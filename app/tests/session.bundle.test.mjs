@@ -152,6 +152,9 @@ test('no connector SDK, relay or public RPC endpoint reached either build', () =
   // names an image, both named in the deployed CSP (functions/_middleware.ts,
   // img-src and connect-src) and pinned by tests/token-artwork.test.mjs. Not
   // an RPC endpoint, a relay or a connector; nothing about a wallet goes there.
+  // 2026-09-24: the metadata endpoint's same GET also picks which pool ids New
+  // position asks the read service to verify (src/lib/read/screens/poolHints.ts):
+  // the host and path are unchanged, and none of its figures is shown.
   const allowedHosts = new Set([
     'viem.sh',
     'wagmi.sh',
@@ -251,26 +254,85 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // #204's Linux baseline of 160,358 B; PR #205 measured 162,022 B on Linux.
   // The 163 kB ceiling leaves 978 B headroom there. The 90 kB session/read and
   // 150 kB finance ceilings stay unchanged; the initial closure is outside this sum.
+  // 2026-09-24: Create position checks the pool before a one-token deposit
+  // (CreatePosition.tsx swapPreflight: finance/setup.ts poolState, quotePool with
+  // its quoterAbi and revertOf, depositPlan.ts quoteWithin/endSqrtPrice, and the
+  // sentences that say nothing was deposited), all inside the lazy DepositAmounts
+  // chunk. Measured on Windows, gzip level 9, both builds from the same tree: at
+  // main 6af7691 financial was 148,417 B (dist) and 148,698 B
+  // (.wallet-test-dist), all lazy 162,022 B and 162,437 B; with the check,
+  // financial 149,916 B and 150,206 B, all lazy 163,521 B and 163,946 B (about
+  // +1.5 kB each). The financial ceiling moves to 151.5 kB and the all-lazy one
+  // to 164.5 kB, keeping the headroom they had (1,584 B / 1,294 B and
+  // 979 B / 554 B). The 90 kB session/read ceiling is untouched: nobody who
+  // never opens Review's Create position pays for it.
+  // 2026-09-24: Positions lists the connected wallet's position NFTs and opens a
+  // page per position (owner's request). Both are lazy read roots
+  // (OwnedPositions, PositionDetail) with their shared PositionFigures and
+  // PositionRange chunks, so the entry every page loads grows by 598 B only
+  // (229,365 -> 229,963 B in dist); the position-actions placeholders add 143 B
+  // to the financial closure. Measured on Windows, gzip level 9: all lazy
+  // 162,024 -> 170,635 B in dist and 162,452 -> 171,066 B in .wallet-test-dist;
+  // financial 148,418 -> 148,561 B and 148,712 -> 148,851 B; session/public reads
+  // 59,413 B and 59,918 B. The all-lazy ceiling moves to 172 kB for it (934 B
+  // headroom in .wallet-test-dist); the 90 kB and 150 kB ceilings are unchanged.
+  // 2026-09-24: the owner's position actions, Collect fees, Close position and
+  // the refund of a held deposit (components/positions/PositionActions.tsx,
+  // HeldDeposits.tsx, finance/position.ts, about 11.6 kB gzip), are lazy
+  // financial roots. Measured on Windows, gzip level 9, shared dependencies
+  // included. Before (main 6af7691): dist financial 148,418 B, all lazy
+  // 162,024 B; .wallet-test-dist 148,712 B and 162,452 B. After, on this branch,
+  // where only the wallet-test lab (screens/PositionLab.tsx, about 0.8 kB) opens
+  // them: dist unchanged at 148,416 B and 162,021 B; .wallet-test-dist 161,014 B
+  // and 174,757 B. With the Positions screens opening both lazily (the merged
+  // shape, measured with a temporary opener): dist 159,929 B and 173,543 B;
+  // .wallet-test-dist 161,013 B and 174,759 B. The financial ceiling moves to
+  // 162 kB and the all-lazy one to 176 kB for them, about 1 kB over the larger
+  // build; the 90 kB session/read ceiling is untouched, so nobody who never
+  // opens a position's actions pays for them.
+  // 2026-09-24, merged (the three entries above were measured on their own
+  // branches; these numbers supersede their ceilings): the pool check before a
+  // one-token deposit, the Positions list and page, the position actions and
+  // the review's fixes, all on one tree. Measured on Windows, gzip level 9:
+  // dist financial 162,459 B, all lazy 185,115 B; .wallet-test-dist financial
+  // 163,591 B, all lazy 186,391 B (it also carries the test-only PositionLab).
+  // Against main 6af7691 (financial 148,418 B / 148,712 B, all lazy 162,024 B
+  // / 162,452 B) that is about +14.9 kB financial and +23.9 kB all lazy, all in
+  // chunks opened only by Review's Create position or by Positions. The
+  // financial ceiling moves to 165 kB and the all-lazy one to 188 kB, about
+  // 1.4 kB and 1.6 kB over the larger build; the 90 kB session/read ceiling is
+  // unchanged.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
   ]) {
     const { js, entry, island } = shape(dir);
     const initial = staticClosure(dir, entry);
-    const readRoots = js.filter((file) => /^(PoolExplorer|TokenPicker|index)-/.test(file) && !initial.has(file));
+    // Changed on purpose (owner, 2026-09-24): Positions' own list (components/positions/OwnedPositions.tsx) and a
+    // position's page (screens/PositionDetail.tsx) are public-read screens in chunks of their own, opened only on
+    // Positions, so the entry every page loads does not carry them.
+    const readRoots = js.filter((file) => /^(PoolExplorer|TokenPicker|index|OwnedPositions|PositionDetail)-/.test(file) && !initial.has(file));
     // New position's Create position is the fifth private lazy root: the chunk Review opens in wallet builds
     // (components/create/DepositAmounts.tsx), which signs through the wallet with the setup client. Changed on
     // purpose (owner, 2026-09-22): it held Review's deposit amounts and their onboarding-v1 preview (G8) before;
     // those were deleted, and the chunk is Create position alone.
-    const financialRoots = js.filter((file) => /^(Setup|Sequence|Execution|Performance|DepositAmounts)-/.test(file));
-    assert.equal(financialRoots.length, 5, 'the four P2 financial screens and New position\'s Create position are explicit lazy roots');
+    // 2026-09-24: the owner's position actions are lazy roots of their own: components/positions/PositionActions.tsx
+    // (Collect fees, Close position) and HeldDeposits.tsx (the refund of a held setup deposit), opened lazily by the
+    // Positions screens in every wallet build, and in the wallet-test build also by its test-only lab
+    // (screens/PositionLab.tsx, routed only behind __DOMINO_TEST_HOOKS__). A deployable dist never carries the lab, and
+    // carries the two actions together or not at all (not at all on a branch where no Positions screen opens them yet).
+    const positionRoots = js.filter((file) => /^(PositionActions|HeldDeposits|PositionLab)-/.test(file)).map((file) => file.split('-')[0]).sort();
+    if (dir === WALLET) assert.deepEqual(positionRoots, ['HeldDeposits', 'PositionActions', 'PositionLab'], 'the lab and the two actions it opens');
+    else assert.ok(['', 'HeldDeposits,PositionActions'].includes(positionRoots.join()), `dist carries both position actions or neither, and never the lab: ${positionRoots.join(', ')}`);
+    const financialRoots = js.filter((file) => /^(Setup|Sequence|Execution|Performance|DepositAmounts|PositionActions|HeldDeposits|PositionLab)-/.test(file));
+    assert.equal(financialRoots.length, 5 + positionRoots.length, 'the four P2 financial screens, New position\'s Create position and the position actions are explicit lazy roots');
     assert.equal(readRoots.filter((file) => file.startsWith('index-')).length, 1, 'include the public read screen, even though Vite calls it index');
     const base = new Set([...staticClosure(dir, [...island, ...readRoots])].filter((file) => !initial.has(file)));
     const financial = new Set([...staticClosure(dir, financialRoots)].filter((file) => !initial.has(file)));
     for (const file of financialRoots) assert.ok(!base.has(file) && !initial.has(file), `${file} must remain opt-in`);
     const allLazy = new Set([...base, ...financial]);
     assert.deepEqual([...new Set([...initial, ...allLazy])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 150_000], ['all lazy', allLazy, 163_000]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 165_000], ['all lazy', allLazy, 188_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

@@ -1,0 +1,572 @@
+[
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x5eac4195930d5ff8b7a34a347f2bde951c42eb730d6e26075bea3dd7c66feb40",
+  "baseToken": {
+   "address": "0x11B70d0243baf75E85CE03201A92b5B7C33BEB59",
+   "symbol": "ROBIN"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 177597.65
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
+  "baseToken": {
+   "address": "0x2E8c31162b855A2ffa90F6F8634643Ad6F111e18",
+   "symbol": "AI"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 1193845.7
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x90691314f1bca335cf43fa9444a314ec15b2a0d82d644a9ace7e3acde70e1cd5",
+  "baseToken": {
+   "address": "0xe34f03f4F36E842C8817Ac635162A2cc67E03C8a",
+   "symbol": "CDS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 4574.67
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xfec7b1efe77aa60887986db5bcbfff39ca40b56d964bb8ce3d9dd0d9baaca4d4",
+  "baseToken": {
+   "address": "0x98096d17e191B3dA1d5f99a6D7b3584351b11E18",
+   "symbol": "BONER"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 433085.67
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x4b7c86491df95f366b31217b2950d2c5136a2f19b6879613eac73d0e69092a1a",
+  "baseToken": {
+   "address": "0x385F4f8ae47651ce5F58F5265395a669f8281e18",
+   "symbol": "MEME"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 101522.18
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "ramses",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0xf2A0bE59AB76b96f957bd5E5b967F2B75e8dB269",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 1508540.2
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x51958cce8f6eee392b53c22005325e94ad605c24ed46f5d6fb225a69f8f9bd36",
+  "baseToken": {
+   "address": "0x0A574aae41DA077713ba32aa05cA151c8759e2F6",
+   "symbol": "SFX"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 82858.91
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xff7b3bd2db34d9ed8160e6dedf1d448777abaa1fa6fc8a31144930a1a656fd92",
+  "baseToken": {
+   "address": "0xeDBf91223639800BCd5756815CAf908Df3b890bE",
+   "symbol": "PRIORS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 79423.25
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x46525dc119850396470f132c4a989d7192cb692139db891b5a4cdcd684c11b17",
+  "baseToken": {
+   "address": "0x385F4f8ae47651ce5F58F5265395a669f8281e18",
+   "symbol": "MEME"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 1202754.84
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x4e3c581d3043cfc06bfd425011cc3f590f2db319cd9f2103927f5a978194914d",
+  "baseToken": {
+   "address": "0x83a49B808F8d5e02CB2931cd2352988f498e5Ba3",
+   "symbol": "Agrippa"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 248614.41
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4",
+  "baseToken": {
+   "address": "0xab093dEF657F15dF31b33922A95e047aDd645B29",
+   "symbol": "SHROOM"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 569617
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x05c53aa8db4ac905381ba999d92a40a13fc0bc93b5d0a287ca16dc107bd8d11b",
+  "baseToken": {
+   "address": "0xded852De9fe9bA9b6f27f39e8e81CF851A5C79cc",
+   "symbol": "ROBINCAT"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 132156.38
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef",
+  "baseToken": {
+   "address": "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3",
+   "symbol": "ORBIO"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 772216.65
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x6d56f66e52e63e8be558d708a987426314bb4de92bc9b43a44effee1f2abf317",
+  "baseToken": {
+   "address": "0x812486EAea648819853F8E372dc9f1516C7868Bd",
+   "symbol": "UBIK"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 346305.68
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x93cc54eb4e1928e841cb8b2e488bd82e8d97d56e0aab16cf078ef71c576dcded",
+  "baseToken": {
+   "address": "0x91A2DAe9699f0B82540B5886b0d8759C22820bA3",
+   "symbol": "musebook"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 452810.94
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x9bcc119a4293ad41b78ee4ad6ced3edf80fc2f53e84ae99eae80d5514c1c4134",
+  "baseToken": {
+   "address": "0x83a49B808F8d5e02CB2931cd2352988f498e5Ba3",
+   "symbol": "Agrippa"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 145477.01
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xbd83654848bdcabeba74cacd06b96e341ee5da47e17a373f6a189cfa2c44d2b8",
+  "baseToken": {
+   "address": "0x9411673acad2Ff68810713cbc04E029c8d636FE6",
+   "symbol": "CATWIFFEATHER"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 45744.68
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x63eeaac7a218d31dc36a404cf66b2e2843de4e7c5dd05fed3a9d7ce4e5b19527",
+  "baseToken": {
+   "address": "0xe02c53d448A62067B2Ac10ED70F5BC6C29471386",
+   "symbol": "NOSH"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 179405.57
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 2858488.24
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x478e9c778920bd4b961719de6f377f2551d7ae14b604e323185f6933f39da17e",
+  "baseToken": {
+   "address": "0x04f0eE2197bC83aA3fa423A7EB6a697D1AFf0e04",
+   "symbol": "RYVO"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 6959.51
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x8aa76172b7ecb36d9fe6535734a2aca7d60905c5e85ff9100f38628dc7d70aae",
+  "baseToken": {
+   "address": "0x1a911bb954dAA9CB38513423075bE74450351e18",
+   "symbol": "MONITOR"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 91924.71
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x3ec09245d84caf3f843e3e1195ff6de27f54ec95dda68a908e277bf73dc19711",
+  "baseToken": {
+   "address": "0x7C9a5e08a849eb84d079536862b3c3FA885205F8",
+   "symbol": "4663"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 18792.7
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xb86426417ced7ec351b0a4a2258e789d1d8cf2b50921faf51c6df60376953024",
+  "baseToken": {
+   "address": "0xBBDD439FD49ADE6Ff3C96f748867de4356647960",
+   "symbol": "HUNTER"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 7643.33
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x3206ce1c4d3f9fa25cfab95de7e743f61912fcb03efa6b3bff02cc577dcda22b",
+  "baseToken": {
+   "address": "0x3b4A0048a00787A644932cD648Faa043410C163e",
+   "symbol": "SIRIUS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 62773.32
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x19c05832614264bf7d8c38507bef70f7fa4d372300138f152fa27a2e964530e3",
+  "baseToken": {
+   "address": "0x1C1DAEF0300551aDBfbE403e7d567b6c5aFF566f",
+   "symbol": "HOTDOG"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 74718.84
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x486435a1f76cd58193f854c6e6213cd05fd58d637865d02065ff558b387fa6ea",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 8559585.36
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x85b82a85a9a45b3995787412b848eee09f655b525f8edfd33db48a7009230c05",
+  "baseToken": {
+   "address": "0xcD0B3b43d8632cE600a13E4519754c138998a93c",
+   "symbol": "JOLLY"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 3026.91
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xf764fdc5fe1d0340656a0f247cda9e38d02850c2a507c9cbbc6f0a73db05be0c",
+  "baseToken": {
+   "address": "0x1a911bb954dAA9CB38513423075bE74450351e18",
+   "symbol": "MONITOR"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 11905.48
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x86613158961c8997962b0bc98f20266f2b2321de5a6a650c27b8ef63b660667e",
+  "baseToken": {
+   "address": "0x32003CC8357938bCF615c1222a349c58f2B30698",
+   "symbol": "W0G"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 406495.35
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xf6c9f0a8bf94ecda6751465a3097bc4c69914421126d2cbc3df723e36b8cf47b",
+  "baseToken": {
+   "address": "0x85a574f2fF0795685F58d1D7B0D4b51F148Ac489",
+   "symbol": "PRINTER"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 273785.65
+  }
+ }
+]

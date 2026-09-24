@@ -175,7 +175,8 @@ test('DF-11: prepare has exactly one call site, inside issueWalletStep; create a
   const at = flow.indexOf('.prepare(');
   assert.ok(start > 0 && start < at && at < end, 'the call sits in issueWalletStep');
   assert.deepEqual(hits(ALL, /\.create\(/), ['screens/Sequence.tsx', 'screens/SequenceCreate.tsx', 'screens/Setup.tsx']);
-  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['components/create/CreatePosition.tsx', 'screens/AdvancedSetup.tsx', 'screens/Sequence.tsx', 'screens/SequenceCreate.tsx']);
+  // 2026-09-24: the owner's Collect fees / Close position and the refund of a held setup deposit send one reviewed step each, on purpose.
+  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['components/create/CreatePosition.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/PositionActions.tsx', 'screens/AdvancedSetup.tsx', 'screens/Sequence.tsx', 'screens/SequenceCreate.tsx']);
   assert.deepEqual(hits(MINE, /available:\s*true/), [], 'no handoff says it is available');
   assert.deepEqual(hits(MINE, /executionAvailable:\s*true|automationAvailable:\s*true|serverBroadcastAvailable:\s*true/), []);
 });

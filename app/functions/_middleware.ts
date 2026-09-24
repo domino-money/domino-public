@@ -63,6 +63,9 @@ const MAX_FORM_BYTES = 1024
 /**
  * Optional decorative token metadata/images use only the two explicitly
  * authorized public DEX Screener hosts. No Domino credentials are forwarded.
+ * Since 2026-09-24 the same token-pairs GET also names the pool ids New
+ * position asks the read service to verify (src/lib/read/screens/poolHints.ts);
+ * no new host or path, and nothing it reports is shown.
  */
 export const APP_CSP = [
   "default-src 'self'",

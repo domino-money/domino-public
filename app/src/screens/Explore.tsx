@@ -36,7 +36,7 @@ function Title() {
 }
 
 /**
- * The list: the rail of selected pools with their hourly volume, the table
+ * The list: the rail of selected pools with their last 24 hours, the table
  * with its two filters, and a way to any other token's pools. Filters live in
  * this page's state only. A token chosen in either search goes to the token
  * view by the address bar.

@@ -27,6 +27,7 @@ import type {
   VerifiedPool,
 } from 'api-contracts/read-v1/types'
 import type { PoolAprEstimate } from 'api-contracts/read-v2/types'
+import { carriedHistory } from './chart'
 import { formatUnits, formatUsdCompact, isZero, parseDecimal, toFixed } from './decimal'
 import { reasonText } from './describe'
 import type { ArtworkKey, EstimateReason, Observation, ReadOutcome, ReadRoute, TokenDisplay } from './types'
@@ -731,7 +732,9 @@ function projectRow(input: RowInput): Market {
 
 export function projectMarketRow({ market, metrics, tokens }: RowReads): Market {
   const d = market.data
-  return projectRow({
+  // Candles the answer itself carried: none from the table's lean reads, and none from a stored overview until the collector keeps them.
+  const carried = carriedHistory(d, market.provenance)
+  const row = projectRow({
     poolId: d.poolId,
     pool: d.pool,
     block: d.snapshot.number,
@@ -743,6 +746,7 @@ export function projectMarketRow({ market, metrics, tokens }: RowReads): Market 
     tokens,
     origin: 'pool-market',
   })
+  return carried ? { ...row, providerHistory: carried } : row
 }
 
 /** How old a stored entry was when the snapshot answered, in whole seconds. */

@@ -16,7 +16,11 @@ export function ratioText(value: string): string {
   return text.includes('.') ? text.replace(/0+$/, '').replace(/\.$/, '') : text
 }
 
-export function ratioGeometry(history: HistoryResponse, width = 720, height = 240) {
+/** Room around the plotted line: the pool chart keeps 100 on the right for its labels. */
+export interface RatioPad { left: number; right: number; top: number; bottom: number }
+const CHART_PAD: RatioPad = { left: 12, right: 100, top: 16, bottom: 32 }
+
+export function ratioGeometry(history: HistoryResponse, width = 720, height = 240, pad: RatioPad = CHART_PAD) {
   const candles = history.candles
   if (!candles.length || width <= 120 || height <= 80) return null
   const decimals = candles.map(candle => parseDecimal(candle.close))
@@ -25,7 +29,7 @@ export function ratioGeometry(history: HistoryResponse, width = 720, height = 24
   const values = decimals.map(value => value!.coefficient * 10n ** BigInt(scale - value!.scale))
   let high = 0, low = 0
   values.forEach((value, index) => { if (value > values[high]) high = index; if (value < values[low]) low = index })
-  const left = 12, right = width - 100, top = 16, bottom = height - 32
+  const left = pad.left, right = width - pad.right, top = pad.top, bottom = height - pad.bottom
   const { startTimestamp: start, endTimestamp: end } = history.requestedWindow
   const x = (timestamp: number) => left + Math.max(0, Math.min(1, (timestamp - start) / Math.max(1, end - start))) * (right - left)
   const rise = BigInt(Math.round((bottom - top) * 1000))

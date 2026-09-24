@@ -1,11 +1,21 @@
 /** Optional decoration from https://docs.dexscreener.com/api/reference.
  * Chain/address association is not token approval. Never use this API's prices,
  * names or links as application data. A pair image belongs to its BASE token.
+ *
+ * One exception, since 2026-09-24: New position also reads the same token-pairs
+ * body to choose which pool ids the read service is asked to verify on chain
+ * (lib/read/screens/poolHints.ts). Only the ids are used, as a question for the
+ * read service; every figure shown still comes from the read service's own
+ * reply. Both uses share one GET per token (`pairs`, cached for 30 s). The
+ * hints may also ask for native ETH by the zero address, the provider's own
+ * name for it (since 2026-09-23); artwork never does.
  */
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 const CDN_IMAGE = /^https:\/\/cdn\.dexscreener\.com\/cms\/images\/([A-Za-z0-9_-]{8,128})(?:\?[^#\s]*)?$/
 const MAX_BODY = 262144
 const TIMEOUT = 6000
+/** How long one token-pairs body is reused: the provider's own `Cache-Control: max-age=30`. */
+const BODY_TTL = 30000
 
 export function tokenArtworkKey(chainId: number, address: string): string | null {
   return chainId === 4663 && ADDRESS.test(address) && !/^0x0{40}$/i.test(address) ? `4663:${address.toLowerCase()}` : null
@@ -38,8 +48,12 @@ export function createTokenArtworkResolver(options: Options = {}) {
   const pending = new Map<string, Promise<string | null>>()
   const queue: Array<() => void> = []
   let active = 0
+  const bodies = new Map<string, { body: unknown; expires: number }>()
+  /** Reads in flight, each with the time (on `now`) it gives up at. */
+  const reading = new Map<string, { result: Promise<unknown>; deadline: number }>()
 
-  async function retrieve(address: string, remaining: number): Promise<string | null> {
+  /** One guarded GET of the token-pairs body: parsed JSON, or null for anything else. */
+  async function retrieve(address: string, remaining: number): Promise<unknown> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), remaining)
     try {
@@ -64,9 +78,54 @@ export function createTokenArtworkResolver(options: Options = {}) {
       let offset = 0
       for (const part of parts) { bytes.set(part, offset); offset += part.byteLength }
       if (controller.signal.aborted) return null
-      return artworkFromPairs(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), address)
+      return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
     } catch { return null }
     finally { clearTimeout(timer); controller.abort() }
+  }
+
+  /**
+   * The token-pairs body for `address` (lowercase), shared by artwork and pool
+   * hints: a body read in the last 30 s is reused, and a read in flight is
+   * joined, so the two never ask twice for one token while it answers.
+   *
+   * Only a body is kept. A failure (a timeout, a 429, a network error, a reply
+   * that is not JSON) is not an answer to reuse: the next ask reads again, and
+   * the artwork keeps its own negative cache (`remember`). A read in flight
+   * may have less time than the caller that joins it: an artwork lookup that
+   * waited in the queue starts with what is left of its six seconds. When
+   * such a read gives up, its null is not the joiner's answer, so the joiner
+   * reads again with the time it has left.
+   */
+  function pairsWithin(address: string, remaining: number): Promise<unknown> {
+    const kept = bodies.get(address)
+    if (kept && kept.expires > now()) return Promise.resolve(kept.body)
+    const deadline = now() + remaining
+    const joined = reading.get(address)
+    if (joined) {
+      if (joined.deadline >= deadline) return joined.result
+      return joined.result.then((body) => {
+        const left = deadline - now()
+        return body !== null || left <= 0 ? body : pairsWithin(address, left)
+      })
+    }
+    const entry: { result: Promise<unknown>; deadline: number } = {
+      deadline,
+      result: retrieve(address, remaining).then((body) => {
+        if (reading.get(address) === entry) reading.delete(address)
+        if (body !== null) {
+          bodies.delete(address)
+          bodies.set(address, { body, expires: now() + BODY_TTL })
+          while (bodies.size > 16) bodies.delete(bodies.keys().next().value!)
+        }
+        return body
+      }),
+    }
+    reading.set(address, entry)
+    return entry.result
+  }
+
+  async function artworkWithin(address: string, remaining: number): Promise<string | null> {
+    try { return artworkFromPairs(await pairsWithin(address, remaining), address) } catch { return null }
   }
 
   function remember(key: string, value: string | null) {
@@ -88,7 +147,7 @@ export function createTokenArtworkResolver(options: Options = {}) {
       const run = () => {
         active++
         const remaining = TIMEOUT - (now() - queuedAt)
-        void (remaining <= 0 ? Promise.resolve(null) : retrieve(address.toLowerCase(), remaining)).then((value) => {
+        void (remaining <= 0 ? Promise.resolve(null) : artworkWithin(address.toLowerCase(), remaining)).then((value) => {
           remember(key, value)
           done(value)
         }).finally(() => {
@@ -104,7 +163,17 @@ export function createTokenArtworkResolver(options: Options = {}) {
     return result
   }
 
-  return { resolve, rejectImage: (chainId: number, address: string) => {
+  /**
+   * The token-pairs body for a Robinhood token, or for native ETH by the zero
+   * address, or null: the same guarded GET and 30 s reuse as the artwork. Not
+   * queued behind the artwork lookups: the one caller (New position's pool
+   * hints) waits for it with its own limit.
+   */
+  function pairs(chainId: number, address: string): Promise<unknown> {
+    return chainId === 4663 && ADDRESS.test(address) ? pairsWithin(address.toLowerCase(), TIMEOUT) : Promise.resolve(null)
+  }
+
+  return { resolve, pairs, rejectImage: (chainId: number, address: string) => {
     const key = tokenArtworkKey(chainId, address)
     if (key) remember(key, null)
   } }

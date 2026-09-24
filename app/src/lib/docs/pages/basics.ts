@@ -103,7 +103,7 @@ export const EARNED_FEES: DocPage = {
       id: 'unsettled-fees',
       title: 'Unsettled fees',
       blocks: [
-        p('Fees a position has earned but not yet collected are its unsettled fees. ', doc('Positions', 'positions', 'position-details'), ' shows them for any position NFT you look up, beside its principal: the liquidity deposited in it.'),
+        p('Fees a position has earned but not yet collected are its unsettled fees. ', doc('Positions', 'positions', 'position-details'), ' shows them as unclaimed fees for each of your positions, beside its principal: the liquidity deposited in it.'),
       ],
     },
     {

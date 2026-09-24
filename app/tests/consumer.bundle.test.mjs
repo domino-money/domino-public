@@ -106,7 +106,8 @@ function productionClosures() {
     roots.forEach(walk);
     return seen;
   };
-  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts)-/.test(file));
+  // Changed on purpose (owner, 2026-09-24): the Positions list, a position's page and their two wallet chunks are lazy roots too.
+  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits)-/.test(file));
   const shared = reach([...entry, ...otherRoots]);
   const setupClosure = reach(setup);
   assert.ok(!shared.has(setup[0]), 'Setup must not be loaded statically by the entry or another screen');
@@ -148,7 +149,8 @@ test('production excludes preview/deposit labs and confines the live deposit cli
     }
   }
   assert.ok(files.some(({ text }) => SHARED_CODE_MARKERS.every((marker) => text.includes(marker))), 'the shared error codes are still in the build, so the confinement above is checked against something');
-  // Create position's chunk carries the setup client it signs through, its assisted swap and its way to Positions,
+  // Create position's chunk carries the setup client it signs through, its assisted swap and its way to the new position's
+  // page on Positions ('#/positions/<id>', a position's own page since 2026-09-24),
   // and nothing of the onboarding service: Review asks no preview any more.
   const amountsText = [...amountsClosure].map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
   for (const marker of ['quoteSwap', 'swap_output_insufficient', 'getSlot0', '#/positions/']) {

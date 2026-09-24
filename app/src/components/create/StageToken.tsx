@@ -22,6 +22,8 @@ export type PreselectStatus =
   | { kind: 'checking'; again: boolean }
   | { kind: 'verified'; block: number }
   | { kind: 'not_found' }
+  /** The linked pool is verified, but Domino cannot open a position in it (hooks, or a dynamic fee): nothing is preselected. */
+  | { kind: 'unsupported'; reason: 'hooks' | 'dynamic' }
   | { kind: 'failed'; line: StatusLine }
 
 /** What a screen reader hears about the link; nothing of it is a panel on screen. */
@@ -37,6 +39,8 @@ function preselectWords(status: PreselectStatus): string {
       return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectVerified(status.block)}`
     case 'not_found':
       return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectNotFound}`
+    case 'unsupported':
+      return `${CREATE.token.preselectHeading}: ${status.reason === 'dynamic' ? CREATE.pool.unsupportedDynamic : CREATE.pool.unsupportedHooks}`
     case 'failed':
       return `${CREATE.token.preselectHeading}: ${status.line.title}.`
     default:
@@ -101,7 +105,7 @@ export function StageToken({
   const checking = preselect.kind === 'checking' && !preselect.again && !state.pool
 
   return (
-    <div className="dm-flow-stack" data-stage="token" data-preselect={preselect.kind} data-preselect-reason={preselect.kind === 'failed' ? preselect.line.code : undefined}>
+    <div className="dm-flow-stack" data-stage="token" data-preselect={preselect.kind} data-preselect-reason={preselect.kind === 'failed' ? preselect.line.code : preselect.kind === 'unsupported' ? preselect.reason : undefined}>
       <p role="status" aria-live="polite" className="sr-only">
         {preselectWords(preselect)}
       </p>

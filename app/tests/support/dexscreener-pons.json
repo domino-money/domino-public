@@ -1,0 +1,560 @@
+[
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x10CC6BD38112cAc182db90B6a71d8Bb5939526bA",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+   "symbol": "WETH"
+  },
+  "liquidity": {
+   "usd": 4576539.06
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "ramses",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0xf2A0bE59AB76b96f957bd5E5b967F2B75e8dB269",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 1518846
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0xEd50bDeeA8aDC232f159486192a4157281D722ff",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+   "symbol": "WETH"
+  },
+  "liquidity": {
+   "usd": 5683956.61
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 2807382.62
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x46534760B24aBE79AafdD82d4a37681DEc311133",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 20732.1
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x486435a1f76cd58193f854c6e6213cd05fd58d637865d02065ff558b387fa6ea",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 8523356.15
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "ramses",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x51B6Ca77DEaE9f17c1D89EdFb301AE50053C57A5",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+   "symbol": "WETH"
+  },
+  "liquidity": {
+   "usd": 640589.6
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "up",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x2F393B60eF0CFAf669af63284e5592DC3a657B73",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 386359.23
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xb59001413cb070e28433826f927b7265a0813213ba21f454d86896cee3cce674",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0000000000000000000000000000000000000000",
+   "symbol": "ETH"
+  },
+  "liquidity": {
+   "usd": 1537270.39
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xaaa11bc76a36c8d0bbdac3d481b8c61a1c2a0667b2da9e7c5796f3207ef65d8d",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 13141.2
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x5e22474a4138e421def449b0568dd0821578904f2f3497e7df54b35559e2a26f",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0000000000000000000000000000000000000000",
+   "symbol": "ETH"
+  },
+  "liquidity": {
+   "usd": 4764.11
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x7A192E71564ec66eE0763e328a3Ac274942dE4e1",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 4163007.72
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xfcb3ac1562a590e0c96f24a0e664dbe9dcc2f98e05f3311be02eba6909af5c7d",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 102145.87
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x9a18d2518128a9c2b28762b5501220faa54af73f76f70a60955a7ec5397eb8dc",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0000000000000000000000000000000000000000",
+   "symbol": "ETH"
+  },
+  "liquidity": {
+   "usd": 1304.69
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "giga",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x50E43b43A8ee1E07e0AC978e92aDfF7DFbfb88e7",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+   "symbol": "WETH"
+  },
+  "liquidity": {
+   "usd": 84866.13
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x13f9ab4e07b7f222cf49ff8ae9d7cdd2f749546eb3f83bdd84b884e27dd5e49d",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 132913.01
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "up",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x25C93DaC3A72E48E67314709f058CCf56C0Cf43a",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+   "symbol": "WETH"
+  },
+  "liquidity": {
+   "usd": 74641.58
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "giga",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x56000f3980200D0f39A9f2EEFd5233B2196B4445",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 28966.65
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "0x5481864ddd46a2D798Df0925C23B7846e776E5E3",
+  "pairAddress": "0x1937215e6fa2F9F1cdD5192B623634bE38Af77Cc",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 47664.09
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x34e7c4657937632cbe3181a7aa635b7acb537b05357aff2c5527822082292943",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0000000000000000000000000000000000000000",
+   "symbol": "ETH"
+  },
+  "liquidity": {
+   "usd": 30175.64
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v2"
+  ],
+  "pairAddress": "0x8018Ee3ad3c0321bE0e69536733CD28e29564dD4",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+   "symbol": "WETH"
+  },
+  "liquidity": {
+   "usd": 20233.59
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "kittenswap",
+  "pairAddress": "0x2CAfC1776D2008ae76Da819716f91FDC09BdB02a",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 16814.13
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x0652d61511f3A96B8721bE6825680F5954D9BAF3",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 7138.68
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x6693CF7e87a7039E36FA5F3c0D7E06818d259468",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+   "symbol": "WETH"
+  },
+  "liquidity": {
+   "usd": 1529.93
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "alandale",
+  "pairAddress": "0x544e1492315f24ec61C2A500a1C75e55E5bb20EB",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+   "symbol": "WETH"
+  },
+  "liquidity": {
+   "usd": 8644.31
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "robinswap",
+  "labels": [
+   "v3"
+  ],
+  "pairAddress": "0x1C6360671CDa45cE21738EdBb02E97881E389A33",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+   "symbol": "WETH"
+  },
+  "liquidity": {
+   "usd": 8228.32
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x913c0f466a4e35e61eb424e0a7d62b05e17c94bf8b1463658fa9c3c011639a0b",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0000000000000000000000000000000000000000",
+   "symbol": "ETH"
+  },
+  "liquidity": {
+   "usd": 6350.68
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "0swap",
+  "pairAddress": "0x0310Ea1560B9f6DD55e8Db1c5f80bd506DafC116",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+   "symbol": "WETH"
+  },
+  "liquidity": {
+   "usd": 7046.65
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0xdbb1f9663016a98cb1792480a4433946cf3ba32d0ec00b1be0c9ed46b1bbc45d",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x0000000000000000000000000000000000000000",
+   "symbol": "ETH"
+  },
+  "liquidity": {
+   "usd": 4438.71
+  }
+ },
+ {
+  "chainId": "robinhood",
+  "dexId": "uniswap",
+  "labels": [
+   "v4"
+  ],
+  "pairAddress": "0x5cf9e7a7c416d1a1673a013c1bb311a1cf57be2944616949c2dd15e4624a3bff",
+  "baseToken": {
+   "address": "0x39dBED3a2bd333467115dE45665cC57F813C4571",
+   "symbol": "PONS"
+  },
+  "quoteToken": {
+   "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+   "symbol": "USDG"
+  },
+  "liquidity": {
+   "usd": 3385.48
+  }
+ }
+]

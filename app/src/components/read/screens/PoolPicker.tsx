@@ -3,7 +3,8 @@ import { reasonText } from '../../../lib/read/describe'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { cataloguePoolId, createCatalogueSession, verifyCandidate, type CatalogueSession, type CatalogueSnapshot } from '../../../lib/read/screens/catalogueSession'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/read/screens/identity'
-import { neutralOrder, poolsRequest, projectPoolsView, type PoolOption, type PoolsView } from '../../../lib/read/screens/poolsList'
+import { hintsWithin } from '../../../lib/read/screens/poolHints'
+import { neutralOrder, poolsRequest, projectPoolsView, usablePoolsRequest, type PoolOption, type PoolsView } from '../../../lib/read/screens/poolsList'
 import { failureCode } from '../../../lib/read/screens/quietRead'
 import { askAgainLater, readWithin } from '../../../lib/read/screens/screenRead'
 import { asksAgain } from '../../../lib/read/screens/transient'
@@ -19,12 +20,20 @@ import { SymbolText } from './SymbolText'
 /** A candidate's verification: `loading`, `ok`, `not_found` or a read state, and its words for the title and the live region. */
 type Check = { code: string; text: string }
 
+/** What a plain row keeps out of sight: said in its title only, and only when there is something to say. */
+const plainNotes = (option: PoolOption) =>
+  [option.tokenMetadata === 'partial' ? COPY.picker.partialMetadata : '', option.providerConflict ? COPY.picker.providerConflict : ''].filter(Boolean).join('. ') || undefined
+
 /**
  * One verified pool. As a radio it is a choice inside a picker; with `open`
  * it is a way in, and `onPick` opens the pool. The accessible name is the
  * row's own text, never an attribute built from a symbol.
+ *
+ * `plain` is New position's row: the pair and its fee, then TVL, 24h volume
+ * and APR, always in that order, a dash for a figure nobody reports. No
+ * details to open and no note lines: what they said is in titles and data.
  */
-function PoolRow({ option, checked, onPick, name, compact = false, open = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean }) {
+function PoolRow({ option, checked, onPick, name, compact = false, open = false, plain = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean; plain?: boolean }) {
   const identity = (
     <>
       <TokenMarkPair base={option.currencies[0]} quote={option.currencies[1]} size={compact ? 28 : 32} ring="var(--surface-1)" />
@@ -35,19 +44,38 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false 
       <span className="dm-chip shrink-0" data-fee="">{option.fee}</span>
     </>
   )
+  const head = open ? (
+    <button type="button" onClick={onPick} className="dm-mkt-option-head" data-open-pool="">
+      {identity}
+      <IconChevronRight size={14} />
+    </button>
+  ) : (
+    <label className="dm-mkt-option-head">
+      <input type="radio" name={name} checked={checked} onChange={onPick} className="shrink-0" />
+      {identity}
+    </label>
+  )
+  if (plain) {
+    return (
+      <li
+        className={cx('dm-mkt-option', checked && 'dm-mkt-option--checked')}
+        data-pool-option={option.kind}
+        data-token-metadata={option.tokenMetadata}
+        data-provider-conflict={option.providerConflict ? '' : undefined}
+        title={plainNotes(option)}
+      >
+        {head}
+        <div className="dm-mkt-option-figures dm-flow-pool-figures">
+          <ProviderFigure label="TVL" figure={option.liquidity} dash />
+          <ProviderFigure label="24h volume" figure={option.volume} dash />
+          <RowAprFigure option={option} label="APR" />
+        </div>
+      </li>
+    )
+  }
   return (
     <li className={cx('dm-mkt-option', checked && 'dm-mkt-option--checked')} data-pool-option={option.kind}>
-      {open ? (
-        <button type="button" onClick={onPick} className="dm-mkt-option-head" data-open-pool="">
-          {identity}
-          <IconChevronRight size={14} />
-        </button>
-      ) : (
-        <label className="dm-mkt-option-head">
-          <input type="radio" name={name} checked={checked} onChange={onPick} className="shrink-0" />
-          {identity}
-        </label>
-      )}
+      {head}
       {/* Most pools a search turns up are not covered by any market data
           provider — for one token here, eleven of twelve. Three columns each
           reading "Unavailable", with the reason only in a title nobody hovers,
@@ -269,16 +297,6 @@ type PoolsResult =
   | { kind: 'failed'; code: string; failure: string; reason: string; final: boolean }
 
 /**
- * Existing pools for the chosen token (and second asset, if chosen), from the
- * pools route, in a neutral order, plus the stored catalogue on request. With
- * `onOpen` the rows are ways into a pool rather than a choice, and the
- * catalogue can be left to the caller (`catalogue={false}`) when it is shown
- * elsewhere on the page. While the list is read its rows rest, and they keep
- * resting while a busy or briefly unavailable read waits to be asked again on
- * its own. A list that failed for good is one plain muted line, its code in
- * data and its reason in the title.
- */
-/**
  * The row's fee APR estimate, worked out here from the figures this row already
  * carries (rowApr.ts). The service's own estimate, on the pool page, is built on
  * a different provider's reported TVL and volume, so the two can differ for one
@@ -298,7 +316,7 @@ function worthColumns(option: PoolOption): boolean {
   return option.liquidity.state !== 'unavailable' || option.volume.state !== 'unavailable'
 }
 
-function RowAprFigure({ option }: { option: PoolOption }) {
+function RowAprFigure({ option, label = 'Pool APR' }: { option: PoolOption; label?: string }) {
   const apr = rowApr({
     integration: option.integration,
     currentLpFeePips: option.feePips,
@@ -308,7 +326,7 @@ function RowAprFigure({ option }: { option: PoolOption }) {
   })
   return (
     <p className="dm-mkt-option-apr" data-row-apr={apr.kind === 'estimate' ? (apr.stale ? 'stale' : 'estimate') : 'none'} data-row-apr-reason={apr.kind === 'none' ? apr.reason : undefined}>
-      <span className="text-fg-muted">Pool APR</span>
+      <span className="text-fg-muted">{label}</span>
       {apr.kind === 'estimate' ? (
         <span className="tnum font-medium text-fg" title={ROW_APR_TITLE}>
           {apr.text}% est.
@@ -322,6 +340,24 @@ function RowAprFigure({ option }: { option: PoolOption }) {
   )
 }
 
+/**
+ * Existing pools for the chosen token (and second asset, if chosen), from the
+ * pools route, in a neutral order, plus the stored catalogue on request. With
+ * `onOpen` the rows are ways into a pool rather than a choice, and the
+ * catalogue can be left to the caller (`catalogue={false}`) when it is shown
+ * elsewhere on the page. While the list is read its rows rest, and they keep
+ * resting while a busy or briefly unavailable read waits to be asked again on
+ * its own. A list that failed for good is one plain muted line, its code in
+ * data and its reason in the title.
+ *
+ * `variant="create"` is New position's first step. It lists only the pools
+ * Domino can open a position in (no hooks, a fixed fee: poolsList.ts
+ * `usableForDomino`), the largest reported TVL first, every row with its TVL,
+ * 24h volume and APR. Before the one pools read it asks which pools are worth
+ * verifying (poolHints.ts, waiting at most 2.5 s) and names them in it. No
+ * coverage summary, no rejected candidates and no catalogue: how many pools
+ * were left out is data only, and an empty list is the same muted line.
+ */
 export function PoolPicker({
   source,
   token,
@@ -331,6 +367,7 @@ export function PoolPicker({
   onOpen,
   catalogue = true,
   compact = false,
+  variant,
 }: {
   source: ReadSource
   token: AddressKey
@@ -340,7 +377,9 @@ export function PoolPicker({
   onOpen?: (option: PoolOption) => void
   catalogue?: boolean
   compact?: boolean
+  variant?: 'create'
 }) {
+  const create = variant === 'create'
   const question = `${token}:${paired ?? ''}`
   const [answer, setAnswer] = useState<{ question: string; result: PoolsResult } | null>(null)
   const result: PoolsResult = answer?.question === question ? answer.result : { kind: 'loading' }
@@ -353,8 +392,11 @@ export function PoolPicker({
   useEffect(() => {
     const controller = new AbortController()
     const { signal } = controller
-    const request = poolsRequest(token, paired)
     void (async () => {
+      // New position names the pools worth verifying first; hints that are slow
+      // or missing leave the plain read, never a longer wait (poolHints.ts).
+      const request = create ? usablePoolsRequest(token, paired, await hintsWithin(token, paired, signal)) : poolsRequest(token, paired)
+      if (signal.aborted) return
       let outcome = await readWithin(source, 'pools', request, { signal })
       let restarted = false
       if (outcome.state === 'restart_required' && outcome.code === 'catalogue_revision_changed') {
@@ -366,7 +408,7 @@ export function PoolPicker({
       }
       if (signal.aborted || outcome.state === 'aborted') return
       if (outcome.state === 'ok') {
-        setAnswer({ question, result: { kind: 'ok', view: projectPoolsView(outcome.data, outcome.provenance.receivedAt), restarted } })
+        setAnswer({ question, result: { kind: 'ok', view: projectPoolsView(outcome.data, outcome.provenance.receivedAt, create ? { only: 'domino' } : {}), restarted } })
         return
       }
       const text = failureText(outcome, 'pools')
@@ -376,21 +418,23 @@ export function PoolPicker({
       if (await askAgainLater(outcome, attempt, signal)) setAsked({ question, attempt: attempt + 1 })
     })()
     return () => controller.abort()
-  }, [source, token, paired, question, attempt])
+  }, [source, token, paired, question, attempt, create])
 
   const listed = result.kind === 'ok' ? result.view.options : []
-  const options = neutralOrder([...listed, ...verified.filter((v) => !listed.some((o) => o.key === v.key))])
+  // New position's list is the reply's own, already in TVL order; it verifies nothing else.
+  const options = create ? listed : neutralOrder([...listed, ...verified.filter((v) => !listed.some((o) => o.key === v.key))])
   // Still being read, or waiting to be asked again: the rows rest either way.
   const resting = result.kind === 'loading' || (result.kind === 'failed' && !result.final)
+  const counts = create && result.kind === 'ok' ? { 'data-pools-hidden': result.view.hidden, 'data-pools-rejected': result.view.rejected.length, 'data-pools-restarted': result.restarted ? '' : undefined } : {}
 
   return (
-    <div className="grid gap-3" data-picker="pool" data-pools-state={result.kind === 'failed' ? result.code : result.kind}>
+    <div className="grid gap-3" data-picker="pool" data-picker-variant={variant} data-pools-state={result.kind === 'failed' ? result.code : result.kind} {...counts}>
       <p role="status" aria-live="polite" className="sr-only">{result.kind === 'loading' ? COPY.picker.poolsLoading : result.kind === 'failed' ? result.reason : ''}</p>
       {resting && options.length === 0 && (
         <div className="grid gap-3" aria-hidden="true">
           {/* The coverage summary and the legend land with the read too; without a resting
               shape they alone push the list 80px down the moment the pools arrive. */}
-          <Skeleton className="h-10 w-full rounded-[var(--radius)]" />
+          {!create && <Skeleton className="h-10 w-full rounded-[var(--radius)]" />}
           <div className="grid">
             {!onOpen && <Skeleton className="mb-2 h-5 w-28" />}
             <ul className="grid gap-2">
@@ -405,10 +449,18 @@ export function PoolPicker({
                     </span>
                     <Skeleton className="h-5 w-12 shrink-0 rounded-full" />
                   </div>
-                  <div className="dm-mkt-option-figures">
-                    <Skeleton className="h-[18px] w-full" />
-                  </div>
-                  <Skeleton className="mx-3 h-9 w-56 max-w-[calc(100%-24px)]" />
+                  {create ? (
+                    <div className="dm-mkt-option-figures dm-flow-pool-figures">
+                      {[0, 1, 2].map((cell) => <Skeleton key={cell} className="h-[18px] w-full" />)}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="dm-mkt-option-figures">
+                        <Skeleton className="h-[18px] w-full" />
+                      </div>
+                      <Skeleton className="mx-3 h-9 w-56 max-w-[calc(100%-24px)]" />
+                    </>
+                  )}
                 </li>
               ))}
             </ul>
@@ -420,7 +472,12 @@ export function PoolPicker({
           {paired ? COPY.picker.poolsNonePair : COPY.picker.poolsNone}
         </p>
       )}
-      {result.kind === 'ok' && (
+      {create && result.kind === 'ok' && options.length === 0 && (
+        <p className="px-1 py-4 text-center text-body text-fg-muted" data-pools-empty="">
+          {paired ? COPY.picker.poolsNonePair : COPY.picker.poolsNone}
+        </p>
+      )}
+      {!create && result.kind === 'ok' && (
         <>
           {result.restarted && <p className="px-1 text-caption text-fg-muted">{COPY.picker.catalogueRestarted}</p>}
           <details className="dm-details dm-mkt-coverage">
@@ -443,12 +500,12 @@ export function PoolPicker({
           <legend className="mb-2 text-body font-medium text-fg">{COPY.picker.poolsLegend}</legend>
           <ul className="grid gap-2">
             {options.map((option) => (
-              <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact={compact} />
+              <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact={compact} plain={create} />
             ))}
           </ul>
         </fieldset>
       ))}
-      {result.kind === 'ok' && result.view.rejected.length > 0 && (
+      {!create && result.kind === 'ok' && result.view.rejected.length > 0 && (
         <section aria-labelledby="rejected-heading" className="grid gap-1.5" data-rejected-pools="">
           <h3 id="rejected-heading" className="text-body font-medium text-fg">
             {COPY.picker.rejectedHeading}
@@ -463,7 +520,7 @@ export function PoolPicker({
           </ul>
         </section>
       )}
-      {catalogue && (
+      {catalogue && !create && (
         <details open={compact ? undefined : true} className={compact ? 'dm-details' : undefined}>
           <summary className={compact ? undefined : 'hidden'}>More sources · stored catalogue</summary>
           <div className={compact ? 'pt-2' : ''}>

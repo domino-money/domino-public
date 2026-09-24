@@ -272,7 +272,10 @@ test('the app route reads nothing until asked: one NFT read with the typed IDs, 
   // Every fetch and XHR is same-origin, with one exception the owner approved
   // on 2026-09-12: the token artwork resolver may GET DexScreener's public
   // token-pairs endpoint for a token's contract address, and nothing else — no
-  // wallet address, no other path, no other host, no credentials. Any other
+  // wallet address, no other path, no other host, no credentials. (Since
+  // 2026-09-24 that same GET also names the pool ids New position asks the
+  // read service to verify: src/lib/read/screens/poolHints.ts; for native ETH
+  // it asks by the zero address, the provider's own name for it.) Any other
   // resource from another host must be one the app itself names: the fonts
   // APP_CSP allows, and DexScreener's image CDN for the artwork. A host that
   // appears nowhere in the build (a local antivirus injecting its own script
@@ -314,6 +317,55 @@ test('a link that carries ids looks them up on arrival, once; Clear takes them o
   assert.equal(await cards(page).count(), 0);
   assert.equal(await page.evaluate(() => location.hash), '#/positions', 'Clear clears the link too');
   assert.equal(await page.inputValue('#nft-ids'), '');
+  await quiet(page, errors);
+  await page.close();
+});
+
+// Review of 2026-09-25: a lookup of one id used to write `#/positions/<id>`, which is now that position's own page. The
+// hash was replaced, so no hashchange came: the list stayed under a detail link, a link to that id's page did nothing,
+// and Back from any other page landed on that position instead of the list. One id is not written any more.
+test('a lookup of one id leaves the link at #/positions: that id’s page still opens by its link, and Back returns to the list', async () => {
+  const { page, errors } = await tracked();
+  await page.goto(`${origin}/#/positions`, { waitUntil: 'networkidle' });
+  await page.locator('#chain-lookup').waitFor();
+  await lookUp(page, '1');
+  await settledLookup(page);
+  assert.equal(await page.evaluate(() => location.hash), '#/positions', 'one id is not written: #/positions/1 is that position’s page');
+  // The id's own page opens by its link, as a row of Your positions links to it.
+  await page.evaluate(() => { location.hash = '#/positions/1'; });
+  await page.locator('[data-position-detail], [data-position-reason], [data-position-loading], [data-empty="position-gone"]').first().waitFor({ timeout: 10_000 });
+  assert.equal(await page.locator('#chain-lookup').count(), 0, 'the position’s page, not the list');
+  // Back returns to the list and its lookup, not to a position.
+  await page.goBack();
+  await page.locator('#chain-lookup').waitFor();
+  assert.equal(await page.evaluate(() => location.hash), '#/positions');
+  assert.equal(await page.locator('[data-position-detail], [data-position-loading]').count(), 0);
+  // A list of ids is still a link someone can share.
+  await lookUp(page, IDS);
+  await settledLookup(page);
+  assert.equal(await page.evaluate(() => location.hash), `#/positions/1,${BIG}`);
+  // And one id after it takes the list out of the link again, rather than leaving it to name ids no longer shown.
+  await lookUp(page, BIG);
+  await settledLookup(page);
+  assert.equal(await page.evaluate(() => location.hash), '#/positions');
+  await quiet(page, errors);
+  await page.close();
+});
+
+// Changed on purpose (owner, 2026-09-24): a link with one NFT id is that position's own page (screens/PositionDetail.tsx),
+// where Create position lands; only a list of ids is the lookup, above. The page reads its one id and nothing else.
+test('a link with one NFT id opens that position’s own page: no lookup, one read of that id', async () => {
+  const { page, errors } = await tracked();
+  await page.goto(`${origin}/#/positions/${BIG}`, { waitUntil: 'networkidle' });
+  await page.locator('[data-position-detail], [data-position-reason], [data-empty="position-gone"]').first().waitFor();
+  assert.equal(await page.locator('#chain-lookup').count(), 0, 'no lookup on a position’s page');
+  assert.equal(await page.locator('main').getByRole('link', { name: 'Positions', exact: true }).first().getAttribute('href'), '#/positions');
+  const reads = await page.evaluate(() => (window.__DOMINO_FIXTURE_READS__ ?? []).map((r) => ({ route: r.route, request: r.request })));
+  assert.deepEqual(reads[0], { route: 'nft-positions', request: { tokenIds: [BIG] } }, 'exactly the id in the link, and no pinned block');
+  assert.equal(reads.filter((r) => r.route === 'nft-positions').length, 1, 'read once');
+  for (const label of await page.locator('main').getByRole('button').allInnerTexts()) assert.doesNotMatch(label, /^(Retry|Refresh|Read again|Look up positions)$/, label);
+  const stored = await page.evaluate(() => Object.keys(localStorage).concat(Object.keys(sessionStorage)).filter((key) => key !== 'domino-appearance'));
+  assert.deepEqual(stored, [], 'nothing about the id is stored');
   await quiet(page, errors);
   await page.close();
 });

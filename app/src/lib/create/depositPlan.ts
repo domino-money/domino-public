@@ -173,6 +173,63 @@ export function liquidityAfterSwap(terms: PoolTerms, from: Side, balance: bigint
   return from === 0 ? { kept: l0, bought: l1, sqrtPriceX96: after } : { kept: l1, bought: l0, sqrtPriceX96: after }
 }
 
+/**
+ * The fee a swap in this direction pays, in pips, as v4-core's ProtocolFeeLibrary.calculateSwapFee takes it: the
+ * pool's packed protocol fee (12 bits per direction: token 0 in the low bits, token 1 in the high) and the LP fee on
+ * what the protocol leaves, pf + lp − ⌊pf·lp / 10⁶⌋.
+ */
+export function swapFeePips(lpFee: number, protocolFeeRaw: number, zeroForOne: boolean): number {
+  const protocol = zeroForOne ? protocolFeeRaw & 0xfff : (protocolFeeRaw >>> 12) & 0xfff
+  return protocol + lpFee - Math.floor((protocol * lpFee) / 1_000_000)
+}
+
+/** ⌊√n⌋ by Newton's method, from a first guess at or above the root. */
+export function isqrt(n: bigint): bigint {
+  if (n < 2n) return n < 0n ? 0n : n
+  let x = 1n << BigInt((n.toString(2).length + 1) >> 1)
+  for (;;) {
+    const next = (x + n / x) >> 1n
+    if (next >= x) return x
+    x = next
+  }
+}
+
+/**
+ * The pool's square-root price where an exact-input swap ends, from two quotes of it: `outDelta` more out for `step`
+ * more in is the pool's marginal rate there, less the swap's fee (`feePips`, swapFeePips). Token 0 in pays token 1 at
+ * price·(1 − fee), so √price = √(outDelta·2¹⁹²·10⁶ / (step·(10⁶ − fee))); token 1 in pays token 0 at (1 − fee)/price.
+ * Null when the quotes say nothing.
+ */
+export function endSqrtPrice(zeroForOne: boolean, step: bigint, outDelta: bigint, feePips: number): bigint | null {
+  if (!Number.isSafeInteger(feePips) || feePips < 0 || feePips >= 1_000_000 || step <= 0n || outDelta <= 0n) return null
+  const f = 1_000_000n - BigInt(feePips)
+  const root = zeroForOne ? isqrt((outDelta * Q192 * 1_000_000n) / (step * f)) : isqrt((step * f * Q192) / (outDelta * 1_000_000n))
+  return root > 0n ? root : null
+}
+
+/** A pool's answer for `net` and `net + step` of one token in (finance/setup.ts quotePool), or its refusal. */
+export type PoolQuote = { kind: 'quote'; out: bigint; outNext: bigint } | { kind: 'refused'; reason: string }
+
+/**
+ * A quote for sizeSwap before anything is deposited: what `gross` buys, asked of the pool itself for the net amount
+ * the setup contract would swap (its assisted fee off the gross), with a second size a ten-thousandth larger (at least
+ * 1,000 units) to read the price the swap ends at (endSqrtPrice, with the swap's own fee `feePips`). Null — too much
+ * for this pool — when the pool refuses it, or when it would end at or past `check`, the square-root price the swap
+ * may not reach.
+ */
+export function quoteWithin(assistedFeeBps: number, zeroForOne: boolean, feePips: number, check: bigint, ask: (net: bigint, step: bigint) => Promise<PoolQuote>) {
+  return async (gross: bigint): Promise<bigint | null> => {
+    const net = gross - (gross * BigInt(assistedFeeBps)) / 10_000n
+    if (net <= 0n) return null
+    const step = net / 10_000n > 1_000n ? net / 10_000n : 1_000n
+    const answer = await ask(net, step)
+    if (answer.kind !== 'quote' || answer.outNext <= answer.out) return null
+    const end = endSqrtPrice(zeroForOne, step, answer.outNext - answer.out, feePips)
+    if (end === null || (zeroForOne ? end <= check : end >= check)) return null
+    return answer.out
+  }
+}
+
 export interface SwapSize {
   gross: bigint
   /** What the contract's quote said this size buys. */

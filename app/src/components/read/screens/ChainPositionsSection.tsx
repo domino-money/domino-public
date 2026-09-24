@@ -91,10 +91,16 @@ function linkIds(hash: string): LinkIds {
  * no hashchange to scroll the page. Only on the positions route: the read
  * lab mounts this section under its own hash, and on `#/portfolio/<address>`
  * the Wallet card owns the link, so both stay as they are.
+ *
+ * One id is never written: `#/positions/<id>` is that position's own page
+ * (positionDetailId), and a replaced hash fires no hashchange, so the list
+ * would stay on screen under a detail link, a row link to that id would do
+ * nothing, and Back would land on the position instead of the list. A lookup
+ * of one id leaves the link at `#/positions`; only a list of ids is a link.
  */
 function writeLink(ids: readonly string[]) {
   if (!positionsRoute(window.location.hash).onRoute) return
-  const next = positionsHash(ids)
+  const next = positionsHash(ids.length === 1 ? [] : ids)
   if (window.location.hash !== next) window.history.replaceState(null, '', next)
 }
 

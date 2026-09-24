@@ -17,7 +17,7 @@ import type { Clock } from '../pipeline'
 import { formatUnits } from '../decimal'
 import { tokenDisplay, unreadToken } from '../project'
 import type { ReadSource, TokenDisplay } from '../types'
-import { feeLabel } from './fee'
+import { DYNAMIC_FEE_PIPS, feeLabel } from './fee'
 import { tokenAmount } from './figures'
 import { NATIVE_CURRENCY, addressKey, poolIdKey, type AddressKey, type PoolIdKey } from './identity'
 // poolRange imports tickPriceText from here; the cycle is safe because
@@ -76,6 +76,8 @@ export type ChainPositionCard =
       positionManager: AddressKey
       currencies: [TokenDisplay, TokenDisplay]
       fee: string
+      /** The pool key's fee in pips; DYNAMIC_FEE_PIPS for a dynamic-fee pool, whose fee a hook sets. */
+      feePips: number
       tickSpacing: number
       hooks: AddressKey
       range: {
@@ -90,6 +92,8 @@ export type ChainPositionCard =
       /** The producer's own answer at the snapshot, never recomputed here. */
       inRange: boolean
       hasLiquidity: boolean
+      /** The position's liquidity at the snapshot, as the producer's decimal integer: for display and for the owner's actions, which read it again on chain. */
+      liquidityRaw: string
       principal: [AmountView, AmountView]
       unsettledFees: [AmountView, AmountView]
       /** `items[].owner`. The core owner is the position manager and is never shown as an owner. */
@@ -191,17 +195,28 @@ function liveCard(item: LiveNft, tokens: ReadonlyMap<string, TokenDisplay>): Cha
     positionManager: addressKey(item.positionManager),
     currencies: [base, quote],
     fee: feeLabel(item.poolKey),
+    feePips: item.poolKey.feeMode === 'dynamic' ? DYNAMIC_FEE_PIPS : item.poolKey.fee_pips,
     tickSpacing: item.poolKey.tick_spacing,
     hooks: addressKey(item.poolKey.hooks),
     range: { tickLower: item.tickLower, tickUpper: item.tickUpper, fullRange: ends.lower.kind === 'limit' && ends.upper.kind === 'limit', ends, prices },
     inRange: item.inRange,
     hasLiquidity: item.hasLiquidity,
+    liquidityRaw: item.liquidityRaw,
     principal: [amount(item.principalRaw[0], base), amount(item.principalRaw[1], quote)],
     unsettledFees: [amount(item.unsettledFeesRaw[0], base), amount(item.unsettledFeesRaw[1], quote)],
     owner: { address: addressKey(item.owner), basis: item.ownershipBasis },
     valuation: { state: 'unavailable', reason: 'no_qualified_price_source' },
   }
 }
+
+/**
+ * Whether Domino's setup contract can open a position in a card's pool: no
+ * hooks and a fixed fee, the rule New position applies to every pool it lists
+ * or opens by a link (poolsList.ts usableForDomino, optionUsableForDomino).
+ * DominoSetup.open reverts on any other pool, so nothing links a card's pool
+ * into New position unless this holds.
+ */
+export const cardPoolUsableForDomino = (card: { hooks: string; feePips: number }) => card.hooks === NATIVE_CURRENCY && card.feePips !== DYNAMIC_FEE_PIPS
 
 /** Cards in the order asked for. Fails closed unless the reply answers exactly the IDs requested. */
 export function projectNftBatch(
@@ -245,6 +260,19 @@ export async function runLookup(source: ReadSource, ids: string[], options: { si
   const projected = projectNftBatch(ids, nft.data, tokens, { tokenProblems, tokenCapped: skipped > 0 })
   return projected.ok ? { kind: 'ok', batch: projected.batch } : { kind: 'failed', failure: { state: 'incomplete_reply' } }
 }
+
+/**
+ * The waits before an NFT the read service answered as empty is asked again,
+ * before a page says it is not there. The read service answers at its own
+ * node's head, which can be a few blocks behind the block that minted a
+ * position a moment ago: Create position opens the new position's page 3 s
+ * after the mint.
+ */
+export const EMPTY_REASK_MS = [2_000, 5_000, 10_000] as const
+
+/** The wait before empty re-ask number `attempt` (0 for the first), or null once they are spent. */
+export const emptyReaskDelayMs = (attempt: number): number | null =>
+  Math.trunc(attempt) === attempt && attempt >= 0 && attempt < EMPTY_REASK_MS.length ? EMPTY_REASK_MS[attempt] : null
 
 export const sameIds = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id) => b.includes(id))
 
@@ -403,6 +431,18 @@ export function positionsRoute(hash: string): PositionsRoute {
 
 /** The hash that carries these ids, so a card set can be shared as a link. */
 export const positionsHash = (ids: readonly string[]) => (ids.length === 0 ? '#/positions' : `#/positions/${ids.join(',')}`)
+
+/**
+ * The one NFT a `#/positions/<id>` link opens as its own page: the route's
+ * second segment when it is exactly one canonical decimal id below 2^256 (no
+ * sign, no leading zero, no comma, no space). Anything else is null: a comma
+ * list stays the lookup, and a malformed segment opens the list.
+ */
+export function positionDetailId(segment: string): string | null {
+  const id = decodeSegment(segment)
+  if (!/^[1-9]\d{0,77}$/.test(id) || BigInt(id) >= UINT256) return null
+  return id
+}
 
 export type PortfolioRoute = { onRoute: false } | { onRoute: true; address: string }
 

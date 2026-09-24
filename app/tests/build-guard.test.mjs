@@ -345,7 +345,8 @@ test('the wallet SDKs compile alone, and the emitted modules load, the way the b
   const tsc = resolve(here, 'node_modules/typescript/bin/tsc');
   const root = resolve(here, '.test-build/sdk-standalone');
   rmSync(root, { recursive: true, force: true });
-  for (const entry of ['setup', 'sequence']) {
+  // 2026-09-24: position (the owner's collect and close, finance/position.ts) is held to the same standalone shape.
+  for (const entry of ['setup', 'sequence', 'position']) {
     const out = join(root, entry);
     mkdirSync(out, { recursive: true });
     const run = spawnSync(process.execPath, [tsc, resolve(here, `src/finance/${entry}.ts`),

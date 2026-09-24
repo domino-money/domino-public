@@ -202,3 +202,35 @@ test('read-v3 refuses an overview whose stored figures belong to another pool or
   holder.value.asset.address = `0x${'ab'.repeat(20)}`;
   assert.equal(v3.validateResponse('overview', movedToken), false, 'a token value about another address');
 });
+
+// Changed on purpose 2026-09-24 (marketsProvider.ts, where activeRefreshMs is
+// set). A settled stored overview was asked again every five seconds: about
+// eleven extra reads a minute through the tab's one queue and its 30-a-minute
+// budget, ahead of the Markets cards' own reads. It now waits the ordinary
+// minute; only a load still acquiring keeps the five-second floor.
+test('a settled stored overview is asked again after a minute, not every five seconds; one still acquiring keeps its five-second floor', async () => {
+  const refreshAfter = async (answer) => {
+    const timers = [];
+    const clock = { now: () => 1_010_000, monotonic: () => 0, random: () => 0,
+      sleep: (_ms, signal) => new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })),
+      timer: (ms) => { timers.push(ms); return () => {}; } };
+    const { source } = setup({ answer, clock });
+    const provider = createReadMarketsProvider({ source, poolIds: [pool], kind: 'bridge', clock, refreshMs: 60_000, visibility: { hidden: () => false, onChange: () => () => {} } });
+    await new Promise(resolve => {
+      const stop = provider.subscribe(() => { if (provider.getSnapshot().phase !== 'loading') { stop(); resolve(); } });
+      provider.ensure();
+    });
+    const before = timers.length;
+    const release = provider.recoverQuietly();
+    const planned = timers.slice(before);
+    release();
+    return planned;
+  };
+  assert.deepEqual(await refreshAfter(() => fixture('overview')), [60_000]);
+  const pending = fixture('overview');
+  for (const entry of [...pending.pools, ...pending.tokens]) {
+    entry.value = null; entry.observedAt = null;
+    entry.acquisition = { status: 'pending', refreshing: false, reason: null, nextAttemptAt: null };
+  }
+  assert.deepEqual(await refreshAfter(() => pending), [5_000]);
+});

@@ -14,7 +14,7 @@ const { createPerformanceController, formatMetricUsd, formatMetricPercent, exact
   PERFORMANCE_STATUS_TEXT, ENROLLMENT_STATUS_TEXT, ENROLLMENT_REASON_TEXT, COLLECTION_TEXT, SEQUENCE_LIST_TRIES, PERFORMANCE_RETRY_MS, trackableSequence } = require('../.test-build/app/src/finance/performance.js');
 // Compiled into the test build through performance.ts's import of its types.
 const { createSequenceClient, sequenceAbi, sequenceIdentity, cloneRuntime, sequenceProviderReadError, sequenceReadError, sequenceReadStage, SEQUENCE_LIST_LIMIT, SEQUENCE_MEMBER_STEPS, sequenceIdParameters, poolKeyParameters } = require('../.test-build/app/src/finance/sequence.js');
-const { setupAbi, tokenAbi, operationIdParameters } = require('../.test-build/app/src/finance/setup.js');
+const { setupAbi, tokenAbi, quoterAbi, operationIdParameters } = require('../.test-build/app/src/finance/setup.js');
 const { sequenceDeploymentFrom } = require('../.test-build/app/src/finance/sequence.js');
 const { deploymentFrom } = require('../.test-build/app/src/finance/setup.js');
 const { SEQUENCE_FACTORY, SETUP_CONTRACT, POSITION_MANAGER } = require('../.test-build/app/src/finance/pin.js');
@@ -692,11 +692,13 @@ test('the closed owner ABIs ship as JSON, and each equals what viem parses from 
   const setupText = source('setup.ts'), sequenceText = source('sequence.ts');
   assert.deepEqual(setupAbi, parseAbi(signatures(setupText, 'setupAbi')));
   assert.deepEqual(tokenAbi, parseAbi(signatures(setupText, 'tokenAbi')));
+  // Added 2026-09-24: Uniswap's V4Quoter, read before a one-token deposit (setup.ts quotePool). Its own list, never appended to setupAbi.
+  assert.deepEqual(quoterAbi, parseAbi(signatures(setupText, 'quoterAbi')));
   assert.deepEqual(operationIdParameters, parseAbiParameters(parameters(setupText, 'operationIdParameters')));
   assert.deepEqual(sequenceAbi, parseAbi(signatures(sequenceText, 'sequenceAbi')));
   assert.deepEqual(sequenceIdParameters, parseAbiParameters(parameters(sequenceText, 'sequenceIdParameters')));
   assert.deepEqual(poolKeyParameters, parseAbiParameters(parameters(sequenceText, 'poolKeyParameters')));
-  assert.deepEqual([setupAbi.length, tokenAbi.length, sequenceAbi.length], [15, 2, 58], 'every signature, and nothing else');
+  assert.deepEqual([setupAbi.length, tokenAbi.length, quoterAbi.length, sequenceAbi.length], [15, 2, 2, 58], 'every signature, and nothing else');
   const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   for (const text of [setupText, sequenceText]) assert.doesNotMatch(code(text), /\bparseAbi(Parameters)?\b/, 'no ABI parser runs in the page');
 });

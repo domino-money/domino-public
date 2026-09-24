@@ -1,6 +1,5 @@
 import { CREATE } from '../../lib/create/copy'
 import type { JourneyState } from '../../lib/create/journey'
-import { COPY } from '../../lib/read/screens/copy'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../lib/read/types'
 import { PoolPicker } from '../read/screens/PoolPicker'
@@ -28,11 +27,6 @@ export function ChosenPool({ option, onChange }: { option: PoolOption; onChange:
           </p>
           <p className="flex flex-wrap items-center gap-1.5">
             <Chip title={CREATE.pool.verifiedAt(option.block)}>Uniswap · {option.fee}</Chip>
-            {option.integration !== 'hookless_fixed_fee' && (
-              <span className="text-caption text-fg-muted" data-pool-integration={option.integration}>
-                {COPY.picker.needsAdapter}
-              </span>
-            )}
           </p>
         </div>
         <Button type="button" variant="ghost" size="sm" onClick={onChange}>
@@ -47,9 +41,14 @@ export function ChosenPool({ option, onChange }: { option: PoolOption; onChange:
  * The existing pools for the chosen token (and second asset), read when this
  * list mounts. The rows are the whole step: no footnote under them. No row is
  * suggested, and the flow's prices already name both tokens ("USDG per WETH").
+ *
+ * Only pools Domino can open a position in are listed (no hooks, a fixed fee),
+ * largest reported TVL first, each with its TVL, 24h volume and APR: the
+ * picker's `create` variant. A pool with hooks is never a row here, so the
+ * chosen pool needs no note about one.
  */
 export function PoolList({ source, state, onPool }: { source: ReadSource; state: JourneyState; onPool: (option: PoolOption | null) => void }) {
   const token = state.token
   if (!token) return null
-  return <PoolPicker key={`${token.key}:${state.paired?.key ?? ''}`} source={source} token={token.key} paired={state.paired?.key ?? null} pending={state.pool} onPending={onPool} compact />
+  return <PoolPicker key={`${token.key}:${state.paired?.key ?? ''}`} source={source} token={token.key} paired={state.paired?.key ?? null} pending={state.pool} onPending={onPool} compact variant="create" catalogue={false} />
 }

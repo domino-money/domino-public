@@ -54,6 +54,7 @@
     "src/finance/performance.ts",
     "src/finance/execution.ts",
     "src/finance/setup.ts",
-    "src/finance/nonce.ts"
+    "src/finance/nonce.ts",
+    "src/finance/position.ts"
   ]
 }

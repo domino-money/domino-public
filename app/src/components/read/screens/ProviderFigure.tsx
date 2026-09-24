@@ -23,8 +23,11 @@ const VALUE_TEXT = (figure: AttributedFigure) => {
  * reads as the figure, in the same ink; when it was retrieved, that it is
  * stale and why a figure is missing are its title and data, never a caption
  * or a colour. `full` also gives that sentence to assistive technology.
+ * With `dash` a missing figure is a dash, with why only in its title and
+ * data, as in the markets tables; without it the missing figure says so in
+ * words.
  */
-export function ProviderFigure({ label, figure, full = false }: { label: string; figure: AttributedFigure; full?: boolean }) {
+export function ProviderFigure({ label, figure, full = false, dash = false }: { label: string; figure: AttributedFigure; full?: boolean; dash?: boolean }) {
   const provenance = provenanceText(figure)
   const valued = figure.state === 'attributed' || figure.state === 'attributed_stale'
   return (
@@ -32,7 +35,7 @@ export function ProviderFigure({ label, figure, full = false }: { label: string;
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
         <span className="text-[13px] leading-[18px] text-fg-muted">{label}</span>
         <span className={cx('tnum text-[13px] leading-[18px]', valued ? 'font-medium text-fg' : 'text-fg-subtle')}>
-          {VALUE_TEXT(figure)}
+          {valued || !dash ? VALUE_TEXT(figure) : '—'}
         </span>
       </div>
       {full && <p className="sr-only">{provenance.long}</p>}

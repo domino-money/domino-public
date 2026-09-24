@@ -194,3 +194,63 @@ test('a provider that answered keeps its columns, whatever it answered', () => {
   assert.match(rendered, />24h volume</)
   assert.doesNotMatch(rendered, /data-no-figures/)
 })
+
+// Added 2026-09-24 (owner): New position's pool step lists pools with their TVL, 24h volume and APR on every row,
+// and nothing else under the pair — no "Pool details · verified at block N" to open, no line saying no figures are
+// reported. A figure nobody reports is a dash, why only in its title and data. Markets keeps its own row, above.
+test('New position’s pool row: TVL, 24h volume and APR on every row, a dash for a missing figure, nothing to open and no note', () => {
+  const nothing = { state: 'unavailable', provider: 'dexscreener', reason: 'no_provider_figures' }
+  const cases = [
+    { ...option, liquidity: nothing, volume: nothing },
+    { ...option, liquidity: { state: 'not_reported', provider: 'dexscreener' }, volume: { state: 'rejected', provider: 'dexscreener', reason: 'provider_currency_mismatch' } },
+    { ...option, tokenMetadata: 'partial', providerConflict: true },
+    option,
+  ]
+  for (const shown of cases) {
+    const rendered = html(PoolRow, { option: shown, checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
+    const text = rendered.replace(/<[^>]+>/g, ' ')
+    assert.match(rendered, /type="radio"/, 'still a choice')
+    assert.doesNotMatch(rendered, /<details|<summary/, 'nothing to open')
+    assert.doesNotMatch(rendered, /data-no-figures|data-provider-note/)
+    assert.doesNotMatch(text, /verified at block|No market figures|Unavailable|Not reported|Rejected, not shown|separate adapter|No hooks|hooks|Token metadata partial|Provider figures rejected/i, 'no note line, no provenance words on screen')
+    for (const label of ['TVL', '24h volume', 'APR']) assert.match(rendered, new RegExp(`>${label}</span>`), `${label} on every row`)
+    assert.doesNotMatch(rendered, />Pool APR</, 'the row names it APR')
+    assert.equal((rendered.match(/data-provider-figure=/g) ?? []).length, 2)
+    assert.equal((rendered.match(/data-row-apr=/g) ?? []).length, 1)
+    assert.doesNotMatch(rendered, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen')
+    assert.doesNotMatch(rendered, /money-wait|warning|yellow|amber/, 'no warning colour')
+  }
+  // Missing figures: dashes, each with its reason in its title, and the refusal as data.
+  const empty = html(PoolRow, { option: cases[0], checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
+  assert.equal((empty.match(/>—</g) ?? []).length, 3, 'three dashes')
+  assert.match(empty, /data-provider-figure="unavailable"[^>]*title="Nothing usable was retrieved from a market data provider/)
+  assert.match(empty, /data-row-apr="none" data-row-apr-reason="missing_reported_tvl"><span class="text-fg-muted">APR<\/span><span class="text-fg-subtle" title="No market data provider reports liquidity for this pool\.">—/)
+  const answered = html(PoolRow, { option: cases[1], checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
+  assert.match(answered, /data-provider-figure="not_reported"/)
+  assert.match(answered, /data-provider-figure="rejected"/)
+  // What the details and note lines said is the row's title and data now.
+  const noted = html(PoolRow, { option: cases[2], checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
+  assert.match(noted, /data-token-metadata="partial" data-provider-conflict="" title="Token metadata partial\. Provider figures rejected: the provider’s currencies conflict with the chain\."/)
+  // A real zero is a figure: $0.00 and 0% est., never a dash.
+  const zero = html(PoolRow, { option: { ...option, volume: { state: 'attributed', value: '$0.00', raw: '0', zero: true, provider: 'dexscreener', retrievedAt: 1000, cacheAgeSeconds: null } }, checked: true, onPick() {}, name: 'pool-option', compact: true, plain: true })
+  assert.match(zero, /\$0\.00/)
+  assert.match(zero, /data-row-apr="estimate"><span class="text-fg-muted">APR<\/span><span class="tnum font-medium text-fg"[^>]*>0% est\./)
+  assert.match(zero, /checked=""/)
+  // The fixture pool's own figures: $10.00 TVL and its estimate, like Markets ("12.34% est.").
+  const full = html(PoolRow, { option, checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
+  assert.match(full, />\$10\.00</)
+  assert.match(full, />[\d.]+% est\.</)
+  assert.match(full, /data-token-metadata="available"/)
+  assert.doesNotMatch(full, /\btitle="[^"]*"[^>]*data-pool-option|data-pool-option="discovery"[^>]*title=/, 'no title on a row with nothing to say')
+})
+
+test('the New position picker reads nothing on render and shows no coverage, catalogue or rejected panel while it waits', () => {
+  const { PoolPicker } = load('src/components/read/screens/PoolPicker.tsx')
+  let calls = 0
+  const rendered = html(PoolPicker, { source: { read() { calls++; throw Error('Unexpected read') } }, token: candidate.key, paired: null, pending: null, onPending() {}, catalogue: false, compact: true, variant: 'create' })
+  assert.equal(calls, 0)
+  assert.match(rendered, /data-picker-variant="create"/)
+  assert.match(rendered, /data-pools-state="loading"/)
+  assert.doesNotMatch(rendered, /<details|Stored pool catalogue|Load catalogue candidates|Rejected candidates|sources &amp; coverage/)
+  assert.equal((rendered.match(/dm-flow-pool-figures/g) ?? []).length, 2, 'each resting row rests with three figure cells')
+})

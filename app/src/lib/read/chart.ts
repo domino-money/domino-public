@@ -1,4 +1,5 @@
 import type { Candle, HistoryData, PoolMarketResponse } from 'api-contracts/read-v1/types'
+import type { CarriedHistory } from '../markets'
 import { parseDecimal } from './decimal'
 
 /** Bind the displayed currency by address as well as the response's side.
@@ -8,6 +9,22 @@ export function chartMatches(data: PoolMarketResponse, expectedCurrency: string,
   const m = data.market.data
   return !!h && !!m && h.selectedToken === selected && h.currency.toLowerCase() === expectedCurrency.toLowerCase() &&
     h.currency === m[selected === 'base' ? 'baseToken' : 'quoteToken'] && h.baseToken === m.baseToken && h.quoteToken === m.quoteToken
+}
+
+/**
+ * Hourly USD candles an answer already carries (a stored overview, once the
+ * collector keeps them), bound to that answer's own currencies the same way a
+ * chart's own read is. Null when there are none to draw.
+ */
+export function carriedHistory(data: PoolMarketResponse, received: { receivedAt: number; receivedMonotonic?: number }): CarriedHistory | null {
+  const history = data.priceHistory
+  if (history.status !== 'available' && history.status !== 'stale') return null
+  if (history.data.candles.length === 0 || !chartMatches(data, history.data.currency, history.data.selectedToken)) return null
+  return {
+    candles: history.data.candles, intervalSeconds: history.data.intervalSeconds, returned: history.data.coverage.returnedCandles, status: history.status,
+    ageSeconds: history.cache.ageSeconds, freshForSeconds: history.cache.freshForSeconds, maxStaleSeconds: history.cache.maxStaleSeconds,
+    receivedAt: received.receivedAt, ...(received.receivedMonotonic === undefined ? {} : { receivedMonotonic: received.receivedMonotonic }),
+  }
 }
 
 /** Only SVG coordinates become Numbers. Monetary strings remain exact; no

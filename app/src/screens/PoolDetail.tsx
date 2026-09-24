@@ -11,7 +11,7 @@ import { overviewPoolOption } from '../lib/read/publicOverview'
 import { failureText } from '../lib/read/screens/copy'
 import { parseAddressInput, poolIdKey, shortAddress } from '../lib/read/screens/identity'
 import { poolPrice, presetRange } from '../lib/read/screens/poolRange'
-import type { PoolOption } from '../lib/read/screens/poolsList'
+import { optionUsableForDomino, type PoolOption } from '../lib/read/screens/poolsList'
 import { useReadSource } from '../lib/read/screens/readContext'
 import { askAgainLater, readWithin } from '../lib/read/screens/screenRead'
 import { whenVisibleAfter } from '../lib/read/screens/quietRead'
@@ -226,6 +226,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
       </div>
     )
   } else {
+    // New position opens positions only in pools with no hooks and a fixed fee: any other pool has no way there.
     body = (
       <PoolWorkspace
         source={source}
@@ -233,7 +234,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
         onOption={onOption}
         range={resolution.range}
         onRange={onRange}
-        actions={<LinkButton href={newPositionHref(resolution.option.key)} className="dm-pool-new" data-new-position="">New position</LinkButton>}
+        actions={optionUsableForDomino(resolution.option) ? <LinkButton href={newPositionHref(resolution.option.key)} className="dm-pool-new" data-new-position="">New position</LinkButton> : undefined}
       />
     )
   }

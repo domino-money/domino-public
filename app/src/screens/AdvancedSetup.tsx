@@ -5,6 +5,7 @@ import { walletConfig } from '../wallet/config'
 import { setupWallet } from '../finance/wallet'
 import { readRelease, type ReleaseRead } from '../finance/release'
 import { createSetupClient, deploymentFrom, raw, type PreparedSetup, type SetupOperation, type SetupDeployment } from '../finance/setup'
+import { saveSetupProfile, savedSetupProfile } from '../finance/recoveryProfile'
 import { RECEIPT_TEXT, SETUP_STEP_TEXT, errorCode, financeErrorText } from '../finance/words'
 import { financialFetch } from '../finance/http'
 import { realClock } from '../lib/clock'
@@ -24,18 +25,9 @@ const labels: Record<keyof typeof defaults, string> = { currency0: 'Token 0 addr
 type Client = ReturnType<typeof createSetupClient>
 type Release = { kind: 'loading' } | ReleaseRead<SetupDeployment>
 type Notice = { text: string; code: string | null }
-const RECOVERY_KEY = 'domino.setup.public-recovery.v1'
 const readSetupRelease = () => readRelease('/api/setup/v1/release', value => deploymentFrom(value))
 /** For a loaded client: the published profile now, or null when it is no longer published. */
 const currentSetupDeployment = async () => { const release = await readSetupRelease(); return release.kind === 'available' ? release.deployment : null }
-/** A profile this browser saved after verifying it, for recovery when none is published. */
-function savedProfile(): SetupDeployment | null {
-  try {
-    const saved = localStorage.getItem(RECOVERY_KEY)
-    if (saved && saved.length <= 8192) { const old = deploymentFrom(JSON.parse(saved), 0); if (old) return { ...old, expiresAt: 0 } }
-  } catch { /* Storage is optional and holds no wallet or operation data. */ }
-  return null
-}
 
 /**
  * The assisted swap's fields, folded until the owner opens them. Whether they
@@ -57,7 +49,7 @@ function AssistedSwap({ children }: { children: (open: boolean) => ReactNode }) 
  * one: the balancing swap's minimum output is drawn with it until the owner
  * sets the swap's own limit here. */
 export default function AdvancedSetup({ slippageBps }: { slippageBps?: string } = {}) {
-  const [release, setRelease] = useState<Release>({ kind: 'loading' }), [saved] = useState(savedProfile)
+  const [release, setRelease] = useState<Release>({ kind: 'loading' }), [saved] = useState(savedSetupProfile)
   const [form, setForm] = useState(defaults), [client, setClient] = useState<Client | null>(null), [recovery, setRecovery] = useState(false)
   // The swap's own limit once the owner sets one; until then the draft's choice, or the default, over the one bound (lib/create/slippage.ts).
   const [ownSwapSlippage, setOwnSwapSlippage] = useState<string | null>(null)
@@ -94,15 +86,13 @@ export default function AdvancedSetup({ slippageBps }: { slippageBps?: string } 
     const live = await readSetupRelease()
     if (generation.current !== gen) return
     setRelease(live)
-    const stored = live.kind === 'available' ? null : savedProfile()
+    const stored = live.kind === 'available' ? null : savedSetupProfile()
     const deployment = live.kind === 'available' ? live.deployment : stored, isRecovery = live.kind !== 'available'
     if (!deployment) { say('The deployment could not be read. Nothing was prepared.', live.kind === 'unavailable' ? live.reason : null); return }
     const wallet = await setupWallet(), next = createSetupClient(wallet, deployment, () => Date.now() / 1000, currentSetupDeployment)
     const rows = await next.recent()
     if (generation.current !== gen || !wallet.current()) return
-    if (!isRecovery) {
-      try { localStorage.setItem(RECOVERY_KEY, JSON.stringify({ contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment })) } catch { /* Recovery can also use the published deployment profile. */ }
-    }
+    if (!isRecovery) saveSetupProfile(deployment)
     setClient(next); setRecovery(isRecovery); setRecent(rows)
     say(isRecovery ? 'The saved deployment was verified on chain. Read or refund your existing operations below.' : 'Deployment verified through your wallet. Choose an existing operation or review new funding.')
   }

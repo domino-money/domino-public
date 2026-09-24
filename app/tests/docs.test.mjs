@@ -384,14 +384,19 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /deposit-amount estimate|expected to take, and the most it may take|Hover a figure to see until when/, entry.slug);
   const create = sectionText(page('new-position'), 'create');
   assert.match(create, /the deposit of both tokens \(or of the one your wallet holds, then the swap of part of it inside the pool\), and the position itself\./);
+  // Added 2026-09-24: a one-token deposit is made only into a pool that can swap part of it (CreatePosition.tsx swapPreflight).
+  assert.match(create, /With one token, the pool is checked first: if it cannot swap part of your deposit, Create position says so before anything is deposited\./);
   assert.match(create, /A direct position carries no Domino percentage fee, except the assisted-swap fee on the part swapped when your wallet holds one token; network gas still applies\./);
   // Four steps, none of them Automation, and the summary counts them.
   const newPosition = page('new-position');
   assert.match(newPosition.summary, /^Plan a position in four steps,/);
   assert.deepEqual(blocksOf(newPosition).find((block) => block.kind === 'steps').items.map((step) => step.title), ['Pool', 'Range', 'Amount', 'Review']);
   const positions = page('positions');
-  assert.match(sectionText(positions, 'position-nfts'), /so on Positions a position is looked up by its ID\. Where available, a pool’s page lists the positions in that pool\./);
-  assert.doesNotMatch(textOf(positions), /always looked up by its ID/);
+  // Changed on purpose (owner, 2026-09-24): Positions lists the wallet's own NFTs; typing an ID is only for anyone else's.
+  assert.match(sectionText(positions, 'your-positions'), /Positions lists every position NFT it holds, found from the chain for your address: there is no ID to type\./);
+  assert.match(sectionText(positions, 'your-positions'), /open Look up by NFT id under the list and enter up to 10 IDs\. Where available, a pool’s page lists the positions in that pool\./);
+  assert.doesNotMatch(textOf(positions), /always looked up by its ID|cannot list the positions a wallet holds/);
+  assert.match(termText(page('glossary'), 'position-nft'), /Positions lists the ones your wallet holds\./);
 
   assert.match(sectionText(page('risks'), 'tokens-and-contracts'), /Positions and automation run on smart contracts, and a contract can have defects\./);
   const intro = page('what-is-domino');

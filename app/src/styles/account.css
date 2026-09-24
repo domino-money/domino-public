@@ -152,6 +152,42 @@
   .dm-acct-range-ends { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg); }
   .dm-acct-range-unit { min-width: 0; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
 
+  /* ---- Your positions: the wallet's NFTs in two tabs; every row is a link to the position's page ---- */
+  .dm-own-slot { display: grid; gap: 12px; }
+  .dm-own-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; min-height: 56px; padding: 12px; }
+  .dm-acct-nft-rows > .dm-own-row { row-gap: 8px; padding-top: 12px; padding-bottom: 12px; color: inherit; text-decoration: none; }
+  .dm-acct-nft-rows > .dm-own-row:focus-visible { outline-offset: var(--focus-offset-inset); }
+  .dm-own-row:hover .dm-acct-nft-chev { color: var(--fg); }
+  .dm-own-row:hover .dm-acct-nft-chev > svg { translate: 2px 0; }
+  .dm-acct-nft-rows > .dm-own-row--wait:hover { background: none; }
+  .dm-own-more { display: flex; justify-content: center; padding: 8px 0 4px; }
+  .dm-own-lookup > summary { width: fit-content; }
+  .dm-details.dm-own-lookup > .dm-own-lookup-body { padding: 8px 0 0; }
+  @container acct-nft (max-width: 699px) {
+    .dm-acct-nft-rows > .dm-own-row { grid-template-columns: minmax(0, 1fr) 32px; row-gap: 10px; padding-left: 12px; padding-right: 8px; }
+  }
+
+  /* ---- A position's own page ------------------------------------------------------------- */
+  .dm-pos-back { display: inline-flex; align-items: center; gap: 4px; margin-left: -4px; padding: 4px 8px 4px 4px; border-radius: var(--radius-sm); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease, background-color var(--dur-hover) ease; }
+  .dm-pos-back:hover { background: var(--wash); color: var(--fg); }
+  .dm-pos-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px 32px; margin-top: 16px; }
+  .dm-pos-name { display: flex; align-items: center; gap: 16px; min-width: 0; }
+  .dm-pos-pair { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dm-pos-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+  .dm-pos-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .dm-pos-actions:empty { display: none; }
+  .dm-pos-stats { margin-top: 32px; }
+  /* The strip's values are two amounts or a range, not one big figure: they wrap instead of truncating. */
+  .dm-pos-stats dd { overflow: visible !important; white-space: normal !important; }
+  .dm-pos-amounts { display: grid; gap: 2px; }
+  .dm-pos-amounts .dm-acct-amount, .dm-pos-figure { display: block; font-size: 16px; line-height: 22px; letter-spacing: -0.2px; }
+  .dm-pos-unit { color: var(--fg-subtle); }
+  .dm-pos-grid { display: grid; gap: 24px; margin-top: 24px; }
+  @media (min-width: 1024px) { .dm-pos-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+  .dm-pos-card { display: grid; gap: 16px; min-width: 0; padding: 20px; }
+  .dm-pos-facts { padding: 0; }
+  .dm-pos-links { display: flex; flex-wrap: wrap; gap: 8px; }
+
   /* ---- Automate (E.6) ---------------------------------------------------------------------- */
   .dm-acct-auto-grid { display: grid; gap: 24px; margin-top: 40px; }
   @media (min-width: 900px) { .dm-acct-auto-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; } }

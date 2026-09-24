@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { ASSISTED_SWAP_FEE_BPS, SWAP_QUOTES, costOf, depositPlan, liquidityAfterSwap, needsSides, priceAfterSwap, proceedsOf, refineSplit, sizeSwap, splitFor, withRoom } from '../.test-build/app/src/lib/create/depositPlan.js';
+import { ASSISTED_SWAP_FEE_BPS, SWAP_QUOTES, costOf, depositPlan, endSqrtPrice, isqrt, liquidityAfterSwap, needsSides, priceAfterSwap, proceedsOf, quoteWithin, refineSplit, sizeSwap, splitFor, swapFeePips, withRoom } from '../.test-build/app/src/lib/create/depositPlan.js';
 import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/create/mintPlan.js';
 import { pairedAmount } from '../.test-build/app/src/lib/create/pairAmount.js';
 import { sqrtPriceAtTick } from '../.test-build/app/src/lib/read/screens/poolRange.js';
@@ -391,4 +391,116 @@ test('sizeSwap swaps the whole deposit when the range takes only the other token
   assert.ok(sized.gross * 1000n >= balance * 999n, `${sized.gross} of ${balance}`);
   const after = liquidityAfterSwap(above, 0, balance, sized.gross, sized.output);
   assert.equal(after.kept, null, 'the kept token is not needed above the range');
+});
+
+// ---------------------------------------------------------------------------
+// Before a one-token deposit: the pool's own quotes, and where a swap ends
+// ---------------------------------------------------------------------------
+
+test('swapFeePips is v4-core’s calculateSwapFee on the packed protocol fees read on Robinhood Chain (2026-09-23)', () => {
+  // [packed slot0.protocolFee, lpFee, the fee a swap pays in pips]: the same both ways, 12 bits per direction.
+  const onChain = [
+    [213044, 200, 252], // WETH/USDG: 52/52 on 200
+    [2048500, 3000, 3499], // PONS/USDG: 500/500 on 3000
+    [4097000, 80000, 80920], // USDG/NET 8%, the owner's pool: 1000/1000 on 80000
+    [4097000, 50000, 50950], // USDG/MARLIN: 1000/1000 on 50000
+    [1073414, 1500, 1762], // USDG/cbBTC: 262/262 on 1500
+    [81940, 75, 95], // USDG/U: 20/20 on 75
+    [102425, 100, 125], // ETH/USDG: 25/25 on 100
+    [0, 3000, 3000], // no protocol fee: the LP fee alone
+  ];
+  for (const [raw, lp, fee] of onChain) {
+    assert.equal(swapFeePips(lp, raw, true), fee, `${raw} on ${lp}, token 0 in`);
+    assert.equal(swapFeePips(lp, raw, false), fee, `${raw} on ${lp}, token 1 in`);
+  }
+  // One direction each: token 0 in reads the low 12 bits, token 1 in the high 12.
+  const packed = (1000 << 12) | 0;
+  assert.deepEqual([swapFeePips(3000, packed, true), swapFeePips(3000, packed, false)], [3000, 3997]);
+  assert.deepEqual([swapFeePips(3000, 250, true), swapFeePips(3000, 250, false)], [3250, 3000]);
+});
+
+test('isqrt is the floor of the square root, at the sizes the price maths meets', () => {
+  for (const n of [0n, 1n, 2n, 3n, 4n, 15n, 16n, 17n, 99n, 100n, 101n, 2n ** 96n, 2n ** 192n, 2n ** 192n - 1n, 3n ** 200n, 91475816417046462998559025046n ** 2n, 91475816417046462998559025046n ** 2n - 1n]) {
+    const r = isqrt(n);
+    assert.ok(r * r <= n && (r + 1n) * (r + 1n) > n, `isqrt(${n}) = ${r}`);
+  }
+  assert.equal(isqrt(91475816417046462998559025046n ** 2n), 91475816417046462998559025046n, 'the owner’s pool’s square-root price squared, back to itself');
+  assert.equal(isqrt(-5n), 0n);
+});
+
+/** Two quotes of one pool at net and net + step, as V4Quoter answers them: [out, outNext], or null when it cannot fill. */
+const twoQuotes = (quote, from, net, step) => {
+  const first = quote(from, net), second = quote(from, net + step);
+  return first && second ? [first[0], second[0]] : null;
+};
+
+test('endSqrtPrice reads where a swap ends from two quotes of it, within 0.1 bps along a constant-liquidity curve, both ways', () => {
+  let checked = 0;
+  // The quoter is asked for the net amount: no assisted fee, the pool's own fee only. Moves up to 10% in square root,
+  // the band the swap's 5% limit lives in, with outputs large enough that a unit of rounding is far below 0.1 bps.
+  for (const t of [terms(0, -3600, 4080, 3000, 0), terms(0, -3600, 4080, 80920, 0), terms(-200040, -201000, -199020, 252, 0)]) {
+    for (const L of [10n ** 20n, 10n ** 22n]) {
+      const quote = simulatedPool(t, L);
+      for (const from of [0, 1]) {
+        for (const net of [10n ** 16n, 10n ** 18n, 5n * 10n ** 18n]) {
+          const swapped = quote(from, net);
+          if (!swapped || swapped[0] <= 10n ** 12n) continue;
+          const truth = swapped[1];
+          const move = truth > t.sqrtPriceX96 ? truth - t.sqrtPriceX96 : t.sqrtPriceX96 - truth;
+          if (move * 10n > t.sqrtPriceX96) continue;
+          const step = net / 10_000n > 1_000n ? net / 10_000n : 1_000n;
+          const [out, outNext] = twoQuotes(quote, from, net, step);
+          const end = endSqrtPrice(from === 0, step, outNext - out, t.feePips);
+          assert.ok(end !== null);
+          const gap = end > truth ? end - truth : truth - end;
+          assert.ok(gap * 100_000n <= truth, `fee ${t.feePips}, L ${L}, from ${from}, net ${net}: ${end} against ${truth}`);
+          checked++;
+        }
+      }
+    }
+  }
+  assert.ok(checked >= 20, `${checked} swaps checked`);
+  assert.equal(endSqrtPrice(true, 0n, 5n, 3000), null, 'no step');
+  assert.equal(endSqrtPrice(true, 5n, 0n, 3000), null, 'nothing more out: the pool says nothing');
+  assert.equal(endSqrtPrice(false, 5n, 5n, 1_000_000), null, 'a fee that takes everything');
+  assert.equal(endSqrtPrice(false, 5n, 5n, 1.5), null);
+});
+
+test('quoteWithin refuses a size the pool cannot fill or that would end past the check, and sizeSwap backs off to one that ends inside it', async () => {
+  // A pool so shallow that the balanced split would move the square-root price far past 5%.
+  const t = terms(0, -3600, 4080);
+  const L = 2n * 10n ** 19n;
+  const behindSetup = simulatedPool(t, L); // the setup contract's swap of a gross amount
+  const quoter = simulatedPool({ ...t, assistedFeeBps: 0 }, L); // the quoter's answer for the net amount
+  const balance = 10n ** 19n;
+  for (const from of [0, 1]) {
+    const zeroForOne = from === 0;
+    const limit = (t.sqrtPriceX96 * (zeroForOne ? 9500n : 10500n)) / 10000n;
+    const check = (t.sqrtPriceX96 * (zeroForOne ? 9550n : 10450n)) / 10000n;
+    const balanced = splitFor(balance, from, t);
+    assert.equal(behindSetup(from, balanced, limit), null, 'the balanced split would pass the swap’s 5% limit');
+    const asked = [];
+    const ask = async (net, step) => {
+      asked.push([net, step]);
+      const both = twoQuotes(quoter, from, net, step);
+      return both ? { kind: 'quote', out: both[0], outNext: both[1] } : { kind: 'refused', reason: 'not_enough_liquidity' };
+    };
+    const sized = await sizeSwap(t, from, balance, quoteWithin(t.assistedFeeBps, zeroForOne, t.feePips, check, ask));
+    assert.ok(sized, `from ${from}: a size`);
+    assert.ok(sized.gross < balanced, `from ${from}: backed off from ${balanced} to ${sized.gross}`);
+    // What the quoter said for it is what the setup contract's swap of it gives, and that swap fills inside the limit.
+    const filled = behindSetup(from, sized.gross, limit);
+    assert.ok(filled, `from ${from}: the setup contract fills ${sized.gross} inside its limit`);
+    assert.equal(sized.output, filled[0]);
+    assert.ok(zeroForOne ? filled[1] > check - check / 100_000n : filled[1] < check + check / 100_000n, 'it ends inside the check');
+    // Every size was asked net of the assisted fee, with a step of a ten-thousandth, at least 1,000 units.
+    for (const [net, step] of asked) assert.equal(step, net / 10_000n > 1_000n ? net / 10_000n : 1_000n);
+    assert.ok(asked.length <= SWAP_QUOTES);
+  }
+  const refusing = quoteWithin(65, true, 3000, 1n, async () => ({ kind: 'refused', reason: 'not_enough_liquidity' }));
+  assert.equal(await refusing(10n ** 18n), null, 'refused by the pool');
+  assert.equal(await sizeSwap(t, 0, balance, refusing), null, 'a pool that refuses every size: no size, and so no deposit');
+  const flat = quoteWithin(65, true, 3000, 1n, async () => ({ kind: 'quote', out: 10n, outNext: 10n }));
+  assert.equal(await flat(10n ** 18n), null, 'nothing more for more in: says nothing');
+  assert.equal(await quoteWithin(10_000, true, 3000, 1n, async () => assert.fail('never asked'))(10n ** 18n), null, 'nothing left after the fee');
 });

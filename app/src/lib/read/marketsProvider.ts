@@ -607,7 +607,11 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
   let cancelRefreshVisibility: (() => void) | null = null
   let refreshDueAt: number | null = null
   let refreshFailures = 0
-  let activeRefreshMs = refreshMs
+  // The same interval for stored and live loads (changed 2026-09-24): a settled
+  // stored overview used to be asked again every 5 s, about eleven extra reads a
+  // minute through the tab's one queue and its 30-a-minute budget, ahead of the
+  // Markets cards. A load still acquiring keeps its own 5 s floor below.
+  const activeRefreshMs = refreshMs
 
   /** Never ask faster than this, whatever the producer's schedule says. */
   const ACQUISITION_FLOOR_MS = 5000
@@ -706,7 +710,6 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
       return
     }
     ledger = loaded.ledger
-    activeRefreshMs = loaded.stored ? Math.min(refreshMs, 5_000) : refreshMs
     const at = wall()
     for (const row of loaded.rows) {
       const id = key(row.poolId)

@@ -571,6 +571,45 @@ test('a positions link carries ids and nothing else, a portfolio link an address
   assert.equal(identity.parseAddressInput(positions.portfolioRoute('#/portfolio/0x1234').address).ok, false);
 });
 
+// Changed on purpose (owner, 2026-09-24): `#/positions/<id>` with one canonical id is now that position's own page
+// (screens/PositionDetail.tsx), which is where Create position lands; a list of ids keeps opening the lookup.
+test('one canonical NFT id in a positions link is that position’s page; a list, or anything else, is not', () => {
+  assert.equal(positions.positionDetailId('3135288'), '3135288');
+  assert.equal(positions.positionDetailId(BIG), BIG);
+  assert.equal(positions.positionDetailId('%34%32'), '42', 'decoded as the route’s ids are');
+  for (const segment of ['', '0', '01', '1,2', '1%2C2', `1,${BIG}`, ' 1', '1 ', '-1', '+1', '1e3', '0x1', (2n ** 256n).toString(), '9'.repeat(79), 'abc', '%E0%A4%A']) {
+    assert.equal(positions.positionDetailId(segment), null, segment);
+  }
+  // The list and the page agree on what a link means.
+  const list = positions.positionsRoute('#/positions/1,2');
+  assert.equal(positions.positionDetailId(list.ids), null);
+  assert.equal(positions.positionDetailId(positions.positionsRoute(positions.positionsHash(['4242'])).ids), '4242', 'the one-id link Create position writes opens the page (the lookup never writes one: ChainPositionsSection writeLink)');
+});
+
+// Review of 2026-09-25: a position's page offered "Add to this pool" (#/new/<poolId>) for any pool, where New position
+// refuses a pool with hooks or a dynamic fee. The card now carries its fee in pips, and the page links only where
+// New position's own rule (poolsList.ts usableForDomino) holds.
+test('a card carries its pool’s fee in pips, and only a pool with no hooks and a fixed fee is one Domino can add to', () => {
+  const nft = fixture('nft-positions.success');
+  const card = (poolKey) => {
+    const data = runtime.assertResponse('nft-positions', { ...nft, items: nft.items.map((item) => ({ ...item, poolKey: { ...item.poolKey, ...poolKey } })) });
+    return positions.projectNftBatch(FIXTURE_NFT_IDS, data, tokenMap('token.native', 'token.success')).batch.cards[0];
+  };
+  const plain = card({});
+  assert.equal(plain.feePips, 3000);
+  assert.equal(positions.cardPoolUsableForDomino(plain), true);
+  const hooked = card({ hooks: `0x${'4a'.repeat(20)}` });
+  assert.deepEqual([hooked.hooks, hooked.feePips], [`0x${'4a'.repeat(20)}`, 3000]);
+  assert.equal(positions.cardPoolUsableForDomino(hooked), false, 'hooks');
+  const dynamic = card({ feeMode: 'dynamic', fee_pips: 8388608 });
+  assert.deepEqual([dynamic.feePips, dynamic.fee], [fee.DYNAMIC_FEE_PIPS, 'Dynamic']);
+  assert.equal(positions.cardPoolUsableForDomino(dynamic), false, 'a dynamic fee');
+  // The same verdict as New position's own test on a projected pool, for every combination.
+  for (const [hooks, feePips] of [[NATIVE, 3000], [NATIVE, fee.DYNAMIC_FEE_PIPS], [`0x${'4a'.repeat(20)}`, 3000], [`0x${'4a'.repeat(20)}`, fee.DYNAMIC_FEE_PIPS]]) {
+    assert.equal(positions.cardPoolUsableForDomino({ hooks, feePips }), pools.optionUsableForDomino({ integration: 'hookless_fixed_fee', hooks, feePips }), `${hooks} ${feePips}`);
+  }
+});
+
 test('the pool price read for a card: the verified pool’s tick at that read’s own block, checked, in the card’s decimals; another pool shows nothing', () => {
   const nft = runtime.assertResponse('nft-positions', fixture('nft-positions.success'));
   const card = positions.projectNftBatch(FIXTURE_NFT_IDS, nft, tokenMap('token.native', 'token.success')).batch.cards[0];

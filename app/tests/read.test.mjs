@@ -3751,7 +3751,8 @@ test('no private API path, no signing or value transfer, no markup injection, no
       /dangerouslySetInnerHTML|innerHTML/,
       /\.sourceUrl\b/,
     ]) {
-      if (pattern.source.startsWith('eth_sendTransaction') && ['/finance/wallet.ts', '/finance/setup.ts', '/finance/sequence.ts'].some(suffix => file.replace(/\\/g, '/').endsWith(suffix))) continue;
+      // 2026-09-24: /finance/position.ts joins on purpose, the owner's collect and close sent to Uniswap's pinned PositionManager.
+      if (pattern.source.startsWith('eth_sendTransaction') && ['/finance/wallet.ts', '/finance/setup.ts', '/finance/sequence.ts', '/finance/position.ts'].some(suffix => file.replace(/\\/g, '/').endsWith(suffix))) continue;
       if (pattern.test(code)) found.push(`${file.slice(SRC.length)}: ${pattern}`);
     }
   }
@@ -3774,7 +3775,16 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // The product now consumes onboarding-v1 (New position's deposit amounts, Setup's swap quote), deliberately
   // through the financial client's same-origin fetch (/finance/http.ts), so no new fetcher joins this list.
   const diagnosticPath = '/components/read/LocalDevelopmentBanner.tsx';
-  assert.deepEqual(fetchers, [diagnosticPath, '/finance/http.ts', '/lib/read/bridgeSource.ts', '/lib/tokenArtwork.ts', '/screens/LivePreview.tsx', '/wallet/session.ts'], 'product clients, the financial client, serve-only diagnostics, the consumer-test preview, and the explicitly authorized decorative token metadata client');
+  // Changed on purpose (owner, 2026-09-24): Positions lists the connected wallet's position NFTs through the site's own
+  // endpoint (functions/api/owned/v1/positions.ts). /lib/ownedPositions.ts is its one client, pinned below to that one
+  // same-origin POST.
+  const ownedPath = '/lib/ownedPositions.ts';
+  assert.deepEqual(fetchers, [diagnosticPath, '/finance/http.ts', ownedPath, '/lib/read/bridgeSource.ts', '/lib/tokenArtwork.ts', '/screens/LivePreview.tsx', '/wallet/session.ts'], 'product clients, the financial client, the owned-positions client, serve-only diagnostics, the consumer-test preview, and the explicitly authorized decorative token metadata client');
+  const ownedClient = readFileSync(join(SRC, ownedPath), 'utf8');
+  assert.equal([...ownedClient.matchAll(/\bfetch\s*\(/g)].length, 1, 'exactly one owned-positions fetch call');
+  assert.match(ownedClient, /fetch\(OWNED_PATH, \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json' \}, body, credentials: 'same-origin', cache: 'no-store', signal \}\)/, 'a fixed same-origin POST, the address in its body');
+  assert.deepEqual([...ownedClient.matchAll(/['"`](https?:\/\/[^'"`]+|\/api\/[^'"`]+)['"`]/g)].map((match) => match[1]), ['/api/owned/v1/positions'], 'no other network route in the owned-positions client');
+  assert.doesNotMatch(ownedClient, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage)\b/, 'no other network client and no storage');
 
   const diagnostics = readFileSync(join(SRC, diagnosticPath), 'utf8');
   assert.equal([...diagnostics.matchAll(/\bfetch\s*\(/g)].length, 1, 'exactly one diagnostic fetch call');

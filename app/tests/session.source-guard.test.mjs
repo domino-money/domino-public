@@ -37,7 +37,9 @@ test('only closed financial adapters offer wallet transactions; login cannot spe
   // Any quote style, so a single-quoted literal is caught as well as a double one.
   const methods =
     /['"`](eth_sendTransaction|eth_signTransaction|eth_sendRawTransaction|eth_sign|eth_signTypedData(_v\d)?|wallet_sendCalls|wallet_addEthereumChain|wallet_watchAsset|eth_call|eth_estimateGas)['"`]/;
-  assert.deepEqual(hits(ALL, methods), ['finance/sequence.ts', 'finance/setup.ts', 'finance/wallet.ts']);
+  // Changed on purpose (2026-09-24): finance/position.ts is the owner's collect and close, sent from the wallet to
+  // Uniswap's pinned PositionManager, simulated and estimated first, through the same bounded client as setup.ts.
+  assert.deepEqual(hits(ALL, methods), ['finance/position.ts', 'finance/sequence.ts', 'finance/setup.ts', 'finance/wallet.ts']);
   assert.deepEqual(hits(inside('session/', 'wallet/', 'components/wallet/'), methods), [], 'login still cannot spend');
   assert.deepEqual([...ALL.find(f => f.path === 'finance/wallet.ts').code.matchAll(/method: '([^']+)'/g)].map(m => m[1]), ['eth_accounts', 'eth_chainId', 'eth_sendTransaction']);
 });
@@ -101,7 +103,11 @@ test('the wallet feature is reached only through the build flag', () => {
   // without their extension so that their importers are checked too. Only Review opens that chunk, lazily behind
   // the build flag (below). Changed on purpose (owner, 2026-09-22): Review's deposit amounts, and with them
   // StageBalance.tsx, the second part that opened the chunk, were deleted.
-  const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$/;
+  // Changed on purpose (2026-09-24): the owner's position actions (Collect fees, Close position) and the refund of a
+  // held setup deposit sign through the wallet too (components/positions/PositionActions.tsx and HeldDeposits.tsx),
+  // written with or without their extension like Create position's chunk, so their importers are checked (below);
+  // screens/PositionLab.tsx mounts them alone in test builds only (App.tsx, behind __DOMINO_TEST_HOOKS__).
+  const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits)(\.tsx)?$/;
   // The onboarding previews and the deposit consumer (#38, #40/#44) read the
   // session through session/port.ts, and the preview screen also through
   // session/livePort.ts. Their lab screens live in chunks of the consumer-test
@@ -113,13 +119,18 @@ test('the wallet feature is reached only through the build flag', () => {
   const consumerMayUse = (path, target) =>
     consumer.test(path) && (target === 'session/port' || (path === 'screens/LivePreview.tsx' && target === 'session/livePort'));
   const reviewOpens = (path, spec) => path === 'components/create/StageReview.tsx' && spec === './DepositAmounts';
+  // Changed on purpose (owner, 2026-09-24): a position's page opens the owner's Collect fees and Close position, and
+  // Positions opens the held deposits with their refund, each as a lazy chunk behind the flag (asserted below). Named
+  // here so that the importer check admits them once the position-actions branch makes the two files wallet feature code.
+  const POSITION_CHUNKS = { 'screens/PositionDetail.tsx': '../components/positions/PositionActions', 'screens/Positions.tsx': '../components/positions/HeldDeposits' };
+  const positionsOpens = (path, spec) => POSITION_CHUNKS[path] === spec;
   const offenders = [];
   for (const { path, code } of ALL.filter(({ path }) => !feature.test(path))) {
     for (const spec of specifiers(code)) {
       if (/^(wagmi|viem|@tanstack\/)/.test(spec)) offenders.push(`${path}: ${spec}`);
       if (!spec.startsWith('.')) continue;
       const target = posix.normalize(posix.join(posix.dirname(path), spec));
-      if (feature.test(target) && target !== 'components/wallet/WalletBoundary' && spec !== './wallet/WalletSessionIsland' && spec !== './wallet/LocalWalletIsland' && !consumerMayUse(path, target) && !reviewOpens(path, spec)) {
+      if (feature.test(target) && target !== 'components/wallet/WalletBoundary' && spec !== './wallet/WalletSessionIsland' && spec !== './wallet/LocalWalletIsland' && !consumerMayUse(path, target) && !reviewOpens(path, spec) && !positionsOpens(path, spec)) {
         offenders.push(`${path}: ${spec}`);
       }
     }
@@ -135,4 +146,38 @@ test('the wallet feature is reached only through the build flag', () => {
     const lazy = [...code.matchAll(/import\(\s*['"`]\.\/DepositAmounts(?:\.tsx?)?['"`]\s*\)/g)].length;
     assert.deepEqual([mentions, lazy], [1, 1], `${path} names Create position's chunk once, in its lazy import()`);
   }
+  for (const [path, spec] of Object.entries(POSITION_CHUNKS)) {
+    const { code } = ALL.find((file) => file.path === path);
+    const quoted = spec.replaceAll('.', '\\.').replaceAll('/', '\\/');
+    assert.match(code, new RegExp(`__DOMINO_WALLET_SESSION__\\s*\\?\\s*lazy(?:<[^\\n]*?>)?\\(\\(\\)\\s*=>\\s*import\\('${quoted}'\\)`), `${path} opens ${spec} lazily, behind the flag`);
+    const mentions = [...code.matchAll(new RegExp(`['"\`]${quoted}(?:\\.tsx?)?['"\`]`, 'g'))].length;
+    assert.equal(mentions, 1, `${path} names ${spec} once, in its lazy import(), and imports nothing else from it, types included`);
+  }
+});
+
+// Added 2026-09-24 with the owner's position actions (components/positions/PositionActions.tsx: Collect fees and
+// Close position; components/positions/HeldDeposits.tsx: the refund of a held setup deposit). Like Create position's
+// chunk, whichever screen opens them does it lazily behind the wallet flag, naming each once, so a build without the
+// wallet never loads them. Type-only imports are erased and are not an opening. Their lab screen is test-only.
+test('the position actions are opened only lazily behind the wallet flag, and their lab only in test builds', () => {
+  const target = /^components\/positions\/(PositionActions|HeldDeposits)$/;
+  const openers = [];
+  for (const { path, code } of ALL) {
+    if (/^components\/positions\/(PositionActions|HeldDeposits)\.tsx$/.test(path)) continue;
+    const values = code.replace(/^import\s+type\s[^;]*?from\s*'[^']+';?$/gm, '');
+    for (const spec of new Set(specifiers(values))) {
+      if (!spec.startsWith('.') || !target.test(posix.normalize(posix.join(posix.dirname(path), spec)).replace(/\.tsx?$/, ''))) continue;
+      openers.push(path);
+      const quoted = spec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // 2026-09-24 (merge): an explicit type argument, lazy<ComponentType<Props>>(...), types the chunk from the opener's own props.
+      assert.match(values, new RegExp(`__DOMINO_WALLET_SESSION__\\s*\\?\\s*lazy(?:<[^\\n]*?>)?\\(\\(\\)\\s*=>\\s*import\\('${quoted}'\\)`), `${path} opens ${spec} lazily, behind the wallet flag`);
+      const mentions = [...values.matchAll(new RegExp(`['"\`]${quoted}['"\`]`, 'g'))].length;
+      const lazy = [...values.matchAll(new RegExp(`import\\(\\s*['"\`]${quoted}['"\`]\\s*\\)`, 'g'))].length;
+      assert.deepEqual([mentions, lazy], [1, 1], `${path} names ${spec} once, in its lazy import()`);
+    }
+  }
+  assert.ok(openers.includes('screens/PositionLab.tsx'), openers.join(', '));
+  const labOpeners = ALL.filter(({ code }) => /['"`]\.\/screens\/PositionLab(?:\.tsx?)?['"`]/.test(code)).map(({ path }) => path);
+  assert.deepEqual(labOpeners, ['App.tsx'], 'only the app routes to the lab');
+  assert.match(ALL.find(({ path }) => path === 'App.tsx').code, /const PositionLab = __DOMINO_TEST_HOOKS__\s*\?\s*lazy\(\(\)\s*=>\s*import\('\.\/screens\/PositionLab'\)/, 'the lab exists only where the test hooks do');
 });

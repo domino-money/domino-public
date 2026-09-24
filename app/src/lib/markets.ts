@@ -18,6 +18,7 @@
  * Every row is built from validated reads. There is no stand-in or placeholder
  * state: a figure nobody observed is unavailable, and says why.
  */
+import type { Candle } from 'api-contracts/read-v1/types'
 import { compare, formatUsdCompact, ratio, toFixed } from './read/decimal'
 import type { TokenDisplay } from './read/types'
 import type { AprEstimateObservation } from './read/aprEstimate'
@@ -130,6 +131,12 @@ export interface Market {
   feeAprEstimate?: AprEstimateObservation
   /** Provider orientation, used to ask for a chart by a verified token address. */
   chartTokens?: { base: string; quote: string }
+  /**
+   * Hourly USD candles the row's own answer already carried, bound to its
+   * currencies (lib/read/chart.ts carriedHistory). A stored overview carries
+   * none until the collector keeps them; the Markets cards draw these first.
+   */
+  providerHistory?: CarriedHistory
   /** The pool's own state at the block the row was read at: where its price comes from (lib/read/marketPrice.ts). */
   poolState?: MarketPoolState
   /** Where the row's figures came from. */
@@ -140,6 +147,20 @@ export interface Market {
    * a token read that settled without them. Never set on a settled result.
    */
   tokensPending?: true
+}
+
+/** A row's carried hourly candles, with the ages its answer reported and when that answer arrived on this page. */
+export interface CarriedHistory {
+  candles: readonly Candle[]
+  intervalSeconds: number
+  returned: number
+  status: 'available' | 'stale'
+  /** The provider cache's age when the answer was made; null when not reported. */
+  ageSeconds: number | null
+  freshForSeconds: number
+  maxStaleSeconds: number
+  receivedAt: number
+  receivedMonotonic?: number
 }
 
 /**

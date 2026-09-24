@@ -1,72 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { poolListings, type PoolListing } from '../../config/selectedPoolCatalogue'
-import { readNow, retrievedText, type Instant, type Market } from '../../lib/markets'
-import { chartMatches } from '../../lib/read/chart'
-import { reasonText } from '../../lib/read/describe'
-import { volumeGeometry } from '../../lib/read/priceSeries'
-import { failureText } from '../../lib/read/screens/copy'
+import { poolListings } from '../../config/selectedPoolCatalogue'
+import { followCardMode, watchCard, type CardMode } from '../../lib/read/cardReads'
+import { cardAsk, inAskOrder, mergeAnswer, pickSeries, type CardAnswer, type CardAsk } from '../../lib/read/cardSeries'
 import { useReadSource } from '../../lib/read/screens/readContext'
-import { readWithin, type ScreenOutcome } from '../../lib/read/screens/screenRead'
 import { shownResult, useMarkets } from '../../lib/read/useMarkets'
 import { useNow } from '../../lib/read/useNow'
 import { IconChevronLeft, IconChevronRight } from '../icons'
 import { IconButton } from '../ui'
-import { MarketCard, type CardVolume } from './MarketCard'
+import { MarketCard } from './MarketCard'
 
-type Side = 'base' | 'quote'
-
-/** One card's settled hourly read: its outcome, the side it asked for, and when it settled on this page's clocks. */
-interface Remembered {
-  outcome: Exclude<ScreenOutcome<'pool-market'>, { state: 'aborted' }>
-  side: Side
-  settledAt: Instant
-}
-
-/**
- * Settled card reads by pool id, for the life of the document: going back to
- * Markets within the read service's five-minute limit shows what was already
- * read instead of asking again. Written only when a read settles, never while
- * rendering.
- */
-const REMEMBERED = new Map<string, Remembered>()
-
-/** A read of a card asks at most this often per page view: the first read, and one more when that one is due again. */
-const READS_PER_VIEW = 2
-/** How long a failed read waits before it may be asked again, unless the service said how long. */
-const RETRY_AFTER_MS = 60_000
-/** Candle reasons a later read can clear. The others are the answer. */
-const TRANSIENT = new Set(['provider_capacity_busy', 'provider_rate_limited', 'provider_unavailable'])
-
-/**
- * The token whose USD candles the pool page asks for, asked for the same way
- * here, so both send the identical read and share the read service's cache.
- */
-const chartSide = (market: Market): Side => (market.chartTokens?.quote === market.tokens.base.address ? 'quote' : 'base')
-
-const elapsedMs = (since: Instant, now: Instant) =>
-  Math.max(0, since.monotonic !== undefined && now.monotonic !== undefined ? now.monotonic - since.monotonic : now.wall - since.wall)
-
-/** Seconds since the provider's candles were retrieved: the age the read service reported plus the time since its answer arrived. */
-function historyAge(outcome: Extract<ScreenOutcome<'pool-market'>, { state: 'ok' }>, now: Instant): { seconds: number; known: boolean } {
-  const onScreen = Math.floor(elapsedMs({ wall: outcome.provenance.receivedAt, monotonic: outcome.provenance.receivedMonotonic }, now) / 1000)
-  const reported = outcome.data.priceHistory.cache?.ageSeconds ?? null
-  return reported === null ? { seconds: onScreen, known: false } : { seconds: reported + onScreen, known: true }
-}
-
-/** Whether a settled read may be asked again: expired candles, a transient answer, or a failure worth retrying, once its wait is over. */
-function dueAgain(entry: Remembered, now: Instant): boolean {
-  const { outcome } = entry
-  if (outcome.state === 'ok') {
-    const history = outcome.data.priceHistory
-    if (history.status === 'available' || history.status === 'stale') return historyAge(outcome, now).seconds > history.cache.maxStaleSeconds
-    if (history.status === 'unavailable' || history.status === 'rejected') return TRANSIENT.has(history.reason ?? '') && elapsedMs(entry.settledAt, now) >= RETRY_AFTER_MS
-    return false
-  }
-  const wait = outcome.state === 'busy' ? outcome.retryAfterSeconds * 1000 : RETRY_AFTER_MS
-  return failureText(outcome, 'pools').retry && elapsedMs(entry.settledAt, now) >= wait
-}
-
-const NO_PAD = { top: 0, right: 0, bottom: 0, left: 0 }
+const NO_ASKS: readonly CardAsk[] = []
 
 /** Whether the rail can still move back, and forward; the previous value when nothing changed, so a scroll re-renders nothing. */
 function railEdges(node: HTMLElement, prev: { start: boolean; end: boolean }) {
@@ -75,46 +18,22 @@ function railEdges(node: HTMLElement, prev: { start: boolean; end: boolean }) {
   return prev.start === start && prev.end === end ? prev : { start, end }
 }
 
-/** What one card's plot shows now, from the markets state and its own settled read only. */
-function volumeOf(listing: PoolListing, settled: boolean, entry: Remembered | undefined, now: Instant): CardVolume {
-  const market = listing.market
-  if (!market) return settled ? { kind: 'no-figures' } : { kind: 'loading' }
-  // Candles are asked for by a provider token the market read verified; without one there is nothing to ask.
-  if (!market.chartTokens) return { kind: 'unavailable', reason: reasonText(market.provenance?.market.reason ?? 'provider_unavailable') }
-  const side = chartSide(market)
-  if (!entry || entry.side !== side) return { kind: 'reading' }
-  const { outcome } = entry
-  if (outcome.state !== 'ok') {
-    const said = failureText(outcome, 'pools')
-    return { kind: 'failed', title: said.title, detail: said.detail }
-  }
-  const history = outcome.data.priceHistory
-  if (history.status !== 'available' && history.status !== 'stale') return { kind: 'unavailable', reason: reasonText(history.reason) }
-  if (!chartMatches(outcome.data, market.chartTokens[side], side)) return { kind: 'unavailable', reason: reasonText('provider_chart_currency_mismatch') }
-  const age = historyAge(outcome, now)
-  if (age.seconds > history.cache.maxStaleSeconds) return { kind: 'expired' }
-  const data = history.data
-  if (data.candles.length === 0) return { kind: 'unavailable', reason: 'no candles reported' }
-  if (!volumeGeometry(data.candles, data.intervalSeconds, 240, 96, NO_PAD, 0)) return { kind: 'unavailable', reason: 'the reported volumes could not be read' }
-  const stale = history.status === 'stale' || age.seconds >= history.cache.freshForSeconds
-  const title = `Reported by a market data provider, ${retrievedText(age.known ? age.seconds : null)}. Not reconciled by Domino.${stale ? ' Stale, not current.' : ''}`
-  return { kind: 'bars', candles: data.candles, intervalSeconds: data.intervalSeconds, returned: data.coverage.returnedCandles, stale, title }
-}
-
 /**
  * The top of Markets: the page's title block with the rail's arrows, and the
  * rail of wide cards, one per selected pool, in the table's order.
  *
- * Reads: as soon as its own verified row is available, a card asks for its
- * pool's hourly candles once, through the
- * app's one scheduled source, but only while it is at least 60% inside the
- * rail: cards come into the queue in rail order as they come into view. The
- * view gates only the asking. A read that has been asked for is kept to its
- * end even if its card scrolls away; leaving the page cancels what is still
- * outstanding. A busy or failed read, or candles past the service's limit,
- * is asked once more, when its wait is over and its card is in view. One
- * clock ticks for the whole rail, only while a card in view has something
- * that ages.
+ * Reads: once the table's rows are in, one capabilities check (the answer the
+ * page already holds, never a read of its own) decides what every card asks
+ * for: the pool's stored price history where `history` is listed, else a
+ * provider's hourly candles (lib/read/cardReads.ts). While it says provider
+ * it is asked again each minute; when `history` is listed again, the cards
+ * stop their provider reads and ask for the chain line. Every card with a row
+ * then asks at once, cards in view first and the rest in rail order, through
+ * the app's one scheduled source, which paces them; nothing waits for a card
+ * to scroll into view. What this tab kept for a card is drawn at once and
+ * replaced when its own answer lands. Leaving the page cancels whatever is
+ * still outstanding. One clock ticks for the whole rail, only while a card in
+ * view has something that ages.
  */
 export function MarketCarousel({ heading }: { heading: ReactNode }) {
   const source = useReadSource()
@@ -125,14 +44,17 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
 
   const rail = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState<ReadonlySet<string>>(() => new Set())
-  const [reads, setReads] = useState<ReadonlyMap<string, Remembered>>(() => new Map(REMEMBERED))
+  const [mode, setMode] = useState<CardMode | null>(null)
+  const [reads, setReads] = useState<ReadonlyMap<string, CardAnswer>>(() => new Map())
   const [edges, setEdges] = useState({ start: true, end: true })
   const running = useRef(new Map<string, AbortController>())
-  const asked = useRef(new Map<string, number>())
   const frame = useRef(0)
 
   const ids = listings.map((listing) => listing.poolId).join(',')
-  const active = listings.some((listing) => visible.has(listing.poolId) && (listing.market !== undefined || reads.has(listing.poolId)))
+  const rows = listings.some((listing) => listing.market !== undefined)
+  const asks = mode === 'chain' || mode === 'provider' ? listings.map((listing) => (listing.market ? cardAsk(listing.market, mode) : null)) : NO_ASKS
+  const wanted = asks.flatMap((ask) => (ask ? [ask.key] : [])).join(',')
+  const active = listings.some((listing) => visible.has(listing.poolId) && listing.market !== undefined)
   const now = useNow(active)
 
   const onScroll = () => {
@@ -144,20 +66,18 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
     })
   }
 
-  // Leaving the page cancels what is still outstanding; a read already settled stays remembered.
+  // Leaving the page cancels what is still outstanding; what was answered stays in this tab's memory.
   useEffect(() => {
     const flights = running.current
-    const counts = asked.current
     return () => {
       cancelAnimationFrame(frame.current)
       frame.current = 0
       for (const controller of flights.values()) controller.abort()
       flights.clear()
-      counts.clear()
     }
   }, [])
 
-  // Which cards are at least 60% inside the rail, and whether the rail can move either way.
+  // Which cards are at least 60% inside the rail, for the arrows and to ask for those first.
   useEffect(() => {
     const node = rail.current
     if (!node) return
@@ -190,28 +110,37 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
     }
   }, [ids])
 
-  // Ask for the hourly candles of each card in view that needs them, in rail order.
+  // Once there are rows: which series the cards ask for, from the capabilities the page already holds, and again
+  // each minute while that says provider, so a passing failure of the check does not keep the cards off the chain line.
+  useEffect(() => {
+    if (!source || !rows) return
+    const controller = new AbortController()
+    void followCardMode(source, (next) => {
+      if (!controller.signal.aborted) setMode(next)
+    }, { signal: controller.signal })
+    return () => controller.abort()
+  }, [source, rows])
+
+  // Every card with a row asks, those in view first; a card whose series changed stops asking for the old one.
   useEffect(() => {
     if (!source) return
-    for (const { poolId, market } of listings) {
-      if (!market?.chartTokens || !visible.has(poolId) || running.current.has(poolId)) continue
-      const side = chartSide(market)
-      const entry = reads.get(poolId)
-      const count = asked.current.get(poolId) ?? 0
-      if (count >= READS_PER_VIEW) continue
-      if (entry && entry.side === side && !dueAgain(entry, now)) continue
-      const controller = new AbortController()
-      running.current.set(poolId, controller)
-      asked.current.set(poolId, count + 1)
-      void readWithin(source, 'pool-market', { poolId, includePriceHistory: true, priceToken: side }, { signal: controller.signal }).then((outcome) => {
-        if (running.current.get(poolId) === controller) running.current.delete(poolId)
-        if (controller.signal.aborted || outcome.state === 'aborted') return
-        const remembered: Remembered = { outcome, side, settledAt: readNow() }
-        REMEMBERED.set(poolId, remembered)
-        setReads((current) => new Map(current).set(poolId, remembered))
-      })
+    const keys = new Set(wanted.split(','))
+    for (const [key, controller] of running.current) {
+      if (keys.has(key)) continue
+      controller.abort()
+      running.current.delete(key)
     }
-  }, [source, listings, visible, reads, now])
+    for (const ask of inAskOrder(asks.flatMap((entry) => (entry ? [entry] : [])), visible)) {
+      if (running.current.has(ask.key)) continue
+      const controller = new AbortController()
+      running.current.set(ask.key, controller)
+      void watchCard(source, ask, (answer) => {
+        if (controller.signal.aborted) return
+        setReads((current) => new Map(current).set(ask.key, mergeAnswer(current.get(ask.key), answer)))
+      }, { signal: controller.signal })
+    }
+    // `asks` is rebuilt on every render and `wanted` names it, so this runs often; a card already asking is left alone.
+  }, [source, wanted, visible, asks])
 
   const scrollPage = (direction: 1 | -1) => {
     const node = rail.current
@@ -238,10 +167,18 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
         )}
       </div>
       {railed && (
-        <div id="market-rail" ref={rail} role="region" aria-label="Selected pools, hourly volume" className="dm-mkt-rail" onScroll={onScroll}>
-          {listings.map((listing, index) => (
-            <MarketCard key={listing.poolId} listing={listing} index={index} now={now} volume={volumeOf(listing, settled, reads.get(listing.poolId), now)} />
-          ))}
+        <div id="market-rail" ref={rail} role="region" aria-label="Selected pools, last 24 hours" className="dm-mkt-rail" onScroll={onScroll}>
+          {listings.map((listing, index) => {
+            const ask = asks[index] ?? null
+            const own = ask ? reads.get(ask.key) : undefined
+            // A card moved to the chain line keeps drawing what the provider gave it until its own answer lands.
+            const earlier = own === undefined && mode === 'chain' && listing.market ? cardAsk(listing.market, 'provider') : null
+            const answer = own ?? (earlier ? reads.get(earlier.key) : undefined)
+            // An answer is on its way while the capabilities are unread, and while an asking card has none yet.
+            const expecting = listing.market !== undefined && (mode === null || (ask !== null && answer === undefined))
+            const series = pickSeries({ market: listing.market, settled, answer, expecting, now })
+            return <MarketCard key={listing.poolId} listing={listing} index={index} now={now} series={series} />
+          })}
         </div>
       )}
     </>

@@ -78,6 +78,29 @@ export const SETUP_CONTRACT: Pin = '0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a'
 export const POSITION_MANAGER = '0x58daec3116aae6d93017baaea7749052e8a04fa7'
 
 /**
+ * Uniswap's V4Quoter on Robinhood Chain, and the keccak256 of its runtime
+ * code (6,118 bytes, read 2026-09-23). Create position asks it, through the
+ * wallet and before anything is approved or deposited, whether the pool can
+ * swap part of a one-token deposit (finance/setup.ts quotePool). It is not in
+ * the setup release record, so it is anchored here, in git: the code embeds
+ * the PoolManager it quotes against as an immutable, so this hash names this
+ * chain's deployment, and the client also reads poolManager() back against
+ * the verified release. A redeployed quoter is a new commit, never a silent
+ * pass: a different hash refuses the check, and a one-token deposit with it.
+ */
+export const V4_QUOTER = '0x8dc178efb8111bb0973dd9d722ebeff267c98f94'
+export const V4_QUOTER_CODE_HASH = '0xd707b1da8cb165e5ea35a3b4450d971eb562ec171e23492aa117036b78a868f6'
+
+/**
+ * Uniswap v4's StateView on the same chain, the one the published setup
+ * profile names beside the position manager. The owner's own position actions
+ * (./position.ts) read prices, liquidity and fee growth from it directly,
+ * with no profile in between, so the address is shipped here rather than
+ * taken from any reply.
+ */
+export const STATE_VIEW = '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b'
+
+/**
  * Only a DEPLOYABLE build insists on the pin.
  *
  * `__DOMINO_DEPLOYABLE__` is a Vite `define`, written from the mode's own row

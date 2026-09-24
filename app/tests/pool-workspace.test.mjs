@@ -16,7 +16,7 @@ const deferred = () => { let resolve; const promise = new Promise((done) => { re
 const addr = (letter) => `0x${letter.repeat(40)}`
 const id = (letter) => `0x${letter.repeat(64)}`
 const token = (letter) => ({ origin: 'read', chainId: 4663, address: addr(letter), symbol: letter, decimals: 18, artwork: null, readStatus: 'available' })
-const option = (letter) => ({ key: id(letter), currencies: [token('1'), token('2')], fee: '0.3%', tickSpacing: 60, hooks: addr('0'), block: 700, tick: 0, sqrtPriceX96: '79228162514264337593543950336', aprReason: 'reconciled_fee_history_unavailable' })
+const option = (letter) => ({ key: id(letter), currencies: [token('1'), token('2')], fee: '0.3%', feePips: 3000, tickSpacing: 60, hooks: addr('0'), integration: 'hookless_fixed_fee', block: 700, tick: 0, sqrtPriceX96: '79228162514264337593543950336', aprReason: 'reconciled_fee_history_unavailable' })
 const metric = { value: '42', state: 'provider', source: 'GeckoTerminal', asOf: 1000 }
 const row = (poolId) => ({ poolId, tokens: { base: token('1'), quote: token('2') }, tvlUsd: metric, volume24hUsd: metric, provenance: { block: 700, market: { status: 'available', receivedAt: 0, ageSeconds: 0, cacheAgeSeconds: 0, freshForSeconds: 60 } } })
 const Container = ({ children }) => React.createElement('div', null, children)
@@ -112,34 +112,163 @@ const unavailable = { state: 'unavailable', cause: { kind: 'producer', code: 'up
 /** Every dash the page drew in place of a figure (the shared FigureDash), by the reason it names. */
 const dashes = (host) => elements(host.tree, (node) => node.type?.name === 'FigureDash').map((node) => node.props.reason)
 
-test('a visible carousel card asks for its own verified candles while other rows are still loading', () => {
+/**
+ * The Markets rail over the hook harness, with the real card decisions
+ * (lib/read/cardSeries.ts) and the reads stubbed at cardReads.ts: `modes`
+ * records each capabilities decision the page starts, `decide` hands a test
+ * that decision's later answers, `watches` records each card that asks.
+ * Rewritten 2026-09-24: cards used to ask only while 60% in view, so on a
+ * laptop four of six never asked until paged to, and none asked twice after
+ * two refusals. Now every card with a row asks at once, those in view first.
+ */
+function carousel({ mode = 'chain', listings, phase = 'ready' }) {
+  const cards = require(resolve(root, '.test-build/app/src/lib/read/cardSeries.js'));
+  const modes = [], watches = [], decide = [];
+  const Card = stub('MarketCard');
+  const source = { transport: 'bridge' };
+  const { MarketCarousel } = load('src/components/markets/MarketCarousel.tsx', {
+    useReadSource: () => source,
+    useMarkets: () => ({ state: { phase }, provider: { kind: 'bridge' } }),
+    shownResult: () => ({ markets: listings.flatMap((listing) => (listing.market ? [listing.market] : [])) }), poolListings: () => listings,
+    MarketCard: Card, IconButton: Container, IconChevronLeft: Container, IconChevronRight: Container,
+    cardAsk: cards.cardAsk, inAskOrder: cards.inAskOrder, mergeAnswer: cards.mergeAnswer, pickSeries: cards.pickSeries,
+    // The one decision the rail used to make, kept so an older rail still loads here.
+    cardMode: async (_source, signal) => (modes.push(signal), mode),
+    followCardMode(_source, emit, options) {
+      modes.push(options.signal);
+      decide.push((next) => { if (!options.signal.aborted) emit(next); });
+      void Promise.resolve().then(() => { if (!options.signal.aborted) emit(mode); });
+      return new Promise(() => {});
+    },
+    watchCard(_source, ask, emit, options) { watches.push({ ask, emit, options }); return new Promise(() => {}); },
+  });
+  const series = (host) => elements(host.tree, (node) => node.type === Card).map((node) => [node.props.listing.poolId, node.props.series]);
+  return { MarketCarousel, modes, watches, decide, series };
+}
+/** A row whose provider orientation names the pool's first currency as its quote, as on the live WETH/USDG pool. */
+const cardRow = (letter, extra = {}) => ({ ...row(id(letter)), key: `4663:${id(letter)}`, chartTokens: { base: addr('2'), quote: addr('1') },
+  poolState: { currency0: addr('1'), currency1: addr('2') }, ...extra });
+const ratio = (hour, close) => ({ startTimestamp: 997_200 - hour * 3600, open: close, high: close, low: close, close, swapCount: 2, complete: true });
+const storedHistory = (poolId, extra = {}) => ({ poolId, currency: addr('1'), quoteCurrency: addr('2'), status: 'partial', reason: 'history_acquisition_pending',
+  requestedWindow: { startTimestamp: 997_200 - 86_400, endTimestamp: 997_200 }, resolutionSeconds: 3600, snapshot: { number: 700, hash: '0x', timestamp: 997_200 },
+  covered: [], gaps: [{ startTimestamp: 997_200 - 86_400, endTimestamp: 997_200 - 7200 }], candles: [ratio(2, '1.5'), ratio(1, '1.6')], ...extra });
+const chainAnswer = (ask, data) => ({ source: 'chain', key: ask.key, data, receivedAt: 1_000_000, failure: null, code: null });
+
+test('every carousel card asks at mount, those in view first, with no view gate, and each settles on a line or its 24h figure', async () => {
   const beforeSet = globalThis.__DOMINO_POOL_SET__;
   const beforeCancel = globalThis.cancelAnimationFrame;
   globalThis.__DOMINO_POOL_SET__ = 'selected';
   globalThis.cancelAnimationFrame = () => {};
-  const reads = [];
-  const market = { ...row(id('a')), chartTokens: { base: addr('1'), quote: addr('2') } };
-  const listings = [{ poolId: id('a'), market }, { poolId: id('b') }];
-  const { MarketCarousel } = load('src/components/markets/MarketCarousel.tsx', {
-    useReadSource: () => ({ transport: 'bridge' }),
-    useMarkets: () => ({ state: { phase: 'loading' }, provider: { kind: 'bridge' } }),
-    shownResult: () => ({ markets: [market] }), poolListings: () => listings,
-    MarketCard: Container, IconButton: Container, IconChevronLeft: Container, IconChevronRight: Container,
-    readWithin(_source, route, request, options) { reads.push({ route, request, options }); return new Promise(() => {}); },
-  });
+  const letters = ['a', 'b', 'c', 'd', 'e', 'f'];
+  const fixture = carousel({ listings: letters.map((letter) => ({ poolId: id(letter), market: cardRow(letter) })) });
   let host;
   try {
-    host = mount(MarketCarousel, { heading: 'Markets' });
-    assert.equal(reads.length, 0, 'an offscreen card does not ask');
-    // The observer's visible-set state: both cards are visible, but only A
-    // has a verified row. The hook harness does not emulate browser layout.
-    host.values[1] = new Set([id('a'), id('b')]);
+    host = mount(fixture.MarketCarousel, { heading: 'Markets' });
+    assert.equal(fixture.modes.length, 1, 'one capabilities decision for the whole rail');
+    assert.equal(fixture.watches.length, 0, 'nothing is asked before it is known what to ask');
+    assert.deepEqual(fixture.series(host).map(([, series]) => series.kind), letters.map(() => 'waiting'));
+    // The observer's visible-set state (hook slot 1): two cards in view, as on a laptop. The harness does not emulate layout.
+    host.values[1] = new Set([id('c'), id('d')]);
+    await flush(); host.render();
+    assert.deepEqual(fixture.watches.map(({ ask }) => ask.poolId), [id('c'), id('d'), id('a'), id('b'), id('e'), id('f')], 'all six at once, in view first, then rail order');
+    for (const { ask } of fixture.watches) assert.deepEqual(ask, { key: `chain:${ask.poolId}:${addr('1')}:3600`, poolId: ask.poolId, source: 'chain', currency: addr('1'), side: 'quote' });
+    host.render(); host.values[1] = new Set([id('a')]); host.render();
+    assert.equal(fixture.watches.length, 6, 'a card already asking, or scrolled to, does not ask again');
+    assert.deepEqual(fixture.series(host).map(([, series]) => series.kind), letters.map(() => 'waiting'), 'a baseline only until the first answer');
+
+    const byPool = new Map(fixture.watches.map((watch) => [watch.ask.poolId, watch]));
+    byPool.get(id('a')).emit(chainAnswer(byPool.get(id('a')).ask, storedHistory(id('a'))));
+    byPool.get(id('b')).emit(chainAnswer(byPool.get(id('b')).ask, storedHistory(id('b'), { status: 'not_built', candles: [], snapshot: null })));
+    byPool.get(id('c')).emit({ ...chainAnswer(byPool.get(id('c')).ask, null), failure: 'Unavailable. No response', code: 'unavailable' });
+    byPool.get(id('d')).emit(chainAnswer(byPool.get(id('d')).ask, storedHistory(id('d'), { candles: [ratio(1, '1.6')] })));
+    for (const letter of ['e', 'f']) byPool.get(id(letter)).emit(chainAnswer(byPool.get(id(letter)).ask, storedHistory(id(letter), { status: 'available', gaps: [] })));
     host.render();
-    assert.deepEqual(reads.map(({ route, request }) => ({ route, request })), [{ route: 'pool-market', request: { poolId: id('a'), includePriceHistory: true, priceToken: 'base' } }]);
+    const settled = new Map(fixture.series(host));
+    assert.deepEqual(letters.map((letter) => settled.get(id(letter)).kind), ['line', 'figure', 'figure', 'figure', 'line', 'line'], 'a partial window draws its line; not built, failed or one hour shows the figure');
+    for (const [, series] of settled) assert.ok(['line', 'bars', 'figure'].includes(series.kind), 'no settled card is left without something drawn');
+    assert.equal(settled.get(id('b')).metric, cardRow('b').volume24hUsd, 'the figure is the row’s own 24h volume');
+    assert.deepEqual([settled.get(id('b')).code, settled.get(id('c')).code, settled.get(id('d')).code], ['not_built', 'unavailable', 'few-hours']);
+
+    // A failed refresh keeps the line it had, marked stale in its title.
+    byPool.get(id('a')).emit({ ...chainAnswer(byPool.get(id('a')).ask, null), failure: 'Busy. Later', code: 'busy' });
     host.render();
-    assert.equal(reads.length, 1, 'the in-flight card does not duplicate its read');
+    assert.equal(new Map(fixture.series(host)).get(id('a')).kind, 'line');
+    assert.equal(new Map(fixture.series(host)).get(id('a')).stale, true);
+
     host.unmount(); host = null;
-    assert.equal(reads[0].options.signal.aborted, true);
+    assert.ok(fixture.watches.every(({ options }) => options.signal.aborted), 'leaving the page cancels every card');
+    assert.ok(fixture.modes.every((signal) => signal.aborted));
+  } finally {
+    host?.unmount();
+    globalThis.__DOMINO_POOL_SET__ = beforeSet;
+    globalThis.cancelAnimationFrame = beforeCancel;
+  }
+});
+
+test('where history is not listed the cards ask a provider, rows without its orientation show their figure at once, and a missing row waits only while the table loads', async () => {
+  const beforeSet = globalThis.__DOMINO_POOL_SET__;
+  const beforeCancel = globalThis.cancelAnimationFrame;
+  globalThis.__DOMINO_POOL_SET__ = 'selected';
+  globalThis.cancelAnimationFrame = () => {};
+  const listings = [{ poolId: id('a'), market: cardRow('a') }, { poolId: id('b'), market: cardRow('b', { chartTokens: undefined }) }, { poolId: id('c') }];
+  let host;
+  try {
+    const loading = carousel({ mode: 'provider', listings, phase: 'loading' });
+    host = mount(loading.MarketCarousel, { heading: 'Markets' });
+    await flush(); host.render();
+    assert.deepEqual(loading.watches.map(({ ask }) => ask), [{ key: `provider:${id('a')}:${addr('1')}:3600`, poolId: id('a'), source: 'provider', currency: addr('1'), side: 'quote' }]);
+    assert.deepEqual(loading.series(host).map(([, series]) => [series.kind, series.code]), [['waiting', undefined], ['figure', 'not-asked'], ['waiting', undefined]]);
+    loading.watches[0].emit({ source: 'provider', key: loading.watches[0].ask.key, side: 'quote', data: null, receivedAt: 1_000_000, failure: 'Unavailable. No response', code: 'unavailable' });
+    host.render();
+    assert.equal(loading.series(host)[0][1].kind, 'figure');
+    host.unmount(); host = null;
+
+    const refused = carousel({ mode: 'none', listings, phase: 'ready' });
+    host = mount(refused.MarketCarousel, { heading: 'Markets' });
+    await flush(); host.render();
+    assert.equal(refused.watches.length, 0, 'capabilities that failed ask nothing more');
+    assert.deepEqual(refused.series(host).map(([, series]) => [series.kind, series.code]), [['figure', 'not-asked'], ['figure', 'not-asked'], ['figure', 'no-figures']]);
+  } finally {
+    host?.unmount();
+    globalThis.__DOMINO_POOL_SET__ = beforeSet;
+    globalThis.cancelAnimationFrame = beforeCancel;
+  }
+});
+
+// Review of 2026-09-24: the rail decided its cards' series once per mount, so a passing failure of the read-v3
+// capabilities GET (which comes back as "not listed") kept all six cards on the costlier provider reads for the visit,
+// while the table went back to the stored overview at its next refresh.
+test('cards on the provider path move to the chain line when the capabilities list history again, and stop their provider reads', async () => {
+  const beforeSet = globalThis.__DOMINO_POOL_SET__;
+  const beforeCancel = globalThis.cancelAnimationFrame;
+  globalThis.__DOMINO_POOL_SET__ = 'selected';
+  globalThis.cancelAnimationFrame = () => {};
+  const fixture = carousel({ mode: 'provider', listings: [{ poolId: id('a'), market: cardRow('a') }, { poolId: id('b'), market: cardRow('b') }] });
+  let host;
+  try {
+    host = mount(fixture.MarketCarousel, { heading: 'Markets' });
+    await flush(); host.render();
+    assert.deepEqual(fixture.watches.map(({ ask }) => ask.source), ['provider', 'provider']);
+    const [a, b] = fixture.watches;
+    a.emit({ source: 'provider', key: a.ask.key, side: 'quote', data: null, receivedAt: 1_000_000, failure: 'Unavailable. No response', code: 'unavailable' });
+    host.render();
+    assert.equal(fixture.decide.length, 1, 'the page follows one decision for the whole rail');
+
+    // A minute on, the capabilities answer again and list history.
+    fixture.decide[0]('chain'); host.render(); host.render();
+    assert.ok(a.options.signal.aborted && b.options.signal.aborted, 'the provider reads stop');
+    assert.deepEqual(fixture.watches.slice(2).map(({ ask }) => ask.key), [id('a'), id('b')].map((poolId) => `chain:${poolId}:${addr('1')}:3600`), 'and each card asks for its chain line');
+    assert.equal(fixture.modes.length, 1, 'no second decision is started for it');
+    const moved = new Map(fixture.series(host));
+    assert.equal(moved.get(id('a')).code, 'unavailable', 'what the provider gave stays drawn until the chain answers');
+    assert.equal(moved.get(id('b')).kind, 'waiting');
+    const chainA = fixture.watches[2];
+    chainA.emit(chainAnswer(chainA.ask, storedHistory(id('a'), { status: 'available', gaps: [] })));
+    host.render();
+    assert.equal(new Map(fixture.series(host)).get(id('a')).kind, 'line');
+
+    host.unmount(); host = null;
+    assert.ok(fixture.watches.every(({ options }) => options.signal.aborted) && fixture.modes.every((signal) => signal.aborted));
   } finally {
     host?.unmount();
     globalThis.__DOMINO_POOL_SET__ = beforeSet;
@@ -404,6 +533,8 @@ function poolPage(hash, dependencies = {}) {
     parsePoolHash: (value) => { const [, , poolId = '', third = ''] = value.replace(/^#/, '').split('/'); return { poolId: /^0x[0-9a-f]{64}$/i.test(poolId) ? poolId.toLowerCase() : null, token: /^0x[0-9a-f]{40}$/i.test(third) ? third : null } },
     exploreHref: () => '#/markets', newPositionHref: (poolId) => `#/new/${poolId}`,
     verifyCandidate(_source, tokenKey, paired, poolId, options) { const pending = deferred(); verifications.push({ tokenKey, paired, poolId, signal: options.signal, ...pending }); return pending.promise },
+    // 2026-09-24: the page offers New position only for a pool Domino can open a position in (the real test).
+    optionUsableForDomino: real('src/lib/read/screens/poolsList.ts').optionUsableForDomino,
     ...dependencies,
   })
   return { PoolDetail, verifications }
@@ -427,6 +558,23 @@ test('one of the six is verified against the token they all hold, then gets its 
     const onward = elements(workspace.props.actions, (node) => node.type === parts.LinkButton)
     assert.deepEqual(onward.map((node) => node.props.href), [`#/new/${id('a')}`])
   } finally { host.unmount(); globalThis.window = previous }
+})
+
+// Added 2026-09-24 (owner): Domino's setup contract refuses a pool with hooks or a dynamic fee, and New position
+// never lists one, so a page for such a pool offers no way there. The page itself is unchanged.
+test('a pool with hooks or a dynamic fee gets its page, and no New position', async () => {
+  const previous = globalThis.window
+  try {
+    for (const refused of [{ hooks: addr('a'), integration: 'requires_separate_adapter' }, { hooks: addr('a'), feePips: 8388608, fee: 'Dynamic', integration: 'requires_separate_adapter' }]) {
+      const { PoolDetail, verifications } = poolPage(`#/pool/${id('a')}`)
+      const host = mount(PoolDetail, { poolId: id('a') })
+      verifications[0].resolve({ failure: null, option: { ...option('a'), ...refused }, restarted: false }); await flush(); host.render()
+      const workspace = part(host, 'PoolWorkspace')
+      assert.equal(workspace.props.option.key, id('a'), 'the pool still has its page')
+      assert.equal(workspace.props.actions, undefined, 'and no way into New position')
+      host.unmount()
+    }
+  } finally { globalThis.window = previous }
 })
 
 test('a pool outside the six is verified with the token its link names, and is not read at all without one', async () => {
@@ -837,6 +985,7 @@ test('the pool pickers say nothing that is not there: no new-pool note, no statu
 function picker(props = {}) {
   const reads = []
   const asks = []
+  const hinted = []
   const { PoolPicker } = load('PoolPicker', {
     readWithin(_source, route, request, options) { const pending = deferred(); reads.push({ route, request, options, ...pending }); return pending.promise },
     askAgainLater(outcome, attempt, signal) { const pending = deferred(); asks.push({ outcome, attempt, signal, ...pending }); return pending.promise },
@@ -845,9 +994,15 @@ function picker(props = {}) {
     COPY: real('src/lib/read/screens/copy.ts').COPY,
     poolsRequest: (token, paired) => (paired ? { token, pairedToken: paired } : { token }),
     neutralOrder: (options) => options,
+    // New position's variant (2026-09-24): its pool-id hints are a deferred boundary too; its request and its
+    // projection (usable pools only, in TVL order) are the real ones.
+    hintsWithin(token, paired, signal) { const pending = deferred(); hinted.push({ token, paired, signal, ...pending }); return pending.promise },
+    usablePoolsRequest: real('src/lib/read/screens/poolsList.ts').usablePoolsRequest,
+    projectPoolsView: real('src/lib/read/screens/poolsList.ts').projectPoolsView,
+    rowApr: real('src/lib/read/screens/rowApr.ts').rowApr, rowAprReasonText: real('src/lib/read/screens/rowApr.ts').rowAprReasonText,
   })
   const host = mount(PoolPicker, { source: { transport: 'bridge' }, token: TOKEN_1, paired: null, pending: null, onPending() {}, catalogue: false, compact: true, ...props })
-  return { host, reads, asks }
+  return { host, reads, asks, hinted }
 }
 const pickerLine = (host) => elements(host.tree, (node) => node.props?.['data-pools-unavailable'] !== undefined)[0]
 const failed = (s) => ({ route: 'pools', provenance: { transport: 'bridge', contract: null, receivedAt: 0, attempts: 1 }, ...s })
@@ -909,6 +1064,66 @@ test('the pool picker’s quiet re-asks belong to its token: a new token starts 
   reads.at(-1).resolve(busy); await flush(); host.render()
   assert.equal(asks.at(-1).attempt, 0, 'the new token is asked again from its first wait')
   host.unmount()
+})
+
+// Added 2026-09-24 (owner): New position's first step lists only pools Domino can open a position in, largest TVL
+// first. It first asks which pools are worth verifying and names them in the one pools read; without an answer
+// in time it reads as before. A pool with hooks never becomes a row, and how many were left out is data only.
+test('New position’s picker names the hinted pools in its one pools read, lists only usable pools by TVL, and reads without hints when there are none', async () => {
+  const { host, reads, asks, hinted } = picker({ variant: 'create' })
+  assert.equal(reads.length, 0, 'the pools read waits for the hints')
+  assert.deepEqual(hinted.map(({ token, paired }) => [token, paired]), [[TOKEN_1, null]])
+  hinted[0].resolve([id('c'), id('a'), id('b')]); await flush(); host.render()
+  assert.deepEqual(reads.map(({ route, request }) => [route, request]), [['pools', { token: TOKEN_1, maxPools: 3, poolIds: [id('c'), id('a'), id('b')] }]])
+  const base = gatewayFixture('pools.success').pools[0]
+  const metrics = (usd) => ({ ...base.providerMetrics, reportedLiquidityUsd: usd })
+  reads[0].resolve(okRead('pools', 'pools.success', (body) => ({ ...body, pools: [
+    { ...base, poolId: id('a'), providerMetrics: metrics('10.00') },
+    { ...base, poolId: id('b'), poolKey: { ...base.poolKey, hooks: addr('a') }, integrationClass: 'requires_separate_adapter', providerMetrics: metrics('9000000') },
+    { ...base, poolId: id('c'), providerMetrics: metrics('5000') },
+  ], unverifiedCandidates: [{ poolId: id('d'), reason: 'pool_id_mismatch' }] })))
+  await flush(); host.render()
+  const rows = elements(host.tree, (node) => node.type?.name === 'PoolRow')
+  assert.deepEqual(rows.map((row) => row.props.option.key), [id('c'), id('a')], 'the hooked pool is not a row; the larger TVL is first')
+  assert.ok(rows.every((row) => row.props.plain === true), 'New position’s plain rows')
+  assert.equal(host.tree.props['data-pools-state'], 'ok')
+  assert.equal(host.tree.props['data-pools-hidden'], 1, 'left out, for data only')
+  assert.equal(host.tree.props['data-pools-rejected'], 1)
+  const markup = renderToStaticMarkup(host.tree)
+  assert.doesNotMatch(markup, /<details|data-rejected-pools|data-pools-coverage|data-catalogue/, 'no coverage, rejected or catalogue panel')
+  assert.doesNotMatch(markup.replace(/<[^>]+>/g, ' '), /Rejected|coverage|verified pool|catalogue|hooks/i, 'none of it in words, and hooks are never mentioned')
+  host.unmount()
+
+  // No hints (none listed, none in time, or a failure: hintsWithin answers [] for all three): today's plain read.
+  const plain = picker({ variant: 'create', paired: addr('2') })
+  plain.hinted[0].resolve([]); await flush(); plain.host.render()
+  assert.deepEqual(plain.reads[0].request, { token: TOKEN_1, pairedToken: addr('2') })
+  // Every pool left out: the same muted line as an empty list, marked as data, never a sentence about hooks.
+  plain.reads[0].resolve(okRead('pools', 'pools.success', (body) => ({ ...body, pools: body.pools.map((pool) => ({ ...pool, poolKey: { ...pool.poolKey, hooks: addr('a') }, integrationClass: 'requires_separate_adapter' })) })))
+  await flush(); plain.host.render()
+  const empty = elements(plain.host.tree, (node) => node.props?.['data-pools-empty'] !== undefined)[0]
+  assert.equal(empty?.props.children, 'No pools to show for this pair.')
+  assert.match(empty.props.className, /text-fg-muted/)
+  assert.equal(elements(plain.host.tree, (node) => node.type?.name === 'PoolRow').length, 0)
+  assert.doesNotMatch(renderToStaticMarkup(plain.host.tree), /hooks|No verified pool was found/i)
+  plain.host.unmount()
+
+  // A transient failure: the rows keep resting, nothing is said, and it is asked again on its own.
+  const busy = picker({ variant: 'create' })
+  busy.hinted[0].resolve([]); await flush(); busy.host.render()
+  busy.reads[0].resolve(failed({ state: 'busy', retryAfterSeconds: 2 })); await flush(); busy.host.render()
+  assert.equal(pickerLine(busy.host), undefined)
+  assert.ok(elements(busy.host.tree, (node) => node.type === parts.Skeleton).length > 0, 'its rows rest meanwhile')
+  assert.deepEqual(busy.asks.map(({ attempt }) => attempt), [0])
+  busy.host.unmount()
+
+  // Leaving before the hints answer: nothing is read at all.
+  const gone = picker({ variant: 'create' })
+  gone.host.unmount()
+  assert.equal(gone.hinted[0].signal.aborted, true, 'the wait is cancelled')
+  gone.hinted[0].resolve([id('a')]); await flush()
+  assert.equal(gone.reads.length, 0)
+  assert.deepEqual(asks, [])
 })
 
 test('asking again quietly: only a busy or transient failure, at most four times, at doubling waits of about 4 s give or take a quarter, and only while the page is shown', async () => {

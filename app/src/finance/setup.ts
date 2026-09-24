@@ -1,6 +1,6 @@
-import { decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, zeroAddress, type Address, type Hex } from 'viem'
+import { decodeAbiParameters, decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, zeroAddress, type Address, type Hex } from 'viem'
 import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS, slippageWritten } from './slippage.js'
-import { POSITION_MANAGER, SETUP_CONTRACT, pinned, unpinned } from './pin.js'
+import { POSITION_MANAGER, SETUP_CONTRACT, V4_QUOTER, V4_QUOTER_CODE_HASH, pinned, unpinned } from './pin.js'
 
 /*
  * The closed ABIs are written as JSON: exactly what viem's parseAbi and
@@ -61,6 +61,17 @@ export const tokenAbi = [
   { name: 'allowance', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }, { type: 'address' }], outputs: [{ type: 'uint256' }] },
   { name: 'approve', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'address' }, { type: 'uint256' }], outputs: [{ type: 'bool' }] },
 ] as const
+/**
+ * quoterAbi signatures:
+ *   struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }
+ *   struct QuoteExactSingleParams { PoolKey poolKey; bool zeroForOne; uint128 exactAmount; bytes hookData; }
+ *   function quoteExactInputSingle(QuoteExactSingleParams params) returns (uint256 amountOut, uint256 gasEstimate)
+ *   function poolManager() view returns (address)
+ */
+export const quoterAbi = [
+  { name: 'quoteExactInputSingle', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'params', type: 'tuple', components: [{ name: 'poolKey', type: 'tuple', components: poolKeyComponents }, { name: 'zeroForOne', type: 'bool' }, { name: 'exactAmount', type: 'uint128' }, { name: 'hookData', type: 'bytes' }] }], outputs: [{ name: 'amountOut', type: 'uint256' }, { name: 'gasEstimate', type: 'uint256' }] },
+  { name: 'poolManager', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+] as const
 /** operationIdParameters signature: uint256,address,address,uint64 */
 export const operationIdParameters = [{ type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'uint64' }] as const
 export type PoolKey = { currency0: Address; currency1: Address; fee: number; tickSpacing: number; hooks: Address }
@@ -75,6 +86,10 @@ export interface WalletRpc {
   nonceOffered(nonce: bigint): boolean; claimNonce(nonce: bigint): Promise<string>; releaseRejectedNonce(nonce: bigint, token: string): Promise<void>
 }
 export interface GasBudget { maxGas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint; reserveWei: bigint }
+/** A pool as the chain has it now: StateView's slot0 and in-range liquidity, and the latest block's time (seconds). */
+export interface PoolState { sqrtPriceX96: bigint; tick: number; protocolFee: number; lpFee: number; liquidity: bigint; chainTime: number }
+/** V4Quoter's answer for `net` and `net + step` of one token in, or why it refused (quotePool). */
+export type PoolQuote = { kind: 'quote'; out: bigint; outNext: bigint } | { kind: 'refused'; reason: 'not_enough_liquidity' | 'pool_not_initialized' | 'reverted' }
 export interface PreparedSetup {
   kind: 'approve' | 'fund' | 'swap' | 'mint' | 'cancel' | 'recover'; operationId: Hex | null; owner: Address; expiresAt: number
   transaction: { from: Address; to: Address; data: Hex; value: Hex; nonce: Hex; gas: Hex; maxFeePerGas: Hex; maxPriorityFeePerGas: Hex; chainId: '0x1237'; type: '0x2' }
@@ -98,6 +113,43 @@ export const STEP_DEADLINE_S = SIGN_WINDOW_S + 300
 const fail = (code: string): never => { throw new Error(code) }
 const asHex = (value: unknown): Hex => typeof value === 'string' && /^0x(?:[0-9a-fA-F]{2})*$/.test(value) ? value as Hex : fail('invalid_wallet_reply')
 const quantity = (value: unknown): bigint => typeof value === 'string' && /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/.test(value) ? BigInt(value) : fail('invalid_wallet_quantity')
+/**
+ * A simulated call the contract itself refused, as opposed to a wallet or network failure, with its revert data when
+ * the wallet passed it on. Wallets and their libraries wrap a node's `{ code: 3, message: 'execution reverted', data }`
+ * in errors of their own, so the error is walked four levels down through `data`, `originalError`, `cause` and
+ * `error`: a revert is code 3 at any level, 0x-hex `data`, or a message that says it reverted. A request declined in
+ * the wallet (4001) or rate-limited (429) is never a revert, whatever it carries. Null when it is not a revert.
+ */
+export function revertOf(error: unknown): { data: Hex | null } | null {
+  let reverted = false, other = false, data: Hex | null = null
+  const walk = (value: unknown, depth: number) => {
+    if (!value || typeof value !== 'object' || depth > 4) return
+    const node = value as { code?: unknown; message?: unknown; data?: unknown; originalError?: unknown; cause?: unknown; error?: unknown }
+    if (node.code === 4001 || node.code === 429) other = true
+    if (node.code === 3) reverted = true
+    if (typeof node.data === 'string' && /^0x(?:[0-9a-fA-F]{2})+$/.test(node.data)) { reverted = true; data ??= node.data as Hex }
+    if (typeof node.message === 'string' && /execution reverted|revert/i.test(node.message)) reverted = true
+    for (const next of [node.data, node.originalError, node.cause, node.error]) walk(next, depth + 1)
+  }
+  walk(error, 0)
+  return reverted && !other ? { data } : null
+}
+export const isRevert = (error: unknown): boolean => revertOf(error) !== null
+/**
+ * Why V4Quoter refused a size, from its revert data. It re-wraps every failure as UnexpectedRevertBytes(bytes)
+ * (0x6190b2b0) around the pool's own error: NotEnoughLiquidity (0x7a5ed734) when the pool cannot fill the amount,
+ * PoolNotInitialized (0x486aa307) when it has no price.
+ */
+function quoterRefusal(data: Hex | null): Extract<PoolQuote, { kind: 'refused' }>['reason'] {
+  if (!data || data.slice(0, 10).toLowerCase() !== '0x6190b2b0') return 'reverted'
+  try {
+    const [inner] = decodeAbiParameters([{ type: 'bytes' }], `0x${data.slice(10)}`)
+    const selector = inner.slice(0, 10).toLowerCase()
+    return selector === '0x7a5ed734' ? 'not_enough_liquidity' : selector === '0x486aa307' ? 'pool_not_initialized' : 'reverted'
+  } catch {
+    return 'reverted'
+  }
+}
 export function deploymentFrom(value: unknown, now = Date.now() / 1000): SetupDeployment | null {
   if (!value || typeof value !== 'object') return fail('invalid_setup_release')
   const r = value as Record<string, unknown>
@@ -132,6 +184,9 @@ export function poolKey(key: PoolKey): PoolKey {
 // signer, allowance spender or calldata comes from a backend response.
 /** getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee) */
 const slot0Abi = [{ name: 'getSlot0', type: 'function', stateMutability: 'view', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint160' }, { type: 'int24' }, { type: 'uint24' }, { type: 'uint24' }] }] as const
+/** getLiquidity(bytes32 poolId) view returns (uint128 liquidity): the pool's in-range liquidity now. */
+const liquidityAbi = [{ name: 'getLiquidity', type: 'function', stateMutability: 'view', inputs: [{ type: 'bytes32' }], outputs: [{ type: 'uint128' }] }] as const
+const poolIdOf = (key: PoolKey) => keccak256(encodeAbiParameters([{ type: 'tuple', components: poolKeyComponents }], [key]))
 /** balanceOf(address) view returns (uint256) */
 const balanceAbi = [{ name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{ type: 'address' }], outputs: [{ type: 'uint256' }] }] as const
 /**
@@ -150,6 +205,8 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
   const issued = new WeakSet<PreparedSetup>(), offered = new Set<string>()
   const returned = new Map<Hex, PreparedSetup>()
   let busy = false
+  /** Whether V4Quoter's code and PoolManager were read back as pinned, once for this client (quotePool). */
+  let quoterVerified = false
   async function bounded<T>(work: (rpc: (method: string, params: unknown[], onUserRejection?: () => Promise<void>) => Promise<unknown>) => Promise<T>, seconds = 25): Promise<T> {
     if (busy) return fail('wallet_action_busy')
     busy = true
@@ -235,6 +292,59 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       const [sqrtPriceX96] = decodeFunctionResult({ abi: slot0Abi, functionName: 'getSlot0', data: asHex(await rpc('eth_call', [{ to: deployment.stateView, data }, 'latest'])) })
       if (sqrtPriceX96 === 0n) return fail('pool_not_initialized')
       return sqrtPriceX96
+    }),
+    /**
+     * The pool now, from the deployment's own StateView, through the wallet: its slot0 (price, tick, packed protocol
+     * fee, LP fee), its in-range liquidity, and the time of the block both are read at — the latest one, read first,
+     * so the three describe one state of the pool. Reads only; for checking a pool before a one-token deposit is made
+     * into it.
+     */
+    poolState: (key: PoolKey) => bounded(async (rpc): Promise<PoolState> => {
+      await identity(rpc); poolKey(key)
+      const id = poolIdOf(key)
+      const block = await rpc('eth_getBlockByNumber', ['latest', false]) as { number?: unknown; timestamp?: unknown } | null
+      const at = numberToHex(quantity(block?.number))
+      const slot = encodeFunctionData({ abi: slot0Abi, functionName: 'getSlot0', args: [id] })
+      const [sqrtPriceX96, tick, protocolFee, lpFee] = decodeFunctionResult({ abi: slot0Abi, functionName: 'getSlot0', data: asHex(await rpc('eth_call', [{ to: deployment.stateView, data: slot }, at])) })
+      if (sqrtPriceX96 === 0n) return fail('pool_not_initialized')
+      const held = encodeFunctionData({ abi: liquidityAbi, functionName: 'getLiquidity', args: [id] })
+      const liquidity = decodeFunctionResult({ abi: liquidityAbi, functionName: 'getLiquidity', data: asHex(await rpc('eth_call', [{ to: deployment.stateView, data: held }, at])) })
+      return { sqrtPriceX96, tick, protocolFee, lpFee, liquidity, chainTime: Number(quantity(block?.timestamp)) }
+    }),
+    /**
+     * What `net` of one token buys in this pool, and what `net + step` buys, from Uniswap's V4Quoter through the
+     * wallet (`net` is what reaches the pool: the setup contract's swap of a gross amount quotes exactly as this
+     * quote of the gross less the assisted fee). Two sizes, so the rate at the end of the swap can be read from their
+     * difference; both are asked at one block, read once, so a swap in between cannot move one and not the other
+     * (the difference is thousands of times more sensitive to the pool moving than the rate is). The quoter's code
+     * and PoolManager are read back once per client against the pin (./pin.ts V4_QUOTER); a quoter that reverts is
+     * `refused`, with the pool's reason. Reads only; used before anything is deposited, never by fund, swap, mint,
+     * cancel or recover.
+     */
+    quotePool: (key: PoolKey, zeroForOne: boolean, net: bigint, step: bigint) => bounded(async (rpc): Promise<PoolQuote> => {
+      await identity(rpc); poolKey(key)
+      if (net <= 0n || step <= 0n || net + step >= 2n ** 128n) return fail('invalid_swap_budget')
+      if (!quoterVerified) {
+        if (keccak256(asHex(await rpc('eth_getCode', [V4_QUOTER, 'latest']))) !== V4_QUOTER_CODE_HASH) return fail('quoter_identity_changed')
+        const manager = decodeFunctionResult({ abi: quoterAbi, functionName: 'poolManager', data: asHex(await rpc('eth_call', [{ to: V4_QUOTER, data: encodeFunctionData({ abi: quoterAbi, functionName: 'poolManager' }) }, 'latest'])) })
+        if (manager.toLowerCase() !== deployment.poolManager) return fail('quoter_identity_changed')
+        quoterVerified = true
+      }
+      const at = numberToHex(quantity(await rpc('eth_blockNumber', [])))
+      const out: bigint[] = []
+      for (const exactAmount of [net, net + step]) {
+        const data = encodeFunctionData({ abi: quoterAbi, functionName: 'quoteExactInputSingle', args: [{ poolKey: key, zeroForOne, exactAmount, hookData: '0x' }] })
+        let reply: unknown
+        try {
+          reply = await rpc('eth_call', [{ to: V4_QUOTER, data }, at])
+        } catch (error) {
+          const refused = revertOf(error)
+          if (!refused) throw error
+          return { kind: 'refused', reason: quoterRefusal(refused.data) }
+        }
+        out.push(decodeFunctionResult({ abi: quoterAbi, functionName: 'quoteExactInputSingle', data: asHex(reply) })[0])
+      }
+      return { kind: 'quote', out: out[0], outNext: out[1] }
     }),
     inspect: (id: Hex) => bounded(async rpc => { await verify(rpc, true); return operation(rpc, id) }),
     recent: () => bounded(async rpc => {

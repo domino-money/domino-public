@@ -42,6 +42,8 @@ export interface CardPrice {
   canRead: boolean
   /** Where the range and, once read, the pool's tick sit on the bar. */
   scale: RangeBarScale
+  /** Read on its own when the card arrives (a position's own page): no button asks for it. */
+  auto: boolean
 }
 
 /**
@@ -97,7 +99,51 @@ export function useCardPrice(card: LiveCard): CardPrice {
 
   const usable = state.phase === 'ready' && state.price.state === 'usable' ? state.price : null
   const scale = rangeBarScale(card.range.tickLower, card.range.tickUpper, usable ? usable.tick : null)
-  return { state, read, canRead: source !== null, scale }
+  return { state, read, canRead: source !== null, scale, auto: false }
+}
+
+/**
+ * The pool's price for a position's own page: the same lean pool-market read,
+ * made as soon as the card is there, and again whenever a new card replaces
+ * it (after the owner collected or closed). A read that failed only for the
+ * moment is asked again on its own, a few times, while the page is visible.
+ */
+export function useAutoCardPrice(card: LiveCard): CardPrice {
+  const source = useReadSource()
+  const [answer, setAnswer] = useState<{ card: LiveCard; state: PriceState } | null>(null)
+  useEffect(() => {
+    if (!source) return
+    const controller = new AbortController()
+    let attempts = 0
+    let cancelQuiet: (() => void) | null = null
+    const ask = () => {
+      void readWithin(source, 'pool-market', { poolId: card.poolId }, { signal: controller.signal }).then((outcome) => {
+        if (controller.signal.aborted || outcome.state === 'aborted') return
+        if (outcome.state === 'ok') {
+          setAnswer({ card, state: { phase: 'ready', price: cardPoolPrice(card, outcome.data) } })
+          return
+        }
+        setAnswer({ card, state: { phase: 'failed', code: failureCode(outcome), reason: quietTitle(outcome, 'pools') } })
+        const wait = reaskDelayMs(outcome, attempts)
+        if (wait === null) return
+        cancelQuiet = whenVisibleAfter(wait, () => {
+          cancelQuiet = null
+          attempts += 1
+          ask()
+        })
+      })
+    }
+    ask()
+    return () => {
+      controller.abort()
+      cancelQuiet?.()
+    }
+  }, [source, card])
+  // An answer about an earlier card is kept on screen while the new one is read.
+  const state: PriceState = answer ? answer.state : { phase: 'loading' }
+  const usable = state.phase === 'ready' && state.price.state === 'usable' ? state.price : null
+  const scale = rangeBarScale(card.range.tickLower, card.range.tickUpper, usable ? usable.tick : null)
+  return { state, read: () => undefined, canRead: source !== null, scale, auto: true }
 }
 
 /** Words for the bar itself: never a symbol, which is untrusted text and belongs in the page, not an attribute. */
@@ -138,7 +184,7 @@ export function PositionRange({ card, price }: { card: LiveCard; price: CardPric
         <span className="dm-acct-caps-label">{COPY.card.range}</span>
         <span className="dm-acct-range-now" data-current-price={currentState(state)}>
           <CurrentPrice state={state} card={card} beyond={scale.currentBeyond} />
-          {asking && (
+          {asking && !price.auto && (
             <Button type="button" variant="ghost" size="sm" aria-disabled={state.phase === 'loading' ? true : undefined} onClick={price.read} disabled={!price.canRead}>
               {state.phase === 'loading' ? COPY.range.rereading : 'Show current price'}
             </Button>

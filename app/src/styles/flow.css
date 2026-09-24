@@ -74,6 +74,12 @@
   .dm-flow-pool-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
   .dm-flow-pool-name { display: grid; flex: 1 1 180px; gap: 4px; min-width: 0; }
   .dm-flow-pool-head > .dm-btn { margin-left: auto; }
+  /* Step 1's pool rows: TVL, 24h volume and APR in three equal columns under the pair, so the figures line up
+     from row to row like a table; a phone stacks them. The doubled class outranks the markets rows' own rule. */
+  .dm-mkt-option-figures.dm-flow-pool-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 24px; }
+  @media (max-width: 479px) {
+    .dm-mkt-option-figures.dm-flow-pool-figures { grid-template-columns: minmax(0, 1fr); }
+  }
   .dm-flow-deposit { min-width: 0; margin: 0; padding: 12px 0 0; border: 0; box-shadow: inset 0 1px 0 var(--border); }
   /* Floated, the legend is an ordinary block inside the fieldset rather than a caption on its top edge. */
   .dm-flow-deposit-legend { float: left; width: 100%; padding: 0; margin-bottom: 8px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-muted); }

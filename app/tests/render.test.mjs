@@ -720,17 +720,23 @@ test('Automate shows its two cards and nothing under them, and each card’s way
   await close(page);
 });
 
+/** The routes that open Positions, whose list asks for a wallet in its own empty state. */
+const POSITIONS_ROUTES = new Set(['/positions', '/app', '/portfolio']);
+
 test('the wallet control is on every route and ready, no route mentions practice, and only the appearance is stored', async () => {
   for (const route of ROUTES) {
     const page = await open(route);
     // No wallet is injected in this suite, so the control invites one. It is
     // enabled: sign-in is built into the deployed site now, and opening it
     // signs nothing (tests/session.browser.test.mjs drives the flow itself).
-    // One way in, in the header, on every route: a second control would leave
-    // the reader guessing which one signs them in.
+    // One control, in the header, on every route: a second one that signed in
+    // would leave the reader guessing which one does. Changed on purpose
+    // (owner, 2026-09-24): Positions' own list asks for a wallet in its empty
+    // state, with a Connect wallet that only opens the header's dialog.
+    if (POSITIONS_ROUTES.has(route)) await page.locator('[data-empty="owned-connect"]').waitFor();
     const buttons = await page.getByRole('button', { name: 'Connect wallet' }).all();
-    assert.equal(buttons.length, 1, `expected one Connect wallet on ${route}, found ${buttons.length}`);
-    assert.equal(await buttons[0].isDisabled(), false, `Connect wallet is disabled on ${route}`);
+    assert.equal(buttons.length, POSITIONS_ROUTES.has(route) ? 2 : 1, `Connect wallet on ${route}: found ${buttons.length}`);
+    for (const button of buttons) assert.equal(await button.isDisabled(), false, `Connect wallet is disabled on ${route}`);
     assert.equal(await page.locator('header').getByRole('button', { name: 'Connect wallet' }).count(), 1, `the control is not in the header on ${route}`);
     assert.doesNotMatch(await page.locator('#root').innerText(), /practice/i, `practice on ${route}`);
     await page.getByRole('button', { name: /Switch to (light|dark) appearance/ }).click();
@@ -765,15 +771,23 @@ test('the landing never shows an invented figure: catalogue labels in every row,
 // explanatory sections stay, in relative terms, saying what is not connected.
 // ---------------------------------------------------------------------------
 
+// Changed on purpose (owner, 2026-09-24): Positions lists the connected wallet's positions itself. With no wallet it says
+// so in one empty state whose button opens the header's wallet dialog, and the lookup by NFT id waits, closed, under it.
 test('the positions screen is an honest empty state: no cards, totals or private figures, a sign-in for the managed side, and a way back to the pools', async () => {
   const page = await open('/app');
   assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Positions');
-  // The lookup card arrives with the read screens' chunk.
-  await page.getByText('Look up a position NFT', { exact: true }).waitFor();
+  // The list arrives with its own chunk: with no wallet it asks for one, and reads nothing.
+  const empty = page.locator('[data-empty="owned-connect"]');
+  await empty.waitFor();
+  assert.equal(await page.locator('[data-owned]').getAttribute('data-owned'), 'no-wallet');
   const text = await page.locator('#root').innerText();
-  assert.match(text, /Look up a position NFT/);
-  // The by-id lookup is here now; finding every position a wallet holds is not.
-  assert.match(text, /Enter its ID above/);
+  assert.match(text, /Your positions\s+Connect a wallet to see your positions\s+Connect wallet/);
+  assert.doesNotMatch(text, /Look up a position NFT|Enter its ID above|NFT ids?\b.*comma/i, 'no typed ids asked for up front');
+  // The lookup by NFT id is still here, closed, and nothing of it is mounted until it is opened.
+  const lookup = page.locator('details[data-lookup-disclosure]');
+  assert.equal(await lookup.locator('summary').innerText(), 'Look up by NFT id');
+  assert.equal(await lookup.evaluate((details) => details.open), false);
+  assert.equal(await page.locator('#nft-ids').count(), 0);
   // The managed side asks for a wallet session and shows nothing private without one.
   assert.match(text, /Sign in with your wallet to view private history/);
   assert.match(text, /Sign in with your wallet to view private execution receipts/);
@@ -790,6 +804,17 @@ test('the positions screen is an honest empty state: no cards, totals or private
   assert.deepEqual(apiOf(page), [[]], 'the positions screen reads nothing by itself');
   assert.equal(await page.locator('main [data-metric]').count(), 0, 'no figure appears before a lookup');
   assert.equal(await page.locator('main').getByRole('link', { name: 'Markets', exact: true }).getAttribute('href'), '#/markets');
+  // Opened, the lookup is the read screens' card, and still reads nothing until asked.
+  await lookup.locator('summary').click();
+  await page.getByText('Look up a position NFT', { exact: true }).waitFor();
+  assert.match(await lookup.innerText(), /Enter its ID above/);
+  assert.deepEqual(apiOf(page), [[]], 'opening the lookup reads nothing');
+  // The empty state's Connect wallet is the header's: it opens the same wallet dialog.
+  await empty.getByRole('button', { name: 'Connect wallet' }).click();
+  await page.locator('[role="dialog"]').first().waitFor();
+  assert.equal(await page.locator('header [aria-haspopup="dialog"]').getAttribute('aria-expanded'), 'true');
+  await page.keyboard.press('Escape');
+  assert.deepEqual(apiOf(page), [[]], 'and connects nothing by itself');
   clean(page, 'positions');
   await close(page);
 });

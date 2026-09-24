@@ -9,7 +9,7 @@ import { createFakeOnboarding } from './support/fake-onboarding.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { createWalletServer } from './support/wallet-server.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
-import { ARTWORK, choosePool, footerButton, walkToReview } from './support/new-position.mjs';
+import { ARTWORK, footerButton, walkToReview } from './support/new-position.mjs';
 import { FIXTURE_TOKEN, createReadStub } from './support/read-stub.mjs';
 // The mint's own sizing, from the unit build (npm test compiles it first, as check:app runs it first).
 import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/create/mintPlan.js';
@@ -561,6 +561,15 @@ const setupChainAbi = parseAbi([
 ]);
 /** finance/setup.ts's token ABI, and the balance read Create position checks the wallet with before asking it anything (CreatePosition.tsx). */
 const erc20Abi = parseAbi(['function allowance(address,address) view returns(uint256)', 'function approve(address,uint256) returns(bool)', 'function balanceOf(address) view returns (uint256)']);
+/** Uniswap's V4Quoter as finance/setup.ts's quoterAbi lists it: what Create position asks before a one-token deposit. */
+const quoterChainAbi = parseAbi([
+  'struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }',
+  'struct QuoteExactSingleParams { PoolKey poolKey; bool zeroForOne; uint128 exactAmount; bytes hookData; }',
+  'function quoteExactInputSingle(QuoteExactSingleParams params) returns (uint256 amountOut, uint256 gasEstimate)',
+  'function poolManager() view returns (address)',
+]);
+/** The pinned quoter (src/finance/pin.ts V4_QUOTER) and its real runtime code, whose keccak256 is the pinned hash. */
+const QUOTER = JSON.parse(readFileSync(new URL('./support/v4-quoter.code.json', import.meta.url), 'utf8'));
 
 /**
  * A browser wallet on Robinhood Chain that is also the chain behind a published setup deployment, for Create position.
@@ -580,11 +589,25 @@ const erc20Abi = parseAbi(['function allowance(address,address) view returns(uin
  * does. `swapOutput` is what a size buys from the stub's first price. `seed` puts an operation on chain
  * before the page opens; `decline(name)` makes the wallet refuse, with 4001, the next transaction that calls `name`;
  * `revert(name)` includes it with status 0 and no effect.
+ *
+ * Added 2026-09-24, for the check before a one-token deposit: its StateView also answers getLiquidity (the constant
+ * `liquidity`, which may be 0n: nothing in range) and slot0's `protocolFee`; its latest block carries the time; and
+ * Uniswap's V4Quoter sits at the pinned address with its real code, answering poolManager() with this deployment's
+ * PoolManager and quoteExactInputSingle with the same swap maths on the net amount (no assisted fee), or reverting
+ * NotEnoughLiquidity, wrapped as V4Quoter wraps it, when nothing is in range. Every quoter question is kept in
+ * `quoted`, with the block tag it was asked at (never in `quotes`, which counts the setup contract's own simulations);
+ * eth_blockNumber answers the newest block's number. A call the contract refuses —
+ * a partial fill, a short output — answers as a node does, code 3 with its revert data, and is kept in `reverts`.
+ *
+ * Added (review, 2026-09-24): `liquidFrom`, a square-root price above the stub's where the pool's `liquidity` starts:
+ * below it nothing is in range, so getLiquidity reports 0 at the stub's price, a swap that raises the price crosses the
+ * empty stretch for nothing in and nothing out and fills above it (as v4-core crosses empty ticks), and one that lowers
+ * it finds nothing. `quoteDelayMs`: how long each quoter question takes to answer, as a slow wallet's does.
  */
-function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, finality = 'final' } = {}) {
+function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0 } = {}) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`;
   const setup = at(0x71), poolManager = at(0x72), positionManager = at(0x73), stateView = at(0x74), feeRecipient = at(0x75);
-  const code = { [setup]: '0x6071', [poolManager]: '0x6072', [positionManager]: '0x6073', [stateView]: '0x6074' };
+  const code = { [setup]: '0x6071', [poolManager]: '0x6072', [positionManager]: '0x6073', [stateView]: '0x6074', [QUOTER.address]: QUOTER.code };
   const deployment = { setup, setupCodeHash: keccak256(code[setup]), poolManager, positionManager, stateView, poolManagerCodeHash: keccak256(code[poolManager]),
     positionManagerCodeHash: keccak256(code[positionManager]), stateViewCodeHash: keccak256(code[stateView]), feeRecipient, feeBps: 30, tariffVersion: '1', expiresAt: Math.floor(Date.now() / 1000) + 86_400 };
   const FINALIZED = { number: finality === 'lagging' ? '0x1' : '0x100', hash: at(0xbf, 32) };
@@ -592,46 +615,76 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
   const operationId = nonce => keccak256(encodeAbiParameters(parseAbiParameters('uint256,address,address,uint64'), [4663n, setup, owner, nonce]));
   const NONE = { owner: zeroAddress, key: { currency0: zeroAddress, currency1: zeroAddress, fee: 0, tickSpacing: 0, hooks: zeroAddress }, balance0: 0n, balance1: 0n, swapped: false, closed: false, tokenId: 0n };
   const operations = new Map(), allowances = new Map(), held = new Map(Object.entries(balances).map(([token, amount]) => [lower(token), amount]));
-  const log = [], refused = [], missing = [], sends = [], viewed = [], declined = [], quotes = [];
+  const log = [], refused = [], missing = [], sends = [], viewed = [], declined = [], quotes = [], quoted = [], reverts = [];
   /** The pool's square-root price now: the stub's, until a swap is included. */
   let sqrtPrice = STUB_SQRT_PRICE;
+  /** What is in range at square-root price `price`: the pool's `liquidity`, or nothing below `liquidFrom`. */
+  const liquidityAt = price => (liquidFrom !== null && price < liquidFrom ? 0n : liquidity);
   /**
    * What `gross` swapped from the square-root price `from` buys, and the price it leaves: the assisted fee off the
    * gross, the pool's 0.30% off the rest, then v4-core's SqrtPriceMath along the constant liquidity, rounded as it is.
+   * `feeBps` 0 is the pool alone, as V4Quoter quotes a net amount.
    */
-  const swapAt = (gross, zeroForOne, from = sqrtPrice) => {
-    const net = gross - (gross * BigInt(deployment.feeBps)) / 10000n;
+  const swapAt = (gross, zeroForOne, from = sqrtPrice, feeBps = deployment.feeBps) => {
+    const net = gross - (gross * BigInt(feeBps)) / 10000n;
     const curve = (net * 997n) / 1000n;
+    // Null: the swap finds nothing in range to fill it.
+    if (liquidity === 0n) return null;
     if (zeroForOne) {
+      // Token 0 in lowers the price, never below `liquidFrom`: under it nothing is in range.
+      if (liquidityAt(from) === 0n) return null;
       const after = (liquidity * Q96 * from + (liquidity * Q96 + curve * from) - 1n) / (liquidity * Q96 + curve * from);
-      return [(liquidity * (from - after)) / Q96, after];
+      return liquidFrom !== null && after < liquidFrom ? null : [(liquidity * (from - after)) / Q96, after];
     }
-    const after = from + (curve * Q96) / liquidity;
-    return [(liquidity * Q96 * (after - from)) / after / from, after];
+    // Token 1 in raises the price: a stretch with nothing in range, below `liquidFrom`, is crossed for nothing in and
+    // nothing out, as v4-core crosses empty ticks; the swap then runs along `liquidity` from there.
+    const start = liquidityAt(from) === 0n ? liquidFrom : from;
+    const after = start + (curve * Q96) / liquidity;
+    return [(liquidity * Q96 * (after - start)) / after / start, after];
   };
   /** What `gross` buys from the stub's first price, the one each test's single swap starts from. */
-  const swapOutput = (gross, zeroForOne) => swapAt(gross, zeroForOne, STUB_SQRT_PRICE)[0];
+  const swapOutput = (gross, zeroForOne) => swapAt(gross, zeroForOne, STUB_SQRT_PRICE)?.[0];
+  /** A refusal by the contract, answered as a node answers one: code 3 with the revert data (InvalidSetup() unless said). */
+  const reverting = (why, data = '0x30070737') => Object.assign(new Error(`execution reverted: ${why}`), { revertData: data });
   /** DominoSetup.swap's own checks, then its output and the price it leaves; a partial or short fill reverts. */
   const swapped = plan => {
     const op = operations.get(plan.operationId);
-    if (!op || op.closed || op.swapped || plan.grossInput === 0n || plan.minOutput === 0n || plan.grossInput > (plan.zeroForOne ? op.balance0 : op.balance1)) throw new Error('execution reverted: InvalidSetup()');
-    if (plan.zeroForOne ? plan.sqrtPriceLimitX96 >= sqrtPrice : plan.sqrtPriceLimitX96 <= sqrtPrice) throw new Error('execution reverted: price limit on the wrong side');
-    const [output, after] = swapAt(plan.grossInput, plan.zeroForOne);
-    if (plan.zeroForOne ? after < plan.sqrtPriceLimitX96 : after > plan.sqrtPriceLimitX96) throw new Error('execution reverted: a partial fill');
-    if (output < plan.minOutput) throw new Error('execution reverted: InvalidSetup()');
+    if (!op || op.closed || op.swapped || plan.grossInput === 0n || plan.minOutput === 0n || plan.grossInput > (plan.zeroForOne ? op.balance0 : op.balance1)) throw reverting('InvalidSetup()');
+    if (plan.zeroForOne ? plan.sqrtPriceLimitX96 >= sqrtPrice : plan.sqrtPriceLimitX96 <= sqrtPrice) throw reverting('price limit on the wrong side');
+    const filled = swapAt(plan.grossInput, plan.zeroForOne);
+    if (!filled) throw reverting('nothing in range: the swap consumes nothing');
+    const [output, after] = filled;
+    if (plan.zeroForOne ? after < plan.sqrtPriceLimitX96 : after > plan.sqrtPriceLimitX96) throw reverting('a partial fill');
+    if (output < plan.minOutput) throw reverting('InvalidSetup()');
     return [output, after];
   };
-  const refuse = new Set(), reverting = new Set(), reverted = new Set();
+  /** V4Quoter's NotEnoughLiquidity(poolId), wrapped as it wraps every failure: UnexpectedRevertBytes(bytes). */
+  const notEnoughLiquidity = key => concatHex(['0x6190b2b0', encodeAbiParameters(parseAbiParameters('bytes'), [concatHex(['0x7a5ed734',
+    keccak256(encodeAbiParameters(parseAbiParameters('(address,address,uint24,int24,address)'), [[key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks]]))])])]);
+  const refuse = new Set(), toRevert = new Set(), reverted = new Set();
   let permitted = false;
   const blockOf = index => ({ number: numberToHex(0x10 + index), hash: at(0xb0 + index, 32) });
   const hashOf = index => at(0xc0 + index, 32);
   const decode = tx => decodeFunctionData({ abi: lower(tx.to) === setup ? setupChainAbi : erc20Abi, data: tx.data });
-  function view(to, data) {
+  function view(to, data, tag) {
     if (to === stateView) {
       const { functionName } = decodeFunctionData({ abi: stateViewAbi, data });
       viewed.push(functionName);
-      if (functionName === 'getSlot0') return encodeFunctionResult({ abi: stateViewAbi, functionName, result: [sqrtPrice, 0, 0, 3000] });
+      if (functionName === 'getSlot0') return encodeFunctionResult({ abi: stateViewAbi, functionName, result: [sqrtPrice, 0, protocolFee, 3000] });
+      if (functionName === 'getLiquidity') return encodeFunctionResult({ abi: stateViewAbi, functionName, result: liquidityAt(sqrtPrice) });
       throw new Error(`unexpected ${functionName} on the state view`);
+    }
+    if (to === QUOTER.address) {
+      const { functionName, args } = decodeFunctionData({ abi: quoterChainAbi, data });
+      viewed.push(functionName);
+      if (functionName === 'poolManager') return encodeFunctionResult({ abi: quoterChainAbi, functionName, result: poolManager });
+      const [{ poolKey, zeroForOne, exactAmount, hookData }] = args;
+      quoted.push({ exactAmount, zeroForOne, sent: sends.length, tag });
+      if (JSON.stringify(lowerKey(poolKey), (_, v) => (typeof v === 'bigint' ? String(v) : v)) !== JSON.stringify(STUB_POOL_KEY) || hookData !== '0x') throw new Error('a quote for another pool');
+      // The pool alone, on the net amount: no assisted fee (the setup contract takes it off the gross first).
+      const filled = swapAt(exactAmount, zeroForOne, sqrtPrice, 0);
+      if (!filled) throw reverting('NotEnoughLiquidity', notEnoughLiquidity(poolKey));
+      return encodeFunctionResult({ abi: quoterChainAbi, functionName, result: [filled[0], 120_000n] });
     }
     if (to === setup) {
       const { functionName, args = [] } = decodeFunctionData({ abi: setupChainAbi, data });
@@ -688,12 +741,17 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
         case 'eth_getTransactionCount': return { result: numberToHex(sends.length) };
         case 'eth_estimateGas': return { result: '0x186a0' };
         case 'eth_getBalance': return { result: numberToHex(eth) };
-        case 'eth_call': return { result: view(lower(params[0].to), params[0].data) };
+        case 'eth_call':
+          // A slow wallet: each quoter question takes `quoteDelayMs` to answer.
+          if (quoteDelayMs > 0 && lower(params[0].to) === QUOTER.address) await new Promise(resolve => setTimeout(resolve, quoteDelayMs));
+          return { result: view(lower(params[0].to), params[0].data, params[1]) };
+        // The newest block's number, as eth_getBlockByNumber('latest') has it.
+        case 'eth_blockNumber': return { result: blockOf(sends.length).number };
         case 'eth_sendTransaction': {
           const { functionName } = decode(params[0]);
           if (refuse.delete(functionName)) { declined.push(functionName); return { error: { code: 4001, message: 'User rejected the request.' } }; }
           const index = sends.length; sends.push(params[0]);
-          if (reverting.delete(functionName)) reverted.add(index); else include(params[0]);
+          if (toRevert.delete(functionName)) reverted.add(index); else include(params[0]);
           return { result: hashOf(index) };
         }
         case 'eth_getTransactionByHash': case 'eth_getTransactionReceipt': {
@@ -706,11 +764,17 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
         }
         case 'eth_getBlockByNumber': {
           if (params[0] === 'finalized') return { result: FINALIZED };
+          // The newest block, at this machine's time (`clockSkew` seconds on): the chain's clock, which Create position compares its own with.
+          if (params[0] === 'latest') return { result: { ...blockOf(sends.length), timestamp: numberToHex(Math.floor(Date.now() / 1000) + clockSkew) } };
           const index = Number(BigInt(params[0])) - 0x10;
           return { result: index >= 0 && index < sends.length ? blockOf(index) : null };
         }
       }
     } catch (error) {
+      if (error.revertData) {
+        reverts.push(error.message);
+        return { error: { code: 3, message: 'execution reverted', data: error.revertData } };
+      }
       missing.push(String(error));
       return { error: { code: -32000, message: String(error) } };
     }
@@ -718,13 +782,17 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     return { error: { code: 4200, message: `${method} is not supported` } };
   }
   return {
-    log, refused, missing, sends, viewed, declined, quotes, request, operationId, tokenId, operations, swapOutput, price: () => sqrtPrice, release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
+    log, refused, missing, sends, viewed, declined, quotes, quoted, reverts, request, operationId, tokenId, operations, swapOutput, price: () => sqrtPrice, release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
+    /** Where `amount` swapped from the stub's first price leaves the pool's square-root price: through the setup contract (its fee off the gross), or, with `feeBps` 0, a net amount as V4Quoter quotes it. */
+    priceAfter: (amount, zeroForOne, feeBps = deployment.feeBps) => swapAt(amount, zeroForOne, STUB_SQRT_PRICE, feeBps)?.[1],
+    /** What is in range at a square-root price (`liquidFrom`). */
+    liquidityAt,
     /** What the wallet holds: its ETH, and its balance of an ERC-20. */
     eth, balanceOf: token => held.get(lower(token)) ?? 0n,
     /** An operation of this owner already on chain, under the owner's next id. */
     seed(operation) { const id = operationId(BigInt(operations.size)); operations.set(id, { owner, swapped: false, closed: false, tokenId: 0n, ...operation }); return id; },
     decline(functionName) { refuse.add(functionName); },
-    revert(functionName) { reverting.add(functionName); },
+    revert(functionName) { toRevert.add(functionName); },
     /** Every transaction sent, decoded against the contract it went to. */
     decoded: () => sends.map(tx => ({ to: lower(tx.to), from: lower(tx.from), value: BigInt(tx.value), nonce: tx.nonce, ...decode(tx) })),
   };
@@ -737,7 +805,8 @@ async function installDepositWallet(context, chain) {
     const provider = {
       async request({ method, params }) {
         const reply = await window.__dominoDepositWallet(method, params ?? []);
-        if (reply.error) throw Object.assign(new Error(reply.error.message), { code: reply.error.code });
+        // A revert keeps its data, as a node's reply does: { code: 3, message: 'execution reverted', data }.
+        if (reply.error) throw Object.assign(new Error(reply.error.message), { code: reply.error.code }, reply.error.data ? { data: reply.error.data } : {});
         return reply.result;
       },
       on() { return provider; },
@@ -751,7 +820,7 @@ async function installDepositWallet(context, chain) {
 }
 
 /** The deployed StateView's price read: what Create position sizes the mint at. */
-const stateViewAbi = parseAbi(['function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)']);
+const stateViewAbi = parseAbi(['function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)', 'function getLiquidity(bytes32 poolId) view returns (uint128 liquidity)']);
 /** An amount with Review's default 0.5% slippage as room, rounded up: what the deposit takes of it (CreatePosition.tsx withRoom). */
 const withRoom = amount => (amount * 10050n + 9999n) / 10000n;
 /** The read stub's pool (support/read-stub.mjs), as the setup contract keys it: ETH against TOKEN, 0.30%, spacing 60, no hooks. */
@@ -842,8 +911,12 @@ async function atReview(chain, { answer, amount } = {}) {
   } catch (error) { await s.close().catch(() => {}); throw error; }
 }
 
-/** No service and no session took part, and the wallet was asked nothing outside connecting and the chain's own reads and sends. */
-async function onlyTheWallet(s, chain) {
+/**
+ * No service and no session took part, and the wallet was asked nothing outside connecting and the chain's own reads and sends.
+ * `reverts`: whether the contract may have refused a simulated call (a swap size past its price limit); by default none did.
+ */
+async function onlyTheWallet(s, chain, { reverts = false } = {}) {
+  if (!reverts) assert.deepEqual(chain.reverts, [], 'no simulated call was refused');
   // The one session route seen is the boot-time GET that asks whether a session exists to restore; none was started.
   assert.deepEqual(s.services.filter(path => path !== '/api/session/v1/me'), [], 'no deposit service and no session request');
   assert.deepEqual(s.deposits, []);
@@ -890,14 +963,15 @@ test('Create position opens the position from Review through a connected wallet 
 
     // The mint read back closed with its NFT: the page opens that position on Positions.
     await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 60_000 });
-    await s.page.locator('#nft-ids').waitFor();
-    assert.equal(await s.page.locator('#nft-ids').inputValue(), '4242', 'Positions looks up the new NFT');
-    // The position read from chain: the one card is NFT 4242, in the pool chosen, at Review's range.
-    const cards = s.page.locator('#chain-lookup [data-chain-cards]');
-    await cards.waitFor({ timeout: 30_000 });
-    assert.equal(await cards.getAttribute('data-chain-cards'), '1');
+    // Changed on purpose (owner, 2026-09-24): #/positions/<id> is the position's own page now, not the lookup by id.
+    const detail = s.page.locator('[data-position-detail][data-position-id="4242"]');
+    await detail.waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.locator('#nft-ids').count(), 0, 'no id to type: the page is the position');
+    // The position read from chain: NFT 4242, in the pool chosen, at Review's range, this wallet's.
     assert.deepEqual(s.read.requests.filter(r => r.path.endsWith('/nft-positions')).map(r => JSON.parse(r.body)), [{ tokenIds: ['4242'] }], 'one read, of the new NFT');
-    assert.match(await cards.innerText(), /ETH\s*\/\s*TOKEN[\s\S]*Ticks -3600 to 4080/);
+    assert.match(await detail.locator('h1').innerText(), /^ETH\s*\/\s*TOKEN$/);
+    assert.match(await detail.locator('.dm-pos-chips').innerText(), /#4242\s+In range/);
+    assert.match(await detail.locator('.dm-pos-facts').innerText(), new RegExp(`Owner\\s+${OWNER}[\\s\\S]*Ticks\\s+-3600 to 4080`));
     await s.page.screenshot({ path: join(shots(), 'create-position-positions.png'), fullPage: true });
 
     // What the wallet was asked to sign, in order, decoded from the calldata it recorded.
@@ -920,6 +994,8 @@ test('Create position opens the position from Review through a connected wallet 
     assert.equal(chain.operations.get(id).tokenId, 4242n);
     assert.ok(chain.viewed.includes('balanceOf'), 'the wallet’s TOKEN balance was checked before anything was asked');
     assert.deepEqual(chain.quotes, [], 'nothing was swapped or even quoted: the wallet held both tokens');
+    assert.deepEqual(chain.quoted, [], 'and the pool was not checked for a swap: V4Quoter was never asked');
+    assert.ok(!chain.viewed.includes('getLiquidity') && !chain.viewed.includes('poolManager'));
     // The steps turned done one at a time, in order, each while the ones after it were still to come.
     const { order } = await doneOrder(s.page);
     assert.deepEqual(order.map(({ key }) => key), [`approve:${FIXTURE_TOKEN}`, 'fund', 'mint']);
@@ -1098,8 +1174,8 @@ test('with TOKEN and only gas in ETH, Review plans the swap; Create position app
     const log = await doneInTurn(s.page, [`approve:${FIXTURE_TOKEN}`, 'fund', 'swap', 'mint']);
     assert.ok(log.some(entry => entry.includes('swap=wallet')) && log.some(entry => entry.includes('swap=chain')), 'the swap was asked of the wallet, then waited for');
     await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 60_000 });
-    await s.page.locator('#nft-ids').waitFor();
-    assert.equal(await s.page.locator('#nft-ids').inputValue(), '4242');
+    // Changed on purpose (owner, 2026-09-24): the new position's own page, not the lookup by id.
+    await s.page.locator('[data-position-detail][data-position-id="4242"]').waitFor({ timeout: 30_000 });
 
     // What the wallet signed, decoded: four transactions, one more than with both tokens.
     const sent = chain.decoded();
@@ -1118,6 +1194,20 @@ test('with TOKEN and only gas in ETH, Review plans the swap; Create position app
     assert.ok(chain.quotes.length >= 2 && chain.quotes.length <= 11, `${chain.quotes.length} quotes: at most ten to size it, and the swap's own simulation`);
     assert.ok(chain.quotes.every(quote => quote.operationId === id && quote.zeroForOne === false), 'every quote for this operation, TOKEN for ETH');
     assert.equal(chain.quotes.at(-1).grossInput, plan.grossInput, 'the size offered is the size last simulated');
+    // Before any of it, the pool was checked through the wallet: V4Quoter asked what sizes of TOKEN buy, while nothing
+    // had been sent, and the swap step said Checking… before the approval reached the wallet.
+    assert.ok(chain.quoted.length >= 2 && chain.quoted.every(q => q.sent === 0 && q.zeroForOne === false), `${chain.quoted.length} quoter questions, all before the first send`);
+    // Added (review, 2026-09-24): each size and the one just above it, which give the price the swap ends at, are asked at
+    // one block number read for them, never at 'latest', where a block between the two calls would skew their difference.
+    assert.equal(chain.quoted.length % 2, 0, 'the sizes in pairs');
+    for (let i = 0; i < chain.quoted.length; i += 2) {
+      const [size, next] = chain.quoted.slice(i, i + 2);
+      assert.match(size.tag, /^0x[0-9a-f]+$/, 'a block number');
+      assert.equal(next.tag, size.tag, 'the pair at one block');
+      assert.ok(next.exactAmount > size.exactAmount);
+    }
+    assert.ok(log.findIndex(entry => entry.includes('swap=reading')) < log.findIndex(entry => entry.includes(`approve:${FIXTURE_TOKEN}=wallet`)), 'checked before the approval');
+    assert.equal(await s.page.locator('[data-review-liquidity]').count(), 0, 'the pool reports liquidity: Review says nothing about it');
     assert.equal(plan.minOutput, (chain.swapOutput(plan.grossInput, false) * 9950n) / 10000n, 'at least the simulated output less the 0.5% slippage limit');
     assert.ok(plan.sqrtPriceLimitX96 > STUB_SQRT_PRICE && plan.sqrtPriceLimitX96 <= (STUB_SQRT_PRICE * 10500n) / 10000n, 'a price limit above the price: TOKEN in pushes it up, at most 5% in square root');
     const minted = mint.args[0], received = chain.swapOutput(plan.grossInput, false);
@@ -1175,11 +1265,234 @@ test('with ETH only and TOKEN typed, the ETH pays for the whole position: deposi
     assert.deepEqual([mint.nonce, minted.operationId, minted.maxAmount0, minted.maxAmount1], ['0x2', id, amount0 - plan.grossInput, chain.swapOutput(plan.grossInput, true)]);
     assert.ok(minted.liquidity > 0n);
     assert.ok(!chain.viewed.includes('allowance'), 'no allowance was even read');
+    assert.ok(chain.quoted.length >= 2 && chain.quoted.every(q => q.sent === 0 && q.zeroForOne === true), 'the pool was checked for ETH in before the deposit');
     await onlyTheWallet(s, chain);
   } finally { await s.close(); }
 });
 
-test('a pool with hooks is refused at the pool step with its own sentence, and Continue stays off: Create position never meets it', async () => {
+// ---- Before a one-token deposit (2026-09-24): the owner deposited 0.1 USDG alone into USDG/NET 8%, a pool with nothing
+// in range; every swap reverted and the deposit was held. A one-token deposit is now made only into a pool that can
+// swap part of it, and a pool that cannot is said before the wallet is asked for anything. ----
+
+/** The read service's pools answer with the fixture pool's liquidity reported as zero, as DexScreener reported the owner's pool. */
+const emptyPools = (route) => {
+  if (route !== 'pools') return undefined;
+  const base = readGateway('pools.success');
+  return JSON.stringify({ ...base, pools: base.pools.map(pool => ({ ...pool, providerMetrics: { ...pool.providerMetrics, reportedLiquidityUsd: '0.00' } })) });
+};
+
+test('a one-token deposit into a pool with nothing in range is refused before anything is sent: Review warns from the pool’s reported liquidity, and Create position reads the pool, says nothing was deposited, and asks the wallet for nothing', async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidity: 0n });
+  const s = await atReview(chain, { answer: emptyPools, amount: '10000000000' });
+  try {
+    assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'swap');
+    // Review, from the figure it already has and no wallet read: one neutral line under the swap note.
+    const warning = s.page.locator('[data-review-liquidity="none"]');
+    assert.equal(await warning.innerText(), 'This pool reports no liquidity, so part of a one-token deposit cannot be swapped in it. Deposit both tokens, or choose another pool.');
+    assert.equal(await warning.getAttribute('data-tone'), 'neutral');
+    assert.deepEqual(chain.viewed, [], 'Review read nothing through the wallet');
+    await recordWalletSteps(s.page);
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-position="failed"]').waitFor({ timeout: 60_000 });
+    const notice = s.page.locator('[data-create-notice="pool_no_liquidity"]');
+    assert.equal(await notice.innerText(), 'This pool has no liquidity at its current price, so part of your deposit cannot be swapped in it. Nothing was deposited. Deposit both tokens, or choose another pool.');
+    assert.deepEqual(chain.sends, [], 'no approval and no deposit');
+    assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, 'waiting'], ['fund', 'waiting'], ['swap', 'failed'], ['mint', 'waiting']], 'stopped at the check, before the approval');
+    assert.ok((await s.page.evaluate(() => window.__walletStepLog)).some(entry => entry.includes('swap=reading')), 'the swap step said Checking… while the pool was read');
+    assert.equal(await s.page.getByRole('button', { name: 'Refund the deposit instead', exact: true }).count(), 0, 'nothing is held');
+    assert.ok(chain.viewed.includes('getLiquidity'), 'the pool’s in-range liquidity was read on chain, through the wallet');
+    // Changed on purpose (review, 2026-09-24): the quotes decide, and nothing in range only picks the sentence. V4Quoter
+    // refused every size asked, NotEnoughLiquidity, as it did for the owner's pool.
+    assert.ok(chain.quoted.length >= 1 && chain.quoted.every(q => q.sent === 0), `${chain.quoted.length} sizes asked, all before anything was sent`);
+    assert.deepEqual(chain.reverts, chain.quoted.map(() => 'execution reverted: NotEnoughLiquidity'), 'each refused by the quoter');
+    assert.ok(!chain.log.includes('eth_estimateGas') && !chain.viewed.includes('allowance') && !chain.viewed.includes('nextOperationId'), 'no step was even prepared');
+    assert.equal(chain.operations.size, 0);
+    await onlyTheWallet(s, chain, { reverts: true });
+    assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
+  } finally { await s.close(); }
+});
+
+test('in a pool too thin for the balanced split, the check backs off to a swap the pool fills inside its limit before anything is sent, and Create position approves, deposits, swaps and mints', async () => {
+  const typed = 10n ** 16n;
+  // 5·10¹⁶ of liquidity: swapping half the TOKEN, as the balanced split would, moves the square-root price about 10%.
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidity: 5n * 10n ** 16n });
+  const s = await atReview(chain, { answer: mintedPosition(chain), amount: '10000000000' });
+  try {
+    const [, part] = (await s.page.locator('[data-review-swap]').innerText()).match(/About ([\d.,]+) TOKEN of it is swapped/) ?? [];
+    const balanced = parseUnits(part.replaceAll(',', ''), 6);
+    const limit = (STUB_SQRT_PRICE * 10500n) / 10000n, check = (STUB_SQRT_PRICE * 10450n) / 10000n;
+    assert.ok(chain.priceAfter(balanced, false) > limit, 'Review’s balanced split would pass the swap’s 5% limit here');
+    assert.equal(await s.page.locator('[data-review-liquidity]').count(), 0, 'the pool reports liquidity');
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 90_000 });
+    const sent = chain.decoded();
+    assert.deepEqual(sent.map(tx => tx.functionName), ['approve', 'open', 'swap', 'mint']);
+    const [, open, swap, mint] = sent;
+    assert.deepEqual([open.args[2], open.args[3]], [0n, typed], 'the typed TOKEN alone');
+    // The check, before any send: V4Quoter was asked net sizes, a size past 4.5% was refused and one inside it found.
+    assert.ok(chain.quoted.length >= 4 && chain.quoted.every(q => q.sent === 0 && q.zeroForOne === false), `${chain.quoted.length} quoter questions, all before the first send`);
+    assert.ok(chain.quoted.some(q => chain.priceAfter(q.exactAmount, false, 0) >= check), 'a size that would end past the check was asked, and refused');
+    assert.ok(chain.quoted.some(q => chain.priceAfter(q.exactAmount, false, 0) < check), 'and a size inside it');
+    // After the deposit the contract's own quotes size the swap sent, and it fills inside the 5% limit.
+    const plan = swap.args[0];
+    assert.ok(plan.grossInput > 0n && plan.grossInput < balanced, `a smaller swap than the balanced ${balanced}: ${plan.grossInput}`);
+    assert.ok(chain.price() > STUB_SQRT_PRICE && chain.price() <= limit, 'the swap filled, inside its limit');
+    assert.ok(chain.reverts.length >= 1 && chain.reverts.every(why => /a partial fill/.test(why)), 'the contract refused the balanced size as a partial fill');
+    assert.ok(mint.args[0].liquidity > 0n);
+    assert.deepEqual([chain.operations.get(open.args[0]).swapped, chain.operations.get(open.args[0]).tokenId], [true, 4242n]);
+    await onlyTheWallet(s, chain, { reverts: true });
+  } finally { await s.close(); }
+});
+
+test('a held one-token deposit in a pool with nothing in range: Create position says it cannot be swapped there, signs nothing, and puts the refund first', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { liquidity: 0n, finality: 'lagging' });
+  // The owner's case: 0.1 of one token deposited alone, and nothing in range to swap part of it against.
+  const id = chain.seed({ key: STUB_POOL_KEY, balance0: 0n, balance1: 100_000n });
+  const s = await atReview(chain);
+  const { setup } = chain.release.deployment;
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.getByRole('status').filter({ hasText: /^You have an earlier deposit in this pool: [\d.,]+ ETH and 0\.1 TOKEN\./ }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="held"]').click();
+    const notice = s.page.locator('[data-create-notice="held_pool_no_liquidity"]');
+    await notice.waitFor({ timeout: 60_000 });
+    assert.equal(await notice.innerText(), 'This pool has no liquidity at its current price, so your deposit cannot be swapped in it. Refund the deposit to your wallet.');
+    const again = s.page.locator('[data-create-position="held"]');
+    await again.waitFor();
+    assert.deepEqual(chain.sends, [], 'nothing was signed');
+    assert.ok(!chain.log.includes('eth_sendTransaction') && !chain.log.includes('eth_estimateGas'), 'nothing was even prepared');
+    // Changed on purpose (review, 2026-09-24): the contract's own quotes decide. It refused every size simulated.
+    assert.deepEqual([chain.quotes, chain.quoted], [[], []], 'no size filled, and V4Quoter is not asked after a deposit');
+    assert.ok(chain.reverts.length >= 1 && chain.reverts.every(why => why === 'execution reverted: nothing in range: the swap consumes nothing'), `${chain.reverts.length} sizes simulated, each refused`);
+    assert.deepEqual(await walletStepStates(s.page), [['fund', 'done'], ['swap', 'failed'], ['mint', 'waiting']]);
+    // The refund is the one main action now; Create position stays, drawn second.
+    const refund = s.page.locator('[data-create-refund="first"]');
+    assert.equal(await refund.innerText(), 'Refund the deposit instead');
+    assert.match(await refund.getAttribute('class'), /\bdm-btn--primary\b/);
+    assert.match(await again.getAttribute('class'), /\bdm-btn--outline\b/);
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'A deposit is held for this pool. Refund it to your wallet.');
+    await refund.click();
+    await s.page.getByRole('status').filter({ hasText: 'The deposit was refunded to your wallet.' }).waitFor({ timeout: 60_000 });
+    const [cancel] = chain.decoded();
+    assert.deepEqual([chain.sends.length, cancel.functionName, cancel.to, cancel.args[0]], [1, 'cancel', setup, id], 'the refund of that deposit, and nothing else');
+    assert.equal(await s.page.locator('[data-create-refund]').count(), 0);
+    await onlyTheWallet(s, chain, { reverts: true });
+  } finally { await s.close(); }
+});
+
+// ---- Review, 2026-09-24: nothing in range at a pool's price is not a pool that cannot swap. A range the price reaches
+// may fill the swap, as the quotes say; nothing in range only picks the sentence once no size fills. ----
+
+/** A square-root price 1.6% above the stub's: the pool's liquidity starts there, and nothing is in range below it. */
+const LIQUID_FROM = (STUB_SQRT_PRICE * 10160n) / 10000n;
+
+test('a pool with nothing in range at its price and a range just above it: the quotes find the swap filling there, inside its limit, and Create position approves, deposits, swaps and mints', async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidFrom: LIQUID_FROM });
+  const s = await atReview(chain, { answer: mintedPosition(chain), amount: '10000000000' });
+  try {
+    assert.equal(chain.liquidityAt(STUB_SQRT_PRICE), 0n, 'nothing in range at the pool’s price');
+    assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'swap');
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 90_000 });
+    assert.equal(await s.page.locator('[data-create-notice="pool_no_liquidity"]').count(), 0);
+    const sent = chain.decoded();
+    assert.deepEqual(sent.map(tx => tx.functionName), ['approve', 'open', 'swap', 'mint'], 'the flow went on');
+    const [, open, swap, mint] = sent;
+    assert.deepEqual([open.args[2], open.args[3]], [0n, typed], 'the typed TOKEN alone');
+    // Before any send, the pool read with nothing in range, and V4Quoter asked what sizes buy: they filled.
+    assert.ok(chain.viewed.includes('getLiquidity'));
+    assert.ok(chain.quoted.length >= 2 && chain.quoted.every(q => q.sent === 0 && q.zeroForOne === false), `${chain.quoted.length} quoter questions, all before the first send`);
+    // The swap crossed the empty stretch and filled inside its 5% limit, in the range above.
+    const plan = swap.args[0], limit = (STUB_SQRT_PRICE * 10500n) / 10000n;
+    assert.ok(plan.grossInput > 0n && plan.grossInput < typed);
+    assert.ok(chain.price() > LIQUID_FROM && chain.price() <= limit, `filled above ${LIQUID_FROM}, inside ${limit}: ${chain.price()}`);
+    assert.ok(mint.args[0].liquidity > 0n);
+    assert.deepEqual([chain.operations.get(open.args[0]).swapped, chain.operations.get(open.args[0]).tokenId], [true, 4242n]);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('a held one-token deposit in a pool with nothing in range at its price and a range just above it: the contract’s quotes fill, and Create position swaps and mints it, with no refund first', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { tokenId: 4243n, liquidFrom: LIQUID_FROM, finality: 'lagging' });
+  const id = chain.seed({ key: STUB_POOL_KEY, balance0: 0n, balance1: 10n ** 15n });
+  const s = await atReview(chain);
+  try {
+    assert.equal(chain.liquidityAt(STUB_SQRT_PRICE), 0n, 'nothing in range at the pool’s price');
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.getByRole('status').filter({ hasText: /^You have an earlier deposit in this pool: 0 ETH and [\d.,]+ TOKEN\./ }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="held"]').click();
+    await s.page.waitForFunction(() => location.hash === '#/positions/4243', null, { timeout: 90_000 });
+    assert.equal(await s.page.locator('[data-create-notice="held_pool_no_liquidity"]').count(), 0);
+    assert.equal(await s.page.locator('[data-create-refund]').count(), 0, 'no refund put first');
+    const sent = chain.decoded();
+    assert.deepEqual(sent.map(tx => tx.functionName), ['swap', 'mint'], 'no second deposit: the swap, then the mint');
+    const [swap, mint] = sent;
+    assert.deepEqual([swap.args[0].operationId, swap.args[0].zeroForOne, mint.args[0].operationId], [id, false, id]);
+    assert.ok(chain.viewed.includes('getLiquidity'), 'the pool read with nothing in range');
+    assert.ok(chain.quotes.length >= 2 && chain.quotes.every(quote => quote.operationId === id), 'sized from the contract’s own quotes, which filled');
+    assert.ok(chain.price() > LIQUID_FROM, 'the swap crossed the empty stretch and filled above it');
+    assert.deepEqual([chain.operations.get(id).swapped, chain.operations.get(id).tokenId], [true, 4243n]);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('leaving New position while the pool is checked before a one-token deposit: nothing is prepared or sent, and the check stops', async () => {
+  const typed = 10n ** 16n;
+  // A slow wallet: each quoter question takes a second, so the check is still running when the person leaves.
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed }, quoteDelayMs: 1_000 });
+  const s = await atReview(chain, { amount: '10000000000' });
+  const until = async (done, ms = 30_000) => {
+    const end = Date.now() + ms;
+    while (!done()) {
+      if (Date.now() > end) throw new Error('timed out');
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+  };
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-wallet-step="swap"][data-step-state="reading"]').waitFor({ timeout: 30_000 });
+    // The first size answered, and more to come: the person leaves by another page's link.
+    await until(() => chain.quoted.length >= 1);
+    await s.page.evaluate(() => { location.hash = '#/docs'; });
+    const left = chain.quoted.length;
+    await s.page.locator('[data-create-position]').waitFor({ state: 'detached', timeout: 10_000 });
+    // Quiet for three questions' time, then two seconds more for anything the check would have been followed by.
+    let seen = chain.log.length, quietSince = Date.now();
+    await until(() => {
+      if (chain.log.length !== seen) { seen = chain.log.length; quietSince = Date.now(); }
+      return Date.now() - quietSince > 3_000;
+    }, 60_000);
+    await new Promise(resolve => setTimeout(resolve, 2_000));
+    assert.deepEqual(chain.sends, [], 'no approval and no deposit');
+    assert.ok(!chain.log.includes('eth_sendTransaction'), 'the wallet was never asked to sign');
+    assert.ok(!chain.log.includes('eth_estimateGas') && !chain.viewed.includes('allowance') && !chain.viewed.includes('nextOperationId'), 'no step was even prepared');
+    assert.ok(chain.quoted.length <= left + 1, `the check stopped with the question in flight: ${left} asked when the page was left, ${chain.quoted.length} in all`);
+    assert.equal(chain.operations.size, 0);
+  } finally { await s.close(); }
+});
+
+test('a device clock far off the chain’s stops a one-token deposit before anything is sent, with its own sentence', async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed }, clockSkew: 900 });
+  const s = await atReview(chain, { amount: '10000000000' });
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    const notice = s.page.locator('[data-create-notice="device_clock_off"]');
+    await notice.waitFor({ timeout: 60_000 });
+    assert.equal(await notice.innerText(), 'Your device’s clock is more than 5 minutes off the network’s time. Nothing was deposited. Set the clock right, then try again.');
+    assert.equal(await s.page.locator('[data-create-position]').getAttribute('data-create-position'), 'failed');
+    assert.deepEqual([chain.sends, chain.quoted], [[], []]);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// Changed on purpose (owner, 2026-09-24): a pool with hooks is no longer listed and then refused at Continue; it is
+// never listed. Domino's setup contract refuses it (DominoSetup.open), so step 1 leaves it out of the search itself,
+// before any row or count, and says nothing about hooks. journey.canContinue still refuses one if it ever arrived
+// (create-journey.test.mjs), and a link to one preselects nothing (Journey.tsx).
+test('a pool with hooks is never listed at the pool step: the muted empty line, nothing chosen, and Continue stays off', async () => {
   const HOOKS = `0x${'ab'.repeat(20)}`;
   const hooked = (route) => {
     if (route !== 'pools') return undefined;
@@ -1192,17 +1505,184 @@ test('a pool with hooks is refused at the pool step with its own sentence, and C
   try {
     await s.page.goto(`${s.origin}/#/new`);
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
-    await choosePool(s.page);
-    assert.equal(await s.page.locator('[data-chosen-pool] [data-pool-integration]').getAttribute('data-pool-integration'), 'requires_separate_adapter');
-    const reason = s.page.locator('#continue-reason');
-    await reason.filter({ hasText: /\S/ }).waitFor();
-    assert.equal(await reason.innerText(), 'This pool has hooks, and positions can only be created here in pools without hooks. Choose another pool.');
+    await s.page.getByRole('combobox', { name: 'Token in the pool' }).fill(FIXTURE_TOKEN);
+    await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    const picker = s.page.locator('[data-picker="pool"][data-pools-state="ok"]');
+    await picker.waitFor({ timeout: 30_000 });
+    assert.equal(await picker.getAttribute('data-picker-variant'), 'create');
+    assert.equal(await picker.getAttribute('data-pools-hidden'), '1', 'the hooked pool was read, and left out');
+    assert.equal(await s.page.locator('[data-pool-option]').count(), 0, 'no row for it');
+    assert.equal(await s.page.locator('[data-picker="pool"] input[name="pool-option"]').count(), 0);
+    assert.equal(await picker.locator('[data-pools-empty]').innerText(), 'No pools to show for this token.');
+    assert.equal(await s.page.locator('[data-chosen-pool]').count(), 0);
+    const stage = await s.page.locator('[data-stage="token"]').innerText();
+    assert.doesNotMatch(stage, /hooks|adapter|verified at block|No market figures/i, 'hooks are never mentioned');
+    assert.doesNotMatch(stage, FORBIDDEN);
     const next = footerButton(s.page, 'Continue');
     assert.equal(await next.isDisabled(), true);
-    await next.click({ force: true });
-    await s.page.waitForTimeout(500);
+    assert.equal(await s.page.locator('#continue-reason').innerText(), 'Choose a pool to continue.');
+    // The provider lists no pool for the token here, so the read is today's, for the token alone.
+    assert.deepEqual(read.requests.filter(r => r.path === '/api/read/v1/pools').map(r => JSON.parse(r.body)), [{ token: FIXTURE_TOKEN }]);
     assert.equal(await s.page.locator('[data-stage="range"]').count(), 0, 'the range step is not reached');
     assert.equal(await s.page.locator('[data-create-position]').count(), 0);
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-24 (owner): the other way into step 1 is a link carrying a pool id (a pool page's New position,
+// or a shared #/new/<id>). A pool with hooks is verified like any other and then not preselected: the search is
+// offered instead, and why is said only in the step's live region and data, never as a panel.
+test('a link to a pool with hooks preselects nothing: the search is offered, and the reason is data and a live region only', async () => {
+  const HOOKS = `0x${'ab'.repeat(20)}`;
+  const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
+  const LINKED = `0x${'e'.repeat(64)}`;
+  const asked = [];
+  const hookedById = (route, body) => {
+    if (route !== 'pools') return undefined;
+    asked.push(body);
+    const base = readGateway('pools.success'), [pool] = base.pools;
+    return JSON.stringify({
+      ...base,
+      selectedToken: USDG,
+      tokens: base.tokens.map(token => (token.address === FIXTURE_TOKEN ? { ...token, address: USDG, symbol: 'USDG' } : token)),
+      pools: [{ ...pool, poolId: LINKED, currencies: [pool.currencies[0], USDG], poolKey: { ...pool.poolKey, currency1: USDG, hooks: HOOKS }, integrationClass: 'requires_separate_adapter', requestedById: true }],
+    });
+  };
+  const read = createReadStub({ answer: hookedById });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  try {
+    await s.page.goto(`${s.origin}/#/new/${LINKED}`);
+    const stage = s.page.locator('[data-stage="token"][data-preselect="unsupported"]');
+    await stage.waitFor({ timeout: 30_000 });
+    assert.equal(await stage.getAttribute('data-preselect-reason'), 'hooks');
+    assert.equal(await s.page.locator('[data-chosen-pool]').count(), 0, 'nothing is preselected');
+    assert.equal(await s.page.locator('[data-deposit-choice]').count(), 0);
+    await s.page.getByRole('combobox', { name: 'Token in the pool' }).waitFor();
+    assert.equal(await stage.locator('p[role="status"].sr-only').first().textContent(), 'Pool from the link: This pool has hooks, and positions can only be created here in pools without hooks. Choose another pool.');
+    assert.equal(await footerButton(s.page, 'Continue').isDisabled(), true);
+    assert.deepEqual(asked, [{ token: USDG, maxPools: 1, poolIds: [LINKED] }], 'the link is verified against USDG, by its id alone, once');
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-24 (owner): the pools listed at step 1 are the most liquid ones, sorted by TVL, each with its TVL,
+// 24h volume and APR. The provider's token-pairs list (the same GET the token artwork makes) only names which pool ids
+// the read service verifies; what each row shows is the read service's own reply, and its order is that reply's TVL.
+test('New position names the provider’s most liquid pools in its one pools read, and lists the usable ones by TVL, each with TVL, 24h volume and APR', async () => {
+  const HOOKS = `0x${'ab'.repeat(20)}`;
+  const ZERO = `0x${'0'.repeat(40)}`;
+  const [X, Y, Z] = ['a', 'b', 'c'].map(digit => `0x${digit.repeat(64)}`);
+  const v4 = (pairAddress, usd) => ({ chainId: 'robinhood', dexId: 'uniswap', labels: ['v4'], pairAddress, baseToken: { address: FIXTURE_TOKEN }, quoteToken: { address: ZERO }, liquidity: { usd } });
+  // Three v4 pools for the token, and a pair from another exchange with more liquidity than all of them.
+  const pairs = [v4(Y, 200), { ...v4(`0x${'d'.repeat(40)}`, 1e9), labels: ['v3'] }, v4(X, 300), v4(Z, 100)];
+  const mixed = (route) => {
+    if (route !== 'pools') return undefined;
+    const base = readGateway('pools.success'), [pool] = base.pools;
+    const metrics = (usd, volume) => ({ ...pool.providerMetrics, reportedLiquidityUsd: usd, volume24hUsd: volume });
+    return JSON.stringify({ ...base, pools: [
+      { ...pool, poolId: X, poolKey: { ...pool.poolKey, hooks: HOOKS }, integrationClass: 'requires_separate_adapter', providerMetrics: metrics('9000000.00', '1.00'), requestedById: true },
+      { ...pool, poolId: Y, providerMetrics: metrics('50.00', '1234.56'), requestedById: true },
+      { ...pool, poolId: Z, providerMetrics: metrics('900.00', '100.00'), requestedById: true },
+    ] });
+  };
+  const read = createReadStub({ answer: mixed });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  const listed = [];
+  await s.context.route(ARTWORK, route => {
+    const url = new URL(route.request().url());
+    if (url.host === 'api.dexscreener.com') listed.push(url.pathname);
+    const body = url.pathname === `/token-pairs/v1/robinhood/${FIXTURE_TOKEN}` ? JSON.stringify(pairs) : '[]';
+    return route.fulfill({ status: 200, contentType: 'application/json', body });
+  });
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.getByRole('combobox', { name: 'Token in the pool' }).fill(FIXTURE_TOKEN);
+    await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    const picker = s.page.locator('[data-picker="pool"][data-pools-state="ok"]');
+    await picker.waitFor({ timeout: 30_000 });
+    assert.deepEqual(read.requests.filter(r => r.path === '/api/read/v1/pools').map(r => JSON.parse(r.body)), [{ token: FIXTURE_TOKEN, maxPools: 3, poolIds: [X, Y, Z] }], 'the three v4 pools, most liquid first, and nothing else');
+    assert.equal(listed.filter(path => path === `/token-pairs/v1/robinhood/${FIXTURE_TOKEN}`).length, 1, 'the artwork and the hints shared one GET');
+    const rows = picker.locator('[data-pool-option]');
+    assert.equal(await rows.count(), 2, 'the hooked pool is not a row, however liquid');
+    assert.equal(await picker.getAttribute('data-pools-hidden'), '1');
+    assert.deepEqual(await rows.evaluateAll((els, ids) => els.map(el => ids.find(poolId => el.textContent.includes(poolId))), [X, Y, Z]), [Z, Y], 'the read service’s TVL decides the order: $900 before $50');
+    const figures = await rows.evaluateAll(els => els.map(el => [...el.querySelectorAll('[data-provider-figure], [data-row-apr]')].map(cell => cell.innerText.replace(/\s+/g, ' ').trim())));
+    assert.deepEqual(figures, [
+      ['TVL $900.00', '24h volume $100.00', 'APR 12.17% est.'],
+      ['TVL $50.00', '24h volume $1.2K', 'APR 2703.69% est.'],
+    ]);
+    const stage = await s.page.locator('[data-stage="token"]').innerText();
+    assert.doesNotMatch(stage, /verified at block|No market figures|Pool details|hooks|adapter|coverage|catalogue|Rejected/i, 'no disclosure, no footnote, no panel');
+    assert.doesNotMatch(stage, FORBIDDEN);
+    assert.equal(await s.page.locator('[data-stage="token"] details').count(), 0);
+    await s.page.locator('[data-stage="token"]').screenshot({ path: join(shots(), 'create-pool-step.png') });
+    // On a phone the three figures stack under the pair, and nothing scrolls sideways.
+    await s.page.setViewportSize({ width: 390, height: 900 });
+    assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'no sideways scroll at phone width');
+    await s.page.locator('[data-stage="token"]').screenshot({ path: join(shots(), 'create-pool-step-phone.png') });
+    await s.page.setViewportSize({ width: 1320, height: 1000 });
+    // The first row is the most liquid usable pool, and it continues.
+    await picker.locator('input[name="pool-option"]').first().click();
+    assert.equal(await s.page.locator('[data-chosen-pool]').getAttribute('data-chosen-pool'), Z);
+    assert.equal(await footerButton(s.page, 'Continue').isDisabled(), false);
+  } finally { await s.close(); }
+});
+
+// Review 2026-09-23: the provider's token-pairs list is a 30-pair sample. For USDG it named none of the site's
+// featured pools (U/USDG, cbBTC/USDG, ETH/USDG, WETH/USDG), so step 1 never listed the largest usable USDG pools.
+// The featured pools that hold the token are named first, then the provider's, each once.
+test('for USDG the pools read names the featured pools first, then the provider’s, each once', async () => {
+  const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
+  const ZERO = `0x${'0'.repeat(40)}`;
+  const FEATURED = [
+    '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6',
+    '0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7',
+    '0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a',
+    '0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c',
+    '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e',
+    '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a',
+  ];
+  const [ETH_USDG, PONS_USDG] = [FEATURED[4], FEATURED[5]];
+  const X = `0x${'a'.repeat(64)}`;
+  // The provider's list: one pool of its own, and one featured pool it happens to hold.
+  const v4 = (pairAddress, usd) => ({ chainId: 'robinhood', dexId: 'uniswap', labels: ['v4'], pairAddress, baseToken: { address: `0x${'3'.repeat(40)}` }, quoteToken: { address: USDG }, liquidity: { usd } });
+  const pairs = [v4(X, 9e6), v4(PONS_USDG, 3e6)];
+  const usdg = (route, body) => {
+    if (route === 'token' && body.token === USDG) {
+      const base = readGateway('token.success');
+      return JSON.stringify({ ...base, asset: { ...base.asset, address: USDG, symbol: 'USDG' } });
+    }
+    if (route !== 'pools') return undefined;
+    const base = readGateway('pools.success'), [pool] = base.pools;
+    const holding = (poolId) => ({ ...pool, poolId, currencies: [ZERO, USDG], poolKey: { ...pool.poolKey, currency0: ZERO, currency1: USDG }, requestedById: true });
+    return JSON.stringify({
+      ...base,
+      selectedToken: USDG,
+      tokens: base.tokens.map(token => (token.address === FIXTURE_TOKEN ? { ...token, address: USDG, symbol: 'USDG' } : token)),
+      pools: [holding(ETH_USDG)],
+    });
+  };
+  const read = createReadStub({ answer: usdg });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => {
+    const url = new URL(route.request().url());
+    const body = url.pathname === `/token-pairs/v1/robinhood/${USDG}` ? JSON.stringify(pairs) : '[]';
+    return route.fulfill({ status: 200, contentType: 'application/json', body });
+  });
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.getByRole('combobox', { name: 'Token in the pool' }).fill(USDG);
+    await s.page.locator(`[data-token-option="${USDG}"]`).click();
+    const picker = s.page.locator('[data-picker="pool"][data-pools-state="ok"]');
+    await picker.waitFor({ timeout: 30_000 });
+    assert.deepEqual(
+      read.requests.filter(r => r.path === '/api/read/v1/pools').map(r => JSON.parse(r.body)),
+      [{ token: USDG, maxPools: 7, poolIds: [...FEATURED, X] }],
+      'the six featured pools in catalogue order, then the provider’s own, PONS/USDG not twice',
+    );
+    assert.equal(await picker.locator('[data-pool-option]').count(), 1);
+    assert.ok((await picker.locator('[data-pool-option]').first().textContent()).includes(ETH_USDG), 'the row is the read service’s own');
   } finally { await s.close(); }
 });
 
@@ -2426,5 +2906,346 @@ test('from a position link, a connected wallet without a session puts the NFT un
       'reads, the network price, one simulation and one send per step, and the receipts');
     assert.deepEqual(chain.refused, [], 'every method asked is one this chain answers');
     assert.deepEqual(chain.missing, [], 'every call reached a contract that answers it');
+  } finally { await s.close(); }
+});
+
+// ---------------------------------------------------------------------------
+// Positions: the connected wallet's own list, and a page per position (owner, 2026-09-24)
+// ---------------------------------------------------------------------------
+
+/** What the chain answered for 0xf618…c0a on 2026-09-23: one open position and eleven closed ones. */
+const OWNED_OPEN = '3135288';
+const OWNED_CLOSED = ['2578809', '2540892', '2475975', '2403400', '2232776', '2227392', '2186802', '2186209', '2176619', '2160098', '1932641'];
+const BIG_ID = '57896044618658097711785492504343953926634992332820282019728792003956564819969';
+
+/**
+ * The read gateway's nft-positions answer for exactly the ids asked: the read fixture's first position, made `owner`'s
+ * NFT of that id in the stub's pool; the open one keeps the fixture's liquidity and amounts, the closed ones hold none.
+ */
+const ownedPositionsRead = (owner) => (route, body) => {
+  if (route !== 'nft-positions') return undefined;
+  const base = readGateway('nft-positions.success');
+  const items = body.tokenIds.map((id) => ({
+    ...base.items[0],
+    tokenId: id,
+    owner,
+    salt: numberToHex(BigInt(id), { size: 32 }),
+    ...(id === OWNED_OPEN ? {} : { hasLiquidity: false, inRange: false, liquidityRaw: '0', principalRaw: ['0', '0'], unsettledFeesRaw: ['0', '0'] }),
+  }));
+  return JSON.stringify({ ...base, items });
+};
+
+/** A same-origin owned-positions endpoint for the wallet-server, answering with `answer(body)` and keeping every request. */
+function ownedEndpoint(answer) {
+  const asked = [];
+  return {
+    asked,
+    async route(request, url) {
+      if (url.pathname !== '/api/owned/v1/positions') return undefined;
+      const body = await request.json();
+      asked.push({ method: request.method, search: url.search, type: request.headers.get('content-type'), body });
+      return answer(body);
+    },
+  };
+}
+
+/** The endpoint's answer for one open and eleven closed NFTs, for whichever wallet asks. */
+const oneOpenElevenClosed = (deposits = []) => ({ owner }) =>
+  Response.json({ owner, block: 70921337, positions: [{ tokenId: OWNED_OPEN, status: 'open' }, ...OWNED_CLOSED.map((tokenId) => ({ tokenId, status: 'closed' }))], complete: true, deposits });
+
+/** Connects Test Wallet A from the header's dialog, on Robinhood Chain, without signing in. */
+async function connectWallet(page) {
+  await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+  await page.locator('header [aria-haspopup="dialog"]').click();
+  const dialog = page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+  await dialog.getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+  await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+  await page.keyboard.press('Escape');
+}
+
+/** The nft-positions questions the page asked, in order. */
+const nftReads = (read) => read.requests.filter((r) => r.path.endsWith('/nft-positions')).map((r) => JSON.parse(r.body).tokenIds);
+
+test('Positions lists the connected wallet’s own NFTs, Open 1 and Closed 11, reads their figures ten at a time, and each row opens the position’s page', async () => {
+  const owned = ownedEndpoint(oneOpenElevenClosed());
+  const read = createReadStub({ answer: ownedPositionsRead(OWNER) });
+  const s = await scenario({ routes: [owned.route, (request, url) => read.handle(request, url)] });
+  const chunks = [];
+  s.page.on('request', (request) => {
+    const name = new URL(request.url()).pathname.split('/').pop();
+    if (/^(PositionActions|HeldDeposits)-/.test(name)) chunks.push(name.split('-')[0]);
+  });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    // No wallet yet: one empty state that asks for one, and nothing is listed or read.
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    assert.equal((await s.page.locator('[data-empty="owned-connect"]').innerText()).replace(/\s+/g, ' '), 'Connect a wallet to see your positions Connect wallet');
+    assert.deepEqual([owned.asked.length, read.requests.length], [0, 0], 'nothing is asked without a wallet');
+
+    await connectWallet(s.page);
+    const card = s.page.locator('[data-owned="ready"]');
+    await card.waitFor();
+    // One same-origin POST with the address in its body, never in the URL.
+    assert.deepEqual(owned.asked, [{ method: 'POST', search: '', type: 'application/json', body: { owner: OWNER } }]);
+    const tabs = s.page.getByRole('tab');
+    assert.deepEqual((await tabs.allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim()), ['Open 1', 'Closed 11'], 'the counts come from the endpoint, before any figure');
+    assert.equal(await s.page.getByRole('tab', { selected: true }).innerText().then((text) => text.replace(/\s+/g, ' ')), 'Open 1');
+    assert.equal(await card.getAttribute('data-owned-block'), '70921337');
+
+    // The open position's row, read from nft-positions alone: closed ones are not read until their tab is opened.
+    const row = s.page.locator(`a[data-position-row="${OWNED_OPEN}"][data-snapshot]`);
+    await row.waitFor();
+    assert.equal(await row.getAttribute('href'), `#/positions/${OWNED_OPEN}`);
+    const rowText = await row.innerText();
+    assert.match(rowText, /ETH\s*\/\s*TOKEN[\s\S]*0\.30%\s*·\s*#3135288[\s\S]*In range/);
+    assert.match(rowText, /3,797,063,508\s+ETH/);
+    assert.equal(await s.page.locator('[data-position-row]').count(), 1);
+    assert.deepEqual(nftReads(read), [[OWNED_OPEN]]);
+    assert.equal(await s.page.locator('details[data-lookup-disclosure]').evaluate((details) => details.open), false, 'the lookup by NFT id waits, closed');
+    assert.equal(await s.page.locator('#nft-ids').count(), 0);
+    assert.deepEqual(chunks, [], 'no held deposits: their chunk is not loaded');
+    await s.page.locator('[data-owned-rows]').screenshot({ path: join(shots(), 'positions-open.png') });
+
+    // Closed: ten rows read in one question, the eleventh behind Show 1 more.
+    await s.page.getByRole('tab', { name: /^Closed/ }).click();
+    await s.page.locator('[data-owned-rows="closed"] a[data-position-row][data-snapshot]').nth(9).waitFor();
+    assert.deepEqual(nftReads(read), [[OWNED_OPEN], OWNED_CLOSED.slice(0, 10)]);
+    const closedRows = s.page.locator('[data-owned-rows="closed"] a[data-position-row]');
+    assert.equal(await closedRows.count(), 10);
+    assert.deepEqual(await closedRows.locator('[data-position-status]').evaluateAll((pills) => [...new Set(pills.map((pill) => pill.textContent))]), ['Closed']);
+    await s.page.getByRole('button', { name: 'Show 1 more', exact: true }).click();
+    await s.page.locator(`[data-owned-rows="closed"] a[data-position-row="${OWNED_CLOSED[10]}"][data-snapshot]`).waitFor();
+    assert.deepEqual(nftReads(read).at(-1), [OWNED_CLOSED[10]]);
+    assert.equal(await s.page.getByRole('button', { name: /^Show \d+ more$/ }).count(), 0);
+    await s.page.locator('main').screenshot({ path: join(shots(), 'positions-closed.png') });
+    const listText = await s.page.locator('main').innerText();
+    assert.doesNotMatch(listText, FORBIDDEN);
+    assert.doesNotMatch(listText, /comma|type (?:the|an) NFT id/i, 'no typed ids asked for');
+
+    // A row is a link to the position's own page.
+    await s.page.getByRole('tab', { name: /^Open/ }).click();
+    await row.click();
+    await s.page.waitForFunction((id) => location.hash === `#/positions/${id}`, OWNED_OPEN);
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
+    await detail.waitFor();
+    await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
+    assert.match(await detail.locator('h1').innerText(), /^ETH\s*\/\s*TOKEN$/);
+    assert.match(await detail.locator('.dm-pos-chips').innerText(), /Uniswap · 0\.30% · #3135288\s+In range/);
+    const stats = await detail.locator('[data-position-stats]').innerText();
+    assert.match(stats, /PRINCIPAL\s+3,797,063,508 ETH/);
+    assert.match(stats, /UNCLAIMED FEES\s+633,825,300,114 ETH\s+0 TOKEN/);
+    assert.match(stats, /PRINCIPAL\s+3,797,063,508 ETH\s+3,797,063,507,756,903,070,969 TOKEN/, 'six significant digits, never fewer than the whole part');
+    assert.match(stats, /CURRENT PRICE\s+≈1,000,000,000,000 TOKEN per ETH/, 'the pool’s price, read on its own, with no button to ask for it');
+    assert.match(stats, /RANGE\s+≈994,018,000,000 – ≈1,006,020,000,000/);
+    assert.equal(await detail.getByRole('button', { name: 'Show current price' }).count(), 0);
+    const facts = await detail.locator('.dm-pos-facts').innerText();
+    assert.match(facts, /NFT id\s+3135288/);
+    assert.match(facts, new RegExp(`Owner\\s+${OWNER}`));
+    assert.match(facts, /Liquidity\s+1267650600228229401496703205376/);
+    assert.match(facts, /Ticks\s+-60 to 60/);
+    const pool = readGateway('nft-positions.success').items[0].poolId;
+    assert.deepEqual(await detail.locator('.dm-pos-links a').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [
+      ['Pool', `#/pool/${pool}/${FIXTURE_TOKEN}`],
+      ['Add to this pool', `#/new/${pool}`],
+      ['Automate', `#/sequence/compound/${OWNED_OPEN}`],
+    ]);
+    assert.deepEqual(nftReads(read).at(-1), [OWNED_OPEN], 'the page reads its one NFT');
+    assert.ok(read.requests.some((r) => r.path.endsWith('/pool-market') && JSON.parse(r.body).poolId === pool), 'and the pool’s price');
+    // The owner's actions have their mount: the chunk is opened on the page, behind the wallet flag (a placeholder until the position-actions branch).
+    await s.page.waitForFunction(() => performance.getEntriesByType('resource').some((entry) => /\/PositionActions-[\w-]+\.js$/.test(entry.name)));
+    assert.doesNotMatch(await detail.innerText(), FORBIDDEN);
+    await s.page.screenshot({ path: join(shots(), 'position-detail.png'), fullPage: true });
+
+    // A closed position's page: Closed, and no Automate.
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_CLOSED[0]);
+    const closed = s.page.locator(`[data-position-detail][data-position-id="${OWNED_CLOSED[0]}"]`);
+    await closed.waitFor();
+    assert.equal(await closed.locator('[data-position-status]').innerText(), 'Closed');
+    assert.equal(await closed.getByRole('link', { name: 'Automate' }).count(), 0);
+    // Back to the list.
+    await s.page.getByRole('link', { name: 'Positions', exact: true }).first().click();
+    await s.page.locator('[data-owned="ready"]').waitFor();
+    assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
+  } finally { await s.close(); }
+});
+
+test('a list the chain cannot give opens the lookup under it, its reason only in data; a link with several ids is looked up there; the list is asked again on its own and brings the held deposits’ chunk', async () => {
+  const deposit = { operationId: `0x${'33'.repeat(32)}`, currency0: zeroAddress, currency1: FIXTURE_TOKEN, fee: 3000, tickSpacing: 60, hooks: zeroAddress, balance0: '100000', balance1: '0' };
+  let answer = () => Response.json({ error: 'chain_busy' }, { status: 502 });
+  const owned = ownedEndpoint((body) => answer(body));
+  const read = createReadStub({ answer: ownedPositionsRead(OWNER) });
+  const s = await scenario({ routes: [owned.route, (request, url) => read.handle(request, url)] });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await connectWallet(s.page);
+
+    // The chain could not be read: nothing on the list's face says so; its reason is a data attribute and a title, and the lookup opens by itself.
+    const unlisted = s.page.locator('[data-owned="unlisted"]');
+    await unlisted.waitFor();
+    assert.equal(await unlisted.getAttribute('data-owned-reason'), 'chain_busy');
+    assert.equal(await unlisted.getAttribute('title'), 'Your positions could not be listed just now. Look one up by its NFT id below.');
+    const lookup = s.page.locator('details[data-lookup-disclosure]');
+    await s.page.locator('#nft-ids').waitFor();
+    assert.equal(await lookup.evaluate((details) => details.open), true, 'the lookup opens by itself');
+    const text = await s.page.locator('main').innerText();
+    assert.doesNotMatch(text, FORBIDDEN);
+    assert.doesNotMatch(text, /could not be listed|chain_busy/, 'no status panel: the reason is a title and a data attribute');
+    assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'and no Retry');
+
+    // A link that carries several ids, arriving while the page is open: looked up in the lookup, once, and the list stays.
+    await s.page.evaluate((big) => { location.hash = `#/positions/1,${big}`; }, BIG_ID);
+    await s.page.locator('#chain-lookup [data-chain-cards="2"]').waitFor();
+    assert.equal(await s.page.inputValue('#nft-ids'), `1, ${BIG_ID}`);
+    assert.deepEqual(nftReads(read), [['1', BIG_ID]]);
+    assert.equal(await s.page.locator('[data-owned]').count(), 1, 'the list stays above it');
+
+    // The chain answers again: the list, asked again on its own a few seconds later, arrives with a held deposit; its tokens are read and its chunk opens.
+    answer = oneOpenElevenClosed([deposit]);
+    await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 20_000 });
+    assert.ok(owned.asked.length >= 2 && owned.asked.length <= 3, `asked again twice at most: ${owned.asked.length}`);
+    await s.page.waitForFunction(() => performance.getEntriesByType('resource').some((entry) => /\/HeldDeposits-[\w-]+\.js$/.test(entry.name)));
+    const tokens = read.requests.filter((r) => r.path.endsWith('/token')).map((r) => JSON.parse(r.body).token);
+    assert.ok(tokens.includes(zeroAddress) && tokens.includes(FIXTURE_TOKEN), `the deposit’s tokens were read: ${tokens}`);
+
+    // Review of 2026-09-25: the wallet looks up its own NFT by id in the lookup that opened above. One id is not written
+    // into the link (#/positions/<id> is the position's page, and a replaced hash fires no hashchange), so that NFT's
+    // row still opens its page, and Back comes back to the list rather than to the position.
+    await s.page.fill('#nft-ids', OWNED_OPEN);
+    await s.page.locator('#chain-lookup').getByRole('button', { name: 'Look up positions' }).click();
+    await s.page.locator('#chain-lookup [data-chain-cards="1"]').waitFor();
+    assert.equal(await s.page.evaluate(() => location.hash), '#/positions', 'the list of ids leaves the link; one id is not written into it');
+    await s.page.locator(`a[data-position-row="${OWNED_OPEN}"][data-snapshot]`).click();
+    await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`).waitFor({ timeout: 10_000 });
+    await s.page.goBack();
+    await s.page.locator('[data-owned="ready"]').waitFor();
+    assert.equal(await s.page.evaluate(() => location.hash), '#/positions', 'Back is the list');
+    assert.equal(await s.page.locator('[data-position-detail]').count(), 0);
+    assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
+  } finally { await s.close(); }
+});
+
+/** Someone else's wallet: the NFTs a visitor who is not their owner opens. */
+const OTHER_OWNER = '0x3333333333333333333333333333333333333333';
+
+/**
+ * The read gateway's nft-positions answer for one id, `answer(id, count)` saying how: null for empty at the snapshot
+ * (position_info_empty_at_snapshot), or { owner, poolKey } for the read fixture's first position made that owner's NFT
+ * of that id, in that pool key (the fixture's own pool when none is given). `count` is how many times the id was asked.
+ */
+const onePositionRead = (answer) => {
+  const asked = new Map();
+  return (route, body) => {
+    if (route !== 'nft-positions') return undefined;
+    const base = readGateway('nft-positions.success');
+    const items = body.tokenIds.map((id) => {
+      asked.set(id, (asked.get(id) ?? 0) + 1);
+      const shape = answer(id, asked.get(id));
+      if (!shape) return { tokenId: id, status: 'position_info_empty_at_snapshot', owner: null, corePositionId: null, nftOwnershipResolved: false };
+      return { ...base.items[0], tokenId: id, owner: shape.owner, salt: numberToHex(BigInt(id), { size: 32 }), poolKey: shape.poolKey ?? base.items[0].poolKey };
+    });
+    return JSON.stringify({ ...base, items });
+  };
+};
+
+// Review of 2026-09-25: Create position opens #/positions/<id> 3 s after the mint, and the read service answers at its own
+// node's head, which can be behind the mint's block. Its first answer was 'empty', and the page said at once, for good,
+// that the NFT no longer exists. An empty answer is now asked again (2, 5, 10 s) with the skeleton kept.
+test('a position’s page asks an NFT that reads empty again, the skeleton kept, and shows the position once the read service has it', async () => {
+  const NEW = '4242';
+  const read = createReadStub({ answer: onePositionRead((_id, count) => (count === 1 ? null : { owner: OTHER_OWNER })) });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    // Everything the page draws on the way, recorded as it happens.
+    await s.page.evaluate((id) => {
+      window.__positionSeen = [];
+      const note = (what) => { if (window.__positionSeen.at(-1) !== what) window.__positionSeen.push(what); };
+      new MutationObserver(() => {
+        if (document.querySelector('[data-empty="position-gone"]')) note('gone');
+        else if (document.querySelector('[data-position-detail]')) note('position');
+        else if (document.querySelector('[data-position-loading]')) note('loading');
+      }).observe(document.body, { childList: true, subtree: true, attributes: true });
+      location.hash = `#/positions/${id}`;
+    }, NEW);
+    // The first answer: empty. The page keeps its skeleton and says nothing yet.
+    for (let i = 0; i < 100 && nftReads(read).length === 0; i++) await s.page.waitForTimeout(50);
+    assert.deepEqual(nftReads(read), [[NEW]]);
+    await s.page.waitForTimeout(700);
+    assert.equal(await s.page.locator('[data-position-loading]').count(), 1, 'the skeleton stays while the NFT is asked again');
+    assert.equal(await s.page.locator('[data-empty="position-gone"]').count(), 0, 'nothing says it no longer exists');
+    // Asked again about 2 s later: the position.
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${NEW}"]`);
+    await detail.waitFor({ timeout: 10_000 });
+    assert.deepEqual(nftReads(read), [[NEW], [NEW]], 'asked twice, and not again once it is there');
+    assert.deepEqual(await s.page.evaluate(() => window.__positionSeen), ['loading', 'position'], 'the skeleton, then the position, and never the empty state');
+    assert.match(await detail.locator('h1').innerText(), /^ETH\s*\/\s*TOKEN$/);
+  } finally { await s.close(); }
+});
+
+// Review of 2026-09-25: the page offered "Add to this pool" (#/new/<poolId>) for a pool with hooks or a dynamic fee, which
+// New position refuses on arrival with nothing preselected. It links only to a pool Domino can open a position in.
+test('a position’s page offers Add to this pool only for a pool with no hooks and a fixed fee', async () => {
+  const [PLAIN, HOOKED, DYNAMIC] = ['4242', '4243', '4244'];
+  const base = readGateway('nft-positions.success').items[0].poolKey;
+  const keys = { [PLAIN]: base, [HOOKED]: { ...base, hooks: `0x${'4a'.repeat(20)}` }, [DYNAMIC]: { ...base, feeMode: 'dynamic', fee_pips: 8388608 } };
+  const read = createReadStub({ answer: onePositionRead((id) => ({ owner: OTHER_OWNER, poolKey: keys[id] })) });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    const links = {};
+    for (const id of [PLAIN, HOOKED, DYNAMIC]) {
+      await s.page.evaluate((next) => { location.hash = `#/positions/${next}`; }, id);
+      const detail = s.page.locator(`[data-position-detail][data-position-id="${id}"]`);
+      await detail.waitFor({ timeout: 10_000 });
+      links[id] = await detail.locator('.dm-pos-links a').evaluateAll((all) => all.map((a) => a.textContent));
+    }
+    assert.deepEqual(links, { [PLAIN]: ['Pool', 'Add to this pool', 'Automate'], [HOOKED]: ['Pool', 'Automate'], [DYNAMIC]: ['Pool', 'Automate'] });
+    assert.equal(await s.page.locator('a[href^="#/new/"]').count(), 0, 'no way into New position with the dynamic-fee pool on its page');
+  } finally { await s.close(); }
+});
+
+// Review of 2026-09-25: every visitor of a position's page downloaded the owner's actions chunk (Collect fees, Close
+// position and the setup client under them, about 27.5 kB gzip), which then drew nothing for anyone but the owner. The
+// page opens it only for the NFT's owner, connected on Robinhood Chain.
+test('a position’s page downloads the owner’s actions only for the owner’s wallet: not with no wallet, not for someone else’s NFT', async () => {
+  const [THEIRS, MINE] = ['4242', '4243'];
+  const read = createReadStub({ answer: onePositionRead((id) => ({ owner: id === MINE ? OWNER : OTHER_OWNER })) });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  const chunks = [];
+  s.page.on('request', (request) => {
+    const name = new URL(request.url()).pathname.split('/').pop();
+    if (/^PositionActions-/.test(name)) chunks.push(name);
+  });
+  /** Opens `id`'s page and waits until it has drawn, its pool price read included. */
+  const open = async (id) => {
+    await s.page.evaluate((next) => { location.hash = `#/positions/${next}`; }, id);
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${id}"]`);
+    await detail.waitFor({ timeout: 10_000 });
+    await detail.locator('[data-stat="price"] [data-current-price]').waitFor();
+    await s.page.waitForTimeout(300);
+    return detail;
+  };
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    // No wallet: the wallet's own NFT is a public page, with no actions and nothing of them downloaded.
+    await open(MINE);
+    assert.deepEqual(chunks, [], 'no wallet: the actions chunk is not requested');
+    assert.equal(await s.page.locator('[data-position-actions]').count(), 0);
+    // Connected, on someone else's NFT: still nothing.
+    await open(THEIRS);
+    await connectWallet(s.page);
+    await s.page.waitForTimeout(500);
+    assert.deepEqual(chunks, [], 'someone else’s NFT: not requested either');
+    assert.equal(await s.page.locator('[data-position-actions]').count(), 0);
+    // The wallet's own NFT: its actions, and their chunk.
+    await open(MINE);
+    await s.page.locator('.dm-pos-actions[data-position-actions]').waitFor();
+    await s.page.waitForFunction(() => performance.getEntriesByType('resource').some((entry) => /\/PositionActions-[\w-]+\.js$/.test(entry.name)));
+    assert.equal(chunks.length, 1, 'requested once, for the owner');
+    assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
   } finally { await s.close(); }
 });

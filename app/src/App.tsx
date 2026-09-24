@@ -31,6 +31,8 @@ const Sequence = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./screens/Sequen
 const Setup = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./screens/Setup').catch(couldNotLoad)) : null
 const LivePreview = __DOMINO_ONBOARDING_PREVIEW__ ? lazy(() => import('./screens/LivePreview').catch(couldNotLoad)) : null
 const Deposits = __DOMINO_DEPOSIT_LAB__ ? lazy(() => import('./screens/Deposits').catch(couldNotLoad)) : null
+// Test builds only: the owner's position actions mounted alone, for tests/position-actions.browser.test.mjs.
+const PositionLab = __DOMINO_TEST_HOOKS__ ? lazy(() => import('./screens/PositionLab').catch(couldNotLoad)) : null
 
 /**
  * The pages, by the first segment of the hash route. Older links keep
@@ -41,7 +43,7 @@ const Deposits = __DOMINO_DEPOSIT_LAB__ ? lazy(() => import('./screens/Deposits'
  * build is scanned for them), and the route falls through to Home like any
  * unknown route.
  */
-export type Page = 'overview' | 'markets' | 'pool' | 'positions' | 'new' | 'automate' | 'settings' | 'docs' | 'sequence' | 'setup' | 'live-preview' | 'deposits'
+export type Page = 'overview' | 'markets' | 'pool' | 'positions' | 'new' | 'automate' | 'settings' | 'docs' | 'sequence' | 'setup' | 'live-preview' | 'deposits' | 'position-lab'
 
 const PAGES: Readonly<Record<string, Page>> = {
   '': 'overview',
@@ -60,11 +62,12 @@ const PAGES: Readonly<Record<string, Page>> = {
   setup: 'setup',
   ...(__DOMINO_ONBOARDING_PREVIEW__ ? ({ 'live-preview': 'live-preview' } as const) : {}),
   ...(__DOMINO_DEPOSIT_LAB__ ? ({ deposits: 'deposits' } as const) : {}),
+  ...(__DOMINO_TEST_HOOKS__ ? ({ 'position-lab': 'position-lab' } as const) : {}),
 }
 
 export interface HashLocation {
   page: Page
-  /** The second segment: a pool id under `#/pool/<id>`, a pool id under `#/new/<id>`, a page's slug under `#/docs/<slug>`. Empty otherwise. */
+  /** The second segment: a pool id under `#/pool/<id>`, a pool id under `#/new/<id>`, an NFT id (or a list of them) under `#/positions/<id>`, a page's slug under `#/docs/<slug>`. Empty otherwise. */
   param: string
   /** The in-page section after a second `#`, e.g. `pools` in `#/#pools`. */
   section: string
@@ -123,7 +126,7 @@ function Screen({ page, param }: { page: Page; param: string }) {
     case 'pool':
       return <PoolDetail poolId={param} />
     case 'positions':
-      return <Positions />
+      return <Positions param={param} />
     case 'new':
       return <NewPosition poolId={param} />
     case 'automate':
@@ -140,6 +143,7 @@ function Screen({ page, param }: { page: Page; param: string }) {
       // Only the build that carries a consumer screen names it; elsewhere the whole branch folds away.
       if (__DOMINO_ONBOARDING_PREVIEW__ && page === 'live-preview') return <Flagged screen={LivePreview} loading="Loading the preview…" />
       if (__DOMINO_DEPOSIT_LAB__ && page === 'deposits') return <Flagged screen={Deposits} loading="Loading deposits…" />
+      if (__DOMINO_TEST_HOOKS__ && page === 'position-lab' && PositionLab) return <Suspense fallback={null}><PositionLab spec={param} /></Suspense>
       return <Landing />
   }
 }
@@ -150,6 +154,7 @@ const FLAGGED: Partial<Record<Page, unknown>> = {
   setup: Setup,
   ...(__DOMINO_ONBOARDING_PREVIEW__ ? { 'live-preview': LivePreview } : {}),
   ...(__DOMINO_DEPOSIT_LAB__ ? { deposits: Deposits } : {}),
+  ...(__DOMINO_TEST_HOOKS__ ? { 'position-lab': PositionLab } : {}),
 }
 
 export default function App() {

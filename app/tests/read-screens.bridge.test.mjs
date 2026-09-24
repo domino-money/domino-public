@@ -282,12 +282,17 @@ const poolsSettled = (page) =>
     const status = document.querySelector('[data-selected-pools] [data-read-status]')?.getAttribute('data-read-status');
     return status && status !== 'loading' && document.querySelectorAll('[data-selected-pools] tbody [data-metric]').length > 0;
   }, null, { timeout: 30_000 });
-/** The fixture pool's card on the Markets rail has settled its hourly read: bars, or a line saying why there are none. */
-const cardSettled = (page) => page.waitForFunction(() => document.querySelector('[data-market-card] [data-volume-bar], [data-market-card] [data-chart-unavailable]'), null, { timeout: 30_000 });
+/**
+ * The fixture pool's card on the Markets rail has settled its read: a price line, bars, or the row's 24h figure with why
+ * there is no chart in its data. Changed 2026-09-24: the card draws the pool's stored price line where read-v3 lists
+ * `history`; this Worker has read-v3 off, so here the card still makes its read-v1 hourly read.
+ */
+const cardSettled = (page) => page.waitForFunction(() => document.querySelector('[data-market-card] [data-price-line], [data-market-card] [data-volume-bar], [data-market-card] [data-chart-unavailable]'), null, { timeout: 30_000 });
 /**
  * The route's reads on mount: the disabled stored namespace, V1/V2 capabilities,
- * the fixture pool's market and two tokens, pool-metrics and one visible-card
- * hourly read. The card is independent of the rest of the table's readiness.
+ * the fixture pool's market and two tokens, pool-metrics and the card's
+ * hourly read, which every card makes at mount whether in view or not. The
+ * card is independent of the rest of the table's readiness.
  */
 const MOUNT = ['GET /api/read/v3/capabilities', 'GET /api/read/v1/capabilities', 'GET /api/read/v2/capabilities', 'POST /api/read/v1/pool-market', 'POST /api/read/v1/token', 'POST /api/read/v1/token', 'POST /api/read/v1/pool-metrics', 'POST /api/read/v1/pool-market'];
 const MOUNT_POSTS = MOUNT.filter((line) => line.startsWith('POST')).length;
@@ -337,11 +342,11 @@ test('Markets reads the searched token, then its pools and the catalogue only on
   const { context, page, errors } = await visit('/pools');
   try {
     await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
-    // The selected pools are on Markets: their lean load, and the rail card's one hourly read for its pool, are the route's only reading on mount.
+    // The selected pools are on Markets: their lean load, and the rail card's one hourly read for its pool (read-v1: this Worker lists no read-v3 history), are the route's only reading on mount.
     await poolsSettled(page);
     await cardSettled(page);
     await page.waitForTimeout(300);
-    assert.deepEqual(trail().sort(), [...MOUNT].sort(), 'route mount reads the selected pools and the visible card, and nothing else');
+    assert.deepEqual(trail().sort(), [...MOUNT].sort(), 'route mount reads the selected pools and the card, and nothing else');
     const cardIndex = posts().findIndex((read) => JSON.parse(read.body).includePriceHistory === true);
     const cardRead = JSON.parse(posts()[cardIndex].body);
     assert.deepEqual(cardRead, { poolId: POOL, includePriceHistory: true, priceToken: 'quote' }, 'the card asks for the same candles the pool page would');

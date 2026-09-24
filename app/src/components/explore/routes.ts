@@ -69,6 +69,12 @@ export const newPositionHref = (poolId: string | null = null) => (poolId ? `#/ne
 
 export const positionsHref = '#/positions' as const
 
+/** One position NFT's own page. */
+export const positionHref = (tokenId: string) => `#/positions/${tokenId}`
+
+/** Auto-compound set up on one position NFT (Sequence reads the mode and the id from the link). */
+export const compoundHref = (tokenId: string) => `#/sequence/compound/${tokenId}`
+
 export const automateHref = '#/automate' as const
 
 export const settingsHref = '#/settings' as const

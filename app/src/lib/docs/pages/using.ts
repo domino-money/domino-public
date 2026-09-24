@@ -57,7 +57,7 @@ export const NEW_POSITION: DocPage = {
         {
           kind: 'steps',
           items: [
-            { title: CREATE.step.pool.title, body: [CREATE.step.pool.lead] },
+            { title: CREATE.step.pool.title, body: [CREATE.step.pool.lead, ' Only pools without hooks and with a fixed fee are listed, largest TVL first, each with its TVL, 24h volume and estimated APR.'] },
             { title: CREATE.step.range.title, body: [CREATE.step.range.lead, ' See ', doc('Price ranges', 'ranges'), '.'] },
             { title: CREATE.step.amount.title, body: [CREATE.step.amount.lead, ' A position holds both of the pool’s tokens, so the step shows a row for each: type an amount in either and the other follows from your range and the pool’s price. There is no choice of which token to deposit. The slippage tolerance is chosen here too: 0.1%, 0.5% or 1% as presets, or any exact hundredth of a percent from 0.1% to 5%. It starts at 0.5%, and above 1% the step says what that allows.'] },
             { title: CREATE.step.review.title, body: [CREATE.step.review.lead] },
@@ -78,7 +78,7 @@ export const NEW_POSITION: DocPage = {
       title: 'Create position',
       blocks: [
         p(b('Create position'), ' is the last step. It needs your wallet connected on Robinhood Chain, and no sign-in.'),
-        p('Your wallet asks you to sign, in order: an exact approval for each token whose allowance is short, the deposit of both tokens (or of the one your wallet holds, then the swap of part of it inside the pool), and the position itself. The deployment is checked on chain before each step, and each transaction is read back before the next one is asked for.'),
+        p('Your wallet asks you to sign, in order: an exact approval for each token whose allowance is short, the deposit of both tokens (or of the one your wallet holds, then the swap of part of it inside the pool), and the position itself. The deployment is checked on chain before each step, and each transaction is read back before the next one is asked for. With one token, the pool is checked first: if it cannot swap part of your deposit, Create position says so before anything is deposited.'),
         p('When the position exists, it opens on Positions. If a deposit went through and the position did not (a declined signature, a closed tab), pressing Create position again creates it from that deposit, never depositing twice; the deposit can also be refunded.'),
         note(['Positions are created in hookless pools that have a fixed fee. A direct position carries no Domino percentage fee, except the assisted-swap fee on the part swapped when your wallet holds one token; network gas still applies.']),
       ],
@@ -89,14 +89,15 @@ export const NEW_POSITION: DocPage = {
 export const POSITIONS: DocPage = {
   slug: 'positions',
   title: 'Positions',
-  summary: 'Look up any position NFT, and see your managed positions, receipts and wallet balances.',
+  summary: 'Your position NFTs, open and closed, a page for each, and your managed positions, receipts and wallet balances.',
   sections: [
     {
-      id: 'position-nfts',
-      title: 'Look up a position NFT',
+      id: 'your-positions',
+      title: 'Your positions',
       blocks: [
-        p('Enter up to 10 position NFT IDs to look them up. The result is public data at one block: it does not show that anyone controls a wallet, and nothing in it can be signed or moved.'),
-        p('The read service cannot list the positions a wallet holds, so on Positions a position is looked up by its ID. Where available, a pool’s page lists the positions in that pool.'),
+        p('Connect your wallet on Robinhood Chain and Positions lists every position NFT it holds, found from the chain for your address: there is no ID to type. ', b('Open'), ' positions still hold liquidity; ', b('Closed'), ' ones hold none.'),
+        p('Each row shows the pool and its fee tier, whether the pool price is inside the range, the principal and the fees not yet collected. Select a row to open the position’s own page.'),
+        p('To see any other position, open ', b('Look up by NFT id'), ' under the list and enter up to 10 IDs. Where available, a pool’s page lists the positions in that pool.'),
       ],
     },
     {
@@ -105,10 +106,11 @@ export const POSITIONS: DocPage = {
       blocks: [
         list(
           ['Its pool, fee tier, tick spacing and hooks.'],
-          ['Its range, and whether the pool price was inside it at that block.'],
-          ['Its principal, and its ', b('unsettled fees'), ': fees earned and not yet collected.'],
-          ['Its owner at that block, read from chain.'],
+          ['Its range, the pool’s current price against it, and whether that price is inside it.'],
+          ['Its principal, and its ', b('unclaimed fees'), ': fees earned and not yet collected.'],
+          ['Its owner, read from chain.'],
         ),
+        p('Every figure is public data at one block. It does not show that anyone controls a wallet.'),
       ],
     },
     {

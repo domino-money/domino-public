@@ -60,7 +60,13 @@
   .dm-mkt-plot { position: absolute; z-index: 1; left: 20px; right: 20px; bottom: 44px; height: 96px; }
   /* The resting plot while figures are on their way: an empty grid and one faint baseline, never bars. */
   .dm-mkt-baseline { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 1px; background: var(--skeleton); animation: dm-pulse 1.6s ease-in-out infinite; }
-  .dm-mkt-plot-note { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 0 16px; text-align: center; text-wrap: balance; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  /* A plot with no series holds the row's own 24h volume, large, on the plot's floor: a figure, never a sentence. */
+  .dm-mkt-plot-figure { position: absolute; inset: 0; display: flex; align-items: flex-end; font-size: 28px; line-height: 32px; letter-spacing: -0.4px; white-space: nowrap; }
+  /* The pool's price line (components/charts/PriceLine.tsx): one thin stroke, its latest or inspected hour dotted. */
+  .dm-spark-line { fill: none; stroke: var(--primary-ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .dm-spark-dot { fill: var(--primary-ink); }
+  .dm-spark-dot[data-open] { opacity: 0.55; }
+  .dm-spark-cross { stroke: var(--border-strong); stroke-width: 1; }
   .dm-mkt-card-caption { position: absolute; z-index: 1; left: 20px; right: 20px; bottom: 20px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
 
   /* ---- Selected pools: heading, filters, table ---- */

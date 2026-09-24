@@ -227,6 +227,8 @@ export const CREATE = {
     swapStepDetail: (fee: string) => `One swap inside this pool, of part of your deposit, with at least what your slippage limit allows. The pool’s fee and Domino’s assisted-swap fee (${fee}) apply to the swapped part.`,
     /** Under the headline when part of the deposit is swapped (StageReview.tsx names the two tokens before it): what the swap costs, and what bounds it. */
     swapNote: (fee: string) => `The amounts are estimates before the pool’s price impact. The swap returns at least what your slippage limit allows; the pool’s fee and Domino’s assisted-swap fee (${fee}) apply to the swapped part.`,
+    /** Under the swap note when the pool's liquidity figure is reported and zero (lib/create/reviewPlan.ts). Nothing is said when the figure is missing. */
+    emptyPool: 'This pool reports no liquidity, so part of a one-token deposit cannot be swapped in it. Deposit both tokens, or choose another pool.',
     /** The fee bases side by side (feeBases in journey.ts). The service row is the docs' fees page's (lib/docs/pages/reference.ts), not Review's: a direct deposit carries no Domino fee. */
     feeLabels: { pool: 'Pool trading fee', service: 'Domino service fee', swap: 'Assisted swap fee', gas: 'Network gas' },
     feeValues: { service: 'Auto-compound 2%; Domino-compound 4% of earned fees consumed', swap: '0.65% of the amount swapped', gas: 'Paid by you' },

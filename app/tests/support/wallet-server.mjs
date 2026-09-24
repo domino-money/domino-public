@@ -29,6 +29,30 @@ const TYPES = {
 
 const DROPPED = new Error('drop the connection');
 
+/** Where Positions asks which position NFTs the connected wallet holds (functions/api/owned/v1/positions.ts). */
+export const OWNED_PATH = '/api/owned/v1/positions';
+
+/**
+ * This server has no chain behind it, so it answers the owned-positions POST
+ * as the endpoint would for a wallet that holds no position NFT and no held
+ * deposit: every scenario that connects a wallet on Positions gets a real,
+ * empty answer instead of the app shell. A test that wants positions answers
+ * the path itself, through `routes`, which run first. Added on purpose on
+ * 2026-09-24 with the list, so that no suite depends on what the app does
+ * with an HTML answer.
+ */
+async function noOwnedPositions(request) {
+  let owner = null;
+  try {
+    const body = await request.json();
+    if (typeof body?.owner === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.owner)) owner = body.owner.toLowerCase();
+  } catch {
+    // An unreadable body is refused below.
+  }
+  if (request.method !== 'POST' || !owner) return Response.json({ error: 'invalid_request' }, { status: 400 });
+  return Response.json({ owner, block: 1, positions: [], complete: true, deposits: [] });
+}
+
 async function staticResponse(dist, url) {
   let file = normalize(join(dist, decodeURIComponent(url.pathname)));
   if (!file.startsWith(dist)) return new Response('forbidden', { status: 403 });
@@ -89,11 +113,14 @@ async function send(req, res, response) {
  * @param fake       the fake session service
  * @param gate       env for the real beta gate, or null to serve without it
  * @param intercept  (url) => Response | undefined, to replace a static file
- * @param routes     test-only same-origin handlers, after session routing and the gate
+ * @param routes     test-only same-origin handlers, after session routing and the gate; the
+ *                   owned-positions POST falls through to an empty answer (noOwnedPositions)
  */
 export function createWalletServer({ fake, gate = null, intercept, dist = WALLET_DIST, routes = [] }) {
   const middleware = loadMiddleware();
   const sockets = new Set();
+  /** The owned-positions requests this server answered itself, in order. */
+  const owned = [];
 
   async function app(request) {
     const url = new URL(request.url);
@@ -101,6 +128,10 @@ export function createWalletServer({ fake, gate = null, intercept, dist = WALLET
     for (const route of routes) {
       const response = await route(request, url);
       if (response !== undefined) return response;
+    }
+    if (url.pathname === OWNED_PATH) {
+      owned.push({ method: request.method });
+      return noOwnedPositions(request);
     }
     const replaced = intercept?.(url);
     if (replaced) return replaced;
@@ -146,6 +177,7 @@ export function createWalletServer({ fake, gate = null, intercept, dist = WALLET
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
   });
+  server.owned = owned;
   server.closeAll = () =>
     new Promise((done) => {
       for (const socket of sockets) socket.destroy();

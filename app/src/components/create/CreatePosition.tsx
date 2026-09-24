@@ -3,12 +3,13 @@ import { zeroAddress, type Address, type Hex } from 'viem'
 import { setupWallet } from '../../finance/wallet'
 import { suggestGasBudget } from '../../finance/gas'
 import { readRelease } from '../../finance/release'
-import { createSetupClient, deploymentFrom, walletBalance, type GasBudget, type PoolKey, type PreparedSetup, type SetupDeployment, type SetupOperation, type WalletRpc } from '../../finance/setup'
+import { saveSetupProfile } from '../../finance/recoveryProfile'
+import { createSetupClient, deploymentFrom, isRevert, walletBalance, type GasBudget, type PoolKey, type PreparedSetup, type SetupOperation, type WalletRpc } from '../../finance/setup'
 import { errorCode, financeErrorText } from '../../finance/words'
 import { switchToRobinhood } from '../../wallet/port'
 import { CREATE } from '../../lib/create/copy'
 import { publishCreateProgress, type LiveState, type LiveStep } from '../../lib/create/createProgress'
-import { depositPlan, needsSides, sizeSwap, type DepositPlan, type PoolTerms, type Side } from '../../lib/create/depositPlan'
+import { depositPlan, needsSides, quoteWithin, sizeSwap, swapFeePips, type DepositPlan, type PoolTerms, type Side } from '../../lib/create/depositPlan'
 import { setupDraft, type JourneyState, type SetupDraft } from '../../lib/create/journey'
 import { mintPlanFor } from '../../lib/create/mintPlan'
 import { pairedAmount } from '../../lib/create/pairAmount'
@@ -27,8 +28,12 @@ import { Button } from '../ui'
  * What the wallet holds decides how it is funded (lib/create/depositPlan.ts):
  * both tokens as the range pairs them, or one token alone, part of which is
  * swapped for the other inside the pool before the mint — the setup
- * contract's own assisted swap, sized from the contract's own quotes. The
- * wallet is asked, in order and only for what is needed: an exact allowance
+ * contract's own assisted swap, sized from the contract's own quotes. One
+ * token alone is deposited only into a pool that can swap part of it: before
+ * any approval, Uniswap's own quotes of that swap are read through the wallet
+ * (swapPreflight), and a pool that cannot fill it is said with nothing
+ * deposited. The wallet is asked, in order and only for what is
+ * needed: an exact allowance
  * for each token deposited whose allowance is short, the deposit, the swap
  * when one token was deposited, and the mint, which sends the position NFT to
  * the wallet and returns whatever the range did not use. Every step is
@@ -56,7 +61,6 @@ type Client = ReturnType<typeof createSetupClient>
 type Open = { id: Hex; operation: SetupOperation }
 type Phase = 'idle' | 'running' | 'failed' | 'held' | 'done'
 
-const RECOVERY_KEY = 'domino.setup.public-recovery.v1'
 const readSetupRelease = () => readRelease('/api/setup/v1/release', (value) => deploymentFrom(value))
 const currentSetupDeployment = async () => {
   const release = await readSetupRelease()
@@ -75,6 +79,26 @@ const GAS_UP_TO_DEPOSIT_UNITS = 3_000_000n
 const SETTLE_MS = 3_000
 /** The furthest the assisted swap may move the pool's square-root price, in basis points: about 10% in price. */
 const SWAP_PRICE_LIMIT_BPS = 500n
+/** Before a one-token deposit, a size passes only if its swap ends this much short of the limit: room for the price to move before the swap is sent. */
+const SWAP_CHECK_MARGIN_BPS = 50n
+/** How far the device clock may be from the chain's: the swap and the mint carry a deadline drawn from it, and the contract refuses one too far off. */
+const CLOCK_SKEW_S = 300
+/**
+ * What the check before a one-token deposit says when it stops (swapPreflight): each says nothing was deposited, and
+ * what to do instead. `noLiquidity` and `tooThin` both follow quotes that found no size the pool fills: the first when
+ * nothing is in range at the pool's price. `held`: the same pool met after a deposit is made, when the refund is the
+ * way out.
+ */
+const PREFLIGHT = {
+  noLiquidity: 'This pool has no liquidity at its current price, so part of your deposit cannot be swapped in it. Nothing was deposited. Deposit both tokens, or choose another pool.',
+  tooThin: 'This pool is too thin to swap part of your deposit within a 10% price move. Nothing was deposited. Lower the amount, deposit both tokens, or choose another pool.',
+  noPosition: 'After the swap, this deposit would make no position in this range. Nothing was deposited. Widen the range or change the amount.',
+  unchecked: 'The pool could not be checked just now. Nothing was deposited. Try again in a moment.',
+  quoter: 'The pool’s swap check could not be verified on chain. Nothing was deposited. Deposit both tokens to create this position.',
+  clock: 'Your device’s clock is more than 5 minutes off the network’s time. Nothing was deposited. Set the clock right, then try again.',
+  held: 'This pool has no liquidity at its current price, so your deposit cannot be swapped in it. Refund the deposit to your wallet.',
+  heldClock: 'Your device’s clock is more than 5 minutes off the network’s time, so the swap cannot be signed. Your deposit is held: set the clock right and press Create position again, or refund it.',
+} as const
 /** This page's sentences for the setup client's codes whose shared sentence names a control it does not have. */
 const OWN_TEXT: Readonly<Record<string, string>> = {
   native_gas_reserve_insufficient: 'Keep some ETH for network gas: your ETH does not cover this step. Lower the ETH amount or add ETH.',
@@ -95,15 +119,6 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const units = (raw: bigint, token: PoolOption['currencies'][number]) => formatUnits(String(raw), decimalsOf(token))?.text ?? String(raw)
 const ethText = (wei: bigint) => formatUnits(String(wei), 18)?.text ?? String(wei)
 const isRejection = (error: unknown) => Boolean(error && typeof error === 'object' && (error as { code?: unknown }).code === 4001)
-/** A simulated call the contract itself refused (EIP-1474 code 3, or a node's "execution reverted"), as opposed to a wallet or network failure. */
-function isRevert(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const { code, message, data } = error as { code?: unknown; message?: unknown; data?: unknown }
-  if (code === 3) return true
-  const inner = data && typeof data === 'object' ? (data as { code?: unknown; message?: unknown }) : null
-  if (inner?.code === 3) return true
-  return /execution reverted|revert/i.test(`${typeof message === 'string' ? message : ''} ${typeof inner?.message === 'string' ? inner.message : ''}`)
-}
 
 const poolKeyOf = (pool: PoolOption): PoolKey => ({
   currency0: pool.currencies[0].address as Address,
@@ -123,27 +138,22 @@ function needsOf(draft: SetupDraft): readonly [bigint, bigint] | null {
   return draft.independent === 0 ? [mine, theirs] : [theirs, mine]
 }
 /** The price the assisted swap may not cross: a partial fill reverts whole, so a thinner pool than this is said, never half-used. */
-function swapLimit(sqrtPriceX96: bigint, zeroForOne: boolean): bigint {
+function swapLimit(sqrtPriceX96: bigint, zeroForOne: boolean, bps = SWAP_PRICE_LIMIT_BPS): bigint {
   if (zeroForOne) {
-    const limit = (sqrtPriceX96 * (10000n - SWAP_PRICE_LIMIT_BPS)) / 10000n
+    const limit = (sqrtPriceX96 * (10000n - bps)) / 10000n
     return limit > MIN_SQRT_PRICE ? limit : MIN_SQRT_PRICE + 1n
   }
-  const limit = (sqrtPriceX96 * (10000n + SWAP_PRICE_LIMIT_BPS)) / 10000n
+  const limit = (sqrtPriceX96 * (10000n + bps)) / 10000n
   return limit < MAX_SQRT_PRICE ? limit : MAX_SQRT_PRICE - 1n
 }
 
+/** A stop with its sentence; `code` is what the notice carries (data-create-notice). */
 class Stop extends Error {
-  constructor(readonly text: string) {
-    super('create_position_stopped')
-  }
-}
-
-/** Keeps the verified profile where Setup's owner recovery looks for it, so a held deposit can be refunded there too. */
-function saveRecoveryProfile(deployment: SetupDeployment) {
-  try {
-    localStorage.setItem(RECOVERY_KEY, JSON.stringify({ contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment }))
-  } catch {
-    /* Recovery can also use the published deployment profile. */
+  constructor(
+    readonly text: string,
+    code = 'create_position_stopped',
+  ) {
+    super(code)
   }
 }
 
@@ -170,6 +180,8 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   const [phase, setPhase] = useState<Phase>('idle')
   const [notice, setNotice] = useState<{ text: string; code: string | null } | null>(null)
   const [held, setHeld] = useState<Open | null>(null)
+  // The held deposit cannot be used in this pool as it is now: the refund is the one main action.
+  const [refundFirst, setRefundFirst] = useState(false)
   const generation = useRef(0)
   const running = useRef(false)
   const steps = useRef<readonly LiveStep[]>([])
@@ -181,6 +193,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     setPhase('idle')
     setNotice(null)
     setHeld(null)
+    setRefundFirst(false)
   }
   // The previous wallet's flow, if one was running, writes nothing more, and Review shows its plan again.
   useEffect(() => {
@@ -233,8 +246,15 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
             ? 'The deposit reverted on chain: nothing was deposited, only network gas was spent. Press Create position to try again.'
             : 'The approval reverted on chain: nothing was deposited. Press Create position to try again.'
 
+  /** Stops this run, saying nothing, once the page was left or the wallet changed since it started: the wallet is asked nothing more. */
+  function stillHere(gen: number) {
+    if (generation.current !== gen) throw new Stop('')
+  }
+
   /** Offers one prepared step to the wallet, then waits for its receipt. Throws on a revert or a reorg. */
   async function sendAndWait(client: Client, step: PreparedSetup, key: string, gen: number) {
+    // The step may have been prepared after a long check: no prompt opens on a page that was left meanwhile.
+    stillHere(gen)
     mark(key, 'wallet', gen)
     const hash = await client.send(step, true)
     mark(key, 'chain', gen)
@@ -304,11 +324,17 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
       show(at < 0 ? [...steps.current, swapStep] : [...steps.current.slice(0, at), swapStep, ...steps.current.slice(at)], gen)
     }
     mark('swap', 'reading', gen)
+    // A clock far off the chain's makes every quote and swap revert: said as itself, before anything is quoted, and the
+    // wallet is asked nothing. A pool with nothing in range at its price may still fill the swap in a range the price
+    // reaches, so the contract's quotes decide; the in-range liquidity only picks the sentence when no size fills.
+    const onChain = await client.poolState(key)
+    if (Math.abs(Date.now() / 1000 - onChain.chainTime) > CLOCK_SKEW_S) throw new Stop(PREFLIGHT.heldClock, 'device_clock_off')
     const balance = from === 0 ? operation.balance0 : operation.balance1
     const zeroForOne = from === 0
     const limit = swapLimit(terms.sqrtPriceX96, zeroForOne)
     // Each size asked is the swap simulated by the contract through the wallet; a size it refuses is too large for this pool.
     const sized = await sizeSwap(terms, from, balance, async (gross) => {
+      stillHere(gen)
       try {
         return await client.quoteSwap(open.id, zeroForOne, gross, limit)
       } catch (error) {
@@ -316,7 +342,10 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         throw error
       }
     })
-    if (!sized) throw new Stop('This pool is too thin to swap part of your deposit within a 10% price move. Your deposit is held: refund it, then try a smaller amount.')
+    if (!sized)
+      throw onChain.liquidity === 0n
+        ? new Stop(PREFLIGHT.held, 'held_pool_no_liquidity')
+        : new Stop('This pool is too thin to swap part of your deposit within a 10% price move. Your deposit is held: refund it, then try a smaller amount.')
     // What the mint would make after this swap, at the price it leaves: nothing is swapped for a position that cannot follow.
     const kept = balance - sized.gross
     const after = mintPlanFor({
@@ -331,6 +360,61 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     const step = await client.swap(open.id, zeroForOne, sized.gross, draft.slippageBps, limit, gas)
     await sendAndWait(client, step, 'swap', gen)
     return true
+  }
+
+  /**
+   * Before anything is approved or deposited for one token alone: whether this pool can swap part of it, read through
+   * the wallet. The device clock against the chain's (the swap carries a deadline drawn from it), then the swap sized
+   * as it will be after the deposit, each size quoted by Uniswap's V4Quoter and refused when the pool cannot fill it or
+   * it would end past the swap's price limit less a margin, and the position that swap leaves. The quotes decide: a
+   * pool with nothing in range at its price may fill the swap in a range the price reaches, and its in-range
+   * liquidity only picks the sentence when no size fills. Any doubt stops here, with nothing deposited; after the
+   * deposit, the setup contract's own quotes still size the swap that is sent (swapIfNeeded).
+   */
+  async function swapPreflight(client: Client, key: PoolKey, settled: SetupDraft, from: Side, deposit: bigint, gen: number) {
+    mark('swap', 'reading', gen)
+    try {
+      const onChain = await client.poolState(key)
+      const terms: PoolTerms = {
+        sqrtPriceX96: onChain.sqrtPriceX96,
+        tickLower: settled.tickLower,
+        tickUpper: settled.tickUpper,
+        feePips: settled.pool.feePips,
+        assistedFeeBps: client.deployment.feeBps,
+        slippageBps: settled.slippageBps,
+      }
+      // The range takes only the token deposited: nothing will be swapped, so there is nothing to check.
+      if (!needsSides(terms)[from === 0 ? 1 : 0]) {
+        mark('swap', 'waiting', gen)
+        return
+      }
+      if (Math.abs(Date.now() / 1000 - onChain.chainTime) > CLOCK_SKEW_S) throw new Stop(PREFLIGHT.clock, 'device_clock_off')
+      const zeroForOne = from === 0
+      const check = swapLimit(onChain.sqrtPriceX96, zeroForOne, SWAP_PRICE_LIMIT_BPS - SWAP_CHECK_MARGIN_BPS)
+      const fee = swapFeePips(onChain.lpFee, onChain.protocolFee, zeroForOne)
+      const sized = await sizeSwap(terms, from, deposit, quoteWithin(terms.assistedFeeBps, zeroForOne, fee, check, (net, step) => {
+        stillHere(gen)
+        return client.quotePool(key, zeroForOne, net, step)
+      }))
+      if (!sized) throw onChain.liquidity === 0n ? new Stop(PREFLIGHT.noLiquidity, 'pool_no_liquidity') : new Stop(PREFLIGHT.tooThin, 'pool_too_thin')
+      const kept = deposit - sized.gross
+      const after = mintPlanFor({
+        sqrtPriceX96: String(sized.sqrtPriceX96),
+        tickLower: settled.tickLower,
+        tickUpper: settled.tickUpper,
+        balance0: from === 0 ? kept : sized.output,
+        balance1: from === 0 ? sized.output : kept,
+        slippageBps: settled.slippageBps,
+      })
+      if (!after) throw new Stop(PREFLIGHT.noPosition, 'swap_makes_no_position')
+    } catch (error) {
+      if (error instanceof Stop) throw error
+      const code = errorCode(error)
+      // A pool with no price has its own sentence (OWN_TEXT); anything else unread is a check that did not happen.
+      if (code === 'pool_not_initialized') throw error
+      throw new Stop(code === 'quoter_identity_changed' ? PREFLIGHT.quoter : PREFLIGHT.unchecked, code ?? 'pool_check_unavailable')
+    }
+    mark('swap', 'waiting', gen)
   }
 
   async function mintFrom(client: Client, key: PoolKey, gas: GasBudget, open: Open, gen: number): Promise<bigint> {
@@ -355,7 +439,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     const rpc = await setupWallet()
     const client = createSetupClient(rpc, live.deployment, () => Date.now() / 1000, currentSetupDeployment)
     const gas = await suggestGasBudget(rpc)
-    saveRecoveryProfile(live.deployment)
+    saveSetupProfile(live.deployment)
     return { client, rpc, gas }
   }
 
@@ -377,6 +461,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     running.current = true
     setPhase('running')
     setNotice(null)
+    setRefundFirst(false)
     // Review keeps its own plan in view until this run knows its steps.
     show([], gen)
     let open: Open | null = held
@@ -440,10 +525,14 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
           ...(plan.kind === 'swap' ? [{ key: 'swap', title: CREATE.review.swapStep, state: 'waiting' as const }] : []),
           { key: 'mint', title: CREATE.review.mintStep, state: 'waiting' },
         ], gen)
+        // One token alone is deposited only into a pool that can swap part of it: checked before any approval.
+        if (plan.kind === 'swap') await swapPreflight(client, key, draft, plan.from, plan.deposit, gen)
         // The deposit keeps ETH back for the swap and the mint, or a refund, that follow it.
         const reserved: GasBudget = { ...gas, reserveWei: kept }
         let asked = 0
         while (!open) {
+          // The check above can take many seconds: a page left meanwhile prepares nothing.
+          stillHere(gen)
           const step = await client.fund(key, funding[0], funding[1], reserved)
           if (step.kind === 'approve') {
             asked++
@@ -472,6 +561,8 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
       if (said.text) setNotice(said)
       setPhase(open ? 'held' : 'failed')
       if (open) setHeld(open)
+      // Only once the contract's own quotes found no size this pool fills, with nothing in range at its price.
+      setRefundFirst(open !== null && said.code === 'held_pool_no_liquidity')
     } finally {
       if (generation.current === gen) running.current = false
     }
@@ -490,6 +581,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
       await sendAndWait(client, step, 'refund', gen)
       if (generation.current !== gen) return
       setHeld(null)
+      setRefundFirst(false)
       setPhase('idle')
       setNotice({ text: 'The deposit was refunded to your wallet.', code: null })
     } catch (error) {
@@ -520,6 +612,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   else if (onOtherNetwork) reason = 'Switch your wallet to Robinhood Chain to create the position.'
   else if (!connected) reason = 'Connect your wallet to create the position. Each transaction appears in your wallet to sign.'
   else if (phase === 'done') reason = 'The position is created. Positions opens it in a moment.'
+  else if (phase === 'held' && refundFirst) reason = 'A deposit is held for this pool. Refund it to your wallet.'
   else if (phase === 'held') reason = 'A deposit is held for this pool. Press Create position to create the position from it, or refund it.'
   else if (busy) reason = 'Confirm each step in your wallet. The list above marks each one as it is done.'
   else if (short) reason = 'Your wallet does not seem to hold enough for this position. Lower the amount, or add the token named above to your wallet.'
@@ -535,7 +628,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
       ) : (
         <Button
           type="button"
-          variant="primary"
+          variant={refundFirst && phase === 'held' ? 'outline' : 'primary'}
           size="lg"
           className="w-full"
           data-create-position={phase}
@@ -556,7 +649,15 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         </p>
       )}
       {phase === 'held' && held && (
-        <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={() => void refund()} data-create-refund="">
+        <Button
+          type="button"
+          variant={refundFirst ? 'primary' : 'outline'}
+          size={refundFirst ? 'lg' : 'md'}
+          className="w-full"
+          disabled={busy}
+          onClick={() => void refund()}
+          data-create-refund={refundFirst ? 'first' : ''}
+        >
           Refund the deposit instead
         </Button>
       )}

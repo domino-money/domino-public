@@ -16,6 +16,7 @@ import { ASSISTED_SWAP_FEE_BPS, depositPlan, type DepositPlan, type Side } from 
 import { candidateDecimals, validateBudget, validateSlippage, type JourneyState } from './journey'
 import { pairedAmount } from './pairAmount'
 import { NATIVE_CURRENCY } from '../read/screens/identity'
+import type { PoolOption } from '../read/screens/poolsList'
 
 /** The ETH Review keeps back for network gas when native ETH is one of the pool's tokens: 0.0005 ETH. */
 export const REVIEW_GAS_RESERVE_WEI = 500_000_000_000_000n
@@ -27,7 +28,17 @@ export interface ReviewPlan {
   need: readonly [bigint, bigint]
   /** How the wallet funds it; null while its balances are unknown. */
   plan: DepositPlan | null
+  /**
+   * The plan swaps part of a one-token deposit in a pool whose liquidity figure is reported and zero: Review says so
+   * before anything is pressed. A missing figure says nothing either way, so it is never read as zero; Create position
+   * checks the pool on chain before anything is deposited.
+   */
+  noLiquidity: boolean
 }
+
+/** Whether this pool reports no liquidity (its TVL figure, attributed and zero) while `plan` swaps part of a one-token deposit in it. */
+export const swapsInEmptyPool = (pool: PoolOption, plan: DepositPlan | null): boolean =>
+  plan !== null && plan.kind === 'swap' && plan.swap > 0n && pool.liquidity.state === 'attributed' && pool.liquidity.zero
 
 /** Review's reading for these choices and these raw balances (in pool order), or null while a choice is missing or unusable. */
 export function reviewPlan(state: JourneyState, balances: readonly [string | null, string | null] | null): ReviewPlan | null {
@@ -42,7 +53,7 @@ export function reviewPlan(state: JourneyState, balances: readonly [string | nul
   if (other.kind !== 'amount') return null
   const need: readonly [bigint, bigint] = independent === 0 ? [BigInt(budget.raw), BigInt(other.raw)] : [BigInt(other.raw), BigInt(budget.raw)]
   const slippage = validateSlippage(state.slippageBps)
-  if (!slippage.ok || !balances || balances[0] === null || balances[1] === null) return { independent, need, plan: null }
+  if (!slippage.ok || !balances || balances[0] === null || balances[1] === null) return { independent, need, plan: null, noLiquidity: false }
   const spendable = (raw: string, index: Side) => {
     const value = BigInt(raw)
     if (pool.currencies[index].address !== NATIVE_CURRENCY) return value
@@ -57,5 +68,5 @@ export function reviewPlan(state: JourneyState, balances: readonly [string | nul
     slippageBps: slippage.bps,
     balances: [spendable(balances[0], 0), spendable(balances[1], 1)],
   })
-  return { independent, need, plan }
+  return { independent, need, plan, noLiquidity: swapsInEmptyPool(pool, plan) }
 }

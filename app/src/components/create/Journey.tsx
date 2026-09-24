@@ -25,7 +25,9 @@ import {
 } from '../../lib/create/journey'
 import { verifyCandidate } from '../../lib/read/screens/catalogueSession'
 import { failureText } from '../../lib/read/screens/copy'
-import type { PoolOption } from '../../lib/read/screens/poolsList'
+import { DYNAMIC_FEE_PIPS } from '../../lib/read/screens/fee'
+import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
+import { optionUsableForDomino, type PoolOption } from '../../lib/read/screens/poolsList'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { usePairBalances } from './usePairBalances'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
@@ -37,7 +39,7 @@ import { StageToken, type PreselectStatus } from './StageToken'
 import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
 
 /** The outcomes only the verification read can produce. */
-type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'failed' }>
+type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'unsupported' | 'failed' }>
 
 /** How many times a failed verification of the linked pool is asked again on its own, and the first wait. */
 const VERIFY_ATTEMPTS = 3
@@ -124,6 +126,12 @@ export function Journey({ poolId }: { poolId: string }) {
       const option = result.option
       if (!option) {
         setVerified({ poolId, attempt, outcome: { kind: 'not_found' } })
+        return
+      }
+      // Domino opens positions only in pools with no hooks and a fixed fee, and step 1 never lists
+      // another: a link to one preselects nothing, and says why only in the step's live region and data.
+      if (!optionUsableForDomino(option)) {
+        setVerified({ poolId, attempt, outcome: { kind: 'unsupported', reason: option.hooks === NATIVE_CURRENCY && option.feePips === DYNAMIC_FEE_PIPS ? 'dynamic' : 'hooks' } })
         return
       }
       const at = Date.now()

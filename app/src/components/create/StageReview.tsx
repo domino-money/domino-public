@@ -159,6 +159,12 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
             </span>
           </p>
         )}
+        {/* The pool's liquidity figure is reported and zero: the swap has nothing to trade against. Create position checks the pool on chain too, before anything is deposited. */}
+        {swap && planned?.noLiquidity && (
+          <p role="status" className="dm-flow-position" data-tone="neutral" data-review-liquidity="none">
+            {CREATE.review.emptyPool}
+          </p>
+        )}
         {plan && plan.kind === 'short' && pool && (
           <p role="status" className="dm-flow-position" data-tone="neutral" data-review-short={plan.token}>
             <span>

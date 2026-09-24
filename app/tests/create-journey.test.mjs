@@ -530,7 +530,7 @@ test('Review ends on Create position, made in place: no hand-off to Setup, and t
   assert.match(review, /<Suspense fallback=\{<Unavailable note=\{CREATE\.review\.loading\} \/>\}>/);
   const control = readFileSync(new URL('../src/components/create/CreatePosition.tsx', import.meta.url), 'utf8');
   assert.match(control, /'Create position'/);
-  assert.match(control, /window\.location\.hash = `#\/positions\/\$\{tokenId\.toString\(\)\}`/, 'the new position opens on Positions');
+  assert.match(control, /window\.location\.hash = `#\/positions\/\$\{tokenId\.toString\(\)\}`/, 'the new position opens its own page on Positions (screens/PositionDetail.tsx; changed on purpose, owner, 2026-09-24: it was the lookup by id)');
   assert.doesNotMatch(control, /livePort|session\//, 'no sign-in is needed to create a position');
 });
 
@@ -788,4 +788,33 @@ test('the automation choices carry the approved names, and the service fee keeps
   // "sequence" stays where it names the vault or its cap.
   assert.equal(CREATE.automation.cap, 'Positions in the sequence');
   for (const text of allCreateStrings()) assert.doesNotMatch(text, /Domino sequence|No automation|^None$/, text);
+});
+
+// Added 2026-09-24 (the owner's one-token deposit into USDG/NET 8%, a pool with nothing in range): Review says a
+// pool reports no liquidity before anything is pressed, from the figure it already has and no wallet read. A missing
+// figure is never read as zero; Create position checks the pool on chain before anything is deposited.
+test('Review warns that a pool reports no liquidity only when its figure is attributed and zero and the plan swaps part of one token', () => {
+  const { reviewPlan, swapsInEmptyPool } = require('../.test-build/app/src/lib/create/reviewPlan.js');
+  const reported = (raw, zero) => ({ state: 'attributed', value: zero ? '$0' : '$10', raw, zero, provider: 'dexscreener', retrievedAt: 1010, cacheAgeSeconds: null });
+  const empty = pool({ liquidity: reported('0.00', true) });
+  const swap = { kind: 'swap', from: 0, deposit: 10n, swap: 5n, receive: 5n };
+  assert.equal(swapsInEmptyPool(empty, swap), true);
+  assert.equal(swapsInEmptyPool(pool({ liquidity: reported('10.00', false) }), swap), false, 'liquidity reported');
+  for (const missing of [figure, { state: 'not_reported', provider: 'dexscreener' }, { state: 'rejected', provider: 'dexscreener', reason: 'provider_currency_mismatch' }])
+    assert.equal(swapsInEmptyPool(pool({ liquidity: missing }), swap), false, `${missing.state}: nothing is said`);
+  assert.equal(swapsInEmptyPool(empty, { kind: 'both', amount0: 1n, amount1: 1n }), false, 'both tokens deposited: nothing is swapped');
+  assert.equal(swapsInEmptyPool(empty, { ...swap, swap: 0n }), false, 'the range takes only the token held: nothing is swapped');
+  assert.equal(swapsInEmptyPool(empty, null), false, 'balances unknown');
+  assert.equal(CREATE.review.emptyPool, 'This pool reports no liquidity, so part of a one-token deposit cannot be swapped in it. Deposit both tokens, or choose another pool.');
+
+  // Review's own reading: 0.5 ONE typed, the wallet holds ONE and no TWO, in a range around the price.
+  let s = journey.withToken(journey.initialState(), ONE);
+  s = journey.withRange(journey.withBudget(journey.withPool(journey.next(s, NOW), empty, NOW), '0.5'), { lower: -600, upper: 600 });
+  const held = [String(10n ** 18n), '0'];
+  const read = reviewPlan(s, held);
+  assert.equal(read.plan.kind, 'swap');
+  assert.equal(read.noLiquidity, true);
+  assert.equal(reviewPlan({ ...s, pool: pool() }, held).noLiquidity, false, 'no figure: nothing is said');
+  assert.equal(reviewPlan(s, [String(10n ** 18n), String(10n ** 24n)]).noLiquidity, false, 'both tokens at hand');
+  assert.equal(reviewPlan(s, null).noLiquidity, false);
 });

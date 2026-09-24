@@ -1,0 +1,720 @@
+/**
+ * Which Uniswap position NFTs a wallet holds on Robinhood Chain, and the
+ * DominoSetupV1 deposits it has not turned into a position: the list behind
+ * Positions, so nobody has to type an NFT id to find their own positions.
+ *
+ * The PositionManager is a plain ERC-721 with no enumeration, and the read
+ * service has no index by owner, so the list comes from the chain itself:
+ *
+ *   1. eth_blockNumber: the head every other answer is pinned to.
+ *   2. eth_getLogs of the PositionManager's Transfer events TO the owner,
+ *      newest first: from the head back to the first one ever emitted (block
+ *      9506, the mint of NFT 1). A range the RPC refuses as too large or too
+ *      slow is split in halves, the newer half asked first; a 429 is waited
+ *      out and asked again. Each range's logs are walked newest to oldest, and
+ *      the walk stops at the MAX_IDS most recently received ids, or once the
+ *      answer has read MAX_LOG_BYTES of logs, so a busy address costs a few
+ *      calls, never its whole history. Every NFT the wallet holds arrived
+ *      through one of these events, so the ids received are a superset of the
+ *      ids held (all of them, unless the walk stopped early).
+ *   3. One Multicall3 aggregate3 eth_call (per 100 ids) at the head:
+ *      balanceOf(owner), and per id ownerOf and getPositionLiquidity, each
+ *      allowed to fail. Held with liquidity is open, held without is closed; a
+ *      burned id (ownerOf reverts) or one sent away since is dropped. The list
+ *      is complete when what is left matches balanceOf, whether or not the
+ *      walk stopped early: a held NFT older than where it stopped leaves the
+ *      count short, so that answer says complete: false.
+ *   4. The same call carries DominoSetupV1.ownerNonce(owner). A second one reads
+ *      operation(id) and recoveryStarted(id) for the owner's last 8 operation
+ *      ids, which are keccak256(abi.encode(4663, setup, owner, nonce)) exactly
+ *      as app/src/finance/setup.ts recent() derives them. A deposit still held
+ *      (not closed, a balance left, no recovery started) is listed.
+ *
+ * What this is not: a general RPC proxy. The caller chooses the owner and
+ * nothing else, and not the zero address, which every burn is sent to. The
+ * endpoint, every method, contract, topic, block range and calldata are fixed
+ * here, the ids come from the logs, and the RPC calls and bytes one answer may
+ * cost are capped. Per owner, an answer is kept 30 seconds (5 for a fresh
+ * question) and a failure 12, so a loop of questions is not a loop of scans.
+ * No secret is involved: the RPC is the
+ * chain's public one, and the answer is public chain data about a public
+ * address, which is why the owner travels in a POST body, never in a URL.
+ *
+ * The ABI encoding is written by hand (a Function carries no viem), and
+ * tests/owned.test.mjs checks every selector, encoding and the Keccak below
+ * against viem.
+ */
+
+export const RPC_URL = 'https://rpc.mainnet.chain.robinhood.com'
+export const CHAIN_ID = 4663
+/** Uniswap v4 PositionManager on Robinhood Chain; the same pin as app/src/finance/pin.ts. */
+export const POSITION_MANAGER = '0x58daec3116aae6d93017baaea7749052e8a04fa7'
+/** DominoSetupV1; the same pin as app/src/finance/pin.ts SETUP_CONTRACT. */
+export const SETUP_CONTRACT = '0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a'
+/** Multicall3 at its canonical address, deployed on Robinhood Chain. */
+export const MULTICALL3 = '0xca11bde05977b3631167028862be2a173976ca11'
+/** The block of the PositionManager's first Transfer (the mint of NFT 1): nothing before it can name an NFT. */
+export const FIRST_TRANSFER_BLOCK = 9506
+/** keccak256('Transfer(address,address,uint256)'). */
+export const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+
+/** The most NFT ids one answer classifies: the most recently received ones. */
+export const MAX_IDS = 300
+/** Ids per aggregate3 call. */
+export const IDS_PER_CALL = 100
+/** The most RPC calls one answer may cost, retries and splits included. */
+export const MAX_RPC_CALLS = 48
+/**
+ * The most log bytes one answer reads, over all its eth_getLogs replies. A
+ * Transfer log is about 630 bytes as this RPC sends it, and the RPC refuses a
+ * query matching more than 10,000 logs, so one full reply (about 6.3 MB) fits.
+ * No range is asked once this is read, and a reply that would pass it is not
+ * read to its end: the walk stops there, with the newer ids it has.
+ */
+export const MAX_LOG_BYTES = 8 * 1024 * 1024
+/** The most bytes any other reply may have (an aggregate3 of 100 ids is about 30 kB). */
+export const MAX_REPLY_BYTES = 1024 * 1024
+/** How many times a rate-limited call is asked, and the wait before each repeat (× attempt). */
+export const RATE_ATTEMPTS = 4
+export const BACKOFF_MS = 1500
+/** A log range is not split below this many blocks. */
+export const MIN_SPLIT_BLOCKS = 2000
+/** The owner's most recent setup operations that are read. */
+export const RECENT_OPERATIONS = 8
+const CALL_TIMEOUT_MS = 10_000
+const DEADLINE_MS = 25_000
+/** How long an answer is kept per owner. */
+export const CACHE_SECONDS = 30
+/** How long a chain_busy or chain_unavailable is kept per owner, for every question, fresh or not. */
+export const FAILURE_SECONDS = 12
+/** A fresh question gets the kept answer while it is younger than this, rather than a new scan. */
+export const FRESH_AFTER_MS = 5_000
+const MAX_BODY_BYTES = 512
+
+/** Function selectors, each checked against viem in tests/owned.test.mjs. */
+export const SELECTOR = {
+  balanceOf: '70a08231',
+  ownerOf: '6352211e',
+  getPositionLiquidity: '1efeed33',
+  aggregate3: '82ad56cb',
+  ownerNonce: 'e8ad29b4',
+  operation: '47da73be',
+  recoveryStarted: '20698983',
+} as const
+
+export type OwnedStatus = 'open' | 'closed'
+
+export interface OwnedDeposit {
+  operationId: string
+  currency0: string
+  currency1: string
+  fee: number
+  tickSpacing: number
+  hooks: string
+  balance0: string
+  balance1: string
+}
+
+/** The JSON body of an answer: exactly the five fields the page's parser (src/lib/ownedPositions.ts) takes. */
+export interface OwnedAnswer {
+  owner: string
+  block: number
+  positions: { tokenId: string; status: OwnedStatus }[]
+  /** The positions listed are every NFT the owner holds: their count matches balanceOf. */
+  complete: boolean
+  deposits: OwnedDeposit[]
+}
+
+/**
+ * A scan: the answer, and whether the log walk stopped before the first
+ * Transfer (MAX_IDS or MAX_LOG_BYTES). `capped` leaves the body alone and
+ * travels as the X-Owned-Capped header; `complete` already turns false when
+ * that stop hid a held NFT.
+ */
+export interface OwnedScan extends OwnedAnswer {
+  capped: boolean
+}
+
+/** What the scan needs from the runtime; tests hand in fakes. */
+export interface OwnedDeps {
+  fetch: (input: string, init: RequestInit) => Promise<Response>
+  sleep: (ms: number) => Promise<void>
+  now: () => number
+}
+
+/** Wait and ask again; split the range; stop; or (logs only) the answer's log bytes are used up. */
+type Failure = 'rate' | 'range' | 'fatal' | 'bytes'
+
+export class ChainError extends Error {
+  constructor(
+    readonly kind: Failure,
+    message: string,
+  ) {
+    super(message)
+  }
+}
+
+const RATE_WORDS = /rate.?limit|too many requests|throttl/i
+const RANGE_WORDS = /exceed|more than \d+|block range|range (?:is )?too (?:large|wide|big)|too many (?:logs|results)|query returned more|timed? ?out|timeout/i
+const BUSY_WORDS = /\brate\b|capacity|busy/i
+
+/**
+ * What an RPC error means for the scan: wait and ask again, split the range,
+ * or stop. Words decide before codes: -32005 means a rate limit at one
+ * provider and "more than 10000 results" at another.
+ */
+export function classifyRpcError(code: unknown, message: string): Failure {
+  if (RATE_WORDS.test(message)) return 'rate'
+  if (RANGE_WORDS.test(message)) return 'range'
+  if (code === 429 || code === -32005 || BUSY_WORDS.test(message)) return 'rate'
+  return 'fatal'
+}
+
+// ---------------------------------------------------------------------------
+// Hex and ABI, by hand
+// ---------------------------------------------------------------------------
+
+const hex = (n: number | bigint) => `0x${n.toString(16)}`
+const word = (n: bigint) => n.toString(16).padStart(64, '0')
+const addressWord = (address: string) => address.slice(2).toLowerCase().padStart(64, '0')
+
+/** One aggregate3 call: its target and its calldata without 0x. */
+export interface SubCall {
+  target: string
+  data: string
+}
+
+/** aggregate3((address target, bool allowFailure, bytes callData)[]) calldata, every call allowed to fail. */
+export function encodeAggregate3(calls: readonly SubCall[]): string {
+  const tuples = calls.map(({ target, data }) => {
+    const padded = data.padEnd(Math.ceil(data.length / 64) * 64, '0')
+    return addressWord(target) + word(1n) + word(0x60n) + word(BigInt(data.length / 2)) + padded
+  })
+  let offset = BigInt(calls.length * 32)
+  const offsets: string[] = []
+  for (const tuple of tuples) {
+    offsets.push(word(offset))
+    offset += BigInt(tuple.length / 2)
+  }
+  return `0x${SELECTOR.aggregate3}${word(0x20n)}${word(BigInt(calls.length))}${offsets.join('')}${tuples.join('')}`
+}
+
+/** A bounds-checked reader over ABI-encoded return data. */
+function reader(data: string) {
+  const body = data.startsWith('0x') ? data.slice(2) : data
+  if (!/^(?:[0-9a-fA-F]{2})*$/.test(body)) throw new ChainError('fatal', 'invalid_return_data')
+  const bytes = body.length / 2
+  const at = (byte: bigint | number): bigint => {
+    const start = Number(byte)
+    if (!Number.isSafeInteger(start) || start < 0 || start + 32 > bytes) throw new ChainError('fatal', 'invalid_return_data')
+    return BigInt(`0x${body.slice(start * 2, start * 2 + 64)}`)
+  }
+  const slice = (byte: bigint | number, length: bigint | number): string => {
+    const start = Number(byte)
+    const size = Number(length)
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(size) || start < 0 || size < 0 || start + size > bytes) throw new ChainError('fatal', 'invalid_return_data')
+    return body.slice(start * 2, (start + size) * 2)
+  }
+  return { at, slice, bytes }
+}
+
+/** aggregate3's (bool success, bytes returnData)[], as returned. */
+export function decodeAggregate3(data: string): { success: boolean; data: string }[] {
+  const r = reader(data)
+  const base = r.at(0) // offset of the array
+  const count = r.at(base)
+  if (count > 10_000n) throw new ChainError('fatal', 'invalid_return_data')
+  const head = base + 32n
+  const out: { success: boolean; data: string }[] = []
+  for (let i = 0n; i < count; i++) {
+    const tuple = head + r.at(head + 32n * i)
+    const flag = r.at(tuple)
+    if (flag > 1n) throw new ChainError('fatal', 'invalid_return_data')
+    const at = tuple + r.at(tuple + 32n)
+    out.push({ success: flag === 1n, data: r.slice(at + 32n, r.at(at)) })
+  }
+  return out
+}
+
+/** A 32-byte word as an address, refusing anything with bits above 160. */
+function asAddress(value: bigint): string {
+  if (value >> 160n !== 0n) throw new ChainError('fatal', 'invalid_return_data')
+  return `0x${value.toString(16).padStart(40, '0')}`
+}
+
+/** int24 from its two's-complement word. */
+function asInt24(value: bigint): number {
+  const signed = value >> 255n === 1n ? value - (1n << 256n) : value
+  if (signed < -(1n << 23n) || signed >= 1n << 23n) throw new ChainError('fatal', 'invalid_return_data')
+  return Number(signed)
+}
+
+/** DominoSetupV1.operation(id): the Operation struct, a static tuple of 11 words. */
+export function decodeOperation(data: string) {
+  const r = reader(data)
+  if (r.bytes < 11 * 32) throw new ChainError('fatal', 'invalid_return_data')
+  const w = (i: number) => r.at(i * 32)
+  const fee = w(3)
+  const bounded = (value: bigint, bits: bigint) => {
+    if (value >> bits !== 0n) throw new ChainError('fatal', 'invalid_return_data')
+    return value
+  }
+  return {
+    owner: asAddress(w(0)),
+    currency0: asAddress(w(1)),
+    currency1: asAddress(w(2)),
+    fee: Number(bounded(fee, 24n)),
+    tickSpacing: asInt24(w(4)),
+    hooks: asAddress(w(5)),
+    balance0: bounded(w(6), 128n),
+    balance1: bounded(w(7), 128n),
+    swapped: bounded(w(8), 1n) === 1n,
+    closed: bounded(w(9), 1n) === 1n,
+    tokenId: w(10),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Keccak-256 (the original Keccak padding, as Solidity's keccak256), on 64-bit lanes
+// ---------------------------------------------------------------------------
+
+const MASK64 = (1n << 64n) - 1n
+const ROUND_CONSTANTS = [
+  '0000000000000001', '0000000000008082', '800000000000808a', '8000000080008000', '000000000000808b', '0000000080000001',
+  '8000000080008081', '8000000000008009', '000000000000008a', '0000000000000088', '0000000080008009', '000000008000000a',
+  '000000008000808b', '800000000000008b', '8000000000008089', '8000000000008003', '8000000000008002', '8000000000000080',
+  '000000000000800a', '800000008000000a', '8000000080008081', '8000000000008080', '0000000080000001', '8000000080008008',
+].map((value) => BigInt(`0x${value}`))
+const ROTATIONS = [1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14, 27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44].map(BigInt)
+const LANES = [10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4, 15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1]
+
+const rotl = (x: bigint, n: bigint) => ((x << n) | (x >> (64n - n))) & MASK64
+
+function permute(state: bigint[]) {
+  const c: bigint[] = [0n, 0n, 0n, 0n, 0n]
+  for (const constant of ROUND_CONSTANTS) {
+    for (let x = 0; x < 5; x++) c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20]
+    for (let x = 0; x < 5; x++) {
+      const d = c[(x + 4) % 5] ^ rotl(c[(x + 1) % 5], 1n)
+      for (let y = 0; y < 25; y += 5) state[y + x] ^= d
+    }
+    let carried = state[1]
+    for (let i = 0; i < 24; i++) {
+      const lane = LANES[i]
+      const next = state[lane]
+      state[lane] = rotl(carried, ROTATIONS[i])
+      carried = next
+    }
+    for (let y = 0; y < 25; y += 5) {
+      const row = state.slice(y, y + 5)
+      for (let x = 0; x < 5; x++) state[y + x] = row[x] ^ (~row[(x + 1) % 5] & MASK64 & row[(x + 2) % 5])
+    }
+    state[0] ^= constant
+  }
+}
+
+/** keccak256 of the bytes `data` (hex, with or without 0x), as 0x-prefixed lowercase hex. */
+export function keccak256(data: string): string {
+  const body = data.startsWith('0x') ? data.slice(2) : data
+  const bytes: number[] = []
+  for (let i = 0; i < body.length; i += 2) bytes.push(Number.parseInt(body.slice(i, i + 2), 16))
+  const rate = 136
+  bytes.push(0x01)
+  while (bytes.length % rate !== 0) bytes.push(0)
+  bytes[bytes.length - 1] |= 0x80
+  const state: bigint[] = Array.from({ length: 25 }, () => 0n)
+  for (let block = 0; block < bytes.length; block += rate) {
+    for (let lane = 0; lane < rate / 8; lane++) {
+      let value = 0n
+      for (let b = 7; b >= 0; b--) value = (value << 8n) | BigInt(bytes[block + lane * 8 + b])
+      state[lane] ^= value
+    }
+    permute(state)
+  }
+  let out = ''
+  for (let lane = 0; lane < 4; lane++) {
+    for (let b = 0; b < 8; b++) out += Number((state[lane] >> BigInt(8 * b)) & 0xffn).toString(16).padStart(2, '0')
+  }
+  return `0x${out}`
+}
+
+/** A setup operation's id: keccak256(abi.encode(uint256 4663, address setup, address owner, uint64 nonce)). */
+export const operationId = (owner: string, nonce: bigint) =>
+  keccak256(word(BigInt(CHAIN_ID)) + addressWord(SETUP_CONTRACT) + addressWord(owner) + word(nonce))
+
+// ---------------------------------------------------------------------------
+// The scan
+// ---------------------------------------------------------------------------
+
+/** What one answer has spent: RPC calls, and bytes of eth_getLogs replies. */
+export interface Budget {
+  calls: number
+  started: number
+  logBytes: number
+}
+
+/**
+ * A reply's body as text, read no further than `limit` bytes: null past it.
+ * The RPC sends its replies chunked, with no length, so the size is known
+ * only by reading.
+ */
+async function bodyWithin(response: Response, limit: number): Promise<{ text: string | null; bytes: number }> {
+  if (!response.body) return { text: '', bytes: 0 }
+  const reader = response.body.getReader()
+  const parts: Uint8Array[] = []
+  let bytes = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    bytes += value.byteLength
+    if (bytes > limit) {
+      await reader.cancel().catch(() => undefined)
+      return { text: null, bytes }
+    }
+    parts.push(value)
+  }
+  const joined = new Uint8Array(bytes)
+  let at = 0
+  for (const part of parts) {
+    joined.set(part, at)
+    at += part.byteLength
+  }
+  return { text: new TextDecoder().decode(joined), bytes }
+}
+
+async function rpc(deps: OwnedDeps, budget: Budget, method: string, params: unknown[]): Promise<unknown> {
+  budget.calls += 1
+  if (budget.calls > MAX_RPC_CALLS) throw new ChainError('fatal', 'rpc_call_cap')
+  if (deps.now() - budget.started > DEADLINE_MS) throw new ChainError('fatal', 'deadline')
+  const logs = method === 'eth_getLogs'
+  // A call that took too long is, for a log range, a range too large; any other call stops the scan.
+  const slow = (error: unknown) => {
+    const name = error instanceof Error ? error.name : ''
+    return name === 'TimeoutError' || name === 'AbortError' ? new ChainError(logs ? 'range' : 'fatal', 'rpc_timeout') : null
+  }
+  let response: Response
+  try {
+    response = await deps.fetch(RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: budget.calls, method, params }),
+      signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+    })
+  } catch (error) {
+    throw slow(error) ?? new ChainError('fatal', 'rpc_unreachable')
+  }
+  if (response.status === 429 || response.status === 503) throw new ChainError('rate', `http_${response.status}`)
+  if (!response.ok) throw new ChainError('fatal', `http_${response.status}`)
+  let read: { text: string | null; bytes: number }
+  try {
+    read = await bodyWithin(response, logs ? MAX_LOG_BYTES - budget.logBytes : MAX_REPLY_BYTES)
+  } catch (error) {
+    throw slow(error) ?? new ChainError('fatal', 'rpc_read_failed')
+  }
+  if (logs) budget.logBytes += read.bytes
+  if (read.text === null) throw logs ? new ChainError('bytes', 'log_byte_cap') : new ChainError('fatal', 'reply_too_large')
+  let body: unknown
+  try {
+    body = JSON.parse(read.text)
+  } catch {
+    throw new ChainError('fatal', 'rpc_invalid_json')
+  }
+  if (!body || typeof body !== 'object') throw new ChainError('fatal', 'rpc_invalid_envelope')
+  const envelope = body as { result?: unknown; error?: { code?: unknown; message?: unknown; data?: unknown } }
+  if (envelope.error) {
+    const inner = envelope.error.data && typeof envelope.error.data === 'object' ? (envelope.error.data as { message?: unknown }).message : undefined
+    const message = [envelope.error.message, inner].filter((part): part is string => typeof part === 'string').join(' ')
+    throw new ChainError(classifyRpcError(envelope.error.code, message), message.slice(0, 120) || 'rpc_error')
+  }
+  if (!('result' in envelope)) throw new ChainError('fatal', 'rpc_missing_result')
+  return envelope.result
+}
+
+/** A call asked again after a growing wait while the RPC says it is rate limited. */
+async function paced(deps: OwnedDeps, budget: Budget, method: string, params: unknown[]): Promise<unknown> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await rpc(deps, budget, method, params)
+    } catch (error) {
+      if (!(error instanceof ChainError) || error.kind !== 'rate' || attempt >= RATE_ATTEMPTS) throw error
+      await deps.sleep(BACKOFF_MS * attempt)
+    }
+  }
+}
+
+const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/i
+const HASH = /^0x[0-9a-f]{64}$/i
+
+function quantity(value: unknown): number {
+  if (typeof value !== 'string' || !QUANTITY.test(value)) throw new ChainError('fatal', 'invalid_quantity')
+  const n = Number(BigInt(value))
+  if (!Number.isSafeInteger(n)) throw new ChainError('fatal', 'invalid_quantity')
+  return n
+}
+
+/** The NFT id a log names, when it is a PositionManager Transfer to `ownerTopic`; null for anything else. */
+function receivedId(log: unknown, ownerTopic: string): bigint | null {
+  const entry = (log ?? {}) as { address?: unknown; topics?: unknown; removed?: unknown }
+  const topics = entry.topics
+  if (typeof entry.address !== 'string' || entry.address.toLowerCase() !== POSITION_MANAGER || !Array.isArray(topics) || topics.length !== 4) return null
+  if (entry.removed === true || String(topics[0]).toLowerCase() !== TRANSFER_TOPIC || String(topics[2]).toLowerCase() !== ownerTopic || !HASH.test(String(topics[3]))) return null
+  return BigInt(String(topics[3]))
+}
+
+/**
+ * The NFT ids the owner received, most recent first, at most MAX_IDS of them.
+ * Ranges are asked newest first; one the RPC refuses as too large or too slow
+ * is split in two, down to MIN_SPLIT_BLOCKS, and its newer half is asked
+ * first. A reply's logs come in chain order, so each is walked from its end.
+ * The walk stops at MAX_IDS distinct ids, or when the answer's log bytes
+ * (MAX_LOG_BYTES) are used up; `capped` then says that older transfers may
+ * name ids not returned.
+ */
+export async function receivedIds(deps: OwnedDeps, budget: Budget, owner: string, head: number): Promise<{ ids: bigint[]; capped: boolean }> {
+  const ownerTopic = `0x${addressWord(owner)}`
+  const queue: [number, number][] = head >= FIRST_TRANSFER_BLOCK ? [[FIRST_TRANSFER_BLOCK, head]] : []
+  const ids: bigint[] = []
+  const seen = new Set<bigint>()
+  while (queue.length > 0) {
+    if (budget.logBytes >= MAX_LOG_BYTES) return { ids, capped: true }
+    const [from, to] = queue.shift() as [number, number]
+    let logs: unknown
+    try {
+      logs = await paced(deps, budget, 'eth_getLogs', [{ address: POSITION_MANAGER, fromBlock: hex(from), toBlock: hex(to), topics: [TRANSFER_TOPIC, null, ownerTopic] }])
+    } catch (error) {
+      if (error instanceof ChainError && error.kind === 'bytes') return { ids, capped: true }
+      if (error instanceof ChainError && error.kind === 'range' && to - from + 1 >= 2 * MIN_SPLIT_BLOCKS) {
+        const middle = from + Math.floor((to - from) / 2)
+        queue.unshift([middle + 1, to], [from, middle])
+        continue
+      }
+      throw error
+    }
+    if (!Array.isArray(logs)) throw new ChainError('fatal', 'invalid_logs')
+    for (let i = logs.length - 1; i >= 0; i--) {
+      const id = receivedId(logs[i], ownerTopic)
+      if (id === null || seen.has(id)) continue
+      // An id past the cap: older than every id kept.
+      if (ids.length === MAX_IDS) return { ids, capped: true }
+      seen.add(id)
+      ids.push(id)
+    }
+    // Full, with older ranges never asked.
+    if (ids.length === MAX_IDS && queue.length > 0) return { ids, capped: true }
+  }
+  return { ids, capped: false }
+}
+
+async function aggregate(deps: OwnedDeps, budget: Budget, calls: SubCall[], block: number) {
+  const result = await paced(deps, budget, 'eth_call', [{ to: MULTICALL3, data: encodeAggregate3(calls) }, hex(block)])
+  if (typeof result !== 'string') throw new ChainError('fatal', 'invalid_call_result')
+  const decoded = decodeAggregate3(result)
+  if (decoded.length !== calls.length) throw new ChainError('fatal', 'invalid_call_result')
+  return decoded
+}
+
+/** A 32-byte result word, or null for a failed or short sub-call. */
+const resultWord = (call: { success: boolean; data: string }): bigint | null => (call.success && call.data.length >= 64 ? BigInt(`0x${call.data.slice(0, 64)}`) : null)
+
+/** The whole answer for one owner (lowercase 0x address). */
+export async function scanOwner(deps: OwnedDeps, owner: string): Promise<OwnedScan> {
+  const budget: Budget = { calls: 0, started: deps.now(), logBytes: 0 }
+  const head = quantity(await paced(deps, budget, 'eth_blockNumber', []))
+  const { ids, capped } = await receivedIds(deps, budget, owner, head)
+
+  const positions: { tokenId: bigint; status: OwnedStatus }[] = []
+  let balance: bigint | null = null
+  let nonce: bigint | null = null
+  const chunks = Math.max(1, Math.ceil(ids.length / IDS_PER_CALL))
+  for (let chunk = 0; chunk < chunks; chunk++) {
+    const part = ids.slice(chunk * IDS_PER_CALL, (chunk + 1) * IDS_PER_CALL)
+    const calls: SubCall[] = []
+    if (chunk === 0) {
+      calls.push({ target: POSITION_MANAGER, data: SELECTOR.balanceOf + addressWord(owner) })
+      calls.push({ target: SETUP_CONTRACT, data: SELECTOR.ownerNonce + addressWord(owner) })
+    }
+    for (const id of part) {
+      calls.push({ target: POSITION_MANAGER, data: SELECTOR.ownerOf + word(id) })
+      calls.push({ target: POSITION_MANAGER, data: SELECTOR.getPositionLiquidity + word(id) })
+    }
+    const results = await aggregate(deps, budget, calls, head)
+    let at = 0
+    if (chunk === 0) {
+      balance = resultWord(results[0])
+      nonce = resultWord(results[1])
+      at = 2
+    }
+    for (const id of part) {
+      const holder = resultWord(results[at])
+      const liquidity = resultWord(results[at + 1])
+      at += 2
+      // Burned (ownerOf reverts), sent away since, or unreadable: not listed.
+      if (holder === null || liquidity === null || holder >> 160n !== 0n || asAddress(holder) !== owner) continue
+      positions.push({ tokenId: id, status: liquidity > 0n ? 'open' : 'closed' })
+    }
+  }
+
+  const deposits: OwnedDeposit[] = []
+  if (nonce !== null && nonce > 0n) {
+    const operations: string[] = []
+    for (let n = nonce - 1n; n >= 0n && n >= nonce - BigInt(RECENT_OPERATIONS); n--) operations.push(operationId(owner, n))
+    const calls = operations.flatMap((id) => [
+      { target: SETUP_CONTRACT, data: SELECTOR.operation + id.slice(2) },
+      { target: SETUP_CONTRACT, data: SELECTOR.recoveryStarted + id.slice(2) },
+    ])
+    const results = await aggregate(deps, budget, calls, head)
+    operations.forEach((id, i) => {
+      const [op, recovery] = [results[2 * i], results[2 * i + 1]]
+      if (!op.success || resultWord(recovery) !== 0n) return
+      const value = decodeOperation(op.data)
+      if (value.owner !== owner || value.closed || (value.balance0 === 0n && value.balance1 === 0n)) return
+      deposits.push({
+        operationId: id,
+        currency0: value.currency0,
+        currency1: value.currency1,
+        fee: value.fee,
+        tickSpacing: value.tickSpacing,
+        hooks: value.hooks,
+        balance0: value.balance0.toString(),
+        balance1: value.balance1.toString(),
+      })
+    })
+  }
+
+  // Open first, then closed; newest NFT first within each.
+  positions.sort((a, b) => (a.status === b.status ? (a.tokenId > b.tokenId ? -1 : a.tokenId < b.tokenId ? 1 : 0) : a.status === 'open' ? -1 : 1))
+  return {
+    owner,
+    block: head,
+    positions: positions.map(({ tokenId, status }) => ({ tokenId: tokenId.toString(), status })),
+    complete: balance !== null && BigInt(positions.length) === balance,
+    deposits,
+    capped,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The request
+// ---------------------------------------------------------------------------
+
+/** The part of the Workers cache this route uses; caches.default in production, absent in tests. */
+export interface AnswerCache {
+  match(request: Request): Promise<Response | undefined>
+  put(request: Request, response: Response): Promise<void>
+}
+
+const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
+/** Present, as "true", on an answer whose log walk stopped early (OwnedScan.capped). */
+export const CAPPED = 'X-Owned-Capped'
+
+export const refuse = (error: string, status: number, headers: Record<string, string> = {}) =>
+  new Response(JSON.stringify({ error }), { status, headers: { ...JSON_HEADERS, ...headers } })
+
+const OWNER = /^0x[0-9a-fA-F]{40}$/
+/** Every burn is a Transfer to it, and no wallet holds anything there: never scanned. */
+const ZERO_OWNER = /^0x0{40}$/
+
+/**
+ * The owner from a POST body of exactly {"owner": "0x…"}, lowercase, or the
+ * refusal. {"owner": "0x…", "fresh": true} is the same question asked right
+ * after the page changed the answer (a refund, a close): it skips a kept
+ * answer older than FRESH_AFTER_MS and replaces it, but never a kept failure.
+ */
+export async function ownerFrom(request: Request, url: URL): Promise<{ owner: string; fresh: boolean } | Response> {
+  if (request.method !== 'POST') return refuse('method_not_allowed', 405, { Allow: 'POST' })
+  const origin = request.headers.get('Origin')
+  const site = request.headers.get('Sec-Fetch-Site')
+  if ((origin !== null && origin !== url.origin) || (site !== null && site !== 'same-origin')) return refuse('origin_not_allowed', 403)
+  if (!(request.headers.get('Content-Type') ?? '').toLowerCase().startsWith('application/json')) return refuse('json_required', 415)
+  if (Number(request.headers.get('Content-Length') ?? '0') > MAX_BODY_BYTES) return refuse('request_too_large', 413)
+  const text = await request.text()
+  if (text.length > MAX_BODY_BYTES) return refuse('request_too_large', 413)
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    return refuse('invalid_request', 400)
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return refuse('invalid_request', 400)
+  const keys = Object.keys(body).sort().join()
+  const { owner, fresh } = body as { owner?: unknown; fresh?: unknown }
+  if ((keys !== 'owner' && keys !== 'fresh,owner') || (keys === 'fresh,owner' && fresh !== true)) return refuse('invalid_request', 400)
+  if (typeof owner !== 'string' || !OWNER.test(owner) || ZERO_OWNER.test(owner)) return refuse('invalid_owner', 400)
+  return { owner: owner.toLowerCase(), fresh: fresh === true }
+}
+
+/** The cache key for an owner: a digest of the address, so the address itself is never part of a URL, even an internal one. */
+async function cacheKey(url: URL, owner: string): Promise<Request> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`owned/v1|${owner}`)))
+  const name = Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('')
+  return new Request(`${url.origin}/api/owned/v1/cache/${name}`)
+}
+
+/** What one scan came to: its answer, or the code of its failure. */
+type Outcome = 'answer' | 'chain_busy' | 'chain_unavailable'
+
+/** On a kept entry: when it was stored (ms since the epoch), and its Outcome. */
+const STORED_AT = 'X-Owned-Stored-At'
+const OUTCOME = 'X-Owned-Outcome'
+
+const failed = (code: Outcome, leftMs: number) => refuse(code, 502, { 'Retry-After': String(Math.max(1, Math.ceil(leftMs / 1000))) })
+const cappedHeader = (capped: boolean): Record<string, string> => (capped ? { [CAPPED]: 'true' } : {})
+
+/**
+ * What a kept entry answers at `now`, or null when it is too old for this
+ * question (or was not stored with these headers). The cache's own max-age
+ * drops it too; the age is checked here so the rule does not depend on it.
+ */
+function fromKept(kept: Response, now: number, fresh: boolean): Response | null {
+  const at = Number(kept.headers.get(STORED_AT))
+  const outcome = kept.headers.get(OUTCOME)
+  if (!Number.isSafeInteger(at)) return null
+  const age = Math.max(0, now - at)
+  if (outcome === 'chain_busy' || outcome === 'chain_unavailable') {
+    const left = FAILURE_SECONDS * 1000 - age
+    return left > 0 ? failed(outcome, left) : null
+  }
+  if (outcome !== 'answer' || age >= CACHE_SECONDS * 1000 || (fresh && age >= FRESH_AFTER_MS)) return null
+  return new Response(kept.body, { status: 200, headers: { ...JSON_HEADERS, ...cappedHeader(kept.headers.get(CAPPED) === 'true') } })
+}
+
+/**
+ * POST /api/owned/v1/positions with {"owner": "0x…"}: the owner's answer, as
+ * JSON. A chain that cannot be read fully is a 502, never a partial list
+ * presented as the whole. Per owner, under a digest, the last outcome is kept:
+ * an answer for CACHE_SECONDS (a fresh question takes it only within
+ * FRESH_AFTER_MS), a failure for FAILURE_SECONDS whatever the question, so
+ * asking in a loop cannot make every question a scan of the public RPC.
+ */
+export async function answerOwned(request: Request, deps: OwnedDeps, cache: AnswerCache | null = null, waitUntil?: (work: Promise<unknown>) => void): Promise<Response> {
+  const url = new URL(request.url)
+  const asked = await ownerFrom(request, url)
+  if (asked instanceof Response) return asked
+  const { owner, fresh } = asked
+  const key = cache ? await cacheKey(url, owner) : null
+  if (cache && key) {
+    const kept = await cache.match(key).catch(() => undefined)
+    const answered = kept ? fromKept(kept, deps.now(), fresh) : null
+    if (answered) return answered
+  }
+  let outcome: Outcome = 'answer'
+  let text = ''
+  let capped = false
+  try {
+    const { capped: stopped, ...answer } = await scanOwner(deps, owner)
+    text = JSON.stringify(answer satisfies OwnedAnswer)
+    capped = stopped
+  } catch (error) {
+    outcome = error instanceof ChainError && error.kind === 'rate' ? 'chain_busy' : 'chain_unavailable'
+  }
+  if (cache && key) {
+    const seconds = outcome === 'answer' ? CACHE_SECONDS : FAILURE_SECONDS
+    const entry = new Response(outcome === 'answer' ? text : JSON.stringify({ error: outcome }), {
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': `max-age=${seconds}`, [STORED_AT]: String(deps.now()), [OUTCOME]: outcome, ...cappedHeader(capped) },
+    })
+    const stored = cache.put(key, entry).catch(() => undefined)
+    if (waitUntil) waitUntil(stored)
+    else await stored
+  }
+  return outcome === 'answer' ? new Response(text, { status: 200, headers: { ...JSON_HEADERS, ...cappedHeader(capped) } }) : failed(outcome, FAILURE_SECONDS * 1000)
+}
