@@ -184,7 +184,11 @@ rendered command names: `rpc.json` for `auth`, `onboarding` and `deposit`
 (the listener refuses to start enabled without it; owned by the family's
 account, mode `0600`, an `rpcUrl` on an allowed host), `profile.json` for
 `performance` and `execution-status` — the Access application and hostname,
-the tunnel route, the Worker's service token and flag (#170–#174).
+the tunnel route, the Worker's service token and flag (#170–#174). For `auth`,
+the release the listener runs is named by its own `50-release.conf`, written by
+`install_auth_release.py` ([financial upgrade](FINANCIAL_BACKEND_UPGRADE.md));
+the egress drop-in sorts after it and replaces only `ExecStart`, whose relative
+script path resolves in that release.
 
 ## Not yet a role
 

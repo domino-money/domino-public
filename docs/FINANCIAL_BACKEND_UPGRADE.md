@@ -112,6 +112,52 @@ before those credentials exist and does not claim provider availability or
 financial readiness. No change to the current read/development access expiry
 or quotas is part of this operation.
 
+## Moving the session listener to a newer release
+
+This installer runs once, so it never moves a service to a later commit. The
+listener it installed on 13 September still runs `fbc0d5e`, which answers
+`session-v1` 3.0.0-rc.2 and still checks the removed allowlist, while the
+session Worker expects 3.0.0-rc.3 (issue #182, `90b23c5`).
+`scripts/staging/install_auth_release.py` moves `domino-auth` alone:
+
+- it writes the archive's `backend/` (tests excluded) to
+  `/opt/domino/financial/releases/<commit>/auth`, root-owned and read-only,
+  with the empty mount point for the listener's private runtime. A commit
+  directory it creates is `0555` whatever the umask, and it refuses an existing
+  one the listener's user could not traverse;
+- it writes one drop-in, `domino-auth.service.d/50-release.conf`, with the
+  unit's `Description`, `WorkingDirectory` and `BindPaths` exactly as
+  `unit_text` renders them for that commit. The unit file stays as this
+  installer wrote it; the egress policy's `60-continuous-reads.conf` sorts after
+  the drop-in and keeps owning `ExecStart`;
+- it keeps a receipt of the drop-in it replaced under
+  `/var/backups/domino-auth-release/`.
+
+It refuses a unit that differs from what this installer wrote, a drop-in it did
+not write, a pending daemon-reload, a dependency lock that differs from the
+running release's, and a database that still has migration 011's session
+trigger (027 not applied). It reads nothing private and never starts, stops or
+reloads anything; `--inspect` needs root only to read that trigger.
+
+```sh
+git archive --format=tar -o auth-release.tar "$RELEASE_SHA"
+sha256sum auth-release.tar
+sudo -n python3 scripts/staging/install_auth_release.py --archive auth-release.tar \
+  --archive-sha256 "$ARCHIVE_SHA256" --commit "$RELEASE_SHA" --inspect
+sudo -n python3 scripts/staging/install_auth_release.py --archive auth-release.tar \
+  --archive-sha256 "$ARCHIVE_SHA256" --commit "$RELEASE_SHA" --apply
+sudo systemctl daemon-reload
+```
+
+The listener runs the release from its next start. Once the continuous egress
+policy makes it a member of `domino-continuous-reads.target`, restart that
+target, never the listener alone: a member stopped or restarted takes the tunnel
+with it ([home VM runbook](HOME_VM_RUNBOOK.md) §6). `--rollback <commit>` puts
+back the drop-in that commit replaced, or removes it; reload and restart the
+same way. Releases and receipts stay. A commit is applied once: after a failed
+or rolled-back apply, install a new commit, or remove that release directory by
+hand first.
+
 ## Scoped recovery
 
 `--rollback` with the same archive/commit restores the original three financial
