@@ -21,7 +21,13 @@ REPO = Path(__file__).resolve().parents[3]
 BEFORE = 'a' * 40
 OTHER = 'c' * 40
 # The unit keys systemd treats as lists; every other key is overridden by a later value.
-LISTS = {'BindPaths', 'BindReadOnlyPaths', 'ReadWritePaths'}
+LISTS = {'ReadWritePaths'}
+# BindPaths and BindReadOnlyPaths append to one ordered list in systemd
+# (ExecContext.bind_mounts, read-only taken from the key), and an empty
+# assignment to either frees all of it. On 24 September a drop-in that reset
+# BindPaths= lost the unit's read-only configuration bind with it, and the
+# enabled listener found no rpc.json.
+BINDS = ('BindPaths', 'BindReadOnlyPaths')
 
 
 def settings(text, start=None):
@@ -37,7 +43,13 @@ def settings(text, start=None):
             section = result.setdefault(line, {})
             continue
         key, value = line.split('=', 1)
-        if not value:
+        if key in BINDS:
+            binds = section.setdefault('Binds', [])
+            if value:
+                binds.append((key, value))
+            else:
+                binds.clear()
+        elif not value:
             section.pop(key, None)
         elif key in LISTS:
             section.setdefault(key, []).append(value)
@@ -137,10 +149,18 @@ class AuthReleaseTests(unittest.TestCase):
     def test_the_dropin_over_the_installed_unit_is_the_unit_written_for_the_new_release(self):
         before = installer.financial.unit_text('auth', BEFORE)
         after = settings(installer.dropin_text(self.commit), settings(before))
-        self.assertEqual(after, settings(installer.financial.unit_text('auth', self.commit)))
+        wanted = settings(installer.financial.unit_text('auth', self.commit))
+        self.assertEqual(after, wanted)
         # Only what names a release: the egress drop-in owns ExecStart.
         self.assertEqual(sorted(settings(installer.dropin_text(self.commit))['[Service]']),
-                         ['BindPaths', 'WorkingDirectory'])
+                         ['Binds', 'WorkingDirectory'])
+        # The egress drop-in sorts after this one and appends its hosts bind to the
+        # same list, so the listener keeps the runtime and configuration binds too.
+        egress = '[Service]\nIPAddressAllow=\nBindReadOnlyPaths=/etc/domino/continuous-reads/auth.hosts:/etc/hosts\n'
+        self.assertEqual(settings(egress, after)['[Service]']['Binds'],
+                         [*wanted['[Service]']['Binds'],
+                          ('BindReadOnlyPaths', '/etc/domino/continuous-reads/auth.hosts:/etc/hosts')])
+        self.assertEqual([key for key, _ in wanted['[Service]']['Binds']], ['BindPaths', 'BindReadOnlyPaths'])
 
     def test_the_unit_must_be_loaded_where_and_as_the_financial_upgrade_wrote_it(self):
         for changes, reason in (({'LoadState': 'not-found'}, 'auth_unit_not_loaded'),

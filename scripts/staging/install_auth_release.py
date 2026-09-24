@@ -70,9 +70,12 @@ def dropin_text(commit):
 
     def line(key):
         return next(value for value in lines if value.startswith(key + '='))
-    # BindPaths is a list: the empty assignment drops the unit's own bind first.
+    # BindPaths and BindReadOnlyPaths share one list in systemd, so the empty
+    # assignment that drops the unit's own runtime bind drops its read-only
+    # configuration bind too; both come back from the unit for this release.
     return HEADER + '\n'.join(('[Unit]', line('Description'), '', '[Service]',
-                               line('WorkingDirectory'), 'BindPaths=', line('BindPaths'))) + '\n'
+                               line('WorkingDirectory'), 'BindPaths=', line('BindPaths'),
+                               line('BindReadOnlyPaths'))) + '\n'
 
 
 def release_of(path):

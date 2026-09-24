@@ -190,6 +190,19 @@ the release the listener runs is named by its own `50-release.conf`, written by
 the egress drop-in sorts after it and replaces only `ExecStart`, whose relative
 script path resolves in that release.
 
+A family in the target's `Requires=` shares its failures with the read path.
+systemd propagates a member's restart to the target that requires it, and the
+target's restart to every unit `PartOf=` it: on 24 September `domino-auth`,
+enabled while its drop-in had lost its configuration bind, exited at start, and
+each of its three automatic restarts restarted the egress service, reader,
+gateway, tunnel and the public-data lanes (23:20:50 to 23:21:09 UTC), until its
+start limit left it failed and the target inactive. Recovery put the target
+back without it and set its egress drop-in aside. Start a family enabled
+and watch it run before its unit joins the target, and keep one that can still
+fail at start out of it: the rendered target names every enabled family in
+`Requires=`, and a dependency that does not propagate restarts (`Wants=`) is
+not what the renderer writes today.
+
 ## Not yet a role
 
 `domino-reference-collector` (the reference price timer) has no identity on

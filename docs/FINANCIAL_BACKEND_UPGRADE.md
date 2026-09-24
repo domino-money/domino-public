@@ -126,10 +126,13 @@ session Worker expects 3.0.0-rc.3 (issue #182, `90b23c5`).
   directory it creates is `0555` whatever the umask, and it refuses an existing
   one the listener's user could not traverse;
 - it writes one drop-in, `domino-auth.service.d/50-release.conf`, with the
-  unit's `Description`, `WorkingDirectory` and `BindPaths` exactly as
-  `unit_text` renders them for that commit. The unit file stays as this
-  installer wrote it; the egress policy's `60-continuous-reads.conf` sorts after
-  the drop-in and keeps owning `ExecStart`;
+  unit's `Description`, `WorkingDirectory`, `BindPaths` and `BindReadOnlyPaths`
+  exactly as `unit_text` renders them for that commit. systemd keeps both bind
+  keys in one list, so the empty `BindPaths=` that drops the old runtime bind
+  drops the read-only configuration bind too, and both come back. The unit file
+  stays as this installer wrote it; the egress policy's
+  `60-continuous-reads.conf` sorts after the drop-in, appends its hosts bind and
+  keeps owning `ExecStart`;
 - it keeps a receipt of the drop-in it replaced under
   `/var/backups/domino-auth-release/`.
 
@@ -148,6 +151,20 @@ sudo -n python3 scripts/staging/install_auth_release.py --archive auth-release.t
   --archive-sha256 "$ARCHIVE_SHA256" --commit "$RELEASE_SHA" --apply
 sudo systemctl daemon-reload
 ```
+
+Before the first start of a release, compare what systemd loaded with what the
+unit written for that commit names; it is read-only and catches a drop-in that
+loses a bind:
+
+```sh
+systemctl show domino-auth.service -p WorkingDirectory -p BindPaths -p BindReadOnlyPaths -p ExecStart
+```
+
+The first version of this tool (`64b9f3f1`, 24 September) wrote the drop-in
+without `BindReadOnlyPaths`: the listener then had no
+`/run/domino-financial-auth-config`, and enabled, it exited at once for want of
+`rpc.json`. Its drop-in is not one a later version recognises; take it back
+with that commit's own `--rollback`, reload, then apply the later commit.
 
 The listener runs the release from its next start. Once the continuous egress
 policy makes it a member of `domino-continuous-reads.target`, restart that
