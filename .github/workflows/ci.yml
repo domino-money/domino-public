@@ -119,11 +119,12 @@ jobs:
   frontend_browser:
     name: Frontend browser (${{ matrix.suite }})
     runs-on: ubuntu-24.04
-    # check:app's browser suites, one job each. These 2-vCPU runners give
+    # check:app's browser suites, one job each: test:render is test:pages and
+    # then test:finance, and test:gate follows. These 2-vCPU runners give
     # node --test one file at a time, so in one job the suites ran end to end
     # and outgrew the limit twice: 15 minutes (runs #336/#337), then 25 (runs
     # 35948947372 and 36071207614 were cut there with no test failed or hung).
-    # Run 36114583875 spent 6.8 minutes on render, 7.4 on finance (0.7 on
+    # Run 36114583875 spent 6.8 minutes on pages, 7.4 on finance (0.7 on
     # 19 September) and 9.4 on gate; each job adds about a minute to install
     # and build.
     timeout-minutes: 20
@@ -131,7 +132,7 @@ jobs:
       # Every suite reports, even when another one fails.
       fail-fast: false
       matrix:
-        suite: [render, finance, gate]
+        suite: [pages, finance, gate]
     env:
       WRANGLER_SEND_METRICS: 'false'
     steps:
