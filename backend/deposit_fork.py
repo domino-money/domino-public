@@ -7,7 +7,6 @@ is supplied to this helper. Local funding and mining are experiment controls.
 from collections import Counter
 import json
 import os
-from pathlib import Path
 import socket
 import subprocess
 import tempfile
@@ -18,8 +17,8 @@ from urllib.parse import urlsplit
 
 from discovery import CHAIN_ID, RPC_URL, DataError
 from deposit_rpc import DepositRpc
+import local_anvil
 
-ROOT = Path(__file__).resolve().parents[1]
 READ_METHODS = DepositRpc.METHODS | {'web3_clientVersion', 'eth_getStorageAt',
     'eth_getBlockByHash', 'anvil_nodeInfo'}
 LOCAL_CONTROLS = frozenset({'anvil_setBalance', 'anvil_setCode', 'anvil_impersonateAccount',
@@ -35,7 +34,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 class DepositFork:
     """Own one loopback node, with no option to attach to an existing wallet RPC."""
-    def __init__(self, gateway, *, block, anvil=None, total_seconds=1200, max_requests=5000, hardfork='cancun'):
+    def __init__(self, gateway, *, block, total_seconds=1200, max_requests=5000, hardfork='cancun'):
         # Cancun matches every earlier qualification. Prague is what makes an
         # EIP-7702 designator execute on the child; Nitro already runs it.
         if (not isinstance(block, dict) or not isinstance(block.get('number'), str)
@@ -54,7 +53,6 @@ class DepositFork:
         self.gateway, self.source_block = gateway, dict(block)
         self.number, self.total_seconds, self.max_requests = number, total_seconds, max_requests
         self.hardfork = hardfork
-        self.anvil = Path(anvil) if anvil else ROOT/'node_modules/.bin/anvil'
         self.process = self.temp = None
         self._verified = False
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
@@ -79,12 +77,12 @@ class DepositFork:
             self.url = f'http://127.0.0.1:{port}'
             # Only the task-owned read gateway reaches the upstream. Its URL,
             # not a credential-bearing provider URL, appears in child argv.
-            args = [str(self.anvil), '--host', '127.0.0.1', '--port', str(port),
+            args = ['--host', '127.0.0.1', '--port', str(port),
                 '--chain-id', str(CHAIN_ID), '--accounts', '0', '--silent',
                 '--fork-url', gateway_url, '--fork-block-number', str(self.number),
                 '--no-storage-caching', '--retries', '0', '--timeout', '10000',
                 '--hardfork', self.hardfork, '--slots-in-an-epoch', '1']
-            self.process = subprocess.Popen(args, cwd=self.temp.name,
+            self.process = local_anvil.start(args, cwd=self.temp.name,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 env={'PATH': os.environ.get('PATH', '/usr/bin:/bin')})
             for _ in range(200):
@@ -111,13 +109,8 @@ class DepositFork:
 
     def close(self):
         self._verified = False
-        if self.process is not None and self.process.poll() is None:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait(timeout=5)
+        if self.process is not None:
+            local_anvil.stop(self.process)
         if self.temp is not None:
             self.temp.cleanup()
 

@@ -16,6 +16,7 @@ from urllib.request import Request, ProxyHandler, build_opener
 from deposit_fork import DepositFork, LOCAL_CONTROLS
 from discovery import CHAIN_ID, DataError
 from fork_read_gateway import ForkReadGateway, METHODS
+import local_anvil
 import qualify_deposit_fork as runner
 
 
@@ -93,7 +94,8 @@ class DepositForkTests(unittest.TestCase):
         gateway = Gateway()
         gateway.endpoint = ENDPOINT
         fork = DepositFork(gateway, block=BLOCK)
-        with patch('deposit_fork.subprocess.Popen', return_value=process) as spawn, \
+        with patch('deposit_fork.local_anvil.start', return_value=process) as spawn, \
+                patch('deposit_fork.local_anvil.stop') as stop, \
                 patch.object(fork, '_request', side_effect=self.answers()), \
                 patch.dict(os.environ, {'ALCHEMY_API_KEY': CANARY, 'PRIVATE_KEY': CANARY}):
             with fork:
@@ -110,7 +112,7 @@ class DepositForkTests(unittest.TestCase):
                 self.assertEqual(set(options['env']), {'PATH'})
                 self.assertEqual(options['stdout'], subprocess.DEVNULL)
                 self.assertEqual(options['stderr'], subprocess.DEVNULL)
-            process.terminate.assert_called_once()
+            stop.assert_called_once_with(process)
             self.assertFalse(path.exists())
             self.assertFalse(fork._verified)
 
@@ -118,7 +120,8 @@ class DepositForkTests(unittest.TestCase):
         # Prague makes an EIP-7702 designator execute on the child.
         process = self.process()
         fork = DepositFork(Gateway(), block=BLOCK, hardfork='prague')
-        with patch('deposit_fork.subprocess.Popen', return_value=process) as spawn, \
+        with patch('deposit_fork.local_anvil.start', return_value=process) as spawn, \
+                patch('deposit_fork.local_anvil.stop'), \
                 patch.object(fork, '_request', side_effect=self.answers()):
             with fork:
                 args = spawn.call_args[0][0]
@@ -133,13 +136,14 @@ class DepositForkTests(unittest.TestCase):
         for answers in cases:
             process = self.process()
             fork = DepositFork(Gateway(), block=BLOCK)
-            with patch('deposit_fork.subprocess.Popen', return_value=process), \
+            with patch('deposit_fork.local_anvil.start', return_value=process), \
+                    patch('deposit_fork.local_anvil.stop') as stop, \
                     patch.object(fork, '_request', side_effect=answers):
                 with self.assertRaises(DataError):
                     fork.__enter__()
                 self.assertFalse(fork._verified)
                 self.assertFalse(Path(fork.temp.name).exists())
-                process.terminate.assert_called_once()
+                stop.assert_called_once_with(process)
                 with self.assertRaisesRegex(DataError, '^fork_method_rejected$'):
                     fork.request('eth_sendTransaction', [{}])
 
@@ -152,7 +156,7 @@ class DepositForkTests(unittest.TestCase):
                 gateway = Gateway()
                 gateway.url = url
                 fork = DepositFork(gateway, block=BLOCK)
-                with patch('deposit_fork.subprocess.Popen') as spawn:
+                with patch('deposit_fork.local_anvil.start') as spawn:
                     with self.assertRaises(DataError) as caught:
                         fork.__enter__()
                     self.assertNotIn(CANARY, str(caught.exception))
@@ -161,23 +165,21 @@ class DepositForkTests(unittest.TestCase):
 
     def test_spawn_failure_cleans_temp_without_marking_node_verified(self):
         fork = DepositFork(Gateway(), block=BLOCK)
-        with patch('deposit_fork.subprocess.Popen', side_effect=FileNotFoundError('anvil absent')):
+        with patch('deposit_fork.local_anvil.start', side_effect=FileNotFoundError('anvil absent')):
             with self.assertRaises((DataError, OSError)):
                 fork.__enter__()
         self.assertFalse(fork._verified)
         self.assertFalse(Path(fork.temp.name).exists())
 
-    def test_stubborn_child_is_killed_and_waited_before_temp_cleanup(self):
+    def test_child_is_stopped_before_temp_cleanup(self):
         fork = DepositFork(Gateway(), block=BLOCK)
-        process = self.process()
-        process.wait.side_effect = [subprocess.TimeoutExpired('anvil', 5), 0]
-        fork.process = process
+        fork.process = process = self.process()
         fork.temp = tempfile.TemporaryDirectory(prefix='domino-test-fork-close-')
         path = Path(fork.temp.name)
-        fork.close()
-        process.terminate.assert_called_once()
-        process.kill.assert_called_once()
-        self.assertEqual(process.wait.call_count, 2)
+        with patch('deposit_fork.local_anvil.stop',
+                   side_effect=lambda _: self.assertTrue(path.exists())) as stop:
+            fork.close()
+        stop.assert_called_once_with(process)
         self.assertFalse(path.exists())
 
     def test_read_adapter_cannot_forward_local_write_controls(self):
@@ -317,8 +319,6 @@ class DepositForkCliTests(unittest.TestCase):
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_EVM') == '1', 'opt-in isolated local Anvil parent/child oracle')
 class DepositForkEvmTests(unittest.TestCase):
     def test_actual_child_transfer_never_mutates_parent_or_forwards_a_write(self):
-        binary = Path(__file__).resolve().parents[2]/'node_modules/.bin/anvil'
-        self.assertTrue(binary.exists(), 'Install pinned local EVM test dependencies first.')
         process, gateway = None, None
         with tempfile.TemporaryDirectory(prefix='domino-test-parent-anvil-') as path:
             with socket.socket() as reservation:
@@ -338,10 +338,9 @@ class DepositForkEvmTests(unittest.TestCase):
                 return result['result']
 
             try:
-                process = subprocess.Popen([str(binary), '--host', '127.0.0.1', '--port', str(port),
+                process = local_anvil.start(['--host', '127.0.0.1', '--port', str(port),
                     '--chain-id', str(CHAIN_ID), '--accounts', '0', '--silent'],
-                    cwd=path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    env={'PATH': os.environ.get('PATH', '/usr/bin:/bin')})
+                    cwd=path, env={'PATH': os.environ.get('PATH', '/usr/bin:/bin')})
                 for _ in range(100):
                     try:
                         if parent('eth_chainId') == hex(CHAIN_ID):
@@ -386,13 +385,8 @@ class DepositForkEvmTests(unittest.TestCase):
                 self.assertTrue(gateway.stats['closed'])
                 self.assertNotIn(CANARY, json.dumps(gateway.stats))
             finally:
-                if process is not None and process.poll() is None:
-                    process.terminate()
-                    try:
-                        process.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait(timeout=3)
+                if process is not None:
+                    local_anvil.stop(process)
 
 
 if __name__ == '__main__':

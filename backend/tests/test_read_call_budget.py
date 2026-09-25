@@ -12,6 +12,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from discovery import (DEFAULT_READ_CALL_GAS, MAX_READ_CALL_GAS, DataError,
                        ReadRpc, ZERO, rpc_error_code)
+import local_anvil
 from read_contract import sanitize_error, validate_response
 from rpc_failover import FailoverReadRpc
 from test_discovery import TOKEN, OTHER, OWNER
@@ -135,9 +136,8 @@ contract MetadataProxy {
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
         cls.url = f'http://127.0.0.1:{port}'
-        cls.process = subprocess.Popen([str(ROOT/'node_modules/.bin/anvil'), '--host', '127.0.0.1',
-                                       '--port', str(port), '--chain-id', '31337', '--silent'],
-                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cls.process = local_anvil.start(['--host', '127.0.0.1',
+                                         '--port', str(port), '--chain-id', '31337', '--silent'])
         cls.addClassCleanup(cls.stop)
         for _ in range(100):
             try:
@@ -149,7 +149,7 @@ contract MetadataProxy {
 
     @classmethod
     def stop(cls):
-        cls.process.terminate(); cls.process.wait(timeout=10)
+        local_anvil.stop(cls.process)
 
     @classmethod
     def transport(cls, url, body):

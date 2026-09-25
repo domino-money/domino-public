@@ -19,6 +19,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from catalogue import checked_key
 from discovery import DataError
 from fee_accounting import reconstruct_swap, replay_fees, simulate
+import local_anvil
 from v4_math import MAX_SQRT, MIN_SQRT, Q96, sqrt_at_tick, swap_step, tick_at_sqrt
 from test_catalogue import stored_candidate
 from test_discovery import POOL
@@ -65,9 +66,7 @@ class NativeReferenceTests(unittest.TestCase):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         cls.url=f'http://127.0.0.1:{port}'
-        cls.process=subprocess.Popen([str(ROOT/'node_modules/.bin/anvil'),
-                                     '--host','127.0.0.1','--port',str(port),'--chain-id','31337','--silent'],
-                                     stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        cls.process=local_anvil.start(['--host','127.0.0.1','--port',str(port),'--chain-id','31337','--silent'])
         cls.addClassCleanup(cls.stop)
         for _ in range(100):
             try:
@@ -79,7 +78,7 @@ class NativeReferenceTests(unittest.TestCase):
 
     @classmethod
     def stop(cls):
-        cls.process.terminate();cls.process.wait(timeout=10)
+        local_anvil.stop(cls.process)
 
     @classmethod
     def rpc(cls,method,params):

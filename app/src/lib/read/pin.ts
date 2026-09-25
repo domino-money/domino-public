@@ -38,6 +38,9 @@
  * digests moved with rc.4 only because their manifests hash the backend
  * sources it touched (the account check, the session store, the deposit
  * owner check); none of them changed a route, a schema shape or a version.
+ * The deposit-v1 digest moved once more because its manifest hashes
+ * backend/tests/test_deposit_receipt.py, whose local Anvil now starts through
+ * backend/local_anvil.py; nothing in the contract changed.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -57,7 +60,7 @@ export const PRODUCER_PIN = {
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
-      manifestSha256: 'c6b85e95c08f2519a7c4cf9755dbdf3dc43ba55df4f4a6dbb5217069a51a1546',
+      manifestSha256: '088714f989945b9da5536d13f6f86907562aa96a35b492a0607120d0e861b66c',
     },
   },
 } as const

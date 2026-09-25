@@ -21,6 +21,7 @@ from eth_hash.auto import keccak
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from deposit_models import DepositError
 from discovery import ZERO, POOL_MANAGER, POSITION_MANAGER
+import local_anvil
 from token_admission import POLICY, PERMIT2, TokenAdmission, check_profile, validate_profile
 from test_token_admission import code_hash, seal, word
 
@@ -110,8 +111,8 @@ class TokenAdmissionEvmTests(unittest.TestCase):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         cls.url=f'http://127.0.0.1:{port}'
-        cls.process=subprocess.Popen([str(ROOT/'node_modules/.bin/anvil'),'--host','127.0.0.1',
-            '--port',str(port),'--chain-id','4663','--silent'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        cls.process=local_anvil.start(['--host','127.0.0.1',
+            '--port',str(port),'--chain-id','4663','--silent'])
         cls.addClassCleanup(cls.stop)
         for _ in range(100):
             try:
@@ -123,7 +124,7 @@ class TokenAdmissionEvmTests(unittest.TestCase):
 
     @classmethod
     def stop(cls):
-        cls.process.terminate();cls.process.wait(timeout=10)
+        local_anvil.stop(cls.process)
 
     @classmethod
     def rpc(cls,method,params):

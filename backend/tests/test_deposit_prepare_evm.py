@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from deposit_prepare import DirectDepositPreparer, DEPLOYMENTS, PERMIT2, calldata
 from deposit_rpc import DepositRpc
 from discovery import POSITION_MANAGER, POOL_MANAGER, STATE_VIEW
+import local_anvil
 from uniswap_position import UniswapPosition
 from test_deposit_prepare import signed_manifest, selection, Provider, OWNER, TOKEN0, TOKEN1, KEY
 
@@ -100,9 +101,8 @@ class DepositEvmTests(unittest.TestCase):
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
         cls.url = f'http://127.0.0.1:{port}'
-        cls.process = subprocess.Popen([str(ROOT/'node_modules/.bin/anvil'), '--host', '127.0.0.1',
-            '--port', str(port), '--chain-id', '4663', '--silent'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cls.process = local_anvil.start(['--host', '127.0.0.1',
+            '--port', str(port), '--chain-id', '4663', '--silent'])
         cls.addClassCleanup(cls.stop)
         for _ in range(100):
             try:
@@ -117,8 +117,7 @@ class DepositEvmTests(unittest.TestCase):
 
     @classmethod
     def stop(cls):
-        cls.process.terminate()
-        cls.process.wait(timeout=10)
+        local_anvil.stop(cls.process)
 
     @classmethod
     def rpc(cls, method, params):

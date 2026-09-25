@@ -14,7 +14,7 @@ import json
 import os
 from pathlib import Path
 import socket
-import subprocess
+import sys
 import time
 import unittest
 import urllib.request
@@ -23,6 +23,9 @@ from eth_abi import decode, encode
 from eth_hash.auto import keccak
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT/'backend'))
+import local_anvil
+
 KEY_TYPE = '(address,address,uint24,int24,address)'
 POLICY_TYPE = '(uint16,uint16,uint16,uint32,uint8,uint64,bool)'
 LIMITS_TYPE = '(uint64,uint32,uint16,uint16,uint128,uint32,uint32)'
@@ -60,9 +63,8 @@ class EvmHarness(unittest.TestCase):
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
         cls.rpc = LocalRpc(f'http://127.0.0.1:{port}')
-        cls.process = subprocess.Popen([str(cls.artifact_root/'node_modules/.bin/anvil'),
-            '--host', '127.0.0.1', '--port', str(port), '--chain-id', '4663',
-            '--hardfork', getattr(cls, 'HARDFORK', 'cancun'), '--silent'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cls.process = local_anvil.start(['--host', '127.0.0.1', '--port', str(port), '--chain-id', '4663',
+            '--hardfork', getattr(cls, 'HARDFORK', 'cancun'), '--silent'], root=cls.artifact_root)
         cls.addClassCleanup(cls.stop)
         for _ in range(100):
             try:
@@ -81,8 +83,7 @@ class EvmHarness(unittest.TestCase):
 
     @classmethod
     def stop(cls):
-        cls.process.terminate()
-        cls.process.wait(timeout=10)
+        local_anvil.stop(cls.process)
 
     def send(self, target, data='0x', value=0):
         tx = {'from': self.owner, 'data': data, 'gas': hex(30_000_000), 'value': hex(value)}

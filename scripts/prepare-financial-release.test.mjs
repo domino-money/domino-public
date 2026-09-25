@@ -106,7 +106,12 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
     const binary = require.resolve(platform.PLATFORM_SPECIFIC_PACKAGE_NAME('anvil') + '/bin/' + platform.BINARY_NAME('anvil'));
     const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const port = server.address().port; await new Promise(resolve => server.close(resolve));
-    const child = spawn(binary, ['--host', '127.0.0.1', '--port', String(port), '--chain-id', '4663', '--hardfork', 'cancun', '--silent'], { stdio: 'ignore' });
+    // backend/local_anvil.py supervises Anvil, as for the backend EVM tests: block
+    // states stay in memory (none in ~/.foundry/anvil/tmp), and Anvil stops once
+    // this process closes the pipe or exits in any way.
+    const supervisor = fileURLToPath(new URL('../backend/local_anvil.py', import.meta.url));
+    const child = spawn('python3', ['-I', supervisor, binary, '--host', '127.0.0.1', '--port', String(port), '--chain-id', '4663',
+      '--hardfork', 'cancun', '--silent', '--max-persisted-states', '0'], { stdio: ['pipe', 'ignore', 'ignore'], detached: true });
     const endpoint = 'http://127.0.0.1:' + port;
     let id = 0;
     async function rpc(method, params) {
@@ -255,7 +260,9 @@ test('actual official-v4 dependency code and all unsigned deployments verify int
       await rpc('anvil_mine', ['0x40']);
       await assert.rejects(() => verify(manifest, hashes, artifacts, viem, readonly), /deployment_code_changed/);
     } finally {
-      child.kill('SIGTERM');
-      await new Promise(resolve => { if (child.exitCode !== null) resolve(); else child.once('exit', resolve); });
+      child.stdin.end();
+      const stuck = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} }, 10000);
+      await new Promise(resolve => { if (child.exitCode !== null || child.signalCode !== null) resolve(); else child.once('exit', resolve); });
+      clearTimeout(stuck);
     }
   });

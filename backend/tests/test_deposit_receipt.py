@@ -21,6 +21,7 @@ from deposit_receipt import ReceiptReconciler, receipt_summary, validate_issued_
 from deposit_models import ReceiptSummary
 from deposit_rpc import DepositRpc
 from discovery import CHAIN_ID, POOL_MANAGER, POSITION_MANAGER, ZERO, DataError
+import local_anvil
 from lp_mint_inspection import inspect_mint
 from test_lp_mint_inspection import fixture, OWNER, OTHER, TOKEN0, TOKEN1, DEADLINE
 
@@ -680,9 +681,8 @@ contract StandardApprovalReceipt {
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         cls.url=f'http://127.0.0.1:{port}'
-        cls.process=subprocess.Popen([str(root/'node_modules/.bin/anvil'),'--host','127.0.0.1',
-                                      '--port',str(port),'--chain-id',str(CHAIN_ID),'--silent'],
-                                     stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        cls.process=local_anvil.start(['--host','127.0.0.1',
+                                       '--port',str(port),'--chain-id',str(CHAIN_ID),'--silent'],root=root)
         cls.addClassCleanup(cls.stop)
         for _ in range(100):
             try:
@@ -694,7 +694,7 @@ contract StandardApprovalReceipt {
 
     @classmethod
     def stop(cls):
-        cls.process.terminate();cls.process.wait(timeout=10)
+        local_anvil.stop(cls.process)
 
     @classmethod
     def rpc(cls,method,params):

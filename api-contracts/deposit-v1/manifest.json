@@ -295,7 +295,7 @@
     },
     {
       "path": "backend/tests/test_deposit_receipt.py",
-      "sha256": "27486af85866d17be830b1e0da781ab440a63300cd01cc7e01ae7e3a3fd3480b"
+      "sha256": "dff8f04e7e68d97642d7a6c39997a387e4e0dc0942cb1a5bb66ce2551be54ffc"
     },
     {
       "path": "backend/tests/test_lp_mint_inspection.py",

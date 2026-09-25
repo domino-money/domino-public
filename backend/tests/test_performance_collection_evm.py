@@ -20,6 +20,7 @@ from eth_hash.auto import keccak
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from discovery import POSITION_MANAGER, POOL_MANAGER, STATE_VIEW, ZERO
+import local_anvil
 from performance_collection import CanonicalCollector, PerformanceRpc, ReorgDetected, event_id
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -120,9 +121,8 @@ class PerformanceCollectionEvmTests(unittest.TestCase):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
         cls.url=f'http://127.0.0.1:{port}'
-        cls.process=subprocess.Popen([str(ROOT/'node_modules/.bin/anvil'),'--host','127.0.0.1',
-            '--port',str(port),'--chain-id','4663','--accounts','0','--silent'],
-            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        cls.process=local_anvil.start(['--host','127.0.0.1',
+            '--port',str(port),'--chain-id','4663','--accounts','0','--silent'])
         cls.addClassCleanup(cls.stop)
         for _ in range(100):
             try:
@@ -143,10 +143,7 @@ class PerformanceCollectionEvmTests(unittest.TestCase):
 
     @classmethod
     def stop(cls):
-        cls.process.terminate()
-        try: cls.process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            cls.process.kill(); cls.process.wait(timeout=5)
+        local_anvil.stop(cls.process)
 
     @classmethod
     def rpc(cls,method,params):
