@@ -137,4 +137,4 @@ wallet's status.
 Out of scope:
 - the advanced funding form, which stays step by step;
 - the deposit-v1 lab, which has no wallet handoff;
-- gas sponsorship (`paymasterService`), which is phase 3.
+- gas sponsorship (`paymasterService`), phase 3, postponed on 25 Sep: no wallet in reach supported it on 4663 ([decision](2026-09-25-gas-sponsorship-design.md)).
