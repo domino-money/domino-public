@@ -97,6 +97,14 @@ class PgPublicData:
         with self.connection() as conn:
             return conn.execute('SELECT domino_public.reserve_provider() AS allowed').fetchone()['allowed']
 
+    def reserve_provider_if_headroom(self, min_free):
+        """Spend the shared allowance only while `min_free` of the minute's calls remain."""
+        if type(min_free) is not int or not 0<=min_free<25:
+            raise DataError('invalid_request')
+        with self.connection(write=True) as conn:
+            return conn.execute('SELECT domino_public.reserve_provider_if_headroom(%s) AS allowed',
+                                (min_free,)).fetchone()['allowed']
+
     def ensure(self, kind, entity_id):
         """Persist a background prerequisite without requesting its discovery."""
         entity_id=self.identity(kind,entity_id)

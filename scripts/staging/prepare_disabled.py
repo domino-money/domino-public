@@ -163,6 +163,10 @@ PACKAGED_ONLY_MIGRATIONS = (
     # Session policy eoa_or_7702_v1 (EIP-7702 accounts may sign in). Like 027,
     # applied separately to an installed foundation, as the runbook records.
     'backend/migrations/041_session_delegated_accounts.sql',
+    # Provider calls by priority for the public collector; same vehicle as 024.
+    'backend/migrations/042_provider_priority.sql',
+    # The featured-pools selection's tables; same vehicle as 024.
+    'backend/migrations/043_featured_pools.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

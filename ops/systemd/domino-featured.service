@@ -1,0 +1,45 @@
+[Unit]
+Description=Domino featured pools selection (shadow list; publishes nothing)
+After=postgresql@16-domino.service domino-continuous-egress.service
+BindsTo=domino-continuous-egress.service
+PartOf=domino-public-data.target
+StartLimitIntervalSec=300
+StartLimitBurst=6
+
+[Service]
+Type=simple
+User=domino-write
+Group=domino-write
+SupplementaryGroups=domino-db
+WorkingDirectory=@PUBLIC_ROOT@/current/backend
+ExecStart=@QUEUE_ROOT@/venv/bin/python -B manage_featured.py serve --period 60
+Restart=on-failure
+RestartSec=30
+# A selection is one transaction; a stop mid-run records nothing and the next
+# attempt inside the window runs it again.
+TimeoutStopSec=60
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+TasksMax=16
+MemoryMax=512M
+CPUQuota=50%
+
+[Install]
+# Installing a release never starts the selection: enable it explicitly.
+# Wanted, not required, by the target: a failing selection never restarts the lanes.
+WantedBy=domino-public-data.target

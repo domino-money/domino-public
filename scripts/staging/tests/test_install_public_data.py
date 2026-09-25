@@ -26,7 +26,8 @@ class PublicInstallTests(unittest.TestCase):
         (self.queue/'release/backend/requirements-api.lock').write_bytes(b'unchanged')
         self.systemd.mkdir()
         self.files={'backend/requirements-api.lock':(b'unchanged',False)}
-        for name in ('manage_public_data.py','public_history.py','public_observations.py','manage_activity.py'):
+        for name in ('manage_public_data.py','public_history.py','public_observations.py','manage_activity.py',
+                     'manage_featured.py'):
             self.files['backend/'+name]=(b'pass\n',False)
         for name in installer.UNITS:self.files['ops/systemd/'+name]=((REPO/'ops/systemd'/name).read_bytes(),False)
         for item in (patch.object(installer,'BASE',self.base),patch.object(installer,'QUEUE',self.queue),
@@ -48,7 +49,7 @@ class PublicInstallTests(unittest.TestCase):
         planned=self.plan()
         self.assertEqual(planned['runtime'],str(self.queue/'release/backend/runtime'))
         self.assertEqual(planned['previousCurrent'],None)
-        self.assertEqual(len(planned['units']),8)
+        self.assertEqual(len(planned['units']),9)
         for name,value in planned['units'].items():
             self.assertNotIn('@PUBLIC_ROOT@',value)
             self.assertNotIn('@QUEUE_ROOT@',value)
@@ -57,6 +58,15 @@ class PublicInstallTests(unittest.TestCase):
             self.assertIn(f'--lane {name}',unit)
             for field in ('User=domino-write','ProtectSystem=strict','BindsTo=domino-continuous-egress.service'):
                 self.assertIn(field,unit)
+
+    def test_the_featured_selection_is_installed_but_not_started(self):
+        unit=self.plan()['units']['domino-featured.service']
+        for field in ('User=domino-write','SupplementaryGroups=domino-db','ProtectSystem=strict',
+                      'BindsTo=domino-continuous-egress.service','PartOf=domino-public-data.target',
+                      'manage_featured.py serve','WantedBy=domino-public-data.target'):
+            self.assertIn(field,unit)
+        target=self.plan()['units']['domino-public-data.target']
+        self.assertNotIn('domino-featured',target)
 
     def test_apply_preserves_rollback_and_only_repoints_named_files(self):
         old=self.systemd/'domino-queue-worker.service.d/90-public-data.conf'

@@ -325,6 +325,48 @@ class ActivityFollowerCliTests(unittest.TestCase):
             self.assertEqual(self.store.pool(conn,POOL)['next_block'],10)
             self.assertEqual(conn.execute('SELECT count(*) AS n FROM domino_activity.chunks').fetchone()['n'],0)
 
+    def test_a_missed_initialize_blocks_the_request_until_its_anchor_is_registered(self):
+        """A hinted pool older than the search window was scanned again for ever."""
+        running=self.patches(reader_factory(5000))
+        for item in running:item.start()
+        requests=PgRequests(self.catalogue)
+        try:
+            run_main(manage_activity,['manage_activity.py','--request','--pool-id',POOL])
+            code,output=run_main(manage_activity,['manage_activity.py','--queue-worker',
+                                                  '--search-from','4000','--search-span','100',
+                                                  '--search-max-spans','1','--max-pools','1',
+                                                  '--anchor-only'])
+            self.assertEqual(code,1,output)
+            report=json.loads(output.strip().splitlines()[-1])
+            self.assertEqual((report['pools'][0]['status'],report['pools'][0]['reason']),
+                             ('blocked','initialize_anchor_not_found'))
+            row=requests.status(POOL)
+            self.assertEqual((row['status'],row['error_class']),('blocked','identity'))
+            # Every refresh of an explicit pool asks again: the ask neither
+            # reopens the request nor makes it claimable once due.
+            requests.enqueue(POOL)
+            with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+                conn.execute("UPDATE domino_activity.pool_requests SET due_at=clock_timestamp()-interval '1 second'")
+            self.assertEqual(requests.claim(),[])
+            registered,output=self.registered(POOL,10)
+            self.assertEqual(registered,0,output)
+            self.assertEqual(json.loads(output.strip())['reopenedRequests'],[POOL])
+            self.assertEqual(requests.status(POOL)['status'],'queued')
+            # Registering again reopens a request blocked since; a refused
+            # registration reopens nothing.
+            requests.enqueue(ABSENT_POOL)
+            with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+                conn.execute("UPDATE domino_activity.pool_requests SET status='blocked'")
+            again,output=self.registered(POOL,10)
+            self.assertEqual(json.loads(output.strip())['pools'][0]['status'],'already_registered')
+            self.assertEqual(json.loads(output.strip())['reopenedRequests'],[POOL])
+            refused,output=self.registered(ABSENT_POOL,10)
+        finally:
+            for item in running:item.stop()
+        self.assertEqual((again,refused),(0,1))
+        self.assertEqual(json.loads(output.strip())['reopenedRequests'],[])
+        self.assertEqual(requests.status(ABSENT_POOL)['status'],'blocked')
+
     def test_a_registered_pool_is_anchored_from_its_own_registration(self):
         """The verified anchor in the registry beats a search window that misses."""
         running=self.patches(reader_factory(5000))

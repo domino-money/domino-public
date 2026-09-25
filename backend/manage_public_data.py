@@ -20,6 +20,11 @@ from read_deadline import check_read_deadline, read_deadline
 from read_service import ReadService
 from rpc_config import configured_rpc_urls, configured_history_rpc_urls
 
+# Provider calls an idle refresh leaves in the minute's shared allowance: room
+# for the pools a visitor is reading and for the daily featured-pools listing.
+# Recalibrate together with the ceiling in 042_provider_priority.sql.
+IDLE_PROVIDER_HEADROOM = 8
+
 
 class PublicCollector:
     def __init__(self, repository, service, *, history=None, requests=None, clock=time.time):
@@ -128,11 +133,20 @@ class PublicCollector:
                 self.service.market_cache.restore_pool(entity_id,previous['market'],
                     elapsed_seconds=max(0,int(self.clock())-claim['observed_at']))
             explicit=claim['last_requested_at'].timestamp()>0
-            payload = self.service.pool_market(entity_id,allow_provider=explicit)
             # Browser demand is debounced by 15s in PostgreSQL. A minute of
             # grace tolerates that debounce without keeping abandoned tabs hot.
             # Claim order stays oldest-due first for active and idle pools alike.
             active = self.clock() - claim['last_requested_at'].timestamp() <= 60
+            # A pool asked for once stays explicit and is refreshed for good.
+            # While nobody reads it, it spends the provider allowance only when
+            # enough is left for the pools on screen (042_provider_priority.sql).
+            cache=self.service.market_cache
+            if not active:
+                cache.reserve_provider=lambda:self.repository.reserve_provider_if_headroom(IDLE_PROVIDER_HEADROOM)
+            try:
+                payload = self.service.pool_market(entity_id,allow_provider=explicit)
+            finally:
+                cache.reserve_provider=self.repository.reserve_provider
             self.repository.publish(claim,payload,delay=5 if active else 120)
             if explicit and self.requests is not None:
                 self.requests.enqueue(entity_id)

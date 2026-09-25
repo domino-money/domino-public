@@ -236,6 +236,10 @@ def create_database(name):
         # 041 only widens the session policy and adds a nullable column, so it
         # applies again safely.
         conn.execute((ROOT/'migrations/041_session_delegated_accounts.sql').read_text())
+        # 042 only replaces 024's provider reservation, so it applies again safely.
+        conn.execute((ROOT/'migrations/042_provider_priority.sql').read_text())
+        # 043 creates the featured-pools tables if absent and re-grants, so it applies again safely.
+        conn.execute((ROOT/'migrations/043_featured_pools.sql').read_text())
         # Development mirrors the production split: callable NOLOGIN privilege
         # roles, each inherited by exactly one unprivileged LOGIN bridge.
         for login, privilege in (

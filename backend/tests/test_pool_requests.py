@@ -10,7 +10,7 @@ import psycopg
 from catalogue import PgCatalogue
 from dev_postgres import ADMIN
 from discovery import DataError
-from pool_requests import PgRequests, REQUESTER_ROLE
+from pool_requests import PgRequests, REQUESTER_ROLE, error_class
 from read_service import ReadService
 from test_catalogue import block_hash
 
@@ -48,6 +48,15 @@ class RequestTriggerTests(unittest.TestCase):
         requests=FakeRequests()
         self.assertTrue(self.service(requests).request_pool(POOL))
         self.assertEqual(requests.asked,[(POOL,'read')])
+
+
+class ErrorClassTests(unittest.TestCase):
+    def test_a_missed_initialize_blocks_but_an_unseen_pool_stays_retryable(self):
+        """The anchor search window moves with the head, so an older pool is
+        never found by it: retrying cost 80 getLogs an attempt, for ever. A pool
+        missing from the catalogue may still be seeded and is retried."""
+        self.assertEqual(error_class('initialize_anchor_not_found'),'identity')
+        self.assertEqual(error_class('pool_not_in_catalogue'),'discovery_incomplete')
 
 
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_POSTGRES')=='1',

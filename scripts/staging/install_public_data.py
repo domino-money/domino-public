@@ -29,6 +29,8 @@ QUEUE=Path('/opt/domino/queue-worker')
 SYSTEMD=Path('/etc/systemd/system')
 UNITS=tuple(f'domino-public-{lane}.service' for lane in ('current','history','accounting'))+(
     'domino-public-data.target',
+    # Installed, never enabled here: the featured-pools shadow starts only on `systemctl enable`.
+    'domino-featured.service',
     'domino-queue-worker.service.d/90-public-data.conf',
     'domino-catalogue-follower.service.d/90-public-data.conf',
     'domino-queue-worker.timer.d/90-public-data.conf',
@@ -59,7 +61,8 @@ def plan(files,commit,digest):
     require((QUEUE/'venv/bin/python').exists(),'writer_interpreter_missing')
     require(sha(read_installed(QUEUE/'release/backend/requirements-api.lock'))==
             sha(files['backend/requirements-api.lock'][0]),'dependency_change_needs_a_venv')
-    for name in ('manage_public_data.py','public_history.py','public_observations.py','manage_activity.py'):
+    for name in ('manage_public_data.py','public_history.py','public_observations.py','manage_activity.py',
+                 'manage_featured.py'):
         require('backend/'+name in files,'public_source_missing')
     units={}
     for name in UNITS:

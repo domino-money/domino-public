@@ -180,6 +180,33 @@ class PublicObservationStorageTests(unittest.TestCase):
         self.assertTrue(self.reader.reserve_provider())
         self.assertFalse(PgPublicData(self.catalogue).reserve_provider())
 
+    def test_a_deferred_reservation_leaves_the_minute_s_last_calls_to_higher_priorities(self):
+        self.assertTrue(all(self.writer.reserve_provider_if_headroom(8) for _ in range(17)))
+        self.assertFalse(self.writer.reserve_provider_if_headroom(8))
+        self.assertTrue(all(self.writer.reserve_provider_if_headroom(2) for _ in range(6)))
+        self.assertFalse(self.writer.reserve_provider_if_headroom(2))
+        self.assertTrue(self.reader.reserve_provider())
+        self.assertTrue(self.writer.reserve_provider())
+        self.assertFalse(self.writer.reserve_provider())
+        self.assertFalse(self.writer.reserve_provider_if_headroom(0))
+
+    def test_only_the_writer_defers_and_nonsense_headroom_reserves_nothing(self):
+        with psycopg.connect(**self.settings,user='domino_catalogue_reader') as conn,\
+             self.assertRaises(psycopg.errors.InsufficientPrivilege):
+            conn.execute('SELECT domino_public.reserve_provider_if_headroom(0)')
+        with psycopg.connect(**self.settings,user='domino_catalogue_writer') as conn:
+            for value in (None,-1,25,26):
+                with self.subTest(value=value):
+                    self.assertFalse(conn.execute('SELECT domino_public.reserve_provider_if_headroom(%s)',
+                                                  (value,)).fetchone()[0])
+        for value in (-1,25,True,'2',2.0):
+            with self.subTest(value=value),self.assertRaisesRegex(DataError,'invalid_request'):
+                self.writer.reserve_provider_if_headroom(value)
+        with self.assertRaisesRegex(DataError,'public_data_writer_required'):
+            self.reader.reserve_provider_if_headroom(0)
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            self.assertEqual(conn.execute('SELECT count(*) FROM domino_public.provider_requests').fetchone()[0],0)
+
     def test_first_token_failure_is_retryable_and_retains_last_good_value(self):
         self.reader.request('token',TOKEN)
         claim=self.writer.claim('token')[0]

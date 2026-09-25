@@ -17,7 +17,7 @@ from discovery import Block, DataError, ZERO
 from eth_abi import encode
 from eth_hash.auto import keccak
 from discovery import POOL_MANAGER
-from manage_public_data import PublicCollector
+from manage_public_data import IDLE_PROVIDER_HEADROOM, PublicCollector
 from market_cache import MarketCache
 from public_observations import PgPublicData
 from public_data_service import PublicDataService
@@ -42,7 +42,8 @@ class PublicCollectorTests(unittest.TestCase):
         migrations=Path(__file__).resolve().parents[1]/'migrations'
         with psycopg.connect(**cls.settings,user=ADMIN) as conn:
             for name in ('001_catalogue','002_activity','020_pool_requests','023_pool_request_scheduling',
-                         '024_public_observations','025_public_history','026_public_demand'):
+                         '024_public_observations','025_public_history','026_public_demand',
+                         '042_provider_priority'):
                 conn.execute((migrations/(name+'.sql')).read_text())
 
     def setUp(self):
@@ -470,6 +471,49 @@ class PublicCollectorTests(unittest.TestCase):
         self.assertEqual(second['data']['retrievedAt'],1010)
         self.assertEqual(self.provider.calls,[])
         self.assertFalse(self.writer.reserve_provider())
+
+    def spend_provider_calls(self,count):
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('INSERT INTO domino_public.provider_requests SELECT clock_timestamp() FROM generate_series(1,%s)',(count,))
+
+    def provider_calls_spent(self):
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            return conn.execute('SELECT count(*) FROM domino_public.provider_requests').fetchone()[0]
+
+    def read_at(self,seconds):
+        """Last browser interest at `seconds` on the collectors' clock."""
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_public.entities SET last_requested_at=to_timestamp(%s) WHERE kind='pool' AND entity_id=%s",
+                         (seconds,POOL))
+
+    def test_an_idle_explicit_pool_leaves_the_minute_s_last_provider_calls(self):
+        """Asked for once, refreshed for good: unread, it must not take the calls
+        the pools on screen and the featured listing need."""
+        _,market=fixtures();self.writer.request('pool',POOL)
+        self.writer.publish(self.writer.claim('pool')[0],market)
+        self.spend_provider_calls(25-IDLE_PROVIDER_HEADROOM)
+        self.read_at(900);self.restart_at(1080);self.due('pool',POOL)
+        self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+        value=self.row('pool',POOL)['payload']['market']
+        self.assertEqual((value['status'],value['reason']),('stale','provider_capacity_busy'))
+        self.assertEqual(self.provider.calls,[])
+        self.assertEqual(self.provider_calls_spent(),25-IDLE_PROVIDER_HEADROOM)
+        self.assertEqual(self.service.market_cache.reserve_provider,self.writer.reserve_provider)
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('DELETE FROM domino_public.provider_requests WHERE ctid=(SELECT min(ctid) FROM domino_public.provider_requests)')
+        self.restart_at(1080);self.due('pool',POOL)
+        self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+        self.assertEqual(self.provider.calls,['pool'])
+        self.assertEqual(self.provider_calls_spent(),25-IDLE_PROVIDER_HEADROOM)
+
+    def test_a_pool_on_screen_still_takes_a_call_idle_refreshes_leave(self):
+        _,market=fixtures();self.writer.request('pool',POOL)
+        self.writer.publish(self.writer.claim('pool')[0],market)
+        self.spend_provider_calls(24)
+        self.read_at(1070);self.restart_at(1080);self.due('pool',POOL)
+        self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+        self.assertEqual(self.provider.calls,['pool'])
+        self.assertEqual(self.provider_calls_spent(),25)
 
     def test_background_pool_keeps_onchain_state_without_consuming_provider_quota(self):
         self.writer.ensure('pool',POOL)

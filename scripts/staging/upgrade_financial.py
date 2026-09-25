@@ -59,6 +59,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/039_automation_readiness.sql',
     'backend/migrations/040_gas_finalized_quote_lag.sql',
     'backend/migrations/041_session_delegated_accounts.sql',
+    'backend/migrations/042_provider_priority.sql',
+    'backend/migrations/043_featured_pools.sql',
 )
 NEW_ROLES = ('domino_performance_collector', 'domino_performance_reader',
              'domino_execution_worker', 'domino_execution_ledger',

@@ -59,6 +59,8 @@ Apply migrations in order through the existing privileged deployment path:
 | `024_public_observations.sql` | Public entity observations, token/pool links, revisioned lookup, narrow interest admission and a shared 25/minute external-provider allowance. |
 | `025_public_history.sql` | Recent-history jobs, canonical coverage, Swap observations and ratio candles. |
 | `026_public_demand.sql` | Explicit token-discovery demand separated from metadata prerequisites, plus durable history span recovery. |
+| `042_provider_priority.sql` | Provider calls by priority from the same allowance: an idle refresh spends one only while enough of the minute is left for the pools on screen. Apply as the owner of 024's functions. |
+| `043_featured_pools.sql` | The featured-pools selection's runs, lists, owner overrides and token baselines; the reader may read lists only ([featured pools](FEATURED_POOLS.md)). |
 
 Token metadata prerequisites do not request discovery. Only an explicit token
 lookup starts its catalogue/provider pool discovery; discovering a pool may

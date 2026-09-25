@@ -209,7 +209,11 @@ def error_class(reason):
     if reason=='http_429':return 'provider_rate_limit'
     if reason in ('header_budget_exhausted','indexer_rpc_budget_exhausted','read_deadline_exceeded'):
         return 'run_budget'
-    if reason in ('pool_not_in_catalogue','initialize_anchor_not_found'):return 'discovery_incomplete'
+    # A pool the catalogue has not seen may still be seeded, so it stays
+    # retryable. An Initialize the bounded search missed stays missed: the
+    # window moves with the head, so an older pool would be scanned for ever.
+    # It is an identity failure (blocked); registering its anchor reopens it.
+    if reason=='pool_not_in_catalogue':return 'discovery_incomplete'
     if reason in PERMANENT:return 'identity'
     if 'reorg' in reason or 'reconciliation' in reason:return 'canonicality'
     return 'source_unavailable'

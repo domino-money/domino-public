@@ -389,8 +389,20 @@ def main():
                     results.append({'poolId':pool_id,'status':'not_registered','reason':str(error)})
                 else:
                     results.append({'poolId':pool_id,**outcome})
+            # The queue worker blocks a request whose Initialize its search
+            # missed; the anchor registered here is what it lacked.
+            reopened,reopen_reason=[],None
+            anchored=[item['poolId'] for item in results if item['status']!='not_registered']
+            if anchored:
+                try:
+                    requests=PgRequests(catalogue,role=WRITER_ROLE)
+                    for pool_id in anchored:reopened+=requests.retry(pool_id)
+                except DataError as error:
+                    reopen_reason=str(error)
             print(json.dumps({'schemaVersion':1,'mode':'core_pool_activity_registration','chainId':4663,
-                              'pools':results,'capacityProfile':args.capacity_profile,
+                              'pools':results,'reopenedRequests':reopened,
+                              **({'reopenReason':reopen_reason} if reopen_reason else {}),
+                              'capacityProfile':args.capacity_profile,
                               'financialTransaction':False}))
             return 0 if all(item['status']!='not_registered' for item in results) else 1
         if args.follow:
