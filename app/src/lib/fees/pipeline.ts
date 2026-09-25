@@ -67,6 +67,15 @@
  *       last span and the life so far. A read of the life stopped by its
  *       budget or its time keeps its place (`later`): a later run, with a
  *       budget of its own, goes on from it.
+ *   P4. (2026-09-25, release review) A probe that saw no Swap knows no rate, not
+ *       a quiet one: a busy pool's six quiet minutes (PONS/USDG's slice held 7
+ *       other LPs' logs and no Swap, live) took P1 and read the life from one
+ *       span of a day, cut at the cap four times, and no estimate was drawn.
+ *       The windows measure the rate first (their first, at the state block,
+ *       sees the same quiet minutes; the others are spread over the life), and
+ *       P1 or P2 follows from it. No span is sized from a rate of 0: the first
+ *       then reads SAMPLE_MIN_BLOCKS and the next grow by half, and a later
+ *       run starts from the rate its checkpoint kept.
  */
 import { BEHIND_RETRY_MS, BUDGET_MS, CLIENT_CONCURRENCY, DAY_SPAN, EPOCH_SPAN, HOUR_SPAN, MAX_DAYS_PER_REQUEST, MAX_HEADERS_PER_REQUEST, MAX_HOLDERS, MAX_SLOTS, MAX_SWAP_DAYS, PATH_BURST, PATH_LIFE_SHARE, PATH_NOW_BYTES, PATH_REFINE_BYTES, PATH_REFINE_MS, POSITION_MANAGER, SAMPLE_BATCH_BYTES, SAMPLE_BYTES, SAMPLE_MIN_BLOCKS, SAMPLE_SPANS_PER_REQUEST, SPAN_BLOCKS_MAX, SPAN_CAP_BYTES, SPAN_MIN_BLOCKS, SPAN_TARGET_BYTES } from './constants'
 import { estimateHistory, type EstimateSlot } from './estimate'
@@ -99,8 +108,11 @@ export interface PipelineRun {
 /** What a checkpoint holds (opaque to the main thread). */
 interface PipelineCheckpoint {
   v: 1
-  /** 2026-09-25: a price path's (its later runs read only settlements and Swaps); absent for the exact replay. */
-  path?: { holders: string[] }
+  /**
+   * 2026-09-25: a price path's (its later runs read only settlements and Swaps); absent for the exact replay. `rate`: the
+   * Swaps' rate its next span was sized by (compact bytes a block), which sizes a later run's first span (P4).
+   */
+  path?: { holders: string[]; rate: number }
   tokenId: string
   poolId: string
   tickLower: number
@@ -200,6 +212,8 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
   let holders: string[] = checkpoint?.path?.holders ?? []
   /** Set once the run replays the price path (a path checkpoint, or the probe's plan). */
   let onPath = checkpoint?.path !== undefined
+  /** The Swaps' rate the price path's spans are sized by (compact bytes a block; 0: not known). */
+  let rate = checkpoint?.path?.rate ?? 0
   /**
    * Where the run is. `spentBytes`: what a later run counts from, the bytes so far for a budget stop (a larger budget goes
    * on from them), none for a verified run (2026-09-25, review: each later run reads only the new logs, under a budget of
@@ -208,7 +222,7 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
   const keep = (spentBytes = bytes): Checkpoint | null =>
     replay === null
       ? null
-      : ({ v: 1, ...(onPath ? { path: { holders } } : {}), tokenId: run.id, poolId: state.poolId, tickLower: state.tickLower, tickUpper: state.tickUpper, mintBlock, through, points, replay: replay.save(), bytes: spentBytes } satisfies PipelineCheckpoint as unknown as Checkpoint)
+      : ({ v: 1, ...(onPath ? { path: { holders, rate } } : {}), tokenId: run.id, poolId: state.poolId, tickLower: state.tickLower, tickUpper: state.tickUpper, mintBlock, through, points, replay: replay.save(), bytes: spentBytes } satisfies PipelineCheckpoint as unknown as Checkpoint)
 
   /** One relay request: rate limits waited out, a lagging relay asked once more, any other failure stops the run. */
   async function ask(request: LogsRequest): Promise<Answer> {
@@ -289,7 +303,8 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     const rate = (count: number, total: number, blocks: number) => (count > PROBE_SLACK ? ((count - PROBE_SLACK) * (total / count)) / blocks : 0)
     const pool = { count: 0, bytes: 0, blocks: 0 }
     const swaps = { count: 0, bytes: 0, blocks: 0 }
-    // 2026-09-25: the Swaps' own rate over every sample (no slack), for the price path's plan (step P).
+    // 2026-09-25: the Swaps' own rate over every sample (no slack), for the price path's plan (step P); 0 when no sample
+    // held a Swap, which the plan takes as a rate not known (P4), never as a quiet pool.
     const seen = { bytes: 0, blocks: 0 }
     const swapRate = () => Math.max(swaps.blocks > 0 ? swaps.bytes / swaps.blocks : 0, seen.blocks > 0 ? seen.bytes / seen.blocks : 0)
     for (const { from, to, recent } of windows) {
@@ -387,26 +402,27 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     const settledSince = resumed ? own.length : own.length - 1
     // (c) The plan: the whole life now, or first an estimate from windows of it (a busy pool), then the whole life.
     let budget = run.budgetBytes
-    const projected = start ? start.swapRate * (top - from + 1) : 0
-    /** The Swaps' rate the spans are sized by (compact bytes a block): the probe's, or the estimate's windows'. */
-    let rate = start?.swapRate ?? 0
+    const life = top - from + 1
+    // The Swaps' rate the spans are sized by (compact bytes a block): the probe's, the estimate's windows', or (a later
+    // run) its checkpoint's.
+    if (start) rate = start.swapRate
     // The probe's rate is its last minutes', and Swaps come in bursts: read at once only a life that fits even at
     // PATH_BURST times that rate, else draw an estimate first (the reading after it then shows nothing new for longer).
-    if (start && PATH_BURST * projected > PATH_NOW_BYTES) {
+    // A probe that saw no Swap knows no rate (P4): the windows measure it, and then P1 or P2 follows from it.
+    const unknown = rate === 0
+    if (start && (unknown || PATH_BURST * rate * life > PATH_NOW_BYTES)) {
       // The probe's rate is its last minutes' (PONS/USDG's last hour was 2.5 times its day's average, 2026-09-25): the
       // windows of the estimate, spread over the life, say better what the whole read will take.
       // They are read either way: after a settlement no estimate is drawn (what it collected would be a guess), but
       // the windows still size the whole read (2310187's pool had its busiest hour of two weeks just before the probe).
-      let expected = projected
       const sample = await sampled(start, own[0], timeline)
-      if (sample.history && settledSince === 0) deps.estimate?.(sample.history)
-      if (sample.rate !== null) {
-        expected = sample.rate * (top - from + 1)
-        rate = sample.rate
+      if (sample.rate !== null) rate = sample.rate
+      if (!unknown || PATH_BURST * rate * life > PATH_NOW_BYTES) {
+        if (sample.history && settledSince === 0) deps.estimate?.(sample.history)
+        if (rate * life > PATH_REFINE_BYTES) throw new Stop('too_much_history')
+        deps.extend?.(PATH_REFINE_MS)
+        budget = bytes + PATH_REFINE_BYTES
       }
-      if (expected > PATH_REFINE_BYTES) throw new Stop('too_much_history')
-      deps.extend?.(PATH_REFINE_MS)
-      budget = bytes + PATH_REFINE_BYTES
     }
     // (d) The Swaps of the life, in spans sized to about SPAN_TARGET_BYTES, replayed with the NFT's own events in chain order.
     let next = 0
@@ -428,9 +444,10 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     // A span's length follows the Swaps' rate, and grows at most by half from one span to the next: a pool's Swaps come in
     // bursts (measured 2026-09-25: after a quiet PONS/USDG span of 14,400 blocks, one of 165,658 was a reply of 943 kB).
     // The first is sized at PATH_BURST times the rate known before it (2026-09-25, review: a reply past the cap is cut
-    // only once the RPC has sent it, and the visitor's address pays for it).
-    let blocks = Math.min(SPAN_BLOCKS_MAX, Math.max(SPAN_MIN_BLOCKS, Math.round(SPAN_TARGET_BYTES / Math.max(PATH_BURST * rate, 1e-6))))
-    const total = Math.max(1, top - from + 1)
+    // only once the RPC has sent it, and the visitor's address pays for it); with none known, SAMPLE_MIN_BLOCKS (P4: sized
+    // from a rate of 0, it was a day of PONS/USDG, cut at the cap four times live).
+    let blocks = rate > 0 ? Math.min(SPAN_BLOCKS_MAX, Math.max(SPAN_MIN_BLOCKS, Math.round(SPAN_TARGET_BYTES / (PATH_BURST * rate)))) : SAMPLE_MIN_BLOCKS
+    const total = Math.max(1, life)
     const read = { bytes: 0, blocks: 0 }
     for (let at = from; at <= top; ) {
       // Out of its budget or time: a span read keeps its place (2026-09-25, review), and a later run goes on from it.
@@ -455,8 +472,8 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
       // Sized by the busier of the last span and the life read so far (a burst after a quiet span, 2026-09-25, review).
       read.bytes += bytes - spent0
       read.blocks += to - at + 1
-      const busier = Math.max((bytes - spent0) / (to - at + 1), read.bytes / read.blocks, 1e-6)
-      blocks = Math.min(SPAN_BLOCKS_MAX, Math.round(1.5 * (to - at + 1)), Math.max(SPAN_MIN_BLOCKS, Math.round(SPAN_TARGET_BYTES / busier)))
+      rate = Math.max((bytes - spent0) / (to - at + 1), read.bytes / read.blocks, 1e-6)
+      blocks = Math.min(SPAN_BLOCKS_MAX, Math.round(1.5 * (to - at + 1)), Math.max(SPAN_MIN_BLOCKS, Math.round(SPAN_TARGET_BYTES / rate)))
       deps.progress?.({ bytes, daysDone: Math.floor(((to - from + 1) * 100) / total), daysTotal: 100 })
       at = to + 1
     }

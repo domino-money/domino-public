@@ -94,7 +94,11 @@ test('NFT 3203538 (USDG/DELTA): the probe chooses the price path, its life is re
   const kinds = new Set(relay.requests.map((request) => request.kind));
   assert.ok(kinds.has('settlements') && kinds.has('span'), [...kinds].join(', '));
   assert.ok(!kinds.has('pool') && !kinds.has('swaps'), 'neither the pool’s history nor whole days');
+  // Its probe slice holds no Swap (recorded): since 2026-09-25 (release review, P4) that rate is not known, and the
+  // estimate's windows measure it first; they say a life this small (104 kB) is read at once, with no estimate drawn.
   assert.deepEqual(estimates, [], 'a life this small is read at once: no estimate first');
+  const spans = relay.requests.filter((request) => request.kind === 'span');
+  assert.ok(spans.length <= 12 && relay.cut === 0, `${spans.length} span requests, ${relay.cut} cut`);
   const settle = relay.requests.find((request) => request.kind === 'settlements');
   assert.deepEqual(settle.holders, ['0xf6184f814543b88dd867c34ce6e9f56ab7d18c0a'], 'its owner, from its Transfers');
   assert.equal(settle.from, fixture.positions['3203538'].mintBlock);
@@ -160,6 +164,84 @@ for (const id of ['3202568', '3204536']) {
     assert.ok(atEstimate.spanBytes <= 1.25 * constants.SAMPLE_BYTES, `the windows read ${atEstimate.spanBytes} B`);
     assert.equal(relay.cut, 0, 'nor any span of the exact read');
     assert.equal(result?.ok, true, `not verified: ${result?.reason}`);
+    assert.deepEqual(result.history.earned, state.unclaimed);
+  });
+}
+
+// 2026-09-25 (release review, P4): live, PONS/USDG's probe slice (its last six minutes) held 7 other LPs'
+// ModifyLiquidity and no Swap. The probe stops at its first slice with any liquidity log, so it said a rate of 0, and
+// the run took P1: its first span was the whole life (sized from that 0), cut at the reply's cap four times, and the
+// page's 30 s ran out with no estimate drawn. A rate of 0 is now one not known: the estimate's windows measure it.
+
+/** A probe answer: the recorded logs of its blocks without their Swaps, and `lps` other LPs' ModifyLiquidity. */
+function quietProbe(fixture, lps) {
+  const someone = fixture.logs.find((log) => log[2] === 1);
+  return (request) => {
+    const recorded = fixture.logs.filter((log) => log[2] !== 3 && log[0] >= request.from && log[0] <= request.to);
+    const others = Array.from({ length: lps }, (_, i) => [request.from + 10 + i, 900, 1, someone[3], someone[4], `${someone[5].slice(0, 2 + 3 * 64)}${'0'.repeat(63)}1`]);
+    const logs = [...recorded, ...others].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const value = { v: 1, kind: 'probe', head: request.to + 2, units: [{ unit: null, from: request.from, to: request.to, final: false, logs }], next: null };
+    return { ok: true, value, bytes: JSON.stringify(value).length };
+  };
+}
+
+/** Runs `id` with the page's time as 30 span requests (about a second each through the lane) until an estimate extends it. */
+async function pageRun(relay, id, state, growth) {
+  let spans = 0;
+  let extended = false;
+  const estimates = [];
+  const logs = async (request) => {
+    if (request.kind === 'span') spans += 1;
+    return relay.logs(request);
+  };
+  const result = await runPipeline(
+    { logs, ...quiet, estimate: (e) => estimates.push(e), extend: () => void (extended = true), timeUp: () => !extended && spans >= 30 },
+    { id, state, growth, budgetBytes: PAGE, checkpoint: null },
+  );
+  return { result, estimates };
+}
+
+for (const id of ['3202568', '3204536']) {
+  test(`NFT ${id}: a probe slice with another LP's ModifyLiquidity and no Swap is a rate not known; an estimate, no reply cut, then the exact history`, async () => {
+    const fixture = loadPath('path-pons');
+    const relay = pathRelay(fixture, id, { script: { probe: [quietProbe(fixture, 1)] } });
+    const { state, growth } = pathState(fixture, id);
+    const { result, estimates } = await pageRun(relay, id, state, growth);
+    assert.equal(relay.requests.filter((request) => request.kind === 'probe').length, 1, 'the probe stopped at its first slice');
+    assert.equal(estimates.length, 1, 'an estimate was drawn');
+    assert.deepEqual(estimates[0].history.earned, state.unclaimed);
+    assert.equal(relay.cut, 0, 'no reply was cut at the cap');
+    assert.equal(result?.ok, true, `not verified: ${result?.reason}${result?.later ? ' (later)' : ''}`);
+    assert.deepEqual(result.history.earned, state.unclaimed);
+  });
+}
+
+// The same, as live: a state 13,202 blocks after the pool's last recorded Swap (its longest quiet stretch in the
+// recording), so the estimate's first window, at the state block, holds no Swap either: only the windows before it
+// can tell the rate, and the plan waits for them.
+for (const id of ['3202568', '3204536']) {
+  test(`NFT ${id}: at a quiet moment of the chain itself (no Swap in its last 13,202 blocks, 7 other LPs' logs in the probe), the estimate is drawn and the exact history verifies`, async () => {
+    const fixture = loadPath('path-pons');
+    const { state: recorded, growth } = pathState(fixture, id);
+    const swaps = fixture.logs.filter((log) => log[2] === 3);
+    const gaps = swaps.slice(1).map((log, i) => [log[0] - swaps[i][0], log[0]]).sort((a, b) => b[0] - a[0]);
+    const block = gaps[0][1] - 1;
+    assert.ok(gaps[0][0] > 7_200 && block > fixture.positions[id].mintBlock + 20 * HOUR, 'a quiet stretch longer than the probe’s first two slices, late in the life');
+    // The state at that block: the path up to it (landed to the unit on the recorded state, above).
+    const init = fixture.initialize[5];
+    const replay = FeeReplay.start({ tokenId: BigInt(id), tickLower: recorded.tickLower, tickUpper: recorded.tickUpper, tickSpacing: 60, fee: Number(BigInt(`0x${init.slice(2, 66)}`)), path: true, protocolFee: recorded.protocolFee }, 0n, 0);
+    const timeline = new Timeline(Object.entries(fixture.headers).map(([at, t]) => [Number(at), t]));
+    for (const log of lifeOf(fixture, id)) if (log[0] <= block) replay.apply(log, timeline);
+    const state = { ...recorded, block, timestamp: timeline.at(block), unclaimed: replay.owed(), sqrtPriceX96: replay.pool().price, tick: replay.pool().tick };
+    const relay = pathRelay(fixture, id, { script: { probe: [quietProbe(fixture, 7)] } });
+    const { result, estimates } = await pageRun(relay, id, state, growth);
+    const first = relay.requests.find((request) => request.kind === 'span');
+    assert.equal(first.spans[0][1], block, 'the estimate’s first window ends at the state block');
+    assert.equal(swaps.filter((log) => log[0] >= first.spans[0][0] && log[0] <= block).length, 0, 'and holds no Swap');
+    assert.equal(estimates.length, 1, 'an estimate was drawn');
+    assert.deepEqual(estimates[0].history.earned, state.unclaimed);
+    assert.equal(relay.cut, 0, 'no reply was cut at the cap');
+    assert.equal(result?.ok, true, `not verified: ${result?.reason}${result?.later ? ' (later)' : ''}`);
     assert.deepEqual(result.history.earned, state.unclaimed);
   });
 }
@@ -283,6 +365,9 @@ test('NFT 3202568: an exact read stopped by its time keeps its place; later runs
     const again = pathRelay(fixture, id);
     result = await runPipeline({ logs: again.logs, ...quiet }, { id, state, growth, budgetBytes: PAGE, checkpoint });
     assert.ok(!again.requests.some((request) => request.kind === 'transfer' || request.kind === 'probe' || request.kind === 'initialize'), 'no start over');
+    // 2026-09-25 (release review, P4): its first span is sized by the rate its checkpoint kept, not from a rate of 0 (a
+    // day of PONS/USDG, cut at the reply's cap).
+    assert.equal(again.cut, 0, `run ${run}: no reply cut at the cap`);
     const spans = again.requests.filter((request) => request.kind === 'span');
     through.push(spans[0].spans[0][0]);
     if (!result.ok) {
