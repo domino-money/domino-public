@@ -571,6 +571,12 @@
 
   /* ---- Token marks (§3.8): missing artwork is a calm disc from the address, never letters ---------- */
   .dm-token-disc { background: radial-gradient(120% 120% at 30% 25%, hsl(var(--mark-h, 0) var(--disc-s) calc(var(--disc-l) + 6%)), hsl(var(--mark-h, 0) var(--disc-s) var(--disc-l))); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  /* The monogram a vetted list may ask for (TokenMark `monogram`, 2026-09-25): the symbol's first letters in the disc's own
+     hue, deep on the light disc and pale on the dark one, so it reads as a coin and never as an empty circle. */
+  .dm-token-mono { place-items: center; overflow: hidden; font-family: var(--font-sans); font-weight: 600; line-height: 1; letter-spacing: -0.02em;
+    color: color-mix(in srgb, hsl(var(--mark-h, 0) 55% 50%) 30%, var(--fg)); user-select: none; }
+  /* Drawn from the attribute, not as text, so copying a row never picks the letters up. */
+  .dm-token-mono::before { content: attr(data-letters); }
   /* Token art gets the disc's hairline too, painted over the image (an inset shadow would sit under it), so art on a
      white or transparent field (a lone glyph, a pale letter) still reads as a coin in light. TokenIcon sets the offset:
      -1px, or -3px inside a 2px overlap ring. */

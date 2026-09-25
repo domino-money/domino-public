@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { createFakeSession } from './support/fake-session.mjs';
+import { RPC_URL, routeChain } from './support/browser-chain.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
 import { createWalletServer, WALLET_DIST } from './support/wallet-server.mjs';
 
@@ -93,12 +94,17 @@ async function scenario({ gate = null, intercept, clockAt, allowConsoleErrors = 
   // refused here and left out of the external-request check. Anything else
   // leaving the origin still fails the run.
   await context.route(INJECTED, (route) => route.abort());
+  // 2026-09-25: the page reads Robinhood Chain's public RPC itself (the wallet's positions on Positions and on the
+  // automation page, a position's state, the fees history), since the RPC rate-limits Cloudflare's edge. That one host
+  // is answered here by an empty chain (tests/support/browser-chain.mjs): no position, no deposit, every NFT unknown,
+  // as the site's routes answered before; a request the CSP refused never reaches it.
+  const chain = await routeChain(context);
   const wallet = await installWallets(context, wallets);
   const problems = [];
   const external = [];
   context.on('request', (request) => {
     const url = request.url();
-    if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url)) external.push(url);
+    if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url) && url !== `${RPC_URL}/`) external.push(url);
   });
 
   const s = {
@@ -128,6 +134,7 @@ async function scenario({ gate = null, intercept, clockAt, allowConsoleErrors = 
       assert.deepEqual(wallet.state.csp, [], 'CSP violations');
       assert.deepEqual(problems, [], 'browser errors');
       assert.deepEqual(external, [], 'requests to another origin');
+      assert.deepEqual([chain.errors, chain.refused, chain.missing], [[], [], []], 'the chain was asked only what it answers');
       assert.deepEqual(fake.state.violations, [], 'session protocol violations');
       assert.deepEqual(wallet.state.refused, [], 'wallet methods outside the login allowlist');
       for (const [id, count] of fake.state.verifies) {

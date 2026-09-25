@@ -32,6 +32,8 @@ execFileSync(
     'tests/owned.test.mjs',
     // 2026-09-24: the wallet's Domino positions from chain replace owned-positions (v1 list, row reads, browser memory).
     'tests/wallet-positions.test.mjs',
+    // 2026-09-24: a position's feature (plain, Auto-compound or Domino-compound) from chain, and the three features' words.
+    'tests/automation-state.test.mjs',
     'tests/release.test.mjs',
     'tests/session.api.test.mjs',
     'tests/session.siwe.test.mjs',
@@ -90,10 +92,14 @@ execFileSync(
     'tests/fees-relay.test.mjs',
     'tests/fees-topics.test.mjs',
     'tests/fees-store.test.mjs',
+    // 2026-09-25: the fees worker's paced lane to the public RPC, and the reads that share it with the page.
+    'tests/chain-lane.test.mjs',
     // 2026-09-24 (P5): the guided creation's successor axis, per-field reasons and the Automate fee meter's rates (DESIGN-V2 §14, R-13, R-18).
     'tests/automate-successor.test.mjs',
     // 2026-09-24: the automation page's position picker (the wallet's open positions, a link's preselection, what each option shows).
     'tests/automate-picker.test.mjs',
+    // 2026-09-25: the Positions Wallet card's prices (one provider GET per view, memory only) and main holdings by value.
+    'tests/wallet-holdings.test.mjs',
   ],
   { stdio: 'inherit' },
 );

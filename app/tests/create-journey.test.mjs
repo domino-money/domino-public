@@ -530,7 +530,23 @@ test('Review ends on Create position, made in place: no hand-off to Setup, and t
   assert.match(review, /<Suspense fallback=\{<Unavailable note=\{CREATE\.review\.loading\} \/>\}>/);
   const control = readFileSync(new URL('../src/components/create/CreatePosition.tsx', import.meta.url), 'utf8');
   assert.match(control, /'Create position'/);
-  assert.match(control, /window\.location\.hash = `#\/positions\/\$\{tokenId\.toString\(\)\}`/, 'the new position opens its own page on Positions (screens/PositionDetail.tsx; changed on purpose, owner, 2026-09-24: it was the lookup by id)');
+  // Changed on purpose (2026-09-24, the three features joined up): the page no longer leaves by itself once the position
+  // exists. Create position publishes it (lib/create/createProgress.ts), and Review offers what comes next in its place
+  // (CreatedNext.tsx): the position's own page on Positions, or its automation with the position chosen.
+  assert.match(control, /publishCreated\(tokenId\.toString\(\)\)/, 'the new position is handed to Review');
+  assert.doesNotMatch(control, /window\.location\.hash =/, 'nothing opens another page on its own');
+  const next = readFileSync(new URL('../src/components/create/CreatedNext.tsx', import.meta.url), 'utf8');
+  assert.match(next, /positionHref\(tokenId\)/, 'the position’s own page (screens/PositionDetail.tsx)');
+  assert.match(next, /sequenceHref\(tokenId, key\)/, 'or the automation page with this position and the mode chosen');
+  assert.match(review, /\{created && <CreatedNext tokenId=\{created\} \/>\}/);
+  // Review of 2026-09-24: the success is not a dead end. New position's own link starts a fresh flow (NewPosition.tsx keys
+  // the journey, anew once a position was created), and a done step still reopens: the steps are locked only while
+  // Create position is asking the wallet.
+  const newPosition = readFileSync(new URL('../src/screens/NewPosition.tsx', import.meta.url), 'utf8');
+  assert.equal([...newPosition.matchAll(/<Journey key=\{flow\} poolId=\{poolId\} \/>/g)].length, 2, 'both ways the page draws the journey are keyed');
+  const journeyCode = readFileSync(new URL('../src/components/create/Journey.tsx', import.meta.url), 'utf8');
+  assert.match(journeyCode, /<StepList steps=\{steps\} onOpen=\{reopen\} locked=\{creating\} \/>/);
+  assert.match(journeyCode, /if \(creating \|\| !canOpen\(target, state, now\)\) return/);
   assert.doesNotMatch(control, /livePort|session\//, 'no sign-in is needed to create a position');
 });
 
@@ -778,8 +794,10 @@ test('the copy never promises, never names a sample or a fixture, and never link
 
 test('the automation choices carry the approved names, and the service fee keeps the company’s name', () => {
   const { options } = CREATE.automation;
-  assert.deepEqual([options.none.title, options.compound.title, options.domino.title], ['Self-managing', 'Auto-compound', 'Domino-compound']);
-  assert.equal(CREATE.automation.none, 'Self-managing', 'the summary line says what the option says');
+  // Changed on purpose (review of 2026-09-24, the three features): the choice with no automation is named Plain position,
+  // as New position's success, Positions, Automate and the docs name it; the app says 'Self-managing' nowhere any more.
+  assert.deepEqual([options.none.title, options.compound.title, options.domino.title], ['Plain position', 'Auto-compound', 'Domino-compound']);
+  assert.equal(CREATE.automation.none, 'Plain position', 'the summary line says what the option says');
   assert.equal(CREATE.automation.domino, 'Domino-compound');
   assert.equal(CREATE.automation.dominoRulesHeading, 'How Domino-compound works');
   // The docs' fees page draws its service row from these (lib/docs/pages/reference.ts).

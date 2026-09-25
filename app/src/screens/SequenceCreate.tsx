@@ -6,6 +6,8 @@ import { errorCode, financeErrorText } from '../finance/words'
 import { CREATE } from '../lib/create/copy'
 import { SEQUENCE_DEFAULTS, sequenceOptionsFrom, type SequenceForm, type SequenceMode } from '../lib/create/sequenceDefaults'
 import { preselected, tokenName } from '../lib/automate/picker'
+import { noteAutomation, useAutomation } from '../lib/automationState'
+import { positionHref } from '../components/explore/routes'
 import type { WalletPosition } from '../lib/walletPositions'
 import { Button, Card, LinkButton } from '../components/ui'
 import { IconChevronRight } from '../components/icons'
@@ -36,7 +38,8 @@ import { AddressMark } from '../components/automate/marks'
 
 type Client = ReturnType<typeof createSequenceClient>
 type StepKey = 'approve-root' | 'create'
-type StepState = 'upcoming' | 'reading' | 'wallet' | 'chain' | 'done' | 'failed'
+/** `chain`: sent, its receipt read while the press runs. `sent`: sent, and the press ended before its receipt settled it: no spinner, no caption, since nothing reads it any more. */
+type StepState = 'upcoming' | 'reading' | 'wallet' | 'chain' | 'sent' | 'done' | 'failed'
 type Notice = { text: string; code: string | null; stage: string | null }
 type Receipt = Awaited<ReturnType<Client['receipt']>>['state']
 
@@ -57,13 +60,28 @@ const ACTION = 'Set up automation'
 const RECEIPT_WAIT_MS = 240_000
 const RECEIPT_EVERY_MS = 3_000
 const SETTLED: readonly Receipt[] = ['confirming', 'finalized', 'reverted', 'reorged', 'over_budget', 'over_budget_finalized']
-const BEFORE_WALLET = ['review_required', 'sequence_admission_unavailable', 'sequence_release_expired', 'sequence_preparation_changed', 'sequence_activation_unavailable', 'sequence_tariff_changed', 'deployment_code_changed', 'deployment_identity_changed', 'root_approval_changed']
-/** Said in this screen's own words; every other code goes through finance/words.ts. */
+const BEFORE_WALLET = ['review_required', 'sequence_admission_unavailable', 'sequence_release_expired', 'sequence_activation_unavailable', 'sequence_tariff_changed', 'deployment_code_changed', 'deployment_identity_changed', 'root_approval_changed']
+/**
+ * Said in this screen's own words wherever the code is raised, the check a send makes before the wallet opens included;
+ * every other code goes through finance/words.ts. The code stays beside the sentence.
+ */
 const OWN: Readonly<Record<string, string>> = {
   sequence_receipt_waiting: `The transaction is still waiting to be included. Check your wallet activity before pressing ${ACTION} again.`,
   sequence_step_reverted: `The transaction reverted: nothing changed, only network gas was spent. Press ${ACTION} to try again.`,
   sequence_step_reorged: 'The block that held the transaction left the canonical chain. Check your wallet activity before trying again.',
+  // finance/words.ts sends these to the review and the network budget, which this page no longer has.
+  sequence_preparation_changed: `The sequence changed since it was prepared. Press ${ACTION} again.`,
+  native_gas_reserve_insufficient: 'Your ETH does not cover the network fee for this step.',
+  // The chosen position is no longer this wallet's, or something is already subscribed to it (finance/sequence.ts root).
+  position_not_in_wallet: 'This position is no longer in your wallet.',
+  position_subscribed: 'This position is already linked to a sequence or another contract.',
 }
+// Once a press has sent a transaction, no sentence may claim that nothing was sent, requested or prepared: such a clause is
+// left out (NOTHING), and a failure with no sentence of its own says SENT instead of the usual fallback.
+const NOTHING = / (No (wallet )?transaction|Nothing) was \w+\./
+const SENT = `A transaction was sent. Check your wallet activity before pressing ${ACTION} again.`
+/** The picker's notes with one more position and what the chain showed about it. */
+const noted = (tokenId: string, text: string) => (old: Readonly<Record<string, string>>) => ({ ...old, [tokenId]: text })
 
 const MODES: readonly { key: SequenceMode; title: string; line: string; fee: string }[] = [
   { key: 'compound', title: CREATE.automation.options.compound.title, line: CREATE.automation.options.compound.line, fee: `${AUTOMATION_FEE_BPS.compound / 100}%` },
@@ -112,25 +130,29 @@ async function settle(client: Client, hash: Hex, here: () => boolean) {
   if (state === 'reorged') throw new Error('sequence_step_reorged')
 }
 
-function noticeFor(error: unknown): Notice {
-  if (error instanceof Offered) {
-    const inner = error.inner
-    const rejected = !!inner && typeof inner === 'object' && (inner as { code?: unknown }).code === 4001
-    const text =
-      inner instanceof Error && BEFORE_WALLET.includes(inner.message)
-        ? `The preparation is no longer valid. No wallet transaction was requested. Press ${ACTION} again.`
-        : rejected
-          ? `You declined in your wallet. Press ${ACTION} to try again.`
-          : 'The wallet outcome may be unknown. Check wallet activity and chain state before continuing. This nonce stays protected against another offer, including after reload.'
-    return { text, code: errorCode(inner), stage: null }
-  }
-  const code = errorCode(error)
-  if (code !== null && Object.hasOwn(OWN, code)) return { text: OWN[code], code: null, stage: null }
-  return { text: financeErrorText(errorCode(error), 'The wallet read or simulation could not be completed. No transaction was sent.', 'Set up automation'), code, stage: sequenceReadStage(error) }
+/** `sent`: this press already has a transaction hash, so nothing it says may claim that nothing was sent. */
+function noticeFor(error: unknown, sent: boolean): Notice {
+  const offered = error instanceof Offered
+  const inner = offered ? error.inner : error
+  const code = errorCode(inner)
+  const text =
+    code !== null && Object.hasOwn(OWN, code)
+      ? OWN[code]
+      : !offered
+        ? financeErrorText(errorCode(error), '', 'Set up automation') || (sent ? SENT : 'The wallet read or simulation could not be completed. No transaction was sent.')
+        : code !== null && BEFORE_WALLET.includes(code)
+          ? `The preparation is no longer valid. No wallet transaction was requested. Press ${ACTION} again.`
+          : !!inner && typeof inner === 'object' && (inner as { code?: unknown }).code === 4001
+            ? `You declined in your wallet. Press ${ACTION} to try again.`
+            : 'The wallet outcome may be unknown. Check wallet activity and chain state before continuing. This nonce stays protected against another offer, including after reload.'
+  return { text: sent ? text.replace(NOTHING, '') : text, code, stage: sequenceReadStage(inner) }
 }
 
 export default function SequenceCreate({ positions, intent, connect, onCreated }: { positions: readonly WalletPosition[]; intent: SequenceIntent; connect: () => Promise<Connected>; onCreated?: (vault: `0x${string}`) => void }) {
   const [tokenId, setTokenId] = useState(() => preselected(positions, intent.tokenId))
+  // The position a link named, arriving with a later read of the list (Sequence.tsx asks once more for it), is chosen then.
+  const preset = tokenId === null ? preselected(positions, intent.tokenId) : null
+  if (preset !== null) setTokenId(preset)
   const [mode, setMode] = useState<SequenceMode | null>(intent.mode)
   const [baseIsCurrency0, setBaseIsCurrency0] = useState<boolean | null>(null)
   const [form, setForm] = useState<SequenceForm>(SEQUENCE_DEFAULTS)
@@ -138,14 +160,21 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
   const [phase, setPhase] = useState<'idle' | 'running' | 'failed' | 'done'>('idle')
   const [steps, setSteps] = useState<Record<StepKey, StepState>>(IDLE_STEPS)
   const [notice, setNotice] = useState<Notice | null>(null)
-  // The sequence read back from the chain, and the position it was set up for (kept here, whatever the list does afterwards).
+  // The sequence created, and the position it was set up for (kept here, whatever the list does afterwards).
   const [created, setCreated] = useState<{ vault: string; tokenId: string } | null>(null)
+  // Positions the chain showed something already subscribed to, each with that sentence: the picker shows it and never chooses one.
+  const [linked, setLinked] = useState<Readonly<Record<string, string>>>({})
   const generation = useRef(0)
   const running = useRef(false)
   useEffect(() => () => void generation.current++, [])
 
-  const position = positions.find((entry) => entry.tokenId === tokenId) ?? null
+  const position = positions.find((entry) => entry.tokenId === tokenId && !linked[entry.tokenId]) ?? null
   const chosen = MODES.find((entry) => entry.key === mode) ?? null
+  // A position already in a sequence (or subscribed elsewhere) cannot start another: said before anything is asked.
+  const automation = useAutomation(position?.tokenId ?? null)
+  const taken = automation.phase === 'ready' && automation.state.automation !== 'plain'
+  // The steps after the first open only for a position that can take a sequence.
+  const usable = taken ? null : position
   const busy = phase === 'running'
   const locked = busy || phase === 'done'
 
@@ -182,8 +211,8 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
     if (generation.current === gen) setSteps((old) => ({ ...old, [key]: state }))
   }
 
-  /** Offers one prepared step to the wallet, then reads its receipt until it settles. Returns only once it is in. */
-  async function sendAndWait(client: Client, step: PreparedSequence, key: StepKey, gen: number) {
+  /** Offers one prepared step to the wallet, then reads its receipt until it settles. Returns only once it is in. `press.sent` names the step once the wallet gave its hash. */
+  async function sendAndWait(client: Client, step: PreparedSequence, key: StepKey, gen: number, press: { sent: StepKey | null }) {
     mark(key, 'wallet', gen)
     let hash: Hex
     try {
@@ -191,6 +220,7 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
     } catch (error) {
       throw new Offered(error)
     }
+    press.sent = key
     if (generation.current !== gen) throw new Left()
     mark(key, 'chain', gen)
     await settle(client, hash, () => generation.current === gen)
@@ -198,7 +228,7 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
   }
 
   async function setUp() {
-    if (running.current || !position || !mode || baseIsCurrency0 === null || !consent) return
+    if (running.current || !position || taken || !mode || baseIsCurrency0 === null || !consent) return
     const checked = sequenceOptionsFrom(mode, BigInt(position.tokenId), baseIsCurrency0, form)
     if (!checked.ok) {
       setNotice({ text: checked.reason, code: null, stage: null })
@@ -207,6 +237,7 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
     running.current = true
     const gen = ++generation.current
     let at: StepKey = 'approve-root'
+    const press: { sent: StepKey | null } = { sent: null }
     setNotice(null)
     setPhase('running')
     setSteps({ 'approve-root': 'reading', create: 'upcoming' })
@@ -222,7 +253,7 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
       let step = await client.create(checked.options, gas)
       verified()
       if (step.kind === 'approve-root') {
-        await sendAndWait(client, step, 'approve-root', gen)
+        await sendAndWait(client, step, 'approve-root', gen, press)
         at = 'create'
         mark('create', 'reading', gen)
         step = await client.create(checked.options, gas)
@@ -232,34 +263,43 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
         mark('approve-root', 'done', gen)
       }
       at = 'create'
-      await sendAndWait(client, step, 'create', gen)
-      const state = await client.inspect(step.vault)
+      await sendAndWait(client, step, 'create', gen, press)
+      // Its receipt is in and matches what was prepared: the sequence exists at the address it was prepared for.
       if (generation.current !== gen) return
-      setCreated({ vault: state.vault, tokenId: position.tokenId })
+      setCreated({ vault: step.vault, tokenId: position.tokenId })
+      // Positions shows the new sequence at once, and asks the chain again a few seconds later. A new sequence starts paused.
+      noteAutomation({ tokenId: position.tokenId, automation: mode, paused: true, active: false, vault: step.vault })
       setPhase('done')
       onCreated?.(step.vault)
     } catch (error) {
       if (error instanceof Left || generation.current !== gen) return
-      mark(at, 'failed', gen)
+      // A step the wallet gave a hash for failed only if its receipt says it reverted; otherwise it stays sent, and the
+      // press ending here means nothing reads its receipt any more (`sent`, not `chain`).
+      mark(at, press.sent !== at || errorCode(error) === 'sequence_step_reverted' ? 'failed' : 'sent', gen)
+      const said = noticeFor(error, press.sent !== null)
+      // Something is already subscribed to this NFT: the picker says so beside it and no longer offers it.
+      if (said.code === 'position_subscribed') setLinked(noted(position.tokenId, said.text))
       setPhase('failed')
-      setNotice(noticeFor(error))
+      setNotice(said)
     } finally {
       if (generation.current === gen) running.current = false
     }
   }
 
-  const ready = !!position && !!chosen && baseIsCurrency0 !== null && consent
+  const ready = !!position && !taken && !!chosen && baseIsCurrency0 !== null && consent
   const reason = !position
     ? 'Choose one of your positions.'
-    : !chosen
-      ? 'Choose what its earned fees do.'
-      : baseIsCurrency0 === null
-        ? 'Choose the quote currency.'
-        : !consent
-          ? 'Tick the consent box to continue.'
-          : busy
-            ? 'Confirm each step in your wallet. The list marks each one as it is done.'
-            : 'Your wallet asks you to approve the position, then to create the sequence.'
+    : taken
+      ? 'This position already has automation. Choose another one.'
+      : !chosen
+        ? 'Choose what its earned fees do.'
+        : baseIsCurrency0 === null
+          ? 'Choose the quote currency.'
+          : !consent
+            ? 'Tick the consent box to continue.'
+            : busy
+              ? 'Confirm each step in your wallet. The list marks each one as it is done.'
+              : 'Your wallet asks you to approve the position, then to create the sequence.'
 
   const field = (name: keyof SequenceForm) => (
     <LimitControl key={name} name={name} value={form[name]} onEdit={(value) => edit(name, value)}>
@@ -310,33 +350,38 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
         </h2>
         <p className="dm-seq-done-line">It starts paused, and your position stays in your wallet.</p>
         {stepList(created.tokenId)}
-        <LinkButton href={chosen.key === 'domino' ? '#/docs/domino-compounder#start-and-stop' : '#/docs/auto-compound#where-it-starts'} variant="outline" size="lg" className="dm-seq-done-link">
-          How to switch it on
-          <IconChevronRight />
-        </LinkButton>
+        <div className="dm-seq-done-links">
+          <LinkButton href={positionHref(created.tokenId)} size="lg" className="dm-seq-done-link" data-sequence-created-position={created.tokenId}>
+            View position
+          </LinkButton>
+          <LinkButton href={chosen.key === 'domino' ? '#/docs/domino-compounder#start-and-stop' : '#/docs/auto-compound#where-it-starts'} variant="outline" size="lg" className="dm-seq-done-link">
+            How to switch it on
+            <IconChevronRight />
+          </LinkButton>
+        </div>
       </section>
     )
   }
 
   const pair = position?.currencies ?? null
-  const phaseName = busy ? 'running' : !position ? 'position' : !chosen ? 'mode' : baseIsCurrency0 === null ? 'quote' : 'limits'
+  const phaseName = busy ? 'running' : !usable ? 'position' : !chosen ? 'mode' : baseIsCurrency0 === null ? 'quote' : 'limits'
   return (
     <Card className="dm-acct-block dm-acct-panel dm-seq-create" data-sequence-create={phaseName} data-sequence-create-mode={mode ?? undefined} aria-busy={busy || undefined}>
       <div className="dm-seq-grid">
         <div className="dm-seq-steps">
-          <fieldset disabled={locked} className="dm-acct-fieldset" data-state={position ? 'done' : 'current'}>
-            {legend(1, !!position, 'Your position')}
-            <PositionPicker positions={positions} selected={tokenId} onSelect={choosePosition} disabled={locked} />
+          <fieldset disabled={locked} className="dm-acct-fieldset" data-state={usable ? 'done' : 'current'}>
+            {legend(1, !!usable, 'Your position')}
+            <PositionPicker positions={positions} selected={position?.tokenId ?? null} onSelect={choosePosition} disabled={locked} notes={linked} />
           </fieldset>
           {/* The journey ahead, numbers only, until the next step opens. */}
-          {!position && (
+          {!usable && (
             <div className="dm-seq-ghosts" aria-hidden="true">
               <span>2</span>
               <span>3</span>
               <span>4</span>
             </div>
           )}
-          {position && (
+          {usable && (
             <fieldset disabled={locked} className="dm-acct-fieldset" data-state={chosen ? 'done' : 'current'}>
               {legend(2, !!chosen, 'What the earned fees do')}
               <div className="dm-acct-choices dm-seq-modes" role="radiogroup" aria-label="Automation">
@@ -370,7 +415,7 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
               {chosen && <p className="dm-acct-line dm-acct-wrap dm-seq-chosen">{chosen.line}</p>}
             </fieldset>
           )}
-          {position && chosen && pair && (
+          {usable && chosen && pair && (
             <fieldset disabled={locked} className="dm-acct-fieldset" data-state={baseIsCurrency0 === null ? 'current' : 'done'}>
               {legend(3, baseIsCurrency0 !== null, 'Quote currency')}
               <p className="dm-seq-hint">Prices are counted in this token. It can’t be changed later.</p>
@@ -388,7 +433,7 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
               </div>
             </fieldset>
           )}
-          {position && chosen && baseIsCurrency0 !== null && (
+          {usable && chosen && baseIsCurrency0 !== null && (
             <fieldset disabled={locked} className="dm-acct-fieldset" data-state={consent ? 'done' : 'current'}>
               {legend(4, consent, 'Limits')}
               {chosen.key === 'domino' && <div className="dm-acct-fields">{DOMINO_FIELDS.map(field)}</div>}
@@ -415,14 +460,14 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
           )}
         </div>
         <aside className="dm-seq-aside" aria-label="Wallet steps">
-          {chosen && !position && (
+          {chosen && !usable && (
             <div className="dm-plate dm-dots-plate dm-seq-stage" data-mode={chosen.key}>
               <ModeArt mode={chosen.key} size="card" play="loop" />
             </div>
           )}
-          {position && chosen?.key === 'domino' && <SuccessorAxis root={{ tokenId: position.tokenId, lower: position.tickLower, upper: position.tickUpper, spacing: position.tickSpacing }} inverse={baseIsCurrency0 === false} form={form} />}
-          {position && chosen?.key === 'compound' && <CompoundPreview />}
-          {position && stepList(position.tokenId)}
+          {usable && chosen?.key === 'domino' && <SuccessorAxis root={{ tokenId: usable.tokenId, lower: usable.tickLower, upper: usable.tickUpper, spacing: usable.tickSpacing }} inverse={baseIsCurrency0 === false} form={form} />}
+          {usable && chosen?.key === 'compound' && <CompoundPreview />}
+          {usable && stepList(usable.tokenId)}
           <Button type="button" variant="primary" size="xl" className="w-full" disabled={!ready || locked} aria-busy={busy || undefined} aria-describedby="sequence-reason" data-sequence-action={phase} onClick={() => void setUp()}>
             Set up automation
           </Button>

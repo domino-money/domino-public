@@ -10,8 +10,9 @@ import { robinhoodChain } from './chain'
  *   are optional peers of wagmi and are not installed.
  * - The chain's transport refuses every request. Connecting, reading the
  *   chain ID, switching network and signing all go through the connector's
- *   own EIP-1193 provider, so nothing here opens a connection past the page's
- *   `connect-src 'self'`.
+ *   own EIP-1193 provider, so nothing here opens a connection of its own. (The
+ *   page's connect-src is the site itself and, since 2026-09-25, the chain's
+ *   public RPC, which only lib/chain/browser.ts asks, for the page's reads.)
  * - No storage. wagmi would otherwise keep the last connector and account
  *   list in localStorage; reconnecting after a reload relies on the wallet's
  *   own permission instead.

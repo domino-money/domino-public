@@ -92,14 +92,26 @@
   .dm-acct-tokens-count { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   .dm-acct-token-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
   .dm-acct-token { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 12px; border-radius: var(--radius); transition: background-color 100ms ease-in-out; }
-  .dm-acct-token:hover { background: var(--row-hover); }
+  /* Pointer hover only: a tap on a phone must not leave a row lit (2026-09-25). */
+  @media (hover: hover) { .dm-acct-token:hover { background: var(--row-hover); } }
   .dm-acct-token-id { display: flex; flex-direction: column; flex-shrink: 0; max-width: 55%; min-width: 0; }
   .dm-acct-token-name { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-decoration: none; border-radius: 4px; }
   .dm-acct-token-link { text-decoration-line: underline; text-decoration-color: transparent; text-underline-offset: 3px; transition: text-decoration-color var(--dur-hover) ease; }
   .dm-acct-token-link:hover { text-decoration-color: var(--fg-faint); }
   .dm-acct-token-amount { min-width: 0; margin-left: auto; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-align: right; overflow-wrap: anywhere; font-variant-numeric: lining-nums tabular-nums; }
   .dm-acct-tokens-empty { padding: 12px; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
-  .dm-acct-tokens > .dm-btn { margin-left: 4px; }
+  /* The main holdings by value (owner, 2026-09-25): the total under the head, then two-line rows of 56 (the symbol over
+     its amount, small and muted; the USD value right-aligned as the row's figure), then "Show N more". */
+  .dm-acct-total { margin: 0; padding: 0 16px 12px; min-height: 40px; overflow-wrap: anywhere; }
+  .dm-acct-total .dm-fig-xl { display: inline-block; }
+  .dm-acct-total-skel { width: 152px; height: 32px; margin-top: 4px; border-radius: var(--radius-sm); }
+  .dm-acct-tokens .dm-acct-token { min-height: 56px; }
+  .dm-acct-token-sub { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-acct-token-units { min-width: 0; overflow-wrap: anywhere; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-acct-token-twin { font-family: var(--font-mono); font-size: 11px; line-height: 18px; letter-spacing: 0; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-acct-token-usd { min-width: 0; margin-left: auto; font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-align: right; overflow-wrap: anywhere; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-acct-token-skel { gap: 6px; }
+  .dm-acct-tokens-actions { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 4px; }
   .dm-acct-tokens-more { margin: 0; }
   .dm-acct-tokens-more > summary { min-height: 36px; font-size: 13px; letter-spacing: -0.16px; }
   .dm-acct-tokens-form { display: grid; gap: 8px; }
@@ -191,7 +203,11 @@
   .dm-own-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; min-height: 60px; padding: 12px 12px 12px 16px; }
   .dm-own-card .dm-empty.dm-own-connect { padding: 40px 16px; }
   .dm-own-card .dm-empty.dm-own-none { margin: 0 8px 8px; }
-  .dm-own-card > .dm-empty:not(.dm-own-connect, .dm-own-none, [data-empty="owned-unlisted"]) { padding: 24px 16px; }
+  .dm-own-card > .dm-empty:not(.dm-own-connect, .dm-own-none) { padding: 24px 16px; }
+  /* 2026-09-25: the one quiet line while a failed read is asked again, and the calm one once it could not be read. */
+  .dm-own-note { margin: 0; padding: 4px 16px 12px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-own-note[data-owned-note="unread"] { padding-top: 20px; padding-bottom: 24px; }
+  @media (max-width: 767px) { .dm-own-note { padding-left: 8px; padding-right: 8px; } }
 
   /* The portfolio band (§11.1-4): Principal over Unclaimed fees, on the card before the rows. */
   /* Labels on one line, figures on the next, on one baseline: the two figures read as one band. */
@@ -332,9 +348,11 @@
     .dm-acct-wallet > .dm-acct-rail-head { padding: 12px 8px 8px; }
     .dm-acct-wallet > .dm-acct-rail-empty { padding: 0 8px 16px; }
     .dm-acct-token { padding: 0 8px; }
+    .dm-acct-total { padding: 0 8px 12px; min-height: 32px; }
+    .dm-acct-total-skel { height: 28px; }
     /* A ghost button's words line up with the text above them (its plate reaches 4px past the inset). */
     .dm-acct-wallet > .dm-acct-rail-actions { padding: 4px 4px 4px 0; margin-left: -4px; }
-    .dm-acct-tokens > .dm-btn { margin-left: -4px; }
+    .dm-acct-tokens-actions { padding-left: 0; margin-left: -4px; }
     .dm-acct-auto { padding: 16px; }
     .dm-auto-frame-body { padding: 0 8px 8px; }
     .dm-held-row { padding-left: 8px; padding-right: 8px; }

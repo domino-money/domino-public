@@ -9,6 +9,17 @@
  * reply. Both uses share one GET per token (`pairs`, cached for 30 s). The
  * hints may also ask for native ETH by the zero address, the provider's own
  * name for it (since 2026-09-23); artwork never does.
+ *
+ * A second exception, since 2026-09-25 (owner's request: the Positions Wallet
+ * card lists only the main tokens, largest first, by their USD value): the
+ * card asks the provider's `tokens` endpoint once for the prices of the
+ * tokens the wallet holds, up to 30 addresses in one GET (`tokenPrices`),
+ * through the same guarded read (no credentials, no referrer, no redirect,
+ * a bounded body and deadline). Those prices are an indicative figure in that
+ * card only (lib/walletPrices.ts): never an amount, a quote, a position
+ * figure or anything sent anywhere. The same reply's artwork is kept for the
+ * addresses it names (`seed`), so the card's rows ask no token-pairs GET of
+ * their own. Only token addresses leave the page, never the wallet's.
  */
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 const CDN_IMAGE = /^https:\/\/cdn\.dexscreener\.com\/cms\/images\/([A-Za-z0-9_-]{8,128})(?:\?[^#\s]*)?$/
@@ -16,6 +27,8 @@ const MAX_BODY = 262144
 const TIMEOUT = 6000
 /** How long one token-pairs body is reused: the provider's own `Cache-Control: max-age=30`. */
 const BODY_TTL = 30000
+/** Addresses one `tokens` GET may name: the provider's own limit. */
+export const PRICE_BATCH = 30
 
 export function tokenArtworkKey(chainId: number, address: string): string | null {
   return chainId === 4663 && ADDRESS.test(address) && !/^0x0{40}$/i.test(address) ? `4663:${address.toLowerCase()}` : null
@@ -52,12 +65,12 @@ export function createTokenArtworkResolver(options: Options = {}) {
   /** Reads in flight, each with the time (on `now`) it gives up at. */
   const reading = new Map<string, { result: Promise<unknown>; deadline: number }>()
 
-  /** One guarded GET of the token-pairs body: parsed JSON, or null for anything else. */
-  async function retrieve(address: string, remaining: number): Promise<unknown> {
+  /** One guarded GET of a provider body (`token-pairs/…` or `tokens/…` on Robinhood): parsed JSON, or null for anything else. */
+  async function retrieve(path: string, remaining: number): Promise<unknown> {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), remaining)
     try {
-      const response = await fetch(`https://api.dexscreener.com/token-pairs/v1/robinhood/${address}`, {
+      const response = await fetch(`https://api.dexscreener.com/${path}`, {
         signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
         headers: { Accept: 'application/json' },
       })
@@ -110,7 +123,7 @@ export function createTokenArtworkResolver(options: Options = {}) {
     }
     const entry: { result: Promise<unknown>; deadline: number } = {
       deadline,
-      result: retrieve(address, remaining).then((body) => {
+      result: retrieve(`token-pairs/v1/robinhood/${address}`, remaining).then((body) => {
         if (reading.get(address) === entry) reading.delete(address)
         if (body !== null) {
           bodies.delete(address)
@@ -173,7 +186,38 @@ export function createTokenArtworkResolver(options: Options = {}) {
     return chainId === 4663 && ADDRESS.test(address) ? pairsWithin(address.toLowerCase(), TIMEOUT) : Promise.resolve(null)
   }
 
-  return { resolve, pairs, rejectImage: (chainId: number, address: string) => {
+  /**
+   * The provider's `tokens` body for up to PRICE_BATCH Robinhood token
+   * addresses (lowercased, deduplicated, sorted, so one set is one URL), or
+   * null: one guarded GET with the artwork's deadline, never retried here.
+   * The Wallet card's prices (lib/walletPrices.ts) are its one caller.
+   */
+  function tokenPrices(addresses: readonly string[]): Promise<unknown> {
+    const list = [...new Set(addresses.map((address) => address.toLowerCase()))].filter((address) => ADDRESS.test(address)).sort().slice(0, PRICE_BATCH)
+    return list.length === 0 ? Promise.resolve(null) : retrieve(`tokens/v1/robinhood/${list.join(',')}`, TIMEOUT)
+  }
+
+  /**
+   * Artwork a `tokens` reply already answered for a token: its one safe image,
+   * or none (null) when the token is the base of a pair there and has no image.
+   * Found artwork is never replaced by a none.
+   */
+  function seed(chainId: number, address: string, image: string | null) {
+    const key = tokenArtworkKey(chainId, address)
+    if (!key) return
+    const kept = cache.get(key)
+    if (image === null && kept?.value && kept.expires > now()) return
+    remember(key, image === null ? null : safeTokenImage(image))
+  }
+
+  /** The artwork already held for a token, without asking: a URL, null (none), or undefined (not known yet). */
+  function peek(chainId: number, address: string): string | null | undefined {
+    const key = tokenArtworkKey(chainId, address)
+    const kept = key ? cache.get(key) : undefined
+    return kept && kept.expires > now() ? kept.value : undefined
+  }
+
+  return { resolve, pairs, tokenPrices, seed, peek, rejectImage: (chainId: number, address: string) => {
     const key = tokenArtworkKey(chainId, address)
     if (key) remember(key, null)
   } }

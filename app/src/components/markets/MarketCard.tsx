@@ -6,8 +6,9 @@ import { agedMarket, feeLabel, presentMetric, retrievedAgeSeconds, retrievedText
 import type { CardSeries } from '../../lib/read/cardSeries'
 import { formatUsdCompact } from '../../lib/read/decimal'
 import { unreadToken } from '../../lib/read/project'
-import { ratioText } from '../../lib/read/ratioSeries'
+import { groupedRatioText, ratioText } from '../../lib/read/ratioSeries'
 import { percentChange } from '../../lib/format/change'
+import { shortTime } from '../../lib/format/time'
 import { PriceLineSvg } from '../charts/PriceLine'
 import { VolumeBarsSvg } from '../charts/VolumeBars'
 import { MetricCell } from '../explore/MetricCell'
@@ -16,22 +17,20 @@ import { PoolTokenLabel } from '../PoolCatalogueIdentity'
 import { TokenIcon, TokenMark, TokenMarkPair } from '../TokenIcon'
 import { FigureDash } from '../ui'
 
-const hour = (timestamp: number) => new Date(timestamp * 1000).toISOString().slice(11, 16)
-/** A close as the price row shows it: the exact ratio text, its whole part grouped in thousands ("2,656.07"), as the table writes prices. */
-const grouped = (text: string) => text.replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ','))
-
 /**
- * The card plot's height (px): what the card's fixed height (markets.css, 300px) leaves under the head, the price
- * row and the caption. The line's area runs full bleed into the card's bottom edge.
+ * The card plot's height (px): what the card's fixed height (markets.css, 300px) leaves under the head and the price
+ * row. The plot runs full bleed into the card's bottom edge; the caption rests over its foot (markets.css).
  */
-const LINE_HEIGHT = 148
+const LINE_HEIGHT = 164
 /** Bars carry no price, so they take the price row's room as well. */
 const BARS_HEIGHT = 200
 /**
- * Full bleed: the area touches the card's left and bottom edges (it closes to the plot's full height); the line's low
- * keeps 14px above the bottom edge and its end dot 16px from the right one, so neither meets the card's ring.
+ * The line keeps 14px under the price row and 40px over the card's bottom edge (the caption's band), so a peak or a
+ * trough never meets either; it starts at its first close (the card's left edge when that hour opens the window) and
+ * ends 20px from the right edge, under the TVL figure, with room for the end dot's rings. The area under it runs to the
+ * bottom edge and fades out before it.
  */
-const LINE_PAD = { left: 0, right: 16, top: 12, bottom: 14 }
+const LINE_PAD = { left: 0, right: 20, top: 14, bottom: 40 }
 
 /** Bundled artwork by address where the catalogue has it; a read-token mark for other bound addresses; a plain disc otherwise. */
 function CatalogueMarks({ entry }: { entry: PoolCatalogueEntry }) {
@@ -107,7 +106,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   if (line && shownPoint) {
     caption = (
       <span className="tnum">
-        {hour(shownPoint.startTimestamp)} UTC · {ratioText(shownPoint.close)} <PoolTokenLabel token={line.quote} /> per <PoolTokenLabel token={line.base} /> · {shownPoint.swapCount}{' '}
+        {shortTime(shownPoint.startTimestamp)} · {ratioText(shownPoint.close)} <PoolTokenLabel token={line.quote} /> per <PoolTokenLabel token={line.base} /> · {shownPoint.swapCount}{' '}
         {shownPoint.swapCount === 1 ? 'swap' : 'swaps'}
         {!shownPoint.complete && ' · open hour'}
       </span>
@@ -117,7 +116,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   } else if (bars && shownBar) {
     caption = (
       <span className="tnum">
-        {hour(shownBar.startTimestamp)} UTC · {formatUsdCompact(shownBar.volumeUsd) ?? 'Unavailable'}
+        {shortTime(shownBar.startTimestamp)} · {formatUsdCompact(shownBar.volumeUsd) ?? 'Unavailable'}
         {!shownBar.closed && ' · open hour'}
       </span>
     )
@@ -131,10 +130,25 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
     caption = <span>24h volume</span>
   }
 
+  // The price row (DESIGN-V2 §8.1): the latest close, or the inspected one while a pointer is on the line, in the
+  // pool's quote token; beside it, its change from the first close the line draws (the change a reader can see on
+  // the plot, for the hour at rest and the hour inspected alike), but only when that first hour opens the window (a
+  // partial window's change would claim more than it covers). Waiting cards rest bubbles in its place.
+  const candles = line ? line.history.candles : []
+  const first = candles[0]
+  const last = candles[candles.length - 1]
+  const shown = shownPoint ?? last
+  const whole = !!line && !!first && first.startTimestamp - line.history.requestedWindow.startTimestamp <= line.history.resolutionSeconds
+  const change = whole && candles.length > 1 ? percentChange(first.close, shown.close) : null
+  // The line's colour is the window's own direction, first close to latest (the badge at rest); Tangerine without one.
+  const direction = whole && candles.length > 1 ? percentChange(first.close, last.close) : null
+  const tone = direction ? (direction.sign > 0 ? 'up' : direction.sign < 0 ? 'down' : 'flat') : undefined
+
   let plot = <span aria-hidden="true" className="dm-mkt-baseline" />
   if (line) {
-    // Monotone where a run holds 20 hours or more (PriceLineSvg keeps shorter runs straight, §4.1).
-    plot = <PriceLineSvg history={line.history} label="Pool price, last 24 hours" height={LINE_HEIGHT} pad={LINE_PAD} title={line.title} onInspect={setPoint} variant="area" curve="monotone" live />
+    // A smooth line and its soft area, a live end dot (PriceLineSvg's area variant); the dashed level of the first close
+    // only beside the change it measures.
+    plot = <PriceLineSvg history={line.history} label="Pool price, last 24 hours" height={LINE_HEIGHT} pad={LINE_PAD} title={line.title} onInspect={setPoint} variant="area" tone={tone} level={direction !== null} live />
   } else if (bars) {
     plot = <VolumeBarsSvg candles={bars.candles} intervalSeconds={bars.intervalSeconds} label="Hourly volume" height={BARS_HEIGHT} title={bars.title} onInspect={setBar} />
   } else if (series.kind === 'figure') {
@@ -147,21 +161,11 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
     )
   }
 
-  // The price row (DESIGN-V2 §8.1): the latest close, or the inspected one while a pointer is on the line, in the
-  // pool's quote token; beside it, its change from the first close the line draws (the change a reader can see on
-  // the plot, for the hour at rest and the hour inspected alike), but only when that first hour opens the window (a
-  // partial window's change would claim more than it covers). Waiting cards rest bubbles in its place.
   let price = null
   if (line) {
-    const candles = line.history.candles
-    const first = candles[0]
-    const last = candles[candles.length - 1]
-    const shown = shownPoint ?? last
-    const whole = first.startTimestamp - line.history.requestedWindow.startTimestamp <= line.history.resolutionSeconds
-    const change = whole && candles.length > 1 ? percentChange(first.close, shown.close) : null
     price = (
       <div className="dm-mkt-card-price">
-        <span className="dm-mkt-card-close dm-fig-lg">{grouped(ratioText(shown.close))}</span>
+        <span className="dm-mkt-card-close dm-fig-lg">{groupedRatioText(shown.close)}</span>
         {change && (
           <span className="dm-delta dm-mkt-card-delta" data-sign={change.sign} data-variant="pill">
             <span className="dm-delta-arrow" aria-hidden="true" />

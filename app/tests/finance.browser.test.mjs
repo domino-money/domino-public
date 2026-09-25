@@ -13,8 +13,12 @@ import { ARTWORK, footerButton, walkToReview } from './support/new-position.mjs'
 import { FIXTURE_TOKEN, createReadStub } from './support/read-stub.mjs';
 // The mint's own sizing, from the unit build (npm test compiles it first, as check:app runs it first).
 import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/create/mintPlan.js';
-// 2026-09-24: the positions' principal as the owned-positions endpoint computes it (v4's own rounding).
-import { principalAt } from '../.test-build/app/functions/_lib/walletPositions.js';
+// 2026-09-25: the public RPC as the page reads it, answered by a fake chain (the page reads the chain itself since the RPC
+// rate-limits Cloudflare's edge), and a recorded fees case as the chain it was read from.
+import { SETUP_MINTED_TOPIC, browserChain, busyHistory, routeChain as routeRpc } from './support/browser-chain.mjs';
+import { caseChain } from './support/fees/case-chain.mjs';
+// 2026-09-25: the fees worker's lane to the RPC, whose pace the busy-history test holds it to.
+import { LANE_PACE } from '../.test-build/app/src/lib/chain/browser.js';
 import * as runtime from '../../api-contracts/performance-v2/runtime.mjs';
 import * as executionRuntime from '../../api-contracts/execution-v1/runtime.mjs';
 import * as depositRuntime from '../../api-contracts/deposit-v1/runtime.mjs';
@@ -36,7 +40,11 @@ const json = (body, status, headers) => new Response(JSON.stringify(body), { sta
 const FORBIDDEN = /not connected yet|not enabled|isn’t enabled|isn't enabled|aren't enabled|not available on this deployment|coming soon|in this release|\bbeta\b|\balpha\b|\bv4\b|read-only|temporarily unavailable|retry after|Last read/i;
 const RELEASE_OFF = { status: 200, body: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: false, deployment: null } };
 
-async function scenario({ clock = false, routes = [] } = {}) {
+/**
+ * `chain`: what the public RPC answers the page (tests/support/browser-chain.mjs), an empty chain unless one is given
+ * (no position, no deposit, every NFT unknown), as the site's routes answered before 2026-09-25.
+ */
+async function scenario({ clock = false, routes = [], chain = browserChain() } = {}) {
   const fake = createFakeSession();
   const calls = [], executions = [], releases = [], deposits = [], errors = [];
   const state = { performance: 'available', execution: 'on', setupRelease: RELEASE_OFF, sequenceRelease: RELEASE_OFF, deposit: null };
@@ -79,11 +87,12 @@ async function scenario({ clock = false, routes = [] } = {}) {
   const context = await browser.newContext({ viewport: { width: 1320, height: 1000 } });
   if (clock) await context.clock.install({ time: Date.now() });
   await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+  const rpc = await routeRpc(context, chain);
   const wallet = await installWallets(context);
   const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
   await page.goto(`${origin}/#/app`);
-  return { page, origin, fake, calls, executions, releases, deposits, wallet, context, set(patch) { Object.assign(state, patch); }, async close() {
-    await context.close(); await server.closeAll(); assert.deepEqual(errors, []); assert.deepEqual(wallet.state.csp, []); assert.deepEqual(wallet.state.refused, []);
+  return { page, origin, fake, calls, executions, releases, deposits, wallet, context, rpc, set(patch) { Object.assign(state, patch); }, async close() {
+    await context.close(); await server.closeAll(); assert.deepEqual(errors, []); assert.deepEqual(wallet.state.csp, []); assert.deepEqual(wallet.state.refused, []); assert.deepEqual(rpc.errors, [], 'the public RPC was asked only what it answers');
   } };
 }
 async function login(page) {
@@ -834,27 +843,22 @@ const STUB_SQRT_PRICE = 2n ** 96n;
 const Q96 = 2n ** 96n;
 const lowerKey = key => ({ ...key, currency0: key.currency0.toLowerCase(), currency1: key.currency1.toLowerCase(), hooks: key.hooks.toLowerCase() });
 /**
- * The fees relay's /state for the chain above (2026-09-24: a position's page reads it, not the read service): the NFT
- * the chain minted, once it exists, this wallet's, in the stub's pool at the minted range and liquidity, the pool at
- * tick 0; any other id is not_found, as the relay answers it.
+ * The public RPC for the chain above, as a position's page reads it (2026-09-25: the page reads the chain itself, since
+ * the RPC rate-limits Cloudflare's edge; before, the fees relay's /state): the NFT the chain minted, once it exists,
+ * this wallet's, in the stub's pool at the minted range and liquidity, the pool at tick 0; any other id unknown.
  */
-const mintedState = (chain) => async (request, url) => {
-  if (url.pathname !== '/api/fees/v1/state') return undefined;
-  const { tokenIds } = await request.json();
-  const minted = [...chain.operations.values()].find(op => op.closed && op.tokenId !== 0n);
-  const mint = chain.decoded().find(tx => tx.functionName === 'mint');
-  const poolId = keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }, { type: 'int24' }, { type: 'address' }], [zeroAddress, FIXTURE_TOKEN, 3000, 60, zeroAddress]));
-  const positions = tokenIds.map(tokenId => {
-    if (!minted || !mint || tokenId !== String(minted.tokenId)) return { tokenId, ok: false, reason: 'not_found' };
-    const plan = mint.args[0];
-    return {
-      tokenId, ok: true, owner: OWNER, poolId, poolKey: lowerKey(STUB_POOL_KEY),
-      currencies: [{ address: zeroAddress, symbol: 'ETH', decimals: 18 }, { address: FIXTURE_TOKEN.toLowerCase(), symbol: 'TOKEN', decimals: 6 }],
-      tickLower: plan.tickLower, tickUpper: plan.tickUpper, liquidity: String(plan.liquidity), sqrtPriceX96: String(STUB_SQRT_PRICE), tick: 0,
-      feeGrowthInside0X128: '0', feeGrowthInside1X128: '0', feeGrowthInside0LastX128: '0', feeGrowthInside1LastX128: '0', unclaimed0: '0', unclaimed1: '0',
-    };
+const mintedChain = (chain) => {
+  const rpc = browserChain({ tokens: { [FIXTURE_TOKEN.toLowerCase()]: { symbol: 'TOKEN', decimals: 6 } } });
+  Object.defineProperty(rpc, 'positions', {
+    get: () => {
+      const minted = [...chain.operations.values()].find(op => op.closed && op.tokenId !== 0n);
+      const mint = chain.decoded().find(tx => tx.functionName === 'mint');
+      if (!minted || !mint) return [];
+      const plan = mint.args[0];
+      return [{ tokenId: String(minted.tokenId), holder: OWNER, key: lowerKey(STUB_POOL_KEY), tickLower: plan.tickLower, tickUpper: plan.tickUpper, liquidity: plan.liquidity, unclaimed: [0n, 0n] }];
+    },
   });
-  return Response.json({ v: 1, block: 70921337, timestamp: 1790000000, positions });
+  return rpc;
 };
 /**
  * The read gateway's wallet page for the chain above: the read fixture's (wallet-assets.last-page), holding what the
@@ -871,6 +875,31 @@ const walletAssets = (chain) => (route) => {
 const firstAnswer = (...answers) => (route, body) => answers.map(answer => answer?.(route, body)).find(reply => reply !== undefined);
 /** Review's list of wallet steps as the page shows it: each step's key and live state (null before Create position runs). */
 const walletStepStates = page => page.locator('[data-wallet-steps] li').evaluateAll(items => items.map(item => [item.getAttribute('data-wallet-step'), item.getAttribute('data-step-state')]));
+
+/**
+ * Changed on purpose (2026-09-24, the three features joined up): once the position exists, Review offers what comes
+ * next in Create position's place instead of opening Positions on its own (components/create/CreatedNext.tsx): keep it
+ * as a plain position and open it, or automate it with Auto-compound or Domino-compound, the position chosen. Waits
+ * for that offer for `id`, checks its three ways, optionally keeps a picture of it, and takes the first.
+ */
+async function openCreated(page, id, timeout = 60_000, shot = null) {
+  const next = page.locator(`[data-created-position="${id}"]`);
+  await next.waitFor({ timeout });
+  assert.equal(await page.locator('[data-create-position]').innerText(), 'Position created');
+  assert.deepEqual(await next.locator('a').evaluateAll((links) => links.map((a) => [a.getAttribute('data-created-next'), a.getAttribute('href')])), [
+    ['plain', `#/positions/${id}`],
+    ['compound', `#/sequence/compound/${id}`],
+    ['domino', `#/sequence/domino/${id}`],
+  ]);
+  assert.match(await next.innerText(), new RegExp(`Position NFT ${id} is in your wallet\\.[\\s\\S]*Plain position[\\s\\S]*View position[\\s\\S]*Auto-compound · 2%[\\s\\S]*Domino-compound · 4%`));
+  assert.ok(!(await page.locator('[data-journey-footer] > button').first().isVisible()), 'Back rests once the position exists');
+  if (shot) {
+    await next.evaluate((element) => element.scrollIntoView({ block: 'end' }));
+    await page.screenshot({ path: join(shots(), shot) });
+  }
+  await next.locator('[data-created-next="plain"]').click();
+  await page.waitForFunction((want) => location.hash === `#/positions/${want}`, id, { timeout: 10_000 });
+}
 /** Records every change of Review's wallet steps from now on, in `window.__walletStepLog`, as `key=state` lists. */
 const recordWalletSteps = page => page.evaluate(() => {
   const log = (window.__walletStepLog = []);
@@ -895,11 +924,12 @@ async function doneOrder(page) {
  * The wallet-test build at New position's Review with the chain above connected on Robinhood Chain and nothing more:
  * Sign in is offered and never pressed. The release the setup client verifies is the chain's own, and the read
  * service reports the chain wallet's balances. Resolves once Create position's lazily loaded control is in
- * (StageReview.tsx FinalControl). `answer` goes to the read stub; `amount` is the TOKEN amount typed.
+ * (StageReview.tsx FinalControl). `answer` goes to the read stub; `amount` is the TOKEN amount typed; `routes` are
+ * more same-origin endpoints for the wallet-server, asked before the read stub.
  */
-async function atReview(chain, { answer, amount } = {}) {
+async function atReview(chain, { answer, amount, routes = [] } = {}) {
   const read = createReadStub({ answer: firstAnswer(answer, walletAssets(chain)) });
-  const s = await scenario({ routes: [mintedState(chain), (request, url) => read.handle(request, url)] });
+  const s = await scenario({ chain: mintedChain(chain), routes: [...routes, (request, url) => read.handle(request, url)] });
   try {
     await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await installDepositWallet(s.context, chain);
@@ -973,9 +1003,9 @@ test('Create position opens the position from Review through a connected wallet 
     await s.page.screenshot({ path: join(shots(), 'create-position-steps.png') });
 
     // The mint read back closed with its NFT: the page opens that position on Positions.
-    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 60_000 });
+    await openCreated(s.page, '4242', 60_000, 'create-position-next.png');
     // Changed on purpose (owner, 2026-09-24): #/positions/<id> is the position's own page now, not the lookup by id,
-    // read from chain by the fees relay (not the read service), and nothing about it is kept in the browser.
+    // read from chain (not the read service; by the page itself since 2026-09-25), and nothing about it is kept in the browser.
     const detail = s.page.locator('[data-position-detail][data-position-id="4242"]');
     await detail.waitFor({ timeout: 30_000 });
     assert.equal(await s.page.locator('#nft-ids').count(), 0, 'no id to type: the page is the position');
@@ -1032,7 +1062,7 @@ test('Create position finds this wallet’s earlier deposit in the same pool and
     assert.deepEqual(chain.sends, [], 'nothing was sent by finding it');
     assert.equal(await s.page.getByRole('button', { name: 'Refund the deposit instead', exact: true }).count(), 1, 'it can be refunded instead');
     await s.page.locator('[data-create-position="held"]').click();
-    await s.page.waitForFunction(() => location.hash === '#/positions/4243', null, { timeout: 60_000 });
+    await openCreated(s.page, '4243', 60_000);
     assert.equal(chain.sends.length, 1, 'the mint alone');
     const [mint] = chain.decoded();
     const plan = mint.args[0];
@@ -1084,7 +1114,7 @@ test('pressed again after a declined mint, Create position mints the held deposi
   try {
     await s.page.locator('[data-create-position="idle"]').click();
     await s.page.locator('[data-create-position="held"]').click({ timeout: 60_000 });
-    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 60_000 });
+    await openCreated(s.page, '4242', 60_000);
     const [, open, mint] = chain.decoded();
     assert.deepEqual(chain.decoded().map(tx => [tx.functionName, tx.nonce]), [['approve', '0x0'], ['open', '0x1'], ['mint', '0x2']], 'one approval, one deposit, and the mint at the nonce the declined one gave back');
     assert.deepEqual([mint.args[0].operationId, mint.args[0].maxAmount0, mint.args[0].maxAmount1], [open.args[0], open.args[2], open.args[3]], 'the held operation, capped at what it holds');
@@ -1186,7 +1216,7 @@ test('with TOKEN and only gas in ETH, Review plans the swap; Create position app
     await s.page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'swap-steps-done.png') });
     const log = await doneInTurn(s.page, [`approve:${FIXTURE_TOKEN}`, 'fund', 'swap', 'mint']);
     assert.ok(log.some(entry => entry.includes('swap=wallet')) && log.some(entry => entry.includes('swap=chain')), 'the swap was asked of the wallet, then waited for');
-    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 60_000 });
+    await openCreated(s.page, '4242', 60_000);
     // Changed on purpose (owner, 2026-09-24): the new position's own page, not the lookup by id.
     await s.page.locator('[data-position-detail][data-position-id="4242"]').waitFor({ timeout: 30_000 });
 
@@ -1259,7 +1289,7 @@ test('with ETH only and TOKEN typed, the ETH pays for the whole position: deposi
 
     await recordWalletSteps(s.page);
     await s.page.locator('[data-create-position="idle"]').click();
-    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 90_000 });
+    await openCreated(s.page, '4242', 90_000);
     await doneInTurn(s.page, ['fund', 'swap', 'mint']);
     const sent = chain.decoded();
     assert.deepEqual(sent.map(tx => tx.functionName), ['open', 'swap', 'mint'], 'no approval');
@@ -1338,7 +1368,7 @@ test('in a pool too thin for the balanced split, the check backs off to a swap t
     assert.ok(chain.priceAfter(balanced, false) > limit, 'Review’s balanced split would pass the swap’s 5% limit here');
     assert.equal(await s.page.locator('[data-review-liquidity]').count(), 0, 'the pool reports liquidity');
     await s.page.locator('[data-create-position="idle"]').click();
-    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 90_000 });
+    await openCreated(s.page, '4242', 90_000);
     const sent = chain.decoded();
     assert.deepEqual(sent.map(tx => tx.functionName), ['approve', 'open', 'swap', 'mint']);
     const [, open, swap, mint] = sent;
@@ -1408,7 +1438,7 @@ test('a pool with nothing in range at its price and a range just above it: the q
     assert.equal(chain.liquidityAt(STUB_SQRT_PRICE), 0n, 'nothing in range at the pool’s price');
     assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'swap');
     await s.page.locator('[data-create-position="idle"]').click();
-    await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 90_000 });
+    await openCreated(s.page, '4242', 90_000);
     assert.equal(await s.page.locator('[data-create-notice="pool_no_liquidity"]').count(), 0);
     const sent = chain.decoded();
     assert.deepEqual(sent.map(tx => tx.functionName), ['approve', 'open', 'swap', 'mint'], 'the flow went on');
@@ -1436,7 +1466,7 @@ test('a held one-token deposit in a pool with nothing in range at its price and 
     await s.page.locator('[data-create-position="idle"]').click();
     await s.page.getByRole('status').filter({ hasText: /^You have an earlier deposit in this pool: 0 ETH and [\d.,]+ TOKEN\./ }).waitFor({ timeout: 30_000 });
     await s.page.locator('[data-create-position="held"]').click();
-    await s.page.waitForFunction(() => location.hash === '#/positions/4243', null, { timeout: 90_000 });
+    await openCreated(s.page, '4243', 90_000);
     assert.equal(await s.page.locator('[data-create-notice="held_pool_no_liquidity"]').count(), 0);
     assert.equal(await s.page.locator('[data-create-refund]').count(), 0, 'no refund put first');
     const sent = chain.decoded();
@@ -1534,6 +1564,8 @@ test('a pool with hooks is never listed at the pool step: the muted empty line, 
     const next = footerButton(s.page, 'Continue');
     assert.equal(await next.isDisabled(), true);
     assert.equal(await s.page.locator('#continue-reason').innerText(), 'Choose a pool to continue.');
+    // Changed on purpose (owner, 2026-09-24): step 1 has nowhere to go back to, so it offers Continue alone.
+    assert.equal(await footerButton(s.page, 'Back').count(), 0, 'no Back on step 1');
     // The provider lists no pool for the token here, so the read is today's, for the token alone.
     assert.deepEqual(read.requests.filter(r => r.path === '/api/read/v1/pools').map(r => JSON.parse(r.body)), [{ token: FIXTURE_TOKEN }]);
     assert.equal(await s.page.locator('[data-stage="range"]').count(), 0, 'the range step is not reached');
@@ -1572,8 +1604,86 @@ test('a link to a pool with hooks preselects nothing: the search is offered, and
     assert.equal(await s.page.locator('[data-deposit-choice]').count(), 0);
     await s.page.getByRole('combobox', { name: 'Token in the pool' }).waitFor();
     assert.equal(await stage.locator('p[role="status"].sr-only').first().textContent(), 'Pool from the link: This pool has hooks, and positions can only be created here in pools without hooks. Choose another pool.');
-    assert.equal(await footerButton(s.page, 'Continue').isDisabled(), true);
+    // Changed on purpose (owner, 2026-09-24): until a token is chosen step 1 shows no Back and no Continue (they
+    // arrive with the token); the reason stays in the footer's live region, out of sight.
+    assert.equal(await s.page.locator('[data-journey-footer] button').count(), 0, 'no buttons before a token is chosen');
+    assert.equal(await s.page.locator('#continue-reason').textContent(), 'Choose a token to continue.');
     assert.deepEqual(asked, [{ token: USDG, maxPools: 1, poolIds: [LINKED] }], 'the link is verified against USDG, by its id alone, once');
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-24 (owner): New position's preview is the card of the position being made, and it shows at every width
+// (under the steps below 1024). It is aria-hidden (the steps say everything it shows) and draws the Journey's own
+// state, so pointing at a pool row asks nothing of the network. Its head folds away over the pool it showed rather than
+// vanishing (the card must not jump), and stilled, its picture is the whole composition, fee pips included. Step 1
+// offers Continue only once a token is chosen, and its arrival is stilled under reduced motion too.
+test('New position’s preview shows under the steps on a phone, aria-hidden, rests complete under reduced motion, previews a pointed pool with no read and folds it away; Continue arrives with the token', async () => {
+  const read = createReadStub();
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  try {
+    await s.page.setViewportSize({ width: 390, height: 844 });
+    await s.page.emulateMedia({ reducedMotion: 'reduce' });
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    const aside = s.page.locator('aside.dm-flow-preview');
+    await aside.waitFor();
+    assert.equal(await aside.getAttribute('aria-hidden'), 'true');
+    assert.equal(await aside.getAttribute('data-preview'), 'empty');
+    const [card, box] = [await s.page.locator('.dm-flow-card').boundingBox(), await aside.boundingBox()];
+    assert.ok(box.width > 300 && box.height > 200, `the preview is shown on a phone (${box.width} x ${box.height})`);
+    assert.ok(box.y >= card.y + card.height, 'under the steps');
+    assert.equal(await s.page.evaluate(() => document.documentElement.scrollWidth), 390, 'nothing overflows the phone');
+    // Stilled, the picture rests complete: the four fee pips its legend names show, and nothing in it runs.
+    const pips = await aside.locator('.dm-flow-pv-art .pip').evaluateAll(nodes => nodes.map(node => [getComputedStyle(node).animationName, Number(getComputedStyle(node).opacity)]));
+    assert.equal(pips.length, 4);
+    for (const [name, opacity] of pips) assert.ok(name === 'none' && opacity >= 0.5, `a resting pip shows (${name}, ${opacity})`);
+    assert.deepEqual(await aside.locator('.dm-flow-pv-legend li').allInnerTexts(), ['In range', 'Out of range', 'Price range', 'Fees earned']);
+    assert.equal(await s.page.locator('[data-journey-footer] button').count(), 0, 'no buttons before a token is chosen');
+
+    await s.page.getByRole('combobox', { name: 'Token in the pool' }).fill(FIXTURE_TOKEN);
+    await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    const next = footerButton(s.page, 'Continue');
+    await next.waitFor();
+    assert.equal(await s.page.locator('[data-journey-footer] button').count(), 1, 'Continue alone: step 1 has nowhere to go back to');
+    assert.ok(parseFloat(await next.evaluate(node => getComputedStyle(node).animationDuration)) < 0.001, 'its arrival is stilled');
+
+    // With motion, on a wide screen: pointing at a row opens the head, and leaving it folds the head away over its pool.
+    await s.page.emulateMedia({ reducedMotion: 'no-preference' });
+    await s.page.setViewportSize({ width: 1320, height: 1000 });
+    const row = s.page.locator('[data-pool-option]').first();
+    await row.waitFor({ timeout: 30_000 });
+    await s.page.waitForTimeout(300);
+    const asked = [];
+    const ask = request => { if (/\/api\/|rpc\.mainnet/.test(request.url())) asked.push(request.url()); };
+    s.page.on('request', ask);
+    await row.hover();
+    await aside.locator('.dm-flow-pv-fold[data-open] .dm-flow-pv-pair').waitFor();
+    assert.equal(await aside.getAttribute('data-preview'), 'pointed');
+    assert.equal(await aside.locator('.dm-flow-pv-pair').innerText(), 'ETH / TOKEN');
+    await s.page.waitForFunction(() => document.querySelector('.dm-flow-pv-fold').getBoundingClientRect().height > 40);
+    // Read in the same task as the commit that closes the fold (a MutationObserver's microtask), before any frame. The
+    // observer is in place before the pointer moves.
+    await aside.evaluate(node => {
+      const fold = node.querySelector('.dm-flow-pv-fold');
+      window.__folding = new Promise(done => {
+        const observer = new MutationObserver(() => {
+          if (fold.hasAttribute('data-open')) return;
+          observer.disconnect();
+          done({ heads: fold.querySelectorAll('.dm-flow-pv-pool').length, height: fold.getBoundingClientRect().height });
+        });
+        observer.observe(fold, { attributes: true, attributeFilter: ['data-open'] });
+        setTimeout(() => { observer.disconnect(); done({ heads: -1, height: -1 }); }, 10_000);
+      });
+    });
+    await s.page.mouse.move(2, 2);
+    const closing = await s.page.evaluate(() => window.__folding);
+    assert.equal(closing.heads, 1, 'the head is still drawn as the fold starts to close');
+    assert.ok(closing.height > 40, `the fold closes from its open height, it does not snap shut (${closing.height})`);
+    await aside.locator('.dm-flow-pv-pool').waitFor({ state: 'detached' });
+    assert.equal(await aside.getAttribute('data-preview'), 'empty');
+    s.page.off('request', ask);
+    assert.deepEqual(asked, [], 'the preview reads nothing of its own');
   } finally { await s.close(); }
 });
 
@@ -1850,9 +1960,14 @@ const chainAbi = parseAbi([
  * `createVault` then registers the vault at the address it predicted, with the policy and limits it carried, so the
  * vault's views and the factory's `isVault`/`vaultForSequence` answer for it. `settled: true` includes every sent
  * transaction at once in the finalized block, instead of leaving it pending until `include` is called.
+ *
+ * Four more are for what Set up automation refuses or survives (added 2026-09-24 with the audit's fixes): `subscribed` lists the
+ * NFTs whose PositionInfo carries the position manager's hasSubscriber flag, `holder` is who holds every NFT when it is not the
+ * owner, `lostApproval` includes a sent `approve` without recording it, and `balance` is the owner's ETH.
  */
 function fakeSequenceChain(owner, { roots, chains = {}, operator = null, serviceFeeBps = 400, maxPositions = 3,
-  policyVersion = 1n, paused = false, limitsVersion = 1n, rootPermissionValid = true, vaultHeld = [], accounted = 0n, approved = true, settled = false }) {
+  policyVersion = 1n, paused = false, limitsVersion = 1n, rootPermissionValid = true, vaultHeld = [], accounted = 0n, approved = true, settled = false,
+  subscribed = [], holder = null, lostApproval = false, balance = '0xde0b6b3a7640000' }) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`, zero = at(0, 32);
   const cloneOf = implementation => concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3']);
   const implementation = at(0x42), factoryCode = '0x6001', implementationCode = '0x6002';
@@ -1910,8 +2025,8 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     // address and by code hash, and the guard at its publisher.
     if ((to === deployment.positionManager || to === deployment.stateView) && name === 'poolManager') return deployment.poolManager;
     if (to === deployment.positionManager) {
-      if (name === 'ownerOf') return held.get(args[0]) ?? owner;
-      if (name === 'getPoolAndPositionInfo') return [poolKey, packedPosition];
+      if (name === 'ownerOf') return held.get(args[0]) ?? holder ?? owner;
+      if (name === 'getPoolAndPositionInfo') return [poolKey, subscribed.includes(args[0]) ? packedPosition | 1n : packedPosition];
       if (name === 'getApproved') return approved ? predict(vaults.size) : approvals.get(args[0]) ?? zeroAddress;
       // Simulated before it is offered, like the vault's own writes below.
       if (name === 'approve') return undefined;
@@ -1954,7 +2069,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     const to = String(tx.to).toLowerCase();
     if (to !== deployment.positionManager && to !== deployment.factory) return;
     const { functionName, args } = decodeFunctionData({ abi: chainAbi, data: tx.data });
-    if (to === deployment.positionManager && functionName === 'approve') approvals.set(args[1], String(args[0]).toLowerCase());
+    if (to === deployment.positionManager && functionName === 'approve' && !lostApproval) approvals.set(args[1], String(args[0]).toLowerCase());
     if (to === deployment.factory && functionName === 'createVault') {
       const [params, nonce] = args, { id, vault } = identity(nonce);
       vaults.set(vault, { id, root: params.rootTokenId, chain: [], policy: params.policy, limits: params.limits });
@@ -1968,7 +2083,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
       // refuses anything outside its login set and fails the scenario's close.
       if (method === 'eth_getTransactionCount') return { result: numberToHex(sends.length) };
       if (method === 'eth_estimateGas') return { result: '0x186a0' };
-      if (method === 'eth_getBalance') return { result: '0xde0b6b3a7640000' };
+      if (method === 'eth_getBalance') return { result: balance };
       if (method === 'eth_gasPrice') return { result: '0x5f5e100' };
       if (method === 'eth_sendTransaction') { const index = sends.length; sends.push(params[0]); apply(params[0]); return { result: hashOf(index) }; }
       if (method === 'eth_getTransactionByHash' || method === 'eth_getTransactionReceipt') {
@@ -2059,8 +2174,9 @@ test('Start tracking is offered for the sequences the wallet lists, reads each o
 // unchanged. What is left is one guided card: pick a position, a mode, the quote currency, keep the limits, consent, and press Set up
 // automation, which runs the approval and the paused creation through the same client, each read back by hash.
 //
-// The positions arrive from useWalletPositions (lib/walletPositions.ts), which answers idle until its endpoint lands; these tests
-// inject them through the test-only lab route (#/sequence-lab/<spec>, App.tsx behind __DOMINO_TEST_HOOKS__), as the hook would.
+// The positions arrive from useWalletPositions (lib/walletPositions.ts: the page's own read of the chain since 2026-09-25,
+// tested at the end of this file); these tests inject them through the test-only lab route (#/sequence-lab/<spec>, App.tsx
+// behind __DOMINO_TEST_HOOKS__), as the hook would.
 
 /** A position as useWalletPositions answers it, in the fake chain's pool. The symbols are what the page shows, never the addresses. */
 const walletPosition = (chain, tokenId, patch = {}) => ({
@@ -2108,12 +2224,7 @@ async function setUpFromLink(s, chain, { mode = 'compound', tokenId = '5' } = {}
 test('with no wallet the page asks to connect; connected, the wallet’s own positions are the only way in, and with none open it points to New position, reading nothing from the chain', async () => {
   const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [] });
   await routeChain(s, chain, CHAIN_METHODS);
-  // The wallet's positions, as the positions endpoint answers them: none (lib/walletPositions.ts answers idle on its own until it lands).
-  const owned = [];
-  await s.context.route(/\/api\/owned\/v2\/positions$/, async route => {
-    owned.push(route.request().method());
-    await route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', body: JSON.stringify({ owner: OWNER, block: 1, positions: [], deposits: [] }) });
-  });
+  // The wallet's positions, as the page reads them from the public RPC (2026-09-25): the scenario's empty chain, none.
   try {
     s.set({ sequenceRelease: { status: 200, body: chain.release } });
     await s.page.goto(`${s.origin}/#/sequence/compound/5`);
@@ -2133,7 +2244,7 @@ test('with no wallet the page asks to connect; connected, the wallet’s own pos
     const text = await main.innerText();
     assert.doesNotMatch(text, /Owner controls|Network budget|Create a paused sequence|Manage a sequence|Root NFT|Read my sequences|Sequence address/i);
     assert.doesNotMatch(text, FORBIDDEN);
-    assert.ok(owned.every(method => method === 'POST'), 'the positions are asked for, never sent');
+    assert.equal(s.rpc.scans(OWNER), 1, 'the positions are read from the chain, once');
     assert.deepEqual(chain.log, [], 'nothing is read from the chain by opening the page');
     assert.deepEqual(chain.sends, []);
     assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
@@ -2289,6 +2400,8 @@ test('from a position link, one press puts the NFT under Domino-compound: the ap
     assert.match(await created.innerText(), /^\s*Domino-compound is set up for position #5\s+It starts paused, and your position stays in your wallet\./);
     assert.deepEqual(await created.locator('[data-wallet-step]').evaluateAll(items => items.map(item => item.getAttribute('data-step-state'))), ['done', 'done']);
     assert.equal(await created.getByRole('link', { name: 'How to switch it on' }).getAttribute('href'), '#/docs/domino-compounder#start-and-stop');
+    // 2026-09-24 (the three features joined up): and the way back to the position, which Positions now shows in its sequence.
+    assert.equal(await created.getByRole('link', { name: 'View position' }).getAttribute('href'), '#/positions/5');
     assert.equal(await main.locator('[data-notice-code]').count(), 0, 'no error code beside any sentence');
     assert.doesNotMatch(await created.innerText(), FORBIDDEN);
     await s.page.screenshot({ path: join(shots(), 'p2-sequence-create.png'), fullPage: true });
@@ -2322,106 +2435,181 @@ test('from a position link, one press puts the NFT under Domino-compound: the ap
   } finally { await s.close(); }
 });
 
+// ---- Set up automation's refusals and its failures after a send (added 2026-09-24, from an adversarial audit of the released build) ----
+
+/** What the wallet steps say now, in order: approve-root, then create. */
+const stepStates = (card) => card.locator('[data-wallet-step]').evaluateAll(items => items.map(item => item.getAttribute('data-step-state')));
+/** The one sentence the page says under Set up automation, once it says one. */
+async function said(card) {
+  const notice = card.locator('p[role="status"]');
+  await notice.waitFor({ timeout: 60_000 });
+  return { text: await notice.innerText(), code: await notice.getAttribute('data-notice-code') };
+}
+/** What preparing a wallet step asks the chain for: none of it means nothing was prepared. */
+const PREPARING = ['eth_getTransactionCount', 'eth_estimateGas', 'eth_getBalance', 'eth_sendTransaction'];
+/** The hash the fake chain gives the n-th send. */
+const sentHash = (index) => `0x${(0xcc + index).toString(16).repeat(32)}`;
+
+test('a position something is already subscribed to is refused before its approval is prepared, and the picker then shows it with that sentence and no longer offers it', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, subscribed: [5n] });
+  await routeChain(s, chain, CHAIN_METHODS);
+  try {
+    await connectOnly(s.page);
+    s.set({ sequenceRelease: { status: 200, body: chain.release } });
+    await s.page.goto(`${s.origin}/${labHash({ positions: [walletPosition(chain, 5), walletPosition(chain, 7)], mode: 'compound', tokenId: '5' })}`);
+    await s.page.reload();
+    const card = s.page.locator('[data-sequence-create]');
+    await card.waitFor({ timeout: 30_000 });
+    await card.getByRole('radiogroup', { name: 'Quote currency' }).getByRole('radio', { name: 'AAA', exact: true }).click();
+    await card.getByRole('checkbox', { name: /^I consent to using this NFT’s already uncollected fees/ }).check();
+    await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+    assert.deepEqual(await said(card), { text: 'This position is already linked to a sequence or another contract.', code: 'position_subscribed' });
+    assert.deepEqual(chain.sends, [], 'nothing was offered to the wallet');
+    assert.deepEqual(chain.log.filter(method => PREPARING.includes(method)), [], 'no approval was even prepared');
+    // The picker: #5 carries the sentence and can't be chosen; #7 is still offered; nothing is chosen for the person.
+    const picker = card.getByRole('radiogroup', { name: 'Your open positions' });
+    assert.deepEqual(await picker.getByRole('radio').evaluateAll(items => items.map(item => [item.getAttribute('data-sequence-position'), item.getAttribute('aria-checked'), item.disabled])),
+      [['5', 'false', true], ['7', 'false', false]]);
+    assert.match(await picker.locator('[data-sequence-position="5"]').innerText(), /#5\s+This position is already linked to a sequence or another contract\.$/);
+    assert.equal(await card.getAttribute('data-sequence-create'), 'position', 'back to choosing a position');
+    await picker.locator('[data-sequence-position="7"]').click();
+    assert.equal(await card.getAttribute('data-sequence-create'), 'quote', 'another position can still be chosen, the link’s mode kept');
+    assert.equal(s.wallet.state.signed.length, 0);
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+test('a listed position the wallet no longer holds is refused as that, with nothing prepared', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, holder: `0x${'dd'.repeat(20)}` });
+  await routeChain(s, chain, CHAIN_METHODS);
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain);
+    assert.deepEqual(await said(card), { text: 'This position is no longer in your wallet.', code: 'position_not_in_wallet' });
+    assert.deepEqual(chain.sends, []);
+    assert.deepEqual(chain.log.filter(method => PREPARING.includes(method)), []);
+    assert.deepEqual(chain.missing, []);
+  } finally { await s.close(); }
+});
+
+test('after the approval was sent, a failure never says that nothing was sent: the approval stays done and the creation failed', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true });
+  // The creation's estimate is refused by the node, after the approval was sent and landed.
+  let estimates = 0;
+  await routeChain(s, chain, CHAIN_METHODS, (method, params) => method === 'eth_estimateGas' && ++estimates === 2 ? { error: { code: -32000, message: 'execution reverted' } } : chain.request(method, params));
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain);
+    assert.deepEqual(await said(card), { text: 'A transaction was sent. Check your wallet activity before pressing Set up automation again.', code: null });
+    assert.deepEqual(await stepStates(card), ['done', 'failed']);
+    assert.deepEqual(chain.sends.map(tx => decodeFunctionData({ abi: chainAbi, data: tx.data }).functionName), ['approve'], 'the approval alone was sent');
+  } finally { await s.close(); }
+});
+
+test('when the creation was sent but its receipt could not be read, the step stays sent and nothing claims that nothing was sent', async () => {
+  // Changed on purpose (2026-09-25): once the press ends, a sent step whose receipt never settled is `sent`, not `chain`, so
+  // nothing spins or says it waits for the network while nothing reads its receipt. The approval's own receipt is the second case.
+  for (const [index, states] of [[1, ['done', 'sent']], [0, ['sent', 'upcoming']]]) {
+    const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true });
+    await routeChain(s, chain, CHAIN_METHODS, (method, params) => method === 'eth_getTransactionReceipt' && String(params[0]).toLowerCase() === sentHash(index)
+      ? { error: { code: -32000, message: 'header not found' } } : chain.request(method, params));
+    try {
+      await connectOnly(s.page);
+      const card = await setUpFromLink(s, chain);
+      assert.equal((await said(card)).text, 'A transaction was sent. Check your wallet activity before pressing Set up automation again.');
+      assert.deepEqual(await stepStates(card), states, 'the step is sent, not failed: only its receipt can say that');
+      assert.equal(chain.sends.length, index + 1);
+      const list = card.locator('[data-wallet-steps]');
+      assert.equal(await list.locator('.dm-step-marker[data-state="current"]').count(), 0, 'no step is shown as running');
+      assert.deepEqual(await list.locator('.dm-step-marker').evaluateAll((markers) => markers.map((marker) => getComputedStyle(marker, '::after').animationName)), ['none', 'none'], 'no marker spins');
+      assert.doesNotMatch(await list.innerText(), /Waiting for the network|Confirm in your wallet/);
+      assert.equal(await card.getByRole('button', { name: 'Set up automation', exact: true }).isEnabled(), true, 'the press has ended');
+    } finally { await s.close(); }
+  }
+});
+
+test('a sequence whose creation receipt is in is shown created, even when a read of it right after fails', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true });
+  // A node behind the block that holds the creation: the new sequence's code reads as none.
+  await routeChain(s, chain, CHAIN_METHODS, (method, params) => method === 'eth_getCode' && String(params[0]).toLowerCase() === chain.predict(0) ? { result: '0x' } : chain.request(method, params));
+  try {
+    await connectOnly(s.page);
+    await setUpFromLink(s, chain);
+    const created = s.page.locator(`main [data-sequence-created="${chain.predict(0)}"]`);
+    await created.waitFor({ timeout: 60_000 });
+    assert.deepEqual(await stepStates(created), ['done', 'done']);
+    assert.equal(await s.page.locator('main p[role="status"]').count(), 0, 'no failure is said');
+  } finally { await s.close(); }
+});
+
+// The page no longer has a review or a network budget: the sentences it can reach name neither.
+test('not enough ETH for a step is said as the network fee it does not cover, not as a reserve set in a network budget', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, balance: '0x0' });
+  await routeChain(s, chain, CHAIN_METHODS);
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain);
+    assert.deepEqual(await said(card), { text: 'Your ETH does not cover the network fee for this step.', code: 'native_gas_reserve_insufficient' });
+    assert.deepEqual(chain.sends, []);
+  } finally { await s.close(); }
+});
+
+test('a creation that is no longer what was prepared sends the owner back to Set up automation, not to a review', async () => {
+  // The approval was sent and included, yet the chain still asks for it.
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, lostApproval: true });
+  await routeChain(s, chain, CHAIN_METHODS);
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain);
+    assert.deepEqual(await said(card), { text: 'The sequence changed since it was prepared. Press Set up automation again.', code: 'sequence_preparation_changed' });
+    assert.deepEqual(await stepStates(card), ['done', 'failed']);
+    assert.equal(chain.sends.length, 1, 'the approval alone');
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /review|network budget|reserve you set/i);
+  } finally { await s.close(); }
+});
+
 // ---------------------------------------------------------------------------
 // Positions: the connected wallet's own list, and a page per position (owner, 2026-09-24)
-// Rewritten later the same day: the list is what DominoSetupV1 minted to the wallet, read from chain by
-// POST /api/owned/v2/positions, every row drawn from that one answer (no nft-positions read, no lookup by NFT id, nothing
-// kept in the browser); a position's page reads the fees relay's /api/fees/v1/state, so it opens while the read service is down.
+// Rewritten later the same day: the list is what DominoSetupV1 minted to the wallet, read from chain, every row drawn from
+// that one answer (no nft-positions read, no lookup by NFT id, nothing kept in the browser).
+// Changed on purpose (2026-09-25): the public RPC answers 429 to every call from Cloudflare's edge, so the site's routes
+// (POST /api/owned/v2/positions, /api/fees/v1/*) failed in production and the list said "No positions to show". The page
+// now reads the chain itself, with the routes' own code: these tests answer the RPC's host with a fake chain
+// (tests/support/browser-chain.mjs) and check that no route of the site is asked, and that a read that failed is never
+// shown as a wallet with nothing.
 // ---------------------------------------------------------------------------
 
 /** The stub's pool as the chain keys it: ETH against TOKEN, 0.30%, spacing 60, no hooks. */
+const STUB_KEY = { currency0: zeroAddress, currency1: FIXTURE_TOKEN.toLowerCase(), fee: 3000, tickSpacing: 60, hooks: zeroAddress };
 const STUB_POOL_ID = keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }, { type: 'int24' }, { type: 'address' }], [zeroAddress, FIXTURE_TOKEN, 3000, 60, zeroAddress]));
-const ETH = { address: zeroAddress, symbol: 'ETH', decimals: 18 };
-const TOKEN = { address: FIXTURE_TOKEN.toLowerCase(), symbol: 'TOKEN', decimals: 6 };
-/** 2^100 of liquidity in -60..60 at tick 0: what removing it pays, v4's own figure. */
+const TOKENS = { [FIXTURE_TOKEN.toLowerCase()]: { symbol: 'TOKEN', decimals: 6 } };
+/** 2^100 of liquidity in -60..60 at tick 0. */
 const LIQUIDITY = 2n ** 100n;
-const PRINCIPAL = principalAt(2n ** 96n, 0, -60, 60, LIQUIDITY).map(String);
+const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
 
-/** One of the wallet's positions as the endpoint answers it: the stub's pool at tick 0, -60 to 60, unless `patch` says otherwise. */
-const chainPosition = (tokenId, patch = {}) => ({
-  tokenId,
-  status: 'open',
-  poolId: STUB_POOL_ID,
-  currencies: [ETH, TOKEN],
-  fee: 3000,
-  tickSpacing: 60,
-  hooks: zeroAddress,
-  tickLower: -60,
-  tickUpper: 60,
-  liquidity: String(LIQUIDITY),
-  sqrtPriceX96: String(2n ** 96n),
-  tick: 0,
-  unclaimedFees: ['633825300114', '0'],
-  principal: PRINCIPAL,
-  ...patch,
-});
-const closedPosition = (tokenId) => chainPosition(tokenId, { status: 'closed', liquidity: '0', principal: ['0', '0'], unclaimedFees: ['0', '0'] });
+/** One of the chain's positions: held by the connected wallet, in the stub's pool at tick 0, -60 to 60, 633,825,300,114 wei of ETH unclaimed, unless `patch` says otherwise. */
+const onChain = (tokenId, patch = {}) => ({ tokenId, holder: OWNER, key: STUB_KEY, tickLower: -60, tickUpper: 60, liquidity: LIQUIDITY, unclaimed: [633825300114n, 0n], ...patch });
+/** Closed: all of its liquidity removed, the NFT kept by its owner. */
+const closedOnChain = (tokenId, patch = {}) => onChain(tokenId, { liquidity: 0n, unclaimed: [0n, 0n], ...patch });
 
-/** The same position as the fees relay's /state answers it for `owner`, its pool key `key` (the position's own when none is given). */
-const stateOf = (position, owner, key = {}) => ({
-  tokenId: position.tokenId,
-  ok: true,
-  owner,
-  poolId: position.poolId,
-  poolKey: { currency0: position.currencies[0].address, currency1: position.currencies[1].address, fee: position.fee, tickSpacing: position.tickSpacing, hooks: position.hooks, ...key },
-  currencies: position.currencies,
-  tickLower: position.tickLower,
-  tickUpper: position.tickUpper,
-  liquidity: position.liquidity,
-  sqrtPriceX96: position.sqrtPriceX96,
-  tick: position.tick,
-  feeGrowthInside0X128: '0',
-  feeGrowthInside1X128: '0',
-  feeGrowthInside0LastX128: '0',
-  feeGrowthInside1LastX128: '0',
-  unclaimed0: position.unclaimedFees[0],
-  unclaimed1: position.unclaimedFees[1],
-});
-
-/**
- * A same-origin /api/fees/v1/state for the wallet-server: `answer(id, count)` is that id's state, or null for not_found
- * (`count`: how many times the id was asked). Keeps every question.
- */
-function stateEndpoint(answer) {
-  const asked = [];
-  const counts = new Map();
-  return {
-    asked,
-    async route(request, url) {
-      if (url.pathname !== '/api/fees/v1/state') return undefined;
-      const { tokenIds } = await request.json();
-      asked.push(tokenIds);
-      const positions = tokenIds.map((id) => {
-        counts.set(id, (counts.get(id) ?? 0) + 1);
-        return answer(id, counts.get(id)) ?? { tokenId: id, ok: false, reason: 'not_found' };
-      });
-      return Response.json({ v: 1, block: 70921337, timestamp: 1790000000, positions });
-    },
-  };
-}
-
-/** What the chain answered for 0xf618…c0a: one open position created through DominoSetupV1; here, eleven closed ones too. */
+/** What the chain holds for 0xf618…c0a: one open position created through DominoSetupV1; here, eleven closed ones too. */
 const OWNED_OPEN = '3135288';
 const OWNED_CLOSED = ['3134000', '3133000', '3132000', '3131000', '3130000', '3129000', '3128000', '3127000', '3126000', '3125000', '3124000'];
 const BIG_ID = '57896044618658097711785492504343953926634992332820282019728792003956564819969';
 
-/** A same-origin owned-positions endpoint (v2) for the wallet-server, answering with `answer(body)` and keeping every request. */
-function ownedEndpoint(answer) {
+/** The site's own routes that read the chain for the page, recorded if the page ever asks one again: it must not. */
+function siteRoutes() {
   const asked = [];
   return {
     asked,
     async route(request, url) {
-      if (url.pathname !== '/api/owned/v2/positions') return undefined;
-      const body = await request.json();
-      asked.push({ method: request.method, search: url.search, type: request.headers.get('content-type'), body });
-      return answer(body);
+      // 2026-09-25, later: and the automation state's (functions/api/automation/v1/state.ts), read by the page since.
+      if (!/^\/api\/(?:owned|fees|automation)\//.test(url.pathname)) return undefined;
+      asked.push(`${request.method} ${url.pathname}`);
+      return Response.json({ error: 'route_not_available' }, { status: 404 });
     },
   };
 }
-
-/** The endpoint's answer for one open and eleven closed positions, for whichever wallet asks. */
-const oneOpenElevenClosed = (deposits = []) => ({ owner }) =>
-  Response.json({ owner, block: 70921337, positions: [chainPosition(OWNED_OPEN), ...OWNED_CLOSED.map(closedPosition)], deposits });
 
 /** Connects Test Wallet A from the header's dialog, on Robinhood Chain, without signing in. */
 async function connectWallet(page) {
@@ -2438,11 +2626,29 @@ const nftReads = (read) => read.requests.filter((r) => r.path.endsWith('/nft-pos
 /** Everything the page keeps in the browser that is not the appearance or a session's own key. */
 const kept = (page) => page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter((key) => /position/i.test(key)));
 
+/** What the list card showed since recordList, once a wallet was connected (the no-wallet and waiting cards left out). */
+const listSeen = (page) => page.evaluate(() => window.__ownedSeen.filter((what) => !/^(?:no-wallet|waiting|other-network)\b/.test(what)));
+/** From now on, every state the list card shows, in order: data-owned, and which empty state or line it carries. */
+const recordList = (page) =>
+  page.evaluate(() => {
+    window.__ownedSeen = [];
+    const note = () => {
+      const card = document.querySelector('[data-owned]');
+      if (!card) return;
+      const empty = card.querySelector('[data-empty]')?.getAttribute('data-empty');
+      const line = card.querySelector('[data-owned-note]')?.getAttribute('data-owned-note');
+      const what = [card.getAttribute('data-owned'), empty, line].filter(Boolean).join(':');
+      if (window.__ownedSeen.at(-1) !== what) window.__ownedSeen.push(what);
+    };
+    note();
+    new MutationObserver(note).observe(document.body, { childList: true, subtree: true, attributes: true });
+  });
+
 test('Positions lists the positions the wallet created through Domino, Open 1 and Closed 11, straight from the chain read, and each row opens the position’s page', async () => {
-  const owned = ownedEndpoint(oneOpenElevenClosed());
-  const relay = stateEndpoint((id) => (id === OWNED_OPEN ? stateOf(chainPosition(OWNED_OPEN), OWNER) : id === OWNED_CLOSED[0] ? stateOf(closedPosition(OWNED_CLOSED[0]), OWNER) : null));
+  const chain = browserChain({ positions: [onChain(OWNED_OPEN), ...OWNED_CLOSED.map((id) => closedOnChain(id))], tokens: TOKENS });
+  const site = siteRoutes();
   const read = createReadStub();
-  const s = await scenario({ routes: [owned.route, relay.route, (request, url) => read.handle(request, url)] });
+  const s = await scenario({ chain, routes: [site.route, (request, url) => read.handle(request, url)] });
   const chunks = [];
   s.page.on('request', (request) => {
     const name = new URL(request.url()).pathname.split('/').pop();
@@ -2453,32 +2659,42 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // No wallet yet: one empty state that asks for one, and nothing is listed or read.
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     assert.equal((await s.page.locator('[data-empty="owned-connect"]').innerText()).replace(/\s+/g, ' '), 'Connect a wallet to see your positions Connect wallet');
-    assert.deepEqual([owned.asked.length, nftReads(read).length], [0, 0], 'nothing is asked without a wallet');
+    assert.deepEqual([chain.scans(OWNER), nftReads(read).length], [0, 0], 'nothing is asked without a wallet');
 
+    await recordList(s.page);
     await connectWallet(s.page);
     const card = s.page.locator('[data-owned="ready"]');
     await card.waitFor();
-    // One same-origin POST with the address in its body, never in the URL.
-    assert.deepEqual(owned.asked, [{ method: 'POST', search: '', type: 'application/json', body: { owner: OWNER } }]);
+    // One read of the chain by the page itself, the address in its POST bodies only; no route of the site.
+    assert.equal(chain.scans(OWNER), 1);
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    assert.deepEqual(await listSeen(s.page), ['loading', 'ready'], 'the loading rows, then the list');
     const tabs = s.page.getByRole('tab');
     assert.deepEqual((await tabs.allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim()), ['Open 1', 'Closed 11']);
     assert.equal(await s.page.getByRole('tab', { selected: true }).innerText().then((text) => text.replace(/\s+/g, ' ')), 'Open 1');
-    assert.equal(await card.getAttribute('data-owned-block'), '70921337');
+    assert.equal(await card.getAttribute('data-owned-block'), String(chain.head));
 
-    // The open position's row, every figure from the endpoint's answer: the read service is never asked.
-    const row = s.page.locator(`a[data-position-row="${OWNED_OPEN}"][data-snapshot="70921337"]`);
+    // The open position's row, every figure from the chain read: the read service is never asked.
+    const row = s.page.locator(`a[data-position-row="${OWNED_OPEN}"][data-snapshot="${chain.head}"]`);
     await row.waitFor();
     assert.equal(await row.getAttribute('href'), `#/positions/${OWNED_OPEN}`);
     const rowText = await row.innerText();
     assert.match(rowText, /ETH\s*\/\s*TOKEN[\s\S]*0\.30%\s*·\s*#3135288[\s\S]*In range/);
     assert.match(rowText, /633,825,300,114 ETH|0\.000000633825 ETH/);
     assert.equal(await s.page.locator('[data-position-row]').count(), 1);
+    // 2026-09-24 (the three features joined up): under the open row, its feature from chain and the way to automate it.
+    const feature = s.page.locator(`[data-position-automation="${OWNED_OPEN}"]`);
+    await feature.locator('a[data-automate-entry]').waitFor();
+    assert.equal(await feature.getAttribute('data-automation'), 'plain');
+    assert.match(await feature.innerText(), /^Plain position\s+Automate$/);
+    assert.equal(await feature.locator('a').getAttribute('href'), `#/sequence/${OWNED_OPEN}`);
+    assert.equal(await s.page.locator('[data-position-row] a, [data-position-row] button').count(), 0, 'the row stays one link, with nothing inside it');
     assert.deepEqual(nftReads(read), [], 'no nft-positions read: the rows are the chain read');
     assert.equal(await s.page.locator('details[data-lookup-disclosure], #nft-ids, #chain-lookup').count(), 0, 'no lookup by NFT id');
     assert.deepEqual(chunks, [], 'no held deposits: their chunk is not loaded');
     await s.page.locator('[data-owned-rows]').screenshot({ path: join(shots(), 'positions-open.png') });
 
-    // Closed: ten rows, the eleventh behind Show 1 more, all from the same answer.
+    // Closed: ten rows, the eleventh behind Show 1 more, all from the same answer. A closed position kept its NFT.
     await s.page.getByRole('tab', { name: /^Closed/ }).click();
     const closedRows = s.page.locator('[data-owned-rows="closed"] a[data-position-row]');
     await closedRows.nth(9).waitFor();
@@ -2487,14 +2703,14 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     await s.page.getByRole('button', { name: 'Show 1 more', exact: true }).click();
     await s.page.locator(`[data-owned-rows="closed"] a[data-position-row="${OWNED_CLOSED[10]}"]`).waitFor();
     assert.equal(await s.page.getByRole('button', { name: /^Show \d+ more$/ }).count(), 0);
-    assert.deepEqual(owned.asked.length, 1, 'the tabs and Show more ask nothing');
+    assert.equal(chain.scans(OWNER), 1, 'the tabs and Show more ask nothing');
     await s.page.locator('main').screenshot({ path: join(shots(), 'positions-closed.png') });
     const listText = await s.page.locator('main').innerText();
     assert.doesNotMatch(listText, FORBIDDEN);
     assert.doesNotMatch(listText, /comma|type (?:the|an) NFT id|Look up|Position NFTs/i, 'no typed ids asked for');
     assert.deepEqual(await kept(s.page), [], 'nothing about positions is kept in the browser');
 
-    // A row is a link to the position's own page, read from the fees relay's /state.
+    // A row is a link to the position's own page, read from the chain by the page.
     await s.page.getByRole('tab', { name: /^Open/ }).click();
     await row.click();
     await s.page.waitForFunction((id) => location.hash === `#/positions/${id}`, OWNED_OPEN);
@@ -2513,12 +2729,17 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     assert.match(facts, new RegExp(`Owner\\s+${OWNER}`));
     assert.match(facts, new RegExp(`Liquidity\\s+${LIQUIDITY}`));
     assert.match(facts, /Ticks\s+-60 to 60/);
+    // Changed on purpose (2026-09-24, the three features joined up): Automate left the facts' links for the owner's own
+    // actions in the title row, beside Collect fees and Close position, and opens the automation page with this position
+    // chosen and the mode still to choose; the position's feature is a pill beside its range status.
     assert.deepEqual(await detail.locator('.dm-pos-links a').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [
       ['Pool', `#/pool/${STUB_POOL_ID}/${FIXTURE_TOKEN.toLowerCase()}`],
       ['Add to this pool', `#/new/${STUB_POOL_ID}`],
-      ['Automate', `#/sequence/compound/${OWNED_OPEN}`],
     ]);
-    assert.ok(relay.asked.some((ids) => ids.length === 1 && ids[0] === OWNED_OPEN), 'the page reads its one NFT from the relay');
+    await detail.locator('[data-position-actions] a[data-automate-entry]').waitFor();
+    assert.deepEqual(await detail.locator('[data-position-actions] a[data-automate-entry]').evaluate((a) => [a.textContent, a.getAttribute('href')]), ['Automate', `#/sequence/${OWNED_OPEN}`]);
+    assert.equal(await detail.locator('.dm-pos-chips [data-automation="plain"]').innerText(), 'Plain position');
+    assert.ok(chain.log.some((call) => call.method === 'eth_call' && Number(call.params[1]) === chain.head - 2), 'the page reads its NFT from the chain, at head − 2');
     assert.deepEqual(nftReads(read), [], 'and never from the read service');
     assert.ok(!read.requests.some((r) => r.path.endsWith('/pool-market')), 'nor the pool’s price: it came with the read');
     // The owner's actions have their mount: the chunk is opened on the page, behind the wallet flag.
@@ -2535,46 +2756,71 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // Back to the list.
     await s.page.getByRole('link', { name: 'Positions', exact: true }).first().click();
     await s.page.locator('[data-owned="ready"]').waitFor();
+    assert.deepEqual(site.asked, [], 'no route of the site was asked at any point');
+    assert.deepEqual([chain.refused, chain.missing], [[], []], 'the page asked the chain only what the reads may');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
   } finally { await s.close(); }
 });
 
-test('a list the chain cannot give says so only in data, with no lookup and no Retry; a link with several ids is the list; asked again on its own, it brings the held deposit with its tokens', async () => {
-  const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
-  const deposit = { operationId: `0x${'33'.repeat(32)}`, currency0: zeroAddress, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: zeroAddress, balance0: '0', balance1: '100000', currencies: [ETH, { address: USDG, symbol: 'USDG', decimals: 6 }] };
-  let answer = () => Response.json({ error: 'chain_busy' }, { status: 502 });
-  const owned = ownedEndpoint((body) => answer(body));
+// The owner's complaint of 2026-09-25: with the RPC refusing the site's routes, a read that failed drew "No positions to
+// show" for a wallet with four open positions. A failed read now says nothing about the wallet: the loading rows and one
+// quiet line while it is asked again on its own (2, 5 and 10 s), one calm line if those fail too; never the empty state.
+test('a read that fails is never “no positions”: the loading rows and one quiet line while it is asked again, the list and the held deposit once the chain answers, one calm line if it keeps failing, and no Retry', async () => {
+  const deposit = { key: { currency0: zeroAddress, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: zeroAddress }, balance0: 0n, balance1: 100000n };
+  const chain = browserChain({ positions: [onChain(OWNED_OPEN), ...OWNED_CLOSED.map((id) => closedOnChain(id))], tokens: { ...TOKENS, [USDG]: { symbol: 'USDG', decimals: 6 } }, deposits: { [OWNER]: [deposit] } });
+  // The chain refuses the page's first two reads, then answers.
+  let refusals = 0;
+  chain.outage = (call) => (call.method === 'eth_blockNumber' && ++refusals <= 2 ? 500 : null);
+  const site = siteRoutes();
   const read = createReadStub();
-  const s = await scenario({ routes: [owned.route, (request, url) => read.handle(request, url)] });
+  const s = await scenario({ chain, routes: [site.route, (request, url) => read.handle(request, url)] });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await recordList(s.page);
     await connectWallet(s.page);
 
-    // The chain could not be read: nothing on the list's face says so; its reason is a data attribute and a title.
-    const unlisted = s.page.locator('[data-owned="unlisted"]');
-    await unlisted.waitFor();
-    assert.equal(await unlisted.getAttribute('data-owned-reason'), 'chain_busy');
-    assert.equal(await unlisted.getAttribute('title'), 'Your positions could not be read from chain just now. They are asked again on their own.');
+    // Refused: the loading rows stay, with one quiet line; the reason is a data attribute only.
+    const again = s.page.locator('[data-owned="retrying"]');
+    await again.waitFor();
+    assert.equal(await again.locator('[data-owned-note]').innerText(), 'Reading your positions from the chain…');
+    assert.equal(await again.getAttribute('data-owned-reason'), 'chain_unavailable');
+    assert.equal(await again.locator('[data-owned-loading]').count(), 1, 'the loading rows stay');
+    assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'no Retry');
     const text = await s.page.locator('main').innerText();
     assert.doesNotMatch(text, FORBIDDEN);
-    assert.doesNotMatch(text, /could not be|chain_busy|Look up|NFT id/i, 'no status panel and no lookup: the reason is a title and a data attribute');
-    assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'and no Retry');
-    assert.equal(await s.page.locator('details[data-lookup-disclosure], #nft-ids').count(), 0);
+    assert.doesNotMatch(text, /No positions|chain_unavailable|Look up|NFT id/i, 'no empty state, no code, no lookup');
 
     // A link that carries several ids, arriving while the page is open: it is the list, nothing is looked up.
     await s.page.evaluate((big) => { location.hash = `#/positions/1,${big}`; }, BIG_ID);
     await s.page.locator('[data-owned]').waitFor();
     assert.equal(await s.page.locator('[data-position-detail], [data-position-loading]').count(), 0);
     assert.deepEqual(nftReads(read), [], 'no id of the link is read');
+    await recordList(s.page);
 
-    // The chain answers again: the list, asked again on its own a few seconds later, arrives with a held deposit whose
-    // tokens came with the answer (no token read), and its chunk opens.
-    answer = oneOpenElevenClosed([deposit]);
+    // Asked again on its own (2 s, then 5 s): the chain answers, with the list and the held deposit, whose tokens came
+    // with the answer (no token read), and its chunk opens.
     await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 20_000 });
-    assert.ok(owned.asked.length >= 2 && owned.asked.length <= 4, `asked again twice at most per visit: ${owned.asked.length}`);
+    const seen = await listSeen(s.page);
+    assert.ok(seen.every((what) => /^(?:loading|retrying:rereading|ready)$/.test(what)), `only the loading rows, the quiet line and the list: ${seen.join(' → ')}`);
+    assert.deepEqual((await s.page.getByRole('tab').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim()), ['Open 1', 'Closed 11']);
     await s.page.waitForFunction(() => performance.getEntriesByType('resource').some((entry) => /\/HeldDeposits-[\w-]+\.js$/.test(entry.name)));
     assert.deepEqual(read.requests.filter((r) => r.path.endsWith('/token')), [], 'the deposit’s tokens came with the chain read');
+
+    // Another wallet, and the chain refuses every read: asked again after 2, 5 and 10 s, then one calm line.
+    chain.outage = 500;
+    await recordList(s.page);
+    await s.wallet.switchAccount('a', 1);
+    const unread = s.page.locator('[data-owned="unlisted"]');
+    await unread.waitFor({ timeout: 30_000 });
+    assert.equal(await unread.locator('[data-owned-note]').innerText(), 'Your positions couldn’t be read right now.');
+    assert.equal(await unread.getAttribute('data-owned-reason'), 'chain_unavailable');
+    const after = await listSeen(s.page);
+    assert.ok(after.every((what) => /^(?:ready|loading|retrying:rereading|unlisted:unread)$/.test(what)), `never an empty state: ${after.join(' → ')}`);
+    assert.equal(await s.page.locator('[data-owned] [data-empty]').count(), 0, 'no empty state in the card');
+    assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'and no Retry');
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /No positions/);
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
     assert.deepEqual(await kept(s.page), [], 'nothing about positions is kept in the browser');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
   } finally { await s.close(); }
@@ -2583,13 +2829,13 @@ test('a list the chain cannot give says so only in data, with no lookup and no R
 /** Someone else's wallet: the NFTs a visitor who is not their owner opens. */
 const OTHER_OWNER = '0x3333333333333333333333333333333333333333';
 
-// Review of 2026-09-25: Create position opens #/positions/<id> 3 s after the mint. 2026-09-24: the page reads the fees
-// relay, which reads two blocks behind the head and keeps an answer 10 s: an NFT it does not know yet is asked again
-// (3, 8, 12 s) with the skeleton kept, before the page says it no longer exists.
-test('a position’s page asks an NFT the relay does not know yet again, the skeleton kept, and shows the position once it is there', async () => {
+// Review of 2026-09-25: Create position opens #/positions/<id> 3 s after the mint. 2026-09-24: the page reads two blocks
+// behind the head: an NFT the chain does not show yet is asked again (3, 8, 12 s) with the skeleton kept, before the page
+// says it no longer exists.
+test('a position’s page asks an NFT the chain does not show yet again, the skeleton kept, and shows the position once it is there', async () => {
   const NEW = '4242';
-  const relay = stateEndpoint((id, count) => (count === 1 ? null : stateOf(chainPosition(id), OTHER_OWNER)));
-  const s = await scenario({ routes: [relay.route] });
+  const chain = browserChain({ positions: [onChain(NEW, { holder: OTHER_OWNER, from: 1 })], tokens: TOKENS });
+  const s = await scenario({ chain });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
@@ -2604,7 +2850,7 @@ test('a position’s page asks an NFT the relay does not know yet again, the ske
       }).observe(document.body, { childList: true, subtree: true, attributes: true });
       location.hash = `#/positions/${id}`;
     }, NEW);
-    const pageAsks = () => relay.asked.filter((ids) => ids.length === 1 && ids[0] === NEW).length;
+    const pageAsks = () => chain.asked.get(NEW) ?? 0;
     for (let i = 0; i < 100 && pageAsks() === 0; i++) await s.page.waitForTimeout(50);
     await s.page.waitForTimeout(700);
     assert.equal(await s.page.locator('[data-position-loading]').count(), 1, 'the skeleton stays while the NFT is asked again');
@@ -2617,24 +2863,33 @@ test('a position’s page asks an NFT the relay does not know yet again, the ske
 });
 
 // Review of 2026-09-25: the page offered "Add to this pool" (#/new/<poolId>) for a pool with hooks or a dynamic fee, which
-// New position refuses on arrival with nothing preselected. It links only to a pool Domino can open a position in.
+// New position refuses on arrival with nothing preselected. It links only to a pool Domino can open a position in. (A pool
+// with hooks is one the chain read names as such: its page says its details could not be read, with no link at all.)
 test('a position’s page offers Add to this pool only for a pool with no hooks and a fixed fee', async () => {
   const [PLAIN, HOOKED, DYNAMIC] = ['4242', '4243', '4244'];
-  const keys = { [PLAIN]: {}, [HOOKED]: { hooks: `0x${'4a'.repeat(20)}` }, [DYNAMIC]: { fee: 8388608 } };
-  const relay = stateEndpoint((id) => (keys[id] ? stateOf(chainPosition(id), OTHER_OWNER, keys[id]) : null));
-  const s = await scenario({ routes: [relay.route] });
+  const chain = browserChain({
+    positions: [onChain(PLAIN, { holder: OTHER_OWNER }), onChain(HOOKED, { holder: OTHER_OWNER, key: { ...STUB_KEY, hooks: `0x${'4a'.repeat(20)}` } }), onChain(DYNAMIC, { holder: OTHER_OWNER, key: { ...STUB_KEY, fee: 8388608 } })],
+    tokens: TOKENS,
+  });
+  const s = await scenario({ chain });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     const links = {};
-    for (const id of [PLAIN, HOOKED, DYNAMIC]) {
+    for (const id of [PLAIN, DYNAMIC]) {
       await s.page.evaluate((next) => { location.hash = `#/positions/${next}`; }, id);
       const detail = s.page.locator(`[data-position-detail][data-position-id="${id}"]`);
       await detail.waitFor({ timeout: 10_000 });
       links[id] = await detail.locator('.dm-pos-links a').evaluateAll((all) => all.map((a) => a.textContent));
     }
-    assert.deepEqual(links, { [PLAIN]: ['Pool', 'Add to this pool', 'Automate'], [HOOKED]: ['Pool', 'Automate'], [DYNAMIC]: ['Pool', 'Automate'] });
-    assert.equal(await s.page.locator('a[href^="#/new/"]').count(), 0, 'no way into New position with the dynamic-fee pool on its page');
+    // 2026-09-24: Automate is the owner's own action in the title row now (and never for a pool a sequence refuses).
+    assert.deepEqual(links, { [PLAIN]: ['Pool', 'Add to this pool'], [DYNAMIC]: ['Pool'] });
+    assert.equal(await s.page.locator('a[data-automate-entry]').count(), 0, 'someone else’s position offers no Automate');
+    await s.page.evaluate((next) => { location.hash = `#/positions/${next}`; }, HOOKED);
+    const hooked = s.page.locator('[data-position-reason="hooked_pool"]');
+    await hooked.waitFor({ timeout: 10_000 });
+    assert.equal(await s.page.locator('.dm-pos-links a').count(), 0, 'a pool with hooks: no link');
+    assert.equal(await s.page.locator('a[href^="#/new/"]').count(), 0, 'no way into New position with the dynamic-fee or hooked pool on its page');
   } finally { await s.close(); }
 });
 
@@ -2643,8 +2898,8 @@ test('a position’s page offers Add to this pool only for a pool with no hooks 
 // page opens it only for the NFT's owner, connected on Robinhood Chain.
 test('a position’s page downloads the owner’s actions only for the owner’s wallet: not with no wallet, not for someone else’s NFT', async () => {
   const [THEIRS, MINE] = ['4242', '4243'];
-  const relay = stateEndpoint((id) => stateOf(chainPosition(id), id === MINE ? OWNER : OTHER_OWNER));
-  const s = await scenario({ routes: [relay.route] });
+  const chain = browserChain({ positions: [onChain(THEIRS, { holder: OTHER_OWNER }), onChain(MINE)], tokens: TOKENS });
+  const s = await scenario({ chain });
   const chunks = [];
   s.page.on('request', (request) => {
     const name = new URL(request.url()).pathname.split('/').pop();
@@ -2678,5 +2933,354 @@ test('a position’s page downloads the owner’s actions only for the owner’s
     await s.page.waitForFunction(() => performance.getEntriesByType('resource').some((entry) => /\/PositionActions-[\w-]+\.js$/.test(entry.name)));
     assert.equal(chunks.length, 1, 'requested once, for the owner');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
+  } finally { await s.close(); }
+});
+
+// Review of 2026-09-24 (the three features): a position's page offered its owner Automate for any open NFT in a pool with
+// no hooks and a fixed fee, one opened elsewhere included, and the automation page, which lists only the wallet's own
+// Domino positions, then said "No open positions" (and asked the wallet's list again, fresh). Automate, and the Plain
+// position pill, are offered only for a position the automation page lists; a sequence's state is still said to anyone.
+test('a position’s page offers Automate and says Plain position only for one of the wallet’s own open Domino positions: not for an NFT it opened elsewhere, not for a closed one, and the list is not read again for it', async () => {
+  const ELSEWHERE = '2827280';
+  // The wallet holds ELSEWHERE too, open, in the same usable pool; DominoSetupV1 minted it to someone else.
+  const chain = browserChain({ positions: [onChain(OWNED_OPEN), ...OWNED_CLOSED.map((id) => closedOnChain(id)), onChain(ELSEWHERE, { minter: OTHER_OWNER })], tokens: TOKENS });
+  const s = await scenario({ chain });
+  /** Opens `id`'s page as its owner and waits until its actions and the wallet's list are in. */
+  const open = async (id) => {
+    await s.page.evaluate((next) => { location.hash = `#/positions/${next}`; }, id);
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${id}"]`);
+    await detail.waitFor({ timeout: 10_000 });
+    await detail.locator('[data-position-actions] button').first().waitFor({ timeout: 10_000 });
+    await s.page.waitForTimeout(600);
+    return detail;
+  };
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await connectWallet(s.page);
+    await s.page.locator('[data-owned="ready"]').waitFor();
+
+    // One of the wallet's Domino positions, open: Automate beside the owner's actions, and its feature beside its range.
+    const mine = await open(OWNED_OPEN);
+    await mine.locator('[data-position-actions] a[data-automate-entry]').waitFor();
+    assert.equal(await mine.locator('[data-position-actions] a[data-automate-entry]').getAttribute('href'), `#/sequence/${OWNED_OPEN}`);
+    assert.equal(await mine.locator('.dm-pos-chips [data-automation="plain"]').innerText(), 'Plain position');
+
+    // The wallet holds this NFT, open, in the same usable pool, but did not open it with Domino: the owner's actions
+    // stay, and nothing says Plain position or offers Automate, which would lead to a page that does not list it.
+    const elsewhere = await open(ELSEWHERE);
+    assert.ok(await elsewhere.getByRole('button', { name: 'Close position' }).count() > 0, 'the owner’s own actions are there');
+    assert.equal(await elsewhere.locator('a[data-automate-entry]').count(), 0, 'no Automate for an NFT opened elsewhere');
+    assert.equal(await elsewhere.locator('.dm-pos-chips [data-automation]').count(), 0, 'and no Plain position pill');
+
+    // Closed, though one of the wallet's: no Automate and no pill, as its row on Positions has no line either.
+    const closed = await open(OWNED_CLOSED[0]);
+    assert.equal(await closed.locator('[data-position-status]').innerText(), 'Closed');
+    assert.equal(await closed.locator('a[data-automate-entry], .dm-pos-chips [data-automation]').count(), 0);
+
+    // A link to the automation page for the NFT opened elsewhere (typed, or kept from before): its list is the wallet's
+    // Domino positions, and a missing id that no New position made here is not asked for again, fresh.
+    const before = chain.scans(OWNER);
+    await s.page.evaluate((id) => { location.hash = `#/sequence/${id}`; }, ELSEWHERE);
+    await s.page.locator('main.dm-seq [data-sequence-release]').first().waitFor({ timeout: 10_000 });
+    await s.page.waitForTimeout(1_000);
+    assert.equal(chain.scans(OWNER) - before, 1, 'the wallet’s list was read once, and not again for an id it lacks');
+    assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
+  } finally { await s.close(); }
+});
+
+// Review of 2026-09-24 (the three features): once a position existed, New position rested on its success until the person
+// left the page. Back was hidden, every step locked, and the footer's or the menu's New position (the very hash already
+// open) did nothing. It now opens a fresh flow at the first step. The new position's page, opened next with a list the
+// endpoint kept from before the mint, asks that list again, fresh, once, and then offers Automate.
+test('after a success, New position in the footer opens a fresh flow at step 1; the new position’s page asks the wallet’s list again, fresh, once, and offers Automate', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { tokenId: 4243n, finality: 'lagging' });
+  chain.seed({ key: STUB_POOL_KEY, balance0: 2_000_000n, balance1: 1_000_000n });
+  const s = await atReview(chain);
+  // The RPC's first read of the wallet's list comes from a node behind the mint, as a load-balanced RPC may: it lacks the
+  // new NFT; any later read has it.
+  let behind = true;
+  s.rpc.history = (filter) => (behind && filter.topics?.[0] === SETUP_MINTED_TOPIC ? ((behind = false), []) : null);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-position="held"]').click({ timeout: 60_000 });
+    const next = s.page.locator('[data-created-position="4243"]');
+    await next.waitFor({ timeout: 60_000 });
+    assert.equal(await s.page.evaluate(() => location.hash), '#/new');
+    assert.equal(await s.page.locator('li[data-step="review"][data-state="current"]').count(), 1);
+    // The done steps above the offer are not locked: each still opens (and leaving Review ends the offer).
+    assert.deepEqual(await s.page.locator('li[data-step-done] button.dm-flow-row').evaluateAll((rows) => rows.map((row) => row.disabled)), [false, false, false]);
+
+    // The footer's New position is the hash already open: it starts again at the first step, with nothing chosen.
+    await s.page.locator('footer').getByRole('link', { name: 'New position', exact: true }).click();
+    await next.waitFor({ state: 'detached', timeout: 10_000 });
+    await s.page.locator('li[data-step="pool"][data-state="current"]').waitFor({ timeout: 10_000 });
+    assert.equal(await s.page.evaluate(() => location.hash), '#/new', 'the same page');
+    assert.equal(await s.page.locator('li[data-step-done], [data-create-position], [data-created-position]').count(), 0, 'no step done, no Create position, no offer');
+    assert.ok(await s.page.evaluate(() => window.scrollY) < 200, 'at the top of the page');
+    assert.equal(chain.sends.length, 1, 'nothing more was sent');
+
+    // The position's own page: the list kept from before the mint lacks it, so it is asked once more, fresh, and Automate
+    // is offered once that answer names it.
+    await s.page.evaluate(() => { location.hash = '#/positions/4243'; });
+    const detail = s.page.locator('[data-position-detail][data-position-id="4243"]');
+    await detail.waitFor({ timeout: 30_000 });
+    await detail.locator('[data-position-actions] a[data-automate-entry]').waitFor({ timeout: 20_000 });
+    assert.equal(await detail.locator('[data-position-actions] a[data-automate-entry]').getAttribute('href'), '#/sequence/4243');
+    assert.equal(await detail.locator('.dm-pos-chips [data-automation="plain"]').innerText(), 'Plain position');
+    assert.equal(s.rpc.scans(OWNER), 2, 'the list from before the mint, then one more read');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// 2026-09-24 (the three features): a position already in a sequence says which one and whether it runs, on its row and
+// on its page, and offers no Automate. Review of the same day: a sequence that does not run offers its next step, the
+// docs on switching it on (the automation page's own link once a sequence is set up), instead of nothing.
+test('a paused Auto-compound says so on its row and its page, offers how to switch it on and no Automate, beside a plain position that offers Automate', async () => {
+  const PLAIN = '3135289';
+  const VAULT = `0x${'5a'.repeat(20)}`;
+  // Changed on purpose (2026-09-25): the feature is read from the chain by the page itself, no longer from the site's
+  // POST /api/automation/v1/state: OWNED_OPEN's subscriber is a vault Domino's factory made, rooted at it, at 2% (Auto-
+  // compound) and paused; PLAIN has no subscriber.
+  const chain = browserChain({
+    positions: [onChain(OWNED_OPEN, { subscriber: VAULT }), onChain(PLAIN)],
+    tokens: TOKENS,
+    vaults: { [VAULT]: { root: OWNED_OPEN, feeBps: 200, paused: true, valid: true } },
+  });
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await connectWallet(s.page);
+    const paused = s.page.locator(`[data-position-automation="${OWNED_OPEN}"][data-automation="compound"]`);
+    await paused.waitFor();
+    assert.equal(await paused.getAttribute('data-automation-state'), 'paused');
+    assert.match(await paused.innerText(), /^Auto-compound · Paused\s+How to switch it on$/);
+    assert.equal(await paused.getByRole('link').getAttribute('href'), '#/docs/auto-compound#where-it-starts');
+    assert.equal(await paused.locator('a[data-automate-entry]').count(), 0, 'no second sequence on it');
+    const plain = s.page.locator(`[data-position-automation="${PLAIN}"][data-automation="plain"]`);
+    await plain.locator('a[data-automate-entry]').waitFor();
+    assert.equal(await plain.locator('a[data-automate-entry]').getAttribute('href'), `#/sequence/${PLAIN}`);
+
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
+    await detail.waitFor({ timeout: 10_000 });
+    await detail.locator('[data-position-actions] a[data-automate-docs]').waitFor({ timeout: 10_000 });
+    assert.equal(await detail.locator('.dm-pos-chips [data-automation="compound"]').innerText(), 'Auto-compound · Paused');
+    assert.deepEqual(await detail.locator('[data-position-actions] a').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['How to switch it on', '#/docs/auto-compound#where-it-starts']]);
+    assert.doesNotMatch(await detail.innerText(), FORBIDDEN);
+    // Read by the page from the chain: the subscribers, then the vault's factory check, root, policy and permission.
+    const reads = chain.log.filter((call) => call.method === 'eth_call').map((call) => call.params[0].data);
+    assert.ok(reads.some((data) => data.includes('16a24131')), 'the subscriber of each NFT');
+    assert.ok(reads.some((data) => data.includes('652b9b41') && data.includes('0505c8c9')), 'and the vault, once');
+    assert.deepEqual([site.asked, chain.missing, chain.refused], [[], [], []], 'no route of the site; nothing but the reads');
+    assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
+  } finally { await s.close(); }
+});
+
+// 2026-09-25: the fees history through the page's own chain reads in the browser: the replay worker reads the logs from
+// the RPC itself, under its own CSP (functions/_middleware.ts WORKER_CSP, served by the test server as in production),
+// and the card is drawn only because the replay equals the chain's unclaimed fees. The chain is the recorded one of NFT
+// 3136705 (tests/support/fees/case-chain.mjs), and no route of the site is asked.
+test('a position’s fees history is read from the chain by the page and its worker, and drawn once the replay equals the chain’s unclaimed fees', async () => {
+  const chain = caseChain('3136705');
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await s.page.evaluate(() => { location.hash = '#/positions/3136705'; });
+    await s.page.locator('[data-position-detail][data-position-id="3136705"]').waitFor({ timeout: 15_000 });
+    const card = s.page.locator('[data-fees-card][data-fees-state="verified"]');
+    await card.first().waitFor({ timeout: 45_000 });
+    const logs = chain.log.filter((call) => call.method === 'eth_getLogs');
+    assert.ok(logs.some((call) => call.params[0].topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'), 'the NFT’s Transfer logs, read by the worker');
+    assert.ok(logs.some((call) => Array.isArray(call.params[0].topics[0])), 'and the pool’s logs');
+    assert.deepEqual(chain.refused, [], 'nothing but the reads');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    await s.page.screenshot({ path: join(shots(), 'position-fees-chain.png'), fullPage: true });
+  } finally { await s.close(); }
+});
+
+// Review of 2026-09-25: the fees replays ran in the visitor's browser with two requests in flight per history and four
+// tries per refused call, used up the public RPC's per-address limit, and the RPC then refused the page's own list and
+// position reads too (the list took 7.4 s to come back; a busy position's card loaded for minutes). Here the chain
+// limits one address as the RPC does (a budget of reply bytes a reply may overdraw, refused with the allow-origin
+// `*,*` a browser cannot read) and the position's pool has a long liquidity history. While it is replayed, the list and
+// the position's page come back within about two seconds; once the RPC refuses the replay, the card stops loading at
+// once (the band keeps the unclaimed figure) and the worker asks nothing more.
+// Changed on purpose (2026-09-25, later): the page's budget is 2 MB and a probe comes first. This pool is quiet now (the
+// probe lets the replay start) and its history, 1.7 MB, is read for a while under the budget.
+test('while a busy history is replayed the list and the position’s page come back at once, and a refusal ends the replay instead of a card loading for minutes', async () => {
+  const history = busyHistory({ tokenId: OWNED_OPEN, key: STUB_KEY, owner: OWNER, perEpoch: 200 });
+  const chain = browserChain({ positions: [onChain(OWNED_OPEN)], tokens: TOKENS, history, limit: { capacity: 256 * 1024, perSecond: 400 * 1024 } });
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  // The pool's epochs: Initialize, ModifyLiquidity and ProtocolFeeUpdated (the probe asks five kinds, the swap days two).
+  const poolLogs = () => chain.log.filter((call) => call.method === 'eth_getLogs' && Array.isArray(call.params[0].topics[0]) && call.params[0].topics[0].length === 3).length;
+  const within = async (what, locator, ms) => {
+    const started = Date.now();
+    await locator.waitFor({ timeout: 15_000 });
+    const took = Date.now() - started;
+    assert.ok(took < ms, `${what} in ${took} ms`);
+    return took;
+  };
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await connectWallet(s.page);
+    await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 15_000 });
+
+    // The position's page: its state at once, then its fees card loading while the worker reads the pool's epochs.
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`).waitFor({ timeout: 15_000 });
+    await s.page.locator('[data-fees-card][data-fees-state="loading"]').waitFor({ timeout: 15_000 });
+    for (let i = 0; i < 150 && poolLogs() < 3; i++) await new Promise((done) => setTimeout(done, 100));
+    assert.ok(poolLogs() >= 3, 'the pool’s epochs are being read');
+
+    // Back to the list, and to the position again, while its epochs are still read: each within about two seconds.
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    const listed = await within('the list', s.page.locator('[data-owned="ready"]'), 2_500);
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    const shown = await within('the position’s page', s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`), 2_500);
+    const readBefore = poolLogs();
+    await s.page.locator('[data-fees-card][data-fees-state="loading"]').waitFor({ timeout: 5_000 });
+    for (let i = 0; i < 100 && poolLogs() === readBefore; i++) await new Promise((done) => setTimeout(done, 100));
+    assert.ok(poolLogs() > readBefore, `the replay went on meanwhile (list ${listed} ms, page ${shown} ms)`);
+    // Paced by bytes (changed on purpose, 2026-09-25: a pool's epochs may be asked in capped tenths, small replies a few
+    // milliseconds apart within the lane's burst): the worker's pool log reads never ran ahead of the lane's burst and
+    // rate (lib/chain/browser.ts LANE_PACE), by more than the one reply that may overdraw it.
+    const reads = chain.log.filter((call) => call.method === 'eth_getLogs' && Array.isArray(call.params[0].topics[0]) && call.params[0].topics[0].length === 3);
+    let read = 0;
+    for (const [i, call] of reads.entries()) {
+      const allowed = LANE_PACE.burstBytes + (LANE_PACE.bytesPerSecond * (call.at - reads[0].at)) / 1000 + Math.max(0, ...reads.slice(0, i).map((r) => r.bytes));
+      assert.ok(read <= allowed, `read ${read} B before call ${i} at +${call.at - reads[0].at} ms: over the lane's pace (${Math.round(allowed)} B)`);
+      read += call.bytes;
+    }
+    assert.ok(reads.every((call) => call.bytes < 256 * 1024), `no large reply: ${Math.max(...reads.map((call) => call.bytes))} B at most`);
+
+    // The RPC starts refusing this address. The replay ends at the first refusal: no card left loading, nothing asked
+    // again by the worker, and the band still shows the chain's unclaimed fees.
+    const refusedBefore = chain.refusals.length;
+    chain.limit = { capacity: 256 * 1024, perSecond: 1, tokens: -1 };
+    const stopped = Date.now();
+    await s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 10_000 });
+    const took = Date.now() - stopped;
+    assert.ok(took < 5_000, `the card stopped loading ${took} ms after the first refusal`);
+    await new Promise((done) => setTimeout(done, 3_000));
+    const refused = chain.refusals.slice(refusedBefore);
+    assert.equal(refused.length, 1, `one refused request, and nothing asked again: ${refused.map((r) => r.method).join(', ')}`);
+    assert.match(await s.page.locator('[data-position-stats]').innerText(), /UNCLAIMED FEES\s+[\d.,]+ ETH/);
+    assert.equal(await s.page.locator('[data-fees-card]').count(), 0, 'the band shows the unclaimed figure: no card repeats it');
+
+    // The RPC lets this address in again: the list is read at once.
+    chain.limit = null;
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await within('the list after the refusals', s.page.locator('[data-owned="ready"]'), 2_500);
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+  } finally { await s.close(); }
+});
+
+// Changed on purpose (2026-09-25, review of r3/chain, option a): the Positions list replays no fees history. Its
+// aggregate card replayed every open position's history from the visitor's own browser, which the public RPC's
+// per-address limit could not bear (PONS/USDG's history is over 60 MB), and its refusals then held back the list's own
+// reads. Each row shows its unclaimed fees from the list's read; no Transfer or pool log is asked, and no Fees card.
+test('the list replays no fees history: each row shows its unclaimed fees from the list’s read, no log is asked, and no Fees card', async () => {
+  const usdgKey = (fee) => ({ currency0: zeroAddress, currency1: USDG, fee, tickSpacing: 60, hooks: zeroAddress });
+  const chain = browserChain({ positions: [onChain('5', { key: usdgKey(3000), unclaimed: [0n, 2_500_000n] }), onChain('7', { key: usdgKey(500) })], tokens: { [USDG]: { symbol: 'USDG', decimals: 6 } } });
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  const workers = [];
+  s.page.on('worker', (worker) => workers.push(worker.url()));
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await connectWallet(s.page);
+    await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 15_000 });
+    assert.deepEqual((await s.page.getByRole('tab').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim()), ['Open 2', 'Closed 0']);
+    assert.match(await s.page.locator('a[data-position-row="5"]').innerText(), /2\.5 USDG|\$2\.50/, 'the row’s unclaimed fees, from the list’s read');
+    await new Promise((done) => setTimeout(done, 3_000));
+    const logs = chain.log.filter((call) => call.method === 'eth_getLogs' && call.params[0].topics?.[0] !== SETUP_MINTED_TOPIC);
+    assert.deepEqual(logs, [], 'no Transfer, pool or swap log: nothing is replayed for the list');
+    assert.deepEqual(workers, [], 'no replay worker is created');
+    assert.equal(await s.page.locator('[data-fees-card]').count(), 0, 'and no Fees card');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+  } finally { await s.close(); }
+});
+
+// 2026-09-25 (the owner's positions must never go missing again): a position in a pool busy now (PONS/USDG's history is
+// over 60 MB) can never verify in a browser. Its page probes the pool's last minutes before reading any of its
+// history, and stops there: no pool epoch is read, the card never loads for long, the band keeps the unclaimed figure,
+// and the list and the page come back at once, with no refusal of the page's reads.
+test('a history the probe says cannot verify is never read: no pool epoch, no card loading for long, the list and the page at once', async () => {
+  const history = busyHistory({ tokenId: OWNED_OPEN, key: STUB_KEY, owner: OWNER, recent: 40 });
+  const chain = browserChain({ positions: [onChain(OWNED_OPEN)], tokens: TOKENS, history, limit: { capacity: 256 * 1024, perSecond: 400 * 1024 } });
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  const asked = (kinds) => chain.log.filter((call) => call.method === 'eth_getLogs' && Array.isArray(call.params[0].topics[0]) && call.params[0].topics[0].length === kinds).length;
+  const within = async (what, locator, ms) => {
+    const started = Date.now();
+    await locator.waitFor({ timeout: 15_000 });
+    const took = Date.now() - started;
+    assert.ok(took < ms, `${what} in ${took} ms`);
+    return took;
+  };
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await connectWallet(s.page);
+    await within('the list', s.page.locator('[data-owned="ready"]'), 5_000);
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    await within('the position’s page', s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`), 2_500);
+    // The probe (five kinds of log) is asked, then no card is left loading, quickly.
+    for (let i = 0; i < 150 && asked(5) === 0; i++) await new Promise((done) => setTimeout(done, 100));
+    assert.equal(asked(5), 1, 'one probe');
+    const probe = chain.log.find((call) => call.method === 'eth_getLogs' && call.params[0].topics[0].length === 5).params[0];
+    assert.equal(Number(probe.toBlock) - Number(probe.fromBlock) + 1, 3_600, 'of the pool’s last 3,600 blocks, six minutes');
+    await s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 5_000 });
+    await new Promise((done) => setTimeout(done, 2_000));
+    assert.equal(asked(3), 0, 'no epoch of the pool’s history is read');
+    assert.equal(asked(2), 0, 'nor any swap day');
+    assert.match(await s.page.locator('[data-position-stats]').innerText(), /UNCLAIMED FEES\s+[\d.,]+ ETH/);
+    assert.equal(await s.page.locator('[data-fees-card]').count(), 0, 'the band shows the unclaimed figure: no card repeats it, no chart');
+    // Back to the list, and to the page again: each at once, and nothing of the page's was refused.
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await within('the list again', s.page.locator('[data-owned="ready"]'), 2_500);
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    await within('the position’s page again', s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`), 2_500);
+    assert.deepEqual(chain.refusals, [], 'no read was refused');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+  } finally { await s.close(); }
+});
+
+// 2026-09-25: the automation page's position picker is the same browser read (useWalletPositions → the page's own scan):
+// the wallet's open positions from the chain, a closed one left out, and the link's position preselected.
+test('the automation page lists the wallet’s open positions from the page’s own chain read, and a failed read is loading, then one line, never “no open positions”', async () => {
+  const sequence = fakeSequenceChain(OWNER, { roots: [] });
+  const chain = browserChain({ positions: [onChain('5'), closedOnChain('6'), onChain('7', { holder: OTHER_OWNER })], tokens: TOKENS });
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  await routeChain(s, sequence, CHAIN_METHODS);
+  try {
+    s.set({ sequenceRelease: { status: 200, body: sequence.release } });
+    await s.page.goto(`${s.origin}/#/sequence/compound/5`);
+    await s.page.reload();
+    await connectOnly(s.page);
+    const option = s.page.locator('[data-sequence-position]');
+    await option.first().waitFor({ timeout: 15_000 });
+    assert.deepEqual(await option.evaluateAll((all) => all.map((button) => [button.getAttribute('data-sequence-position'), button.getAttribute('aria-checked')])), [['5', 'true']], 'the open one, chosen by the link; the closed one and someone else’s are not listed');
+    assert.equal(chain.scans(OWNER), 1);
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+
+    // Another wallet, and a chain that refuses every read: loading while it is asked again, then one line; never "No open positions".
+    chain.outage = 500;
+    await s.wallet.switchAccount('a', 1);
+    await s.page.locator('[data-sequence-positions="loading"]').waitFor();
+    const failed = s.page.locator('[data-sequence-positions="failed"]');
+    await failed.waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.locator('[data-sequence-positions="empty"]').count(), 0);
+    assert.deepEqual(sequence.sends, [], 'nothing is sent');
+    assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
   } finally { await s.close(); }
 });

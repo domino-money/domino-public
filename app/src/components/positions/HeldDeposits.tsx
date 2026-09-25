@@ -41,8 +41,12 @@ export interface HeldDeposit {
 export interface HeldDepositsProps { owner: string; deposits: readonly HeldDeposit[]; onChanged: () => void }
 
 type Stage = 'wallet' | 'chain' | 'done' | 'failed'
-/** `setup`: the notice points to Setup's owner recovery. */
-interface Notice { text: string; code: string | null; setup?: boolean }
+/**
+ * What the page says under a deposit. Changed on purpose (2026-09-25, audit of 754014c): it no longer points to
+ * "Setup's owner recovery", a page with no recovery in the very state that shows the notice (no release, no saved
+ * profile: it renders nothing to do), or else the raw Network budget and Operation ID form.
+ */
+interface Notice { text: string; code: string | null }
 interface Refund { stage: Stage; notice: Notice | null }
 
 const OPERATION = /^0x[0-9a-f]{64}$/
@@ -54,7 +58,7 @@ const PASSING_RELEASE: ReadonlySet<string> = new Set(['network', 'timeout', 'rou
 /** Neither a published release nor a saved profile: why the refund cannot be prepared here, in words that stay true. */
 function releaseNotice(reason: string): Notice {
   if (PASSING_RELEASE.has(reason)) return { text: 'The deployment could not be confirmed just now. Nothing was sent. Try again in a moment.', code: reason }
-  return { text: 'The refund can’t be prepared on this page right now. Nothing was sent: your deposit stays held and refundable.', code: reason, setup: true }
+  return { text: 'The refund can’t be prepared on this page right now. Nothing was sent: your deposit stays held and refundable.', code: reason }
 }
 const WATCHED_TEXT = {
   reverted: 'The refund reverted on chain. Your deposit is still held; only network gas was spent.',
@@ -198,15 +202,6 @@ export default function HeldDeposits({ owner, deposits, onChanged }: HeldDeposit
               {state?.notice && (
                 <p role="alert" className="dm-held-line" data-held-notice={state.notice.code ?? 'said'}>
                   {state.notice.text}
-                  {state.notice.setup && (
-                    <>
-                      {' '}
-                      <a href="#/setup" className="font-medium text-fg underline underline-offset-2" data-held-setup="">
-                        Setup’s owner recovery
-                      </a>{' '}
-                      can also return it.
-                    </>
-                  )}
                 </p>
               )}
             </li>

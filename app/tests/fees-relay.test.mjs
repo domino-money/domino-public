@@ -67,6 +67,13 @@ test('requests are exact: POST, same origin, JSON, small, known keys, safe numbe
     { kind: 'swaps', poolId: POOL, day: 82, count: 8 },
     { kind: 'swaps', poolId: POOL, day: 2 ** 53, count: 1 },
     { kind: 'swapBefore', poolId: POOL, block: 0 },
+    // 2026-09-25: a floor at or past the block; a probe backwards or wider than PROBE_SPAN; a transfer from a negative block.
+    { kind: 'swapBefore', poolId: POOL, block: 5, since: 5 },
+    { kind: 'probe', poolId: POOL, from: 10, to: 9 },
+    { kind: 'probe', poolId: POOL, from: 0, to: 36_000 },
+    { kind: 'probe', poolId: POOL, from: 0 },
+    { kind: 'pool', poolId: POOL, epoch: 19, parts: false },
+    { kind: 'transfer', tokenId: '1', since: -1 },
     { kind: 'headers', blocks: [] },
     { kind: 'headers', blocks: Array.from({ length: 51 }, (_, i) => i * HOUR) },
     { kind: 'headers', blocks: [HOUR, HOUR] },
@@ -370,6 +377,56 @@ test('swapBefore: windows of 3,000 blocks growing ×4, at most 8, the last reach
   const all = none.log.filter((c) => c.method === 'eth_getLogs');
   assert.equal(all.length, 8);
   assert.equal(Number(all.at(-1).params[0].fromBlock), 0, 'the last window reaches the chain’s start');
+});
+
+// 2026-09-25: the page's replay reads the chain from the visitor's own address, under the RPC's limit. Its cheap bound, the
+// probe, is one read of every log of the pool in at most PROBE_SPAN blocks, refused as too large past PROBE_BYTES; and the
+// two scans of the whole chain a replay made are bounded: swapBefore stops at the pool's Initialize (since), and a
+// transfer read starts at since.
+test('probe: every log of the pool in at most PROBE_SPAN blocks, too large past PROBE_BYTES; swapBefore stops at since; transfer starts at since', async () => {
+  const head = 71_500_000;
+  const chain = fakeChain({ head, logs: [swapLog(POOL, head - 10), swapLog(POOL, head - 40_000)] });
+  const probe = await askLogs(chain, { kind: 'probe', poolId: POOL, from: head - fees.PROBE_SPAN + 1, to: head }, memoryCache().cache);
+  assert.equal(probe.status, 200);
+  const body = await probe.json();
+  assert.deepEqual([body.kind, body.units.length, body.units[0].logs.map((log) => log[0]), body.next], ['probe', 1, [head - 10], null]);
+  const [call] = chain.log.filter((c) => c.method === 'eth_getLogs');
+  assert.deepEqual(call.params[0].topics, [[fees.TOPIC.Initialize, fees.TOPIC.ModifyLiquidity, fees.TOPIC.ProtocolFeeUpdated, fees.TOPIC.Swap, fees.TOPIC.Donate], POOL]);
+  assert.deepEqual([Number(call.params[0].fromBlock), Number(call.params[0].toBlock)], [head - fees.PROBE_SPAN + 1, head]);
+  // A pool too busy for a probe's reply: too large, never a partial count.
+  const busy = fakeChain({ head, logs: Array.from({ length: 900 }, (_, i) => swapLog(POOL, head - i)) });
+  const refusedProbe = await askLogs(busy, { kind: 'probe', poolId: POOL, from: head - 1_000, to: head }, memoryCache().cache);
+  assert.equal(refusedProbe.status, 413);
+  // swapBefore with a floor: its windows end there, and the last one starts there.
+  const none = fakeChain({ head });
+  const since = 69_950_000;
+  const empty = await (await askLogs(none, { kind: 'swapBefore', poolId: POOL, block: 70_000_000, since }, memoryCache().cache)).json();
+  assert.equal(empty.log, null);
+  const windows = none.log.filter((c) => c.method === 'eth_getLogs').map((c) => [Number(c.params[0].fromBlock), Number(c.params[0].toBlock)]);
+  assert.ok(windows.every(([from]) => from >= since), JSON.stringify(windows));
+  assert.equal(windows.at(-1)[0], since, 'the last window reaches the floor, not block 0');
+  // transfer from a block.
+  const nft = fakeChain({ head });
+  assert.equal((await askLogs(nft, { kind: 'transfer', tokenId: '7', since: 70_000_000 }, memoryCache().cache)).status, 200);
+  assert.deepEqual(nft.log.filter((c) => c.method === 'eth_getLogs').map((c) => Number(c.params[0].fromBlock)), [70_000_000]);
+});
+
+// 2026-09-25: a pool epoch asked `parts: true` (the replay in a browser, for a pool its probe saw liquidity history in) is
+// read in tenths from the start, never whole, and a tenth whose reply passes PART_REPLY_BYTES ends the answer as too large.
+test('pool parts: an epoch asked in parts is read tenth by tenth, never whole, and a tenth past PART_REPLY_BYTES is too large', async () => {
+  const head = 71_500_000;
+  const epoch = Math.floor(head / fees.EPOCH_SPAN);
+  const start = epoch * fees.EPOCH_SPAN;
+  const modify = (block, index = 0) => rpcLog({ topics: [fees.TOPIC.ModifyLiquidity, POOL, addressTopic('0x2222222222222222222222222222222222222222')], data: `0x${[-600, 600, 1000, block].map(word).join('')}`, block, index });
+  const quiet = fakeChain({ head, logs: [modify(start + 10), modify(start + fees.EPOCH_PART_SPAN + 10)] });
+  const body = await (await askLogs(quiet, { kind: 'pool', poolId: POOL, epoch, until: head, parts: true }, memoryCache().cache)).json();
+  assert.deepEqual(body.units[0].logs.map((log) => log[0]), [start + 10, start + fees.EPOCH_PART_SPAN + 10]);
+  const ranges = quiet.log.filter((c) => c.method === 'eth_getLogs').map((c) => Number(c.params[0].toBlock) - Number(c.params[0].fromBlock) + 1);
+  assert.ok(ranges.every((span) => span <= fees.EPOCH_PART_SPAN), `tenths only: ${ranges.join(', ')}`);
+  // One tenth holding more than a part's reply may take.
+  const busy = fakeChain({ head, logs: Array.from({ length: 600 }, (_, i) => modify(start + 100 + i)) });
+  assert.equal((await askLogs(busy, { kind: 'pool', poolId: POOL, epoch, until: head, parts: true }, memoryCache().cache)).status, 413);
+  assert.ok(busy.log.filter((c) => c.method === 'eth_getLogs').every((c) => Number(c.params[0].toBlock) - Number(c.params[0].fromBlock) + 1 <= fees.EPOCH_PART_SPAN), 'never the whole epoch');
 });
 
 test('simultaneous questions for one unit make one RPC read', async () => {

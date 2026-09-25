@@ -60,6 +60,44 @@
   .dm-inrange { fill: var(--surface-3); }
   .dm-inrange[data-in] { fill: var(--money-in); fill-opacity: 0.65; }
 
+  /* ---- PriceLineSvg's area variant: the Markets cards' price (2026-09-25) --------------------------- */
+  /* A smooth line in the card's direction (Tangerine when the card shows no change), one area under each run of it
+     on a vertical gradient that fades to nothing, a quiet dashed level at the first close, and the end dot. */
+  .dm-spark-wrap { position: relative; }
+  /* A held touch inspects the line: no iOS link preview over it (Android: PriceLine.tsx drops the menu). */
+  .dm-spark { --spark-line: var(--primary-line); -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  /* An area edge inside the plot (where a run starts after an uncovered interval or later than the window's first
+     hour, and at the end dot) fades out over 14px: one gradient on that one path's own box, never a mask over slices. */
+  .dm-spark-area[data-fade] { -webkit-mask-origin: fill-box; mask-origin: fill-box; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+  .dm-spark-area[data-fade="start"] { -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px); mask-image: linear-gradient(90deg, transparent, #000 14px); }
+  .dm-spark-area[data-fade="end"] { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 14px), transparent); }
+  .dm-spark-area[data-fade="both"] { -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent); }
+  /* One hour between two uncovered intervals: a dot, no area (DESIGN-V2 §4.1). */
+  .dm-spark-lone { fill: var(--spark-line); }
+  .dm-spark[data-tone="up"] { --spark-line: var(--chart-up); }
+  .dm-spark[data-tone="down"] { --spark-line: var(--chart-down); }
+  .dm-spark-stop-top { stop-color: color-mix(in srgb, var(--spark-line) var(--spark-area-top), transparent); }
+  .dm-spark-stop-mid { stop-color: color-mix(in srgb, var(--spark-line) var(--spark-area-mid), transparent); }
+  .dm-spark-stop-bottom { stop-color: color-mix(in srgb, var(--spark-line) 0%, transparent); }
+  .dm-spark .dm-spark-line { stroke: var(--spark-line); stroke-width: 2; }
+  .dm-spark-base { stroke: var(--fg-faint); stroke-opacity: 0.6; stroke-width: 1; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; shape-rendering: crispEdges; }
+  /* While a pointer is on the line, what lies past it steps back, the end dot with it. */
+  .dm-spark-past, .dm-spark[data-inspecting] .dm-spark-end { opacity: 0.3; }
+  /* The end dot is cut out of what it sits on by a ring of the card's own ground. */
+  .dm-spark .dm-end-dot { fill: var(--spark-line); stroke: var(--chart-ground, var(--card)); stroke-width: 3; paint-order: stroke; }
+  /* It breathes softly three times after the first draw, then rests (§5.3: never infinite on a link). */
+  .dm-spark .dm-live-ring { fill: var(--spark-line); animation-name: dm-spark-pulse; animation-duration: 2.4s; animation-timing-function: cubic-bezier(0.25, 0.6, 0.35, 1); }
+  .dm-spark .dm-live-ring + .dm-live-ring { animation-delay: calc(var(--dur-wipe) + 1400ms); }
+  .dm-spark .dm-hover-halo { fill: var(--spark-line); opacity: 0.16; }
+  .dm-spark .dm-hover-dot { fill: var(--spark-line); stroke: var(--chart-ground, var(--card)); }
+  /* The inspected hour: its close over its time, beside the crosshair, above the point (under it near the top). */
+  .dm-spark-tip { position: absolute; z-index: 2; display: grid; gap: 1px; padding: 6px 9px 7px; border-radius: var(--radius-sm); background: var(--tooltip-bg); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--elev-tooltip); white-space: nowrap; pointer-events: none; translate: 12px calc(-100% - 12px); animation: dm-fade var(--dur-instant) linear backwards; }
+  .dm-spark-tip[data-side="left"] { translate: calc(-100% - 12px) calc(-100% - 12px); text-align: right; }
+  .dm-spark-tip[data-place="below"] { translate: 12px 12px; }
+  .dm-spark-tip[data-side="left"][data-place="below"] { translate: calc(-100% - 12px) 12px; }
+  .dm-spark-tip-price { font-size: 13px; line-height: 16px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-spark-tip-time { font-size: 11px; line-height: 14px; letter-spacing: -0.08px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+
   /* ---- Tooltip (§4.4): glass, placed without measuring, fades in once ----------------------------- */
   .dm-chart-tooltip { position: absolute; z-index: 5; display: grid; gap: 4px; min-width: 160px; max-width: 240px; padding: 10px 12px; border-radius: var(--radius); background: var(--tooltip-bg); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--elev-tooltip); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); pointer-events: none; animation: dm-fade var(--dur-instant) linear backwards; }
   .dm-chart-tooltip[data-side="left"] { translate: calc(-100% - 24px) 0; }
@@ -95,4 +133,9 @@
 @keyframes dm-live-ring {
   from { scale: 1; opacity: 0.5; }
   to { scale: 3; opacity: 0; }
+}
+
+@keyframes dm-spark-pulse {
+  from { scale: 1; opacity: 0.4; }
+  to { scale: 3.4; opacity: 0; }
 }

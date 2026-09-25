@@ -1,9 +1,13 @@
 import { b, doc, list, note, p } from '../blocks'
 import type { DocPage } from '../types'
 
-/** Public terms stay accurate whether one admitted pilot vault is live or none are. */
+/**
+ * Public terms stay accurate whether one admitted pilot vault is live or none are. Changed on purpose (2026-09-25, audit
+ * of 754014c): the automation page no longer has owner controls, so no screen of this site activates, pauses, revokes or
+ * withdraws; the note no longer says this site offers activation.
+ */
 const SERVICE_SCOPE = note(
-  ['Automation availability is checked for each owner and sequence. A new sequence starts paused. Its signed-in owner can review activation only when the live service confirms readiness for that vault; this site does not offer activation when the check fails. Pause, revocation, repair and withdrawal remain available through your wallet.'],
+  ['Automation availability is checked for each owner and sequence. A new sequence starts paused. Activation, pause, revocation and withdrawal are transactions your wallet signs on your sequence vault, activation only once the automation service confirms readiness for it. No Domino screen makes them today.'],
   'Per sequence',
 )
 
@@ -46,7 +50,7 @@ export const AUTO_COMPOUND: DocPage = {
       id: 'where-it-starts',
       title: 'Where it starts',
       blocks: [
-        p('Auto-compound runs on a position NFT you hold, wherever you opened it. Setup takes two wallet transactions: approve that one NFT to its sequence vault, then create the sequence, which starts paused. Activation is a separate wallet transaction when the service is ready for your sequence.'),
+        p('Auto-compound runs on a position NFT you opened with Domino and still hold. Setup takes two wallet transactions: approve that one NFT to its sequence vault, then create the sequence, which starts paused. Activation is a separate wallet transaction when the service is ready for your sequence.'),
         SERVICE_SCOPE,
         p(
           'Custody is the same as for Domino Compounder: the NFT stays in your wallet, and ',

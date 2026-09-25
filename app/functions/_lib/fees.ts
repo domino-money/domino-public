@@ -23,6 +23,13 @@
  * The gate middleware runs first, as for every /api path, and sets no-store,
  * no-transform and the API CSP on the way out. No secret is involved: the RPC
  * is the chain's public one and every answer is public chain data.
+ *
+ * 2026-09-25: the RPC answers 429 to every call from Cloudflare's shared
+ * egress, so the page and the replay worker now run these same reads
+ * themselves, against the public RPC from the browser (stateOnChain and
+ * logsOnChain below, through src/lib/fees/client.ts), with an in-memory cache
+ * in place of the Workers cache. The two routes stay, tested; nothing on the
+ * page asks them.
  */
 import {
   BACKOFF_MS,
@@ -36,8 +43,9 @@ import {
   decodeAggregate3,
   encodeAggregate3,
   keccak256,
+  timeoutSignal,
 } from './owned'
-import type { CompactEvent, CompactLog, LogsRequest, LogsResponse, LogsUnit, StateCurrency, StatePosition, StateResponse } from '../../src/lib/fees/types'
+import type { CompactEvent, CompactLog, LogsRequest, LogsResponse, LogsUnit, RelayAnswer, StateCurrency, StatePosition, StateResponse } from '../../src/lib/fees/types'
 
 // ---------------------------------------------------------------------------
 // Pins (checked against viem and the deployment profile in tests/fees-topics.test.mjs)
@@ -111,6 +119,21 @@ export const MAX_HEADERS = 50
 export const BEFORE_FIRST_SPAN = 3_000
 export const BEFORE_GROWTH = 4
 export const BEFORE_TRIES = 8
+/**
+ * probe (2026-09-25): the most blocks one probe covers (an hour, one HOUR_SPAN), and the most bytes its reply may take. A
+ * position page's replay asks it before any of the pool's history, to tell a history it can plausibly verify from one
+ * it never can, from one small read: more than that many bytes in an hour is more than any budget of the page. An hour,
+ * not six minutes: PONS/USDG's pool, 47 logs in one six-minute window, showed 2 in another on the same morning.
+ */
+export const PROBE_SPAN = 36_000
+export const PROBE_BYTES = 64 * 1024
+/**
+ * A pool epoch asked in parts from the start (`parts: true`, 2026-09-25): the most bytes one part's reply may take; a
+ * part past it ends the answer as too large. The replay in a visitor's browser asks a pool whose probe projects a large
+ * epoch this way, so no single reply is large: USDG/DELTA's epochs came back whole at 1 and 1.7 MB, and the public RPC
+ * refuses an address's next reads after a reply of a few hundred kB.
+ */
+export const PART_REPLY_BYTES = 256 * 1024
 /** How long a /state answer and a unit that can still change are kept. */
 export const SHORT_SECONDS = 10
 /** How long a day not yet final stays marked as busy (asked by the hour). */
@@ -140,6 +163,16 @@ export interface FeesDeps {
   fetch: (input: string, init: RequestInit) => Promise<Response>
   sleep: (ms: number) => Promise<void>
   now: () => number
+  /** True once nobody wants the answer any more (the page's read was dropped): no further call is made. A Function has none. */
+  cancelled?: () => boolean
+  /**
+   * 2026-09-25: a runtime that paces its calls to the RPC's per-IP limit (the
+   * page's replay worker, src/lib/chain/browser.ts chainLane) waits here for
+   * its turn before each call, and says how long it waited: that wait is not
+   * the answer's own time, and the call's time-out starts after it. A
+   * Function has none.
+   */
+  turn?: () => Promise<number>
 }
 
 /** The part of the Workers cache the relay uses: caches.default in production, absent in tests. */
@@ -317,7 +350,13 @@ function retryAfterMs(response: Response): number {
 
 /** One POST to the RPC (one call or a batch), within the answer's caps; its body parsed as JSON. */
 async function post(rt: FeesRuntime, budget: Budget, payload: unknown, logs: boolean, byteLimit = MAX_BYTES): Promise<unknown> {
+  if (rt.deps.cancelled?.()) throw new RelayError('fatal', 'cancelled')
   if (budget.calls >= MAX_RPC_CALLS) throw new RelayError('calls', 'rpc_call_cap')
+  if (rt.deps.turn) {
+    // A paced runtime's wait for its turn moves the answer's start, so the deadline counts only the RPC's own time.
+    budget.started += await rt.deps.turn()
+    if (rt.deps.cancelled?.()) throw new RelayError('fatal', 'cancelled')
+  }
   if (rt.deps.now() - budget.started > DEADLINE_MS) throw new RelayError('deadline', 'deadline')
   budget.calls += 1
   // A call that took too long is, for a log range, a range too large; any other call fails.
@@ -331,7 +370,7 @@ async function post(rt: FeesRuntime, budget: Budget, payload: unknown, logs: boo
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+      signal: timeoutSignal(CALL_TIMEOUT_MS),
     })
   } catch (error) {
     throw slow(error) ?? new RelayError('fatal', 'rpc_unreachable')
@@ -571,14 +610,18 @@ const poolIdOk = (value: unknown): value is string => typeof value === 'string' 
 /** A /logs body as a LogsRequest, or null unless it is exactly one (exact keys, safe integers, lowercase hex). */
 export function logsRequestOf(body: Record<string, unknown>): LogsRequest | null {
   switch (body.kind) {
-    case 'transfer':
-      return keysAre(body, ['kind', 'tokenId']) && tokenIdOk(body.tokenId) ? { kind: 'transfer', tokenId: body.tokenId } : null
+    case 'transfer': {
+      if (!keysAre(body, ['kind', 'tokenId'], ['since']) || !tokenIdOk(body.tokenId)) return null
+      if (body.since === undefined) return { kind: 'transfer', tokenId: body.tokenId }
+      return blockNumber(body.since) ? { kind: 'transfer', tokenId: body.tokenId, since: body.since } : null
+    }
     case 'initialize':
       return keysAre(body, ['kind', 'poolId']) && poolIdOk(body.poolId) ? { kind: 'initialize', poolId: body.poolId } : null
     case 'pool': {
-      if (!keysAre(body, ['kind', 'poolId', 'epoch'], ['until']) || !poolIdOk(body.poolId) || !blockNumber(body.epoch) || (body.epoch + 1) * EPOCH_SPAN > Number.MAX_SAFE_INTEGER) return null
+      if (!keysAre(body, ['kind', 'poolId', 'epoch'], ['until', 'parts']) || !poolIdOk(body.poolId) || !blockNumber(body.epoch) || (body.epoch + 1) * EPOCH_SPAN > Number.MAX_SAFE_INTEGER) return null
       if (body.until !== undefined && !blockNumber(body.until)) return null
-      const base = { kind: 'pool' as const, poolId: body.poolId, epoch: body.epoch }
+      if (body.parts !== undefined && body.parts !== true) return null
+      const base = { kind: 'pool' as const, poolId: body.poolId, epoch: body.epoch, ...(body.parts === true ? { parts: true as const } : {}) }
       return body.until === undefined ? base : { ...base, until: body.until as number }
     }
     case 'swaps': {
@@ -588,8 +631,15 @@ export function logsRequestOf(body: Record<string, unknown>): LogsRequest | null
       const base = { kind: 'swaps' as const, poolId: body.poolId, day: body.day, count: body.count }
       return body.until === undefined ? base : { ...base, until: body.until as number }
     }
-    case 'swapBefore':
-      return keysAre(body, ['kind', 'poolId', 'block']) && poolIdOk(body.poolId) && blockNumber(body.block) && body.block > 0 ? { kind: 'swapBefore', poolId: body.poolId, block: body.block } : null
+    case 'swapBefore': {
+      if (!keysAre(body, ['kind', 'poolId', 'block'], ['since']) || !poolIdOk(body.poolId) || !blockNumber(body.block) || body.block <= 0) return null
+      if (body.since === undefined) return { kind: 'swapBefore', poolId: body.poolId, block: body.block }
+      return blockNumber(body.since) && body.since < body.block ? { kind: 'swapBefore', poolId: body.poolId, block: body.block, since: body.since } : null
+    }
+    case 'probe':
+      return keysAre(body, ['kind', 'poolId', 'from', 'to']) && poolIdOk(body.poolId) && blockNumber(body.from) && blockNumber(body.to) && body.from <= body.to && body.to - body.from < PROBE_SPAN
+        ? { kind: 'probe', poolId: body.poolId, from: body.from, to: body.to }
+        : null
     case 'headers': {
       if (!keysAre(body, ['kind', 'blocks']) || !Array.isArray(body.blocks) || body.blocks.length < 1 || body.blocks.length > MAX_HEADERS) return null
       const blocks: unknown[] = body.blocks
@@ -850,13 +900,15 @@ interface PartedUnit {
   partSpan: number
   attemptBytes: number
   filter: LogFilter
+  /** Asked in parts from the start, each part's reply at most this many bytes (the pool's `parts` request). */
+  partBytes?: number
 }
 
 async function partedLogs(rt: FeesRuntime, budget: Budget, origin: string, head: number, spec: PartedUnit, cut: number): Promise<KeptUnit> {
   const { from, to, filter, poolId } = spec
   const busy = cacheUrl(origin, spec.busyKind, poolId, spec.unit)
   return unitLogs(rt, head, { url: cacheUrl(origin, spec.kind, poolId, spec.unit), from, to }, cut, async () => {
-    if (!(await kept<{ busy: true }>(rt, busy))) {
+    if (spec.partBytes === undefined && !(await kept<{ busy: true }>(rt, busy))) {
       try {
         return await rangeLogs(rt, budget, filter, from, cut, spec.attemptBytes)
       } catch (error) {
@@ -874,10 +926,12 @@ async function partedLogs(rt: FeesRuntime, budget: Budget, origin: string, head:
       const spent = budget.bytes
       const got = await unitLogs(rt, head, { url: cacheUrl(origin, spec.partKind, poolId, part), from: start, to: last }, end, async () => {
         try {
-          return await rangeLogs(rt, budget, filter, start, end)
+          return await rangeLogs(rt, budget, filter, start, end, spec.partBytes)
         } catch (error) {
-          // A part that does not fit in an answer that had spent almost nothing fits in no answer.
-          if (error instanceof RelayError && error.kind === 'bytes' && spent < FRESH_BUDGET_BYTES) throw new RelayError('fatal', 'part_too_large')
+          // A part that does not fit in an answer that had spent almost nothing fits in no answer; a part past its own
+          // cap (or one the RPC refuses as too large, which a capped read does not split) is too large too.
+          const capped = spec.partBytes !== undefined && error instanceof RelayError && (error.kind === 'bytes' || error.kind === 'range')
+          if (capped || (error instanceof RelayError && error.kind === 'bytes' && spent < FRESH_BUDGET_BYTES)) throw new RelayError('fatal', 'part_too_large')
           throw error
         }
       })
@@ -894,21 +948,26 @@ function swapDay(rt: FeesRuntime, budget: Budget, origin: string, head: number, 
 }
 
 /** One pool epoch of Initialize, ModifyLiquidity and ProtocolFeeUpdated logs up to `cut`: kept, or in one call, or (a busy epoch) in tenths. */
-function poolEpoch(rt: FeesRuntime, budget: Budget, origin: string, head: number, poolId: string, epoch: number, cut: number): Promise<KeptUnit> {
+function poolEpoch(rt: FeesRuntime, budget: Budget, origin: string, head: number, poolId: string, epoch: number, cut: number, parts = false): Promise<KeptUnit> {
   const from = epoch * EPOCH_SPAN
-  return partedLogs(rt, budget, origin, head, { kind: 'pool', partKind: 'poolPart', busyKind: 'poolBusy', poolId, unit: epoch, from, to: from + EPOCH_SPAN - 1, partSpan: EPOCH_PART_SPAN, attemptBytes: EPOCH_ATTEMPT_BYTES, filter: poolFilter(poolId, POOL_EVENTS) }, cut)
+  return partedLogs(rt, budget, origin, head, { kind: 'pool', partKind: 'poolPart', busyKind: 'poolBusy', poolId, unit: epoch, from, to: from + EPOCH_SPAN - 1, partSpan: EPOCH_PART_SPAN, attemptBytes: EPOCH_ATTEMPT_BYTES, filter: poolFilter(poolId, POOL_EVENTS), ...(parts ? { partBytes: PART_REPLY_BYTES } : {}) }, cut)
 }
 
 /** Whether a failure only means this answer's calls, bytes or time are spent (the next answer goes further). */
 const spent = (error: unknown) => error instanceof RelayError && (error.kind === 'calls' || error.kind === 'deadline' || error.kind === 'bytes') && error.message !== 'part_too_large'
 
-/** The last Swap strictly before `block`: windows ending at block − 1, 3,000 blocks first, ×4 each try, the last reaching block 0. */
-async function lastSwapBefore(rt: FeesRuntime, budget: Budget, poolId: string, block: number): Promise<CompactLog | null> {
+/**
+ * The last Swap strictly before `block`: windows ending at block − 1, 3,000 blocks first, ×4 each try, the last reaching
+ * `since` (block 0 unless given). 2026-09-25: a replay names its pool's Initialize block as `since`, since no Swap is
+ * older: for a pool with no Swap before the mint, the last window was a scan of the whole chain (2.2 s measured that
+ * day, the kind of cold scan after which the RPC refuses the visitor's next reads).
+ */
+async function lastSwapBefore(rt: FeesRuntime, budget: Budget, poolId: string, block: number, since = 0): Promise<CompactLog | null> {
   const filter = poolFilter(poolId, [TOPIC.Swap])
   let hi = block - 1
   let span = BEFORE_FIRST_SPAN
-  for (let attempt = 1; attempt <= BEFORE_TRIES && hi >= 0; attempt++, span *= BEFORE_GROWTH) {
-    const lo = attempt === BEFORE_TRIES ? 0 : Math.max(0, hi - span + 1)
+  for (let attempt = 1; attempt <= BEFORE_TRIES && hi >= since; attempt++, span *= BEFORE_GROWTH) {
+    const lo = attempt === BEFORE_TRIES ? since : Math.max(since, hi - span + 1)
     const logs = await rangeLogs(rt, budget, filter, lo, hi)
     if (logs.length > 0) return logs[logs.length - 1]
     hi = lo - 1
@@ -956,8 +1015,12 @@ async function readLogs(rt: FeesRuntime, budget: Budget, origin: string, asked: 
   switch (asked.kind) {
     case 'transfer': {
       const filter: LogFilter = { address: POSITION_MANAGER, topic0: [TOPIC.Transfer], topic3: `0x${word(BigInt(asked.tokenId))}` }
-      const spec = { url: cacheUrl(origin, 'transfer', asked.tokenId, 0), from: FIRST_TRANSFER_BLOCK, to: Number.MAX_SAFE_INTEGER }
-      const unit = await unitLogs(rt, head, spec, head, () => rangeLogs(rt, budget, filter, FIRST_TRANSFER_BLOCK, head))
+      // From `since` when asked (2026-09-25: a replay looks for a mint only as far back as one that can still verify; the
+      // whole chain was a scan of 72 million blocks, up to 1.2 s measured that day, after which the RPC refuses the
+      // visitor's next reads), else from the first Transfer ever.
+      const from = Math.max(FIRST_TRANSFER_BLOCK, asked.since ?? 0)
+      const spec = { url: cacheUrl(origin, 'transfer', asked.tokenId, asked.since === undefined ? 0 : from), from, to: Number.MAX_SAFE_INTEGER }
+      const unit = await unitLogs(rt, head, spec, head, () => rangeLogs(rt, budget, filter, from, head))
       return { v: 1, kind: 'transfer', head, units: [toUnit(null, unit)], next: null }
     }
     case 'initialize': {
@@ -976,7 +1039,7 @@ async function readLogs(rt: FeesRuntime, budget: Budget, origin: string, asked: 
       if (from > top) return behind
       const cut = Math.min(from + EPOCH_SPAN - 1, top)
       try {
-        const unit = await poolEpoch(rt, budget, origin, head, asked.poolId, asked.epoch, cut)
+        const unit = await poolEpoch(rt, budget, origin, head, asked.poolId, asked.epoch, cut, asked.parts === true)
         return { v: 1, kind: 'pool', head, units: [toUnit(asked.epoch, unit)], next: null }
       } catch (error) {
         // A busy epoch not finished within one answer: its complete parts are kept, and the next answer goes on.
@@ -1016,10 +1079,22 @@ async function readLogs(rt: FeesRuntime, budget: Budget, origin: string, asked: 
       const url = cacheUrl(origin, 'swapBefore', asked.poolId, asked.block)
       const hit = await kept<{ log: CompactLog | null; final: boolean }>(rt, url)
       if (hit && (hit.value.final || hit.ageMs < SHORT_SECONDS * 1000)) return { v: 1, kind: 'swapBefore', head, log: hit.value.log }
-      const log = await shared(url, () => lastSwapBefore(rt, budget, asked.poolId, asked.block))
+      const log = await shared(url, () => lastSwapBefore(rt, budget, asked.poolId, asked.block, asked.since))
       const final = asked.block <= head - SAFE_DEPTH
       await keep(rt, url, { log, final }, final ? FINAL_SECONDS : SHORT_SECONDS)
       return { v: 1, kind: 'swapBefore', head, log }
+    }
+    case 'probe': {
+      if (asked.to > head) return behind
+      let logs: CompactLog[]
+      try {
+        logs = await rangeLogs(rt, budget, poolFilter(asked.poolId, [...POOL_EVENTS, ...SWAP_EVENTS]), asked.from, asked.to, PROBE_BYTES)
+      } catch (error) {
+        // More than a probe may take, or more than the RPC answers in one reply: far more history than any budget.
+        if (error instanceof RelayError && (error.kind === 'bytes' || error.kind === 'range')) throw new RelayError('fatal', 'part_too_large')
+        throw error
+      }
+      return { v: 1, kind: 'probe', head, units: [{ unit: null, from: asked.from, to: asked.to, final: false, logs }], next: null }
     }
     case 'headers': {
       if (asked.blocks.some((block) => block > head)) return behind
@@ -1049,6 +1124,52 @@ export async function answerLogs(request: Request, rt: FeesRuntime): Promise<Res
     const outcome = outcomeOf(error)
     await keep(rt, failKey, { outcome }, FAILURE_SECONDS)
     return failure(outcome, budget.retryAfterMs)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The same reads, answered in process (the page and the replay worker, 2026-09-25)
+// ---------------------------------------------------------------------------
+
+/** A failed read as the page's client used to receive it from a route: the kind, and the wait the route's Retry-After named. */
+function failedRead(error: unknown, budget: Budget): RelayAnswer<never> {
+  if (error instanceof Refused) return { ok: false, failure: 'bad_request', retryAfterMs: 0 }
+  if (error instanceof RelayError && error.message === 'part_too_large') return { ok: false, failure: 'too_large', retryAfterMs: 0 }
+  const retryAfterMs = Math.min(60, Math.ceil(Math.max(budget.retryAfterMs, FAILURE_SECONDS * 1000) / 1000)) * 1000
+  return { ok: false, failure: outcomeOf(error) === 'rate_limited' ? 'rate_limited' : 'unavailable', retryAfterMs }
+}
+
+/**
+ * POST /api/fees/v1/state's read without the route: the same id check, the
+ * same three RPC calls at head − 2, as a RelayAnswer. `bytes` is the size of
+ * the answer's JSON, as the route's reply measured it.
+ */
+export async function stateOnChain(rt: FeesRuntime, tokenIds: readonly string[]): Promise<RelayAnswer<StateResponse>> {
+  const ids = stateIdsOf({ tokenIds: [...tokenIds] })
+  if (!ids) return { ok: false, failure: 'bad_request', retryAfterMs: 0 }
+  const budget = newBudget(rt)
+  try {
+    const value = await readState(rt, budget, ids)
+    return { ok: true, value, bytes: JSON.stringify(value).length }
+  } catch (error) {
+    return failedRead(error, budget)
+  }
+}
+
+/**
+ * POST /api/fees/v1/logs's read without the route: the same request check,
+ * units, splits, caps and cache rules, with `rt.cache` the caller's own (the
+ * worker's memory) and `origin` only the prefix of its keys.
+ */
+export async function logsOnChain(rt: FeesRuntime, origin: string, request: LogsRequest): Promise<RelayAnswer<LogsResponse>> {
+  const asked = logsRequestOf({ ...request })
+  if (!asked) return { ok: false, failure: 'bad_request', retryAfterMs: 0 }
+  const budget = newBudget(rt)
+  try {
+    const value = await readLogs(rt, budget, origin, asked)
+    return { ok: true, value, bytes: JSON.stringify(value).length }
+  } catch (error) {
+    return failedRead(error, budget)
   }
 }
 

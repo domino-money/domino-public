@@ -1,27 +1,37 @@
 /**
  * The connected wallet's positions created through Domino's own contracts,
- * read from chain by our same-origin endpoint: no NFT id is ever typed and
- * nothing is kept in the browser's storage (the owner's rule, 2026-09-24).
+ * read from the chain: no NFT id is ever typed and nothing is kept in the
+ * browser's storage (the owner's rule, 2026-09-24).
  *
- * CONTRACT between the Positions engineer (who implements the endpoint and
- * this hook) and the Automate engineer (whose position picker consumes it):
+ * CONTRACT between the Positions engineer (who implements the read and this
+ * hook) and the Automate engineer (whose position picker consumes it):
  *
- *   POST /api/owned/v2/positions  body {"owner":"0x…40 hex, lowercase"}
- *   → 200 { owner, block, positions: WalletPosition[], deposits: WalletDeposit[] }
+ *   readWalletPositions(owner)  owner "0x…40 hex"
+ *   → { owner, block, positions: WalletPosition[], deposits: WalletDeposit[] }
  *
  * Positions are the NFTs minted to `owner` by DominoSetupV1 (SetupMinted
  * events, owner indexed), plus later the successors of the owner's
- * sequences; each is classified open (liquidity > 0) or closed (0) at one
- * block, with its pool, range, tokens and the pool's price read from chain,
- * so the list and the position page never depend on the read service.
- * functions/_lib/walletPositions.ts is the endpoint.
+ * sequences; each is classified open (liquidity > 0) or closed (0, the NFT
+ * kept) at one block, with its pool, range, tokens and the pool's price read
+ * from chain, so the list and the position page never depend on the read
+ * service.
  *
- * This module holds the wire types, the answer's parser (every field checked,
- * the owner's own answer only), the one fetch of the endpoint
- * (tests/read.test.mjs pins it) and the hooks. Nothing is stored: an answer
- * lives in React state for as long as the screen shows it.
+ * 2026-09-25: the page reads it itself, from the chain's public RPC, with the
+ * scan the site's route ran (functions/_lib/walletPositions.ts scanWallet,
+ * through lib/chain/browser.ts): the RPC answers 429 to every call from
+ * Cloudflare's edge, so POST /api/owned/v2/positions failed in production and
+ * the list said it had nothing. The route stays, tested; the page never asks
+ * it. The scan's answer still passes this module's parser, field by field.
+ * The scan and its runtime are loaded on the first read (lib/chain/chainCode.ts),
+ * so the screens that import this module do not carry them until they read.
+ *
+ * This module holds the wire types, the parser, the read and the hooks.
+ * Nothing is stored: an answer lives in React state for as long as the screen
+ * shows it.
  */
 import { useEffect, useState } from 'react'
+import type { OwnedDeps } from '../../functions/_lib/owned'
+import type { MintedMemory } from '../../functions/_lib/walletPositions'
 
 export interface WalletToken {
   /** Lowercase address; the zero address is native ETH. */
@@ -71,7 +81,7 @@ export interface WalletDeposit {
   currencies: readonly [WalletToken, WalletToken]
 }
 
-/** The endpoint's answer, as parseWalletAnswer accepts it. */
+/** The scan's answer, as parseWalletAnswer accepts it. */
 export interface WalletAnswer {
   owner: string
   block: number
@@ -85,10 +95,10 @@ export type WalletPositionsState =
   | { phase: 'ready'; block: number; positions: readonly WalletPosition[] }
   | { phase: 'failed'; reason: string }
 
-export const WALLET_POSITIONS_PATH = '/api/owned/v2/positions'
-/** The endpoint's own caps (functions/_lib/walletPositions.ts MAX_POSITIONS, owned.ts RECENT_OPERATIONS): a reply beyond them is refused. */
+/** The scan's own caps (functions/_lib/walletPositions.ts MAX_POSITIONS, owned.ts RECENT_OPERATIONS): an answer beyond them is refused. */
 const MAX_POSITIONS = 100
-const MAX_DEPOSITS = 8
+/** Every held deposit among the owner's 128 most recent setup operations (8 before 2026-09-25). */
+const MAX_DEPOSITS = 128
 
 const ADDRESS = /^0x[0-9a-f]{40}$/
 const HASH = /^0x[0-9a-f]{64}$/
@@ -174,8 +184,8 @@ function deposit(value: unknown): WalletDeposit | null {
 }
 
 /**
- * The endpoint's answer, checked field by field, for `owner` only; null when
- * anything in it is not exactly what the endpoint sends.
+ * The scan's answer, checked field by field, for `owner` only; null when
+ * anything in it is not exactly what the scan gives.
  */
 export function parseWalletAnswer(value: unknown, owner: string): WalletAnswer | null {
   if (!isRecord(value) || !hasKeys(value, ['owner', 'block', 'positions', 'deposits'])) return null
@@ -200,35 +210,66 @@ export function parseWalletAnswer(value: unknown, owner: string): WalletAnswer |
 
 export type WalletRead = { ok: true; answer: WalletAnswer } | { ok: false; reason: string }
 
-/** The reasons worth asking again for, a little later: the chain or the page's connection was busy for the moment. */
-export const passingWalletFailure = (reason: string) => reason === 'chain_busy' || reason === 'chain_unavailable' || reason === 'unreachable' || /^http_5\d\d$/.test(reason)
+/**
+ * Whether a failed read is asked again: every failure of the chain or of the
+ * page's connection to it; never a read the page dropped, nor an address the
+ * scan cannot take.
+ */
+export const passingWalletFailure = (reason: string) => reason !== 'aborted' && reason !== 'invalid_owner'
+
+const OWNER = /^0x[0-9a-fA-F]{40}$/
+const ZERO_OWNER = /^0x0{40}$/
 
 /**
- * Asks the endpoint for `owner`'s positions and held deposits. `fresh` skips
- * a kept answer older than 5 seconds (the endpoint keeps answers 30 s and
- * failures 12 s), for the read right after an action changed the answer.
+ * Per wallet, the ids DominoSetupV1 minted to it and the block the page's last scan read them at (2026-09-25), in this
+ * page's memory only, for the visit: the logs are history that only grows, so a later read of the same wallet (Positions
+ * again, a position's page, the automation page) reads them from shortly before that block, and every position's state
+ * fresh at its own head. Only the page's own runtime keeps it; a read handed its runtime (the tests) scans in full.
  */
-export async function readWalletPositions(owner: string, signal: AbortSignal, fresh = false): Promise<WalletRead> {
-  const body = JSON.stringify(fresh ? { owner, fresh: true } : { owner })
-  let response: Response
+const minted = new Map<string, MintedMemory>()
+/** For tests: forget what earlier scans found. */
+export function forgetMinted(): void {
+  minted.clear()
+}
+
+/**
+ * `owner`'s positions and held deposits, read from the chain by the page:
+ * the scan's answer through the parser, or why there is none (chain_busy
+ * while the RPC rate-limits, chain_unavailable for any other failure of it,
+ * as the route named them). A read `signal` drops makes no further call.
+ * `deps` is the page's own runtime (lib/chain/browser.ts); tests hand in fakes.
+ */
+export async function readWalletPositions(owner: string, signal: AbortSignal, deps?: OwnedDeps): Promise<WalletRead> {
+  if (!OWNER.test(owner) || ZERO_OWNER.test(owner)) return { ok: false, reason: 'invalid_owner' }
+  const lower = owner.toLowerCase()
+  let body: WalletAnswer
   try {
-    response = await fetch(WALLET_POSITIONS_PATH, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, credentials: 'same-origin', cache: 'no-store', signal })
+    const code = await import('./chain/chainCode')
+    try {
+      const scan = await code.scanWallet(deps ?? code.chainDeps(signal), lower, deps ? null : (minted.get(lower) ?? null))
+      body = scan.body
+      if (!deps) {
+        if (scan.minted) minted.set(lower, scan.minted)
+        else minted.delete(lower)
+      }
+    } catch (error) {
+      if (signal.aborted) return { ok: false, reason: 'aborted' }
+      return { ok: false, reason: error instanceof code.ChainError && error.kind === 'rate' ? 'chain_busy' : 'chain_unavailable' }
+    }
   } catch {
-    return { ok: false, reason: signal.aborted ? 'aborted' : 'unreachable' }
+    // The chain code's chunk could not be loaded (a file of an earlier deploy): as a read that failed, asked again.
+    return { ok: false, reason: signal.aborted ? 'aborted' : 'chain_unavailable' }
   }
-  let value: unknown = null
-  try {
-    value = await response.json()
-  } catch {
-    return { ok: false, reason: signal.aborted ? 'aborted' : response.ok ? 'invalid_reply' : `http_${response.status}` }
-  }
-  if (!response.ok) {
-    const code = isRecord(value) && typeof value.error === 'string' && /^[a-z_]{1,40}$/.test(value.error) ? value.error : `http_${response.status}`
-    return { ok: false, reason: code }
-  }
-  const answer = parseWalletAnswer(value, owner)
+  if (signal.aborted) return { ok: false, reason: 'aborted' }
+  // The scan's answer as a route would have sent it, taken only when every field is what the parser expects.
+  const answer = parseWalletAnswer(JSON.parse(JSON.stringify(body)), lower)
   return answer ? { ok: true, answer } : { ok: false, reason: 'invalid_reply' }
 }
+
+/** The waits before a failed read is asked again, while the page is visible (the owner's rule, 2026-09-25). */
+export const REASK_MS = [2_000, 5_000, 10_000] as const
+/** After those, the read is still asked again on its own, this often, while the page is visible. */
+export const LATER_MS = 30_000
 
 /**
  * `run` after `ms`, or, when the page is hidden by then, once it is shown
@@ -254,15 +295,27 @@ function whenVisibleAfter(ms: number, run: () => void): () => void {
   }
 }
 
-/** The whole answer for one wallet, as the Positions list draws it (its held deposits included). */
-export type WalletAnswerState = { phase: 'idle' } | { phase: 'loading' } | { phase: 'ready'; answer: WalletAnswer } | { phase: 'failed'; reason: string }
+/**
+ * The whole answer for one wallet, as the Positions list draws it (its held
+ * deposits included). `retrying`: a read failed and is asked again on its own
+ * (REASK_MS), so nothing is said about the list yet; `failed`: those failed
+ * too, and it is still asked now and then (LATER_MS). Neither is ever an empty
+ * list: only `ready` with no positions is.
+ */
+export type WalletAnswerState =
+  | { phase: 'idle' }
+  | { phase: 'loading' }
+  | { phase: 'ready'; answer: WalletAnswer }
+  | { phase: 'retrying'; reason: string }
+  | { phase: 'failed'; reason: string }
 
 /**
  * The connected wallet's answer: asked whenever `owner` is set (a lowercase
- * address, the wallet connected on Robinhood Chain), and again, fresh, each
- * time `asked` grows (after an action changed it). A chain that was busy for
- * the moment is asked again on its own, twice at most, while the page is
- * visible; an answer already on screen stays there when a later one fails.
+ * address, the wallet connected on Robinhood Chain), and again each time
+ * `asked` grows (after an action changed it). A read that failed is asked
+ * again on its own while the page is visible, after 2, 5 and 10 seconds and
+ * then every 30; an answer already on screen stays there when a later one
+ * fails.
  */
 export function useWalletAnswer(owner: string | null, asked = 0): WalletAnswerState {
   const [state, setState] = useState<{ owner: string; value: WalletAnswerState } | null>(null)
@@ -272,15 +325,17 @@ export function useWalletAnswer(owner: string | null, asked = 0): WalletAnswerSt
     let attempts = 0
     let cancel: (() => void) | null = null
     const ask = () => {
-      void readWalletPositions(owner, controller.signal, asked > 0).then((result) => {
+      void readWalletPositions(owner, controller.signal).then((result) => {
         if (controller.signal.aborted) return
         if (result.ok) {
           setState({ owner, value: { phase: 'ready', answer: result.answer } })
           return
         }
-        setState((before) => (before?.owner === owner && before.value.phase === 'ready' ? before : { owner, value: { phase: 'failed', reason: result.reason } }))
-        if (!passingWalletFailure(result.reason) || attempts >= 2) return
-        cancel = whenVisibleAfter(attempts === 0 ? 3_000 : 12_000, () => {
+        const again = passingWalletFailure(result.reason)
+        const value: WalletAnswerState = again && attempts < REASK_MS.length ? { phase: 'retrying', reason: result.reason } : { phase: 'failed', reason: result.reason }
+        setState((before) => (before?.owner === owner && before.value.phase === 'ready' ? before : { owner, value }))
+        if (!again) return
+        cancel = whenVisibleAfter(attempts < REASK_MS.length ? REASK_MS[attempts] : LATER_MS, () => {
           cancel = null
           attempts += 1
           ask()
@@ -298,9 +353,14 @@ export function useWalletAnswer(owner: string | null, asked = 0): WalletAnswerSt
   return state && state.owner === owner ? state.value : { phase: 'loading' }
 }
 
-/** The connected wallet's Domino positions (see the contract above). `owner` null: idle. */
+/**
+ * The connected wallet's Domino positions (see the contract above). `owner`
+ * null: idle. A read being asked again is still loading; `failed` only once
+ * the quick re-asks failed too.
+ */
 export function useWalletPositions(owner: string | null): WalletPositionsState {
   const state = useWalletAnswer(owner ? owner.toLowerCase() : null)
   if (state.phase === 'ready') return { phase: 'ready', block: state.answer.block, positions: state.answer.positions }
+  if (state.phase === 'retrying') return { phase: 'loading' }
   return state
 }

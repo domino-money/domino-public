@@ -219,7 +219,9 @@ test('the automation is Domino Compounder in the docs and Domino-compound in the
   assert.doesNotMatch(textOf(page('new-position')), /Self-managing|Auto-compound|Domino-compound|Automation step/);
   assert.match(textOf(page('new-position')), /Automation is set up afterwards, from Automate, on the position you opened\./);
   const glossary = termIds(page('glossary'));
-  for (const id of ['domino-compounder', 'sequence', 'self-managing', 'auto-compound', 'operator']) assert.ok(glossary.includes(id), id);
+  // Changed on purpose (2026-09-24, the three features joined up): the choice with no automation is named Plain position
+  // everywhere it is offered (Automate, New position's success, a position's state), so the glossary names it so too.
+  for (const id of ['domino-compounder', 'sequence', 'plain-position', 'auto-compound', 'operator']) assert.ok(glossary.includes(id), id);
   assert.equal(glossary.includes('domino-sequence'), false);
   // Wherever a reader meets "sequence", it is the vault, the Automate button that creates one, or that creation.
   const lines = DOC_PAGES.flatMap((entry) => textOf(entry).split('\n')).filter((line) => /\bsequences?\b/i.test(line));
@@ -304,10 +306,12 @@ test('figures: Domino history first where the deployment provides it, the provid
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /as a market data provider reports it|reported by a provider and not reconciled by Domino/, entry.slug);
 });
 
-test('Auto-compound sets up on any position NFT you hold with two wallet transactions; activation is a separate conditional third step', () => {
+test('Auto-compound sets up on a position NFT you opened with Domino, with two wallet transactions; activation is a separate conditional third step', () => {
   const auto = page('auto-compound');
   const start = sectionText(auto, 'where-it-starts');
-  assert.match(start, /Auto-compound runs on a position NFT you hold, wherever you opened it\. Setup takes two wallet transactions: approve that one NFT to its sequence vault, then create the sequence, which starts paused\. Activation is a separate wallet transaction when the service is ready for your sequence\./);
+  // Changed on purpose (2026-09-24): the automation page lists the positions the wallet opened with Domino, so the page
+  // no longer says any NFT the wallet holds, wherever it was opened.
+  assert.match(start, /Auto-compound runs on a position NFT you opened with Domino and still hold\. Setup takes two wallet transactions: approve that one NFT to its sequence vault, then create the sequence, which starts paused\. Activation is a separate wallet transaction when the service is ready for your sequence\./);
   assert.match(start, /Custody is the same as for Domino Compounder: the NFT stays in your wallet, and your sequence vault holds earned fees not yet reinvested until you withdraw them\./);
   assert.match(start, /Changes made to that NFT outside Domino can stop it: see Risks\./);
   // New position offers no automation choice any more, so the page no longer says choosing it there records anything.
@@ -492,17 +496,25 @@ test('Domino V1 is deployed; owner-scoped automation copy keeps each new sequenc
     assert.equal(ROADMAP_PILL[entry.status], 'Per sequence');
     assert.doesNotMatch(entry.note, /not running|not in operation/i);
   }
+  // Changed on purpose (2026-09-25, audit of 754014c): the automation page lost its owner controls, so no Domino screen
+  // activates, pauses, revokes or withdraws any more. The docs and Settings said this site offered activation after a
+  // readiness check; they now say what is true: those are transactions the wallet signs on the sequence vault,
+  // activation once the service confirms readiness, and no Domino screen makes them today.
+  const TRUE = /A new sequence starts paused\. Activation, pause, revocation and withdrawal are transactions your wallet signs on your sequence vault, activation only once the automation service confirms readiness for it\. No Domino screen makes them today\./;
   for (const [slug, section] of [['auto-compound', 'where-it-starts'], ['domino-compounder', 'start-and-stop']]) {
     const copy = sectionText(page(slug), section);
     assert.match(copy, /Per sequence\nAutomation availability is checked for each owner and sequence\./);
-    assert.match(copy, /signed-in owner can review activation only when the live service confirms readiness for that vault/);
-    assert.match(copy, /does not offer activation when the check fails/);
+    assert.match(copy, TRUE, slug);
   }
   const activate = blocksOf(page('domino-compounder')).find((block) => block.kind === 'steps').items.find((step) => step.title === 'Activate it');
   assert.match(inlineText(activate.body), /After the service confirms readiness for your sequence, a separate wallet transaction takes it out of pause\. Signing in or opening a page never does\./);
-  assert.match(sectionText(page('what-is-domino'), 'your-wallet-signs'), /offers activation only to its signed-in owner after the live service confirms readiness for that exact sequence/);
+  assert.match(sectionText(page('what-is-domino'), 'your-wallet-signs'), TRUE);
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /offers? activation|review activation|may activate|remain available through your wallet/i, entry.slug);
+  for (const row of ROADMAP) assert.doesNotMatch(row.note, /may activate|pauses or recovers|authorises or revokes the operator, and/i, row.name);
+  assert.match(ROADMAP.find((row) => row.name === 'Compound').note, /A new sequence starts paused; your wallet activates it on your sequence vault once the service confirms readiness\. No Domino screen makes that transaction today\./);
+  assert.match(ROADMAP.find((row) => row.name === 'Wallet permissions').note, /Authorising or revoking the operator, pausing and withdrawing are transactions it signs on that vault, which no Domino screen makes today\./);
   assert.match(sectionText(page('what-is-domino'), 'built-on-uniswap'), /Domino’s own contracts, Domino V1, are deployed there as well: Setup opens positions, and a factory creates your sequence vault\./);
-  assert.match(sectionText(page('contracts'), 'domino-contracts'), /deployed on Robinhood Chain as Domino V1\.[\s\S]*Service readiness is checked for each owner and vault/);
+  assert.match(sectionText(page('contracts'), 'domino-contracts'), /deployed on Robinhood Chain as Domino V1\.[\s\S]*Service readiness is checked for each owner and vault before activation/);
   assert.match(sectionText(page('wallet'), 'what-needs-sign-in'), /Checking whether the automation service is ready for your sequence before activation/);
   for (const entry of DOC_PAGES) {
     const text = textOf(entry);

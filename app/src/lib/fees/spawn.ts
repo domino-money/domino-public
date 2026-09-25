@@ -9,13 +9,13 @@
  * under the tests' CommonJS config. The store's logic is tested through
  * createFeesStore with a fake worker.
  */
-import { postState } from './client'
+import { chainState } from './client'
 import { createFeesStore, type WorkerLike } from './store'
 import { whenVisibleAfter } from '../read/screens/quietRead'
 
 export const feesStore = createFeesStore({
   spawn: () => new Worker(new URL('./feesReplay.worker.ts', import.meta.url)) as unknown as WorkerLike,
-  postState: (tokenIds) => postState(tokenIds),
+  postState: (tokenIds) => chainState(tokenIds),
   later: whenVisibleAfter,
   timer: (ms, run) => {
     const id = setTimeout(run, ms)

@@ -3775,30 +3775,62 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // The product now consumes onboarding-v1 (New position's deposit amounts, Setup's swap quote), deliberately
   // through the financial client's same-origin fetch (/finance/http.ts), so no new fetcher joins this list.
   const diagnosticPath = '/components/read/LocalDevelopmentBanner.tsx';
-  // Changed on purpose (owner, 2026-09-24): Positions lists the connected wallet's position NFTs through the site's own
-  // endpoint. 2026-09-24, later: v2 (functions/api/owned/v2/positions.ts) lists only what DominoSetupV1 minted to the
-  // wallet, read from chain; /lib/walletPositions.ts is its one client (replacing /lib/ownedPositions.ts), pinned below
-  // to that one same-origin POST, with nothing kept in the browser's storage.
-  const ownedPath = '/lib/walletPositions.ts';
-  // 2026-09-24 (P6, DESIGN-V2 §15.4, R-10): the fees history's client, /lib/fees/client.ts, joins on purpose: two fixed
-  // same-origin POSTs to the site's own relay (functions/api/fees/v1/{logs,state}.ts), pinned below; the replay worker
-  // that uses it names no fetch of its own.
-  const feesPath = '/lib/fees/client.ts';
-  assert.deepEqual(fetchers, [diagnosticPath, '/finance/http.ts', feesPath, '/lib/read/bridgeSource.ts', '/lib/tokenArtwork.ts', ownedPath, '/screens/LivePreview.tsx', '/wallet/session.ts'], 'product clients, the financial client, the fees and owned-positions clients, serve-only diagnostics, the consumer-test preview, and the explicitly authorized decorative token metadata client');
-  const feesClient = readFileSync(join(SRC, feesPath), 'utf8');
-  assert.equal([...feesClient.matchAll(/\bfetch\s*\(/g)].length, 2, 'exactly two fees fetch calls');
-  assert.match(feesClient, /fetch\('\/api\/fees\/v1\/logs', \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json' \}, body: JSON\.stringify\(request\), credentials: 'same-origin', cache: 'no-store', signal \}\)/);
-  assert.match(feesClient, /fetch\('\/api\/fees\/v1\/state', \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json' \}, body: JSON\.stringify\(\{ tokenIds \}\), credentials: 'same-origin', cache: 'no-store', signal \}\)/);
-  assert.deepEqual([...feesClient.matchAll(/['"`](https?:\/\/[^'"`]+|\/api\/[^'"`]+)['"`]/g)].map((match) => match[1]), ['/api/fees/v1/logs', '/api/fees/v1/state'], 'no other network route in the fees client');
-  assert.doesNotMatch(feesClient, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB)\b/, 'no other network client and no storage');
-  assert.match(feesClient, /function relayed\(\): boolean \{\n  return __DOMINO_DEPLOYABLE__ \|\| __DOMINO_TEST_HOOKS__\n\}/, 'asked only in builds with a relay, decided inside the call');
-  assert.doesNotMatch(readFileSync(join(SRC, 'lib/fees/feesReplay.worker.ts'), 'utf8'), /fetch\(/, 'the worker file names no fetch, not even in a comment');
-  assert.doesNotMatch(readFileSync(join(SRC, 'lib/fees/pipeline.ts'), 'utf8'), /fetch\(/);
-  const ownedClient = readFileSync(join(SRC, ownedPath), 'utf8');
-  assert.equal([...ownedClient.matchAll(/\bfetch\s*\(/g)].length, 1, 'exactly one owned-positions fetch call');
-  assert.match(ownedClient, /fetch\(WALLET_POSITIONS_PATH, \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json' \}, body, credentials: 'same-origin', cache: 'no-store', signal \}\)/, 'a fixed same-origin POST, the address in its body');
-  assert.deepEqual([...ownedClient.matchAll(/['"`](https?:\/\/[^'"`]+|\/api\/[^'"`]+)['"`]/g)].map((match) => match[1]), ['/api/owned/v2/positions'], 'no other network route in the owned-positions client');
-  assert.doesNotMatch(ownedClient, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB)\b/, 'no other network client and no storage');
+  // Changed on purpose (2026-09-25): the chain's public RPC answers 429 to every call from Cloudflare's shared egress,
+  // so the site's routes that read it for the page (functions/api/owned/v2/positions.ts, functions/api/fees/v1/*)
+  // failed in production and Positions listed nothing. The page now reads the chain itself, with those routes' own
+  // code (functions/_lib/walletPositions.ts, owned.ts and fees.ts, imported as pure modules): /lib/walletPositions.ts
+  // (the wallet's positions, replacing its same-origin POST) and /lib/fees/client.ts (a position's state and the fees
+  // history's logs, replacing its two) no longer fetch at all. Their one fetcher is /lib/chain/browser.ts, pinned below
+  // to the RPC's fixed URL, with no credentials and no referrer; the RPC is named in the page's and the fees worker's
+  // connect-src (functions/_middleware.ts). The routes stay, tested, and nothing on the page asks them.
+  const chainPath = '/lib/chain/browser.ts';
+  // 2026-09-25, later (the automation state off the edge): a position's feature, plain, Auto-compound or Domino-compound,
+  // and whether its sequence is paused, no longer comes from the site's POST /api/automation/v1/state, which reads the
+  // chain from Cloudflare's edge and so could never answer in production. /lib/automationState.ts runs that route's own
+  // scan (functions/_lib/automation.ts) through the chain code, like the wallet's positions and a position's state, and
+  // leaves this list: automationState no longer fetches (pinned below with the modules that do not).
+  assert.deepEqual(fetchers, [diagnosticPath, '/finance/http.ts', chainPath, '/lib/read/bridgeSource.ts', '/lib/tokenArtwork.ts', '/screens/LivePreview.tsx', '/wallet/session.ts'], 'product clients, the financial client, the page\'s own line to the chain, serve-only diagnostics, the consumer-test preview, and the explicitly authorized decorative token metadata client');
+  const chainClient = readFileSync(join(SRC, chainPath), 'utf8');
+  // Changed on purpose (2026-09-25, review of r3/chain): the module has two runtimes now, the page's own reads
+  // (chainDeps) and the fees worker's paced lane (chainLane, which keeps the logs from using up the RPC's per-address
+  // limit the page's reads need). Each defines its `fetch(input, init)`, refuses any URL but the RPC's before anything
+  // else, and sends through the module's one network call, rpcFetch. The lane hears from the page over a
+  // BroadcastChannel of the site's own that carries one flag (a read on its way or not), and nothing else.
+  assert.equal([...chainClient.matchAll(/\bfetch\s*\((?!input, init\))/g)].length, 1, 'exactly one chain fetch call');
+  assert.match(chainClient, /function rpcFetch\(init: RequestInit\): Promise<Response> \{\n(?:\s*\/\/.*\n)*\s*return fetch\(RPC_URL, \{ \.\.\.init, credentials: 'omit', referrerPolicy: 'no-referrer' \}\)\n\}/, 'the RPC\'s fixed URL only, with no credentials and no referrer');
+  assert.match(chainClient, /const elsewhere = \(\) => Promise\.reject\(new TypeError\('not the chain RPC'\)\)/);
+  const runtimes = [...chainClient.matchAll(/fetch\(input, init\)/g)].length;
+  assert.deepEqual([runtimes, [...chainClient.matchAll(/async fetch\(input, init\) \{\n\s*if \(input !== RPC_URL\) return elsewhere\(\)\n/g)].length], [2, 2], 'both runtimes refuse any other URL first');
+  assert.deepEqual([...chainClient.matchAll(/\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['busy'], 'the channel carries one flag');
+  assert.match(chainClient, /import \{ RPC_URL, type OwnedDeps \} from '\.\.\/\.\.\/\.\.\/functions\/_lib\/owned'/, 'the URL is the routes\' own pin');
+  assert.doesNotMatch(chainClient, /['"`]https?:\/\/|['"`]\/api\//, 'no other network route in the chain client');
+  assert.doesNotMatch(chainClient, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|localStorage|sessionStorage|indexedDB)\b/, 'no other network client and no storage');
+  const owned = readFileSync(join(SRC, '../functions/_lib/owned.ts'), 'utf8');
+  assert.match(owned, /^export const RPC_URL = 'https:\/\/rpc\.mainnet\.chain\.robinhood\.com'$/m, 'the one endpoint, Robinhood Chain\'s public RPC');
+  // What the page runs against it can only read: the methods the three modules name are the four reads, and never a
+  // send, a signature or a subscription.
+  for (const file of ['owned.ts', 'walletPositions.ts', 'fees.ts', 'automation.ts']) {
+    const code = readFileSync(join(SRC, '../functions/_lib', file), 'utf8');
+    const methods = [...new Set([...code.matchAll(/['"`]((?:eth|net|web3|wallet|personal|debug|txpool)_[A-Za-z]+)['"`]/g)].map((match) => match[1]))].sort();
+    assert.ok(methods.every((method) => ['eth_blockNumber', 'eth_call', 'eth_getBlockByNumber', 'eth_getLogs'].includes(method)), `${file} names ${methods.join(', ')}`);
+    assert.doesNotMatch(code, /\b(?:localStorage|sessionStorage|indexedDB|document\.|window\.|__DOMINO_)\w*/, `${file} stays a pure module: no storage, no DOM, no build flag`);
+  }
+  // 2026-09-25 (review of r3/chain): the fees client is split so the page loads the chain code lazily
+  // (lib/chain/chainCode.ts) while the replay worker, a single classic file, carries its own: answers.ts holds the
+  // build check and the answers' checks, logs.ts the log read both share. None of them fetches.
+  for (const path of ['lib/walletPositions.ts', 'lib/automationState.ts', 'lib/fees/client.ts', 'lib/fees/answers.ts', 'lib/fees/logs.ts', 'lib/chain/chainCode.ts', 'lib/fees/feesReplay.worker.ts', 'lib/fees/pipeline.ts']) {
+    const code = readFileSync(join(SRC, path), 'utf8');
+    assert.doesNotMatch(code, /fetch\(/, `${path} names no fetch of its own, not even in a comment`);
+    assert.doesNotMatch(code, /['"`]\/api\/(?:owned|fees|automation)\//, `${path} asks no route of the site`);
+    assert.doesNotMatch(code, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB)\b/, `${path}: no other network client and no storage`);
+  }
+  const feesClient = readFileSync(join(SRC, 'lib/fees/answers.ts'), 'utf8');
+  assert.match(feesClient, /function chainRead\(\): boolean \{\n  return __DOMINO_DEPLOYABLE__ \|\| __DOMINO_TEST_HOOKS__\n\}/, 'asked only in builds meant to reach the chain, decided inside the call');
+  for (const path of ['lib/fees/client.ts', 'lib/fees/logs.ts']) assert.match(readFileSync(join(SRC, path), 'utf8'), /if \(!chainRead\(\)\) return UNAVAILABLE/, `${path} asks nothing in a build not meant to reach the chain`);
+  const automationClient = readFileSync(join(SRC, 'lib/automationState.ts'), 'utf8');
+  assert.match(automationClient, /function chainRead\(\): boolean \{\n  return __DOMINO_DEPLOYABLE__ \|\| __DOMINO_TEST_HOOKS__\n\}/, 'the automation state is asked only in builds meant to reach the chain');
+  assert.match(automationClient, /if \(!chainRead\(\) \|\| ids\.length === 0/, 'decided inside the call');
+  assert.match(automationClient, /await import\('\.\/chain\/chainCode'\)/, 'through the chain code chunk, loaded on the first read');
 
   const diagnostics = readFileSync(join(SRC, diagnosticPath), 'utf8');
   assert.equal([...diagnostics.matchAll(/\bfetch\s*\(/g)].length, 1, 'exactly one diagnostic fetch call');

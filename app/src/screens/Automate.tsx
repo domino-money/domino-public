@@ -1,8 +1,10 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { ModeArt } from '../components/automate/ModeArt'
+import { ModeArt, PlainArt } from '../components/automate/ModeArt'
 import { FeeMeter } from '../components/automate/ServiceFee'
-import { IconChevronRight, IconLock } from '../components/icons'
+import { IconChevronRight, IconLock, IconPlus } from '../components/icons'
 import { Display, LinkButton, PageHeader, PageShell, Pill, cx } from '../components/ui'
+import { newPositionHref } from '../components/explore/routes'
+import { FEATURES } from '../lib/automate/features'
 import { CREATE } from '../lib/create/copy'
 import { ROADMAP, ROADMAP_PILL } from '../lib/capabilities'
 
@@ -68,6 +70,31 @@ function AutomationCard({
   )
 }
 
+/**
+ * The first of the three features (2026-09-24, the owner's product: a plain position, then Auto-compound or
+ * Domino-compound on it): what a position does with no automation, and where one is opened. Both automations start
+ * from a position like this one, so it leads the page.
+ */
+function PlainCard({ step }: { step: number }) {
+  return (
+    <section className="dm-card dm-auto-plain animate-rise" style={rise(step)} data-feature="plain" aria-labelledby="automate-plain">
+      <div className="dm-plate dm-dots-plate dm-auto-plain-plate" aria-hidden="true">
+        <PlainArt />
+      </div>
+      <div className="dm-auto-plain-body">
+        <Display as="h2" id="automate-plain" className="dm-display-card">
+          {FEATURES.plain.name}
+        </Display>
+        <p className="dm-auto-plain-line">{FEATURES.plain.line}</p>
+      </div>
+      <LinkButton href={newPositionHref()} variant="outline" size="lg" className="dm-auto-plain-go">
+        <IconPlus />
+        New position
+      </LinkButton>
+    </section>
+  )
+}
+
 /** In builds without the wallet flows there is nowhere to go, and the card says why instead of offering a way in. */
 const OFF = (
   <p className="dm-acct-auto-off">
@@ -77,9 +104,11 @@ const OFF = (
 )
 
 /**
- * Automate: the two ways Domino can put a position's earned fees to work, where
- * each stands, what it costs, and the screen each one starts from. Nothing
- * here reads, signs or enables anything; the status comes from ROADMAP.
+ * Automate: Domino's three features in order (2026-09-24): the plain position
+ * they all start from, and the two ways Domino can put its earned fees to
+ * work, where each stands, what it costs, and the screen each one starts
+ * from. Nothing here reads, signs or enables anything; the status comes from
+ * ROADMAP.
  */
 export function Automate() {
   return (
@@ -87,8 +116,10 @@ export function Automate() {
       <PageHeader
         className="animate-rise"
         title="Automate"
-        description="Two ways to put a position’s earned fees to work, within limits your wallet signs."
+        description="A plain position, and two ways to put its earned fees to work, within limits your wallet signs."
       />
+
+      <PlainCard step={1} />
 
       <div className="dm-acct-auto-grid">
         <AutomationCard
@@ -96,7 +127,7 @@ export function Automate() {
           kind="compound"
           roadmap="Compound"
           title="Auto-compound"
-          step={1}
+          step={2}
           points={[
             'Adds a position you already hold’s earned fees back into that same position, improving your fees APR.',
             'Compounds earned fees only, nothing else.',
@@ -119,7 +150,7 @@ export function Automate() {
           kind="domino"
           roadmap="Domino"
           title="Domino-compound"
-          step={2}
+          step={3}
           points={[
             'As the price nears the top of the range, earned fees automatically open the next position, one step higher.',
             'Compounds earned fees only, nothing else.',

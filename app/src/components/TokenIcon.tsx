@@ -119,23 +119,49 @@ export function TokenIcon({
  * The mark for a token as the read adapter describes it. Curated artwork is
  * preferred; other public token contracts may resolve decorative artwork by
  * exact chain/address through the bounded provider helper. Symbols never
- * select an image or supply fallback letters. Missing artwork is a calm disc
- * whose hue comes from the token's address (DESIGN-V2 §3.8), with a 1px theme
- * line, so a pair never looks broken and nothing untrusted is drawn.
+ * select an image, and supply fallback letters only where a vetted list asks
+ * for them (`monogram`, 2026-09-25). Missing artwork is a calm disc whose hue
+ * comes from the token's address (DESIGN-V2 §3.8), with a 1px theme line, so
+ * a pair never looks broken and nothing untrusted is drawn.
  */
-type MarkProps = { token: TokenDisplay; size?: number; ring?: string; style?: CSSProperties }
+type MarkProps = {
+  token: TokenDisplay
+  size?: number
+  ring?: string
+  style?: CSSProperties
+  /**
+   * Missing artwork shows the first two letters of the symbol on the disc.
+   * Only for a list that has already vetted its tokens and prints the same
+   * symbol beside the mark (the Positions Wallet card, 2026-09-25: a priced,
+   * non-look-alike holding), so the letters say nothing the row does not.
+   * Everywhere else the disc stays empty (§3.8).
+   */
+  monogram?: boolean
+}
+
+/**
+ * Up to two letters or digits of a symbol, upper case. A token with no
+ * symbol the adapter would pass (or none with a letter or digit in it) takes
+ * the first two hex digits of its address, which the row names it by, so a
+ * monogram disc is never empty (2026-09-25).
+ */
+export function monogramOf(symbol: string | null, address: string): string {
+  const letters = symbol === null ? '' : [...symbol.normalize('NFKC').replace(/[^\p{L}\p{N}]/gu, '')].slice(0, 2).join('').toUpperCase()
+  return letters !== '' ? letters : /^0x[0-9a-fA-F]{2}/.test(address) ? address.slice(2, 4).toUpperCase() : ''
+}
 
 /** A 1px inner line from the theme's strong border: visible on light and dark cards alike. */
 const DISC_LINE = 'inset 0 0 0 1px var(--border-strong)'
 
-export function TokenMark({ token, size = 24, ring, style }: MarkProps) {
+export function TokenMark({ token, size = 24, ring, style, monogram }: MarkProps) {
   if (token.artwork) return <TokenIcon symbol={token.artwork} size={size} ring={ring} style={style} />
-  return <RemoteTokenMark key={`${token.chainId}:${token.address}`} token={token} size={size} ring={ring} style={style} />
+  return <RemoteTokenMark key={`${token.chainId}:${token.address}`} token={token} size={size} ring={ring} style={style} monogram={monogram} />
 }
 
 /** Decoration only: the provider never supplies a symbol, balance or verified badge. */
-function RemoteTokenMark({ token, size = 24, ring, style }: MarkProps) {
-  const [src, setSrc] = useState<string | null>(null)
+function RemoteTokenMark({ token, size = 24, ring, style, monogram = false }: MarkProps) {
+  // Artwork the resolver already holds paints on the first frame, with no disc before it.
+  const [src, setSrc] = useState<string | null>(() => tokenArtwork.peek(token.chainId, token.address) ?? null)
   const [loaded, setLoaded] = useState(false)
   const [broken, setBroken] = useState(false)
   useEffect(() => {
@@ -165,15 +191,19 @@ function RemoteTokenMark({ token, size = 24, ring, style }: MarkProps) {
     onLoad={() => setLoaded(true)} onError={() => { setBroken(true); tokenArtwork.rejectImage(token.chainId, token.address) }}
     style={{ ...markStyle, outlineOffset: ring ? -3 : -1, objectFit: 'cover' }} />
   // No inline background or shadow here: inline styles would beat the disc's class.
+  const letters = monogram ? monogramOf(token.symbol, token.address) : ''
   const discStyle = {
     width: size, height: size, borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined,
-    display: 'inline-block', flexShrink: 0, '--mark-h': tokenHue(token.address), ...style,
+    display: letters ? 'inline-grid' : 'inline-block', flexShrink: 0, '--mark-h': tokenHue(token.address),
+    ...(letters ? { fontSize: Math.max(9, Math.round(size * (letters.length > 1 ? 0.34 : 0.42))) } : {}), ...style,
   } as CSSProperties
+  // The letters are drawn by the class from `data-letters` (shell.css), not as text: a copied row reads "UFG", never "UF UFG".
   return (
     <span
       aria-hidden="true"
       data-token-mark="unknown"
-      className="dm-token-disc"
+      data-letters={letters || undefined}
+      className={letters ? 'dm-token-disc dm-token-mono' : 'dm-token-disc'}
       style={discStyle}
     />
   )

@@ -76,11 +76,14 @@ test('the contracts are the V1 deployment profile’s and the finance pins, in e
 test('the grid and the limits the relay and the client share are one set of numbers', () => {
   assert.equal(constants.DAY_SPAN, 24 * constants.HOUR_SPAN);
   assert.equal(constants.EPOCH_SPAN % constants.HOUR_SPAN, 0);
-  for (const name of ['HOUR_SPAN', 'DAY_SPAN', 'EPOCH_SPAN', 'SAFE_DEPTH']) assert.equal(fees[name], constants[name], name);
+  // 2026-09-25: and the probe's span, the page's cheap bound before a history.
+  for (const name of ['HOUR_SPAN', 'DAY_SPAN', 'EPOCH_SPAN', 'SAFE_DEPTH', 'PROBE_SPAN']) assert.equal(fees[name], constants[name], name);
   assert.equal(fees.MAX_STATE_IDS, constants.MAX_STATE_IDS);
   assert.equal(fees.MAX_DAYS, constants.MAX_DAYS_PER_REQUEST);
   assert.equal(fees.MAX_HEADERS, constants.MAX_HEADERS_PER_REQUEST);
-  assert.deepEqual(constants.BUDGET_BYTES, { page: 24 * 1024 * 1024, list: 6 * 1024 * 1024 });
+  // Changed on purpose (2026-09-25): every byte is read by the visitor's own browser under the RPC's per-address limit.
+  assert.deepEqual(constants.BUDGET_BYTES, { page: 2 * 1024 * 1024, list: 1024 * 1024 });
+  assert.deepEqual(constants.BUDGET_MS, { page: 20_000, list: 10_000 });
   assert.equal(constants.MAX_SWAP_DAYS, 30);
 });
 

@@ -16,6 +16,11 @@ export function ratioText(value: string): string {
   return text.includes('.') ? text.replace(/0+$/, '').replace(/\.$/, '') : text
 }
 
+/** A close as a Markets card writes it, in its price row and its tooltip alike: ratioText, its whole part grouped in thousands ("2,656.07"). */
+export function groupedRatioText(value: string): string {
+  return ratioText(value).replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ','))
+}
+
 /** Room around the plotted line: the pool chart keeps 100 on the right for its labels. */
 export interface RatioPad { left: number; right: number; top: number; bottom: number }
 const CHART_PAD: RatioPad = { left: 12, right: 100, top: 16, bottom: 32 }

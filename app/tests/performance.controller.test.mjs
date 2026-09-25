@@ -575,7 +575,8 @@ test('guided inspectRoot() rechecks deployed links, NFT owner, pool identity and
   assert.equal(found.poolId,poolId);assert.equal(found.vault,predicted.vault);assert.equal(found.approved,zeroAddress);
   const foreign=structuredClone(snapshot);foreign.root.ownerOf=encodeFunctionResult({abi:sequenceAbi,functionName:'ownerOf',result:hexOf(0xdd,20)});
   const tampered=createSequenceClient(wallet,d,()=>1000,async()=>d,async()=>foreign);
-  await assert.rejects(tampered.inspectRoot(rootTokenId),/deployment_identity_changed/);
+  // Changed on purpose (audit, 2026-09-24): an NFT another wallet holds is refused as no longer in this wallet, not as a changed deployment.
+  await assert.rejects(tampered.inspectRoot(rootTokenId),/position_not_in_wallet/);
   let lateNow=1000, walletReads=0, snapshotReads=0;
   const lateWallet={...base.wallet,request:(method,params)=>{
     walletReads++;
@@ -596,6 +597,112 @@ test('guided inspectRoot() rechecks deployed links, NFT owner, pool identity and
     lateNow+=26;return snapshot;
   });
   await assert.rejects(overBudget.inspectRoot(rootTokenId),/sequence_read_timeout/);
+});
+
+/**
+ * One root NFT on a chain that answers everything Set up automation reads and prepares: the whole deployment
+ * verification, the NFT (its owner, and its packed PositionInfo, whose low byte is the position manager's hasSubscriber
+ * flag), the factory's prediction, and the preparation's nonce, simulation, estimate and balance. `log` keeps every method
+ * asked, so a test can tell whether anything was prepared; `snapshot` is the read snapshot of the same block.
+ */
+async function rootChain({ holder = null, subscribed = false } = {}) {
+  const base = fakeChain({sequences:0}), d = structuredClone(base.d), owner = base.wallet.owner;
+  const componentNames = ['factory','implementation','poolManager','positionManager','stateView','readHelper','engine','routing','priceGuard'];
+  const code = Object.fromEntries([...componentNames,'operator','pricePublisher'].map(role => [role,
+    role==='factory'?'0x6001':role==='implementation'?'0x6002':role==='operator'||role==='pricePublisher'?'0x':'0x6000']));
+  for (const role of componentNames) d.codeHashes[role] = keccak256(code[role]);
+  const rootTokenId = 3136705n, poolKey = {currency0:hexOf(0x31,20),currency1:hexOf(0x32,20),fee:3000,tickSpacing:60,hooks:zeroAddress};
+  const poolId = keccak256(encodeAbiParameters(poolKeyParameters,[poolKey]));
+  const packed = (BigInt(poolId) & ~((1n<<56n)-1n)) | (BigInt.asUintN(24,-600n)<<8n) | (600n<<32n) | (subscribed ? 1n : 0n);
+  const predicted = sequenceIdentity(d,owner,0n);
+  const links = {
+    factory:{implementation:d.implementation,implementationCodeHash:d.codeHashes.implementation,poolManager:d.poolManager,positionManager:d.positionManager,stateView:d.stateView,serviceFeeRecipient:d.serviceFeeRecipient,nextOwnerNonce:0n,predictVault:predicted.vault},
+    implementation:{factory:d.factory,implementation:d.implementation,implementationVersion:4n,poolManager:d.poolManager,positionManager:d.positionManager,stateView:d.stateView,serviceFeeRecipient:d.serviceFeeRecipient,readHelper:d.readHelper,executionEngine:d.engine,
+      readHelperCodeHash:d.codeHashes.readHelper,executionEngineCodeHash:d.codeHashes.engine,poolManagerCodeHash:d.codeHashes.poolManager,positionManagerCodeHash:d.codeHashes.positionManager,stateViewCodeHash:d.codeHashes.stateView},
+    positionManager:{poolManager:d.poolManager,ownerOf:holder ?? owner,getPoolAndPositionInfo:[poolKey,packed],getApproved:zeroAddress},
+    stateView:{poolManager:d.poolManager},readHelper:{positionManager:d.positionManager,stateView:d.stateView},
+    engine:{factory:d.factory,readHelper:d.readHelper,routingHelper:d.routing,priceGuard:d.priceGuard,readHelperHash:d.codeHashes.readHelper,routingHelperHash:d.codeHashes.routing,priceGuardHash:d.codeHashes.priceGuard},
+    priceGuard:{publisher:d.pricePublisher},
+  };
+  const log = [];
+  const request = async (method,params) => {
+    log.push(method);
+    if (method==='eth_accounts') return [owner];
+    if (method==='eth_chainId') return '0x1237';
+    if (method==='eth_getBlockByNumber') return {number:'0x10',hash:hexOf(0xbb,32)};
+    if (method==='eth_getTransactionCount') return '0x0';
+    if (method==='eth_estimateGas') return '0x186a0';
+    if (method==='eth_getBalance') return '0xde0b6b3a7640000';
+    if (method==='eth_getCode') {
+      const role = componentNames.find(name => d[name]===params[0]);
+      return role ? code[role] : params[0]===poolKey.currency0||params[0]===poolKey.currency1 ? '0x6000' : '0x';
+    }
+    if (method==='eth_call') {
+      const {to,data}=params[0], {functionName}=decodeFunctionData({abi:sequenceAbi,data});
+      // The preparation's simulation of the approval answers nothing.
+      if (functionName==='approve') return '0x';
+      const role=Object.keys(links).find(name=>d[name]===to);
+      if (!role || !Object.hasOwn(links[role],functionName)) throw new Error(`unexpected read ${functionName} on ${to}`);
+      return encodeFunctionResult({abi:sequenceAbi,functionName,result:links[role][functionName]});
+    }
+    throw new Error(`unexpected ${method}`);
+  };
+  const read = async (to,functionName,args=[]) => request('eth_call',[{to,data:encodeFunctionData({abi:sequenceAbi,functionName,args})},'0x10']);
+  const staticCalls = {
+    factory:['implementation','implementationCodeHash','poolManager','positionManager','stateView','serviceFeeRecipient','nextOwnerNonce'],
+    implementation:['factory','implementation','implementationVersion','poolManager','positionManager','stateView','serviceFeeRecipient','readHelper','executionEngine','readHelperCodeHash','executionEngineCodeHash','poolManagerCodeHash','positionManagerCodeHash','stateViewCodeHash'],
+    positionManager:['poolManager'],stateView:['poolManager'],readHelper:['positionManager','stateView'],
+    engine:['factory','readHelper','routingHelper','priceGuard','readHelperHash','routingHelperHash','priceGuardHash'],priceGuard:['publisher'],
+  };
+  const calls={};
+  for (const [role,names] of Object.entries(staticCalls)) {
+    calls[role]={};
+    for (const name of names) calls[role][name]=await read(d[role],name,name==='nextOwnerNonce'?[owner]:[]);
+  }
+  const root={tokenId:rootTokenId.toString(),ownerOf:await read(d.positionManager,'ownerOf',[rootTokenId]),getPoolAndPositionInfo:await read(d.positionManager,'getPoolAndPositionInfo',[rootTokenId]),
+    getApproved:await read(d.positionManager,'getApproved',[rootTokenId]),predictVault:await read(d.factory,'predictVault',[owner,0n]),
+    predictedSequenceId:predicted.id,predictedVault:predicted.vault,currency0:poolKey.currency0,currency1:poolKey.currency1,code:{currency0:'0x6000',currency1:'0x6000',predictedVault:'0x'}};
+  const snapshot={schemaVersion:1,contractVersion:'1.0.0-rc.1',chainId:4663,owner,tokenId:rootTokenId.toString(),blockNumber:16,blockHash:hexOf(0xbb,32),code,calls,recent:[],root};
+  log.length = 0;
+  const options = {automationMode:'compound',rootTokenId,baseIsCurrency0:true,consentToUncollectedFees:true,triggerDistanceBps:500,maxOverlapBps:2000,minimumIntervalSeconds:60,maxPositions:1,
+    upsideBps:5000,maxSlippageBps:100,maxPriceImpactBps:100,maxGasCostWei:10n**16n,maxObservationAgeSeconds:120,forecastHorizonSeconds:3600};
+  return { d, rootTokenId, options, snapshot, log, wallet: { ...base.wallet, request } };
+}
+const ROOT_GAS = { maxGas: 1_000_000n, maxFeePerGas: 1n, maxPriorityFeePerGas: 0n, reserveWei: 0n };
+/** Whatever the preparation of a wallet step asks for: none of it means nothing was prepared. */
+const PREPARED = ['eth_getTransactionCount','eth_estimateGas','eth_getBalance','eth_sendTransaction'];
+/** A wallet whose every read of `implementation()` is refused, so a guided read falls back to the read snapshot. */
+const refusingImplementation = wallet => ({ ...wallet, request: (method,params) => method==='eth_call' && decodeFunctionData({abi:sequenceAbi,data:params[0].data}).functionName==='implementation'
+  ? Promise.reject(new Error('private wallet refusal')) : wallet.request(method,params) });
+
+// Added 2026-09-24 (audit): a position that already had a sequence was offered again, and Set up automation approved its NFT to a
+// new predicted sequence (which takes the approval from the first one) before the creation failed on chain. The position
+// manager's hasSubscriber flag, in the PositionInfo root() already reads, now refuses it before any approval is prepared.
+test('an NFT something is already subscribed to is refused before any approval is prepared, from the wallet and from the read snapshot', async () => {
+  // The same NFT with nothing subscribed prepares its approval: the refusal below is the flag's alone.
+  const free = await rootChain();
+  assert.equal((await createSequenceClient(free.wallet,free.d,()=>1000,async()=>free.d).create(free.options,ROOT_GAS)).kind,'approve-root');
+  const taken = await rootChain({ subscribed: true });
+  const client = createSequenceClient(taken.wallet,taken.d,()=>1000,async()=>taken.d,async()=>taken.snapshot);
+  await assert.rejects(client.inspectRoot(taken.rootTokenId), error => error.message === 'position_subscribed');
+  await assert.rejects(client.create(taken.options,ROOT_GAS), error => error.message === 'position_subscribed');
+  assert.deepEqual(taken.log.filter(method => PREPARED.includes(method)), [], 'no nonce, estimate, balance or send: nothing was prepared');
+  // The read snapshot answers it too: the flag travels in the PositionInfo the snapshot already carries.
+  let fetched = 0;
+  const viaSnapshot = createSequenceClient(refusingImplementation(taken.wallet),taken.d,()=>1000,async()=>taken.d,async()=>{ fetched++; return taken.snapshot; });
+  await assert.rejects(viaSnapshot.inspectRoot(taken.rootTokenId), error => error.message === 'position_subscribed');
+  assert.equal(fetched, 1);
+});
+
+// Added 2026-09-24 (audit): a listed NFT the wallet no longer held was refused with a sentence that blamed the deployment.
+test('a listed NFT this wallet no longer holds is refused as that, never as a changed deployment', async () => {
+  const gone = await rootChain({ holder: hexOf(0xdd,20) });
+  const client = createSequenceClient(gone.wallet,gone.d,()=>1000,async()=>gone.d,async()=>gone.snapshot);
+  await assert.rejects(client.inspectRoot(gone.rootTokenId), error => error.message === 'position_not_in_wallet');
+  await assert.rejects(client.create(gone.options,ROOT_GAS), error => error.message === 'position_not_in_wallet');
+  assert.deepEqual(gone.log.filter(method => PREPARED.includes(method)), [], 'nothing was prepared');
+  const viaSnapshot = createSequenceClient(refusingImplementation(gone.wallet),gone.d,()=>1000,async()=>gone.d,async()=>gone.snapshot);
+  await assert.rejects(viaSnapshot.inspectRoot(gone.rootTokenId), error => error.message === 'position_not_in_wallet');
 });
 
 test('sequence preparation never uses the read snapshot after a wallet refusal', async () => {
@@ -674,11 +781,9 @@ test('new sequence mode must be explicit and simple compound cannot admit succes
     upsideBps: 5000, maxSlippageBps: 100, maxPriceImpactBps: 100, maxGasCostWei: 10n ** 16n,
     maxObservationAgeSeconds: 120, forecastHorizonSeconds: 3600 };
   const gas = { maxGas: 1000000n, maxFeePerGas: 1n, maxPriorityFeePerGas: 0n, reserveWei: 0n };
-  for (const automationMode of [undefined, null, '', 'auto', 200, 400]) {
+  // Changed on purpose (2026-09-24): creation is the one place the client takes a mode; its policy change went with Manage a sequence.
+  for (const automationMode of [undefined, null, '', 'auto', 200, 400])
     await assert.rejects(chain.client.create({ ...options, automationMode }, gas), /invalid_sequence_policy/);
-    if (automationMode !== undefined)
-      await assert.rejects(chain.client.setPolicy(chain.vaults[0], { ...options, automationMode }, gas), /invalid_sequence_policy/);
-  }
   await assert.rejects(chain.client.create({ ...options, automationMode: 'compound', maxPositions: 2 }, gas), /simple_compound_position_limit/);
   assert.equal(chain.log.includes('claimNonce'), false);
 });

@@ -129,7 +129,11 @@ test('the wallet-test build writes its own directory and loads the feature lazil
   assert.ok(islandText.includes('__dominoSessionProbe'), 'the probes are what this build is for');
 });
 
-test('no connector SDK, relay or public RPC endpoint reached either build', () => {
+// Changed on purpose (2026-09-25): one public RPC endpoint is now reached, Robinhood Chain's own
+// (rpc.mainnet.chain.robinhood.com), for reads only, by the page's own chain reads (src/lib/chain/browser.ts): the RPC
+// answers 429 to every call from Cloudflare's edge, so the site's routes that read it for the page failed. Wallet
+// calls still go through the wallet's own provider only; no connector SDK or relay is reached.
+test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s own for the page\u2019s reads, reached either build', () => {
   // Names alone are not evidence: viem has a WalletConnect error class and
   // wagmi's injected connector knows the Coinbase and MetaMask provider flags.
   // What must not be present is SDK code or anywhere to connect to.
@@ -155,6 +159,11 @@ test('no connector SDK, relay or public RPC endpoint reached either build', () =
   // 2026-09-24: the metadata endpoint's same GET also picks which pool ids New
   // position asks the read service to verify (src/lib/read/screens/poolHints.ts):
   // the host and path are unchanged, and none of its figures is shown.
+  // 2026-09-25: Robinhood Chain's public RPC, which the page reads the chain from itself (the wallet's positions, a
+  // position's state, the fees history's logs; src/lib/chain/browser.ts): named in the deployed CSP's connect-src, for
+  // the page and for the fees worker (functions/_middleware.ts APP_CSP and WORKER_CSP), because the RPC rate-limits
+  // Cloudflare's edge and the site's own routes could not read it for the page. Reads only (tests/read.test.mjs pins
+  // the one fetch and the methods it may carry).
   const allowedHosts = new Set([
     'viem.sh',
     'wagmi.sh',
@@ -171,6 +180,7 @@ test('no connector SDK, relay or public RPC endpoint reached either build', () =
     'json-schema.org',
     'cdn.dexscreener.com',
     'api.dexscreener.com',
+    'rpc.mainnet.chain.robinhood.com',
     // The reviewed pool catalogue records where its labels were inspected
     // (src/config/selectedPoolCatalogue.ts, sourceUrl): a citation kept as
     // data, never rendered as a link and never fetched (tests/read.test.mjs
@@ -187,6 +197,9 @@ test('no connector SDK, relay or public RPC endpoint reached either build', () =
   const csp = readFileSync(join(APP, 'functions', '_middleware.ts'), 'utf8');
   assert.ok(csp.includes("img-src 'self' data: https://cdn.dexscreener.com"), 'the CSP names the artwork CDN');
   assert.ok(csp.includes("connect-src 'self' https://api.dexscreener.com"), 'the CSP names the artwork metadata endpoint');
+  // 2026-09-25: and the chain's RPC, for the page and for the fees worker, which loads nothing and reaches nothing else.
+  assert.ok(csp.includes(`"connect-src 'self' https://api.dexscreener.com https://rpc.mainnet.chain.robinhood.com",`), 'the page\u2019s CSP names the chain\u2019s RPC');
+  assert.ok(csp.includes(`export const WORKER_CSP = "default-src 'none'; connect-src https://rpc.mainnet.chain.robinhood.com"`), 'the fees worker\u2019s own CSP names only the chain\u2019s RPC');
   assert.doesNotMatch(csp, /app\.uniswap\.org/, 'the catalogue citation is never a destination');
   assert.doesNotMatch(csp, /gateway\.uniswap\.org/, 'the swap provenance label is never a destination');
   for (const [label, dir] of [
@@ -302,6 +315,68 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // financial ceiling moves to 165 kB and the all-lazy one to 188 kB, about
   // 1.4 kB and 1.6 kB over the larger build; the 90 kB session/read ceiling is
   // unchanged.
+  // 2026-09-24, the three features joined up (branch r3/three, on e2f8553 with
+  // rugged's PR #212, which had left 120 B of financial headroom): the
+  // automation page reads each listed position's feature (src/lib/automationState.ts,
+  // shared with Positions' rows and a position's page) so a position already in
+  // a sequence says so and is not set up again, and the page shows the new
+  // sequence on Positions at once. Measured on Windows, gzip level 9, after the
+  // review's fixes (a position's page shares the wallet's list with the
+  // automation page, and Rollup now puts that list, the picker's test and the
+  // state client in one shared chunk): dist financial 164,754 B, all lazy
+  // 181,289 B; .wallet-test-dist financial 165,977 B, all lazy 182,649 B. The
+  // financial ceiling moves by the minimum, to 166.1 kB (123 B over the larger
+  // build; the branch's first measurement, 166,393 B, had asked for 166.5 kB);
+  // the all-lazy and 90 kB session/read ceilings are unchanged.
+  // 2026-09-25: the page reads the chain itself (the public RPC answers 429 to
+  // every call from Cloudflare's edge, so the site's routes failed and Positions
+  // showed nothing): the wallet's positions (the route's scan,
+  // functions/_lib/walletPositions.ts), a position's state and the fees
+  // history's logs (the relay's reads, functions/_lib/fees.ts), with the RPC
+  // runtime, Keccak and the ABI code under them (owned.ts,
+  // src/lib/chain/browser.ts). That chain code is one chunk of its own
+  // (src/lib/chain/chainCode.ts), loaded by dynamic import on a page's first
+  // read of the chain (Positions, a position's page, the automation page's
+  // picker), so neither the entry every page loads nor the financial screens'
+  // closure carries it: it is measured as its own family, with its own
+  // ceiling, like the fees worker. Measured on Windows, gzip level 9, against
+  // r3/integrate e2f8553: dist entry 264,120 -> 264,216 B, financial 163,690
+  // -> 163,660 B, all lazy 179,305 -> 179,299 B; .wallet-test-dist financial
+  // 164,880 -> 164,865 B, all lazy 180,639 -> 180,648 B; the chain code
+  // 12,715 B (new, 13,500 B ceiling); the fees worker, which now reads its logs
+  // from the chain with the relay's code and its own paced lane, 7,169 ->
+  // 14,162 B (16,000 B ceiling, unchanged). The financial, all-lazy and
+  // session/read ceilings are unchanged. (An earlier version of this branch
+  // shipped the scan in the financial closure and raised that ceiling to
+  // 168 kB; the review moved the chain code out instead, and the ceiling is
+  // back at 165 kB.)
+  // 2026-09-25, r3/three and r3/chain merged (the two entries above were
+  // measured on their own branches; these numbers supersede their ceilings):
+  // the three features' state client and picker with the page's own chain
+  // reads, on one tree (r3/integrate 248090d + r3/chain 036ba3c). Measured on
+  // Windows, gzip level 9: dist financial 164,497 B, all lazy 181,069 B, fees
+  // worker 14,162 B, chain code 12,715 B; .wallet-test-dist financial
+  // 165,682 B, all lazy 182,386 B, fees worker 14,162 B, chain code 12,715 B.
+  // The financial ceiling is set at the minimum the larger build needs,
+  // 165.7 kB (18 B over it): above r3/chain's 165 kB, which three's automation
+  // client and picker outgrow, and below r3/three's 166.1 kB. The all-lazy,
+  // fees worker, chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-25, later (r3/integrate after the merge): the automation state is
+  // read by the page itself through the chain code (the route's scanAutomation
+  // joins the chunk), a later read of a wallet reads only the newest logs, and
+  // a position's replay probes its pool first. Measured on Windows, gzip level
+  // 9, both builds alike: chain code 13,618 B (12,715 B at the merge), fees
+  // worker 14,863 B (14,162 B); dist financial 164,347 B and .wallet-test-dist
+  // 165,547 B (the automation client no longer carries a fetch of its own),
+  // all lazy 180,903 B and 182,232 B. The chain code ceiling moves by the
+  // minimum, to 13.7 kB (82 B over both builds); every other ceiling is
+  // unchanged.
+  // 2026-09-25, later still: the probe in slices and a busy pool's epochs
+  // asked in capped parts (functions/_lib/fees.ts, which the chain code and the
+  // fees worker both carry). Measured the same way, both builds alike: chain
+  // code 13,710 B, fees worker 15,029 B; dist financial 164,355 B and
+  // .wallet-test-dist 165,549 B. The chain code ceiling moves by the minimum
+  // again, to 13.8 kB (90 B over both builds).
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -342,8 +417,13 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
       assert.ok(!initial.has(file) && !allLazy.has(file), 'the worker is loaded by new Worker(), never imported');
       assert.ok(moduleTree(dir, file).program.body.every((node) => !['ImportDeclaration', 'ExportNamedDeclaration', 'ExportAllDeclaration', 'ExportDefaultDeclaration'].includes(node.type)), 'a classic worker: one file');
     }
-    assert.deepEqual([...new Set([...initial, ...allLazy, ...worker])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 165_000], ['all lazy', allLazy, 188_000], ['fees worker', worker, 16_000]]) {
+    // 2026-09-25: the chain code the page runs (see above): one chunk, reached only by dynamic import, never in the entry.
+    const chainRoots = js.filter((file) => /^chainCode-/.test(file));
+    assert.equal(chainRoots.length, 1, `one chain code chunk: ${chainRoots.join(', ')}`);
+    const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
+    for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
+    assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 165_700], ['all lazy', allLazy, 188_000], ['fees worker', worker, 16_000], ['chain code', chain, 13_800]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

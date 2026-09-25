@@ -77,10 +77,37 @@ export const MAX_DAYS_PER_REQUEST = 7
 export const MAX_HEADERS_PER_REQUEST = 50
 /** Most ids one `/state` request asks for. */
 export const MAX_STATE_IDS = 8
-/** Decoded answer bytes one history may download: a position page, or the Positions list's aggregate. */
-export const BUDGET_BYTES = { page: 24 * 1024 * 1024, list: 6 * 1024 * 1024 } as const
-/** Relay requests one history keeps in flight. */
-export const CLIENT_CONCURRENCY = 2
+/**
+ * Decoded answer bytes one history may download: a position page, or the Positions list's aggregate (which the list no
+ * longer shows: 2026-09-25, no replay runs for the list). The page's was 24 MB; since 2026-09-25 every byte of it is
+ * read by the visitor's own browser under the public RPC's per-address limit (one 670 kB reply can draw a refusal, and a
+ * refusal stops the page's own reads too), so a history bigger than about 2 MB is shown as its unclaimed figure only.
+ * The owner's USDG/UFG position needs 5 kB; the recorded cases 3136705 and 2310187, 0.6 and 1.2 MB, still verify.
+ * The list's (6 MB before) stays below the page's, which is how the worker tells a page's run and puts it first.
+ */
+export const BUDGET_BYTES = { page: 2 * 1024 * 1024, list: 1024 * 1024 } as const
+/**
+ * The most blocks the probe covers, the relay's own (functions/_lib/fees.ts PROBE_SPAN, compared in
+ * tests/fees-topics.test.mjs): the pool's last hour of logs, the page's cheap bound on a history before it
+ * reads any of it (pipeline.ts step 3).
+ */
+export const PROBE_SPAN = 36_000
+/**
+ * How long one history may take in the replay worker, the same way (2026-09-25). The worker reads the chain itself,
+ * paced below the RPC's per-address limit (lib/chain/browser.ts chainLane), so a busy pool's history takes minutes to
+ * reach the byte budget (PONS/USDG: 27 MB decoded in 345 s, measured that day, and never verified): past this time the
+ * run stops as it does at its byte budget, and the card keeps its unclaimed figure instead of loading for minutes.
+ * The page's was 60 s; 20 s since 2026-09-25, with the probe before the pool's history (the owner's USDG/UFG position
+ * verifies in about 7 s from Brazil through the paced lane).
+ */
+export const BUDGET_MS = { page: 20_000, list: 10_000 } as const
+/**
+ * Relay requests one history keeps in flight for its pool epochs and headers.
+ * 1 since 2026-09-25 (was 2): the replay worker's reads share one paced lane
+ * to the RPC (lib/chain/browser.ts chainLane), so a second request only waits
+ * in it, and was asked before the budget could see the first one's bytes.
+ */
+export const CLIENT_CONCURRENCY = 1
 /** How often a visible page re-reads `/state`. */
 export const STATE_REFRESH_MS = 60_000
 /** A relay that lags the state's block is asked once more after this wait. */

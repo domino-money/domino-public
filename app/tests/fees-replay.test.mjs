@@ -14,12 +14,15 @@ import { test } from 'node:test';
 import { CASES, fixtureRelay, loadCase, stateOfCase } from './support/fees/relay-fixture.mjs';
 
 const require = createRequire(import.meta.url);
-const { runPipeline } = require('../.test-build/app/src/lib/fees/pipeline.js');
+const { runPipeline, PROBE_WINDOWS, PROBE_SLICES } = require('../.test-build/app/src/lib/fees/pipeline.js');
 const series = require('../.test-build/app/src/lib/fees/series.js');
 const { FeeReplay, Timeline, sqrtAtTick } = require('../.test-build/app/src/lib/fees/replay.js');
 
 const BIG = 64 * 1024 * 1024;
 const DAY = 864_000;
+const EPOCH = 3_600_000;
+// 2026-09-25: the relay's probe span, beside the page's (compared in tests/fees-topics.test.mjs).
+const fees = require('../.test-build/app/functions/_lib/fees.js');
 const HOUR = 36_000;
 const quiet = { sleep: async () => {} };
 
@@ -151,13 +154,61 @@ test('a history over MAX_SWAP_DAYS stops before any swap is asked (too_much_hist
   const relay = fixtureRelay(fixture);
   const result = await runPipeline({ logs: relay.logs, ...quiet }, { ...run, state: { ...run.state, block: run.state.block + 31 * DAY } });
   assert.deepEqual({ ok: result.ok, reason: result.reason, checkpoint: result.checkpoint }, { ok: false, reason: 'too_much_history', checkpoint: null });
-  assert.deepEqual(relay.requests.map((r) => r.kind), ['transfer']);
+  // Changed on purpose (2026-09-25): the mint is looked for in the last epoch, then as far back as a history that can still
+  // be replayed; found in neither, the mint is older than that, and nothing else is asked.
+  const top = run.state.block + 31 * DAY;
+  const lastDay = Math.floor(top / DAY);
+  assert.deepEqual(relay.requests.map((r) => [r.kind, r.since]), [['transfer', top - EPOCH + 1], ['transfer', (lastDay - 29) * DAY]]);
+});
+
+// 2026-09-25: the replay's cheap bound. Before any of the pool's history, one probe of its last PROBE_SPAN blocks: each
+// kind of log at its rate there (less PROBE_SLACK logs), over the pool's life for its liquidity history and over the
+// position's for its swaps. A history that projects past the budget stops there, as PONS/USDG's must (over 60 MB); a
+// quiet pool, or one with a few logs in that hour, goes on and verifies.
+test('the probe stops a history its budget cannot hold before any of it is read, and lets a quiet one verify', async () => {
+  const PAGE = 2 * 1024 * 1024;
+  // 3165100: 66 swaps in its pool's last six minutes (908 in the hour), 10.9 MB of history in all.
+  const busy = await replayed('3165100', {}, { budgetBytes: PAGE });
+  assert.deepEqual({ ok: busy.result.ok, reason: busy.result.reason, checkpoint: busy.result.checkpoint }, { ok: false, reason: 'too_much_history', checkpoint: null });
+  assert.deepEqual(busy.relay.requests.map((r) => r.kind), ['transfer', 'initialize', 'probe'], 'nothing of the pool’s history is read');
+  const probe = busy.relay.requests[2];
+  assert.equal(probe.to, busy.run.state.block);
+  assert.equal(probe.to - probe.from + 1, PROBE_SLICES[0], 'its last six minutes: a small reply, and enough');
+  assert.equal(PROBE_SLICES.reduce((a, b) => a + b), fees.PROBE_SPAN, 'the slices make the last hour');
+  // 3136705 and 2310187 (0.6 and 1.2 MB in all, nine logs each in the sample) and the owner's 3135288 (none): each verifies.
+  for (const id of ['3136705', '3135288', '2310187']) {
+    const quietOne = await replayed(id, {}, { budgetBytes: PAGE });
+    assert.equal(quietOne.result.ok, true, `${id}: ${quietOne.result.reason}`);
+    // Its last hour in slices, then a few minutes in each epoch it lived through, newest first, all before its history.
+    const probes = quietOne.relay.requests.filter((r) => r.kind === 'probe');
+    const pool = loadCase(id).initialize[0][0];
+    const lived = Math.floor(quietOne.run.state.block / EPOCH) - Math.floor(pool / EPOCH) + 1;
+    assert.ok(probes.length >= PROBE_SLICES.length && probes.length <= PROBE_SLICES.length + Math.min(PROBE_WINDOWS, lived), `${id}: ${probes.length} samples`);
+    assert.ok(probes.every((r) => r.to - r.from + 1 <= fees.PROBE_SPAN && r.from >= pool), id);
+    assert.ok(probes.slice(1).every((r, i) => r.to < probes[i].from), `${id}: newest first`);
+    const firstEpoch = quietOne.relay.requests.findIndex((r) => r.kind === 'pool');
+    assert.ok(quietOne.relay.requests.slice(firstEpoch).every((r) => r.kind !== 'probe'), `${id}: every sample before the history`);
+  }
+  // A pool with no liquidity history in its samples (the owner's 3135288's) has its epochs asked whole, one reply each;
+  // one with any (3136705's) has them asked in capped parts: liquidity comes in bursts that samples do not see.
+  const quietPool = await replayed('3135288', {}, { budgetBytes: PAGE });
+  assert.ok(quietPool.relay.requests.filter((r) => r.kind === 'pool').every((r) => r.parts === undefined), 'a quiet pool’s epochs whole');
+  const livelyPool = await replayed('3136705', {}, { budgetBytes: PAGE });
+  const epochs = livelyPool.relay.requests.filter((r) => r.kind === 'pool');
+  assert.ok(epochs.length > 0 && epochs.every((r) => r.parts === true), 'the other’s in capped parts');
+  assert.equal(livelyPool.result.ok, true, livelyPool.result.reason);
+  // A swapBefore never looks further back than the pool's Initialize (no longer a scan of the whole chain).
+  const owner = await replayed('3135288', {}, { budgetBytes: PAGE });
+  const before = owner.relay.requests.find((r) => r.kind === 'swapBefore');
+  assert.equal(before.since, loadCase('3135288').initialize[0][0]);
 });
 
 test('the budget stops a run with its checkpoint, and a larger budget resumes it to the same history', async () => {
   const straight = (await replayed('3165100')).result;
   const fixture = loadCase('3165100');
-  const first = fixtureRelay(fixture, { maxDays: 1 });
+  // 2026-09-25: a probe that saw a quiet hour lets the run start (3165100's own would stop it at once, above).
+  const quietProbe = (request) => ({ ok: true, value: { v: 1, kind: 'probe', head: fixture.state.block + 2, units: [{ unit: null, from: request.from, to: request.to, final: false, logs: [] }], next: null }, bytes: 100 });
+  const first = fixtureRelay(fixture, { maxDays: 1, script: { probe: Array.from({ length: 10 }, () => quietProbe) } });
   const stopped = await runPipeline({ logs: first.logs, ...quiet }, runOf(fixture, { budgetBytes: 3 * 1024 * 1024 }));
   assert.equal(stopped.ok, false);
   assert.equal(stopped.reason, 'too_much_history');
@@ -168,6 +219,46 @@ test('the budget stops a run with its checkpoint, and a larger budget resumes it
   assert.deepEqual(resumed.history, straight.history);
   assert.deepEqual(resumed.prices, straight.prices);
   assert.ok(!second.requests.some((r) => r.kind === 'transfer' || r.kind === 'initialize'), 'a resumed run does not start over');
+});
+
+// 2026-09-25: the budget bounds every step. A busy pool's liquidity history (PONS/USDG's is over 60 MB decoded) was read
+// to its end before the budget was ever looked at, and each visitor now reads it from the RPC under their own address's
+// limit (src/lib/chain/browser.ts chainLane).
+test('the budget bounds the pool’s epochs too: a busy pool stops the run before any swap is asked, with nothing to keep', async () => {
+  const fixture = loadCase('3136705');
+  const relay = fixtureRelay(fixture);
+  // Each epoch answered at 2 MB, as a busy pool's are.
+  const heavy = async (request) => {
+    const answer = await relay.logs(request);
+    return request.kind === 'pool' && answer.ok ? { ...answer, bytes: 2 * 1024 * 1024 } : answer;
+  };
+  const result = await runPipeline({ logs: heavy, ...quiet }, runOf(fixture, { budgetBytes: 3 * 1024 * 1024 }));
+  assert.deepEqual({ ok: result.ok, reason: result.reason, checkpoint: result.checkpoint }, { ok: false, reason: 'too_much_history', checkpoint: null });
+  assert.equal(relay.requests.filter((r) => r.kind === 'pool').length, 2, 'no epoch is asked once the budget is spent');
+  assert.ok(!relay.requests.some((r) => r.kind === 'swaps' || r.kind === 'headers' || r.kind === 'swapBefore'), 'nor anything after the epochs');
+  // With room for them, the same epochs verify.
+  const roomy = fixtureRelay(fixture);
+  const whole = await runPipeline({ logs: async (request) => { const a = await roomy.logs(request); return request.kind === 'pool' && a.ok ? { ...a, bytes: 2 * 1024 * 1024 } : a; }, ...quiet }, runOf(fixture, { budgetBytes: 24 * 1024 * 1024 }));
+  assert.equal(whole.ok, true, whole.reason);
+});
+
+// 2026-09-25: the replay worker gives each run a time budget as well (constants.ts BUDGET_MS): paced below the RPC's
+// limit, a busy history would otherwise keep a card loading for minutes before its byte budget stopped it.
+test('a run whose time is spent stops as at its byte budget: before the swap days with nothing kept, among them with its place kept', async () => {
+  const fixture = loadCase('2310187');
+  const early = fixtureRelay(fixture);
+  const before = await runPipeline({ logs: early.logs, ...quiet, timeUp: () => early.requests.some((r) => r.kind === 'pool') }, runOf(fixture));
+  assert.deepEqual({ ok: before.ok, reason: before.reason, checkpoint: before.checkpoint }, { ok: false, reason: 'too_much_history', checkpoint: null });
+  assert.equal(early.requests.filter((r) => r.kind === 'pool').length, 1);
+
+  const late = fixtureRelay(fixture, { maxDays: 1 });
+  const stopped = await runPipeline({ logs: late.logs, ...quiet, timeUp: () => late.requests.filter((r) => r.kind === 'swaps').length >= 3 }, runOf(fixture));
+  assert.equal(stopped.reason, 'too_much_history');
+  assert.notEqual(stopped.checkpoint, null, 'the place is kept');
+  assert.equal(late.requests.filter((r) => r.kind === 'swaps').length, 3);
+  const resumed = await runPipeline({ logs: fixtureRelay(fixture, { maxDays: 1 }).logs, ...quiet }, runOf(fixture, { checkpoint: stopped.checkpoint }));
+  assert.equal(resumed.ok, true, resumed.reason);
+  assert.deepEqual(resumed.history.earned.map(String), fixture.expect.earned);
 });
 
 test('a verified checkpoint at the same block needs no log at all to verify again', async () => {

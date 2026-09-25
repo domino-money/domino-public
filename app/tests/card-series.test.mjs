@@ -544,8 +544,11 @@ function cardModule() {
     ...markets, ...require('../.test-build/app/src/lib/read/cardSeries.js'), ...require('../.test-build/app/src/lib/read/decimal.js'), ...require('../.test-build/app/src/lib/read/ratioSeries.js'),
     // 2026-09-24 (V2 P2, R-4): the card's price row shows the window's change with percentChange (lib/format/change.ts).
     ...require('../.test-build/app/src/lib/format/change.js'),
+    // 2026-09-25 (r3 charts): the caption's hour is lib/format/time.ts shortTime, as the tooltip's.
+    ...require('../.test-build/app/src/lib/format/time.js'),
     unreadToken: (address) => ({ address }), poolHref: (id) => `#/pool/${id}`,
-    PriceLineSvg: (props) => React.createElement('svg', { 'data-price-line': '', title: props.title }),
+    // 2026-09-25 (r3 charts): the stub also shows the tone the card gives its line, and whether it draws the level.
+    PriceLineSvg: (props) => React.createElement('svg', { 'data-price-line': '', 'data-tone': props.tone, 'data-level': props.level ? '' : undefined, title: props.title }),
     VolumeBarsSvg: (props) => React.createElement('svg', { 'data-volume-bars': '', title: props.title }),
     MetricCell: ({ metric }) => React.createElement('span', { 'data-metric': metric.state }, `$${metric.value}`),
     FigureDash: ({ reason }) => React.createElement('span', { 'data-figure': 'none', title: reason }, '—'),
@@ -577,4 +580,25 @@ test('each series draws something in the plot: a line with its caption, the 24h 
   assert.match(rowless, /data-chart-unavailable="no-figures"[^>]*><span data-figure="none" title="24h volume unavailable">—<\/span>/)
   assert.doesNotMatch(rowless, /data-metric/, 'no figure before any answer')
   for (const markup of [line, figure, waiting, rowless]) assert.doesNotMatch(markup, /Reading|Retry|unavailable<\/|sample|practice/i)
+})
+
+// Added 2026-09-25 (r3 charts): the line's colour and the change badge tell the same story.
+test('the line takes the direction of the change the card shows at rest, and no direction without one', () => {
+  const { renderToStaticMarkup } = require('react-dom/server')
+  const MarketCard = cardModule()
+  const draw = (candles) => renderToStaticMarkup(MarketCard({ listing: { poolId: POOL, market: market() }, index: 0, now: NOW,
+    series: pickSeries({ market: market(), settled: true, answer: chain(history({ candles })), expecting: false, now: NOW }) }))
+  const down = draw([ratioCandle(24, '2701.25'), ratioCandle(2, '2695'), ratioCandle(1, '2689.5', false)])
+  assert.match(down, /data-tone="down"/)
+  assert.match(down, /data-level=""/, 'the dashed level of the first close, beside the change it measures')
+  assert.match(down, /class="dm-delta dm-mkt-card-delta" data-sign="-1"/)
+  const up = draw([ratioCandle(24, '2689.5'), ratioCandle(2, '2695'), ratioCandle(1, '2701.25', false)])
+  assert.match(up, /data-tone="up"/)
+  assert.match(up, /class="dm-delta dm-mkt-card-delta" data-sign="1"/)
+  const level = draw([ratioCandle(24, '2695'), ratioCandle(1, '2695', false)])
+  assert.match(level, /data-tone="flat"/)
+  // The first hour does not open the window: no change is shown, and the line keeps the chart accent.
+  const partial = draw([ratioCandle(3, '2689.5'), ratioCandle(2, '2701.25'), ratioCandle(1, '2695', false)])
+  assert.doesNotMatch(partial, /data-tone=|dm-mkt-card-delta/)
+  assert.doesNotMatch(partial, /data-level/, 'no level for a change the card does not show')
 })

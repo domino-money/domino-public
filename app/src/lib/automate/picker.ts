@@ -1,4 +1,6 @@
 import type { WalletPosition, WalletPositionsState, WalletToken } from '../walletPositions'
+import { DYNAMIC_FEE_PIPS } from '../read/screens/fee'
+import { NATIVE_CURRENCY } from '../read/screens/identity'
 
 /**
  * The automation page's position picker, as data (2026-09-24, the owner's
@@ -17,12 +19,21 @@ export type PickerList =
   | { kind: 'empty' }
   | { kind: 'ready'; positions: readonly WalletPosition[] }
 
-/** Only open positions can be automated: a closed one has no liquidity to reinvest into. Their order is the read's. */
+/**
+ * Whether a position can be automated: open (a closed one has no liquidity to reinvest into), in a pool with no
+ * hooks and a fixed fee (a sequence refuses any other, finance/sequence.ts root()). Positions' rows offer Automate
+ * on the same test (2026-09-24, the three features joined up), so no row leads to a position the picker leaves out.
+ */
+export function automatable(position: Pick<WalletPosition, 'status' | 'tokenId' | 'hooks' | 'fee'>): boolean {
+  return position.status === 'open' && /^[1-9]\d{0,77}$/.test(position.tokenId) && position.hooks.toLowerCase() === NATIVE_CURRENCY && position.fee !== DYNAMIC_FEE_PIPS
+}
+
+/** The positions that can be automated (automatable), in the read's order. */
 export function pickerList(state: WalletPositionsState): PickerList {
   if (state.phase === 'loading') return { kind: 'loading' }
   if (state.phase === 'failed') return { kind: 'failed' }
   if (state.phase === 'idle') return { kind: 'empty' }
-  const open = state.positions.filter((position) => position.status === 'open' && /^[1-9]\d{0,77}$/.test(position.tokenId))
+  const open = state.positions.filter(automatable)
   return open.length ? { kind: 'ready', positions: open } : { kind: 'empty' }
 }
 

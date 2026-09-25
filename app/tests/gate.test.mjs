@@ -10,7 +10,7 @@ import { beforeEach, test } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const gate = require('../.test-build/app/functions/_lib/gate.js');
-const { onRequest, APP_CSP, LOGIN_PATH, LOGOUT_PATH, PERMISSIONS_POLICY } = require('../.test-build/app/functions/_middleware.js');
+const { onRequest, APP_CSP, LOGIN_PATH, LOGOUT_PATH, PERMISSIONS_POLICY, WORKER_CSP } = require('../.test-build/app/functions/_middleware.js');
 
 const PASSWORD = 'correct-horse-battery-staple-42';
 const KEY = 'q3VfK9mJx7Rt2WbN5cYp8LhD4sGa6ZeU1oTiQwErTyA';
@@ -253,6 +253,23 @@ test('hashed assets stay cacheable, but only in the browser that authenticated',
   });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('Cache-Control'), 'private, max-age=31536000, immutable');
+});
+
+// 2026-09-25: the page and the fees replay worker read Robinhood Chain's public RPC themselves (it rate-limits
+// Cloudflare's edge). The page's CSP names it; a dedicated worker keeps the CSP its own file is served with, so the
+// worker's file carries one that loads nothing and reaches only the RPC. No other script gets a CSP of its own.
+test('the page and the fees worker may reach the chain’s RPC, and nothing else is opened', async () => {
+  const connect = APP_CSP.split('; ').find((part) => part.startsWith('connect-src '));
+  assert.equal(connect, "connect-src 'self' https://api.dexscreener.com https://rpc.mainnet.chain.robinhood.com");
+  assert.equal(WORKER_CSP, "default-src 'none'; connect-src https://rpc.mainnet.chain.robinhood.com");
+  const cookie = await signIn();
+  const asset = (path) => onRequest({ request: fetchLike(path, { Cookie: cookie }), env: ENV, next: async () => new Response('x', { headers: { 'Content-Type': 'text/javascript' } }) });
+  const worker = await asset('/assets/feesReplay.worker-CdlBbZHL.js');
+  assert.equal(worker.headers.get('Content-Security-Policy'), WORKER_CSP);
+  assert.equal(worker.headers.get('Cache-Control'), 'private, max-age=31536000, immutable');
+  for (const path of ['/assets/index-abc123.js', '/assets/feesReplay.worker.js', '/assets/x/feesReplay.worker-abc.js', '/assets/feesReplay.worker-abc.js.map']) {
+    assert.equal((await asset(path)).headers.get('Content-Security-Policy'), null, path);
+  }
 });
 
 test('the cookie is accepted among other cookies', async () => {

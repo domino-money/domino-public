@@ -24,6 +24,8 @@ export const positionManagerAbi = parseAbi([
   'function getPoolAndPositionInfo(uint256 tokenId) view returns (PoolKey poolKey, uint256 info)',
   'function getPositionLiquidity(uint256 tokenId) view returns (uint128 liquidity)',
   'function ownerOf(uint256 id) view returns (address owner)',
+  // 2026-09-25: a position's feature, read by the page (functions/_lib/automation.ts): nothing is subscribed here.
+  'function subscriber(uint256 id) view returns (address)',
 ]);
 export const stateViewAbi = parseAbi([
   'function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)',

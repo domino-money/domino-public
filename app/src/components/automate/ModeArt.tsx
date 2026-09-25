@@ -291,3 +291,20 @@ export function ModeArt({ mode, size, play = 'none', className }: { mode: ModeAr
     </svg>
   )
 }
+
+/**
+ * A plain position as a thumbnail beside the two modes' (2026-09-24, the three features side by side): one range with
+ * its tile standing on it, nothing travelling. Still, like every thumbnail; decoration only.
+ */
+export function PlainArt({ className }: { className?: string }) {
+  return (
+    <svg className={cx('dm-art dm-mode-art', className)} data-mode="plain" data-size="thumb" width={56} height={32} viewBox="0 0 56 32" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false">
+      <rect className="plain-band" x={6} y={24.5} width={44} height={7} rx={3.5} />
+      <g transform="translate(21 0)">
+        <g className="tile-solid">
+          <ArtTile w={14} layout={[2, 1]} />
+        </g>
+      </g>
+    </svg>
+  )
+}

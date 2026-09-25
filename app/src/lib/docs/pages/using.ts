@@ -79,7 +79,7 @@ export const NEW_POSITION: DocPage = {
       blocks: [
         p(b('Create position'), ' is the last step. It needs your wallet connected on Robinhood Chain, and no sign-in.'),
         p('Your wallet asks you to sign, in order: an exact approval for each token whose allowance is short, the deposit of both tokens (or of the one your wallet holds, then the swap of part of it inside the pool), and the position itself. The deployment is checked on chain before each step, and each transaction is read back before the next one is asked for. With one token, the pool is checked first: if it cannot swap part of your deposit, Create position says so before anything is deposited.'),
-        p('When the position exists, it opens on Positions. If a deposit went through and the position did not (a declined signature, a closed tab), pressing Create position again creates it from that deposit, never depositing twice; the deposit can also be refunded.'),
+        p('When the position exists, Review offers to open it on Positions or to set up its automation. If a deposit went through and the position did not (a declined signature, a closed tab), pressing Create position again creates it from that deposit, never depositing twice; the deposit can also be refunded.'),
         note(['Positions are created in hookless pools that have a fixed fee. A direct position carries no Domino percentage fee, except the assisted-swap fee on the part swapped when your wallet holds one token; network gas still applies.']),
       ],
     },
@@ -97,6 +97,7 @@ export const POSITIONS: DocPage = {
       blocks: [
         p('Connect your wallet on Robinhood Chain and Positions lists the positions it created with Domino, read from the chain for your address: there is no ID to type, and nothing is kept in your browser. ', b('Open'), ' positions still hold liquidity; ', b('Closed'), ' ones hold none. Position NFTs made elsewhere are not listed.'),
         p('Each row shows the pool and its fee tier, whether the pool price is inside the range, the principal and the fees not yet collected. Select a row to open the position’s own page.'),
+        p('Under an open row: its feature, Plain position, Auto-compound or Domino-compound, and whether its sequence is paused. ', b('Automate'), ' on a plain one opens the automation page with it chosen.'),
         p('Deposits you made that never became a position are listed under them, each with its refund.'),
       ],
     },

@@ -33,6 +33,7 @@ export interface WorkerLike {
 
 export interface StoreDeps {
   spawn: () => WorkerLike
+  /** The /state read of up to eight ids (client.ts chainState: the relay's read, from the chain since 2026-09-25). */
   postState: (tokenIds: readonly string[]) => Promise<RelayAnswer<StateResponse>>
   /** Calls `run` once `ms` have passed and the page is visible; returns a cancel. */
   later: (ms: number, run: () => void) => () => void
@@ -45,12 +46,20 @@ export interface FeesStore {
   subscribeHistory(ids: readonly string[], scope: FeesScope, listener: () => void): () => void
   /** Shows the /state of `ids` (no history) to `listener` until the returned function is called. */
   subscribeStates(ids: readonly string[], listener: () => void): () => void
+  /** Tells `listener` of every change to the views of `ids` without asking anything for them (the list's aggregate, useFeeHistories). */
+  watch(ids: readonly string[], listener: () => void): () => void
   /** One id's view (idle when nothing shows it). */
   view(id: string): FeeHistoryView
   /** Several ids' views, the same Map object while none of them changed. */
   views(ids: readonly string[]): ReadonlyMap<string, FeeHistoryView>
   /** Several ids' states: null while none is known; the same Map object while none changed. */
   states(ids: readonly string[]): ReadonlyMap<string, PositionState | null> | null
+  /**
+   * Reads the /state of `ids` again at once, and once more AFTER_ACTION_MS later (a read at head − 2 right after the
+   * receipt may not include it yet): after the owner's Collect or Close changed them (2026-09-25, audit of 754014c: the
+   * fees card kept its unclaimed figure for up to a minute, STATE_REFRESH_MS, while the page above it showed the new one).
+   */
+  refresh(ids: readonly string[]): void
 }
 
 const IDLE: FeeHistoryView = { phase: 'idle' }
@@ -59,6 +68,8 @@ const U256 = (1n << 256n) - 1n
 export const RELEASE_MS = 3_000
 /** Runs that failed to reach the relay, per id and visit, before the store stops asking. */
 const RUN_ATTEMPTS = 3
+/** After an action, the second /state read: past the few blocks head − 2 may still lack (as the position page reads again). */
+export const AFTER_ACTION_MS = 11_000
 
 interface Run {
   state: PositionState
@@ -85,6 +96,12 @@ interface Entry {
   settled: FeesReason | null
   settledBudget: number
   failures: number
+  /**
+   * The state block of the last run that could not reach the chain: the next run waits for a newer block (the next
+   * /state read, a minute later), never starting again at once (2026-09-25: the RPC limits each visitor's address, and
+   * a run asked again straight after a refusal is refused too, and the page's own reads with it).
+   */
+  failedAt: number | null
   release: (() => void) | null
 }
 
@@ -125,7 +142,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const entry = (id: string): Entry => {
     let found = entries.get(id)
     if (!found) {
-      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, state: null, growth: null, stateReason: null, answered: false, view: IDLE, running: null, checkpoint: null, settled: null, settledBudget: 0, failures: 0, release: null }
+      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, state: null, growth: null, stateReason: null, answered: false, view: IDLE, running: null, checkpoint: null, settled: null, settledBudget: 0, failures: 0, failedAt: null, release: null }
       entries.set(id, found)
     }
     return found
@@ -186,6 +203,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     if (result.ok) {
       e.checkpoint = result.checkpoint
       e.failures = 0
+      e.failedAt = null
       e.settled = null
       setView(e, { phase: 'verified', state: run.state, history: result.history, prices: result.prices })
       return
@@ -197,6 +215,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     }
     if (result.reason === 'rpc_unavailable' || result.reason === 'worker_failed') {
       e.failures += 1
+      e.failedAt = run.state.block
       // A verified history stays up while the relay has a bad moment; the next state block asks again.
       if (e.view.phase === 'verified') return
     } else {
@@ -216,9 +235,11 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     const view = e.view
     if (view.phase === 'verified' && view.state.block >= state.block) return
     if (e.settled === 'replay_mismatch' || e.settled === 'hooked_pool' || e.settled === 'not_found') return
-    // A budget stop is final for that budget; a larger one (a position page after the list) goes on from its checkpoint.
-    if (e.settled === 'too_much_history' && (budgetOf(e) <= e.settledBudget || !e.checkpoint)) return
+    // A budget stop is final for that budget; a larger one (a position page after the list) goes on from its checkpoint,
+    // or starts over when the stop came before the swap days (2026-09-25: the budget now bounds those steps too).
+    if (e.settled === 'too_much_history' && budgetOf(e) <= e.settledBudget) return
     if (e.failures >= RUN_ATTEMPTS) return
+    if (e.failedAt !== null && state.block <= e.failedAt) return
     const target = theWorker()
     if (!target) {
       if (view.phase !== 'verified') setView(e, { phase: 'unclaimed-only', state, reason: 'worker_failed', prices: null })
@@ -380,8 +401,20 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
         e.stateRefs += step
       })
     },
+    watch(ids, listener) {
+      const own = [...new Set(ids)].map(entry)
+      for (const e of own) e.listeners.add(listener)
+      return () => {
+        for (const e of own) e.listeners.delete(listener)
+      }
+    },
     view(id) {
       return entries.get(id)?.view ?? IDLE
+    },
+    refresh(ids) {
+      const known = (list: readonly string[]) => list.filter((id) => entries.get(id)?.answered)
+      ask(known(ids))
+      deps.timer(AFTER_ACTION_MS, () => ask(known(ids)))
     },
     views(ids) {
       const key = ids.join(',')

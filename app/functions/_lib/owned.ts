@@ -1,7 +1,13 @@
 /**
- * The chain helpers behind the site's own same-origin reads of Robinhood
- * Chain: the wallet's Domino positions (functions/_lib/walletPositions.ts,
- * POST /api/owned/v2/positions) and the fees relay (functions/_lib/fees.ts).
+ * The chain helpers behind the site's own reads of Robinhood Chain: the
+ * wallet's Domino positions (functions/_lib/walletPositions.ts) and the fees
+ * relay (functions/_lib/fees.ts). Since 2026-09-25 the page itself imports
+ * them and asks the public RPC from the browser (src/lib/chain/browser.ts):
+ * the RPC answers 429 to every call from Cloudflare's shared egress, so the
+ * same-origin routes (POST /api/owned/v2/positions, /api/fees/v1/*) failed
+ * in production. The routes stay, tested, and nothing on the page asks them.
+ * Nothing here may name the DOM, a build flag or a Workers-only API at module
+ * level: the same file runs in a Pages Function, a page and a Web Worker.
  *
  * Here: the pins, the hand-written ABI encoding of Multicall3's aggregate3 and
  * its results, Keccak-256, the bounded RPC call (a cap on calls, bytes and
@@ -60,8 +66,13 @@ export const RATE_ATTEMPTS = 4
 export const BACKOFF_MS = 1500
 /** A log range is not split below this many blocks. */
 export const MIN_SPLIT_BLOCKS = 2000
-/** The owner's most recent setup operations that are read. */
-export const RECENT_OPERATIONS = 8
+/**
+ * The owner's most recent setup operations that are read, for the deposits still held in them. Changed on purpose
+ * (2026-09-25, audit of 754014c): it was 8, and a deposit older than the owner's last 8 operations was left out with
+ * nothing to say so, its Refund to wallet gone while the funds stayed in DominoSetupV1. Every operation is read now, up
+ * to this many (two sub-calls each, batched into the Multicall3 reads the scan already makes).
+ */
+export const RECENT_OPERATIONS = 128
 const CALL_TIMEOUT_MS = 10_000
 const DEADLINE_MS = 25_000
 /** How long an answer is kept per owner. */
@@ -83,11 +94,26 @@ export const SELECTOR = {
   recoveryStarted: '20698983',
 } as const
 
+/**
+ * AbortSignal.timeout(ms), or the same signal made by hand where the runtime
+ * has no AbortSignal.timeout (Safari before 16): since 2026-09-25 the page
+ * runs this file too, and there every call would otherwise throw at once and
+ * the list would never be read.
+ */
+export function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms)
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(new DOMException('The call took too long', 'TimeoutError')), ms)
+  return controller.signal
+}
+
 /** What the scan needs from the runtime; tests hand in fakes. */
 export interface OwnedDeps {
   fetch: (input: string, init: RequestInit) => Promise<Response>
   sleep: (ms: number) => Promise<void>
   now: () => number
+  /** True once nobody wants the answer any more (the page left): no further call is made. Optional; a Function has none. */
+  cancelled?: () => boolean
 }
 
 /** Wait and ask again; split the range; stop; or (logs only) the answer's log bytes are used up. */
@@ -332,6 +358,7 @@ async function bodyWithin(response: Response, limit: number): Promise<{ text: st
 }
 
 async function rpc(deps: OwnedDeps, budget: Budget, method: string, params: unknown[]): Promise<unknown> {
+  if (deps.cancelled?.()) throw new ChainError('fatal', 'cancelled')
   budget.calls += 1
   if (budget.calls > MAX_RPC_CALLS) throw new ChainError('fatal', 'rpc_call_cap')
   if (deps.now() - budget.started > DEADLINE_MS) throw new ChainError('fatal', 'deadline')
@@ -347,7 +374,7 @@ async function rpc(deps: OwnedDeps, budget: Budget, method: string, params: unkn
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: budget.calls, method, params }),
-      signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+      signal: timeoutSignal(CALL_TIMEOUT_MS),
     })
   } catch (error) {
     throw slow(error) ?? new ChainError('fatal', 'rpc_unreachable')

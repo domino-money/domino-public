@@ -8,7 +8,7 @@ import { createSetupClient, deploymentFrom, isRevert, walletBalance, type GasBud
 import { errorCode, financeErrorText } from '../../finance/words'
 import { switchToRobinhood } from '../../wallet/port'
 import { CREATE } from '../../lib/create/copy'
-import { publishCreateProgress, type LiveState, type LiveStep } from '../../lib/create/createProgress'
+import { publishCreateProgress, publishCreated, type LiveState, type LiveStep } from '../../lib/create/createProgress'
 import { depositPlan, needsSides, quoteWithin, sizeSwap, swapFeePips, type DepositPlan, type PoolTerms, type Side } from '../../lib/create/depositPlan'
 import { setupDraft, type JourneyState, type SetupDraft } from '../../lib/create/journey'
 import { mintPlanFor } from '../../lib/create/mintPlan'
@@ -49,8 +49,10 @@ import { Button } from '../ui'
  * executes (lib/create/mintPlan.ts). What it does not use comes back with the
  * NFT.
  *
- * When the position exists the page opens it on Positions, read from chain;
- * nothing is kept in the browser: Positions lists it from chain for the
+ * When the position exists, Review offers what comes next in this control's
+ * place (2026-09-24, the three features joined up: components/create/
+ * CreatedNext.tsx): open it on Positions as a plain position, or automate it.
+ * Nothing is kept in the browser: Positions lists it from chain for the
  * connected wallet (2026-09-24). An earlier deposit of this wallet
  * in this pool whose mint did not happen is never funded again: it is shown
  * with its amounts, and the next press creates the position from it, or it
@@ -75,8 +77,6 @@ const MAX_APPROVALS = 4
 const GAS_AFTER_DEPOSIT_UNITS = 6_000_000n
 /** Gas units the approvals and the deposit itself may cost, at the same ceiling: never deposited. */
 const GAS_UP_TO_DEPOSIT_UNITS = 3_000_000n
-/** How long the page waits after the mint before opening Positions, so the read service has seen its block. */
-const SETTLE_MS = 3_000
 /** The furthest the assisted swap may move the pool's square-root price, in basis points: about 10% in price. */
 const SWAP_PRICE_LIMIT_BPS = 500n
 /** Before a one-token deposit, a size passes only if its swap ends this much short of the limit: room for the price to move before the swap is sent. */
@@ -202,11 +202,13 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     running.current = false
     steps.current = []
     publishCreateProgress(null)
+    publishCreated(null)
   }, [wallet])
   useEffect(
     () => () => {
       generation.current++
       publishCreateProgress(null)
+      publishCreated(null)
     },
     [],
   )
@@ -444,13 +446,13 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     return { client, rpc, gas }
   }
 
-  async function finish(tokenId: bigint, gen: number) {
+  /** The position is in the wallet: Review offers what comes next in this control's place. */
+  function finish(tokenId: bigint, gen: number) {
     if (generation.current !== gen) return
     setHeld(null)
     setPhase('done')
-    setNotice({ text: `Position NFT ${tokenId.toString()} is in your wallet. Opening it on Positions…`, code: null })
-    await sleep(SETTLE_MS)
-    if (generation.current === gen) window.location.hash = `#/positions/${tokenId.toString()}`
+    setNotice(null)
+    publishCreated(tokenId.toString())
   }
 
   async function create() {
@@ -471,7 +473,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         // The deposit this page holds, as the chain has it now: minted meanwhile, refunded, or still waiting for its mint.
         const current = await client.inspect(open.id)
         if (current.closed && current.tokenId > 0n) {
-          await finish(current.tokenId, gen)
+          finish(current.tokenId, gen)
           return
         }
         open = current.closed || current.recoveryStarted ? null : { id: open.id, operation: current }
@@ -552,7 +554,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         }
       }
       const tokenId = await mintFrom(client, key, gas, open, gen)
-      await finish(tokenId, gen)
+      finish(tokenId, gen)
     } catch (error) {
       if (generation.current !== gen) return
       stopAt(gen)
@@ -610,7 +612,6 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   } else if (!needs) reason = 'The pool’s price or the range could not be used. Go back to the range and choose it again.'
   else if (onOtherNetwork) reason = 'Switch your wallet to Robinhood Chain to create the position.'
   else if (!connected) reason = 'Connect your wallet to create the position. Each transaction appears in your wallet to sign.'
-  else if (phase === 'done') reason = 'The position is created. Positions opens it in a moment.'
   else if (phase === 'held' && refundFirst) reason = 'A deposit is held for this pool. Refund it to your wallet.'
   else if (phase === 'held') reason = 'A deposit is held for this pool. Press Create position to create the position from it, or refund it.'
   else if (busy) reason = 'Confirm each step in your wallet. The list above marks each one as it is done.'
@@ -631,7 +632,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
           size="xl"
           className="w-full"
           data-create-position={phase}
-          aria-describedby="create-reason"
+          aria-describedby={phase === 'done' ? 'created-title' : 'create-reason'}
           aria-busy={busy || undefined}
           disabled={!ready || !needs || busy || phase === 'done'}
           onClick={() => void create()}
@@ -639,9 +640,12 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
           {busy ? 'Creating position…' : phase === 'done' ? 'Position created' : 'Create position'}
         </Button>
       )}
-      <p id="create-reason" className="dm-flow-reason" data-align="start">
-        {reason}
-      </p>
+      {/* Once the position exists, what comes next is said under the button instead (CreatedNext.tsx). */}
+      {phase !== 'done' && (
+        <p id="create-reason" className="dm-flow-reason" data-align="start">
+          {reason}
+        </p>
+      )}
       {notice && (
         <p role="status" className="dm-flow-reason dm-flow-create-notice" data-align="start" data-create-notice={notice.code ?? 'said'}>
           {notice.text}

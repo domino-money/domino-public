@@ -78,35 +78,7 @@ mode='wrongcode';await assert.rejects(client.send(activation,true),/deployment_c
 await settle(client,activation);assert.equal((await client.inspect(root.vault)).paused,false);check();
 await assert.rejects(client.resume(root.vault,gas),/sequence_activation_unavailable/);check();
 await settle(client,await client.recover(root.vault,'pause',gas));
-// An owner chooses a mode explicitly. Omission preserves it; every change
-// advances policy/state versions and invalidates already reviewed actions.
-const policyOptions={triggerDistanceBps:900,maxOverlapBps:1000,minimumIntervalSeconds:60,maxPositions:1};
-await assert.rejects(client.setPolicy(root.vault,{...policyOptions,automationMode:null},gas),/invalid_sequence_policy/);check();
-await assert.rejects(client.setPolicy(root.vault,{...policyOptions,automationMode:'compound',maxPositions:2},gas),/simple_compound_position_limit/);check();
-await assert.rejects(client.setPolicy(f.oldVault,{...policyOptions,automationMode:'compound'},gas),/position_limit_below_membership/);check();
-const stalePolicy=await client.setPolicy(root.vault,{...policyOptions,automationMode:'domino',maxPositions:4},gas);
-const toSimple=await client.setPolicy(root.vault,{...policyOptions,automationMode:'compound'},gas);
-const simplePolicy=decodeFunctionData({abi:sequenceAbi,data:toSimple.transaction.data}).args[0];
-assert.equal(simplePolicy.serviceFeeBps,200);assert.equal(simplePolicy.version,2n);assert.equal(simplePolicy.paused,true);
-assert(toSimple.summary.some(x=>x.includes('Service fee: 4%')&&x.includes('New Auto-compound policy: 2%')));
-await assert.rejects(client.send(toSimple,false),/review_required/);check();
-await settle(client,toSimple);
-let policyState=await client.inspect(root.vault);assert.equal(policyState.serviceFeeBps,200);assert.equal(policyState.automationMode,'compound');
-const beforeStale=calls.filter(x=>x.method==='eth_sendTransaction').length;
-await assert.rejects(client.send(stalePolicy,true),/sequence_preparation_changed/);
-assert.equal(calls.filter(x=>x.method==='eth_sendTransaction').length,beforeStale);check();
-const preserved=await client.setPolicy(root.vault,policyOptions,gas);
-assert.equal(decodeFunctionData({abi:sequenceAbi,data:preserved.transaction.data}).args[0].serviceFeeBps,200);
-await settle(client,preserved);
-const simpleActivation=await client.resume(root.vault,gas);
-assert(simpleActivation.summary.some(x=>x.startsWith('Auto-compound: 2%')));check();
-const toDomino=await client.setPolicy(root.vault,{...policyOptions,automationMode:'domino',maxPositions:4},gas);
-assert(toDomino.summary.some(x=>x.includes('Service fee: 2%')&&x.includes('New Domino-compound policy: 4%')));
-await settle(client,toDomino);
-await assert.rejects(client.send(simpleActivation,true),/sequence_preparation_changed/);check();
-policyState=await client.inspect(root.vault);assert.equal(policyState.serviceFeeBps,400);assert.equal(policyState.automationMode,'domino');
-const preservedDomino=await client.setPolicy(root.vault,{...policyOptions,maxPositions:4},gas);
-assert.equal(decodeFunctionData({abi:sequenceAbi,data:preservedDomino.transaction.data}).args[0].serviceFeeBps,400);check();
+// No policy change here: the client lost setPolicy and setExecutionLimits with Manage a sequence (2026-09-24).
 mode='wrongreceipt';await assert.rejects(client.receipt(createHash),/receipt_identity_changed/);mode='normal';check();
 mode='reorg';assert.equal((await client.receipt(approvalHash)).state,'reorged');mode='normal';check();
 await assert.rejects(createSequenceClient(wallet,d,()=>now).receipt(createHash),/receipt_not_from_this_review/);check();

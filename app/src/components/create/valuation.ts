@@ -99,6 +99,8 @@ export interface Held {
   total: string | null
   /** The one-token plan's amounts after its swap: estimates, before the pool's price impact. */
   estimate: boolean
+  /** The one-token plan's deposit, what Review says comes "From your wallet": its side and amount; null for any other plan. */
+  wallet: { side: 0 | 1; text: string } | null
 }
 
 const textOf = (raw: bigint, decimals: number | null) => {
@@ -121,16 +123,18 @@ export function heldAmounts(state: JourneyState, balances: PairBalancesState): H
   const plan = planned.plan
   let amounts: readonly [bigint, bigint] = planned.need
   let estimate = false
+  let wallet: Held['wallet'] = null
   if (plan && plan.kind === 'swap') {
     const kept = plan.deposit - plan.swap
     amounts = plan.from === 0 ? [kept, plan.receive] : [plan.receive, kept]
     estimate = true
+    wallet = { side: plan.from, text: textOf(plan.deposit, pool.currencies[plan.from].decimals) }
   }
   const side = (index: 0 | 1): HeldSide => ({
     text: textOf(amounts[index], pool.currencies[index].decimals),
     usd: usdOf(pool, index === 0 ? [amounts[0], 0n] : [0n, amounts[1]]),
   })
-  return { sides: [side(0), side(1)], total: usdOf(pool, amounts), estimate }
+  return { sides: [side(0), side(1)], total: usdOf(pool, amounts), estimate, wallet }
 }
 
 /**

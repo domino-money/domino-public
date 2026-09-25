@@ -7,6 +7,8 @@ const { linearScale, logScale, niceTicks, timeTicks } = require('../.test-build/
 const { linePath, areaPath, areaUnder, curveFor } = require('../.test-build/app/src/lib/chart/paths.js');
 const { nearestIndex, tooltipSide, buckets } = require('../.test-build/app/src/lib/chart/inspect.js');
 const { rangeGeometry } = require('../.test-build/app/src/lib/chart/range.js');
+// Added 2026-09-25 (r3 charts): the Markets cards' price line.
+const { sparkGeometry } = require('../.test-build/app/src/lib/chart/spark.js');
 
 const HOUR = 3600;
 const DAY = 86400;
@@ -85,4 +87,142 @@ test('rangeGeometry puts the band and the price on a log axis, edges and unknown
   assert.equal(rangeGeometry(1, 4, null, 400).current, null, 'no price, no marker');
   const out = rangeGeometry(1, 4, 100, 400);
   assert.ok(out.current > out.upper, 'a price above the range sits to its right');
+});
+
+// ---------------------------------------------------------------------------
+// The Markets cards' price line (2026-09-25, lib/chart/spark.ts)
+// ---------------------------------------------------------------------------
+
+const SPARK_PAD = { left: 0, right: 20, top: 14, bottom: 40 };
+/** A 24h hourly history ending 14 minutes into its last hour; `closes` maps hours after the first whole one to closes. */
+function sparkHistory(closes, gaps = []) {
+  const end = 1_790_255_659;
+  const start = end - DAY;
+  const first = Math.ceil(start / HOUR) * HOUR;
+  const candles = Object.entries(closes).map(([hour, close]) => {
+    const startTimestamp = first + Number(hour) * HOUR;
+    return { startTimestamp, open: close, high: close, low: close, close, swapCount: 3, complete: startTimestamp + HOUR <= end };
+  });
+  return { resolutionSeconds: HOUR, requestedWindow: { startTimestamp: start, endTimestamp: end }, gaps, candles };
+}
+/** Every x, y pair of a path's numbers. */
+const pairs = (d) => {
+  const numbers = (d.match(/-?\d*\.?\d+/g) ?? []).map(Number);
+  const out = [];
+  for (let i = 0; i + 1 < numbers.length; i += 2) out.push({ x: numbers[i], y: numbers[i + 1] });
+  return out;
+};
+
+test('the card line is one smooth path across the card: from the first whole hour to the right edge, never past the pad', () => {
+  const closes = Object.fromEntries(Array.from({ length: 24 }, (_, hour) => [hour, String(2600 + ((hour * 37) % 50))]));
+  const g = sparkGeometry(sparkHistory(closes), 360, 164, SPARK_PAD);
+  assert.equal((g.line.match(/M/g) ?? []).length, 1, 'one path');
+  assert.equal(g.runs.length, 1);
+  assert.ok(g.line.includes(' C'), 'monotone cubic segments');
+  assert.equal(g.points.length, 24);
+  assert.equal(g.points[0].x, 0, 'the first whole hour at the left edge');
+  assert.equal(g.end.x, 340, 'the latest close at the right edge, inside the right pad');
+  for (const { y } of pairs(g.line)) assert.ok(y >= 14 - 1e-9 && y <= 124 + 1e-9, `y ${y} stays between the pads`);
+  assert.equal(g.baseline, g.points[0].y, 'the level is the first close');
+  assert.equal(g.crest, 14, 'the area’s gradient starts at the highest close');
+  assert.match(g.runs[0].area, / L340 164 L0 164 Z$/, 'one area, closed down to the plot’s floor');
+  assert.equal(g.flat, false);
+});
+
+/** The x span of every drawn segment of a path (`M` starts a subpath; each `C` or `L` ends a segment at its last pair). */
+function segments(d) {
+  const out = [];
+  let at = null;
+  for (const [, command, args] of d.matchAll(/([MLC])([^MLC]*)/g)) {
+    const numbers = (args.match(/-?\d*\.?\d+/g) ?? []).map(Number);
+    const end = numbers[numbers.length - 2];
+    if (command !== 'M' && at !== null) out.push([at, end]);
+    at = end;
+  }
+  return out;
+}
+
+test('hours with no swap hold the last close, invisibly; the curve never joins across an uncovered interval', () => {
+  // Swaps at hours 0, 1 and 6: hours 2 to 5 had none, so the close of hour 1 holds until hour 5.
+  const quiet = sparkGeometry(sparkHistory({ 0: '10', 1: '12', 6: '8' }), 360, 164, SPARK_PAD);
+  const drawn = pairs(quiet.line);
+  const hour5 = quiet.points[1].x + 4 * ((quiet.points[2].x - quiet.points[1].x) / 5);
+  const held = drawn.find((point) => Math.abs(point.x - hour5) < 0.02);
+  assert.ok(held, 'the curve passes the hour before the next close');
+  assert.ok(Math.abs(held.y - quiet.points[1].y) < 0.02, 'at the earlier close');
+  assert.equal((quiet.line.match(/M/g) ?? []).length, 1, 'still one path: no break, no dotted stretch');
+  // Closes at hours 0, 1, 10 and 23; hours 2 to 10 were never collected (the collector was behind or down).
+  const history = sparkHistory({ 0: '10', 1: '12', 10: '8', 23: '9' });
+  const first = history.candles[0].startTimestamp;
+  const x = (at) => ((at - first) / (history.requestedWindow.endTimestamp - first)) * 340;
+  const gap = { startTimestamp: first + 2 * HOUR, endTimestamp: first + 10 * HOUR };
+  const open = sparkGeometry({ ...history, gaps: [gap] }, 360, 164, SPARK_PAD);
+  assert.equal(open.runs.length, 2, 'the line ends before the interval and starts again after it');
+  assert.equal((open.line.match(/M/g) ?? []).length, 2);
+  assert.deepEqual(open.runs[0].end, { x: open.points[1].x, y: open.points[1].y }, 'the first run ends at the close before the gap (hour 1 is the last whole hour before it)');
+  assert.deepEqual(open.runs[1].start, { x: open.points[2].x, y: open.points[2].y }, 'the second starts at the first close after it');
+  for (const [a, b] of segments(open.line)) assert.ok(!(a <= x(gap.startTimestamp) + 1e-6 && b >= x(gap.endTimestamp) - 1e-6), `no segment spans the gap (${a} → ${b})`);
+  // Each run has its own area, closed down to the floor under that run only.
+  const floor = (area) => pairs(area.replace(/ Z$/, '')).slice(-2);
+  assert.deepEqual(floor(open.runs[0].area).map((point) => point.y), [164, 164]);
+  assert.ok(Math.abs(floor(open.runs[0].area)[0].x - open.points[1].x) < 0.01 && floor(open.runs[0].area)[1].x === 0, 'the first area ends under hour 1');
+  assert.ok(Math.abs(floor(open.runs[1].area)[1].x - open.points[2].x) < 0.01 && floor(open.runs[1].area)[0].x === 340, 'the second starts under hour 10');
+  assert.equal(open.end.x, 340, 'the latest close still holds to the right edge');
+  // Covered quiet hours before a gap: the close holds through the last whole hour before it, and no further.
+  const late = sparkGeometry({ ...history, gaps: [{ startTimestamp: first + 5 * HOUR + 1200, endTimestamp: first + 10 * HOUR }] }, 360, 164, SPARK_PAD);
+  assert.equal(late.runs.length, 2);
+  assert.ok(Math.abs(late.runs[0].end.x - x(first + 4 * HOUR)) < 0.02 && late.runs[0].end.y === late.points[1].y, 'hour 4 is the last whole hour covered: held there');
+  for (const [a, b] of segments(late.line)) assert.ok(!(a <= x(first + 5 * HOUR + 1200) && b >= x(first + 10 * HOUR)), 'no segment spans the gap');
+  // One hour between two gaps is a lone point: no line, no area (a dot, DESIGN-V2 §4.1).
+  const lone = sparkGeometry({ ...history, gaps: [gap, { startTimestamp: first + 11 * HOUR, endTimestamp: first + 23 * HOUR }] }, 360, 164, SPARK_PAD);
+  assert.equal(lone.runs.length, 3);
+  assert.equal(lone.runs[1].area, '');
+  assert.match(lone.runs[1].line, /^M[\d.]+ [\d.]+$/);
+  // A history not collected up to its end: the curve ends at the last close, not at the right edge.
+  const behind = sparkGeometry({ ...sparkHistory({ 0: '10', 1: '12' }), gaps: [{ startTimestamp: first + 2 * HOUR, endTimestamp: history.requestedWindow.endTimestamp }] }, 360, 164, SPARK_PAD);
+  assert.equal(behind.runs.length, 1);
+  assert.equal(behind.end.x, behind.points[1].x);
+});
+
+test('a stable pair rests near a level line; a pair that moved uses the whole height', () => {
+  const stable = sparkGeometry(sparkHistory({ 0: '1.0000', 12: '1.0004', 23: '1.0002' }), 360, 164, SPARK_PAD);
+  const ys = stable.points.map((point) => point.y);
+  assert.ok(Math.max(...ys) - Math.min(...ys) < 110 * 0.2, `a 0.04 % day spans ${Math.max(...ys) - Math.min(...ys)} px of 110`);
+  const moved = sparkGeometry(sparkHistory({ 0: '0.60', 12: '0.66', 23: '0.62' }), 360, 164, SPARK_PAD);
+  assert.deepEqual([Math.min(...moved.points.map((p) => p.y)), Math.max(...moved.points.map((p) => p.y))], [14, 124]);
+  // Opens are never drawn, so an open never widens the scale.
+  const opened = sparkHistory({ 0: '0.60', 12: '0.66', 23: '0.62' });
+  opened.candles[0] = { ...opened.candles[0], open: '0.90', high: '0.90' };
+  const scaled = sparkGeometry(opened, 360, 164, SPARK_PAD);
+  assert.deepEqual([Math.min(...scaled.points.map((p) => p.y)), Math.max(...scaled.points.map((p) => p.y))], [14, 124]);
+});
+
+test('quiet first hours draw nothing: the line starts at the first close; one price all day is a level line at mid-height', () => {
+  // Nothing traded before hour 6. Its open (10) is the price AFTER its first swap (backend public_history.py), so the
+  // hours before it held a price the history does not give: nothing is drawn there, and the open widens nothing.
+  const quiet = sparkHistory({ 6: '12', 7: '11' });
+  quiet.candles[0] = { ...quiet.candles[0], open: '10', low: '10' };
+  const late = sparkGeometry(quiet, 360, 164, SPARK_PAD);
+  const drawn = pairs(late.line);
+  assert.equal(late.runs.length, 1);
+  assert.deepEqual(drawn[0], { x: Math.round(late.points[0].x * 100) / 100, y: 14 }, 'the first close, the day’s high, where its hour is');
+  assert.ok(late.points[0].x > 80, 'well inside the card');
+  assert.ok(drawn.every((point) => point.x >= drawn[0].x), 'nothing left of the first close');
+  assert.ok(drawn.every((point) => point.y <= 124 + 1e-9 && point.y >= 14 - 1e-9), 'the closes alone set the scale');
+  assert.equal(late.baseline, late.points[0].y, 'the level stays the first close');
+  assert.equal(late.end.x, 340);
+  const one = sparkGeometry(sparkHistory({ 23: '5' }), 360, 164, SPARK_PAD);
+  assert.equal(one.flat, true);
+  assert.equal(pairs(one.line)[0].x, Math.round(one.points[0].x * 100) / 100, 'one close: from its own hour, nothing before it');
+  assert.ok(pairs(one.line).every((point) => point.y === 69), 'at mid-height');
+  assert.equal(one.end.x, 340);
+  const same = sparkGeometry(sparkHistory({ 0: '5', 9: '5.00', 23: '5' }), 360, 164, SPARK_PAD);
+  assert.equal(same.flat, true);
+  assert.equal(pairs(same.line)[0].x, 0);
+  assert.ok(pairs(same.line).every((point) => point.y === 69));
+  assert.equal(sparkGeometry(sparkHistory({}), 360, 164, SPARK_PAD), null, 'no close, nothing to draw');
+  assert.equal(sparkGeometry(sparkHistory({ 0: 'x' }), 360, 164, SPARK_PAD), null, 'an unreadable close draws nothing');
+  const unread = sparkHistory({ 0: '5', 1: '6' });
+  unread.candles[0] = { ...unread.candles[0], open: 'x' };
+  assert.notEqual(sparkGeometry(unread, 360, 164, SPARK_PAD), null, 'an open is never read');
 });

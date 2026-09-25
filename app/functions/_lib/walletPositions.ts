@@ -12,6 +12,8 @@
  *      halves, the newer half asked first; a 429 is waited out and asked
  *      again. The walk stops at the MAX_POSITIONS most recently minted ids.
  *      NFTs the wallet holds that were minted elsewhere are never named.
+ *      The page's later scans of the same wallet (2026-09-25) start shortly
+ *      before its last scan's block instead (MintedMemory).
  *   3. One Multicall3 aggregate3 at the head (per IDS_PER_CALL ids): per id
  *      ownerOf, getPositionLiquidity and getPoolAndPositionInfo, and the
  *      owner's DominoSetupV1.ownerNonce. An id burned (ownerOf reverts) or
@@ -22,7 +24,8 @@
  *      per position getFeeGrowthInside and getPositionInfo (the unclaimed
  *      fees, exactly as v4 computes them, mod 2^256); symbol() and
  *      decimals() per ERC-20 (native ETH is 'ETH', 18); and operation(id) and
- *      recoveryStarted(id) for the owner's last 8 setup operations. A third,
+ *      recoveryStarted(id) for every one of the owner's setup operations, the
+ *      RECENT_OPERATIONS (128) most recent at most (8 before 2026-09-25). A third,
  *      only for a held deposit's tokens not read already.
  *   The principal is what removing all of the liquidity pays at the pool's
  *   price at that block, before fees (v4's own rounding).
@@ -68,6 +71,23 @@ import type { WalletAnswer, WalletDeposit, WalletPosition, WalletToken } from '.
 
 /** The most positions one answer lists: the most recently minted ones. */
 export const MAX_POSITIONS = 100
+/**
+ * How far back of an earlier scan's block a later one reads the logs again (about two minutes of blocks): a log a node
+ * behind the head had not shown yet is found by the next scan.
+ */
+export const REREAD_BLOCKS = 1_200
+
+/**
+ * What an earlier scan of the same owner found (2026-09-25): every id DominoSetupV1 minted to it up to `block`, most
+ * recent first. SetupMinted logs are history that only grows, so a later scan in the same page reads the logs from
+ * shortly before `block` only, and still reads every position's state, fresh, at its own head: the page's second and
+ * later reads of a wallet no longer scan the chain from the contract's deployment (a log scan of millions of blocks,
+ * after which the public RPC refuses the visitor's next reads).
+ */
+export interface MintedMemory {
+  block: number
+  ids: readonly bigint[]
+}
 /** Positions per aggregate3 call in the first read (three sub-calls each). */
 export const IDS_PER_CALL = 50
 /** Sub-calls per aggregate3 call in the second read. */
@@ -156,9 +176,10 @@ function mintedId(log: unknown, ownerTopic: string): bigint | null {
  * large or too slow is split in two, down to MIN_SPLIT_BLOCKS, its newer half
  * asked first. `capped` says the walk stopped before the deployment block.
  */
-export async function mintedIds(deps: OwnedDeps, budget: Budget, owner: string, head: number): Promise<{ ids: bigint[]; capped: boolean }> {
+export async function mintedIds(deps: OwnedDeps, budget: Budget, owner: string, head: number, known: MintedMemory | null = null): Promise<{ ids: bigint[]; capped: boolean }> {
   const ownerTopic = `0x${addressWord(owner)}`
-  const queue: [number, number][] = head >= SETUP_DEPLOY_BLOCK ? [[SETUP_DEPLOY_BLOCK, head]] : []
+  const start = known ? Math.max(SETUP_DEPLOY_BLOCK, known.block - REREAD_BLOCKS + 1) : SETUP_DEPLOY_BLOCK
+  const queue: [number, number][] = head >= start ? [[start, head]] : []
   const ids: bigint[] = []
   const seen = new Set<bigint>()
   while (queue.length > 0) {
@@ -186,7 +207,10 @@ export async function mintedIds(deps: OwnedDeps, budget: Budget, owner: string, 
     }
     if (ids.length === MAX_POSITIONS && queue.length > 0) return { ids, capped: true }
   }
-  return { ids, capped: false }
+  if (!known) return { ids, capped: false }
+  // The newer logs' ids first, then the ones the earlier scan found and these did not name again.
+  const merged = [...ids, ...known.ids.filter((id) => !seen.has(id))]
+  return { ids: merged.slice(0, MAX_POSITIONS), capped: merged.length > MAX_POSITIONS }
 }
 
 /** Several aggregate3 calls of at most `per` sub-calls each, at one block; their results in order. */
@@ -213,11 +237,16 @@ interface Held {
   liquidity: bigint
 }
 
-/** The positions and held deposits of one owner (a lowercase 0x address), at the head. */
-export async function scanWallet(deps: OwnedDeps, owner: string): Promise<OwnerScan & { body: WalletAnswer }> {
+/**
+ * The positions and held deposits of one owner (a lowercase 0x address), at the head. `earlier`: what an earlier scan of
+ * this owner found (the page's own, 2026-09-25), so only the logs since are read; `minted` is what the next may reuse,
+ * null when this one stopped at a cap.
+ */
+export async function scanWallet(deps: OwnedDeps, owner: string, earlier: MintedMemory | null = null): Promise<OwnerScan & { body: WalletAnswer; minted: MintedMemory | null }> {
   const budget: Budget = { calls: 0, started: deps.now(), logBytes: 0 }
   const head = quantity(await paced(deps, budget, 'eth_blockNumber', []))
-  const { ids, capped } = await mintedIds(deps, budget, owner, head)
+  // A node behind the earlier scan's block reads the logs from where it stands; the earlier ids are kept.
+  const { ids, capped } = await mintedIds(deps, budget, owner, head, earlier && earlier.block <= head ? earlier : earlier ? { block: head, ids: earlier.ids } : null)
 
   // First read: which ids the owner still holds, their pool keys, ranges and liquidity, and the owner's setup nonce.
   const held: Held[] = []
@@ -367,7 +396,7 @@ export async function scanWallet(deps: OwnedDeps, owner: string): Promise<OwnerS
 
   // Open first, then closed; the newest NFT first within each.
   positions.sort((a, b) => (a.status === b.status ? (BigInt(a.tokenId) > BigInt(b.tokenId) ? -1 : 1) : a.status === 'open' ? -1 : 1))
-  return { body: { owner, block: head, positions, deposits }, capped }
+  return { body: { owner, block: head, positions, deposits }, capped, minted: capped ? null : { block: head, ids } }
 }
 
 /** POST /api/owned/v2/positions with {"owner": "0x…"} (and optionally "fresh": true): the owner's answer, as JSON. */

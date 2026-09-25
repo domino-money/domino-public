@@ -16,6 +16,18 @@ export const WHAT_IS_DOMINO: DocPage = {
       ],
     },
     {
+      id: 'three-features',
+      title: 'One position, three ways',
+      blocks: [
+        list(
+          [b('Plain position'), ': opened in ', doc('New position', 'new-position'), '. Its earned fees wait in it until you collect them.'],
+          [doc('Auto-compound', 'auto-compound'), ': its earned fees go back into the same position.'],
+          [doc('Domino-compound', 'domino-compounder'), ': near the top of its range, its earned fees open the next position one step higher.'],
+        ),
+        p('Both automations start from a plain position you hold. When Create position finishes, you choose: keep it plain, or set up either automation on it. Later, ', b('Automate'), ' on an open position in Positions does the same. Positions shows which one each position is in, and whether its sequence is paused.'),
+      ],
+    },
+    {
       id: 'markets-positions-automate',
       title: 'Markets, Positions and Automate',
       blocks: [
@@ -34,7 +46,8 @@ export const WHAT_IS_DOMINO: DocPage = {
         p('Nothing moves until your wallet signs. Each wallet step is reviewed on its own, and shows its amounts, destination and limits before your wallet asks you to sign it.'),
         p('Signing in is not one of those steps: it proves you control an address and allows nothing. See ', doc('what signing in proves', 'wallet', 'sign-in'), '.'),
         p('Once you activate automation, its operator sends automation transactions within the limits you signed. See ', doc('what the operator can do', 'non-custodial', 'operator'), '.'),
-        p('A new sequence starts paused. This site offers activation only to its signed-in owner after the live service confirms readiness for that exact sequence. If the check fails, pause, revocation, repair and withdrawal still work through your wallet.'),
+        // Changed on purpose (2026-09-25, audit of 754014c): no screen of this site offers activation any more.
+        p('A new sequence starts paused. Activation, pause, revocation and withdrawal are transactions your wallet signs on your sequence vault, activation only once the automation service confirms readiness for it. No Domino screen makes them today.'),
       ],
     },
     {

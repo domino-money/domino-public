@@ -72,7 +72,8 @@ export function fixtureRelay(fixture, { maxDays = 7, script = {}, tamper, swapBy
     const until = request.until ?? head;
     switch (request.kind) {
       case 'transfer':
-        return answer({ v: 1, kind: 'transfer', head, units: [{ unit: null, from: 9506, to: head, final: false, logs: fixture.transfer }], next: null });
+        // From `since` when asked (2026-09-25), as the relay reads it.
+        return answer({ v: 1, kind: 'transfer', head, units: [{ unit: null, from: Math.max(9506, request.since ?? 0), to: head, final: false, logs: fixture.transfer.filter((log) => log[0] >= (request.since ?? 0)) }], next: null });
       case 'initialize':
         return answer({ v: 1, kind: 'initialize', head, units: [{ unit: null, from: 0, to: head, final: true, logs: fixture.initialize }], next: null });
       case 'pool': {
@@ -96,6 +97,14 @@ export function fixtureRelay(fixture, { maxDays = 7, script = {}, tamper, swapBy
           units.push({ unit: day, from: day * DAY, to, final: false, logs: tamper ? tamper(kept, day) : kept });
         }
         return answer({ v: 1, kind: 'swaps', head, units, next });
+      }
+      case 'probe': {
+        // 2026-09-25: the pool's recorded logs (its epochs and swap days) in [from, to], in chain order.
+        const seen = new Set();
+        const logs = [...Object.values(fixture.pool).flat(), ...Object.values(fixture.swaps).flat()]
+          .filter((log) => log[0] >= request.from && log[0] <= request.to && !seen.has(`${log[0]}:${log[1]}`) && seen.add(`${log[0]}:${log[1]}`))
+          .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        return answer({ v: 1, kind: 'probe', head, units: [{ unit: null, from: request.from, to: request.to, final: false, logs }], next: null });
       }
       case 'swapBefore': {
         if (!(request.block in fixture.swapBefore)) throw new Error(`no swapBefore ${request.block} in fixture ${fixture.id}`);

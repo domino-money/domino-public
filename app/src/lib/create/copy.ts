@@ -135,7 +135,7 @@ export const CREATE = {
   automation: {
     notEnabled: 'Not connected',
     planned: 'Planned',
-    none: 'Self-managing',
+    none: 'Plain position',
     noneDetail: 'Earned fees stay in the position until you collect them. Nothing runs on your behalf.',
     compound: 'Auto-compound',
     compoundRules: [
@@ -154,8 +154,8 @@ export const CREATE = {
     ],
     /** The three choices as cards: a title and one line each. */
     options: {
-      none: { title: 'Self-managing', line: 'Fees wait in the position until you collect them.' },
-      compound: { title: 'Auto-compound', line: 'Fees go back into the same range. 2% of earned fees consumed.' },
+      none: { title: 'Plain position', line: 'Fees wait in the position until you collect them.' },
+      compound: { title: 'Auto-compound', line: 'Fees go back into the same position. 2% of earned fees consumed.' },
       domino: { title: 'Domino-compound', line: 'Fees can fund the next range one step higher. 4% of earned fees consumed.' },
     },
     optionsLegend: 'What the earned fees do',

@@ -11,6 +11,7 @@
 @import './automate.css';         /* automate: Automate and the sequence pages */
 @import './account-screens.css';  /* foundation: Settings and rugged97's screens */
 @import './docs.css';     /* docs: #/docs layout, sidebar, prose, on-this-page */
+@import './three.css';    /* the three features joined up: rows, a position's page, New position's success, Automate */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -90,6 +91,12 @@
   --money-out-bg: #fdecef;
   --money-wait: #865100;
   --money-wait-bg: #fcf1d9;
+  /* Direction as a graphic (2026-09-25, the Markets cards' price line and its area): up is --money-in's hue a step
+     lighter for a 2px line (4.76:1 on --card), down is --money-out; the area's strength at its top and mid stop. */
+  --chart-up: #1a8350;
+  --chart-down: #c62d4a;
+  --spark-area-top: 13%;
+  --spark-area-mid: 4%;
 
   /* Chart tooltip: a glass layer with its own ring */
   --tooltip-bg: rgb(255 255 255 / 0.94);
@@ -244,6 +251,10 @@
   --money-out-bg: rgb(244 96 122 / 0.12);
   --money-wait: #f2c14e;                  /* 10.3:1 */
   --money-wait-bg: rgb(242 193 78 / 0.12);
+  --chart-up: #5fd09a;
+  --chart-down: #f4607a;
+  --spark-area-top: 18%;
+  --spark-area-mid: 5%;
 
   --tooltip-bg: rgb(23 19 16 / 0.92);
   --tooltip-border: rgb(255 236 220 / 0.12);

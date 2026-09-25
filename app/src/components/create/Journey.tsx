@@ -30,6 +30,7 @@ import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
 import { optionUsableForDomino, type PoolOption } from '../../lib/read/screens/poolsList'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { usePairBalances } from './usePairBalances'
+import { useCreated } from '../../lib/create/createProgress'
 import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import { useNow } from '../../lib/read/useNow'
 import { Button, PageHeader, PageShell } from '../ui'
@@ -96,6 +97,10 @@ export function Journey({ poolId }: { poolId: string }) {
   const [part, setPart] = useState<AmountPart>('range')
   // Create position is asking the wallet: Back waits, so leaving Review cannot drop the flow mid-way.
   const [creating, setCreating] = useState(false)
+  // Once the position exists, Review offers what comes next in its footer (CreatedNext.tsx) and Back rests. A done step
+  // still reopens (review of 2026-09-24): that leaves Review, which ends the offer, so a second position can be made from
+  // the same choices; New position's own link starts a fresh flow (screens/NewPosition.tsx).
+  const created = useCreated() !== null
   // Whether the budget half of the amount stage has been reached on this visit.
   const [amountReached, setAmountReached] = useState(false)
   const [candidates, setCandidates] = useState<TokenCandidate[]>([])
@@ -288,22 +293,38 @@ export function Journey({ poolId }: { poolId: string }) {
 
   const checkFor: Record<VisualStep, Check> = { pool: poolCheck, range: rangeCheck, amount: amountCheck, review: canContinue('review', state, now) }
   const check = checkFor[current]
+  // Changed on purpose (owner, 2026-09-24): step 1 shows no buttons until a token is chosen, and then only
+  // Continue, full width (there is nowhere to go back to from the first step). The buttons arrive gently
+  // (flow.css, stilled under reduced motion). The reason paragraph stays mounted, out of sight while nothing
+  // is chosen, so the live region already exists when its first visible reason lands in it.
+  const first = current === 'pool'
+  const waiting = first && !state.token
   const footer = (
-    <div className="dm-flow-foot" data-journey-footer="" data-final={current === 'review' ? '' : undefined}>
+    <div
+      className="dm-flow-foot"
+      data-journey-footer=""
+      data-final={current === 'review' ? '' : undefined}
+      data-first={first ? '' : undefined}
+      data-waiting={waiting ? '' : undefined}
+    >
       {/* On Review, Back steps down under Create position (flow.css), so it is the smaller button there. */}
-      <Button type="button" variant="outline" size={current === 'review' ? 'md' : 'lg'} disabled={current === 'pool' || creating} onClick={backward}>
-        {CREATE.page.back}
-      </Button>
+      {!first && (
+        <Button type="button" variant="outline" size={current === 'review' ? 'md' : 'lg'} disabled={creating} hidden={created} onClick={backward}>
+          {CREATE.page.back}
+        </Button>
+      )}
       {current === 'review' ? (
         <FinalControl state={state} balances={pair} onBusy={setCreating} />
       ) : (
         <>
-          <Button type="button" variant="primary" size="lg" disabled={!check.ok} aria-describedby={check.ok ? undefined : 'continue-reason'} onClick={forward}>
-            {CREATE.page.next}
-          </Button>
+          {!waiting && (
+            <Button type="button" variant="primary" size="lg" disabled={!check.ok} aria-describedby={check.ok ? undefined : 'continue-reason'} onClick={forward}>
+              {CREATE.page.next}
+            </Button>
+          )}
           {/* Always in the DOM, so the live region exists before the reason lands in it: a region
               mounted together with its text is announced by nothing. */}
-          <p id="continue-reason" role="status" className="dm-flow-reason">
+          <p id="continue-reason" role="status" className={waiting ? 'dm-flow-reason sr-only' : 'dm-flow-reason'}>
             {check.ok ? '' : check.reason}
           </p>
         </>
@@ -374,6 +395,7 @@ export function Journey({ poolId }: { poolId: string }) {
         price={usablePrice}
         balances={pair}
         slippageDone={steps.some((step) => step.key === 'amount' && step.state === 'done')}
+        step={current}
       />
     </PageShell>
   )

@@ -2,7 +2,8 @@
  * Serves the wallet-test build with the fake session service on the same
  * origin, the way Pages and the session Worker would.
  *
- * HTML carries the exact production CSP, taken from the compiled middleware.
+ * HTML carries the exact production CSP, taken from the compiled middleware,
+ * and so does the fees worker's file (WORKER_CSP, 2026-09-25).
  * With `gate` set, every request goes through the real closed-beta middleware
  * first, so its 401 and 503 answers are the real ones. Responses are streamed:
  * headers are flushed before the body, which is what lets a test deliver
@@ -43,7 +44,10 @@ export const OWNED_PATH = '/api/owned/v2/positions';
  * empty answer instead of the app shell. A test that wants positions answers
  * the path itself, through `routes`, which run first. Added on purpose on
  * 2026-09-24 with the list, so that no suite depends on what the app does
- * with an HTML answer.
+ * with an HTML answer. Since 2026-09-25 the page reads the chain itself (the
+ * RPC rate-limits Cloudflare's edge) and never asks this path or the fees
+ * relay's: suites answer the RPC with tests/support/browser-chain.mjs. The
+ * answers stay, as the routes do, for anything that still asks.
  */
 async function noOwnedPositions(request) {
   let owner = null;
@@ -55,6 +59,29 @@ async function noOwnedPositions(request) {
   }
   if (request.method !== 'POST' || !owner) return Response.json({ error: 'invalid_request' }, { status: 400 });
   return Response.json({ owner, block: 1, positions: [], deposits: [] });
+}
+
+/** Where a position's feature is asked (functions/api/automation/v1/state.ts; 2026-09-24, the three features). */
+export const AUTOMATION_PATH = '/api/automation/v1/state';
+
+/**
+ * This server has no chain behind it, so it answers the automation POST as the endpoint would for NFTs no sequence
+ * holds: every id a plain position. A test that wants a sequence answers the path itself, through `routes`, which run
+ * first. Added on purpose on 2026-09-24 with the rows' and the position page's state.
+ * Since 2026-09-25 the page reads a position's feature from the chain itself (the RPC rate-limits Cloudflare's edge) and
+ * never asks this path: suites answer the RPC with tests/support/browser-chain.mjs. The answer stays, as the route does,
+ * for anything that still asks.
+ */
+export async function plainAutomation(request) {
+  let ids = null;
+  try {
+    const body = await request.json();
+    if (Array.isArray(body?.tokenIds) && body.tokenIds.length > 0 && body.tokenIds.every((id) => typeof id === 'string' && /^[1-9]\d{0,77}$/.test(id))) ids = body.tokenIds;
+  } catch {
+    // An unreadable body is refused below.
+  }
+  if (request.method !== 'POST' || !ids) return Response.json({ error: 'invalid_request' }, { status: 400 });
+  return Response.json({ block: 1, positions: ids.map((tokenId) => ({ tokenId, automation: 'plain' })) });
 }
 
 async function staticResponse(dist, url) {
@@ -137,6 +164,7 @@ export function createWalletServer({ fake, gate = null, intercept, dist = WALLET
       owned.push({ method: request.method });
       return noOwnedPositions(request);
     }
+    if (url.pathname === AUTOMATION_PATH) return plainAutomation(request);
     // 2026-09-24 (P6, R-7): the fees relay (functions/api/fees/v1/*) answers every position not_found by default, so no
     // history is drawn and /logs is never asked; a suite that wants one passes tests/support/fees/stub.mjs's
     // feesFixtureRoute through `routes`, which run first.
@@ -166,6 +194,10 @@ export function createWalletServer({ fake, gate = null, intercept, dist = WALLET
         if (response !== DROP && (response.headers.get('Content-Type') ?? '').includes('text/html')) {
           response = new Response(response.body, response);
           response.headers.set('Content-Security-Policy', middleware.APP_CSP);
+        } else if (response !== DROP && middleware.WORKER_PATH.test(new URL(request.url).pathname)) {
+          // 2026-09-25: the fees worker's own CSP, as production serves its file (it reads the chain's RPC itself).
+          response = new Response(response.body, response);
+          response.headers.set('Content-Security-Policy', middleware.WORKER_CSP);
         }
       }
       if (response === DROP) {

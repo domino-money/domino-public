@@ -717,7 +717,7 @@ test('Settings describes owner-scoped automated signing and wallet transactions 
 });
 
 // Changed on purpose (qa:visual, Automate): the info panel under the two cards is gone, and the cards' ways in are one size, outline beside filled.
-test('Automate shows its two cards and nothing under them, and each card’s way in is the same size', async () => {
+test('Automate shows the plain position, then its two cards and nothing under them, and each card’s way in is the same size', async () => {
   const page = await open('/automate');
   const ways = await Promise.all(['Set up Auto-compound', 'Set up Domino-compound'].map((name) =>
     page.getByRole('link', { name, exact: true }).evaluate((link) => ({ height: link.getBoundingClientRect().height, outline: link.classList.contains('dm-btn--outline'), sm: link.classList.contains('dm-btn--sm') }))));
@@ -727,6 +727,12 @@ test('Automate shows its two cards and nothing under them, and each card’s way
   assert.doesNotMatch(await page.locator('main').innerText(), /Setup checks the deployment/, 'no note under the cards');
   assert.equal(await page.locator('[data-automation-card="compound"] .dm-acct-auto-fee dd').innerText(), '2% of earned fees consumed, once');
   assert.equal(await page.locator('[data-automation-card="domino"] .dm-acct-auto-fee dd').innerText(), '4% of earned fees consumed, once');
+  // 2026-09-24 (the three features): the plain position leads the page, one line and one way in, New position, before the
+  // two automations that start from it.
+  const plain = page.locator('main [data-feature="plain"]');
+  assert.match(await plain.innerText(), /^Plain position\s+Fees wait in the position until you collect them\.\s+New position$/);
+  assert.deepEqual(await plain.getByRole('link').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [['New position', '#/new']]);
+  assert.deepEqual(await page.locator('main [data-feature="plain"], main [data-automation-card]').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-feature') ?? card.getAttribute('data-automation-card'))), ['plain', 'compound', 'domino']);
   clean(page, 'automate');
   await close(page);
 });

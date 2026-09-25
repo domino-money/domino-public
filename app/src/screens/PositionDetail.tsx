@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from 'react'
-import { compoundHref, newPositionHref, poolHref, positionsHref } from '../components/explore/routes'
-import { IconAutomate, IconChevronLeft, IconMarkets, IconPlus, IconSearch } from '../components/icons'
+import { newPositionHref, poolHref, positionsHref } from '../components/explore/routes'
+import { IconChevronLeft, IconMarkets, IconPlus, IconSearch } from '../components/icons'
 import { Amount, PairName, PositionStatus, blockTitle } from '../components/positions/PositionFigures'
+import { AutomateEntry, AutomationChip, useListedPosition } from '../components/positions/AutomateEntry'
 import { Approx, PositionRange, chainCardPrice, type CardPrice } from '../components/positions/PositionRange'
 import { FeesCard } from '../components/positions/visual/FeesCard'
 import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
@@ -12,7 +13,8 @@ import { TokenLabel } from '../components/read/TokenLabel'
 import { Address } from '../components/read/screens/Address'
 import { TokenMarkPair } from '../components/TokenIcon'
 import { Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, PageShell, Stat, StatStrip } from '../components/ui'
-import { postState } from '../lib/fees/client'
+import { chainState } from '../lib/fees/client'
+import { refreshFeeStates } from '../lib/fees/useFeeHistory'
 import type { StatePositionOk } from '../lib/fees/types'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import { NATIVE_CURRENCY } from '../lib/read/screens/identity'
@@ -52,7 +54,7 @@ const couldNotLoad = () => ({
 })
 const PositionActions = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ActionsProps>>(() => import('../components/positions/PositionActions').catch(couldNotLoad)) : null
 
-/** The page's own chain read: one /api/fees/v1/state answer for this NFT, at one block. */
+/** The page's own chain read: the fees relay's /state read of this NFT, from the chain, at one block. */
 type Detail =
   | { phase: 'loading' }
   | { phase: 'ready'; position: StatePositionOk; block: number }
@@ -63,12 +65,16 @@ type Detail =
 /** The waits before a read that failed only for the moment is asked again, while the page is visible. */
 const REASK_MS = [3_000, 12_000, 30_000] as const
 /**
- * An NFT the relay says does not exist is asked again after these waits, the skeleton kept, before the page says so:
- * Create position opens a new position's page 3 s after its mint, and the relay reads two blocks behind the head and
- * keeps an answer 10 s (the last wait reaches past that).
+ * An NFT the chain says does not exist is asked again after these waits, the skeleton kept, before the page says so:
+ * Create position opens a new position's page 3 s after its mint, and the page reads two blocks behind the head, from a
+ * public RPC whose nodes may lag one another (the relay's 10 s answer cache these waits once reached past is gone).
  */
 const NOT_FOUND_REASK_MS = [3_000, 8_000, 12_000] as const
-/** After an action, the page is read again at once and once more past the relay's 10 s answer cache. */
+/**
+ * After an action, the page is read again at once and once more a moment later: its read is at head − 2, which right after
+ * the receipt may not hold the action yet (the relay's 10 s answer cache, which this wait first reached past, is gone
+ * since the page reads the chain itself).
+ */
 const AFTER_ACTION_MS = 11_000
 
 /** `run` after `ms`, or once the page is shown again when it is hidden by then. Returns a cancel. */
@@ -136,7 +142,7 @@ function CurrentPrice({ price, card }: { price: CardPrice; card: LiveCard }) {
  * Close position in the title row; anyone else reads the same page with no
  * action on it. Every figure is from one chain read, at its block (the strip's title).
  */
-function LiveDetail({ position, block, onChanged }: { position: StatePositionOk; block: number; onChanged: () => void }) {
+function LiveDetail({ position, block, changes, onChanged }: { position: StatePositionOk; block: number; changes: number; onChanged: () => void }) {
   const wallet = useMemo(() => positionOfState(position), [position])
   const card = useMemo(() => walletCard(wallet, position.owner), [wallet, position.owner])
   // The same read values the amounts for a pair with USDG (§6.2): one price, one block.
@@ -149,6 +155,11 @@ function LiveDetail({ position, block, onChanged }: { position: StatePositionOk;
   // any other visitor downloads nothing of them. PositionActions checks the owner again on chain before anything is sent.
   const identity = useWalletIdentity()
   const mine = walletKey(identity) !== null && identity.kind === 'connected' && identity.address.toLowerCase() === card.owner.address
+  // Read again after each of the owner's actions (`changes`), and never offered for a position this read shows closed:
+  // after a Close, Automate and the Plain position pill go at once (2026-09-25, audit of 754014c: the wallet's list, read
+  // before the Close, still offered them until the page was opened again).
+  const listed = useListedPosition(card.tokenId, mine ? card.owner.address : null, changes)
+  const automatable = listed === true && card.hasLiquidity
   const usdgIndex = state ? usdgSide(state.currencies) : null
   const series = usePriceSeries(card.tokenId)
   const phone = useMediaQuery('(max-width: 767px)')
@@ -168,11 +179,13 @@ function LiveDetail({ position, block, onChanged }: { position: StatePositionOk;
                 </span>
               </Chip>
               <PositionStatus card={card} />
+              <AutomationChip tokenId={card.tokenId} listed={card.hasLiquidity ? listed : false} />
             </div>
           </div>
         </div>
         {PositionActions && mine && (
           <div className="dm-pos-actions" data-position-actions="">
+            <AutomateEntry tokenId={card.tokenId} open={automatable} variant="action" />
             <Suspense fallback={null}>
               <PositionActions
                 tokenId={card.tokenId}
@@ -298,12 +311,6 @@ function LiveDetail({ position, block, onChanged }: { position: StatePositionOk;
                 Add to this pool
               </LinkButton>
             )}
-            {card.hasLiquidity && (
-              <LinkButton href={compoundHref(card.tokenId)} variant="outline" size="sm">
-                <IconAutomate />
-                Automate
-              </LinkButton>
-            )}
           </div>
         </section>
       </div>
@@ -312,10 +319,11 @@ function LiveDetail({ position, block, onChanged }: { position: StatePositionOk;
 }
 
 /**
- * `#/positions/<id>`: one position NFT's own page, read from chain through the
- * site's own fees relay (POST /api/fees/v1/state: the NFT's pool, range,
- * liquidity, owner, the pool's price and its unclaimed fees at one block), so
- * it opens whether or not the read service is up. A read that failed only for
+ * `#/positions/<id>`: one position NFT's own page, read from chain by the fees
+ * relay's /state read (the NFT's pool, range, liquidity, owner, the pool's
+ * price and its unclaimed fees at one block), which the page runs itself
+ * against the public RPC since 2026-09-25, so it opens whether or not the read
+ * service or the site's routes are up. A read that failed only for
  * the moment is asked again on its own while the page is visible; the owner's
  * actions ask the page to read again once they are included on chain.
  */
@@ -334,7 +342,7 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
       })
     }
     const ask = () => {
-      void postState([tokenId], controller.signal).then((answer) => {
+      void chainState([tokenId], controller.signal).then((answer) => {
         if (controller.signal.aborted) return
         const found = answer.ok ? answer.value.positions.find((p) => p.tokenId === tokenId) : undefined
         if (answer.ok && found?.ok) {
@@ -365,7 +373,7 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
       })
     }
     ask()
-    // After an action the relay may still answer from before it for a few seconds: once more past its cache.
+    // After an action a read at head − 2 may still be from before it: once more a moment later.
     const again = asked > 0 ? whenVisibleAfter(AFTER_ACTION_MS, ask) : null
     return () => {
       controller.abort()
@@ -411,7 +419,18 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
       />
     )
   } else {
-    body = <LiveDetail position={detail.position} block={detail.block} onChanged={() => setAsked((n) => n + 1)} />
+    body = (
+      <LiveDetail
+        position={detail.position}
+        block={detail.block}
+        changes={asked}
+        onChanged={() => {
+          setAsked((n) => n + 1)
+          // The fees card reads its own state (every minute): at once too.
+          refreshFeeStates([tokenId])
+        }}
+      />
+    )
   }
 
   return (

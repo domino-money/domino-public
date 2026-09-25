@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { catalogueTokens } from '../../config/selectedPoolCatalogue'
+import { formatUsd } from '../../lib/format/usd'
+import { scaledText } from '../../lib/format/decimal'
 import type { WalletRow, WalletView } from '../../lib/read/pagers'
-import type { ItemView } from '../../lib/read/project'
 import { ADDRESS_PROBLEM, COPY, failureText } from '../../lib/read/screens/copy'
 import { tokenAmount } from '../../lib/read/screens/figures'
-import { NATIVE_CURRENCY, parseAddressInput } from '../../lib/read/screens/identity'
+import { NATIVE_CURRENCY, parseAddressInput, shortAddress } from '../../lib/read/screens/identity'
 import { quietTitle, reaskDelayMs, whenVisibleAfter } from '../../lib/read/screens/quietRead'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { WALLET_PAGE_CAP, createWalletSession, type WalletSession, type WalletSnapshot } from '../../lib/read/screens/walletSession'
 import type { TokenDisplay } from '../../lib/read/types'
+import { USD_SCALE, addressesToPrice, totalWithheld, walletHoldings, type Holding } from '../../lib/walletHoldings'
+import { walletPrices, type PriceAnswer, type TokenQuote } from '../../lib/walletPrices'
+import { LiveFigure } from '../figures'
 import { exploreHref } from '../explore/routes'
 import { Figure } from '../positions/Figure'
 import { TokenLabel } from '../read/TokenLabel'
@@ -80,34 +84,57 @@ function balanceOf(row: WalletRow): { text: string | null; title: string } {
   }
 }
 
-function TokenRow({ row }: { row: WalletRow }) {
-  const balance = balanceOf(row)
-  return (
-    <li className="dm-acct-token" data-wallet-row={addressOf(row.token)} data-wallet-row-via={row.via} data-wallet-row-old={row.old ? '' : undefined}>
-      <TokenMark token={row.token} size={24} ring="var(--card)" />
-      <span className="dm-acct-token-id">
-        <TokenName token={row.token} />
-      </span>
-      <span className="dm-acct-token-amount tnum" data-balance={row.amount.state} title={balance.title}>
-        {balance.text === null ? '—' : <Figure text={balance.text} />}
-      </span>
-    </li>
-  )
+/** No provider quote: what a list holding nothing but USDG is valued with (USDG is $1 without one). */
+const NO_QUOTES: ReadonlyMap<string, TokenQuote | null> = new Map()
+
+/** A USD value in 10^-18 dollars as the card writes it: `$1,234.56`. */
+const usdText = (units: bigint) => formatUsd(scaledText(units, USD_SCALE))
+
+/** Where a holding's value comes from, for its title: USDG's fixed dollar, or the provider's price and the pair it is from. */
+function valueTitle(holding: Holding): string {
+  const quote = holding.quote
+  if (!quote) return ''
+  if (quote.liquidityUsd === null) return 'USDG counted at $1.'
+  return `At $${quote.usd} per token, reported by DEX Screener for a pair holding ${formatUsd(String(Math.floor(quote.liquidityUsd)))}. Indicative, not a quote.`
 }
 
-/** An asset the page names whose balance could not be read: listed with a dash, so the list never looks complete when it is not. Its reason is the title. */
-function UnavailableRow({ item }: { item: ItemView }) {
-  const token = item.title.tokens?.[0]
-  if (!token) return null
+/**
+ * One holding: its mark (artwork, or a monogram disc), its symbol linked to
+ * Markets, and either its USD value right-aligned with the amount small and
+ * muted under the symbol, or, when the card has no prices, the amount alone.
+ * A symbol another listed holding shares is followed by its short address.
+ */
+function HoldingRow({ holding }: { holding: Holding }) {
+  const { row, value, twin } = holding
+  const balance = balanceOf(row)
+  const amount = (
+    <span className={value === null ? 'dm-acct-token-amount tnum' : 'dm-acct-token-units tnum'} data-balance={row.amount.state} title={balance.title}>
+      {balance.text === null ? '—' : <Figure text={balance.text} />}
+    </span>
+  )
   return (
-    <li className="dm-acct-token" data-wallet-row={addressOf(token)} data-wallet-unavailable="" data-wallet-row-old={item.old ? '' : undefined}>
-      <TokenMark token={token} size={24} ring="var(--card)" />
+    <li className="dm-acct-token" data-wallet-row={addressOf(row.token)} data-wallet-row-via={row.via} data-wallet-row-old={row.old ? '' : undefined}>
+      <TokenMark token={row.token} size={32} ring="var(--card)" monogram />
       <span className="dm-acct-token-id">
-        <TokenName token={token} />
+        <TokenName token={row.token} />
+        {value !== null && (
+          <span className="dm-acct-token-sub">
+            {amount}
+            {twin && (
+              <span className="dm-acct-token-twin" translate="no" title={row.token.address}>
+                {shortAddress(row.token.address)}
+              </span>
+            )}
+          </span>
+        )}
       </span>
-      <span className="dm-acct-token-amount tnum" data-balance="unavailable" title={[item.facts[0]?.text ?? 'Unavailable', item.old ? COPY.picker.fromEarlier : null].filter((part) => part !== null).join(' · ')}>
-        —
-      </span>
+      {value === null ? (
+        amount
+      ) : (
+        <span className="dm-acct-token-usd tnum" data-usd="" title={valueTitle(holding)}>
+          {usdText(value)}
+        </span>
+      )}
     </li>
   )
 }
@@ -211,11 +238,36 @@ function listTitle(snap: WalletSnapshot, view: WalletView, block: string | null,
  * offers the form to check others. A list whose pages skipped candidates has
  * the selected pools' tokens it lacks checked once by address, silently; the
  * partial coverage is only in data attributes and the count's title.
+ *
+ * What the card shows of that list (owner, 2026-09-25: "only the main tokens,
+ * a few at most", by USD value): the total value on top, then the five
+ * largest holdings worth at least $1 at a qualified price, largest first, and
+ * any others behind "Show N more" (lib/walletHoldings.ts). Zero balances,
+ * dust, unpriced tokens, balances that could not be read and look-alikes of
+ * the main tokens are left out; the count line still counts what was listed.
+ *
+ * The largest holdings and their total are the whole list's, never a page's
+ * (review of 2026-09-25): every step follows the list's pages on its own, up
+ * to WALLET_PAGE_CAP, and a list that skipped candidates gets its by-address
+ * check, before the card shows anything of it. That is one wallet-assets
+ * read per 20 tokens the wallet holds (two for the owner's 31), then ONE
+ * provider GET for the held tokens' prices, kept in memory for the visit
+ * (lib/walletPrices.ts). While the first list and its first prices are on the
+ * wire the card keeps its skeleton; a later step (Load more after a failure,
+ * a restart) keeps the rows on screen. When the prices fail the card lists
+ * native ETH, WETH and USDG with their amounts instead. The total is shown
+ * only when the list is whole (totalWithheld): pages left unread, balances
+ * that could not be read, skipped candidates or unanswered prices leave the
+ * rows with no total, the reason in a data attribute only.
  */
 export function PortfolioTokens({ address }: { address: string }) {
   const source = useReadSource()
   const [tokens, setTokens] = useState<string[]>([])
-  const [snap, setSnap] = useState<WalletSnapshot | null>(null)
+  // The provider's answer for one set of addresses, and "Show N more".
+  const [priced, setPriced] = useState<{ key: string; answer: PriceAnswer } | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  // The list as its last step left it (read to its end, or to a failure), and how many balances its pages could not read.
+  const [list, setList] = useState<{ snap: WalletSnapshot; unread: number } | null>(null)
   // The first page is asked for as soon as the source is there, so the list starts out loading.
   const [loading, setLoading] = useState(true)
   const [lastStep, setLastStep] = useState<Step>('first')
@@ -226,33 +278,50 @@ export function PortfolioTokens({ address }: { address: string }) {
   const generation = useRef(0)
   // Quiet re-asks spent since the list last answered.
   const quiet = useRef(0)
+  // The assets this list's pages could not read, by key: the pager keeps only the last page's.
+  const unreadKeys = useRef(new Set<string>())
 
   /**
-   * One step of the session, on its own signal; a result lands only if nothing newer was asked for meanwhile.
-   * A list that skipped candidates then gets its one by-address check, on the list's signal rather than the
-   * step's: Load more pressed while the check is on the wire waits behind it instead of cancelling it and
-   * asking for the same check again after the next page.
+   * One step of the session, on its own signal, then the list's next pages on the same signal until there are
+   * none (or the cap, or a failure): the card values the whole list, never a page of it. A list whose pages
+   * skipped candidates then gets its one by-address check, on the list's signal rather than the step's, so
+   * leaving the step never cancels it, and it is asked once, for what the whole list lacks. Only then does
+   * the result land, and only if nothing newer was asked for meanwhile.
    */
   const read = useCallback((current: WalletSession, step: Step, settled?: (after: WalletSnapshot) => void) => {
     const gen = generation.current
     running.current?.abort()
     const mine = new AbortController()
     running.current = mine
-    const call = step === 'first' ? current.first(mine.signal) : step === 'more' ? current.more(mine.signal) : current.restart(mine.signal)
-    void call.then((after) => {
-      if (gen !== generation.current || mine.signal.aborted) return
+    const stale = () => gen !== generation.current || mine.signal.aborted
+    // Every page's unreadable assets are kept until a later row answers them; a list read again from its first page starts over.
+    const note = (after: WalletSnapshot) => {
+      if (after.failure === null && after.view.pages === 1) unreadKeys.current.clear()
+      for (const item of after.view.unavailable) unreadKeys.current.add(item.key)
+    }
+    void (async () => {
+      let asked: Step = step
+      let after = await (step === 'first' ? current.first(mine.signal) : step === 'more' ? current.more(mine.signal) : current.restart(mine.signal))
+      note(after)
+      while (!stale() && after.failure === null && after.canLoadMore) {
+        asked = 'more'
+        after = await current.more(mine.signal)
+        note(after)
+      }
+      if (stale()) return
+      // Pages skipped candidates: the selected pools' tokens the list lacks are checked once by address; nothing is said on screen.
+      if (after.pendingCheck) {
+        after = await current.check(checks.current?.signal)
+        if (stale()) return
+      }
       if (running.current === mine) running.current = null
+      const answered = new Set(after.view.rows.map((row) => row.key))
       setLoading(false)
-      // The session as it is now: a check that answered while this page was on its way is in it.
-      setSnap(current.snapshot())
+      // A failed step is asked again as the step it was: a page after the first is never read again from the top.
+      setLastStep(asked)
+      setList({ snap: after, unread: [...unreadKeys.current].filter((key) => !answered.has(key)).length })
       settled?.(after)
-      if (!after.pendingCheck) return
-      // A page skipped candidates: the selected pools' tokens are checked once by address; nothing is said on screen.
-      void current.check(checks.current?.signal).then(() => {
-        if (gen !== generation.current || current !== session.current) return
-        setSnap(current.snapshot())
-      })
-    })
+    })()
     return mine
   }, [])
 
@@ -268,6 +337,7 @@ export function PortfolioTokens({ address }: { address: string }) {
     if (!source) return
     generation.current += 1
     quiet.current = 0
+    unreadKeys.current.clear()
     // The automatic second read after an empty list is a by-address check of
     // the selected pools' tokens — discovery already reported this address
     // holds nothing listed, so asking it to look again is work with a known
@@ -281,7 +351,7 @@ export function PortfolioTokens({ address }: { address: string }) {
     const mine = read(current, 'first', (after) => {
       if (!after.emptyHint || tokens.length > 0 || autoChecked.current === address) return
       autoChecked.current = address
-      setSnap(null)
+      setList(null)
       setLoading(true)
       setLastStep('first')
       setTokens(SELECTED_TOKENS)
@@ -293,6 +363,8 @@ export function PortfolioTokens({ address }: { address: string }) {
       listChecks.abort()
     }
   }, [source, address, tokens, read])
+
+  const snap = list?.snap ?? null
 
   // A step that failed only for the moment is asked again on its own, after a growing wait, while the page is visible.
   // A handle that may have expired, or a restart that was used up, is left to Load more.
@@ -324,7 +396,7 @@ export function PortfolioTokens({ address }: { address: string }) {
   }
 
   const check = (next: string[]) => {
-    setSnap(null)
+    setList(null)
     setLoading(true)
     setLastStep('first')
     setTokens(next)
@@ -340,6 +412,45 @@ export function PortfolioTokens({ address }: { address: string }) {
   const block = view ? blockOf(view.freshness) : null
   // The selected pools' tokens asked for because the list showed none held; tokens someone typed are theirs, not this.
   const checkedByAddress = Boolean(snap && tokens === SELECTED_TOKENS)
+
+  // The addresses to price for these rows: none when the list holds nothing but USDG, which is $1 without asking.
+  const ask = addressesToPrice(rows).join(',')
+  useEffect(() => {
+    if (ask === '') return
+    let alive = true
+    void walletPrices.price(ask.split(',')).then((answer) => {
+      if (alive) setPriced({ key: ask, answer })
+    })
+    return () => {
+      alive = false
+    }
+  }, [ask])
+
+  // An earlier answer stands while a later list's tokens are priced (its rows stay, its total waits); a GET that failed leaves amounts.
+  const answer = ask === '' ? null : priced
+  const pricing = ask !== '' && priced?.key !== ask
+  const quotes = ask === '' ? NO_QUOTES : answer && !(answer.answer.failed && answer.answer.quotes.size === 0) ? answer.answer.quotes : null
+  const holdings = walletHoldings(rows, quotes)
+  // Skeletons only until the first list and its first prices land; a later step keeps what is on screen.
+  const waiting = snap === null || (pricing && answer === null)
+  const shown = waiting ? [] : holdings.shown
+  const rest = !waiting && holdings.mode === 'values' ? holdings.rest : []
+  const withheld = totalWithheld(
+    {
+      reading: loading,
+      morePages: Boolean(view?.hasMore && !snap?.capped),
+      capped: Boolean(snap?.capped),
+      failed: failure !== null,
+      unread: list?.unread ?? 0,
+      earlier: rows.some((row) => row.old),
+      skipped: view?.skipped ?? 0,
+      pricing,
+    },
+    holdings,
+  )
+  const total = !waiting && withheld === null && holdings.mode === 'values' ? holdings.total : null
+  const pricesState = ask === '' ? 'none' : pricing ? 'pending' : quotes === null ? 'failed' : 'ok'
+  const showLoadMore = Boolean(view && view.pages > 0 && (canAskMore || loading))
 
   const more = () => {
     if (loading || !snap || !canAskMore) return
@@ -359,6 +470,10 @@ export function PortfolioTokens({ address }: { address: string }) {
       data-wallet-capped={snap?.capped ? '' : undefined}
       data-wallet-restarted={snap?.restarted ? '' : undefined}
       data-wallet-verified-checked={checkedByAddress ? '' : undefined}
+      data-wallet-unavailable={unavailable.length > 0 ? unavailable.length : undefined}
+      data-wallet-prices={pricesState}
+      data-wallet-shown={waiting ? undefined : shown.length + (expanded ? rest.length : 0)}
+      data-wallet-total-withheld={waiting || withheld === null ? undefined : withheld}
     >
       <p className="dm-acct-tokens-count" aria-live="polite" title={snap && view && view.pages > 0 ? listTitle(snap, view, block, checkedByAddress) : undefined}>
         {view && view.pages > 0 ? (
@@ -380,43 +495,73 @@ export function PortfolioTokens({ address }: { address: string }) {
         {loading ? 'Reading the token list…' : failure ? failureText(failure, 'wallet').title : ''}
       </p>
 
-      {(listed > 0 || loading) && (
-        <ul className="dm-acct-token-list" aria-label="Tokens held by this address" aria-busy={loading || undefined}>
-          {rows.map((row) => (
-            <TokenRow key={row.key} row={row} />
+      {/* The total of every holding on the card, the ones behind "Show N more" included, when the list is whole; its skeleton holds the place while the first list and its prices are read. */}
+      {total !== null ? (
+        <p className="dm-acct-total" data-wallet-total="" title="The sum of the holdings on this card, at provider-reported prices with USDG at $1. Indicative, not a quote.">
+          <span className="sr-only">Total value </span>
+          <LiveFigure value={usdText(total)} mode="digits" dimCents className="dm-fig-xl" />
+        </p>
+      ) : (
+        waiting && (
+          <p className="dm-acct-total" aria-hidden="true">
+            <Skeleton className="dm-acct-total-skel" />
+          </p>
+        )
+      )}
+
+      {(shown.length > 0 || waiting) && (
+        <ul className="dm-acct-token-list" aria-label="Tokens held by this address" aria-busy={waiting || loading || undefined}>
+          {shown.map((holding) => (
+            <HoldingRow key={holding.row.key} holding={holding} />
           ))}
-          {unavailable.map((item) => (
-            <UnavailableRow key={item.key} item={item} />
-          ))}
-          {loading &&
+          {expanded && rest.map((holding) => <HoldingRow key={holding.row.key} holding={holding} />)}
+          {waiting &&
             [0, 1, 2].map((n) => (
               <li key={`wait-${n}`} className="dm-acct-token" aria-hidden="true">
-                <Skeleton className="size-6 shrink-0 rounded-full" />
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="ml-auto h-3 w-12" />
+                <Skeleton className="size-8 shrink-0 rounded-full" />
+                <span className="dm-acct-token-id dm-acct-token-skel">
+                  <Skeleton className="h-3.5 w-14" />
+                  <Skeleton className="h-3 w-20" />
+                </span>
+                <Skeleton className="ml-auto h-3.5 w-16" />
               </li>
             ))}
         </ul>
       )}
 
-      {!loading && snap && listed === 0 && (
+      {!waiting && snap && listed === 0 && (
         <p className="dm-acct-tokens-empty" data-wallet-empty={failure ? 'failed' : 'listed'} data-wallet-block={block ?? undefined} title={failure ? quietTitle(failure, 'wallet') : block ? `Balances at block ${block}.` : undefined}>
           {failure ? NOTHING_TO_SHOW : NONE_LISTED}
         </p>
       )}
+      {/* Listed, but nothing worth a dollar at a qualified price (or, without prices, no ETH, WETH or USDG). */}
+      {!waiting && snap && listed > 0 && shown.length === 0 && (
+        <p className="dm-acct-tokens-empty" data-wallet-empty={quotes === null ? 'unpriced' : 'unvalued'} data-wallet-block={block ?? undefined} title={block ? `Balances at block ${block}.` : undefined}>
+          {NOTHING_TO_SHOW}
+        </p>
+      )}
 
-      {view && view.pages > 0 && (canAskMore || loading) && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="justify-self-start"
-          aria-disabled={loading || !canAskMore ? true : undefined}
-          onClick={more}
-          title={exhausted ? COPY.picker.walletExhausted : snap?.status === 'handle_expired' ? COPY.picker.walletExpired : failure ? quietTitle(failure, 'wallet') : undefined}
-        >
-          {loading ? 'Loading…' : COPY.picker.loadMore}
-        </Button>
+      {/* The card's two quiet controls share one line: the holdings behind "Show N more" (and back), and the provider's next page. */}
+      {(rest.length > 0 || showLoadMore) && (
+        <div className="dm-acct-tokens-actions">
+          {rest.length > 0 && (
+            <Button type="button" variant="ghost" size="sm" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+              {expanded ? 'Show less' : `Show ${rest.length} more`}
+            </Button>
+          )}
+          {showLoadMore && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-disabled={loading || !canAskMore ? true : undefined}
+              onClick={more}
+              title={exhausted ? COPY.picker.walletExhausted : snap?.status === 'handle_expired' ? COPY.picker.walletExpired : failure ? quietTitle(failure, 'wallet') : undefined}
+            >
+              {loading ? 'Loading…' : COPY.picker.loadMore}
+            </Button>
+          )}
+        </div>
       )}
 
       {snap && !loading && (snap.emptyHint || tokens.length > 0) && <TokensForm onCheck={check} />}

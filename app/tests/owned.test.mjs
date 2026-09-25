@@ -259,7 +259,9 @@ test('a 429 is waited out with a growing pause, a few times, and then the scan g
   assert.equal(stuck.log.length, owned.RATE_ATTEMPTS);
 });
 
-test('held setup deposits: the last 8 operations by nonce, listed only while held, this owner’s, with a balance and no recovery started, their tokens read at the same block', async () => {
+// Changed on purpose (2026-09-25, audit of 754014c): every setup operation is read (the 128 most recent at most), not the
+// last 8: a deposit older than those was left out, with its Refund to wallet, while its funds stayed held.
+test('held setup deposits: every operation by nonce, listed only while held, this owner’s, with a balance and no recovery started, their tokens read at the same block', async () => {
   const owner = '0x19ea136f23151d681da6d20a7a39d36e784ea792';
   const NET = '0xca9c78dd337a67f6e0077f65f5e9218719d30edf';
   const key = { currency0: USDG, currency1: NET, fee: 80000, tickSpacing: 800, hooks: ZERO };
@@ -271,7 +273,7 @@ test('held setup deposits: the last 8 operations by nonce, listed only while hel
     [opId(owner, 6n)]: op({ balance1: 3n, balance0: 0n, swapped: true, key: { ...key, currency0: ZERO } }),
     [opId(owner, 5n)]: op({ owner: OTHER }),
     [opId(owner, 4n)]: op({}),
-    [opId(owner, 1n)]: op({}), // older than the last 8: not read
+    [opId(owner, 1n)]: op({}), // older than the last 8: read too since 2026-09-25, and still held
   };
   const chain = fakeChain({ owner, nonce: 10n, operations, recovery: { [opId(owner, 4n)]: true }, tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [NET]: { symbol: 'NET', decimals: 9 } } });
   const { body } = await wallet.scanWallet(chain.deps, owner);
@@ -281,13 +283,36 @@ test('held setup deposits: the last 8 operations by nonce, listed only while hel
   assert.deepEqual(body.deposits, [
     { operationId: opId(owner, 9n), ...key, balance0: '100000', balance1: '0', currencies: [usdg, net] },
     { operationId: opId(owner, 6n), ...key, currency0: ZERO, balance0: '0', balance1: '3', currencies: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, net] },
+    { operationId: opId(owner, 1n), ...key, balance0: '100000', balance1: '0', currencies: [usdg, net] },
   ]);
   const reads = chain.log.filter(({ method }) => method === 'eth_call').map(({ params }) => decodeFunctionData({ abi: multicallAbi, data: params[0].data }).args[0]);
   assert.equal(reads.length, 3, 'the first read, the second, and one for the deposits’ tokens no position named');
-  assert.equal(reads[1].length, 16, 'operation and recoveryStarted for nonces 9 down to 2');
+  assert.equal(reads[1].length, 20, 'operation and recoveryStarted for nonces 9 down to 0');
   assert.equal(reads[1][0].callData, encodeFunctionData({ abi: setupAbi, functionName: 'operation', args: [opId(owner, 9n)] }));
-  assert.equal(reads[1].at(-1).callData, encodeFunctionData({ abi: setupAbi, functionName: 'recoveryStarted', args: [opId(owner, 2n)] }));
+  assert.equal(reads[1].at(-1).callData, encodeFunctionData({ abi: setupAbi, functionName: 'recoveryStarted', args: [opId(owner, 0n)] }));
   assert.deepEqual(reads[2].map((call) => call.target.toLowerCase()), [USDG, USDG, NET, NET]);
+});
+
+// 2026-09-25 (audit of 754014c): a wallet with many setup operations. Its 128 most recent are read, two sub-calls each,
+// batched into Multicall3 calls of at most CALLS_PER_AGGREGATE; a held deposit among them is listed however old, and one
+// older than the 128 is not read.
+test('held setup deposits: the 128 most recent operations are read in Multicall3 batches, an old held deposit among them listed', async () => {
+  const owner = '0x19ea136f23151d681da6d20a7a39d36e784ea792';
+  const key = { currency0: ZERO, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: ZERO };
+  const op = (patch) => ({ owner, key, balance0: 0n, balance1: 100000n, swapped: false, closed: false, tokenId: 0n, ...patch });
+  const operations = { [opId(owner, 20n)]: op({}), [opId(owner, 139n)]: op({ closed: true, tokenId: 9n }), [opId(owner, 11n)]: op({}) };
+  const chain = fakeChain({ owner, nonce: 140n, operations, tokens: { [USDG]: { symbol: 'USDG', decimals: 6 } } });
+  const { body } = await wallet.scanWallet(chain.deps, owner);
+  assert.deepEqual(body.deposits.map((d) => d.operationId), [opId(owner, 20n)], 'nonce 20 of 140 is listed; 11 is older than the 128 most recent');
+  const reads = chain.log.filter(({ method }) => method === 'eth_call').map(({ params }) => decodeFunctionData({ abi: multicallAbi, data: params[0].data }).args[0]);
+  const opCalls = reads.flat().filter((call) => call.target.toLowerCase() === owned.SETUP_CONTRACT && call.callData.startsWith(encodeFunctionData({ abi: setupAbi, functionName: 'operation', args: [opId(owner, 0n)] }).slice(0, 10)));
+  assert.equal(opCalls.length, 128, 'operation() for nonces 139 down to 12');
+  assert.ok(reads.every((calls) => calls.length <= wallet.CALLS_PER_AGGREGATE), 'no Multicall3 call over its batch size');
+  // The page's parser takes an answer with that many deposits.
+  const client = require('../.test-build/app/src/lib/walletPositions.js');
+  const many = { owner, block: 1, positions: [], deposits: Array.from({ length: 128 }, (_, i) => ({ operationId: opId(owner, BigInt(i)), currency0: ZERO, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: ZERO, balance0: '0', balance1: '1', currencies: [{ address: ZERO, symbol: 'ETH', decimals: 18 }, { address: USDG, symbol: 'USDG', decimals: 6 }] })) };
+  assert.notEqual(client.parseWalletAnswer(many, owner), null);
+  assert.equal(client.parseWalletAnswer({ ...many, deposits: [...many.deposits, many.deposits[0]] }, owner), null, 'beyond the scan’s own cap: refused');
 });
 
 // ---------------------------------------------------------------------------
@@ -457,7 +482,9 @@ test('wrangler 4.130.0 routes /api/owned/v2/positions to its own function, ahead
     const handlers = routes.filter((entry) => entry.module).map((entry) => [entry.routePath, entry.module.join()]);
     // 2026-09-24 (P6, DESIGN-V2 §15.1, R-14): the fees relay's two routes join, ahead of the catch-all like owned's.
     // 2026-09-24: owned v1 (every NFT the wallet held) is replaced by v2 (what DominoSetupV1 minted to it).
+    // 2026-09-24 (the three features joined up): a position's feature (functions/api/automation/v1/state.ts) joins, ahead of it too.
     assert.deepEqual(handlers, [
+      ['/api/automation/v1/state', 'api/automation/v1/state.ts:onRequest'],
       ['/api/fees/v1/logs', 'api/fees/v1/logs.ts:onRequest'],
       ['/api/fees/v1/state', 'api/fees/v1/state.ts:onRequest'],
       ['/api/owned/v2/positions', 'api/owned/v2/positions.ts:onRequest'],

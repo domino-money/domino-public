@@ -119,11 +119,11 @@ export const EARNED_FEES: DocPage = {
       title: 'What fees can do next',
       blocks: [
         list(
-          [b('Self-managing'), ': fees wait in the position until you collect them.'],
+          [b('Plain position'), ': fees wait in the position until you collect them.'],
           [doc('Auto-compound', 'auto-compound'), ': fees go back into the same position.'],
           [doc('Domino-compound', 'domino-compounder'), ': near the top of the range, fees open the next position one step higher.'],
         ),
-        p('You make the choice afterwards, from Automate, on a position you opened; automation starts only with its own wallet transactions.'),
+        p('You make the choice once the position exists, when Create position finishes or later from Automate; automation starts only with its own wallet transactions.'),
       ],
     },
   ],

@@ -9,9 +9,10 @@ import { Button, Display, EmptyState, LinkButton, Skeleton } from '../components
 import { IconAutomate, IconPlus, IconWallet } from '../components/icons'
 import { hashParts } from '../components/explore/routes'
 import { sequenceIntent, type SequenceMode } from '../lib/create/sequenceDefaults'
+import { createdHere } from '../lib/create/createProgress'
 import { pickerList } from '../lib/automate/picker'
 import { useWalletIdentity, walletKey } from '../lib/walletIdentity'
-import { useWalletPositions, type WalletPosition, type WalletPositionsState } from '../lib/walletPositions'
+import { useWalletAnswer, type WalletPosition, type WalletPositionsState } from '../lib/walletPositions'
 import SequenceCreate, { type Connected, type SequenceIntent } from './SequenceCreate'
 
 type Release = { kind: 'loading' } | ReleaseRead<SequenceDeployment>
@@ -92,7 +93,16 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
   const identity = useWalletIdentity()
   const key = walletKey(identity)
   const owner = key === null ? null : key.slice(key.indexOf('|') + 1)
-  const read = useWalletPositions(owner)
+  // A link to a position just created (New position's success, #/sequence/<mode>/<id>): a read of the chain from a node
+  // still behind its mint does not have it yet, so the list is asked once more; SequenceCreate chooses it when it arrives.
+  // Only for an id Create position made during this visit (createdHere): any other id missing from the list is not one
+  // of the wallet's Domino positions, and costs no second read (review of 2026-09-24).
+  const [again, setAgain] = useState(0)
+  const answer = useWalletAnswer(owner ? owner.toLowerCase() : null, again)
+  // A read being asked again on its own is still loading: the picker never says "No open positions" for a failed read.
+  const read: WalletPositionsState =
+    answer.phase === 'ready' ? { phase: 'ready', block: answer.answer.block, positions: answer.answer.positions } : answer.phase === 'retrying' ? { phase: 'loading' } : answer
+  if (!lab && !again && intent.tokenId !== null && createdHere(intent.tokenId) && read.phase === 'ready' && !read.positions.some((entry) => entry.tokenId === intent.tokenId)) setAgain(1)
   const positions: WalletPositionsState = lab && owner ? { phase: 'ready', block: 0, positions: lab.positions } : read
   const list = pickerList(positions)
 
@@ -138,7 +148,7 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
   else if (list.kind === 'failed')
     body = (
       <p className="dm-acct-block text-body text-fg-muted" data-sequence-release="available" data-sequence-positions="failed">
-        Your positions couldn’t be read. Reload the page to read them again.
+        Your positions couldn’t be read right now.
       </p>
     )
   else if (list.kind === 'empty')

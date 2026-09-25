@@ -134,11 +134,13 @@ after(async () => {
 });
 afterEach(async () => { await Promise.all(browser.contexts().map(context => context.close())); });
 
-async function visit(route) {
+async function visit(route, setup) {
   edge = [];
   upstream = [];
   walletReplies = [];
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  // 2026-09-25: a test may answer the page's third-party requests itself (the Wallet card's one price GET) before it loads.
+  if (setup) await setup(context);
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(`uncaught: ${error.message}`));
@@ -537,6 +539,15 @@ test('the pool page never shows activity months behind the chain as the last 24 
   }
 });
 
+/** Answers the provider (DEX Screener) for the page itself, and keeps every URL it was asked (2026-09-25: the Wallet card's one price GET). */
+const provider = (asked, answer) => async (context) => {
+  await context.route(/^https:\/\/(api|cdn)\.dexscreener\.com\//, (route) => {
+    asked.push(route.request().url());
+    const reply = answer(route.request().url());
+    return reply === null ? route.fulfill({ status: 503, contentType: 'text/plain', body: 'busy' }) : route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(reply) });
+  });
+};
+
 // The selected pools' tokens, by address, in catalogueTokens() order (src/config/selectedPoolCatalogue.ts).
 const SELECTED_TOKENS = [
   '0x0bd7d308f8e1639fab988df18a8011f41eacad73', // WETH
@@ -648,13 +659,18 @@ test('an address whose provider page lists nothing held: the selected pools’ t
   }
 });
 
-test('Load more pressed while a partial list’s check is on the wire waits for it: one check for one list, and its balance stays', async () => {
+// Changed on purpose (review of 2026-09-25): the Wallet card values the whole list, so it reads the list's pages on its
+// own and nothing waits for Load more. The check a partial list is owed now goes out once, after the last page, for
+// what the whole list lacks (here the same six tokens: neither page lists one), instead of after page 1 with Load
+// more pressed behind it. The session-level rule that a check on the wire is joined, never asked twice, is still
+// covered in tests/screens.test.mjs.
+test('a partial list is read to its last page on its own, then checked once by address for what the whole list lacks, and its balance stays', async () => {
   const USDG = SELECTED_TOKENS[1];
   overrideReply = async (route, body) => {
     if (route !== 'wallet-assets') return null;
     if (body.autoDiscover === false) {
       // The by-address check takes a while on the wire.
-      await sleep(2500);
+      await sleep(1500);
       const check = JSON.parse(fixture('wallet-assets.not-requested'));
       check.items[1].address = USDG;
       return { status: 200, text: JSON.stringify(check) };
@@ -665,23 +681,222 @@ test('Load more pressed while a partial list’s check is on the wire waits for 
     first.inventory = { ...first.inventory, candidatesProbed: 13, candidatesSkipped: 7, skippedReason: 'request_budget_exhausted' };
     return { status: 200, text: JSON.stringify(first) };
   };
+  const asked = [];
   try {
-    const { context, page, errors } = await visit(`/portfolio/${OWNER}`);
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, provider(asked, () => []));
     try {
       const list = page.locator('[data-portfolio-tokens]');
-      await page.locator('[data-portfolio-tokens][data-wallet-pages="1"]').waitFor({ timeout: 30_000 });
-      for (const started = Date.now(); !walletBodies().some((b) => b.autoDiscover === false) && Date.now() - started < 30_000; ) await page.waitForTimeout(50);
-      assert.equal(walletBodies().filter((b) => b.autoDiscover === false).length, 1, 'the check is on the wire');
-      await list.getByRole('button', { name: 'Load more' }).click();
-      await page.locator('[data-portfolio-tokens][data-wallet-pages="2"]').waitFor({ timeout: 30_000 });
       await list.locator(`[data-wallet-row="${USDG}"][data-wallet-row-via="address"]`).waitFor({ timeout: 30_000 });
-      await page.waitForTimeout(2000);
+      assert.equal(await list.getAttribute('data-wallet-pages'), '2', 'both pages were read, without a press');
+      await page.waitForTimeout(1500);
       assert.deepEqual(walletBodies(), [
         { wallet: OWNER, autoDiscover: true },
-        { wallet: OWNER, tokens: SELECTED_TOKENS, autoDiscover: false },
         { wallet: OWNER, autoDiscover: true, cursor: HANDLE },
-      ], 'Load more waited behind the check instead of cancelling it and asking for it again after page 2');
+        { wallet: OWNER, tokens: SELECTED_TOKENS, autoDiscover: false },
+      ], 'the pages first, then one check of the selected pools’ tokens the whole list lacks, and nothing else');
+      assert.equal(await list.getAttribute('data-wallet-partial'), '7');
+      assert.equal(await list.getAttribute('data-wallet-total-withheld'), 'skipped_candidates', 'candidates the pages skipped were never valued: no total claims to be the wallet’s');
+      assert.equal(await list.locator('[data-wallet-total]').count(), 0);
       assert.equal(await list.getByRole('button', { name: /Load more|All pages loaded/ }).count(), 0, 'the last page leaves nothing to press, and says nothing about being complete');
+      assert.equal(asked.filter((url) => url.includes('/tokens/v1/')).length, 1, 'one price GET, for the whole list');
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+
+// 2026-09-25 (owner: the Wallet card lists only the main tokens, by USD value, "if that doesn't cause too much load").
+const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73';
+const NATIVE = '0x0000000000000000000000000000000000000000';
+const UFG = '0xefab538cf3c29237a47c6afb145d50ddf204a0a3';
+const FAKE_USDG = '0x3c261bf9087b11bd30861881492ed02e9ad1c7de';
+const DUST = '0x4444444444444444444444444444444444444444';
+const UNPRICED = '0x5555555555555555555555555555555555555555';
+/** A wallet holding 0.01 ETH, 5.5 USDG, 1,000,000 UFG, a second "USDG", a token worth ten cents and one with no price. */
+const heldWallet = () => walletPage(({ native, token }) => [
+  { ...native, amountRaw: '10000000000000000' },
+  { ...token, address: SELECTED_TOKENS[1], symbol: 'USDG', decimals: 6, amountRaw: '5500000' },
+  { ...token, address: UFG, symbol: 'UFG', decimals: 18, amountRaw: '1000000000000000000000000' },
+  { ...token, address: FAKE_USDG, symbol: 'USDG', decimals: 18, amountRaw: '50000000000000000000' },
+  { ...token, address: DUST, symbol: 'DUST', decimals: 18, amountRaw: '1000000000000000000' },
+  { ...token, address: UNPRICED, symbol: 'NOPE', decimals: 18, amountRaw: '1000000000000000000000' },
+]);
+const providerPair = (base, priceUsd, usd) => ({ chainId: 'robinhood', dexId: 'uniswap', baseToken: { address: base, symbol: 'X' }, quoteToken: { address: SELECTED_TOKENS[1], symbol: 'USDG' }, priceUsd, liquidity: { usd } });
+
+test('the Wallet card: the total, then the largest holdings by USD value from ONE provider GET; dust, unpriced tokens and a second USDG left out', async () => {
+  overrideReply = (route) => (route === 'wallet-assets' ? heldWallet() : null);
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, provider(asked, (url) => (url.includes('/tokens/v1/') ? [
+      providerPair(WETH, '2000', 1e7),
+      providerPair(UFG, '0.003', 165_000),
+      providerPair(FAKE_USDG, '1', 1e6),
+      providerPair(DUST, '0.1', 1e6),
+    ] : [])));
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$3,025.50', '1,000,000 UFG at $0.003, 0.01 ETH at WETH’s $2,000, and 5.5 USDG at $1');
+      assert.deepEqual(await list.locator('[data-wallet-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-wallet-row'))), [UFG, NATIVE, SELECTED_TOKENS[1]], 'largest first, and nothing else');
+      assert.deepEqual(await list.locator('[data-usd]').allTextContents(), ['$3,000.00', '$20.00', '$5.50']);
+      assert.deepEqual(await list.locator('[data-balance]').allTextContents(), ['1,000,000', '0.01', '5.5'], 'each amount, small, under its symbol');
+      assert.equal(await list.getByRole('button', { name: /^Show \d+ more$/ }).count(), 0, 'three holdings: nothing behind Show more');
+      assert.match(await list.locator('.dm-acct-tokens-count').textContent(), /6 tokens listed/, 'the count line still counts what was listed');
+      const prices = asked.filter((url) => url.includes('/tokens/v1/robinhood/'));
+      assert.equal(prices.length, 1, 'one price GET for the page view');
+      assert.ok(prices[0].includes(UFG) && prices[0].includes(WETH) && !prices[0].includes(SELECTED_TOKENS[1]) && !prices[0].includes(OWNER), `token addresses only, USDG never: ${prices[0]}`);
+      // Review of 2026-09-25: only what the wallet holds is named: no selected-pool token it does not hold, no look-alike.
+      assert.equal(new URL(prices[0]).pathname, `/tokens/v1/robinhood/${[WETH, UNPRICED, DUST, UFG].sort().join(',')}`);
+      assert.deepEqual(asked.filter((url) => url.includes('/token-pairs/')), [], 'the price reply answered the artwork: no GET per row');
+      assert.equal(await list.locator('[data-token-mark="unknown"]').count(), 1, 'UFG has no artwork in the reply: its disc');
+      assert.equal(await list.locator('[data-token-mark="unknown"]').getAttribute('data-letters'), 'UF', 'a monogram, never an empty circle');
+      assert.equal(await list.locator('[data-token-mark="unknown"]').textContent(), '', 'drawn by its class: copying the row never picks the letters up');
+      assert.equal(await list.getAttribute('data-wallet-total-withheld'), null, 'a whole list: its total is shown');
+      assert.equal(walletBodies().length, 1, 'one listing, nothing else asked of the read service');
+      await page.waitForTimeout(1000);
+      assert.equal(asked.filter((url) => url.includes('/tokens/v1/')).length, 1, 'not asked again');
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+test('the Wallet card without prices: native ETH, WETH and USDG only, with their amounts, and no total', async () => {
+  overrideReply = (route) => (route === 'wallet-assets' ? heldWallet() : null);
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, provider(asked, () => null));
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="failed"]').waitFor({ timeout: 30_000 });
+      assert.deepEqual(await list.locator('[data-wallet-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-wallet-row'))), [NATIVE, SELECTED_TOKENS[1]]);
+      assert.deepEqual(await list.locator('[data-balance]').allTextContents(), ['0.01', '5.5']);
+      assert.equal(await list.locator('[data-wallet-total], [data-usd]').count(), 0, 'no dollar figure without a price');
+      assert.equal(await list.getByRole('button', { name: /Retry|again/i }).count(), 0, 'no retry control');
+      assert.equal(asked.filter((url) => url.includes('/tokens/v1/')).length, 1);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+const MANY = '0xa26992c4268a8a78a4d872fe4bdad2ed03ac287d';
+/** A first page with a second after it: 0.01 ETH, 5.5 USDG and 1,000 UFG ($3). */
+const pageWithMore = () => {
+  const reply = walletPage(({ native, token }) => [
+    { ...native, amountRaw: '10000000000000000' },
+    { ...token, address: SELECTED_TOKENS[1], symbol: 'USDG', decimals: 6, amountRaw: '5500000' },
+    { ...token, address: UFG, symbol: 'UFG', decimals: 18, amountRaw: '1000000000000000000000' },
+  ], { hasMore: true, nextCursor: HANDLE });
+  return reply;
+};
+/** The second page: the largest holding, 1,000,000 MANY ($2,000). */
+const pageTwo = () => walletPage(({ native, token }) => [
+  { ...native, amountRaw: '10000000000000000' },
+  { ...token, address: MANY, symbol: 'MANY', decimals: 18, amountRaw: '1000000000000000000000000' },
+]);
+const twoPagePrices = (url) => (url.includes('/tokens/v1/') ? [providerPair(WETH, '2000', 1e7), providerPair(UFG, '0.003', 165_000), providerPair(MANY, '0.002', 400_000)] : []);
+/** Every total and row list the card ever showed together, in order (a MutationObserver from the first frame). */
+const watchTotals = async (context) => {
+  await context.addInitScript(() => {
+    window.__totals = [];
+    const look = () => {
+      const card = document.querySelector('[data-portfolio-tokens]');
+      const total = card?.querySelector('[data-wallet-total]');
+      if (!total) return;
+      const rows = [...card.querySelectorAll('[data-wallet-row]')].map((row) => row.getAttribute('data-wallet-row')).join(',');
+      if (window.__totals.at(-1) !== rows) window.__totals.push(rows);
+    };
+    new MutationObserver(look).observe(document, { subtree: true, childList: true, attributes: true });
+  });
+};
+
+// Review of 2026-09-25: the total and the top five are the whole list's. A wallet whose largest holding is on page 2 must
+// never show page 1's sum as its value: the card reads page 2 on its own, then prices the union in ONE GET, then shows it.
+test('the Wallet card reads every page before it values the list: the largest holding on page 2 leads, and no partial total is ever shown', async () => {
+  overrideReply = async (route, body) => {
+    if (route !== 'wallet-assets') return null;
+    if (body.cursor === undefined) return pageWithMore();
+    await sleep(1200);
+    return pageTwo();
+  };
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await provider(asked, twoPagePrices)(ctx);
+      await watchTotals(ctx);
+    });
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
+      assert.deepEqual(walletBodies(), [{ wallet: OWNER, autoDiscover: true }, { wallet: OWNER, autoDiscover: true, cursor: HANDLE }], 'page 2 read on its own, with the handle page 1 gave');
+      assert.equal(await list.getAttribute('data-wallet-pages'), '2');
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50', 'MANY $2,000 + ETH $20 + USDG $5.50 + UFG $3');
+      assert.deepEqual(await list.locator('[data-wallet-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-wallet-row'))), [MANY, NATIVE, SELECTED_TOKENS[1], UFG], 'page 2’s MANY leads');
+      const prices = asked.filter((url) => url.includes('/tokens/v1/'));
+      assert.equal(prices.length, 1, 'ONE price GET, for both pages’ tokens');
+      assert.equal(new URL(prices[0]).pathname, `/tokens/v1/robinhood/${[WETH, UFG, MANY].sort().join(',')}`);
+      assert.deepEqual(await page.evaluate(() => window.__totals), [[MANY, NATIVE, SELECTED_TOKENS[1], UFG].join(',')], 'a total was only ever shown over the whole list');
+      assert.equal(await list.getByRole('button', { name: /Load more/ }).count(), 0, 'nothing left to press');
+      assert.match(await list.locator('.dm-acct-tokens-count').textContent(), /page 2 of up to 5/);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+// Review of 2026-09-25: pressing Load more blanked the card to skeletons until the next page landed. A later step keeps
+// the rows on screen, and a list with a page it could not read shows no total at all.
+test('a page the list could not read leaves its rows with no total; Load more keeps them on screen while it reads, then the whole list is valued', async () => {
+  let secondAsks = 0;
+  overrideReply = async (route, body) => {
+    if (route !== 'wallet-assets') return null;
+    if (body.cursor === undefined) return pageWithMore();
+    secondAsks += 1;
+    // First a reply the hop could not read, which is final (never asked again on its own); then, pressed, page 2 after a while.
+    if (secondAsks === 1) return { status: 502, text: '{"error":"upstream_invalid_response"}' };
+    await sleep(2000);
+    return pageTwo();
+  };
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, provider(asked, twoPagePrices));
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"][data-wallet-total-withheld]').waitFor({ timeout: 30_000 });
+      assert.equal(await list.getAttribute('data-wallet-total-withheld'), 'read_failed');
+      assert.equal(await list.locator('[data-wallet-total]').count(), 0, 'page 2 is unread: no figure claims to be the wallet’s value');
+      const rowsNow = () => list.locator('[data-wallet-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-wallet-row')));
+      assert.deepEqual(await rowsNow(), [NATIVE, SELECTED_TOKENS[1], UFG], 'page 1’s holdings, by value');
+      const more = list.getByRole('button', { name: 'Load more' });
+      await more.click();
+      for (const wait of [100, 700, 700]) {
+        await page.waitForTimeout(wait);
+        assert.deepEqual(await rowsNow(), [NATIVE, SELECTED_TOKENS[1], UFG], 'the rows stay while the next page is read');
+        assert.equal(await list.locator('li[aria-hidden="true"]').count(), 0, 'no skeleton rows in their place');
+        assert.equal(await list.locator('.dm-acct-tokens-actions button').last().textContent(), 'Loading…');
+      }
+      await page.locator('[data-portfolio-tokens] [data-wallet-total]').waitFor({ timeout: 30_000 });
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
+      assert.deepEqual(await rowsNow(), [MANY, NATIVE, SELECTED_TOKENS[1], UFG]);
+      assert.equal(secondAsks, 2, 'the final failure was not asked again on its own; the press asked once');
+      assert.deepEqual(asked.filter((url) => url.includes('/tokens/v1/')).map((url) => new URL(url).pathname), [
+        `/tokens/v1/robinhood/${[WETH, UFG].sort().join(',')}`,
+        `/tokens/v1/robinhood/${MANY}`,
+      ], 'the press priced only the token it added: the rest are kept in memory');
       assert.deepEqual(errors, []);
     } finally {
       await context.close();

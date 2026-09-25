@@ -12,17 +12,17 @@
   /* ---- The page: the steps, and on a wide screen the position they make beside them (§10.1) -------------- */
   .dm-np { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; row-gap: 24px; }
   .dm-np-head { min-width: 0; }
-  /* Below 1024 the preview is out of sight and out of the flow (it is aria-hidden: the steps say everything it
-     shows). Hidden this way rather than with display: none, so crossing the breakpoint never replays its
-     entrance from an invisible first frame. */
-  .dm-flow-preview { position: absolute; display: grid; gap: 20px; width: 1px; height: 1px; min-width: 0; padding: 20px; overflow: hidden; clip-path: inset(50%); visibility: hidden; pointer-events: none; }
+  /* Changed on purpose (owner, 2026-09-24): the preview is no longer out of sight below 1024. On a phone and a tablet
+     it sits under the steps, full width, as the card of the position they make; from 1024 it stands beside them,
+     sticky. It is aria-hidden: the steps say everything it shows. */
+  .dm-flow-preview { display: grid; min-width: 0; padding: 0; overflow: hidden; }
   @media (min-width: 768px) {
     .dm-np { row-gap: 32px; }
   }
   @media (min-width: 1024px) {
     .dm-np { grid-template-columns: minmax(0, 1fr) 400px; column-gap: 32px; }
     .dm-np-head { grid-column: 1 / -1; }
-    .dm-flow-preview { position: sticky; top: calc(var(--header-h) + 24px); width: auto; height: auto; overflow: visible; clip-path: none; visibility: visible; pointer-events: auto; }
+    .dm-flow-preview { position: sticky; top: calc(var(--header-h) + 24px); }
   }
 
   /* ---- The flow card and its four steps --------------------------------------------------------------- */
@@ -85,9 +85,15 @@
   .dm-flow-reason { grid-column: 1 / -1; margin: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); text-align: right; text-wrap: pretty; }
   .dm-flow-reason[data-align="start"] { text-align: left; }
   .dm-flow-foot > [data-create-refund] { grid-column: 1 / -1; }
-  /* Step 1 has nowhere to go back to: its Back rests as a quiet word, so the footer reads as the one slot
-     Continue fills. A blocked Continue keeps a visible well on the dark card (surface-1 is 1.04:1 there). */
-  .dm-flow-foot > .dm-btn--outline:disabled:first-child { background: transparent; box-shadow: none; }
+  /* Changed on purpose (owner, 2026-09-24): step 1 shows no buttons until a token is chosen, and has nowhere to go
+     back to, so then Continue arrives alone, full width, with a short rise (stilled under reduced motion). While
+     nothing is chosen the footer holds only the visually hidden reason and takes no room. A blocked Continue keeps
+     a visible well on the dark card (surface-1 is 1.04:1 there). */
+  .dm-flow-foot[data-first] { grid-template-columns: minmax(0, 1fr); }
+  .dm-flow-foot[data-waiting] { margin-top: 0; }
+  .dm-flow-foot[data-first] > .dm-btn,
+  .dm-flow-foot[data-first] > .dm-flow-reason:not(.sr-only) { animation: dm-flow-foot-in var(--dur-enter) var(--ease-enter) backwards; }
+  .dm-flow-foot[data-first] > .dm-flow-reason:not(.sr-only) { animation-delay: 60ms; }
   .dark .dm-flow-foot > .dm-btn--primary:disabled { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
   /* Journey keeps the reason paragraph mounted so the live region pre-exists its text. Hold its
      one line open on the steps that have one, or the footer jumps when a reason appears. */
@@ -307,10 +313,10 @@
   .dm-flow-headline-line { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); overflow-wrap: anywhere; }
   .dm-flow-headline-range { margin: 10px 0 0; }
   .dm-flow-headline .dm-range-preview-dot { box-shadow: 0 0 0 2px var(--flow-well, var(--surface-1)); }
-  /* Beside the steps the preview draws this range large: the small one is for where the preview is not. */
-  @media (min-width: 1024px) {
-    .dm-np .dm-flow-headline-range { display: none; }
-  }
+  /* Changed on purpose (owner, 2026-09-24): the preview now shows at every width, beside the steps from 1024 and
+     under them below, and draws this range large; the small one was for where the preview was not, so on a phone
+     the range showed twice at Review. The line above it still says the range in words. */
+  .dm-np .dm-flow-headline-range { display: none; }
 
   /* Lines that appear only when there is something to say: a range that does not hold the price, a slippage
      above 1%, a wallet that does not cover the deposit. The dot is always the neutral one. */
@@ -339,41 +345,142 @@
   .dm-flow-wstep-token .font-mono { font-size: 11px; color: var(--fg-subtle); }
   .dm-flow-wstep-note { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
 
-  /* ---- The preview beside the steps (§10.1): pair, range, deposit, tolerance, split by hairlines ---------- */
-  .dm-flow-preview-pair { display: grid; gap: 16px; min-width: 0; }
-  .dm-flow-preview-id { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 36px; }
-  .dm-flow-preview-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dm-flow-preview-fee { flex-shrink: 0; border-radius: var(--radius-sm); background: var(--surface-3); }
-  .dm-flow-preview-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 16px; min-height: 36px; margin: 0; }
-  .dm-flow-preview-stats dt { margin-bottom: 2px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-flow-preview-stats dd { margin: 0; color: var(--fg); }
-  .dm-flow-preview-stats .dm-flow-preview-apr { color: var(--money-in); }
-  .dm-flow-preview-range { display: grid; gap: 12px; min-width: 0; padding-top: 20px; box-shadow: inset 0 1px 0 var(--border); }
-  /* The band's 6px corners show: its Tangerine edges run along the straight part of its sides only (the
-     preview's 48px band; F's RangePreview draws the edges the band's full height). */
-  .dm-flow-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
-  .dm-flow-preview-label { font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-flow-preview-deposit { display: grid; gap: 2px; min-width: 0; padding-top: 12px; box-shadow: inset 0 1px 0 var(--border); }
-  .dm-flow-preview-row { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 44px; }
-  .dm-flow-preview-amount { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
-  .dm-flow-preview-usd { flex-shrink: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-flow-preview-total { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; margin-top: 6px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); color: var(--fg); }
-  .dm-flow-preview-slip { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-flow-preview-slip > .dm-fig-xs { color: var(--fg); }
-  /* Slots: quiet solid places for what a choice will fill (a wash, the marks on a ringed disc), never dashed outlines,
-     which read as a wireframe or a card that failed to load. Places, not loading: nothing shimmers. */
-  .dm-flow-preview-slot { display: inline-block; flex-shrink: 0; height: 10px; border-radius: var(--radius-pill); background: var(--wash-strong); }
-  .dm-flow-preview-slot--mark { width: 36px; height: 36px; background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-flow-preview-slot-pair > .dm-flow-preview-slot--mark:last-child { box-shadow: inset 0 0 0 1px var(--border), 0 0 0 2px var(--card); }
-  .dm-flow-preview-slot-pair { display: inline-flex; flex-shrink: 0; }
-  .dm-flow-preview-slot-pair > :last-child { margin-left: -11px; }
-  .dm-flow-preview-slot-lines { display: grid; gap: 8px; }
-  .dm-flow-preview[data-preview="empty"] .dm-flow-preview-stats { align-items: center; min-height: 16px; }
-  /* Before a range: the axis, with a dashed place where the band will sit on it. */
-  .dm-flow-preview-axis { position: relative; min-width: 0; }
-  .dm-flow-preview-axis > .dm-flow-preview-slot { position: absolute; top: 50%; translate: 0 -50%; }
-  /* The band's place: its fill at half strength between two quiet edges, as the band itself will stand. */
-  .dm-flow-preview-axis > .dm-flow-preview-slot--band { left: 30%; width: 40%; height: 22px; border-radius: 6px; background: color-mix(in srgb, var(--band-fill) 45%, var(--card)); box-shadow: inset 2px 0 0 var(--border-strong), inset -2px 0 0 var(--border-strong); }
+  /* ---- The preview (§10.1, redrawn 2026-09-24 at the owner's request): the position being made, as a card -- */
+  /* Before a pool: a picture of what a position is (PreviewArt) over its legend. With a pool: its pair, fee, TVL and
+     APR; with a price and a range, the price large and the range drawn on it; then the amounts, their total and the
+     tolerance, each part joining as its step is reached. Sections meet at hairlines; every figure is one the steps
+     show. aria-hidden, so none of it is read twice. */
+
+  /* The pool's head opens and folds as a row is pointed at and left (M13: grid rows 0fr <-> 1fr, .25s). */
+  .dm-flow-pv-fold { display: grid; grid-template-rows: 0fr; min-width: 0; transition: grid-template-rows var(--dur-step) var(--ease-enter); }
+  .dm-flow-pv-fold[data-open] { grid-template-rows: 1fr; }
+  .dm-flow-pv-fold-inner { min-width: 0; min-height: 0; overflow: hidden; }
+  .dm-flow-pv-pool { display: flex; align-items: center; gap: 14px; min-width: 0; padding: 20px 20px 18px; }
+  .dm-flow-pv-pool-words { display: grid; flex: 1; gap: 4px; min-width: 0; }
+  .dm-flow-pv-pair { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; line-height: 24px; font-weight: 500; letter-spacing: -0.3px; color: var(--fg); }
+  .dm-flow-pv-stats { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
+  .dm-flow-pv-stats > div { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .dm-flow-pv-stats dt { color: var(--fg-subtle); }
+  .dm-flow-pv-stats dd { margin: 0; font-weight: 500; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-flow-pv-stats .dm-flow-pv-apr { color: var(--money-in); }
+  .dm-flow-pv-fee { flex-shrink: 0; align-self: flex-start; margin-top: 1px; border-radius: var(--radius-sm); background: var(--surface-3); }
+
+  /* The price and its range. */
+  .dm-flow-pv-live { display: grid; min-width: 0; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-flow-pv-price { display: grid; gap: 6px; min-width: 0; padding: 18px 20px 0; }
+  .dm-flow-pv-price-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; min-height: 24px; }
+  .dm-flow-pv-label { font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-flow-pv-price-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; margin: 0; color: var(--fg); }
+  .dm-flow-pv-unit { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+
+  /* The range on a log price axis across the card: a dotted field that fades toward its edges, a warm light under
+     the band, the band itself (a Tangerine wash that deepens toward the axis), its two edges with grips, the pool's
+     price as a dotted line down to a dot on the axis, and each edge's distance from that price under the axis.
+     Every part is a full-width layer moved by translate (a percentage of the card's width) or by its clip (M14);
+     out of range the band, its edges and the light go quiet. */
+  .dm-flow-pv-range { --pv-top: 14px; --pv-axis: 28px; position: relative; height: 152px; min-width: 0; margin-top: 10px; overflow: hidden; }
+  .dm-flow-pv-range::before { content: ''; position: absolute; inset: 0 0 var(--pv-axis); background-image: radial-gradient(circle at center, var(--dot-chart) 1px, transparent 1.2px); background-size: 16px 16px; background-position: 8px 4px; -webkit-mask-image: linear-gradient(to bottom, transparent, #000 45%); mask-image: linear-gradient(to bottom, transparent, #000 45%); pointer-events: none; }
+  .dm-flow-pv-range > span { position: absolute; left: 0; width: 100%; pointer-events: none; }
+  .dm-flow-pv-range-glow { top: 0; bottom: var(--pv-axis); background: radial-gradient(34% 100% at 50% 100%, var(--primary-glow), transparent 75%); transition: translate var(--dur-step) var(--ease-enter), opacity var(--dur-step) var(--ease-std); }
+  .dm-flow-pv-range-band { top: var(--pv-top); bottom: var(--pv-axis); background: linear-gradient(to bottom, color-mix(in srgb, var(--primary-line) 4%, transparent), color-mix(in srgb, var(--primary-line) 26%, transparent)); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--primary-line) 55%, transparent); transition: clip-path var(--dur-step) var(--ease-enter); }
+  .dark .dm-flow-pv-range-band { background: linear-gradient(to bottom, color-mix(in srgb, var(--primary-line) 3%, transparent), color-mix(in srgb, var(--primary-line) 34%, transparent)); }
+  .dm-flow-pv-range-edge { top: var(--pv-top); bottom: var(--pv-axis); transition: translate var(--dur-step) var(--ease-enter); }
+  .dm-flow-pv-range-edge::before { content: ''; position: absolute; top: 0; bottom: 0; left: -1px; width: 2px; border-radius: 1px 1px 0 0; background: var(--primary-line); }
+  .dm-flow-pv-range-edge[data-at="edge"] { display: none; }
+  /* A grip on each edge, as the range step's handles are drawn (two strokes on Tangerine, ringed in the card). */
+  .dm-flow-pv-range-grip { position: absolute; top: 50%; left: 0; width: 12px; height: 30px; margin: -15px 0 0 -6px; border-radius: var(--radius-pill); background: linear-gradient(var(--primary-fg), var(--primary-fg)) 3.5px 50% / 1px 12px no-repeat, linear-gradient(var(--primary-fg), var(--primary-fg)) 7.5px 50% / 1px 12px no-repeat, var(--primary-line); box-shadow: 0 0 0 2px var(--card), var(--elev-button); }
+  .dm-flow-pv-range-axis { bottom: var(--pv-axis); height: 1px; background: var(--border-strong); }
+  .dm-flow-pv-range-now { top: 2px; bottom: var(--pv-axis); transition: translate var(--dur-step) var(--ease-enter); }
+  .dm-flow-pv-range-now::before { content: ''; position: absolute; top: 0; bottom: 0; left: -0.75px; width: 1.5px; background: radial-gradient(circle, var(--fg-muted) 0.75px, transparent 1px) center top / 1.5px 5px repeat-y; }
+  .dm-flow-pv-range-dot, .dm-flow-pv-range-ping { position: absolute; bottom: -4.5px; left: -4.5px; width: 9px; height: 9px; border-radius: var(--radius-pill); }
+  .dm-flow-pv-range-dot { background: var(--fg); box-shadow: 0 0 0 2.5px var(--card); }
+  /* The price pings twice when it arrives or changes (the key remounts it): an answer to data, never a loop. */
+  .dm-flow-pv-range-ping { background: var(--primary-line); opacity: 0; animation: dm-live-ring 1.6s ease-out 320ms 2; }
+  .dm-flow-pv-range-mark { bottom: 6px; height: 16px; transition: translate var(--dur-step) var(--ease-enter); }
+  .dm-flow-pv-range-mark > span { position: absolute; bottom: 0; left: 0; translate: -50% 0; font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: -0.1px; color: var(--fg-subtle); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-flow-pv-range-mark > span[data-side="start"] { translate: 4px 0; }
+  .dm-flow-pv-range-mark > span[data-side="end"] { translate: calc(-100% - 4px) 0; }
+  .dm-flow-pv-range[data-in="false"] .dm-flow-pv-range-glow { opacity: 0; }
+  .dm-flow-pv-range[data-in="false"] .dm-flow-pv-range-band { background: linear-gradient(to bottom, transparent, var(--wash-strong)); box-shadow: inset 0 -2px 0 var(--border-strong); }
+  .dm-flow-pv-range[data-in="false"] .dm-flow-pv-range-edge::before { background: var(--fg-faint); }
+  .dm-flow-pv-range[data-in="false"] .dm-flow-pv-range-grip { background: linear-gradient(var(--fg-subtle), var(--fg-subtle)) 3.5px 50% / 1px 12px no-repeat, linear-gradient(var(--fg-subtle), var(--fg-subtle)) 7.5px 50% / 1px 12px no-repeat, var(--surface-3); }
+  .dm-flow-pv-bounds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 14px 20px 20px; }
+  .dm-flow-pv-bounds > div { display: grid; gap: 2px; min-width: 0; }
+  .dm-flow-pv-bounds > div:last-child { text-align: right; }
+  .dm-flow-pv-bounds dt { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-flow-pv-bounds dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+
+  /* Before a pool: the picture on a dotted, warmly lit field, then its legend. */
+  .dm-flow-pv-start { display: grid; min-width: 0; }
+  .dm-flow-pv-fold[data-open] + .dm-flow-pv-start { box-shadow: inset 0 1px 0 var(--border); }
+  .dm-flow-pv-stage { position: relative; height: 200px; min-width: 0; }
+  .dm-flow-pv-stage::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(circle at center, var(--dot-chart) 1px, transparent 1.2px), radial-gradient(42% 50% at 50% 52%, color-mix(in srgb, var(--primary-glow) 70%, transparent), transparent 72%); background-size: 16px 16px, 100% 100%; background-position: 8px 8px, 0 0; -webkit-mask-image: radial-gradient(75% 85% at 50% 50%, #000 40%, transparent 100%); mask-image: radial-gradient(75% 85% at 50% 50%, #000 40%, transparent 100%); pointer-events: none; }
+  /* The picture keeps its scale on a wide card (a tablet puts the preview under the steps, full width): it is
+     centred at most 440 wide, and the field and its light carry on to the card's edges. */
+  .dm-flow-pv-stage > svg { position: relative; width: 100%; max-width: 440px; height: 100%; margin-inline: auto; }
+  /* The picture's legend: four quiet swatches drawn as the picture draws them, two to a line. */
+  .dm-flow-pv-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0; padding: 4px 20px 20px; list-style: none; }
+  @media (min-width: 640px) and (max-width: 1023px) {
+    .dm-flow-pv-legend { grid-template-columns: repeat(4, auto); justify-content: center; column-gap: 28px; }
+  }
+  .dm-flow-pv-legend > li { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-flow-pv-swatch { position: relative; flex-shrink: 0; width: 20px; height: 12px; }
+  .dm-flow-pv-swatch::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 2px; margin-top: -1px; border-radius: 1px; }
+  .dm-flow-pv-swatch[data-swatch="in"]::before { background: var(--primary-line); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-line) 16%, transparent); }
+  .dm-flow-pv-swatch[data-swatch="out"]::before { background: color-mix(in srgb, var(--fg-subtle) 55%, transparent); }
+  .dm-flow-pv-swatch[data-swatch="band"]::before { top: 0; height: 12px; margin-top: 0; border-radius: 3px; background: color-mix(in srgb, var(--band-fill) 80%, transparent); box-shadow: inset 0 1.25px 0 color-mix(in srgb, var(--primary-line) 70%, transparent), inset 0 -1.25px 0 color-mix(in srgb, var(--primary-line) 70%, transparent); }
+  .dm-flow-pv-swatch[data-swatch="fees"]::before { top: 50%; left: 4px; right: auto; width: 5px; height: 5px; margin-top: -2.5px; border-radius: var(--radius-pill); background: var(--primary-line); box-shadow: 7px -3px 0 -0.5px color-mix(in srgb, var(--primary-line) 60%, transparent); }
+
+  /* The deposit, its total, and the tolerance. */
+  .dm-flow-pv-deposit { display: grid; gap: 0; min-width: 0; padding: 10px 20px 16px; box-shadow: inset 0 1px 0 var(--border); }
+  /* A one-token plan's deposit, over the amounts its swap leaves the position: Review's "From your wallet". */
+  .dm-flow-pv-from { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; padding: 8px 0 6px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-flow-pv-from > .dm-fig-xs { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+  .dm-flow-pv-row { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 48px; }
+  .dm-flow-pv-amount { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+  .dm-flow-pv-symbol { color: var(--fg-muted); font-weight: 400; }
+  .dm-flow-pv-usd { flex-shrink: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-flow-pv-total { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; margin-top: 8px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); color: var(--fg); }
+  .dm-flow-pv-slip { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px 18px; box-shadow: inset 0 1px 0 var(--border); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-flow-pv-slip > .dm-fig-xs { color: var(--fg); }
+
+  /* The picture (PreviewArt): every colour a token, both themes. At rest (and stilled: tokens.css puts
+     `animation: none` on every .dm-art part) it is the whole composition, fee pips included; the loop runs only
+     while it is in view (art.css pauses a .dm-art without .is-running). One 10 s timeline: hold, fade (12-15%), the
+     line drawn again with the tip at its head (15.5-82%), the tip grey while outside the band, each pip rising again
+     where the tip passes it inside the band and settling where it rests, hold. The tip's ink times and the pips'
+     moments come from the path (PreviewArt.tsx). */
+  .dm-flow-pv-art { display: block; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 9%, #000 91%, transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 9%, #000 91%, transparent 100%); }
+  .dm-flow-pv-art .band-0 { stop-color: var(--band-fill); stop-opacity: 0; }
+  .dm-flow-pv-art .band-1 { stop-color: var(--band-fill); stop-opacity: 0.62; }
+  .dm-flow-pv-art .edge-0 { stop-color: var(--primary-line); stop-opacity: 0; }
+  .dm-flow-pv-art .edge-1 { stop-color: var(--primary-line); stop-opacity: 0.7; }
+  .dm-flow-pv-art .edge { stroke-width: 1.25px; }
+  .dm-flow-pv-art .line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 100 110; stroke-dashoffset: 0; }
+  .dm-flow-pv-art .line-out { stroke: var(--fg-subtle); stroke-opacity: 0.5; stroke-width: 1.75px; }
+  .dm-flow-pv-art .line-glow { stroke: color-mix(in srgb, var(--primary-line) 16%, transparent); stroke-width: 9px; }
+  .dm-flow-pv-art .line-in { stroke: var(--primary-line); stroke-width: 2.25px; }
+  .dm-flow-pv-art .now { stroke: var(--fg-subtle); stroke-width: 1.5px; stroke-linecap: round; stroke-dasharray: 0 5; }
+  .dm-flow-pv-art .pip { fill: var(--primary-line); opacity: var(--rest); translate: 0 var(--rise); scale: var(--size); transform-box: fill-box; transform-origin: 50% 50%; }
+  /* Each pip at rest: how far it has risen from the line, how strongly it shows, its size. Two strong, two faint. */
+  .dm-flow-pv-art .pip-1 { --rise: -20px; --rest: 0.85; --size: 1; }
+  .dm-flow-pv-art .pip-2 { --rise: -26px; --rest: 0.55; --size: 0.8; }
+  .dm-flow-pv-art .pip-3 { --rise: -15px; --rest: 0.9; --size: 1; }
+  .dm-flow-pv-art .pip-4 { --rise: -22px; --rest: 0.65; --size: 0.85; }
+  .dm-flow-pv-art .shadow { fill: var(--fg); opacity: 0.12; }
+  .dark .dm-flow-pv-art .shadow { fill: var(--bg); opacity: 0.9; }
+  .dm-flow-pv-art .tip { transform-box: view-box; transform-origin: 0 0; offset-rotate: 0deg; offset-distance: 100%; }
+  .dm-flow-pv-art .tip-core { fill: var(--primary); stroke: var(--card); stroke-width: 2px; }
+  .dm-flow-pv-art .tip-ring { fill: var(--primary-line); opacity: 0.18; transform-box: fill-box; transform-origin: 50% 50%; scale: 2.2; }
+  .dm-flow-pv-art .line { animation: dm-flow-pv-draw 10s linear infinite; }
+  .dm-flow-pv-art .now { animation: dm-flow-pv-now 10s linear infinite; }
+  .dm-flow-pv-art .tip { animation: dm-flow-pv-tip 10s linear infinite; }
+  .dm-flow-pv-art .tip-core { animation: dm-flow-pv-ink 10s linear infinite; }
+  .dm-flow-pv-art .tip-ring { animation: dm-flow-pv-ring 10s var(--ease-std) infinite; }
+  .dm-flow-pv-art .pip-1 { animation: dm-flow-pv-pip-1 10s var(--ease-enter) infinite; }
+  .dm-flow-pv-art .pip-2 { animation: dm-flow-pv-pip-2 10s var(--ease-enter) infinite; }
+  .dm-flow-pv-art .pip-3 { animation: dm-flow-pv-pip-3 10s var(--ease-enter) infinite; }
+  .dm-flow-pv-art .pip-4 { animation: dm-flow-pv-pip-4 10s var(--ease-enter) infinite; }
 
   /* ---- Token search ------------------------------------------------------------------------------------ */
   .dm-flow-search { min-width: 0; }
@@ -397,6 +504,11 @@
   .dm-flow-hit-name { min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; }
   .dm-flow-hit-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-flow-hit-blank { flex-shrink: 0; width: 28px; height: 28px; border-radius: var(--radius-pill); background: var(--surface-3); }
+  /* New position's token results (owner review, 2026-09-24): a little more room per result and the name a step
+     larger, as an exchange's token list reads. Scoped to the page: Markets' catalogue search keeps its own. */
+  .dm-np .dm-flow-listbox { top: calc(100% + 8px); }
+  .dm-np .dm-flow-hit { min-height: 56px; gap: 14px; padding: 8px 12px; }
+  .dm-np .dm-flow-hit-name { font-size: 15px; }
 
   /* ---- Token picker ------------------------------------------------------------------------------------ */
   .dm-flow-picker { display: grid; gap: 16px; min-width: 0; }
@@ -481,4 +593,76 @@
 /* A mark that lands: a done wallet step's check, the chosen pool's check, Create position's done glyph. */
 @keyframes dm-flow-stamp {
   from { opacity: 0; scale: 0.6; }
+}
+
+/* Step 1's Continue arriving once a token is chosen: a short rise and fade (backwards fill only). */
+@keyframes dm-flow-foot-in {
+  from { opacity: 0; translate: 0 10px; }
+}
+
+/* The preview's picture (PreviewArt): one 10 s timeline. 0% and 100% are the static composition. */
+@keyframes dm-flow-pv-draw {
+  0%, 12% { stroke-dashoffset: 0; opacity: 1; }
+  15% { stroke-dashoffset: 0; opacity: 0; }
+  15.01%, 15.5% { stroke-dashoffset: 101; opacity: 1; }
+  82%, 100% { stroke-dashoffset: 0; opacity: 1; }
+}
+@keyframes dm-flow-pv-tip {
+  0%, 12% { offset-distance: 100%; opacity: 1; }
+  15% { offset-distance: 100%; opacity: 0; }
+  15.01% { offset-distance: 0%; opacity: 0; }
+  15.5% { offset-distance: 0%; opacity: 1; }
+  82%, 100% { offset-distance: 100%; opacity: 1; }
+}
+/* Grey while the tip is outside the band: 28.3-41.5% (above it) and 64.1-73.4% (below it). */
+@keyframes dm-flow-pv-ink {
+  0%, 27.9% { fill: var(--primary); }
+  28.7%, 41.1% { fill: var(--fg-subtle); }
+  41.9%, 63.7% { fill: var(--primary); }
+  64.5%, 73% { fill: var(--fg-subtle); }
+  73.8%, 100% { fill: var(--primary); }
+}
+@keyframes dm-flow-pv-ring {
+  0%, 12% { scale: 2.2; opacity: 0.18; }
+  15%, 81.9% { scale: 1; opacity: 0; }
+  82% { scale: 1; opacity: 0.5; }
+  94% { scale: 3.4; opacity: 0; }
+  96% { scale: 2.2; opacity: 0; }
+  100% { scale: 2.2; opacity: 0.18; }
+}
+@keyframes dm-flow-pv-now {
+  0%, 12% { opacity: 1; }
+  15%, 82% { opacity: 0; }
+  86%, 100% { opacity: 1; }
+}
+/* Each fee pip on the same 10 s timeline, at rest at 0% and 100%: it fades with the line (12-15%), waits on the line
+   unseen until the tip reaches it (46.6%, 50.1%, 58.1%, 77.7%: PreviewArt.tsx), pops, rises and settles where it rests
+   (its --rise, --rest and --size). One set of keyframes per pip, as the hero's tiles each tip at their own moment. */
+@keyframes dm-flow-pv-pip-1 {
+  0%, 12% { opacity: var(--rest); translate: 0 var(--rise); scale: var(--size); }
+  15% { opacity: 0; translate: 0 var(--rise); scale: var(--size); }
+  15.01%, 46.6% { opacity: 0; translate: 0 0; scale: 0.3; }
+  48.1% { opacity: 1; translate: 0 calc(var(--rise) * 0.25); scale: 1; }
+  55.6%, 100% { opacity: var(--rest); translate: 0 var(--rise); scale: var(--size); }
+}
+@keyframes dm-flow-pv-pip-2 {
+  0%, 12% { opacity: var(--rest); translate: 0 var(--rise); scale: var(--size); }
+  15% { opacity: 0; translate: 0 var(--rise); scale: var(--size); }
+  15.01%, 50.1% { opacity: 0; translate: 0 0; scale: 0.3; }
+  51.6% { opacity: 1; translate: 0 calc(var(--rise) * 0.25); scale: 1; }
+  59.1%, 100% { opacity: var(--rest); translate: 0 var(--rise); scale: var(--size); }
+}
+@keyframes dm-flow-pv-pip-3 {
+  0%, 12% { opacity: var(--rest); translate: 0 var(--rise); scale: var(--size); }
+  15% { opacity: 0; translate: 0 var(--rise); scale: var(--size); }
+  15.01%, 58.1% { opacity: 0; translate: 0 0; scale: 0.3; }
+  59.6% { opacity: 1; translate: 0 calc(var(--rise) * 0.25); scale: 1; }
+  67.1%, 100% { opacity: var(--rest); translate: 0 var(--rise); scale: var(--size); }
+}
+@keyframes dm-flow-pv-pip-4 {
+  0%, 12% { opacity: var(--rest); translate: 0 var(--rise); scale: var(--size); }
+  15% { opacity: 0; translate: 0 var(--rise); scale: var(--size); }
+  15.01%, 77.7% { opacity: 0; translate: 0 0; scale: 0.3; }
+  79.2% { opacity: 1; translate: 0 calc(var(--rise) * 0.25); scale: 1; }
+  86.7%, 100% { opacity: var(--rest); translate: 0 var(--rise); scale: var(--size); }
 }

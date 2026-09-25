@@ -66,6 +66,13 @@ const MAX_FORM_BYTES = 1024
  * Since 2026-09-24 the same token-pairs GET also names the pool ids New
  * position asks the read service to verify (src/lib/read/screens/poolHints.ts);
  * no new host or path, and nothing it reports is shown.
+ *
+ * 2026-09-25: connect-src also names Robinhood Chain's public RPC. The page
+ * reads the wallet's positions and a position's state from it itself
+ * (src/lib/chain/browser.ts, the one fetch that reaches it): the RPC answers
+ * 429 to every call from Cloudflare's shared egress, so the site's own routes
+ * that read it for the page failed in production. Public chain data only;
+ * nothing is sent there but the reads' fixed calls, with no credentials.
  */
 export const APP_CSP = [
   "default-src 'self'",
@@ -73,7 +80,7 @@ export const APP_CSP = [
   "style-src 'self' https://fonts.googleapis.com",
   'font-src https://fonts.gstatic.com',
   "img-src 'self' data: https://cdn.dexscreener.com",
-  "connect-src 'self' https://api.dexscreener.com",
+  "connect-src 'self' https://api.dexscreener.com https://rpc.mainnet.chain.robinhood.com",
   "object-src 'none'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
@@ -82,6 +89,17 @@ export const APP_CSP = [
 
 /** The CSP for an API answer: JSON that renders nothing and frames nowhere. */
 export const API_CSP = "default-src 'none'; frame-ancestors 'none'"
+
+/**
+ * The fees replay worker's own CSP (2026-09-25). A dedicated worker loaded
+ * from a URL is governed by the policy its own script is served with, not by
+ * the page's, so its file carries one: it loads nothing, and reaches only the
+ * chain's public RPC, where it reads the fees history's logs itself since the
+ * RPC rate-limits Cloudflare's edge (src/lib/fees/logs.ts, through its paced lane).
+ */
+export const WORKER_CSP = "default-src 'none'; connect-src https://rpc.mainnet.chain.robinhood.com"
+/** Vite's name for that worker's file: src/lib/fees/feesReplay.worker.ts, content-hashed, under /assets/. */
+export const WORKER_PATH = /^\/assets\/feesReplay\.worker-[\w-]+\.js$/
 
 /**
  * The /api paths: /api itself and everything under /api/, in any case. Pages
@@ -256,6 +274,7 @@ function secured(response: Response, url: URL): Response {
   } else if (url.pathname.startsWith('/assets/')) {
     // Content-hashed by Vite, so safe to keep, but only in this browser.
     out.headers.set('Cache-Control', 'private, max-age=31536000, immutable')
+    if (WORKER_PATH.test(url.pathname)) out.headers.set('Content-Security-Policy', WORKER_CSP)
   } else {
     out.headers.set('Cache-Control', 'private, no-cache')
   }

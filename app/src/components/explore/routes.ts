@@ -75,6 +75,12 @@ export const positionHref = (tokenId: string) => `#/positions/${tokenId}`
 /** Auto-compound set up on one position NFT (Sequence reads the mode and the id from the link). */
 export const compoundHref = (tokenId: string) => `#/sequence/compound/${tokenId}`
 
+/**
+ * The automation page with one of the wallet's positions preselected (2026-09-24, the three features joined up):
+ * with a mode, that mode is chosen too (`#/sequence/<mode>/<id>`); without one, the page asks which.
+ */
+export const sequenceHref = (tokenId: string, mode: 'compound' | 'domino' | null = null) => (mode ? `#/sequence/${mode}/${tokenId}` : `#/sequence/${tokenId}`)
+
 export const automateHref = '#/automate' as const
 
 export const settingsHref = '#/settings' as const

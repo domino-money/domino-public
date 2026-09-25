@@ -210,6 +210,8 @@
   .dm-seq-pick-pair { overflow: hidden; font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; white-space: nowrap; text-overflow: ellipsis; }
   .dm-seq-pick-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
   .dm-seq-pick-id { font-size: 12px; line-height: 16px; color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
+  /* The chain showed something already subscribed to this NFT: said on its own line, and the option can't be chosen. */
+  .dm-seq-pick-note { flex-basis: 100%; font-size: 12px; line-height: 16px; color: var(--fg-muted); }
   .dm-seq-pick-range { display: block; min-width: 0; }
   .dm-seq-pick-dot { width: 20px; height: 20px; border-radius: 9999px; box-shadow: inset 0 0 0 1.5px var(--border-strong); transition: box-shadow var(--dur-fast) var(--ease-std); }
   .dm-seq-pick[aria-checked="true"] .dm-seq-pick-dot { box-shadow: inset 0 0 0 6px var(--primary); }

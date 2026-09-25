@@ -16,6 +16,7 @@ import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { decodeAbiParameters, decodeFunctionData, encodeFunctionData } from 'viem';
+import { browserChain, busyHistory, poolIdOf, routeChain } from './support/browser-chain.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { installWallets } from './support/mock-wallet.mjs';
 import { POSITION_MANAGER, createPositionChain } from './support/position-chain.mjs';
@@ -72,8 +73,12 @@ async function installPositionWallet(context, chain) {
   });
 }
 
-/** The wallet-test build at the lab with `spec`, the chain connected on Robinhood Chain and not signed in. */
-async function atLab(chain, spec) {
+/**
+ * The wallet-test build at the lab with `spec`, the chain connected on Robinhood Chain and not signed in. `hash`: a
+ * route of the app instead of the lab (2026-09-25: a position's own page); `rpc`: the public RPC the page reads, an empty
+ * chain unless given.
+ */
+async function atLab(chain, spec, { hash = null, rpc: chainRpc = undefined } = {}) {
   const fake = createFakeSession();
   const releases = [], errors = [];
   const server = createWalletServer({ fake, routes: [async (request, url) => {
@@ -87,6 +92,11 @@ async function atLab(chain, spec) {
   const origin = `http://127.0.0.1:${server.address().port}`; fake.origin = origin;
   const context = await browser.newContext({ viewport: { width: 1180, height: 900 } });
   await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+  // 2026-09-25: the page reads Robinhood Chain's public RPC itself (the wallet's positions on Positions and on the
+  // automation page, a position's state, the fees history), since the RPC rate-limits Cloudflare's edge. That one host
+  // is answered here by an empty chain (tests/support/browser-chain.mjs): no position, no deposit, every NFT unknown,
+  // as the site's routes answered before; a request the CSP refused never reaches it.
+  const rpc = await routeChain(context, chainRpc);
   const wallets = await installWallets(context);
   await installPositionWallet(context, chain);
   const page = await context.newPage();
@@ -97,10 +107,14 @@ async function atLab(chain, spec) {
     assert.deepEqual(chain.refused, [], 'every method asked is one this wallet answers');
     assert.deepEqual(chain.missing, [], 'every call reached a contract that answers it');
     assert.ok(!chain.log.includes('personal_sign'), 'nothing is signed in');
+    assert.deepEqual([rpc.errors, rpc.refused, rpc.missing], [[], [], []], 'the public RPC was asked only what it answers');
   } };
   try {
-    await page.goto(`${origin}/#/position-lab/${encodeURIComponent(JSON.stringify(spec))}`);
-    await page.locator('[data-position-lab="ready"]').waitFor();
+    if (hash) await page.goto(`${origin}/#${hash}`);
+    else {
+      await page.goto(`${origin}/#/position-lab/${encodeURIComponent(JSON.stringify(spec))}`);
+      await page.locator('[data-position-lab="ready"]').waitFor();
+    }
     await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
     await page.locator('header [aria-haspopup="dialog"]').click();
     await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Position Wallet', exact: true }).click();
@@ -261,8 +275,12 @@ test('Refund to wallet needs no published release: the profile this browser save
     chain.release = off;
     await refund.click();
     await card.locator('[data-held-notice="release_not_available"]').waitFor({ timeout: 30_000 });
-    assert.equal(await text(notice), 'The refund can’t be prepared on this page right now. Nothing was sent: your deposit stays held and refundable. Setup’s owner recovery can also return it.');
-    assert.equal(await notice.locator('a[data-held-setup]').getAttribute('href'), '#/setup');
+    // Changed on purpose (2026-09-25, audit of 754014c): the notice no longer sends anyone to "Setup’s owner recovery".
+    // That page offers no recovery in this state (with no release and no saved profile it renders nothing to do), or else
+    // the raw Network budget and Operation ID form. The notice's own words stay, and nothing on the card links away.
+    assert.equal(await text(notice), 'The refund can’t be prepared on this page right now. Nothing was sent: your deposit stays held and refundable.');
+    assert.equal(await card.locator('a').count(), 0, 'no link on the card, to Setup or anywhere');
+    assert.doesNotMatch(await text(card), /owner recovery|Setup/);
     assert.doesNotMatch(await text(card), FORBIDDEN);
     assert.deepEqual([chain.sends.length, chain.log.includes('eth_sendTransaction')], [0, false], 'nothing was offered to the wallet');
     // No release Worker answering at all: that may pass, so this one says try again.
@@ -392,5 +410,70 @@ test('only the owner sees the actions; hooked pools are refused, an empty positi
     await dialog.locator('[data-position-warning="automation"]').waitFor();
     assert.equal(await text(dialog.locator('[data-position-warning]')), 'Collecting fees or closing stops Domino automation for this position.');
     assert.deepEqual(chain.sends, []);
+  } finally { await s.close(); }
+});
+
+// 2026-09-25 (audit of 754014c, re-checked on the page's own chain reads): after Collect and Close on a position's own
+// page, everything that shows the position reads it again at once. Found on the released build: the fees card kept its
+// unclaimed figure for up to a minute (its own state read, every STATE_REFRESH_MS), and Automate and the Plain position
+// pill stayed on a closed position (the wallet's list was read before the Close). On return, the Positions list reads
+// the chain afresh: it says Closed.
+test('after Collect and Close on a position’s page, its figures, its fees card, Automate and the list show the new state at once', async () => {
+  const chain = chainFor();
+  const key = { ...NFT.key, currency0: USDG, currency1: UFG };
+  // The public RPC as the page reads it, following the wallet's chain: each included send moves its head on, and the
+  // position's liquidity and unclaimed fees are the wallet chain's. Its pool's history is long, so the fees card is still
+  // loading (with its unclaimed figure) while the owner acts.
+  const rpc = browserChain({
+    positions: [{ tokenId: '3135288', holder: OWNER, key, tickLower: NFT.tickLower, tickUpper: NFT.tickUpper, get liquidity() { return chain.nft(NFT.tokenId).liquidity; }, get unclaimed() { return chain.sends.length ? [0n, 0n] : FEES; } }],
+    pools: { [poolIdOf(key)]: { sqrtPriceX96: NFT.sqrtPriceX96, tick: NFT.tick } },
+    tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [UFG]: { symbol: 'UFG', decimals: 18 } },
+    history: busyHistory({ tokenId: '3135288', key, owner: OWNER, perEpoch: 200 }),
+  });
+  const HEAD = rpc.head;
+  Object.defineProperty(rpc, 'head', { get: () => HEAD + 10 * chain.sends.length });
+  const s = await atLab(chain, null, { hash: '/positions/3135288', rpc });
+  try {
+    const page = s.page;
+    const detail = page.locator('[data-position-detail][data-position-id="3135288"]');
+    await detail.waitFor({ timeout: 15_000 });
+    await detail.locator('[data-position-actions] a[data-automate-entry]').waitFor({ timeout: 15_000 });
+    assert.equal(await text(detail.locator('.dm-pos-chips [data-automation="plain"]')), 'Plain position');
+    const card = page.locator('[data-fees-card][data-fees-state="loading"]');
+    await card.waitFor({ timeout: 15_000 });
+    assert.match(await text(card), /0\.001234 USDG[\s\S]*0\.5 UFG/, 'the card’s unclaimed figure while its history loads');
+    assert.match(await text(detail.locator('[data-stat="fees"]')), /0\.001234\s+USDG/);
+
+    // Collect fees: the page's figures and the card's are 0 at once, not a minute later.
+    await page.locator('[data-position-action="collect"]').click();
+    const collect = page.locator('[role="dialog"][data-position-dialog="collect"]');
+    await collect.locator('[data-position-send="collect"]:not([disabled])').waitFor({ timeout: 30_000 });
+    await collect.getByRole('button', { name: 'Collect in wallet', exact: true }).click();
+    await collect.locator('[data-position-progress="done"]').waitFor({ timeout: 30_000 });
+    const collected = Date.now();
+    await collect.getByRole('button', { name: 'Back to position', exact: true }).click();
+    await page.waitForFunction(() => !/0\.001234/.test(document.querySelector('[data-stat="fees"]')?.textContent ?? '0.001234'), null, { timeout: 5_000 });
+    await page.waitForFunction(() => {
+      const shown = document.querySelector('[data-fees-card]');
+      return !shown || !/0\.001234/.test(shown.textContent ?? '');
+    }, null, { timeout: 5_000 });
+    const took = Date.now() - collected;
+    assert.ok(took < 5_000, `the fees card's figure followed the collect in ${took} ms`);
+
+    // Close position: Closed at once, and neither Automate nor the Plain position pill any more.
+    await page.locator('[data-position-action="close"]').click();
+    const close = page.locator('[role="dialog"][data-position-dialog="close"]');
+    await close.locator('[data-position-send="close"]:not([disabled])').waitFor({ timeout: 30_000 });
+    await close.getByRole('button', { name: 'Close in wallet', exact: true }).click();
+    await close.locator('[data-position-progress="done"]').waitFor({ timeout: 30_000 });
+    await close.getByRole('button', { name: 'Back to position', exact: true }).click();
+    await detail.locator('[data-position-status="closed"]').waitFor({ timeout: 5_000 });
+    await page.waitForFunction(() => document.querySelectorAll('a[data-automate-entry], .dm-pos-chips [data-automation="plain"]').length === 0, null, { timeout: 5_000 });
+    assert.equal(chain.sends.length, 2, 'the collect and the close');
+
+    // Positions, read afresh: the position is under Closed (the automation page's picker reads the same way, on its own mount).
+    await page.evaluate(() => { location.hash = '#/positions'; });
+    await page.locator('[data-owned="ready"]').waitFor({ timeout: 5_000 });
+    assert.deepEqual((await page.getByRole('tab').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim()), ['Open 0', 'Closed 1']);
   } finally { await s.close(); }
 });

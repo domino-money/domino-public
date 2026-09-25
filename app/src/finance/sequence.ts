@@ -186,7 +186,7 @@ export const SEQUENCE_LIST_LIMIT = 8
 /** The most successors a member read follows, so one read stays inside its wallet-call ceiling. */
 export const SEQUENCE_MEMBER_STEPS = 30
 export interface PreparedSequence {
-  kind: 'approve-root' | 'create' | 'resume' | 'pause' | 'restore-operator' | 'revoke-operator' | 'revoke-root' | 'withdraw-child' | 'withdraw-fees' | 'rearm-root' | 'recover-position' | 'recover-currency' | 'set-policy' | 'set-limits'
+  kind: 'approve-root' | 'create' | 'resume' | 'pause' | 'restore-operator' | 'revoke-operator' | 'revoke-root' | 'withdraw-child' | 'withdraw-fees' | 'rearm-root' | 'recover-position' | 'recover-currency'
   owner: Address; vault: Address; expiresAt: number; summary: readonly string[]
   transaction: Readonly<{ from: Address; to: Address; data: Hex; value: '0x0'; nonce: Hex; gas: Hex; maxFeePerGas: Hex; maxPriorityFeePerGas: Hex; chainId: '0x1237'; type: '0x2' }>
 }
@@ -508,8 +508,12 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   }
   async function root(c: Context, tokenId: bigint) {
     if (uint(tokenId,256) === 0n) fail('invalid_root_nft')
-    equal(await call(c, d.positionManager, 'ownerOf', [tokenId]), wallet.owner)
+    if (String(await call(c, d.positionManager, 'ownerOf', [tokenId])).toLowerCase() !== wallet.owner) fail('position_not_in_wallet')
     const [rawKey, packed] = await call(c, d.positionManager, 'getPoolAndPositionInfo', [tokenId])
+    // The low byte of PositionInfo is the manager's hasSubscriber flag, set exactly while subscriber(tokenId) is not zero
+    // (v4-periphery Notifier). A sequence subscribes to its root, and a vault refuses a root another contract is subscribed
+    // to, so a new sequence here would only move the approval off the one it has. No read is added: the read snapshot has it.
+    if (packed & 255n) fail('position_subscribed')
     const key = { ...rawKey, currency0: address(rawKey.currency0.toLowerCase()), currency1: address(rawKey.currency1.toLowerCase()), hooks: address(rawKey.hooks.toLowerCase()) }
     if (key.currency0 >= key.currency1 || key.hooks !== zeroAddress || key.fee > 1_000_000 || key.tickSpacing <= 0 || key.tickSpacing > 32767) fail('unsupported_pool')
     const poolId = keccak256(encodeAbiParameters(poolKeyParameters, [key]))
@@ -629,6 +633,8 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
         if (current.state.stateNonce !== state.stateNonce || current.policy.version !== policy.version || current.limits.version !== limits.version) fail('sequence_preparation_changed')
       })
     }),
+    // No setPolicy or setExecutionLimits: their one way in, Manage a sequence, was removed by the owner (2026-09-24), and
+    // nothing else changes a sequence's rules or limits from this app. The ABI keeps both entries for the owner-surface test.
     /**
      * Authorise the deployment's operator again for a sequence whose operator
      * was revoked.
@@ -645,80 +651,6 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
      * It grants authority and nothing else: a paused sequence stays paused,
      * and Resume remains a separate, reviewed step.
      */
-    /**
-     * Change the automation rules, or the safety limits, on a sequence the
-     * person owns. Both are onlyOwner on chain and neither had a way in from
-     * this product: the four policy fields and the six limits were chosen once
-     * at creation and could never be changed, so a sequence that reached its
-     * own maxPositions had no way forward except being abandoned.
-     *
-     * Each sends a WHOLE struct, because the contract takes a whole one. Only
-     * the fields a person chose come from the form; the rest is re-read from
-     * the live vault and sent back unchanged:
-     *
-     *   version        exactly current + 1, which the contract demands
-     *   paused         unchanged — flipping it here is refused
-     *                  (PauseChangeRequiresTransition); pause and resume stay
-     *                  their own reviewed steps
-     *   serviceFeeBps  preserves the current mode unless an explicit new mode is
-     *                  selected and reviewed. Already charged lots stay charged.
-     *
-     * The bounds are the contract's own, checked here first so a refusal reads
-     * as words rather than as a reverted transaction.
-     */
-    setPolicy: (vault: Address, next: {automationMode?:AutomationMode;triggerDistanceBps:number;maxOverlapBps:number;minimumIntervalSeconds:number;maxPositions:number}, gas: GasBudget) => bounded(async c => {
-      const o = Object.freeze({...next})
-      if (o.automationMode !== undefined && o.automationMode !== 'compound' && o.automationMode !== 'domino') fail('invalid_sequence_policy')
-      integer(o.triggerDistanceBps,0,2000); integer(o.maxOverlapBps,0,2000); integer(o.minimumIntervalSeconds,1,2**32-1); integer(o.maxPositions,1,255)
-      async function check(at: Context) {
-        await verify(at); const state = await owned(at,vault)
-        const current = await call(at,vault,'policy'), members = await call(at,vault,'activePositions') as bigint
-        if (current.version === 0n || current.version >= 2n**64n-1n) fail('policy_version_exhausted')
-        if (BigInt(o.maxPositions) < members) fail('position_limit_below_membership')
-        const mode = o.automationMode ?? automationModeForFee(current.serviceFeeBps)
-        if (mode !== 'compound' && mode !== 'domino') fail('invalid_sequence_policy')
-        if (mode === 'compound' && (o.maxPositions !== 1 || members !== 1n)) fail('simple_compound_position_limit')
-        return { state, current, members, mode: mode as AutomationMode }
-      }
-      const s = await check(c)
-      const policy = {serviceFeeBps:AUTOMATION_FEE_BPS[s.mode],triggerDistanceBps:o.triggerDistanceBps,maxOverlapBps:o.maxOverlapBps,
-        minimumIntervalSeconds:o.minimumIntervalSeconds,maxPositions:o.maxPositions,version:s.current.version+1n,paused:s.current.paused}
-      return prepare(c,'set-policy',vault,vault,encode('setPolicy',[policy]),gas,[
-        `Change the automation rules for root NFT #${s.state.rootTokenId}.`,
-        `Service fee: ${feeDescription(s.current.serviceFeeBps)} New ${s.mode === 'domino' ? 'Domino-compound' : 'Auto-compound'} policy: ${feeDescription(policy.serviceFeeBps)}`,
-        `Trigger distance ${s.current.triggerDistanceBps} to ${policy.triggerDistanceBps} bps; maximum overlap ${s.current.maxOverlapBps} to ${policy.maxOverlapBps} bps; minimum interval ${s.current.minimumIntervalSeconds} to ${policy.minimumIntervalSeconds}s; maximum positions ${s.current.maxPositions} to ${policy.maxPositions}, with ${s.members} registered now.`,
-        `Policy version ${s.current.version} to ${policy.version}. The paused state is unchanged: ${policy.paused?'this sequence stays paused':'this sequence stays active'}, and pausing or resuming is its own step.`,
-        'Owner transaction: no Domino service fee. Network gas still applies.',
-      ],async at => {
-        const again = await check(at)
-        if (again.state.stateNonce !== s.state.stateNonce || again.current.version !== s.current.version) fail('sequence_preparation_changed')
-      })
-    }),
-    setExecutionLimits: (vault: Address, next: {upsideBps:number;maxSlippageBps:number;maxPriceImpactBps:number;maxGasCostWei:bigint;maxObservationAgeSeconds:number;forecastHorizonSeconds:number}, gas: GasBudget) => bounded(async c => {
-      const o = Object.freeze({...next})
-      integer(o.upsideBps,1,1_000_000); integer(o.maxSlippageBps,0,9999); integer(o.maxPriceImpactBps,0,9999)
-      if (uint(o.maxGasCostWei) === 0n) fail('invalid_sequence_policy')
-      integer(o.maxObservationAgeSeconds,1,2**32-1); integer(o.forecastHorizonSeconds,1,2**32-1)
-      async function check(at: Context) {
-        await verify(at); const state = await owned(at,vault)
-        const current = await call(at,vault,'executionLimits')
-        if (current.version >= 2n**64n-1n) fail('limits_version_exhausted')
-        return { state, current }
-      }
-      const s = await check(c)
-      const limits = {version:s.current.version+1n,upsideBps:o.upsideBps,maxSlippageBps:o.maxSlippageBps,maxPriceImpactBps:o.maxPriceImpactBps,
-        maxGasCostWei:o.maxGasCostWei,maxObservationAgeSeconds:o.maxObservationAgeSeconds,forecastHorizonSeconds:o.forecastHorizonSeconds}
-      return prepare(c,'set-limits',vault,vault,encode('setExecutionLimits',[limits]),gas,[
-        `Change the safety limits for root NFT #${s.state.rootTokenId}.`,
-        `Successor upside ${s.current.upsideBps} to ${limits.upsideBps} bps; maximum slippage ${s.current.maxSlippageBps} to ${limits.maxSlippageBps} bps; maximum price impact ${s.current.maxPriceImpactBps} to ${limits.maxPriceImpactBps} bps.`,
-        `Maximum execution gas cost ${s.current.maxGasCostWei} to ${limits.maxGasCostWei} wei; maximum observation age ${s.current.maxObservationAgeSeconds} to ${limits.maxObservationAgeSeconds}s; forecast horizon ${s.current.forecastHorizonSeconds} to ${limits.forecastHorizonSeconds}s.`,
-        `Limits version ${s.current.version} to ${limits.version}. These bound every automated run; they do not move the position.`,
-        'Owner transaction: no Domino service fee. Network gas still applies.',
-      ],async at => {
-        const again = await check(at)
-        if (again.state.stateNonce !== s.state.stateNonce || again.current.version !== s.current.version) fail('sequence_preparation_changed')
-      })
-    }),
     restoreOperator: (vault: Address, gas: GasBudget) => bounded(async c => {
       async function check(next: Context) {
         await verify(next); const state = await owned(next,vault)

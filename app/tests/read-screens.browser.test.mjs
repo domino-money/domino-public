@@ -149,26 +149,45 @@ test('the positions route reads nothing and offers no lookup by NFT id; every re
   assert.doesNotMatch(await page.locator('main').innerText(), /Look up|Position NFTs|NFT ids?\b/i);
   assert.deepEqual(await keptKeys(page), [], 'nothing is kept');
 
-  // Every fetch and XHR is same-origin, with one exception the owner approved
-  // on 2026-09-12: the token artwork resolver may GET DexScreener's public
-  // token-pairs endpoint for a token's contract address, and nothing else — no
-  // wallet address, no other path, no other host, no credentials. (Since
-  // 2026-09-24 that same GET also names the pool ids New position asks the
-  // read service to verify: src/lib/read/screens/poolHints.ts; for native ETH
-  // it asks by the zero address, the provider's own name for it.) Any other
-  // resource from another host must be one the app itself names: the fonts
-  // APP_CSP allows, and DexScreener's image CDN for the artwork. A host that
-  // appears nowhere in the build (a local antivirus injecting its own script
-  // into every page, say) is not the app's request.
+  ownRequestsOnly(requests);
+  await quiet(page, errors);
+  await page.close();
+});
+
+/**
+ * Every fetch and XHR is same-origin, with two exceptions, each a GET to
+ * DexScreener's public API that names token contract addresses and nothing
+ * else: no wallet address, no query, no other path, no other host, no
+ * credentials.
+ *
+ * - 2026-09-12 (approved by the owner): the token artwork resolver's
+ *   token-pairs lookup for one token.
+ *   (Since 2026-09-24 that same GET also names the pool ids New position asks
+ *   the read service to verify: src/lib/read/screens/poolHints.ts; for native
+ *   ETH it asks by the zero address, the provider's own name for it.)
+ * - 2026-09-25 (added for the owner's request that the Positions Wallet card
+ *   list "only the main tokens", by USD value): the card's one price GET, the
+ *   provider's `tokens` endpoint for up to 30 held token addresses,
+ *   lowercased, sorted and comma-separated (src/lib/tokenArtwork.ts
+ *   tokenPrices, src/lib/walletPrices.ts).
+ *
+ * Any other resource from another host must be one the app itself names: the
+ * fonts APP_CSP allows, and DexScreener's image CDN for the artwork. A host
+ * that appears nowhere in the build (a local antivirus injecting its own
+ * script into every page, say) is not the app's request.
+ */
+const ARTWORK_LOOKUP = /^\/token-pairs\/v1\/robinhood\/0x[0-9a-fA-F]{40}$/;
+const WALLET_PRICES = /^\/tokens\/v1\/robinhood\/0x[0-9a-f]{40}(,0x[0-9a-f]{40}){0,29}$/;
+function ownRequestsOnly(requests, { walletAddress = null } = {}) {
   const built = distText();
-  const artworkLookup = /^\/token-pairs\/v1\/robinhood\/0x[0-9a-fA-F]{40}$/;
   for (const r of requests) {
     const url = new URL(r.url);
     if (r.type === 'fetch' || r.type === 'xhr') {
       if (url.origin === 'https://api.dexscreener.com') {
         assert.equal(r.type, 'fetch', r.url);
-        assert.match(url.pathname, artworkLookup, `only the artwork lookup may leave the origin: ${r.url}`);
+        assert.ok(ARTWORK_LOOKUP.test(url.pathname) || WALLET_PRICES.test(url.pathname), `only the artwork lookup and the Wallet card's price GET may leave the origin: ${r.url}`);
         assert.equal(url.search, '', r.url);
+        if (walletAddress) assert.equal(url.pathname.toLowerCase().includes(walletAddress.toLowerCase().slice(2)), false, `the wallet's address never leaves the page: ${r.url}`);
         continue;
       }
       assert.equal(url.origin, origin, r.url);
@@ -177,6 +196,28 @@ test('the positions route reads nothing and offers no lookup by NFT id; every re
     if (url.origin === origin || url.host === 'fonts.googleapis.com' || url.host === 'fonts.gstatic.com') continue;
     assert.equal(built.includes(url.host), false, `the build itself requests ${r.url}`);
   }
+}
+
+// 2026-09-25: the same rule on the view where the Wallet card makes its one price GET: an address's Positions page reads
+// the address's whole list (both fixture pages, on its own), then asks the provider once, by token addresses only.
+test('an address’s Wallet card: its pages are read on their own, then ONE price GET by token addresses leaves the origin, and nothing else', async () => {
+  const { page, errors, requests } = await tracked();
+  const asked = [];
+  await page.route(/^https:\/\/(api|cdn)\.dexscreener\.com\//, (route) => {
+    asked.push(route.request().url());
+    return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: '[]' });
+  });
+  await page.goto(`${origin}/#/portfolio/${OWNER}`, { waitUntil: 'networkidle' });
+  const card = page.locator('[data-portfolio-tokens]');
+  await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"]').waitFor({ timeout: 30_000 });
+  assert.equal(await card.getAttribute('data-wallet-pages'), '2');
+  const walletReads = (await fixtureReads(page)).filter((r) => r.route === 'wallet-assets');
+  assert.equal(walletReads.length, 2, 'page 1, then page 2 with its handle');
+  assert.equal(walletReads[1].request.cursor !== undefined, true);
+  const prices = asked.filter((url) => new URL(url).pathname.startsWith('/tokens/'));
+  assert.deepEqual(prices, [`https://api.dexscreener.com/tokens/v1/robinhood/${TOKEN}`], 'one price GET, for the one token held; native ETH at zero needs none');
+  ownRequestsOnly(requests, { walletAddress: OWNER });
+  assert.deepEqual(await keptKeys(page), [], 'nothing is kept: the prices live in memory only');
   await quiet(page, errors);
   await page.close();
 });

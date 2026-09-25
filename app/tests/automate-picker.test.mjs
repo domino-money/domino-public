@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
-const { pickerList, preselected, tokenName, feeText, rangeView } = require('../.test-build/app/src/lib/automate/picker.js');
+const { automatable, pickerList, preselected, tokenName, feeText, rangeView } = require('../.test-build/app/src/lib/automate/picker.js');
 
 const ETH = { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH', decimals: 18 };
 const USDG = { address: '0x' + 'ab'.repeat(20), symbol: 'USDG', decimals: 6 };
@@ -45,4 +45,16 @@ test('the mini range bar draws the range in the middle half and where the poolâ€
   assert.deepEqual(rangeView({ tickLower: -600, tickUpper: 600, tick: 600 }).inRange, false, 'the upper tick is outside, as in the pool');
   assert.deepEqual(rangeView({ tickLower: -600, tickUpper: 600, tick: -100000 }).current, 0, 'far outside: at the edge');
   assert.deepEqual(rangeView({ tickLower: -600, tickUpper: 600, tick: null }), { lower: 0.25, upper: 0.75, current: null, inRange: null });
+});
+
+// Added 2026-09-24 (the three features joined up): Positions' rows offer Automate on the same test the picker lists by,
+// so no row leads to a position the automation page leaves out; a sequence refuses a pool with hooks or a dynamic fee.
+test('a position can be automated when it is open, in a pool with no hooks and a fixed fee', () => {
+  assert.equal(automatable(position('7')), true);
+  assert.equal(automatable(position('7', { status: 'closed' })), false);
+  assert.equal(automatable(position('7', { hooks: '0x' + '4a'.repeat(20) })), false);
+  assert.equal(automatable(position('7', { fee: 8388608 })), false);
+  assert.equal(automatable(position('07')), false);
+  const list = [position('7'), position('8', { hooks: '0x' + '4a'.repeat(20) }), position('9', { fee: 8388608 })];
+  assert.deepEqual(pickerList({ phase: 'ready', block: 1, positions: list }), { kind: 'ready', positions: [list[0]] });
 });

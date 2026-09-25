@@ -186,16 +186,24 @@ export type CompactEvent = 0 | 1 | 2 | 3 | 4 | 5
 
 /** POST /api/fees/v1/logs. The caller chooses the kind and a pool id or token id; every contract, topic and method is fixed by the relay. */
 export type LogsRequest =
-  /** PositionManager Transfer, topic3 = tokenId, from the first Transfer ever to the head, one call. */
-  | { kind: 'transfer'; tokenId: string }
+  /** PositionManager Transfer, topic3 = tokenId, from the first Transfer ever (or from `since`) to the head, one call. */
+  | { kind: 'transfer'; tokenId: string; since?: number }
   /** PoolManager Initialize, topic1 = poolId, whole chain, one call; final once found. */
   | { kind: 'initialize'; poolId: Hex32 }
-  /** Initialize, ModifyLiquidity and ProtocolFeeUpdated for the pool, blocks [epoch × 3_600_000, (epoch + 1) × 3_600_000 − 1]. */
-  | { kind: 'pool'; poolId: Hex32; epoch: number; until?: number }
+  /**
+   * Initialize, ModifyLiquidity and ProtocolFeeUpdated for the pool, blocks [epoch × 3_600_000, (epoch + 1) × 3_600_000 − 1].
+   * `parts`: asked in tenths from the start, each tenth's reply capped (2026-09-25: no single large reply in a browser).
+   */
+  | { kind: 'pool'; poolId: Hex32; epoch: number; until?: number; parts?: true }
   /** Swap and Donate for the pool, `count` day units (864_000 blocks each) from `day`; count 1..7. */
   | { kind: 'swaps'; poolId: Hex32; day: number; count: number; until?: number }
-  /** The last Swap of the pool strictly before `block`. */
-  | { kind: 'swapBefore'; poolId: Hex32; block: number }
+  /** The last Swap of the pool strictly before `block`, looked for no further back than `since` (the pool's Initialize block). */
+  | { kind: 'swapBefore'; poolId: Hex32; block: number; since?: number }
+  /**
+   * Every log of the pool (Initialize, ModifyLiquidity, ProtocolFeeUpdated, Swap, Donate) in [from, to], at most
+   * PROBE_SPAN blocks (2026-09-25): a replay's cheap bound on its history before it reads any of it.
+   */
+  | { kind: 'probe'; poolId: Hex32; from: number; to: number }
   /** Block timestamps; 1..50 blocks, each a multiple of 36_000 or exactly a request's `until`. */
   | { kind: 'headers'; blocks: number[] }
 
@@ -212,7 +220,7 @@ export interface LogsUnit {
 }
 
 export type LogsResponse =
-  | { v: 1; kind: 'transfer' | 'initialize' | 'pool' | 'swaps'; head: number; units: LogsUnit[]; next: number | null }
+  | { v: 1; kind: 'transfer' | 'initialize' | 'pool' | 'swaps' | 'probe'; head: number; units: LogsUnit[]; next: number | null }
   | { v: 1; kind: 'swapBefore'; head: number; log: CompactLog | null }
   | { v: 1; kind: 'headers'; head: number; headers: Array<[block: number, timestamp: number]> }
   | { v: 1; kind: LogsKind; behind: true }

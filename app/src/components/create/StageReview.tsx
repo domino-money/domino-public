@@ -11,8 +11,9 @@ import { Button } from '../ui'
 import { ASSISTED_SWAP_FEE_BPS, type DepositPlan } from '../../lib/create/depositPlan'
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
-import { useCreateProgress, type LiveState } from '../../lib/create/createProgress'
+import { useCreateProgress, useCreated, type LiveState } from '../../lib/create/createProgress'
 import { Approx, PoolPair, RangeSummary } from './StepList'
+import { CreatedNext } from './CreatedNext'
 import { RangePreview } from '../charts/RangePreview'
 import { AmountText, UsdText } from '../figures'
 import { TokenMarkPair } from '../TokenIcon'
@@ -164,7 +165,7 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           <p className="dm-flow-headline-line tnum" data-review-slippage={slippage.ok ? slippage.bps : undefined}>
             {slippage.ok ? CREATE.review.slippage(slippageWritten(slippage.bps)) : CREATE.page.notChosen}
           </p>
-          {/* The range drawn small, with the bounds the line above says under its ends. Beside the steps on a wide screen the preview draws it large, so this one is shown only where that one is not. */}
+          {/* The range drawn small, with the bounds the line above says under its ends. New position's preview draws it large at every width (2026-09-24), so flow.css hides this one there. */}
           {view && (
             <RangePreview
               lower={view.lower}
@@ -285,11 +286,16 @@ function Unavailable({ note }: { note: string }) {
  * for tests without it.
  */
 export function FinalControl({ state, balances, onBusy }: { state: JourneyState; balances: PairBalancesState; onBusy?: (busy: boolean) => void }) {
+  // The position Create position just made: what comes next is offered under it (2026-09-24, the three features).
+  const created = useCreated()
   if (CreateControl) {
     return (
-      <Suspense fallback={<Unavailable note={CREATE.review.loading} />}>
-        <CreateControl state={state} reviewed={planFor(state, balances)} onBusy={onBusy} />
-      </Suspense>
+      <>
+        <Suspense fallback={<Unavailable note={CREATE.review.loading} />}>
+          <CreateControl state={state} reviewed={planFor(state, balances)} onBusy={onBusy} />
+        </Suspense>
+        {created && <CreatedNext tokenId={created} />}
+      </>
     )
   }
   return <Unavailable note={CREATE.review.noWallet} />

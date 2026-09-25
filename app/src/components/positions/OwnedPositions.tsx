@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { CHAIN_ID } from '../../lib/read/screens/identity'
 import { walletCard, walletState } from '../../lib/walletCards'
 import { useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
@@ -6,8 +6,9 @@ import type { WalletIdentityView } from '../../lib/walletIdentity'
 import { newPositionHref } from '../explore/routes'
 import { IconSearch, IconWallet } from '../icons'
 import { Button, EmptyState, LinkButton, Skeleton, Tabs } from '../ui'
+import { AutomateEntry } from './AutomateEntry'
+import { automatable } from '../../lib/automate/picker'
 import { PendingRow, PendingRows, PendingSummary, PositionRow } from './PositionRow'
-import { FeesCard } from './visual/FeesCard'
 import { PortfolioSummary, portfolioOf } from './visual/PortfolioSummary'
 
 /** What Positions hands the held deposits: drawn by the lazily loaded HeldDeposits in wallet builds. */
@@ -21,13 +22,18 @@ type Status = 'open' | 'closed'
 /** Opens the header's wallet dialog, where a wallet is connected or switched to Robinhood Chain. */
 const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria-haspopup="dialog"]')?.click()
 
-/** Why the list could not be read, for a title only: the endpoint's code is in the data attribute beside it. */
-const UNLISTED = 'Your positions could not be read from chain just now. They are asked again on their own.'
+/**
+ * The one quiet line while a read that failed is asked again (2, 5 and 10 s), and the one calm line once those failed
+ * too (it is still asked now and then). Never the empty state: a read that failed says nothing about the wallet
+ * (the owner's rule, 2026-09-25). The failure's code is in the card's data attribute only.
+ */
+const REREADING = 'Reading your positions from the chain…'
+const UNREAD = 'Your positions couldn’t be read right now.'
 
 /** The card's frame: its title, and the tabs once there is something to put in them. */
-function Frame({ children, tabs, data, title }: { children: ReactNode; tabs?: ReactNode; data?: Record<string, string | undefined>; title?: string }) {
+function Frame({ children, tabs, data }: { children: ReactNode; tabs?: ReactNode; data?: Record<string, string | undefined> }) {
   return (
-    <section className="dm-card dm-acct-nft-card dm-own-card" aria-labelledby="own-title" title={title} {...data}>
+    <section className="dm-card dm-acct-nft-card dm-own-card" aria-labelledby="own-title" {...data}>
       <div className="dm-own-head">
         <h2 id="own-title" className="dm-title">
           Your positions
@@ -53,9 +59,9 @@ export interface OwnedPositionsProps {
 
 /**
  * Your positions, for the wallet the header is connected to: the positions
- * it created through Domino (DominoSetupV1), read from chain by the site's
- * own endpoint (open and closed, in two tabs), and under them the deposits it
- * has not turned into a position yet. Without a wallet, or on another
+ * it created through Domino (DominoSetupV1), read from chain by the page
+ * itself (open and closed, in two tabs; a closed one keeps its NFT), and under
+ * them the deposits it has not turned into a position yet. Without a wallet, or on another
  * network, one empty state says what to do. Nothing is read until a wallet is
  * connected on Robinhood Chain, no NFT id is ever asked for, and nothing is
  * kept in the browser (the owner's rule, 2026-09-24).
@@ -113,7 +119,9 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   const [asked, setAsked] = useState(0)
   const answer = useWalletAnswer(owner, asked)
   const ready = answer.phase === 'ready' ? answer.answer : null
-  const reason = answer.phase === 'failed' ? answer.reason : null
+  const reason = answer.phase === 'failed' || answer.phase === 'retrying' ? answer.reason : null
+  // Given up on for now (the quick re-asks failed too): one calm line. Still reading, or asked again: the loading rows.
+  const unread = answer.phase === 'failed'
 
   // Every row straight from the chain read: its card, and the state its USD is valued at (the same read, the same block).
   const rows = useMemo(
@@ -131,7 +139,7 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   const shown = tabs ? tabs[tab].slice(0, pages[tab] * PAGE_SIZE) : []
   const more = tabs ? tabs[tab].length - shown.length : 0
   const total = tabs ? tabs.open.length + tabs.closed.length : 0
-  const phase = ready ? 'ready' : reason ? 'unlisted' : 'loading'
+  const phase = ready ? 'ready' : unread ? 'unlisted' : answer.phase === 'retrying' ? 'retrying' : 'loading'
   // `No positions yet` carries its own New position: the page's title row steps its own back (before paint, no flash).
   const emptyAction = tabs !== null && total === 0
   useLayoutEffect(() => {
@@ -139,12 +147,25 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
     onEmptyAction(emptyAction)
     return () => onEmptyAction(false)
   }, [emptyAction, onEmptyAction])
-  // The reason a list could not be read is a title and a data attribute only, never a sentence, not even a spoken one.
-  const status = !tabs ? (reason ? 'No positions to show.' : 'Listing your positions…') : `${tabs.open.length} open and ${tabs.closed.length} closed positions.`
+  // A read that failed is never "no positions": its code is a data attribute, and the one line says it is read again or could not be.
+  const status = !tabs ? (unread ? UNREAD : 'Listing your positions…') : `${tabs.open.length} open and ${tabs.closed.length} closed positions.`
 
   let body: ReactNode
   if (!tabs) {
-    body = reason ? <EmptyState icon={<IconSearch />} title="No positions to show" data-empty="owned-unlisted" /> : <PendingRows loading />
+    body = unread ? (
+      <p className="dm-own-note" data-owned-note="unread">
+        {UNREAD}
+      </p>
+    ) : (
+      <>
+        {answer.phase === 'retrying' && (
+          <p className="dm-own-note" data-owned-note="rereading">
+            {REREADING}
+          </p>
+        )}
+        <PendingRows loading />
+      </>
+    )
   } else if (total === 0) {
     body = (
       <EmptyState
@@ -175,7 +196,10 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
           <span />
         </div>
         {shown.map((row) => (
-          <PositionRow key={row.card.tokenId} card={row.card} block={ready?.block ?? 0} state={row.state} tick={row.position.tick} />
+          <Fragment key={row.card.tokenId}>
+            <PositionRow card={row.card} block={ready?.block ?? 0} state={row.state} tick={row.position.tick} />
+            <AutomateEntry tokenId={row.card.tokenId} open={automatable(row.position)} />
+          </Fragment>
         ))}
       </div>
     )
@@ -184,7 +208,6 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   return (
     <>
       <Frame
-        title={reason && !ready ? UNLISTED : undefined}
         data={{
           'data-owned': phase,
           'data-owned-reason': reason ?? undefined,
@@ -201,7 +224,7 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
                 { key: 'closed', label: 'Closed', count: tabs.closed.length },
               ]}
             />
-          ) : !tabs && !reason ? (
+          ) : !tabs && !unread ? (
             <Skeleton className="dm-own-skel-tabs" />
           ) : undefined
         }
@@ -211,7 +234,7 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
         </p>
         {/* The totals are the open positions': shown over their tab only, never over the closed rows. While the list is on
             its way the band keeps its place, so the rows never move when it fills. */}
-        {tab === 'open' && (portfolio?.totals ? <PortfolioSummary {...portfolio.totals} /> : !tabs && !reason ? <PendingSummary /> : null)}
+        {tab === 'open' && (portfolio?.totals ? <PortfolioSummary {...portfolio.totals} /> : !tabs && !unread ? <PendingSummary /> : null)}
         {body}
         {more > 0 && (
           <div className="dm-own-more">
@@ -221,7 +244,10 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
           </div>
         )}
       </Frame>
-      {portfolio?.aggregate && <FeesCard kind="plain" source={{ tokenIds: portfolio.aggregate }} scope="list" bandPresent />}
+      {/* No fees history is replayed for the list (2026-09-25, review of r3/chain, option a): each row shows its unclaimed
+          fees from the list's own read, and only a position's page replays its history, bounded. The list's aggregate card
+          replayed every open position's history from the visitor's browser, which the public RPC's per-address limit could
+          not bear (PONS/USDG's is over 60 MB), and its refusals then held back the list's own reads. */}
       {deposits && held.length > 0 && deposits({ owner, deposits: held, onChanged: () => setAsked((n) => n + 1) })}
     </>
   )

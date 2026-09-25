@@ -250,19 +250,83 @@ test('every minute while visible /state is read again; a newer block resumes fro
 });
 
 test('the list budget stops a busy history with its place kept; a position page goes on from it with the larger budget', async () => {
-  // The relay answers one busy day at a time, as its 8 MB answer cap makes it do for this pool, at its untrimmed size.
-  const { store, workers } = storeWith({ relays: { 3165100: fixtureRelay(loadCase('3165100'), { maxDays: 1, swapBytes: 3 }) } });
-  const list = store.subscribeHistory(['3165100'], 'list', () => {});
-  await until(() => store.view('3165100').phase === 'unclaimed-only', 'stopped by the list budget');
-  assert.equal(store.view('3165100').reason, 'too_much_history');
+  // Changed on purpose (2026-09-25, the page's budget is 2 MB): 3136705's swap days at four times their recorded size,
+  // one day an answer: its first day ends past the list's 1 MB (1.2 MB), and the whole, 1.4 MB, is within the page's 2 MB.
+  // Its probe answered as a quiet pool's (the probe's own stops are pipeline.ts's, tested in fees-replay.test.mjs): the
+  // byte budget is what stops it here.
+  const fixture = loadCase('3136705');
+  const quietProbe = (request) => ({ ok: true, value: { v: 1, kind: 'probe', head: fixture.state.block + 2, units: [{ unit: null, from: request.from, to: request.to, final: false, logs: [] }], next: null }, bytes: 100 });
+  const { store, workers } = storeWith({ relays: { 3136705: fixtureRelay(fixture, { maxDays: 1, swapBytes: 4, script: { probe: Array.from({ length: 20 }, () => quietProbe) } }) } });
+  const list = store.subscribeHistory(['3136705'], 'list', () => {});
+  await until(() => store.view('3136705').phase === 'unclaimed-only', 'stopped by the list budget');
+  assert.equal(store.view('3136705').reason, 'too_much_history');
   assert.equal(workers[0].posted[0].budgetBytes, BUDGET_BYTES.list);
-  const page = store.subscribeHistory(['3165100'], 'page', () => {});
-  await until(() => store.view('3165100').phase === 'verified', 'verified on the page');
+  const page = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => store.view('3136705').phase === 'verified', 'verified on the page');
   const second = workers[0].posted.filter((m) => m.type === 'run')[1];
   assert.equal(second.budgetBytes, BUDGET_BYTES.page);
   assert.notEqual(second.checkpoint, null);
   list();
   page();
+});
+
+// 2026-09-25: a run that could not reach the chain is not started again at once. Each visitor now reads the chain from
+// their own address, under the RPC's limit: a run asked again straight after a refusal is refused too, and the page's own
+// reads with it. The next /state read with a newer block (a minute later) asks again, up to three failures a visit.
+test('a run that could not reach the chain waits for the next newer block before it is asked again', async () => {
+  const fixture = loadCase('3136705');
+  const relay = fixtureRelay(fixture, { script: { transfer: [{ ok: false, failure: 'unavailable', retryAfterMs: 0 }] } });
+  const service = stateService();
+  const { store, workers, time } = storeWith({ relays: { 3136705: relay }, service });
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => store.view('3136705').phase === 'unclaimed-only', 'unclaimed-only');
+  for (let i = 0; i < 20; i++) await settle();
+  assert.equal(workers[0].posted.filter((m) => m.type === 'run').length, 1, 'not started again at once');
+  assert.equal(store.view('3136705').reason, 'rpc_unavailable');
+  // A minute later /state is read again; the same block starts nothing, a newer one does.
+  assert.equal(time.fire('later'), 1);
+  for (let i = 0; i < 20; i++) await settle();
+  assert.equal(workers[0].posted.filter((m) => m.type === 'run').length, 1, 'the same block: still nothing');
+  service.bump = 10;
+  assert.equal(time.fire('later'), 1);
+  await until(() => store.view('3136705').phase === 'verified', 'verified on the newer block');
+  assert.equal(workers[0].posted.filter((m) => m.type === 'run').length, 2);
+  stop();
+});
+
+// 2026-09-25: the budget now bounds the pool's epochs too (pipeline.ts), where a stopped run has no place to keep: a
+// position page's larger budget then starts that history over.
+test('a list budget spent before the swap days: a position page starts the history over with its larger budget', async () => {
+  const fixture = loadCase('3136705');
+  const relay = fixtureRelay(fixture);
+  // Each of its four epochs answered at 300 kB (2026-09-25, the budgets are 1 MB and 2 MB): the list's is spent by them.
+  const heavy = { logs: async (request) => { const a = await relay.logs(request); return request.kind === 'pool' && a.ok ? { ...a, bytes: 300 * 1024 } : a; } };
+  const { store, workers } = storeWith({ relays: { 3136705: heavy } });
+  const list = store.subscribeHistory(['3136705'], 'list', () => {});
+  await until(() => store.view('3136705').phase === 'unclaimed-only', 'stopped by the list budget');
+  assert.equal(store.view('3136705').reason, 'too_much_history');
+  const page = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => store.view('3136705').phase === 'verified', 'verified on the page');
+  const runs = workers[0].posted.filter((m) => m.type === 'run');
+  assert.deepEqual(runs.map((m) => [m.budgetBytes, m.checkpoint]), [[BUDGET_BYTES.list, null], [BUDGET_BYTES.page, null]]);
+  list();
+  page();
+});
+
+// 2026-09-25: the Positions list's aggregate asks its histories one at a time (useFeeHistories); `watch` is how it hears
+// about every id's view without asking for any of them.
+test('watch hears every change to the ids it names and asks nothing for them', async () => {
+  const { store, workers, service } = storeWith();
+  const heard = [];
+  const unwatch = store.watch(['3136705', '2310187'], () => heard.push(store.view('3136705').phase));
+  for (let i = 0; i < 20; i++) await settle();
+  assert.deepEqual([service.asked, workers.length, heard], [[], 0, []], 'watching asks nothing');
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => store.view('3136705').phase === 'verified', 'verified');
+  assert.ok(heard.includes('loading') && heard.at(-1) === 'verified', heard.join(' → '));
+  assert.deepEqual(service.asked, [['3136705']], 'only the id asked for was read');
+  unwatch();
+  stop();
 });
 
 test('leaving: the run is cancelled a moment after the last screen goes, the worker ended a moment later; a quick return keeps both', async () => {
@@ -281,47 +345,103 @@ test('leaving: the run is cancelled a moment after the last screen goes, the wor
   assert.equal(workers[0].terminated, true);
 });
 
-test('client.ts: no request in a build without a relay; a page, a refusal or a malformed answer is unavailable; the request is a fixed same-origin POST', async () => {
+// Changed on purpose (2026-09-25): the public RPC answers 429 to every call from Cloudflare's edge, so client.ts no
+// longer POSTs to the site's relay routes: it runs the relay's own reads (functions/_lib/fees.ts stateOnChain and
+// logsOnChain) against the RPC itself, in the page and in the replay worker.
+test('client.ts: no request in a build without the chain; the relay’s own reads against the public RPC, no credentials, no referrer; a refused request asks nothing; a failure is unavailable', async () => {
   const client = require('../.test-build/app/src/lib/fees/client.js');
+  const { caseChain } = await import('./support/fees/case-chain.mjs');
   const original = globalThis.fetch;
   const sent = [];
-  let reply = () => new Response('<!doctype html><title>Domino</title>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+  let chain = caseChain('3136705');
   globalThis.fetch = async (url, init) => {
     sent.push([url, init]);
-    return reply();
+    return chain.fetch(url, init);
   };
   try {
     globalThis.__DOMINO_DEPLOYABLE__ = false;
     globalThis.__DOMINO_TEST_HOOKS__ = false;
-    assert.deepEqual(await client.postState(['1']), { ok: false, failure: 'unavailable', retryAfterMs: 0 });
-    assert.deepEqual(await client.postLogs({ kind: 'transfer', tokenId: '1' }), { ok: false, failure: 'unavailable', retryAfterMs: 0 });
+    assert.deepEqual(await client.chainState(['1']), { ok: false, failure: 'unavailable', retryAfterMs: 0 });
+    assert.deepEqual(await client.chainLogs({ kind: 'transfer', tokenId: '1' }), { ok: false, failure: 'unavailable', retryAfterMs: 0 });
     assert.equal(sent.length, 0, 'fixture and bridge-test builds ask nothing');
 
     globalThis.__DOMINO_DEPLOYABLE__ = true;
-    assert.equal((await client.postState(['1'])).failure, 'unavailable', 'index.html from a static server');
-    assert.deepEqual(sent[0], ['/api/fees/v1/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"tokenIds":["1"]}', credentials: 'same-origin', cache: 'no-store', signal: undefined }]);
-    reply = () => new Response('{"v":1,"error":"rate_limited"}', { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': '3' } });
-    assert.deepEqual(await client.postLogs({ kind: 'transfer', tokenId: '1' }), { ok: false, failure: 'rate_limited', retryAfterMs: 3000 });
-    assert.equal(sent[1][0], '/api/fees/v1/logs');
-    reply = () => new Response('{"error":"beta_access_required"}', { status: 401, headers: { 'Content-Type': 'application/json' } });
-    assert.equal((await client.postState(['1'])).failure, 'unavailable');
     const fixture = loadCase('3136705');
-    reply = () => Response.json(fixture.state);
-    const good = await client.postState(['3136705']);
-    assert.equal(good.ok, true);
-    assert.deepEqual(good.value, fixture.state);
-    reply = () => Response.json({ ...fixture.state, positions: [{ ...fixture.state.positions[0], unclaimed0: '-1' }] });
-    assert.equal((await client.postState(['3136705'])).failure, 'unavailable', 'a malformed figure is not taken');
-    reply = () => Response.json({ v: 1, kind: 'swaps', head: 5, units: [{ unit: 1, from: 864000, to: 5, final: false, logs: [] }], next: null });
-    assert.equal((await client.postLogs({ kind: 'swaps', poolId: `0x${'0'.repeat(64)}`, day: 1, count: 1 })).failure, 'unavailable', 'a unit that ends before it starts');
-    reply = () => Response.json({ v: 1, kind: 'transfer', behind: true });
-    assert.equal((await client.postLogs({ kind: 'transfer', tokenId: '1' })).ok, true);
-    reply = () => Response.json({ v: 1, kind: 'pool', behind: true });
-    assert.equal((await client.postLogs({ kind: 'transfer', tokenId: '1' })).ok, false, 'an answer of another kind');
+    const state = await client.chainState(['3136705']);
+    assert.equal(state.ok, true);
+    assert.deepEqual(state.value, fixture.state, 'the recorded /state answer, rebuilt by the page from the same chain values');
+    assert.equal(state.bytes, JSON.stringify(fixture.state).length);
+    assert.deepEqual(chain.log.map((call) => call.method), ['eth_blockNumber', 'eth_call', 'eth_call']);
+    for (const [url, init] of sent) {
+      assert.equal(url, 'https://rpc.mainnet.chain.robinhood.com');
+      assert.deepEqual({ ...init, body: undefined, signal: undefined }, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: undefined, signal: undefined, credentials: 'omit', referrerPolicy: 'no-referrer' });
+    }
+    const transfer = await client.chainLogs({ kind: 'transfer', tokenId: '3136705' });
+    assert.deepEqual(transfer.value.units[0].logs, fixture.transfer, 'the relay’s compact logs, read by the page');
+
+    // What the relay's route refuses is refused before any call.
+    const before = sent.length;
+    assert.deepEqual(await client.chainLogs({ kind: 'headers', blocks: [1, 2] }), { ok: false, failure: 'bad_request', retryAfterMs: 0 });
+    assert.deepEqual(await client.chainState([]), { ok: false, failure: 'bad_request', retryAfterMs: 0 });
+    assert.equal(sent.length, before);
+    // An RPC that fails, or answers what the relay cannot take, is unavailable.
+    chain = { fetch: async () => new Response('', { status: 500 }) };
+    assert.deepEqual(await client.chainState(['3136705']), { ok: false, failure: 'unavailable', retryAfterMs: 5000 });
+    chain = { fetch: async () => new Response('<!doctype html>', { status: 200 }) };
+    assert.equal((await client.chainLogs({ kind: 'transfer', tokenId: '1' })).failure, 'unavailable');
+    const controller = new AbortController();
+    controller.abort();
+    const asked = sent.length;
+    assert.equal((await client.chainState(['3136705'], controller.signal)).failure, 'unavailable', 'a dropped read');
+    assert.equal(sent.length, asked, 'makes no call');
   } finally {
     globalThis.fetch = original;
     delete globalThis.__DOMINO_DEPLOYABLE__;
     delete globalThis.__DOMINO_TEST_HOOKS__;
+  }
+});
+
+// 2026-09-25: the fees history through the page's own chain reads, end to end: the relay's reads run by client.ts
+// against a chain rebuilt from each recording, the worker's pipeline on them. The chart is drawn only when the replay
+// equals the chain's unclaimed fees; a chain that owes one unit more is a mismatch, and nothing is drawn.
+test('the page’s own chain reads rebuild each recorded history exactly, and a chain that disagrees with the replay is a mismatch', async () => {
+  const client = require('../.test-build/app/src/lib/fees/client.js');
+  const { caseChain } = await import('./support/fees/case-chain.mjs');
+  const { stateOf } = require('../.test-build/app/src/lib/fees/store.js');
+  const original = globalThis.fetch;
+  globalThis.__DOMINO_DEPLOYABLE__ = true;
+  const relay = require('../.test-build/app/functions/_lib/fees.js');
+  const through = async (chain) => {
+    // One chain per recording, each at its own head: nothing read for another may be reused.
+    relay.resetRelayMemory();
+    client.forgetChainMemory();
+    globalThis.fetch = (url, init) => chain.fetch(url, init);
+    const answer = await client.chainState([chain.id]);
+    assert.equal(answer.ok, true);
+    const { state, growth } = stateOf(answer.value.positions[0], answer.value.block, answer.value.timestamp);
+    return runPipeline({ logs: (request) => client.chainLogs(request), sleep: async () => {} }, { id: chain.id, state, growth, budgetBytes: 64 * 1024 * 1024, checkpoint: null });
+  };
+  try {
+    for (const id of ['3136705', '2310187', '3165100', '3135288']) {
+      const fixture = loadCase(id);
+      const result = await through(caseChain(id));
+      // Changed on purpose (2026-09-25): 3165100's pool swapped 908 times in its last hour, more than the page's probe
+      // may read (functions/_lib/fees.ts PROBE_BYTES): its history, 10.9 MB, is never read in a browser, whatever the budget.
+      if (id === '3165100') {
+        assert.deepEqual([result.ok, result.reason], [false, 'too_much_history'], id);
+        continue;
+      }
+      assert.equal(result.ok, fixture.expect.ok, `${id}: ${result.reason}`);
+      if (!result.ok) continue;
+      assert.deepEqual(result.history.earned.map(String), fixture.expect.earned, id);
+      assert.deepEqual(result.history.collected.map(String), fixture.expect.collected, id);
+      assert.equal(result.history.checks.swaps, fixture.expect.checks.swaps, id);
+    }
+    const off = await through(caseChain('3136705', { edit: (p) => ({ ...p, feeGrowthInside0X128: String(BigInt(p.feeGrowthInside0X128) + (1n << 128n) / BigInt(p.liquidity) + 1n) }) }));
+    assert.deepEqual([off.ok, off.reason], [false, 'replay_mismatch']);
+  } finally {
+    globalThis.fetch = original;
+    delete globalThis.__DOMINO_DEPLOYABLE__;
   }
 });
 

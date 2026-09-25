@@ -38,12 +38,12 @@ const STEPS: ReadonlyArray<{ n: string; title: string; body: string; roadmap?: R
   {
     n: '02',
     title: 'Review, then create',
-    body: 'Review every choice and the wallet steps before anything is sent. Create position then asks your wallet to sign each step, and opens the position when it exists.',
+    body: 'Review every choice and the wallet steps before anything is sent. Create position then asks your wallet to sign each step; when the position exists, keep it plain or automate it.',
   },
   {
     n: '03',
     title: 'Automation',
-    body: 'Three choices: Self-managing, Auto-compound or Domino-compound.',
+    body: 'Three choices: Plain position, Auto-compound or Domino-compound.',
     roadmap: ['Compound', 'Domino'],
   },
 ]

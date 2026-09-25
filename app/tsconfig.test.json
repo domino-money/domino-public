@@ -25,6 +25,10 @@
     "functions/_lib/owned.ts",
     "functions/_lib/walletPositions.ts",
     "functions/api/owned/v2/positions.ts",
+    "functions/_lib/automation.ts",
+    "functions/api/automation/v1/state.ts",
+    "src/lib/automationState.ts",
+    "src/lib/automate/features.ts",
     "src/lib/read/pin.ts",
     "src/lib/read/types.ts",
     "src/lib/read/errors.ts",
@@ -101,6 +105,7 @@
     "src/lib/chart/paths.ts",
     "src/lib/chart/inspect.ts",
     "src/lib/chart/range.ts",
+    "src/lib/chart/spark.ts",
     "src/build-flags.d.ts",
     "src/lib/fees/types.ts",
     "src/lib/fees/constants.ts",
@@ -115,6 +120,8 @@
     "src/lib/automate/successor.ts",
     "src/lib/automate/fieldCheck.ts",
     "src/lib/automate/picker.ts",
-    "src/components/automate/feeMeter.ts"
+    "src/components/automate/feeMeter.ts",
+    "src/lib/walletPrices.ts",
+    "src/lib/walletHoldings.ts"
   ]
 }

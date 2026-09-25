@@ -18,6 +18,7 @@ import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { createFakeOnboarding } from './support/fake-onboarding.mjs';
+import { RPC_URL, routeChain } from './support/browser-chain.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
 import { ARTWORK, footerButton, walkToReview } from './support/new-position.mjs';
@@ -82,6 +83,11 @@ async function scenario({ clockAt, wallets, reads = false } = {}) {
   if (clockAt !== undefined) await context.clock.install({ time: clockAt });
   await context.route(FONTS, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await context.route(INJECTED, (route) => route.abort());
+  // 2026-09-25: the page reads Robinhood Chain's public RPC itself (the wallet's positions on Positions and on the
+  // automation page, a position's state, the fees history), since the RPC rate-limits Cloudflare's edge. That one host
+  // is answered here by an empty chain (tests/support/browser-chain.mjs): no position, no deposit, every NFT unknown,
+  // as the site's routes answered before; a request the CSP refused never reaches it.
+  const chain = await routeChain(context);
   // New position shows token marks, whose optional artwork lookup the CSP admits; it is answered here with nothing.
   if (reads) await context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   const wallet = await installWallets(context, wallets);
@@ -91,7 +97,7 @@ async function scenario({ clockAt, wallets, reads = false } = {}) {
   context.on('request', (request) => {
     const url = request.url();
     requests.push(url);
-    if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url) && !(reads && ARTWORK.test(url))) external.push(url);
+    if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url) && !(reads && ARTWORK.test(url)) && url !== `${RPC_URL}/`) external.push(url);
   });
 
   const s = {
@@ -119,6 +125,7 @@ async function scenario({ clockAt, wallets, reads = false } = {}) {
       assert.deepEqual(wallet.state.csp, [], 'CSP violations');
       assert.deepEqual(problems, [], 'browser errors');
       assert.deepEqual(external, [], 'requests to another origin');
+      assert.deepEqual([chain.errors, chain.refused, chain.missing], [[], [], []], 'the chain was asked only what it answers');
       assert.deepEqual(fake.state.violations, [], 'session protocol violations');
       assert.deepEqual(onboarding.state.violations, [], 'onboarding protocol violations');
       assert.deepEqual(wallet.state.refused, [], 'wallet methods outside the login allowlist');

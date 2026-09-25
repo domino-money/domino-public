@@ -138,7 +138,7 @@ export const CONTRACTS: DocPage = {
             { label: 'DominoVaultFactoryV1', role: 'Creates your sequence vault', address: '0x16bf6eaba7b31118627b277e97249720dfe1c7ff' },
           ],
         },
-        p('Your sequence vault is a contract of its own, created for your wallet by the factory. Service readiness is checked for each owner and vault before this site offers activation: see ', doc('Domino Compounder', 'domino-compounder', 'start-and-stop'), '.'),
+        p('Your sequence vault is a contract of its own, created for your wallet by the factory. Service readiness is checked for each owner and vault before activation: see ', doc('Domino Compounder', 'domino-compounder', 'start-and-stop'), '.'),
       ],
     },
     {
@@ -230,7 +230,7 @@ export const GLOSSARY: DocPage = {
         {
           kind: 'terms',
           items: [
-            { id: 'self-managing', term: 'Self-managing', text: ['No automation: earned fees wait in the position until you collect them.'] },
+            { id: 'plain-position', term: 'Plain position', text: ['No automation: earned fees wait in the position until you collect them.'] },
             { id: 'auto-compound', term: 'Auto-compound', text: ['Automation that adds a position’s earned fees back into the same position.'] },
             {
               id: 'domino-compounder',

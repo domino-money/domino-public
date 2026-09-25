@@ -34,15 +34,14 @@ export interface PortfolioRow {
 export interface Portfolio {
   /** Principal and unclaimed fees of every open position in USD; null unless every one is valued. */
   totals: { principal: bigint; unclaimed: bigint; block: number } | null
-  /** The open ids the list's fees aggregate may show (1 to 4, every one with a USDG leg); null otherwise. */
-  aggregate: readonly string[] | null
 }
 
 /**
  * The Positions list's USD (§11.1), from the wallet's own chain read: every
  * row's amounts and its pool's price are from one block, so a pair with USDG
  * is valued at once, with nothing else asked. The totals when every open
- * position is valued, and the ids the fees aggregate may show.
+ * position is valued. (2026-09-25: no fees aggregate any more; the list
+ * replays no history.)
  */
 export function portfolioOf(open: readonly PortfolioRow[]): Portfolio {
   const everyUsdg = open.length > 0 && open.every((row) => usdgSide(row.card.currencies) !== null)
@@ -61,7 +60,7 @@ export function portfolioOf(open: readonly PortfolioRow[]): Portfolio {
     unclaimed += u.units
     block = Math.max(block, p.block)
   }
-  return { totals: valued ? { principal, unclaimed, block } : null, aggregate: everyUsdg && open.length <= 4 ? open.map((row) => row.card.tokenId) : null }
+  return { totals: valued ? { principal, unclaimed, block } : null }
 }
 
 /**

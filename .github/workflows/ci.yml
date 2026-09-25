@@ -72,7 +72,10 @@ jobs:
     # check:app runs the app suite plus the render and browser gate passes and
     # brushes against 15 minutes on hosted runners (runs #336/#337 were cancelled
     # mid-suite); give deliberate headroom so the job is not spuriously cut.
-    timeout-minutes: 25
+    # 2026-09-25: the chain-in-the-browser tests (#214) took check:app from about
+    # 20 to 24 minutes, and the 25-minute limit cut the step after it (run
+    # 36109799409); 35 minutes restores the headroom.
+    timeout-minutes: 35
     env:
       WRANGLER_SEND_METRICS: 'false'
     steps:

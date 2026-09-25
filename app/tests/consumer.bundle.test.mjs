@@ -111,7 +111,10 @@ function productionClosures() {
   // file that only src/lib/fees/spawn.ts creates, is an admitted root of its own, within its 16,000 B gzip ceiling.
   const workers = scripts.filter((file) => /^feesReplay\.worker-/.test(file));
   for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 16_000, `${file} is over its 16,000 B gzip ceiling`);
-  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|feesReplay\.worker)-/.test(file));
+  // 2026-09-25: the chain code the page runs (src/lib/chain/chainCode.ts: the routes' scan and relay reads, the RPC runtime,
+  // Keccak), one chunk loaded by dynamic import on a page's first read of the chain, is an admitted root of its own
+  // (tests/session.bundle.test.mjs measures it, with its own ceiling).
+  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|feesReplay\.worker|chainCode)-/.test(file));
   const shared = reach([...entry, ...otherRoots]);
   const setupClosure = reach(setup);
   assert.ok(!shared.has(setup[0]), 'Setup must not be loaded statically by the entry or another screen');
