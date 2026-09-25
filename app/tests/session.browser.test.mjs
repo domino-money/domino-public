@@ -241,6 +241,10 @@ test('clean wallet picker uses only bundled brand icons; connection shows the ad
   assert.equal(await dialog(page).getByRole('heading', { name: 'Connect', exact: true }).count(), 1);
   assert.doesNotMatch(await dialog(page).innerText(), /Signing in is not a permission|Connect a browser wallet|Robinhood Chain · 4663|contract wallet/);
   assert.deepEqual(await dialog(page).locator('img').evaluateAll((images) => images.map((image) => image.getAttribute('src'))), ['/wallets/rabby.svg']);
+  // 2026-09-25: the dialog can be on screen before Chrome has finished its icon (4 runs in 5 on macOS). Let the icon
+  // either decode or fail before looking, so that a missing or broken file fails the check below at once, not after
+  // WAIT_MS.
+  await until(page, () => document.querySelector('[role="dialog"][aria-labelledby="wallet-dialog-title"] img')?.complete, null, 'the Rabby icon');
   assert.equal(await dialog(page).locator('img').evaluate((image) => image.complete && image.naturalWidth > 0), true);
   await dialog(page).getByRole('button', { name: 'Connect Rabby Wallet' }).click();
   await viewIs(page, 'signed_out');
