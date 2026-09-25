@@ -69,6 +69,14 @@ EOA is never probed. Position collect and close in a native pool, and a
 sequence's native fee-reserve withdrawal or untracked recovery, check the same
 way.
 
+Funding also reads which delegate an EIP-7702 account runs. For a delegate the
+app does not recognize by its code hash, `fund` refuses with
+`delegate_unrecognized` before any approval, because that code can move
+everything the account holds, the position NFT included. Create position and
+the advanced funding form name the contract and continue only once the person
+confirms they set up that smart account themselves. Refunds and recovery never
+ask; see [wallet sessions](WALLET_SESSIONS.md) for the list and its limits.
+
 Recovery requires the setup contract's balance to decrease by exactly the
 debited claim. It lets the owner accept a transfer tax or forward tokens from a
 receipt hook; this does not weaken transfer checks for swap funding, service

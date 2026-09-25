@@ -246,7 +246,8 @@ class ReadinessTests(unittest.TestCase):
         finalized = {'number': 190, 'timestamp': 1900}
         entry = SimpleNamespace(owner=address(1), vault=address(3))
         deployment = SimpleNamespace(operator=address(2), pricePublisher=address(5), serviceFeeRecipient=address(6),
-                                     serviceFeeBps=200, dominoServiceFeeBps=400)
+                                     priceGuard=address(7), serviceFeeBps=200, dominoServiceFeeBps=400)
+        guardian = address(8)
         code = {}
         def request(method, params):
             if method == 'eth_getCode':
@@ -256,6 +257,9 @@ class ReadinessTests(unittest.TestCase):
         state = {'paused': True, 'operator': address(2), 'enabled': True,
                  'rootPermission': True, 'fee': 200, 'positions': 1}
         def call(target, signature, outputs, block, *args):
+            if signature == 'guardian()':
+                self.assertEqual((target, block), (deployment.priceGuard, head))
+                return (guardian,)
             if signature == 'policy()':
                 return ((state['fee'], 0, 0, 0, state['positions'], 0, state['paused']),)
             if signature == 'operator()':
@@ -307,8 +311,9 @@ class ReadinessTests(unittest.TestCase):
             self.assertTrue(service_readiness_probe(candidate, entry))
             finalized['timestamp'] = 1900
             # A role key carrying code (an EIP-7702 designator) is not ready,
-            # whichever of the three it is; a vault's own code is never read.
-            for role in (deployment.operator, deployment.pricePublisher, deployment.serviceFeeRecipient):
+            # whichever of the four it is, the guardian as the guard names it;
+            # a vault's own code is never read.
+            for role in (deployment.operator, deployment.pricePublisher, deployment.serviceFeeRecipient, guardian):
                 code[role] = '0xef0100' + 'ab' * 20
                 self.assertFalse(service_readiness_probe(candidate, entry))
                 code.clear()

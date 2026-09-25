@@ -1,0 +1,197 @@
+{
+ "about": "Evidence for the EIP-7702 delegates app/src/finance/delegates.ts recognizes, and for the ones it does not. Read-only measurements, 25 Sep 2026.",
+ "chainId": 4663,
+ "source": "eth_getCode, eth_call and eth_getStorageAt through the own Nitro node (SSH tunnel); Sourcify API v2 for verified sources; public RPC endpoints of other chains for code comparison.",
+ "codeReadAtBlock": 72322930,
+ "sample": {
+  "description": "Delegates of the accounts that received a Uniswap v4 PositionManager NFT in the 6,048,000 blocks (169.3 hours) before block 71,510,559, measured on 24 Sep 2026.",
+  "recipients": 18203,
+  "delegatedAccounts": 1657,
+  "recognizedAccounts": 1342
+ },
+ "recognized": [
+  {
+   "address": "0x63c0c19a282a1b52b07dd5a65b58948a07dae32b",
+   "wallet": "MetaMask",
+   "contract": "EIP7702StatelessDeleGator 1.3.0",
+   "accounts7d": 728,
+   "codeBytes": 11185,
+   "codeHash": "0xa06befcb6f1d7b6c566a607d9d5d932f9b267f3470e55940225c6ee9c4c5e6b0",
+   "evidence": "Sourcify-verified at this address on 4663: src/EIP7702/EIP7702StatelessDeleGator.sol:EIP7702StatelessDeleGator. eip712Domain() names EIP7702StatelessDeleGator; VERSION() is 1.3.0."
+  },
+  {
+   "address": "0x000000005c84f8fd50b21cac312528a64437030e",
+   "wallet": "Uniswap",
+   "contract": "Calibur 1.0.0",
+   "accounts7d": 208,
+   "codeBytes": 22020,
+   "codeHash": "0xba697585ba58ba66ebd095ab4c7f980ed42ad115b2e3bb9b5b9bdf167bf08b1b",
+   "evidence": "Sourcify-verified at this address on 4663: src/CaliburEntry.sol:CaliburEntry. eip712Domain() names Calibur 1.0.0."
+  },
+  {
+   "address": "0x612373d7003d694220f7800eeaf8e3924c0951d3",
+   "wallet": "Uniswap",
+   "contract": "Calibur 1.0.0",
+   "accounts7d": 49,
+   "codeBytes": 24504,
+   "codeHash": "0xff0357b543bbb94845b6791a8becac5e87d467814f86538a62649c877227d631",
+   "evidence": "Sourcify-verified at this address on 4663: src/CaliburEntry.sol:CaliburEntry. eip712Domain() names Calibur 1.0.0."
+  },
+  {
+   "address": "0x000000009b1d0af20d8c6d0a44e162d11f9b8f00",
+   "wallet": "Uniswap",
+   "contract": "Calibur 1.0.0",
+   "accounts7d": 8,
+   "codeBytes": 24504,
+   "codeHash": "0x7fa1bd2edb51499cb83a324acd9d0f35b31774cf8894e26fc13ac0474f4f57a4",
+   "evidence": "Sourcify-verified at this address on chain 1: src/CaliburEntry.sol:CaliburEntry. The runtime code on 4663 is identical to chain 1's."
+  },
+  {
+   "address": "0xe8b12077f4f9c3e1b239a62f283fe4ef6ec9c449",
+   "wallet": "Uniswap",
+   "contract": "Calibur 1.0.0",
+   "accounts7d": 13,
+   "codeBytes": 24504,
+   "codeHash": "0x7c14f7786d170873435db421ef3363025984b8b5b5f9963dd74859422bd8c9c3",
+   "evidence": "Not verified at this address, and no code there on chain 1. Its runtime code equals the verified Calibur at 0x612373d7003d694220f7800eeaf8e3924c0951d3 and 0x000000009b1d0af20d8c6d0a44e162d11f9b8f00 byte for byte except two 20-byte runs, at offsets 9485 and 10191, that hold the contract's own address. eip712Domain() names Calibur 1.0.0."
+  },
+  {
+   "address": "0x77021100bd87b7008e5e1989d0eb38555d0d0000",
+   "wallet": "Alchemy",
+   "contract": "SemiModularAccount7702 1.1.0",
+   "accounts7d": 150,
+   "codeBytes": 24358,
+   "codeHash": "0x46fc4ecb190e16f7734d2ebe8f7e1d616a1b07c5e7cf1fc5c47dbb4e7c1a7ee0",
+   "evidence": "Sourcify-verified at this address on chain 1: src/account/SemiModularAccount7702.sol:SemiModularAccount7702. The runtime code on 4663 is identical to chain 1's. accountId() is alchemy.sma-7702.1.1.0."
+  },
+  {
+   "address": "0x69007702764179f14f51cdce752f4f775d74e139",
+   "wallet": "Alchemy",
+   "contract": "SemiModularAccount7702 1.0.0",
+   "accounts7d": 26,
+   "codeBytes": 23741,
+   "codeHash": "0xecfc0328ce4d953a4d452e11f54b578fa2d7f2f8126246d1120ca24d11845081",
+   "evidence": "Sourcify-verified at this address on chain 1: src/account/SemiModularAccount7702.sol:SemiModularAccount7702. The runtime code on 4663 is identical to chain 1's. accountId() is alchemy.sma-7702.1.0.0."
+  },
+  {
+   "address": "0x6c35fbcf24e57e5aa2e3aa2ca82e052499d02cf8",
+   "wallet": "TokenPocket",
+   "contract": "TokenPocketStatelessDelegator 1.1.0",
+   "accounts7d": 82,
+   "codeBytes": 6289,
+   "codeHash": "0xb47811be4a976fc14fb6d5e5f522e908f0ef200b11c42a5329dfb123440c7c9d",
+   "evidence": "Sourcify-verified at this address on 4663 (and chains 56 and 137): src/TokenPocketStatelessDelegator.sol:TokenPocketStatelessDelegator. VERSION() is 1.1.0; entryPoint() is EntryPoint v0.8."
+  },
+  {
+   "address": "0x7702cb554e6bfb442cb743a7df23154544a7176c",
+   "wallet": "Coinbase",
+   "contract": "EIP7702Proxy",
+   "accounts7d": 47,
+   "codeBytes": 3318,
+   "codeHash": "0x002fe31551358806134e6166961fd583633bcbddd90160af866e0d71c26fcac9",
+   "evidence": "Sourcify-verified at this address on 4663: src/EIP7702Proxy.sol:EIP7702Proxy. A proxy: recognized only while the account's ERC-1967 slot names the implementation below."
+  },
+  {
+   "address": "0xe6cae83bde06e4c305530e199d7217f42808555b",
+   "wallet": "Simple7702Account",
+   "contract": "Simple7702Account (EntryPoint v0.8)",
+   "accounts7d": 20,
+   "codeBytes": 3639,
+   "codeHash": "0xcc7b633aef4b2543cb8f37522adf1a401f910f0f6b2430c1eecc11f401ccfcf3",
+   "evidence": "Sourcify-verified at this address on chain 1: contracts/accounts/Simple7702Account.sol:Simple7702Account. The runtime code on 4663 is identical to chain 1's. entryPoint() is EntryPoint v0.8."
+  },
+  {
+   "address": "0x5a7fc11397e9a8ad41bf10bf13f22b0a63f96f6d",
+   "wallet": "Ambire",
+   "contract": "AmbireAccount7702",
+   "accounts7d": 6,
+   "codeBytes": 11162,
+   "codeHash": "0x386e55cb86f9a31fdb7926ceab54847aa4542b7a0517216144a956982a21ade3",
+   "evidence": "Sourcify-verified at this address on chain 1: contracts/AmbireAccount7702.sol:AmbireAccount7702. The runtime code on 4663 is identical to chain 1's."
+  },
+  {
+   "address": "0xd6cedde84be40893d153be9d467cd6ad37875b28",
+   "wallet": "ZeroDev",
+   "contract": "Kernel 0.3.3",
+   "accounts7d": 4,
+   "codeBytes": 24469,
+   "codeHash": "0x6f6d6691dc11fda98d3102802f20e7e816ccc576c16c9279ee1a884a51d1935d",
+   "evidence": "Sourcify-verified at this address on 4663: src/Kernel.sol:Kernel. eip712Domain() names Kernel 0.3.3; accountId() is kernel.advanced.v0.3.3."
+  },
+  {
+   "address": "0x00000000383e8cbe298514674ea60ee1d1de50ac",
+   "wallet": "Biconomy",
+   "contract": "Nexus 1.2.0",
+   "accounts7d": 1,
+   "codeBytes": 23452,
+   "codeHash": "0x410506042901d5b17d0cf1375da60f6bd5047d4fa5da2b2f6be7fb55c62183f0",
+   "evidence": "Sourcify-verified at this address on chain 1: contracts/Nexus.sol:Nexus. The runtime code on 4663 differs from chain 1's only in 34 bytes: the EIP-712 chain id and domain separator it caches. accountId() is biconomy.nexus.1.2.0."
+  }
+ ],
+ "coinbaseImplementations": {
+  "description": "ERC-1967 implementation slot of the accounts delegated to Coinbase's EIP7702Proxy among the recipients of the 3,000,000 blocks before this head.",
+  "head": 72325791,
+  "proxiedAccounts": 29,
+  "implementations": [
+   {
+    "address": "0x000100abaad02f1cfc8bbe32bd5a564817339e72",
+    "contract": "CoinbaseSmartWallet",
+    "evidence": "Sourcify-verified at this address on 4663: src/CoinbaseSmartWallet.sol:CoinbaseSmartWallet.",
+    "accounts": 29,
+    "codeBytes": 18002,
+    "codeHash": "0x179bcb847d3401ac830789a21cc37ed846fd5da9582a9c9d4b5140b6f26bd1a1"
+   }
+  ]
+ },
+ "unrecognized": [
+  {
+   "address": "0x1c08930b2d330447e6c05b5be8c4caf172b4a174",
+   "accounts7d": 308,
+   "codeBytes": 2725,
+   "codeHash": "0xb4ffaeb9026c8ffc66d7914dfa03d5b64ffd8a50670c5856bcf166534c9bf7ca",
+   "note": "Not on Sourcify, and no code at this address on chains 1, 8453, 42161, 56, 10 or 137. ERC-4337 v0.7 validateUserOp, ERC-1271 isValidSignature and token receiver hooks; no hard-coded address. Metadata: solc 0.8.28, ipfs QmbnFfp5yxoJQ7EuMKsjeSG1aJDiVsXkF1Xkx7pWuP9riX, not found on public gateways."
+  },
+  {
+   "address": "0x3a97c139508134305e7feab3cf2b2be0ba29e6c9",
+   "accounts7d": 2,
+   "codeBytes": 18547,
+   "codeHash": "0x155df58c641373f2c70d3292a119a70f6cdd85d9102d494c4a82b36be487ee26",
+   "note": "Not on Sourcify."
+  },
+  {
+   "address": "0xf35f3f5d989d9094c34ead562347e0276305d175",
+   "accounts7d": 1,
+   "codeBytes": 3195,
+   "codeHash": "0x99e18db920416738fcbc94a3273fe501fb80bea072f5f65ee729f464193f981b",
+   "note": "Not on Sourcify."
+  },
+  {
+   "address": "0x94dd219e45465c61a48cdd233180b7b4550c5b1b",
+   "accounts7d": 1,
+   "codeBytes": 9464,
+   "codeHash": "0x972d29e13585ae201d67c45f96ea24f87ccd18e3fc730ea8719eeddf02ab75da",
+   "note": "Not on Sourcify."
+  },
+  {
+   "address": "0x272148e7139a3691cbe6735e931887ac00242096",
+   "accounts7d": 1,
+   "codeBytes": 21539,
+   "codeHash": "0x2fa5fc531a0ef637e83eacc906559e3ff7aa140427034206d81a2463689d2d96",
+   "note": "Not on Sourcify."
+  },
+  {
+   "address": "0xe6240b81eb423cd0a3df5a634726402bf905cd97",
+   "accounts7d": 1,
+   "codeBytes": 2727,
+   "codeHash": "0x9cde1dcbaee7167f1edbcfdae955977e7258185cd455c07cd07f51c297df2b1c",
+   "note": "Not on Sourcify. Hard-codes two addresses and moves tokens with transfer(address,uint256); holds chain id 4663 as a constant."
+  },
+  {
+   "address": "0x14f01bbaa1dcff8f12bfe1cd54b58a7ebe211b29",
+   "accounts7d": 1,
+   "codeBytes": 2567,
+   "codeHash": "0x6efc2a697c142579f95b2e678eb6a243f3cfbddc16d374551c9412294940ca31",
+   "note": "Sourcify-verified on chain 1 as project/contracts/BronAccount.sol:BronAccount; its publisher was not identified, so it is not listed."
+  }
+ ]
+}

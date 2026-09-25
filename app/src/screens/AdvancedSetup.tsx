@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { watchConnection } from 'wagmi/actions'
 import { zeroAddress, type Address, type Hex } from 'viem'
 import { walletConfig } from '../wallet/config'
-import { setupWallet } from '../finance/wallet'
+import { confirmDelegate, setupWallet } from '../finance/wallet'
 import { readRelease, type ReleaseRead } from '../finance/release'
 import { createSetupClient, deploymentFrom, raw, type PreparedSetup, type SetupOperation, type SetupDeployment } from '../finance/setup'
 import { saveSetupProfile, savedSetupProfile } from '../finance/recoveryProfile'
@@ -57,10 +57,12 @@ export default function AdvancedSetup({ slippageBps }: { slippageBps?: string } 
   const [operation, setOperation] = useState<SetupOperation | null>(null), [recent, setRecent] = useState<{ id: Hex; operation: SetupOperation }[]>([])
   const [prepared, setPrepared] = useState<PreparedSetup | null>(null), [ack, setAck] = useState(false)
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState<Notice | null>(null), [direction, setDirection] = useState(true)
+  // The EIP-7702 delegate the funding's own check stopped at (finance/delegates.ts), until the owner confirms it or acts again.
+  const [unrecognized, setUnrecognized] = useState<{ owner: Address; delegate: Address } | null>(null)
   const generation = useRef(0), running = useRef(false)
   const say = (text: string, code: string | null = null) => setNotice({ text, code })
   useEffect(() => { let live = true; void readSetupRelease().then(result => { if (live) setRelease(result) }); return () => { live = false } }, [])
-  useEffect(() => watchConnection(walletConfig, { onChange: () => { generation.current++; running.current = false; setClient(null); setRecovery(false); setOperation(null); setRecent([]); setPrepared(null); setAck(false); setBusy(false); setForm(defaults); setOwnSwapSlippage(null); setNotice(null) } }), [])
+  useEffect(() => watchConnection(walletConfig, { onChange: () => { generation.current++; running.current = false; setClient(null); setRecovery(false); setOperation(null); setRecent([]); setPrepared(null); setAck(false); setBusy(false); setForm(defaults); setOwnSwapSlippage(null); setNotice(null); setUnrecognized(null) } }), [])
   useEffect(() => () => { generation.current++ }, [])
   // A swap reviewed at one limit is not the swap at another: a limit that moves under a prepared step drops that review, as any edit does.
   const reviewedSlippage = useRef(swapSlippage)
@@ -75,7 +77,7 @@ export default function AdvancedSetup({ slippageBps }: { slippageBps?: string } 
   const edit = (name: keyof typeof defaults, value: string) => { generation.current++; setForm(old => ({ ...old, [name]: value })); setPrepared(null); setAck(false); if (name === 'operationId') setOperation(null) }
   async function action(work: () => Promise<void>) {
     if (running.current) return
-    running.current = true; setBusy(true); setNotice(null); setPrepared(null); setAck(false)
+    running.current = true; setBusy(true); setNotice(null); setPrepared(null); setAck(false); setUnrecognized(null)
     const gen = generation.current
     try { await work() } catch (error) { if (generation.current === gen) say(financeErrorText(errorCode(error), 'The wallet read or simulation could not be completed. No transaction was sent.', 'Read my operations'), errorCode(error)) }
     finally { if (generation.current === gen) { running.current = false; setBusy(false) } }
@@ -100,10 +102,23 @@ export default function AdvancedSetup({ slippageBps }: { slippageBps?: string } 
   const id = () => form.operationId.toLowerCase() as Hex
   const integer = (value: string) => { if (!/^-?(0|[1-9][0-9]{0,6})$/.test(value)) throw new Error('invalid_integer'); return Number(value) }
   const swapSlippageBps = () => { const bps = slippageBpsFrom(swapSlippage); if (bps === null) throw new Error('invalid_slippage'); return bps }
+  /** The funding, or, when its check stops at a delegate this app does not recognize, that delegate for the confirmation. */
+  async function fund(current: Client) {
+    const gen = generation.current
+    try {
+      return await current.fund({ currency0: form.currency0.toLowerCase() as Address, currency1: form.currency1.toLowerCase() as Address, hooks: zeroAddress, fee: integer(form.fee), tickSpacing: integer(form.tickSpacing) }, raw(form.amount0), raw(form.amount1), gas())
+    } catch (error) {
+      if (errorCode(error) === 'delegate_unrecognized') {
+        const account = await current.account()
+        if (generation.current === gen && account.kind === 'delegated' && account.known === null) setUnrecognized({ owner: current.owner, delegate: account.delegate })
+      }
+      throw error
+    }
+  }
   async function prepare(kind: 'fund' | 'swap' | 'mint' | 'cancel') {
     if (!client) return
     const gen = generation.current
-    const result = kind === 'fund' ? await client.fund({ currency0: form.currency0.toLowerCase() as Address, currency1: form.currency1.toLowerCase() as Address, hooks: zeroAddress, fee: integer(form.fee), tickSpacing: integer(form.tickSpacing) }, raw(form.amount0), raw(form.amount1), gas())
+    const result = kind === 'fund' ? await fund(client)
       : kind === 'swap' ? await client.swap(id(), direction, raw(form.grossSwap), swapSlippageBps(), raw(form.sqrtLimit, 160), gas())
       : kind === 'mint' ? await client.mint(id(), { tickLower: integer(form.tickLower), tickUpper: integer(form.tickUpper), liquidity: raw(form.liquidity, 127), maxAmount0: raw(form.maxAmount0), maxAmount1: raw(form.maxAmount1), minSqrtPriceX96: raw(form.minPrice, 160), maxSqrtPriceX96: raw(form.maxPrice, 160), initialSqrtPriceX96: raw(form.initialPrice, 160) }, gas())
       : await client.cancel(id(), gas())
@@ -146,6 +161,9 @@ export default function AdvancedSetup({ slippageBps }: { slippageBps?: string } 
       : 'Read and refund your setup operations directly through your wallet. Refunds carry no Domino fee and need no Domino sign-in.'}</p>
     {profile && <Button className="justify-self-start" disabled={busy} variant="outline" onClick={() => { void action(connect) }}>Read my operations</Button>}
     {notice && <p role="status" className="dm-acct-line dm-acct-wrap" data-notice-code={notice.code ?? undefined}>{notice.text}</p>}
+    {unrecognized && <Button className="justify-self-start" variant="outline" size="sm" disabled={busy} data-confirm-delegate={unrecognized.delegate}
+      onClick={() => { confirmDelegate(unrecognized.owner, unrecognized.delegate); setUnrecognized(null); say('Confirmed for this account on this page. Prepare the funding again.') }}>
+      I set up this smart account ({unrecognized.delegate}): continue</Button>}
     {client && <>
       <p className="dm-acct-hash">Setup {client.deployment.setup} · assisted swap fee {client.deployment.feeBps} bps · tariff {client.deployment.tariffVersion}. Mint and refunds carry no Domino fee. Network gas applies; pool fees apply only to the optional swap.</p>
       <fieldset disabled={busy} className="dm-acct-fieldset"><legend className="dm-acct-subtitle">Network budget for each wallet step</legend>{inputs(['maxGas','maxFee','priorityFee','reserve'])}</fieldset>

@@ -39,6 +39,7 @@ const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> 
   gas_budget_exceeded: 'This step needs more gas than your maximum gas units.',
   native_gas_reserve_insufficient: 'Your ETH balance does not cover this step and the reserve you set.',
   native_eth_refused: "Your wallet can't receive ETH right now: its smart-account delegation (EIP-7702) refuses plain ETH, so this ETH payment would fail. Change or turn off that delegation in your wallet, then try again. Nothing was sent.",
+  delegate_unrecognized: 'Your account runs a smart-account contract (EIP-7702) that Domino does not recognize, and that code can move everything the account holds. Nothing was prepared. If you set up this smart account in your wallet yourself, confirm it below, then prepare the funding again.',
   pending_wallet_transaction: 'Your wallet has a pending transaction. Let it finish first.',
   invalid_pool_key: 'Check the pool: tokens in address order, no hooks, and a fee and tick spacing in range.',
   invalid_funding: 'Fund at least one token, within range.',

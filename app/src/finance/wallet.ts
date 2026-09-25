@@ -10,6 +10,13 @@ interface Provider { request(args: { method: string; params?: unknown[] }): Prom
 // Once offered to a wallet, a nonce stays latched for this page even if the
 // provider loses its response. Reconciliation, never a second Send, follows.
 const offered = new Set<string>()
+// Owner|delegate pairs the person confirmed on this page (./delegates.ts): they set up that EIP-7702 delegate
+// themselves. Kept for the page only, so a reload, or a different delegate, asks again.
+const confirmedDelegates = new Set<string>()
+/** Records that the person set up this unrecognized delegate for this account themselves; funding may continue. */
+export function confirmDelegate(owner: string, delegate: string) {
+  confirmedDelegates.add(`${owner.toLowerCase()}|${delegate.toLowerCase()}`)
+}
 /** Owner recovery deliberately does not require a Domino session or backend. */
 export async function setupWallet(): Promise<WalletRpc> {
   const connected = getConnection(walletConfig)
@@ -21,7 +28,8 @@ export async function setupWallet(): Promise<WalletRpc> {
     return next.status === 'connected' && next.connector?.uid === connector.uid && next.address.toLowerCase() === owner && next.chainId === 4663
   }, request: (method, params) => provider.request({ method, params }),
   nonceOffered: nonce => ownerNonceOffered(owner, nonce), claimNonce: nonce => claimOwnerNonce(owner, nonce),
-  releaseRejectedNonce: (nonce, token) => releaseOwnerNonceAfterRejection(owner, nonce, token) }
+  releaseRejectedNonce: (nonce, token) => releaseOwnerNonceAfterRejection(owner, nonce, token),
+  delegateConfirmed: delegate => confirmedDelegates.has(`${owner}|${delegate.toLowerCase()}`) }
 }
 export const liveWalletHandoff: WalletHandoff = {
   available: true,

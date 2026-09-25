@@ -87,6 +87,8 @@ execFileSync(
     'tests/automation-availability.test.mjs',
     'tests/nonce.test.mjs',
     'tests/setup-recovery.test.mjs',
+    // 2026-09-25: the EIP-7702 delegates this app recognizes, and the confirmation funding waits for otherwise.
+    'tests/delegates.test.mjs',
     'tests/setup-quoter.test.mjs',
     'tests/position-actions.test.mjs',
     // 2026-09-24: V2 foundation, the pure number, USD, time and chart geometry helpers (lib/format, lib/chart).

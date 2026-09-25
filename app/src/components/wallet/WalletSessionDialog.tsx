@@ -8,12 +8,23 @@ import { sessionController } from '../../wallet/session'
 import { useDialog } from '../../lib/useDialog'
 import { Button, Card, Pill } from '../ui'
 import { IconChevronRight, IconClose } from '../icons'
+import { knownDelegateAt } from '../../finance/delegates'
 import { describe, NO_BROWSER_WALLET, REFRESH_UNAVAILABLE } from './copy'
 import { WalletLogo } from './WalletLogo'
 
 /** Wallet names come from the extension that announced them: shown as text, shortened. */
 const MAX_NAME = 40
 const walletName = (name: string) => (name.length > MAX_NAME ? `${name.slice(0, MAX_NAME - 1)}…` : name)
+
+/**
+ * The service's latest account check in words: a plain EOA, or an EIP-7702 smart account and the wallet whose
+ * code it runs, named from its delegate's address (finance/delegates.ts). Funding reads the delegate's code itself.
+ */
+function accountCheck(validation: { method: string; blockNumber: string; delegate?: string }): string {
+  if (validation.method !== 'eip7702_delegated' || !validation.delegate) return `Plain EOA · block ${validation.blockNumber}`
+  const known = knownDelegateAt(validation.delegate)
+  return `Smart account (EIP-7702), ${known ? `${known.wallet} ${known.contract}` : `unrecognized contract ${validation.delegate}`} · block ${validation.blockNumber}`
+}
 
 /** An action's own outcome, shown only while the state it was taken in lasts. */
 interface Notice {
@@ -231,7 +242,7 @@ export function WalletSessionDialog({
               </div>
               <div>
                 <dt className="text-[13px]">Latest account check</dt>
-                <dd className="tnum font-mono text-[13px] tracking-normal">Plain EOA · block {details.validation.blockNumber}</dd>
+                <dd className="tnum font-mono text-[13px] tracking-normal">{accountCheck(details.validation)}</dd>
               </div>
             </dl>
           )}

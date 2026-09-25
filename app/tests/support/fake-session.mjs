@@ -72,6 +72,8 @@ export function createFakeSession() {
     failNext: new Map(),
     corruptNext: new Map(),
     foreignDomain: false,
+    // The account check every session reply carries: a plain EOA unless a test sets another (an EIP-7702 designator's).
+    validation: { method: 'plain_eoa', blockNumber: '123', blockHash: `0x${'ab'.repeat(32)}` },
   };
   const now = () => Date.now() + state.offset;
   const violation = (text) => state.violations.push(text);
@@ -130,7 +132,7 @@ export function createFakeSession() {
       owner: { address: row.owner, chainId: 4663 },
       expiresAt: utc(row.expiresAt),
       csrfToken: row.csrf,
-      validation: { method: 'plain_eoa', blockNumber: '123', blockHash: `0x${'ab'.repeat(32)}` },
+      validation: controls.validation,
     };
   }
 

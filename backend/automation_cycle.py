@@ -73,11 +73,14 @@ def service_readiness_probe(cycle, entry):
                     and now - finalized['timestamp'] <= QuotePolicy().max_finalized_lag_seconds):
                 return False
             deployment = cycle.config.deployment
-            # Operator, publisher and fee recipient are plain keys. Code on one
-            # (an EIP-7702 designator) means that key signed an authorization;
-            # a delegated fee recipient can also refuse or forward native fees,
-            # which the vault's exact-receipt check turns into a revert.
-            for role in (deployment.operator, deployment.pricePublisher, deployment.serviceFeeRecipient):
+            # Operator, publisher, fee recipient and the price guard's guardian
+            # are plain keys. Code on one (an EIP-7702 designator) means that key
+            # signed an authorization; a delegated fee recipient can also refuse
+            # or forward native fees, which the vault's exact-receipt check turns
+            # into a revert, and the guardian can name a new publisher. The
+            # guardian is immutable in the guard, so it is read there.
+            guardian = reader.call(deployment.priceGuard, 'guardian()', ['address'], head)[0]
+            for role in (deployment.operator, deployment.pricePublisher, deployment.serviceFeeRecipient, guardian):
                 if reader.request('eth_getCode', (role, {'blockHash': head['hash'], 'requireCanonical': True})) != '0x':
                     return False
             derive_admission(reader, cycle.config.deployment, entry.owner, entry.vault, head)

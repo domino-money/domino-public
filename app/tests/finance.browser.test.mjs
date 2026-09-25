@@ -582,6 +582,8 @@ const quoterChainAbi = parseAbi([
 ]);
 /** The pinned quoter (src/finance/pin.ts V4_QUOTER) and its real runtime code, whose keccak256 is the pinned hash. */
 const QUOTER = JSON.parse(readFileSync(new URL('./support/v4-quoter.code.json', import.meta.url), 'utf8'));
+/** Two recognized EIP-7702 delegates' runtime code as read on Robinhood Chain (src/finance/delegates.ts). */
+const DELEGATES = JSON.parse(readFileSync(new URL('./support/eip7702-delegates.code.json', import.meta.url), 'utf8'));
 
 /**
  * A browser wallet on Robinhood Chain that is also the chain behind a published setup deployment, for Create position.
@@ -616,7 +618,7 @@ const QUOTER = JSON.parse(readFileSync(new URL('./support/v4-quoter.code.json', 
  * empty stretch for nothing in and nothing out and fills above it (as v4-core crosses empty ticks), and one that lowers
  * it finds nothing. `quoteDelayMs`: how long each quoter question takes to answer, as a slow wallet's does.
  */
-function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0 } = {}) {
+function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0, ownerCode = '0x', delegateCode = null } = {}) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`;
   const setup = at(0x71), poolManager = at(0x72), positionManager = at(0x73), stateView = at(0x74), feeRecipient = at(0x75);
   const code = { [setup]: '0x6071', [poolManager]: '0x6072', [positionManager]: '0x6073', [stateView]: '0x6074', [QUOTER.address]: QUOTER.code };
@@ -624,6 +626,9 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     positionManagerCodeHash: keccak256(code[positionManager]), stateViewCodeHash: keccak256(code[stateView]), feeRecipient, feeBps: 30, tariffVersion: '1', expiresAt: Math.floor(Date.now() / 1000) + 86_400 };
   const FINALIZED = { number: finality === 'lagging' ? '0x1' : '0x100', hash: at(0xbf, 32) };
   const lower = value => String(value).toLowerCase();
+  // The owner's own code: none, a plain EOA, or an EIP-7702 designator whose delegate answers `delegateCode`.
+  if (ownerCode !== '0x') code[lower(owner)] = ownerCode;
+  if (delegateCode !== null) code[`0x${ownerCode.slice(8)}`] = delegateCode;
   const operationId = nonce => keccak256(encodeAbiParameters(parseAbiParameters('uint256,address,address,uint64'), [4663n, setup, owner, nonce]));
   const NONE = { owner: zeroAddress, key: { currency0: zeroAddress, currency1: zeroAddress, fee: 0, tickSpacing: 0, hooks: zeroAddress }, balance0: 0n, balance1: 0n, swapped: false, closed: false, tokenId: 0n };
   const operations = new Map(), allowances = new Map(), held = new Map(Object.entries(balances).map(([token, amount]) => [lower(token), amount]));
@@ -679,6 +684,9 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
   const hashOf = index => at(0xc0 + index, 32);
   const decode = tx => decodeFunctionData({ abi: lower(tx.to) === setup ? setupChainAbi : erc20Abi, data: tx.data });
   function view(to, data, tag) {
+    // The one-wei payment to the owner's own account that an account with code is probed with (finance/setup.ts
+    // acceptsNativeEth): this account's code accepts it.
+    if (to === lower(owner) && ownerCode !== '0x' && !data) { viewed.push('native_probe'); return '0x'; }
     if (to === stateView) {
       const { functionName } = decodeFunctionData({ abi: stateViewAbi, data });
       viewed.push(functionName);
@@ -1046,6 +1054,55 @@ test('Create position opens the position from Review through a connected wallet 
     for (const [index, { key, states }] of order.entries()) for (const later of order.slice(index + 1)) assert.notEqual(states[later.key], 'done', `${later.key} was done before ${key}`);
     await onlyTheWallet(s, chain);
     assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
+  } finally { await s.close(); }
+});
+
+test('an account delegated (EIP-7702) to a contract this app does not recognize: Create position names it and asks the wallet nothing until the person confirms, then approves, deposits and mints', async () => {
+  const delegate = '0x' + 'de'.repeat(20);
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, ownerCode: '0xef0100' + delegate.slice(2), delegateCode: '0x6000' });
+  const s = await atReview(chain);
+  try {
+    // What the press itself reads and asks, apart from what the page read before it.
+    const [viewedBefore, loggedBefore] = [chain.viewed.length, chain.log.length];
+    await s.page.locator('[data-create-position]').click();
+    const notice = s.page.locator('[data-create-notice="delegate_unrecognized"]');
+    await notice.waitFor({ timeout: 30_000 });
+    assert.equal(await notice.innerText(), `Your account runs a smart-account contract (EIP-7702) that Domino does not recognize: ${delegate}. That code can move everything the account holds, including the position this would create. Nothing was sent. Continue only if you set up this smart account in your wallet yourself.`);
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet is asked nothing until you confirm the smart account below, or connect another account.');
+    assert.equal(await s.page.locator('[data-create-position]').getAttribute('data-create-position'), 'failed');
+    // Said before anything else was read or asked: no balance, no allowance, no probe, no simulation, nothing sent.
+    assert.deepEqual(chain.sends, []);
+    const asked = chain.log.slice(loggedBefore), viewed = chain.viewed.slice(viewedBefore);
+    assert.ok(!asked.includes('eth_estimateGas') && !asked.includes('eth_getBalance') && !asked.includes('eth_sendTransaction'), asked.join(', '));
+    assert.ok(!viewed.includes('balanceOf') && !viewed.includes('allowance') && !viewed.includes('native_probe'), viewed.join(', '));
+    await s.page.screenshot({ path: join(shots(), 'create-position-unrecognized-delegate.png'), fullPage: true });
+    // Pressed again without confirming: the same stop, still nothing asked.
+    await s.page.locator('[data-create-position]').click();
+    await s.page.locator('[data-create-position="failed"]').waitFor({ timeout: 30_000 });
+    await notice.waitFor({ timeout: 30_000 });
+    assert.deepEqual(chain.sends, []);
+    // Confirmed: the same press runs again, and the position is made as for any account.
+    const confirm = s.page.locator(`[data-create-confirm-delegate="${delegate}"]`);
+    assert.equal(await confirm.innerText(), 'I set up this smart account: continue');
+    await confirm.click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open', 'mint']);
+    assert.ok(chain.viewed.includes('native_probe'), 'the account has code, so the ETH it may be paid back was probed as well');
+    assert.equal(await s.page.locator('[data-create-notice="delegate_unrecognized"], [data-create-confirm-delegate]').count(), 0);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('an account delegated (EIP-7702) to a recognized wallet’s contract creates its position with no question: Simple7702Account’s own code, as read on Robinhood Chain', async () => {
+  const delegate = '0xe6cae83bde06e4c305530e199d7217f42808555b';
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, ownerCode: '0xef0100' + delegate.slice(2), delegateCode: DELEGATES.code[delegate] });
+  const s = await atReview(chain);
+  try {
+    await s.page.locator('[data-create-position]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open', 'mint']);
+    assert.equal(await s.page.locator('[data-create-notice="delegate_unrecognized"], [data-create-confirm-delegate]').count(), 0);
+    await onlyTheWallet(s, chain);
   } finally { await s.close(); }
 });
 

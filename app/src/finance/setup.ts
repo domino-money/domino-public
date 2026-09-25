@@ -1,6 +1,7 @@
 import { decodeAbiParameters, decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, zeroAddress, type Address, type Hex } from 'viem'
 import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS, slippageWritten } from './slippage.js'
 import { POSITION_MANAGER, SETUP_CONTRACT, V4_QUOTER, V4_QUOTER_CODE_HASH, pinned, unpinned } from './pin.js'
+import { readAccountCode, type AccountCode } from './delegates.js'
 
 /*
  * The closed ABIs are written as JSON: exactly what viem's parseAbi and
@@ -84,6 +85,8 @@ export interface SetupDeployment {
 export interface WalletRpc {
   owner: Address; current(): boolean; request(method: string, params: unknown[]): Promise<unknown>
   nonceOffered(nonce: bigint): boolean; claimNonce(nonce: bigint): Promise<string>; releaseRejectedNonce(nonce: bigint, token: string): Promise<void>
+  /** Whether the person confirmed on this page that they set up this EIP-7702 delegate themselves (./delegates.ts). */
+  delegateConfirmed?(delegate: Address): boolean
 }
 export interface GasBudget { maxGas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint; reserveWei: bigint }
 /** A pool as the chain has it now: StateView's slot0 and in-range liquidity, and the latest block's time (seconds). */
@@ -309,6 +312,8 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
   }
   return {
     deployment,
+    /** The connected account this client prepares for. */
+    owner: wallet.owner,
     /** The pool's square-root price now, read on chain through the wallet from the deployment's own StateView. Reads only. */
     price: (key: PoolKey) => bounded(async rpc => {
       await identity(rpc); poolKey(key)
@@ -371,6 +376,8 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       }
       return { kind: 'quote', out: out[0], outNext: out[1] }
     }),
+    /** The connected account's code, and the EIP-7702 delegate it names if any, recognized or not (./delegates.ts). Reads only. */
+    account: () => bounded(async (rpc): Promise<AccountCode> => { await identity(rpc); return readAccountCode(rpc, wallet.owner) }),
     inspect: (id: Hex) => bounded(async rpc => { await verify(rpc, true); return operation(rpc, id) }),
     recent: () => bounded(async rpc => {
       await verify(rpc, true)
@@ -398,6 +405,10 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     fund: (key: PoolKey, amount0: bigint, amount1: bigint, gas: GasBudget) => bounded(async rpc => {
       await verify(rpc); poolKey(key)
       if (amount0 < 0n || amount1 < 0n || amount0 >= 2n ** 128n || amount1 >= 2n ** 128n || amount0 + amount1 === 0n) return fail('invalid_funding')
+      // New funds, and the position they become, are held by an account whose delegate's code runs on all of it. A
+      // delegate this app does not recognize waits for the person to confirm they set it up, before any approval.
+      const account = await readAccountCode(rpc, wallet.owner)
+      if (account.kind === 'delegated' && account.known === null && wallet.delegateConfirmed?.(account.delegate) !== true) return fail('delegate_unrecognized')
       // Mint's leftover and every refund of this operation pay ETH back: never
       // lock ETH (or approve anything) for an account that refuses it.
       if (key.currency0 === zeroAddress && !await acceptsNativeEth(rpc, wallet.owner)) return fail('native_eth_refused')

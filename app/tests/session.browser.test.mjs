@@ -619,6 +619,27 @@ test('an idle expiry is found when the tab comes back into view', async () => {
   await s.close();
 });
 
+test('the latest account check names the account: a plain EOA, or an EIP-7702 smart account with its wallet, or its unrecognized contract', async () => {
+  const s = await scenario();
+  const page = await s.open();
+  await connect(page);
+  await signIn(s, page);
+  const details = page.locator('[data-testid="session-details"]');
+  await until(page, () => document.querySelector('[data-testid="session-details"]') !== null, null, 'session details');
+  assert.match(await details.innerText(), /Latest account check\s+Plain EOA · block 123/);
+  // The service's check at a later refresh or reload is the one shown: a delegate named from its address.
+  for (const [delegate, said] of [['0x63c0c19a282a1b52b07dd5a65b58948a07dae32b', 'Smart account (EIP-7702), MetaMask EIP7702StatelessDeleGator 1.3.0 · block 124'],
+    ['0x1c08930b2d330447e6c05b5be8c4caf172b4a174', 'Smart account (EIP-7702), unrecognized contract 0x1c08930b2d330447e6c05b5be8c4caf172b4a174 · block 124']]) {
+    s.fake.controls.validation = { method: 'eip7702_delegated', blockNumber: '124', blockHash: `0x${'cd'.repeat(32)}`, delegate };
+    await page.reload({ waitUntil: 'load' });
+    await viewIs(page, 'signed_in');
+    await openDialog(page);
+    await until(page, () => document.querySelector('[data-testid="session-details"]') !== null, null, 'session details');
+    assert.match(await details.innerText(), new RegExp(`Latest account check\\s+${said.replace(/[().]/g, '\\$&')}`));
+  }
+  await s.close();
+});
+
 test('an idle expiry is noticed while the tab stays in view, and the end time is not overstated', async () => {
   const s = await scenario({ clockAt: Date.now() });
   const page = await s.open();

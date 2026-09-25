@@ -109,6 +109,32 @@ into an unsupported-wallet claim or silently deleting a still-valid session. The
 policy is `eoa_or_7702_v1`; a future policy change requires a migration and
 reauthentication.
 
+Sign-in admits any delegate, but a delegate's code runs on everything the
+account holds, so the app separates the delegates it recognizes from the rest
+before new funds go in. `app/src/finance/delegates.ts` lists 13 delegates by the
+hash of their runtime code on 4663: MetaMask, Uniswap's Calibur (four
+deployments), Alchemy, TokenPocket, Coinbase, Simple7702Account, Ambire, ZeroDev
+Kernel and Biconomy Nexus. Coinbase's delegate is a proxy, so it counts only
+while the account's ERC-1967 slot names CoinbaseSmartWallet. Every entry is
+verified, as the file and
+[reports/eip7702-delegates-2026-09-25.json](../reports/eip7702-delegates-2026-09-25.json)
+record. In the 7-day sample of accounts that received a Uniswap v4 position,
+these cover 1,342 of 1,657 delegated accounts. The most common unrecognized
+delegate, `0x1c08930b2d330447e6c05b5be8c4caf172b4a174` (308 accounts), exists
+only on 4663 and has no verified source.
+
+Before a Setup funding, the app reads the owner's code through the wallet. For
+an unrecognized delegate it names the contract and asks the wallet nothing more
+until the person confirms they set up that smart account themselves (Create
+position, and the advanced funding form). `fund` refuses with
+`delegate_unrecognized` otherwise. The confirmation holds for that owner and
+delegate on that page only: a reload or another delegate asks again. Refunds,
+recovery, the mint and position actions never wait for it, since they bring no
+new funds into the account's care. Recognition says the code is a known
+wallet's, not that the account is safe: modules or keys installed in the
+account's own storage are not covered. The session dialog names the delegate
+from its address, and marks it unrecognized when it is not in the list.
+
 ## Durable state, expiry and logout
 
 Migration `008_wallet_sessions.sql` creates `domino_sessions`, separate from the

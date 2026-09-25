@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { zeroAddress, type Address, type Hex } from 'viem'
-import { setupWallet } from '../../finance/wallet'
+import { confirmDelegate, setupWallet } from '../../finance/wallet'
 import { suggestGasBudget } from '../../finance/gas'
 import { readRelease } from '../../finance/release'
 import { saveSetupProfile } from '../../finance/recoveryProfile'
@@ -113,7 +113,15 @@ const OWN_TEXT: Readonly<Record<string, string>> = {
   invalid_swap_budget: 'The swap could not be sized from your deposit. Press Create position again.',
   swap_output_insufficient: 'The swap would return too little at your slippage limit. Press Create position again, or raise the slippage limit.',
   pool_not_initialized: 'This pool has no price on chain yet, so a position cannot be created in it here.',
+  // The press checked the account's delegate a moment before; the deposit's own check read another one.
+  delegate_unrecognized: 'Your account’s smart-account contract (EIP-7702) changed while the deposit was prepared. Nothing was sent. Press Create position again.',
 }
+/**
+ * Said before anything is read or asked when the account's EIP-7702 delegate is not one this app recognizes
+ * (finance/delegates.ts): its code runs on everything the account holds. The person continues only by confirming it.
+ */
+const unrecognizedText = (delegate: Address) =>
+  `Your account runs a smart-account contract (EIP-7702) that Domino does not recognize: ${delegate}. That code can move everything the account holds, including the position this would create. Nothing was sent. Continue only if you set up this smart account in your wallet yourself.`
 const decimalsOf = (token: PoolOption['currencies'][number]) => (token.origin === 'read' ? token.decimals : null)
 const symbolOf = (token: PoolOption['currencies'][number]) => token.symbol ?? 'token'
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -183,6 +191,8 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   const [held, setHeld] = useState<Open | null>(null)
   // The held deposit cannot be used in this pool as it is now: the refund is the one main action.
   const [refundFirst, setRefundFirst] = useState(false)
+  // The account's unrecognized delegate the last press stopped at, until the person confirms it or presses again.
+  const [unrecognized, setUnrecognized] = useState<{ owner: Address; delegate: Address } | null>(null)
   const generation = useRef(0)
   const running = useRef(false)
   const steps = useRef<readonly LiveStep[]>([])
@@ -195,6 +205,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     setNotice(null)
     setHeld(null)
     setRefundFirst(false)
+    setUnrecognized(null)
   }
   // The previous wallet's flow, if one was running, writes nothing more, and Review shows its plan again.
   useEffect(() => {
@@ -463,6 +474,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     setPhase('running')
     setNotice(null)
     setRefundFirst(false)
+    setUnrecognized(null)
     // Review keeps its own plan in view until this run knows its steps.
     show([], gen)
     let open: Open | null = held
@@ -499,6 +511,13 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
           { key: 'mint', title: CREATE.review.mintStep, state: 'waiting' },
         ], gen)
       } else {
+        // New funds, and the position they become, are held by the account, and its delegate's code runs on all of it:
+        // one this app does not recognize is said before anything else is read or asked (setup.ts fund checks it too).
+        const account = await client.account()
+        if (account.kind === 'delegated' && account.known === null && rpc.delegateConfirmed?.(account.delegate) !== true) {
+          if (generation.current === gen) setUnrecognized({ owner: rpc.owner, delegate: account.delegate })
+          throw new Stop(unrecognizedText(account.delegate), 'delegate_unrecognized')
+        }
         // What the wallet holds decides the funding: both tokens, or one of them with the swap. ETH keeps the gas of every step:
         // the approvals and the deposit, and, held back through the deposit itself, the swap and the mint or a refund.
         const kept = GAS_AFTER_DEPOSIT_UNITS * gas.maxFeePerGas
@@ -596,6 +615,14 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     }
   }
 
+  /** The person set up this smart account themselves: remembered for this account on this page, and the press runs again. */
+  function confirmUnrecognized() {
+    if (!unrecognized || running.current) return
+    confirmDelegate(unrecognized.owner, unrecognized.delegate)
+    setUnrecognized(null)
+    void create()
+  }
+
   const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria-haspopup="dialog"]')?.click()
   const connectOrSwitch = () => {
     if (onOtherNetwork) void switchToRobinhood()
@@ -616,6 +643,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   else if (phase === 'held') reason = 'A deposit is held for this pool. Press Create position to create the position from it, or refund it.'
   else if (busy) reason = 'Confirm each step in your wallet. The list above marks each one as it is done.'
   else if (short) reason = 'Your wallet does not seem to hold enough for this position. Lower the amount, or add the token named above to your wallet.'
+  else if (phase === 'failed' && unrecognized) reason = 'Your wallet is asked nothing until you confirm the smart account below, or connect another account.'
   else if (phase === 'failed') reason = 'Press Create position to try again. An allowance already set is not asked for again.'
   else reason = 'Your wallet asks you to sign each step in the list above, in order.'
 
@@ -650,6 +678,11 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         <p role="status" className="dm-flow-reason dm-flow-create-notice" data-align="start" data-create-notice={notice.code ?? 'said'}>
           {notice.text}
         </p>
+      )}
+      {phase === 'failed' && unrecognized && (
+        <Button type="button" variant="outline" size="md" className="w-full" onClick={confirmUnrecognized} data-create-confirm-delegate={unrecognized.delegate}>
+          I set up this smart account: continue
+        </Button>
       )}
       {phase === 'held' && held && (
         <Button
