@@ -25,7 +25,8 @@ npm --prefix app ci
 npm --prefix app run dev       # http://localhost:5273
 ```
 
-Checks, the same ones CI runs, in the same order:
+Checks, the same ones CI runs, in the same order (CI runs the three browser
+suites beside each other, in jobs of their own):
 
 ```sh
 npm run check:app   # domain and gate tests, typecheck, lint, build, browser tests
@@ -33,14 +34,18 @@ npm run check:app   # domain and gate tests, typecheck, lint, build, browser tes
 
 ## Tests
 
-Three suites, run from `app/`.
+Four suites, run from `app/`.
 
 ```sh
 npm --prefix app test          # pure logic, node --test
 npm --prefix app run build     # required before the browser suites
 npm --prefix app run test:render
+npm --prefix app run test:finance # the wallet flows: setup, New position, Automate, positions and their actions
 npm --prefix app run test:gate # the gate, release and read-state browser suites
 ```
+
+The browser suites also load `.test-build`, which `npm test` leaves behind;
+`npm --prefix app run build:unit` compiles it without running the tests.
 
 `npm test` compiles the pure modules to `.test-build` and runs
 `tests/domain.test.mjs`, the same pattern as `web/scripts/test.mjs`. It covers

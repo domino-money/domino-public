@@ -16,7 +16,7 @@
     "check:contract-gas": "node scripts/gas-baseline.mjs --check",
     "check:web": "npm --prefix web test && npm --prefix web run typecheck && npm --prefix web run lint && npm --prefix web run build",
     "check:read-bridge": "npm --prefix bridge run check",
-    "check:app": "npm --prefix app test && npm --prefix app run typecheck && npm --prefix app run lint && npm --prefix app run build && npm --prefix app run test:render && npm --prefix app run test:gate",
+    "check:app": "npm --prefix app test && npm --prefix app run typecheck && npm --prefix app run lint && npm --prefix app run build && npm --prefix app run test:render && npm --prefix app run test:finance && npm --prefix app run test:gate",
     "check:repository": "python3 scripts/check-repository.py"
   }
 }

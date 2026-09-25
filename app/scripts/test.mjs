@@ -16,6 +16,11 @@ execFileSync(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconf
 mkdirSync('.test-build', { recursive: true });
 writeFileSync('.test-build/package.json', JSON.stringify({ type: 'commonjs' }));
 
+// `--build-only` (npm run build:unit) stops here. The browser suites load
+// .test-build too (the gated server's middleware, the fake chains), and CI runs
+// each of them in a job of its own, which needs this build but not these tests.
+if (process.argv.includes('--build-only')) process.exit(0);
+
 execFileSync(
   process.execPath,
   [

@@ -69,13 +69,10 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-24.04
-    # check:app runs the app suite plus the render and browser gate passes and
-    # brushes against 15 minutes on hosted runners (runs #336/#337 were cancelled
-    # mid-suite); give deliberate headroom so the job is not spuriously cut.
-    # 2026-09-25: the chain-in-the-browser tests (#214) took check:app from about
-    # 20 to 24 minutes, and the 25-minute limit cut the step after it (run
-    # 36109799409); 35 minutes restores the headroom.
-    timeout-minutes: 35
+    # The web checks, the shared types and check:app up to its build: about 4
+    # minutes on run 36114583875. check:app's browser suites run beside this job
+    # in frontend_browser.
+    timeout-minutes: 15
     env:
       WRANGLER_SEND_METRICS: 'false'
     steps:
@@ -89,6 +86,8 @@ jobs:
             app/package-lock.json
       - name: Check preview deployment policy without credentials
         run: node --test scripts/preview-workflow.test.mjs
+      - name: Check that the frontend jobs run every part of check:app
+        run: node --test scripts/check-app-jobs.test.mjs
       - run: npm --prefix web ci --no-audit --no-fund
       - run: npm run check:web
       - name: Check shared read types
@@ -108,9 +107,50 @@ jobs:
       - name: Check shared performance types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/performance-v1/types.ts api-contracts/performance-v1/runtime.d.mts api-contracts/performance-v1/consumer.typecheck.mts
       - run: npm --prefix app ci --no-audit --no-fund
-      - run: npm run check:app
+      # check:app up to its build, one step each; its browser suites follow in
+      # frontend_browser (scripts/check-app-jobs.test.mjs holds the two lists
+      # to check:app).
+      - run: npm --prefix app test
+      - run: npm --prefix app run typecheck
+      - run: npm --prefix app run lint
+      - run: npm --prefix app run build
       - name: Check pool estimate contract in a real browser
         run: node --test api-contracts/read-v2/consumer.browser.test.mjs
+  frontend_browser:
+    name: Frontend browser (${{ matrix.suite }})
+    runs-on: ubuntu-24.04
+    # check:app's browser suites, one job each. These 2-vCPU runners give
+    # node --test one file at a time, so in one job the suites ran end to end
+    # and outgrew the limit twice: 15 minutes (runs #336/#337), then 25 (runs
+    # 35948947372 and 36071207614 were cut there with no test failed or hung).
+    # Run 36114583875 spent 6.8 minutes on render, 7.4 on finance (0.7 on
+    # 19 September) and 9.4 on gate; each job adds about a minute to install
+    # and build.
+    timeout-minutes: 20
+    strategy:
+      # Every suite reports, even when another one fails.
+      fail-fast: false
+      matrix:
+        suite: [render, finance, gate]
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            app/package-lock.json
+      - run: npm --prefix web ci --no-audit --no-fund
+      - run: npm --prefix app ci --no-audit --no-fund
+      # What check:app has built by the time its browser suites run: the unit
+      # build, which the fake chains and the gated server's middleware load,
+      # and dist.
+      - name: Build what the browser suites load
+        run: npm --prefix app run build:unit && npm --prefix app run build
+      - run: npm --prefix app run test:${{ matrix.suite }}
   backend:
     name: Backend
     runs-on: ubuntu-24.04
@@ -234,7 +274,7 @@ jobs:
         run: node --test scripts/gas-baseline.test.mjs scripts/mutate-contracts.test.mjs && node scripts/gas-baseline.mjs --check
   preview:
     name: Deploy gated preview
-    needs: [hygiene, frontend, backend, contracts]
+    needs: [hygiene, frontend, frontend_browser, backend, contracts]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
