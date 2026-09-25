@@ -65,7 +65,7 @@ def main():
     from deposit_store import DepositStore
     from onboarding_auth import OnboardingAuth
     from rpc_config import configured_rpc_urls, DEFAULT_RPC_HOSTS
-    from session_chain import PlainEoaChecker
+    from session_chain import EoaChecker
     from session_store import SessionStore
     from uniswap_config import load_config, CONFIG_PATH
     from uniswap_position import UniswapPosition
@@ -97,7 +97,7 @@ def main():
             # bounded request budget and deadline; no unbounded retries.
             rpc_factory = lambda: DepositRpc(urls[0], allowed_hosts=hosts, max_requests=160)
             auth = OnboardingAuth(SessionStore(settings, abuse_secret=bytes.fromhex(secret)),
-                                 PlainEoaChecker(urls, allowed_hosts=hosts))
+                                 EoaChecker(urls, allowed_hosts=hosts))
             preparer = DirectDepositPreparer(UniswapPosition(api_key), rpc_factory, admission=manifest)
             service = DepositService(auth, DepositStore(settings), preparer,
                 lambda: ReceiptReconciler(rpc_factory(), token_guard=preparer.token_guard), private_values=(api_key,),

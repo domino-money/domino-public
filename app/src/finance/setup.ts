@@ -136,6 +136,31 @@ export function revertOf(error: unknown): { data: Hex | null } | null {
 }
 export const isRevert = (error: unknown): boolean => revertOf(error) !== null
 /**
+ * Whether the connected account can be paid plain ETH, read through the
+ * wallet's own provider: no signature, no transaction.
+ *
+ * An account without code always can. An EIP-7702 account runs its delegate's
+ * code on every payment, and a delegate with no payable receive() or fallback()
+ * refuses it. Then every refund or withdrawal in native ETH reverts until the
+ * owner changes or clears the delegation in their wallet; the funds stay where
+ * they are meanwhile. So a step that pays ETH out, or would lock ETH that only
+ * such a payment can return, asks first.
+ *
+ * The probe simulates one wei from the account to itself. Only a revert means
+ * "refused"; a read that fails any other way throws, as every other read here.
+ */
+export async function acceptsNativeEth(read: (method: string, params: unknown[]) => Promise<unknown>,
+  owner: Address, block = 'latest'): Promise<boolean> {
+  if (await read('eth_getCode', [owner, block]) === '0x') return true
+  try {
+    await read('eth_call', [{ from: owner, to: owner, value: '0x1' }, block])
+    return true
+  } catch (error) {
+    if (isRevert(error)) return false
+    throw error
+  }
+}
+/**
  * Why V4Quoter refused a size, from its revert data. It re-wraps every failure as UnexpectedRevertBytes(bytes)
  * (0x6190b2b0) around the pool's own error: NotEnoughLiquidity (0x7a5ed734) when the pool cannot fill the amount,
  * PoolNotInitialized (0x486aa307) when it has no price.
@@ -373,6 +398,9 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     fund: (key: PoolKey, amount0: bigint, amount1: bigint, gas: GasBudget) => bounded(async rpc => {
       await verify(rpc); poolKey(key)
       if (amount0 < 0n || amount1 < 0n || amount0 >= 2n ** 128n || amount1 >= 2n ** 128n || amount0 + amount1 === 0n) return fail('invalid_funding')
+      // Mint's leftover and every refund of this operation pay ETH back: never
+      // lock ETH (or approve anything) for an account that refuses it.
+      if (key.currency0 === zeroAddress && !await acceptsNativeEth(rpc, wallet.owner)) return fail('native_eth_refused')
       for (const [token, amount] of [[key.currency0, amount0], [key.currency1, amount1]] as const) {
         if (token === zeroAddress || amount === 0n) continue
         const data = encodeFunctionData({ abi: tokenAbi, functionName: 'allowance', args: [wallet.owner, deployment.setup] })
@@ -409,6 +437,8 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       if (op.closed || !Number.isSafeInteger(plan.tickLower) || !Number.isSafeInteger(plan.tickUpper) || plan.tickLower < -887272 || plan.tickUpper > 887272 || plan.tickLower >= plan.tickUpper || plan.tickLower % op.key.tickSpacing || plan.tickUpper % op.key.tickSpacing
         || plan.liquidity <= 0n || plan.liquidity >= 2n ** 127n || plan.maxAmount0 < 0n || plan.maxAmount1 < 0n || plan.maxAmount0 > op.balance0 || plan.maxAmount1 > op.balance1
         || plan.minSqrtPriceX96 <= 0n || plan.maxSqrtPriceX96 < plan.minSqrtPriceX96 || plan.maxSqrtPriceX96 >= 2n ** 160n || plan.initialSqrtPriceX96 < 0n || plan.initialSqrtPriceX96 >= 2n ** 160n) return fail('invalid_mint_limits')
+      // Mint returns whatever ETH it did not use, and it rarely uses every wei.
+      if (op.key.currency0 === zeroAddress && op.balance0 > 0n && !await acceptsNativeEth(rpc, wallet.owner)) return fail('native_eth_refused')
       return prepare(rpc, 'mint', id, deployment.setup, encodeFunctionData({ abi: setupAbi, functionName: 'mint', args: [{ operationId: id, ...plan, deadline: BigInt(Math.floor(now()) + STEP_DEADLINE_S) }] }), 0n, gas,
         [`Mint liquidity ${plan.liquidity} in ticks ${plan.tickLower} to ${plan.tickUpper}; caps ${plan.maxAmount0} / ${plan.maxAmount1} smallest units.`, `Token 0: ${op.key.currency0}; token 1: ${op.key.currency1}.`, `Price limits (sqrtPriceX96): ${plan.minSqrtPriceX96} to ${plan.maxSqrtPriceX96}.`,
           plan.initialSqrtPriceX96 ? `Create the pool at sqrtPriceX96 ${plan.initialSqrtPriceX96} and mint atomically. This sets the pool's initial relative token price.` : 'Mint into the existing pool.', `NFT and unused funds return to ${wallet.owner}. No Domino percentage fee on mint.`])
@@ -416,6 +446,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     cancel: (id: Hex, gas: GasBudget) => bounded(async rpc => {
       await verify(rpc, true); const op = await operation(rpc, id)
       if (op.closed) return fail('operation_already_closed')
+      if (op.key.currency0 === zeroAddress && op.balance0 > 0n && !await acceptsNativeEth(rpc, wallet.owner)) return fail('native_eth_refused')
       return prepare(rpc, 'cancel', id, deployment.setup, encodeFunctionData({ abi: setupAbi, functionName: 'cancel', args: [id] }), 0n, gas,
         [`Refund ${op.balance0} of ${op.key.currency0} and ${op.balance1} of ${op.key.currency1} to ${wallet.owner}.`, 'No exit fee. Any earlier successful swap remains completed.'])
     }),
@@ -424,6 +455,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       if (op.closed) return fail('operation_already_closed')
       if (amount <= 0n || amount >= 2n ** 128n || ![op.key.currency0.toLowerCase(), op.key.currency1.toLowerCase()].includes(currency)
         || amount > (currency === op.key.currency0.toLowerCase() ? op.balance0 : op.balance1)) return fail('invalid_recovery_amount')
+      if (currency === zeroAddress && !await acceptsNativeEth(rpc, wallet.owner)) return fail('native_eth_refused')
       return prepare(rpc, 'recover', id, deployment.setup, encodeFunctionData({ abi: setupAbi, functionName: 'recoverCurrency', args: [id, currency, amount] }), 0n, gas,
         [`Return ${amount} smallest units of ${currency} from this operation to ${wallet.owner}.`,
           'This starts recovery: this operation can no longer swap or mint. Other funds remain available for a later refund.',

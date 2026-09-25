@@ -65,10 +65,13 @@ const owed = (now, last, liquidity) => (((now - last) & ((1n << 256n) - 1n)) * l
 /**
  * `positions`: [{ tokenId, key, tickLower, tickUpper, liquidity, sqrtPriceX96, tick, growthLast: [a, b], growthNow: [a, b], hasSubscriber?, owner? }]
  * `deposits`: [{ key, balance0, balance1 }] held for `owner` in the setup contract, in operation order.
+ * `ownerCode`: the owner's own code, as an EIP-7702 designator gives it; `refusesEth`: that code reverts a plain ETH
+ * payment (the one-wei probe the app sends before any step that pays native ETH out).
  */
-export function createPositionChain(owner, { positions = [], deposits = [], eth = 10n ** 18n, finality = 'final', timestamp = Math.floor(Date.now() / 1000), positionManagerCode = CODE.positionManager, connected = false } = {}) {
+export function createPositionChain(owner, { positions = [], deposits = [], eth = 10n ** 18n, finality = 'final', timestamp = Math.floor(Date.now() / 1000), positionManagerCode = CODE.positionManager, connected = false, ownerCode = null, refusesEth = false } = {}) {
   owner = lower(owner);
   const code = { [POSITION_MANAGER]: positionManagerCode, [STATE_VIEW]: CODE.stateView, [SETUP]: SETUP_CODE, [POOL_MANAGER]: POOL_MANAGER_CODE };
+  if (ownerCode !== null) code[owner] = ownerCode;
   const nfts = new Map(), pools = new Map();
   for (const p of positions) {
     const key = { ...p.key, currency0: lower(p.key.currency0), currency1: lower(p.key.currency1), hooks: lower(p.key.hooks ?? zeroAddress) };
@@ -109,6 +112,11 @@ export function createPositionChain(owner, { positions = [], deposits = [], eth 
   }
 
   function view(from, to, data) {
+    if (to === owner && data === undefined) {
+      calls.push('probe');
+      if (refusesEth) throw new Revert('0x');
+      return '0x';
+    }
     if (to === POSITION_MANAGER) {
       const { functionName, args } = decodeFunctionData({ abi: position.positionManagerAbi, data });
       calls.push(functionName);

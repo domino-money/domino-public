@@ -29,6 +29,17 @@ class SessionContractTests(unittest.TestCase):
         for field,value in [('expiresAt','2026-02-30T12:00:00Z'), ('expiresAt','2026-09-10T12:00:00+00:00'),
                              ('authenticated',1), ('csrfToken','x'*43+'\n')]:
             cases.append({'kind':'response','route':'me','value':{**responses['me'],field:value},'valid':False})
+        # An EIP-7702 account names its delegate; a plain EOA names none.
+        plain=responses['me']['validation']
+        delegated={**plain,'method':'eip7702_delegated','delegate':'0x'+'d7'*20}
+        for route in ('verify','me','refresh'):
+            cases.append({'kind':'response','route':route,'value':{**responses[route],'validation':delegated},'valid':True})
+        for validation in ({**plain,'delegate':'0x'+'d7'*20}, {k:v for k,v in delegated.items() if k!='delegate'},
+                           {**delegated,'delegate':'0x'+'0'*40}, {**delegated,'delegate':'0x'+'D7'*20},
+                           {**delegated,'delegate':'0x'+'d7'*19}, {**delegated,'delegate':None},
+                           {**delegated,'method':'contract'}, {**delegated,'method':'eip7702'},
+                           {**plain,'method':'contract'}, {**plain,'method':'PLAIN_EOA'}, None, []):
+            cases.append({'kind':'response','route':'me','value':{**responses['me'],'validation':validation},'valid':False})
         for case in cases:
             with self.subTest(kind=case['kind'],route=case['route'],value=repr(case['value'])[:80]):
                 try:

@@ -6,7 +6,7 @@ Process update, 12 September 2026: [EXECUTION_POLICY.md](docs/EXECUTION_POLICY.m
 
 The backend portion of #14 now has a separate disabled implementation candidate
 in #31. Its [session-v1 contract](api-contracts/session-v1/README.md) defines
-bootstrap/challenge/verify/me/logout, HttpOnly cookies, CSRF, supported plain EOAs,
+bootstrap/challenge/verify/me/logout, HttpOnly cookies, CSRF, supported EOAs (plain or EIP-7702 delegated),
 expiry and safe errors. [Integration/rollback](docs/WALLET_SESSIONS.md) lists the
 remaining consumer and staging evidence. Existing `read-v1` fields and app/web
 hooks are unchanged. Frontend integration includes wallet discovery, account/network changes,

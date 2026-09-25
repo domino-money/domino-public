@@ -30,12 +30,14 @@
  * `slippageBps` now takes 10 to 500 basis points (lib/create/slippage.ts holds
  * the same numbers), and the versions stayed where they were.
  *
- * session-v1 is at 3.0.0-rc.3 because the producer dropped `wallet_not_allowed`
- * from its closed error set with the per-wallet whitelist (issue #182). The
- * onboarding-v1, performance-v2 and execution-v1 digests moved with it: those
- * manifests hash backend sources the same change touched, and the last two
- * inherit the session error table, without any of the three changing a route,
- * a schema shape or a version.
+ * session-v1 is at 3.0.0-rc.4 because EIP-7702 accounts may now sign in: the
+ * `validation` a session returns is either the plain EOA shape or
+ * `eip7702_delegated` with its `delegate`, a closed union where rc.3 had one
+ * shape. rc.3 had dropped `wallet_not_allowed` with the per-wallet whitelist
+ * (issue #182). The onboarding-v1, deposit-v1, performance-v2 and execution-v1
+ * digests moved with rc.4 only because their manifests hash the backend
+ * sources it touched (the account check, the session store, the deposit
+ * owner check); none of them changed a route, a schema shape or a version.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -46,16 +48,16 @@ export const PRODUCER_PIN = {
       manifestSha256: 'a5e6e7fa47468ea5d39855beb62be40e314c2fd4831a192a1fb16ea91c31549b',
     },
     'session-v1': {
-      version: '3.0.0-rc.3',
-      manifestSha256: '98e89f83e157d3a774254aee4fa4165bdfd2e0b96df1127f3d654709127e2879',
+      version: '3.0.0-rc.4',
+      manifestSha256: '6cb8e872afa15b1a0bcc085a4c192f580dceb2a7f9f8e5a9b072ebf48a44406c',
     },
     'onboarding-v1': {
       version: '1.0.0',
-      manifestSha256: '8c4f8076af50ec2e6537ba4764865fbb1055cd6ae866851307ba2390404b3a69',
+      manifestSha256: 'ad75636852aa4e2aff84d8b5f007150bfa6b6de85d1398eb7f0b755efcef8812',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
-      manifestSha256: 'fa84d370fc4f9b941946ec5ad04f9d2b251a8f9f7f6173600c8cd7ea78b82f29',
+      manifestSha256: 'c6b85e95c08f2519a7c4cf9755dbdf3dc43ba55df4f4a6dbb5217069a51a1546',
     },
   },
 } as const
@@ -104,11 +106,11 @@ export const REQUEST_READ_CONTRACT: ReadContractPin = PRODUCER_PIN.packages['rea
 /** Authenticated private numeric history, independent of public pool estimates. */
 export const PERFORMANCE_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '7c8291381abf244af0e62a8e0c8930c2919fb494ca817b213e4154537f96d8a0',
+  manifestSha256: '12317dd036574dd777c25235242ca00bec4645268ec91bc96ea42879c47e5733',
 } as const
 
 /** Sanitized private execution status, finalized receipts and short-lived service availability. */
 export const EXECUTION_V1_PIN = {
   version: '1.0.0-rc.1',
-  manifestSha256: '5b00de7408e658a4a1a1ee1190037744c4d48b0a1b8248e5e96217be81a69b75',
+  manifestSha256: '938ab09a9e3901e4a427b9b1ce13bfd538ed3292b07b31fe2bac0dc83e30cfef',
 } as const

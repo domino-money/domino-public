@@ -1,4 +1,4 @@
-"""Fresh plain-EOA checks with deterministic synthetic providers only."""
+"""Fresh EOA checks (plain or EIP-7702 delegated) with deterministic synthetic providers only."""
 from copy import deepcopy
 import io
 import json
@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from discovery import CHAIN_ID, DataError, RPC_URL, SNAPSHOT_LOOPBACK_RPC
 from read_deadline import read_deadline
 from rpc_config import DEFAULT_RPC_HOSTS
-from session_chain import PlainEoaChecker
-from session_models import SessionError
+from session_chain import EoaChecker
+from session_models import SessionError, validate_account
 
 
 ADDRESS = '0x'+'1'*40
@@ -42,7 +42,7 @@ class Provider:
 class EoaTests(unittest.TestCase):
     def setUp(self):
         self.provider=Provider()
-        self.checker=PlainEoaChecker((RPC_URL,),transport=self.provider,clock=lambda:1010)
+        self.checker=EoaChecker((RPC_URL,),transport=self.provider,clock=lambda:1010)
 
     def unavailable(self):
         with self.assertRaisesRegex(SessionError, '^account_check_unavailable$'):
@@ -57,12 +57,38 @@ class EoaTests(unittest.TestCase):
         self.assertEqual(self.provider.calls[3][2],[ADDRESS,'0xa'])
         self.assertEqual(self.provider.calls[4][2],['0xa',False])
 
-    def test_every_nonempty_code_including_delegation_is_unsupported(self):
-        for code in ('0x00','0x6001600055','0xef0100'+'ab'*20,'0xDEADBEEF'):
+    def test_a_delegation_designator_is_an_eoa_reporting_its_delegate(self):
+        for code in ('0xef0100'+'ab'*20,'0xEF0100'+'AB'*20,'0xef0100'+'00'*19+'01'):
+            self.setUp(); self.provider.code=code
+            with self.subTest(code=code):
+                self.assertEqual(self.checker.check(ADDRESS),
+                                 {'method':'eip7702_delegated','delegate':'0x'+code[8:].lower(),
+                                  'blockNumber':'10','blockHash':BLOCK['hash']})
+                self.assertEqual([method for _,method,_ in self.provider.calls],
+                                 ['eth_chainId','eth_chainId','eth_getBlockByNumber','eth_getCode',
+                                  'eth_getBlockByNumber','eth_chainId'])
+
+    def test_other_code_and_near_miss_designators_are_unsupported(self):
+        # A contract, a designator one byte short or long, another prefix, and
+        # a zero delegate (EIP-7702 clears the code instead of writing that).
+        for code in ('0x00','0x6001600055','0xDEADBEEF','0xef0100'+'ab'*19,'0xef0100'+'ab'*21,
+                     '0xef0101'+'ab'*20,'0xef01'+'ab'*20,'0x00ef0100'+'ab'*20,'0xef0100'+'00'*20):
             self.setUp(); self.provider.code=code
             with self.subTest(code=code), self.assertRaisesRegex(SessionError, '^account_unsupported$'):
                 self.checker.check(ADDRESS)
             self.assertEqual(self.provider.calls[-1][1],'eth_chainId')
+
+    def test_the_validation_a_session_stores_is_one_of_two_closed_shapes(self):
+        plain={'method':'plain_eoa','blockNumber':'10','blockHash':BLOCK['hash']}
+        delegated={**plain,'method':'eip7702_delegated','delegate':'0x'+'ab'*20}
+        for value in (plain,delegated):
+            self.assertIs(validate_account(value),value)
+        for value in ({**plain,'delegate':'0x'+'ab'*20},{k:v for k,v in delegated.items() if k!='delegate'},
+                      {**delegated,'delegate':'0x'+'00'*20},{**delegated,'delegate':'0x'+'AB'*20},
+                      {**delegated,'delegate':'0x'+'ab'*19},{**delegated,'delegate':None},
+                      {**delegated,'method':'contract'},{**plain,'extra':1},None,[]):
+            with self.subTest(value=value), self.assertRaisesRegex(SessionError,'^account_check_unavailable$'):
+                validate_account(value)
 
     def test_unknown_or_malformed_code_never_means_empty(self):
         for code in (None,False,0,'','0X','0x0','0xgg',{},'0x'+'ff'*1_000_000):
@@ -85,8 +111,12 @@ class EoaTests(unittest.TestCase):
         self.checker.check(ADDRESS)
         self.provider.block={**BLOCK,'number':'0xb','hash':'0x'+'b'*64}
         self.provider.code='0xef0100'+'ab'*20
+        self.assertEqual(self.checker.check(ADDRESS)['delegate'],'0x'+'ab'*20)
+        self.provider.code='0xef0100'+'cd'*20
+        self.assertEqual(self.checker.check(ADDRESS)['delegate'],'0x'+'cd'*20)
+        self.provider.code='0x6000'
         with self.assertRaisesRegex(SessionError,'^account_unsupported$'): self.checker.check(ADDRESS)
-        self.assertEqual(self.provider.code_reads,2)
+        self.assertEqual(self.provider.code_reads,4)
 
     def test_snapshot_height_uses_shared_twenty_digit_bound(self):
         self.provider.block['number']=hex(10**20-1)
@@ -97,7 +127,7 @@ class EoaTests(unittest.TestCase):
         self.assertEqual(self.provider.code_reads,count)
 
     def test_fallback_must_prove_same_chain_and_existing_block(self):
-        self.checker=PlainEoaChecker((RPC_URL,SECOND),transport=self.provider,clock=lambda:1010,
+        self.checker=EoaChecker((RPC_URL,SECOND),transport=self.provider,clock=lambda:1010,
                                     allowed_hosts=(*DEFAULT_RPC_HOSTS,'secondary.example.invalid'))
         self.provider.fail[(RPC_URL,'eth_getCode')]=DataError('http_503')
         self.assertEqual(self.checker.check(ADDRESS)['blockHash'],BLOCK['hash'])
@@ -110,7 +140,7 @@ class EoaTests(unittest.TestCase):
         elapsed=[0.0]; real=self.provider
         def slow(url,body):
             result=real(url,body); elapsed[0]+=2; return result
-        self.checker=PlainEoaChecker((RPC_URL,),transport=slow,clock=lambda:1010)
+        self.checker=EoaChecker((RPC_URL,),transport=slow,clock=lambda:1010)
         with read_deadline(1,clock=lambda:elapsed[0]):
             self.unavailable()
             self.assertEqual(len(self.provider.calls),1)
@@ -120,7 +150,7 @@ class EoaTests(unittest.TestCase):
         for urls in ([],[RPC_URL]*2,[RPC_URL]*4,['http://rpc.mainnet.chain.robinhood.com'],
                      ['https://unlisted.example.invalid'],['https://127.0.0.1'],RPC_URL):
             with self.assertRaisesRegex(ValueError,'^invalid_session_rpc_config$'):
-                PlainEoaChecker(urls,transport=self.provider)
+                EoaChecker(urls,transport=self.provider)
         self.assertEqual(self.provider.calls,[])
         with self.assertRaisesRegex(SessionError,'^account_check_unavailable$'):
             self.checker.check('not-an-address')
@@ -128,7 +158,7 @@ class EoaTests(unittest.TestCase):
 
     def test_status_loopback_uses_only_exact_local_transport_and_pinned_chain(self):
         with patch('session_chain.snapshot_loopback_http', self.provider):
-            checker=PlainEoaChecker((SNAPSHOT_LOOPBACK_RPC,),clock=lambda:1010,
+            checker=EoaChecker((SNAPSHOT_LOOPBACK_RPC,),clock=lambda:1010,
                                     execution_status_loopback=True)
         self.assertEqual(checker.urls,(SNAPSHOT_LOOPBACK_RPC,))
         self.assertIs(checker.transport,self.provider)
@@ -149,7 +179,7 @@ class EoaTests(unittest.TestCase):
                     'eth_getCode':'0x'}[method]
             return io.BytesIO(json.dumps({'jsonrpc':'2.0','id':body['id'],
                                           'result':result}).encode())
-        checker=PlainEoaChecker((SNAPSHOT_LOOPBACK_RPC,),clock=lambda:1010,
+        checker=EoaChecker((SNAPSHOT_LOOPBACK_RPC,),clock=lambda:1010,
                                 execution_status_loopback=True)
         with patch('discovery._LOOPBACK_JSON_OPENER',opener):
             self.assertEqual(checker.check(ADDRESS)['method'],'plain_eoa')
@@ -163,17 +193,17 @@ class EoaTests(unittest.TestCase):
             for enabled in (False,True):
                 with self.subTest(url=url,enabled=enabled), self.assertRaisesRegex(
                         ValueError,'^invalid_session_rpc_config$'):
-                    PlainEoaChecker((url,),execution_status_loopback=enabled)
+                    EoaChecker((url,),execution_status_loopback=enabled)
         for urls,kwargs in (((SNAPSHOT_LOOPBACK_RPC,RPC_URL),{}),
                             ((SNAPSHOT_LOOPBACK_RPC,),{'transport':self.provider}),
                             ((RPC_URL,),{})):
             with self.subTest(urls=urls,kwargs=kwargs), self.assertRaisesRegex(
                     ValueError,'^invalid_session_rpc_config$'):
-                PlainEoaChecker(urls,execution_status_loopback=True,**kwargs)
+                EoaChecker(urls,execution_status_loopback=True,**kwargs)
         with self.assertRaisesRegex(ValueError,'^invalid_session_rpc_config$'):
-            PlainEoaChecker((SNAPSHOT_LOOPBACK_RPC,),execution_status_loopback=1)
+            EoaChecker((SNAPSHOT_LOOPBACK_RPC,),execution_status_loopback=1)
         with self.assertRaisesRegex(ValueError,'^invalid_session_rpc_config$'):
-            PlainEoaChecker((SNAPSHOT_LOOPBACK_RPC,))
+            EoaChecker((SNAPSHOT_LOOPBACK_RPC,))
         self.assertEqual(self.provider.calls,[])
 
 

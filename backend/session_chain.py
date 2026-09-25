@@ -1,7 +1,11 @@
-"""Fresh canonical plain-EOA classification, independent of Uniswap or SIWE.
+"""Fresh canonical EOA classification, independent of Uniswap or SIWE.
 
-An empty-code observation never authenticates by itself. The session service
-must separately verify SIWE and atomically authorize against its private store.
+An EOA is admitted with empty code or with exactly one EIP-7702 designator:
+either way the account's own key signs, which is what SIWE proves. Any other
+code is a contract account and stays unsupported. An observation never
+authenticates by itself. The session service must separately verify SIWE and
+atomically authorize against its private store, which also refuses a session
+whose account changed kind or delegate since it was admitted.
 Each check creates a new bounded reader; no positive code/session cache exists.
 """
 import math
@@ -13,7 +17,7 @@ from discovery import (CHAIN_ID, SNAPSHOT_LOOPBACK_RPC, DataError, address as no
 from read_deadline import read_deadline
 from rpc_config import DEFAULT_RPC_HOSTS, MAX_RPC_ENDPOINTS, rpc_endpoint, rpc_hosts
 from rpc_failover import FailoverReadRpc
-from session_models import SessionError
+from session_models import SessionError, account_code
 
 
 CHECK_BUDGET_SECONDS = 10
@@ -22,7 +26,7 @@ MAX_BLOCK_AGE_SECONDS = 120
 MAX_FUTURE_SECONDS = 15
 
 
-class PlainEoaChecker:
+class EoaChecker:
     def __init__(self, rpc_urls, *, allowed_hosts=DEFAULT_RPC_HOSTS, transport=json_http,
                  clock=time.time, execution_status_loopback=False):
         # Only explicitly supplied operator configuration can select destinations.
@@ -73,11 +77,12 @@ class PlainEoaChecker:
                 if quantity(rpc.request('eth_chainId')) != CHAIN_ID:
                     raise DataError('wrong_chain')
                 self._fresh(block)
-                result = {'method': 'plain_eoa', 'blockNumber': str(block.number), 'blockHash': block.hash}
+                kind = account_code(code)
+                result = {'blockNumber': str(block.number), 'blockHash': block.hash}
             # Only a canonical, fresh observation can trigger unsupported/revocation.
-            if code != '0x':
+            if kind is None:
                 raise SessionError('account_unsupported')
-            return result
+            return {**kind, **result}
         except SessionError:
             raise
         except Exception:

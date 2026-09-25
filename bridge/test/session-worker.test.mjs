@@ -101,6 +101,21 @@ for (const route of Object.keys(payloads)) test(`${route} maps to its isolated P
   if (route === 'logout') assert.ok(cookies.every((cookie) => cookie.endsWith('Max-Age=0')));
 });
 
+test('an EIP-7702 account passes through with its delegate; a malformed one is a contract mismatch', async () => {
+  const delegated = { ...loggedIn, validation: { ...loggedIn.validation, method: 'eip7702_delegated', delegate: `0x${'d7'.repeat(20)}` } };
+  for (const route of ['verify', 'me', 'refresh']) {
+    const ok = harness(() => response({ ...envelopes[route], result: delegated }));
+    const result = await ok.worker.fetch(request(route), env);
+    assert.equal(result.status, 200);
+    assert.deepEqual(await result.json(), delegated);
+  }
+  for (const validation of [{ ...delegated.validation, delegate: `0x${'0'.repeat(40)}` },
+    { ...loggedIn.validation, delegate: `0x${'d7'.repeat(20)}` }, { ...loggedIn.validation, method: 'contract' }]) {
+    const bad = harness(() => response({ ...envelopes.me, result: { ...loggedIn, validation } }));
+    await error(await bad.worker.fetch(request('me'), env), 'upstream_contract_mismatch');
+  }
+});
+
 for (const path of ['/api/read/v1/token', '/api/session/v1/me/', '/api/session/v1/%6de',
   '/api/session/v1/verify?account=evil', '/api/session/v1/private', '/internal/session/v1/bootstrap']) {
   test(`no alternate route ${path}`, async () => {

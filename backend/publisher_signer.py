@@ -92,6 +92,10 @@ class PublisherSigner:
                                                                        {'blockHash': head['hash'], 'requireCanonical': True}]))
         if call(self.guard, 'publisher()', ['address'])[0] != self.address:
             raise ExecutionError('publisher_not_current')
+        # Same rule as the operator: code on the publisher's account means its
+        # key signed an EIP-7702 authorization. Publish nothing through it.
+        if self.rpc.request('eth_getCode', [self.address, {'blockHash': head['hash'], 'requireCanonical': True}]) != '0x':
+            raise ExecutionError('publisher_account_has_code')
         stored = call(self.guard, 'observations(bytes32)', ['bytes32', 'uint64', 'bytes32', 'uint64', 'uint64', 'uint160'], ['bytes32'], [bytes.fromhex(identifier[2:])])
         if stored[5] != 0 or call(self.guard, 'revoked(bytes32)', ['bool'], ['bytes32'], [bytes.fromhex(identifier[2:])])[0]:
             raise ExecutionError('publisher_observation_exists')
@@ -311,9 +315,13 @@ class PublicationJournal:
                 if state == 'reorged':
                     fields = {}
             else:
+                # The nonce is read at the head that was read before the
+                # receipt. Read at the latest block, it would count this very
+                # transaction if it was mined between the two reads, and report
+                # a nonce spent by someone else.
                 if row['state'] in ('included', 'confirmed', 'reverted'):
                     state, reason = 'reorged', 'publication_block_lost'
-                elif g._quantity(rpc.request('eth_getTransactionCount', [row['signer'], 'latest'])) > int(row['nonce']):
+                elif g._quantity(rpc.request('eth_getTransactionCount', [row['signer'], {'blockHash': head['hash'], 'requireCanonical': True}])) > int(row['nonce']):
                     state, reason = 'attention', 'publication_nonce_consumed_without_receipt'
                 elif head['timestamp'] >= int(row['expires_at']):
                     state, reason = 'expired', 'publication_expired_before_inclusion'

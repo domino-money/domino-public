@@ -35,11 +35,14 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 class DepositFork:
     """Own one loopback node, with no option to attach to an existing wallet RPC."""
-    def __init__(self, gateway, *, block, anvil=None, total_seconds=1200, max_requests=5000):
+    def __init__(self, gateway, *, block, anvil=None, total_seconds=1200, max_requests=5000, hardfork='cancun'):
+        # Cancun matches every earlier qualification. Prague is what makes an
+        # EIP-7702 designator execute on the child; Nitro already runs it.
         if (not isinstance(block, dict) or not isinstance(block.get('number'), str)
                 or not isinstance(block.get('hash'), str)
                 or type(total_seconds) is not int or not 1 <= total_seconds <= 1800
-                or type(max_requests) is not int or not 1 <= max_requests <= 100_000):
+                or type(max_requests) is not int or not 1 <= max_requests <= 100_000
+                or hardfork not in ('cancun', 'prague')):
             raise DataError('invalid_fork_configuration')
         try:
             number = int(block['number'], 16)
@@ -50,6 +53,7 @@ class DepositFork:
             raise DataError('invalid_fork_configuration') from None
         self.gateway, self.source_block = gateway, dict(block)
         self.number, self.total_seconds, self.max_requests = number, total_seconds, max_requests
+        self.hardfork = hardfork
         self.anvil = Path(anvil) if anvil else ROOT/'node_modules/.bin/anvil'
         self.process = self.temp = None
         self._verified = False
@@ -79,7 +83,7 @@ class DepositFork:
                 '--chain-id', str(CHAIN_ID), '--accounts', '0', '--silent',
                 '--fork-url', gateway_url, '--fork-block-number', str(self.number),
                 '--no-storage-caching', '--retries', '0', '--timeout', '10000',
-                '--hardfork', 'cancun', '--slots-in-an-epoch', '1']
+                '--hardfork', self.hardfork, '--slots-in-an-epoch', '1']
             self.process = subprocess.Popen(args, cwd=self.temp.name,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 env={'PATH': os.environ.get('PATH', '/usr/bin:/bin')})

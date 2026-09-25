@@ -160,6 +160,9 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/038_gas_settlement_quote_witness.sql',
     'backend/migrations/039_automation_readiness.sql',
     'backend/migrations/040_gas_finalized_quote_lag.sql',
+    # Session policy eoa_or_7702_v1 (EIP-7702 accounts may sign in). Like 027,
+    # applied separately to an installed foundation, as the runbook records.
+    'backend/migrations/041_session_delegated_accounts.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

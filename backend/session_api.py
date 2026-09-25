@@ -256,7 +256,7 @@ def main():
     from bridge_identity import AccessVerifier
     from catalogue import database_settings
     from rpc_config import configured_rpc_urls, DEFAULT_RPC_HOSTS
-    from session_chain import PlainEoaChecker
+    from session_chain import EoaChecker
     from session_service import SessionService
     from session_siwe import SiwePolicy
     from session_store import SessionStore
@@ -278,7 +278,7 @@ def main():
             if not re.fullmatch(r'[0-9a-f]{64}',secret):raise ValueError()
             origin=os.environ.get('DOMINO_SESSION_ORIGIN')
             config=load_session_rpc_config(args.rpc_config)
-            checker=PlainEoaChecker(configured_rpc_urls(config),allowed_hosts=config.get('rpcAllowedHosts',DEFAULT_RPC_HOSTS))
+            checker=EoaChecker(configured_rpc_urls(config),allowed_hosts=config.get('rpcAllowedHosts',DEFAULT_RPC_HOSTS))
             store=SessionStore(database_settings(),abuse_secret=bytes.fromhex(secret))
             service=SessionService(store,SiwePolicy(origin),checker)
             verifier=AccessVerifier(os.environ.get('DOMINO_SESSION_ACCESS_ISSUER'),os.environ.get('DOMINO_SESSION_ACCESS_AUDIENCE'),

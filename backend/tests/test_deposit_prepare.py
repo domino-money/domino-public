@@ -279,6 +279,23 @@ class DepositPreparationTests(unittest.TestCase):
                 self.reject('deposit_admission_required')
             self.assertFalse(self.provider.calls)
 
+    def test_an_eip7702_owner_prepares_like_a_plain_eoa(self):
+        # Its own key signs the prepared step; a designator only names the code
+        # that runs when something calls the account.
+        self.setup_pipeline()
+        plain = self.run_prepare()
+        for code in ('0xef0100' + 'ab' * 20, '0xEF0100' + 'AB' * 20):
+            self.setup_pipeline()
+            self.rpc.codes[OWNER] = code
+            with self.subTest(code=code):
+                self.assertEqual(self.run_prepare(), plain)
+        for code in ('0xef0100' + 'ab' * 19, '0xef0100' + 'ab' * 21, '0xef0100' + '00' * 20, '0xef0101' + 'ab' * 20):
+            self.setup_pipeline()
+            self.rpc.codes[OWNER] = code
+            with self.subTest(code=code):
+                self.reject('deposit_admission_required')
+            self.assertFalse(self.provider.calls)
+
     def test_chain_manager_pool_fee_and_nonce_fail_closed(self):
         for field, value in (('chain', 1), ('pool_manager', TOKEN0), ('fee', 500), ('pending', 8)):
             self.setup_pipeline()

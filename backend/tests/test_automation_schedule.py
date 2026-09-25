@@ -242,10 +242,17 @@ class ReadinessTests(unittest.TestCase):
 
     def test_probe_requires_live_peer_rpc_and_current_vault_admission(self):
         client = GasBudgetClient('/run/test-readiness.sock', server_uid=os.getuid())
-        head = {'number': 200, 'timestamp': 2000}
+        head = {'number': 200, 'timestamp': 2000, 'hash': '0x' + '2' * 64}
         finalized = {'number': 190, 'timestamp': 1900}
         entry = SimpleNamespace(owner=address(1), vault=address(3))
-        deployment = SimpleNamespace(operator=address(2), serviceFeeBps=200, dominoServiceFeeBps=400)
+        deployment = SimpleNamespace(operator=address(2), pricePublisher=address(5), serviceFeeRecipient=address(6),
+                                     serviceFeeBps=200, dominoServiceFeeBps=400)
+        code = {}
+        def request(method, params):
+            if method == 'eth_getCode':
+                self.assertEqual(params[1], {'blockHash': head['hash'], 'requireCanonical': True})
+                return code.get(params[0], '0x')
+            return '0x1237'
         state = {'paused': True, 'operator': address(2), 'enabled': True,
                  'rootPermission': True, 'fee': 200, 'positions': 1}
         def call(target, signature, outputs, block, *args):
@@ -258,7 +265,7 @@ class ReadinessTests(unittest.TestCase):
             if signature == 'rootPermissionValid()':
                 return (state['rootPermission'],)
             raise AssertionError(signature)
-        reader = SimpleNamespace(reset=lambda: None, request=lambda method, params: '0x1237',
+        reader = SimpleNamespace(reset=lambda: None, request=request,
                                  head=lambda: head, finalized=lambda: finalized, call=call)
         candidate = SimpleNamespace(gas_budget=client, reader=reader, clock=lambda: 2000,
                                     config=SimpleNamespace(deployment=deployment))
@@ -299,9 +306,16 @@ class ReadinessTests(unittest.TestCase):
             finalized['timestamp'] = 200
             self.assertTrue(service_readiness_probe(candidate, entry))
             finalized['timestamp'] = 1900
+            # A role key carrying code (an EIP-7702 designator) is not ready,
+            # whichever of the three it is; a vault's own code is never read.
+            for role in (deployment.operator, deployment.pricePublisher, deployment.serviceFeeRecipient):
+                code[role] = '0xef0100' + 'ab' * 20
+                self.assertFalse(service_readiness_probe(candidate, entry))
+                code.clear()
+            self.assertTrue(service_readiness_probe(candidate, entry))
             reader.request = lambda method, params: '0x1'
             self.assertFalse(service_readiness_probe(candidate, entry))
-            reader.request = lambda method, params: '0x1237'
+            reader.request = request
             head['timestamp'] = 800
             self.assertFalse(service_readiness_probe(candidate, entry))
             head['timestamp'] = 2000

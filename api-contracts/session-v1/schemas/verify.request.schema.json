@@ -27,7 +27,7 @@
   ],
   "title": "VerifyRequest",
   "type": "object",
-  "x-contract-version": "3.0.0-rc.3",
+  "x-contract-version": "3.0.0-rc.4",
   "x-domino-constraints": [
     "All timestamps are valid UTC calendar dates.",
     "Messages must be well-formed UTF-8 and at most 2048 bytes.",

@@ -68,6 +68,7 @@ const OWN_TEXT: Readonly<Record<string, string>> = {
   wallet_identity_changed: 'Your wallet account or network changed. Nothing was sent.',
   pending_wallet_transaction: 'Your wallet has a transaction waiting. Let it finish, then try again.',
   native_gas_reserve_insufficient: 'Your ETH does not cover the network fee for the refund.',
+  native_eth_refused: "Your wallet can't receive ETH right now: its smart-account delegation (EIP-7702) refuses plain ETH. The ETH stays safely in this deposit until you change or turn off that delegation in your wallet.",
   wallet_review_required: 'The refund took too long to reach your wallet. Try again.',
   wallet_review_expired: 'The refund took too long to reach your wallet. Try again.',
 }

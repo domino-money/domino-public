@@ -33,7 +33,7 @@ def main():
     from onboarding_auth import OnboardingAuth
     from onboarding_service import OnboardingService
     from rpc_config import configured_rpc_urls, DEFAULT_RPC_HOSTS
-    from session_chain import PlainEoaChecker
+    from session_chain import EoaChecker
     from session_store import SessionStore
     from uniswap_config import load_config, CONFIG_PATH
     from uniswap_position import UniswapPosition
@@ -61,7 +61,7 @@ def main():
             if not re.fullmatch(r'[0-9a-f]{64}', secret):
                 raise ValueError()
             store = SessionStore(database_settings(), abuse_secret=bytes.fromhex(secret))
-            checker = PlainEoaChecker(configured_rpc_urls(config),
+            checker = EoaChecker(configured_rpc_urls(config),
                                      allowed_hosts=config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS))
             service = OnboardingService(OnboardingAuth(store, checker), UniswapQuote(api_key),
                                         UniswapPosition(api_key), private_values=(api_key,))

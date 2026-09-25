@@ -22,7 +22,7 @@ and a further coordinated pre-release admission/receipt migration from rc.3
 to rc.4. Older headers are rejected. See the
 [current evidence and remaining gates](../reports/UPGRADEABLE_ADMISSION_IMPLEMENTATION.md).
 
-The P1 combined producer uses session-v1 3.0.0-rc.3, with stable CSRF and a
+The P1 combined producer uses session-v1 3.0.0-rc.4, with stable CSRF and a
 read-only browser GET `/me`. Fresh private checks remain required before and
 after provider work and before payload delivery. A revoked, logged-out or
 expired session invalidates the old cookie with `session_required`, including an

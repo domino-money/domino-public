@@ -14,7 +14,7 @@ export type ErrorClass =
   | 'challenge_rejected'
   | 'signature_rejected'
   | 'csrf'
-  /** The address has contract code. */
+  /** The address is a contract account: code other than one EIP-7702 designator. */
   | 'unsupported_account'
   | 'session_exists'
   /** The session bridge is switched off on this deployment. */

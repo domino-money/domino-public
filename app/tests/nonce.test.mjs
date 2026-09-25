@@ -43,7 +43,7 @@ function setupFixture(){
  let deferred;
  const wallet={owner,current:()=>true,nonceOffered:n=>journal.offered(owner,n),claimNonce:n=>journal.claim(owner,n),releaseRejectedNonce:(n,t)=>journal.releaseAfterRejection(owner,n,t),request:async(method,params)=>{
   walletCalls.push(method);
-  if(method==='eth_accounts')return [owner];if(method==='eth_chainId')return '0x1237';if(method==='eth_getCode')return code;
+  if(method==='eth_accounts')return [owner];if(method==='eth_chainId')return '0x1237';if(method==='eth_getCode')return params[0]===owner?'0x':code;
   if(method==='eth_getTransactionCount')return '0x0';if(method==='eth_estimateGas')return '0x5208';if(method==='eth_getBalance')return '0x100000000000000000000';
   if(method==='eth_sendTransaction')return new Promise((resolve,reject)=>{deferred={resolve,reject}});
   if(method==='eth_call'){const call=decodeFunctionData({abi:setupAbi,data:params[0].data});return call.functionName==='open'?'0x':encodeFunctionResult({abi:setupAbi,functionName:call.functionName,result:getters[call.functionName]});}

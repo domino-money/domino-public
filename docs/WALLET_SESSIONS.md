@@ -22,6 +22,13 @@ GET/protected POST separation stay unchanged. See the linked runbook for
 migration 027, which must run before this producer meets a database that has
 011.
 
+EIP-7702 accounts may sign in from `session-v1` **3.0.0-rc.4**. An EOA whose
+code is exactly one EIP-7702 designator still signs with its own key, which is
+what SIWE proves, so the policy `eoa_or_7702_v1` admits it next to the plain
+EOA. The session keeps the delegate it was admitted with, and a later check that
+observes another one revokes it for a fresh sign-in. Migration 041 must run
+before this producer; see [Delegated accounts (EIP-7702)](#delegated-accounts-eip-7702).
+
 ## Components and fixed traffic boundaries
 
 ```text
@@ -72,13 +79,18 @@ these pins and code review do not constitute an external audit.
 [SIWE source](https://github.com/spruceid/siwe-py),
 [ERC-4361](https://eips.ethereum.org/EIPS/eip-4361).
 
-Only plain EOAs are admitted initially. A fresh check verifies chain, a recent
-block, account code at that numeric block, and the canonical block/chain again.
-Failover must prove the same chain/block; it cannot change an already observed
-snapshot. Nonempty code, including delegated EIP-7702 code, is unsupported.
-Counterfactual signatures and ERC-1271 verification are not implemented.
-Unknown code, stale or changed snapshots and exhausted reads fail closed. No
-wallet brand establishes account type. An empty-code read alone is not login.
+EOAs are admitted: an account with no code (`plain_eoa`), or one whose code is
+exactly one EIP-7702 designator, `0xef0100` followed by a nonzero address
+(`eip7702_delegated`, reported with that `delegate`). A fresh check verifies
+chain, a recent block, account code at that numeric block, and the canonical
+block/chain again. Failover must prove the same chain/block; it cannot change an
+already observed snapshot. Any other code is a contract account and is
+unsupported, as is a designator one byte short or long, with another prefix or
+naming the zero address. Counterfactual signatures and ERC-1271 verification are
+not implemented: a delegated account still signs SIWE with its own key, and the
+65-byte signature limit stays. Unknown code, stale or changed snapshots and
+exhausted reads fail closed. No wallet brand establishes account type. A code
+read alone is not login.
 [ERC-1271](https://eips.ethereum.org/EIPS/eip-1271),
 [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702).
 
@@ -87,10 +99,15 @@ age at most 120 seconds, with at most fifteen seconds of future clock skew.
 Every protected POST `refresh` rereads code and then reauthorizes the same
 stored session before touching it. GET `me` only returns stored identity and the
 last stored code snapshot; it never claims a fresh account check or grants
-transaction authority. During refresh, canonical nonempty code revokes that
-session; an unavailable check denies the request without converting it into an unsupported-wallet claim or
-silently deleting a still-valid session. The policy is `plain_eoa_v1`; a future
-policy change requires a migration and reauthentication.
+transaction authority. During refresh, canonical contract code revokes that
+session (`account_unsupported`), and so does an account whose delegate differs
+from the one it was admitted with: a delegate added, changed or cleared answers
+`session_required` after the revocation commits. The protected preview,
+deposit, performance and execution-status endpoints apply the same rule through
+the shared store. An unavailable check denies the request without converting it
+into an unsupported-wallet claim or silently deleting a still-valid session. The
+policy is `eoa_or_7702_v1`; a future policy change requires a migration and
+reauthentication.
 
 ## Durable state, expiry and logout
 
@@ -158,6 +175,27 @@ closed internal directive schema. It rejects credential/CSRF aliasing and strips
 all upstream cookies/diagnostic headers. All responses are JSON, no-store,
 nosniff, with request ID and contract version. A lost response is not evidence
 that a transaction in the session store rolled back.
+
+### Delegated accounts (EIP-7702)
+
+Apply 041 before running a producer built from rc.4. It adds the nullable
+`sessions.delegate`, lets `policy` take `eoa_or_7702_v1` besides the old value,
+and ties a delegate to the new policy and to a lowercase nonzero address. It
+accepts every row the previous producer writes, so it can run before the deploy
+with ingress open; the reverse order refuses every login, because the new
+producer writes a policy and a column that only 041 admits.
+
+```sh
+psql -f backend/migrations/041_session_delegated_accounts.sql
+```
+
+Sessions created under `plain_eoa_v1` stay stored but stop being live, since the
+store compares the policy, so each browser signs in once more after the deploy.
+`backend/dev_postgres.py` applies 041 on every run; the staging installers
+package it as source (`PACKAGED_ONLY_MIGRATIONS`) and an operator applies it as
+above. A rollback to an rc.3 producer needs no schema change: it never reads
+`delegate` and treats `eoa_or_7702_v1` sessions as inactive, so those browsers
+sign in again under the old policy.
 
 ## Frontend handoff, still owned by #14
 

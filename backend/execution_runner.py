@@ -333,6 +333,10 @@ class ExecutionRunner:
                     or final['number']<int(effect['block_number'])):
                 self.journal.invalidate_effect(owner,identifier,worker,fence)
                 data=self.journal.read(owner,identifier);j=data['journal']
+        # The head is read before the receipts. The nonce is read at it, so a
+        # transaction mined after its receipt was looked up is not taken for a
+        # nonce spent without one.
+        head=g._header(rpc.request('eth_getBlockByNumber',['latest',False]))
         # Every recorded attempt is checked: an earlier replacement can win.
         for attempt in data['attempts']:
             receipt=rpc.request('eth_getTransactionReceipt',[attempt['transaction_hash']])
@@ -369,9 +373,8 @@ class ExecutionRunner:
             self.journal.state(owner,identifier,worker,fence,'reorged','execution_canonical_receipt_lost')
         if j['state'] in ('attention','reorged','reverted','included','reconciled'):
             return self.journal.status(owner,identifier)
-        pending=g._quantity(rpc.request('eth_getTransactionCount',[j['signer'],'pending']))
-        latest=g._quantity(rpc.request('eth_getTransactionCount',[j['signer'],'latest']))
-        if latest>int(j['nonce']):
+        spent=g._quantity(rpc.request('eth_getTransactionCount',[j['signer'],{'blockHash':head['hash'],'requireCanonical':True}]))
+        if spent>int(j['nonce']):
             self.journal.state(owner,identifier,worker,fence,'attention','execution_nonce_consumed_without_receipt')
             return self.journal.status(owner,identifier)
         if replace:

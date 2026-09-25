@@ -79,6 +79,7 @@ const OWN_TEXT: Readonly<Record<string, string>> = {
   connect_robinhood_wallet: 'Connect your wallet on Robinhood Chain first.',
   pending_wallet_transaction: 'Your wallet has a transaction waiting. Let it finish, then try again.',
   native_gas_reserve_insufficient: 'Your ETH does not cover the network fee for this step.',
+  native_eth_refused: "Your wallet can't receive ETH right now: its smart-account delegation (EIP-7702) refuses plain ETH, so this payout would fail. Change or turn off that delegation in your wallet, then try again.",
   gas_budget_exceeded: 'This step needs more gas than expected. Try again in a moment.',
   invalid_gas_budget: 'The network fee could not be worked out. Try again in a moment.',
   wallet_review_required: SLOW,

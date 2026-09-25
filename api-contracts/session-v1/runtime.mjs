@@ -1,5 +1,5 @@
 // Closed session-v1 candidate contract. No financial authority is represented.
-export const CONTRACT_VERSION = '3.0.0-rc.3';
+export const CONTRACT_VERSION = '3.0.0-rc.4';
 export const ROUTES = Object.freeze(['bootstrap', 'challenge', 'verify', 'me', 'refresh', 'logout']);
 export const ERROR_STATUS_BY_CODE = Object.freeze({
   invalid_request: 400, session_required: 401, preauth_required: 401,
@@ -22,6 +22,15 @@ const matches = (value, pattern) => typeof value === 'string' && pattern.exec(va
 export const credential = (value) => matches(value, /^[A-Za-z0-9_-]{43}$/u);
 const challengeId = (value) => matches(value, /^[a-f0-9]{32}$/u);
 const message = (value) => typeof value === 'string' && value.length > 0 && value.isWellFormed() && new TextEncoder().encode(value).length <= 2048;
+// A plain EOA, or one carrying an EIP-7702 designator: the delegate is named,
+// lowercase, and never the zero address (EIP-7702 clears the code instead).
+const account = (value) => {
+  const delegated = value !== null && typeof value === 'object' && value.method === 'eip7702_delegated';
+  return keys(value, delegated ? ['method', 'blockNumber', 'blockHash', 'delegate'] : ['method', 'blockNumber', 'blockHash']) &&
+    (delegated || value.method === 'plain_eoa') && matches(value.blockNumber, /^(?:0|[1-9][0-9]{0,19})$/u) &&
+    matches(value.blockHash, /^0x[0-9a-f]{64}$/u) &&
+    (!delegated || (matches(value.delegate, /^0x[0-9a-f]{40}$/u) && value.delegate !== `0x${'0'.repeat(40)}`));
+};
 const date = (value) => {
   if (!matches(value, /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z$/u)) return false;
   const parsed = new Date(value);
@@ -42,9 +51,7 @@ export function validateResponse(route, value) {
   if (!['verify', 'me', 'refresh'].includes(route)) return false;
   return keys(value, ['authenticated', 'owner', 'expiresAt', 'csrfToken', 'validation']) && value.authenticated === true &&
     keys(value.owner, ['address', 'chainId']) && value.owner.chainId === 4663 && matches(value.owner.address, /^0x[0-9a-f]{40}$/u) &&
-    date(value.expiresAt) && credential(value.csrfToken) && keys(value.validation, ['method', 'blockNumber', 'blockHash']) &&
-    value.validation.method === 'plain_eoa' && matches(value.validation.blockNumber, /^(?:0|[1-9][0-9]{0,19})$/u) &&
-    matches(value.validation.blockHash, /^0x[0-9a-f]{64}$/u);
+    date(value.expiresAt) && credential(value.csrfToken) && account(value.validation);
 }
 
 export function validateError(status, value) {

@@ -102,6 +102,7 @@ const PREFLIGHT = {
 /** This page's sentences for the setup client's codes whose shared sentence names a control it does not have. */
 const OWN_TEXT: Readonly<Record<string, string>> = {
   native_gas_reserve_insufficient: 'Keep some ETH for network gas: your ETH does not cover this step. Lower the ETH amount or add ETH.',
+  native_eth_refused: "Your wallet can't receive ETH right now: its smart-account delegation (EIP-7702) refuses plain ETH, so unused ETH could not come back from this deposit. Change or turn off that delegation in your wallet, then try again. Nothing was sent.",
   gas_budget_exceeded: 'This step needs more gas than expected. Try again in a moment.',
   invalid_gas_budget: 'The network’s gas price could not be used. Try again in a moment.',
   pending_wallet_transaction: 'Your wallet has a transaction waiting. Let it finish, or cancel it in your wallet, then press Create position again.',

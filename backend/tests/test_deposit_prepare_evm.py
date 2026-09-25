@@ -136,6 +136,10 @@ class DepositEvmTests(unittest.TestCase):
             raise AssertionError('synthetic transport identity')
         return {'jsonrpc': '2.0', 'id': body['id'], 'result': cls.rpc(body['method'], body['params'])}
 
+    def setUp(self):
+        # One chain per class: every test starts from the same state.
+        self.addCleanup(self.rpc, 'evm_revert', [self.rpc('evm_snapshot', [])])
+
     def send(self, to, data, sender=None, **fields):
         digest = self.rpc('eth_sendTransaction', [{'from': sender or self.account, 'to': to,
             'data': data, 'gas': hex(1_000_000), **fields}])
@@ -148,7 +152,7 @@ class DepositEvmTests(unittest.TestCase):
         self.assertEqual(receipt['status'], '0x1')
         return receipt
 
-    def test_reset_erc20_permit2_mint_sequence_simulates_and_executes_with_bound_nonces(self):
+    def deposit_sequence(self, owner_code):
         hashes = {}
         for target, name in ((TOKEN0, 'SyntheticToken'), (TOKEN1, 'SyntheticToken'),
                 (PERMIT2, 'SyntheticPermit2'), (POSITION_MANAGER, 'SyntheticManager'),
@@ -158,6 +162,7 @@ class DepositEvmTests(unittest.TestCase):
             hashes[target] = '0x' + keccak(bytes.fromhex(code)).hex()
         self.rpc('anvil_setBalance', [OWNER, hex(10**21)])
         self.rpc('anvil_impersonateAccount', [OWNER])
+        self.rpc('anvil_setCode', [OWNER, owner_code])
         for token in (TOKEN0, TOKEN1):
             self.send(token, calldata('mint(address,uint256)', ['address', 'uint256'], [OWNER, 10000]))
         self.send(TOKEN0, calldata('approve(address,uint256)', ['address', 'uint256'], [PERMIT2, 1]), OWNER)
@@ -182,6 +187,18 @@ class DepositEvmTests(unittest.TestCase):
                 nonce=hex(int(tx['nonceRaw'])), gas=hex(int(tx['gasLimitRaw'])),
                 maxFeePerGas=hex(int(tx['maxFeePerGasRaw'])),
                 maxPriorityFeePerGas=hex(int(tx['maxPriorityFeePerGasRaw'])))
+        return kinds, nonces
+
+    def test_reset_erc20_permit2_mint_sequence_simulates_and_executes_with_bound_nonces(self):
+        self.assert_sequence(*self.deposit_sequence('0x'))
+
+    def test_an_eip7702_owner_signs_the_same_steps_and_nonces(self):
+        # The owner's own key signs each step; its designator names code that
+        # nothing in this sequence calls (an empty synthetic contract).
+        self.assert_sequence(*self.deposit_sequence('0xef0100' + POOL_MANAGER[2:]))
+        self.assertEqual(self.rpc('eth_getCode', [OWNER, 'latest']), '0xef0100' + POOL_MANAGER[2:].lower())
+
+    def assert_sequence(self, kinds, nonces):
         self.assertEqual(kinds, ['erc20_reset', 'erc20_approval', 'permit2_approval',
                                 'erc20_approval', 'permit2_approval', 'mint'])
         self.assertEqual(nonces, [1, 2, 3, 4, 5, 6])

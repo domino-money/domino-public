@@ -23,6 +23,7 @@ class FakeRpc:
     def __init__(self, signer):
         self.publisher, self.head_number, self.balance, self.base = signer, 105, 10**18, 10**9
         self.calls = []
+        self.code = {}
 
     def request(self, method, params):
         self.calls.append((method, params))
@@ -34,6 +35,9 @@ class FakeRpc:
                     'baseFeePerGas': hex(self.base)}
         if method == 'eth_getBalance':
             return hex(self.balance)
+        if method == 'eth_getCode':
+            self.assertion_block = params[1]
+            return self.code.get(params[0], '0x')
         if method == 'eth_estimateGas':
             return hex(150000)
         if method == 'eth_getTransactionCount':
@@ -49,6 +53,26 @@ class FakeRpc:
             if data[:4] == selector('publish((bytes32,uint64,bytes32,uint64,uint64,uint160))'):
                 return '0x' + encode(['bytes32'], [bytes.fromhex(observation_id(GUARD, POINT)[2:])]).hex()
         raise AssertionError(method)
+
+
+class LateMiningRpc(FakeRpc):
+    """A node that answers the receipt read of the publication at nonce 5 with
+    nothing and then mines it into block 106, as 100 ms blocks allow."""
+    def __init__(self, signer, *, spent_by_105):
+        super().__init__(signer)
+        self.spent = {105: spent_by_105, 106: 6}
+
+    def request(self, method, params):
+        if method == 'eth_getTransactionReceipt':
+            self.calls.append((method, params))
+            self.head_number = 106
+            return None
+        if method == 'eth_getTransactionCount':
+            self.calls.append((method, params))
+            number = self.head_number if params[1] == 'latest' else next(
+                n for n in self.spent if params[1] == {'blockHash': identity(n), 'requireCanonical': True})
+            return hex(self.spent[number])
+        return super().request(method, params)
 
 
 class SyntheticReservation:
@@ -96,6 +120,17 @@ class PublisherSignerTests(unittest.TestCase):
         disabled = PublisherSigner(self.rpc, KEY, GUARD, PublisherPolicy(400000, 10**10, 10**6, 10**16, 600))
         with self.assertRaisesRegex(ExecutionError, 'publisher_disabled'):
             disabled.qualify(POINT, max_source_age=200)
+
+    def test_a_publisher_account_carrying_code_publishes_nothing(self):
+        # An EIP-7702 designator on the publisher's own account means its key
+        # signed an authorization; the account itself is read at the head.
+        self.rpc.code[self.address] = '0xef0100' + 'ab' * 20
+        with self.assertRaisesRegex(ExecutionError, '^publisher_account_has_code$'):
+            self.signer.qualify(POINT, max_source_age=200)
+        self.assertEqual(self.rpc.assertion_block, {'blockHash': identity(105), 'requireCanonical': True})
+        self.assertNotIn('eth_estimateGas', [method for method, _ in self.rpc.calls])
+        self.rpc.code[self.address] = '0x'
+        self.assertEqual(self.signer.qualify(POINT, max_source_age=200)[0], observation_id(GUARD, POINT))
 
     def test_envelope_is_the_registered_call_under_the_caps(self):
         envelope = self.signer.envelope(POINT, 5)
@@ -163,6 +198,38 @@ class PublisherSignerTests(unittest.TestCase):
         with self.assertRaisesRegex(ExecutionError, 'publisher_gas_reservation_required'):
             journal.send(identifier, self.rpc)
         self.assertFalse(any(method == 'eth_sendRawTransaction' for method, _ in self.rpc.calls))
+
+    def checked(self, rpc):
+        """Check a submitted publication at nonce 5, whose point expires far
+        ahead, through a stand-in for its locked row. Returns (state, reason)."""
+        row = {'state': 'submitted', 'reason': '', 'signer': self.address, 'nonce': 5,
+               'transaction_hash': identity(9), 'expires_at': 1800000000}
+
+        class LockedRow:
+            def execute(self, query, args):
+                assert query.startswith('UPDATE publications SET state=%s,reason=%s,')
+                row.update(state=args[0], reason=args[1])
+                return self
+
+            def fetchone(self):
+                return row
+        journal = object.__new__(PublicationJournal)
+        journal._transaction = lambda operation: operation(LockedRow())
+        journal._row = lambda conn, key, lock=False: dict(row)
+        journal._status = lambda value: (value['state'], value['reason'])
+        return journal.check(observation_id(GUARD, POINT), rpc, confirmations=2)
+
+    def test_a_publication_mined_after_its_receipt_read_keeps_its_nonce(self):
+        rpc = LateMiningRpc(self.address, spent_by_105=5)
+        # Nonce 5 is still unspent at the head read before the receipt; the
+        # latest block, 106, already holds this very publication.
+        self.assertEqual(self.checked(rpc), ('submitted', ''))
+        self.assertEqual([params for method, params in rpc.calls if method == 'eth_getTransactionCount'],
+                         [[self.address, {'blockHash': identity(105), 'requireCanonical': True}]])
+
+    def test_a_nonce_spent_by_the_head_without_a_receipt_needs_attention(self):
+        rpc = LateMiningRpc(self.address, spent_by_105=6)
+        self.assertEqual(self.checked(rpc), ('attention', 'publication_nonce_consumed_without_receipt'))
 
 
 if __name__ == '__main__':

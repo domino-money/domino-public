@@ -442,7 +442,7 @@ coverage are still unqualified; labeled synthetic tests may cover their UI.
 
 | Future flow | Existing contract | Separate work required before real local use |
 | --- | --- | --- |
-| Wallet login/private account | `session-v1` 3.0.0-rc.3 | Dedicated dev session ingress/audience, SIWE consent, origin/cookie/CSRF design. The chosen read-only HTTP loopback does not automatically solve Secure `__Host-` session cookies. Access service authentication does not identify a wallet owner or supply private portfolio/settings APIs. |
+| Wallet login/private account | `session-v1` 3.0.0-rc.4 | Dedicated dev session ingress/audience, SIWE consent, origin/cookie/CSRF design. The chosen read-only HTTP loopback does not automatically solve Secure `__Host-` session cookies. Access service authentication does not identify a wallet owner or supply private portfolio/settings APIs. |
 | Swap/LP onboarding previews | `onboarding-v1` 1.0.0 | Reviewed dev session/CSRF, server-derived owner, provider qualification/quotas, validity/unit checks and consumer contract notice. Preview does not authorize spending; its routes are absent from this read allowlist. |
 | Deposit preparation/reconciliation | `deposit-v1` 1.1.0-rc.4 | Separate financial/access review, test accounts or isolated fork, durable state, exact-step expiry and owner authorization. No approval/signature/swap/mint/production execution under #132. |
 | Missing private/financial screens | #124 / PR #129 | Resume only in the coordinated queue, with contract/pin/fixture and consumer notices. Do not import that candidate into the development read boundary or present fixtures as real balances. |

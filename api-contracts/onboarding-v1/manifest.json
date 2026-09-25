@@ -91,7 +91,7 @@
     },
     {
       "path": "backend/onboarding_api.py",
-      "sha256": "fb74f7190b4753a81400b1033836676ed7c9ae2af044f867a78821a29af5692f"
+      "sha256": "20c1d9a7ff559f4f5f6e6ecbdb05a9b4abb578ecf6037bb555733476b50ba88a"
     },
     {
       "path": "backend/authenticated_api.py",
@@ -111,7 +111,7 @@
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "5fe1dc47f216fda896b1b449ba5b30f26d16f80495b979acc403aa3f4bb0a6d2"
+      "sha256": "2b6afe090e73fb3ef0dd875bbdc6a9e24d093c036fb65d94214d1050e30c13d8"
     },
     {
       "path": "backend/hop_log.py",
@@ -119,7 +119,7 @@
     },
     {
       "path": "backend/session_models.py",
-      "sha256": "4fd480654df1deffec09b9d46df81f249d4a1d6c9e204a39f127b7d0bf3f5c51"
+      "sha256": "77bff17b95a6f6723500b723af7133359ea7b21f010dafbc83605a7923d4b4d5"
     },
     {
       "path": "backend/tests/test_onboarding_flow.py",

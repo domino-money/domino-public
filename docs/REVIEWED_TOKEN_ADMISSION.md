@@ -56,7 +56,7 @@ recipient, nonce and deadlines remain enforced.
 
 The final service handoff calls `preparer.revalidate` for **every** wallet payload,
 including re-delivery of a persisted step. It checks the current manifest and
-review IDs, token state, protocol identity, plain-EOA owner, nonce, canonicality
+review IDs, token state, protocol identity, EOA owner (plain or EIP-7702 delegated), nonce, canonicality
 and expiry. It never substitutes new calldata, recomposes the transaction or
 silently releases a nonce. If revalidation fails after issuance was persisted,
 the reservation and history remain intact.

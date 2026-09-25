@@ -97,7 +97,7 @@ export const DEPOSIT_ERROR_UI: Readonly<Record<DepositErrorCode, DepositDisposit
   },
   csrf_invalid: { copy: 'Rechecking your sign-in. No signature needed. Retry the action when it finishes.', retry: 'manual', denial: 'csrf_invalid' },
   account_unsupported: {
-    copy: "This account can't use deposits. Only standard wallets (EOAs) are supported. You've been signed out.",
+    copy: "This account can't use deposits: it is a contract wallet. Standard wallet accounts are supported, including ones upgraded to a smart account. You've been signed out.",
     retry: 'none',
     stop: true,
     denial: 'account_unsupported',

@@ -1,4 +1,4 @@
-# Session contract 3.0.0-rc.3 candidate
+# Session contract 3.0.0-rc.4 candidate
 
 Unreleased and disabled. This contract belongs to the backend dependency #31
 of wallet UI #14. It does not change `read-v1`, connect any frontend hook,
@@ -41,7 +41,7 @@ preauth/session. Cookies must be sent with same-origin fetch credentials; do
 not copy them into JavaScript storage. Login signatures and messages belong
 only in the active sign-in flow, never telemetry.
 
-Use `X-Domino-Session-Contract: 3.0.0-rc.3`. All responses include this header and
+Use `X-Domino-Session-Contract: 3.0.0-rc.4`. All responses include this header and
 `Cache-Control: no-store`. The version is independent of `read-v1`. Bodies are
 closed: unknown fields, alternate chains, guessed owner/role/session selectors,
 duplicate JSON keys and coerced scalars are invalid. A message is at most 2048
@@ -56,7 +56,7 @@ renewing idle expiry, reserving quota, cleaning records, checking RPC or revokin
 anything. Its `validation` is the **last stored observation**, which can be
 stale. `authenticated:true` establishes session identity, not current EOA
 eligibility or transaction permission. POST `refresh` with the recovered `X-Domino-CSRF`
-performs the fresh plain-EOA check and renews idle/snapshot state. Both tabs retain
+performs the fresh EOA check and renews idle/snapshot state. Both tabs retain
 the same CSRF; neither refresh invalidates an in-flight write in the other tab.
 Protected preview/deposit endpoints must still reauthorize session+CSRF and make
 their own fresh checks. Never use `me` as that guard.
@@ -81,9 +81,23 @@ alone. Logout does not require a working chain RPC.
 
 `fixtures/errors.json` is the finite status/code map. Treat unavailable storage
 or account code reads as unavailable, not as a logged-out or unsupported wallet.
-`account_unsupported` denotes an observed code-bearing account; unknown code
-state gives `account_check_unavailable`. The initial method is `plain_eoa` only.
+`account_unsupported` denotes an observed contract account; unknown code
+state gives `account_check_unavailable`. `validation.method` is `plain_eoa` for
+an account without code, or `eip7702_delegated` for an EOA whose code is exactly
+one EIP-7702 designator (`0xef0100` and a nonzero address). The latter also
+carries `delegate`, that address in lowercase. Its key still signs, so the SIWE
+signature proves control either way. The session keeps the delegate it was
+admitted with: when a fresh check (refresh or a protected endpoint) observes a
+delegate added, changed or cleared, the server revokes the session and answers
+`session_required`, and the browser signs in again. Any other code is
+`account_unsupported`, as before.
 Cookie/session tokens never appear in public response bodies.
+
+This rc.4 candidate admits EIP-7702 accounts: `validation` becomes one of two
+closed shapes, and consumers that matched `method: "plain_eoa"` exactly must
+accept `eip7702_delegated` in the same change. Paths, requests and the error set
+are unchanged. The session policy moves from `plain_eoa_v1` to
+`eoa_or_7702_v1`, so every earlier session signs in once more.
 
 The earlier 2.0.0 candidate corrected the mutating GET semantics of 1.0.0.
 The 3.0.0-rc.1 and rc.2 candidates added a mandatory admission policy and
@@ -94,6 +108,11 @@ code exhaustively must drop it in the same change. Paths and successful public
 body shapes are unchanged. Pin the producer commit/digest and obtain consumer
 acknowledgment before integrating; no mixed producer/Worker/consumer versions
 are supported.
+
+Apply migration 041 before this producer: it adds the stored `delegate` and
+admits the new policy, and it accepts rows from the previous producer, so it can
+precede the deploy. A producer from before rc.4 must not run against sessions
+created under `eoa_or_7702_v1`; it treats them as inactive, which is safe.
 
 Apply migration 027 with ingress disabled, before running this producer against
 a database that has migration 011. 011's `wallet_access_session_insert` trigger

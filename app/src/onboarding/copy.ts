@@ -27,7 +27,7 @@ export const ELIGIBILITY_COPY: Readonly<Record<EligibilityBlock, string>> = {
   session_disabled: "Wallet sign-in isn't enabled on this deployment.",
   session_busy: 'The sign-in service is temporarily unavailable. Previews resume when it recovers.',
   account_unsupported:
-    "This account can't use previews. Only standard wallets (EOAs) are supported; smart-contract and delegated accounts aren't yet. You've been signed out.",
+    "This account can't use previews: it is a contract wallet. Standard wallet accounts are supported, including ones upgraded to a smart account. You've been signed out.",
   session_error: "Sign-in isn't working in this build right now. Reload the page.",
   browser_unsupported: 'This browser is too old for wallet sign-in. Update it to continue.',
   session_off: "Wallet sign-in isn't part of this build.",

@@ -338,6 +338,26 @@ test('a rejection in the wallet releases the nonce claim and sends nothing more'
   assert.equal(chain.log.length, after, 'nothing more reached the wallet');
 });
 
+test('collect and close in a native-ETH pool first check that the owner can be paid ETH', async () => {
+  const native = { key: { ...USDG_UFG, currency0: '0x0000000000000000000000000000000000000000', currency1: USDG } };
+  const designator = '0xef0100' + 'ab'.repeat(20);
+  for (const act of [(client) => client.prepareCollect(TOKEN_ID, gas), (client) => client.prepareClose(TOKEN_ID, 100, gas)]) {
+    // An EIP-7702 account whose code refuses a plain ETH payment gets no step: nothing simulated, nothing offered.
+    const refused = setupChain({ ownerCode: designator, refusesEth: true, position: native });
+    await assert.rejects(act(refused.client), /native_eth_refused/);
+    assert.ok(refused.chain.calls.includes('probe'));
+    assert.equal(refused.chain.log.includes('eth_estimateGas'), false);
+    const accepted = setupChain({ ownerCode: designator, position: native });
+    assert.ok((await act(accepted.client)).kind);
+    // A plain EOA is paid without a probe, and a token-only pool never asks.
+    for (const options of [{ position: native }, { ownerCode: designator, refusesEth: true }]) {
+      const quiet = setupChain(options);
+      assert.ok((await act(quiet.client)).kind);
+      assert.equal(quiet.chain.calls.includes('probe'), false);
+    }
+  }
+});
+
 test('a subscribed position is read as subscribed, so the page can say automation stops', async () => {
   const { client } = setupChain({ position: { hasSubscriber: true } });
   assert.equal((await client.inspect(TOKEN_ID)).hasSubscriber, true);

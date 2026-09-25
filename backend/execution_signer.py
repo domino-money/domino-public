@@ -154,6 +154,11 @@ class RestrictedSigner:
         if g._quantity(verifier._request('eth_chainId'))!=4663:
             raise ExecutionError('execution_wrong_chain')
         head,_=verifier._block('latest')
+        # The operator is a plain key. Code on its own account means the key
+        # signed an EIP-7702 authorization: what runs there was never admitted,
+        # so nothing more is signed with it.
+        if verifier._request('eth_getCode',[self.address,{'blockHash':head['hash'],'requireCanonical':True}])!='0x':
+            raise ExecutionError('execution_signer_has_code')
         source,_=verifier._block(int(plan.sourceBlockNumber))
         if head['number']<=source['number']:
             raise ExecutionError('execution_observation_block_pending')

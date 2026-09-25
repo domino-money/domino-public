@@ -1,6 +1,6 @@
 {
   "contract": "session-v1",
-  "contractVersion": "3.0.0-rc.3",
+  "contractVersion": "3.0.0-rc.4",
   "files": [
     {
       "path": "fixtures/errors.json",
@@ -56,23 +56,23 @@
     },
     {
       "path": "runtime.d.mts",
-      "sha256": "190f865e2a31b5c8dec0705f87c329ec24897c313bac19f217a54ca1cbb0120c"
+      "sha256": "44f69de7d11876d998bf5312cfbeabf61383d61caba408e370db95aca1effa63"
     },
     {
       "path": "schemas/bootstrap.request.schema.json",
-      "sha256": "c41ecbf45bce6fc6f70390748c1e578502df0f8dd329c9e8f8bebf4a7999d2c0"
+      "sha256": "1d8cf486659c95f1242586b30f6097f9845011071e0b1525619f2218b7a99a7b"
     },
     {
       "path": "schemas/bootstrap.response.schema.json",
-      "sha256": "f39fbb43fe43d6e271d1fc29f563510e9829a6479a0eafacf83d1881331e50c7"
+      "sha256": "14df02d0b8d72aea1e5ed1941499aa2452a66b2caa1954a89e284f6849fabd15"
     },
     {
       "path": "schemas/challenge.request.schema.json",
-      "sha256": "6cde841eaa23a9e92218528faba427a60c0fc53ae7f383acd55f232c5e7030d3"
+      "sha256": "80c1e084ad00f8caf3664e65d67bcd85eaf1c842702ee852a45d65fc38382159"
     },
     {
       "path": "schemas/challenge.response.schema.json",
-      "sha256": "a6443f9a6db9e4819daa4707dc02ae266750cb55323567078c4b3a74b7edcb4d"
+      "sha256": "c1b139038672ab36c4c233a8d0c4838f05bed8d067c5ae2614145020a6473ed9"
     },
     {
       "path": "schemas/error.response.schema.json",
@@ -80,58 +80,58 @@
     },
     {
       "path": "schemas/logout.request.schema.json",
-      "sha256": "65c8b17d162130704910d3833097d651ca8508cda715cb58c5c0504b0b9b6b77"
+      "sha256": "c1fc915dab9a9f7d1c512e7eca33d32d39a628c38b4c312e7feaec1a9e56b35c"
     },
     {
       "path": "schemas/logout.response.schema.json",
-      "sha256": "912303fa198d1fa508c3b16b621434e6c4ed08193e7bb4f89d98e51f5d68dfb6"
+      "sha256": "877b009cd29b771564713a0e292f197677da272615efb743a834208d6161cf31"
     },
     {
       "path": "schemas/me.request.schema.json",
-      "sha256": "23a808551def0a7205333c2c9ca166407de789715d281337a5ba6e6e2c75dacb"
+      "sha256": "9ff894ffba6617558aba0c78bc528680a192e6b1c3411b2eac53dd1396dc82e2"
     },
     {
       "path": "schemas/me.response.schema.json",
-      "sha256": "eaee5a28cda76b33702094220a366ddd8a57270b5beb489bb4440d2859d5484c"
+      "sha256": "1bafb73a58e2c518e372cba21b0588ace4da59dfba78c12e22eb3ff4d059a582"
     },
     {
       "path": "schemas/refresh.request.schema.json",
-      "sha256": "4c64faf0f09526be0e9f000ba18c4e0b383684c746ed83ba7a926e945d4ef039"
+      "sha256": "5652b639808e39f7c81da92cf9f2f31c7690342ef45043ff6b54e7ded605af80"
     },
     {
       "path": "schemas/refresh.response.schema.json",
-      "sha256": "efb2223971c56657015cbf4f59ef672cdbaefbe263ffe9fbdabb88ffe203c6c1"
+      "sha256": "d2029500c5a99ec528860870799fef26cef17afaf5a489c6c473d4a3abe401f8"
     },
     {
       "path": "schemas/verify.request.schema.json",
-      "sha256": "e85eb58fef2863db4b11c1ac32cf30823a0753203b18b98d2c8f5a3504a5da95"
+      "sha256": "9b8b74e8f997b5349d2126a127f651142a8ce5b73ff514022cf3f72c539bc6c4"
     },
     {
       "path": "schemas/verify.response.schema.json",
-      "sha256": "02a7a4edacdc637a229e0968aaeae8daa3055b23ff5abcc58d974b53d3659c19"
+      "sha256": "f337bb514553d9a19cd15131a68c31897a4d189637a91d0b006cc597ca561a45"
     },
     {
       "path": "types.ts",
-      "sha256": "71d290acd7f986543e3a37c5ac947383523e4e7b6d418bdde8b4b725611a38b1"
+      "sha256": "319cace452be60f8657abcb10599304a2794ee544df150a07f822e10156696b9"
     },
     {
       "path": "runtime.mjs",
-      "sha256": "144c6c6fa1332c21c49e9ad70d56d26c5d4389ffc29e689a9219a9351199f211"
+      "sha256": "9c4e5e16135332bef761db8850a31e3853d3851e6db009a4c9f8fd5be242ea30"
     },
     {
       "path": "README.md",
-      "sha256": "527f3192dc7f9366faaf5e295481602f566c4227e71f01bd07e5f2268adde963"
+      "sha256": "9f010416459dfa37da6e5b7796ff867c75356af4b31558ae8ddc46a6ff97485e"
     }
   ],
   "generator": "scripts/export-session-contract.py",
   "sources": [
     {
       "path": "backend/session_models.py",
-      "sha256": "4fd480654df1deffec09b9d46df81f249d4a1d6c9e204a39f127b7d0bf3f5c51"
+      "sha256": "77bff17b95a6f6723500b723af7133359ea7b21f010dafbc83605a7923d4b4d5"
     },
     {
       "path": "backend/session_api.py",
-      "sha256": "562af82fc5f739e551d40d409dd3a2ab0cdba0152f7b81dc1c0fb389352e4363"
+      "sha256": "c00667afaf94fb4e49551932b85ec09e00994ba1c0721e9753fc078933cf5408"
     },
     {
       "path": "backend/access_transport.py",
@@ -147,7 +147,7 @@
     },
     {
       "path": "backend/session_store.py",
-      "sha256": "5fe1dc47f216fda896b1b449ba5b30f26d16f80495b979acc403aa3f4bb0a6d2"
+      "sha256": "2b6afe090e73fb3ef0dd875bbdc6a9e24d093c036fb65d94214d1050e30c13d8"
     },
     {
       "path": "backend/hop_log.py",
@@ -158,12 +158,16 @@
       "sha256": "0a65dd15291ce97b68ca730c349128b63860a8c27791893813137850523fde29"
     },
     {
+      "path": "backend/migrations/041_session_delegated_accounts.sql",
+      "sha256": "e9c6d01f242779dd5dccdca8380e64c85a05d9806fc4eafbfb46d1855d17bc45"
+    },
+    {
       "path": "backend/tests/session_contract_fixtures.py",
       "sha256": "8c516a05c867788819b5ac04239a0b42026bf17e2ebea073f3b6a9ccdc4a4817"
     },
     {
       "path": "scripts/export-session-contract.py",
-      "sha256": "f06704edf0eb84e933cbfce4edac24a8e09fd47ea86f4e4f5d534be8206ebd43"
+      "sha256": "127d2898fdbe24e1d4a6f76ffce26c002c554d484ce8b934cb388d64b499cf06"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

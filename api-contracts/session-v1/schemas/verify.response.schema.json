@@ -1,6 +1,80 @@
 {
   "$defs": {
     "AccountValidation": {
+      "discriminator": {
+        "mapping": {
+          "eip7702_delegated": "#/$defs/DelegatedEoaValidation",
+          "plain_eoa": "#/$defs/PlainEoaValidation"
+        },
+        "propertyName": "method"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PlainEoaValidation"
+        },
+        {
+          "$ref": "#/$defs/DelegatedEoaValidation"
+        }
+      ],
+      "title": "AccountValidation"
+    },
+    "DelegatedEoaValidation": {
+      "additionalProperties": false,
+      "description": "An EOA carrying an EIP-7702 designator; its own key still signs.",
+      "properties": {
+        "blockHash": {
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Blockhash",
+          "type": "string"
+        },
+        "blockNumber": {
+          "pattern": "^(0|[1-9][0-9]{0,19})$",
+          "title": "Blocknumber",
+          "type": "string"
+        },
+        "delegate": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Delegate",
+          "type": "string"
+        },
+        "method": {
+          "const": "eip7702_delegated",
+          "title": "Method",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "blockNumber",
+        "blockHash",
+        "delegate"
+      ],
+      "title": "DelegatedEoaValidation",
+      "type": "object"
+    },
+    "Owner": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Address",
+          "type": "string"
+        },
+        "chainId": {
+          "maximum": 4663,
+          "minimum": 4663,
+          "title": "Chainid",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "address",
+        "chainId"
+      ],
+      "title": "Owner",
+      "type": "object"
+    },
+    "PlainEoaValidation": {
       "additionalProperties": false,
       "properties": {
         "blockHash": {
@@ -24,29 +98,7 @@
         "blockNumber",
         "blockHash"
       ],
-      "title": "AccountValidation",
-      "type": "object"
-    },
-    "Owner": {
-      "additionalProperties": false,
-      "properties": {
-        "address": {
-          "pattern": "^0x[0-9a-f]{40}$",
-          "title": "Address",
-          "type": "string"
-        },
-        "chainId": {
-          "maximum": 4663,
-          "minimum": 4663,
-          "title": "Chainid",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "address",
-        "chainId"
-      ],
-      "title": "Owner",
+      "title": "PlainEoaValidation",
       "type": "object"
     }
   },
@@ -85,7 +137,7 @@
   ],
   "title": "AuthenticatedResult",
   "type": "object",
-  "x-contract-version": "3.0.0-rc.3",
+  "x-contract-version": "3.0.0-rc.4",
   "x-domino-constraints": [
     "All timestamps are valid UTC calendar dates.",
     "Messages must be well-formed UTF-8 and at most 2048 bytes.",

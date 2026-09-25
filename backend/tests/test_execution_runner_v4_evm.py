@@ -249,6 +249,60 @@ class DurableV4ExecutorTests(unittest.TestCase):
             self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.journal').fetchone()[0],0)
             self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.attempts').fetchone()[0],0)
 
+    def test_an_operator_account_carrying_code_signs_nothing_before_journal(self):
+        self.setup();self.candidate()
+        # An EIP-7702 designator on the operator's own account means its key
+        # signed an authorization. Nothing is signed or journaled until it clears.
+        self.rpc.request('anvil_setCode',[self.operator,'0xef0100'+'ab'*20])
+        with self.assertRaisesRegex(ValueError,'execution_signer_has_code'):self.step()
+        with self.pg.admin() as conn:
+            self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.journal').fetchone()[0],0)
+            self.assertEqual(conn.execute('SELECT count(*) FROM domino_execution.attempts').fetchone()[0],0)
+        self.rpc.request('anvil_setCode',[self.operator,'0x'])
+        self.assertEqual(self.step()['state'],'submitted')
+
+    def test_an_attempt_mined_after_its_receipt_read_keeps_its_nonce(self):
+        self.setup();self.candidate()
+        # The node answers the receipt read with nothing and then mines the
+        # attempt, as 100 ms blocks allow. At the head read before the receipts
+        # the nonce is unspent: the attempt is still pending, not lost.
+        self.rpc.request('evm_setAutomine',[False])
+        try:
+            self.assertEqual(self.step()['state'],'submitted')
+            request=self.rpc.request
+            def mined_late(method,params):
+                result=request(method,params)
+                if method=='eth_getTransactionReceipt' and result is None:request('evm_mine',[])
+                return result
+            self.rpc.request=mined_late
+            try:raced=self.step()
+            finally:self.rpc.request=request
+        finally:self.rpc.request('evm_setAutomine',[True])
+        self.assertNotEqual(raced['state'],'attention',raced)
+        self.assertEqual(self.finish()['attempts'],raced['attempts'])
+
+    def test_a_nonce_spent_by_another_transaction_needs_attention_and_sends_nothing(self):
+        self.setup();self.candidate()
+        journal=self.runner.journal
+        journal.prepare(self.owner,self.identifier,self.worker,self.lease['fence'],self.signer)
+        journal.persist_signed(self.owner,self.identifier,self.worker,self.lease['fence'],self.signer)
+        envelope=journal.read(self.owner,self.identifier)['attempts'][0]['envelope']
+        # The operator's key spends the journal's nonce on another transaction
+        # before the signed attempt goes out.
+        operator=Account.from_key(KEY)
+        other=operator.sign_transaction({'chainId':4663,'nonce':envelope['nonce'],'to':operator.address,'value':0,'gas':21000,
+            'maxFeePerGas':envelope['maxFeePerGas'],'maxPriorityFeePerGas':envelope['maxPriorityFeePerGas']})
+        self.assertEqual(self.mined_receipt(self.rpc.request('eth_sendRawTransaction',['0x'+bytes(other.raw_transaction).hex()]))['status'],'0x1')
+        request=self.rpc.request;sent=[]
+        def watched(method,params):
+            if method=='eth_sendRawTransaction':sent.append(params[0])
+            return request(method,params)
+        self.rpc.request=watched
+        try:status=self.step()
+        finally:self.rpc.request=request
+        self.assertEqual((status['state'],status['reason']),('attention','execution_nonce_consumed_without_receipt'))
+        self.assertEqual(sent,[])
+
     def test_unallocated_old_original_fees_cannot_cover_empty_new_collection(self):
         self.setup();self.candidate()
         self.assertEqual(self.step()['state'],'submitted');first=self.finish()

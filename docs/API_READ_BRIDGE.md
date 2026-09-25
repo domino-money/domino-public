@@ -287,17 +287,19 @@ formats are explicit compatibility failures, not an excuse to skip validation.
   Reject arbitrary client-composed messages, wrong context/account/chain,
   expiry and unexpected fields. Limit five verification attempts per challenge.
 - Use a reviewed SIWE/parser/signature library with exact-version tests, not
-  handwritten address recovery. For initial sessions admit only verified plain
-  EOAs. Deployed contract accounts, delegated-code accounts (including EIP-7702)
-  and counterfactual signatures are explicitly unsupported until their validation
-  and revocation rules are tested. Never infer wallet type from its brand or
+  handwritten address recovery. Admit only verified EOAs: an account with no
+  code, or one whose code is exactly one EIP-7702 designator (its own key still
+  signs; policy `eoa_or_7702_v1`, session-v1 3.0.0-rc.4). Deployed contract
+  accounts and counterfactual signatures are explicitly unsupported until their
+  validation and revocation rules are tested. Never infer wallet type from its brand or
   fall back to EOA recovery after a failed contract check. Unknown code state
   fails login; public reads remain usable. See the distinct account behaviors in
   [ERC-1271](https://eips.ethereum.org/EIPS/eip-1271) and
   [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702).
   Verify code state at a pinned canonical chain snapshot and record the method
-  and block. For the initial plain-EOA policy, recheck code on each authenticated
-  private request; nonempty code revokes the session, while an unavailable read
+  and block. Recheck code on each authenticated private request; contract code
+  revokes the session, and so does a delegate added, changed or cleared since
+  sign-in (the browser signs in again), while an unavailable read
   denies that request without guessing wallet type. A changed validation policy
   also requires reauthentication. Broader account support needs its own tested
   revalidation rules.

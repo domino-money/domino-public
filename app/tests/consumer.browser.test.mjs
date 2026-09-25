@@ -755,7 +755,7 @@ test("csrf_invalid rechecks the sign-in with no signature; the beta gate's real 
   await sameInputsAgain(page);
   s.onboarding.failNext('swap-preview', 'account_unsupported');
   await getPreview(page).click();
-  await eligibilityIs(page, /This account can't use previews\. Only standard wallets \(EOAs\) are supported/, 'account unsupported');
+  await eligibilityIs(page, /This account can't use previews: it is a contract wallet\. Standard wallet accounts are supported, including ones upgraded to a smart account/, 'account unsupported');
   assert.match(await eligibility(page), /You've been signed out\./);
   assert.equal(await figures(page).count(), 0);
   assert.equal(await getPreview(page).isDisabled(), true);

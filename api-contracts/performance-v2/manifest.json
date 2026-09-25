@@ -107,7 +107,7 @@
     },
     {
       "path": "backend/performance_v2_api.py",
-      "sha256": "04da5039c9fb2d673064d50d736e095ebdcbe9dfeb028dc8c9242abb7a8a0c04"
+      "sha256": "de003df2d5bacc00434879820222898f31c81a865207711badb4849c37146097"
     },
     {
       "path": "backend/performance_runtime.py",

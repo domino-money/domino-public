@@ -54,7 +54,7 @@ EDGE_HOSTS = frozenset(shared.EDGE_ADDRESSES)
 ISSUER = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com')
 # What each identity's own code reaches for, by hostname class. `jwks` is the
 # Access issuer every listener verifies assertions against; `rpc` is the
-# PlainEoaChecker / quote / signer path; `uniswap` is the trade API onboarding
+# EoaChecker / quote / signer path; `uniswap` is the trade API onboarding
 # and deposit quote through. Nothing here is a grant: a class is rendered only
 # for an enabled role and only for the hostnames the operator pinned.
 CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),

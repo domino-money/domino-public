@@ -11,7 +11,7 @@ Ethereum execution and Beacon upstreams remain separate and unchanged.
 | Consumer | Source with a version 4 provider file |
 | --- | --- |
 | Token, wallet balance, pool state, current NFT and market snapshot reads | `rpcUrl`, then bounded `rpcFallbackUrls` |
-| Session/onboarding plain-EOA checks | Same current list, chain and block verified |
+| Session/onboarding EOA checks | Same current list, chain and block verified |
 | Direct deposit preparation/receipt reads | Current primary; existing single-provider, fail-closed transport |
 | Live activity window and log-only anchor lookup | Local primary for each operation; bounded, verified fallback |
 | NFT reads requesting a block; owner resolution for stored pool positions | Local primary, then verified configured fallback |

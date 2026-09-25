@@ -1,7 +1,7 @@
 import { decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, zeroAddress, type Address, type Hex } from 'viem'
 import { POSITION_MANAGER, STATE_VIEW, pinned } from './pin.js'
 import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS } from './slippage.js'
-import { SIGN_WINDOW_S, STEP_DEADLINE_S, type GasBudget, type WalletRpc } from './setup.js'
+import { SIGN_WINDOW_S, STEP_DEADLINE_S, acceptsNativeEth, type GasBudget, type WalletRpc } from './setup.js'
 
 /*
  * The owner's own actions on a Uniswap v4 position NFT: collect its fees, or
@@ -372,6 +372,7 @@ export function createPositionClient(wallet: WalletRpc, supplied: PositionDeploy
     prepareCollect: (tokenId: bigint, gas: GasBudget) => bounded(async (rpc) => {
       const state = await read(rpc, tokenId)
       if (state.liquidity === 0n) return fail('position_already_empty')
+      if (state.key.currency0 === zeroAddress && !await acceptsNativeEth(rpc, wallet.owner)) return fail('native_eth_refused')
       const deadline = state.blockTimestamp + BigInt(STEP_DEADLINE_S)
       return prepare(rpc, 'collect', state, deadline, collectData(tokenId, state.key.currency0, state.key.currency1, wallet.owner, deadline), [0n, 0n], gas)
     }),
@@ -380,6 +381,7 @@ export function createPositionClient(wallet: WalletRpc, supplied: PositionDeploy
       if (!Number.isSafeInteger(slippageBps) || slippageBps < SLIPPAGE_MIN_BPS || slippageBps > SLIPPAGE_MAX_BPS) return fail('invalid_slippage')
       const state = await read(rpc, tokenId)
       if (state.liquidity === 0n) return fail('position_already_empty')
+      if (state.key.currency0 === zeroAddress && !await acceptsNativeEth(rpc, wallet.owner)) return fail('native_eth_refused')
       const minimum = closeMinimums(state.sqrtPriceX96, state.tickLower, state.tickUpper, state.liquidity, slippageBps)
       const deadline = state.blockTimestamp + BigInt(STEP_DEADLINE_S)
       return prepare(rpc, 'close', state, deadline, closeData(tokenId, state.liquidity, minimum[0], minimum[1], state.key.currency0, state.key.currency1, wallet.owner, deadline), minimum, gas)

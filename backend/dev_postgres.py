@@ -233,6 +233,9 @@ def create_database(name):
             conn.execute((ROOT/'migrations/038_gas_settlement_quote_witness.sql').read_text())
         # Replaces only the two finalized settlement quote functions from 038.
         conn.execute((ROOT/'migrations/040_gas_finalized_quote_lag.sql').read_text())
+        # 041 only widens the session policy and adds a nullable column, so it
+        # applies again safely.
+        conn.execute((ROOT/'migrations/041_session_delegated_accounts.sql').read_text())
         # Development mirrors the production split: callable NOLOGIN privilege
         # roles, each inherited by exactly one unprivileged LOGIN bridge.
         for login, privilege in (

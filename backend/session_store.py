@@ -322,10 +322,10 @@ class SessionStore:
             conn.execute('UPDATE sessions SET revoked_at=%s WHERE bearer_hash=%s',(now,digest(old_session)))
             expires=now+timedelta(hours=12)
             conn.execute('INSERT INTO sessions(bearer_hash,csrf_hash,source_context_hash,address,chain_id,policy,'
-                         'created_at,last_used_at,expires_at,block_number,block_hash) VALUES '
-                         '(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                         'created_at,last_used_at,expires_at,block_number,block_hash,delegate) VALUES '
+                         '(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                          (digest(new),digest(new_csrf),digest(preauth),current['address'],CHAIN_ID,POLICY_VERSION,
-                          now,now,expires,validation['blockNumber'],validation['blockHash']))
+                          now,now,expires,validation['blockNumber'],validation['blockHash'],validation.get('delegate')))
             return _CommitResult({'result':self._result(current['address'],expires,new_csrf,validation),
                     'credentials':{'preauth':None,'session':new}},
                     min(context['expires_at'],current['expires_at']),'challenge_invalid')
@@ -350,6 +350,8 @@ class SessionStore:
             # their hash on GET; rollout revokes old sessions before enabling.
             if not same_hash(row['csrf_hash'],csrf):return SessionError('session_required')
             validation={'method':'plain_eoa','blockNumber':row['block_number'],'blockHash':row['block_hash']}
+            if row['delegate'] is not None:
+                validation={**validation,'method':'eip7702_delegated','delegate':row['delegate']}
             return _CommitResult({'result':self._result(row['address'],row['expires_at'],csrf,validation),'credentials':{}},
                                  min(row['expires_at'],row['last_used_at']+timedelta(minutes=30)),'session_required')
         return self._transaction(operation,readonly=True)
@@ -367,11 +369,26 @@ class SessionStore:
             return denied or row
         return self._transaction(operation)
 
+    @staticmethod
+    def _account_changed(conn, now, row, session, validation):
+        """Revoke a session whose account now runs other code than at sign-in.
+
+        The key is unchanged, but a new delegate (or one added or cleared) is
+        code this session never admitted. Committed, so the error that follows
+        cannot leave the session usable; the browser signs in again.
+        """
+        if row['delegate']==validation.get('delegate'):
+            return None
+        conn.execute('UPDATE sessions SET revoked_at=%s WHERE bearer_hash=%s',(now,digest(session)))
+        return SessionError('session_required')
+
     def finish_private(self, session, csrf, validation):
         def operation(conn,now):
             row=self._session(conn,session)
             if not self._active(row,now):return SessionError('session_required')
             if not same_hash(row['csrf_hash'],csrf):return SessionError('csrf_invalid')
+            changed=self._account_changed(conn,now,row,session,validation)
+            if changed:return changed
             conn.execute('UPDATE sessions SET last_used_at=%s,block_number=%s,block_hash=%s '
                          'WHERE bearer_hash=%s', (now,validation['blockNumber'],validation['blockHash'],digest(session)))
             return _CommitResult({'result':self._result(row['address'],row['expires_at'],csrf,validation),'credentials':{}},
@@ -427,6 +444,9 @@ class SessionStore:
                 return SessionError('session_required')
             if not same_hash(row['csrf_hash'], csrf):
                 return SessionError('csrf_invalid')
+            changed = self._account_changed(conn, now, row, session, validation)
+            if changed:
+                return changed
             conn.execute('UPDATE sessions SET last_used_at=%s,block_number=%s,block_hash=%s '
                          'WHERE bearer_hash=%s',
                          (now, validation['blockNumber'], validation['blockHash'], digest(session)))

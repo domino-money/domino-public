@@ -235,7 +235,7 @@
     },
     {
       "path": "backend/deposit_api.py",
-      "sha256": "88a06f7be2e4c6aa401f180bd9e58f0e36de74318bbd67d3351288954a652054"
+      "sha256": "ac29874ee202de2d379e65bea13910147194179ff326fd28e04e4972be8a9b58"
     },
     {
       "path": "backend/authenticated_api.py",
@@ -259,7 +259,7 @@
     },
     {
       "path": "backend/deposit_prepare.py",
-      "sha256": "4589b27db438a1d775dc3f5a14bb88bfe1b0e2b5605d5ffdda1cb1db2402ec77"
+      "sha256": "88b37940d4b43207af16a29db4e75148a5b57ad5bcb4f25e7fcc87d62fb6b9a0"
     },
     {
       "path": "backend/deposit_receipt.py",

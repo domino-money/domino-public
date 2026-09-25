@@ -106,12 +106,26 @@ class DepositForkTests(unittest.TestCase):
                 self.assertEqual(args[0][args[0].index('--accounts')+1], '0')
                 self.assertEqual(args[0][args[0].index('--fork-url')+1], gateway.url)
                 self.assertEqual(args[0][args[0].index('--fork-block-number')+1], str(int(BLOCK['number'], 16)))
+                self.assertEqual(args[0][args[0].index('--hardfork')+1], 'cancun')
                 self.assertEqual(set(options['env']), {'PATH'})
                 self.assertEqual(options['stdout'], subprocess.DEVNULL)
                 self.assertEqual(options['stderr'], subprocess.DEVNULL)
             process.terminate.assert_called_once()
             self.assertFalse(path.exists())
             self.assertFalse(fork._verified)
+
+    def test_prague_is_the_only_other_child_hardfork(self):
+        # Prague makes an EIP-7702 designator execute on the child.
+        process = self.process()
+        fork = DepositFork(Gateway(), block=BLOCK, hardfork='prague')
+        with patch('deposit_fork.subprocess.Popen', return_value=process) as spawn, \
+                patch.object(fork, '_request', side_effect=self.answers()):
+            with fork:
+                args = spawn.call_args[0][0]
+                self.assertEqual(args[args.index('--hardfork')+1], 'prague')
+        for value in ('osaka', 'Prague', '', None, 1):
+            with self.subTest(hardfork=value), self.assertRaisesRegex(DataError, '^invalid_fork_configuration$'):
+                DepositFork(Gateway(), block=BLOCK, hardfork=value)
 
     def test_child_identity_chain_and_source_pin_required_before_local_writes(self):
         cases = [self.answers(version='other-node'), self.answers(chain='0x1'),

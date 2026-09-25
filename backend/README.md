@@ -49,7 +49,7 @@ complete-day performance, measuring, missing and stale states.
 
 The disabled [wallet-session candidate](../docs/WALLET_SESSIONS.md) is a separate
 auth listener on loopback port 8879, backed by private PostgreSQL state and a
-plain-EOA SIWE verifier. It does not authenticate through the public reader,
+EOA SIWE verifier (plain or EIP-7702 delegated). It does not authenticate through the public reader,
 grant financial permission or connect frontend hooks. Its shared contract is
 `api-contracts/session-v1/`; the public-read documentation below stays unchanged.
 
@@ -64,9 +64,10 @@ Issue #182 removes the [operator-managed wallet admission](../docs/WALLET_ACCESS
 issue #49 had added: proving control of a chain 4663 address through SIWE is the
 only condition on login again, and the shared beta password at the edge is the
 only remaining gate. Public reads remain open. The `session-v1` candidate is
-3.0.0-rc.3; no services are enabled. Apply migration 027 before running this
-producer against a database that has 011, or its session-insert trigger refuses
-every login. The selected [home VM deployment](../docs/HOME_VM_RUNBOOK.md) still
+3.0.0-rc.4, which admits EIP-7702 accounts; no services are enabled. Apply
+migration 027 before running this producer against a database that has 011, or
+its session-insert trigger refuses every login, and migration 041 before rc.4,
+or its new session rows are refused. The selected [home VM deployment](../docs/HOME_VM_RUNBOOK.md) still
 requires integrated-release validation and application configuration; the
 VM/empty PostgreSQL foundation is installed.
 

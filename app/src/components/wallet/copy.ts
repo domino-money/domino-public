@@ -27,7 +27,7 @@ export const FAILURE: Record<FailureKind, string> = {
   account_check_unavailable: 'The account check is temporarily unavailable. This is not a problem with your wallet.',
   service_unavailable: 'The sign-in service is temporarily unavailable.',
   rate_limited: 'Too many sign-in attempts. Wait a minute, then check again.',
-  account_unsupported: 'This address has contract code. Only standard wallets (EOAs) can sign in for now.',
+  account_unsupported: "This address is a contract wallet, which can't sign in yet. Standard wallet accounts can, including ones upgraded to a smart account.",
   contract_mismatch: 'The sign-in service answered in an unexpected format, so sign-in stopped.',
   untrusted_challenge:
     'The sign-in message did not match this site, address and network, so it was not sent to your wallet.',

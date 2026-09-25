@@ -66,7 +66,7 @@ signature. `previewChecks.status` can be blocked/incomplete even with HTTP200;
 | 400 `invalid_request` | Correct the input against the contract. |
 | 401 `session_required` | Clear private preview and use the session flow. |
 | 403 `csrf_invalid` | Refresh current session/CSRF and discard the old preview; do not automatically request another signature. |
-| 403 `account_unsupported` | Explain current plain-EOA login scope; public reads remain separate. |
+| 403 `account_unsupported` | Explain the login scope (EOAs, plain or EIP-7702 delegated; not contract wallets); public reads remain separate. |
 | 409 `preview_expired` | Request a fresh preview when needed. |
 | 422 `provider_request_rejected` | Preserve selection and explain unavailable input/route; do not substitute a pool. |
 | 429 rate/capacity error | Honor `Retry-After: 60`; no background retry loop. |
@@ -92,15 +92,16 @@ and Authorization headers are forbidden. Its separate Access service JWT must
 verify before any session DB, account RPC or Uniswap work.
 
 The session store reserves the IP attempt, checks active session/chain/CSRF, and
-reserves account/global quotas. The existing plain-EOA checker runs before the
+reserves account/global quotas. The existing EOA checker runs before the
 provider. Fresh DB guards before and after provider work reject expiry, logout
 and changed session credentials while a calculation is running. The final
-`session-v1` 3.0.0-rc.3 authority rechecks the live session before account RPC
+`session-v1` 3.0.0-rc.4 authority rechecks the live session before account RPC
 and again before delivery. A revoked, logged-out or expired session invalidates
-old cookies with `session_required`; there is no per-wallet denial, because
+old cookies with `session_required`, and so does an EIP-7702 delegate that
+changed since sign-in; there is no per-wallet denial, because
 3.0.0-rc.3 removed the admission list. GET `/session/me` is read-only and recovers the same
 CSRF for reload/two tabs; it does not renew expiry or replace the financial
-request's fresh plain-EOA check. Previews and protected refresh keep CSRF stable.
+request's fresh EOA check. Previews and protected refresh keep CSRF stable.
 
 | Limit | Candidate |
 | --- | --- |
@@ -167,7 +168,7 @@ Technical controls, compatibility evidence and wallet consent still apply.
 
 The [shared package](../api-contracts/onboarding-v1/README.md) includes schemas,
 types, runtime validation, deterministic fixtures and producer hashes. The onboarding payload contract stays 1.0.0; inherited read-v1 rc.3 and
-session-v1 3.0.0-rc.3 must be pinned from this combined producer. Session/source
+session-v1 3.0.0-rc.4 must be pinned from this combined producer. Session/source
 manifest hashes change with the composed private authorization methods. Any
 authorized collaborator may integrate amount/range/review hooks and run rendering
 tests; validator tests alone do not establish the actual consumer behavior.

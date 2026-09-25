@@ -945,6 +945,8 @@ def main(argv=None):
     parser.add_argument('--root1', default='8000000000', help='root deposit of currency1, raw')
     parser.add_argument('--width', type=int, default=200, help='root range half-width, ticks')
     parser.add_argument('--lifecycle', action='store_true', help='also mint a successor near the ceiling and run every owner exit')
+    parser.add_argument('--hardfork', choices=('cancun', 'prague'), default='cancun',
+                        help='child EVM rules; prague makes EIP-7702 designators execute, as on Nitro')
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args(argv)
     if args.recompute:
@@ -986,8 +988,9 @@ def main(argv=None):
             tag = 'latest' if args.block is None else hex(int(args.block, 0))
             block = gateway.request('eth_getBlockByNumber', [tag, False])
             report['source'] = {k: block[k] for k in ('number', 'hash', 'timestamp')}
-            with DepositFork(gateway, block=block, total_seconds=1800, max_requests=40_000) as fork:
+            with DepositFork(gateway, block=block, total_seconds=1800, max_requests=40_000, hardfork=args.hardfork) as fork:
                 report['anvilVersion'] = fork.version
+                report['hardfork'] = args.hardfork
                 x = Experiment(fork, args.pool, args.band, args.scenario_seconds)
                 report['chainSemantics'] = x.emulate_arbsys()
                 x.deploy_stack()

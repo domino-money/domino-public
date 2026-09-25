@@ -51,7 +51,7 @@ def status_gateway(path):
     from onboarding_auth import OnboardingAuth
     from rpc_config import rpc_hosts
     from session_api import acquire_session_lock
-    from session_chain import PlainEoaChecker
+    from session_chain import EoaChecker
     from session_siwe import SiwePolicy
     from session_store import SessionStore
     config=strict_json(private_file(path,16384))
@@ -72,7 +72,7 @@ def status_gateway(path):
     if not re.fullmatch(r'[0-9a-f]{64}',secret):raise ValueError()
     verifier=AccessVerifier(access['issuer'],access['audience'],access['serviceId'])
     store=SessionStore(database,abuse_secret=bytes.fromhex(secret))
-    checker=PlainEoaChecker((session['rpcEndpoint'],),allowed_hosts=hosts,
+    checker=EoaChecker((session['rpcEndpoint'],),allowed_hosts=hosts,
                             execution_status_loopback=session['rpcEndpoint']==SNAPSHOT_LOOPBACK_RPC)
     service=ExecutionStatusService(OnboardingAuth(store,checker),ExecutionStatusReader(database))
     gateway=ExecutionStatusGateway(service=service,verifier=verifier,origin=session['origin'],enabled=True)

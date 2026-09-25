@@ -31,7 +31,7 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 |---|---|---|---|
 | `read` | 8876 | rpc, analytics | discovery and the market provider |
 | `gateway` | 8878 | jwks | `AccessVerifier` fetches the issuer's certs |
-| `auth` | 8879 | rpc, jwks | `PlainEoaChecker`; assertion verification |
+| `auth` | 8879 | rpc, jwks | `EoaChecker`; assertion verification |
 | `onboarding` | 8880 | rpc, jwks, uniswap | plus the trade API quote |
 | `deposit` | 8881 | rpc, jwks, uniswap | same |
 | `performance` | 8900 | rpc, jwks | |

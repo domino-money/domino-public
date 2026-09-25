@@ -126,6 +126,12 @@ const reserves=await recovery.reserves(f.oldVault,BigInt(f.root)),balance=reserv
 assert.ok(balance);await settle(recovery,await recovery.recover(f.oldVault,'withdraw-fees',gas,{...balance,original:1n,charged:0n}));
 assert.equal((await recovery.reserves(f.oldVault,BigInt(f.root))).balances.find(x=>x.sourceId===balance.sourceId&&x.currency===balance.currency).original,balance.original-1n);check();
 assert.equal(calls.slice(ownerOnlyStart).some(x=>x.method==='eth_getCode'&&x.params[0]===d.engine),false);check();
+// A native reserve is paid with a plain call: an account whose code reverts it
+// (an EIP-7702 delegate without receive, here a bare revert) is not offered one.
+if(f.native){const nativeBalance=reserves.balances.find(x=>x.currency===zeroAddress&&x.original>0n);assert.ok(nativeBalance);
+ await rpc('anvil_setCode',[f.owner,'0x60006000fd']);
+ await assert.rejects(recovery.recover(f.oldVault,'withdraw-fees',gas,{...nativeBalance,original:1n,charged:0n}),/native_eth_refused/);check();
+ await rpc('anvil_setCode',[f.owner,'0x']);}
 await assert.rejects(recovery.recover(f.oldVault,'withdraw-child',gas,{tokenId:BigInt(f.root)}),/invalid_child/);check();
 await assert.rejects(recovery.recover(f.oldVault,'withdraw-fees',gas,{...balance,original:balance.original+1n,charged:0n}),/fee_reserve_insufficient/);check();
 await rpc('anvil_setCode',[d.engine,originalEngine]);

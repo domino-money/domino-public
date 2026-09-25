@@ -46,7 +46,7 @@ def main():
     from performance_runtime import Runtime
     from performance_v2_service import PerformanceV2Service
     from session_api import acquire_session_lock
-    from session_chain import PlainEoaChecker
+    from session_chain import EoaChecker
     from session_store import SessionStore
     from rpc_config import configured_rpc_urls, DEFAULT_RPC_HOSTS
     parser = argparse.ArgumentParser(description=__doc__)
@@ -79,7 +79,7 @@ def main():
             secret = os.environ.get('DOMINO_SESSION_ABUSE_SECRET','')
             if not re.fullmatch(r'[0-9a-f]{64}',secret): raise ValueError('session_secret_required')
             sessions = SessionStore(runtime.settings,abuse_secret=bytes.fromhex(secret))
-            checker = PlainEoaChecker(configured_rpc_urls(runtime.config),allowed_hosts=runtime.config.get('rpcAllowedHosts',DEFAULT_RPC_HOSTS))
+            checker = EoaChecker(configured_rpc_urls(runtime.config),allowed_hosts=runtime.config.get('rpcAllowedHosts',DEFAULT_RPC_HOSTS))
             from performance_rollup import project
             service = PerformanceV2Service(OnboardingAuth(sessions,checker),runtime.enrollments,runtime.history,
                 runtime.valuation,runtime.admission,projection=project,

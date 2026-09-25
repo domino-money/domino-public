@@ -56,6 +56,19 @@ use `cancel` to return all remaining balances together. The operation closes
 only once both balances reach zero. Recovery works without the pool manager,
 position manager, read dependency or Domino services.
 
+Every refund of native currency, including the ETH a mint did not use, is a
+plain transfer to the owner. An EIP-7702 account runs its delegate's code on
+that transfer, and a delegate with no payable `receive` or `fallback` refuses
+it: `cancel`, `recoverCurrency` for the zero address, and a mint that returns
+ETH then revert, and the balance stays in the operation until the owner changes
+or clears the delegation in their wallet. Nothing is lost. The app asks first:
+before funding a native-currency operation, and before a native mint, cancel or
+recovery, it simulates one wei from the owner's account to itself, and refuses
+the step with `native_eth_refused` if the account's code reverts it. A plain
+EOA is never probed. Position collect and close in a native pool, and a
+sequence's native fee-reserve withdrawal or untracked recovery, check the same
+way.
+
 Recovery requires the setup contract's balance to decrease by exactly the
 debited claim. It lets the owner accept a transfer tax or forward tokens from a
 receipt hook; this does not weaken transfer checks for swap funding, service

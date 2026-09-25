@@ -29,6 +29,7 @@ from discovery import (CHAIN_ID, ZERO, POOL_MANAGER, POSITION_MANAGER, STATE_VIE
     KEY_TYPES, DataError, PoolKey, address, bytes32, parse_block, quantity)
 from lp_mint_inspection import inspect_mint, MSG_SENDER, ADDRESS_THIS
 from read_deadline import check_read_deadline, read_deadline
+from session_models import account_code
 from token_admission import (POLICY as UPGRADEABLE_POLICY, TokenAdmission,
                              validate_manifest as validate_proxy_manifest, validate_check_budget)
 
@@ -240,7 +241,9 @@ class DirectDepositPreparer:
 
     def _wallet_identity(self, rpc, owner, artifact, manifest, block):
         pinned = {'blockHash': block.hash, 'requireCanonical': True}
-        if rpc.request('eth_getCode', [owner, pinned]) != '0x':
+        # The same owners a session admits: a plain EOA, or one carrying an
+        # EIP-7702 designator (its key still signs this transaction).
+        if account_code(rpc.request('eth_getCode', [owner, pinned])) is None:
             raise DepositError('deposit_state_changed')
         for label, target in DEPLOYMENTS.items():
             if _code_hash(rpc.request('eth_getCode', [target, pinned])) != manifest['deployments'][label]:
@@ -322,7 +325,7 @@ class DirectDepositPreparer:
         for label, target in DEPLOYMENTS.items():
             if _code_hash(request('eth_getCode', [target, pinned])) != manifest['deployments'][label]:
                 raise DepositError('deposit_admission_required')
-        if request('eth_getCode', [owner, pinned]) != '0x':
+        if account_code(request('eth_getCode', [owner, pinned])) is None:
             raise DepositError('deposit_admission_required')
         if manifest['policyVersion'] == UPGRADEABLE_POLICY:
             self.token_admission.check(request, profiles, owner=owner, block=asdict(block))

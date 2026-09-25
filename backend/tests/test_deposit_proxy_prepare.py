@@ -107,6 +107,15 @@ class ProxyPreparationTests(unittest.TestCase):
                 self.denied(lambda: preparer.revalidate(OWNER, selection(), artifact),
                     'deposit_token_changed' if mode == 'manifest' else 'deposit_state_changed')
 
+    def test_a_delegated_owner_redelivers_while_its_code_stays_a_designator(self):
+        rpc, provider, preparer = self.setup_flow()
+        rpc.codes[OWNER] = '0xef0100' + 'ab' * 20
+        artifact = preparer.prepare(OWNER, selection())
+        preparer.revalidate(OWNER, selection(), artifact)
+        self.assertEqual(len(provider.calls), 1)
+        rpc.codes[OWNER] = '0x6000'
+        self.denied(lambda: preparer.revalidate(OWNER, selection(), artifact), 'deposit_state_changed')
+
     def test_archived_profile_does_not_authorize_a_new_deposit(self):
         rpc, provider, _ = self.setup_flow()
         value = deepcopy(rpc.manifest)

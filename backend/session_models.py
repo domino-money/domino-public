@@ -3,11 +3,11 @@ from datetime import datetime, timezone
 import re
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StrictInt, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, RootModel, StrictInt, field_validator
 
-CONTRACT_VERSION = '3.0.0-rc.3'
+CONTRACT_VERSION = '3.0.0-rc.4'
 CHAIN_ID = 4663
-POLICY_VERSION = 'plain_eoa_v1'
+POLICY_VERSION = 'eoa_or_7702_v1'
 MAX_BODY = 8192
 ERROR_STATUS = {
     'invalid_request':400, 'session_required':401, 'preauth_required':401,
@@ -23,6 +23,8 @@ ERROR_STATUS_BY_CODE = ERROR_STATUS
 ROUTES = frozenset(('bootstrap','challenge','verify','me','refresh','logout'))
 TOKEN = re.compile(r'[A-Za-z0-9_-]{43}\Z')
 ADDRESS = re.compile(r'0x[0-9a-fA-F]{40}\Z')
+DELEGATION = re.compile(r'0xef0100([0-9a-f]{40})\Z')
+ZERO_ADDRESS = '0x' + '0'*40
 
 
 class SessionError(Exception):
@@ -64,11 +66,34 @@ def validate_body(route, value):
     return value
 
 
+def account_code(code):
+    """What an account's code at a pinned block says it is, or None.
+
+    Empty code is a plain EOA. EIP-7702 writes exactly the 23-byte designator
+    0xef0100 || delegate; the account's own key still signs for it, so a SIWE
+    signature keeps proving control. Any other code is a contract account, and
+    a designator naming the zero address cannot exist (EIP-7702 clears the code
+    instead), so neither is an EOA here.
+    """
+    if code=='0x':
+        return {'method':'plain_eoa'}
+    # Hex digits in either case, never a 0X prefix.
+    match=DELEGATION.fullmatch(code[:2]+code[2:].lower()) if isinstance(code,str) else None
+    if match is None or int(match.group(1),16)==0:
+        return None
+    return {'method':'eip7702_delegated','delegate':'0x'+match.group(1)}
+
+
 def validate_account(value):
-    if (not isinstance(value,dict) or set(value)!={'method','blockNumber','blockHash'} or
-            value['method']!='plain_eoa' or not isinstance(value['blockNumber'],str) or
+    keys={'method','blockNumber','blockHash'}|({'delegate'} if isinstance(value,dict)
+                                                 and value.get('method')=='eip7702_delegated' else set())
+    if (not isinstance(value,dict) or set(value)!=keys or
+            value['method'] not in ('plain_eoa','eip7702_delegated') or not isinstance(value['blockNumber'],str) or
             not re.fullmatch(r'(0|[1-9][0-9]{0,19})',value['blockNumber']) or
-            not isinstance(value['blockHash'],str) or not re.fullmatch(r'0x[0-9a-f]{64}',value['blockHash'])):
+            not isinstance(value['blockHash'],str) or not re.fullmatch(r'0x[0-9a-f]{64}',value['blockHash']) or
+            ('delegate' in keys and (not isinstance(value['delegate'],str) or
+                                     not re.fullmatch(r'0x[0-9a-f]{40}',value['delegate']) or
+                                     value['delegate']==ZERO_ADDRESS))):
         raise SessionError('account_check_unavailable')
     return value
 
@@ -128,10 +153,27 @@ class Owner(StrictModel):
     chainId: Chain
 
 
-class AccountValidation(StrictModel):
+def _delegate(value):
+    if value==ZERO_ADDRESS:raise ValueError('zero_delegate')
+    return value
+
+
+class PlainEoaValidation(StrictModel):
     method: Literal['plain_eoa']
     blockNumber: Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,19})$')]
     blockHash: Annotated[str, Field(pattern=r'^0x[0-9a-f]{64}$')]
+
+
+class DelegatedEoaValidation(StrictModel):
+    """An EOA carrying an EIP-7702 designator; its own key still signs."""
+    method: Literal['eip7702_delegated']
+    blockNumber: Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,19})$')]
+    blockHash: Annotated[str, Field(pattern=r'^0x[0-9a-f]{64}$')]
+    delegate: Annotated[str, Field(pattern=r'^0x[0-9a-f]{40}$'), AfterValidator(_delegate)]
+
+
+class AccountValidation(RootModel[Annotated[PlainEoaValidation | DelegatedEoaValidation, Field(discriminator='method')]]):
+    model_config = ConfigDict(strict=True)
 
 
 class AuthenticatedResult(StrictModel):

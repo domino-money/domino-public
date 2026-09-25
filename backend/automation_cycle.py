@@ -72,13 +72,20 @@ def service_readiness_probe(cycle, entry):
                     and now - head['timestamp'] <= QuotePolicy().max_head_age_seconds
                     and now - finalized['timestamp'] <= QuotePolicy().max_finalized_lag_seconds):
                 return False
+            deployment = cycle.config.deployment
+            # Operator, publisher and fee recipient are plain keys. Code on one
+            # (an EIP-7702 designator) means that key signed an authorization;
+            # a delegated fee recipient can also refuse or forward native fees,
+            # which the vault's exact-receipt check turns into a revert.
+            for role in (deployment.operator, deployment.pricePublisher, deployment.serviceFeeRecipient):
+                if reader.request('eth_getCode', (role, {'blockHash': head['hash'], 'requireCanonical': True})) != '0x':
+                    return False
             derive_admission(reader, cycle.config.deployment, entry.owner, entry.vault, head)
             policy = reader.call(entry.vault, 'policy()', [POLICY_TYPE], head)[0]
             operator = reader.call(entry.vault, 'operator()', ['address'], head)[0]
             enabled = reader.call(entry.vault, 'isOperator(address)', ['bool'], head,
                                   ['address'], [cycle.config.deployment.operator])[0]
             root_permission = reader.call(entry.vault, 'rootPermissionValid()', ['bool'], head)[0]
-            deployment = cycle.config.deployment
             return (operator.lower() == deployment.operator and enabled is True
                     and root_permission is True
                     and (policy[0] == deployment.dominoServiceFeeBps

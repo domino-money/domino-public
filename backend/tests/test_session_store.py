@@ -23,6 +23,8 @@ from session_siwe import SiwePolicy
 from session_store import CAPACITIES, CLEANUP_BATCH, SessionStore, digest, session_csrf, _DeadlineConnection
 
 VALIDATION={'method':'plain_eoa','blockNumber':'123','blockHash':'0x'+'ab'*32}
+DELEGATE='0x'+'d7'*20
+DELEGATED={**VALIDATION,'method':'eip7702_delegated','delegate':DELEGATE}
 SECRET=b'synthetic shared abuse-key secret only'
 # A partner reaches the account check only after its own connect, advisory lock
 # and statements, each already bounded by the store (connect 2 s, statement 1 s,
@@ -219,6 +221,58 @@ class SessionStoreTests(unittest.TestCase):
         self.assertIsNotNone(self.admin.execute('SELECT revoked_at FROM domino_sessions.sessions').fetchone()['revoked_at'])
         self.checker.effect=None
         self.error('session_required',lambda:self.call('me',**credentials))
+
+    def test_a_delegated_account_signs_in_and_keeps_its_delegate(self):
+        self.checker.effect=lambda _: dict(DELEGATED)
+        p,b,c,r=self.login()
+        self.assertEqual(r['result']['validation'],DELEGATED)
+        row=self.admin.execute('SELECT policy,delegate FROM domino_sessions.sessions').fetchone()
+        self.assertEqual((row['policy'],row['delegate']),('eoa_or_7702_v1',DELEGATE))
+        # A reload reports what was admitted, with no fresh read.
+        self.assertEqual(self.call('me',session=c['session'])['result']['validation'],DELEGATED)
+        self.assertEqual(self.call('refresh',**c)['result']['validation'],DELEGATED)
+        self.assertIsNone(self.admin.execute('SELECT revoked_at FROM domino_sessions.sessions').fetchone()['revoked_at'])
+
+    def test_a_changed_account_kind_or_delegate_revokes_at_refresh(self):
+        other={**DELEGATED,'delegate':'0x'+'e8'*20}
+        for admitted,observed in ((VALIDATION,DELEGATED),(DELEGATED,other),(DELEGATED,VALIDATION)):
+            with self.subTest(admitted=admitted['method'],observed=observed.get('delegate')):
+                self.setUp()
+                self.checker.effect=lambda _,v=admitted: dict(v)
+                p,b,c,r=self.login()
+                self.checker.effect=lambda _,v=observed: dict(v)
+                self.error('session_required',lambda:self.call('refresh',**c))
+                self.assertIsNotNone(self.admin.execute('SELECT revoked_at FROM domino_sessions.sessions').fetchone()['revoked_at'])
+                self.error('session_required',lambda:self.call('me',session=c['session']))
+
+    def test_a_changed_delegate_revokes_every_authenticated_preview(self):
+        # Onboarding, deposits, performance and execution status share this path.
+        self.checker.effect=lambda _: dict(DELEGATED)
+        p,b,c,r=self.login()
+        owner=self.store.begin_preview('192.0.2.1',c['session'],c['csrf'])['address']
+        self.store.finish_preview(c['session'],c['csrf'],owner,dict(DELEGATED))
+        self.assertIsNone(self.admin.execute('SELECT revoked_at FROM domino_sessions.sessions').fetchone()['revoked_at'])
+        self.error('session_required',lambda:self.store.finish_preview(
+            c['session'],c['csrf'],owner,{**DELEGATED,'delegate':'0x'+'e8'*20}))
+        self.assertIsNotNone(self.admin.execute('SELECT revoked_at FROM domino_sessions.sessions').fetchone()['revoked_at'])
+        self.error('session_required',lambda:self.store.begin_preview('192.0.2.1',c['session'],c['csrf']))
+
+    def test_a_session_admitted_under_the_plain_eoa_policy_signs_in_again(self):
+        p,b,c,r=self.login()
+        self.admin.execute("UPDATE domino_sessions.sessions SET policy='plain_eoa_v1'")
+        self.error('session_required',lambda:self.call('me',session=c['session']))
+        self.error('session_required',lambda:self.call('refresh',**c))
+
+    def test_the_schema_keeps_delegates_to_the_new_policy_and_to_real_addresses(self):
+        self.checker.effect=lambda _: dict(DELEGATED)
+        self.login()
+        for statement,value in (("UPDATE domino_sessions.sessions SET delegate=%s",'0x'+'0'*40),
+                                ("UPDATE domino_sessions.sessions SET delegate=%s",'0x'+'D7'*20),
+                                ("UPDATE domino_sessions.sessions SET delegate=%s",'0x'+'d7'*19),
+                                ("UPDATE domino_sessions.sessions SET policy=%s",'plain_eoa_v1'),
+                                ("UPDATE domino_sessions.sessions SET policy=%s",'contract_v1')):
+            with self.subTest(statement=statement,value=value), self.assertRaises(psycopg.errors.CheckViolation):
+                self.admin.execute(statement,(value,))
 
     def test_expired_challenge_context_absolute_and_idle_never_reach_checker(self):
         p,b=self.pending()

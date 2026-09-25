@@ -23,7 +23,7 @@ unauthenticated, as they always were.
   [027_remove_wallet_access_gate.sql](../backend/migrations/027_remove_wallet_access_gate.sql).
 
 SIWE is unchanged and still mandatory: origin, nonce, expiry, signature, CSRF
-and the fresh plain-EOA check all remain. Proving control of an address is now
+and the fresh EOA check all remain. Proving control of an address is now
 the only thing login asks for. It proves neither spending authority nor token or
 pool eligibility, exactly as before; those admission checks are separate and
 untouched.
@@ -96,7 +96,8 @@ successful.
 
 ## Consumer
 
-The candidate is **session-v1 3.0.0-rc.3**; the path family and six successful
+This change made the candidate **session-v1 3.0.0-rc.3** (rc.4 later admitted
+EIP-7702 accounts; see [wallet sessions](WALLET_SESSIONS.md)); the path family and six successful
 body shapes stay the same. The only wire change is the removal of
 `wallet_not_allowed` from the closed error set. A consumer that matched it
 exhaustively — `app/src/session/errors.ts` types `ERROR_CLASS` as a complete

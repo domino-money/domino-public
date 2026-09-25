@@ -1,6 +1,6 @@
 import { concatHex, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, stringToHex, zeroAddress, type Abi, type Address, type ContractFunctionName, type ContractFunctionReturnType, type Hex } from 'viem'
 import { POSITION_MANAGER, SEQUENCE_FACTORY, pinned, unpinned } from './pin.js'
-import type { GasBudget, WalletRpc } from './setup'
+import { acceptsNativeEth, type GasBudget, type WalletRpc } from './setup.js'
 import { sequenceSnapshotFrom, snapshotCalls, type SequenceSnapshot } from './sequenceSnapshot.js'
 
 /*
@@ -773,6 +773,10 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
           const source = await call(next,vault,'source',[v.sourceId]), balance = await call(next,vault,'feeBalance',[v.sourceId,v.currency])
           if (!source.known || v.original! > balance.original || v.charged! > balance.charged) fail('fee_reserve_insufficient')
         }
+        // The vault pays native ETH with a plain call, which an EIP-7702 account
+        // that refuses ETH reverts; the reserve then stays in the vault.
+        if ((action === 'withdraw-fees' || action === 'recover-currency') && v.currency === zeroAddress
+          && !await acceptsNativeEth(next.rpc, wallet.owner, next.block)) fail('native_eth_refused')
         return state
       }
       const s = await check(c)

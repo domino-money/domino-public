@@ -165,7 +165,7 @@ secret must match the session service; the secret file contains exactly 64
 lowercase hexadecimal characters, optionally followed by one newline. Database
 settings cannot choose a role: session authentication uses `domino_session_auth`
 and status reads use `domino_execution_reader`. The RPC endpoint is used only
-for the existing plain-EOA session check, with no fallback or environment override.
+for the existing EOA session check, with no fallback or environment override.
 On the production status identity, use exactly `http://127.0.0.1:18547/` after
 qualifying the independently managed VM-local RPC tunnel for chain 4663. That
 one endpoint selects the bounded no-proxy, no-redirect loopback transport.
