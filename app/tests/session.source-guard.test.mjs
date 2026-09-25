@@ -39,17 +39,18 @@ test('only closed financial adapters offer wallet transactions; login cannot spe
     /['"`](eth_sendTransaction|eth_signTransaction|eth_sendRawTransaction|eth_sign|eth_signTypedData(_v\d)?|wallet_sendCalls|wallet_addEthereumChain|wallet_watchAsset|eth_call|eth_estimateGas)['"`]/;
   // Changed on purpose (2026-09-24): finance/position.ts is the owner's collect and close, sent from the wallet to
   // Uniswap's pinned PositionManager, simulated and estimated first, through the same bounded client as setup.ts.
-  assert.deepEqual(hits(ALL, methods), ['finance/position.ts', 'finance/sequence.ts', 'finance/setup.ts', 'finance/wallet.ts']);
+  // Changed on purpose (2026-09-25): finance/batch.ts offers the owner clients' one batch (wallet_sendCalls), shared by setup.ts and sequence.ts.
+  assert.deepEqual(hits(ALL, methods), ['finance/batch.ts', 'finance/position.ts', 'finance/sequence.ts', 'finance/setup.ts', 'finance/wallet.ts']);
   assert.deepEqual(hits(inside('session/', 'wallet/', 'components/wallet/'), methods), [], 'login still cannot spend');
   assert.deepEqual([...ALL.find(f => f.path === 'finance/wallet.ts').code.matchAll(/method: '([^']+)'/g)].map(m => m[1]), ['eth_accounts', 'eth_chainId', 'eth_sendTransaction']);
 });
 
-test('batches (EIP-5792) are asked for, offered and read back only by the closed setup client', () => {
+test('batches (EIP-5792) are asked for, offered and read back only by the closed batch module the owner clients share', () => {
   // Changed on purpose (2026-09-25): Create position's one-signature batch (docs/plans/2026-09-25-eip5792-batches-design.md)
-  // reads what the wallet can batch, offers one batch and reads its status, all in finance/setup.ts; login and every
-  // other screen name none of these methods.
+  // reads what the wallet can batch, offers one batch and reads its status. Since the sequence's creation batches too, both
+  // clients (finance/setup.ts, finance/sequence.ts) go through finance/batch.ts; login and every screen name none of these.
   const batch = /['"`](wallet_sendCalls|wallet_getCallsStatus|wallet_getCapabilities|wallet_showCallsStatus)['"`]/;
-  assert.deepEqual(hits(ALL, batch), ['finance/setup.ts']);
+  assert.deepEqual(hits(ALL, batch), ['finance/batch.ts']);
 });
 
 test('exact approvals are confined to the closed setup and sequence ABIs', () => {

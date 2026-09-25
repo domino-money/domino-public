@@ -2214,7 +2214,7 @@ const chainAbi = parseAbi([
  */
 function fakeSequenceChain(owner, { roots, chains = {}, operator = null, serviceFeeBps = 400, maxPositions = 3,
   policyVersion = 1n, paused = false, limitsVersion = 1n, rootPermissionValid = true, vaultHeld = [], accounted = 0n, approved = true, settled = false,
-  subscribed = [], holder = null, lostApproval = false, balance = '0xde0b6b3a7640000' }) {
+  subscribed = [], holder = null, lostApproval = false, balance = '0xde0b6b3a7640000', atomic = null, batchError = null, holdBatch = false, simulation = 'wallet' }) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`, zero = at(0, 32);
   const cloneOf = implementation => concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3']);
   const implementation = at(0x42), factoryCode = '0x6001', implementationCode = '0x6002';
@@ -2322,9 +2322,59 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
       vaults.set(vault, { id, root: params.rootTokenId, chain: [], policy: params.policy, limits: params.limits });
     }
   }
+  /**
+   * A batch (EIP-5792) as a wallet that executes it atomically: `atomic` is what the wallet says of chain 4663, `batchError`
+   * its answer to the first batch it is offered, `holdBatch` that batch taken and held unsent (status 100, which a test may
+   * change, or mark `forgotten`: an id the wallet no longer knows), and `simulation: 'unsupported'` a wallet without
+   * eth_simulateV1. The factory creates only at the owner's next nonce, and only a vault its root NFT is approved to; each
+   * call is checked in turn, and one that fails undoes them all.
+   */
+  const batches = [];
+  let capability = atomic, refuseBatch = batchError, hold = holdBatch;
+  function batchResults(calls) {
+    const created = new Map(), approvedHere = new Map();
+    let failed = false;
+    const results = calls.map(call => {
+      if (failed) return { status: '0x0', gasUsed: '0x0' };
+      const to = String(call.to).toLowerCase(), { functionName, args } = decodeFunctionData({ abi: chainAbi, data: call.data });
+      const ok = to === deployment.positionManager && functionName === 'approve' ? true
+        : to === deployment.factory && functionName === 'createVault'
+          ? args[1] === BigInt(vaults.size + created.size) && (approved || approvedHere.get(args[0].rootTokenId) === predict(args[1]) || approvals.get(args[0].rootTokenId) === predict(args[1]))
+          : false;
+      if (!ok) { failed = true; return { status: '0x0', gasUsed: '0x0' }; }
+      if (functionName === 'approve') approvedHere.set(args[1], String(args[0]).toLowerCase());
+      if (functionName === 'createVault') created.set(args[1], true);
+      return { status: '0x1', gasUsed: '0x30d40' };
+    });
+    return { results, ok: !failed };
+  }
   async function request(method, params) {
     log.push(method);
     try {
+      if (method === 'wallet_getCapabilities') return { result: capability ? { '0x1237': { atomic: { status: capability } } } : {} };
+      if (method === 'eth_simulateV1') {
+        if (simulation === 'unsupported') return { error: { code: -32601, message: 'the method eth_simulateV1 does not exist/is not available' } };
+        return { result: [{ calls: batchResults(params[0].blockStateCalls[0].calls).results }] };
+      }
+      if (method === 'wallet_sendCalls') {
+        if (refuseBatch) { const error = refuseBatch; refuseBatch = null; return { error }; }
+        const [{ version, chainId, from, atomicRequired, calls }] = params;
+        const id = `0x${(0x5eba7 + batches.length).toString(16)}`;
+        if (hold) {
+          hold = false;
+          batches.push({ id, version, chainId, from, atomicRequired, calls, status: 100 });
+          return { result: { id } };
+        }
+        const { ok } = batchResults(calls);
+        if (ok) for (const call of calls) apply({ to: call.to, data: call.data });
+        batches.push({ id, version, chainId, from, atomicRequired, calls, status: ok ? 200 : 500 });
+        if (ok && capability === 'ready') capability = 'supported';
+        return { result: { id } };
+      }
+      if (method === 'wallet_getCallsStatus') {
+        const batch = batches.find(entry => entry.id === params[0] && !entry.forgotten);
+        return batch ? { result: { version: '2.0.0', id: batch.id, chainId: '0x1237', status: batch.status, atomic: true, receipts: [] } } : { error: { code: 5730, message: 'Unknown bundle id' } };
+      }
       if (method === 'eth_getBlockByNumber') return { result: { number: '0x10', hash: at(0xbb, 32) } };
       // A suite that routes these here keeps them off the mock wallet, which
       // refuses anything outside its login set and fails the scenario's close.
@@ -2358,7 +2408,8 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
       return { error: { code: -32000, message: String(error) } };
     }
   }
-  return { log, missing, refused, sends, simulations, request, include, predict, poolKey, poolId, policy, limits, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment } };
+  return { log, missing, refused, sends, simulations, batches, request, include, predict, poolKey, poolId, policy, limits, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
+    holdNext: () => { hold = true; }, simulate: calls => batchResults(calls).results };
 }
 
 test('Start tracking is offered for the sequences the wallet lists, reads each one\'s positions from its vault, and sends enroll with the session: nothing typed, nothing signed', async () => {
@@ -2455,8 +2506,11 @@ async function connectOnly(page) {
   await page.keyboard.press('Escape');
 }
 
-/** A link naming the mode and the position, with the release published: the quote currency 0 chosen, consent ticked, Set up automation pressed. */
-async function setUpFromLink(s, chain, { mode = 'compound', tokenId = '5' } = {}) {
+/** The wallet methods a batch (EIP-5792) takes, routed to the fake chain beside CHAIN_METHODS. */
+const BATCH_METHODS = ['wallet_getCapabilities', 'eth_simulateV1', 'wallet_sendCalls', 'wallet_getCallsStatus'];
+
+/** A link naming the mode and the position, with the release published: the quote currency 0 chosen, consent ticked, Set up automation pressed (unless `press` is false). */
+async function setUpFromLink(s, chain, { mode = 'compound', tokenId = '5', press = true } = {}) {
   s.set({ sequenceRelease: { status: 200, body: chain.release } });
   await s.page.goto(`${s.origin}/${labHash({ positions: [walletPosition(chain, tokenId)], mode, tokenId })}`);
   await s.page.reload();
@@ -2464,7 +2518,7 @@ async function setUpFromLink(s, chain, { mode = 'compound', tokenId = '5' } = {}
   await card.waitFor({ timeout: 30_000 });
   await card.getByRole('radiogroup', { name: 'Quote currency' }).getByRole('radio', { name: 'AAA', exact: true }).click();
   await card.getByRole('checkbox', { name: /^I consent to using this NFT’s already uncollected fees/ }).check();
-  await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+  if (press) await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
   return card;
 }
 
@@ -2584,6 +2638,188 @@ test('isolated wallet rejections at the engine verification calls recover at the
   } finally { await s.close(); }
 });
 
+test('a wallet that executes batches atomically sets up automation with one signature: the root NFT’s approval and the paused creation in one batch', async () => {
+  const s = await scenario();
+  const chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, atomic: 'supported' });
+  const { factory, positionManager } = chain.release.deployment, vault = chain.predict(0);
+  await routeChain(s, chain, [...CHAIN_METHODS, ...BATCH_METHODS]);
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain, { press: false });
+    await card.locator('#sequence-reason', { hasText: 'Your wallet asks you to sign once: the approval and the sequence together.' }).waitFor({ timeout: 30_000 });
+    assert.equal(await card.locator('[data-sequence-batch]').count(), 0, 'nothing to choose: the batch needs no upgrade');
+    await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+    await s.page.locator(`[data-sequence-created="${vault}"]`).waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.sends, [], 'no transaction of its own: the wallet was asked for one batch');
+    assert.equal(chain.batches.length, 1);
+    const [batch] = chain.batches;
+    assert.deepEqual([batch.version, batch.chainId, batch.from.toLowerCase(), batch.atomicRequired, batch.status], ['2.0.0', '0x1237', OWNER, true, 200]);
+    const calls = batch.calls.map(call => ({ to: call.to.toLowerCase(), ...decodeFunctionData({ abi: chainAbi, data: call.data }) }));
+    assert.deepEqual(calls.map(call => [call.to, call.functionName]), [[positionManager, 'approve'], [factory, 'createVault']]);
+    assert.deepEqual([calls[0].args[0].toLowerCase(), calls[0].args[1]], [vault, 5n], 'only NFT #5, to the predicted sequence');
+    assert.deepEqual([calls[1].args[0].rootTokenId, calls[1].args[1], calls[1].args[0].policy.paused], [5n, 0n, true], 'the paused creation at the owner’s next nonce');
+    assert.ok(chain.log.includes('eth_simulateV1') && chain.log.indexOf('eth_simulateV1') < chain.log.indexOf('wallet_sendCalls'), 'simulated whole before the wallet was asked');
+    assert.deepEqual(await s.page.locator('[data-wallet-step]').evaluateAll(items => items.map(item => [item.getAttribute('data-wallet-step'), item.getAttribute('data-step-state')])), [['batch', 'done']]);
+    assert.deepEqual([chain.missing, chain.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
+test('a wallet that can batch once it turns on its smart account sets up automation step by step, with one signature offered beside it; declined, nothing is sent, and asked again it sets up automation in one batch', async () => {
+  // Set up automation itself stays step by step for it: the upgrade is the person's choice, never the page's.
+  let s = await scenario();
+  let chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, atomic: 'ready' });
+  await routeChain(s, chain, [...CHAIN_METHODS, ...BATCH_METHODS]);
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain, { press: false });
+    await card.locator('[data-sequence-batch="offer"]').waitFor({ timeout: 30_000 });
+    await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+    await s.page.locator(`[data-sequence-created="${chain.predict(0)}"]`).waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.batches, []);
+    assert.deepEqual(chain.sends.map(tx => decodeFunctionData({ abi: chainAbi, data: tx.data }).functionName), ['approve', 'createVault']);
+  } finally { await s.close(); }
+  s = await scenario();
+  chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, atomic: 'ready', batchError: { code: 5750, message: 'Atomic-ready wallet rejected upgrade' } });
+  const vault = chain.predict(0);
+  await routeChain(s, chain, [...CHAIN_METHODS, ...BATCH_METHODS]);
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain, { press: false });
+    const offer = card.locator('[data-sequence-batch="offer"]');
+    await offer.waitFor({ timeout: 30_000 });
+    assert.equal(await offer.innerText(), 'Sign both steps at once');
+    assert.equal(await card.locator('#sequence-batch-note').innerText(), 'Your wallet will first ask to turn on its smart account (EIP-7702). Your address stays the same, and your key stays in control.');
+    assert.equal(await card.locator('#sequence-reason').innerText(), 'Your wallet asks you to approve the position, then to create the sequence.', 'the steps stay the main way');
+    await offer.click();
+    const notice = card.locator('[data-notice-code="batch_upgrade_declined"]');
+    await notice.waitFor({ timeout: 30_000 });
+    assert.equal(await notice.innerText(), 'You declined turning on your wallet’s smart account. Nothing was created. Press Set up automation to go step by step, or sign both steps at once again.');
+    assert.deepEqual([chain.sends, chain.batches], [[], []]);
+    await offer.click();
+    await s.page.locator(`[data-sequence-created="${vault}"]`).waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.sends, []);
+    assert.deepEqual(chain.batches[0].calls.map(call => decodeFunctionData({ abi: chainAbi, data: call.data }).functionName), ['approve', 'createVault']);
+  } finally { await s.close(); }
+});
+
+test('a batch the wallet still held when the page went away is not offered again; once the wallet says it did not include it, the next press offers a new one', async () => {
+  const s = await scenario();
+  const chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, atomic: 'supported', holdBatch: true });
+  const vault = chain.predict(0);
+  await routeChain(s, chain, [...CHAIN_METHODS, ...BATCH_METHODS]);
+  try {
+    await connectOnly(s.page);
+    await setUpFromLink(s, chain);
+    await s.page.locator('[data-wallet-step="batch"][data-step-state="chain"]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.batches.length, 1);
+    // The page goes away while the wallet holds the batch: the latch outlives it, and the press after asks the wallet first.
+    const card = await setUpFromLink(s, chain);
+    const waiting = card.locator('[data-notice-code="batch_already_offered"]');
+    await waiting.waitFor({ timeout: 30_000 });
+    assert.equal(await waiting.innerText(), 'A batch for this sequence is already waiting in your wallet. Check your wallet activity: nothing is sent twice.');
+    assert.equal(chain.batches.length, 1, 'nothing offered twice while the wallet holds it');
+    chain.batches[0].status = 400;
+    await setUpFromLink(s, chain);
+    await s.page.locator(`[data-sequence-created="${vault}"]`).waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.batches.map(batch => batch.status), [400, 200], 'freed by the wallet’s answer, and offered anew');
+    assert.deepEqual(chain.sends, []);
+    assert.deepEqual([chain.missing, chain.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
+test('a sent batch is watched until the wallet says what became of it: each outcome has its sentence, one that cannot execute is shown failed, and the next press offers a new batch', async () => {
+  const s = await scenario();
+  const chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, atomic: 'supported' });
+  await routeChain(s, chain, [...CHAIN_METHODS, ...BATCH_METHODS]);
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain, { press: false });
+    await card.locator('#sequence-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    for (const [outcome, code, state, text] of [
+      [400, 'sequence_batch_dropped', 'failed', 'Your wallet did not include the batch. Press Set up automation again.'],
+      [500, 'sequence_step_reverted', 'failed', 'The transaction reverted: nothing changed, only network gas was spent. Press Set up automation to try again.'],
+      ['forgotten', 'sequence_batch_unknown', 'sent', 'The batch’s outcome could not be read. Check your wallet activity, then press Set up automation again: the chain is read first, and nothing is sent twice.'],
+    ]) {
+      chain.holdNext();
+      await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+      await s.page.locator('[data-wallet-step="batch"][data-step-state="chain"]').waitFor({ timeout: 30_000 });
+      const batch = chain.batches.at(-1);
+      if (outcome === 'forgotten') batch.forgotten = true;
+      else batch.status = outcome;
+      const notice = card.locator(`[data-notice-code="${code}"]`);
+      await notice.waitFor({ timeout: 30_000 });
+      assert.equal(await notice.innerText(), text);
+      assert.equal(await s.page.locator('[data-wallet-step="batch"]').getAttribute('data-step-state'), state, `${outcome}: ${state}`);
+    }
+    await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+    await s.page.locator(`[data-sequence-created="${chain.predict(0)}"]`).waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.batches.map(batch => batch.forgotten ? 'forgotten' : batch.status), [400, 500, 'forgotten', 200], 'each one freed, and one batch created the sequence');
+    assert.deepEqual(chain.sends, []);
+    assert.deepEqual([chain.missing, chain.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
+test('a sequence batch the wallet cannot simulate is simulated on the chain’s RPC; with no simulation anywhere, the same press goes step by step', async () => {
+  const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
+  for (const rpcSimulates of [true, false]) {
+    const s = await scenario();
+    const chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, atomic: 'supported', simulation: 'unsupported' });
+    await routeChain(s, chain, [...CHAIN_METHODS, ...BATCH_METHODS]);
+    const asked = [];
+    try {
+      await s.context.route(/rpc\.mainnet\.chain\.robinhood\.com/, async route => {
+        const request = route.request();
+        if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+        const body = JSON.parse(request.postData() ?? '{}');
+        asked.push(body.method);
+        if (!rpcSimulates || body.method !== 'eth_simulateV1') return route.fulfill({ status: 500, headers: cors, body: '' });
+        return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [{ calls: chain.simulate(body.params[0].blockStateCalls[0].calls) }] }) });
+      });
+      await connectOnly(s.page);
+      const card = await setUpFromLink(s, chain, { press: false });
+      await card.locator('#sequence-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+      await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+      await s.page.locator(`[data-sequence-created="${chain.predict(0)}"]`).waitFor({ timeout: 60_000 });
+      assert.ok(asked.includes('eth_simulateV1'), 'the chain’s RPC was asked to simulate');
+      if (rpcSimulates) {
+        assert.deepEqual([chain.sends, chain.batches.length], [[], 1], 'simulated on the RPC, and signed once');
+      } else {
+        assert.deepEqual(chain.batches, []);
+        assert.deepEqual(chain.sends.map(tx => decodeFunctionData({ abi: chainAbi, data: tx.data }).functionName), ['approve', 'createVault'], 'no simulation: each step, as for any wallet');
+      }
+      assert.deepEqual([chain.missing, chain.refused], [[], []]);
+    } finally { await s.close(); }
+  }
+});
+
+test('a batch with the root already approved holds only the creation; a batch the wallet cannot make goes step by step in the same press', async () => {
+  let s = await scenario();
+  let chain = fakeSequenceChain(OWNER, { roots: [], approved: true, settled: true, atomic: 'supported' });
+  await routeChain(s, chain, [...CHAIN_METHODS, ...BATCH_METHODS]);
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain, { press: false });
+    await card.locator('#sequence-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+    await s.page.locator(`[data-sequence-created="${chain.predict(0)}"]`).waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.batches[0].calls.map(call => decodeFunctionData({ abi: chainAbi, data: call.data }).functionName), ['createVault'], 'approved already: only the creation');
+  } finally { await s.close(); }
+  s = await scenario();
+  chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, atomic: 'supported', batchError: { code: 5760, message: 'Atomicity not supported' } });
+  await routeChain(s, chain, [...CHAIN_METHODS, ...BATCH_METHODS]);
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain, { press: false });
+    await card.locator('#sequence-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+    await s.page.locator(`[data-sequence-created="${chain.predict(0)}"]`).waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.batches, []);
+    assert.deepEqual(chain.sends.map(tx => decodeFunctionData({ abi: chainAbi, data: tx.data }).functionName), ['approve', 'createVault'], 'refused as unsupported: each step as for any wallet');
+    assert.equal(chain.log.filter(method => method === 'wallet_sendCalls').length, 1, 'asked once, refused, never again');
+  } finally { await s.close(); }
+});
+
 /**
  * SequenceCreate.tsx, driven the way a person reaches it: a position page's link naming the mode and the position, a wallet that is
  * connected and nothing more. The chain is the fake above with nothing approved and every send settled at once, so Set up automation
@@ -2674,7 +2910,10 @@ test('from a position link, one press puts the NFT under Domino-compound: the ap
     assert.deepEqual(s.deposits, []);
     assert.deepEqual([...new Set(s.fake.state.log.map(entry => `${entry.method} ${entry.route}`))], ['GET me'], 'the session service was only asked whether a session exists, never for one');
     assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
-    assert.deepEqual([...new Set(s.wallet.state.log.map(entry => entry.method))].filter(method => !['eth_accounts', 'eth_chainId', 'eth_requestAccounts', 'wallet_requestPermissions', 'wallet_switchEthereumChain'].includes(method)), [], 'the wallet itself was only asked to connect');
+    // Changed on purpose (2026-09-25, EIP-5792 batches, PR 2): the screen also asks what the wallet can do with a batch
+    // (wallet_getCapabilities, finance/batch.ts atomicStatus), a read that opens and signs nothing. This wallet names no
+    // batch, so the two steps above are what it was asked to sign.
+    assert.deepEqual([...new Set(s.wallet.state.log.map(entry => entry.method))].filter(method => !['eth_accounts', 'eth_chainId', 'eth_requestAccounts', 'wallet_requestPermissions', 'wallet_switchEthereumChain'].includes(method)), ['wallet_getCapabilities'], 'the wallet itself was only asked to connect, and what it can batch');
     assert.deepEqual([...new Set(chain.log)].sort(), ['eth_call', 'eth_estimateGas', 'eth_gasPrice', 'eth_getBalance', 'eth_getBlockByNumber', 'eth_getCode', 'eth_getTransactionByHash', 'eth_getTransactionCount', 'eth_getTransactionReceipt', 'eth_sendTransaction'],
       'reads, the network price, one simulation and one send per step, and the receipts');
     assert.deepEqual(chain.refused, [], 'every method asked is one this chain answers');

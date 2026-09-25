@@ -89,11 +89,49 @@ path.
   - a wallet without EIP-5792 keeps today's flow. The existing tests stay as they are.
 - **EVM test** on Anvil with the prague hardfork: the real Setup and Uniswap v4 contracts, and the owner delegated to Simple7702Account's real code (`app/tests/support/eip7702-delegates.code.json`). The batch the app builds runs as the owner's own `executeBatch`: one transaction creates the position, including a one-token deposit with its swap, and the leftover returns. It follows `test_setup_sdk_evm.py`.
 - **Mutation** on every guard of the batch.
-- **Repository guards.** `wallet_sendCalls`, `wallet_getCallsStatus` and `wallet_getCapabilities` are allowed only in `finance/setup.ts`. Login and consumer code still refuse them. The financial bundle ceiling is raised by the minimum, measured on CI.
+- **Repository guards.** `wallet_sendCalls`, `wallet_getCallsStatus` and `wallet_getCapabilities` are allowed only in `finance/setup.ts`. Login and consumer code still refuse them. The financial bundle ceiling is raised by the minimum, measured on CI. PR 2 moved them to `finance/batch.ts`, which both clients share, and the guard follows.
+
+## The vault batch (PR 2)
+
+A sequence's creation takes two signatures today: the root NFT's approval to
+the predicted clone, then `createVault`. PR 2 puts both into one batch, on the
+same machinery. `finance/batch.ts` holds what both clients share: the
+capability read, the whole-batch simulation, the offer behind the latch and the
+wallet's status.
+
+- **Calls.** `approve(predicted vault, root)` on the position manager, left out
+  when the root is already approved to that vault, then
+  `createVault(params, ownerNonce)` on the factory: paused, with the same
+  policy, limits and fee consent as the steps.
+- **Checks.** The same reads and guard as the step-by-step creation: root
+  ownership, pool, range, the owner's next nonce and the approval. Then the
+  batch is simulated whole, as for Create position, and its gas and the
+  owner's ETH are checked against the budget.
+- **Latch.** It is keyed by the sequence id the factory derives from the owner
+  and the nonce. That id is the next one, so a batch found latched for it has
+  created nothing yet, as far as the chain says. The next preparation asks
+  the wallet once:
+  - 400, 500 or 5730: the latch is freed;
+  - pending, 200 on a node that is still behind, a failed read, or an answer
+    that never came: `batch_already_offered`, and nothing is offered twice.
+- **Confirming by effect.** The clone's code stands at the predicted address.
+  `isVault` agrees, the vault is this owner's, and `vaultForSequence(id)`
+  names it.
+- **Screen.** As in Create position: the batch is the default for
+  `supported`. For `ready`, **Sign both steps at once** sits beside the steps
+  with the same note. A wallet that refuses the batch as unsupported, or a
+  batch that neither the wallet nor the chain's RPC can simulate, goes step by
+  step in the same press.
+- **EVM test.** Prague, with the owner delegated to Simple7702Account's real
+  code. The batch is one self-transaction that approves and creates, for the
+  ERC-20 and the native pair. A lost answer and a batch the wallet still holds
+  keep the latch; 400, 500 and 5730 free it. A review the chain moved under is
+  refused before the wallet, and a batch sent again at a used nonce reverts
+  whole.
 
 ## Scope
 
-1. **PR 1:** Create position's batch, for `supported` and as the offer for `ready`.
+1. **PR 1 (#217):** Create position's batch, for `supported` and as the offer for `ready`.
 2. **PR 2:** the vault batch (the root NFT's approval and `createVault`) on the same machinery.
 
 Out of scope:

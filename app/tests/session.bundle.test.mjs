@@ -431,6 +431,16 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // LF in the index and the working tree, core.autocrlf false, so its input
   // is the same bytes there; not measured on Linux). Every other ceiling is
   // unchanged.
+  // 2026-09-25, EIP-5792 batches, PR 2: a sequence's creation in one signature
+  // (finance/sequence.ts prepareCreateBatch, sendCreateBatch and
+  // createBatchStatus, SequenceCreate's batch path and its offer to a wallet
+  // that can upgrade), on finance/batch.ts, which the setup client now shares.
+  // Measured by CI (main cd26bad in run 36185407784, the branch in run
+  // 36186169371): dist financial 170,401 -> 172,120 B, all lazy 187,217 ->
+  // 188,936 B; .wallet-test-dist financial 171,639 -> 173,317 B, all lazy
+  // 188,595 -> 190,263 B. Each moves by the minimum: financial 173.4 kB (83 B
+  // over the larger build), all lazy 190.3 kB (37 B); the fees worker, chain
+  // code and 90 kB session/read ceilings are unchanged.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -477,7 +487,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 171_700], ['all lazy', allLazy, 188_700], ['fees worker', worker, 20_600], ['chain code', chain, 13_900]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 173_400], ['all lazy', allLazy, 190_300], ['fees worker', worker, 20_600], ['chain code', chain, 13_900]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

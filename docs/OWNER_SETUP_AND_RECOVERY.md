@@ -103,9 +103,10 @@ slippage limit. The mint is sized for that least and returns the rest.
 wallet. A wallet without the method is simulated on the chain's public RPC,
 the page's own chain client. With neither, no batch is offered.
 
-**Sending and reading back.** `finance/setup.ts` sends `wallet_sendCalls`
-(version 2.0.0, `atomicRequired: true`). A latch in the nonce journal, keyed
-by the owner and the operation id, keeps a second prompt from opening.
+**Sending and reading back.** `finance/batch.ts`, which Create position and
+sequences share, sends `wallet_sendCalls` (version 2.0.0,
+`atomicRequired: true`). A latch in the nonce journal, keyed by the owner and
+the operation id, keeps a second prompt from opening.
 `wallet_getCallsStatus` is read for the outcome, and the operation's own state
 decides it:
 
@@ -142,6 +143,27 @@ execution. A separate activation review requires a current verified release,
 the admitted operator, valid root permission and the same policy/limit versions.
 Its guard is repeated before the wallet request; an offline recovery profile
 cannot activate automation.
+
+A wallet that executes batches atomically can create the sequence with one
+signature. The batch holds the root NFT's approval, unless the NFT is already
+approved to the predicted clone, and the paused creation. The wallet executes
+both or neither. The capability read and the choice are Create position's:
+a `supported` wallet gets the batch when Set up automation is pressed, and a
+`ready` wallet gets **Sign both steps at once** beside the steps. The batch
+runs the same reads and guard as the steps, then an `eth_simulateV1` of the
+whole batch.
+
+- **One creation only.** The factory creates only at the owner's next nonce,
+  so a batch that meets another creation first reverts whole.
+- **Latch.** It is keyed by the sequence id the batch creates. When a batch is
+  still latched for that id at the next preparation, the app asks the wallet
+  about it once:
+  - not included (400), reverted (500), or unknown to the wallet (5730): the
+    latch is freed, and a new batch can be offered;
+  - pending, confirmed on a node that is still behind, or an answer that never
+    came: nothing is offered again.
+- **Reading it back.** The sequence exists when the clone at its predicted
+  address is registered for that sequence id and belongs to this owner.
 
 Owner controls read the exact registered clone and owner on chain. Pause,
 operator revocation, individual root-approval revocation, child withdrawal and

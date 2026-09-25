@@ -1,6 +1,7 @@
 import { concatHex, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, stringToHex, zeroAddress, type Abi, type Address, type ContractFunctionName, type ContractFunctionReturnType, type Hex } from 'viem'
 import { POSITION_MANAGER, SEQUENCE_FACTORY, pinned, unpinned } from './pin.js'
 import { acceptsNativeEth, type GasBudget, type WalletRpc } from './setup.js'
+import { BATCH_FRAME_GAS, batchCallsStatus, offerBatch, simulateBatch, type BatchCall, type BatchSimulator } from './batch.js'
 import { sequenceSnapshotFrom, snapshotCalls, type SequenceSnapshot } from './sequenceSnapshot.js'
 
 /*
@@ -190,6 +191,19 @@ export interface PreparedSequence {
   owner: Address; vault: Address; expiresAt: number; summary: readonly string[]
   transaction: Readonly<{ from: Address; to: Address; data: Hex; value: '0x0'; nonce: Hex; gas: Hex; maxFeePerGas: Hex; maxPriorityFeePerGas: Hex; chainId: '0x1237'; type: '0x2' }>
 }
+/**
+ * A sequence's creation as one batch (EIP-5792): the root NFT's approval to the vault the factory predicts, unless it is
+ * already given, and createVault. The latch is keyed by the sequence id the batch creates.
+ */
+export interface PreparedSequenceBatch {
+  kind: 'create-batch'; owner: Address; vault: Address; sequenceId: Hex; expiresAt: number
+  calls: readonly BatchCall[]
+  /** The gas the simulation used for every call together, and the limit checked against the budget with room. */
+  gasUsed: bigint; gasLimit: bigint
+  summary: readonly string[]
+}
+/** Where a creation batch stands, read from the wallet and then from the factory and the vault it was made to create. */
+export type SequenceBatchState = { state: 'pending' } | { state: 'created'; vault: Address } | { state: 'dropped' | 'reverted' | 'unknown' }
 const components: Component[] = ['factory','implementation','poolManager','positionManager','stateView','readHelper','engine','routing','priceGuard']
 const addressPattern = /^0x[0-9a-f]{40}$/, hashPattern = /^0x[0-9a-f]{64}$/
 // A closed failure raised by this client, distinct from an untrusted wallet
@@ -270,11 +284,12 @@ export function sequenceDeploymentFrom(value: unknown, now = Date.now() / 1000):
  * accepted. Every logical action has one deadline and a fixed read ceiling. */
 export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDeployment, now = () => Date.now() / 1000,
   currentAdmission?: () => Promise<SequenceDeployment | null>,
-  snapshotRead?: (owner: Address, tokenId: bigint | null) => Promise<SequenceSnapshot>) {
+  snapshotRead?: (owner: Address, tokenId: bigint | null) => Promise<SequenceSnapshot>, batch: { simulate?: BatchSimulator } = {}) {
   const d = Object.freeze({ ...deployment, codeHashes: Object.freeze({ ...deployment.codeHashes }) })
   type Rpc = (method: string, params: unknown[], rejected?: (error: unknown) => Promise<void>) => Promise<unknown>
   type Context = { rpc: Rpc; block: Hex; hash: Hex; diagnoseRead: boolean }
   const issued = new WeakMap<PreparedSequence, (c: Context) => Promise<void>>()
+  const issuedBatches = new WeakMap<PreparedSequenceBatch, (c: Context) => Promise<void>>()
   const sent = new Map<Hex, PreparedSequence>()
   let busy = false
   /** The snapshot has a closed, server-selected set of view results. Its source
@@ -534,6 +549,25 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     if (uint(o.maxGasCostWei) === 0n) fail('invalid_sequence_policy')
     integer(o.maxObservationAgeSeconds,1,2**32-1); integer(o.forecastHorizonSeconds,1,2**32-1)
   }
+  /**
+   * What a creation prepares, step by step or as one batch: the root read now, the vault's parameters, the terms the
+   * owner reviews, and the guard that the chain has not moved under them before the wallet is asked.
+   */
+  async function creation(c: Context, o: SequenceOptions) {
+    const r = await root(c,o.rootTokenId)
+    const policy = {serviceFeeBps:AUTOMATION_FEE_BPS[o.automationMode],triggerDistanceBps:o.triggerDistanceBps,maxOverlapBps:o.maxOverlapBps,minimumIntervalSeconds:o.minimumIntervalSeconds,maxPositions:o.maxPositions,version:1n,paused:true}
+    const limits = {version:1n,upsideBps:o.upsideBps,maxSlippageBps:o.maxSlippageBps,maxPriceImpactBps:o.maxPriceImpactBps,maxGasCostWei:o.maxGasCostWei,maxObservationAgeSeconds:o.maxObservationAgeSeconds,forecastHorizonSeconds:o.forecastHorizonSeconds}
+    const params = {rootTokenId:o.rootTokenId,expectedPoolId:r.poolId,baseCurrency:o.baseIsCurrency0?r.key.currency0:r.key.currency1,quoteCurrency:o.baseIsCurrency0?r.key.currency1:r.key.currency0,operator:d.operator,consentToUncollectedFees:true,policy,limits}
+    const approval = r.approved !== r.vault
+    const guard = async (next: Context) => { await verify(next); const current = await root(next,o.rootTokenId); if (current.ownerNonce !== r.ownerNonce || current.poolId !== r.poolId || current.lower !== r.lower || current.upper !== r.upper) fail('sequence_preparation_changed'); if (!approval && current.approved !== r.vault) fail('root_approval_changed') }
+    const terms = ['Your root NFT stays in your wallet. This does not start automation.',`Pool: ${r.poolId}. Range: ${r.lower} to ${r.upper}.`,
+      `Base: ${params.baseCurrency}. Quote: ${params.quoteCurrency}.`,`Operator: ${d.operator}. Fee recipient: ${d.serviceFeeRecipient}.`,
+      `${o.automationMode === 'domino' ? 'Domino-compound' : 'Auto-compound'}: ${feeDescription(policy.serviceFeeBps)} Includes already uncollected fees with your consent.`,
+      `Trigger distance: ${o.triggerDistanceBps} bps; maximum overlap: ${o.maxOverlapBps} bps; minimum interval: ${o.minimumIntervalSeconds}s; maximum positions: ${o.maxPositions}.`,
+      `Successor upside: ${o.upsideBps} bps; maximum slippage: ${o.maxSlippageBps} bps; maximum price impact: ${o.maxPriceImpactBps} bps.`,
+      `Execution gas cost cap: ${o.maxGasCostWei} wei; observation age: ${o.maxObservationAgeSeconds}s; forecast horizon: ${o.forecastHorizonSeconds}s.`]
+    return { r, params, approval, guard, terms }
+  }
   async function prepare(c: Context, kind: PreparedSequence['kind'], vault: Address, to: Address, data: Hex, gas: GasBudget, summary: string[], guard: (c: Context) => Promise<void>) {
     if (gas.maxGas < 21000n || gas.maxGas > 15_000_000n || uint(gas.maxFeePerGas) === 0n || uint(gas.maxPriorityFeePerGas) > gas.maxFeePerGas || uint(gas.reserveWei,256) < 0n) fail('invalid_gas_budget')
     const latest = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'latest'])), pending = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'pending']))
@@ -594,20 +628,80 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       await canonical(c); return { vault, rootTokenId: s.rootTokenId, tokenIds }
     }),
     create: (supplied: SequenceOptions, gas: GasBudget) => bounded(async c => {
-      const o = Object.freeze({...supplied}); options(o); await verify(c); const r = await root(c,o.rootTokenId)
-      const policy = {serviceFeeBps:AUTOMATION_FEE_BPS[o.automationMode],triggerDistanceBps:o.triggerDistanceBps,maxOverlapBps:o.maxOverlapBps,minimumIntervalSeconds:o.minimumIntervalSeconds,maxPositions:o.maxPositions,version:1n,paused:true}
-      const limits = {version:1n,upsideBps:o.upsideBps,maxSlippageBps:o.maxSlippageBps,maxPriceImpactBps:o.maxPriceImpactBps,maxGasCostWei:o.maxGasCostWei,maxObservationAgeSeconds:o.maxObservationAgeSeconds,forecastHorizonSeconds:o.forecastHorizonSeconds}
-      const params = {rootTokenId:o.rootTokenId,expectedPoolId:r.poolId,baseCurrency:o.baseIsCurrency0?r.key.currency0:r.key.currency1,quoteCurrency:o.baseIsCurrency0?r.key.currency1:r.key.currency0,operator:d.operator,consentToUncollectedFees:true,policy,limits}
-      const approval = r.approved !== r.vault
-      const guard = async (next: Context) => { await verify(next); const current = await root(next,o.rootTokenId); if (current.ownerNonce !== r.ownerNonce || current.poolId !== r.poolId || current.lower !== r.lower || current.upper !== r.upper) fail('sequence_preparation_changed'); if (!approval && current.approved !== r.vault) fail('root_approval_changed') }
+      const o = Object.freeze({...supplied}); options(o); await verify(c)
+      const { r, params, approval, guard, terms } = await creation(c,o)
       return prepare(c,approval?'approve-root':'create',r.vault,approval?d.positionManager:d.factory,approval?encode('approve',[r.vault,o.rootTokenId]):encode('createVault',[params,r.ownerNonce]),gas,
-        [approval?`Approve only NFT #${o.rootTokenId} to the predicted sequence. No approval for all NFTs.`:`Create a paused sequence from NFT #${o.rootTokenId}.`,
-          'Your root NFT stays in your wallet. This does not start automation.',`Pool: ${r.poolId}. Range: ${r.lower} to ${r.upper}.`,
-          `Base: ${params.baseCurrency}. Quote: ${params.quoteCurrency}.`,`Operator: ${d.operator}. Fee recipient: ${d.serviceFeeRecipient}.`,
-          `${o.automationMode === 'domino' ? 'Domino-compound' : 'Auto-compound'}: ${feeDescription(policy.serviceFeeBps)} Includes already uncollected fees with your consent.`,
-          `Trigger distance: ${o.triggerDistanceBps} bps; maximum overlap: ${o.maxOverlapBps} bps; minimum interval: ${o.minimumIntervalSeconds}s; maximum positions: ${o.maxPositions}.`,
-          `Successor upside: ${o.upsideBps} bps; maximum slippage: ${o.maxSlippageBps} bps; maximum price impact: ${o.maxPriceImpactBps} bps.`,
-          `Execution gas cost cap: ${o.maxGasCostWei} wei; observation age: ${o.maxObservationAgeSeconds}s; forecast horizon: ${o.forecastHorizonSeconds}s.`],guard)
+        [approval?`Approve only NFT #${o.rootTokenId} to the predicted sequence. No approval for all NFTs.`:`Create a paused sequence from NFT #${o.rootTokenId}.`,...terms],guard)
+    }),
+    /**
+     * A sequence's creation as one batch (EIP-5792; docs/plans/2026-09-25-eip5792-batches-design.md): the root NFT's
+     * approval to the vault the factory predicts, unless it is already given, and createVault, which the wallet executes
+     * whole or not at all. The factory creates at the owner's next nonce only, so a batch that meets another creation
+     * first reverts whole. The same reads and checks as `create`, then the batch simulated whole (./batch.ts).
+     */
+    prepareCreateBatch: (supplied: SequenceOptions, gas: GasBudget) => bounded(async c => {
+      const o = Object.freeze({...supplied}); options(o); await verify(c)
+      if (gas.maxGas < 21000n || gas.maxGas > 15_000_000n || uint(gas.maxFeePerGas) === 0n || uint(gas.maxPriorityFeePerGas) > gas.maxFeePerGas || uint(gas.reserveWei,256) < 0n) fail('invalid_gas_budget')
+      const { r, params, approval, guard, terms } = await creation(c,o)
+      // A batch this page or another tab offered for this very sequence, which the factory has not created as the chain
+      // reads now: its wallet is asked once. Not included (400), reverted (500) or unknown to it (5730), nothing of it can
+      // execute and it is freed; anything else, an answer that never came or a read that fails, is still waiting.
+      const latched = wallet.batchOffered?.(r.id) ?? null
+      if (latched !== null) {
+        const status = latched === '' ? undefined : await batchCallsStatus(c.rpc, latched).catch(() => undefined)
+        if (status !== 400 && status !== 500 && status !== null) fail('batch_already_offered')
+        await wallet.releaseBatch?.(r.id, latched)
+      }
+      const latest = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'latest'])), pending = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'pending']))
+      if (latest !== pending || wallet.nonceOffered(pending)) fail('pending_wallet_transaction')
+      const calls: BatchCall[] = [...(approval ? [{ to: d.positionManager, data: encode('approve',[r.vault,o.rootTokenId]), value: '0x0' as Hex }] : []),
+        { to: d.factory, data: encode('createVault',[params,r.ownerNonce]), value: '0x0' as Hex }]
+      const gasUsed = await simulateBatch(c.rpc, wallet.owner, calls, batch.simulate)
+      // The wallet runs the calls in one transaction of its own (its delegate's execute, or a bundler's): room for that frame.
+      const limit = ((gasUsed + BATCH_FRAME_GAS) * 120n + 99n) / 100n
+      if (limit > gas.maxGas) fail('gas_budget_exceeded')
+      if (quantity(await c.rpc('eth_getBalance',[wallet.owner,'latest'])) < limit * gas.maxFeePerGas + gas.reserveWei) fail('native_gas_reserve_insufficient')
+      await canonical(c)
+      const out: PreparedSequenceBatch = Object.freeze({ kind: 'create-batch' as const, owner: wallet.owner, vault: r.vault, sequenceId: r.id, expiresAt: now() + 120,
+        calls: Object.freeze(calls.map(call => Object.freeze(call))), gasUsed, gasLimit: limit,
+        summary: Object.freeze([approval ? `Approve only NFT #${o.rootTokenId} to the predicted sequence, and create a paused sequence from it. No approval for all NFTs.` : `Create a paused sequence from NFT #${o.rootTokenId}.`,
+          ...terms, 'One signature for every call: they execute together or not at all.', `Owner: ${wallet.owner}`, `Sequence: ${r.vault}`,
+          `Maximum network cost: about ${limit * gas.maxFeePerGas} wei; your wallet sets the final gas. Native reserve: ${gas.reserveWei} wei.`]) })
+      issuedBatches.set(out, guard); return out
+    }),
+    /**
+     * Offers a prepared creation batch to the wallet once (./batch.ts offerBatch), after the same guard the step-by-step
+     * send runs: the root, the owner's next nonce and the approval as the review read them.
+     */
+    sendCreateBatch: (prepared: PreparedSequenceBatch, acknowledged: boolean) => bounded(async c => {
+      const guard = issuedBatches.get(prepared)
+      if (!acknowledged || !guard || prepared.owner !== wallet.owner || now() >= prepared.expiresAt) fail('review_required')
+      await guard!(c); await canonical(c)
+      const latest = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'latest'])), pending = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'pending']))
+      if (latest !== pending || wallet.nonceOffered(pending)) fail('pending_wallet_transaction')
+      issuedBatches.delete(prepared)
+      return offerBatch(c.rpc, wallet, prepared.sequenceId, prepared.calls, () => wallet.current() && now() < prepared.expiresAt)
+    }),
+    /**
+     * Where a creation batch stands: the wallet's status for what it knows, then the chain for what happened. The vault
+     * read back at its predicted address, this owner's, registered for this sequence, is `created`. No code there after
+     * a confirmation is a node behind: `pending`. Not included (400) or reverted (500), nothing of it can execute and the
+     * latch is freed; a wallet that no longer knows the batch leaves the chain to decide.
+     */
+    createBatchStatus: (id: string, prepared: { vault: Address; sequenceId: Hex }) => bounded(async (c): Promise<SequenceBatchState> => {
+      address(prepared.vault)
+      if (!hashPattern.test(prepared.sequenceId)) fail('unqualified_sequence')
+      const status = await batchCallsStatus(c.rpc, id)
+      if (status !== null && status >= 100 && status < 200) return { state: 'pending' }
+      if (hex(await c.rpc('eth_getCode',[prepared.vault,c.block])) === '0x') {
+        if (id !== '' && (status === 400 || status === 500 || status === null)) await wallet.releaseBatch?.(prepared.sequenceId, id)
+        return { state: status === 400 ? 'dropped' : status === 500 ? 'reverted' : status === 200 ? 'pending' : 'unknown' }
+      }
+      const state = await owned(c, prepared.vault)
+      if (state.sequenceId !== prepared.sequenceId) fail('unqualified_sequence')
+      if (id !== '') await wallet.releaseBatch?.(prepared.sequenceId, id)
+      await canonical(c)
+      return { state: 'created', vault: prepared.vault }
     }),
     resume: (vault: Address, gas: GasBudget) => bounded(async c => {
       async function activeProfile(next: Context) {

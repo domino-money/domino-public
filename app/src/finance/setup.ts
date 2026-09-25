@@ -2,6 +2,8 @@ import { decodeAbiParameters, decodeFunctionData, decodeFunctionResult, encodeAb
 import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS, slippageWritten } from './slippage.js'
 import { POSITION_MANAGER, SETUP_CONTRACT, V4_QUOTER, V4_QUOTER_CODE_HASH, pinned, unpinned } from './pin.js'
 import { readAccountCode, type AccountCode } from './delegates.js'
+import { BATCH_FRAME_GAS, batchCallsStatus, offerBatch, simulateBatch, type BatchCall, type BatchSimulator } from './batch.js'
+export { atomicStatus, type AtomicStatus, type BatchCall, type BatchSimulator } from './batch.js'
 
 /*
  * The closed ABIs are written as JSON: exactly what viem's parseAbi and
@@ -93,10 +95,6 @@ export interface WalletRpc {
   recordBatch?(operationId: Hex, claim: string, id: string): Promise<void>
   releaseBatch?(operationId: Hex, claim: string): Promise<void>
 }
-/** What the connected wallet says it can do with a batch on Robinhood Chain (EIP-5792 version 2, `atomic`). */
-export type AtomicStatus = 'supported' | 'ready' | 'unsupported'
-/** One call of a batch, as `wallet_sendCalls` carries it. */
-export interface BatchCall { to: Address; data: Hex; value: Hex }
 /**
  * What a batch opens and makes (./setup.ts prepareBatch): the funding, the assisted swap of a one-token deposit with
  * the least it may pay, and the mint sized for that least, all inside the operation the batch opens.
@@ -119,8 +117,6 @@ export type BatchState =
   | { state: 'created'; tokenId: bigint }
   | { state: 'held' }
   | { state: 'dropped' | 'reverted' | 'unknown' }
-/** A simulation the page can run elsewhere when the wallet does not carry `eth_simulateV1` (CreatePosition passes the chain's own RPC). */
-export type BatchSimulator = (params: unknown[]) => Promise<unknown>
 export interface GasBudget { maxGas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint; reserveWei: bigint }
 /** A pool as the chain has it now: StateView's slot0 and in-range liquidity, and the latest block's time (seconds). */
 export interface PoolState { sqrtPriceX96: bigint; tick: number; protocolFee: number; lpFee: number; liquidity: bigint; chainTime: number }
@@ -146,11 +142,6 @@ export const SIGN_WINDOW_S = 180
  * price band, not the deadline, is what bounds the price it executes at.
  */
 export const STEP_DEADLINE_S = SIGN_WINDOW_S + 300
-/**
- * Gas a batch's own frame may add to its calls' (a delegate's execute, or a bundler's validation and EntryPoint): used
- * only to check the owner can afford the batch, since the wallet sets the batch's gas itself.
- */
-const BATCH_FRAME_GAS = 150_000n
 const fail = (code: string): never => { throw new Error(code) }
 const asHex = (value: unknown): Hex => typeof value === 'string' && /^0x(?:[0-9a-fA-F]{2})*$/.test(value) ? value as Hex : fail('invalid_wallet_reply')
 const quantity = (value: unknown): bigint => typeof value === 'string' && /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/.test(value) ? BigInt(value) : fail('invalid_wallet_quantity')
@@ -200,33 +191,6 @@ export async function acceptsNativeEth(read: (method: string, params: unknown[])
     if (isRevert(error)) return false
     throw error
   }
-}
-/**
- * The connected wallet's EIP-5792 atomic batches on chain 4663, read through its own provider: `supported` when the
- * account executes a batch atomically now, `ready` when the wallet would first upgrade it (EIP-7702) and asks the person
- * to, `unsupported` otherwise. A read that fails or times out, and a reply in any other shape, version 1's
- * `atomicBatch` included, is `unsupported`: no batch is offered then. Reads only.
- */
-export async function atomicStatus(wallet: WalletRpc, timeoutMs = 5_000): Promise<AtomicStatus> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    const reply = await Promise.race([wallet.request('wallet_getCapabilities', [wallet.owner, ['0x1237']]),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), timeoutMs) })])
-    const chain = reply && typeof reply === 'object' ? (reply as Record<string, unknown>)['0x1237'] : null
-    const atomic = chain && typeof chain === 'object' ? (chain as Record<string, unknown>).atomic : null
-    const status = atomic && typeof atomic === 'object' ? (atomic as Record<string, unknown>).status : null
-    return status === 'supported' || status === 'ready' ? status : 'unsupported'
-  } catch {
-    return 'unsupported'
-  } finally { clearTimeout(timer) }
-}
-/** EIP-5792's refusals of a batch the wallet cannot make, and JSON-RPC's unknown method: the step-by-step flow instead. */
-const BATCH_UNSUPPORTED = new Set([4200, -32601, 5700, 5710, 5740, 5760])
-/** An `eth_simulateV1` the provider does not carry, as opposed to a simulation that ran. */
-const unsupportedMethod = (error: unknown) => {
-  const node = error as { code?: unknown; message?: unknown } | null
-  return !!node && (node.code === 4200 || node.code === -32601 || node.code === -32004
-    || (typeof node.message === 'string' && /method .*(not (supported|found|available|exist))|unsupported method|does not exist/i.test(node.message)))
 }
 /**
  * Why V4Quoter refused a size, from its revert data. It re-wraps every failure as UnexpectedRevertBytes(bytes)
@@ -670,22 +634,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       calls.push({ to: deployment.setup, data: encodeFunctionData({ abi: setupAbi, functionName: 'mint', args: [{ operationId, ...mint, deadline }] }), value: '0x0' })
       summary.push(`Mint liquidity ${mint.liquidity} in ticks ${mint.tickLower} to ${mint.tickUpper}; caps ${mint.maxAmount0} / ${mint.maxAmount1} smallest units. NFT and unused funds return to ${wallet.owner}.`,
         'One signature for every call: they execute together or not at all.')
-      const request = [{ blockStateCalls: [{ calls: calls.map(call => ({ from: wallet.owner, to: call.to, data: call.data, value: call.value })) }], validation: false }, 'latest']
-      let reply: unknown
-      try {
-        reply = await rpc('eth_simulateV1', request)
-      } catch (error) {
-        if (!unsupportedMethod(error)) throw error
-        if (!options.simulate) return fail('batch_simulation_unavailable')
-        let timer: ReturnType<typeof setTimeout> | undefined
-        try {
-          reply = await Promise.race([options.simulate(request), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), 10_000) })])
-        } catch { return fail('batch_simulation_unavailable') } finally { clearTimeout(timer) }
-      }
-      const block = Array.isArray(reply) && reply.length === 1 ? reply[0] as { calls?: unknown } : null
-      const results = block && Array.isArray(block.calls) && block.calls.length === calls.length ? block.calls as { status?: unknown; gasUsed?: unknown }[] : fail('invalid_simulation_reply')
-      if (results.some(result => result?.status !== '0x1')) return fail('batch_simulation_reverted')
-      const gasUsed = results.reduce((sum, result) => sum + quantity(result.gasUsed), 0n)
+      const gasUsed = await simulateBatch(rpc, wallet.owner, calls, options.simulate)
       // The wallet runs the calls in one transaction of its own (its delegate's execute, or a bundler's): room for that frame.
       const limit = ((gasUsed + BATCH_FRAME_GAS) * 120n + 99n) / 100n
       if (limit > gas.maxGas) return fail('gas_budget_exceeded')
@@ -703,34 +652,12 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
      */
     sendBatch: (prepared: PreparedBatch, acknowledged: boolean) => bounded(async rpc => {
       if (!acknowledged || !issuedBatches.has(prepared) || prepared.expiresAt <= now() || prepared.owner !== wallet.owner) return fail('wallet_review_required')
-      const { claimBatch, recordBatch, releaseBatch } = wallet
-      if (!claimBatch || !recordBatch || !releaseBatch) return fail('batch_coordination_unavailable')
       await verify(rpc)
       if (await nextOperationId(rpc) !== prepared.operationId) return fail('batch_state_changed')
       const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest'])), pending = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'pending']))
       if (latest !== pending || offered.has(String(pending)) || wallet.nonceOffered(pending) || prepared.expiresAt <= now()) return fail('pending_wallet_transaction')
-      const claim = await claimBatch(prepared.operationId)
-      if (!wallet.current() || prepared.expiresAt <= now()) {
-        // The wallet has not been asked, so releasing this claim is certain.
-        await releaseBatch(prepared.operationId, claim)
-        return fail('wallet_review_expired')
-      }
       issuedBatches.delete(prepared)
-      let reply: unknown
-      try {
-        reply = await rpc('wallet_sendCalls', [{ version: '2.0.0', chainId: '0x1237', from: wallet.owner, atomicRequired: true, calls: prepared.calls }])
-      } catch (error) {
-        const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined
-        // A definite refusal: nothing was sent, and nothing of it can execute.
-        if (code === 4001 || code === 5750 || BATCH_UNSUPPORTED.has(code as number)) await releaseBatch(prepared.operationId, claim)
-        if (code === 5750) return fail('batch_upgrade_declined')
-        if (BATCH_UNSUPPORTED.has(code as number)) return fail('batch_unsupported')
-        throw error
-      }
-      const id = typeof reply === 'string' ? reply : reply && typeof reply === 'object' ? (reply as { id?: unknown }).id : undefined
-      if (typeof id !== 'string') return fail('wallet_result_unknown')
-      await recordBatch(prepared.operationId, claim, id)
-      return id
+      return offerBatch(rpc, wallet, prepared.operationId, prepared.calls, () => wallet.current() && prepared.expiresAt > now())
     }, SIGN_WINDOW_S),
     /**
      * Where a batch stands: the wallet's status (EIP-5792 wallet_getCallsStatus) for what it knows, then the operation
@@ -742,16 +669,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     batchStatus: (id: string, operationId: Hex) => bounded(async (rpc): Promise<BatchState> => {
       await identity(rpc)
       if (!HASH.test(operationId)) return fail('invalid_operation_id')
-      let status: number | null = null
-      if (id !== '') {
-        try {
-          const reply = await rpc('wallet_getCallsStatus', [id]) as { status?: unknown } | null
-          if (!reply || typeof reply.status !== 'number') return fail('invalid_wallet_reply')
-          status = reply.status
-        } catch (error) {
-          if ((error as { code?: unknown } | null)?.code !== 5730) throw error
-        }
-      }
+      const status = await batchCallsStatus(rpc, id)
       if (status !== null && status >= 100 && status < 200) return { state: 'pending' }
       const op = await stored(rpc, operationId)
       if (op.owner === zeroAddress) {

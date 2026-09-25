@@ -3752,7 +3752,8 @@ test('no private API path, no signing or value transfer, no markup injection, no
       /\.sourceUrl\b/,
     ]) {
       // 2026-09-24: /finance/position.ts joins on purpose, the owner's collect and close sent to Uniswap's pinned PositionManager.
-      if (pattern.source.startsWith('eth_sendTransaction') && ['/finance/wallet.ts', '/finance/setup.ts', '/finance/sequence.ts', '/finance/position.ts'].some(suffix => file.replace(/\\/g, '/').endsWith(suffix))) continue;
+      // 2026-09-25: /finance/batch.ts joins on purpose, the one module that offers an owner's batch (wallet_sendCalls) for setup.ts and sequence.ts.
+      if (pattern.source.startsWith('eth_sendTransaction') && ['/finance/wallet.ts', '/finance/setup.ts', '/finance/sequence.ts', '/finance/position.ts', '/finance/batch.ts'].some(suffix => file.replace(/\\/g, '/').endsWith(suffix))) continue;
       if (pattern.test(code)) found.push(`${file.slice(SRC.length)}: ${pattern}`);
     }
   }

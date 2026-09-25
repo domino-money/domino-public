@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { setupWallet } from '../finance/wallet'
+import { atomicStatus } from '../finance/batch'
 import { suggestGasBudget } from '../finance/gas'
 import { readRelease, type ReleaseRead } from '../finance/release'
 import { createSequenceClient, sequenceDeploymentFrom, sequenceProviderReadError, type SequenceDeployment } from '../finance/sequence'
@@ -31,13 +32,18 @@ const currentSequenceDeployment = async (): Promise<SequenceDeployment | null> =
  * step), the connected wallet, the sequence client over it, and a network
  * budget from the wallet's own price (finance/gas.ts), so nobody types gas.
  */
+/** What the connected wallet can do with a batch (EIP-5792): read once by the creation screen, which offers one signature for it. */
+const capabilities = () => setupWallet().then((wallet) => atomicStatus(wallet))
+/** A batch simulated on the chain's own RPC, for a wallet without eth_simulateV1: the page's chain code, loaded as its reads load it. */
+const simulateOnChain = async (params: unknown[]) => (await import('../lib/chain/chainCode')).simulateOnChain(params)
+
 async function connect(): Promise<Connected> {
   const live = await readSequenceRelease()
   if (live.kind !== 'available') throw new Error('sequence_admission_unavailable')
   const wallet = await setupWallet().catch((error) => {
     throw sequenceProviderReadError(error)
   })
-  const client = createSequenceClient(wallet, live.deployment, () => Date.now() / 1000, currentSequenceDeployment, readSequenceSnapshot)
+  const client = createSequenceClient(wallet, live.deployment, () => Date.now() / 1000, currentSequenceDeployment, readSequenceSnapshot, { simulate: simulateOnChain })
   const gas = await suggestGasBudget(wallet)
   const verified = () => {
     try {
@@ -169,7 +175,7 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
         }
       />
     )
-  else body = <SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connect} />
+  else body = <SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connect} capabilities={capabilities} />
 
   return (
     <main className="dm-page dm-page--narrow dm-seq">

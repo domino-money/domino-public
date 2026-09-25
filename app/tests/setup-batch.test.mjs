@@ -35,13 +35,16 @@ function fixture(options = {}) {
   const deployment = { setup, poolManager: address(3), positionManager: address(4), stateView: address(5), feeRecipient: address(6),
     setupCodeHash: hash, poolManagerCodeHash: hash, positionManagerCodeHash: hash, stateViewCodeHash: hash, feeBps: 65, tariffVersion: '1', expiresAt: 10000 };
   const state = { ownerCode: '0x', receive: 'accept', allowance: 0n, pending: 0, balance: 10n ** 20n, nextId: ID, operation: NONE, confirmed: true,
-    simulate: 'ok', capabilities: undefined, sendError: null, sendReply: { id: '0xba7c4' }, status: 200, statusError: null, ...options };
+    simulate: 'ok', capabilities: undefined, sendError: null, sendReply: { id: '0xba7c4' }, status: 200, statusError: null,
+    live: true, now: 100, onClaim: null, ...options };
   const calls = [], journal = createNonceJournal(storage(), locks(), () => crypto.randomUUID());
   const views = () => ({ manager: deployment.poolManager, positions: deployment.positionManager, stateView: deployment.stateView, feeRecipient: deployment.feeRecipient,
     assistedFeeBps: 65, tariffVersion: 1n, nextOperationId: state.nextId, operation: state.operation });
-  const wallet = { owner, current: () => true, nonceOffered: () => false, claimNonce: async () => 'claim', releaseRejectedNonce: async () => {},
+  const wallet = { owner, current: () => state.live, nonceOffered: () => false, claimNonce: async () => 'claim', releaseRejectedNonce: async () => {},
     delegateConfirmed: () => state.confirmed,
-    batchOffered: id => journal.batchOffered(owner, id), claimBatch: id => journal.claimBatch(owner, id),
+    batchOffered: id => journal.batchOffered(owner, id),
+    // `state.onClaim` runs once the latch is claimed, before anything more: the moment another wallet or the clock can intervene.
+    claimBatch: async id => { const claim = await journal.claimBatch(owner, id); state.onClaim?.(state); return claim; },
     recordBatch: (id, claim, batch) => journal.recordBatch(owner, id, claim, batch), releaseBatch: (id, claim) => journal.releaseBatch(owner, id, claim),
     request: async (method, params) => {
       calls.push({ method, params });
@@ -64,6 +67,7 @@ function fixture(options = {}) {
         }
         case 'eth_simulateV1': {
           if (state.simulate === 'unsupported') throw rpcError(-32601, 'the method eth_simulateV1 does not exist/is not available');
+          if (typeof state.simulate === 'object') throw state.simulate;
           if (state.simulate === 'garbled') return [{ calls: [] }];
           const count = params[0].blockStateCalls[0].calls.length;
           return [{ calls: Array.from({ length: count }, (_, i) => ({ status: state.simulate === i ? '0x0' : '0x1', gasUsed: '0x10000' })) }];
@@ -74,7 +78,7 @@ function fixture(options = {}) {
       }
       throw new Error('unexpected fixture request: ' + method);
     } };
-  const client = createSetupClient(wallet, deployment, () => 100, async () => deployment, options.fallback ? { simulate: options.fallback } : {});
+  const client = createSetupClient(wallet, deployment, () => state.now, async () => deployment, options.fallback ? { simulate: options.fallback } : {});
   return { client, calls, state, journal, wallet, asked: method => calls.filter(c => c.method === method) };
 }
 const decoded = call => decodeFunctionData({ abi: call.to === setup ? setupAbi : tokenAbi, data: call.data });
@@ -165,6 +169,9 @@ test('the simulation decides: a failing call, a garbled reply or no simulation a
   const elsewhere = await fixture({ simulate: 'unsupported', fallback }).client.prepareBatch(both, gas);
   assert.equal(elsewhere.gasUsed, 3n * 0x5208n);
   assert.deepEqual(asked[0][0].blockStateCalls[0].calls.map(call => call.from), [owner, owner, owner]);
+  // A wallet that says it lacks the method by its code alone, whatever its words; any other error of its simulation is its answer.
+  for (const code of [4200, -32601, -32004]) assert.equal((await fixture({ simulate: rpcError(code, 'nope'), fallback }).client.prepareBatch(both, gas)).gasUsed, 3n * 0x5208n, `${code}`);
+  await assert.rejects(fixture({ simulate: rpcError(-32000, 'nope'), fallback }).client.prepareBatch(both, gas), /nope/);
   await assert.rejects(fixture({ simulate: 'unsupported', fallback: async () => { throw new Error('429'); } }).client.prepareBatch(both, gas), /batch_simulation_unavailable/);
   await assert.rejects(fixture({ simulate: 'unsupported', fallback: async () => [{ calls: [{ status: '0x0', gasUsed: '0x1' }, { status: '0x1', gasUsed: '0x1' }, { status: '0x1', gasUsed: '0x1' }] }] }).client.prepareBatch(both, gas), /batch_simulation_reverted/);
   // The ETH the batch spends: its value, its gas at the ceiling and the reserve.
@@ -189,6 +196,16 @@ test('a batch is offered once, as version 2.0.0 on chain 4663 with atomic execut
   moved.state.nextId = OTHER_ID;
   await assert.rejects(moved.client.sendBatch(stale, true), /batch_state_changed/);
   assert.equal(moved.asked('wallet_sendCalls').length, 0);
+});
+
+test('another wallet, or the review’s end, while the latch is being claimed: the latch is freed and the wallet asked nothing', async () => {
+  for (const [label, change] of [['another wallet', state => { state.live = false; }], ['expired', state => { state.now = 10_000; }]]) {
+    const f = fixture();
+    const prepared = await f.client.prepareBatch(both, gas);
+    f.state.onClaim = change;
+    await assert.rejects(f.client.sendBatch(prepared, true), /wallet_review_expired/, label);
+    assert.deepEqual([f.asked('wallet_sendCalls').length, f.journal.batchOffered(owner, ID)], [0, null], label);
+  }
 });
 
 test('a refusal frees the latch and says why; an answer that never came keeps it', async () => {

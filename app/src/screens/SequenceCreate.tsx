@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Hex } from 'viem'
 import { AUTOMATION_FEE_BPS, sequenceReadError, sequenceReadStage, type createSequenceClient, type PreparedSequence } from '../finance/sequence'
 import type { GasBudget } from '../finance/setup'
+import type { AtomicStatus } from '../finance/batch'
 import { errorCode, financeErrorText } from '../finance/words'
 import { CREATE } from '../lib/create/copy'
 import { SEQUENCE_DEFAULTS, sequenceOptionsFrom, type SequenceForm, type SequenceMode } from '../lib/create/sequenceDefaults'
@@ -37,7 +38,8 @@ import { AddressMark } from '../components/automate/marks'
  */
 
 type Client = ReturnType<typeof createSequenceClient>
-type StepKey = 'approve-root' | 'create'
+/** `batch`: the approval and the creation as one batch (EIP-5792), one signature, when the wallet can. */
+type StepKey = 'approve-root' | 'create' | 'batch'
 /** `chain`: sent, its receipt read while the press runs. `sent`: sent, and the press ended before its receipt settled it: no spinner, no caption, since nothing reads it any more. */
 type StepState = 'upcoming' | 'reading' | 'wallet' | 'chain' | 'sent' | 'done' | 'failed'
 type Notice = { text: string; code: string | null; stage: string | null }
@@ -60,7 +62,8 @@ const ACTION = 'Set up automation'
 const RECEIPT_WAIT_MS = 240_000
 const RECEIPT_EVERY_MS = 3_000
 const SETTLED: readonly Receipt[] = ['confirming', 'finalized', 'reverted', 'reorged', 'over_budget', 'over_budget_finalized']
-const BEFORE_WALLET = ['review_required', 'sequence_admission_unavailable', 'sequence_release_expired', 'sequence_activation_unavailable', 'sequence_tariff_changed', 'deployment_code_changed', 'deployment_identity_changed', 'root_approval_changed']
+// wallet_review_expired: a batch's review that ran out while its latch was claimed, freed before the wallet was asked (finance/batch.ts).
+const BEFORE_WALLET = ['review_required', 'sequence_admission_unavailable', 'sequence_release_expired', 'sequence_activation_unavailable', 'sequence_tariff_changed', 'deployment_code_changed', 'deployment_identity_changed', 'root_approval_changed', 'wallet_review_expired']
 /**
  * Said in this screen's own words wherever the code is raised, the check a send makes before the wallet opens included;
  * every other code goes through finance/words.ts. The code stays beside the sentence.
@@ -75,6 +78,14 @@ const OWN: Readonly<Record<string, string>> = {
   // The chosen position is no longer this wallet's, or something is already subscribed to it (finance/sequence.ts root).
   position_not_in_wallet: 'This position is no longer in your wallet.',
   position_subscribed: 'This position is already linked to a sequence or another contract.',
+  // The creation as one batch (EIP-5792; finance/batch.ts, finance/sequence.ts prepareCreateBatch).
+  batch_upgrade_declined: `You declined turning on your wallet’s smart account. Nothing was created. Press ${ACTION} to go step by step, or sign both steps at once again.`,
+  batch_simulation_reverted: `The batch would fail on chain now. Nothing was sent. Press ${ACTION} again.`,
+  invalid_simulation_reply: 'The batch could not be checked just now. Nothing was sent. Try again in a moment.',
+  batch_coordination_unavailable: `This browser cannot keep track of a batch here. Nothing was sent. Press ${ACTION} to go step by step.`,
+  batch_already_offered: 'A batch for this sequence is already waiting in your wallet. Check your wallet activity: nothing is sent twice.',
+  sequence_batch_dropped: `Your wallet did not include the batch. Nothing was created. Press ${ACTION} again.`,
+  sequence_batch_unknown: `The batch’s outcome could not be read. Check your wallet activity, then press ${ACTION} again: the chain is read first, and nothing is sent twice.`,
 }
 // Once a press has sent a transaction, no sentence may claim that nothing was sent, requested or prepared: such a clause is
 // left out (NOTHING), and a failure with no sentence of its own says SENT instead of the usual fallback.
@@ -104,7 +115,7 @@ const LIMIT_LABELS: Record<keyof SequenceForm, string> = {
 const DOMINO_FIELDS: (keyof SequenceForm)[] = ['upsidePercent', 'sequenceCap']
 const MORE_DOMINO: (keyof SequenceForm)[] = ['triggerPercent', 'maxOverlapPercent']
 const SAFETY_FIELDS: (keyof SequenceForm)[] = ['minimumIntervalMinutes', 'maxSlippagePercent', 'maxPriceImpactPercent', 'maxGasCostEth', 'maxObservationAgeMinutes', 'forecastHorizonHours']
-const IDLE_STEPS: Record<StepKey, StepState> = { 'approve-root': 'upcoming', create: 'upcoming' }
+const IDLE_STEPS: Record<StepKey, StepState> = { 'approve-root': 'upcoming', create: 'upcoming', batch: 'upcoming' }
 
 /** A step that stopped because the page moved on (another wallet, another page): nothing is said. */
 class Left extends Error {}
@@ -130,6 +141,29 @@ async function settle(client: Client, hash: Hex, here: () => boolean) {
   if (state === 'reorged') throw new Error('sequence_step_reorged')
 }
 
+/**
+ * Reads a sent creation batch until the vault stands at its predicted address; throws when it cannot, and stops quietly
+ * once the page moved on. A read that fails (a busy wallet, a node behind) is read again at the next beat.
+ */
+async function settleBatch(client: Client, id: string, prepared: { vault: `0x${string}`; sequenceId: Hex }, here: () => boolean): Promise<`0x${string}`> {
+  const until = Date.now() + RECEIPT_WAIT_MS
+  for (let beat = 0; ; beat++) {
+    if (!here()) throw new Left()
+    let read: Awaited<ReturnType<Client['createBatchStatus']>> | null = null
+    try {
+      read = await client.createBatchStatus(id, prepared)
+    } catch (error) {
+      if (Date.now() > until) throw error
+    }
+    if (read?.state === 'created') return read.vault
+    if (read?.state === 'dropped') throw new Error('sequence_batch_dropped')
+    if (read?.state === 'reverted') throw new Error('sequence_step_reverted')
+    if (read?.state === 'unknown') throw new Error('sequence_batch_unknown')
+    if (Date.now() > until) throw new Error('sequence_receipt_waiting')
+    await new Promise((resolve) => setTimeout(resolve, RECEIPT_EVERY_MS))
+  }
+}
+
 /** `sent`: this press already has a transaction hash, so nothing it says may claim that nothing was sent. */
 function noticeFor(error: unknown, sent: boolean): Notice {
   const offered = error instanceof Offered
@@ -148,7 +182,7 @@ function noticeFor(error: unknown, sent: boolean): Notice {
   return { text: sent ? text.replace(NOTHING, '') : text, code, stage: sequenceReadStage(inner) }
 }
 
-export default function SequenceCreate({ positions, intent, connect, onCreated }: { positions: readonly WalletPosition[]; intent: SequenceIntent; connect: () => Promise<Connected>; onCreated?: (vault: `0x${string}`) => void }) {
+export default function SequenceCreate({ positions, intent, connect, capabilities, onCreated }: { positions: readonly WalletPosition[]; intent: SequenceIntent; connect: () => Promise<Connected>; capabilities?: () => Promise<AtomicStatus>; onCreated?: (vault: `0x${string}`) => void }) {
   const [tokenId, setTokenId] = useState(() => preselected(positions, intent.tokenId))
   // The position a link named, arriving with a later read of the list (Sequence.tsx asks once more for it), is chosen then.
   const preset = tokenId === null ? preselected(positions, intent.tokenId) : null
@@ -167,6 +201,19 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
   const generation = useRef(0)
   const running = useRef(false)
   useEffect(() => () => void generation.current++, [])
+  // What the connected wallet can do with a batch (EIP-5792), asked once: nothing is signed or sent for it.
+  const [atomic, setAtomic] = useState<AtomicStatus | null>(null)
+  // Whether the last press asked for one signature: the list shows one step, and its line says so.
+  const [batching, setBatching] = useState(false)
+  useEffect(() => {
+    if (!capabilities) return
+    let live = true
+    capabilities().then(
+      (status) => { if (live) setAtomic(status) },
+      () => { if (live) setAtomic('unsupported') },
+    )
+    return () => { live = false }
+  }, [capabilities])
 
   const position = positions.find((entry) => entry.tokenId === tokenId && !linked[entry.tokenId]) ?? null
   const chosen = MODES.find((entry) => entry.key === mode) ?? null
@@ -227,7 +274,41 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
     mark(key, 'done', gen)
   }
 
-  async function setUp() {
+  /**
+   * The approval and the creation as one batch (EIP-5792): prepared and simulated whole, offered once, and read back
+   * from the chain until the vault stands at its predicted address. Null: this wallet cannot make or simulate the batch
+   * after all, and the same press goes on step by step.
+   */
+  async function createInOneBatch(client: Client, options: Parameters<Client['prepareCreateBatch']>[0], gas: GasBudget, gen: number, press: { sent: StepKey | null }): Promise<`0x${string}` | null> {
+    mark('batch', 'reading', gen)
+    let prepared: Awaited<ReturnType<Client['prepareCreateBatch']>> | null = null
+    try {
+      prepared = await client.prepareCreateBatch(options, gas)
+    } catch (error) {
+      if (errorCode(error) === 'batch_simulation_unavailable') return null
+      throw error
+    }
+    if (generation.current !== gen) throw new Left()
+    mark('batch', 'wallet', gen)
+    let id = ''
+    try {
+      id = await client.sendCreateBatch(prepared, true)
+    } catch (error) {
+      if (errorCode(error) === 'batch_unsupported') {
+        if (generation.current === gen) setAtomic('unsupported')
+        return null
+      }
+      throw new Offered(error)
+    }
+    press.sent = 'batch'
+    mark('batch', 'chain', gen)
+    const vault = await settleBatch(client, id, prepared, () => generation.current === gen)
+    mark('batch', 'done', gen)
+    return vault
+  }
+
+  /** `batch`: one signature for the approval and the creation, for a wallet that can; by default when it can without an upgrade. */
+  async function setUp(batch = atomic === 'supported') {
     if (running.current || !position || taken || !mode || baseIsCurrency0 === null || !consent) return
     const checked = sequenceOptionsFrom(mode, BigInt(position.tokenId), baseIsCurrency0, form)
     if (!checked.ok) {
@@ -240,7 +321,8 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
     const press: { sent: StepKey | null } = { sent: null }
     setNotice(null)
     setPhase('running')
-    setSteps({ 'approve-root': 'reading', create: 'upcoming' })
+    setBatching(batch)
+    setSteps({ 'approve-root': batch ? 'upcoming' : 'reading', create: 'upcoming', batch: 'upcoming' })
     try {
       const { client, gas, verified } = await connect()
       if (generation.current !== gen) throw new Left()
@@ -250,6 +332,25 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
         throw sequenceReadError(error)
       })
       if (generation.current !== gen) throw new Left()
+      if (batch) {
+        at = 'batch'
+        const vault = await createInOneBatch(client, checked.options, gas, gen, press)
+        if (vault) {
+          verified()
+          if (generation.current !== gen) return
+          setCreated({ vault, tokenId: position.tokenId })
+          noteAutomation({ tokenId: position.tokenId, automation: mode, paused: true, active: false, vault })
+          setPhase('done')
+          onCreated?.(vault)
+          return
+        }
+        // This wallet cannot batch after all: the same press goes on step by step.
+        at = 'approve-root'
+        if (generation.current === gen) {
+          setBatching(false)
+          setSteps({ 'approve-root': 'reading', create: 'upcoming', batch: 'upcoming' })
+        }
+      }
       let step = await client.create(checked.options, gas)
       verified()
       if (step.kind === 'approve-root') {
@@ -275,7 +376,8 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
       if (error instanceof Left || generation.current !== gen) return
       // A step the wallet gave a hash for failed only if its receipt says it reverted; otherwise it stays sent, and the
       // press ending here means nothing reads its receipt any more (`sent`, not `chain`).
-      mark(at, press.sent !== at || errorCode(error) === 'sequence_step_reverted' ? 'failed' : 'sent', gen)
+      // A batch the wallet did not include failed as surely as one that reverted: nothing of it can execute.
+      mark(at, press.sent !== at || ['sequence_step_reverted', 'sequence_batch_dropped'].includes(errorCode(error) ?? '') ? 'failed' : 'sent', gen)
       const said = noticeFor(error, press.sent !== null)
       // Something is already subscribed to this NFT: the picker says so beside it and no longer offers it.
       if (said.code === 'position_subscribed') setLinked(noted(position.tokenId, said.text))
@@ -298,8 +400,14 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
           : !consent
             ? 'Tick the consent box to continue.'
             : busy
-              ? 'Confirm each step in your wallet. The list marks each one as it is done.'
-              : 'Your wallet asks you to approve the position, then to create the sequence.'
+              ? batching
+                ? 'Confirm the batch in your wallet: one signature for both steps. The list marks it as it goes.'
+                : 'Confirm each step in your wallet. The list marks each one as it is done.'
+              : atomic === 'supported'
+                ? 'Your wallet asks you to sign once: the approval and the sequence together.'
+                : 'Your wallet asks you to approve the position, then to create the sequence.'
+  // A wallet that could batch once it turns on its smart account: offered beside the steps, never chosen for the person.
+  const offerBatch = atomic === 'ready' && ready && !locked
 
   const field = (name: keyof SequenceForm) => (
     <LimitControl key={name} name={name} value={form[name]} onEdit={(value) => edit(name, value)}>
@@ -320,17 +428,17 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
   )
   const stepList = (tokenId: string) => (
     <ol className="dm-flow-wsteps dm-seq-wsteps" data-wallet-steps="" aria-live="polite">
-      {(['approve-root', 'create'] as const).map((key, index) => {
+      {(batching ? (['batch'] as const) : (['approve-root', 'create'] as const)).map((key, index) => {
         const state = steps[key]
         const active = state === 'reading' || state === 'wallet' || state === 'chain'
-        const caption = state === 'wallet' ? 'Confirm in your wallet.' : state === 'chain' ? 'Waiting for the network.' : state === 'upcoming' && key === 'create' ? 'It starts paused.' : null
+        const caption = state === 'wallet' ? 'Confirm in your wallet.' : state === 'chain' ? 'Waiting for the network.' : state === 'upcoming' && key !== 'approve-root' ? 'It starts paused.' : null
         return (
           <li key={key} data-wallet-step={key} data-step-state={state}>
             <span aria-hidden="true" className="dm-step-marker" data-state={state === 'done' ? 'done' : active ? 'current' : undefined}>
               {state === 'done' ? '✓' : index + 1}
             </span>
             <span className="dm-flow-wstep-body">
-              <span className="dm-flow-wstep-title">{key === 'approve-root' ? `Approve position #${tokenId}` : 'Create the sequence'}</span>
+              <span className="dm-flow-wstep-title">{key === 'approve-root' ? `Approve position #${tokenId}` : key === 'batch' ? `Approve position #${tokenId} and create the sequence` : 'Create the sequence'}</span>
               {caption && <span className="dm-flow-wstep-note">{caption}</span>}
             </span>
           </li>
@@ -474,6 +582,16 @@ export default function SequenceCreate({ positions, intent, connect, onCreated }
           <p id="sequence-reason" className="dm-flow-reason" data-align="start">
             {reason}
           </p>
+          {offerBatch && (
+            <>
+              <Button type="button" variant="outline" size="md" className="w-full" onClick={() => void setUp(true)} data-sequence-batch="offer" aria-describedby="sequence-batch-note">
+                Sign both steps at once
+              </Button>
+              <p id="sequence-batch-note" className="dm-flow-reason" data-align="start">
+                {CREATE.review.batchOfferNote}
+              </p>
+            </>
+          )}
           {notice && (
             <p role="status" className="dm-acct-line dm-acct-wrap dm-seq-notice" data-notice-code={notice.code ?? undefined} data-notice-stage={notice.stage ?? undefined}>
               {notice.text}
