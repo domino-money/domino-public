@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { previewPosition } from 'core/position'
 import { RANGES, SCENARIO_MAX, SCENARIO_MIN, UNIT, change, ofStart, times, type RangeKey } from '../lib/scenario'
 import { RoadmapPill } from '../screens/Automate'
-import { Display, KeyValue, KeyValueList, Pill, Segmented, cx } from './ui'
+import { Display, KeyValue, KeyValueList, Pill, Segmented } from './ui'
 import { MixBar } from './MixBar'
 import { PriceSlider } from './PriceSlider'
 import { RangeChart, useComposition } from './RangeChart'
@@ -14,7 +14,8 @@ import { RangeChart, useComposition } from './RangeChart'
  * nothing here names a pair, quotes an amount or promises an outcome.
  *
  * The chart, the slider, the mix and the state stay in view; the figure list
- * and the comparison with the other range sit in one disclosure.
+ * and the comparison with the other range sit in one disclosure. Looks are
+ * home.css's (`.dm-sim*`, DESIGN-V2 §7.1-6).
  */
 export function RangeSimulator() {
   const [range, setRange] = useState<RangeKey>('standard')
@@ -33,18 +34,16 @@ export function RangeSimulator() {
   const tokenPct = Math.round(p.tokenShare * 100)
 
   return (
-    <div className="dm-card p-5 sm:p-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
-        <div className="min-w-0">
-          <Display as="h2" className="dm-display-card">
-            Move the price. Watch what you own.
-          </Display>
-        </div>
+    <div className="dm-card dm-sim">
+      <div className="dm-sim-head">
+        <Display as="h2" className="dm-display-card">
+          Move the price. Watch what you own.
+        </Display>
         <Segmented
           label="Range width"
           value={range}
           onChange={setRange}
-          className="shrink-0 self-start lg:self-auto"
+          className="dm-sim-seg"
           items={(Object.keys(RANGES) as RangeKey[]).map((key) => ({
             key,
             label: (
@@ -59,10 +58,10 @@ export function RangeSimulator() {
         />
       </div>
 
-      <div className="mt-2 grid gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <div className="dm-sim-grid">
         <div className="min-w-0">
           <RangeChart curve={curve} lower={lower} upper={upper} price={price} onPrice={setPrice} />
-          <div className="mt-4">
+          <div className="dm-sim-slider">
             <PriceSlider
               id="sim-price"
               label="Scenario price, as a multiple of the start price"
@@ -74,18 +73,18 @@ export function RangeSimulator() {
               upper={upper}
             />
           </div>
-          <div className="mt-5">
+          <div className="dm-sim-mix">
             <MixBar tokenShare={p.tokenShare} />
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3 lg:pt-8">
+        <div className="dm-sim-side">
           {/* Where the position stands at this price: the in-tone inside the range, neutral outside it. */}
-          <div className="dm-inset p-4">
+          <div className="dm-inset dm-sim-panel">
             <Pill tone={inRange ? 'in' : 'neutral'} dot>
               {inRange ? 'Collecting trading fees' : p.status === 'above' ? 'Paused above the range' : 'Paused below the range'}
             </Pill>
-            <p className="mt-3 text-body text-fg-muted">
+            <p className="dm-sim-panel-text">
               {inRange
                 ? 'While the price sits in the range, a share of every swap fee lands in the position, trade after trade.'
                 : p.status === 'above'
@@ -94,16 +93,14 @@ export function RangeSimulator() {
             </p>
           </div>
 
-          {/* Where Domino would step in: near the top of the range. */}
-          <div className={cx('rounded-[var(--radius)] p-4 transition-colors duration-200', nearTop ? 'bg-accent' : 'dm-inset')}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className={cx('text-body font-medium', nearTop ? 'text-accent-fg' : 'text-fg')}>
-                {nearTop ? 'This is where Domino steps in' : `Above ${times(triggerFrom)}, Domino steps in`}
-              </p>
+          {/* Where Domino would step in: near the top of the range. The panel warms while the price is there. */}
+          <div className="dm-inset dm-sim-panel dm-sim-domino" data-near={nearTop ? '' : undefined}>
+            <div className="dm-sim-domino-head">
+              <p className="dm-sim-domino-title">{nearTop ? 'This is where Domino steps in' : `Above ${times(triggerFrom)}, Domino steps in`}</p>
               {/* ROADMAP's pill describes owner-scoped readiness for Domino. */}
               <RoadmapPill name="Domino" />
             </div>
-            <p className={cx('mt-1.5 text-body', nearTop ? 'text-accent-fg' : 'text-fg-muted')}>
+            <p className="dm-sim-panel-text">
               Near the top of the range, the fees a position has collected open the next position higher up instead of going back into this one. The deposit stays
               exactly where it is.
             </p>
@@ -111,10 +108,10 @@ export function RangeSimulator() {
         </div>
       </div>
 
-      <div className="mt-6 border-t border-line pt-3">
-        <details className="dm-details -mx-3">
+      <div className="dm-sim-more">
+        <details className="dm-details">
           <summary>Figures, and the other range</summary>
-          <div className="grid gap-x-10 gap-y-6 lg:grid-cols-2">
+          <div className="dm-sim-figures">
             <div className="min-w-0">
               <KeyValueList className="px-0">
                 <KeyValue label="Token share of the value">{tokenPct}%</KeyValue>
@@ -123,14 +120,14 @@ export function RangeSimulator() {
                 <KeyValue label="Same assets, just held">{ofStart(p.holdValue / UNIT)}</KeyValue>
                 <KeyValue label="Against just holding">{change(p.difference / UNIT)}</KeyValue>
               </KeyValueList>
-              <p className="mt-2 px-1 text-caption text-fg-subtle">
+              <p className="dm-sim-note">
                 Fees are left out on purpose, so you see the price effect on its own. Fee income has to cover that gap before a position is ahead of simply holding.
               </p>
             </div>
 
-            <div className="dm-inset min-w-0 self-start p-4">
-              <p className="text-body font-medium text-fg">If you had picked the {other.label.replace(' range', '').toLowerCase()} range instead</p>
-              <div className="mt-3 grid grid-cols-3 gap-3 text-caption">
+            <div className="dm-inset dm-sim-other">
+              <p className="dm-sim-other-title">If you had picked the {other.label.replace(' range', '').toLowerCase()} range instead</p>
+              <div className="dm-sim-compare">
                 {(
                   [
                     ['Token share', `${tokenPct}%`, `${Math.round(o.tokenShare * 100)}%`],
@@ -140,12 +137,12 @@ export function RangeSimulator() {
                 ).map(([label, mine, theirs]) => (
                   <div key={label} className="min-w-0">
                     <p className="text-fg-subtle">{label}</p>
-                    <p className="tnum mt-1 font-medium text-primary-ink">{mine}</p>
-                    <p className="tnum text-fg-muted">{theirs}</p>
+                    <p className="tnum dm-sim-mine">{mine}</p>
+                    <p className="tnum text-fg-subtle">{theirs}</p>
                   </div>
                 ))}
               </div>
-              <p className="mt-3 text-caption text-fg-subtle">
+              <p className="dm-sim-note">
                 {range === 'standard'
                   ? 'A closer range puts the same money into a narrower band. You collect a bigger share of every swap while the price stays inside, and you step out sooner when it leaves.'
                   : 'A wider range keeps you collecting across more prices. The same money is spread thinner, so your share of each swap is smaller.'}

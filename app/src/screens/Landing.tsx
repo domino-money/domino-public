@@ -1,28 +1,33 @@
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { IconTile } from '../components/figures'
 import { MarketsTable } from '../components/MarketsTable'
 import { RangeSimulator } from '../components/RangeSimulator'
 import { FeatureCards } from '../components/home/FeatureCards'
 import { HeroArt } from '../components/home/HeroArt'
 import { useInView } from '../components/home/Vignettes'
+import { IconChartDown, IconCoins, IconKey, IconShield } from '../components/icons'
 import { Chip, Display, LinkButton, LiveDot, PageShell, Pill, cx } from '../components/ui'
 import { ROADMAP, ROADMAP_PILL } from '../lib/capabilities'
 import type { MarketsState } from '../lib/read/marketsProvider'
 import { useMarkets } from '../lib/read/useMarkets'
 
 /*
- * Home. The headline and the two ways in, what automation does with fees,
- * then the selected pools. Below them it explains: how a position comes
- * together, what a range does as the price moves, and what Domino does not
- * do. Home sends no read of its own: the hero chip and the table share the
- * app's one markets provider.
+ * Home (DESIGN-V2 §7). The headline and the two ways in, what automation does
+ * with fees, then the selected pools. Below them it explains: how a position
+ * comes together, what a range does as the price moves, and what Domino does
+ * not do. Home sends no read of its own: the hero chip and the table share the
+ * app's one markets provider. Layout and looks are home.css's; the drawings
+ * are art.css's.
  */
 
 /**
- * A one-time entrance: rise and fade in, then nothing stays applied (backwards
- * fill only), so no block keeps a transform that would trap a fixed dialog.
+ * A first-load entrance, `step` × 40 ms in (DESIGN-V2 §5.5, §7.3): rise and fade
+ * in, then nothing stays applied (backwards fill only), so no block keeps a
+ * transform that would trap a fixed dialog. After the first route change
+ * (`dm-booted`) blocks no longer rise; the page cross-fades instead.
  */
-const RISE = 'animate-[dm-rise_var(--dur-enter)_var(--ease-enter)_backwards]'
-const delay = (ms: number): CSSProperties => ({ animationDelay: `${ms}ms` })
+const RISE = 'animate-rise'
+const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
 
 const STEPS: ReadonlyArray<{ n: string; title: string; body: string; roadmap?: ReadonlyArray<string> }> = [
   {
@@ -43,22 +48,26 @@ const STEPS: ReadonlyArray<{ n: string; title: string; body: string; roadmap?: R
   },
 ]
 
-const LIMITS: ReadonlyArray<{ title: string; body: string }> = [
+const LIMITS: ReadonlyArray<{ title: string; body: string; icon: ReactNode }> = [
   {
     title: 'It does not remove market risk',
     body: 'Prices move and your position moves with them. Outside its range a position holds only one of its two tokens: the one that lost value against the other.',
+    icon: <IconChartDown size={18} />,
   },
   {
     title: 'It does not promise a return',
     body: 'Fees are not profit. A position can collect fees for weeks and still be worth less than holding the assets.',
+    icon: <IconCoins size={18} />,
   },
   {
     title: 'It does not take custody',
     body: 'Your wallet signs every deposit, permission and withdrawal. Automation acts only within the limits you signed, and you can pause or revoke it.',
+    icon: <IconKey size={18} />,
   },
   {
     title: 'It does not touch your principal',
     body: 'Automation spends earned fees only, and the contract does not let it reduce a position’s liquidity.',
+    icon: <IconShield size={18} />,
   },
 ]
 
@@ -90,31 +99,31 @@ function HeroChip() {
       icon={<LiveDot lit={block !== null} />}
       title={block === null ? undefined : `Pool data read from Robinhood Chain at block ${block}`}
       className={RISE}
-      style={delay(0)}
+      style={rise(0)}
     >
       On Robinhood Chain
     </Chip>
   )
 }
 
-/** The headline plate. Its drawing plays while at least 30% of the plate is in view. */
+/** The headline plate: the words centred over a horizon of tiles. The drawing plays while at least 30% of the plate is in view. */
 function Hero() {
   const [plate, inView] = useInView<HTMLDivElement>(0.3)
   return (
     <div ref={plate} className="dm-plate dm-dots-hero dm-hero">
       <div className="dm-hero-body">
         <HeroChip />
-        <Display as="h1" className={cx('dm-display-hero mt-5 text-balance', RISE)} style={delay(0)}>
+        <Display as="h1" className={cx('dm-display-hero dm-hero-title', RISE)} style={rise(1)}>
           Earn fees on your tokens, <span className="dm-hero-accent">on your own terms.</span>
         </Display>
-        <p className={cx('mt-4 max-w-[60ch] text-body text-fg-muted', RISE)} style={delay(60)}>
+        <p className={cx('dm-lede-hero dm-hero-lede', RISE)} style={rise(2)}>
           You pick the pool and the range, and nothing moves until your wallet signs.
         </p>
-        <div className={cx('mt-6 flex w-full items-center justify-center gap-2', RISE)} style={delay(120)}>
-          <LinkButton href="#/markets" className="max-md:h-11 max-md:flex-1 max-md:px-[18px]">
+        <div className={cx('dm-hero-actions', RISE)} style={rise(3)}>
+          <LinkButton href="#/markets" size="xl">
             Explore markets
           </LinkButton>
-          <LinkButton href="#/new" variant="outline" className="max-md:h-11 max-md:flex-1 max-md:px-[18px]">
+          <LinkButton href="#/new" variant="outline" size="xl">
             New position
           </LinkButton>
         </div>
@@ -128,28 +137,27 @@ function Hero() {
 
 function HowItWorks() {
   return (
-    <section id="learn" className="mt-12 grid gap-x-10 gap-y-6 md:mt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-      <div className="min-w-0 lg:pt-5">
-        <p className="text-body font-medium text-fg-subtle">How it works</p>
-        <Display as="h2" className="dm-display-title mt-3 max-w-[30ch] text-balance text-fg">
+    <section id="learn" className="dm-home-section dm-learn">
+      <div className="dm-learn-head">
+        <p className="dm-learn-eyebrow">How it works</p>
+        <Display as="h2" className="dm-display-section dm-learn-title">
           Pick a pool. Set a range. Decide what happens to the fees.
         </Display>
       </div>
-      <ol className="dm-card m-0 min-w-0 list-none p-2">
-        {STEPS.map((step, index) => (
-          <li key={step.n} className={cx('grid grid-cols-[28px_minmax(0,1fr)] gap-4 px-4 py-5 sm:px-5', index > 0 && 'border-t border-line')}>
-            <span aria-hidden="true" className="tnum grid size-7 place-items-center rounded-[var(--radius-sm)] bg-surface-3 text-caption font-medium text-fg-subtle">
-              {step.n}
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <h3 className="text-lead font-medium text-fg">{step.title}</h3>
-                {step.roadmap && roadmapPill(step.roadmap) && <Pill>{roadmapPill(step.roadmap)}</Pill>}
-              </div>
-              <p className="mt-1 max-w-[62ch] text-body text-fg-muted">{step.body}</p>
-            </div>
-          </li>
-        ))}
+      <ol className="dm-learn-steps">
+        {STEPS.map((step, index) => {
+          const pill = step.roadmap && roadmapPill(step.roadmap)
+          return (
+            <li key={step.n} className={cx('dm-card dm-learn-step', RISE)} style={rise(index)}>
+              <span aria-hidden="true" className="dm-learn-num">
+                {step.n}
+              </span>
+              <h3 className="dm-subtitle dm-learn-step-title">{step.title}</h3>
+              {pill && <Pill className="dm-learn-pill">{pill}</Pill>}
+              <p className="dm-learn-step-body">{step.body}</p>
+            </li>
+          )
+        })}
       </ol>
     </section>
   )
@@ -157,16 +165,19 @@ function HowItWorks() {
 
 function Limits() {
   return (
-    <section id="limits" className="mt-12 md:mt-16">
-      <div className="dm-card p-5 sm:p-6">
+    <section id="limits" className="dm-home-section">
+      <div className="dm-card dm-limits">
         <Display as="h2" className="dm-display-card">
           What Domino does not do.
         </Display>
-        <div className="mt-5 grid gap-x-10 md:grid-cols-2">
+        <div className="dm-limits-grid">
           {LIMITS.map((limit) => (
-            <div key={limit.title} className="min-w-0 border-t border-line py-5 last:pb-0 md:[&:nth-last-child(2)]:pb-0">
-              <h3 className="text-body font-medium text-fg">{limit.title}</h3>
-              <p className="mt-1 text-body text-fg-muted">{limit.body}</p>
+            <div key={limit.title} className="dm-limit">
+              <IconTile icon={limit.icon} />
+              <div className="min-w-0">
+                <h3 className="dm-subtitle">{limit.title}</h3>
+                <p className="dm-limit-body">{limit.body}</p>
+              </div>
             </div>
           ))}
         </div>
@@ -177,15 +188,15 @@ function Limits() {
 
 export function Landing() {
   return (
-    <PageShell>
+    <PageShell className="dm-home">
       <Hero />
-      <FeatureCards className="mt-6" delay={60} />
-      {/* The pools card holds an inline dialog, so it takes no entrance: nothing may leave a transform on its ancestors. */}
-      <section id="pools" className="mt-10">
+      <FeatureCards className="dm-home-features" delay={160} />
+      {/* The pools table holds an inline dialog, so it takes no entrance: nothing may leave a transform on its ancestors. */}
+      <section id="pools" className="dm-home-pools">
         <MarketsTable variant="featured" />
       </section>
       <HowItWorks />
-      <section id="ranges" className="mt-12 md:mt-16">
+      <section id="ranges" className="dm-home-section">
         <RangeSimulator />
       </section>
       <Limits />

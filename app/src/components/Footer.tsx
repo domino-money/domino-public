@@ -8,7 +8,6 @@
  * until the documents exist.
  */
 import type { ReactNode } from 'react'
-import { BrandMark } from './BrandMark'
 import { CAPABILITIES } from '../lib/capabilities'
 import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref, settingsHref } from './explore/routes'
 
@@ -48,7 +47,6 @@ export function Footer({ appearance, motion }: { appearance?: ReactNode; motion?
             {/* Not a link: only the header's wordmark points at Home. */}
             <div className="dm-footer-brand">
               <span className="inline-flex items-center gap-2 text-fg">
-                <BrandMark width={18} height={31} />
                 <span className="dm-display text-[26px] leading-[26px] md:text-[30px] md:leading-[30px]">
                   domino<span className="text-primary">.</span>
                 </span>

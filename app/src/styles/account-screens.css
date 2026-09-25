@@ -1,0 +1,104 @@
+/* foundation (DESIGN-V2 §17.2): Settings and the presentation of rugged97's screens, reached through
+   class names. Moved verbatim from account.css in F0 (Performance and Execution went to positions.css).
+   The !important declarations override a primitive's own utilities and are scoped to one card each. */
+
+@layer components {
+  /* ---- Settings (E.7) ---------------------------------------------------------------------- */
+  /* A reading column inside the one 1200px container (DESIGN-V2 2.7). */
+  .dm-acct-settings { display: grid; gap: 24px; max-width: 880px; margin-top: 32px; }
+  .dm-acct-set-title { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
+  .dm-acct-set-note { margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-acct-set-appearance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 20px; }
+  .dm-acct-set-card { padding: 20px; }
+  .dm-acct-build { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 24px; margin: 20px 0 0; }
+  /* A build fact is words, not a figure: it wraps instead of truncating, at body-lead size. */
+  .dm-acct-build dd { overflow: visible !important; font-size: 16px !important; line-height: 22px !important; letter-spacing: -0.24px !important; text-overflow: clip !important; white-space: normal !important; }
+  .dm-acct-build .dm-acct-mono { font-size: 14px; line-height: 22px; }
+  @media (max-width: 767px) { .dm-acct-build { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 479px) { .dm-acct-build { grid-template-columns: minmax(0, 1fr); } }
+  .dm-acct-caps { padding: 8px; }
+  .dm-acct-caps-title { padding: 12px 12px 8px; }
+  .dm-acct-cap { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; padding: 12px; border-radius: var(--radius-sm); }
+  .dm-acct-cap + .dm-acct-cap { background: linear-gradient(var(--border), var(--border)) top center / calc(100% - 24px) 1px no-repeat; }
+  .dm-acct-cap-name { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg); }
+  .dm-acct-cap-note { max-width: 62ch; margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+
+  /* ---- Rugged97's screens (E.8): presentation only, reached through class names ------------- */
+  .dm-acct-desc { max-width: 72ch; font-size: 14px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-acct-lede { max-width: 60ch; margin-top: 8px; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
+  .dm-acct-block { margin-top: 24px; }
+  .dm-acct-panel { display: grid; gap: 12px; min-width: 0; padding: 20px; }
+  .dm-acct-panel-title { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
+  .dm-acct-panel-note { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-acct-subtitle { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-acct-line { font-size: 14px; line-height: 20px; color: var(--fg); }
+  .dm-acct-note { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-acct-hash { font-family: var(--font-mono); font-size: 12px; line-height: 18px; letter-spacing: 0; color: var(--fg-muted); overflow-wrap: anywhere; }
+  /* Sentences that carry a hash or an address: words wrap as words, and only a long hex string breaks inside. */
+  .dm-acct-wrap { overflow-wrap: anywhere; }
+  .dm-acct-signin { padding: 20px; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
+  .dm-acct-stack { display: grid; gap: 12px; }
+  .dm-acct-span { min-width: 0; }
+  .dm-acct-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: -10px; }
+  .dm-acct-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+  /* A label wrapped around its field: the label's words above, the field under them at body size. */
+  .dm-acct-lf { display: grid; gap: 6px; min-width: 0; margin-bottom: 0; }
+  .dm-acct-lf > .dm-field { font-size: 14px; line-height: 20px; font-weight: 400; letter-spacing: -0.2px; }
+  .dm-acct-lf > .dm-acct-mono-field { font-family: var(--font-mono); font-size: 13px; letter-spacing: 0; }
+  .dm-acct-fields { display: grid; gap: 12px; }
+  @media (min-width: 640px) { .dm-acct-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .dm-acct-fields--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .dm-acct-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+  .dm-acct-fieldset > legend { margin-bottom: 12px; padding: 0; }
+  .dm-acct-disclosure { margin: 0 -12px; }
+  .dm-acct-disclosure-body { display: grid; gap: 12px; }
+  .dm-acct-check { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 20px; color: var(--fg); }
+  .dm-acct-check > input { flex-shrink: 0; margin-top: 2px; }
+  .dm-acct-review { display: grid; gap: 12px; padding: 16px; }
+
+  /* Setup: the deposits list as rows, the raw-unit draft as a two-column form. */
+  .dm-acct-oplist { gap: 2px; margin: 0 -12px; }
+  .dm-acct-oprow { justify-content: flex-start; width: 100%; height: 44px; padding: 0 12px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-acct-draft { display: grid; gap: 12px; padding: 20px; }
+  @media (min-width: 640px) {
+    .dm-acct-draft { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dm-acct-draft > .dm-acct-span { grid-column: 1 / -1; }
+  }
+
+  /* One deposit operation (Setup and the deposit lab). */
+  .dm-acct-op { display: grid; gap: 12px; min-width: 0; padding: 20px; }
+  .dm-acct-op-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .dm-acct-op-stack { display: grid; gap: 8px; }
+  .dm-acct-op-body { font-size: 14px; line-height: 20px; color: var(--fg); }
+  .dm-acct-op-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+  .dm-acct-op-report { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+  .dm-acct-op-report > label { flex: 1 1 320px; }
+  .dm-acct-presign { display: grid; gap: 2px; margin: 12px 0 0; padding: 0; list-style: none; }
+  .dm-acct-presign > li { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 10px; border-radius: var(--radius-sm); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); }
+  .dm-acct-presign > li::before { content: ''; }
+  .dm-acct-presign > li[data-ok="true"]::before { --dot-fill: var(--money-in); }
+  .dm-acct-presign > li[data-ok="false"]::before { --dot-fill: var(--money-out); }
+  .dm-acct-op-facts { display: grid; gap: 2px; margin: 4px 0 0; padding: 12px 0 0; list-style: none; border-top: 1px solid var(--border); font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-acct-facts { padding: 0; }
+  .dm-acct-section { display: grid; gap: 12px; margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .dm-acct-section-title { display: block; }
+  .dm-acct-callout { padding: 12px 16px; border-radius: var(--radius); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
+
+  /* The pool explorer in Setup: the two steps beside the pair card. */
+  .dm-acct-explorer { display: grid; align-items: start; gap: 16px; }
+  @media (min-width: 768px) { .dm-acct-explorer { grid-template-columns: 200px minmax(0, 1fr); gap: 24px; } }
+  .dm-acct-explorer-steps { padding: 16px; }
+  .dm-acct-explorer-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
+  @media (min-width: 768px) { .dm-acct-explorer-list { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+  .dm-acct-explorer-step { display: flex; align-items: center; gap: 10px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); }
+  .dm-acct-explorer-kicker { display: block; font-size: 11px; line-height: 14px; color: var(--fg-subtle); }
+  .dm-acct-explorer-card { display: grid; gap: 12px; min-width: 0; padding: 20px; }
+  .dm-acct-explorer-pair { display: grid; gap: 8px; }
+  @media (min-width: 640px) { .dm-acct-explorer-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .dm-acct-explorer-details { display: grid; gap: 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-muted); }
+  .dm-acct-explorer-results { margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .dm-acct-explorer-empty { display: grid; justify-items: center; align-content: center; gap: 8px; min-height: 200px; padding: 0 16px; text-align: center; }
+  .dm-acct-explorer-empty .dm-empty-tile { margin-bottom: 4px; font-size: 18px; line-height: 1; }
+  .dm-acct-explorer-empty .dm-acct-panel-note { max-width: 38ch; }
+}

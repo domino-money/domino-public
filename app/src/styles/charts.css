@@ -1,0 +1,98 @@
+/* foundation (DESIGN-V2 §4): the shared charts kit. Hand-written SVG and HTML layers, no chart library, nothing
+   injects a <style>. Paint servers are SVG attributes (fill="url(#id)" in JSX); their stops take their colours
+   from the classes below, so no rule here references an SVG id. Every animated SVG part has transform-box:
+   fill-box, so it scales about its own centre. Tangerine lives in charts: lines, areas, bands, handles, pips,
+   the last-value chip (exempt from the three-per-viewport count, §0.6). */
+
+@layer components {
+  /* ---- The frame (§4.2): four layers stacked in one box ----------------------------------------- */
+  .dm-chart { position: relative; width: 100%; touch-action: pan-y; outline: none; user-select: none; -webkit-user-select: none; }
+  .dm-chart:focus-visible { outline: 2px solid var(--ring); outline-offset: var(--focus-offset-inset); border-radius: var(--radius-sm); }
+  .dm-chart-layer { position: absolute; inset: 0; display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .dm-chart-series { position: absolute; inset: 0; pointer-events: none; }
+  /* First draw: the series wipes in from the left, on an HTML layer where clip-path is reliable. */
+  .dm-chart-series[data-reveal] { animation: dm-reveal var(--dur-wipe) var(--ease-enter) backwards; }
+  /* A period or window switch cross-fades; what popped in after the wipe is simply there. */
+  .dm-chart-series[data-swap] { animation: dm-fade var(--dur-fast) var(--ease-std) backwards; }
+  .dm-chart-series[data-swap] :is(.dm-end-dot, .dm-pip, .dm-live-ring) { animation: none; }
+  .dm-chart-overlay { position: absolute; inset: 0; pointer-events: none; }
+  /* PriceLineSvg's area variant wipes its own wrapper once (it is not a ChartFrame). */
+  .dm-price-wrap[data-reveal] { animation: dm-reveal var(--dur-wipe) var(--ease-enter) backwards; }
+
+  /* ---- Series parts (§4.3) ------------------------------------------------------------------------ */
+  .dm-stop-top { stop-color: var(--primary-area-top); }
+  .dm-stop-mid { stop-color: var(--primary-area-mid); }
+  .dm-stop-bottom { stop-color: var(--primary-area-bottom); }
+  .dm-series-line { fill: none; stroke: var(--primary-line); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .dm-series-line[data-tone="neutral"] { stroke: var(--fg-muted); stroke-width: 1.5; }
+  .dm-series-line[data-tone="faint"] { stroke: var(--fg-faint); stroke-width: 1.5; }
+  .dm-series-line[data-weight="thin"] { stroke-width: 1.5; }
+  .dm-series-line[data-dashed] { stroke-dasharray: 4 4; }
+  /* The last open hour joins its segment, lighter (§4.5 thin data). */
+  .dm-series-line[data-open] { opacity: 0.55; }
+  .dm-series-glow { fill: none; stroke: var(--series-glow); stroke-width: 6; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .dm-series-dot { fill: var(--primary-line); }
+  .dm-series-dot[data-tone="neutral"] { fill: var(--fg-muted); }
+  .dm-series-dot[data-tone="faint"] { fill: var(--fg-faint); }
+  .dm-bar { fill: var(--fg-faint); opacity: 0.35; }
+  .dm-bar[data-hovered] { fill: var(--primary-line); opacity: 0.6; }
+  .dm-crosshair { stroke: var(--border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; shape-rendering: crispEdges; }
+  .dm-crosshair[data-axis="y"] { stroke: var(--border); }
+  .dm-baseline { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; shape-rendering: crispEdges; }
+  .dm-hover-halo { fill: var(--primary-line); opacity: 0.2; }
+  .dm-hover-dot { fill: var(--primary-line); stroke: var(--card); stroke-width: 2; }
+  .dm-end-dot, .dm-live-ring, .dm-pip { transform-box: fill-box; transform-origin: center; }
+  .dm-end-dot { fill: var(--primary-line); animation: dm-dot-pop var(--dur-dot) var(--ease-pop) var(--dur-wipe) backwards; }
+  /* The live dot breathes three times after the first draw, then rests: never infinite (cards are clickable). */
+  .dm-live-ring { fill: var(--primary-line); opacity: 0; animation: dm-live-ring 1.8s ease-out calc(var(--dur-wipe) + 200ms) 3; }
+  .dm-live-ring + .dm-live-ring { animation-delay: calc(var(--dur-wipe) + 700ms); }
+  .dm-last-line { stroke: var(--primary-line); stroke-opacity: 0.45; stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .dm-last-chip { position: absolute; right: 0; display: inline-flex; align-items: center; height: 20px; padding: 0 6px; translate: 0 -50%; border-radius: 6px; background: var(--primary); color: var(--primary-fg); font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: -0.1px; font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; transform-origin: right center; animation: dm-dot-pop var(--dur-dot) var(--ease-pop) var(--dur-wipe) backwards; }
+  .dm-axis { fill: var(--fg-subtle); font-family: var(--font-sans); font-size: 12px; letter-spacing: -0.12px; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-band { fill: var(--band-fill); }
+  .dm-band-edge { stroke: var(--primary-line); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .dm-band-edge[data-dashed] { stroke-dasharray: 4 3; }
+  .dm-pip { animation: dm-pip-in 240ms var(--ease-pop) calc(var(--dur-wipe) + var(--i, 0) * var(--stagger)) backwards; }
+  .dm-pip[data-kind="collect"] { fill: var(--primary-line); stroke: var(--card); stroke-width: 2; }
+  .dm-pip[data-kind="mint"], .dm-pip[data-kind="close"] { fill: var(--card); stroke: var(--fg-subtle); stroke-width: 1.5; }
+  .dm-pip[data-kind="increase"], .dm-pip[data-kind="decrease"] { fill: var(--fg-muted); }
+  .dm-pip-halo { fill: var(--primary-line); opacity: 0.18; }
+  .dm-inrange { fill: var(--surface-3); }
+  .dm-inrange[data-in] { fill: var(--money-in); fill-opacity: 0.65; }
+
+  /* ---- Tooltip (§4.4): glass, placed without measuring, fades in once ----------------------------- */
+  .dm-chart-tooltip { position: absolute; z-index: 5; display: grid; gap: 4px; min-width: 160px; max-width: 240px; padding: 10px 12px; border-radius: var(--radius); background: var(--tooltip-bg); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--elev-tooltip); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); pointer-events: none; animation: dm-fade var(--dur-instant) linear backwards; }
+  .dm-chart-tooltip[data-side="left"] { translate: calc(-100% - 24px) 0; }
+  .dm-chart-tooltip-head { margin-bottom: 2px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-chart-tooltip-row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; min-width: 0; }
+  .dm-chart-tooltip-row > :first-child { color: var(--fg-muted); }
+  .dm-chart-tooltip-row > :last-child { font-weight: 500; text-align: right; font-variant-numeric: lining-nums tabular-nums; }
+
+  /* ---- Loading (§4.5): a wave under the shimmer, tick bubbles, header bubbles ------------------------ */
+  .dm-chart-skel { position: relative; width: 100%; }
+  .dm-chart-skel-head { display: grid; gap: 8px; margin-bottom: 16px; }
+  .dm-chart-skel-plot { position: relative; }
+  /* The wave: a skeleton box masked by a data-URL sine (no url( inside the data URL). */
+  .dm-chart-skel-wave { position: absolute; inset: 12px 56px 24px 0; border-radius: 0; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 120' preserveAspectRatio='none'%3E%3Cpath d='M0 70 C 30 40, 60 40, 90 62 S 150 96, 180 70 S 240 30, 270 48 S 330 84, 360 56' stroke='black' stroke-width='2' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 360 120' preserveAspectRatio='none'%3E%3Cpath d='M0 70 C 30 40, 60 40, 90 62 S 150 96, 180 70 S 240 30, 270 48 S 330 84, 360 56' stroke='black' stroke-width='2' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
+  .dm-chart-skel[data-axes="false"] .dm-chart-skel-wave { inset: 12px 0 0 0; }
+  .dm-chart-skel-y { position: absolute; top: 12px; right: 0; bottom: 24px; display: flex; flex-direction: column; justify-content: space-between; }
+  .dm-chart-skel-x { position: absolute; left: 0; right: 56px; bottom: 0; display: flex; justify-content: space-between; }
+
+  /* ---- RangePreview (§4.7): the band, the current price, the two ends --------------------------------- */
+  .dm-range-preview { position: relative; width: 100%; }
+  .dm-range-preview-axis { position: absolute; left: 0; right: 0; height: 1px; background: var(--border-strong); }
+  /* The band's fill is clipped to the range with a rounded inset, so its 6px corners never stretch. */
+  .dm-range-preview-band { position: absolute; left: 0; right: 0; background: var(--band-fill); transition: clip-path var(--dur-step) var(--ease-enter); }
+  .dm-range-preview-edge { position: absolute; left: 0; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--primary-line); transition: translate var(--dur-step) var(--ease-enter); }
+  .dm-range-preview[data-in="false"] .dm-range-preview-band { background: var(--wash-strong); }
+  .dm-range-preview[data-in="false"] .dm-range-preview-edge { background: var(--fg-faint); }
+  .dm-range-preview-now { position: absolute; left: 0; top: 0; height: 100%; width: 1.5px; margin-left: -0.75px; background: radial-gradient(circle, var(--fg-subtle) 0.75px, transparent 1px) center top / 1.5px 5px repeat-y; transition: translate var(--dur-step) var(--ease-enter); }
+  .dm-range-preview-dot { position: absolute; left: 0; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: var(--radius-pill); background: var(--fg); box-shadow: 0 0 0 2px var(--card); transition: translate var(--dur-step) var(--ease-enter); }
+  .dm-range-preview-label { position: absolute; left: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; transition: translate var(--dur-step) var(--ease-enter); }
+  .dm-range-preview-label[data-end="current"] { padding: 1px 6px; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--fg); }
+}
+
+@keyframes dm-live-ring {
+  from { scale: 1; opacity: 0.5; }
+  to { scale: 3; opacity: 0; }
+}

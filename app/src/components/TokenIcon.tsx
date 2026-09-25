@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { TokenDisplay } from '../lib/read/types'
 import { tokenArtwork, tokenArtworkKey } from '../lib/tokenArtwork'
+import { tokenHue } from '../lib/format/tokenHue'
 
 /**
  * Token marks.
@@ -67,12 +68,14 @@ export function TokenIcon({
         height={size}
         draggable={false}
         onError={() => setBrokenSrc(src)}
-        className={className}
+        className={className ? `dm-token-img ${className}` : 'dm-token-img'}
         style={{
           width: size,
           height: size,
           borderRadius: '50%',
           border,
+          // The theme's hairline sits on the art's own edge, inside the overlap ring (shell.css .dm-token-img).
+          outlineOffset: ring ? -3 : -1,
           display: 'block',
           // Square source art, drawn into a circle without distorting it.
           objectFit: 'cover',
@@ -116,8 +119,9 @@ export function TokenIcon({
  * The mark for a token as the read adapter describes it. Curated artwork is
  * preferred; other public token contracts may resolve decorative artwork by
  * exact chain/address through the bounded provider helper. Symbols never
- * select an image or supply fallback letters. Missing artwork is a plain disc
- * drawn with a 1px theme line, so it still reads as a mark on a dark card.
+ * select an image or supply fallback letters. Missing artwork is a calm disc
+ * whose hue comes from the token's address (DESIGN-V2 §3.8), with a 1px theme
+ * line, so a pair never looks broken and nothing untrusted is drawn.
  */
 type MarkProps = { token: TokenDisplay; size?: number; ring?: string; style?: CSSProperties }
 
@@ -157,20 +161,26 @@ function RemoteTokenMark({ token, size = 24, ring, style }: MarkProps) {
     ...style,
   }
   if (src && !broken) return <img src={src} alt="" width={size} height={size} draggable={false}
-    decoding="async" referrerPolicy="no-referrer" data-token-mark="provider"
+    decoding="async" referrerPolicy="no-referrer" data-token-mark="provider" className="dm-token-img"
     onLoad={() => setLoaded(true)} onError={() => { setBroken(true); tokenArtwork.rejectImage(token.chainId, token.address) }}
-    style={{ ...markStyle, objectFit: 'cover' }} />
+    style={{ ...markStyle, outlineOffset: ring ? -3 : -1, objectFit: 'cover' }} />
+  // No inline background or shadow here: inline styles would beat the disc's class.
+  const discStyle = {
+    width: size, height: size, borderRadius: '50%', border: ring ? `2px solid ${ring}` : undefined,
+    display: 'inline-block', flexShrink: 0, '--mark-h': tokenHue(token.address), ...style,
+  } as CSSProperties
   return (
     <span
       aria-hidden="true"
       data-token-mark="unknown"
-      style={markStyle}
+      className="dm-token-disc"
+      style={discStyle}
     />
   )
 }
 
-/** `TokenPair` for adapter tokens. */
-export function TokenMarkPair({ base, quote, size = 32, ring = 'var(--surface-2)' }: { base: TokenDisplay; quote: TokenDisplay; size?: number; ring?: string }) {
+/** `TokenPair` for adapter tokens: the second mark overlaps the first by 30 %, both ringed in the surface they sit on. */
+export function TokenMarkPair({ base, quote, size = 32, ring = 'var(--card)' }: { base: TokenDisplay; quote: TokenDisplay; size?: number; ring?: string }) {
   return (
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
       <TokenMark token={base} size={size} ring={ring} />

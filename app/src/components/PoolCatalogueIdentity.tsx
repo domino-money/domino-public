@@ -16,7 +16,7 @@ export function PoolTokenLabel({ token }: { token: TokenDisplay }) {
  */
 export function PoolCatalogueIdentity({ entry, compact = false }: { entry: PoolCatalogueEntry; compact?: boolean }) {
   const size = compact ? 16 : 30
-  const ring = compact ? 'var(--bg)' : 'var(--surface-2)'
+  const ring = compact ? 'var(--bg)' : 'var(--card)'
   return <>
     <span className="inline-flex shrink-0 items-center" aria-hidden="true">
       {entry.artwork.map((artwork, index) => {

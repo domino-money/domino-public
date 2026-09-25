@@ -17,7 +17,6 @@ import { formatUnits } from '../../lib/read/decimal'
 import { MAX_SQRT_PRICE, MIN_SQRT_PRICE } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { useWalletIdentity, walletKey } from '../../lib/walletIdentity'
-import { rememberCreated } from '../../lib/positionMemory'
 import { Button } from '../ui'
 
 /**
@@ -50,8 +49,9 @@ import { Button } from '../ui'
  * executes (lib/create/mintPlan.ts). What it does not use comes back with the
  * NFT.
  *
- * When the position exists the page opens it on Positions and remembers it
- * for this wallet (lib/positionMemory.ts). An earlier deposit of this wallet
+ * When the position exists the page opens it on Positions, read from chain;
+ * nothing is kept in the browser: Positions lists it from chain for the
+ * connected wallet (2026-09-24). An earlier deposit of this wallet
  * in this pool whose mint did not happen is never funded again: it is shown
  * with its amounts, and the next press creates the position from it, or it
  * can be refunded.
@@ -443,9 +443,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     return { client, rpc, gas }
   }
 
-  async function finish(rpc: WalletRpc, tokenId: bigint, gen: number) {
-    // Listed on Positions from now on, for this wallet, without typing its id.
-    rememberCreated(rpc.owner, tokenId.toString())
+  async function finish(tokenId: bigint, gen: number) {
     if (generation.current !== gen) return
     setHeld(null)
     setPhase('done')
@@ -472,7 +470,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         // The deposit this page holds, as the chain has it now: minted meanwhile, refunded, or still waiting for its mint.
         const current = await client.inspect(open.id)
         if (current.closed && current.tokenId > 0n) {
-          await finish(rpc, current.tokenId, gen)
+          await finish(current.tokenId, gen)
           return
         }
         open = current.closed || current.recoveryStarted ? null : { id: open.id, operation: current }
@@ -553,7 +551,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         }
       }
       const tokenId = await mintFrom(client, key, gas, open, gen)
-      await finish(rpc, tokenId, gen)
+      await finish(tokenId, gen)
     } catch (error) {
       if (generation.current !== gen) return
       stopAt(gen)
@@ -622,14 +620,14 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   return (
     <>
       {ready && needs && !connected ? (
-        <Button type="button" variant="primary" size="lg" className="w-full" data-create-position="connect" aria-describedby="create-reason" onClick={connectOrSwitch}>
+        <Button type="button" variant="primary" size="xl" className="w-full" data-create-position="connect" aria-describedby="create-reason" onClick={connectOrSwitch}>
           {onOtherNetwork ? 'Switch to Robinhood Chain' : 'Connect wallet'}
         </Button>
       ) : (
         <Button
           type="button"
           variant={refundFirst && phase === 'held' ? 'outline' : 'primary'}
-          size="lg"
+          size="xl"
           className="w-full"
           data-create-position={phase}
           aria-describedby="create-reason"

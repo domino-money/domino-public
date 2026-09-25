@@ -148,10 +148,11 @@ export function IconCopy({ size, className }: IconProps) {
   )
 }
 
+/** A tick. `pathLength="1"` lets `.dm-check-draw` draw it in (stroke-dashoffset 1 → 0). */
 export function IconCheck({ size, className }: IconProps) {
   return (
     <Svg size={size} className={className}>
-      <path d="m3.5 8.5 3 3 6-7" />
+      <path d="m3.5 8.5 3 3 6-7" pathLength={1} />
     </Svg>
   )
 }
@@ -171,6 +172,78 @@ export function IconPlus({ size, className }: IconProps) {
   return (
     <Svg size={size} className={className}>
       <path d="M8 3.5v9M3.5 8h9" />
+    </Svg>
+  )
+}
+
+export function IconMinus({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M3.5 8h9" />
+    </Svg>
+  )
+}
+
+/** Three dots in a row: the header menu's glyph from 768px. */
+export function IconMore({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <circle cx="3.5" cy="8" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="8" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="12.5" cy="8" r="1.25" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
+/** A line that falls, over a faint floor. */
+export function IconChartDown({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M2 13.5h12" stroke={TWO} opacity=".55" />
+      <path d="M2.5 4l3.5 3.5 2.5-2 5 5" />
+      <path d="M13.5 7.5v3h-3" />
+    </Svg>
+  )
+}
+
+/** Two stacked coins. */
+export function IconCoins({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <ellipse cx="6.5" cy="5" rx="4" ry="2" />
+      <path d="M2.5 5v3c0 1.1 1.8 2 4 2s4-.9 4-2V5" stroke={TWO} opacity=".55" />
+      <path d="M9.5 9.35c.3-.05.6-.1.9-.1 2.2 0 3.6.9 3.6 2v1.5c0 1.1-1.8 2-4 2-1.65 0-3.05-.5-3.65-1.2" />
+    </Svg>
+  )
+}
+
+/** A key. */
+export function IconKey({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <circle cx="5.25" cy="10.75" r="2.75" />
+      <path d="m7.25 8.75 6-6M11 5l1.75 1.75M9.5 6.5l1.25 1.25" stroke={TWO} opacity=".55" />
+    </Svg>
+  )
+}
+
+/** A shield. */
+export function IconShield({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <path d="M8 1.75 3 3.75v4c0 3.1 2.15 5.4 5 6.5 2.85-1.1 5-3.4 5-6.5v-4z" />
+      <path d="M8 4.5v7" stroke={TWO} opacity=".55" />
+    </Svg>
+  )
+}
+
+/** A padlock. */
+export function IconLock({ size, className }: IconProps) {
+  return (
+    <Svg size={size} className={className}>
+      <rect x="3" y="7" width="10" height="7.5" rx="2" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke={TWO} opacity=".55" />
+      <circle cx="8" cy="10.75" r=".9" fill="currentColor" stroke="none" />
     </Svg>
   )
 }

@@ -1,34 +1,190 @@
-/* pool builder (DESIGN.md H.4): chart card and stat strip specifics, classes prefixed dm-pool-. Rules go inside @layer components. */
+/* pool (DESIGN-V2 §9): the pool page's grid, its chart card, figures card, details, the range planner (PoolRangeControls'
+   look in every context: the pool page, New position's range step, Setup) and the on-chain activity. Classes are
+   prefixed dm-pool-. Rules go inside @layer components, so a Tailwind utility on the same element still wins.
+   Tangerine lives in the charts and the range visual only. */
 
 @layer components {
-  /* ---- Page frame: breadcrumb, title row, figures (E.3) ------------------------------------ */
+  /* ---- Page frame: breadcrumb and the one grid (§9.1) ------------------------------------------------------- */
   .dm-pool-breadcrumb { display: flex; align-items: center; min-height: 20px; }
   /* The same back link as every other screen: one chevron icon, 4px gap, no bolder weight. */
-  .dm-pool-back { display: inline-flex; align-items: center; gap: 4px; border-radius: 4px; font-size: 13px; line-height: 16px; letter-spacing: -0.16px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
+  .dm-pool-back { display: inline-flex; align-items: center; gap: 4px; border-radius: 4px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
   .dm-pool-back:hover { color: var(--fg); }
   .dm-pool-back > svg { transition: translate var(--dur-fade) var(--ease-std); }
   .dm-pool-back:hover > svg { translate: -2px 0; }
 
-  .dm-pool-marks { display: inline-flex; flex-shrink: 0; }
-  .dm-pool-id { display: inline-flex; align-items: center; gap: 2px; font-family: var(--font-mono); font-size: 13px; line-height: 18px; letter-spacing: 0; color: var(--fg-subtle); }
-
-  /* No card: a hairline above and below the figures. */
-  .dm-pool-figures { border-block: 1px solid var(--border); padding-block: 20px; }
-  /* Six figures when Domino's 24h history is listed: three a row up to 1279px, all six in one row from 1280px. */
-  @media (min-width: 1024px) and (max-width: 1279px) {
-    .dm-pool-stats-6.dm-stats--5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .dm-pool-stats-6.dm-stats > :nth-child(3n + 1) { border-left: 0; padding-left: 0; }
-  }
-  @media (min-width: 1280px) {
-    .dm-pool-stats-6.dm-stats--5 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-    .dm-pool-stats-6.dm-stats > * { padding-right: 12px; }
-    .dm-pool-stats-6.dm-stats > :not(:first-child) { padding-left: 12px; }
-  }
-
-  /* Key/value rows that read down the first column, then the second (DOM order is the reading order). */
-  .dm-pool-kv dt { flex-shrink: 0; white-space: nowrap; }
+  /* One column below 1024px, the chart before the figures by `order` (the DOM keeps figures first); from 1024px the
+     chart and the 360px figures card side by side, every other card at full width. */
+  .dm-pool-layout { display: flex; flex-direction: column; gap: 16px; }
+  /* Bubbles are opaque on the page's cards, so a dot grid never speckles them; light gets a firmer bubble and a softer
+     sweep (the page's wash at 7 % nearly vanished on white). */
+  .dm-pool-layout { --skeleton: color-mix(in srgb, var(--fg) 9%, var(--card)); --skeleton-shine: rgb(255 255 255 / 0.35); }
+  .dark .dm-pool-layout { --skeleton: color-mix(in srgb, var(--fg) 8%, var(--card)); --skeleton-shine: rgb(255 236 220 / 0.07); }
+  .dm-pool-layout > * { order: 3; min-width: 0; }
+  .dm-pool-layout > .dm-pool-a-head { order: 0; margin-bottom: 8px; }
+  .dm-pool-layout > .dm-pool-a-chart { order: 1; }
+  .dm-pool-layout > .dm-pool-a-figs { order: 2; }
   @media (min-width: 768px) {
-    .dm-pool-kv { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-auto-flow: column; column-gap: 32px; }
+    .dm-pool-layout { gap: 24px; }
+  }
+  @media (min-width: 1024px) {
+    .dm-pool-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      grid-template-areas: "head head" "chart figs" "details details" "range range" "activity activity" "positions positions";
+      align-items: start;
+    }
+    .dm-pool-a-head { grid-area: head; }
+    .dm-pool-a-chart { grid-area: chart; }
+    .dm-pool-a-figs { grid-area: figs; }
+    .dm-pool-a-details { grid-area: details; }
+    .dm-pool-a-range { grid-area: range; }
+    .dm-pool-a-activity { grid-area: activity; }
+    .dm-pool-a-positions { grid-area: positions; }
+  }
+
+  /* ---- The title row: marks, the pair (the page h1), chips; New position at its right ------------------------- */
+  .dm-pool-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px 32px; }
+  .dm-pool-title { display: flex; min-width: 0; align-items: center; gap: 16px; }
+  .dm-pool-marks { display: inline-flex; flex-shrink: 0; }
+  .dm-pool-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 10px; }
+  /* Each chip line keeps the id's copy-button height (24px), with or without the button, so the title row is one
+     height while the pool is verified and after. */
+  .dm-pool-id { display: inline-flex; align-items: center; gap: 2px; min-height: 24px; font-family: var(--font-mono); font-size: 13px; line-height: 18px; letter-spacing: 0; color: var(--fg-subtle); }
+  .dm-pool-verifying { display: inline-flex; align-items: center; min-height: 24px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+  /* ---- Cards ------------------------------------------------------------------------------------------------- */
+  .dm-pool-card, .dm-pool-chart { padding: 24px; }
+  .dm-pool-lead { max-width: 60ch; margin-top: 4px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); }
+  /* A disclosure inside a card is a quiet row whose chevron lines up with the card's text. */
+  .dm-pool-quiet { margin: 12px -12px 0; }
+  .dm-pool-disclosures { display: grid; gap: 2px; margin: 12px -12px 0; }
+  .dm-pool-disclosures > .dm-pool-quiet { margin: 0; }
+
+  /* ---- The figures card (§9.1): every stat a 52px row, the label left and the figure right ---------------------- */
+  .dm-pool-figures { padding: 8px 20px; border-radius: var(--radius-card); background: var(--card); box-shadow: var(--elev-card); }
+  .dm-pool-figures .dm-stat-sub { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; }
+  .dm-pool-fig-skel { width: 72px; height: 14px; margin: 3px 0; }
+  /* A row whose only sub is hidden provenance centres its figure on its label (the empty sub takes no share of the row). */
+  .dm-pool-figures .dm-stats--list > * { align-content: center; }
+  /* From 1024px the card stands beside the chart as the Uniswap stats column: each row a label over its figure at
+     24/28 (Uniswap's heading3), hairlines between. The card is as tall as the chart card beside it, its rows sharing
+     that height evenly, each centred in its share, so the two cards end on one line. PRICE is a row like its
+     siblings at 20/26: the chart header's 36px close stays the page's one big price. */
+  @media (min-width: 1024px) {
+    .dm-pool-layout > .dm-pool-a-figs { align-self: stretch; display: flex; flex-direction: column; padding: 4px 24px; }
+    .dm-pool-a-figs > .dm-stats--list { flex: 1 1 auto; grid-auto-rows: 1fr; }
+    .dm-pool-a-figs > .dm-stats--list > * { grid-template-columns: minmax(0, 1fr); align-content: center; padding: 16px 0; }
+    .dm-pool-a-figs > .dm-stats--list > * > dt { grid-row: auto; }
+    .dm-pool-a-figs > .dm-stats--list > * > dd { grid-column: 1; justify-self: start; text-align: left; }
+    .dm-pool-figures.dm-pool-a-figs .dm-stats--list .dm-stat-value { margin-top: 8px; font-size: 24px; line-height: 28px; letter-spacing: -0.4px; }
+    .dm-pool-figures.dm-pool-a-figs .dm-stats--list .dm-stat-sub { margin-top: 4px; }
+    .dm-pool-figures.dm-pool-a-figs .dm-stats--list .dm-stat-sub:has(> .dm-provenance:only-child) { margin-top: 0; }
+    .dm-pool-a-figs .dm-pool-fig-skel { width: 112px; height: 24px; margin: 2px 0; border-radius: 6px; }
+    .dm-pool-figures.dm-pool-a-figs .dm-stats--list .dm-pool-price-stat .dm-stat-value { font-size: 20px; line-height: 26px; letter-spacing: -0.3px; }
+    .dm-pool-a-figs .dm-pool-price-stat .dm-pool-fig-skel { height: 20px; margin: 3px 0; }
+  }
+
+  /* ---- The chart card (§9.1) --------------------------------------------------------------------------------- */
+  .dm-pool-chart-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; }
+  .dm-pool-chart-sub { margin-top: 4px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-pool-chart-figure { margin-top: 20px; min-width: 0; }
+  .dm-pool-chart-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
+  .dm-pool-chart-close { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .dm-pool-chart-date { margin-top: 4px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pool-chart-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 20px; }
+  .dm-pool-chart-stale { margin-right: auto; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-chart-body { --axis-w: 84px; margin-top: 16px; }
+
+  /* The plot: a stretched SVG (areas, lines, crosshair) left of an HTML price column (labels and the last-value chip);
+     dots, the end dot and the hover dot are HTML over the SVG, placed in percent of the plot box, so nothing stretches. */
+  .dm-pool-canvas { position: relative; height: 320px; }
+  .dm-pool-canvas > .dm-pool-chart-svg { position: absolute; top: 0; left: 0; width: calc(100% - var(--axis-w)); height: 100%; max-width: none; overflow: visible; border-radius: 0; animation: dm-reveal var(--dur-wipe) var(--ease-enter) backwards; }
+  .dm-pool-canvas > .dm-pool-chart-svg:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: 4px; }
+  .dm-pool-gap { fill: var(--fg-subtle); opacity: 0.08; }
+  /* Dots and labels paint over the lines (the SVG sits at z-index 1). */
+  .dm-pool-overlay { position: absolute; z-index: 2; top: 0; bottom: 0; left: 0; right: var(--axis-w); pointer-events: none; }
+  .dm-pool-overlay > span { position: absolute; border-radius: var(--radius-pill); translate: -50% -50%; }
+  .dm-pool-lone { width: 6px; height: 6px; background: var(--primary-line); }
+  .dm-pool-end { width: 8px; height: 8px; background: var(--primary-line); box-shadow: 0 0 0 2px var(--card); animation: dm-dot-pop var(--dur-dot) var(--ease-pop) var(--dur-wipe) backwards; }
+  .dm-pool-hover { width: 10px; height: 10px; background: var(--primary-line); box-shadow: 0 0 0 2px var(--card), 0 0 0 7px color-mix(in srgb, var(--primary-line) 22%, transparent); }
+  .dm-pool-yaxis { position: absolute; z-index: 2; top: 0; bottom: 0; right: 0; width: var(--axis-w); pointer-events: none; }
+  .dm-pool-ylabel { position: absolute; left: 12px; translate: 0 -50%; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+  /* A label within about 15px of the last-value chip gives way to it. */
+  .dm-pool-ylabel[data-by-chip] { visibility: hidden; }
+  /* The last value's chip starts where the dashed line leaves the plot. */
+  .dm-last-chip.dm-pool-chip { left: 6px; right: auto; max-width: calc(var(--axis-w) - 6px); overflow: hidden; text-overflow: ellipsis; transform-origin: left center; }
+  .dm-pool-xaxis { position: relative; display: flex; justify-content: space-between; gap: 12px; margin: 8px var(--axis-w) 0 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; container-type: inline-size; }
+  /* Interior ticks sit on their time, centred; one whose distance to the nearer edge (data-room, in ‰ of the plot)
+     would leave less than about 24px between it and an edge label (about 93px wide) gives way on this plot's width. */
+  .dm-pool-xtick { position: absolute; top: 0; translate: -50% 0; white-space: nowrap; }
+  @container (width < 536px) { .dm-pool-xtick[data-room="250"] { visibility: hidden; } }
+  @container (width < 487px) { .dm-pool-xtick[data-room="275"] { visibility: hidden; } }
+  @container (width < 447px) { .dm-pool-xtick[data-room="300"] { visibility: hidden; } }
+  @container (width < 412px) { .dm-pool-xtick[data-room="325"] { visibility: hidden; } }
+  @container (width < 383px) { .dm-pool-xtick[data-room="350"] { visibility: hidden; } }
+  @container (width < 357px) { .dm-pool-xtick[data-room="375"] { visibility: hidden; } }
+  @container (width < 335px) { .dm-pool-xtick[data-room="400"] { visibility: hidden; } }
+  @container (width < 315px) { .dm-pool-xtick[data-room="425"] { visibility: hidden; } }
+  @container (width < 298px) { .dm-pool-xtick[data-room="450"] { visibility: hidden; } }
+  @container (width < 282px) { .dm-pool-xtick[data-room="475"] { visibility: hidden; } }
+  .dm-pool-coverage { margin-top: 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-coverage:has(> .dm-provenance:only-child) { margin: 0; }
+
+  /* The resting and unavailable plots: the plot's own height, so nothing jumps when the line lands. */
+  .dm-pool-plot { position: relative; --chart-ground: var(--card); }
+  /* The drawn chart stands on the bare card, so its resting and unavailable plots do too: no dot grid to speckle the
+     wave, nothing that disappears when the line lands. */
+  .dm-pool-plot.dm-dots-chart { background-image: none; }
+  .dm-pool-plot.dm-dots-chart::after { display: none; }
+  .dm-pool-plot-empty { position: relative; z-index: 1; display: grid; place-content: center; justify-items: center; gap: 12px; min-height: 320px; padding: 20px; text-align: center; }
+  /* While a history is read: the chart's wave under the skeleton sweep (a data-URL mask, no url( inside it). It ends
+     level and dissolves over its last 32px, a calm placeholder rather than a line cut off at the card's edge. */
+  .dm-pool-plot-empty > .dm-pool-plot-baseline {
+    position: absolute;
+    inset: 24px 0 0;
+    border-radius: 0;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 240' preserveAspectRatio='none'%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116 L 720 240 L 0 240 Z' fill='black' fill-opacity='0.3'/%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116' stroke='black' stroke-width='2.5' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat, linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+    -webkit-mask-composite: source-in;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 720 240' preserveAspectRatio='none'%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116 L 720 240 L 0 240 Z' fill='black' fill-opacity='0.3'/%3E%3Cpath d='M0 150 C 70 110, 130 96, 200 128 S 330 196, 420 150 S 560 70, 640 96 S 690 116, 720 116' stroke='black' stroke-width='2.5' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat, linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+    mask-composite: intersect;
+  }
+  /* The chart card while it waits: every loaded row as a bubble on that row's own box (measured on the loaded card:
+     642px at 1440, 555px at 390), so the card keeps its height when the history lands. Each bubble is a block with
+     its own margins, so an empty one (verification without an answer) still holds its row. */
+  .dm-pool-chart-head { min-height: 30px; }
+  .dm-pool-skel-switch { display: block; width: 172px; height: 30px; border-radius: var(--radius-pill); }
+  .dm-pool-skel-head, .dm-pool-skel-figure { display: grid; justify-items: start; }
+  .dm-pool-skel-sub { display: block; width: 180px; height: 12px; margin: 7px 0 3px; }
+  .dm-pool-skel-price { display: block; width: 180px; height: 32px; margin: 24px 0 4px; border-radius: 6px; }
+  .dm-pool-skel-date { display: block; width: 240px; max-width: 100%; height: 12px; margin: 6px 0 2px; }
+  .dm-pool-skel-controls { display: flex; justify-content: space-between; gap: 12px; margin-top: 20px; }
+  .dm-pool-skel-seg { display: block; width: 112px; height: 30px; border-radius: var(--radius-pill); }
+  .dm-pool-skel-seg + .dm-pool-skel-seg { width: 124px; }
+  .dm-pool-skel-axis { display: flex; justify-content: space-between; margin: 8px var(--axis-w, 84px) 0 0; }
+  .dm-pool-skel-tick { display: block; width: 96px; height: 12px; margin: 2px 0; }
+  .dm-pool-skel-quiet { display: flex; align-items: center; height: 40px; margin-top: 12px; }
+  .dm-pool-skel-summary { display: block; width: 200px; height: 12px; }
+  .dm-pool-skel-marks { width: 44px; height: 44px; border-radius: var(--radius-pill); }
+  /* The New position button's place in the title row, held unseen until the verified page brings the button. */
+  .dm-pool-skel-action { display: block; width: 129px; height: 48px; visibility: hidden; }
+  .dm-pool-fig-sub-skel { display: block; width: 96px; height: 12px; margin: 2px 0; }
+
+  /* The USD · provider chart (PoolPriceChart): a measured SVG with its bars and labels; the kit's line, area and crosshair. */
+  .dm-pool-chart-svg { position: relative; z-index: 1; display: block; max-width: 100%; border-radius: inherit; touch-action: pan-y; cursor: crosshair; }
+  .dm-pool-chart-svg:focus-visible { outline-offset: var(--focus-offset-inset); }
+  .dm-pool-chart-svg { transition: opacity var(--dur-fade) var(--ease-std); }
+  .dm-pool-chart-svg[aria-busy="true"] { opacity: 0.5; }
+  .dm-pool-axis { fill: var(--fg-subtle); font-family: var(--font-sans); font-size: 12px; letter-spacing: 0; font-variant-numeric: lining-nums tabular-nums; }
+  /* Data arrival: the line and its area draw in from the left; the bars rise (VolumeBarsGroup). */
+  .dm-pool-reveal { animation: dm-reveal var(--dur-wipe) var(--ease-enter) backwards; }
+  .dm-end-dot[data-open] { opacity: 0.55; }
+
+  /* ---- Pool details (§9.1): two columns of 48px rows, hex on one line ---------------------------------------- */
+  .dm-pool-card .dm-kv { margin: 12px -4px 0; padding: 0; }
+  .dm-pool-kv dt { flex-shrink: 0; white-space: nowrap; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
+  @media (min-width: 768px) {
+    .dm-pool-kv { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-auto-flow: column; column-gap: 40px; }
     .dm-pool-kv--2 { grid-template-rows: repeat(2, auto); }
     .dm-pool-kv--3 { grid-template-rows: repeat(3, auto); }
     .dm-pool-kv--4 { grid-template-rows: repeat(4, auto); }
@@ -36,76 +192,124 @@
     .dm-pool-kv--2 > div:nth-child(2), .dm-pool-kv--3 > div:nth-child(3), .dm-pool-kv--4 > div:nth-child(4), .dm-pool-kv--5 > div:nth-child(5) { background: none; }
   }
 
+  /* ---- On-chain activity and positions (§9.1): the facts as tiles, the amounts as a hairline table ------------ */
+  .dm-pool-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 16px 0 0; }
+  .dm-pool-facts > div { display: grid; align-content: start; gap: 4px; min-width: 0; padding: 12px 16px; border-radius: var(--radius); background: var(--surface-1); }
+  .dm-pool-facts dt { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pool-fact-skel { width: 64px; height: 14px; margin: 3px 0; }
+
   /* Token amounts in the pool's currency order: a label column, then one column per token, figures right-aligned. */
-  .dm-pool-table-wrap { min-width: 0; overflow-x: auto; }
-  .dm-pool-table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; font-variant-numeric: lining-nums tabular-nums; }
-  .dm-pool-table :is(th, td) { height: 44px; padding: 0 4px; text-align: right; white-space: nowrap; }
+  .dm-pool-table-wrap { min-width: 0; margin-top: 16px; overflow-x: auto; }
+  .dm-pool-table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pool-table :is(th, td) { height: 48px; padding: 0 4px; text-align: right; white-space: nowrap; }
   .dm-pool-table :is(th, td):first-child { text-align: left; }
   .dm-pool-table :is(th, td) + :is(th, td) { padding-left: 16px; }
-  .dm-pool-table thead th { height: 32px; color: var(--fg-subtle); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0; }
-  .dm-pool-table tbody tr { border-top: 1px solid var(--border-lip); }
-  .dm-pool-table tbody th { color: var(--fg-subtle); font-weight: 400; }
+  .dm-pool-table thead th { height: 32px; color: var(--fg-subtle); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; }
+  .dm-pool-table tbody tr { border-top: 1px solid var(--border); }
+  .dm-pool-table tbody th { color: var(--fg-muted); font-weight: 400; }
   .dm-pool-table tbody td { color: var(--fg); }
   .dm-pool-table--positions tbody td:first-child { color: var(--fg-muted); }
-  /* On a phone the label wraps and the figures tighten, so three columns fit without scrolling sideways. */
-  @media (max-width: 639px) {
-    .dm-pool-table { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
-    .dm-pool-table tbody th { white-space: normal; min-width: 64px; }
-    .dm-pool-table :is(th, td) + :is(th, td) { padding-left: 10px; }
-  }
+  .dm-pool-table--positions td:nth-child(2) [translate] { font-family: var(--font-mono); font-size: 13px; letter-spacing: 0; }
+  .dm-pool-positions-list { margin-top: 16px; }
 
-  /* ---- USD price and volume (E.3) ----------------------------------------------------------- */
-  .dm-pool-plot { position: relative; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--border); --chart-ground: var(--surface-2); }
-  .dm-pool-plot-empty { position: relative; z-index: 1; display: grid; place-content: center; justify-items: center; gap: 12px; min-height: 200px; padding: 20px; text-align: center; }
-  .dm-pool-plot-baseline { position: absolute; left: 20px; right: 20px; bottom: 32px; height: 2px; }
-  .dm-pool-chart-svg { position: relative; z-index: 1; display: block; max-width: 100%; border-radius: inherit; touch-action: pan-y; cursor: crosshair; }
-  .dm-pool-chart-svg:focus-visible { outline-offset: var(--focus-offset-inset); }
-  .dm-pool-chart-svg { transition: opacity var(--dur-fade) var(--ease-std); }
-  .dm-pool-chart-svg[aria-busy="true"] { opacity: 0.5; }
-  .dm-pool-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 5; }
-  .dm-pool-line { fill: none; stroke: var(--primary-ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-  .dm-pool-last { fill: var(--primary-ink); }
-  .dm-pool-last[data-open] { opacity: 0.55; }
-  .dm-pool-crosshair { stroke: var(--border-strong); stroke-width: 1; }
-  .dm-pool-ring { fill: var(--surface-2); stroke: var(--primary-ink); stroke-width: 2; }
-  .dm-pool-axis { fill: var(--fg-subtle); font-family: var(--font-sans); font-size: 12px; letter-spacing: 0; font-variant-numeric: lining-nums tabular-nums; }
-  /* Data arrival: the line and its area draw in from the left; the bars rise (VolumeBarsGroup). */
-  .dm-pool-reveal { animation: dm-reveal var(--dur-chart) var(--ease-enter) both; }
+  /* ---- Plan a range: PoolRangeControls, in every context (§9.1) ------------------------------------------------ */
+  .dm-pool-range-body { margin-top: 20px; }
+  .dm-pool-price { display: grid; gap: 4px; }
+  .dm-pool-price-label { margin: 0; font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-pool-price-row { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+  .dm-pool-price-figure { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .dm-pool-price-unit { margin: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
 
-  /* ---- Plan a range: PoolRangeControls (E.4) ------------------------------------------------ */
   .dm-pool-widths { display: flex; width: 100%; }
   @media (min-width: 640px) { .dm-pool-widths { max-width: 360px; } }
   .dm-pool-widths > .dm-seg-item { flex: 1 1 0; min-width: 0; }
 
-  .dm-pool-interval { position: relative; height: 96px; overflow: hidden; border-radius: var(--radius-sm); background-color: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); --chart-ground: var(--surface-1); }
+  /* The interval: a dotted field, the band with its two Tangerine edges, a handle at each end, the pool price as a
+     dotted line under its chip, and how far each end of the field sits from the pool price. Moves ease (M14). */
+  .dm-pool-interval-caption { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-interval { position: relative; height: 140px; overflow: hidden; border-radius: var(--radius-lg); background-color: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); --chart-ground: var(--surface-1); }
   .dm-pool-interval > * { position: absolute; z-index: 1; }
-  .dm-pool-interval-band { top: 28px; bottom: 28px; background: color-mix(in srgb, var(--primary-ink) 22%, transparent); border-inline: 1px solid var(--primary-ink); transition: left var(--dur-hover) var(--ease-std), width var(--dur-hover) var(--ease-std); }
-  .dm-pool-interval-handle { top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: var(--radius-pill); background: var(--btn); box-shadow: var(--elev-button); transition: left var(--dur-hover) var(--ease-std); }
-  .dm-pool-interval-price { top: 22px; bottom: 8px; width: 1px; margin-left: -0.5px; background: repeating-linear-gradient(to bottom, var(--fg) 0 3px, transparent 3px 6px); transition: left var(--dur-hover) var(--ease-std); }
-  .dm-pool-interval-label { top: 5px; translate: -50% 0; font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: -0.1px; color: var(--fg-muted); white-space: nowrap; }
-  .dm-pool-interval-end { bottom: 5px; font-size: 11px; line-height: 14px; color: var(--fg-subtle); white-space: nowrap; }
-  .dm-pool-interval-end--min { left: 8px; }
-  .dm-pool-interval-end--max { right: 8px; }
+  .dm-pool-interval-band { top: 36px; bottom: 36px; border-radius: 6px; background: var(--band-fill); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); transition: left var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter); }
+  .dm-pool-interval-handle {
+    top: 50%;
+    width: 16px;
+    height: 40px;
+    margin: -20px 0 0 -8px;
+    border-radius: var(--radius-pill);
+    /* Tangerine, like the band's edges they move (a range visual, exempt from the Tangerine count): the drag targets
+       are the control's most visible part in both themes, ringed in the field's ground. */
+    background: linear-gradient(var(--primary-fg), var(--primary-fg)) 5px 50% / 1px 14px no-repeat, linear-gradient(var(--primary-fg), var(--primary-fg)) 10px 50% / 1px 14px no-repeat, var(--primary-line);
+    box-shadow: 0 0 0 2px var(--surface-1), var(--elev-button);
+    transition: left var(--dur-step) var(--ease-enter);
+  }
+  .dm-pool-interval-price { top: 30px; bottom: 12px; width: 1.5px; margin-left: -0.75px; background: radial-gradient(circle, var(--fg) 0.75px, transparent 1px) center top / 1.5px 5px repeat-y; transition: left var(--dur-step) var(--ease-enter); }
+  .dm-pool-interval-label { top: 8px; translate: -50% 0; padding: 1px 8px; border-radius: var(--radius-pill); background: var(--surface-3); color: var(--fg); font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: -0.1px; white-space: nowrap; transition: left var(--dur-step) var(--ease-enter); }
+  .dm-pool-interval-end { bottom: 8px; font-size: 11px; line-height: 14px; letter-spacing: -0.1px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-pool-interval-end--min { left: 10px; }
+  .dm-pool-interval-end--max { right: 10px; }
 
-  /* The bound's price: a borderless field, right-aligned, that shows its ring only on focus. */
-  .dm-pool-bound-input { flex: 1 1 auto; min-width: 0; height: 36px; padding: 0 8px; border-radius: var(--radius-sm); background: transparent; color: var(--fg); font: inherit; font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; text-align: right; font-variant-numeric: lining-nums tabular-nums; transition: background-color var(--dur-hover) ease; }
+  /* Min and max: two quiet panels, the price large, − and + as round buttons, the slider under them. */
+  .dm-pool-bounds { display: grid; gap: 12px; }
+  @media (min-width: 640px) { .dm-pool-bounds { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+  .dm-pool-bound { min-width: 0; padding: 16px 16px 6px; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-pool-bound-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .dm-pool-bound-label { font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-pool-bound-pct { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pool-bound-row { display: flex; min-width: 0; align-items: center; gap: 6px; margin-top: 6px; }
+  .dm-pool-bound-unit { margin-top: 2px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  /* The bound's price: a borderless field that shows its ring only on focus. */
+  .dm-pool-bound-input { flex: 1 1 auto; min-width: 0; height: 40px; margin-left: -8px; padding: 0 8px; border-radius: var(--radius); background: transparent; color: var(--fg); font: inherit; font-size: 20px; line-height: 28px; font-weight: 500; letter-spacing: -0.3px; text-align: left; font-variant-numeric: lining-nums tabular-nums; transition: background-color var(--dur-hover) ease; }
   .dm-pool-bound-input:hover { background: var(--wash); }
-  .dm-pool-bound-input:focus-visible { background: var(--wash); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
+  .dm-pool-bound-input:focus-visible { background: var(--card); box-shadow: inset 0 0 0 1px var(--border-card-hover); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-pool-bound-input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--money-out); }
-  .dm-pool-step-glyph { font-size: 18px; line-height: 18px; }
+  .dm-pool-help { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
 
   .dm-pool-position { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
   /* The line appears only out of range, so its dot is always the neutral one, as .dm-flow-position is (flow.css:164). */
   .dm-pool-dot { width: 6px; height: 6px; flex-shrink: 0; margin-top: 6px; border-radius: var(--radius-pill); background: var(--fg-faint); }
 
-  /* ---- Phone (E.3 Phone, 390) ---------------------------------------------------------------- */
-  @media (max-width: 639px) {
-    .dm-pool-price-stat { grid-column: span 2; }
-  }
+  /* ---- Phone (§9.2) ------------------------------------------------------------------------------------------ */
   @media (max-width: 767px) {
     .dm-pool-marks { zoom: 0.8182; }
+    .dm-pool-title { gap: 12px; }
     .dm-pool-actions { width: 100%; }
-    .dm-pool-new { width: 100%; height: 44px; padding: 0 18px; font-size: 14px; line-height: 20px; }
-    .dm-pool-chart-controls { width: 100%; }
+    .dm-pool-new { width: 100%; }
+    .dm-pool-card, .dm-pool-chart { padding: 16px; }
+    .dm-pool-figures { padding: 4px 16px; }
+    /* The plot takes the card's whole width: the high and the low sit inside it at the right, on the card's ground,
+       and the last value is the header's close right above (no gutter, no chip). */
+    .dm-pool-chart-body { --axis-w: 0px; }
+    .dm-pool-canvas { height: 220px; }
+    .dm-pool-plot-empty { min-height: 220px; }
+    .dm-pool-skel-price { height: 28px; margin: 22px 0 2px; }
+    .dm-pool-skel-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .dm-pool-skel-seg, .dm-pool-skel-seg + .dm-pool-skel-seg { width: auto; }
+    .dm-pool-skel-axis { margin-right: 0; }
+    .dm-pool-skel-action { width: 100%; }
+    /* The high sits just over the line's top and the low just under its bottom, in the plot's own padding, so no
+       label ever covers the line; with no chip on a phone, neither gives way. */
+    .dm-pool-ylabel { left: auto; right: 0; font-size: 11px; line-height: 14px; letter-spacing: -0.1px; }
+    .dm-pool-ylabel[data-edge="high"] { translate: 0 calc(-100% - 2px); }
+    .dm-pool-ylabel[data-edge="low"] { translate: 0 2px; }
+    .dm-pool-ylabel[data-by-chip] { visibility: visible; }
+    /* Hidden by visibility, not display: a display switch would restart the chip's pop wherever the query flips. */
+    .dm-last-chip.dm-pool-chip, .dm-pool-chart-svg .dm-last-line { visibility: hidden; }
+    /* The base and the window side by side, each stretched; the stale caption under them. */
+    .dm-pool-chart-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .dm-pool-chart-controls > .dm-seg { display: flex; width: 100%; }
+    .dm-pool-chart-controls > .dm-seg > .dm-seg-item { flex: 1 1 0; min-width: 0; }
+    .dm-pool-chart-stale { grid-column: 1 / -1; order: 3; }
+    .dm-pool-facts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  }
+  @media (max-width: 639px) {
+    .dm-pool-table { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
+    .dm-pool-table tbody th { white-space: normal; min-width: 64px; }
+    .dm-pool-table :is(th, td) + :is(th, td) { padding-left: 10px; }
   }
 }
+
+/* PoolRangeControls' Min and Max sliders fill quietly (§0.6: the interval band above already carries the Tangerine,
+   and the pinned thumb ring keeps its own). Outside the layer on purpose: the fill is a Tailwind utility
+   (bg-primary-line) that a components-layer rule cannot outrank; the inline 55 % opacity still applies on top. */
+.dm-pool-bound .bg-primary-line { background-color: color-mix(in srgb, var(--fg-muted) 82%, transparent); }

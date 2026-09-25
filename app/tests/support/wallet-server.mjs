@@ -14,6 +14,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { loadMiddleware } from '../../scripts/gated-server.mjs';
 import { DROP } from './fake-session.mjs';
+import { feesDefault } from './fees/stub.mjs';
 
 export const WALLET_DIST = resolve(import.meta.dirname, '../../.wallet-test-dist');
 
@@ -29,12 +30,15 @@ const TYPES = {
 
 const DROPPED = new Error('drop the connection');
 
-/** Where Positions asks which position NFTs the connected wallet holds (functions/api/owned/v1/positions.ts). */
-export const OWNED_PATH = '/api/owned/v1/positions';
+/**
+ * Where Positions asks which positions the connected wallet created through Domino (functions/api/owned/v2/positions.ts;
+ * v1 was retired on 2026-09-24).
+ */
+export const OWNED_PATH = '/api/owned/v2/positions';
 
 /**
  * This server has no chain behind it, so it answers the owned-positions POST
- * as the endpoint would for a wallet that holds no position NFT and no held
+ * as the endpoint would for a wallet that created no position and holds no
  * deposit: every scenario that connects a wallet on Positions gets a real,
  * empty answer instead of the app shell. A test that wants positions answers
  * the path itself, through `routes`, which run first. Added on purpose on
@@ -50,7 +54,7 @@ async function noOwnedPositions(request) {
     // An unreadable body is refused below.
   }
   if (request.method !== 'POST' || !owner) return Response.json({ error: 'invalid_request' }, { status: 400 });
-  return Response.json({ owner, block: 1, positions: [], complete: true, deposits: [] });
+  return Response.json({ owner, block: 1, positions: [], deposits: [] });
 }
 
 async function staticResponse(dist, url) {
@@ -133,6 +137,11 @@ export function createWalletServer({ fake, gate = null, intercept, dist = WALLET
       owned.push({ method: request.method });
       return noOwnedPositions(request);
     }
+    // 2026-09-24 (P6, R-7): the fees relay (functions/api/fees/v1/*) answers every position not_found by default, so no
+    // history is drawn and /logs is never asked; a suite that wants one passes tests/support/fees/stub.mjs's
+    // feesFixtureRoute through `routes`, which run first.
+    const fees = await feesDefault(request, url);
+    if (fees) return fees;
     const replaced = intercept?.(url);
     if (replaced) return replaced;
     return staticResponse(dist, url);

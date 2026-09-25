@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { catalogueTokens } from '../../config/selectedPoolCatalogue'
 import { CREATE } from '../../lib/create/copy'
+import { stilled } from '../../lib/motion/stilled'
 import type { JourneyState } from '../../lib/create/journey'
 import { shortAddress } from '../../lib/read/screens/identity'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
@@ -79,6 +80,7 @@ export function StageToken({
   onCandidates,
   onToken,
   onPool,
+  onPreview,
 }: {
   source: ReadSource | null
   state: JourneyState
@@ -87,6 +89,8 @@ export function StageToken({
   onCandidates: (next: TokenCandidate[]) => void
   onToken: (candidate: TokenCandidate | null) => void
   onPool: (option: PoolOption | null) => void
+  /** A pool row pointed at or focused, or null once the list is left: the preview beside the steps shows it. */
+  onPreview?: (option: PoolOption | null) => void
 }) {
   const [changing, setChanging] = useState(false)
   const known = knownTokens({ catalogue: catalogueTokens(), candidates })
@@ -97,7 +101,17 @@ export function StageToken({
   }
   const pickPool = (option: PoolOption | null) => {
     onPool(option)
-    if (option) setChanging(false)
+    if (!option) return
+    setChanging(false)
+    // The list folds into the one chosen pool. Picked low in a long list, the fold can leave it above the screen,
+    // under the header: bring it back into view once it is drawn, as a step change does (StepList.tsx).
+    requestAnimationFrame(() => {
+      const panel = document.querySelector('[data-chosen-pool]')
+      if (!panel) return
+      const header = document.querySelector('header')?.getBoundingClientRect().height ?? 0
+      const top = panel.getBoundingClientRect().top
+      if (top < header + 8) window.scrollTo({ top: Math.max(0, window.scrollY + top - header - 24), behavior: stilled() ? 'auto' : 'smooth' })
+    })
   }
 
   const chosen = state.pool && !changing ? state.pool : null
@@ -181,7 +195,7 @@ export function StageToken({
               {CREATE.page.sourceLoading}
             </p>
           )}
-          {source && state.token && <PoolList source={source} state={state} onPool={pickPool} />}
+          {source && state.token && <PoolList source={source} state={state} onPool={pickPool} onPreview={onPreview} />}
         </>
       )}
     </div>

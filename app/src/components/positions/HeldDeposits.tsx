@@ -7,8 +7,9 @@ import { createSetupClient, deploymentFrom } from '../../finance/setup'
 import { setupWallet } from '../../finance/wallet'
 import { errorCode, financeErrorText } from '../../finance/words'
 import { useWalletIdentity, walletKey } from '../../lib/walletIdentity'
-import { Button, Display } from '../ui'
+import { Button } from '../ui'
 import type { PositionCurrency } from './PositionActions'
+import { QuietMarkPair } from './visual/QuietMarks'
 import { amountText, currencyName, isRejection, outcomeUnknown, watchReceipt } from './walletSteps'
 
 /**
@@ -152,31 +153,33 @@ export default function HeldDeposits({ owner, deposits, onChanged }: HeldDeposit
   }
 
   return (
-    <section className="dm-card dm-acct-card" aria-labelledby="held-deposits-title" data-held-deposits={deposits.length}>
+    <section className="dm-card dm-acct-card dm-held" aria-labelledby="held-deposits-title" data-held-deposits={deposits.length}>
       <div className="dm-acct-card-head">
-        <Display as="h2" id="held-deposits-title" className="dm-display-card">
+        <h2 id="held-deposits-title" className="dm-title">
           Deposits not yet in a position
-        </Display>
+        </h2>
       </div>
-      <ul className="dm-acct-card-body grid gap-3">
+      <ul className="dm-held-list">
         {deposits.map((deposit) => {
           const id = deposit.operationId.toLowerCase()
           const state = refunds[id]
           const pair = `${currencyName(deposit.currencies[0])} / ${currencyName(deposit.currencies[1])}`
           return (
-            <li key={id} className="grid gap-2" data-held-deposit={id}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="grid gap-0.5">
-                  <span className="text-body font-medium text-fg">{pair}</span>
-                  <span className="text-body text-fg-muted">
+            <li key={id} className="dm-held-row" data-held-deposit={id}>
+              <div className="dm-held-main">
+                <QuietMarkPair addresses={[deposit.currencies[0].address, deposit.currencies[1].address]} size={32} />
+                <div className="dm-held-text">
+                  <span className="dm-held-pair">{pair}</span>
+                  <span className="dm-held-amounts">
                     <Amount raw={deposit.balance0} currency={deposit.currencies[0]} /> · <Amount raw={deposit.balance1} currency={deposit.currencies[1]} />
                   </span>
                 </div>
                 {state?.stage !== 'done' && (
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="primary"
                     size="sm"
+                    className="dm-held-refund"
                     disabled={busy || !OPERATION.test(id)}
                     aria-busy={state?.stage === 'wallet' || state?.stage === 'chain' || undefined}
                     data-held-refund={id}
@@ -187,12 +190,12 @@ export default function HeldDeposits({ owner, deposits, onChanged }: HeldDeposit
                 )}
               </div>
               {state && PROGRESS[state.stage] && (
-                <p role="status" className="text-body font-medium text-fg" data-held-progress={state.stage}>
+                <p role="status" className="dm-held-line dm-held-line--strong" data-held-progress={state.stage}>
                   {PROGRESS[state.stage]}
                 </p>
               )}
               {state?.notice && (
-                <p role="alert" className="text-body text-fg-muted" data-held-notice={state.notice.code ?? 'said'}>
+                <p role="alert" className="dm-held-line" data-held-notice={state.notice.code ?? 'said'}>
                   {state.notice.text}
                   {state.notice.setup && (
                     <>

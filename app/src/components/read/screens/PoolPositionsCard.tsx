@@ -80,6 +80,8 @@ export function PoolPositionsCard({ read, option }: { read: ScreenOutcome<'pool-
   const state = view ? (view.state === 'unavailable' ? 'unavailable' : view.stale ? 'stale' : 'ok') : failure ? 'unavailable' : 'loading'
   const counted = view?.state === 'reconciled' ? view : null
   const cell = (node: ReactNode) => (counted ? node : state === 'loading' ? <Skeleton className="ml-auto h-4 w-12" /> : <Dash title={reason} />)
+  // The facts are tiles with their figures on the left: their resting bubbles sit there too.
+  const fact = (node: ReactNode) => (counted ? node : state === 'loading' ? <Skeleton className="dm-pool-fact-skel" /> : <Dash title={reason} />)
   const shown = counted ? counted.rows.slice(0, POSITION_ROWS) : []
   const folded = counted ? counted.rows.slice(POSITION_ROWS) : []
   const table = (rows: PoolPositionRow[]) => (
@@ -99,17 +101,17 @@ export function PoolPositionsCard({ read, option }: { read: ScreenOutcome<'pool-
     </div>
   )
   return (
-    <section className="dm-card mt-6 animate-rise p-5 [--delay:180ms]" aria-labelledby="pool-positions-title" data-pool-positions={state} data-positions-reason={view?.state === 'unavailable' ? view.reason : failure?.state} title={reason}>
-      <h2 id="pool-positions-title" className="dm-display dm-display-card" title="Every position on this pool at one block. Owners are public data at that block.">
+    <section className="dm-card dm-pool-card dm-pool-a-positions animate-rise [--delay:120ms]" aria-labelledby="pool-positions-title" data-pool-positions={state} data-positions-reason={view?.state === 'unavailable' ? view.reason : failure?.state} title={reason}>
+      <h2 id="pool-positions-title" className="dm-title" title="Every position on this pool at one block. Owners are public data at that block.">
         Positions in this pool
       </h2>
       <p role="status" className="sr-only">{state === 'loading' ? 'Reading positions…' : state === 'unavailable' ? reason : ''}</p>
-      <dl className="dm-kv dm-pool-kv dm-pool-kv--2 -mx-5 mt-3">
-        <div><dt>Positions</dt><dd>{cell(counted?.count.toLocaleString('en-US'))}</dd></div>
-        <div><dt>With liquidity</dt><dd>{cell(counted?.withLiquidity.toLocaleString('en-US'))}</dd></div>
-        <div><dt>Block</dt><dd>{view ? view.block : cell(null)}</dd></div>
+      <dl className="dm-pool-facts">
+        <div><dt>Positions</dt><dd>{fact(counted?.count.toLocaleString('en-US'))}</dd></div>
+        <div><dt>With liquidity</dt><dd>{fact(counted?.withLiquidity.toLocaleString('en-US'))}</dd></div>
+        <div><dt>Block</dt><dd>{view ? view.block : fact(null)}</dd></div>
       </dl>
-      <div className="dm-pool-table-wrap mt-2">
+      <div className="dm-pool-table-wrap">
         <table className="dm-pool-table" data-positions-assets="">
           <CurrencyHead option={option} first={<span className="sr-only">Figure</span>} />
           <tbody>
@@ -127,9 +129,9 @@ export function PoolPositionsCard({ read, option }: { read: ScreenOutcome<'pool-
           </tbody>
         </table>
       </div>
-      {shown.length > 0 && <div className="mt-4">{table(shown)}</div>}
+      {shown.length > 0 && <div className="dm-pool-positions-list">{table(shown)}</div>}
       {folded.length > 0 && (
-        <details className="dm-details -mx-3 mt-2">
+        <details className="dm-details dm-pool-quiet">
           <summary>
             {folded.length} more position{folded.length === 1 ? '' : 's'}
           </summary>

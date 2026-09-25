@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ADDRESS_PROBLEM } from '../../lib/read/screens/copy'
 import { parseAddressInput, shortAddress, type AddressKey } from '../../lib/read/screens/identity'
-import { portfolioHash, portfolioRoute, positionsHash } from '../../lib/read/screens/positions'
+import { portfolioHash, portfolioRoute } from '../../lib/read/screens/positions'
 import type { WalletIdentityView } from '../../lib/walletIdentity'
 import { CopyButton } from '../read/screens/CopyButton'
-import { Button, Display, SearchField, cx } from '../ui'
+import { Button, SearchField, cx } from '../ui'
 import { PortfolioTokens } from './PortfolioTokens'
 
 /** Whose tokens the card shows: an address, and where it came from. Never a claim that anyone here controls it. */
@@ -79,8 +79,8 @@ function AddressForm({ id, onView, className }: { id: string; onView: (wire: str
  * wallet's holdings in its place); otherwise the connected wallet; otherwise
  * none. Tokens are read as soon as there is a subject, so a connected wallet's
  * tokens appear without a click; with none, nothing is read. On
- * `#/portfolio/<address>` this card owns the link; on `#/positions` the NFT
- * lookup does, and this card never writes it.
+ * `#/portfolio/<address>` this card owns the link; on `#/positions` it never
+ * writes it.
  */
 export default function PortfolioBody({ identity }: { identity: WalletIdentityView }) {
   const [route, setRoute] = useState(() => portfolioRoute(window.location.hash))
@@ -107,7 +107,7 @@ export default function PortfolioBody({ identity }: { identity: WalletIdentityVi
       ? { wire: identity.address, key: identity.address.toLowerCase() as AddressKey, source: 'wallet', walletChainId: identity.chainId }
       : null
 
-  // "View address" and "View another address" go to that address's link; the ids of an earlier lookup go with the old link.
+  // "View address" and "View another address" go to that address's link.
   const view = (wire: string) => {
     setShowForm(false)
     go(portfolioHash(wire))
@@ -115,18 +115,18 @@ export default function PortfolioBody({ identity }: { identity: WalletIdentityVi
   }
   const useWallet = () => {
     setShowForm(false)
-    go(positionsHash([]))
+    go('#/positions')
     setRoute({ onRoute: false })
   }
 
   const formId = 'portfolio-other-address'
 
   return (
-    <section className="dm-card dm-acct-rail" aria-labelledby="wallet-card-title" data-portfolio-address={subject?.key}>
+    <section className="dm-card dm-acct-rail dm-acct-wallet" aria-labelledby="wallet-card-title" data-portfolio-address={subject?.key}>
       <div className="dm-acct-rail-head">
-        <Display as="h2" id="wallet-card-title" className="dm-display-rail">
+        <h2 id="wallet-card-title" className="dm-title">
           Wallet
-        </Display>
+        </h2>
         {subject && (
           <span className="dm-acct-subject" title={subject.source === 'wallet' ? 'The connected wallet' : 'The address in this link'}>
             <span className="dm-acct-mono" translate="no">

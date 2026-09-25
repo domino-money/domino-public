@@ -91,6 +91,8 @@ export function PoolActivityCard({ read, option, now }: { read: ScreenOutcome<'p
   const state = view ? (age?.state === 'stale' ? 'stale' : 'ok') : blocked ? 'unavailable' : 'loading'
   const code = failure ? (failure.state === 'unavailable' && failure.cause.kind === 'producer' ? failure.cause.code : failure.state) : tooOld ? ACTIVITY_TOO_OLD : undefined
   const cell = (node: ReactNode) => (view ? node : blocked ? <Dash title={reason} /> : <Skeleton className="ml-auto h-4 w-16" />)
+  // The facts are tiles with their figures on the left: their resting bubbles sit there too.
+  const fact = (node: ReactNode) => (view ? node : blocked ? <Dash title={reason} /> : <Skeleton className="dm-pool-fact-skel" />)
   // The figures cover the span the read asked for. That is 24 h for a stored
   // window; a live window is bounded by a block count and blocks here are far
   // shorter than a second, so it reaches back hours. The card says which it is
@@ -105,21 +107,22 @@ export function PoolActivityCard({ read, option, now }: { read: ScreenOutcome<'p
     </>
   )
   return (
-    <section className="dm-card mt-6 animate-rise p-5 [--delay:120ms]" aria-labelledby="pool-activity-title" data-pool-activity={state} data-activity-reason={code} title={reason}>
-      <h2 id="pool-activity-title" className="dm-display dm-display-card" title={COPY.figures.activityScope}>On-chain activity</h2>
+    <section className="dm-card dm-pool-card dm-pool-a-activity animate-rise [--delay:80ms]" aria-labelledby="pool-activity-title" data-pool-activity={state} data-activity-reason={code} title={reason}>
+      <h2 id="pool-activity-title" className="dm-title" title={COPY.figures.activityScope}>On-chain activity</h2>
       <p role="status" className="sr-only">{state === 'loading' ? 'Reading pool activity…' : blocked ? reason : ''}</p>
-      <dl className="dm-kv dm-pool-kv dm-pool-kv--2 -mx-5 mt-3">
-        <div><dt>Swaps ({span})</dt><dd>{cell(view && view.swaps.toLocaleString('en-US'))}</dd></div>
-        <div><dt>Pool age</dt><dd>{cell(view && (view.age ? duration(view.age.seconds) : `Older than ${spanText}`))}</dd></div>
-        <div><dt>Window</dt><dd>{cell(view && (view.window === 'covered' ? `${spanText} covered` : `${duration(view.observedSeconds)} observed`))}</dd></div>
-        <div><dt>Blocks covered</dt><dd>{cell(view && `${view.coveredFromBlock} to ${view.block}`)}</dd></div>
+      {/* The four facts as tiles (pool.css); the dt/dd order is the reading order. */}
+      <dl className="dm-pool-facts">
+        <div><dt>Swaps ({span})</dt><dd>{fact(view && view.swaps.toLocaleString('en-US'))}</dd></div>
+        <div><dt>Pool age</dt><dd>{fact(view && (view.age ? duration(view.age.seconds) : `Older than ${spanText}`))}</dd></div>
+        <div><dt>Window</dt><dd>{fact(view && (view.window === 'covered' ? `${spanText} covered` : `${duration(view.observedSeconds)} observed`))}</dd></div>
+        <div><dt>Blocks covered</dt><dd>{fact(view && `${view.coveredFromBlock} to ${view.block}`)}</dd></div>
       </dl>
       {view?.live ? (
         <p className="dm-note mt-3" data-activity-live="">
           {COPY.figures.activityLiveWindow}
         </p>
       ) : null}
-      <div className="dm-pool-table-wrap mt-2">
+      <div className="dm-pool-table-wrap">
         <table className="dm-pool-table" data-activity-amounts="">
           <CurrencyHead option={option} first={<span className="sr-only">Figure</span>} />
           <tbody>

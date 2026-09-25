@@ -119,7 +119,14 @@ test('rendered ratio chart names its denomination, real coverage and exact value
   const hooks = { useState: () => [values[index++], () => {}], useEffect() {}, useId: () => 'test' }
   const code = ts.transpileModule(readFileSync(new URL('../src/components/read/screens/PoolHistoryChart.tsx', import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
-  const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, ratioGeometry, ratioText, ratioCandleText, useNow: () => ({ wall: 86400000 }),
+  // 2026-09-24 (V2 P2, R-5): the chart draws its area with areaUnder and its runs with linePath/curveFor
+  // (lib/chart/paths.ts), and the header change with percentChange (lib/format/change.ts); the hook set and the
+  // 5-useState order are unchanged.
+  const { areaUnder, curveFor, linePath } = require('../.test-build/app/src/lib/chart/paths.js'), { percentChange } = require('../.test-build/app/src/lib/format/change.js')
+  // 2026-09-24 (V2 final polish): the time axis adds interior ticks with timeTicks (lib/chart/scale.ts) labelled by
+  // axisLabel (lib/format/time.ts); numbers only, and the hook set and the 5-useState order are unchanged.
+  const { timeTicks } = require('../.test-build/app/src/lib/chart/scale.js'), { axisLabel } = require('../.test-build/app/src/lib/format/time.js')
+  const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, useNow: () => ({ wall: 86400000 }),
     Segmented: () => null, Skeleton: () => null, PoolPriceChart: () => null,
     PoolTokenLabel: ({ token }) => React.createElement('span', null, token.symbol), Address: ({ value }) => React.createElement('span', null, value) }
   new Function('require', 'module', 'exports', code)(name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : dependencies, mod, mod.exports)

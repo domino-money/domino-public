@@ -1,87 +1,131 @@
 @import 'tailwindcss';
 @import './shell.css';    /* foundation: header, menu, footer, ticker, primitives' component classes */
+@import './charts.css';   /* foundation: the shared charts kit */
 @import './art.css';      /* home: hero and feature vignettes, nav icon gestures */
+@import './home.css';     /* home: Home-only overrides */
 @import './markets.css';  /* markets: carousel, filter bar */
 @import './pool.css';     /* pool: chart card, stat strip specifics */
 @import './flow.css';     /* new position: step list */
-@import './account.css';  /* positions, automate, settings, rugged screens */
+@import './account.css';  /* foundation: pieces shared by the account screens */
+@import './positions.css';        /* positions: list, position page, Performance, Execution */
+@import './automate.css';         /* automate: Automate and the sequence pages */
+@import './account-screens.css';  /* foundation: Settings and rugged97's screens */
 @import './docs.css';     /* docs: #/docs layout, sidebar, prose, on-this-page */
 
 @custom-variant dark (&:is(.dark *));
 
-/* Domino design tokens, 2026-09 redesign (DESIGN.md section B).
-   Tangerine (--primary, --accent, --accent-fg, --ring) keeps its approved values.
-   Surfaces are Domino's own warm near-black ladder. Elevation now uses a 1px
-   inner ring plus a soft shadow: the owner's 2026-09-13 direction supersedes the
-   earlier "depth from surfaces, never shadows" rule. One radius: 12px. */
+/* Domino design tokens, V2 (DESIGN-V2 §2). `:root` is light, `.dark` (on <html>) is dark; the OS setting is
+   not consulted. Every colour is defined in both blocks. Tangerine (--primary, --accent, --accent-fg, --ring,
+   --primary-ink) keeps its approved values; --primary-line is Tangerine as a graphic and as large text.
+   Cards are flat: a fill, a 1px ring and, in dark, a 1px lit lip. Only floating layers (menus, dialogs,
+   tooltips) cast a shadow. Radii nest: 20 cards, 16 plates, 12 controls, 8 small items. Contrast figures
+   are WCAG 2.1 (DESIGN-V2 §16.1). */
 
 :root {
   color-scheme: light;
 
-  /* Surfaces: page, plate, card, control, control hover */
-  --bg: #f3f0ec;          /* page ground; table header band; hovered row */
-  --surface-1: #f9f7f4;   /* plates: hero, feature plates, chart panels, segmented track, inset panels */
-  --surface-2: #ffffff;   /* cards: table cards, rail cards, nav pill, menus, fields, dialogs */
+  /* Surfaces: page, plate, (control), control, control hover */
+  --bg: #fbfaf8;          /* page ground: near-white warm */
+  --surface-1: #f5f2ee;   /* plates, bands, fields and tracks: darker than the page, as a lowered surface */
+  --surface-2: #ffffff;   /* controls and floating layers: menus, listboxes, dialogs */
   --surface-3: #ebe7e2;   /* controls: chips on plates, active nav indicator, segmented thumb, markers */
   --surface-4: #e0dbd5;   /* control hover (never behind fg-subtle text) */
   --wash: rgb(28 24 20 / 0.05);         /* hover wash on transparent controls */
   --wash-strong: rgb(28 24 20 / 0.07);  /* chip fill */
   --skeleton: rgb(28 24 20 / 0.07);
+  --skeleton-shine: rgb(255 255 255 / 0.55);
+
+  /* Cards (V2): a flat fill, a 1px ring, a lip that is only visible in dark */
+  --card: #ffffff;
+  --card-hover: #fdfcfb;
+  --card-lip: rgb(255 255 255 / 0);
+  --border-card: rgb(28 24 20 / 0.09);
+  --border-card-hover: rgb(28 24 20 / 0.16);
+  --band: rgb(28 24 20 / 0.05);         /* table and list header band */
+  --row-hover: rgb(28 24 20 / 0.035);   /* table and list row hover */
+  --page-glow: rgb(255 132 61 / 0.05);  /* the warm light over the header */
 
   /* Text: primary, secondary, muted, faint */
-  --fg: #1b1815;
-  --fg-muted: #48423c;    /* 8.7:1 on --bg: descriptions, idle nav, table cells that are not the figure */
-  --fg-subtle: #675f58;   /* 5.5:1 on --bg, 5.1:1 on --surface-3: labels, table headers, captions, placeholders */
-  --fg-faint: #8f8881;    /* 3.3:1 on --surface-1: graphics only (gridlines, idle bars, dotted underlines), never text */
+  --fg: #1b1815;          /* 17.68:1 on --card, 16.94:1 on --bg */
+  --fg-muted: #48423c;    /* 9.91:1 on --card, 9.50:1 on --bg: descriptions, idle nav */
+  --fg-subtle: #675f58;   /* 6.26:1 on --card, 6.00:1 on --bg, 5.61:1 on --surface-1, 5.09:1 on --surface-3: labels, captions, units */
+  --fg-faint: #8f8881;    /* 3.50:1 on --card, 3.13:1 on --surface-1: graphics only (idle bars, dashed slots), never text */
 
   /* Lines */
   --border: rgb(28 24 20 / 0.08);        /* inner ring, dividers */
-  --border-lip: rgb(28 24 20 / 0.11);    /* key/value row rules, outline-button ring */
+  --border-lip: rgb(28 24 20 / 0.11);    /* key/value row rules, field and outline-button ring */
   --border-strong: rgb(28 24 20 / 0.18); /* hover ring, focus of fields, crosshair */
 
-  /* Primary button (white on dark, ink on light) */
+  /* The pre-V2 ink button, kept for old callers; V2 buttons do not use it */
   --btn: #1b1815;
   --btn-fg: #faf7f3;
   --btn-hover: #36302b;
 
   /* Tangerine: values unchanged */
   --primary: #ff843d;
-  --primary-fg: #24201c;  /* 6.6:1 on --primary */
+  --primary-fg: #24201c;  /* 6.64:1 on --primary, 5.67:1 on --primary-hover, 4.83:1 on --primary-press */
+  --primary-hover: #f5732a;
+  --primary-press: #e8641c;
   --accent: #fff0e4;
   --accent-fg: #a43d0f;
   --ring: #b24413;
-  /* Tangerine that carries information on a light ground (text, chart line, inspected bar, range band, input accent):
-     5.0:1 on --bg, 5.6:1 on white, 4.6:1 on --surface-3. #ff843d there is 2.1 to 2.4:1 and fails. */
+  /* Tangerine that carries information as small text on a light ground: 5.63:1 on white, 5.40:1 on --bg,
+     5.05:1 on --surface-1, 5.06:1 on --primary-wash. #ff843d there is 2.1 to 2.4:1 and fails. */
   --primary-ink: #b24413;
+  /* Tangerine as a graphic and as large text (24px and up): chart lines, range edges, pips, handles, the light
+     hero phrase. 3.80:1 on white, 3.65:1 on --bg, 3.41:1 on --surface-1. Never text under 24px. */
+  --primary-line: #dc5a1a;
+  --primary-wash: rgb(255 132 61 / 0.12);     /* selected option, soft button, callouts */
+  --primary-glow: rgb(255 132 61 / 0.18);     /* hero floor glow, domino stage glow, primary hover glow */
+  --primary-area-top: rgb(220 90 26 / 0.22);  /* area gradient stops: 0 %, 40 %, 100 % */
+  --primary-area-mid: rgb(220 90 26 / 0.10);
+  --primary-area-bottom: rgb(220 90 26 / 0);
+  --series-glow: rgb(0 0 0 / 0);              /* the glow under chart lines: dark only */
+  --band-fill: rgb(220 90 26 / 0.14);         /* a range band */
 
   /* Semantics: up/in, down/out, wait/stale */
-  --money-in: #17663e;
+  --money-in: #17663e;     /* 6.98:1 on --card, 6.21:1 on its pill */
   --money-in-bg: #e7f5ec;
-  --money-out: #c62d4a;   /* hue 349; Tangerine is hue 23 */
+  --money-out: #c62d4a;    /* 5.42:1 on --card, 4.75:1 on its pill; hue 349, Tangerine is hue 23 */
   --money-out-bg: #fdecef;
   --money-wait: #865100;
   --money-wait-bg: #fcf1d9;
+
+  /* Chart tooltip: a glass layer with its own ring */
+  --tooltip-bg: rgb(255 255 255 / 0.94);
+  --tooltip-border: rgb(28 24 20 / 0.10);
+
+  /* Address-derived token discs: saturation and lightness (DESIGN-V2 §3.8) */
+  --disc-s: 52%;
+  --disc-l: 70%;
 
   /* Dotted grids */
   --dot-hero: rgb(28 24 20 / 0.10);
   --dot-plate: rgb(28 24 20 / 0.06);
   --dot-chart: rgb(28 24 20 / 0.09);
 
-  /* Elevation recipes: every ring is an INNER ring (inset) */
-  --elev-card: inset 0 0 0 1px rgb(28 24 20 / 0.08), 0 1px 2px rgb(28 24 20 / 0.05), 0 10px 28px -14px rgb(28 24 20 / 0.18);
-  --elev-pill: inset 0 0 0 1px rgb(28 24 20 / 0.08), 0 2px 8px -2px rgb(28 24 20 / 0.12);
-  --elev-button: 0 1px 2px rgb(28 24 20 / 0.10), 0 2px 6px -2px rgb(28 24 20 / 0.12);
+  /* Elevation. Cards: an inner lip and an inner ring, no drop shadow. Rings are always INNER (inset).
+     These expressions read the per-theme colours above, so they are written once. */
+  --elev-card: inset 0 1px 0 0 var(--card-lip), inset 0 0 0 1px var(--border-card);
+  --elev-card-hover: inset 0 1px 0 0 var(--card-lip), inset 0 0 0 1px var(--border-card-hover);
+  --elev-pill: inset 0 0 0 1px var(--border-card);
+  --elev-field: inset 0 0 0 1px var(--border-lip);
+  --elev-primary-hover: 0 6px 20px -8px var(--primary-glow);
+  --elev-button: 0 1px 2px rgb(28 24 20 / 0.12);
+  --elev-tooltip: 0 8px 24px -8px rgb(28 24 20 / 0.18), inset 0 0 0 1px var(--tooltip-border);
   --elev-menu: inset 0 0 0 1px rgb(28 24 20 / 0.09), 0 12px 36px -6px rgb(28 24 20 / 0.22);
-  --elev-field: inset 0 0 0 1px rgb(28 24 20 / 0.10), 0 1px 2px rgb(28 24 20 / 0.06);
-  /* The header's soft fall once something scrolls under it (D.2) */
+  /* The header's soft fall once something scrolls under it */
   --elev-header: 0 8px 16px -12px rgb(28 24 20 / 0.18);
 
-  /* Shape */
-  --radius: 12px;       /* everything: cards, buttons, fields, menus, plates, dialogs */
-  --radius-sm: 8px;     /* inside a 4px padding: nav items, menu items, table band ends, row ends, step markers */
-  --radius-inner: 9px;  /* inside a 2px padding: segmented thumb */
-  --radius-xs: 4px;     /* compact: tick marks; bar tops use 2px */
-  --radius-pill: 9999px;/* chips, status pills, dots only */
+  /* Shape: nested radii */
+  --radius-xs: 4px;      /* ticks, tiny bars */
+  --radius-sm: 8px;      /* nav items, menu items, step markers, fee-tier chips in tables and lists */
+  --radius-inner: 9px;
+  --radius: 12px;        /* md controls, fields, table band ends, rows, dropdowns, tooltips */
+  --radius-lg: 16px;     /* plates and panels inside cards, amount panels, xl buttons */
+  --radius-card: 20px;   /* cards, dialogs, market cards, feature cards, sheets (top corners) */
+  --radius-hero: 24px;   /* the Home hero plate only */
+  --radius-pill: 9999px; /* pills, chips, segmented tracks and thumbs, delta pills, page dots */
 
   /* Focus ring geometry: outward on anything with clearance, inset on rows,
      cards and anything inside a scroller or a tight track. One value each. */
@@ -90,36 +134,55 @@
 
   /* Spacing: 4px base with half steps. Use Tailwind's own scale (p-1.5 = 6px, gap-6 = 24px) — it already matches, so there is no --space-* token to reach for. */
 
-  /* Layout */
+  /* Layout: one container. The page-width aliases stay for their callers and all resolve to 1200. */
   --header-h: 72px;     /* 56px below 768px */
-  --ticker-h: 36px;
+  --ticker-h: 40px;
   --gutter: 16px;       /* 24px from 768px, 40px from 1024px */
   --content: 1200px;
-  --content-pool: 1040px;
-  --content-flow: 640px;
-  --content-narrow: 880px;
+  --content-pool: 1200px;
+  --content-flow: 1200px;
+  --content-narrow: 1200px;
 
   /* Type families: unchanged */
   --font-display: 'Instrument Serif', ui-serif, Georgia, 'Times New Roman', serif;
   --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
-  /* Motion */
-  --dur-press: 0.1s;
-  --dur-hover: 0.15s;
-  --dur-fade: 0.2s;
-  --dur-menu: 0.14s;
-  --dur-step: 0.25s;
-  --dur-enter: 1s;
-  --dur-chart: 0.7s;
+  /* Motion (DESIGN-V2 §2.9, §5): fast, small, transform and opacity. Every entrance delay is a multiple of --stagger. */
+  --dur-instant: 80ms;    /* tooltip fade */
+  --dur-press: 100ms;
+  --dur-hover: 120ms;
+  --dur-fast: 150ms;      /* thumbs, toggles, card lift */
+  --dur-fade: 200ms;
+  --dur-menu: 160ms;
+  --dur-step: 250ms;      /* accordion, step panels, range bands */
+  --dur-enter: 320ms;     /* UI entrances, first load only */
+  --dur-page: 180ms;      /* route crossfade */
+  --dur-sheet: 280ms;     /* bottom sheet */
+  --dur-tick: 180ms;      /* value roll */
+  --dur-flash: 600ms;     /* up/down tint */
+  --dur-arrive: 160ms;    /* data arrival fade */
+  --dur-wipe: 700ms;      /* chart first draw */
+  --dur-chart: var(--dur-wipe);
+  --dur-dot: 200ms;       /* end dot pop, pips */
+  --dur-skel: 1.6s;       /* skeleton sweep */
+  --dur-art: 1s;          /* art entrances */
+  --stagger: 40ms;
+  --stagger-digit: 30ms;
+  --lift: -2px;           /* pressable card hover lift */
   --ease-std: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-fall: cubic-bezier(0.55, 0, 1, 0.45);
-  --press-scale: 0.99;
-  --press-scale-icon: 0.96;
+  --ease-fast: cubic-bezier(0.17, 0.67, 0.45, 1);
+  --ease-quick: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);   /* pips, dots, checks only */
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --press-scale: 0.98;
+  --press-scale-icon: 0.94;
+  --press-scale-card: 0.995;
 
-  /* Dialog backdrop (D.8) */
-  --backdrop: rgb(28 24 20 / 0.35);
+  /* Dialog scrim (blurred 6px from 640px) */
+  --backdrop: rgb(28 24 20 / 0.28);
 }
 
 .dark {
@@ -134,11 +197,21 @@
   --wash: rgb(255 236 220 / 0.05);
   --wash-strong: rgb(255 236 220 / 0.08);
   --skeleton: rgb(255 236 220 / 0.08);
+  --skeleton-shine: rgb(255 236 220 / 0.07);
 
-  --fg: #f7f1ea;         /* 15.4:1 on --surface-2 */
-  --fg-muted: #c8beb4;   /* 9.4:1 on --surface-2 */
-  --fg-subtle: #9b9289;  /* 5.6:1 on --surface-2, 4.8:1 on --surface-3 */
-  --fg-faint: #6e665e;   /* 3.1:1 on --surface-2, 3.3:1 on --surface-1: graphics only */
+  --card: #14100d;
+  --card-hover: #181411;
+  --card-lip: rgb(255 236 220 / 0.05);
+  --border-card: rgb(255 236 220 / 0.11);        /* 1.27:1 on the page: decorative */
+  --border-card-hover: rgb(255 236 220 / 0.18);
+  --band: rgb(255 236 220 / 0.045);
+  --row-hover: rgb(255 236 220 / 0.04);
+  --page-glow: rgb(255 157 98 / 0.07);
+
+  --fg: #f7f1ea;         /* 16.87:1 on --card, 17.60:1 on --bg */
+  --fg-muted: #c8beb4;   /* 10.35:1 on --card */
+  --fg-subtle: #9b9289;  /* 6.19:1 on --card, 6.45:1 on --bg, 6.04:1 on --surface-1, 4.83:1 on --surface-3 */
+  --fg-faint: #6e665e;   /* 3.36:1 on --card: graphics only */
 
   --border: rgb(255 236 220 / 0.07);
   --border-lip: rgb(255 236 220 / 0.10);
@@ -149,28 +222,42 @@
   --btn-hover: #ebe6e0;
 
   --primary: #ff9d62;
-  --primary-fg: #24201c;  /* 7.9:1 on --primary */
+  --primary-fg: #24201c;  /* 7.90:1 on --primary, 9.06:1 on --primary-hover, 6.56:1 on --primary-press */
+  --primary-hover: #ffb07f;
+  --primary-press: #f28a4c;
   --accent: #422e25;
   --accent-fg: #ffb98c;
   --ring: #ff9d62;
-  --primary-ink: #ff9d62; /* 8.4:1 on --surface-2 */
+  --primary-ink: #ff9d62; /* 9.24:1 on --card, 7.56:1 on --primary-wash */
+  --primary-line: #ff9d62;
+  --primary-wash: rgb(255 157 98 / 0.12);
+  --primary-glow: rgb(255 157 98 / 0.16);
+  --primary-area-top: rgb(255 157 98 / 0.30);
+  --primary-area-mid: rgb(255 157 98 / 0.14);
+  --primary-area-bottom: rgb(255 157 98 / 0);
+  --series-glow: rgb(255 157 98 / 0.14);
+  --band-fill: rgb(255 157 98 / 0.18);
 
-  --money-in: #5fd09a;                    /* 9.0:1 on --surface-2 */
+  --money-in: #5fd09a;                    /* 9.89:1 on --card, 8.06:1 on its pill */
   --money-in-bg: rgb(95 208 154 / 0.12);
-  --money-out: #f4607a;                   /* 5.6:1 on --surface-2; on its pill 4.8:1 */
+  --money-out: #f4607a;                   /* 6.13:1 on --card, 5.30:1 on its pill */
   --money-out-bg: rgb(244 96 122 / 0.12);
   --money-wait: #f2c14e;                  /* 10.3:1 */
   --money-wait-bg: rgb(242 193 78 / 0.12);
+
+  --tooltip-bg: rgb(23 19 16 / 0.92);
+  --tooltip-border: rgb(255 236 220 / 0.12);
+
+  --disc-s: 32%;
+  --disc-l: 30%;
 
   --dot-hero: rgb(255 236 220 / 0.11);
   --dot-plate: rgb(255 236 220 / 0.045);
   --dot-chart: rgb(255 236 220 / 0.07);
 
-  --elev-card: inset 0 0 0 1px rgb(255 236 220 / 0.07), 0 12px 32px -12px rgb(0 0 0 / 0.65);
-  --elev-pill: inset 0 0 0 1px rgb(255 236 220 / 0.07), 0 4px 14px -6px rgb(0 0 0 / 0.55);
-  --elev-button: 0 1px 2px rgb(0 0 0 / 0.35), 0 3px 10px -4px rgb(0 0 0 / 0.45);
+  --elev-button: 0 1px 2px rgb(0 0 0 / 0.35);
+  --elev-tooltip: 0 12px 28px -10px rgb(0 0 0 / 0.6), inset 0 0 0 1px var(--tooltip-border);
   --elev-menu: inset 0 0 0 1px rgb(255 236 220 / 0.10), 0 16px 40px -10px rgb(0 0 0 / 0.65);
-  --elev-field: inset 0 0 0 1px rgb(255 236 220 / 0.10), 0 1px 3px rgb(0 0 0 / 0.20);
   --elev-header: 0 8px 16px -12px rgb(0 0 0 / 0.6);
 
   --backdrop: rgb(0 0 0 / 0.6);
@@ -179,6 +266,13 @@
 @media (min-width: 768px) { :root { --gutter: 24px; } }
 @media (min-width: 1024px) { :root { --gutter: 40px; } }
 @media (max-width: 767px) { :root { --header-h: 56px; } }
+
+/* The spinner's angle, registered so it animates as a number rather than a transform (DESIGN-V2 §3.18). */
+@property --dm-spin {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
 
 @theme inline {
   --color-bg: var(--bg);
@@ -189,6 +283,10 @@
   --color-wash: var(--wash);
   --color-wash-strong: var(--wash-strong);
   --color-skeleton: var(--skeleton);
+  --color-card: var(--card);
+  --color-card-hover: var(--card-hover);
+  --color-band: var(--band);
+  --color-row-hover: var(--row-hover);
 
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
@@ -198,6 +296,7 @@
   --color-line: var(--border);
   --color-line-lip: var(--border-lip);
   --color-line-strong: var(--border-strong);
+  --color-line-card: var(--border-card);
 
   --color-btn: var(--btn);
   --color-btn-fg: var(--btn-fg);
@@ -206,6 +305,9 @@
   --color-primary: var(--primary);
   --color-primary-fg: var(--primary-fg);
   --color-primary-ink: var(--primary-ink);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-line: var(--primary-line);
+  --color-primary-wash: var(--primary-wash);
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
   --color-ring: var(--ring);
@@ -221,15 +323,21 @@
   --radius-sm: var(--radius-sm);
   --radius-inner: var(--radius-inner);
   --radius-DEFAULT: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-card: var(--radius-card);
+  --radius-hero: var(--radius-hero);
 
   --shadow-card: var(--elev-card);
+  --shadow-card-hover: var(--elev-card-hover);
   --shadow-pill: var(--elev-pill);
   --shadow-button: var(--elev-button);
   --shadow-menu: var(--elev-menu);
   --shadow-field: var(--elev-field);
+  --shadow-tooltip: var(--elev-tooltip);
 
   --ease-std: var(--ease-std);
   --ease-enter: var(--ease-enter);
+  --ease-fast: var(--ease-fast);
 
   --font-display: var(--font-display);
   --font-sans: var(--font-sans);
@@ -237,7 +345,7 @@
 
   /* Type scale: text-chip, text-caption, text-meta, text-body, text-lead, text-section, text-stat,
      text-amount (Geist) and text-hero, text-h1, text-title, text-card, text-rail (Instrument Serif sizes).
-     Phone sizes live in the responsive .dm-display-* classes (shell.css). */
+     Kept for old callers; V2 uses the .dm-display-*, .dm-title, .dm-fig-* classes (shell.css). */
   --text-chip: 11px;     --text-chip--line-height: 14px;    --text-chip--letter-spacing: -0.1px;
   --text-caption: 12px;  --text-caption--line-height: 16px; --text-caption--letter-spacing: -0.12px;
   --text-meta: 13px;     --text-meta--line-height: 18px;    --text-meta--letter-spacing: -0.16px;
@@ -256,12 +364,14 @@
   --text-card: 28px;     --text-card--line-height: 32px;    --text-card--letter-spacing: 0px;
   --text-rail: 24px;     --text-rail--line-height: 28px;    --text-rail--letter-spacing: 0px;
 
-  /* animate-rise staggers through --delay (60ms steps) set on the element. */
+  /* animate-rise staggers through --delay set on the element (multiples of --stagger). Entrances fill
+     backwards only: once they end nothing keeps a transform (it would become the containing block of
+     fixed descendants). Opacity-only fills may stay `both`. */
   --animate-rise: dm-rise var(--dur-enter) var(--ease-enter) var(--delay, 0s) backwards;
   --animate-fade: dm-fade var(--dur-fade) var(--ease-std) both;
-  --animate-pop: dm-pop var(--dur-menu) var(--ease-enter) both;
-  --animate-sheet: dm-sheet var(--dur-fade) var(--ease-enter) both;
-  --animate-step-in: dm-step-in var(--dur-step) var(--ease-enter) both;
+  --animate-pop: dm-pop var(--dur-menu) var(--ease-enter) backwards;
+  --animate-sheet: dm-sheet var(--dur-fade) var(--ease-enter) backwards;
+  --animate-step-in: dm-step-in var(--dur-step) var(--ease-enter) backwards;
   --animate-pulse-soft: dm-pulse 1.6s ease-in-out infinite;
 }
 
@@ -274,8 +384,9 @@
     background-color: var(--bg);
   }
 
+  /* The page ground: the warm light over the header is part of the body's own background, so nothing overflows. */
   body {
-    background: var(--bg);
+    background: radial-gradient(1100px 520px at 50% -160px, var(--page-glow), transparent 70%) no-repeat, var(--bg);
     color: var(--fg);
     font-family: var(--font-sans);
     font-size: 14px;
@@ -339,8 +450,9 @@
     border-width: 0;
   }
 
-  /* Stilled motion (B.7): under prefers-reduced-motion, and while the footer's "Pause motion" control puts
-     dm-still on <html>. Important declarations in this layer outrank every later layer. */
+  /* Stilled motion: under prefers-reduced-motion, and while the footer's "Pause motion" control puts
+     dm-still on <html>. Important declarations in this layer outrank every later layer. Resting states are
+     the real states: skeletons flat, spinners a static arc, art complete. */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -393,15 +505,29 @@
   }
 }
 
-/* Keyframes (DESIGN.md B.7). Art keyframes live in art.css. */
+/* First load rises, navigation crossfades (DESIGN-V2 §5.5): App puts dm-booted on <html> at the first route
+   change, and from then on page blocks no longer rise; the 180ms page fade is the only navigation motion.
+   In the utilities layer, so it beats the animate-rise utility. */
+@layer utilities {
+  .dm-booted :is(.animate-rise, .dm-rise, .dm-flow-rise) {
+    animation: none;
+  }
+}
+
+/* Keyframes (DESIGN-V2 §5.1). Art keyframes live in art.css, ModeArt's in automate.css. Entrances start from
+   their `from` frame and fill backwards only. */
 @keyframes dm-rise {
-  from { opacity: 0; translate: 0 12px; }
+  from { opacity: 0; translate: 0 8px; }
   to { opacity: 1; translate: 0 0; }
 }
 
 @keyframes dm-fade {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes dm-page-in {
+  from { opacity: 0; }
 }
 
 @keyframes dm-pop {
@@ -412,8 +538,28 @@
   from { opacity: 0; translate: 0 12px; }
 }
 
+@keyframes dm-dialog-in {
+  from { opacity: 0; translate: 0 8px; scale: 0.98; }
+}
+
+@keyframes dm-sheet-up {
+  from { translate: 0 100%; }
+}
+
 @keyframes dm-step-in {
   from { opacity: 0; translate: 0 6px; }
+}
+
+@keyframes dm-tick {
+  from { opacity: 0.2; translate: 0 0.35em; }
+}
+
+@keyframes dm-flash-up {
+  from { color: var(--money-in); }
+}
+
+@keyframes dm-flash-down {
+  from { color: var(--money-out); }
 }
 
 @keyframes dm-live {
@@ -421,6 +567,7 @@
   to { scale: 2.6; opacity: 0; }
 }
 
+/* Opacity only: kept for the token search's busy glyph. Skeletons sweep with dm-shimmer. */
 @keyframes dm-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
@@ -429,6 +576,32 @@
 @keyframes dm-reveal {
   from { clip-path: inset(0 100% 0 0); }
   to { clip-path: inset(0 0 0 0); }
+}
+
+@keyframes dm-dot-pop {
+  from { scale: 0; }
+}
+
+@keyframes dm-pip-in {
+  from { scale: 0; }
+}
+
+@keyframes dm-shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+
+@keyframes dm-shimmer-page {
+  from { background-position: -120vw 0; }
+  to { background-position: 20vw 0; }
+}
+
+@keyframes dm-check {
+  from { stroke-dashoffset: 1; }
+}
+
+@keyframes dm-spin {
+  to { --dm-spin: 360deg; }
 }
 
 @keyframes dm-bar-rise {

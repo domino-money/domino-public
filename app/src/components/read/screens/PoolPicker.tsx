@@ -34,12 +34,13 @@ const plainNotes = (option: PoolOption) =>
  * details to open and no note lines: what they said is in titles and data.
  */
 function PoolRow({ option, checked, onPick, name, compact = false, open = false, plain = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean; plain?: boolean }) {
+  // New position's plain rows sit flat on the card: 32px marks ringed in the card, the pair over its id, the fee right after them.
   const identity = (
     <>
-      <TokenMarkPair base={option.currencies[0]} quote={option.currencies[1]} size={compact ? 28 : 32} ring="var(--surface-1)" />
-      <span className="grid min-w-0 flex-1 gap-0.5 text-left">
-        <span className="text-body font-medium text-fg"><SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} /></span>
-        <span className="text-caption text-fg-subtle">Uniswap · <Address value={option.key} short /></span>
+      <TokenMarkPair base={option.currencies[0]} quote={option.currencies[1]} size={plain || !compact ? 32 : 28} ring={plain ? 'var(--card)' : 'var(--surface-1)'} />
+      <span className={plain ? 'dm-flow-pool-id' : 'grid min-w-0 flex-1 gap-0.5 text-left'}>
+        <span className={plain ? 'dm-flow-pool-pair' : 'text-body font-medium text-fg'}><SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} /></span>
+        <span className={plain ? 'dm-flow-pool-where' : 'text-caption text-fg-subtle'}>Uniswap · <Address value={option.key} short /></span>
       </span>
       <span className="dm-chip shrink-0" data-fee="">{option.fee}</span>
     </>
@@ -290,6 +291,14 @@ export function CatalogueCandidates({
   )
 }
 
+/** The option of the list row an event came from: the row's place among its siblings is its place in `options`. */
+function rowAt(options: readonly PoolOption[], target: EventTarget | null): PoolOption | null {
+  const row = target instanceof Element ? target.closest('li') : null
+  const siblings = row?.parentElement?.children
+  if (!row || !siblings) return null
+  return options[Array.prototype.indexOf.call(siblings, row)] ?? null
+}
+
 type PoolsResult =
   | { kind: 'loading' }
   | { kind: 'ok'; view: PoolsView; restarted: boolean }
@@ -368,6 +377,7 @@ export function PoolPicker({
   catalogue = true,
   compact = false,
   variant,
+  onPreview,
 }: {
   source: ReadSource
   token: AddressKey
@@ -378,6 +388,11 @@ export function PoolPicker({
   catalogue?: boolean
   compact?: boolean
   variant?: 'create'
+  /**
+   * New position's preview: the row the pointer or focus is on, and null once
+   * both have left the list. Handlers only, so the rendered markup is the same.
+   */
+  onPreview?: (option: PoolOption | null) => void
 }) {
   const create = variant === 'create'
   const question = `${token}:${paired ?? ''}`
@@ -425,6 +440,13 @@ export function PoolPicker({
   const options = create ? listed : neutralOrder([...listed, ...verified.filter((v) => !listed.some((o) => o.key === v.key))])
   // Still being read, or waiting to be asked again: the rows rest either way.
   const resting = result.kind === 'loading' || (result.kind === 'failed' && !result.final)
+  const list = (
+    <ul className={create ? 'dm-flow-pool-rows' : 'grid gap-2'}>
+      {options.map((option) => (
+        <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact={compact} plain={create} />
+      ))}
+    </ul>
+  )
   const counts = create && result.kind === 'ok' ? { 'data-pools-hidden': result.view.hidden, 'data-pools-rejected': result.view.rejected.length, 'data-pools-restarted': result.restarted ? '' : undefined } : {}
 
   return (
@@ -497,12 +519,30 @@ export function PoolPicker({
         </ul>
       ) : (
         <fieldset className="grid gap-2">
-          <legend className="mb-2 text-body font-medium text-fg">{COPY.picker.poolsLegend}</legend>
-          <ul className="grid gap-2">
-            {options.map((option) => (
-              <PoolRow key={option.key} option={option} name="pool-option" checked={pending?.key === option.key} onPick={() => onPending(option)} compact={compact} plain={create} />
-            ))}
-          </ul>
+          <legend className={create ? 'dm-flow-pools-legend' : 'mb-2 text-body font-medium text-fg'}>{COPY.picker.poolsLegend}</legend>
+          {onPreview ? (
+            // New position's preview follows the pointer and the focus through the rows. One listener pair for the
+            // list, on a wrapper that is presentation only; the rows' own markup stays exactly as it renders anywhere.
+            <div
+              role="presentation"
+              onPointerOver={(event) => {
+                const option = rowAt(options, event.target)
+                if (option) onPreview(option)
+              }}
+              onPointerLeave={() => onPreview(null)}
+              onFocus={(event) => {
+                const option = rowAt(options, event.target)
+                if (option) onPreview(option)
+              }}
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onPreview(null)
+              }}
+            >
+              {list}
+            </div>
+          ) : (
+            list
+          )}
         </fieldset>
       ))}
       {!create && result.kind === 'ok' && result.view.rejected.length > 0 && (

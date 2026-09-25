@@ -3,11 +3,11 @@
  * the unmodified bridge Worker (bridge/src/worker.mjs), with its gateway
  * replaced by package fixtures, as read-bridge.browser.test.mjs sets it up.
  *
- * What only this topology can show: the position lookup sends exactly the
- * typed IDs as a same-origin POST, the capabilities are asked once, reads
- * from the lookup and the landing are spaced the way the bridge admits them,
- * a refresh without the beta cookie is the gate's state (never a wallet
- * sign-in) and keeps the cards, pool activity is read by the figures dialog
+ * What only this topology can show: Positions posts nothing to the read
+ * service (2026-09-24: the lookup by typed NFT ids is gone; the wallet's list
+ * and a position's page read chain data through the site's own endpoints),
+ * reads from the landing are spaced the way the bridge admits them, pool
+ * activity is read by the figures dialog
  * only when it opens and by the pool page where the route is listed, and the
  * wallet listing's continuation handle travels only in POST bodies (B4).
  */
@@ -151,19 +151,6 @@ async function visit(route) {
   return { context, page, errors };
 }
 
-/** The lookup settled: its live region (drawn nowhere) names a state other than loading, and nothing in the section is busy. */
-async function settled(page) {
-  await page.waitForFunction(
-    () => {
-      const status = document.querySelector('#chain-lookup [data-lookup-status]')?.getAttribute('data-lookup-status');
-      return status && status !== 'loading' && !document.querySelector('#chain-lookup [aria-disabled="true"]');
-    },
-    null,
-    { timeout: 30_000 },
-  );
-  return page.locator('#chain-lookup [data-lookup-status]').getAttribute('data-lookup-status');
-}
-
 /** What the eye gets of an element: its text without the screen-reader-only parts. */
 const visibleText = (locator) =>
   locator.evaluate((root) => {
@@ -172,106 +159,21 @@ const visibleText = (locator) =>
     return copy.textContent.replace(/\s+/g, ' ').trim();
   });
 
-async function lookUp(page) {
-  const show = page.getByRole('button', { name: 'Show lookup' });
-  if (await show.count()) await show.click();
-  await page.fill('#nft-ids', `1 ${BIG}`);
-  await page.getByRole('button', { name: 'Look up positions' }).click();
-}
-
 const posts = () => edge.filter((r) => r.method === 'POST');
 
-test('the lookup posts exactly the typed IDs, asks capabilities once, and spaces its reads the way the bridge admits them', async () => {
+// Changed on purpose (owner, 2026-09-24): the lookup by typed NFT ids is gone, and with it every nft-positions post.
+test('Positions posts nothing to the read service: no lookup by NFT id, no position read', async () => {
   const { context, page, errors } = await visit('/app');
-  await page.locator('#chain-lookup').waitFor();
+  await page.locator('[data-owned]').waitFor();
   await page.waitForTimeout(300);
-  assert.deepEqual(edge, [], 'the Dashboard reads nothing until asked');
-  await lookUp(page);
-  assert.equal(await settled(page), 'ok');
-  assert.equal(await page.locator('[data-chain-card]').count(), 2);
-  // No build pill and no source pill (changed on purpose, review of 2026-09-14): each row's snapshot is its title and data attributes.
-  const first = page.locator('[data-chain-card]').first();
-  await first.locator('summary').click();
-  assert.doesNotMatch(await first.innerText(), /Read from chain|Public data|Snapshot:/);
-  assert.equal(await first.getAttribute('data-snapshot'), '700');
-  assert.match(await first.locator('summary').getAttribute('title'), /^Block 700 · /);
-
-  assert.deepEqual(edge.map((r) => `${r.method} ${r.path}`), [
-    'GET /api/read/v1/capabilities',
-    'POST /api/read/v1/nft-positions',
-    'POST /api/read/v1/token',
-    'POST /api/read/v1/token',
-  ]);
-  assert.equal(posts()[0].body, JSON.stringify({ tokenIds: ['1', BIG] }), 'exactly the typed IDs, no pinned block');
-  for (const r of edge) {
-    assert.equal(r.headers['sec-fetch-site'], 'same-origin');
-    assert.equal(r.headers['x-domino-read-contract'], RC3);
-    for (const forbidden of ['authorization', 'x-domino-csrf', 'x-domino-session']) assert.equal(r.headers[forbidden], undefined, forbidden);
-  }
-  const starts = posts().map((r) => r.at);
-  for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 1050, `POST starts ${starts[i] - starts[i - 1]} ms apart`);
-  // Recorded for the open question on whether the capabilities GET counts against the bridge's start rate.
-  console.log(`capabilities GET to first POST: ${posts()[0].at - edge[0].at} ms`);
-
-  // The same ids again read them again, through the one capabilities answer: there is no Refresh.
-  assert.equal(await page.locator('#chain-lookup').getByRole('button', { name: 'Refresh' }).count(), 0);
-  const refreshed = edge.length;
-  await page.getByRole('button', { name: 'Look up positions' }).click();
-  for (const started = Date.now(); edge.length <= refreshed && Date.now() - started < 30_000; ) await page.waitForTimeout(50);
-  await settled(page);
-  assert.equal(edge.filter((r) => r.method === 'GET').length, 1, 'capabilities are asked once per page load');
-  assert.ok(edge.length > refreshed);
+  assert.deepEqual(edge, [], 'the page reads nothing from the read service');
+  assert.equal(await page.locator('#nft-ids, #chain-lookup').count(), 0);
+  await page.evaluate((big) => { location.hash = `#/positions/1,${big}`; }, BIG);
+  await page.waitForTimeout(300);
+  assert.deepEqual(posts().filter((r) => r.path.endsWith('/nft-positions')), [], 'a link with ids reads none of them');
   assert.deepEqual(errors, []);
   await context.close();
 });
-
-test('a lookup without the beta cookie is the gate state: cards stay, the words only in a title, no link, no wallet', async () => {
-  const { context, page } = await visit('/app');
-  await page.locator('#chain-lookup').waitFor();
-  await lookUp(page);
-  assert.equal(await settled(page), 'ok');
-  await context.clearCookies();
-  await page.getByRole('button', { name: 'Look up positions' }).click();
-  assert.equal(await settled(page), 'gate_required');
-  const title = await page.locator('#chain-lookup [data-chain-cards]').getAttribute('title');
-  assert.match(title, /^Site access expired\. Reload the page to sign in again\. The cards below are from the last read that worked/);
-  assert.doesNotMatch(title, /wallet|connect|beta/i);
-  assert.equal(await page.locator('#chain-lookup').getAttribute('data-lookup-reason'), 'gate_required');
-  assert.doesNotMatch(await visibleText(page.locator('#chain-lookup')), /access expired/i, 'nothing about the gate is printed');
-  assert.equal(await page.locator('#chain-lookup a').count(), 0);
-  assert.equal(await page.locator('[data-chain-card]').count(), 2, 'the last cards that worked stay');
-  await context.close();
-});
-
-test('position reads switched off on the server: an empty state that says why only in its title, and not one position is posted', async () => {
-  const emptyTitle = (page) => page.locator('#chain-lookup [data-empty="positions-failed"]').locator('xpath=..').getAttribute('title');
-  BRIDGE.ENABLED_READS = 'token,pools,pool-market,pool-metrics';
-  try {
-    const { context, page } = await visit('/app');
-    await page.locator('#chain-lookup').waitFor();
-    await lookUp(page);
-    assert.equal(await settled(page), 'disabled');
-    assert.match(await emptyTitle(page), /Position reads aren’t enabled on this server\./);
-    assert.equal(await page.locator('#chain-lookup [data-empty="positions-failed"]').innerText(), 'No positions to show');
-    assert.deepEqual(posts(), []);
-    await context.close();
-  } finally {
-    BRIDGE.ENABLED_READS = ALL_READS;
-  }
-  BRIDGE.READ_BRIDGE_ENABLED = 'false';
-  try {
-    const { context, page } = await visit('/app');
-    await page.locator('#chain-lookup').waitFor();
-    await lookUp(page);
-    assert.equal(await settled(page), 'disabled');
-    assert.match(await emptyTitle(page), /This server has live reads turned off\./);
-    assert.deepEqual(posts(), []);
-    await context.close();
-  } finally {
-    BRIDGE.READ_BRIDGE_ENABLED = 'true';
-  }
-});
-
 
 /**
  * The selected pools' load has finished on Markets: its status is settled and a row with a figure is on the page.

@@ -107,7 +107,11 @@ function productionClosures() {
     return seen;
   };
   // Changed on purpose (owner, 2026-09-24): the Positions list, a position's page and their two wallet chunks are lazy roots too.
-  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits)-/.test(file));
+  // 2026-09-24 (P6, DESIGN-V2 §18, R-12): the fees replay worker (src/lib/fees/feesReplay.worker.ts), a classic worker
+  // file that only src/lib/fees/spawn.ts creates, is an admitted root of its own, within its 16,000 B gzip ceiling.
+  const workers = scripts.filter((file) => /^feesReplay\.worker-/.test(file));
+  for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 16_000, `${file} is over its 16,000 B gzip ceiling`);
+  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|feesReplay\.worker)-/.test(file));
   const shared = reach([...entry, ...otherRoots]);
   const setupClosure = reach(setup);
   assert.ok(!shared.has(setup[0]), 'Setup must not be loaded statically by the entry or another screen');

@@ -56,48 +56,72 @@ const catalogueMark = (entry: PoolCatalogueEntry, side: 0 | 1): TokenDisplay => 
  * dashes, with the reason in their title and in the live region, never a panel.
  */
 function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: PoolCatalogueEntry; verifying?: boolean; reason?: { code: string; text: string } }) {
+  // A resting bubble while verifying; the same box, empty, once verification has no answer.
+  const bubble = (name: string) => <span aria-hidden="true" className={verifying ? `dm-skel ${name}` : name} />
   return (
-    <div aria-busy={verifying || undefined} data-pool-verification={verifying ? 'verifying' : reason?.code} title={reason?.text}>
-      <div className="flex min-w-0 animate-rise items-center gap-4">
-        <span className="dm-pool-marks">
-          {entry ? <TokenMarkPair base={catalogueMark(entry, 0)} quote={catalogueMark(entry, 1)} size={44} ring="var(--bg)" /> : <Skeleton className="size-11 rounded-full" />}
-        </span>
-        <div className="min-w-0">
-          <h1 className="dm-display dm-display-title">
-            {entry ? <><bdi>{entry.labels[0]}</bdi> / <bdi>{entry.labels[1]}</bdi></> : 'Pool'}
-          </h1>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            {/* The fee tier is the verified pool's to state, as its stat below is: until then the chip names the protocol only. */}
-            {entry && <span className="dm-chip">Uniswap</span>}
-            <span className="dm-chip">Robinhood Chain</span>
-            <span className="dm-pool-id" title={id} translate="no">{shortAddress(id)}</span>
-            {verifying && <span role="status" className="text-caption text-fg-muted">Verifying this pool on Robinhood Chain…</span>}
-            {!verifying && <span role="status" className="sr-only">{reason?.text}</span>}
+    <div aria-busy={verifying || undefined} data-pool-verification={verifying ? 'verifying' : reason?.code} title={reason?.text} className="dm-pool-layout">
+      <div className="dm-pool-head dm-pool-a-head animate-rise">
+        <div className="dm-pool-title">
+          <span className="dm-pool-marks">
+            {entry ? <TokenMarkPair base={catalogueMark(entry, 0)} quote={catalogueMark(entry, 1)} size={44} ring="var(--bg)" /> : <Skeleton className="dm-pool-skel-marks" />}
+          </span>
+          <div className="min-w-0">
+            <h1 className="dm-display dm-display-h1">
+              {entry ? <><bdi>{entry.labels[0]}</bdi> / <bdi>{entry.labels[1]}</bdi></> : 'Pool'}
+            </h1>
+            <div className="dm-pool-chips">
+              {/* The fee tier is the verified pool's to state, as its stat below is: until then the chip names the protocol only. */}
+              {entry && <span className="dm-chip">Uniswap</span>}
+              <span className="dm-chip">Robinhood Chain</span>
+              <span className="dm-pool-id" title={id} translate="no">{shortAddress(id)}</span>
+              {verifying && <span role="status" className="dm-pool-verifying">Verifying this pool on Robinhood Chain…</span>}
+              {!verifying && <span role="status" className="sr-only">{reason?.text}</span>}
+            </div>
           </div>
         </div>
+        {/* Holds the New position button's place, unseen, so the title row does not move when it arrives. */}
+        {entry && <div aria-hidden="true" className="dm-pool-actions"><span className="dm-pool-skel-action" /></div>}
       </div>
-      <div className="dm-pool-figures mt-8 animate-rise [--delay:60ms]">
-        <StatStrip cols={5}>
+      {/* The verified page's grid, resting: the figures card beside the chart card, each figure a bubble, and a bubble
+          under each figure that has a line under it. */}
+      <div className="dm-pool-figures dm-pool-a-figs animate-rise [--delay:40ms]">
+        <StatStrip cols={5} layout="list">
           {['Price', 'TVL', '24h volume', 'Est. APR', 'Fee tier'].map((label) => (
-            <Stat
-              key={label}
-              label={label}
-              className={label === 'Price' ? 'dm-pool-price-stat' : undefined}
-              sub={verifying ? <span className="mt-2 grid gap-1.5">{(label === 'TVL' || label === '24h volume' ? [20, 24] : [24]).map((width) => <Skeleton key={width} className={width === 20 ? 'h-2.5 w-20' : 'h-2.5 w-24'} />)}</span> : undefined}
-            >
-              {verifying ? <Skeleton className="mt-1 h-6 w-24" /> : <span className="text-fg-subtle">—</span>}
+            <Stat key={label} label={label} className={label === 'Price' ? 'dm-pool-price-stat' : undefined}
+              sub={verifying && (label === 'Price' || label === 'Est. APR' || label === 'Fee tier') ? <Skeleton className="dm-pool-fig-sub-skel" /> : undefined}>
+              {verifying ? <Skeleton className="dm-pool-fig-skel" /> : <span className="text-fg-subtle">—</span>}
             </Stat>
           ))}
         </StatStrip>
       </div>
-      <div className="dm-card mt-8 animate-rise p-5 [--delay:120ms]">
-        <h2 className="dm-display dm-display-card">Pool price history</h2>
+      {/* The chart card at the verified card's height, row for row: the source switch, the close and its date, the
+          base and window switches, the plot, its time axis and the quiet row under it. Bubbles while verifying; once
+          verification has no answer, the same rows hold their place, empty. */}
+      <div className="dm-card dm-pool-chart dm-pool-a-chart animate-rise [--delay:80ms]">
+        <div className="dm-pool-chart-head">
+          <h2 className="dm-title">Pool price history</h2>
+          {bubble('dm-pool-skel-switch')}
+        </div>
+        <div aria-hidden="true" className="dm-pool-skel-head">
+          {bubble('dm-pool-skel-sub')}
+          {bubble('dm-pool-skel-price')}
+          {bubble('dm-pool-skel-date')}
+        </div>
+        <div aria-hidden="true" className="dm-pool-skel-controls">
+          {bubble('dm-pool-skel-seg')}
+          {bubble('dm-pool-skel-seg')}
+        </div>
         {/* Stands in for the ratio chart the verified page opens on; no caption under the heading. */}
         <div className="dm-pool-plot dm-dots-chart mt-4" title="Pool ratios from verified Robinhood Chain Swap events.">
           <div className="dm-pool-plot-empty">
             {verifying ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle" title={reason?.text}>—</span>}
           </div>
         </div>
+        <div aria-hidden="true" className="dm-pool-skel-axis">
+          {bubble('dm-pool-skel-tick')}
+          {bubble('dm-pool-skel-tick')}
+        </div>
+        <div aria-hidden="true" className="dm-pool-skel-quiet">{bubble('dm-pool-skel-summary')}</div>
       </div>
     </div>
   )
@@ -234,7 +258,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
         onOption={onOption}
         range={resolution.range}
         onRange={onRange}
-        actions={optionUsableForDomino(resolution.option) ? <LinkButton href={newPositionHref(resolution.option.key)} className="dm-pool-new" data-new-position="">New position</LinkButton> : undefined}
+        actions={optionUsableForDomino(resolution.option) ? <LinkButton href={newPositionHref(resolution.option.key)} size="lg" className="dm-pool-new" data-new-position="">New position</LinkButton> : undefined}
       />
     )
   }

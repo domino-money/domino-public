@@ -194,7 +194,7 @@ export const GLOSSARY: DocPage = {
             { id: 'range', term: 'Range', text: ['The lower and upper price a position provides liquidity between.'] },
             { id: 'tick', term: 'Tick', text: ['Uniswap’s unit of price, a 0.01% step. Range bounds are multiples of a pool’s tick spacing.'] },
             { id: 'in-range', term: 'In range', text: ['A position is in range while the pool price sits inside its range. Only then does it earn trading fees.'] },
-            { id: 'position-nft', term: 'Position NFT', text: ['The standard Uniswap NFT that represents a position. Positions lists the ones your wallet holds.'] },
+            { id: 'position-nft', term: 'Position NFT', text: ['The standard Uniswap NFT that represents a position. Positions lists the ones your wallet created with Domino.'] },
             { id: 'principal', term: 'Principal', text: ['The liquidity deposited in a position. Automation never reduces it.'] },
           ],
         },

@@ -331,8 +331,19 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const financial = new Set([...staticClosure(dir, financialRoots)].filter((file) => !initial.has(file)));
     for (const file of financialRoots) assert.ok(!base.has(file) && !initial.has(file), `${file} must remain opt-in`);
     const allLazy = new Set([...base, ...financial]);
-    assert.deepEqual([...new Set([...initial, ...allLazy])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 165_000], ['all lazy', allLazy, 188_000]]) {
+    // 2026-09-24 (P6, DESIGN-V2 §18, R-12): the fees replay worker (src/lib/fees/feesReplay.worker.ts, created only by
+    // src/lib/fees/spawn.ts on a positions page) is its own closure with its own 16,000 B ceiling, outside all lazy: it is
+    // not UI and loads only where a fees history is shown. A classic worker is one self-contained file: no import, no
+    // export. It is emitted only once a screen uses the fees hooks (none may on a branch where no screen does yet).
+    // Measured with a temporary opener on 2026-09-24: 16,419 B raw, 7,100 B gzip.
+    const worker = new Set(js.filter((file) => /^feesReplay\.worker-/.test(file)));
+    assert.ok(worker.size <= 1, `one fees worker at most: ${[...worker].join(', ')}`);
+    for (const file of worker) {
+      assert.ok(!initial.has(file) && !allLazy.has(file), 'the worker is loaded by new Worker(), never imported');
+      assert.ok(moduleTree(dir, file).program.body.every((node) => !['ImportDeclaration', 'ExportNamedDeclaration', 'ExportAllDeclaration', 'ExportDefaultDeclaration'].includes(node.type)), 'a classic worker: one file');
+    }
+    assert.deepEqual([...new Set([...initial, ...allLazy, ...worker])].sort(), js, 'every generated script belongs to a measured closure');
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 165_000], ['all lazy', allLazy, 188_000], ['fees worker', worker, 16_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

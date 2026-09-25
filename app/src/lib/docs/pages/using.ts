@@ -89,15 +89,15 @@ export const NEW_POSITION: DocPage = {
 export const POSITIONS: DocPage = {
   slug: 'positions',
   title: 'Positions',
-  summary: 'Your position NFTs, open and closed, a page for each, and your managed positions, receipts and wallet balances.',
+  summary: 'The positions you created with Domino, open and closed, a page for each, and your managed positions, receipts and wallet balances.',
   sections: [
     {
       id: 'your-positions',
       title: 'Your positions',
       blocks: [
-        p('Connect your wallet on Robinhood Chain and Positions lists every position NFT it holds, found from the chain for your address: there is no ID to type. ', b('Open'), ' positions still hold liquidity; ', b('Closed'), ' ones hold none.'),
+        p('Connect your wallet on Robinhood Chain and Positions lists the positions it created with Domino, read from the chain for your address: there is no ID to type, and nothing is kept in your browser. ', b('Open'), ' positions still hold liquidity; ', b('Closed'), ' ones hold none. Position NFTs made elsewhere are not listed.'),
         p('Each row shows the pool and its fee tier, whether the pool price is inside the range, the principal and the fees not yet collected. Select a row to open the position’s own page.'),
-        p('To see any other position, open ', b('Look up by NFT id'), ' under the list and enter up to 10 IDs. Where available, a pool’s page lists the positions in that pool.'),
+        p('Deposits you made that never became a position are listed under them, each with its refund.'),
       ],
     },
     {

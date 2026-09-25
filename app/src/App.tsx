@@ -20,7 +20,7 @@ import { MarketsContext } from './lib/read/useMarkets'
 import { LocalDevelopmentBanner } from './components/read/LocalDevelopmentBanner'
 
 // The owner's wallet flows, in builds that carry the wallet session: creating
-// or recovering a position, and creating or managing a sequence. The
+// or recovering a position, and setting up a sequence. The
 // onboarding previews (#38) and the deposit consumer's fixture lab (#40/#44)
 // are compiled in only by `vite build --mode consumer-test`. Everywhere else
 // each constant is null: the bundler drops the import, no chunk is emitted,
@@ -43,7 +43,7 @@ const PositionLab = __DOMINO_TEST_HOOKS__ ? lazy(() => import('./screens/Positio
  * build is scanned for them), and the route falls through to Home like any
  * unknown route.
  */
-export type Page = 'overview' | 'markets' | 'pool' | 'positions' | 'new' | 'automate' | 'settings' | 'docs' | 'sequence' | 'setup' | 'live-preview' | 'deposits' | 'position-lab'
+export type Page = 'overview' | 'markets' | 'pool' | 'positions' | 'new' | 'automate' | 'settings' | 'docs' | 'sequence' | 'setup' | 'live-preview' | 'deposits' | 'position-lab' | 'sequence-lab'
 
 const PAGES: Readonly<Record<string, Page>> = {
   '': 'overview',
@@ -63,6 +63,8 @@ const PAGES: Readonly<Record<string, Page>> = {
   ...(__DOMINO_ONBOARDING_PREVIEW__ ? ({ 'live-preview': 'live-preview' } as const) : {}),
   ...(__DOMINO_DEPOSIT_LAB__ ? ({ deposits: 'deposits' } as const) : {}),
   ...(__DOMINO_TEST_HOOKS__ ? ({ 'position-lab': 'position-lab' } as const) : {}),
+  // 2026-09-24: the automation page with the wallet's positions injected (tests/finance.browser.test.mjs), test builds only.
+  ...(__DOMINO_TEST_HOOKS__ ? ({ 'sequence-lab': 'sequence-lab' } as const) : {}),
 }
 
 export interface HashLocation {
@@ -144,6 +146,7 @@ function Screen({ page, param }: { page: Page; param: string }) {
       if (__DOMINO_ONBOARDING_PREVIEW__ && page === 'live-preview') return <Flagged screen={LivePreview} loading="Loading the preview…" />
       if (__DOMINO_DEPOSIT_LAB__ && page === 'deposits') return <Flagged screen={Deposits} loading="Loading deposits…" />
       if (__DOMINO_TEST_HOOKS__ && page === 'position-lab' && PositionLab) return <Suspense fallback={null}><PositionLab spec={param} /></Suspense>
+      if (__DOMINO_TEST_HOOKS__ && page === 'sequence-lab' && Sequence) return <Suspense fallback={null}><Sequence lab={param} /></Suspense>
       return <Landing />
   }
 }
@@ -154,7 +157,7 @@ const FLAGGED: Partial<Record<Page, unknown>> = {
   setup: Setup,
   ...(__DOMINO_ONBOARDING_PREVIEW__ ? { 'live-preview': LivePreview } : {}),
   ...(__DOMINO_DEPOSIT_LAB__ ? { deposits: Deposits } : {}),
-  ...(__DOMINO_TEST_HOOKS__ ? { 'position-lab': PositionLab } : {}),
+  ...(__DOMINO_TEST_HOOKS__ ? { 'position-lab': PositionLab, 'sequence-lab': Sequence } : {}),
 }
 
 export default function App() {
@@ -173,6 +176,17 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.toggle('dm-still', still)
   }, [still])
+
+  // First load rises, navigation crossfades (DESIGN-V2 §5.5): at the first route change <html> gets dm-booted, which
+  // switches the page blocks' rise off (tokens.css); from then on only the 180ms page fade marks a navigation.
+  useEffect(() => {
+    const boot = () => {
+      document.documentElement.classList.add('dm-booted')
+      window.removeEventListener('hashchange', boot)
+    }
+    window.addEventListener('hashchange', boot)
+    return () => window.removeEventListener('hashchange', boot)
+  }, [])
 
   // A page opened directly on a section link starts at the top otherwise. Read
   // from the hash rather than from state so this depends on nothing and runs

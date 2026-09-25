@@ -12,7 +12,11 @@ import { ASSISTED_SWAP_FEE_BPS, type DepositPlan } from '../../lib/create/deposi
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
 import { useCreateProgress, type LiveState } from '../../lib/create/createProgress'
-import { PoolPair, RangeSummary } from './StepList'
+import { Approx, PoolPair, RangeSummary } from './StepList'
+import { RangePreview } from '../charts/RangePreview'
+import { AmountText, UsdText } from '../figures'
+import { TokenMarkPair } from '../TokenIcon'
+import { heldAmounts, rangeView, rawBalances } from './valuation'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 
 /**
@@ -41,10 +45,6 @@ const sideOf = (pool: PoolOption, index: 0 | 1, raw: bigint | string): HeldSide 
   const units = formatUnits(String(raw), currency.decimals)
   return { amount: units && units.kind === 'units' ? units.text : String(raw), token: currency }
 }
-
-/** The raw balances the read service reported for the pool's two tokens, in pool order, or null until it answered. */
-const rawBalances = (balances: PairBalancesState): readonly [string | null, string | null] | null =>
-  balances.status === 'ready' && balances.balances ? [balances.balances[0].raw, balances.balances[1].raw] : null
 
 /** How the wallet funds these choices, from the balances the read service reported: what Review shows, and what the final control's line says. */
 const planFor = (state: JourneyState, balances: PairBalancesState): DepositPlan | null => reviewPlan(state, rawBalances(balances))?.plan ?? null
@@ -86,6 +86,9 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
     : steps.map((step) => ({ ...step, state: null as LiveState | null, caption: step.detail }))
   const held = pool && planned ? ([sideOf(pool, 0, planned.need[0]), sideOf(pool, 1, planned.need[1])] as const) : null
   const slippage = validateSlippage(state.slippageBps)
+  // The headline's value in USD (USDG pairs only), and the range drawn small under its lines.
+  const total = planned ? (heldAmounts(state, balances)?.total ?? null) : null
+  const view = pool && usable && state.range ? rangeView(state.range, usable, pool) : null
   return (
     <div className="dm-flow-stack" data-stage="review">
       <section aria-labelledby="create-choices-heading" className="dm-flow-section">
@@ -95,27 +98,54 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
         <div className="dm-flow-headline" data-review-headline="">
           {/* PoolPair already ends in the fee ("ETH / TOKEN · 0.30%"); a chip beside it said the same thing twice. */}
           <p className="dm-flow-headline-pair">
-            {pool ? <PoolPair option={pool} /> : CREATE.page.notChosen}
-          </p>
-          <p className="dm-flow-headline-amounts tnum" data-review-amounts="" data-review-plan={plan?.kind}>
-            {swap && pool ? (
-              // What the position holds once part of the one token is swapped: estimates, before the pool's own price impact.
+            {pool ? (
               <>
-                ≈{sideOf(pool, swap.from, swap.deposit - swap.swap).amount} <SymbolText token={pool.currencies[swap.from]} /> + ≈
-                {sideOf(pool, swap.from === 0 ? 1 : 0, swap.receive).amount} <SymbolText token={pool.currencies[swap.from === 0 ? 1 : 0]} />
-              </>
-            ) : held ? (
-              <>
-                {held[0].amount} <SymbolText token={held[0].token} /> + {held[1].amount} <SymbolText token={held[1].token} />
+                <TokenMarkPair base={pool.currencies[0]} quote={pool.currencies[1]} size={24} ring="var(--flow-well, var(--surface-1))" />
+                <span className="min-w-0">
+                  <PoolPair option={pool} />
+                </span>
               </>
             ) : (
               CREATE.page.notChosen
             )}
           </p>
+          <p className="dm-flow-headline-amounts tnum" data-review-amounts="" data-review-plan={plan?.kind}>
+            {/* Every digit stays (the amount is compared at full precision); the digits past the sixth are dimmed. */}
+            {/* Each side is one phrase that keeps its line, and the + leads the second, so a narrow line breaks only before the +. */}
+            {swap && pool ? (
+              // What the position holds once part of the one token is swapped: estimates, before the pool's own price impact.
+              <>
+                <span className="dm-flow-headline-side">
+                  <span className="dm-approx">≈</span>
+                  <AmountText text={sideOf(pool, swap.from, swap.deposit - swap.swap).amount} mode="dim-tail" /> <SymbolText token={pool.currencies[swap.from]} />
+                </span>{' '}
+                <span className="dm-flow-headline-side">
+                  + <span className="dm-approx">≈</span>
+                  <AmountText text={sideOf(pool, swap.from === 0 ? 1 : 0, swap.receive).amount} mode="dim-tail" /> <SymbolText token={pool.currencies[swap.from === 0 ? 1 : 0]} />
+                </span>
+              </>
+            ) : held ? (
+              <>
+                <span className="dm-flow-headline-side">
+                  <AmountText text={held[0].amount} mode="dim-tail" /> <SymbolText token={held[0].token} />
+                </span>{' '}
+                <span className="dm-flow-headline-side">
+                  + <AmountText text={held[1].amount} mode="dim-tail" /> <SymbolText token={held[1].token} />
+                </span>
+              </>
+            ) : (
+              CREATE.page.notChosen
+            )}
+          </p>
+          {total !== null && (
+            <p className="dm-usd-line dm-flow-headline-usd">
+              <UsdText value={total} approx={swap !== null} />
+            </p>
+          )}
           {swap && pool && (
             <p className="dm-flow-headline-line tnum" data-review-swap={swap.from}>
               From your wallet: {sideOf(pool, swap.from, swap.deposit).amount} <SymbolText token={pool.currencies[swap.from]} />. About {sideOf(pool, swap.from, swap.swap).amount}{' '}
-              <SymbolText token={pool.currencies[swap.from]} /> of it is swapped for ≈{sideOf(pool, swap.from === 0 ? 1 : 0, swap.receive).amount}{' '}
+              <SymbolText token={pool.currencies[swap.from]} /> of it is swapped for ≈<AmountText text={sideOf(pool, swap.from === 0 ? 1 : 0, swap.receive).amount} mode="dim-tail" />{' '}
               <SymbolText token={pool.currencies[swap.from === 0 ? 1 : 0]} />.
             </p>
           )}
@@ -134,6 +164,18 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           <p className="dm-flow-headline-line tnum" data-review-slippage={slippage.ok ? slippage.bps : undefined}>
             {slippage.ok ? CREATE.review.slippage(slippageWritten(slippage.bps)) : CREATE.page.notChosen}
           </p>
+          {/* The range drawn small, with the bounds the line above says under its ends. Beside the steps on a wide screen the preview draws it large, so this one is shown only where that one is not. */}
+          {view && (
+            <RangePreview
+              lower={view.lower}
+              upper={view.upper}
+              current={view.current}
+              inRange={view.inRange}
+              height={56}
+              labels={{ lower: <Approx text={view.lowerText ?? CREATE.review.summary.beyondDisplay} />, upper: <Approx text={view.upperText ?? CREATE.review.summary.beyondDisplay} /> }}
+              className="dm-flow-headline-range"
+            />
+          )}
         </div>
         {slippage.ok && slippageWarns(slippage.bps) && (
           <p role="status" className="dm-flow-position" data-tone="neutral" data-review-slippage-warning="">
@@ -191,16 +233,16 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
               >
                 {step.state === 'done' ? '✓' : index + 1}
               </span>
-              <span className="grid min-w-0 gap-0.5">
-                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-body font-medium text-fg">
+              <span className="dm-flow-wstep-body">
+                <span className="dm-flow-wstep-title">
                   {step.title}
                   {step.token && (
-                    <span className="text-caption font-normal text-fg-muted">
+                    <span className="dm-flow-wstep-token">
                       <SymbolText token={step.token} /> <Address value={step.token.address} short />
                     </span>
                   )}
                 </span>
-                {step.caption && <span className="text-caption text-fg-muted">{step.caption}</span>}
+                {step.caption && <span className="dm-flow-wstep-note">{step.caption}</span>}
               </span>
             </li>
           ))}
@@ -223,7 +265,7 @@ const CreateControl = __DOMINO_WALLET_SESSION__
 function Unavailable({ note }: { note: string }) {
   return (
     <>
-      <Button type="button" variant="primary" size="lg" className="w-full" disabled data-create-position="" aria-describedby="create-reason">
+      <Button type="button" variant="primary" size="xl" className="w-full" disabled data-create-position="" aria-describedby="create-reason">
         {CREATE.page.create}
       </Button>
       <p id="create-reason" className="dm-flow-reason" data-align="start">

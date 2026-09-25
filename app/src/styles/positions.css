@@ -1,0 +1,656 @@
+/* positions (DESIGN-V2 §11–§13): Positions, a position's own page, the fees module, the automation frame,
+   and the Performance and Execution cards (Managed positions, Receipts), which P4 alone styles through their
+   class names. Flat cards, hairlines, big quiet numbers; Tangerine only in charts and range visuals, status in
+   --money-in / --money-out. The few !important declarations override a primitive's own utilities and are
+   scoped to one element each. */
+
+@layer components {
+  /* ---- Positions: title row (§11.1-1) -------------------------------------------------------- */
+  .dm-acct-title { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; }
+  .dm-acct-title-main { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; min-width: 0; }
+  .dm-acct-title-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .dm-acct-wallet-chip { max-width: 100%; margin-top: 6px; }
+  .dm-acct-wallet-chip .dm-acct-mono { font-size: 13px; line-height: 18px; color: var(--fg); }
+  @media (max-width: 767px) {
+    .dm-acct-title { align-items: stretch; flex-direction: column; }
+    .dm-acct-title-main { gap: 8px 12px; }
+    .dm-acct-wallet-chip { margin-top: 2px; }
+    .dm-acct-title-actions { flex-wrap: nowrap; }
+    .dm-acct-title-actions > .dm-btn { flex: 1 1 0; height: 44px; }
+  }
+
+  /* ---- Positions: 1fr + a 360px rail from 1024px; below, one column: Your positions, the rail, then Managed and Receipts. */
+  .dm-acct-grid { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
+  .dm-acct-col { display: contents; }
+  .dm-own-slot { order: 1; }
+  .dm-acct-o4 { order: 2; }
+  .dm-acct-o6 { order: 3; }
+  .dm-acct-pair { order: 4; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+  @media (min-width: 768px) {
+    .dm-acct-grid, .dm-acct-pair { gap: 24px; }
+    .dm-acct-grid { margin-top: 32px; }
+  }
+  @media (min-width: 1024px) {
+    .dm-acct-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; align-items: start; }
+    .dm-acct-col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+    .dm-acct-pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; }
+  }
+
+  /* ---- Cards in the main column ----------------------------------------------------------------- */
+  .dm-acct-card { min-width: 0; padding: 8px; }
+  .dm-acct-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-height: 56px; padding: 12px 16px; }
+  .dm-acct-card-body { min-width: 0; padding: 0 16px 16px; }
+
+  /* ---- The automation frame (§13.6): Managed positions and Receipts -------------------------------- */
+  .dm-auto-frame { display: flex; flex-direction: column; min-width: 0; padding: 8px; }
+  .dm-auto-frame-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-height: 56px; padding: 12px 16px; }
+  .dm-auto-frame-body { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: "desc" "plate"; align-content: start; row-gap: 16px; min-width: 0; padding: 0 12px 12px; }
+  @media (min-width: 768px) { .dm-auto-frame-body { padding: 0 16px 16px; } }
+  /* rugged97's screens lend their children to the frame's grid, so the sentence can sit on the plate under the art. */
+  .dm-auto-frame-body > :is(.dm-acct-perf, .dm-acct-exec) { display: contents; }
+  .dm-auto-frame-body .dm-acct-desc { grid-area: desc; }
+  /* The plate: the art's 104px slot at the top (the machine stands on its floor; the stand-in tile sits in its rings), the sentence 10px under it. */
+  .dm-auto-frame-body :is(.dm-acct-plot, .dm-acct-quiet) { grid-area: plate; position: relative; isolation: isolate; display: grid; align-content: start; justify-items: center; min-height: 188px; margin: 0; padding: 132px 24px 24px; border-radius: var(--radius-lg); background-color: var(--surface-1); background-image: radial-gradient(circle at center, var(--dot-plate) 0.9px, transparent 1.4px); background-size: 14px 24.5px; background-position: 7px 12.25px; box-shadow: inset 0 0 0 1px var(--border); --chart-ground: var(--surface-1); text-align: center; text-wrap: balance; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
+  .dm-auto-frame-body :is(.dm-acct-plot, .dm-acct-quiet)::after { content: ''; position: absolute; inset: 1px; z-index: -1; border-radius: inherit; pointer-events: none; background: radial-gradient(70% 60% at 50% 38%, transparent 0%, var(--surface-1) 100%); opacity: 0.8; }
+  .dm-auto-frame-body :is(.dm-acct-plot, .dm-acct-quiet) > * { position: relative; z-index: 1; max-width: 40ch; }
+  .dm-auto-frame-art { grid-area: plate; z-index: 1; display: none; place-items: end center; align-self: start; justify-self: center; height: 104px; margin-top: 18px; pointer-events: none; }
+  .dm-auto-frame-art > * { grid-area: 1 / 1; }
+  .dm-auto-frame-art .dm-empty-art { margin: 0; width: 104px; height: 104px; }
+  .dm-auto-frame-body:has(:is(.dm-acct-plot, .dm-acct-quiet)) .dm-auto-frame-art { display: grid; }
+  /* The Domino-compound machine once drawn; until then (an empty svg) the automation glyph in the rings stands in for it. */
+  .dm-auto-frame-art > .dm-mode-art { max-width: 100%; }
+  .dm-auto-frame-art > .dm-mode-art:empty { display: none; }
+  .dm-auto-frame-standin { display: grid; }
+  .dm-auto-frame-art:has(> .dm-mode-art:not(:empty)) > .dm-auto-frame-standin { display: none; }
+  .dm-auto-frame-standin .dm-empty-tile, .dm-auto-frame-body[data-art="receipt"] .dm-empty-tile { background: var(--card); color: var(--fg-muted); box-shadow: inset 0 0 0 1px var(--border-strong), 0 1px 2px rgb(0 0 0 / 0.06); }
+  /* Signed in with data: no plate, so no stretched row; the cards simply follow the line, in the frame's column. */
+  .dm-auto-frame-body:not(:has(:is(.dm-acct-plot, .dm-acct-quiet))) { grid-template-areas: none; grid-template-rows: none; }
+  .dm-auto-frame-body:not(:has(:is(.dm-acct-plot, .dm-acct-quiet))) .dm-acct-desc { grid-area: auto; }
+  .dm-auto-frame-body > .dm-acct-perf > :not(.dm-acct-desc, .dm-acct-plot, h2),
+  .dm-auto-frame-body > .dm-acct-exec > :not(.dm-acct-desc, .dm-acct-quiet, h2) { min-width: 0; }
+
+  /* ---- Rail cards: Wallet (padding 8, 48px rows) and Automation (padding 20) --------------------- */
+  .dm-acct-rail { display: grid; gap: 12px; min-width: 0; padding: 20px; }
+  .dm-acct-rail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 28px; }
+  .dm-acct-subject { display: inline-flex; align-items: center; gap: 2px; min-width: 0; height: 28px; padding: 0 2px 0 10px; border-radius: var(--radius-pill); background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg-muted); }
+  .dm-acct-subject .dm-acct-mono { font-size: 12px; line-height: 16px; color: var(--fg-muted); }
+  .dm-acct-rail-text { font-size: 14px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-acct-rail-empty { display: grid; gap: 12px; }
+  .dm-acct-rail-actions { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 -10px -6px; }
+  .dm-acct-rail-form { padding-top: 12px; border-top: 1px solid var(--border); }
+  .dm-acct-address-form { display: grid; gap: 8px; }
+
+  .dm-acct-wallet { gap: 0; padding: 8px; }
+  .dm-acct-wallet > .dm-acct-rail-head { min-height: 56px; padding: 12px 12px 8px 16px; }
+  .dm-acct-wallet > .dm-acct-rail-empty { padding: 0 16px 16px; }
+  .dm-acct-wallet > .dm-acct-rail-actions { margin: 0; padding: 4px 4px 4px; }
+  .dm-acct-wallet > .dm-acct-rail-form { margin: 0 8px 8px; }
+
+  /* Wallet tokens: 48px rows, the mark, the name linked to Markets, the balance at the right. */
+  .dm-acct-tokens { display: grid; gap: 4px; min-width: 0; }
+  /* How many are listed and from which page: for a screen reader and the title, not the layout (§0.3). */
+  .dm-acct-tokens-count { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .dm-acct-token-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+  .dm-acct-token { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 12px; border-radius: var(--radius); transition: background-color 100ms ease-in-out; }
+  .dm-acct-token:hover { background: var(--row-hover); }
+  .dm-acct-token-id { display: flex; flex-direction: column; flex-shrink: 0; max-width: 55%; min-width: 0; }
+  .dm-acct-token-name { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-decoration: none; border-radius: 4px; }
+  .dm-acct-token-link { text-decoration-line: underline; text-decoration-color: transparent; text-underline-offset: 3px; transition: text-decoration-color var(--dur-hover) ease; }
+  .dm-acct-token-link:hover { text-decoration-color: var(--fg-faint); }
+  .dm-acct-token-amount { min-width: 0; margin-left: auto; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-align: right; overflow-wrap: anywhere; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-acct-tokens-empty { padding: 12px; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
+  .dm-acct-tokens > .dm-btn { margin-left: 4px; }
+  .dm-acct-tokens-more { margin: 0; }
+  .dm-acct-tokens-more > summary { min-height: 36px; font-size: 13px; letter-spacing: -0.16px; }
+  .dm-acct-tokens-form { display: grid; gap: 8px; }
+  .dm-acct-mono-field { font-family: var(--font-mono); font-size: 12px; line-height: 18px; letter-spacing: 0; resize: vertical; }
+
+  /* Automation, in the rail: two rows with a tile, a name, its status and one line. */
+  .dm-acct-auto { gap: 16px; }
+  .dm-acct-auto-list { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
+  .dm-acct-auto-list > li { display: flex; align-items: flex-start; gap: 12px; }
+  .dm-acct-auto-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 22px; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-acct-auto-text { margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+
+  /* ---- Position NFTs: the lookup card; its rows are the summaries of their own details ---------------- */
+  .dm-acct-nft-card { container: acct-nft / inline-size; padding: 8px; }
+  .dm-acct-nft-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; padding: 12px 16px; }
+  .dm-acct-nft-head > h2 { padding-top: 6px; }
+  .dm-acct-nft-form { display: flex; flex: 1 1 420px; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 8px; max-width: 600px; }
+  .dm-acct-nft-field { flex: 1 1 240px; min-width: 0; }
+  .dm-acct-nft-field .dm-hint { text-wrap: pretty; }
+  /* Room kept for Cancel and Clear, so Look up positions never moves when they appear. */
+  .dm-acct-nft-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 250px; min-height: 40px; }
+
+  .dm-acct-nft-rows { grid-template-columns: minmax(0, 1fr); --cols: minmax(210px, 1.4fr) minmax(170px, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) 32px; }
+  .dm-acct-nft-band > :nth-child(3), .dm-acct-nft-band > :nth-child(4) { text-align: right; }
+  .dm-acct-nft-rows > .dm-acct-nft > details > summary { row-gap: 8px; padding-top: 12px; padding-bottom: 12px; }
+  .dm-acct-nft-pool { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .dm-acct-nft-name { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 4px; min-width: 0; }
+  .dm-acct-nft-pair { max-width: 100%; margin: 0; overflow: hidden; font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); white-space: nowrap; text-overflow: ellipsis; }
+  .dm-acct-nft-chip { max-width: 100%; min-width: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); }
+  .dm-acct-nft-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dm-acct-nft-nopair { display: inline-flex; flex-shrink: 0; }
+  .dm-acct-nft-nomark { width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius-pill); box-shadow: inset 0 0 0 1px var(--border-strong); background: var(--card) repeating-linear-gradient(135deg, transparent 0 3px, var(--wash-strong) 3px 6px); }
+  .dm-acct-nft-nomark + .dm-acct-nft-nomark { margin-left: -9.6px; }
+  .dm-acct-nft-range { display: grid; justify-items: start; gap: 6px; min-width: 0; }
+  .dm-acct-nft-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-width: 0; }
+  .dm-acct-nft-minibar { display: block; width: 88px; flex-shrink: 0; }
+  .dm-acct-nft-ticks { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-acct-nft-cell { position: relative; display: grid; min-width: 0; }
+  /* The column's name, for a screen reader beside the band; shown as a label when the row stacks. */
+  .dm-acct-nft-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; text-transform: uppercase; }
+  .dm-acct-nft-amounts { display: grid; justify-items: end; gap: 2px; min-width: 0; text-align: right; }
+  .dm-acct-amount { display: block; max-width: 100%; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); overflow-wrap: anywhere; text-wrap: pretty; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-acct-amount-symbol { font-weight: 400; color: var(--fg-subtle); }
+  .dm-acct-nft-empty { grid-column: 2 / 5; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-acct-nft-chev { display: grid; place-items: center; justify-self: end; width: 24px; height: 32px; border-radius: var(--radius-sm); color: var(--fg-subtle); transition: color var(--dur-hover) ease; }
+  .dm-acct-nft-chev > svg { transition: rotate var(--dur-fast) var(--ease-std), translate var(--dur-fast) var(--ease-std); }
+  .dm-acct-nft summary:hover .dm-acct-nft-chev { color: var(--fg); }
+  .dm-acct-nft details:not([open]) > summary:hover .dm-acct-nft-chev > svg { translate: 2px 0; }
+  .dm-acct-nft details[open] > summary .dm-acct-nft-chev > svg { rotate: 90deg; }
+  /* Under the row, aligned with the pair name (two 32px marks overlapping by 30%, then 12px). */
+  .dm-acct-nft-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-left: 66px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-acct-nft-meta > [data-no-liquidity] { color: var(--fg-muted); }
+
+  .dm-acct-nft-body { display: grid; gap: 16px; padding: 16px; animation: dm-fade var(--dur-fade) var(--ease-std) backwards; }
+  .dm-acct-nft-facts { padding: 0; }
+
+  @container acct-nft (max-width: 699px) {
+    .dm-acct-nft-form { flex-basis: 100%; max-width: none; justify-content: flex-start; }
+    .dm-acct-nft-actions { min-width: 0; }
+    .dm-acct-nft-rows > .dm-acct-nft-band { display: none; }
+    .dm-acct-nft-rows > .dm-acct-nft > details > summary { grid-template-columns: minmax(0, 1fr) 32px; row-gap: 10px; padding-left: 8px; padding-right: 8px; }
+    .dm-acct-nft-pool { grid-column: 1; grid-row: 1; }
+    .dm-acct-nft-chev { grid-column: 2; grid-row: 1; }
+    .dm-acct-nft-range, .dm-acct-nft-cell, .dm-acct-nft-empty, .dm-acct-nft-meta { grid-column: 1 / -1; }
+    .dm-acct-nft-range { grid-auto-flow: column; justify-content: start; align-items: center; column-gap: 12px; }
+    .dm-acct-nft-cell { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: start; column-gap: 12px; }
+    .dm-acct-nft-label { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; white-space: normal; font-size: 11px; line-height: 18px; font-weight: 500; letter-spacing: 0.6px; color: var(--fg-subtle); }
+    .dm-acct-nft-meta { padding-left: 0; }
+  }
+  @container acct-nft (max-width: 419px) {
+    .dm-acct-nft-range { grid-auto-flow: row; }
+    .dm-acct-range-ends { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+    .dm-acct-range-unit { grid-column: 1 / -1; grid-row: 2; text-align: left; white-space: normal; }
+    .dm-acct-range-unit:empty { display: none; }
+  }
+
+  /* The range against the pool's price, inside an opened lookup row. */
+  .dm-acct-range { display: grid; gap: 8px; }
+  .dm-acct-range-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; }
+  .dm-acct-range-now { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-muted); }
+  .dm-acct-range-bar { padding: 4px 0; }
+  .dm-acct-range-ends { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg); }
+  .dm-acct-range-unit { min-width: 0; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-muted); }
+
+  /* ---- Your positions (§11.1-3 to -7) --------------------------------------------------------------- */
+  .dm-own-slot { display: grid; gap: 16px; min-width: 0; }
+  @media (min-width: 768px) { .dm-own-slot { gap: 24px; } }
+  .dm-own-card { padding: 8px; }
+  .dm-own-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; min-height: 60px; padding: 12px 12px 12px 16px; }
+  .dm-own-card .dm-empty.dm-own-connect { padding: 40px 16px; }
+  .dm-own-card .dm-empty.dm-own-none { margin: 0 8px 8px; }
+  .dm-own-card > .dm-empty:not(.dm-own-connect, .dm-own-none, [data-empty="owned-unlisted"]) { padding: 24px 16px; }
+
+  /* The portfolio band (§11.1-4): Principal over Unclaimed fees, on the card before the rows. */
+  /* Labels on one line, figures on the next, on one baseline: the two figures read as one band. */
+  .dm-portfolio { display: grid; grid-auto-flow: column; grid-template-rows: auto auto; justify-content: start; column-gap: 48px; row-gap: 6px; padding: 4px 16px 20px; }
+  .dm-portfolio-fig { display: contents; }
+  .dm-portfolio-fig > :last-child { align-self: last baseline; }
+  .dm-portfolio-label { font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-portfolio .dm-fig-hero { color: var(--fg); }
+  .dm-portfolio .dm-fig-lg { color: var(--fg); }
+  /* A narrow phone keeps the two figures side by side while they fit, and wraps the second under the first when a large
+     principal needs the width (§11.2); each figure's row is the hero's height, so the labels stay on one line. */
+  @media (max-width: 479px) {
+    .dm-portfolio { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 32px; }
+    .dm-portfolio-fig { display: grid; grid-template-rows: auto 36px; row-gap: 6px; }
+    .dm-portfolio-fig > :last-child { align-self: end; }
+  }
+  .dm-fees-in, .dm-portfolio .dm-fees-in { color: var(--money-in); }
+
+  /* Rows: 72px, USD first, the range as a mini bar under its status. */
+  .dm-own-card .dm-acct-nft-rows { --cols: minmax(0, 2fr) minmax(0, 1.35fr) minmax(0, 1.3fr) minmax(0, 1.3fr) 24px; }
+  /* The Closed tab's range column holds only the pill: the pool takes the room, so each pair and its id share one line. */
+  .dm-own-card .dm-acct-nft-rows[data-owned-rows="closed"] { --cols: minmax(0, 2.6fr) minmax(0, 0.9fr) minmax(0, 1.35fr) minmax(0, 1.35fr) 24px; }
+  .dm-acct-nft-rows > .dm-own-row { position: relative; min-height: 72px; padding-top: 12px; padding-bottom: 12px; color: inherit; text-decoration: none; }
+  .dm-acct-nft-rows > .dm-own-row:focus-visible { outline-offset: var(--focus-offset-inset); }
+  .dm-own-row .dm-acct-nft-bar { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 8px; }
+  .dm-own-row .dm-acct-nft-minibar { order: 1; width: min(120px, 100%); }
+  .dm-own-row .dm-acct-nft-chip-text { font-size: 12px; }
+  .dm-own-row .dm-acct-nft-amounts { gap: 0; }
+  .dm-own-row .dm-acct-nft-amounts:has(.dm-row-usd) .dm-acct-amount { font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-row-usd { order: -1; font-size: 16px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-row-usd.dm-fees-in { color: var(--money-in); }
+  /* Unclaimed fees without USD: in the in-colour while there are any, muted at zero. */
+  .dm-own-row [data-cell="fees"] .dm-acct-nft-amounts:not(:has(.dm-row-usd)) .dm-acct-amount[data-amount="units"] { color: var(--money-in); }
+  .dm-own-row [data-cell="fees"] .dm-acct-nft-amounts:not(:has(.dm-row-usd)) .dm-acct-amount[data-amount="zero"] { color: var(--fg-muted); }
+  .dm-own-row [data-cell="fees"] .dm-acct-amount[data-amount="units"] .dm-acct-amount-symbol { color: inherit; opacity: 0.8; }
+  .dm-own-row:hover .dm-acct-nft-chev { color: var(--fg); }
+  .dm-own-row:hover .dm-acct-nft-chev > svg { translate: 2px 0; }
+  /* A closed position: one quiet line; nothing leaves the DOM. */
+  .dm-acct-nft-rows > .dm-own-row:has([data-position-status="closed"]) { min-height: 52px; padding-top: 8px; padding-bottom: 8px; }
+  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-pool > span:first-child { opacity: 0.6; }
+  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-minibar { visibility: hidden; height: 0; }
+  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-bar { gap: 0; }
+  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-pair { color: var(--fg-muted); }
+  .dm-own-row:has([data-position-status="closed"]) .dm-acct-amount { font-size: 13px; line-height: 18px; font-weight: 400; color: var(--fg-subtle); }
+  /* One line: smaller faded marks, the pair and its id side by side (the chip without its plate), the zero amounts in a
+     row. Flex items stay blocks, so every figure keeps its own line in innerText. */
+  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-pool > :first-child { scale: 0.75; transform-origin: left center; margin-right: -14px; }
+  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-name { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
+  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-pair { font-size: 14px; line-height: 20px; }
+  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-chip { min-height: 20px; padding: 0; background: none; color: var(--fg-subtle); }
+  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-amounts { display: flex; flex-wrap: wrap; justify-content: flex-end; column-gap: 12px; }
+
+  /* A row on its way: bubbles at the size of what they stand for, never wider than their cell. */
+  .dm-acct-nft-rows > .dm-own-row--wait:hover { background: none; }
+  .dm-own-skel-mark { width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius-pill); }
+  .dm-own-skel-name { display: grid; gap: 8px; min-width: 0; flex: 1 1 auto; }
+  .dm-own-skel-pair { width: min(96px, 100%); height: 12px; }
+  .dm-own-skel-chip { width: min(120px, 100%); height: 12px; border-radius: var(--radius-pill); }
+  .dm-own-skel-bar { width: min(120px, 100%); height: 8px; border-radius: var(--radius-pill); }
+  .dm-own-skel-figs { display: grid; justify-items: end; gap: 8px; }
+  .dm-own-skel-fig { width: min(72px, 100%); height: 12px; }
+  .dm-own-skel-fig--short { width: min(52px, 80%); }
+  .dm-own-skel-tabs { width: 176px; height: 36px; border-radius: var(--radius-pill); }
+  /* The portfolio band on its way: bubbles at the size of its label and figures, on the band's own grid. */
+  .dm-own-skel-label { width: 56px; height: 12px; margin: 3px 0; }
+  .dm-own-skel-label--wide { width: 92px; }
+  .dm-own-skel-band > .dm-portfolio-fig > .dm-own-skel-hero, .dm-own-skel-band > .dm-portfolio-fig > .dm-own-skel-lg { align-self: end; margin-bottom: 4px; border-radius: 8px; }
+  .dm-own-skel-hero { width: 112px; height: 32px; }
+  .dm-own-skel-lg { width: 76px; height: 24px; }
+  @media (max-width: 767px) { .dm-own-skel-hero { width: 96px; height: 28px; } .dm-own-skel-lg { width: 64px; height: 20px; } }
+
+  .dm-own-more { display: flex; justify-content: center; padding: 8px 0 4px; }
+  /* A quiet 40px summary led by a search glyph (a data-URL mask in the text's colour), not the disclosure chevron. */
+  .dm-own-lookup > summary { width: fit-content; min-height: 40px; color: var(--fg-muted); }
+  .dm-details.dm-own-lookup > summary::before { width: 14px; height: 14px; border: 0; rotate: none; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='m10.5 10.5 3 3'/%3E%3C/svg%3E") center / 14px 14px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='m10.5 10.5 3 3'/%3E%3C/svg%3E") center / 14px 14px no-repeat; }
+  .dm-details.dm-own-lookup[open] > summary::before { rotate: none; }
+  .dm-details.dm-own-lookup > .dm-own-lookup-body { padding: 8px 0 0; }
+
+  /* A narrow card (a phone): the marks beside the pair, which may wrap but is never cut; the chip and the status on one
+     line under it; the two figures under both. The pool and name wrappers lend their children to the row's grid, so
+     the DOM (and its text order) stays as it is. */
+  @container acct-nft (max-width: 699px) {
+    .dm-own-card .dm-acct-nft-rows > .dm-own-row {
+      grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto 20px;
+      grid-template-areas: "marks pair pair pair chev" "marks chip chip range chev" "principal principal fees fees chev";
+      grid-template-rows: auto auto auto;
+      align-items: center; row-gap: 4px; column-gap: 12px; min-height: 84px; padding: 14px 8px;
+    }
+    .dm-own-card .dm-own-row > .dm-acct-nft-pool, .dm-own-card .dm-own-row .dm-acct-nft-name { display: contents; }
+    .dm-own-card .dm-own-row > .dm-acct-nft-pool > :first-child { grid-area: marks; align-self: center; }
+    .dm-own-card .dm-own-row .dm-acct-nft-pair { grid-area: pair; align-self: end; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+    .dm-own-card .dm-own-row .dm-acct-nft-chip { grid-area: chip; justify-self: start; align-self: start; max-width: none; }
+    .dm-own-card .dm-own-row .dm-acct-nft-chip-text { overflow: visible; text-overflow: clip; }
+    .dm-own-card .dm-own-row > .dm-acct-nft-range { grid-area: range; justify-self: end; align-self: start; }
+    .dm-own-card .dm-own-row .dm-acct-nft-bar { flex-direction: row; align-items: center; gap: 10px; }
+    .dm-own-card .dm-own-row .dm-acct-nft-minibar { width: 72px; }
+    .dm-own-card .dm-own-row > [data-cell="principal"] { grid-area: principal; margin-top: 10px; }
+    .dm-own-card .dm-own-row > [data-cell="fees"] { grid-area: fees; margin-top: 10px; }
+    .dm-own-card .dm-own-row > .dm-acct-nft-chev { grid-area: chev; align-self: center; }
+    .dm-own-card .dm-own-row > .dm-acct-nft-range.text-fg-subtle { justify-items: end; }
+    .dm-own-card .dm-own-row .dm-acct-nft-cell { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
+    .dm-own-card .dm-own-row [data-cell="principal"] :is(.dm-acct-nft-amounts, .dm-own-skel-figs) { justify-items: start; text-align: left; }
+    .dm-own-card .dm-own-row [data-cell="fees"] .dm-acct-nft-label { text-align: right; }
+    /* A row still on its way keeps its own two blocks (bubbles have no pair or chip to lend). */
+    .dm-own-card .dm-own-row--wait > .dm-acct-nft-pool { display: flex; grid-area: 1 / 1 / 3 / 4; align-self: center; }
+    .dm-own-card .dm-own-row--wait > .dm-acct-nft-range { grid-area: 1 / 4 / 3 / 5; align-self: center; }
+    /* An unread row (no pair, a dash per figure): the id beside the empty marks. */
+    .dm-own-card .dm-own-row[data-row-reason] > .dm-acct-nft-pool { display: flex; grid-area: 1 / 1 / 3 / 4; }
+
+    /* A closed position folds to one quiet line: small faded marks, the pair and its chip, the Closed pill, the chevron.
+       Its zero figures stay in the DOM and in innerText (clipped, not display: none). */
+    .dm-own-card .dm-acct-nft-rows > .dm-own-row:has([data-position-status="closed"]) {
+      grid-template-columns: auto minmax(0, 1fr) auto 20px;
+      grid-template-areas: "marks pair range chev" "marks chip range chev";
+      min-height: 56px; row-gap: 2px; padding-top: 8px; padding-bottom: 8px;
+    }
+    .dm-own-card .dm-own-row:has([data-position-status="closed"]) > .dm-acct-nft-range { align-self: center; }
+    .dm-own-card .dm-own-row:has([data-position-status="closed"]) > :is([data-cell="principal"], [data-cell="fees"]) { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  }
+  @container acct-nft (max-width: 479px) {
+    .dm-own-card .dm-own-row .dm-acct-nft-minibar { display: none; }
+    .dm-own-card .dm-own-row .dm-own-skel-bar { width: 80px; height: 22px; border-radius: var(--radius-pill); }
+  }
+
+  /* ---- One inset per width: every card's text starts 24px inside a card on a wide screen, 16px inside it on a phone
+     (32 from the screen's edge), so the column never zig-zags from card to card. A card with hoverable rows keeps its
+     8px frame and moves its heads and rows; a card without keeps its padding. ---------------------------------------- */
+  .dm-acct-token { padding: 0 16px; }
+  .dm-acct-auto { padding: 24px; }
+  @media (max-width: 767px) {
+    .dm-own-head, .dm-acct-nft-head, .dm-auto-frame-head, .dm-acct-card-head { padding-left: 8px; padding-right: 8px; }
+    /* Open and Closed share the card's width on their own line under the title, as the fees card's periods do (and
+       their bubble while the list loads takes the same line, so the head keeps its height). */
+    .dm-own-head > :is(.dm-seg, .dm-own-skel-tabs) { flex: 1 1 100%; }
+    .dm-own-head > .dm-seg { display: flex; }
+    .dm-own-head > .dm-seg > .dm-seg-item { flex: 1 1 0; min-width: 0; }
+    .dm-portfolio { padding-left: 8px; padding-right: 8px; }
+    .dm-acct-wallet > .dm-acct-rail-head { padding: 12px 8px 8px; }
+    .dm-acct-wallet > .dm-acct-rail-empty { padding: 0 8px 16px; }
+    .dm-acct-token { padding: 0 8px; }
+    /* A ghost button's words line up with the text above them (its plate reaches 4px past the inset). */
+    .dm-acct-wallet > .dm-acct-rail-actions { padding: 4px 4px 4px 0; margin-left: -4px; }
+    .dm-acct-tokens > .dm-btn { margin-left: -4px; }
+    .dm-acct-auto { padding: 16px; }
+    .dm-auto-frame-body { padding: 0 8px 8px; }
+    .dm-held-row { padding-left: 8px; padding-right: 8px; }
+  }
+
+  /* ---- Held deposits (§11.1-11): a normal card, rows with the pair's marks and the refund --------- */
+  .dm-held-list { display: grid; gap: 2px; margin: 0; padding: 0 0 4px; list-style: none; }
+  .dm-held-row { display: grid; gap: 8px; min-width: 0; padding: 12px 16px; border-radius: var(--radius); }
+  .dm-held-main { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+  .dm-held-text { display: grid; gap: 2px; flex: 1 1 180px; min-width: 0; }
+  .dm-held-pair { font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-held-amounts { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-held-line { padding-left: 56px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-held-line--strong { font-weight: 500; color: var(--fg); }
+  /* A finger's target on a phone: the refund is the screen's one filled button, 44 high (DESIGN-V2 §16.5). */
+  @media (max-width: 767px) {
+    .dm-held-refund { height: 44px; padding-inline: 16px; border-radius: var(--radius); font-size: 14px; line-height: 20px; letter-spacing: -0.2px; }
+  }
+  @media (max-width: 479px) {
+    .dm-held-refund { width: 100%; }
+    .dm-held-line { padding-left: 0; }
+  }
+
+  /* ---- A position's own page (§12) ---------------------------------------------------------------- */
+  .dm-pos-back { display: inline-flex; align-items: center; gap: 4px; margin-left: -8px; padding: 6px 10px 6px 6px; border-radius: var(--radius-pill); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease, background-color var(--dur-hover) ease; }
+  .dm-pos-back:hover { background: var(--wash); color: var(--fg); }
+  .dm-pos-back > svg { transition: translate var(--dur-fast) var(--ease-std); }
+  .dm-pos-back:hover > svg { translate: -2px 0; }
+  .dm-pos-title { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 32px; margin-top: 16px; }
+  .dm-pos-name { display: flex; align-items: center; gap: 16px; min-width: 0; }
+  .dm-pos-pair { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dm-pos-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+  .dm-pos-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 2px; }
+  .dm-pos-actions:empty { display: none; }
+  @media (max-width: 767px) {
+    .dm-pos-name { gap: 12px; }
+    .dm-pos-actions { width: 100%; padding-top: 0; }
+    .dm-pos-actions > div { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: 100%; }
+    .dm-pos-actions .dm-btn { height: 44px; }
+  }
+
+  /* The value band (§12.1): one card of four cells; USD above the amounts by CSS, after them in the DOM. */
+  .dm-pos-stats { margin-top: 32px; }
+  .dm-pos-stats.dm-stats--tiles { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .dm-pos-stats.dm-stats--tiles > [data-cell="principal"], .dm-pos-stats.dm-stats--tiles > [data-cell="fees"] { grid-column: 1 / -1; }
+  @media (min-width: 768px) {
+    .dm-pos-stats.dm-stats--tiles { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
+    .dm-pos-stats.dm-stats--tiles > [data-cell="principal"], .dm-pos-stats.dm-stats--tiles > [data-cell="fees"] { grid-column: auto; }
+  }
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .dm-pos-stats.dm-stats--tiles { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  }
+  .dm-pos-stat { display: flex; flex-direction: column; }
+  .dm-pos-stat > dt { order: -2; }
+  .dm-pos-stat > .dm-stat-sub { order: -1; margin-top: 10px; color: var(--fg); }
+  .dm-pos-stat > .dm-stat-sub:empty { display: none; }
+  .dm-pos-stat > .dm-stat-value { margin-top: 10px; }
+  /* The strip's values are two amounts or a range, not one big figure: they wrap instead of truncating. */
+  .dm-pos-stats dd { overflow: visible !important; white-space: normal !important; }
+  .dm-pos-amounts { display: grid; gap: 2px; }
+  .dm-pos-amounts .dm-acct-amount, .dm-pos-figure { display: block; font-size: 18px; line-height: 24px; font-weight: 500; letter-spacing: -0.3px; }
+  @media (min-width: 768px) { .dm-pos-amounts .dm-acct-amount, .dm-pos-figure { font-size: 20px; line-height: 26px; } }
+  .dm-pos-unit { font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: -0.16px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-pos-dash { color: var(--fg-subtle); }
+  /* The range's two runs never break inside themselves: a narrow cell wraps before the dash (see PositionDetail). */
+  .dm-pos-run { white-space: nowrap; }
+  .dm-pos-stats .dm-approx { color: var(--fg-subtle); }
+  .dm-pos-usd { display: grid; gap: 12px; }
+  .dm-pos-split { margin-bottom: 2px; }
+  /* Valued: the amounts step back to 14px, each after its token's dot (the split bar's colours). */
+  .dm-pos-stats[data-valued] .dm-pos-amounts { gap: 4px; }
+  .dm-pos-stats[data-valued] .dm-pos-amounts .dm-acct-amount { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; }
+  /* The dots are the split bar's neutral inks (Tangerine on this page is the fees series alone). */
+  .dm-pos-stats[data-valued] [data-stat="principal"] .dm-acct-amount::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--fg-faint); }
+  .dm-pos-stats[data-valued] [data-stat="principal"] .dm-acct-amount + .dm-acct-amount::before { background: var(--surface-4); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-pos-stats [data-stat="fees"] .dm-acct-amount[data-amount="units"] { color: var(--money-in); }
+  .dm-pos-stats [data-stat="fees"] .dm-acct-amount[data-amount="units"] .dm-acct-amount-symbol { color: inherit; opacity: 0.8; }
+
+  /* Price range and Details: 7fr 5fr from 1024px, with or without the price-vs-range chart (a lone band never stretches
+     across the page); between 768 and 1023 one column, Details' rows in two. */
+  .dm-pos-grid { display: grid; gap: 16px; margin-top: 16px; }
+  @media (min-width: 768px) { .dm-pos-grid { gap: 24px; margin-top: 24px; } }
+  @media (min-width: 1024px) { .dm-pos-grid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); align-items: start; } }
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .dm-pos-facts { grid-template-columns: 1fr 1fr; column-gap: 32px; }
+    .dm-pos-facts > div:nth-last-child(2):nth-child(odd) { background: none; }
+  }
+  .dm-pos-card { display: grid; align-content: start; gap: 16px; min-width: 0; padding: 16px; }
+  @media (min-width: 768px) { .dm-pos-card { gap: 20px; padding: 24px; } }
+  .dm-pos-facts { padding: 0; }
+  .dm-pos-facts > div { min-height: 48px; padding: 0; }
+  .dm-pos-facts dt, .dm-pos-facts dd { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
+  .dm-pos-facts dd .dm-hex { max-width: 100%; }
+  .dm-pos-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
+  .dm-pos-links .dm-btn > svg { color: var(--fg-subtle); }
+
+  .dm-pos-range { gap: 12px; }
+  .dm-pos-range .dm-acct-range-head { min-height: 16px; margin-bottom: -4px; }
+  /* The preview labels only the pool's price (Min and Max are written right under it), so the row its end labels
+     would take is given back. With the price-vs-range chart below, the chart draws the range itself: no preview. */
+  .dm-pos-preview { margin: 0 0 -24px; }
+  .dm-pos-grid[data-has-price-chart] .dm-pos-preview-wrap { display: none; }
+  .dm-pos-ends { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 12px; }
+  .dm-pos-end { display: grid; gap: 2px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  .dm-pos-end[data-end="Max"] { justify-items: end; text-align: right; }
+  .dm-pos-end-word { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-pos-end-fig { font-size: 18px; line-height: 24px; font-weight: 500; letter-spacing: -0.3px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }
+  @media (min-width: 768px) { .dm-pos-end-fig { font-size: 20px; line-height: 26px; } }
+  .dm-pos-ends .dm-acct-range-unit { padding-bottom: 4px; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
+  /* Under the band (no price chart): Min starts at the band's lower edge, Max ends at its upper edge, the unit sits
+     between them; the edges are the preview's own geometry (--lo, --hi), set only for a band wide enough to hold them. */
+  @media (min-width: 768px) {
+    .dm-pos-grid:not([data-has-price-chart]) .dm-pos-ends[data-placed] { position: relative; display: block; min-height: 44px; }
+    .dm-pos-grid:not([data-has-price-chart]) .dm-pos-ends[data-placed] > .dm-pos-end { position: absolute; top: 0; max-width: 45%; }
+    .dm-pos-grid:not([data-has-price-chart]) .dm-pos-ends[data-placed] > .dm-pos-end[data-end="Min"] { left: calc(var(--lo) * 100%); }
+    .dm-pos-grid:not([data-has-price-chart]) .dm-pos-ends[data-placed] > .dm-pos-end[data-end="Max"] { right: calc((1 - var(--hi)) * 100%); }
+    .dm-pos-grid:not([data-has-price-chart]) .dm-pos-ends[data-placed] > .dm-acct-range-unit { position: absolute; bottom: 0; left: calc((var(--lo) + var(--hi)) * 50%); max-width: calc((var(--hi) - var(--lo)) * 100% - 200px); translate: -50% 0; }
+  }
+  .dm-pos-chart { margin-top: 8px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-pvr-unit { font-weight: 400; color: var(--fg-subtle); }
+
+  .dm-pos-empty { margin-top: 24px; }
+  .dm-pos-empty .dm-empty--plate, .dm-pos-empty.dm-empty--plate { border-radius: var(--radius-card); }
+
+  /* The page's loading (§12.2): bubbles where the header, the band and the cards will be. */
+  .dm-pos-skel-mark { width: 44px; height: 44px; border-radius: var(--radius-pill); }
+  .dm-pos-skel-h1 { width: 200px; height: 36px; border-radius: 8px; }
+  .dm-pos-skel-chips { width: 240px; max-width: 100%; height: 22px; border-radius: var(--radius-pill); }
+  .dm-pos-skel-cell { gap: 10px; }
+  .dm-pos-skel-label { width: 72px; height: 10px; }
+  .dm-pos-skel-hero { width: 180px; max-width: 100%; height: 36px; border-radius: 6px; }
+  .dm-pos-skel-fig { width: 120px; max-width: 100%; height: 20px; }
+  .dm-pos-skel-line { width: 96px; max-width: 80%; height: 12px; }
+  .dm-pos-skel-title { width: 120px; height: 20px; }
+  .dm-pos-skel-card { min-height: 220px; }
+  .dm-pos-stat > .dm-stat-value > .dm-skel { margin-top: 4px; }
+
+  /* ---- Dialogs (§3.12): receipt rows, marks beside the amounts, USD on a line of its own ------------- */
+  .dm-receipt-lede { font-size: 14px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-kv.dm-receipt { margin-top: 4px; padding: 0; }
+  .dm-receipt > div { min-height: 48px; padding: 8px 0; }
+  .dm-receipt dt { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
+  .dm-receipt-pair { display: grid; justify-items: end; gap: 6px; }
+  .dm-receipt-amount { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; }
+  /* What the wallet receives is the dialog's answer: a step larger than the rows under it. */
+  .dm-receipt[data-position-receive] > div:first-child .dm-receipt-amount { font-size: 16px; line-height: 22px; letter-spacing: -0.25px; }
+  /* The USD line belongs to the row above it: that row's hairline moves under the line. */
+  .dm-receipt > div:has(+ .dm-usd-line) { background: none; padding-bottom: 2px; }
+  .dm-receipt .dm-usd-line { margin: 0; padding: 0 0 10px; text-align: right; background: linear-gradient(var(--border-lip), var(--border-lip)) bottom center / calc(100% - 8px) 1px no-repeat; }
+  .dm-receipt-skel { width: 112px; height: 14px; margin-left: auto; }
+  /* Close's slippage limit, as New position's: the three presets share the track's width, and the exact figure is set
+     in the figures' face (Geist, tabular), not the hex face. */
+  .dm-flow-dialog[data-position-dialog] .dm-slip-choice { gap: 10px; }
+  .dm-flow-dialog[data-position-dialog] .dm-slip-choice .dm-seg { display: flex; width: 100%; }
+  .dm-flow-dialog[data-position-dialog] .dm-slip-choice .dm-seg-item { flex: 1 1 0; min-width: 0; }
+  .dm-flow-dialog[data-position-dialog] .dm-slip-choice .dm-acct-lf > .dm-acct-mono-field { font-family: var(--font-sans); font-size: 14px; font-variant-numeric: lining-nums tabular-nums; letter-spacing: -0.2px; }
+  /* The position dialogs breathe like the wallet dialog on a desktop (§3.12: 24px sides). */
+  @media (min-width: 640px) {
+    .dm-flow-dialog[data-position-dialog] > .dm-flow-dialog-head { padding: 22px 60px 12px 24px; }
+    .dm-flow-dialog[data-position-dialog] > .dm-flow-dialog-body { padding: 4px 24px 20px; }
+    .dm-flow-dialog[data-position-dialog] > .dm-flow-dialog-foot { padding: 16px 24px 24px; }
+    .dm-flow-dialog[data-position-dialog] .dm-dialog-close { top: 16px; right: 16px; }
+  }
+
+  /* ---- Fees earned (§13) ---------------------------------------------------------------------------- */
+  .dm-fees { display: grid; gap: 20px; min-width: 0; margin-top: 16px; padding: 16px; }
+  @media (min-width: 768px) { .dm-fees { gap: 24px; margin-top: 24px; padding: 24px; } }
+  .dm-own-slot > .dm-fees { margin-top: 0; }
+  .dm-fees-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; min-height: 30px; }
+  .dm-fees-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
+  .dm-fees-pair { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-fees-pair-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 767px) {
+    .dm-fees-tabs { flex: 1 1 100%; }
+    .dm-fees-tabs > .dm-seg { display: flex; width: 100%; }
+    .dm-fees-tabs > .dm-seg > .dm-seg-item { flex: 1 1 0; min-width: 0; }
+  }
+  .dm-fees-body { display: grid; gap: 24px; min-width: 0; }
+  @media (min-width: 1024px) { .dm-fees-body { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); align-items: start; gap: 32px; } }
+  .dm-fees-summary { display: grid; align-content: start; min-width: 0; }
+  .dm-fees-hero { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-height: 36px; margin: 0; color: var(--fg); }
+  @media (min-width: 768px) { .dm-fees-hero { min-height: 44px; } }
+  .dm-fees-hero-sym { font-size: 16px; line-height: 22px; color: var(--fg-subtle); }
+  .dm-fees-delta { align-self: center; }
+  /* Time in range closes the summary, under a hairline, with its own 4px bar. */
+  .dm-fees-tir { display: grid; gap: 8px; margin-top: 16px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-fees-tir-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 20px; }
+  .dm-fees-tir-label { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  /* The split bar, then the legend rows that name its two colours, directly under it. */
+  .dm-fees-split { margin-top: 16px; }
+  .dm-fees-legend { display: grid; margin-top: 6px; }
+  .dm-fees-hero + .dm-fees-legend { margin-top: 12px; }
+  /* Nothing earned: both figures on one quiet row. */
+  .dm-fees-legend--zero { margin-top: 12px; }
+  .dm-fees-legend--zero > .dm-fees-legend-row { flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 4px 28px; }
+  /* Only the hero reads at full ink: the two zero figures beside their names step back. */
+  .dm-fees-zero-fig { margin-left: 2px; color: var(--fg-subtle); }
+  .dm-fees-legend-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-height: 36px; padding: 8px 0; }
+  .dm-fees-legend-row + .dm-fees-legend-row { box-shadow: inset 0 1px 0 var(--border); }
+  .dm-fees-legend-label { display: inline-flex; align-items: center; gap: 8px; min-height: 20px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-fees-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--fg-faint); }
+  .dm-fees-dot[data-tone="collected"] { background: var(--primary-line); }
+  .dm-fees-dot[data-tone="unclaimed"] { background: var(--money-in); }
+  .dm-fees-legend-value { display: grid; justify-items: end; gap: 2px; min-width: 0; text-align: right; }
+  .dm-fees-legend-value > .dm-fig-xs { color: var(--fg); }
+  .dm-fees-legend-value > .dm-fig-xs.dm-fees-in { color: var(--money-in); }
+  .dm-fees-amounts { display: grid; justify-items: end; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-fees-sym { font-weight: 400; color: var(--fg-subtle); }
+  .dm-fees-plot { position: relative; min-width: 0; }
+  /* Nothing earned yet: a timeline waiting for its first fee beside the summary (the real flat line in a quiet ink, the
+     mint pip, the end dot at now, the two dates it spans), centred on the summary's height: no empty field that could
+     read as a chart that failed, and no second green bar beside Time in range. */
+  .dm-fees-body[data-zero] .dm-fees-plot { align-self: center; }
+  .dm-fees-chart { margin-top: -4px; }
+  .dm-fees-body[data-zero] .dm-fees-chart { margin-top: 0; }
+  .dm-fees-flat { fill: none; stroke: var(--fg-subtle); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  /* Each bucket's earnings: slim bars that tint the area (the line is drawn again over them), quieter on white. */
+  .dm-fees-chart .dm-chart-series .dm-bar { opacity: 0.18; }
+  .dark .dm-fees-chart .dm-chart-series .dm-bar { opacity: 0.35; }
+  .dm-fees-hover-bars .dm-bar:not([data-hovered]) { opacity: 0; }
+  /* A phone's y labels sit inside the plot: a halo in the card's colour keeps them clear of the bars and the area. */
+  .dm-fees-axis-inside .dm-axis { paint-order: stroke; stroke: var(--card); stroke-width: 3px; stroke-linejoin: round; }
+  .dm-fees-tip-pill { display: flex; margin-top: 4px; }
+  /* The compact card (§13.3 unclaimed-only): the on-chain figure alone. */
+  .dm-fees--compact { gap: 16px; }
+  .dm-fees-compact-row { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 24px; }
+  .dm-fees-compact-value { display: grid; justify-items: end; gap: 4px; text-align: right; }
+  .dm-fees-compact-value > .dm-fig-lg { color: var(--fg); }
+  .dm-fees-compact-value > .dm-fig-lg.dm-fees-in { color: var(--money-in); }
+
+  /* Activity (§13.2): 56px rows, the verb and its glyph, when, then the amounts at the right. */
+  .dm-fees-activity { display: grid; gap: 8px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-fees-act-list { display: grid; margin: 0; padding: 0; list-style: none; }
+  .dm-fees-act { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto; align-items: center; column-gap: 16px; min-height: 56px; padding: 8px 0; }
+  /* A mint or an increase settles no fees: no empty amounts column. */
+  .dm-fees-act:not([data-settled]) { grid-template-columns: minmax(120px, 160px) minmax(0, 1fr); }
+  .dm-fees-act + .dm-fees-act { box-shadow: inset 0 1px 0 var(--border); }
+  .dm-fees-act-verb { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-fees-act-pip { position: relative; display: inline-grid; place-items: center; width: 20px; height: 20px; flex-shrink: 0; border-radius: 6px; background: var(--primary-wash); }
+  .dm-fees-act-pip::after { content: ''; width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--primary-line); box-shadow: 0 0 0 2px var(--card); }
+  .dm-fees-act-id { margin-left: 2px; padding: 1px 6px; border-radius: 6px; background: var(--surface-3); color: var(--fg-muted); }
+  .dm-fees-act-when { display: grid; gap: 2px; min-width: 0; }
+  .dm-fees-act-date { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-fees-act-when > .dm-hex { max-width: min(100%, 240px); color: var(--fg-subtle); }
+  /* A mint or an increase settles no fees: a quieter row (44 high, the verb in the muted ink), so the rows that carry
+     amounts keep the weight and the empty right side reads as intended. */
+  .dm-fees-act:not([data-settled]) { min-height: 44px; }
+  .dm-fees-act:not([data-settled]) .dm-fees-act-verb { color: var(--fg-muted); }
+  .dm-fees-act:not([data-settled]) .dm-icon-tile { color: var(--fg-subtle); }
+  /* A second event of the same transaction (a collect and an increase in one call) hangs under the first: no hairline,
+     no second date; the date and hash stay for a screen reader. */
+  .dm-fees-act + .dm-fees-act[data-same-tx] { box-shadow: none; }
+  .dm-fees-act[data-same-tx] { min-height: 36px; padding-top: 0; }
+  @media (min-width: 480px) { .dm-fees-act[data-same-tx] > .dm-fees-act-amounts { grid-column: 3; } }
+  .dm-fees-act[data-same-tx] > .dm-fees-act-when { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  /* Value first, as on the rows (§11.1-5); the tokens after it on one quiet line, a dot between them. */
+  .dm-fees-act-amounts { display: grid; justify-items: end; gap: 2px; min-width: 0; text-align: right; }
+  .dm-fees-act-amounts > .dm-fig-xs { color: var(--fg); }
+  .dm-fees-act-tokens { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; min-width: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-fees-act-tokens > span { white-space: nowrap; }
+  .dm-fees-act-tokens > span + span::before { content: ''; display: inline-block; width: 3px; height: 3px; margin: 0 6px 0 7px; border-radius: var(--radius-pill); background: currentColor; opacity: 0.6; vertical-align: middle; translate: 0 -1px; }
+  .dm-fees-more { display: flex; justify-content: center; }
+  @media (max-width: 479px) {
+    .dm-fees-act { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "verb amounts" "when amounts"; row-gap: 4px; min-height: 64px; }
+    .dm-fees-act:not([data-settled]) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "verb" "when"; }
+    .dm-fees-act-tokens { max-width: 180px; }
+    .dm-fees-act-verb { grid-area: verb; }
+    .dm-fees-act-when { grid-area: when; }
+    .dm-fees-act-amounts { grid-area: amounts; align-self: center; }
+    .dm-fees-act-when > .dm-hex { display: none; }
+  }
+
+  /* The fees module on its way (§13.4). */
+  .dm-fees-skel-hero { display: block; min-height: 36px; }
+  @media (min-width: 768px) { .dm-fees-skel-hero { min-height: 44px; } }
+  .dm-fees-skel-hero > .dm-skel { max-width: 100%; border-radius: 6px; }
+  .dm-fees-skel-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; }
+  .dm-fees-skel-row + .dm-fees-skel-row { box-shadow: inset 0 1px 0 var(--border); }
+  .dm-fees-skel-tir > .dm-fees-skel-row { min-height: 20px; }
+  .dm-fees-skel-bar { width: 100%; height: 6px; margin-top: 16px; border-radius: var(--radius-pill); }
+  .dm-fees-skel-tirbar { width: 100%; height: 4px; border-radius: var(--radius-pill); }
+  .dm-fees-chart-skel .dm-chart-skel-wave { inset: 12px 72px 44px 0; }
+  .dm-fees-chart-skel .dm-chart-skel-x { right: 72px; bottom: 8px; }
+  .dm-fees-chart-skel .dm-chart-skel-y { bottom: 44px; }
+
+  /* ---- Performance, inside Managed positions (automate.md §5.8.1, CSS only) ------------------------------ */
+  .dm-acct-perf { display: grid; gap: 16px; }
+  .dm-acct-perf-item { container: acct-perf / inline-size; display: grid; gap: 8px; padding: 16px; border-radius: var(--radius-lg); }
+  .dm-acct-perf-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+  .dm-acct-perf-head > .dm-acct-subtitle { font-size: 16px; line-height: 24px; }
+  [data-performance-status="available"] .dm-acct-status { background: var(--money-in-bg); color: var(--money-in); }
+  [data-performance-status="stale"] .dm-acct-status, [data-performance-status="unavailable"] .dm-acct-status { background: var(--surface-4); color: var(--fg-muted); }
+  .dm-acct-perf-item > .dm-acct-hash { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dm-acct-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; margin: 8px 0 4px; }
+  .dm-acct-metrics dt { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-acct-metrics dd { margin: 2px 0 0; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg-muted); overflow-wrap: anywhere; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-acct-metrics :is([data-metric-name="newTradingFeesUsd"], [data-metric-name="reinvestedUsd"], [data-metric-name="netFeeIncomeUsd"]) dd { font-size: 20px; line-height: 26px; letter-spacing: -0.3px; color: var(--fg); }
+  /* The APRs a step up; gross (never below zero) in the in-colour, net in ink, since it can be negative and CSS cannot see the sign. */
+  .dm-acct-metrics :is([data-metric-name="grossFeeAprPercent"], [data-metric-name="netFeeAprPercent"]) dd { font-size: 16px; line-height: 22px; color: var(--fg); }
+  .dm-acct-metrics [data-metric-name="grossFeeAprPercent"][data-metric-state="value"] dd { color: var(--money-in); }
+  .dm-acct-metrics [data-metric-state="unavailable"] dd { color: var(--fg-subtle); }
+  @container acct-perf (min-width: 640px) {
+    .dm-acct-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .dm-acct-metrics :is([data-metric-name="newTradingFeesUsd"], [data-metric-name="reinvestedUsd"], [data-metric-name="netFeeIncomeUsd"]) { grid-column: span 2; }
+  }
+  .dm-acct-perf-form { display: grid; gap: 12px; padding: 16px; }
+
+  /* ---- Execution, inside Receipts (automate.md §5.8.2, CSS only) -------------------------------------- */
+  .dm-acct-exec { display: grid; gap: 12px; }
+  .dm-acct-exec-item { --exec-tone: var(--fg-faint); position: relative; display: grid; gap: 8px; padding: 16px 16px 16px 19px; border-radius: var(--radius-lg); }
+  .dm-acct-exec-item::before { content: ''; position: absolute; left: 0; top: 16px; bottom: 16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--exec-tone); }
+  .dm-acct-exec-item > .dm-acct-subtitle { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 24px; }
+  .dm-acct-exec-item > .dm-acct-subtitle::before { content: ''; width: 8px; height: 8px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--exec-tone); box-shadow: 0 0 0 2px color-mix(in srgb, var(--exec-tone) 28%, transparent); }
+  .dm-acct-exec-item[data-execution-state="reconciled"] { --exec-tone: var(--money-in); }
+  .dm-acct-exec-item:is([data-execution-state="reverted"], [data-execution-state="reorged"], [data-execution-state="attention"]) { --exec-tone: var(--money-out); }
+  .dm-acct-exec-item:is([data-execution-state="submitted"], [data-execution-state="included"], [data-execution-state="signing"], [data-execution-state="signed"], [data-execution-state="reserved"], [data-execution-state="planned"], [data-execution-state="broadcast_unknown"]) { --exec-tone: var(--fg-muted); }
+  .dm-acct-exec-item [data-receipt-field] dd .dm-acct-hash { display: inline-block; max-width: 100%; padding: 2px 8px; border-radius: var(--radius-sm); background: var(--surface-3); }
+  .dm-acct-exec-item [data-receipt-source] .dm-acct-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

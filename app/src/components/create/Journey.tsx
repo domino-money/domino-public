@@ -37,6 +37,7 @@ import { StageAmount, StageRange } from './StageAmount'
 import { FinalControl, StageReview } from './StageReview'
 import { StageToken, type PreselectStatus } from './StageToken'
 import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
+import { PositionPreview } from './PositionPreview'
 
 /** The outcomes only the verification read can produce. */
 type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'unsupported' | 'failed' }>
@@ -103,6 +104,8 @@ export function Journey({ poolId }: { poolId: string }) {
   const [verified, setVerified] = useState<{ poolId: string; attempt: number; outcome: Verified } | null>(null)
   // Each attempt is one more read of the same id: asked again on its own after a failure that asking again could fix.
   const [attempt, setAttempt] = useState(0)
+  // A pool row pointed at or focused in step 1 while nothing is chosen: the preview beside the steps shows it.
+  const [preview, setPreview] = useState<PoolOption | null>(null)
   const running = useRef<AbortController | null>(null)
 
   useEffect(() => () => running.current?.abort(), [])
@@ -188,8 +191,14 @@ export function Journey({ poolId }: { poolId: string }) {
   }
   const update = (updated: JourneyState) => setState(updated)
 
-  const setToken = (candidate: TokenCandidate | null) => update(withToken(state, candidate))
-  const setPool = (option: PoolOption | null) => update(withPool(state, option, Date.now()))
+  const setToken = (candidate: TokenCandidate | null) => {
+    setPreview(null)
+    update(withToken(state, candidate))
+  }
+  const setPool = (option: PoolOption | null) => {
+    setPreview(null)
+    update(withPool(state, option, Date.now()))
+  }
   const setRange = (range: TickRange) => update(withRange(state, range))
   const setBudget = (text: string) => update(withBudget(state, text))
   // Typing in the other token's row is one change, not two: switching the
@@ -281,7 +290,8 @@ export function Journey({ poolId }: { poolId: string }) {
   const check = checkFor[current]
   const footer = (
     <div className="dm-flow-foot" data-journey-footer="" data-final={current === 'review' ? '' : undefined}>
-      <Button type="button" variant="outline" size="lg" disabled={current === 'pool' || creating} onClick={backward}>
+      {/* On Review, Back steps down under Create position (flow.css), so it is the smaller button there. */}
+      <Button type="button" variant="outline" size={current === 'review' ? 'md' : 'lg'} disabled={current === 'pool' || creating} onClick={backward}>
         {CREATE.page.back}
       </Button>
       {current === 'review' ? (
@@ -305,7 +315,7 @@ export function Journey({ poolId }: { poolId: string }) {
   const bodyOf = (step: VisualStep): ReactNode => {
     switch (step) {
       case 'pool':
-        return <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} />
+        return <StageToken source={source} state={state} preselect={preselect} candidates={candidates} onCandidates={setCandidates} onToken={setToken} onPool={setPool} onPreview={setPreview} />
       case 'range':
         return <StageRange source={source} state={state} onRange={setRange} onPool={setPool} />
       case 'amount':
@@ -349,12 +359,22 @@ export function Journey({ poolId }: { poolId: string }) {
     }
   })
 
+  // The page is the steps and, on a wide screen, the position they make, drawn beside them as it takes shape.
   return (
-    <PageShell width="flow" data-create-journey="">
-      <PageHeader size="display" align="center" title={CREATE.page.title} description={CREATE.page.description} className="dm-flow-rise" />
-      <div className="dm-card dm-flow-card dm-flow-rise" style={{ '--delay': '60ms' } as CSSProperties}>
+    <PageShell width="flow" className="dm-np" data-create-journey="">
+      <PageHeader size="display" title={CREATE.page.title} description={CREATE.page.description} className="dm-np-head dm-flow-rise" />
+      <div className="dm-card dm-flow-card dm-flow-rise" style={{ '--delay': '40ms' } as CSSProperties}>
         <StepList steps={steps} onOpen={reopen} locked={creating} />
       </div>
+      <PositionPreview
+        className="dm-card dm-flow-preview dm-flow-rise"
+        style={{ '--delay': '80ms' } as CSSProperties}
+        state={state}
+        preview={current === 'pool' && !state.pool ? preview : null}
+        price={usablePrice}
+        balances={pair}
+        slippageDone={steps.some((step) => step.key === 'amount' && step.state === 'done')}
+      />
     </PageShell>
   )
 }

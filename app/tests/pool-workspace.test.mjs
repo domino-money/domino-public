@@ -832,7 +832,8 @@ test('G11: an unregistered pool keeps the card without figures, the reason in it
   assert.equal(text.replace(/[^—]/g, '').length, 10, 'every figure is a dash')
   // What the card covers is its heading's title, never a line under it.
   assert.match(text, /^On-chain activity Swaps \(24h\) —/)
-  assert.match(html, /<h2 id="pool-activity-title" class="dm-display dm-display-card" title="Swaps and fees over the 24 hours up to the last indexed block, from indexed chain events\.">On-chain activity<\/h2>/)
+  // 2026-09-24 (V2 P2): module titles are .dm-title (DESIGN-V2 §2.8); the heading's words and title are unchanged.
+  assert.match(html, /<h2 id="pool-activity-title" class="dm-title" title="Swaps and fees over the 24 hours up to the last indexed block, from indexed chain events\.">On-chain activity<\/h2>/)
   assert.doesNotMatch(text, /indexed chain events|The last 24 hours/)
   assert.doesNotMatch(html, /<button|dm-inset|money-wait/)
   assert.match(html, /<p role="status" class="sr-only">Activity isn’t indexed for this pool\. The read service answered: activity pool not registered\.<\/p>/)

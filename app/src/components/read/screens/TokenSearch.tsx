@@ -293,7 +293,7 @@ export function TokenSearch({
         {label}
       </label>
       <div className="dm-flow-combo" aria-busy={busy || undefined}>
-        <IconSearch size={14} className={cx('dm-flow-combo-icon', busy && 'animate-pulse-soft')} />
+        <IconSearch size={16} className={cx('dm-flow-combo-icon', busy && 'animate-pulse-soft')} />
         <input
           ref={input}
           id={id}

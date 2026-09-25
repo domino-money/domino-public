@@ -41,8 +41,6 @@ export const SlotBoundary = READ_SCREENS
     }
   : null
 
-export const ChainPositionsSlot = READ_SCREENS ? lazy(() => import('../../../components/read/screens').then((m) => ({ default: m.ChainPositionsSection }))) : null
-
 export const PoolFiguresSlot = READ_SCREENS
   ? lazy<(props: { market: Market; onClose: () => void }) => ReactNode>(() => import('../../../components/read/screens').then((m) => ({ default: m.PoolFiguresDialog })))
   : null

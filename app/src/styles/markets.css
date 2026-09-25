@@ -1,115 +1,297 @@
-/* markets builder (DESIGN.md H.3, E.2): the Markets page, its rail of pool cards, the filter bar, the
-   markets table, the token view and the pool picker. Classes are prefixed dm-mkt-. Rules sit in the
-   components layer, so a Tailwind utility on the same element still wins. */
+/* markets (DESIGN-V2 §8): the Markets page, its rail of pool cards, the filter bar, the markets table (Home and
+   Markets), the token view and the pool picker. Classes are prefixed dm-mkt-. Rules sit in the components
+   layer, so a Tailwind utility on the same element still wins. Tangerine lives only inside the card plots. */
 
 @layer components {
-  /* ---- Title row: the page title on the left, the rail's arrows on the right (under it on a phone) ---- */
+  /* ---- Title row: the page title, and at its right the page dots and the rail's arrows (§8.1-1) ---- */
   .dm-mkt-titlebar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; }
-  .dm-mkt-arrows { display: flex; gap: 8px; margin-left: auto; }
+  .dm-mkt-lede { margin: 8px 0 0; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); }
+  .dm-mkt-nav { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+  .dm-mkt-arrows { display: flex; gap: 8px; }
+  /* Page dots: one per view of cards; the lit one stretches into a pill (M18). Width only, so nothing else moves. */
+  .dm-mkt-dots { display: flex; align-items: center; gap: 6px; }
+  .dm-mkt-dot { width: 6px; height: 6px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--fg-faint); transition: width var(--dur-dot) var(--ease-fast); }
+  .dm-mkt-dot[data-lit] { width: 18px; background: var(--fg); }
+  /* A disabled arrow keeps its round card, quieter, so the pair reads as one control at two strengths. */
+  .dm-mkt-arrows .dm-icon-btn--round:disabled { background: var(--card); box-shadow: var(--elev-card); color: var(--fg-subtle); opacity: 0.45; cursor: default; }
+  .dm-mkt-dots[data-place="rail"] { display: none; }
+  @media (max-width: 767px) {
+    .dm-mkt-nav { display: none; }
+    .dm-mkt-dots[data-place="rail"] { display: flex; justify-content: center; margin-top: 14px; }
+  }
 
-  /* ---- Rail: two cards a view (one and a peek on a phone), snapping per card. The 6px padding keeps
-     focus rings unclipped; the negative margin keeps the cards on the page's edges. ---- */
+  /* ---- Rail (§8.1-2): three cards a view from 1024px, two on a tablet, one and a peek on a phone, snapping per
+     card. The padding keeps the hover lift and focus rings unclipped; the negative margin keeps the cards on the
+     page's edges. On a phone the rail runs to the screen's edges, so the next card peeks from beyond the gutter. ---- */
   .dm-mkt-rail {
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: calc((100% - 24px) / 2);
-    gap: 24px;
-    margin: 26px -6px -6px;
-    padding: 6px;
+    grid-auto-columns: calc((100% - 32px) / 3);
+    gap: 16px;
+    margin: 18px -4px -6px;
+    padding: 6px 4px;
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scroll-snap-type: x mandatory;
-    scroll-padding-inline: 6px;
+    scroll-padding-inline: 4px;
     scroll-behavior: smooth;
     scrollbar-width: none;
   }
   .dm-mkt-rail::-webkit-scrollbar { display: none; }
   .dm-mkt-rail > * { scroll-snap-align: start; }
   html.dm-still .dm-mkt-rail { scroll-behavior: auto; }
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .dm-mkt-rail { grid-auto-columns: calc((100% - 16px) / 2); }
+  }
   @media (max-width: 767px) {
-    .dm-mkt-rail { grid-auto-columns: 88%; gap: 12px; }
+    .dm-mkt-rail { grid-auto-columns: calc((100% - 16px) / 1.12); margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); scroll-padding-inline: var(--gutter); }
   }
 
-  /* ---- A pool card: a dotted plate that is one link. Content sits above the plate's edge fade. ---- */
+  /* ---- A pool card (§8.1-3): a flat card that is one link, at one fixed height whether its series is in or not, so
+     nothing under the rail moves when the data lands. The head sits on a dot grid that dissolves under it; the plot
+     runs full bleed into the card's bottom edge. The DOM order (head, price, plot, caption) is kept; the grid places
+     the caption above the plot. ---- */
   .dm-mkt-card {
-    --dm-mkt-card-hover: color-mix(in srgb, var(--surface-1), var(--fg) 5%);
-    --chart-ground: var(--surface-1);
-    display: block;
+    --dm-mkt-hover: var(--card-hover);
+    /* Bubbles are opaque on the card, so the dot grid never speckles them (the page's --skeleton is a wash). */
+    --skeleton: color-mix(in srgb, var(--fg) 9%, var(--card));
+    --skeleton-shine: rgb(255 255 255 / 0.35);
+  }
+  .dark .dm-mkt-card { --skeleton: color-mix(in srgb, var(--fg) 8%, var(--card)); --skeleton-shine: rgb(255 236 220 / 0.07); }
+  /* Light: the hovered card stays white, so it lifts rather than sinks into the page; its ring and the 2px lift say hover. */
+  :root:not(.dark) .dm-mkt-card { --dm-mkt-hover: var(--card); }
+  .dm-mkt-card.dm-plate {
+    --chart-ground: var(--card);
+    display: grid;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
     min-width: 0;
-    height: 216px;
-    padding: 20px;
+    height: 300px;
+    padding: 20px 20px 0;
+    border-radius: var(--radius-card);
+    background-color: var(--card);
+    background-image: none;
+    box-shadow: none;
     color: var(--fg);
     text-decoration: none;
-    transition: background-color var(--dur-fade) var(--ease-std);
+    transition: translate var(--dur-fast) var(--ease-fast), background-color var(--dur-fast) var(--ease-fast), box-shadow var(--dur-fast) var(--ease-fast), scale var(--dur-press) var(--ease-std);
   }
-  .dm-mkt-card:hover { --chart-ground: var(--dm-mkt-card-hover); background-color: var(--dm-mkt-card-hover); }
-  .dm-mkt-card:focus-visible { outline: 2px solid var(--ring); outline-offset: var(--focus-offset-inset); }
-  .dm-mkt-card-head { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .dm-mkt-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(circle at center, var(--dot-chart) 1px, transparent 1.2px);
+    background-size: 18px 18px;
+    background-position: 9px 9px;
+    -webkit-mask-image: linear-gradient(#000 0 22%, transparent 34%);
+    mask-image: linear-gradient(#000 0 22%, transparent 34%);
+  }
+  /* The card's ring and lip ride above its content, so the plot that runs into the bottom edge never paints over them. */
+  .dm-mkt-card.dm-plate::after {
+    content: '';
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+    background: none;
+    box-shadow: var(--elev-card);
+    pointer-events: none;
+    transition: box-shadow var(--dur-fast) var(--ease-fast);
+  }
+  .dm-mkt-card > * { position: relative; z-index: 1; min-width: 0; }
+  /* Pressable card (§3.16, M16): it lifts, its ring steps up (and its fill, in dark), and the area under the line
+     comes to full strength. Cards cast no shadow (P1): nothing for the rail's scroll box to clip. */
+  .dm-mkt-card.dm-plate:hover { --chart-ground: var(--dm-mkt-hover); translate: 0 var(--lift); background-color: var(--dm-mkt-hover); }
+  .dm-mkt-card.dm-plate:hover::after { box-shadow: var(--elev-card-hover); }
+  .dm-mkt-card.dm-plate:active { translate: 0 0; scale: var(--press-scale-card); }
+  /* Stilled (M4, M16): no press scale, as .dm-press rests under the same switches. */
+  html.dm-still .dm-mkt-card.dm-plate:active { scale: 1; }
+  @media (prefers-reduced-motion: reduce) { .dm-mkt-card.dm-plate:active { scale: 1; } }
+  .dm-mkt-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+  .dm-mkt-card-head { grid-row: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; height: 32px; }
   /* The chip gives way before the TVL does; inside it the fee gives way before the pair's name. */
-  .dm-mkt-pair { flex: 0 1 auto; min-width: 0; transition: box-shadow var(--dur-fade) var(--ease-std); }
+  .dm-mkt-pair { flex: 0 1 auto; min-width: 0; transition: box-shadow var(--dur-fast) var(--ease-std); }
   .dm-mkt-card:hover .dm-mkt-pair { box-shadow: inset 0 0 0 1px var(--border-strong); }
   .dm-mkt-pair > [aria-hidden="true"] { flex-shrink: 0; }
   .dm-mkt-pair-name { flex: 0 1 auto; min-width: 2.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
   .dm-mkt-pair-fee { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
   @media (max-width: 767px) {
     .dm-mkt-pair-venue { display: none; }
+    /* The phone's close is 24/28, 4px less above the plot, which keeps its 148px. */
+    .dm-mkt-card.dm-plate { height: 296px; }
+    .dm-mkt-card-head { gap: 12px; }
+    .dm-mkt-pair.dm-chip--plate { gap: 6px; padding: 6px 10px 6px 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; }
   }
   .dm-mkt-disc { display: inline-block; width: 20px; height: 20px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--surface-4); box-shadow: 0 0 0 2px var(--surface-3); }
-  .dm-mkt-card-tvl { display: grid; flex-shrink: 0; justify-items: end; gap: 2px; text-align: right; }
-  .dm-mkt-card-figure { font-size: 16px; line-height: 20px; letter-spacing: -0.24px; white-space: nowrap; }
-  .dm-mkt-plot { position: absolute; z-index: 1; left: 20px; right: 20px; bottom: 44px; height: 96px; }
-  /* The resting plot while figures are on their way: an empty grid and one faint baseline, never bars. */
-  .dm-mkt-baseline { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 1px; background: var(--skeleton); animation: dm-pulse 1.6s ease-in-out infinite; }
-  /* A plot with no series holds the row's own 24h volume, large, on the plot's floor: a figure, never a sentence. */
-  .dm-mkt-plot-figure { position: absolute; inset: 0; display: flex; align-items: flex-end; font-size: 28px; line-height: 32px; letter-spacing: -0.4px; white-space: nowrap; }
-  /* The pool's price line (components/charts/PriceLine.tsx): one thin stroke, its latest or inspected hour dotted. */
-  .dm-spark-line { fill: none; stroke: var(--primary-ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-  .dm-spark-dot { fill: var(--primary-ink); }
-  .dm-spark-dot[data-open] { opacity: 0.55; }
-  .dm-spark-cross { stroke: var(--border-strong); stroke-width: 1; }
-  .dm-mkt-card-caption { position: absolute; z-index: 1; left: 20px; right: 20px; bottom: 20px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  /* The TVL kicker over its figure: 14 + 18, the chip's 32px, so the head row is one height in every state. */
+  .dm-mkt-card-tvl { display: grid; flex-shrink: 0; justify-items: end; text-align: right; }
+  .dm-mkt-card-figure { font-size: 16px; line-height: 18px; font-weight: 500; letter-spacing: -0.2px; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
 
-  /* ---- Selected pools: heading, filters, table ---- */
+  /* The price row: the close (28px), its change as a pill, and the unit under both. */
+  .dm-mkt-card-price { grid-row: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 16px; }
+  .dm-mkt-card-close { min-width: 0; white-space: nowrap; }
+  .dm-mkt-card-unit { flex-basis: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  /* The waiting price row has the loaded row's lines: the close (on its 32px line), the pill, the unit under both. */
+  .dm-mkt-skel-close { width: 120px; height: 28px; margin: 2px 0; border-radius: 6px; }
+  .dm-mkt-skel-delta { width: 48px; height: 22px; border-radius: var(--radius-pill); }
+  .dm-mkt-skel-unit { width: 96px; height: 12px; margin: 2px calc(100% - 96px) 2px 0; }
+  .dm-mkt-skel-tvl { width: 64px; height: 18px; }
+
+  .dm-mkt-card-caption { grid-row: 3; margin: 8px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  /* Bars and the lone figure carry no price: the caption follows the head. */
+  .dm-mkt-card:is([data-card-series="bars"], [data-card-series="figure"]) .dm-mkt-card-caption { grid-row: 2; margin-top: 16px; }
+
+  /* The plot: full bleed, the rest of the card's height, its series standing on the card's bottom edge. */
+  .dm-mkt-plot { grid-row: 4; align-self: stretch; position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-height: 0; margin: 8px -20px 0; }
+  .dm-mkt-plot > * { flex-shrink: 0; }
+  /* The area runs under the whole line, the held hours included (at half strength, PriceLine.tsx), and meets the end
+     dot with a clean edge. Only where the history has an uncovered interval does a run's area dissolve (its fill box),
+     so the break never ends in a wall. */
+  .dm-spark-area { opacity: 0.85; transition: opacity var(--dur-fast) var(--ease-fast); }
+  .dm-spark-area[data-fade="start"] { -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px); mask-image: linear-gradient(90deg, transparent, #000 14px); }
+  .dm-spark-area[data-fade="end"] { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 22px), transparent); }
+  .dm-spark-area[data-fade="both"] { -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 22px), transparent); }
+  .dm-mkt-card:hover .dm-spark-area { opacity: 1; }
+  .dm-mkt-plot .dm-series-dot { r: 2.5px; opacity: 0.85; }
+  /* A plot with no series holds the row's own 24h volume, large, in the middle: a figure, never a sentence. */
+  .dm-mkt-plot-figure { position: absolute; inset: 0; display: grid; place-items: center; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.6px; white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-mkt-card[data-card-series="figure"]::before { -webkit-mask-image: none; mask-image: none; }
+  /* While the series is on its way: a wave under the skeleton sweep, the shape of the chart to come (the .dm-skel
+     look, re-stated because this pinned node carries its own class only). A data-URL mask, no url( inside it. */
+  .dm-mkt-baseline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 110px;
+    background-color: var(--skeleton);
+    background-image: linear-gradient(100deg, transparent 40%, var(--skeleton-shine) 50%, transparent 60%);
+    background-repeat: no-repeat;
+    background-size: 200% 100%;
+    background-position: 150% 0;
+    animation: dm-shimmer var(--dur-skel) var(--ease-std) infinite;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 110' preserveAspectRatio='none'%3E%3Cpath d='M0 64 C 40 40, 80 36, 120 56 S 200 92, 250 66 S 330 22, 400 38 L 400 110 L 0 110 Z' fill='black' fill-opacity='0.35'/%3E%3Cpath d='M0 64 C 40 40, 80 36, 120 56 S 200 92, 250 66 S 330 22, 400 38' stroke='black' stroke-width='2.5' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 110' preserveAspectRatio='none'%3E%3Cpath d='M0 64 C 40 40, 80 36, 120 56 S 200 92, 250 66 S 330 22, 400 38 L 400 110 L 0 110 Z' fill='black' fill-opacity='0.35'/%3E%3Cpath d='M0 64 C 40 40, 80 36, 120 56 S 200 92, 250 66 S 330 22, 400 38' stroke='black' stroke-width='2.5' fill='none' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .dm-mkt-baseline { background-attachment: fixed; background-size: 200vw 100%; background-position: -120vw 0; animation-name: dm-shimmer-page; }
+  }
+  /* The pool's price line (components/charts/PriceLine.tsx) on the charts kit's Tangerine line (§4.3), not the ink. */
+  .dm-spark-line { fill: none; stroke: var(--primary-line); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .dm-spark-line[data-open] { opacity: 0.55; }
+  /* Hours with no swap: the last close held, quiet and dashed, so it never reads as a traded price. */
+  .dm-spark-carry { fill: none; stroke: var(--primary-line); stroke-width: 1.5; stroke-dasharray: 2 4; opacity: 0.55; vector-effect: non-scaling-stroke; }
+  .dm-spark-dot { fill: var(--primary-line); }
+  .dm-spark-dot[data-open] { opacity: 0.55; }
+  .dm-spark-cross { stroke: var(--border-strong); stroke-width: 1; vector-effect: non-scaling-stroke; shape-rendering: crispEdges; }
+
+  /* ---- Selected pools: heading, filters, table (§8.1-4) ---- */
   /* Above the blocks after it, so a list opened inside (the asset select, the token search) is never covered. */
-  .dm-mkt-pools { position: relative; z-index: 2; margin-top: 40px; }
-  .dm-mkt-pools-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin-bottom: 12px; }
+  .dm-mkt-pools { position: relative; z-index: 2; margin-top: 48px; }
+  .dm-mkt-pools-head { margin-bottom: 16px; }
   .dm-mkt-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
-  .dm-mkt-search { width: 280px; max-width: 100%; }
-  @media (max-width: 639px) {
-    .dm-mkt-filters { flex-wrap: nowrap; }
-    .dm-mkt-asset { flex-shrink: 0; }
-    .dm-mkt-search { flex: 1 1 auto; width: auto; min-width: 0; }
+  .dm-mkt-search { width: 320px; max-width: 100%; }
+  /* The search wears the select's skin beside it: the card's fill and pill ring, one control family in both themes. */
+  .dm-mkt-search .dm-search-input { border-radius: var(--radius-pill); padding-left: 38px; background: var(--card); box-shadow: var(--elev-pill); }
+  .dm-mkt-search .dm-search-input:hover { background: var(--card-hover); box-shadow: var(--elev-card-hover); }
+  .dm-mkt-search .dm-search-input:focus-visible { background: var(--card); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-mkt-search .dm-search-icon { left: 15px; }
+  .dm-mkt-pools-table { margin-top: 12px; }
+  @media (max-width: 767px) {
+    .dm-mkt-filters { display: grid; grid-template-columns: minmax(0, 1fr); }
+    .dm-mkt-asset { display: block; }
+    .dm-mkt-asset .dm-select-trigger { width: 100%; justify-content: space-between; }
+    .dm-mkt-search { width: 100%; }
   }
 
-  .dm-mkt-table { --dm-mkt-ring: var(--surface-2); }
+  /* ---- The pools table (§8.3), on the page (flat) on Home and Markets ---- */
+  .dm-mkt-table { --dm-mkt-ring: var(--bg); --skeleton: color-mix(in srgb, var(--fg) 9%, var(--bg)); --skeleton-shine: rgb(255 255 255 / 0.35); }
+  .dark .dm-mkt-table { --skeleton: color-mix(in srgb, var(--fg) 8%, var(--bg)); --skeleton-shine: rgb(255 236 220 / 0.07); }
+  /* Fixed columns at every width: the loading bubbles and the figures that replace them share each column's x. */
+  .dm-mkt-table .dm-table { table-layout: fixed; }
   .dm-mkt-table tbody tr { cursor: pointer; }
-  .dm-mkt-table tbody tr:hover, .dm-mkt-table tbody tr:focus-within { --dm-mkt-ring: var(--bg); }
+  /* The marks' cut-out ring follows the row's hover fill, so the overlap stays a clean cut. */
+  .dm-mkt-table tbody tr:is(:hover, :focus-within) { --dm-mkt-ring: color-mix(in srgb, rgb(28 24 20) 3.5%, var(--bg)); }
+  .dark .dm-mkt-table tbody tr:is(:hover, :focus-within) { --dm-mkt-ring: color-mix(in srgb, rgb(255 236 220) 4%, var(--bg)); }
   .dm-mkt-pool { display: flex; align-items: center; gap: 12px; min-width: 0; }
   a.dm-mkt-pool { width: fit-content; max-width: 100%; }
-  .dm-mkt-name { border-radius: 4px; color: var(--fg); text-decoration: none; }
-  .dm-mkt-venue { display: flex; width: fit-content; margin-top: 4px; }
-  .dm-mkt-col-price { width: 180px; }
-  .dm-mkt-col { width: 148px; }
-  .dm-mkt-end { width: 88px; }
+  .dm-mkt-marks { display: inline-flex; flex-shrink: 0; }
+  .dm-mkt-ident { min-width: 0; }
+  .dm-mkt-name { border-radius: 4px; color: var(--fg); text-decoration: none; font-size: 15px; line-height: 20px; letter-spacing: -0.2px; font-weight: 500; }
+  /* The fee-tier chip under the name (§3.4), read rows and catalogue rows alike. */
+  .dm-mkt-venue, .dm-mkt-table [data-pool-catalogue] .dm-chip { display: flex; width: fit-content; min-height: 20px; margin-top: 4px; padding: 2px 6px; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; }
+  /* Catalogue rows (F's PoolCatalogueIdentity) draw 30px marks ringed in the card colour: sized and ringed like a read row's here. */
+  .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:first-child { zoom: 1.0667; }
+  .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:first-child > * { border-color: var(--dm-mkt-ring) !important; }
+  /* The figures spread across the table's width (the pool column keeps about 420px at 1440, which its name and chip
+     never need more of). APR holds its widest estimate ("181.25% est.", about 95px at 16px) inside its padding, so
+     every figure and its header share one right edge. */
+  .dm-mkt-col-price { width: 19%; }
+  .dm-mkt-col-tvl { width: 13%; }
+  .dm-mkt-col-volume { width: 14%; }
+  .dm-mkt-col-apr { width: 13%; }
+  .dm-mkt-end { width: 72px; }
+  /* The end cell holds the info button and the chevron (28 + 6 + 14): an 8px lead keeps them inside its 72px, so the
+     chevron sits at one x in a read row and in a catalogue row. */
+  .dm-mkt-table .dm-table :is(th, td).dm-mkt-end { padding-left: 8px; }
+  /* A tablet keeps all six columns, narrower, so the pool's name keeps its room. */
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .dm-mkt-col-price { width: 140px; }
+    .dm-mkt-col-tvl { width: 96px; }
+    .dm-mkt-col-volume { width: 104px; }
+    .dm-mkt-col-apr { width: 124px; }
+  }
+  .dm-mkt-num { font-size: 16px; line-height: 22px; letter-spacing: -0.2px; }
   .dm-mkt-price { display: inline-grid; justify-items: end; }
-  .dm-mkt-price-unit { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-mkt-price-unit { margin-top: 2px; font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-mkt-end .dm-icon-btn { width: 28px; height: 28px; }
+  /* The first read still out: bubbles at each figure's text-line size (§3.11), right-aligned like the figures. */
+  .dm-mkt-bubbles { display: inline-grid; justify-items: end; gap: 6px; vertical-align: middle; }
+  .dm-mkt-bubble { display: inline-block; height: 14px; vertical-align: middle; }
+  .dm-mkt-bubble--price { width: 88px; }
+  .dm-mkt-bubble--unit { width: 64px; height: 10px; }
+  .dm-mkt-bubble--figure { width: 64px; }
+  .dm-mkt-bubble--apr { width: 56px; }
+  /* A phone keeps Pool · TVL · APR · the info button (§8.4): fixed columns, so a long pair name ellipsises rather
+     than pushing the table sideways; the marks shrink to 24 and the row opens the pool without a chevron. */
   @media (max-width: 767px) {
-    .dm-mkt-end { width: 48px; }
+    .dm-mkt-col-tvl { width: 68px; }
+    .dm-mkt-col-apr { width: 94px; }
+    .dm-mkt-end { width: 36px; }
+    /* Measured at 390 with the real figures ($375.1K, 181.25% est.): the name keeps about 99px, USDG/MARLIN whole. */
+    .dm-mkt-table .dm-table :is(th, td):first-child { padding-right: 4px; }
+    .dm-mkt-table .dm-table :is(th, td).dm-mkt-end { padding-left: 4px; }
+    .dm-mkt-marks { zoom: 0.75; }
+    .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:first-child { zoom: 0.8; }
+    .dm-mkt-pool { gap: 8px; }
+    a.dm-mkt-pool { width: auto; }
+    .dm-mkt-name { font-size: 14px; line-height: 18px; }
+    .dm-mkt-ident > .dm-mkt-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dm-mkt-venue, .dm-mkt-table [data-pool-catalogue] .dm-chip { font-size: 11px; line-height: 14px; }
+    .dm-mkt-num { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
+    .dm-mkt-end .i-chev-r { display: none; }
   }
   /* Home's footnote, inside the card under the rows. */
   .dm-mkt-caption { caption-side: bottom; padding: 12px 16px 4px; text-align: left; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-mkt-footnote { max-width: 100ch; margin-top: 12px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-mkt-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-muted); }
-  .dm-mkt-empty { padding: 24px 8px 32px; }
+  .dm-mkt-empty { padding: 32px 8px; }
   /* No rows, so nothing to scroll sideways: the token search's list may open past the card instead of inside it. */
   .dm-mkt-table[data-filter-empty] > div:has(> .dm-table) { overflow: visible !important; }
   .dm-mkt-empty-actions { display: grid; justify-items: center; gap: 12px; width: min(420px, calc(100vw - 88px)); text-align: left; }
   .dm-mkt-empty-actions > [data-token-search] { width: 100%; }
 
-  /* ---- The catalogue disclosure ---- */
-  .dm-mkt-catalogue { margin-top: 48px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
-  .dm-mkt-catalogue > summary { min-height: 48px; padding: 0 16px; }
-  .dm-mkt-catalogue > :not(summary) { padding: 4px 16px 16px; }
+  /* ---- The catalogue disclosure (§8.1-5): a 56px row on a card, the search glyph left, the chevron right ---- */
+  .dm-mkt-catalogue { margin-top: 32px; border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--elev-card); }
+  .dm-mkt-catalogue > summary { gap: 12px; min-height: 56px; padding: 0 20px; border-radius: var(--radius-lg); color: var(--fg); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; }
+  .dm-mkt-catalogue > summary:hover { background: var(--card-hover); }
+  .dm-mkt-catalogue > summary::before { order: 2; margin-left: auto; color: var(--fg-subtle); rotate: 45deg; translate: 0 -2px; }
+  .dm-mkt-catalogue[open] > summary::before { rotate: 225deg; translate: 0 2px; }
+  .dm-mkt-catalogue-icon { flex-shrink: 0; color: var(--fg-subtle); }
+  .dm-mkt-catalogue > :not(summary) { padding: 8px 20px 20px; }
   .dm-mkt-catalogue-search { max-width: 520px; }
 
   /* ---- Token view ---- */

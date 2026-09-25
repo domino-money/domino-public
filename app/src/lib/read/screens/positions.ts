@@ -1,52 +1,25 @@
 /**
- * Issue #2: position NFTs read from chain, as cards.
+ * A position NFT as the positions screens draw it: its pool, fee, range (as
+ * prices where they can be written), principal and unclaimed fees, and its
+ * owner, all public chain data at one block.
  *
- * A card is public data about one NFT at one block: which pool, which range,
- * what principal and unsettled fees the position holds, and who owned the NFT
- * at that block. It never says the viewer owns or controls it, carries no USD
- * value (there is no qualified price source yet), and has no path into the
- * anything the app keeps: no field here is stored, and nothing is saved.
- *
- * Reads happen only when someone asks: one nft-positions read for up to 10
- * typed IDs, then one token read per distinct currency (at most 8) so amounts
- * and range prices can be written in display units. A reply that does not
- * answer every ID asked for is refused as a whole.
+ * Since 2026-09-24 every card comes from chain through the site's own
+ * endpoints (lib/walletCards.ts: the wallet's list from POST
+ * /api/owned/v2/positions, a position's page from /api/fees/v1/state): the
+ * lookup by typed NFT ids and its nft-positions reads are gone. A card never
+ * says the viewer controls it and carries no USD field; the screens value a
+ * pair with USDG themselves. Nothing here is stored.
  */
-import type { Freshness, LiveNft, NftPositionsResponse, PoolMarketResponse, Snapshot } from 'api-contracts/read-v1/types'
-import type { Clock } from '../pipeline'
 import { formatUnits } from '../decimal'
-import { tokenDisplay, unreadToken } from '../project'
-import type { ReadSource, TokenDisplay } from '../types'
-import { DYNAMIC_FEE_PIPS, feeLabel } from './fee'
+import type { TokenDisplay } from '../types'
+import { DYNAMIC_FEE_PIPS } from './fee'
 import { tokenAmount } from './figures'
-import { NATIVE_CURRENCY, addressKey, poolIdKey, type AddressKey, type PoolIdKey } from './identity'
+import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from './identity'
 // poolRange imports tickPriceText from here; the cycle is safe because
 // neither module calls the other while it loads, only from inside functions.
 import { rangePosition, tickAgrees, usableTicks, type PriceProblem } from './poolRange'
-import { reaskDelayMs } from './quietRead'
-import { readWithin, type ScreenOutcome } from './screenRead'
 
-export const MAX_TOKEN_IDS = 10
-export const MAX_TOKEN_READS_PER_LOOKUP = 8
 const UINT256 = 2n ** 256n
-
-export type IdsProblem = 'empty' | 'not_decimal' | 'leading_zero' | 'too_large' | 'duplicate' | 'too_many'
-
-/** Typed IDs: canonical decimals below 2^256, unique, 1 to 10, separated by commas or white space. */
-export function parseTokenIdsInput(text: string): { ok: true; ids: string[] } | { ok: false; reason: IdsProblem } {
-  const parts = text.split(/[\s,]+/).filter((part) => part !== '')
-  if (parts.length === 0) return { ok: false, reason: 'empty' }
-  if (parts.length > MAX_TOKEN_IDS) return { ok: false, reason: 'too_many' }
-  const seen = new Set<string>()
-  for (const part of parts) {
-    if (!/^\d+$/.test(part)) return { ok: false, reason: 'not_decimal' }
-    if (part.length > 1 && part.startsWith('0')) return { ok: false, reason: 'leading_zero' }
-    if (part.length > 78 || BigInt(part) >= UINT256) return { ok: false, reason: 'too_large' }
-    if (seen.has(part)) return { ok: false, reason: 'duplicate' }
-    seen.add(part)
-  }
-  return { ok: true, ids: parts }
-}
 
 export interface AmountView {
   raw: string
@@ -59,7 +32,8 @@ export interface AmountView {
   text: string
   /** The amount in the token's units, every digit, for a title; null when the decimals are not known. */
   exact: string | null
-  kind: 'units' | 'raw' | 'zero'
+  /** `unread`: the chain gave no figure (the pool's price, or the fee growth, could not be read): a dash, and `raw` is ''. */
+  kind: 'units' | 'raw' | 'zero' | 'unread'
   token: TokenDisplay
 }
 
@@ -89,27 +63,17 @@ export type ChainPositionCard =
         /** Both ends written as prices or limits ('0', '∞'); null when either end is written as its tick. */
         prices: { lower: string; upper: string } | null
       }
-      /** The producer's own answer at the snapshot, never recomputed here. */
+      /** Whether the pool's tick was inside the range at the card's block (v4's rule: the upper tick is outside). */
       inRange: boolean
       hasLiquidity: boolean
-      /** The position's liquidity at the snapshot, as the producer's decimal integer: for display and for the owner's actions, which read it again on chain. */
+      /** The position's liquidity at the card's block, a decimal integer: for display and for the owner's actions, which read it again on chain. */
       liquidityRaw: string
       principal: [AmountView, AmountView]
       unsettledFees: [AmountView, AmountView]
-      /** `items[].owner`. The core owner is the position manager and is never shown as an owner. */
+      /** The NFT's owner (ownerOf) at the card's block. The core owner is the position manager and is never shown as an owner. */
       owner: { address: AddressKey; basis: 'ownerOf_at_pinned_block' }
       valuation: { state: 'unavailable'; reason: 'no_qualified_price_source' }
     }
-
-export interface Batch {
-  ids: string[]
-  cards: ChainPositionCard[]
-  block: Snapshot
-  freshness: Freshness
-  /** Currencies whose token details could not be read, or were beyond the cap. */
-  tokenProblems: number
-  tokenCapped: boolean
-}
 
 /** 1.0001^tick × 10^(dec0 − dec1): currency1 per currency0, to six significant digits, never an exponent. */
 export function tickPriceText(tick: number, decimals0: number, decimals1: number): string | null {
@@ -149,64 +113,14 @@ export function rangePricesProblem(range: { ends: { lower: RangeEnd; upper: Rang
   return problems.includes('decimals_unknown') ? 'decimals_unknown' : (problems[0] ?? null)
 }
 
-function amount(raw: string, token: TokenDisplay): AmountView {
+/** A raw amount as a card shows it, bound to its token by address; null for an amount the chain did not give. */
+export function amountView(raw: string | null, token: TokenDisplay): AmountView {
+  if (raw === null) return { raw: '', text: '—', exact: null, kind: 'unread', token }
   if (raw === '0') return { raw, text: '0', exact: '0', kind: 'zero', token }
   // The activity card's own rule, bound to this token by its address: six significant digits, and every digit for the title.
   const shown = tokenAmount(raw, token.address, [token])
   if (shown.text === null || shown.exact === null) return { raw, text: formatUnits(raw, null)?.text ?? raw, exact: null, kind: 'raw', token }
   return { raw, text: shown.text, exact: shown.exact, kind: 'units', token }
-}
-
-/** The distinct currencies whose details a batch needs, in order, and how many fall beyond the cap. */
-export function tokensNeeded(data: NftPositionsResponse): { reads: AddressKey[]; skipped: number } {
-  const all: AddressKey[] = []
-  for (const item of data.items) {
-    if (item.status !== 'owner_verified_at_snapshot') continue
-    for (const currency of [item.poolKey.currency0, item.poolKey.currency1]) {
-      const key = addressKey(currency)
-      if (!all.includes(key)) all.push(key)
-    }
-  }
-  return { reads: all.slice(0, MAX_TOKEN_READS_PER_LOOKUP), skipped: Math.max(0, all.length - MAX_TOKEN_READS_PER_LOOKUP) }
-}
-
-/** Every requested ID answered, and nothing else. */
-export function answersEveryId(requested: readonly string[], data: NftPositionsResponse): boolean {
-  const returned = data.items.map((item) => item.tokenId)
-  return returned.length === requested.length && new Set(returned).size === returned.length && returned.every((id) => requested.includes(id))
-}
-
-function liveCard(item: LiveNft, tokens: ReadonlyMap<string, TokenDisplay>): ChainPositionCard {
-  const token = (address: string) => tokens.get(address.toLowerCase()) ?? unreadToken(address)
-  const base = token(item.poolKey.currency0)
-  const quote = token(item.poolKey.currency1)
-  const d0 = base.origin === 'read' ? base.decimals : null
-  const d1 = quote.origin === 'read' ? quote.decimals : null
-  const spacing = item.poolKey.tick_spacing
-  // Each end on its own: a full-range end is 0 or ∞ whatever the decimals, and an unwritable price is not blamed on them.
-  const ends = { lower: rangeEnd(item.tickLower, 'lower', spacing, d0, d1), upper: rangeEnd(item.tickUpper, 'upper', spacing, d0, d1) }
-  const prices = ends.lower.kind !== 'tick' && ends.upper.kind !== 'tick' ? { lower: ends.lower.text, upper: ends.upper.text } : null
-  return {
-    origin: 'chain',
-    kind: 'live',
-    key: `4663:nft:${item.tokenId}`,
-    tokenId: item.tokenId,
-    poolId: poolIdKey(item.poolId),
-    positionManager: addressKey(item.positionManager),
-    currencies: [base, quote],
-    fee: feeLabel(item.poolKey),
-    feePips: item.poolKey.feeMode === 'dynamic' ? DYNAMIC_FEE_PIPS : item.poolKey.fee_pips,
-    tickSpacing: item.poolKey.tick_spacing,
-    hooks: addressKey(item.poolKey.hooks),
-    range: { tickLower: item.tickLower, tickUpper: item.tickUpper, fullRange: ends.lower.kind === 'limit' && ends.upper.kind === 'limit', ends, prices },
-    inRange: item.inRange,
-    hasLiquidity: item.hasLiquidity,
-    liquidityRaw: item.liquidityRaw,
-    principal: [amount(item.principalRaw[0], base), amount(item.principalRaw[1], quote)],
-    unsettledFees: [amount(item.unsettledFeesRaw[0], base), amount(item.unsettledFeesRaw[1], quote)],
-    owner: { address: addressKey(item.owner), basis: item.ownershipBasis },
-    valuation: { state: 'unavailable', reason: 'no_qualified_price_source' },
-  }
 }
 
 /**
@@ -217,181 +131,6 @@ function liveCard(item: LiveNft, tokens: ReadonlyMap<string, TokenDisplay>): Cha
  * into New position unless this holds.
  */
 export const cardPoolUsableForDomino = (card: { hooks: string; feePips: number }) => card.hooks === NATIVE_CURRENCY && card.feePips !== DYNAMIC_FEE_PIPS
-
-/** Cards in the order asked for. Fails closed unless the reply answers exactly the IDs requested. */
-export function projectNftBatch(
-  requested: readonly string[],
-  data: NftPositionsResponse,
-  tokens: ReadonlyMap<string, TokenDisplay>,
-  problems: { tokenProblems: number; tokenCapped: boolean } = { tokenProblems: 0, tokenCapped: false },
-): { ok: true; batch: Batch } | { ok: false; reason: 'incomplete_reply' } {
-  if (!answersEveryId(requested, data)) return { ok: false, reason: 'incomplete_reply' }
-  const byId = new Map(data.items.map((item) => [item.tokenId, item]))
-  const cards = requested.map((id): ChainPositionCard => {
-    const item = byId.get(id) as NftPositionsResponse['items'][number]
-    if (item.status === 'position_info_empty_at_snapshot') return { origin: 'chain', kind: 'empty', key: `4663:nft:${id}`, tokenId: id }
-    return liveCard(item, tokens)
-  })
-  return { ok: true, batch: { ids: [...requested], cards, block: { ...data.snapshot }, freshness: { ...data.freshness }, ...problems } }
-}
-
-export type LookupFailure = Exclude<ScreenOutcome<'nft-positions'>, { state: 'ok' | 'aborted' }> | { state: 'incomplete_reply' }
-export type LookupResult = { kind: 'ok'; batch: Batch } | { kind: 'failed'; failure: LookupFailure } | { kind: 'aborted' }
-
-/**
- * One lookup: the NFT read, then the token reads, all on one signal. A new
- * lookup aborts the old signal, which ends whichever of its reads is waiting.
- * The request is always `{ tokenIds }`: no pinned block, so no pin can go stale.
- */
-export async function runLookup(source: ReadSource, ids: string[], options: { signal: AbortSignal; clock?: Clock }): Promise<LookupResult> {
-  const nft = await readWithin(source, 'nft-positions', { tokenIds: [...ids] }, options)
-  if (nft.state === 'aborted') return { kind: 'aborted' }
-  if (nft.state !== 'ok') return { kind: 'failed', failure: nft }
-  if (!answersEveryId(ids, nft.data)) return { kind: 'failed', failure: { state: 'incomplete_reply' } }
-  const { reads, skipped } = tokensNeeded(nft.data)
-  const tokens = new Map<string, TokenDisplay>()
-  let tokenProblems = skipped
-  for (const address of reads) {
-    const read = await readWithin(source, 'token', { token: address }, options)
-    if (read.state === 'aborted') return { kind: 'aborted' }
-    if (read.state === 'ok') tokens.set(address, tokenDisplay(read.data.asset))
-    else tokenProblems += 1
-  }
-  const projected = projectNftBatch(ids, nft.data, tokens, { tokenProblems, tokenCapped: skipped > 0 })
-  return projected.ok ? { kind: 'ok', batch: projected.batch } : { kind: 'failed', failure: { state: 'incomplete_reply' } }
-}
-
-/**
- * The waits before an NFT the read service answered as empty is asked again,
- * before a page says it is not there. The read service answers at its own
- * node's head, which can be a few blocks behind the block that minted a
- * position a moment ago: Create position opens the new position's page 3 s
- * after the mint.
- */
-export const EMPTY_REASK_MS = [2_000, 5_000, 10_000] as const
-
-/** The wait before empty re-ask number `attempt` (0 for the first), or null once they are spent. */
-export const emptyReaskDelayMs = (attempt: number): number | null =>
-  Math.trunc(attempt) === attempt && attempt >= 0 && attempt < EMPTY_REASK_MS.length ? EMPTY_REASK_MS[attempt] : null
-
-export const sameIds = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((id) => b.includes(id))
-
-/**
- * A lookup of the IDs already being read is the same question: it joins the
- * read in flight instead of cancelling it and asking again. Only different
- * IDs start a new read (and cancel the old one).
- */
-export const joinsRunningLookup = (state: LookupState, ids: readonly string[]) => state.phase === 'loading' && sameIds(state.ids, ids)
-
-export interface LookupRunner {
-  /**
-   * Looks up `ids`: joins the read in flight when it is for the same IDs
-   * (and returns false), otherwise cancels it and starts a new one.
-   */
-  start(state: LookupState, ids: string[]): boolean
-  /** Cancels whatever is running. Its result, if it comes, is dropped as aborted. */
-  cancel(): void
-}
-
-/**
- * What the lookup section does with a click, outside React so node tests run
- * the section's own rule: one abort controller at a time, a new request id per
- * started lookup, and the same IDs joined rather than read twice.
- */
-export function createLookupRunner(source: ReadSource, dispatch: (event: LookupEvent) => void, run: typeof runLookup = runLookup): LookupRunner {
-  let running: AbortController | null = null
-  let counter = 0
-  return {
-    start(state, ids) {
-      if (running && joinsRunningLookup(state, ids)) return false
-      running?.abort()
-      const mine = new AbortController()
-      running = mine
-      counter += 1
-      const requestId = counter
-      dispatch({ type: 'submit', requestId, ids })
-      void run(source, ids, { signal: mine.signal }).then((result) => {
-        if (running === mine) running = null
-        dispatch({ type: 'result', requestId, result })
-      })
-      return true
-    },
-    cancel() {
-      running?.abort()
-      running = null
-    },
-  }
-}
-
-type Settled =
-  | { phase: 'idle' }
-  | { phase: 'ready'; requestId: number; ids: string[]; batch: Batch }
-  | {
-      phase: 'failed'
-      requestId: number
-      ids: string[]
-      failure: LookupFailure
-      retained: Batch | null
-      /** A lookup after this failure was cancelled: the failure is back on screen, and nothing asks again on its own. */
-      cancelled?: true
-    }
-
-export type LookupState = Settled | { phase: 'loading'; requestId: number; ids: string[]; retained: Batch | null; before: Settled }
-
-export type LookupEvent =
-  /** Looking up, and each quiet re-ask, take a new request id. */
-  | { type: 'submit'; requestId: number; ids: string[] }
-  | { type: 'result'; requestId: number; result: LookupResult }
-  /** Cancel while the lookup reads. */
-  | { type: 'cancel'; requestId: number }
-  | { type: 'clear' }
-
-const shownBatch = (state: LookupState): Batch | null =>
-  state.phase === 'ready' ? state.batch : state.phase === 'failed' || state.phase === 'loading' ? state.retained : null
-
-/** What a stopped lookup leaves: what was there, and a failure there stays put rather than being asked again. */
-const stopped = (before: Settled): Settled => (before.phase === 'failed' ? { ...before, cancelled: true } : before)
-
-/**
- * The lookup's state. Only the latest request's result lands; any other is
- * dropped, so a slow first answer can never overwrite a later one. Earlier
- * cards stay through a failed lookup of the same IDs, with their own block
- * and time, and are dropped when the IDs change. A cancelled lookup restores
- * what was there, marked so it is not asked again on its own.
- */
-export function lookupReducer(state: LookupState, event: LookupEvent): LookupState {
-  switch (event.type) {
-    case 'submit': {
-      const before: Settled = state.phase === 'loading' ? state.before : state
-      const previous = shownBatch(state)
-      const retained = previous && sameIds(previous.ids, event.ids) ? previous : null
-      return { phase: 'loading', requestId: event.requestId, ids: [...event.ids], retained, before }
-    }
-    case 'result': {
-      if (state.phase !== 'loading' || state.requestId !== event.requestId) return state
-      const { result } = event
-      if (result.kind === 'aborted') return stopped(state.before)
-      if (result.kind === 'ok') return { phase: 'ready', requestId: state.requestId, ids: state.ids, batch: result.batch }
-      return { phase: 'failed', requestId: state.requestId, ids: state.ids, failure: result.failure, retained: state.retained }
-    }
-    case 'cancel':
-      return state.phase === 'loading' && state.requestId === event.requestId ? stopped(state.before) : state
-    case 'clear':
-      return { phase: 'idle' }
-    default:
-      return event satisfies never
-  }
-}
-
-/**
- * The wait before a failed lookup is asked again on its own (quietRead's
- * policy, `attempts` re-asks already spent on these IDs), or null: nothing to
- * ask while the lookup is anything but failed, never after the person
- * cancelled, and never for a failure that cannot pass. `random` is for tests.
- */
-export function lookupReaskDelay(state: LookupState, attempts: number, random?: () => number): number | null {
-  return state.phase === 'failed' && !state.cancelled ? reaskDelayMs(state.failure, attempts, random) : null
-}
 
 export const isNative = (address: string) => address.toLowerCase() === NATIVE_CURRENCY
 
@@ -416,27 +155,11 @@ const decodeSegment = (segment: string) => {
   }
 }
 
-export type PositionsRoute = { onRoute: false } | { onRoute: true; ids: string }
-
-/**
- * `#/positions/<ids>` (or the older `#/app/<ids>`): the NFT ids a link
- * carries, as typed and not yet validated. Nothing else is read from the
- * hash and nothing is stored: the link is the whole state.
- */
-export function positionsRoute(hash: string): PositionsRoute {
-  const [first, second] = routeSegments(hash)
-  if (first !== 'positions' && first !== 'app') return { onRoute: false }
-  return { onRoute: true, ids: decodeSegment(second) }
-}
-
-/** The hash that carries these ids, so a card set can be shared as a link. */
-export const positionsHash = (ids: readonly string[]) => (ids.length === 0 ? '#/positions' : `#/positions/${ids.join(',')}`)
-
 /**
  * The one NFT a `#/positions/<id>` link opens as its own page: the route's
  * second segment when it is exactly one canonical decimal id below 2^256 (no
- * sign, no leading zero, no comma, no space). Anything else is null: a comma
- * list stays the lookup, and a malformed segment opens the list.
+ * sign, no leading zero, no comma, no space). Anything else is null and opens
+ * the list: there is no lookup by typed ids any more (2026-09-24).
  */
 export function positionDetailId(segment: string): string | null {
   const id = decodeSegment(segment)
@@ -495,50 +218,47 @@ export function rangeBarScale(tickLower: number, tickUpper: number, currentTick:
 }
 
 // ---------------------------------------------------------------------------
-// The pool's price, read on demand for one card
+// The pool's price, from the chain read the card came from
 // ---------------------------------------------------------------------------
 
-export type CardPoolPriceProblem = PriceProblem | 'pool_mismatch'
+export type CardPoolPriceProblem = PriceProblem
 
 export type CardPoolPrice =
   | { state: 'unavailable'; problem: CardPoolPriceProblem; block: number }
   | {
       state: 'usable'
-      /** The price read's own block, which is not the card's. */
+      /** The block of the read the price is from: the card's own. */
       block: number
       tick: number
       /** currency1 per currency0, written with the card's decimals: six significant digits, never an exponent. */
       text: string
-      /** Where that tick sits against the card's range, at the price read's block. */
+      /** Where that tick sits against the card's range. */
       position: 'inside' | 'below' | 'above'
     }
 
 const decimalsOf = (token: TokenDisplay) => (token.origin === 'read' ? token.decimals : null)
 
 /**
- * The pool's price from a pool-market read made for one card: the verified
- * pool's tick and square-root price at that read's block, checked exactly as
- * poolRange.ts checks a pool's price, and written with the card's decimals.
- * A reply about another pool, or one whose currencies are not the card's,
- * shows nothing. The block is the read's own and is always shown beside it.
+ * The pool's price at `block`, from the square-root price and tick the same
+ * chain read gave with the card: checked exactly as poolRange.ts checks a
+ * pool's price (the tick must agree with the square root), and written with
+ * the card's decimals. Unavailable, with the reason, otherwise.
  */
-export function cardPoolPrice(card: Extract<ChainPositionCard, { kind: 'live' }>, data: PoolMarketResponse): CardPoolPrice {
-  const pool = data.pool
-  const block = pool.snapshot.number
-  const sameCurrencies = pool.currencies.length === 2 && pool.currencies.every((currency, i) => currency.toLowerCase() === card.currencies[i].address)
-  if (pool.poolId.toLowerCase() !== card.poolId || !sameCurrencies) return { state: 'unavailable', problem: 'pool_mismatch', block }
+export function chainPoolPrice(card: Extract<ChainPositionCard, { kind: 'live' }>, price: { sqrtPriceX96: string | null; tick: number | null; block: number }): CardPoolPrice {
+  const { block } = price
+  if (price.sqrtPriceX96 === null || price.tick === null) return { state: 'unavailable', problem: 'not_initialized', block }
   let sqrt: bigint
   try {
-    sqrt = BigInt(pool.sqrtPriceX96)
+    sqrt = BigInt(price.sqrtPriceX96)
   } catch {
     return { state: 'unavailable', problem: 'tick_mismatch', block }
   }
   if (sqrt === 0n) return { state: 'unavailable', problem: 'not_initialized', block }
-  if (!tickAgrees(pool.tick, sqrt)) return { state: 'unavailable', problem: 'tick_mismatch', block }
+  if (!tickAgrees(price.tick, sqrt)) return { state: 'unavailable', problem: 'tick_mismatch', block }
   const d0 = decimalsOf(card.currencies[0])
   const d1 = decimalsOf(card.currencies[1])
   if (d0 === null || d1 === null) return { state: 'unavailable', problem: 'decimals_unknown', block }
-  const text = tickPriceText(pool.tick, d0, d1)
+  const text = tickPriceText(price.tick, d0, d1)
   if (text === null) return { state: 'unavailable', problem: 'beyond_display', block }
-  return { state: 'usable', block, tick: pool.tick, text, position: rangePosition({ lower: card.range.tickLower, upper: card.range.tickUpper }, pool.tick) }
+  return { state: 'usable', block, tick: price.tick, text, position: rangePosition({ lower: card.range.tickLower, upper: card.range.tickUpper }, price.tick) }
 }

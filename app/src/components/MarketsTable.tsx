@@ -16,7 +16,7 @@ import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
 import { ReadStatus, marketsStatus } from './read/ReadStatus'
 import { PoolAprEstimate } from './read/screens/PoolAprEstimate'
 import { TokenMarkPair } from './TokenIcon'
-import { Button, Chip, FigureDash, LinkButton, Pill, Skeleton, TableShell, Td, Th } from './ui'
+import { Button, Chip, FigureDash, LinkButton, Pill, Skeleton, TableShell, Td, Th, cx } from './ui'
 
 /** The pool page for a PoolId. Identity is chain and PoolId, never a symbol. */
 export { poolHref }
@@ -116,9 +116,14 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
     )
   }
   const title = `Pool price from on-chain state at block ${price.block}. A ratio between the two tokens, not a dollar price.${price.stale ? ' Stale, not current.' : ''}`
+  // A leading ≈ is drawn quieter than the digits (DESIGN-V2 §6.3); the text reads the same.
+  const approx = price.text.startsWith('≈')
   return (
     <span className="dm-mkt-price" data-pool-price={price.stale ? 'stale' : 'usable'} title={title}>
-      <span className="tnum font-medium text-fg">{price.text}</span>
+      <span className="tnum font-medium text-fg">
+        {approx && <span className="dm-approx">≈</span>}
+        {approx ? price.text.slice(1) : price.text}
+      </span>
       <span className="dm-mkt-price-unit">
         <PoolTokenLabel token={price.quote} /> per <PoolTokenLabel token={price.base} />
       </span>
@@ -144,13 +149,17 @@ function Row({ m: read, now, full, onFigures, poolToken }: { m: Market; now: Ins
     </>
   )
   return (
+    // A read row fades in as it replaces its catalogue stand-in (M20). The fade is on the row: an opacity animation on
+    // cell contents left some columns half-drawn in Edge's full-page captures.
     <tr className="dm-mkt-row animate-fade" onClick={(event) => followRow(event, href)} data-pool-row={full ? m.poolId : undefined} data-row-source={p?.origin}>
       <Td>
         <div className="dm-mkt-pool">
-          <TokenMarkPair base={m.tokens.base} quote={m.tokens.quote} size={30} ring="var(--dm-mkt-ring)" />
+          <span className="dm-mkt-marks">
+            <TokenMarkPair base={m.tokens.base} quote={m.tokens.quote} size={32} ring="var(--dm-mkt-ring)" />
+          </span>
           {/* Where the figures came from stays on the row, as its title and as data, never as a
               printed line under the name: one hover, or the figures dialog, away. */}
-          <div className="min-w-0" data-provenance={line} title={line}>
+          <div className="dm-mkt-ident" data-provenance={line} title={line}>
             <a href={href} className="dm-mkt-name">
               <span className="font-medium">{name}</span>
             </a>
@@ -158,17 +167,17 @@ function Row({ m: read, now, full, onFigures, poolToken }: { m: Market; now: Ins
           </div>
         </div>
       </Td>
-      <Td numeric col="wide">
+      <Td numeric col="wide" className="dm-mkt-num">
         <PriceCell market={m} now={now} />
       </Td>
-      <Td numeric>
+      <Td numeric className="dm-mkt-num">
         <MetricCell metric={m.tvlUsd} retrieved={retrieved} />
       </Td>
-      <Td numeric col="wide">
+      <Td numeric col="wide" className="dm-mkt-num">
         <MetricCell metric={m.volume24hUsd} retrieved={retrieved} />
       </Td>
-      <Td numeric col="wide">
-        {qualified ? <MetricCell metric={m.feeAprPercent} percent /> : <PoolAprEstimate observation={m.feeAprEstimate} now={now} compact />}
+      <Td numeric className="dm-mkt-num dm-mkt-apr">
+        {qualified ? <MetricCell metric={m.feeAprPercent} percent tone="in" /> : <PoolAprEstimate observation={m.feeAprEstimate} now={now} compact />}
       </Td>
       <Td numeric className="dm-mkt-end">
         <span className="dm-row-end">
@@ -198,26 +207,29 @@ function Row({ m: read, now, full, onFigures, poolToken }: { m: Market; now: Ins
  * A pool from the reviewed catalogue whose live row has not arrived: its
  * labels only, every figure a dash. It still opens its pool page.
  */
-function CatalogueRow({ poolId, entry, full }: { poolId: string; entry: PoolCatalogueEntry; full: boolean }) {
+function CatalogueRow({ poolId, entry, full, loading }: { poolId: string; entry: PoolCatalogueEntry; full: boolean; loading: boolean }) {
   const href = poolHref(poolId)
+  // While the first markets read is out, each figure rests as a bubble at its text line's size, so the row keeps
+  // its height and nothing reads as missing; once it has settled without a row, the dashes say what is unavailable.
+  const bubble = (className: string) => <Skeleton className={cx('dm-mkt-bubble', className)} />
   return (
-    <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} onClick={(event) => followRow(event, href)}>
+    <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} data-row-loading={loading ? '' : undefined} onClick={(event) => followRow(event, href)}>
       <Td>
         <a href={href} className="dm-mkt-pool dm-mkt-name" title="Listed on Uniswap. Pool figures are unavailable.">
           <PoolCatalogueIdentity entry={entry} />
         </a>
       </Td>
       <Td numeric col="wide">
-        <FigureDash reason="Price unavailable" />
+        {loading ? <span className="dm-mkt-bubbles">{bubble('dm-mkt-bubble--price')}{bubble('dm-mkt-bubble--unit')}</span> : <FigureDash reason="Price unavailable" />}
       </Td>
       <Td numeric>
-        <FigureDash reason="TVL unavailable" />
+        {loading ? bubble('dm-mkt-bubble--figure') : <FigureDash reason="TVL unavailable" />}
       </Td>
       <Td numeric col="wide">
-        <FigureDash reason="24h volume unavailable" />
+        {loading ? bubble('dm-mkt-bubble--figure') : <FigureDash reason="24h volume unavailable" />}
       </Td>
-      <Td numeric col="wide">
-        <FigureDash reason="Pool APR unavailable" />
+      <Td numeric>
+        {loading ? bubble('dm-mkt-bubble--apr') : <FigureDash reason="Pool APR unavailable" />}
       </Td>
       <Td numeric className="dm-mkt-end">
         <span className="dm-row-end">
@@ -366,6 +378,7 @@ export function MarketsTable({
         )
       }
       rowHeight={64}
+      surface="flat"
       // With no rows to scroll, the token search's list may open past the card's edge (markets.css).
       data={nothingMatches ? { 'filter-empty': '' } : undefined}
     >
@@ -375,13 +388,14 @@ export function MarketsTable({
           <Th numeric col="wide" className="dm-mkt-col-price">
             Price
           </Th>
-          <Th numeric className="dm-mkt-col">
+          <Th numeric className="dm-mkt-col-tvl">
             TVL{lean && <span className="sr-only">{' reported by a market data provider'}</span>}
           </Th>
-          <Th numeric col="wide" className="dm-mkt-col">
+          <Th numeric col="wide" className="dm-mkt-col-volume">
             24h volume{lean && <span className="sr-only">{' reported by a market data provider'}</span>}
           </Th>
-          <Th numeric col="wide" className="dm-mkt-col">
+          {/* APR stays on a phone: it is the figure people come for (DESIGN-V2 §8.4). */}
+          <Th numeric className="dm-mkt-col-apr">
             APR
           </Th>
           <Th numeric className="dm-mkt-end">
@@ -395,7 +409,7 @@ export function MarketsTable({
             market ? (
               <Row key={poolId} m={market} now={now} full={full} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken} />
             ) : catalogue ? (
-              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} />
+              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} loading={state.phase === 'loading'} />
             ) : null,
           )}
         </tbody>

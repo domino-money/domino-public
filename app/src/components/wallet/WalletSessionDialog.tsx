@@ -8,7 +8,6 @@ import { sessionController } from '../../wallet/session'
 import { useDialog } from '../../lib/useDialog'
 import { Button, Card, Pill } from '../ui'
 import { IconChevronRight, IconClose } from '../icons'
-import { BrandMark } from '../BrandMark'
 import { describe, NO_BROWSER_WALLET, REFRESH_UNAVAILABLE } from './copy'
 import { WalletLogo } from './WalletLogo'
 
@@ -171,29 +170,29 @@ export function WalletSessionDialog({
         ref={dialog}
         className="dm-dialog"
       >
-        <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-1 pr-10">
-          <BrandMark width={12} height={21} />
+        <div className="relative grid gap-y-1 pr-10">
           <h2 id="wallet-dialog-title" tabIndex={-1} className="dm-dialog-title outline-none">
             {view.status === 'no_wallet' ? 'Connect' : 'Wallet'}
           </h2>
           <button type="button" onClick={onClose} aria-label="Close" className="dm-icon-btn dm-icon-btn--ghost dm-icon-btn--sm dm-press-icon absolute -top-1.5 -right-1.5">
             <IconClose />
           </button>
-          {view.status !== 'no_wallet' && <p id="wallet-dialog-status" className="col-span-2 text-[13px] leading-[18px] text-fg-muted" data-status={view.status}>
+          {view.status !== 'no_wallet' && <p id="wallet-dialog-status" className="text-[13px] leading-[18px] text-fg-muted" data-status={view.status}>
             {describe(view)}
           </p>}
         </div>
 
         <div className="grid gap-3" aria-busy={busy || pending || undefined}>
           {identity.kind === 'connected' && view.status !== 'no_wallet' && (
-            <div className="dm-inset flex items-center justify-between gap-3 px-3 py-2.5">
-              <div className="min-w-0">
-                <p className="text-caption text-fg-subtle">{walletName(identity.connectorName)}</p>
-                <p className="tnum truncate font-mono text-[13px] leading-[18px] tracking-normal" data-testid="wallet-address">
+            <div className="dm-inset grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-3 py-2.5">
+              {/* The name and the pill share the first row; the whole address takes the second, checksum tail included. */}
+              <div className="contents">
+                <p className="col-start-1 row-start-1 min-w-0 text-caption text-fg-subtle">{walletName(identity.connectorName)}</p>
+                <p className="tnum col-span-2 row-start-2 min-w-0 break-all font-mono text-[12px] leading-[16px] tracking-normal" data-testid="wallet-address">
                   {identity.address}
                 </p>
               </div>
-              {view.status === 'signed_in' ? <Pill tone="in">Signed in</Pill> : <Pill tone="neutral">Not signed in</Pill>}
+              {view.status === 'signed_in' ? <Pill tone="in" className="col-start-2 row-start-1 justify-self-end whitespace-nowrap">Signed in</Pill> : <Pill tone="neutral" className="col-start-2 row-start-1 justify-self-end whitespace-nowrap">Not signed in</Pill>}
             </div>
           )}
 

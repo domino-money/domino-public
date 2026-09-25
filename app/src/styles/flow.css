@@ -1,100 +1,206 @@
-/* new-position builder (DESIGN.md H.5, E.4): the four-step flow card, its fields, the token search, the token
-   picker and the pool selection dialog. Every class is prefixed dm-flow-; every rule sits in @layer components,
-   so a Tailwind utility on the same element still wins. Motion stops under reduced motion and html.dm-still. */
+/* New position (DESIGN-V2 §10): the page grid, the four-step flow card with its rail, the live preview beside it,
+   the fields, the token search, the token picker and the pool selection dialog's chrome. Every class is prefixed
+   dm-flow- (the page root is .dm-np); every rule sits in @layer components, so a Tailwind utility on the same
+   element still wins, except where a scoped !important says why. Motion stops under reduced motion and
+   html.dm-still (tokens.css), and every entrance fills backwards only. */
 
 @layer components {
-  /* ---- Entrance (D.6). Backwards fill only: once it ends nothing keeps a transform, which would otherwise
+  /* ---- Entrance (M1). Backwards fill only: once it ends nothing keeps a transform, which would otherwise
      become the containing block of anything fixed inside the card. ---------------------------------------- */
   .dm-flow-rise { animation: dm-rise var(--dur-enter) var(--ease-enter) backwards; animation-delay: var(--delay, 0s); }
 
+  /* ---- The page: the steps, and on a wide screen the position they make beside them (§10.1) -------------- */
+  .dm-np { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; row-gap: 24px; }
+  .dm-np-head { min-width: 0; }
+  /* Below 1024 the preview is out of sight and out of the flow (it is aria-hidden: the steps say everything it
+     shows). Hidden this way rather than with display: none, so crossing the breakpoint never replays its
+     entrance from an invisible first frame. */
+  .dm-flow-preview { position: absolute; display: grid; gap: 20px; width: 1px; height: 1px; min-width: 0; padding: 20px; overflow: hidden; clip-path: inset(50%); visibility: hidden; pointer-events: none; }
+  @media (min-width: 768px) {
+    .dm-np { row-gap: 32px; }
+  }
+  @media (min-width: 1024px) {
+    .dm-np { grid-template-columns: minmax(0, 1fr) 400px; column-gap: 32px; }
+    .dm-np-head { grid-column: 1 / -1; }
+    .dm-flow-preview { position: sticky; top: calc(var(--header-h) + 24px); width: auto; height: auto; overflow: visible; clip-path: none; visibility: visible; pointer-events: auto; }
+  }
+
   /* ---- The flow card and its four steps --------------------------------------------------------------- */
-  .dm-flow-card { margin-top: 32px; padding: 8px; }
-  .dm-flow-steps { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-  .dm-flow-step { position: relative; min-width: 0; }
+  .dm-flow-card { min-width: 0; padding: 8px; }
+  .dm-flow-steps { display: grid; margin: 0; padding: 0; list-style: none; }
+  /* The rail reads as progress in neutral ink (§22: done segments are never Tangerine): a solid line under
+     the done steps, a line that fades out of the open step's marker toward the next, and a hairline ahead. */
+  .dm-flow-step { position: relative; min-width: 0; --flow-rail: var(--border-lip); }
+  .dm-flow-step[data-state="done"] { --flow-rail: var(--fg-faint); }
+  .dm-flow-step[data-state="current"] { --flow-rail: linear-gradient(var(--fg-faint), var(--border-lip) 72%); }
   /* The open step paints above the rows after it, so a search list that overflows its panel covers them. */
   .dm-flow-step[data-state="current"] { z-index: 1; }
 
-  /* Open and fold (E.4 step motion): grid rows 0fr <-> 1fr over .25s. A folding layer stays visible until it
-     has folded, then leaves the accessibility tree and the tab order. The opening layer clips its content only
-     while it grows (dm-flow-clip), so a list inside it may overflow once it has settled. */
+  /* The rail: a 2px line through the marker centres (x = 8 + 16 + 14), from under one marker to above the
+     next. Every marker sits 18px below its step's top, as a row and as an open step, so the segments meet
+     each marker the same way. Only the current marker is Tangerine. */
+  @media (min-width: 768px) {
+    .dm-flow-step:not(:last-child)::before { content: ''; position: absolute; top: 52px; bottom: -12px; left: 29px; width: 2px; border-radius: 1px; background: var(--flow-rail); pointer-events: none; }
+  }
+  .dm-flow-step .dm-step-marker[data-state="current"] { box-shadow: 0 0 0 4px var(--primary-wash); }
+  /* A step turning done draws its check (M15). IconCheck's path carries pathLength="1". */
+  .dm-flow-step .dm-step-marker[data-state="done"] > svg path { stroke-dasharray: 1; animation: dm-check 300ms var(--ease-enter) backwards; }
+
+  /* Open and fold (M13): grid rows 0fr <-> 1fr over .25s. A folding layer stays visible until it has folded,
+     then leaves the accessibility tree and the tab order. The opening layer clips its content only while it
+     grows (dm-flow-clip), so a list inside it may overflow once it has settled. */
   .dm-flow-collapse { display: grid; grid-template-rows: 0fr; min-width: 0; visibility: hidden; transition: grid-template-rows var(--dur-step) var(--ease-enter), visibility 0s linear var(--dur-step); }
   .dm-flow-collapse[data-open] { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows var(--dur-step) var(--ease-enter), visibility 0s linear 0s; }
   .dm-flow-collapse-inner { min-width: 0; min-height: 0; overflow: hidden; }
   .dm-flow-collapse[data-open] > .dm-flow-collapse-inner { overflow: visible; animation: dm-flow-clip var(--dur-step) linear; }
   html.dm-still .dm-flow-collapse { transition: none; }
 
-  /* A step as a row: 56px, marker, title, what was chosen, Edit. */
-  .dm-flow-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 56px; padding: 0 16px; border-radius: var(--radius-sm); text-align: left; color: var(--fg-subtle); transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
+  /* A step as a row: 64px, marker, title, what was chosen, Edit. */
+  .dm-flow-row { display: flex; align-items: center; gap: 16px; width: 100%; min-width: 0; min-height: 64px; padding: 0 16px; border-radius: var(--radius); text-align: left; color: var(--fg-subtle); transition: background-color 100ms ease-in-out, color var(--dur-hover) var(--ease-std); }
   button.dm-flow-row { color: var(--fg); cursor: pointer; }
-  button.dm-flow-row:hover { background: var(--wash); }
+  button.dm-flow-row:hover:not(:disabled) { background: var(--row-hover); }
   button.dm-flow-row:focus-visible { outline-offset: var(--focus-offset-inset); }
+  button.dm-flow-row:disabled { cursor: default; }
   .dm-flow-row-title { flex-shrink: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; }
   .dm-flow-row-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); font-variant-numeric: lining-nums tabular-nums; }
-  .dm-flow-edit { display: inline-flex; flex-shrink: 0; align-items: center; height: 32px; padding: 0 10px; border-radius: var(--radius); font-size: 13px; line-height: 16px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); transition: background-color var(--dur-hover) ease, color var(--dur-hover) ease; }
-  button.dm-flow-row:hover .dm-flow-edit { background: var(--wash); color: var(--fg); }
+  /* Edit is a quiet word, underlined on hover and focus: never Tangerine (§0.6). */
+  .dm-flow-edit { flex-shrink: 0; font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); text-decoration-line: underline; text-decoration-color: transparent; text-decoration-thickness: 1px; text-underline-offset: 3px; transition: color var(--dur-hover) var(--ease-std), text-decoration-color var(--dur-hover) var(--ease-std); }
+  button.dm-flow-row:is(:hover, :focus-visible):not(:disabled) .dm-flow-edit { color: var(--fg); text-decoration-color: currentColor; }
 
-  /* The open step: an inset panel. */
-  .dm-flow-body { min-width: 0; padding: 16px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  /* The open step: no card in the card. The title and the content start past the marker, on the rail. */
+  .dm-flow-body { min-width: 0; padding: 18px 16px 24px 60px; }
   .dm-flow-collapse[data-open] .dm-flow-body { animation: dm-step-in var(--dur-step) var(--ease-enter) backwards; }
-  .dm-flow-head { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
-  .dm-flow-title { margin: 0; padding-top: 2px; font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
+  .dm-flow-head { display: flex; align-items: flex-start; gap: 16px; min-width: 0; margin-left: -44px; }
+  .dm-flow-title { margin: 0; font-family: var(--font-sans); font-size: 20px; line-height: 28px; font-weight: 500; letter-spacing: -0.3px; color: var(--fg); }
   /* StepList moves focus to this heading on every step change. Keep the ring tokens.css gives it when the
      step was advanced from the keyboard; hide it when a pointer moved focus here. */
   .dm-flow-title:focus:not(:focus-visible) { outline: none; }
-  .dm-flow-lead { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--fg-muted); }
+  .dm-flow-lead { margin: 4px 0 0; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); }
   .dm-flow-content { min-width: 0; margin-top: 24px; }
 
-  /* Back and Continue, equal width; the reason under them only while Continue is blocked. */
-  .dm-flow-foot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 24px; }
+  /* Back, and Continue taking the rest of the line; the reason under them only while Continue is blocked. */
+  .dm-flow-foot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; margin-top: 32px; }
   .dm-flow-foot > .dm-btn { width: 100%; min-width: 0; }
-  .dm-flow-reason { grid-column: 1 / -1; margin: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); text-align: right; }
+  .dm-flow-foot > .dm-btn:first-child { min-width: 112px; padding-inline: 28px; }
+  .dm-flow-reason { grid-column: 1 / -1; margin: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); text-align: right; text-wrap: pretty; }
   .dm-flow-reason[data-align="start"] { text-align: left; }
+  .dm-flow-foot > [data-create-refund] { grid-column: 1 / -1; }
+  /* Step 1 has nowhere to go back to: its Back rests as a quiet word, so the footer reads as the one slot
+     Continue fills. A blocked Continue keeps a visible well on the dark card (surface-1 is 1.04:1 there). */
+  .dm-flow-foot > .dm-btn--outline:disabled:first-child { background: transparent; box-shadow: none; }
+  .dark .dm-flow-foot > .dm-btn--primary:disabled { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
   /* Journey keeps the reason paragraph mounted so the live region pre-exists its text. Hold its
      one line open on the steps that have one, or the footer jumps when a reason appears. */
   .dm-flow-foot:not([data-final]) { row-gap: 0; }
   .dm-flow-foot:not([data-final]) > .dm-flow-reason { margin-top: 12px; min-height: 16px; }
+  /* On Review the last control is Create position alone on its line, full width at xl (56, 52 on a phone):
+     the biggest Tangerine shape in the product. Back steps down under it, a quiet md outline, with the
+     reason beside it. Grid areas only: the DOM order (Back, Create position, reason) is unchanged. */
+  .dm-flow-foot[data-final] { grid-template-areas: "cta cta" "back reason"; align-items: center; column-gap: 16px; row-gap: 12px; }
+  .dm-flow-foot[data-final] > .dm-btn:first-child { grid-area: back; min-width: 96px; padding-inline: 20px; }
+  .dm-flow-foot[data-final] > [data-create-position] { grid-area: cta; }
+  .dm-flow-foot[data-final] > #create-reason { grid-area: reason; text-align: right; }
+
+  /* Create position's states (§10.2): running spins an arc beside its words (a registered angle, not a
+     transform); done is the in-the-money fill with a check that pops in (M22); failed is the plain primary. */
+  .dm-btn[data-create-position="running"]:disabled { background: var(--primary); color: var(--primary-fg); box-shadow: var(--elev-button); cursor: progress; }
+  .dm-btn[data-create-position="running"]::before { content: ''; flex-shrink: 0; width: 16px; height: 16px; border-radius: var(--radius-pill); background: conic-gradient(from var(--dm-spin), currentColor 0 25%, color-mix(in srgb, currentColor 22%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px)); animation: dm-spin 1s linear infinite; }
+  .dm-btn[data-create-position="done"]:disabled { background: var(--money-in-bg); color: var(--money-in); box-shadow: none; cursor: default; }
+  .dm-btn[data-create-position="done"]::before { content: ''; flex-shrink: 0; width: 16px; height: 16px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8.5 3 3 6-7' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 16px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8.5 3 3 6-7' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 16px no-repeat; animation: dm-flow-stamp 240ms var(--ease-pop) backwards; }
 
   /* ---- Inside a step ------------------------------------------------------------------------------------ */
   .dm-flow-stack { display: grid; gap: 16px; min-width: 0; }
-  .dm-flow-stack[data-stage="review"] { gap: 28px; }
-  .dm-flow-section { display: grid; gap: 8px; min-width: 0; }
-  .dm-flow-subtitle { margin: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-flow-stack[data-stage="amount"] { gap: 28px; }
+  .dm-flow-stack[data-stage="review"] { gap: 32px; }
+  .dm-flow-section { display: grid; gap: 12px; min-width: 0; }
+  .dm-flow-subtitle { margin: 0; font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
 
   /* The picker's note keeps its summary inside its box, since the picker also sits in containers this file
      does not control (the lab's dialog, Setup's pool explorer). */
   .dm-flow-note > :not(summary) { padding: 4px 12px 8px; }
   .dm-flow-note > p { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
 
-  /* A raised panel inside the inset: the chosen pool, the options. */
-  .dm-flow-panel { display: grid; gap: 12px; min-width: 0; padding: 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-field); }
-  /* Step 2 borrows the pool page's range controls, which are built for a page ground. Inside a
-     step they sit on --surface-1, so they are lifted onto the same ground as every other panel. */
-  .dm-flow-body [data-range-bound] { background: var(--surface-2); box-shadow: var(--elev-field); }
-  .dm-flow-body .dm-pool-interval { background-color: var(--surface-2); --chart-ground: var(--surface-2); }
+  /* A panel inside a step: the chosen pool. Chosen, it is the selected row it was, with a check where its
+     radio sat (the check draws in, M15). */
+  .dm-flow-panel { display: grid; gap: 12px; min-width: 0; padding: 12px 16px; border-radius: var(--radius); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-flow-panel[data-chosen-pool] { align-content: center; min-height: 64px; background: var(--primary-wash); box-shadow: inset 0 0 0 2px var(--primary-line); animation: dm-fade var(--dur-arrive) var(--ease-std) backwards; }
+  .dm-flow-chosen-check { display: grid; flex-shrink: 0; place-items: center; width: 18px; height: 18px; border-radius: var(--radius-pill); background: var(--primary-line); color: var(--card); animation: dm-flow-stamp 240ms var(--ease-pop) backwards; }
+  .dm-flow-chosen-check > svg { stroke-width: 2.25; }
+  .dm-flow-chosen-check path { stroke-dasharray: 1; animation: dm-check 300ms var(--ease-enter) 80ms backwards; }
   .dm-flow-pool-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
   .dm-flow-pool-name { display: grid; flex: 1 1 180px; gap: 4px; min-width: 0; }
   .dm-flow-pool-head > .dm-btn { margin-left: auto; }
-  /* Step 1's pool rows: TVL, 24h volume and APR in three equal columns under the pair, so the figures line up
-     from row to row like a table; a phone stacks them. The doubled class outranks the markets rows' own rule. */
-  .dm-mkt-option-figures.dm-flow-pool-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 24px; }
-  @media (max-width: 479px) {
-    .dm-mkt-option-figures.dm-flow-pool-figures { grid-template-columns: minmax(0, 1fr); }
+  .dm-flow-panel[data-chosen-pool] .dm-chip { border-radius: var(--radius-sm); }
+
+  /* ---- Step 1: the pool rows (§10.2). CSS only over the picker's pinned markup: each row is two grid areas,
+     the label (radio, marks, pair over its id, fee chip) and the figures beside it (outside the label, so not
+     a click target), three fixed columns with each label stacked over its figure. ProviderFigure's own
+     utilities set its type and layout, so the few declarations that restack it are !important, scoped to
+     this picker. Rows are flat until hovered; the checked row is the selected option (§3.16). */
+  .dm-flow-pools-legend { padding: 0; margin: 0 0 8px; font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-flow-pool-rows { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+  /* The rows arrive with the read (M20): a fade, one --stagger apart for the first five, opacity only. */
+  .dm-flow-pool-rows > li { animation: dm-fade var(--dur-arrive) var(--ease-std) backwards; }
+  .dm-flow-pool-rows > li:nth-child(2) { animation-delay: calc(var(--stagger) * 1); }
+  .dm-flow-pool-rows > li:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
+  .dm-flow-pool-rows > li:nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
+  .dm-flow-pool-rows > li:nth-child(n + 5) { animation-delay: calc(var(--stagger) * 4); }
+  [data-picker-variant="create"] .dm-mkt-option { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: center; column-gap: 16px; min-height: 64px; padding: 0 16px 0 0; border-radius: var(--radius); background: transparent; box-shadow: none; transition: background-color 100ms ease-in-out, box-shadow 100ms ease-in-out; }
+  [data-picker-variant="create"] li.dm-mkt-option:hover { background: var(--row-hover); }
+  [data-picker-variant="create"] .dm-mkt-option:has(input:checked) { background: var(--primary-wash); box-shadow: inset 0 0 0 2px var(--primary-line); }
+  [data-picker-variant="create"] .dm-mkt-option-head { min-height: 64px; gap: 12px; padding: 0 0 0 16px; border-radius: var(--radius); background: none; }
+  [data-picker-variant="create"] .dm-mkt-option-head:hover { background: none; }
+  .dm-flow-pool-id { display: grid; flex: 0 1 auto; gap: 2px; min-width: 0; text-align: left; }
+  .dm-flow-pool-pair { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-flow-pool-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-flow-pool-where .font-mono { font-size: 12px; }
+  /* The fee is a fee-tier chip, as in every table and list (§3.4): radius 8 on surface-3. */
+  [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip { align-self: flex-start; margin-top: 14px; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); }
+  .dm-mkt-option-figures.dm-flow-pool-figures { display: grid; grid-template-columns: 88px 96px 96px; gap: 0; padding: 0; }
+  .dm-flow-pool-figures > * { min-width: 0; text-align: right; }
+  .dm-flow-pool-figures > [data-provider-figure] { gap: 0 !important; }
+  .dm-flow-pool-figures > [data-provider-figure] > div { flex-direction: column; flex-wrap: nowrap !important; align-items: flex-end !important; gap: 2px !important; }
+  .dm-flow-pool-figures > [data-provider-figure] > div > span:first-child,
+  .dm-flow-pool-figures > .dm-mkt-option-apr > span:first-child { font-size: 11px !important; line-height: 14px !important; letter-spacing: -0.1px; color: var(--fg-subtle) !important; }
+  .dm-flow-pool-figures > [data-provider-figure] > div > span:last-child,
+  .dm-flow-pool-figures > .dm-mkt-option-apr > span:last-child { font-size: 14px !important; line-height: 20px !important; letter-spacing: -0.2px; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-flow-pool-figures > .dm-mkt-option-apr { flex-direction: column; flex-wrap: nowrap; align-items: flex-end; gap: 2px; }
+  /* The APR is yield, so it takes the in-the-money ink (§2.4); a dash keeps its own. */
+  .dm-flow-pool-figures > .dm-mkt-option-apr[data-row-apr="estimate"] > span:last-child,
+  .dm-flow-pool-figures > .dm-mkt-option-apr[data-row-apr="stale"] > span:last-child { color: var(--money-in) !important; }
+  @media (max-width: 767px) {
+    [data-picker-variant="create"] .dm-mkt-option { position: relative; grid-template-columns: minmax(0, 1fr); row-gap: 0; min-height: 0; padding: 0 12px 10px 0; }
+    [data-picker-variant="create"] .dm-mkt-option-head { min-height: 48px; padding-left: 12px; }
+    /* The fee chip leaves the id's line: it sits in the row's corner, and only the pair's name makes room for
+       it, so the id (already shortened in its middle) runs the full width with no second ellipsis. */
+    [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip { position: absolute; top: 10px; right: 12px; margin: 0; }
+    [data-picker-variant="create"] .dm-flow-pool-id { flex: 1 1 auto; }
+    [data-picker-variant="create"] .dm-flow-pool-pair { padding-right: 76px; }
+    .dm-mkt-option-figures.dm-flow-pool-figures { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 8px; padding-left: 42px; }
+    .dm-flow-pool-figures > * { text-align: left; }
+    .dm-flow-pool-figures > [data-provider-figure] > div,
+    .dm-flow-pool-figures > .dm-mkt-option-apr { align-items: flex-start !important; }
   }
-  .dm-flow-deposit { min-width: 0; margin: 0; padding: 12px 0 0; border: 0; box-shadow: inset 0 1px 0 var(--border); }
-  /* Floated, the legend is an ordinary block inside the fieldset rather than a caption on its top edge. */
-  .dm-flow-deposit-legend { float: left; width: 100%; padding: 0; margin-bottom: 8px; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; color: var(--fg-muted); }
-  .dm-flow-deposit > .dm-hint { clear: both; }
-  .dm-flow-choices { display: flex; clear: both; flex-wrap: wrap; gap: 8px; min-width: 0; }
-  .dm-flow-choice { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 36px; padding: 0 14px 0 10px; border-radius: var(--radius-pill); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border-lip); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg-muted); cursor: pointer; transition: background-color var(--dur-hover) ease, box-shadow var(--dur-hover) ease, color var(--dur-hover) ease; }
-  .dm-flow-choice:hover { color: var(--fg); box-shadow: inset 0 0 0 1px var(--border-strong); }
-  .dm-flow-choice:has(input:checked) { background: var(--surface-3); color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg-subtle); }
-  .dm-flow-choice[data-disabled] { color: var(--fg-subtle); cursor: not-allowed; }
-  .dm-flow-choice-input { flex-shrink: 0; margin: 0; }
+
+  /* ---- Choice cards: which of a linked pool's two tokens is deposited ----------------------------------- */
+  .dm-flow-options { display: grid; gap: 8px; min-width: 0; }
+  .dm-flow-option { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 12px 16px; border-radius: var(--radius); background: transparent; box-shadow: inset 0 0 0 1px var(--border-lip); cursor: pointer; transition: background-color 100ms ease-in-out, box-shadow var(--dur-hover) ease; }
+  .dm-flow-option:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-flow-option:has(input:checked) { background: var(--primary-wash); box-shadow: inset 0 0 0 2px var(--primary-line); }
+  .dm-flow-option:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
+  .dm-flow-option-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .dm-flow-option-top > input { flex-shrink: 0; margin: 0; }
+  .dm-flow-option-title { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-flow-option-line { max-width: 100%; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  @media (min-width: 640px) {
+    .dm-flow-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
 
   /* ---- Fields --------------------------------------------------------------------------------------------- */
-  .dm-flow-input { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-field); transition: box-shadow var(--dur-hover) ease; }
-  .dm-flow-input:hover { box-shadow: var(--elev-field), inset 0 0 0 1px var(--border-strong); }
-  .dm-flow-input:has(input:focus-visible) { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
+  .dm-flow-input { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: var(--radius); background: var(--surface-1); box-shadow: var(--elev-field); transition: box-shadow var(--dur-hover) ease, background-color var(--dur-hover) ease; }
+  .dm-flow-input:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-flow-input:focus-within { background: var(--card); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-flow-input:has(input:focus-visible) { outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
   .dm-flow-input[data-invalid] { box-shadow: inset 0 0 0 1px var(--money-out); }
   .dm-flow-input-control { flex: 1; min-width: 0; height: 100%; background: transparent; color: var(--fg); font-size: 14px; line-height: 20px; letter-spacing: -0.2px; }
   .dm-flow-input-control:focus-visible { outline: none; }
@@ -102,97 +208,191 @@
   .dm-flow-input-unit { flex-shrink: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
   .dm-flow-mono { font-family: var(--font-mono); font-size: 13px; letter-spacing: 0; }
 
-  /* The budget: one large tabular figure with its token, the wallet's balance under it. */
-  .dm-flow-amount { display: grid; gap: 12px; min-width: 0; padding: 16px 20px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-field); transition: box-shadow var(--dur-hover) ease; }
-  .dm-flow-amount:has(.dm-flow-amount-input:focus-visible) { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
+  /* ---- Step 3: the amount panels, as a swap form's (§10.2) ------------------------------------------------ */
+  /* One panel per token: its token's name as the panel's caption, the figure large and tabular with its token
+     in a pill, then its USD value on the left and the wallet's balance on the right. At rest a lowered well
+     (on the dark card a raised one with a hairline, since surface-1 is 1.04:1 there); focused, it lifts to the
+     card inside a soft Tangerine halo, as a swap form's field does. */
+  .dm-np { --flow-well: var(--surface-1); --flow-well-ring: transparent; }
+  .dark .dm-np { --flow-well: var(--surface-2); --flow-well-ring: var(--border); }
+  .dm-flow-pair { display: grid; gap: 0; min-width: 0; }
+  .dm-flow-pair-row { position: relative; min-width: 0; }
+  /* The label is the panel's caption (CSS placement only, and still the input's clickable label). */
+  .dm-flow-pair-row .dm-label { position: absolute; top: 14px; left: 16px; z-index: 1; max-width: calc(100% - 32px); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-subtle); }
+  .dm-flow-amount { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "row row" "usd foot"; align-items: center; gap: 6px 12px; min-width: 0; padding: 16px 16px 12px; border-radius: var(--radius-lg); background: var(--flow-well, var(--surface-1)); box-shadow: inset 0 0 0 1px var(--flow-well-ring, transparent); transition: background-color var(--dur-fast) var(--ease-std), box-shadow var(--dur-fast) var(--ease-std); }
+  .dm-flow-pair-row .dm-flow-amount { padding-top: 38px; }
+  /* Only where a pointer hovers: a finger's last tap would otherwise leave a panel ringed as if it were chosen. */
+  @media (hover: hover) {
+    .dm-flow-amount:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
+  }
+  .dm-flow-amount:focus-within { background: var(--card); box-shadow: inset 0 0 0 1px var(--border-card-hover); }
+  .dm-flow-amount:has(.dm-flow-amount-input:focus-visible) { outline: none; box-shadow: inset 0 0 0 1px var(--primary-line), 0 0 0 4px var(--primary-wash); }
   .dm-flow-amount[data-invalid] { box-shadow: inset 0 0 0 1px var(--money-out); }
-  .dm-flow-amount-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .dm-flow-amount-input { flex: 1; min-width: 0; height: 40px; background: transparent; color: var(--fg); font-size: 36px; line-height: 40px; font-weight: 500; letter-spacing: -0.6px; }
-  .dm-flow-amount-input::placeholder { color: var(--fg-subtle); }
+  .dm-flow-amount[data-invalid]:has(.dm-flow-amount-input:focus-visible) { box-shadow: inset 0 0 0 1px var(--money-out), 0 0 0 4px color-mix(in srgb, var(--money-out) 14%, transparent); }
+  .dm-flow-amount-row { grid-area: row; display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .dm-flow-amount-input { flex: 1; min-width: 0; height: 44px; overflow: hidden; background: transparent; color: var(--fg); font-family: var(--font-sans); font-size: 36px; line-height: 44px; font-weight: 500; letter-spacing: -1px; text-overflow: ellipsis; }
+  .dm-flow-amount-input[data-len="m"] { font-size: 30px; letter-spacing: -0.8px; }
+  .dm-flow-amount-input[data-len="l"] { font-size: 26px; letter-spacing: -0.6px; }
+  .dm-flow-amount-input[data-len="xl"] { font-size: 24px; letter-spacing: -0.5px; }
+  .dm-flow-amount-input::placeholder { color: var(--fg-faint); }
   .dm-flow-amount-input:focus-visible { outline: none; }
   .dm-flow-amount-input:disabled { color: var(--fg-subtle); cursor: not-allowed; }
-  .dm-flow-amount-unit { flex-shrink: 0; max-width: 45%; overflow: hidden; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--fg-muted); }
-  .dm-flow-amount-foot { min-width: 0; padding-top: 12px; box-shadow: inset 0 1px 0 var(--border); }
-  .dm-flow-balance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 32px; min-width: 0; }
-  .dm-flow-balance-line { margin: 0; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; overflow-wrap: anywhere; }
-  .dm-flow-balance-why { margin: 2px 0 0; min-width: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  /* One row per pool token: the same 16px rhythm as .dm-flow-stack, so the two panels read as two fields
-     rather than one broken control, and the spacing does not move when a row grows an error line. */
-  .dm-flow-pair { display: grid; gap: 16px; min-width: 0; }
-  .dm-flow-pair-row { min-width: 0; }
+  .dm-flow-amount-unit { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; max-width: 45%; height: 32px; padding: 0 12px 0 6px; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface-3); font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); white-space: nowrap; }
+  .dm-flow-amount-unit > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .dm-flow-amount-usd { grid-area: usd; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-flow-amount-foot { grid-area: foot; justify-self: end; min-width: 0; }
+  .dm-flow-balance { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 10px; min-height: 28px; min-width: 0; }
+  .dm-flow-balance-line { margin: 0; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; text-align: right; overflow-wrap: anywhere; }
+  .dm-flow-balance > .dm-btn--sm { height: 26px; padding: 0 10px; border-radius: var(--radius-pill); font-size: 12px; line-height: 16px; }
+  /* Funded from one token: the other panel is the pair's other half, which the swap brings, not a deposit. Its figure
+     steps back to the subtle ink while it is not being typed in, and it carries no USD (PairedAmounts). */
+  .dm-flow-pair-row[data-plan-side="swapped"] .dm-flow-amount:not(:focus-within) .dm-flow-amount-input { color: var(--fg-subtle); }
+  /* The + joining the two panels: it straddles the 4px seam between them, cut out of both by a ring of the
+     card (decoration only). The first panel keeps a little more room at its foot, so the medallion never
+     sits on the balance line or its Use max. */
+  .dm-flow-link { position: relative; z-index: 2; display: grid; place-items: center; width: 36px; height: 36px; margin: -16px auto; border-radius: var(--radius-pill); background: var(--card); box-shadow: 0 0 0 4px var(--card), inset 0 0 0 1px var(--border-card); color: var(--fg-subtle); pointer-events: none; }
+  .dm-flow-pair-row:first-child .dm-flow-amount { padding-bottom: 18px; }
+  /* A note or an error under the first panel keeps its line: the + then sits under it, not over it. */
+  .dm-flow-pair-row:has(.dm-error, .dm-hint) + .dm-flow-link { margin-top: 4px; }
 
   /* ---- Slippage tolerance ------------------------------------------------------------------------------ */
   /* A percentage you drag. The native range input lies invisible over the whole rail, so a pointer, a finger
      and the keyboard all move the same control; the track, its marks and the thumb only draw where its
-     position is, and the box under them takes a percentage between the marks. */
-  .dm-flow-slip { display: grid; gap: 8px; min-width: 0; }
+     position is. On a wide step the presets, the track and the exact box share one line; narrower, they
+     stack (a container query on the control itself, so the preview column beside the steps is accounted for). */
+  .dm-flow-slip { display: grid; gap: 12px; min-width: 0; container-type: inline-size; }
   .dm-flow-slip-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; min-width: 0; }
   .dm-flow-slip-head > .dm-label { margin-bottom: 0; }
-  .dm-flow-slip-value { font-size: 24px; line-height: 28px; font-weight: 500; letter-spacing: -0.4px; color: var(--fg); }
-  .dm-flow-slip-rail { position: relative; height: 54px; min-width: 0; }
-  .dm-flow-slip-track { position: absolute; top: 14px; left: 0; right: 0; height: 6px; border-radius: var(--radius-pill); background: var(--surface-3); }
-  .dm-flow-slip-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--primary-ink) 55%, transparent); }
-  .dm-flow-slip-mark { position: absolute; top: -4px; width: 2px; height: 14px; margin-left: -1px; border-radius: 1px; background: var(--fg-faint); transition: background-color var(--dur-hover) ease; }
-  .dm-flow-slip-mark[data-taken] { background: var(--primary-ink); }
+  .dm-flow-slip-value { color: var(--fg); }
+  .dm-flow-slip-line { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 12px 24px; min-width: 0; }
+  .dm-flow-slip-line > .dm-slip-presets { justify-self: start; }
+  .dm-flow-slip-rail { position: relative; height: 46px; min-width: 0; }
+  .dm-flow-slip-track { position: absolute; top: 15px; left: 0; right: 0; height: 6px; border-radius: var(--radius-pill); background: var(--surface-3); }
+  .dm-flow-slip-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--radius-pill); background: var(--fg-subtle); opacity: 0.55; }
+  .dm-flow-slip-mark { position: absolute; top: -3px; width: 2px; height: 12px; margin-left: -1px; border-radius: 1px; background: var(--fg-faint); transition: background-color var(--dur-hover) ease; }
+  .dm-flow-slip-mark[data-taken] { background: var(--fg-subtle); }
   .dm-flow-slip-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
-  .dm-flow-slip-thumb { position: absolute; top: 17px; width: 20px; height: 20px; translate: -50% -50%; border-radius: var(--radius-pill); background: var(--btn); box-shadow: var(--elev-button), inset 0 0 0 1.5px var(--primary-ink); pointer-events: none; }
+  .dm-flow-slip-thumb { position: absolute; top: 18px; width: 20px; height: 20px; translate: -50% -50%; border-radius: var(--radius-pill); background: var(--card); box-shadow: var(--elev-button), inset 0 0 0 1.5px var(--fg-subtle); pointer-events: none; transition: scale var(--dur-press) var(--ease-std); }
+  .dm-flow-slip-rail:hover > .dm-flow-slip-thumb, .dm-flow-slip-input:active ~ .dm-flow-slip-thumb { scale: 1.12; }
   .dm-flow-slip-input:focus-visible ~ .dm-flow-slip-thumb { outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
-  .dm-flow-slip-scale { position: absolute; top: 32px; left: 0; right: 0; height: 16px; font-size: 11px; line-height: 16px; letter-spacing: -0.1px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; pointer-events: none; }
+  .dm-flow-slip-scale { position: absolute; top: 30px; left: 0; right: 0; height: 16px; font-size: 11px; line-height: 16px; letter-spacing: -0.1px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; pointer-events: none; }
   .dm-flow-slip-scale > span { position: absolute; translate: -50% 0; white-space: nowrap; }
   /* The lowest mark is the track's own start and the end is its finish, so neither label is centred on a position that would hang off the rail. */
   .dm-flow-slip-scale > span:first-child { translate: 0 0; }
   .dm-flow-slip-scale > .dm-flow-slip-end { left: auto; right: 0; translate: 0 0; }
-  .dm-flow-slip-exact { max-width: 220px; }
-  .dm-flow-slip > .dm-slip-presets { justify-self: start; }
-  .dm-flow-slip-warn { margin: 0; font-size: 13px; line-height: 18px; color: var(--fg-muted); text-wrap: pretty; }
-
-  /* ---- Choice cards: which of a linked pool's two tokens is deposited ----------------------------------- */
-  .dm-flow-options { display: grid; gap: 8px; min-width: 0; }
-  .dm-flow-option { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; transition: box-shadow var(--dur-hover) ease; }
-  .dm-flow-option:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
-  .dm-flow-option:has(input:checked) { box-shadow: inset 0 0 0 1px var(--fg-subtle); }
-  .dm-flow-option-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .dm-flow-option-top > input { flex-shrink: 0; margin: 0; }
-  .dm-flow-option-title { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  .dm-flow-option-line { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  @media (min-width: 640px) {
-    .dm-flow-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dm-flow-slip-exact { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+  .dm-flow-slip-exact-label { font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-flow-slip-exact > .dm-flow-input { width: 88px; height: 36px; }
+  .dm-flow-slip-hint { margin: 0; max-width: 72ch; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); text-wrap: pretty; }
+  .dm-flow-slip > .dm-error { margin-top: 0; }
+  .dm-flow-slip-warn { margin: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--money-out); text-wrap: pretty; }
+  @container (max-width: 599px) {
+    .dm-flow-slip-line { grid-template-columns: auto minmax(0, 1fr); }
+    .dm-flow-slip-rail { grid-column: 1 / -1; grid-row: 2; }
+  }
+  @container (max-width: 399px) {
+    .dm-flow-slip-line { grid-template-columns: minmax(0, 1fr); }
+    .dm-flow-slip-rail { grid-row: auto; }
+    .dm-flow-slip-exact { justify-content: space-between; }
   }
 
-  /* ---- Review ----------------------------------------------------------------------------------------- */
-  /* Facts as 48px rows with the rule inset 4px from each end (the dm-kv geometry), a note under a row when there is one. */
-  .dm-flow-facts { display: grid; min-width: 0; margin: 0; }
-  .dm-flow-facts > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 16px; min-width: 0; min-height: 48px; padding: 12px 4px; background: linear-gradient(var(--border-lip), var(--border-lip)) bottom center / calc(100% - 8px) 1px no-repeat; }
-  .dm-flow-facts > div:last-child { background: none; }
-  .dm-flow-facts dt { font-size: 14px; line-height: 20px; color: var(--fg-subtle); }
-  .dm-flow-facts dd { margin: 0; min-width: 0; font-size: 14px; line-height: 20px; color: var(--fg); text-align: right; overflow-wrap: anywhere; }
-  .dm-flow-fact-sub { display: block; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-flow-facts--noted > div { align-items: baseline; }
-  .dm-flow-facts--noted .dm-flow-fact-note { flex-basis: 100%; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); text-align: left; }
+  /* ---- Step 4: Review (§10.2) --------------------------------------------------------------------------- */
+  /* Your choices: what is being created, read at a glance, on a lowered well. */
+  .dm-flow-headline { display: grid; gap: 6px; min-width: 0; padding: 20px; border-radius: var(--radius-lg); background: var(--flow-well, var(--surface-1)); box-shadow: inset 0 0 0 1px var(--flow-well-ring, transparent); }
+  .dm-flow-headline-pair { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-flow-headline-amounts { margin: 8px 0 0; font-size: 20px; line-height: 26px; font-weight: 500; letter-spacing: -0.3px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }
+  /* One side, its amount and its token, keeps its line when it fits; one longer than the line still wraps inside itself. */
+  .dm-flow-headline-side { display: inline-block; max-width: 100%; }
+  .dm-flow-headline-usd { margin: -2px 0 6px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
+  .dm-flow-headline-line { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); overflow-wrap: anywhere; }
+  .dm-flow-headline-range { margin: 10px 0 0; }
+  .dm-flow-headline .dm-range-preview-dot { box-shadow: 0 0 0 2px var(--flow-well, var(--surface-1)); }
+  /* Beside the steps the preview draws this range large: the small one is for where the preview is not. */
+  @media (min-width: 1024px) {
+    .dm-np .dm-flow-headline-range { display: none; }
+  }
+
+  /* Lines that appear only when there is something to say: a range that does not hold the price, a slippage
+     above 1%, a wallet that does not cover the deposit. The dot is always the neutral one. */
   .dm-flow-position, .dm-flow-short { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  /* Both lines appear only when there is something to warn about — a range that does not hold the price, a wallet that does not cover the deposit — so the dot is always the neutral one. */
   .dm-flow-position::before, .dm-flow-short::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; margin-top: 6px; border-radius: var(--radius-pill); background: var(--fg-faint); }
-  .dm-flow-wsteps { display: grid; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
-  .dm-flow-wsteps > li[data-step-state="done"] { box-shadow: inset 0 0 0 1px var(--money-in); background: var(--money-in-bg); }
-  .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker { background: var(--money-in); color: var(--bg); }
+  /* The one-token plan's note is information, not a warning: a neutral plate with a swap glyph at its start
+     (a mask, so it takes the subtle ink in both themes), never Tangerine, which marks no status (§0.6). */
+  .dm-flow-position[data-review-swap-note] { position: relative; display: block; padding: 12px 16px 12px 42px; border-radius: var(--radius); background: var(--flow-well, var(--surface-1)); box-shadow: inset 0 0 0 1px var(--flow-well-ring, transparent); text-wrap: pretty; }
+  .dm-flow-position[data-review-swap-note]::before { position: absolute; top: 13px; left: 15px; width: 16px; height: 16px; margin: 0; border-radius: 0; background: var(--fg-subtle); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 5.25h10m-2.5-2.5 2.5 2.5-2.5 2.5M13.25 10.75h-10m2.5-2.5-2.5 2.5 2.5 2.5'/%3E%3C/svg%3E") center / 16px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.75 5.25h10m-2.5-2.5 2.5 2.5-2.5 2.5M13.25 10.75h-10m2.5-2.5-2.5 2.5 2.5 2.5'/%3E%3C/svg%3E") center / 16px no-repeat; }
+
+  /* Wallet steps: a vertical timeline. Each step a 64px row with no ring and no fill at rest, joined to the next
+     by a 2px connector under its marker. A running step's marker is Tangerine with a spinning arc around it
+     (a registered angle, not a transform); a done step turns the marker and its connector green and the check
+     pops in (M15). The two done rules below are pinned: they keep --money-in in their blocks. */
+  .dm-flow-wsteps { display: grid; gap: 0; margin: 4px 0 0; padding: 0; list-style: none; }
+  .dm-flow-wsteps > li { position: relative; display: flex; align-items: flex-start; gap: 16px; min-width: 0; min-height: 64px; padding: 12px 16px; border-radius: var(--radius); --step-line: var(--border); transition: background-color var(--dur-fast) var(--ease-std); }
+  .dm-flow-wsteps > li:not(:last-child)::before { content: ''; position: absolute; top: 46px; bottom: -6px; left: 29px; width: 2px; border-radius: 1px; background: var(--step-line); pointer-events: none; transition: background-color var(--dur-fast) var(--ease-std); }
+  .dm-flow-wsteps > li[data-step-state="done"] { --step-line: var(--money-in); }
+  .dm-flow-wsteps > li[data-step-state="done"] .dm-step-marker { background: var(--money-in); color: var(--bg); animation: dm-flow-stamp 240ms var(--ease-pop) backwards; }
   .dm-flow-wsteps > li[data-step-state="failed"] .dm-step-marker { background: var(--surface-4); color: var(--fg); }
-  .dm-flow-wsteps > li { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-flow-wsteps > li:is([data-step-state="reading"], [data-step-state="wallet"], [data-step-state="chain"]) { background: var(--row-hover); }
+  .dm-flow-wsteps .dm-step-marker[data-state="current"]::after { content: ''; position: absolute; inset: -4px; border-radius: 11px; padding: 2px; background: conic-gradient(from var(--dm-spin), var(--primary-line) 0 25%, transparent 0); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: dm-spin 1s linear infinite; pointer-events: none; }
+  .dm-flow-wstep-body { display: grid; gap: 2px; min-width: 0; padding-top: 4px; }
+  .dm-flow-wstep-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-flow-wstep-token { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 22px; padding: 0 8px; border-radius: var(--radius-pill); background: var(--wash-strong); font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: -0.12px; color: var(--fg-muted); white-space: nowrap; }
+  .dm-flow-wstep-token .font-mono { font-size: 11px; color: var(--fg-subtle); }
+  .dm-flow-wstep-note { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
+
+  /* ---- The preview beside the steps (§10.1): pair, range, deposit, tolerance, split by hairlines ---------- */
+  .dm-flow-preview-pair { display: grid; gap: 16px; min-width: 0; }
+  .dm-flow-preview-id { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 36px; }
+  .dm-flow-preview-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dm-flow-preview-fee { flex-shrink: 0; border-radius: var(--radius-sm); background: var(--surface-3); }
+  .dm-flow-preview-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 16px; min-height: 36px; margin: 0; }
+  .dm-flow-preview-stats dt { margin-bottom: 2px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-flow-preview-stats dd { margin: 0; color: var(--fg); }
+  .dm-flow-preview-stats .dm-flow-preview-apr { color: var(--money-in); }
+  .dm-flow-preview-range { display: grid; gap: 12px; min-width: 0; padding-top: 20px; box-shadow: inset 0 1px 0 var(--border); }
+  /* The band's 6px corners show: its Tangerine edges run along the straight part of its sides only (the
+     preview's 48px band; F's RangePreview draws the edges the band's full height). */
+  .dm-flow-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+  .dm-flow-preview-label { font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-flow-preview-deposit { display: grid; gap: 2px; min-width: 0; padding-top: 12px; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-flow-preview-row { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 44px; }
+  .dm-flow-preview-amount { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+  .dm-flow-preview-usd { flex-shrink: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-flow-preview-total { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; margin-top: 6px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); color: var(--fg); }
+  .dm-flow-preview-slip { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-flow-preview-slip > .dm-fig-xs { color: var(--fg); }
+  /* Slots: quiet solid places for what a choice will fill (a wash, the marks on a ringed disc), never dashed outlines,
+     which read as a wireframe or a card that failed to load. Places, not loading: nothing shimmers. */
+  .dm-flow-preview-slot { display: inline-block; flex-shrink: 0; height: 10px; border-radius: var(--radius-pill); background: var(--wash-strong); }
+  .dm-flow-preview-slot--mark { width: 36px; height: 36px; background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-flow-preview-slot-pair > .dm-flow-preview-slot--mark:last-child { box-shadow: inset 0 0 0 1px var(--border), 0 0 0 2px var(--card); }
+  .dm-flow-preview-slot-pair { display: inline-flex; flex-shrink: 0; }
+  .dm-flow-preview-slot-pair > :last-child { margin-left: -11px; }
+  .dm-flow-preview-slot-lines { display: grid; gap: 8px; }
+  .dm-flow-preview[data-preview="empty"] .dm-flow-preview-stats { align-items: center; min-height: 16px; }
+  /* Before a range: the axis, with a dashed place where the band will sit on it. */
+  .dm-flow-preview-axis { position: relative; min-width: 0; }
+  .dm-flow-preview-axis > .dm-flow-preview-slot { position: absolute; top: 50%; translate: 0 -50%; }
+  /* The band's place: its fill at half strength between two quiet edges, as the band itself will stand. */
+  .dm-flow-preview-axis > .dm-flow-preview-slot--band { left: 30%; width: 40%; height: 22px; border-radius: 6px; background: color-mix(in srgb, var(--band-fill) 45%, var(--card)); box-shadow: inset 2px 0 0 var(--border-strong), inset -2px 0 0 var(--border-strong); }
 
   /* ---- Token search ------------------------------------------------------------------------------------ */
   .dm-flow-search { min-width: 0; }
   .dm-flow-combo { position: relative; min-width: 0; }
-  .dm-flow-combo-icon { position: absolute; left: 12px; top: 20px; translate: 0 -50%; color: var(--fg-subtle); pointer-events: none; }
-  .dm-flow-combo-input { width: 100%; height: 40px; padding: 0 12px 0 34px; border-radius: var(--radius); background: var(--surface-2); color: var(--fg); box-shadow: var(--elev-field); font-family: var(--font-sans); font-size: 14px; line-height: 20px; letter-spacing: -0.2px; text-overflow: ellipsis; transition: box-shadow var(--dur-hover) ease; }
+  .dm-flow-combo-icon { position: absolute; left: 16px; top: 24px; translate: 0 -50%; color: var(--fg-subtle); pointer-events: none; }
+  .dm-flow-combo-input { width: 100%; height: 48px; padding: 0 16px 0 42px; border-radius: 14px; background: var(--surface-1); color: var(--fg); box-shadow: var(--elev-field); font-family: var(--font-sans); font-size: 15px; line-height: 20px; letter-spacing: -0.2px; text-overflow: ellipsis; transition: box-shadow var(--dur-hover) ease, background-color var(--dur-hover) ease; }
   .dm-flow-combo-input::placeholder { color: var(--fg-subtle); }
-  .dm-flow-combo-input:hover { box-shadow: var(--elev-field), inset 0 0 0 1px var(--border-strong); }
-  .dm-flow-combo-input:focus-visible { box-shadow: inset 0 0 0 1px var(--border-strong); outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
+  .dm-flow-combo-input:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-flow-combo-input:focus { background: var(--card); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  /* A field's focus is a soft Tangerine halo, as the amount panels' is; buttons and links keep the --ring outline. */
+  .dm-flow-combo-input:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--primary-line), 0 0 0 4px var(--primary-wash); }
+  .dm-flow-combo-input[aria-invalid="true"]:focus-visible { box-shadow: inset 0 0 0 1px var(--money-out), 0 0 0 4px color-mix(in srgb, var(--money-out) 14%, transparent); }
   .dm-flow-combo-input[aria-invalid="true"] { box-shadow: inset 0 0 0 1px var(--money-out); }
-  .dm-flow-listbox { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; padding: 4px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-menu); transform-origin: top center; animation: dm-pop var(--dur-menu) var(--ease-enter) backwards; }
+  .dm-flow-listbox { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; padding: 6px; border-radius: var(--radius-lg); background: var(--surface-2); box-shadow: var(--elev-menu); transform-origin: top center; animation: dm-pop var(--dur-menu) var(--ease-enter) backwards; }
   .dm-flow-listbox-scroll { display: grid; gap: 2px; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
   .dm-flow-listbox-scroll:empty { display: none; }
   .dm-flow-listbox-empty { margin: 0; padding: 10px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-flow-hit { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 48px; padding: 6px 10px; border-radius: var(--radius-sm); text-align: left; color: var(--fg); cursor: pointer; }
-  .dm-flow-hit:hover, .dm-flow-hit[data-active] { background: var(--wash); }
+  .dm-flow-hit { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 52px; padding: 6px 10px; border-radius: var(--radius); text-align: left; color: var(--fg); cursor: pointer; transition: background-color 100ms ease-in-out; }
+  .dm-flow-hit:hover, .dm-flow-hit[data-active] { background: var(--row-hover); }
   .dm-flow-hit--off { color: var(--fg-subtle); cursor: not-allowed; }
   .dm-flow-hit-name { min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; }
   .dm-flow-hit-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
@@ -213,9 +413,9 @@
   .dm-flow-candidates { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
   .dm-flow-legend { display: flex; align-items: center; padding: 0; margin-bottom: 4px; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
   .dm-flow-candidate-list { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 0; list-style: none; }
-  .dm-flow-candidate { min-width: 0; padding: 2px 8px; border-radius: var(--radius); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); transition: box-shadow var(--dur-hover) ease; }
-  .dm-flow-candidate:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
-  .dm-flow-candidate[data-checked] { box-shadow: inset 0 0 0 1px var(--fg-subtle); }
+  .dm-flow-candidate { min-width: 0; padding: 2px 8px; border-radius: var(--radius); background: transparent; box-shadow: inset 0 0 0 1px var(--border); transition: background-color 100ms ease-in-out, box-shadow var(--dur-hover) ease; }
+  .dm-flow-candidate:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-flow-candidate[data-checked] { background: var(--primary-wash); box-shadow: inset 0 0 0 2px var(--primary-line); }
   .dm-flow-candidate-main { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 52px; padding: 4px; }
   .dm-flow-candidate-main > input { margin: 0; }
   .dm-flow-candidate-check { display: grid; flex-shrink: 0; place-items: center; width: 24px; height: 24px; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg); }
@@ -228,33 +428,57 @@
   .dm-flow-candidate-facts { display: grid; gap: 4px; margin-top: 6px; overflow-wrap: anywhere; }
   .dm-flow-candidate-why { margin: 0 4px 8px 30px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
 
-  /* ---- Pool selection dialog (D.8): head, a scrolling body, a foot that stays ---------------------------- */
+  /* ---- Dialogs drawn with the flow's chrome: head, a scrolling body, a foot that stays (§3.12) ------------ */
+  /* The pool selection dialog here, and Positions' Collect and Close dialogs. .dm-dialog* (F) owns the frame,
+     the backdrop, the handle and the sheet; these are the paddings and, on a phone sheet, the clearances for
+     the handle above the head and the home indicator under the foot. */
   .dm-flow-dialog { grid-template-rows: auto minmax(0, 1fr) auto; gap: 0; padding: 0; overflow: hidden; }
-  .dm-flow-dialog-head { position: relative; padding: 16px 52px 12px 16px; }
-  .dm-flow-dialog-body { min-width: 0; min-height: 0; padding: 4px 16px 16px; overflow-y: auto; overscroll-behavior: contain; }
-  .dm-flow-dialog-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-flow-dialog-head { position: relative; padding: 24px 56px 12px 24px; }
+  .dm-flow-dialog-body { min-width: 0; min-height: 0; padding: 4px 24px 20px; overflow-y: auto; overscroll-behavior: contain; }
+  .dm-flow-dialog-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px 24px; box-shadow: inset 0 1px 0 var(--border); }
 
-  /* ---- Phone (D.7) ----------------------------------------------------------------------------------------- */
-  /* On a phone the last control of the flow takes the full width, under Back (E.4 phone). */
-  @media (max-width: 639px) {
-    .dm-flow-foot[data-final] { grid-template-columns: minmax(0, 1fr); }
-  }
+  /* ---- Phone (§10.3) -------------------------------------------------------------------------------------- */
   @media (max-width: 767px) {
-    .dm-flow-body { padding: 12px; }
+    .dm-flow-card { padding: 4px; }
+    .dm-flow-row { gap: 12px; min-height: 60px; padding: 0 12px; }
+    /* A done row: the marker, the title and Edit on one line, and what was chosen under the title on up to two
+       lines, so the deposit token and the range's unit stay in view. */
+    button.dm-flow-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: 28px auto; grid-template-areas: "marker title edit" ". summary summary"; align-items: center; align-content: center; row-gap: 2px; min-height: 64px; padding: 10px 12px; }
+    button.dm-flow-row > :first-child { grid-area: marker; }
+    button.dm-flow-row > .dm-flow-row-title { grid-area: title; }
+    button.dm-flow-row > .dm-flow-edit { grid-area: edit; }
+    button.dm-flow-row > .dm-flow-row-summary { grid-area: summary; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+    .dm-flow-body { padding: 12px 12px 20px; }
+    .dm-flow-head { gap: 12px; margin-left: 0; }
+    .dm-flow-title { font-size: 18px; line-height: 24px; letter-spacing: -0.24px; padding-top: 2px; }
     .dm-flow-content { margin-top: 20px; }
-    .dm-flow-row { padding: 0 12px; }
-    .dm-flow-amount { padding: 12px 16px; }
-    .dm-flow-amount-input { height: 36px; font-size: 30px; line-height: 36px; }
+    .dm-flow-foot { grid-template-columns: 96px minmax(0, 1fr); margin-top: 24px; }
+    .dm-flow-foot > .dm-btn:first-child { min-width: 0; padding-inline: 12px; }
+    .dm-flow-amount { padding: 14px 14px 10px; }
+    .dm-flow-pair-row .dm-flow-amount { padding-top: 36px; }
+    .dm-flow-pair-row .dm-label { top: 12px; left: 14px; max-width: calc(100% - 28px); }
+    .dm-flow-amount-input { height: 40px; font-size: 30px; line-height: 40px; letter-spacing: -0.8px; }
+    .dm-flow-amount-input[data-len="m"] { font-size: 26px; letter-spacing: -0.6px; }
+    .dm-flow-amount-input[data-len="l"] { font-size: 22px; letter-spacing: -0.4px; }
+    .dm-flow-amount-input[data-len="xl"] { font-size: 20px; letter-spacing: -0.3px; }
+    .dm-flow-headline { padding: 16px; }
+    .dm-flow-headline-amounts { font-size: 18px; line-height: 24px; letter-spacing: -0.3px; }
+    .dm-flow-wsteps > li { gap: 12px; padding: 12px; }
+    .dm-flow-wsteps > li:not(:last-child)::before { left: 25px; }
   }
-  /* Review's headline: what is being created, read at a glance, before any list. */
-  .dm-flow-headline { display: grid; gap: 6px; min-width: 0; padding: 16px; border-radius: var(--radius); background: var(--surface-2); box-shadow: var(--elev-field); }
-  .dm-flow-headline-pair { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-width: 0; font-size: 16px; line-height: 24px; font-weight: 500; color: var(--fg); }
-  .dm-flow-headline-amounts { font-size: 20px; line-height: 28px; font-weight: 500; color: var(--fg); overflow-wrap: anywhere; }
-  .dm-flow-headline-line { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); overflow-wrap: anywhere; }
+  @media (max-width: 639px) {
+    .dm-flow-dialog-head { padding: 28px 52px 12px 16px; }
+    .dm-flow-dialog-body { padding: 4px 16px 16px; }
+    .dm-flow-dialog-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
+  }
 }
 
 /* Clips the opening step's content to its growing box, and releases it when the box has grown. */
 @keyframes dm-flow-clip {
   from, to { clip-path: inset(0); }
+}
 
+/* A mark that lands: a done wallet step's check, the chosen pool's check, Create position's done glyph. */
+@keyframes dm-flow-stamp {
+  from { opacity: 0; scale: 0.6; }
 }

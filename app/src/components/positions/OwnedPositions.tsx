@@ -1,51 +1,37 @@
-import { useEffect, useMemo, useReducer, useState, type ReactNode } from 'react'
-import {
-  PAGE_SIZE,
-  createRowReader,
-  depositCurrencies,
-  heldDepositViews,
-  mergeOwned,
-  ownedTabs,
-  passingOwnedFailure,
-  readOwnedPositions,
-  rowResults,
-  type HeldDepositView,
-  type OwnedList,
-  type OwnedStatus,
-  type RowResult,
-  type Rows,
-} from '../../lib/ownedPositions'
-import { tokenDisplay } from '../../lib/read/project'
+import { useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { CHAIN_ID } from '../../lib/read/screens/identity'
-import { runLookup, type LookupResult } from '../../lib/read/screens/positions'
-import { reaskDelayMs, whenVisibleAfter } from '../../lib/read/screens/quietRead'
-import { useReadSource } from '../../lib/read/screens/readContext'
-import { readWithin } from '../../lib/read/screens/screenRead'
-import type { TokenDisplay } from '../../lib/read/types'
+import { walletCard, walletState } from '../../lib/walletCards'
+import { useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
 import type { WalletIdentityView } from '../../lib/walletIdentity'
 import { newPositionHref } from '../explore/routes'
 import { IconSearch, IconWallet } from '../icons'
-import { Button, Display, EmptyState, LinkButton, Skeleton, Tabs } from '../ui'
-import { PendingRow, PositionRow, UnreadRow } from './PositionRow'
+import { Button, EmptyState, LinkButton, Skeleton, Tabs } from '../ui'
+import { PendingRow, PendingRows, PendingSummary, PositionRow } from './PositionRow'
+import { FeesCard } from './visual/FeesCard'
+import { PortfolioSummary, portfolioOf } from './visual/PortfolioSummary'
 
 /** What Positions hands the held deposits: drawn by the lazily loaded HeldDeposits in wallet builds. */
-export type DepositsSlot = (props: { owner: string; deposits: readonly HeldDepositView[]; onChanged: () => void }) => ReactNode
+export type DepositsSlot = (props: { owner: string; deposits: readonly WalletDeposit[]; onChanged: () => void }) => ReactNode
+
+/** Rows shown at a time, before Show more. */
+const PAGE_SIZE = 10
+
+type Status = 'open' | 'closed'
 
 /** Opens the header's wallet dialog, where a wallet is connected or switched to Robinhood Chain. */
 const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria-haspopup="dialog"]')?.click()
 
-/** Why the list could not be read, for a title: the endpoint's code is in the data attribute beside it. */
-const UNLISTED = 'Your positions could not be listed just now. Look one up by its NFT id below.'
-const INCOMPLETE = 'Some of the NFTs this wallet holds could not be listed. Look one up by its NFT id below.'
+/** Why the list could not be read, for a title only: the endpoint's code is in the data attribute beside it. */
+const UNLISTED = 'Your positions could not be read from chain just now. They are asked again on their own.'
 
 /** The card's frame: its title, and the tabs once there is something to put in them. */
 function Frame({ children, tabs, data, title }: { children: ReactNode; tabs?: ReactNode; data?: Record<string, string | undefined>; title?: string }) {
   return (
     <section className="dm-card dm-acct-nft-card dm-own-card" aria-labelledby="own-title" title={title} {...data}>
       <div className="dm-own-head">
-        <Display as="h2" id="own-title" className="dm-display-card">
+        <h2 id="own-title" className="dm-title">
           Your positions
-        </Display>
+        </h2>
         {tabs}
       </div>
       {children}
@@ -57,22 +43,24 @@ export interface OwnedPositionsProps {
   identity: WalletIdentityView
   deposits: DepositsSlot | null
   /**
-   * The ids this browser created for a wallet (lib/positionMemory.ts createdPositions), handed in by the page so that
-   * module stays where Create position and the page already load it.
+   * Whether the card shows an empty state with its own filled action (`No positions yet` with New position): the page's
+   * title row then steps its New position back, so one filled button leads the screen. Optional, for older callers.
    */
-  remembered: (owner: string) => string[]
-  /** Opens the lookup by NFT id under the table: the list could not be read in full. */
-  onUnlisted: (open: true) => void
+  onEmptyAction?: (shown: boolean) => void
+  /** The positions screens' entry anchor (components/positions/visual/kit.ts): passed, never read. */
+  kit?: unknown
 }
 
 /**
- * Your positions, for the wallet the header is connected to: every position
- * NFT it holds, found for it (open and closed, in two tabs), and below the
- * table the deposits it has not turned into a position yet. Without a wallet,
- * or on another network, one empty state says what to do. Nothing is read
- * until a wallet is connected on Robinhood Chain.
+ * Your positions, for the wallet the header is connected to: the positions
+ * it created through Domino (DominoSetupV1), read from chain by the site's
+ * own endpoint (open and closed, in two tabs), and under them the deposits it
+ * has not turned into a position yet. Without a wallet, or on another
+ * network, one empty state says what to do. Nothing is read until a wallet is
+ * connected on Robinhood Chain, no NFT id is ever asked for, and nothing is
+ * kept in the browser (the owner's rule, 2026-09-24).
  */
-export default function OwnedPositions({ identity, deposits, remembered, onUnlisted }: OwnedPositionsProps) {
+export default function OwnedPositions({ identity, deposits, onEmptyAction }: OwnedPositionsProps) {
   if (identity.kind === 'unknown') {
     return (
       <Frame data={{ 'data-owned': 'waiting' }}>
@@ -93,6 +81,7 @@ export default function OwnedPositions({ identity, deposits, remembered, onUnlis
               Connect wallet
             </Button>
           }
+          className="dm-own-connect"
           data-empty="owned-connect"
         />
       </Frame>
@@ -116,147 +105,63 @@ export default function OwnedPositions({ identity, deposits, remembered, onUnlis
     )
   }
   const owner = identity.address.toLowerCase()
-  return <YourPositions key={owner} owner={owner} deposits={deposits} remembered={remembered} onUnlisted={onUnlisted} />
+  return <YourPositions key={owner} owner={owner} deposits={deposits} onEmptyAction={onEmptyAction} />
 }
 
-type Owned = { phase: 'loading' } | { phase: 'ready'; list: OwnedList } | { phase: 'failed'; reason: string }
-
-const rowsReducer = (state: Rows, event: { owner: string; ids: string[]; result: Exclude<LookupResult, { kind: 'aborted' }>; again: string[] }): Rows => ({
-  ...state,
-  ...rowResults(event.owner, event.ids, event.result, state, event.again),
-})
-
-/** One row by what its read said: the figures, a dash row, or its skeleton while it is read (an empty NFT asked once more included). */
-function Row({ id, row }: { id: string; row: RowResult | undefined }) {
-  if (row?.kind === 'card') return <PositionRow card={row.card} batch={row.batch} />
-  if (row?.kind === 'failed') return <UnreadRow tokenId={id} failure={row.failure} />
-  return <PendingRow tokenId={id} />
-}
-
-function YourPositions({ owner, deposits, remembered: rememberedFor, onUnlisted }: Omit<OwnedPositionsProps, 'identity'> & { owner: string }) {
-  const source = useReadSource()
-  // The endpoint's answer, and how many times the page has asked again after an action changed it.
-  const [owned, setOwned] = useState<Owned>({ phase: 'loading' })
+function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsProps, 'identity' | 'kit'> & { owner: string }) {
+  // How many times the page has asked again after an action (a refund) changed the answer: each asks fresh.
   const [asked, setAsked] = useState(0)
-  useEffect(() => {
-    const controller = new AbortController()
-    let attempts = 0
-    let cancel: (() => void) | null = null
-    const ask = () => {
-      void readOwnedPositions(owner, controller.signal, asked > 0).then((result) => {
-        if (controller.signal.aborted) return
-        if (result.ok) {
-          setOwned({ phase: 'ready', list: result.list })
-          if (!result.list.complete) onUnlisted(true)
-          return
-        }
-        setOwned((before) => (before.phase === 'ready' ? before : { phase: 'failed', reason: result.reason }))
-        onUnlisted(true)
-        // A chain or connection that was busy for the moment is asked again, twice at most, while the page is visible.
-        if (!passingOwnedFailure(result.reason) || attempts >= 2) return
-        cancel = whenVisibleAfter(attempts === 0 ? 3_000 : 12_000, () => {
-          cancel = null
-          attempts += 1
-          ask()
-        })
-      })
-    }
-    ask()
-    return () => {
-      controller.abort()
-      cancel?.()
-    }
-  }, [owner, asked, onUnlisted])
+  const answer = useWalletAnswer(owner, asked)
+  const ready = answer.phase === 'ready' ? answer.answer : null
+  const reason = answer.phase === 'failed' ? answer.reason : null
 
-  const list = owned.phase === 'ready' ? owned.list : null
-  const reason = owned.phase === 'failed' ? owned.reason : null
-  // Ids this browser created for the wallet: listed while the endpoint's cached answer does not name them yet, or when it could not answer.
-  const remembered = useMemo(() => rememberedFor(owner), [rememberedFor, owner])
-  const ids = useMemo(() => (owned.phase === 'loading' ? null : mergeOwned(list, remembered)), [owned.phase, list, remembered])
-
-  // The rows' figures: nft-positions reads, ten ids at a time, one after another, each id once.
-  const [rows, dispatchRows] = useReducer(rowsReducer, {})
-  const reader = useMemo(
-    () =>
-      source
-        ? createRowReader(
-            (batch, signal) => runLookup(source, batch, { signal }),
-            (batch, result, again) => dispatchRows({ owner, ids: batch, result, again }),
-            { retryIn: (failure, attempt) => reaskDelayMs(failure, attempt), later: whenVisibleAfter },
-          )
-        : null,
-    [source, owner],
+  // Every row straight from the chain read: its card, and the state its USD is valued at (the same read, the same block).
+  const rows = useMemo(
+    () => (ready ? ready.positions.map((position) => ({ position, card: walletCard(position, owner), state: walletState(position, ready.block, owner) })) : null),
+    [ready, owner],
   )
-  // Leaving cancels the reads; a cancelled reader starts over on its next want(), so StrictMode's setup, cleanup, setup still reads the rows.
-  useEffect(() => () => reader?.cancel(), [reader])
-
-  const tabs = useMemo(() => (ids ? ownedTabs(ids, rows) : null), [ids, rows])
-  const [chosen, setChosen] = useState<OwnedStatus | null>(null)
+  const tabs = useMemo(() => (rows ? { open: rows.filter((row) => row.position.status === 'open'), closed: rows.filter((row) => row.position.status === 'closed') } : null), [rows])
+  const portfolio = useMemo(() => (tabs ? portfolioOf(tabs.open) : null), [tabs])
+  const [chosen, setChosen] = useState<Status | null>(null)
   // Open unless there is nothing open and something closed.
-  const tab: OwnedStatus = chosen ?? (tabs && tabs.open.length === 0 && tabs.closed.length > 0 ? 'closed' : 'open')
-  const [closedSeen, setClosedSeen] = useState(false)
-  const [pages, setPages] = useState<Record<OwnedStatus, number>>({ open: 1, closed: 1 })
-  // Open positions are read first; closed ones only once their tab has been open.
-  const wanted = useMemo(
-    () => (tabs ? [...tabs.open.slice(0, pages.open * PAGE_SIZE), ...(closedSeen || tab === 'closed' ? tabs.closed.slice(0, pages.closed * PAGE_SIZE) : [])] : []),
-    [tabs, pages, closedSeen, tab],
-  )
-  useEffect(() => {
-    if (reader && wanted.length > 0) reader.want(wanted)
-  }, [reader, wanted])
+  const tab: Status = chosen ?? (tabs && tabs.open.length === 0 && tabs.closed.length > 0 ? 'closed' : 'open')
+  const [pages, setPages] = useState<Record<Status, number>>({ open: 1, closed: 1 })
+  const held = ready?.deposits ?? []
 
-  // The held deposits' tokens, read for their symbols and decimals, only when there are deposits to draw.
-  const held = useMemo(() => list?.deposits ?? [], [list])
-  const [heldTokens, setHeldTokens] = useState<ReadonlyMap<string, TokenDisplay> | null>(null)
-  useEffect(() => {
-    if (!source || !deposits || held.length === 0) return
-    const controller = new AbortController()
-    void (async () => {
-      const tokens = new Map<string, TokenDisplay>()
-      for (const address of depositCurrencies(held)) {
-        const read = await readWithin(source, 'token', { token: address }, { signal: controller.signal })
-        if (read.state === 'aborted') return
-        if (read.state === 'ok') tokens.set(address, tokenDisplay(read.data.asset))
-      }
-      if (!controller.signal.aborted) setHeldTokens(tokens)
-    })()
-    return () => controller.abort()
-  }, [source, deposits, held])
-
-  const choose = (next: OwnedStatus) => {
-    setChosen(next)
-    if (next === 'closed') setClosedSeen(true)
-  }
-  const shownIds = tabs ? tabs[tab].slice(0, pages[tab] * PAGE_SIZE) : []
-  const more = tabs ? tabs[tab].length - shownIds.length : 0
+  const shown = tabs ? tabs[tab].slice(0, pages[tab] * PAGE_SIZE) : []
+  const more = tabs ? tabs[tab].length - shown.length : 0
   const total = tabs ? tabs.open.length + tabs.closed.length : 0
-  const phase = owned.phase === 'loading' ? 'loading' : reason ? 'unlisted' : 'ready'
-  const status = !tabs ? 'Listing your positions…' : `${tabs.open.length} open and ${tabs.closed.length} closed positions.`
+  const phase = ready ? 'ready' : reason ? 'unlisted' : 'loading'
+  // `No positions yet` carries its own New position: the page's title row steps its own back (before paint, no flash).
+  const emptyAction = tabs !== null && total === 0
+  useLayoutEffect(() => {
+    if (!onEmptyAction) return
+    onEmptyAction(emptyAction)
+    return () => onEmptyAction(false)
+  }, [emptyAction, onEmptyAction])
+  // The reason a list could not be read is a title and a data attribute only, never a sentence, not even a spoken one.
+  const status = !tabs ? (reason ? 'No positions to show.' : 'Listing your positions…') : `${tabs.open.length} open and ${tabs.closed.length} closed positions.`
 
   let body: ReactNode
   if (!tabs) {
-    body = (
-      <div className="dm-rows dm-acct-nft-rows" aria-hidden="true" data-owned-loading="">
-        <PendingRow tokenId="" />
-        <PendingRow tokenId="" />
-      </div>
-    )
+    body = reason ? <EmptyState icon={<IconSearch />} title="No positions to show" data-empty="owned-unlisted" /> : <PendingRows loading />
   } else if (total === 0) {
-    body = reason ? (
-      <EmptyState icon={<IconSearch />} title="No positions to show" data-empty="owned-unlisted" />
-    ) : (
+    body = (
       <EmptyState
         icon={<IconSearch />}
         title="No positions yet"
+        // With a deposit waiting for its refund, Refund to wallet is the screen's one filled button: this steps back to soft.
         action={
-          <LinkButton href={newPositionHref()} size="sm">
+          <LinkButton href={newPositionHref()} variant={deposits && held.length > 0 ? 'soft' : 'primary'}>
             New position
           </LinkButton>
         }
+        plate
+        className="dm-own-none"
         data-empty="owned-none"
       />
     )
-  } else if (shownIds.length === 0) {
+  } else if (shown.length === 0) {
     body = <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />
   } else {
     body = (
@@ -269,8 +174,8 @@ function YourPositions({ owner, deposits, remembered: rememberedFor, onUnlisted 
           <span>Unclaimed fees</span>
           <span />
         </div>
-        {shownIds.map((id) => (
-          <Row key={id} id={id} row={rows[id]} />
+        {shown.map((row) => (
+          <PositionRow key={row.card.tokenId} card={row.card} block={ready?.block ?? 0} state={row.state} tick={row.position.tick} />
         ))}
       </div>
     )
@@ -279,32 +184,34 @@ function YourPositions({ owner, deposits, remembered: rememberedFor, onUnlisted 
   return (
     <>
       <Frame
-        title={reason ? UNLISTED : list && !list.complete ? INCOMPLETE : undefined}
+        title={reason && !ready ? UNLISTED : undefined}
         data={{
           'data-owned': phase,
           'data-owned-reason': reason ?? undefined,
-          'data-owned-block': list ? String(list.block) : undefined,
-          'data-owned-complete': list ? String(list.complete) : undefined,
+          'data-owned-block': ready ? String(ready.block) : undefined,
         }}
         tabs={
           tabs && total > 0 ? (
             <Tabs
               label="Positions by state"
               value={tab}
-              onChange={choose}
+              onChange={setChosen}
               items={[
                 { key: 'open', label: 'Open', count: tabs.open.length },
                 { key: 'closed', label: 'Closed', count: tabs.closed.length },
               ]}
             />
-          ) : !tabs ? (
-            <Skeleton className="h-8 w-40" />
+          ) : !tabs && !reason ? (
+            <Skeleton className="dm-own-skel-tabs" />
           ) : undefined
         }
       >
         <p role="status" aria-live="polite" className="sr-only" data-owned-status="">
           {status}
         </p>
+        {/* The totals are the open positions': shown over their tab only, never over the closed rows. While the list is on
+            its way the band keeps its place, so the rows never move when it fills. */}
+        {tab === 'open' && (portfolio?.totals ? <PortfolioSummary {...portfolio.totals} /> : !tabs && !reason ? <PendingSummary /> : null)}
         {body}
         {more > 0 && (
           <div className="dm-own-more">
@@ -314,7 +221,8 @@ function YourPositions({ owner, deposits, remembered: rememberedFor, onUnlisted 
           </div>
         )}
       </Frame>
-      {deposits && held.length > 0 && heldTokens && deposits({ owner, deposits: heldDepositViews(held, heldTokens), onChanged: () => setAsked((n) => n + 1) })}
+      {portfolio?.aggregate && <FeesCard kind="plain" source={{ tokenIds: portfolio.aggregate }} scope="list" bandPresent />}
+      {deposits && held.length > 0 && deposits({ owner, deposits: held, onChanged: () => setAsked((n) => n + 1) })}
     </>
   )
 }

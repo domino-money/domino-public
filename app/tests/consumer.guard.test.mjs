@@ -138,7 +138,8 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lab scree
   const importersOf = (wanted) =>
     ALL.filter(({ path, code }) => specifiers(code).some((spec) => spec.startsWith('.') && target(path, spec) === wanted)).map(({ path }) => path);
   // Setup's preview consumer reads the session through the live port, as Performance, Execution and the owner-only sequence activation check do; New position does not.
-  assert.deepEqual(importersOf('session/livePort'), ['finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Sequence.tsx', 'screens/Setup.tsx']);
+  // Changed on purpose (2026-09-24): the automation page lost its owner controls, and with them the activation check that read the live port.
+  assert.deepEqual(importersOf('session/livePort'), ['finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
   // Create position's chunk and what it is made of ask no preview and read no session: it signs through the wallet alone.
   for (const path of ['components/create/DepositAmounts.tsx', 'components/create/CreatePosition.tsx', 'components/create/StageReview.tsx', 'lib/create/depositPlan.ts', 'lib/create/createProgress.ts']) {
     const targets = specifiers(byPath(path).code).filter((spec) => spec.startsWith('.')).map((spec) => target(path, spec));
@@ -174,9 +175,10 @@ test('DF-11: prepare has exactly one call site, inside issueWalletStep; create a
   const end = flow.indexOf('async function userAction');
   const at = flow.indexOf('.prepare(');
   assert.ok(start > 0 && start < at && at < end, 'the call sits in issueWalletStep');
-  assert.deepEqual(hits(ALL, /\.create\(/), ['screens/Sequence.tsx', 'screens/SequenceCreate.tsx', 'screens/Setup.tsx']);
+  // 2026-09-24: the expert creation card left Sequence.tsx; SequenceCreate's one action is the only sequence creation.
+  assert.deepEqual(hits(ALL, /\.create\(/), ['screens/SequenceCreate.tsx', 'screens/Setup.tsx']);
   // 2026-09-24: the owner's Collect fees / Close position and the refund of a held setup deposit send one reviewed step each, on purpose.
-  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['components/create/CreatePosition.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/PositionActions.tsx', 'screens/AdvancedSetup.tsx', 'screens/Sequence.tsx', 'screens/SequenceCreate.tsx']);
+  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['components/create/CreatePosition.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/PositionActions.tsx', 'screens/AdvancedSetup.tsx', 'screens/SequenceCreate.tsx']);
   assert.deepEqual(hits(MINE, /available:\s*true/), [], 'no handoff says it is available');
   assert.deepEqual(hits(MINE, /executionAvailable:\s*true|automationAvailable:\s*true|serverBroadcastAvailable:\s*true/), []);
 });

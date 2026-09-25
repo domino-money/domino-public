@@ -1,15 +1,17 @@
 import { times } from '../lib/scenario'
 
 /**
- * A price control you can actually grab.
+ * A price control you can actually grab (DESIGN-V2 §4.8).
  *
  * A native range input sits invisibly over the whole control, so clicking or
  * dragging anywhere on it works, the keyboard works and screen readers get a
  * real slider. The visuals underneath follow its value: a slim track, the
- * active range shaded, and a thumb with the value written on it (a multiple of
- * the start price by default). The thumb is the first `.pointer-events-none`
- * element here and carries its position as `style.left`; when the input has
- * keyboard focus, the thumb shows the focus ring.
+ * active range filled (`tone="quiet"` fills it at 55 %), a round thumb, and a
+ * chip above it with the value written on it (a multiple of the start price by
+ * default). The chip is the first `.pointer-events-none` element here and
+ * carries its position as `style.left`; the thumb carries the ring (inside the
+ * band Tangerine, outside it neutral) and, when the input has keyboard focus,
+ * the focus ring. Hover and drag grow the thumb a little.
  */
 export function PriceSlider({
   id,
@@ -23,6 +25,7 @@ export function PriceSlider({
   upper,
   format = times,
   valueText,
+  tone = 'primary',
 }: {
   id: string
   label: string
@@ -37,6 +40,8 @@ export function PriceSlider({
   format?: (v: number) => string
   /** What a screen reader says for the current value, when the written figure alone would not be enough. */
   valueText?: (v: number) => string
+  /** primary: the band in full Tangerine (the Home simulator). quiet: at 55 % (a range's Min and Max cards). */
+  tone?: 'primary' | 'quiet'
 }) {
   const pct = (v: number) => ((v - min) / (max - min)) * 100
   const band = lower !== undefined && upper !== undefined
@@ -46,15 +51,15 @@ export function PriceSlider({
   const ring = inside || !band ? 'var(--primary-ink)' : 'var(--fg-faint)'
 
   return (
-    <div className="relative select-none pb-1 pt-4">
-      <div className="relative h-1.5 rounded-[var(--radius-pill)] bg-surface-3">
+    <div className="relative select-none pb-1 pt-[34px]">
+      <div className="relative h-1 rounded-[var(--radius-pill)] bg-surface-3">
         {band && (
           <div
-            className="absolute inset-y-0 rounded-[var(--radius-pill)] transition-[left,width] duration-300 ease-enter"
+            className="absolute inset-y-0 rounded-[var(--radius-pill)] bg-primary-line transition-[left,width] duration-[var(--dur-step)] ease-enter"
             style={{
               left: `${pct(lower)}%`,
               width: `${pct(upper) - pct(lower)}%`,
-              background: 'color-mix(in srgb, var(--primary-ink) 55%, transparent)',
+              opacity: tone === 'quiet' ? 0.55 : 1,
             }}
           />
         )}
@@ -77,13 +82,19 @@ export function PriceSlider({
         className="peer absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
       />
 
-      {/* thumb */}
+      {/* the value chip: the first .pointer-events-none here, placed by its inline left */}
       <div
-        className="pointer-events-none absolute top-[19px] flex h-7 -translate-x-1/2 -translate-y-1/2 items-center whitespace-nowrap rounded-[var(--radius-pill)] bg-surface-2 px-2.5 text-caption font-medium text-fg peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--ring)]"
-        style={{ left: `${pct(value)}%`, boxShadow: `var(--elev-button), inset 0 0 0 1.5px ${ring}` }}
+        className="pointer-events-none absolute top-0 flex h-[22px] -translate-x-1/2 items-center whitespace-nowrap rounded-[var(--radius-pill)] bg-surface-3 px-2 text-caption font-medium text-fg"
+        style={{ left: `${pct(value)}%` }}
       >
         <span className="tnum">{format(value)}</span>
       </div>
+
+      {/* thumb: never a .pointer-events-none element (the chip stays the only one), it lets pointers through by its own class */}
+      <div
+        className="dm-slider-thumb absolute top-[36px] size-5 -translate-x-1/2 -translate-y-1/2 rounded-[var(--radius-pill)] bg-card transition-[scale] duration-[var(--dur-press)] peer-hover:scale-[1.12] peer-active:scale-[1.12] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--ring)]"
+        style={{ left: `${pct(value)}%`, boxShadow: `inset 0 0 0 1.5px ${ring}, var(--elev-button)` }}
+      />
 
       <div className="mt-5 flex justify-between text-caption text-fg-subtle">
         <span className="tnum">{format(min)}</span>

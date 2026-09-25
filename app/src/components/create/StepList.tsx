@@ -6,6 +6,8 @@ import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { slippageBpsFrom, slippageWritten } from '../../lib/create/slippage'
 import { SymbolText } from '../read/screens/SymbolText'
 import { StepMarker } from '../ui'
+// Whether motion is stilled (reduced motion, or the footer's Pause motion): moved to lib/motion in V2 (DESIGN-V2 §5.4).
+import { stilled } from '../../lib/motion/stilled'
 
 /** The four steps a person sees, over the state machine's five stages. */
 export type VisualStep = 'pool' | 'range' | 'amount' | 'review'
@@ -49,12 +51,24 @@ export function PoolSummary({ state }: { state: JourneyState }) {
   )
 }
 
+/** A figure the page writes from a string that begins with `≈`: the sign dimmed, the text unchanged (DESIGN-V2 §6.3). */
+export function Approx({ text }: { text: string }) {
+  return text.startsWith('≈') ? (
+    <>
+      <span className="dm-approx">≈</span>
+      {text.slice(1)}
+    </>
+  ) : (
+    <>{text}</>
+  )
+}
+
 /** "≈2,241.12 to ≈3,738.54 USDG per WETH": the pool's own orientation, currency1 per currency0. */
 export function RangeSummary({ range, price }: { range: TickRange; price: Usable }) {
   const words = (tick: number) => boundPrice(tick, price) ?? CREATE.review.summary.beyondDisplay
   return (
     <>
-      {words(range.lower)} to {words(range.upper)} <SymbolText token={price.quote} /> per <SymbolText token={price.base} />
+      <Approx text={words(range.lower)} /> to <Approx text={words(range.upper)} /> <SymbolText token={price.quote} /> per <SymbolText token={price.base} />
     </>
   )
 }
@@ -74,10 +88,6 @@ export function AmountSummary({ state }: { state: JourneyState }) {
 /* ---------------------------------------------------------------------------
    The list
 --------------------------------------------------------------------------- */
-
-/** Whether motion is stilled: reduced motion, or the footer's Pause motion. */
-const stilled = () =>
-  (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) || document.documentElement.classList.contains('dm-still')
 
 /**
  * The flow card's four steps, in order. A done step is a row that opens it

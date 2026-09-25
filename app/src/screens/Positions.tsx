@@ -1,14 +1,17 @@
-import { lazy, Suspense, useEffect, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
+import { lazy, Suspense, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
 import PortfolioBody from '../components/portfolio/PortfolioBody'
 import { automateHref, marketsHref, newPositionHref } from '../components/explore/routes'
-import { IconAutomate, IconChevronLeft, IconPositions } from '../components/icons'
+import { IconTile } from '../components/figures'
+import { IconAutomate, IconChevronLeft, IconPositions, IconWallet } from '../components/icons'
 import type { DepositsSlot, OwnedPositionsProps } from '../components/positions/OwnedPositions'
-import { Chip, Display, LinkButton, PageShell, Skeleton } from '../components/ui'
+import { PendingRows, PendingSummary } from '../components/positions/PositionRow'
+import { AutomationFrame } from '../components/positions/visual/AutomationFrame'
+import { POSITION_KIT } from '../components/positions/visual/kit'
+import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
+import { Chip, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
 import { shortAddress } from '../lib/read/screens/identity'
-import { positionDetailId, positionsRoute } from '../lib/read/screens/positions'
-import { ChainPositionsSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
+import { positionDetailId } from '../lib/read/screens/positions'
 import { useWalletIdentity, type WalletIdentityView } from '../lib/walletIdentity'
-import { createdPositions } from '../lib/positionMemory'
 import { RoadmapPill } from './Automate'
 
 type Connected = Extract<WalletIdentityView, { kind: 'connected' }>
@@ -28,7 +31,7 @@ const HeldDeposits = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<Parameters<D
 // Your positions and a position's own page: chunks of their own, loaded only on Positions, so no other page pays for
 // them. The list exists only where a wallet can connect; the page is public chain data and opens in every build.
 const OwnedPositions = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<OwnedPositionsProps>>(() => import('../components/positions/OwnedPositions').catch(couldNotLoad)) : null
-const PositionDetail = lazy<ComponentType<{ tokenId: string }>>(() => import('./PositionDetail').catch(couldNotLoad))
+const PositionDetail = lazy<ComponentType<{ tokenId: string; kit?: unknown }>>(() => import('./PositionDetail').catch(couldNotLoad))
 
 /** The held deposits under Your positions, drawn by HeldDeposits once its chunk is in; nothing while it loads. */
 const heldDeposits: DepositsSlot | null = HeldDeposits
@@ -39,8 +42,8 @@ const heldDeposits: DepositsSlot | null = HeldDeposits
     )
   : null
 
-/** The first four blocks of the page rise in on mount, 60 ms apart; nothing after them does. */
-const rise = (step: number) => ({ '--delay': `${step * 60}ms` }) as CSSProperties
+/** The first four blocks of the page rise in on first load, 40 ms apart (one --stagger); nothing after them does. */
+const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
 
 /**
  * The header's wallet, named beside the title. A connection is not a sign-in:
@@ -57,10 +60,10 @@ function ConnectedChip({ identity }: { identity: Connected }) {
   )
 }
 
-/** An empty plot with one sentence: what the Managed card shows while there is nothing to draw. */
+/** An empty plot with one sentence: what the Managed card shows while there is nothing to draw (the frame makes it its plate). */
 function Plot({ children, status = false }: { children: ReactNode; status?: boolean }) {
   return (
-    <div className="dm-acct-plot dm-dots-chart" role={status ? 'status' : undefined}>
+    <div className="dm-acct-plot" role={status ? 'status' : undefined}>
       <span>{children}</span>
     </div>
   )
@@ -69,73 +72,63 @@ function Plot({ children, status = false }: { children: ReactNode; status?: bool
 /**
  * Managed positions: performance-v2 answers with rolling 24-hour cards only,
  * so the card carries that window as a fixed chip, never tabs, and never a
- * line. The history itself is rugged97's Performance screen, mounted inside.
+ * line. The history itself is rugged97's Performance screen, mounted inside
+ * the automation frame (DESIGN-V2 §13.6): signed out, its sentence sits on a
+ * dotted plate under the Domino-compound machine.
  */
 function ManagedCard() {
   return (
-    <section
-      className="dm-card dm-acct-card dm-acct-o2 animate-rise"
+    <AutomationFrame
+      title="Managed positions"
+      titleId="managed-title"
+      art="domino"
+      aside={<Chip>Rolling 24-hour window</Chip>}
+      className="dm-acct-card animate-rise"
       style={rise(2)}
-      aria-labelledby="managed-title"
       data-managed-positions={Performance ? '' : undefined}
     >
-      <div className="dm-acct-card-head">
-        <Display as="h2" id="managed-title" className="dm-display-card">
-          Managed positions
-        </Display>
-        <Chip>Rolling 24-hour window</Chip>
-      </div>
-      <div className="dm-acct-card-body">
-        {Performance ? (
-          <Suspense fallback={<Plot status>Loading managed positions…</Plot>}>
-            <Performance />
-          </Suspense>
-        ) : (
-          <Plot>Managed history needs wallet sign-in, which isn’t available here.</Plot>
-        )}
-      </div>
-    </section>
+      {Performance ? (
+        <Suspense fallback={<Plot status>Loading managed positions…</Plot>}>
+          <Performance />
+        </Suspense>
+      ) : (
+        <Plot>Managed history needs wallet sign-in, which isn’t available here.</Plot>
+      )}
+    </AutomationFrame>
   )
 }
 
-/** Receipts of what automation did, read with the wallet session: rugged97's Execution screen, mounted inside. */
+/** Receipts of what automation did, read with the wallet session: rugged97's Execution screen, mounted inside the automation frame. */
 function ReceiptsCard() {
   return (
-    <section className="dm-card dm-acct-card dm-acct-o3" aria-labelledby="receipts-title">
-      <div className="dm-acct-card-head">
-        <Display as="h2" id="receipts-title" className="dm-display-card">
-          Receipts
-        </Display>
-      </div>
-      <div className="dm-acct-card-body">
-        {Execution ? (
-          <Suspense
-            fallback={
-              <p role="status" className="dm-acct-quiet">
-                Loading receipts…
-              </p>
-            }
-          >
-            <Execution />
-          </Suspense>
-        ) : (
-          <p className="dm-acct-quiet">Wallet sign-in isn’t available here, so automation receipts can’t be read.</p>
-        )}
-      </div>
-    </section>
+    <AutomationFrame title="Receipts" titleId="receipts-title" art="receipt" className="dm-acct-card">
+      {Execution ? (
+        <Suspense
+          fallback={
+            <p role="status" className="dm-acct-quiet">
+              Loading receipts…
+            </p>
+          }
+        >
+          <Execution />
+        </Suspense>
+      ) : (
+        <p className="dm-acct-quiet">Wallet sign-in isn’t available here, so automation receipts can’t be read.</p>
+      )}
+    </AutomationFrame>
   )
 }
 
 /** What automation is, where it stands, and the way to Automate. Static: the status comes from ROADMAP. */
 function AutomationCard() {
   return (
-    <section className="dm-card dm-acct-rail dm-acct-o6" aria-labelledby="automation-title">
-      <Display as="h2" id="automation-title" className="dm-display-rail">
+    <section className="dm-card dm-acct-rail dm-acct-auto dm-acct-o6" aria-labelledby="automation-title">
+      <h2 id="automation-title" className="dm-title">
         Automation
-      </Display>
+      </h2>
       <ul className="dm-acct-auto-list">
         <li>
-          <IconAutomate className="dm-acct-auto-icon" />
+          <IconTile icon={<IconAutomate />} />
           <div className="min-w-0">
             <p className="dm-acct-auto-name">
               <span>Auto-compound</span>
@@ -145,7 +138,7 @@ function AutomationCard() {
           </div>
         </li>
         <li>
-          <IconPositions className="dm-acct-auto-icon" />
+          <IconTile icon={<IconPositions />} />
           <div className="min-w-0">
             <p className="dm-acct-auto-name">
               <span>Domino-compound</span>
@@ -163,81 +156,37 @@ function AutomationCard() {
 }
 
 /**
- * The typed-id lookup (the read screens' ChainPositionsSection): a public read
- * of any position NFT by its id, in its own chunk, loaded when it is shown.
+ * Your positions in a build that carries no wallet (the fixture and bridge test builds): the card's frame and one
+ * sentence. Every deployed build carries the wallet, and lists the connected wallet's positions in its place.
  */
-function LookupSlot() {
-  if (!ChainPositionsSlot || !SlotBoundary || !SlotFailed) return null
+function NoWalletHere() {
   return (
-    <SlotBoundary
-      fallback={
-        <div className="dm-card p-4">
-          <SlotFailed />
-        </div>
-      }
-    >
-      <Suspense
-        fallback={
-          // The card's own title while its chunk loads, so the column does not jump when it arrives.
-          <div className="dm-card dm-acct-nft-card dm-acct-slot-wait" aria-hidden="true">
-            <div className="dm-acct-nft-head">
-              <p className="dm-display-card">Position NFTs</p>
-            </div>
-          </div>
-        }
-      >
-        <ChainPositionsSlot />
-      </Suspense>
-    </SlotBoundary>
-  )
-}
-
-/**
- * Looking a position up by its NFT id, under Your positions: closed until
- * someone opens it, open by itself when the link carries ids to look up or
- * when the wallet's own list could not be read in full. The lookup mounts
- * only while open, so a closed one reads and loads nothing.
- */
-function LookupDisclosure({ open, onToggle }: { open: boolean; onToggle: (open: boolean) => void }) {
-  return (
-    <details className="dm-details dm-own-lookup" open={open} onToggle={(event) => onToggle(event.currentTarget.open)} data-lookup-disclosure="">
-      <summary>Look up by NFT id</summary>
-      {open && (
-        <div className="dm-own-lookup-body">
-          <LookupSlot />
-        </div>
-      )}
-    </details>
+    <section className="dm-card dm-acct-nft-card dm-own-card" aria-labelledby="own-title" data-owned="unavailable">
+      <div className="dm-own-head">
+        <h2 id="own-title" className="dm-title">
+          Your positions
+        </h2>
+      </div>
+      <EmptyState icon={<IconWallet />} title="Connecting a wallet isn’t available here" data-empty="owned-unavailable" />
+    </section>
   )
 }
 
 /**
  * Positions: what a person holds and what Domino runs for them. With a wallet
- * connected on Robinhood Chain, Your positions lists every position NFT it
- * holds, open and closed, and each row opens the position's own page; the
- * Wallet card reads the wallet's public token balances; the managed side needs
- * a wallet session. Opening the route with no wallet connected and no ids in
- * the link reads nothing. A build without the wallet has no list to make, and
- * shows the lookup by NFT id in its place.
+ * connected on Robinhood Chain, Your positions lists the positions it created
+ * through Domino, open and closed, read from chain (never from the browser's
+ * storage, never by a typed NFT id), and each row opens the position's own
+ * page; the Wallet card reads the wallet's public token balances; the managed
+ * side needs a wallet session. Opening the route with no wallet connected
+ * reads nothing.
  */
-/** A `#/positions/<ids>` link that carries ids to look up; on the list, never a single one (that is a position's page). */
-function linkCarriesIds(hash: string) {
-  const route = positionsRoute(hash)
-  return route.onRoute && route.ids !== ''
-}
-
 function PositionsList() {
   const identity = useWalletIdentity()
-  // Open on arrival when the link carries ids to look up (`#/positions/<id>,<id>`), which a single id never is here.
-  const [lookupOpen, setLookupOpen] = useState(() => linkCarriesIds(window.location.hash))
-  // And when such a link arrives while the list is open.
-  useEffect(() => {
-    const onChange = () => {
-      if (linkCarriesIds(window.location.hash)) setLookupOpen(true)
-    }
-    window.addEventListener('hashchange', onChange)
-    return () => window.removeEventListener('hashchange', onChange)
-  }, [])
+  // Your positions shows its own filled action (Connect wallet, or New position when there is none yet): the title row's
+  // New position steps back to secondary then, so one filled button leads the screen (§0.6).
+  const [listEmpty, setListEmpty] = useState(false)
+  const quietNew = OwnedPositions !== null && (identity.kind === 'disconnected' || (identity.kind === 'connected' && listEmpty))
   return (
     <PageShell>
       <div className="dm-acct-title animate-rise" style={rise(0)}>
@@ -251,7 +200,9 @@ function PositionsList() {
           <LinkButton href={marketsHref()} variant="ghost">
             Markets
           </LinkButton>
-          <LinkButton href={newPositionHref()}>New position</LinkButton>
+          <LinkButton href={newPositionHref()} variant={quietNew ? 'secondary' : 'primary'}>
+            New position
+          </LinkButton>
         </div>
       </div>
 
@@ -260,21 +211,19 @@ function PositionsList() {
         <div className="dm-acct-col">
           <div className="dm-acct-slot dm-acct-o1 dm-own-slot animate-rise" style={rise(1)}>
             {OwnedPositions ? (
-              <>
-                <Suspense fallback={<ListWaiting />}>
-                  <OwnedPositions identity={identity} deposits={heldDeposits} remembered={createdPositions} onUnlisted={setLookupOpen} />
-                </Suspense>
-                <LookupDisclosure open={lookupOpen} onToggle={setLookupOpen} />
-              </>
+              <Suspense fallback={<ListWaiting />}>
+                <OwnedPositions identity={identity} deposits={heldDeposits} onEmptyAction={setListEmpty} kit={POSITION_KIT} />
+              </Suspense>
             ) : (
-              // No wallet in this build, so no list: the lookup by NFT id is the way in, on the page itself.
-              <LookupSlot />
+              <NoWalletHere />
             )}
           </div>
 
-          <ManagedCard />
-
-          <ReceiptsCard />
+          {/* Side by side from 1024px; stacked, after the rail's cards, below. */}
+          <div className="dm-acct-pair">
+            <ManagedCard />
+            <ReceiptsCard />
+          </div>
         </div>
 
         <div className="dm-acct-col">
@@ -290,15 +239,15 @@ function PositionsList() {
 
 /**
  * `#/positions`: the list. `#/positions/<id>`, one canonical decimal NFT id,
- * is that position's own page; a list of ids (`#/positions/1,2`) is the list
- * with the lookup open on them.
+ * is that position's own page; anything else after `#/positions/` (a list of
+ * ids included: there is no lookup any more) is the list.
  */
 export function Positions({ param = '' }: { param?: string }) {
   const detail = positionDetailId(param)
   if (!detail) return <PositionsList />
   return (
     <Suspense fallback={<DetailWaiting />}>
-      <PositionDetail key={detail} tokenId={detail} />
+      <PositionDetail key={detail} tokenId={detail} kit={POSITION_KIT} />
     </Suspense>
   )
 }
@@ -306,10 +255,12 @@ export function Positions({ param = '' }: { param?: string }) {
 /** Your positions' own frame while its chunk loads, so the column does not jump when it arrives. */
 function ListWaiting() {
   return (
-    <div className="dm-card dm-acct-nft-card dm-acct-slot-wait" aria-hidden="true">
+    <div className="dm-card dm-acct-nft-card dm-own-card" aria-hidden="true">
       <div className="dm-own-head">
-        <p className="dm-display-card">Your positions</p>
+        <p className="dm-title">Your positions</p>
       </div>
+      <PendingSummary />
+      <PendingRows />
     </div>
   )
 }
@@ -322,12 +273,7 @@ function DetailWaiting() {
         <IconChevronLeft size={16} />
         Positions
       </a>
-      <div className="dm-pos-title" aria-hidden="true">
-        <div className="dm-pos-name">
-          <Skeleton className="size-10 rounded-full" />
-          <Skeleton className="h-7 w-44" />
-        </div>
-      </div>
+      <PositionSkeleton />
     </PageShell>
   )
 }

@@ -77,8 +77,8 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
 
   return (
     <section className="mt-6 grid gap-4" aria-labelledby="stored-token-title" data-stored-token={token} data-acquisition={atCapacity ? 'at_capacity' : pending ? 'pending' : 'settled'}>
-      <Card className="p-5">
-        <h2 id="stored-token-title" className="dm-display dm-display-card" title="Verified pools stored for this token. The list does not imply complete chain history.">{candidate ? <SymbolText token={candidate.token} /> : 'Token data'}</h2>
+      <Card pad="md">
+        <h2 id="stored-token-title" className="dm-title" title="Verified pools stored for this token. The list does not imply complete chain history.">{candidate ? <SymbolText token={candidate.token} /> : 'Token data'}</h2>
         <p className="mt-2 text-caption text-fg-muted"><Address value={token} /></p>
         {!value && !failure && <Skeleton className="mt-3 h-5 w-48" />}
         <p role="status" className={said && !loading ? 'mt-3 text-caption text-fg-muted' : 'sr-only'}>{said}</p>

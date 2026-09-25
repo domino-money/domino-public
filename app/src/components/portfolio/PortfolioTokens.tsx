@@ -84,7 +84,7 @@ function TokenRow({ row }: { row: WalletRow }) {
   const balance = balanceOf(row)
   return (
     <li className="dm-acct-token" data-wallet-row={addressOf(row.token)} data-wallet-row-via={row.via} data-wallet-row-old={row.old ? '' : undefined}>
-      <TokenMark token={row.token} size={24} ring="var(--surface-2)" />
+      <TokenMark token={row.token} size={24} ring="var(--card)" />
       <span className="dm-acct-token-id">
         <TokenName token={row.token} />
       </span>
@@ -101,7 +101,7 @@ function UnavailableRow({ item }: { item: ItemView }) {
   if (!token) return null
   return (
     <li className="dm-acct-token" data-wallet-row={addressOf(token)} data-wallet-unavailable="" data-wallet-row-old={item.old ? '' : undefined}>
-      <TokenMark token={token} size={24} ring="var(--surface-2)" />
+      <TokenMark token={token} size={24} ring="var(--card)" />
       <span className="dm-acct-token-id">
         <TokenName token={token} />
       </span>

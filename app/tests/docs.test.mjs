@@ -316,13 +316,20 @@ test('Auto-compound sets up on any position NFT you hold with two wallet transac
   for (const to of ['#/docs/non-custodial#sequence-vault', '#/docs/non-custodial#pause-revoke-withdraw', '#/docs/risks#automation-stops']) assert.ok(links.includes(to), to);
   // No screen is named as the place a compound-only sequence starts: the owner has not chosen one.
   assert.doesNotMatch(textOf(auto), /opened in Setup|Automate|Create or manage a sequence|Open a position/);
+  // 2026-09-24: what the automation page used to explain beside its controls, moved here (the owner: explanations live in the docs).
+  const choices = sectionText(auto, 'choices');
+  assert.match(choices, /The quote currency is the token prices are counted in\. It sets which way prices count as higher for your sequence, and it cannot be changed once the sequence is created\./);
+  assert.match(choices, /Every run also keeps within limits that start at defaults you can change: the least time between runs, the most a swap may lose to slippage or move the price, a gas cap per run, how old a price reading may be, and how far ahead fees are forecast\./);
   assert.ok(links.every((to) => to.startsWith('#/docs/')), links.join(', '));
 });
 
 test('Domino Compounder names the screen its Automate button opens, and Risks says what else stops automation, which repairs that screen offers and which restart still takes a call it does not make', () => {
   const compounder = page('domino-compounder');
   const start = sectionText(compounder, 'start-and-stop');
-  assert.match(start, /On Automate, Create or manage a sequence opens the screen that leads through these steps, each reviewed in your wallet\. It is also where you pause, revoke and withdraw\./);
+  // Changed on purpose (2026-09-24, the owner's simpler automation page): Automate's button opens a setup with one action, and
+  // the page no longer pauses, revokes or withdraws; those stay transactions the owner's wallet signs on the vault.
+  assert.match(start, /On Automate, Set up Domino-compound opens the setup, where one button asks your wallet for both transactions\. You pause, revoke and withdraw with your wallet on your sequence vault\./);
+  assert.doesNotMatch(textOf(compounder), /Create or manage a sequence|It is also where you pause/);
   assert.doesNotMatch(start, /The same screen is where/);
   assert.ok(linksOf(compounder).some((link) => link.to === '#/docs/risks#automation-stops'));
   // DominoVaultV4 notifyModifyLiquidity, notifyUnsubscribe and notifyBurn invalidate the root. Sequence.tsx offers rearmRoot
@@ -331,7 +338,8 @@ test('Domino Compounder names the screen its Automate button opens, and Risks sa
   // that exists: the create flow only ever approves the next predicted vault, so the last sentence stays true as written.
   const stops = sectionText(page('risks'), 'automation-stops');
   assert.match(stops, /Automation stops if the position you started from has its fees collected or its liquidity changed outside Domino, or leaves your wallet\./);
-  assert.match(stops, /Create or manage a sequence can restore the vault’s permission over that position, while the position is still yours and still approved to the vault, and can name the operator again while it is revoked\./);
+  // 2026-09-24: no Domino screen repairs a vault any more (the owner removed its controls); the repair is the owner's own wallet transaction.
+  assert.match(stops, /Restoring the vault’s permission over that position, while the position is still yours and still approved to the vault, or naming the operator again while it is revoked, is a transaction your wallet signs on your sequence vault\./);
   assert.match(stops, /Activation stays a separate step you sign\./);
   assert.match(stops, /Restoring that permission consents again to the fees the position has not collected, exactly as creating the vault did\./);
   assert.match(stops, /After you revoke the NFT approval, or the position leaves your wallet, restarting takes a contract call that no Domino screen makes\./);
@@ -392,11 +400,12 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   assert.match(newPosition.summary, /^Plan a position in four steps,/);
   assert.deepEqual(blocksOf(newPosition).find((block) => block.kind === 'steps').items.map((step) => step.title), ['Pool', 'Range', 'Amount', 'Review']);
   const positions = page('positions');
-  // Changed on purpose (owner, 2026-09-24): Positions lists the wallet's own NFTs; typing an ID is only for anyone else's.
-  assert.match(sectionText(positions, 'your-positions'), /Positions lists every position NFT it holds, found from the chain for your address: there is no ID to type\./);
-  assert.match(sectionText(positions, 'your-positions'), /open Look up by NFT id under the list and enter up to 10 IDs\. Where available, a pool’s page lists the positions in that pool\./);
+  // Changed on purpose (owner, 2026-09-24): the list is the positions the wallet created with Domino, read from chain; no lookup by NFT id.
+  assert.match(sectionText(positions, 'your-positions'), /Positions lists the positions it created with Domino, read from the chain for your address: there is no ID to type, and nothing is kept in your browser\./);
+  assert.match(sectionText(positions, 'your-positions'), /Position NFTs made elsewhere are not listed\./);
+  assert.doesNotMatch(sectionText(positions, 'your-positions'), /Look up by NFT id|enter up to 10 IDs/);
   assert.doesNotMatch(textOf(positions), /always looked up by its ID|cannot list the positions a wallet holds/);
-  assert.match(termText(page('glossary'), 'position-nft'), /Positions lists the ones your wallet holds\./);
+  assert.match(termText(page('glossary'), 'position-nft'), /Positions lists the ones your wallet created with Domino\./);
 
   assert.match(sectionText(page('risks'), 'tokens-and-contracts'), /Positions and automation run on smart contracts, and a contract can have defects\./);
   const intro = page('what-is-domino');

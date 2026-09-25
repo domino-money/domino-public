@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { useConnectors, WagmiProvider, type Connector } from 'wagmi'
 import type { WalletIdentity } from '../../session/machine'
@@ -6,10 +6,10 @@ import { walletConfig } from '../../wallet/config'
 import { connectWallet, disconnectWallet, startIdentityFeed } from '../../wallet/port'
 import { useDialog } from '../../lib/useDialog'
 import { publishWalletIdentity, type WalletIdentityView } from '../../lib/walletIdentity'
-import { BrandMark } from '../BrandMark'
 import { Button, Card } from '../ui'
 import { IconChevronDown, IconChevronRight, IconClose } from '../icons'
 import { shortAddress } from './copy'
+import { tokenHue } from '../../lib/format/tokenHue'
 import { WalletLogo } from './WalletLogo'
 
 /** The connection as the store outside this feature describes it: address, chain and connector name, nothing that identifies the provider instance. */
@@ -60,17 +60,16 @@ function LocalWalletControl() {
   const name = (text: string) => text.length > 40 ? `${text.slice(0, 39)}…` : text
   return <>
     <p role="status" aria-live="polite" className="sr-only">{connected ? `Connected wallet ${shortAddress(identity.address)}. Not signed in.` : identity.kind === 'disconnected' ? 'Wallet disconnected.' : ''}</p>
-    <Button variant={connected ? 'outline' : 'primary'} className="whitespace-nowrap" aria-haspopup="dialog" aria-expanded={open} title={connected ? identity.address : undefined} onClick={() => setOpen(true)}>
-      {connected ? <><span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-money-in" /><span className="sr-only">Connected wallet </span><span className="tnum font-mono text-[13px] tracking-normal">{shortAddress(identity.address)}</span><IconChevronDown size={14} className="text-fg-subtle" /></> : 'Connect wallet'}
+    <Button variant={connected ? 'outline' : 'soft'} className={connected ? 'dm-wallet-pill whitespace-nowrap' : 'whitespace-nowrap'} aria-haspopup="dialog" aria-expanded={open} title={connected ? identity.address : undefined} onClick={() => setOpen(true)}>
+      {connected ? <><span aria-hidden="true" className="dm-wallet-disc" style={{ '--mark-h': 200 + (tokenHue(identity.address) % 120) } as CSSProperties} /><span className="sr-only">Connected wallet </span><span className="tnum font-mono text-[13px] tracking-normal">{shortAddress(identity.address)}</span><IconChevronDown size={14} className="text-fg-subtle" /></> : 'Connect wallet'}
     </Button>
     {open && createPortal(
       <div role="presentation" className="dm-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
         <Card level={2} role="dialog" aria-modal="true" aria-labelledby="local-wallet-title" aria-describedby={connected ? 'local-wallet-status' : undefined} ref={dialog} className="dm-dialog">
-          <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-1 pr-10">
-            <BrandMark width={12} height={21} />
+          <div className="relative grid gap-y-1 pr-10">
             <h2 id="local-wallet-title" tabIndex={-1} className="dm-dialog-title outline-none">{connected ? 'Wallet' : 'Connect'}</h2>
             <button type="button" onClick={() => setOpen(false)} aria-label="Close" className="dm-icon-btn dm-icon-btn--ghost dm-icon-btn--sm dm-press-icon absolute -top-1.5 -right-1.5"><IconClose /></button>
-            {connected && <p id="local-wallet-status" className="col-span-2 text-[13px] leading-[18px] text-fg-muted">Connected · Not signed in</p>}
+            {connected && <p id="local-wallet-status" className="text-[13px] leading-[18px] text-fg-muted">Connected · Not signed in</p>}
           </div>
           <div className="grid gap-3" aria-busy={busy || undefined}>
             {connected ? <>

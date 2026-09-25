@@ -542,6 +542,8 @@ function cardModule() {
   const span = (name) => (props) => React.createElement('span', { 'data-stub': name, ...Object.fromEntries(Object.entries(props).filter(([key]) => key.startsWith('data-') || key === 'title')) })
   const dependencies = {
     ...markets, ...require('../.test-build/app/src/lib/read/cardSeries.js'), ...require('../.test-build/app/src/lib/read/decimal.js'), ...require('../.test-build/app/src/lib/read/ratioSeries.js'),
+    // 2026-09-24 (V2 P2, R-4): the card's price row shows the window's change with percentChange (lib/format/change.ts).
+    ...require('../.test-build/app/src/lib/format/change.js'),
     unreadToken: (address) => ({ address }), poolHref: (id) => `#/pool/${id}`,
     PriceLineSvg: (props) => React.createElement('svg', { 'data-price-line': '', title: props.title }),
     VolumeBarsSvg: (props) => React.createElement('svg', { 'data-volume-bars': '', title: props.title }),

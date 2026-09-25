@@ -1,5 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { VignetteCompound, VignetteSequence } from '../components/home/Vignettes'
+import { ModeArt } from '../components/automate/ModeArt'
+import { FeeMeter } from '../components/automate/ServiceFee'
+import { IconChevronRight, IconLock } from '../components/icons'
 import { Display, LinkButton, PageHeader, PageShell, Pill, cx } from '../components/ui'
 import { CREATE } from '../lib/create/copy'
 import { ROADMAP, ROADMAP_PILL } from '../lib/capabilities'
@@ -18,7 +20,7 @@ export function RoadmapPill({ name, className }: { name: string; className?: str
   return <Pill className={cx('dm-acct-status', className)}>{label}</Pill>
 }
 
-const rise = (step: number) => ({ '--delay': `${step * 60}ms` }) as CSSProperties
+const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
 
 /** One way to put fees to work: a moving picture, what it does, what it costs and where it starts. */
 function AutomationCard({
@@ -26,7 +28,6 @@ function AutomationCard({
   kind,
   roadmap,
   title,
-  art,
   points,
   entry,
   step,
@@ -35,14 +36,15 @@ function AutomationCard({
   kind: 'compound' | 'domino'
   roadmap: string
   title: string
-  art: ReactNode
   points: string[]
   entry: ReactNode
   step: number
 }) {
   return (
     <article className="dm-card dm-acct-auto-card animate-rise" style={rise(step)} data-automation-card={kind} aria-labelledby={id}>
-      <div className="dm-plate dm-dots-plate dm-acct-auto-plate">{art}</div>
+      <div className="dm-plate dm-dots-plate dm-acct-auto-plate">
+        <ModeArt mode={kind} size="stage" play="loop" className="dm-acct-auto-art" />
+      </div>
       <div className="dm-acct-auto-body">
         <div className="dm-acct-auto-head">
           <Display as="h2" id={id} className="dm-display-card">
@@ -59,6 +61,7 @@ function AutomationCard({
           <dt>Service fee</dt>
           <dd>{CREATE.review.serviceFeeValue(kind)}, once</dd>
         </dl>
+        <FeeMeter mode={kind} />
         {entry}
       </div>
     </article>
@@ -66,7 +69,12 @@ function AutomationCard({
 }
 
 /** In builds without the wallet flows there is nowhere to go, and the card says why instead of offering a way in. */
-const OFF = <p className="dm-acct-auto-off">Wallet sign-in isn’t available here, so this can’t be set up.</p>
+const OFF = (
+  <p className="dm-acct-auto-off">
+    <IconLock />
+    Wallet sign-in isn’t available here, so this can’t be set up.
+  </p>
+)
 
 /**
  * Automate: the two ways Domino can put a position's earned fees to work, where
@@ -89,7 +97,6 @@ export function Automate() {
           roadmap="Compound"
           title="Auto-compound"
           step={1}
-          art={<VignetteCompound className="dm-acct-auto-art" />}
           points={[
             'Adds a position you already hold’s earned fees back into that same position, improving your fees APR.',
             'Compounds earned fees only, nothing else.',
@@ -97,8 +104,9 @@ export function Automate() {
           entry={
             __DOMINO_WALLET_SESSION__ ? (
               <div className="dm-acct-auto-entry">
-                <LinkButton href="#/sequence/compound" variant="outline">
+                <LinkButton href="#/sequence/compound" variant="outline" size="lg">
                   Set up Auto-compound
+                  <IconChevronRight />
                 </LinkButton>
               </div>
             ) : (
@@ -112,7 +120,6 @@ export function Automate() {
           roadmap="Domino"
           title="Domino-compound"
           step={2}
-          art={<VignetteSequence className="dm-acct-auto-art" />}
           points={[
             'As the price nears the top of the range, earned fees automatically open the next position, one step higher.',
             'Compounds earned fees only, nothing else.',
@@ -120,7 +127,10 @@ export function Automate() {
           entry={
             __DOMINO_WALLET_SESSION__ ? (
               <div className="dm-acct-auto-entry">
-                <LinkButton href="#/sequence/domino">Set up Domino-compound</LinkButton>
+                <LinkButton href="#/sequence/domino" size="lg">
+                  Set up Domino-compound
+                  <IconChevronRight />
+                </LinkButton>
               </div>
             ) : (
               OFF

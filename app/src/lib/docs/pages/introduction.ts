@@ -22,7 +22,7 @@ export const WHAT_IS_DOMINO: DocPage = {
         list(
           [doc('Markets', 'markets'), ' lists Uniswap pools on Robinhood Chain, with a page for each pool.'],
           [doc('New position', 'new-position'), ' plans a pool, a range and an amount, then creates the position with your wallet.'],
-          [doc('Positions', 'positions'), ' lists the position NFTs your wallet holds, each with a page of its own, and shows your managed positions once you sign in.'],
+          [doc('Positions', 'positions'), ' lists the positions your wallet created with Domino, each with a page of its own, and shows your managed positions once you sign in.'],
           [b('Automate'), ' holds the two ways to put earned fees to work: ', doc('Auto-compound', 'auto-compound'), ' and ', doc('Domino-compound', 'domino-compounder'), '.'],
         ),
       ],

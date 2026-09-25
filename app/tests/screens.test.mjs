@@ -20,6 +20,7 @@ const { createAppMarketsProvider } = built('screens/appMarkets');
 const { describeFailure } = built('describe');
 const project = built('project');
 const positions = built('screens/positions');
+const cards = require('../.test-build/app/src/lib/walletCards.js');
 const tokens = built('screens/tokens');
 const walletSession = built('screens/walletSession');
 const pools = built('screens/poolsList');
@@ -241,85 +242,44 @@ test('fees are exact to the pip, and the dynamic sentinel reads Dynamic', () => 
 });
 
 // ---------------------------------------------------------------------------
-// #2 position cards
+// #2 position cards, from chain (2026-09-24: the lookup by typed NFT ids and its nft-positions reads are gone; every
+// card is a WalletPosition of the wallet's list or of a position's /state answer, lib/walletCards.ts)
 // ---------------------------------------------------------------------------
 
-test('typed NFT IDs: canonical decimals below 2^256, unique, 1 to 10', () => {
-  const max = (2n ** 256n - 1n).toString();
-  assert.deepEqual(positions.parseTokenIdsInput(`1, ${max}\n7`), { ok: true, ids: ['1', max, '7'] });
-  assert.deepEqual(positions.parseTokenIdsInput((2n ** 256n).toString()), { ok: false, reason: 'too_large' });
-  assert.deepEqual(positions.parseTokenIdsInput('01'), { ok: false, reason: 'leading_zero' });
-  assert.deepEqual(positions.parseTokenIdsInput('1 1'), { ok: false, reason: 'duplicate' });
-  assert.deepEqual(positions.parseTokenIdsInput('1.5'), { ok: false, reason: 'not_decimal' });
-  assert.deepEqual(positions.parseTokenIdsInput('-1'), { ok: false, reason: 'not_decimal' });
-  assert.deepEqual(positions.parseTokenIdsInput(' ,\n'), { ok: false, reason: 'empty' });
-  assert.deepEqual(positions.parseTokenIdsInput(Array.from({ length: 11 }, (_, i) => String(i + 1)).join(' ')), { ok: false, reason: 'too_many' });
-  for (const text of ['0', '1 2 3', max, FIXTURE_NFT_IDS.join(',')]) {
-    const parsed = positions.parseTokenIdsInput(text);
-    assert.ok(parsed.ok);
-    assert.equal(runtime.validateRequest('nft-positions', { tokenIds: parsed.ids }), true, text);
-  }
+/** A position as the chain read gives it: ETH (18) / TOKEN (6), 0.30%, spacing 60, -60 to 60, the pool at tick 0. */
+const chainPosition = (patch = {}) => ({
+  tokenId: '1',
+  status: 'open',
+  poolId: FIXTURE_POOL,
+  currencies: [{ address: NATIVE, symbol: 'ETH', decimals: 18 }, { address: FIXTURE_TOKEN, symbol: 'TOKEN', decimals: 6 }],
+  fee: 3000,
+  tickSpacing: 60,
+  hooks: NATIVE,
+  tickLower: -60,
+  tickUpper: 60,
+  liquidity: '1',
+  sqrtPriceX96: String(2n ** 96n),
+  tick: 0,
+  unclaimedFees: ['0', '0'],
+  principal: ['0', '0'],
+  ...patch,
 });
-
-test('a live card: pool, fee, range in ticks and prices, amounts, owner at the block as public data, and no USD value', () => {
-  const data = runtime.assertResponse('nft-positions', fixture('nft-positions.success'));
-  const projected = positions.projectNftBatch(FIXTURE_NFT_IDS, data, tokenMap('token.native', 'token.success'));
-  assert.ok(projected.ok);
-  const { batch } = projected;
-  assert.deepEqual(batch.cards.map((c) => c.key), ['4663:nft:1', `4663:nft:${BIG}`]);
-  const card = batch.cards[0];
-  assert.equal(card.kind, 'live');
-  assert.equal(card.fee, '0.30%');
-  assert.deepEqual([card.range.tickLower, card.range.tickUpper], [-60, 60]);
-  assert.deepEqual(card.range.prices, { lower: '≈994,018,000,000', upper: '≈1,006,020,000,000' });
-  assert.equal(card.range.fullRange, false);
-  assert.equal(positions.rangePricesProblem(card.range), null);
-  assert.equal(positions.tickPriceText(-60, 18, 6), '≈994,018,000,000');
-  assert.equal(positions.tickPriceText(60, 18, 6), '≈1,006,020,000,000');
-  assert.equal(positions.tickPriceText(887272, 18, 0), null, 'out of the formatter range: ticks only');
-  assert.doesNotMatch(positions.tickPriceText(-887272, 0, 0) ?? '', /e/, 'never an exponent');
-  assert.equal(card.owner.address, '0x3333333333333333333333333333333333333333');
-  assert.equal(card.owner.basis, 'ownerOf_at_pinned_block');
-  assert.equal('coreOwner' in card, false, 'the core owner is the manager and is never mapped');
-  assert.deepEqual(card.valuation, { state: 'unavailable', reason: 'no_qualified_price_source' });
-  assert.equal(card.inRange, true);
-  assert.equal(card.hasLiquidity, true);
-  assert.equal(card.principal[0].kind, 'units');
-  // Changed on purpose (review of 2026-09-14): six significant digits on the card, never fewer than the whole part, and every digit for its title.
-  assert.deepEqual([card.principal[0].text, card.principal[0].exact], ['3,797,063,508', '3,797,063,507.756903070969194414']);
-  assert.equal(card.unsettledFees[1].kind, 'zero');
-  assert.deepEqual(Object.keys(card).filter((k) => /usd/i.test(k)), []);
-  assert.equal(batch.block.number, 700);
-});
-
-test('empty, zero and stale NFTs keep their own states and the original snapshot', () => {
-  const empty = positions.projectNftBatch(['1'], runtime.assertResponse('nft-positions', fixture('nft-positions.empty')), new Map());
-  assert.deepEqual(empty.batch.cards, [{ origin: 'chain', kind: 'empty', key: '4663:nft:1', tokenId: '1' }]);
-  const zero = positions.projectNftBatch(['1'], runtime.assertResponse('nft-positions', fixture('nft-positions.zero')), tokenMap('token.native', 'token.success'));
-  assert.equal(zero.batch.cards[0].hasLiquidity, false);
-  assert.deepEqual(zero.batch.cards[0].principal.map((a) => a.kind), ['zero', 'zero']);
-  const stale = positions.projectNftBatch(['1'], runtime.assertResponse('nft-positions', fixture('nft-positions.stale')), new Map());
-  assert.equal(stale.batch.block.timestamp, 800);
-  assert.equal(stale.batch.freshness.status, 'stale');
-});
+const chainCard = (patch) => cards.walletCard(chainPosition(patch), FIXTURE_OWNER);
+const unknownDecimals = [{ address: NATIVE, symbol: 'ETH', decimals: 18 }, { address: FIXTURE_TOKEN, symbol: null, decimals: null }];
 
 test('without decimals the range is ticks only and amounts stay raw', () => {
-  const data = runtime.assertResponse('nft-positions', fixture('nft-positions.success'));
-  const { batch } = positions.projectNftBatch(FIXTURE_NFT_IDS, data, tokenMap('token.native', 'token.missing-decimals'));
-  assert.equal(batch.cards[0].range.prices, null);
-  assert.equal(positions.rangePricesProblem(batch.cards[0].range), 'decimals_unknown', 'the one problem a card says in words');
-  assert.deepEqual([batch.cards[0].principal[1].kind, batch.cards[0].principal[1].exact], ['raw', null], 'raw, and never an exact amount in units');
-  assert.equal(batch.cards[0].principal[1].raw, '3797063507756903070969194400');
-  assert.equal(batch.cards[0].principal[0].kind, 'units');
+  const card = chainCard({ currencies: unknownDecimals, principal: ['3797063508', '3797063507756903070969194400'] });
+  assert.equal(card.range.prices, null);
+  assert.equal(positions.rangePricesProblem(card.range), 'decimals_unknown', 'the one problem a card says in words');
+  assert.deepEqual([card.principal[1].kind, card.principal[1].exact], ['raw', null], 'raw, and never an exact amount in units');
+  assert.equal(card.principal[1].raw, '3797063507756903070969194400');
+  assert.equal(card.principal[0].kind, 'units');
 });
 
 test('card amounts: six significant digits that never split a number, every digit kept for the title', () => {
   // The live review's cards: an 18-decimal USDe principal that wrapped as "40." and "003206592866332023", and SMK4 amounts of 18 digits.
   const amountOf = (raw, decimals) => {
-    const data = fixture('nft-positions.success');
-    data.items[0].principalRaw = [raw, '0'];
-    const tokens = new Map([[NATIVE, { origin: 'read', chainId: 4663, address: NATIVE, symbol: 'ETH', decimals, readStatus: 'available', artwork: null }]]);
-    const card = positions.projectNftBatch(FIXTURE_NFT_IDS, runtime.assertResponse('nft-positions', data), tokens).batch.cards[0];
+    const card = chainCard({ currencies: [{ address: NATIVE, symbol: 'ETH', decimals }, { address: FIXTURE_TOKEN, symbol: 'TOKEN', decimals: 6 }], principal: [raw, '0'] });
     return [card.principal[0].text, card.principal[0].exact, card.principal[0].kind];
   };
   assert.deepEqual(amountOf('40003206592866332023', 18), ['40.0032', '40.003206592866332023', 'units']);
@@ -331,39 +291,34 @@ test('card amounts: six significant digits that never split a number, every digi
   assert.deepEqual(amountOf('123456789', 0), ['123,456,789', '123,456,789', 'units'], 'never fewer digits than the whole part');
   assert.deepEqual(amountOf('0', 18), ['0', '0', 'zero']);
   for (const [text] of [amountOf('40003206592866332023', 18), amountOf('4553157887631', 18)]) assert.doesNotMatch(text, /e/i, 'never an exponent');
+  // An amount the chain did not give (no pool price, no fee growth) is a dash, never a zero.
+  const unread = chainCard({ principal: null, unclaimedFees: null });
+  assert.deepEqual([...unread.principal, ...unread.unsettledFees].map((a) => [a.kind, a.text]), Array(4).fill(['unread', '—']));
 });
 
-/** The success fixture with every NFT's range moved to these ticks, on this spacing. */
-const rangedBatch = (lower, upper, spacing, ...tokens) => {
-  const data = fixture('nft-positions.success');
-  for (const item of data.items) {
-    item.tickLower = lower;
-    item.tickUpper = upper;
-    item.poolKey.tick_spacing = spacing;
-  }
-  return positions.projectNftBatch(FIXTURE_NFT_IDS, runtime.assertResponse('nft-positions', data), tokenMap(...tokens)).batch.cards[0];
-};
+/** A chain card with its range moved to these ticks, on this spacing. */
+const rangedCard = (lower, upper, spacing, currencies) => chainCard({ tickLower: lower, tickUpper: upper, tickSpacing: spacing, ...(currencies ? { currencies } : {}) });
 
 test('a full-range position is 0 to ∞ whatever the decimals, and never blamed on decimals', () => {
   // Both ends at the usable limits of spacing 60: 1.0001^±887220 is far outside what a price can be written as, yet nothing is unknown.
-  const full = rangedBatch(-887220, 887220, 60, 'token.native', 'token.success');
+  const full = rangedCard(-887220, 887220, 60);
   assert.equal(full.range.fullRange, true);
   assert.deepEqual(full.range.prices, { lower: '0', upper: '∞' });
   assert.deepEqual(full.range.ends, { lower: { kind: 'limit', text: '0' }, upper: { kind: 'limit', text: '∞' } });
   assert.equal(positions.rangePricesProblem(full.range), null);
 
-  const unread = rangedBatch(-887220, 887220, 60, 'token.native', 'token.missing-decimals');
+  const unread = rangedCard(-887220, 887220, 60, unknownDecimals);
   assert.deepEqual(unread.range.prices, { lower: '0', upper: '∞' }, 'a limit needs no decimals');
   assert.equal(positions.rangePricesProblem(unread.range), null);
 
-  assert.equal(rangedBatch(-887272, 887272, 1, 'token.native', 'token.success').range.fullRange, true, 'spacing 1 reaches the tick limits themselves');
+  assert.equal(rangedCard(-887272, 887272, 1).range.fullRange, true, 'spacing 1 reaches the tick limits themselves');
 
-  const oneSided = rangedBatch(-60, 887220, 60, 'token.native', 'token.success');
+  const oneSided = rangedCard(-60, 887220, 60);
   assert.deepEqual(oneSided.range.prices, { lower: '≈994,018,000,000', upper: '∞' });
   assert.equal(oneSided.range.fullRange, false);
 
   // 18 and 6 decimals: tick 600000 is a real price, too large to write as a plain number, and not a limit of spacing 60.
-  const beyond = rangedBatch(-60, 600000, 60, 'token.native', 'token.success');
+  const beyond = rangedCard(-60, 600000, 60);
   assert.equal(beyond.range.prices, null);
   assert.deepEqual(beyond.range.ends.lower, { kind: 'price', text: '≈994,018,000,000' });
   assert.deepEqual(beyond.range.ends.upper, { kind: 'tick', problem: 'beyond_display' });
@@ -386,136 +341,6 @@ test('a range end at its pool’s usable tick limit is 0 below or ∞ above, on 
     assert.notEqual(positions.rangeEnd(max, 'lower', s, 18, 18).kind, 'limit', `spacing ${s}: the upper limit is no lower end`);
   }
   assert.deepEqual(positions.rangeEnd(-60, 'lower', 60, 18, 6), { kind: 'price', text: '≈994,018,000,000' });
-});
-
-test('a reply that does not answer every ID asked for is refused whole', () => {
-  const data = runtime.assertResponse('nft-positions', fixture('nft-positions.empty'));
-  assert.deepEqual(positions.projectNftBatch(FIXTURE_NFT_IDS, data, new Map()), { ok: false, reason: 'incomplete_reply' });
-});
-
-test('lookup state: only the latest request lands; refresh keeps cards, new IDs drop them, hiding restores', () => {
-  const { lookupReducer: reduce } = positions;
-  const data = runtime.assertResponse('nft-positions', fixture('nft-positions.stale'));
-  const batchA = positions.projectNftBatch(['1'], data, new Map()).batch;
-  let s = { phase: 'idle' };
-  s = reduce(s, { type: 'submit', requestId: 1, ids: ['1'] });
-  s = reduce(s, { type: 'submit', requestId: 2, ids: ['2'] });
-  s = reduce(s, { type: 'submit', requestId: 3, ids: ['1'] });
-  s = reduce(s, { type: 'result', requestId: 1, result: { kind: 'ok', batch: { ...batchA, block: { ...batchA.block, number: 1 } } } });
-  assert.equal(s.phase, 'loading', 'the slow first answer is dropped');
-  s = reduce(s, { type: 'result', requestId: 2, result: { kind: 'failed', failure: { state: 'incomplete_reply' } } });
-  assert.equal(s.phase, 'loading', 'the superseded second answer is dropped');
-  s = reduce(s, { type: 'result', requestId: 3, result: { kind: 'ok', batch: batchA } });
-  assert.equal(s.phase, 'ready');
-  assert.equal(s.batch.block.number, 650);
-
-  let refresh = reduce(s, { type: 'submit', requestId: 4, ids: ['1'] });
-  assert.equal(refresh.retained, batchA, 'a refresh of the same IDs keeps the cards while it runs');
-  refresh = reduce(refresh, { type: 'result', requestId: 4, result: { kind: 'failed', failure: { state: 'local', code: 'screen_budget_exceeded', route: 'nft-positions' } } });
-  assert.equal(refresh.phase, 'failed');
-  assert.equal(refresh.retained, batchA, 'and after it fails, with their own snapshot');
-
-  const other = reduce(s, { type: 'submit', requestId: 5, ids: ['2'] });
-  assert.equal(other.retained, null, 'new IDs drop the earlier cards');
-  assert.deepEqual(reduce(other, { type: 'cancel', requestId: 5 }), s, 'hiding while loading restores what was there');
-  assert.deepEqual(reduce(s, { type: 'clear' }), { phase: 'idle' });
-});
-
-test('Cancel stops the quiet re-asks too: the failure it restores is not asked again on its own, and the next Look up asks as before', () => {
-  // The read-layer review's sequence: a lookup fails busy, its first quiet re-ask goes out, and the person presses Cancel while it reads.
-  const { lookupReducer: reduce, lookupReaskDelay } = positions;
-  const MIDDLE = () => 0.5;
-  const provenance = { transport: 'bridge', contract: null, receivedAt: 0, attempts: 3 };
-  const busy = { route: 'nft-positions', state: 'busy', retryAfterSeconds: 2, provenance };
-  let s = reduce({ phase: 'idle' }, { type: 'submit', requestId: 1, ids: ['7'] });
-  assert.equal(lookupReaskDelay(s, 0), null, 'nothing to ask again while a lookup reads');
-  s = reduce(s, { type: 'result', requestId: 1, result: { kind: 'failed', failure: busy } });
-  // The quiet policy jitters its wait by up to ±25%; the middle draw is the 4 s wait itself.
-  assert.equal(lookupReaskDelay(s, 0, MIDDLE), 4000, 'a busy lookup is asked again on its own, after about 4 s');
-  const first = lookupReaskDelay(s, 0);
-  assert.ok(first >= 3000 && first <= 5000, `a real draw stays within ±25% of 4 s: ${first}`);
-  s = reduce(s, { type: 'submit', requestId: 2, ids: ['7'] });
-  const cancelled = reduce(s, { type: 'cancel', requestId: 2 });
-  assert.deepEqual([cancelled.phase, cancelled.failure, cancelled.cancelled], ['failed', busy, true], 'the failure is back on screen, marked cancelled');
-  assert.equal(lookupReaskDelay(cancelled, 1), null, 'and no automatic lookup follows the press');
-  // A lookup stopped by its signal without a Cancel press (the section leaving) settles the same way.
-  const aborted = reduce(s, { type: 'result', requestId: 2, result: { kind: 'aborted' } });
-  assert.deepEqual([aborted.phase, aborted.cancelled, lookupReaskDelay(aborted, 1)], ['failed', true, null]);
-  // Looking up the same IDs again is a new question: its failure is asked again as before.
-  let again = reduce(cancelled, { type: 'submit', requestId: 3, ids: ['7'] });
-  again = reduce(again, { type: 'result', requestId: 3, result: { kind: 'failed', failure: busy } });
-  assert.deepEqual([again.cancelled, lookupReaskDelay(again, 0, MIDDLE)], [undefined, 4000]);
-  assert.equal(lookupReaskDelay(again, 4), null, 'still bounded at four');
-  // A failure that cannot pass is never asked again; Cancel over cards that worked restores them untouched.
-  const refused = reduce(reduce({ phase: 'idle' }, { type: 'submit', requestId: 4, ids: ['7'] }), { type: 'result', requestId: 4, result: { kind: 'failed', failure: { route: 'nft-positions', state: 'disabled', reason: 'route_not_enabled', provenance } } });
-  assert.equal(lookupReaskDelay(refused, 0), null);
-  const data = runtime.assertResponse('nft-positions', fixture('nft-positions.stale'));
-  const ready = { phase: 'ready', requestId: 5, ids: ['1'], batch: positions.projectNftBatch(['1'], data, new Map()).batch };
-  assert.equal(reduce(reduce(ready, { type: 'submit', requestId: 6, ids: ['1'] }), { type: 'cancel', requestId: 6 }), ready);
-});
-
-test('a lookup is one NFT read with exactly the typed IDs and no pinned block, then one read per currency', async () => {
-  const source = fixtures({ 'nft-positions': [{ fixture: gateway('nft-positions.success'), expectRequest: { tokenIds: FIXTURE_NFT_IDS } }], token: BASE_TOKENS });
-  const result = await positions.runLookup(source, FIXTURE_NFT_IDS, { signal: live() });
-  assert.equal(result.kind, 'ok');
-  assert.deepEqual(source.requests, [
-    { route: 'nft-positions', request: { tokenIds: FIXTURE_NFT_IDS } },
-    { route: 'token', request: { token: NATIVE } },
-    { route: 'token', request: { token: FIXTURE_TOKEN } },
-  ]);
-  assert.equal(result.batch.tokenProblems, 0);
-});
-
-test('the fixture app answers the package NFT IDs through the real pipeline', async () => {
-  const result = await positions.runLookup(fixtures(APP_SCRIPT), FIXTURE_NFT_IDS, { signal: live() });
-  assert.equal(result.kind, 'ok');
-  assert.equal(result.batch.cards.length, 2);
-});
-
-test('a bad ID fails the whole batch; an incomplete reply shows nothing new', async () => {
-  const batch503 = fixtures({ 'nft-positions': [{ fixture: errorFixture('nft-positions.upstream_unavailable'), mutate: (b) => ({ ...b, error: 'nft_live_position_has_no_owner' }) }] });
-  const failed = await positions.runLookup(batch503, FIXTURE_NFT_IDS, { signal: live() });
-  assert.equal(failed.kind, 'failed');
-  assert.equal(failed.failure.state, 'unavailable');
-  assert.equal(failed.failure.cause.code, 'nft_live_position_has_no_owner');
-  const incomplete = fixtures({ 'nft-positions': [{ fixture: gateway('nft-positions.empty') }], token: BASE_TOKENS });
-  const partial = await positions.runLookup(incomplete, FIXTURE_NFT_IDS, { signal: live() });
-  // A reply that answers fewer ids than were asked for is refused before it is
-  // read: answersRequest wants the exact set back, so an empty batch is a wrong
-  // answer to this request, not a short one.
-  assert.equal(partial.kind, 'failed');
-  assert.deepEqual([partial.failure.state, partial.failure.reason], ['invalid', 'identity_mismatch']);
-  assert.equal(incomplete.requests.filter((r) => r.route === 'token').length, 0, 'no token read for a refused reply');
-});
-
-test('at most 8 token reads per lookup, one per distinct currency, and a new lookup aborts the old one', async () => {
-  const data = fixture('nft-positions.success');
-  const template = data.items[0];
-  data.items = Array.from({ length: 10 }, (_, i) => ({
-    ...structuredClone(template),
-    tokenId: String(i + 1),
-    poolKey: { ...template.poolKey, currency0: `0x${'0'.repeat(38)}${(2 * i + 1).toString(16).padStart(2, '0')}`, currency1: `0x${'0'.repeat(38)}${(2 * i + 2).toString(16).padStart(2, '0')}` },
-  }));
-  data.items[9].poolKey = { ...data.items[0].poolKey };
-  const ids = data.items.map((item) => item.tokenId);
-  const validated = runtime.assertResponse('nft-positions', data);
-  const needed = positions.tokensNeeded(validated);
-  assert.equal(needed.reads.length, 8);
-  assert.equal(needed.skipped, 18 - 8, 'a repeated pool costs nothing');
-  const source = fixtures({ 'nft-positions': [{ fixture: gateway('nft-positions.success'), mutate: () => data }], token: BASE_TOKENS });
-  const result = await positions.runLookup(source, ids, { signal: live() });
-  assert.equal(source.requests.filter((r) => r.route === 'token').length, 8);
-  assert.equal(result.batch.tokenCapped, true);
-
-  const clock = manualClock();
-  const slow = withDelays(fixtures({ 'nft-positions': [{ fixture: gateway('nft-positions.success') }], token: BASE_TOKENS }), (route) => (route === 'token' ? { delayMs: 5000 } : undefined), clock);
-  const controller = new AbortController();
-  const pending = positions.runLookup(slow, FIXTURE_NFT_IDS, { signal: controller.signal, clock });
-  await flush();
-  await flush();
-  controller.abort();
-  assert.deepEqual(await pending, { kind: 'aborted' });
-  assert.equal(slow.log.find((entry) => entry.route === 'token')?.aborted, true, 'the token read was cancelled with the lookup');
 });
 
 test('the range bar is a log price axis in ticks: a quarter width of padding each side, the marker clamped to the edge and said so', () => {
@@ -546,19 +371,7 @@ test('the range bar is a log price axis in ticks: a quarter width of padding eac
   }
 });
 
-test('a positions link carries ids and nothing else, a portfolio link an address; what is written is what is read back', () => {
-  assert.deepEqual(positions.positionsRoute('#/positions/1,2'), { onRoute: true, ids: '1,2' });
-  assert.deepEqual(positions.positionsRoute('#/app/1%2C2#chain-lookup'), { onRoute: true, ids: '1,2' }, 'the older route, an encoded comma and a section suffix');
-  assert.deepEqual(positions.positionsRoute('#/positions'), { onRoute: true, ids: '' });
-  assert.deepEqual(positions.positionsRoute('#/portfolio/0xabc'), { onRoute: false });
-  assert.deepEqual(positions.positionsRoute(''), { onRoute: false });
-  assert.equal(positions.positionsHash(['1', BIG]), `#/positions/1,${BIG}`);
-  assert.equal(positions.positionsHash([]), '#/positions');
-  const back = positions.positionsRoute(positions.positionsHash(['1', BIG]));
-  assert.ok(back.onRoute);
-  assert.deepEqual(positions.parseTokenIdsInput(back.ids), { ok: true, ids: ['1', BIG] });
-  assert.equal(positions.parseTokenIdsInput(positions.positionsRoute('#/positions/1,x').ids).ok, false, 'a link is validated exactly as typed ids are');
-
+test('a portfolio link carries an address and nothing else; what is written is what is read back', () => {
   assert.deepEqual(positions.portfolioRoute(`#/portfolio/${FIXTURE_OWNER}`), { onRoute: true, address: FIXTURE_OWNER });
   assert.deepEqual(positions.portfolioRoute('#/portfolio'), { onRoute: true, address: '' });
   assert.deepEqual(positions.portfolioRoute('#/positions/1'), { onRoute: false });
@@ -569,39 +382,35 @@ test('a positions link carries ids and nothing else, a portfolio link an address
   assert.equal(identity.parseAddressInput(positions.portfolioRoute(`#/portfolio/${FIXTURE_OWNER.toUpperCase().replace('0X', '0x')}`).address).ok, true);
   assert.equal(identity.parseAddressInput(positions.portfolioRoute(`#/portfolio/${FIXTURE_OWNER}%20`).address).ok, false);
   assert.equal(identity.parseAddressInput(positions.portfolioRoute('#/portfolio/0x1234').address).ok, false);
+  // 2026-09-24: no positions link carries a list of ids any more: the lookup that read one is gone.
+  assert.equal(positions.positionsRoute, undefined);
+  assert.equal(positions.positionsHash, undefined);
+  assert.equal(positions.parseTokenIdsInput, undefined);
 });
 
-// Changed on purpose (owner, 2026-09-24): `#/positions/<id>` with one canonical id is now that position's own page
-// (screens/PositionDetail.tsx), which is where Create position lands; a list of ids keeps opening the lookup.
+// Changed on purpose (owner, 2026-09-24): `#/positions/<id>` with one canonical id is that position's own page
+// (screens/PositionDetail.tsx), which is where Create position lands; anything else, a list of ids included, is the list.
 test('one canonical NFT id in a positions link is that position’s page; a list, or anything else, is not', () => {
   assert.equal(positions.positionDetailId('3135288'), '3135288');
   assert.equal(positions.positionDetailId(BIG), BIG);
-  assert.equal(positions.positionDetailId('%34%32'), '42', 'decoded as the route’s ids are');
+  assert.equal(positions.positionDetailId('%34%32'), '42', 'decoded as a route segment');
   for (const segment of ['', '0', '01', '1,2', '1%2C2', `1,${BIG}`, ' 1', '1 ', '-1', '+1', '1e3', '0x1', (2n ** 256n).toString(), '9'.repeat(79), 'abc', '%E0%A4%A']) {
     assert.equal(positions.positionDetailId(segment), null, segment);
   }
-  // The list and the page agree on what a link means.
-  const list = positions.positionsRoute('#/positions/1,2');
-  assert.equal(positions.positionDetailId(list.ids), null);
-  assert.equal(positions.positionDetailId(positions.positionsRoute(positions.positionsHash(['4242'])).ids), '4242', 'the one-id link Create position writes opens the page (the lookup never writes one: ChainPositionsSection writeLink)');
 });
 
 // Review of 2026-09-25: a position's page offered "Add to this pool" (#/new/<poolId>) for any pool, where New position
-// refuses a pool with hooks or a dynamic fee. The card now carries its fee in pips, and the page links only where
-// New position's own rule (poolsList.ts usableForDomino) holds.
+// refuses a pool with hooks or a dynamic fee. The card carries its fee in pips, and the page links only where New
+// position's own rule (poolsList.ts usableForDomino) holds.
 test('a card carries its pool’s fee in pips, and only a pool with no hooks and a fixed fee is one Domino can add to', () => {
-  const nft = fixture('nft-positions.success');
-  const card = (poolKey) => {
-    const data = runtime.assertResponse('nft-positions', { ...nft, items: nft.items.map((item) => ({ ...item, poolKey: { ...item.poolKey, ...poolKey } })) });
-    return positions.projectNftBatch(FIXTURE_NFT_IDS, data, tokenMap('token.native', 'token.success')).batch.cards[0];
-  };
-  const plain = card({});
+  const plain = chainCard({});
   assert.equal(plain.feePips, 3000);
+  assert.equal(plain.fee, '0.30%');
   assert.equal(positions.cardPoolUsableForDomino(plain), true);
-  const hooked = card({ hooks: `0x${'4a'.repeat(20)}` });
+  const hooked = chainCard({ hooks: `0x${'4a'.repeat(20)}` });
   assert.deepEqual([hooked.hooks, hooked.feePips], [`0x${'4a'.repeat(20)}`, 3000]);
   assert.equal(positions.cardPoolUsableForDomino(hooked), false, 'hooks');
-  const dynamic = card({ feeMode: 'dynamic', fee_pips: 8388608 });
+  const dynamic = chainCard({ fee: fee.DYNAMIC_FEE_PIPS });
   assert.deepEqual([dynamic.feePips, dynamic.fee], [fee.DYNAMIC_FEE_PIPS, 'Dynamic']);
   assert.equal(positions.cardPoolUsableForDomino(dynamic), false, 'a dynamic fee');
   // The same verdict as New position's own test on a projected pool, for every combination.
@@ -610,27 +419,21 @@ test('a card carries its pool’s fee in pips, and only a pool with no hooks and
   }
 });
 
-test('the pool price read for a card: the verified pool’s tick at that read’s own block, checked, in the card’s decimals; another pool shows nothing', () => {
-  const nft = runtime.assertResponse('nft-positions', fixture('nft-positions.success'));
-  const card = positions.projectNftBatch(FIXTURE_NFT_IDS, nft, tokenMap('token.native', 'token.success')).batch.cards[0];
-  const market = runtime.assertResponse('pool-market', fixture('pool-market.success'));
-  const price = positions.cardPoolPrice(card, market);
+test('the pool price on a card: the same chain read’s tick, checked against its square root, in the card’s decimals, placed against the range', () => {
+  const card = chainCard({});
+  const at = (tick, block = 700) => positions.chainPoolPrice(card, { sqrtPriceX96: poolRange.sqrtPriceAtTick(tick).toString(), tick, block });
+  const price = at(0);
   assert.deepEqual(price, { state: 'usable', block: 700, tick: 0, text: '≈1,000,000,000,000', position: 'inside' });
   assert.equal(price.text, positions.tickPriceText(0, 18, 6), 'the same words as a bound price');
-  const at = (tick) => ({ ...market, pool: { ...market.pool, tick, sqrtPriceX96: poolRange.sqrtPriceAtTick(tick).toString() } });
-  assert.equal(positions.cardPoolPrice(card, at(-120)).position, 'below');
-  assert.equal(positions.cardPoolPrice(card, at(-60)).position, 'inside');
-  assert.equal(positions.cardPoolPrice(card, at(60)).position, 'above', 'v4 counts the upper tick as outside');
+  assert.equal(at(-120).position, 'below');
+  assert.equal(at(-60).position, 'inside');
+  assert.equal(at(60).position, 'above', 'v4 counts the upper tick as outside');
   // Checked the way the range controls check a pool price: the tick has to agree with the square-root price.
-  assert.deepEqual(positions.cardPoolPrice(card, { ...market, pool: { ...market.pool, tick: 5000 } }), { state: 'unavailable', problem: 'tick_mismatch', block: 700 });
-  assert.deepEqual(positions.cardPoolPrice(card, { ...market, pool: { ...market.pool, sqrtPriceX96: '0' } }), { state: 'unavailable', problem: 'not_initialized', block: 700 });
-  // Another pool id, or the card's pool id with other currencies, is not this card's price.
-  assert.deepEqual(positions.cardPoolPrice(card, { ...market, pool: { ...market.pool, poolId: `0x${'1'.repeat(64)}` } }), { state: 'unavailable', problem: 'pool_mismatch', block: 700 });
-  const swapped = [market.pool.currencies[1], market.pool.currencies[0]];
-  assert.equal(positions.cardPoolPrice(card, { ...market, pool: { ...market.pool, currencies: swapped } }).problem, 'pool_mismatch');
+  assert.deepEqual(positions.chainPoolPrice(card, { sqrtPriceX96: String(2n ** 96n), tick: 5000, block: 700 }), { state: 'unavailable', problem: 'tick_mismatch', block: 700 });
+  assert.deepEqual(positions.chainPoolPrice(card, { sqrtPriceX96: '0', tick: 0, block: 700 }), { state: 'unavailable', problem: 'not_initialized', block: 700 });
+  assert.deepEqual(positions.chainPoolPrice(card, { sqrtPriceX96: null, tick: null, block: 700 }), { state: 'unavailable', problem: 'not_initialized', block: 700 });
   // Without both tokens' decimals there is no price to write, only ticks.
-  const noDecimals = positions.projectNftBatch(FIXTURE_NFT_IDS, nft, tokenMap('token.native', 'token.missing-decimals')).batch.cards[0];
-  assert.deepEqual(positions.cardPoolPrice(noDecimals, market), { state: 'unavailable', problem: 'decimals_unknown', block: 700 });
+  assert.deepEqual(positions.chainPoolPrice(chainCard({ currencies: unknownDecimals }), { sqrtPriceX96: String(2n ** 96n), tick: 0, block: 700 }), { state: 'unavailable', problem: 'decimals_unknown', block: 700 });
 });
 
 // ---------------------------------------------------------------------------
@@ -1409,58 +1212,6 @@ test('the catalogue pages, restarts once on 409, stops at 5 pages, and only a ve
   assert.equal(restarted.option?.key, FIXTURE_POOL);
 });
 
-test('the same IDs again while they are read join that read; only different IDs cancel it and ask again', async () => {
-  const loading = positions.lookupReducer({ phase: 'idle' }, { type: 'submit', requestId: 1, ids: ['1', BIG] });
-  assert.equal(loading.phase, 'loading');
-  assert.equal(positions.joinsRunningLookup(loading, ['1', BIG]), true);
-  assert.equal(positions.joinsRunningLookup(loading, [BIG, '1']), true, 'the same set, typed in another order, is the same question');
-  assert.equal(positions.joinsRunningLookup(loading, ['1']), false);
-  assert.equal(positions.joinsRunningLookup({ phase: 'idle' }, ['1', BIG]), false);
-
-  // The section's own runner (ChainPositionsSection holds one and calls nothing else),
-  // against the real scheduler: a second click on the same IDs joins the read in flight;
-  // different IDs cancel it and ask again.
-  const clicks = async (first, second) => {
-    const sent = [];
-    const inner = {
-      transport: 'fixture',
-      read: (route, request, options) => {
-        sent.push({ route, signal: options?.signal });
-        return new Promise((done) => setTimeout(() => done({ route, state: 'unavailable', reason: 'test', provenance: { transport: 'fixture', contract: null, receivedAt: 0, attempts: 1 } }), 60));
-      },
-    };
-    const scheduled = createScheduledSource(inner, { minIntervalMs: 0 });
-    let state = { phase: 'idle' };
-    const runner = positions.createLookupRunner(scheduled, (event) => {
-      state = positions.lookupReducer(state, event);
-    });
-    const started = [runner.start(state, first)];
-    await new Promise((done) => setTimeout(done, 10));
-    started.push(runner.start(state, second));
-    while (state.phase === 'loading') await new Promise((done) => setTimeout(done, 10));
-    const nft = sent.filter((r) => r.route === 'nft-positions');
-    return { started, reads: nft.length, firstCancelled: nft[0].signal?.aborted === true, ids: state.ids };
-  };
-  assert.deepEqual(await clicks(['1'], ['1']), { started: [true, false], reads: 1, firstCancelled: false, ids: ['1'] }, 'joined: one read, never cancelled');
-  assert.deepEqual(await clicks(['1', BIG], [BIG, '1']), { started: [true, false], reads: 1, firstCancelled: false, ids: ['1', BIG] }, 'the same set in another order is joined too');
-  assert.deepEqual(await clicks(['1'], ['2']), { started: [true, true], reads: 2, firstCancelled: true, ids: ['2'] }, 'different IDs cancel and ask again');
-
-  // Cancelling (hiding the section, Clear) aborts the read in flight and nothing lands.
-  let state = { phase: 'idle' };
-  const seen = [];
-  const hanging = { transport: 'fixture', read: (route, request, { signal }) => new Promise((done) => signal.addEventListener('abort', () => done({ route, state: 'aborted', provenance: { transport: 'fixture', contract: null, receivedAt: 0, attempts: 0 } }))) };
-  const runner = positions.createLookupRunner(hanging, (event) => {
-    seen.push(event.type);
-    state = positions.lookupReducer(state, event);
-  });
-  runner.start(state, ['1']);
-  runner.cancel();
-  await flush();
-  await flush();
-  assert.deepEqual(seen, ['submit', 'result']);
-  assert.equal(state.phase, 'idle', 'an aborted lookup returns to what was there before');
-});
-
 test('the Top pools reads have the same 60 s budget as the screens, worded as a read stopped, never as retries used up', async () => {
   const clock = manualClock();
   const log = [];
@@ -1692,8 +1443,11 @@ test('every fixed sentence is listed for the default-bundle check, and chain car
   assert.ok(all.length > 40, `${all.length} sentences`);
   assert.equal(new Set(all).size, all.length);
   for (const sentence of all) assert.ok(sentence.length >= 12, sentence);
-  for (const wanted of [copy.COPY.lookup.heading, copy.COPY.lookup.intro, copy.COPY.card.ownerNote, copy.COPY.picker.tokenTitle, copy.COPY.figures.providerDetail]) assert.ok(all.includes(wanted), wanted);
-  for (const sentence of [...Object.values(copy.COPY.lookup), ...Object.values(copy.COPY.card)]) assert.doesNotMatch(sentence, /\byour\b|\byou own\b/i, sentence);
+  // 2026-09-24: the lookup's sentences went with the lookup by typed NFT ids.
+  assert.equal(copy.COPY.lookup, undefined);
+  assert.equal(copy.IDS_PROBLEM, undefined);
+  for (const wanted of [copy.COPY.card.ownerNote, copy.COPY.picker.tokenTitle, copy.COPY.figures.providerDetail]) assert.ok(all.includes(wanted), wanted);
+  for (const sentence of Object.values(copy.COPY.card)) assert.doesNotMatch(sentence, /\byour\b|\byou own\b/i, sentence);
   // Changed on purpose (review of 2026-09-14): the owner is labelled Owner, and that it is public data proving nothing is its title, not a caption.
   assert.equal(copy.COPY.card.owner, 'Owner');
   assert.match(copy.COPY.card.ownerNote, /proves nothing/);

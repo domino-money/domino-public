@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
 import type { Page } from '../App'
 import { Menu, type MenuEntry } from './ui'
-import { IconAutomate, IconBook, IconInfo, IconMarkets, IconPlus, IconPositions, IconRange, IconSettings, type IconProps } from './icons'
+import { IconAutomate, IconBook, IconClose, IconInfo, IconMarkets, IconMenu, IconMore, IconPlus, IconPositions, IconRange, IconSettings, type IconProps } from './icons'
 import { automateHref, marketsHref, newPositionHref, positionsHref, settingsHref } from './explore/routes'
 
 /**
@@ -41,5 +41,14 @@ export function HeaderMenu({ page }: { page: Page }) {
     { kind: 'link', href: '#/#ranges', label: 'Ranges explained', icon: <IconRange /> },
     { kind: 'link', href: '#/#limits', label: 'What Domino does not do', icon: <IconInfo /> },
   ]
-  return <Menu id="site-menu" label="Menu" items={items} />
+  // Two resting glyphs, both rendered and switched by CSS: three dots from 768px (the nav pill carries the places),
+  // the hamburger below. Both are aria-hidden; the button's name is Menu.
+  const trigger = (
+    <span className="dm-menu-glyph">
+      <IconMore className="dm-menu-glyph-more" />
+      <IconMenu className="dm-menu-glyph-open" />
+      <IconClose className="dm-menu-glyph-close" />
+    </span>
+  )
+  return <Menu id="site-menu" label="Menu" items={items} trigger={trigger} />
 }

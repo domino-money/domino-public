@@ -4,8 +4,8 @@ import { cx } from '../../ui'
 
 /**
  * Copies one identity string (a pool id, an address) to the clipboard and
- * says so for a moment. The value is always shown or reachable beside it;
- * this only saves the selecting.
+ * says so for a moment: the tick draws itself in (DESIGN-V2 M23). The value
+ * is always shown or reachable beside it; this only saves the selecting.
  */
 export function CopyButton({ value, label, className }: { value: string; label: string; className?: string }) {
   const [copied, setCopied] = useState(false)
@@ -32,7 +32,7 @@ export function CopyButton({ value, label, className }: { value: string; label: 
         className,
       )}
     >
-      {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+      {copied ? <IconCheck size={16} className="dm-check-draw" /> : <IconCopy size={16} />}
     </button>
   )
 }

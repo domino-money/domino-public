@@ -15,7 +15,7 @@ export function NewPosition({ poolId }: { poolId: string }) {
     <SlotBoundary
       fallback={
         <PageShell width="flow">
-          <PageHeader size="display" align="center" title={CREATE.page.title} />
+          <PageHeader size="display" title={CREATE.page.title} />
           <div className="mt-8">
             <SlotFailed />
           </div>

@@ -17,6 +17,7 @@ import { createRequire } from 'node:module';
 import { extname, join, normalize, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
+import { feesDefault } from '../tests/support/fees/stub.mjs';
 
 const HERE = import.meta.dirname;
 const COMPILED = resolve(HERE, '../.test-build/app/functions/_middleware.js');
@@ -70,8 +71,13 @@ async function staticResponse(dist, url) {
  * before. `observe`, when given, sees each request exactly as the browser
  * sent it, before the middleware. `env` is read on every request, so a test
  * can break the gate configuration mid-run by changing it.
+ *
+ * `fees` answers the fees relay's two routes (functions/api/fees/v1/*), which
+ * a deployable build asks once a position's read settles: by default every
+ * position is not_found, so /logs is never asked (2026-09-24, P6, R-8;
+ * tests/support/fees/stub.mjs has a recorded, verified alternative).
  */
-export function createGatedServer({ env, dist = DIST, middleware = loadMiddleware(), api = null, observe = null }) {
+export function createGatedServer({ env, dist = DIST, middleware = loadMiddleware(), api = null, observe = null, fees = feesDefault }) {
   return createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host}`);
@@ -88,7 +94,7 @@ export function createGatedServer({ env, dist = DIST, middleware = loadMiddlewar
         duplex: hasBody ? 'half' : undefined,
       });
       observe?.(request);
-      const next = (passed) => (api && url.pathname.startsWith('/api/') ? api(passed ?? request) : staticResponse(dist, url));
+      const next = async (passed) => (await fees?.(passed ?? request, url)) ?? (api && url.pathname.startsWith('/api/') ? api(passed ?? request) : staticResponse(dist, url));
       const response = await middleware.onRequest({ request, env, next });
       const cookies = response.headers.getSetCookie();
       for (const [name, value] of response.headers) {

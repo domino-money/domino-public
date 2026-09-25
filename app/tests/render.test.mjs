@@ -21,6 +21,7 @@ import { chromium } from 'playwright-core';
 import { TEXT_FILE, findForbidden } from '../scripts/deploy-markers.mjs';
 import { apiOf, close, go, leaving, open as openPage, problemsOf, reload, shown } from './page-watch.mjs';
 import { TOGGLE_VIEWPORTS, textUnderToggle } from './toggle-overlap.mjs';
+import { feesAnswer } from './support/fees/stub.mjs';
 
 const DIST = resolve(import.meta.dirname, '../dist');
 const TYPES = {
@@ -42,6 +43,15 @@ if (!existsSync(join(DIST, 'index.html'))) {
 function serveDist() {
   return createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    // 2026-09-24 (P6, R-8): the fees relay's routes answer as the test servers' default does (every position
+    // not_found), since the production build asks /api/fees/v1/state once a position's read settles.
+    if (url.pathname.startsWith('/api/fees/')) {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const fees = feesAnswer(req.method, url.pathname, Buffer.concat(chunks).toString('utf8')) ?? { status: 404, body: '{"v":1,"error":"bad_request"}' };
+      res.writeHead(fees.status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }).end(fees.body);
+      return;
+    }
     let file = normalize(join(DIST, decodeURIComponent(url.pathname)));
     if (!file.startsWith(DIST)) {
       res.writeHead(403).end();
@@ -178,7 +188,8 @@ test('every route in the header renders', async () => {
     // that there is nothing to manage. Each is read once its release has answered. Changed on purpose (Create position): a position is opened from
     // New position's last step, so Setup no longer asks for a wallet to deposit; one line points there instead.
     ['/setup', /Deposits and recovery[\s\S]*To open a new position, use New position: its last step creates it through your wallet\./, '[data-setup-release="unavailable"]'],
-    ['/sequence', /Your sequences[\s\S]*No sequence to manage here\./, '[data-sequence-release="unavailable"]'],
+    // Changed on purpose (2026-09-24, the owner's simpler automation page): its title is its one action, and without a release it says so.
+    ['/sequence', /Set up automation[\s\S]*Automation can’t be set up here\./, '[data-sequence-release="unavailable"]'],
   ]) {
     const page = await open(route);
     if (settled) await page.locator(settled).waitFor({ state: 'attached' });
@@ -772,7 +783,8 @@ test('the landing never shows an invented figure: catalogue labels in every row,
 // ---------------------------------------------------------------------------
 
 // Changed on purpose (owner, 2026-09-24): Positions lists the connected wallet's positions itself. With no wallet it says
-// so in one empty state whose button opens the header's wallet dialog, and the lookup by NFT id waits, closed, under it.
+// so in one empty state whose button opens the header's wallet dialog. Later the same day: the lookup by NFT id is gone
+// (the owner: typing an NFT id must not exist), and nothing about positions is kept in the browser.
 test('the positions screen is an honest empty state: no cards, totals or private figures, a sign-in for the managed side, and a way back to the pools', async () => {
   const page = await open('/app');
   assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Positions');
@@ -782,12 +794,8 @@ test('the positions screen is an honest empty state: no cards, totals or private
   assert.equal(await page.locator('[data-owned]').getAttribute('data-owned'), 'no-wallet');
   const text = await page.locator('#root').innerText();
   assert.match(text, /Your positions\s+Connect a wallet to see your positions\s+Connect wallet/);
-  assert.doesNotMatch(text, /Look up a position NFT|Enter its ID above|NFT ids?\b.*comma/i, 'no typed ids asked for up front');
-  // The lookup by NFT id is still here, closed, and nothing of it is mounted until it is opened.
-  const lookup = page.locator('details[data-lookup-disclosure]');
-  assert.equal(await lookup.locator('summary').innerText(), 'Look up by NFT id');
-  assert.equal(await lookup.evaluate((details) => details.open), false);
-  assert.equal(await page.locator('#nft-ids').count(), 0);
+  assert.doesNotMatch(text, /Look up|Position NFTs|Enter its ID|NFT ids?\b/i, 'no typed ids asked for, anywhere');
+  assert.equal(await page.locator('details[data-lookup-disclosure], #nft-ids, #chain-lookup').count(), 0, 'no lookup by NFT id at all');
   // The managed side asks for a wallet session and shows nothing private without one.
   assert.match(text, /Sign in with your wallet to view private history/);
   assert.match(text, /Sign in with your wallet to view private execution receipts/);
@@ -799,16 +807,10 @@ test('the positions screen is an honest empty state: no cards, totals or private
   assert.equal(await page.locator('#portfolio-address-input').getAttribute('title'), 'Sent exactly as typed; a checksum is not required. Viewing an address proves nothing about who controls it.');
   assert.doesNotMatch(text, /practice|reinvested|awaiting|\$\s?\d|[0-9]+%/i);
   assert.equal(await page.locator('[role="dialog"]').count(), 0);
-  // Nothing reads on load: the lookup asks only when someone asks it to, and
-  // the screen shows no figure of its own until then.
+  // Nothing reads on load without a wallet, and the screen shows no figure of its own.
   assert.deepEqual(apiOf(page), [[]], 'the positions screen reads nothing by itself');
-  assert.equal(await page.locator('main [data-metric]').count(), 0, 'no figure appears before a lookup');
+  assert.equal(await page.locator('main [data-metric]').count(), 0, 'no figure without a wallet');
   assert.equal(await page.locator('main').getByRole('link', { name: 'Markets', exact: true }).getAttribute('href'), '#/markets');
-  // Opened, the lookup is the read screens' card, and still reads nothing until asked.
-  await lookup.locator('summary').click();
-  await page.getByText('Look up a position NFT', { exact: true }).waitFor();
-  assert.match(await lookup.innerText(), /Enter its ID above/);
-  assert.deepEqual(apiOf(page), [[]], 'opening the lookup reads nothing');
   // The empty state's Connect wallet is the header's: it opens the same wallet dialog.
   await empty.getByRole('button', { name: 'Connect wallet' }).click();
   await page.locator('[role="dialog"]').first().waitFor();

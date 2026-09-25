@@ -21,6 +21,7 @@ import {
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import { editablePrice, priceInputToTick } from '../../../lib/read/screens/RangePriceInput'
 import type { ReadSource } from '../../../lib/read/types'
+import { IconMinus, IconPlus } from '../../icons'
 import { PriceSlider } from '../../PriceSlider'
 import { Button, IconButton, cx } from '../../ui'
 import { Address } from './Address'
@@ -131,12 +132,12 @@ function BoundControl({
   }
   const spoken = (t: number) => `${priceOrWords(t, price)}, ${fromPoolPrice(t, price.tick)} from the pool price, tick ${t}`
   return (
-    <div className="dm-inset min-w-0 px-4 pt-3 pb-1" data-range-bound={which}>
-      <div className="flex items-center justify-between gap-2">
-        <label htmlFor={`${id}-price`} className="text-caption font-medium text-fg-muted">{label}</label>
-        <span className="tnum text-caption text-fg-subtle">{fromPoolPrice(tick, price.tick)}</span>
+    <div className="dm-pool-bound" data-range-bound={which}>
+      <div className="dm-pool-bound-head">
+        <label htmlFor={`${id}-price`} className="dm-pool-bound-label">{label}</label>
+        <span className="dm-pool-bound-pct tnum">{fromPoolPrice(tick, price.tick)}</span>
       </div>
-      <div className="mt-1.5 flex min-w-0 items-center gap-1">
+      <div className="dm-pool-bound-row">
         <input
           id={`${id}-price`}
           aria-label={`${label} input`}
@@ -152,20 +153,20 @@ function BoundControl({
         />
         <IconButton
           label={`Lower the ${label.toLowerCase()} by one tick spacing`}
-          icon={<span aria-hidden="true" className="dm-pool-step-glyph">−</span>}
-          variant="ghost"
+          icon={<IconMinus size={14} />}
+          variant="round"
           size="sm"
           onClick={() => change(stepBound(range, which, -1, price.tickSpacing))}
         />
         <IconButton
           label={`Raise the ${label.toLowerCase()} by one tick spacing`}
-          icon={<span aria-hidden="true" className="dm-pool-step-glyph">+</span>}
-          variant="ghost"
+          icon={<IconPlus size={14} />}
+          variant="round"
           size="sm"
           onClick={() => change(stepBound(range, which, 1, price.tickSpacing))}
         />
       </div>
-      <p id={`${id}-unit`} className="mt-0.5 text-caption text-fg-subtle"><Units price={price} /> · displayed approximately</p>
+      <p id={`${id}-unit`} className="dm-pool-bound-unit"><Units price={price} /> · displayed approximately</p>
       <p className="sr-only" data-bound-price="">{priceOrWords(tick, price)}</p>
       <span className="sr-only" data-bound-tick="">{tick}</span>
       {value !== displayed && <Button type="button" variant="outline" size="sm" className="mt-2" onClick={apply}>Apply {label.toLowerCase()}</Button>}
@@ -182,6 +183,7 @@ function BoundControl({
         upper={range.upper}
         format={(t) => fromPoolPrice(t, price.tick)}
         valueText={spoken}
+        tone="quiet"
       />
     </div>
   )
@@ -196,7 +198,7 @@ function RangeInterval({ range, price, bounds }: { range: PlannedRange; price: U
   const pool = at(price.tick)
   return (
     <div className="grid gap-2" data-range-interval="">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-caption text-fg-subtle">
+      <div className="dm-pool-interval-caption">
         <span>Selected price interval</span>
       </div>
       <div
@@ -355,16 +357,16 @@ export function PoolRangeControls({
 
   return (
     <div className="grid gap-5" data-picker="range" data-price-state={price.state === 'usable' ? (price.stale ? 'stale' : price.partial ? 'partial' : 'usable') : 'unavailable'} data-price-read={said?.code}>
-      <section aria-labelledby="range-price-heading" className="grid gap-1" data-pool-price="">
-        <h3 id="range-price-heading" className="text-body font-medium text-fg">Pool price</h3>
+      <section aria-labelledby="range-price-heading" className="dm-pool-price" data-pool-price="">
+        <h3 id="range-price-heading" className="dm-pool-price-label">Pool price</h3>
         <p role="status" aria-live="polite" className="sr-only">{said?.text ?? ''}</p>
         {usable ? (
           <>
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5" {...(usable.stale ? { 'data-price-stale': '', title: COPY.range.stale } : {})}>
-              <p className="tnum text-stat font-medium break-all" data-pool-price-text="">
-                {usable.text}
+            <div className="dm-pool-price-row" {...(usable.stale ? { 'data-price-stale': '', title: COPY.range.stale } : {})}>
+              <p className="dm-fig-lg dm-pool-price-figure" data-pool-price-text="">
+                {usable.text.startsWith('≈') ? <><span className="dm-approx">≈</span>{usable.text.slice(1)}</> : usable.text}
               </p>
-              <p className="text-caption text-fg-subtle">
+              <p className="dm-pool-price-unit">
                 <Units price={usable} />
               </p>
             </div>
@@ -381,7 +383,7 @@ export function PoolRangeControls({
           </>
         ) : (
           <div data-price-unavailable={price.state === 'unavailable' ? price.problem : ''} title={unavailable ?? undefined}>
-            <p className="tnum text-stat font-medium text-fg-subtle">—</p>
+            <p className="dm-fig-lg text-fg-subtle">—</p>
             <p className="sr-only">{unavailable}</p>
           </div>
         )}
@@ -425,7 +427,7 @@ export function PoolRangeControls({
             </button>
           </div>
           <RangeInterval range={range} price={usable} bounds={bounds} />
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="dm-pool-bounds">
             <BoundControl which="lower" range={range} price={usable} bounds={bounds} onRange={custom} />
             <BoundControl which="upper" range={range} price={usable} bounds={bounds} onRange={custom} />
           </div>
@@ -440,7 +442,7 @@ export function PoolRangeControls({
               </p>
             )}
             {position === 'inside' && <span className="sr-only" data-range-position="inside">{COPY.range.inside}</span>}
-            <p className="text-caption text-fg-subtle">
+            <p className="dm-pool-help">
               Enter a price and apply, or drag a handle. Prices snap outward to the pool’s tick spacing.
             </p>
           </div>

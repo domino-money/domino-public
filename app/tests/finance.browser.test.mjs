@@ -13,6 +13,8 @@ import { ARTWORK, footerButton, walkToReview } from './support/new-position.mjs'
 import { FIXTURE_TOKEN, createReadStub } from './support/read-stub.mjs';
 // The mint's own sizing, from the unit build (npm test compiles it first, as check:app runs it first).
 import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/create/mintPlan.js';
+// 2026-09-24: the positions' principal as the owned-positions endpoint computes it (v4's own rounding).
+import { principalAt } from '../.test-build/app/functions/_lib/walletPositions.js';
 import * as runtime from '../../api-contracts/performance-v2/runtime.mjs';
 import * as executionRuntime from '../../api-contracts/execution-v1/runtime.mjs';
 import * as depositRuntime from '../../api-contracts/deposit-v1/runtime.mjs';
@@ -283,27 +285,28 @@ test('a switched-off deposit service leaves only the empty list: no line about d
   } finally { await s.close(); }
 });
 
-// Changed on purpose (qa:visual, dead ends): without a release or a saved profile the Owner controls card promised actions it had no control
-// for, on the page Automate's primary way in opens. One plain muted line says there is nothing to manage instead, why in its data and title.
-test('sequence is reachable from Automate, reads its release on mount with no wallet, and without one or a saved profile says in one plain line that there is nothing to manage', async () => {
+// Changed on purpose (qa:visual, dead ends; then the owner's simpler automation page, 2026-09-24): without a release the page says in one
+// plain muted line that automation can't be set up here, why in its data and title. There are no owner controls, no saved-profile
+// recovery path and nothing to read or press.
+test('sequence is reachable from Automate, reads its release on mount with no wallet, and without one says in one plain line that automation can’t be set up here', async () => {
   const s = await scenario();
   try {
     // The way into sequences lives on Automate (DESIGN.md E.6), where wallet builds render its link.
     await s.page.goto(`${s.origin}/#/automate`);
     await s.page.getByRole('link', {name:'Set up Domino-compound'}).click();
-    await s.page.getByRole('heading', {name:'Your sequences',exact:true}).waitFor();
+    await s.page.getByRole('heading', {name:'Set up automation',exact:true}).waitFor();
     const line = s.page.locator('[data-sequence-release="unavailable"][data-sequence-release-reason="release_not_available"]');
     await line.waitFor();
     assert.deepEqual(s.releases, [{ path: '/api/setup/v1/sequence-release', method: 'GET', contract: '1.0.0-rc.1' }], 'one public GET on mount');
-    assert.deepEqual([await line.evaluate(el => el.tagName), await line.innerText(), await line.getAttribute('data-recovery-profile'), await line.getAttribute('title')],
-      ['P', 'No sequence to manage here.', 'none', 'Sequence deployment unavailable: release not available.']);
+    assert.deepEqual([await line.evaluate(el => el.tagName), await line.innerText(), await line.getAttribute('title')],
+      ['P', 'Automation can’t be set up here.', 'Sequence deployment unavailable: release not available.']);
     assert.match(await line.getAttribute('class'), /\btext-fg-muted\b/, 'a muted line, not a card or a panel');
-    assert.equal(await s.page.getByRole('heading', {name:'Owner controls'}).count(), 0, 'no card that promises controls it has none of');
     const text = await s.page.locator('main').innerText();
-    assert.doesNotMatch(text, /Pause, revoke permissions|\byet\b/i, 'nothing promised');
-    assert.doesNotMatch(text, /Create a paused sequence|Network budget|not available|not connected|No approval or transaction was requested/i);
+    assert.doesNotMatch(text, /Owner controls|Network budget|Create a paused sequence|Manage a sequence|Root NFT|Sequence address|Pause, revoke permissions|\byet\b/i, 'none of the removed cards');
+    assert.doesNotMatch(text, /not available|not connected|No approval or transaction was requested/i);
     assert.doesNotMatch(text, FORBIDDEN);
-    assert.equal(await s.page.getByRole('button', {name:'Read my sequences'}).count(), 0, 'no saved profile: nothing to read');
+    assert.equal(await s.page.locator('main input').count(), 0, 'nothing to type');
+    assert.equal(await s.page.locator('main button').count(), 0, 'nothing to press');
     await noManualReads(s.page.locator('main'));
     const screenshots=resolve(import.meta.dirname,'../.test-artifacts');mkdirSync(screenshots,{recursive:true});
     await s.page.screenshot({path:join(screenshots,'p2-sequence-off.png'),fullPage:true});
@@ -311,7 +314,7 @@ test('sequence is reachable from Automate, reads its release on mount with no wa
   } finally {await s.close();}
 });
 
-test('a refused or failing release (403, 404, 503) is treated like available:false, and a saved profile keeps the owner recovery path', async () => {
+test('a refused or failing release (403, 404, 503) is treated like available:false, and a profile saved by an earlier version brings nothing back', async () => {
   const s = await scenario();
   const address = (n) => `0x${n.toString(16).padStart(2, '0').repeat(20)}`;
   const hash = (n) => `0x${n.toString(16).padStart(2, '0').repeat(32)}`;
@@ -332,12 +335,11 @@ test('a refused or failing release (403, 404, 503) is treated like available:fal
       await s.page.locator(`[data-setup-release="unavailable"][data-setup-release-reason="${code}"]`).waitFor({ state: 'attached' });
       assert.doesNotMatch(await s.page.locator('main').innerText(), /Fund a new operation|not connected|not available on this deployment/i, `setup ${status}`);
     }
+    // Changed on purpose (2026-09-24): the saved profile only fed the owner controls' recovery path, which the owner removed.
     await s.page.evaluate((value) => localStorage.setItem('domino.sequence.public-recovery.v1', JSON.stringify(value)), saved);
     await s.page.goto(`${s.origin}/#/sequence`); await s.page.reload();
-    const controls = s.page.locator('[data-sequence-release="unavailable"][data-recovery-profile="saved"]');
-    await controls.waitFor();
-    await controls.getByRole('button', {name:'Read my sequences'}).waitFor();
-    assert.equal(await s.page.getByRole('heading', {name:'Create a paused sequence'}).count(), 0, 'a saved profile never brings creation back');
+    await s.page.locator('[data-sequence-release="unavailable"]').waitFor();
+    assert.equal(await s.page.locator('main button').count(), 0, 'a saved profile brings no controls back');
     assert.ok(s.releases.every(call => call.method === 'GET'));
     assert.equal(s.wallet.state.signed.length, 0); assert.deepEqual(s.wallet.state.refused, [], 'mounting asked the wallet for nothing');
   } finally { await s.close(); }
@@ -832,18 +834,27 @@ const STUB_SQRT_PRICE = 2n ** 96n;
 const Q96 = 2n ** 96n;
 const lowerKey = key => ({ ...key, currency0: key.currency0.toLowerCase(), currency1: key.currency1.toLowerCase(), hooks: key.hooks.toLowerCase() });
 /**
- * The read gateway's answer for the position NFT the chain above minted, once it exists: the read fixture's first
- * position (nft-positions.success), made this wallet's NFT `tokenId` in the stub's pool, at the minted range and
- * liquidity, holding what the deposit funded. Any other question keeps its fixture.
+ * The fees relay's /state for the chain above (2026-09-24: a position's page reads it, not the read service): the NFT
+ * the chain minted, once it exists, this wallet's, in the stub's pool at the minted range and liquidity, the pool at
+ * tick 0; any other id is not_found, as the relay answers it.
  */
-const mintedPosition = (chain) => (route, body) => {
+const mintedState = (chain) => async (request, url) => {
+  if (url.pathname !== '/api/fees/v1/state') return undefined;
+  const { tokenIds } = await request.json();
   const minted = [...chain.operations.values()].find(op => op.closed && op.tokenId !== 0n);
-  if (route !== 'nft-positions' || !minted || JSON.stringify(body.tokenIds) !== JSON.stringify([String(minted.tokenId)])) return undefined;
-  const [open, mint] = ['open', 'mint'].map(name => chain.decoded().find(tx => tx.functionName === name));
-  const base = readGateway('nft-positions.success'), plan = mint.args[0];
-  const item = { ...base.items[0], tokenId: String(minted.tokenId), owner: OWNER, salt: numberToHex(minted.tokenId, { size: 32 }), tickLower: plan.tickLower, tickUpper: plan.tickUpper,
-    liquidityRaw: String(plan.liquidity), principalRaw: [String(open.args[2]), String(open.args[3])], unsettledFeesRaw: ['0', '0'], inRange: true, hasLiquidity: true };
-  return JSON.stringify({ ...base, items: [item] });
+  const mint = chain.decoded().find(tx => tx.functionName === 'mint');
+  const poolId = keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }, { type: 'int24' }, { type: 'address' }], [zeroAddress, FIXTURE_TOKEN, 3000, 60, zeroAddress]));
+  const positions = tokenIds.map(tokenId => {
+    if (!minted || !mint || tokenId !== String(minted.tokenId)) return { tokenId, ok: false, reason: 'not_found' };
+    const plan = mint.args[0];
+    return {
+      tokenId, ok: true, owner: OWNER, poolId, poolKey: lowerKey(STUB_POOL_KEY),
+      currencies: [{ address: zeroAddress, symbol: 'ETH', decimals: 18 }, { address: FIXTURE_TOKEN.toLowerCase(), symbol: 'TOKEN', decimals: 6 }],
+      tickLower: plan.tickLower, tickUpper: plan.tickUpper, liquidity: String(plan.liquidity), sqrtPriceX96: String(STUB_SQRT_PRICE), tick: 0,
+      feeGrowthInside0X128: '0', feeGrowthInside1X128: '0', feeGrowthInside0LastX128: '0', feeGrowthInside1LastX128: '0', unclaimed0: '0', unclaimed1: '0',
+    };
+  });
+  return Response.json({ v: 1, block: 70921337, timestamp: 1790000000, positions });
 };
 /**
  * The read gateway's wallet page for the chain above: the read fixture's (wallet-assets.last-page), holding what the
@@ -888,7 +899,7 @@ async function doneOrder(page) {
  */
 async function atReview(chain, { answer, amount } = {}) {
   const read = createReadStub({ answer: firstAnswer(answer, walletAssets(chain)) });
-  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  const s = await scenario({ routes: [mintedState(chain), (request, url) => read.handle(request, url)] });
   try {
     await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await installDepositWallet(s.context, chain);
@@ -929,7 +940,7 @@ async function onlyTheWallet(s, chain, { reverts = false } = {}) {
 
 test('Create position opens the position from Review through a connected wallet with no session: the exact approval, the deposit, then the mint at Review’s range, and the page opens the new position on Positions', async () => {
   const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n } });
-  const s = await atReview(chain, { answer: mintedPosition(chain) });
+  const s = await atReview(chain);
   const { setup } = chain.release.deployment;
   try {
     const button = s.page.locator('[data-create-position]');
@@ -963,12 +974,14 @@ test('Create position opens the position from Review through a connected wallet 
 
     // The mint read back closed with its NFT: the page opens that position on Positions.
     await s.page.waitForFunction(() => location.hash === '#/positions/4242', null, { timeout: 60_000 });
-    // Changed on purpose (owner, 2026-09-24): #/positions/<id> is the position's own page now, not the lookup by id.
+    // Changed on purpose (owner, 2026-09-24): #/positions/<id> is the position's own page now, not the lookup by id,
+    // read from chain by the fees relay (not the read service), and nothing about it is kept in the browser.
     const detail = s.page.locator('[data-position-detail][data-position-id="4242"]');
     await detail.waitFor({ timeout: 30_000 });
     assert.equal(await s.page.locator('#nft-ids').count(), 0, 'no id to type: the page is the position');
     // The position read from chain: NFT 4242, in the pool chosen, at Review's range, this wallet's.
-    assert.deepEqual(s.read.requests.filter(r => r.path.endsWith('/nft-positions')).map(r => JSON.parse(r.body)), [{ tokenIds: ['4242'] }], 'one read, of the new NFT');
+    assert.deepEqual(s.read.requests.filter(r => r.path.endsWith('/nft-positions')), [], 'the read service is not asked');
+    assert.deepEqual(await s.page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter(key => /positions/i.test(key))), [], 'no memory of the new position in the browser');
     assert.match(await detail.locator('h1').innerText(), /^ETH\s*\/\s*TOKEN$/);
     assert.match(await detail.locator('.dm-pos-chips').innerText(), /#4242\s+In range/);
     assert.match(await detail.locator('.dm-pos-facts').innerText(), new RegExp(`Owner\\s+${OWNER}[\\s\\S]*Ticks\\s+-3600 to 4080`));
@@ -1121,7 +1134,7 @@ test('with TOKEN and only gas in ETH, Review plans the swap; Create position app
   // 10,000,000,000 TOKEN (6 decimals) pairs with about 0.0112 ETH at this range; the wallet holds 0.01 ETH, enough for gas only.
   const typed = 10n ** 16n;
   const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed } });
-  const s = await atReview(chain, { answer: mintedPosition(chain), amount: '10000000000' });
+  const s = await atReview(chain, { amount: '10000000000' });
   const { setup } = chain.release.deployment;
   try {
     // Review: the plan is the swap from TOKEN, in the headline and the line under it, with the note that says why.
@@ -1229,7 +1242,7 @@ test('with TOKEN and only gas in ETH, Review plans the swap; Create position app
 
 test('with ETH only and TOKEN typed, the ETH pays for the whole position: deposited as the value with room, part swapped for TOKEN inside the pool, then the mint; no approval is asked', async () => {
   const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 18n });
-  const s = await atReview(chain, { answer: mintedPosition(chain) });
+  const s = await atReview(chain);
   const { setup } = chain.release.deployment;
   try {
     assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'swap');
@@ -1317,7 +1330,7 @@ test('in a pool too thin for the balanced split, the check backs off to a swap t
   const typed = 10n ** 16n;
   // 5·10¹⁶ of liquidity: swapping half the TOKEN, as the balanced split would, moves the square-root price about 10%.
   const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidity: 5n * 10n ** 16n });
-  const s = await atReview(chain, { answer: mintedPosition(chain), amount: '10000000000' });
+  const s = await atReview(chain, { amount: '10000000000' });
   try {
     const [, part] = (await s.page.locator('[data-review-swap]').innerText()).match(/About ([\d.,]+) TOKEN of it is swapped/) ?? [];
     const balanced = parseUnits(part.replaceAll(',', ''), 6);
@@ -1390,7 +1403,7 @@ const LIQUID_FROM = (STUB_SQRT_PRICE * 10160n) / 10000n;
 test('a pool with nothing in range at its price and a range just above it: the quotes find the swap filling there, inside its limit, and Create position approves, deposits, swaps and mints', async () => {
   const typed = 10n ** 16n;
   const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidFrom: LIQUID_FROM });
-  const s = await atReview(chain, { answer: mintedPosition(chain), amount: '10000000000' });
+  const s = await atReview(chain, { amount: '10000000000' });
   try {
     assert.equal(chain.liquidityAt(STUB_SQRT_PRICE), 0n, 'nothing in range at the pool’s price');
     assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'swap');
@@ -1763,7 +1776,8 @@ test('a finalized receipt shows its transaction hash, block hash and fee recipie
     await done.getByRole('button', { name: 'Copy transaction hash' }).click();
     await done.locator('[data-receipt-field="transaction-hash"] [data-copied]').waitFor();
     assert.equal(await s.page.evaluate(() => navigator.clipboard.readText()), finalized.receipt.transactionHash);
-    assert.deepEqual(await receipts.locator('a').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['#/sequence'], 'no external link: the one link is the way to pause');
+    // Changed on purpose (2026-09-24): the automation page no longer pauses (the owner removed its controls); the link says how, on the docs.
+    assert.deepEqual(await receipts.locator('a').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['#/docs/non-custodial#pause-revoke-withdraw'], 'no external link: the one link is how to pause');
 
     const cell = (currency, field) => done.locator(`[data-receipt-currency="${currency}"] [data-source-field="${field}"] dd`);
     await cell(TOKEN, 'grossOriginalConsumedRaw').getByText('1.5 TOKEN', { exact: true }).waitFor({ timeout: 30_000 });
@@ -1774,7 +1788,7 @@ test('a finalized receipt shows its transaction hash, block hash and fee recipie
 
     assert.equal(await open.getAttribute('data-execution-can-cancel'), 'true');
     assert.match(await open.innerText(), /A transaction slot is reserved\. Nothing has been sent\.\s+It can still be stopped: pause your sequence before it is signed\./);
-    assert.equal(await open.getByRole('link', { name: 'Pause the sequence', exact: true }).getAttribute('href'), '#/sequence');
+    assert.equal(await open.getByRole('link', { name: 'How to pause', exact: true }).getAttribute('href'), '#/docs/non-custodial#pause-revoke-withdraw');
     assert.deepEqual([await done.getAttribute('data-execution-can-cancel'), await done.getByRole('link').count()], ['false', 0]);
     const text = await receipts.innerText();
     assert.doesNotMatch(text, FORBIDDEN); assert.doesNotMatch(text, /_/, 'no code is printed');
@@ -1785,7 +1799,7 @@ test('a finalized receipt shows its transaction hash, block hash and fee recipie
     await jump(s.page, '00:31');
     await receipts.locator(`[data-execution-intent="${reserved.intentId}"][data-execution-state="signing"]`).waitFor();
     assert.deepEqual(sent.map(call => [call.path, call.body, Boolean(call.csrf)]), [['/api/execution/v1/list', { afterIntentId: null, limit: 10 }, true], ['/api/execution/v1/status', { intentId: reserved.intentId }, true]]);
-    assert.equal(await open.getByRole('link', { name: 'Pause the sequence' }).count(), 0, 'signed: no longer offered as stoppable');
+    assert.equal(await open.getByRole('link', { name: 'How to pause' }).count(), 0, 'signed: no longer offered as stoppable');
     assert.deepEqual(await receipts.locator('[data-execution-intent]').evaluateAll(cards => cards.map(card => card.getAttribute('data-execution-intent'))), [reserved.intentId, finalized.intentId], 'replaced where it stands');
     assert.equal(s.wallet.state.signed.length, 1, 'only the login signature');
   } finally { await s.close(); }
@@ -2037,700 +2051,149 @@ test('Start tracking is offered for the sequences the wallet lists, reads each o
   } finally { await s.close(); }
 });
 
-/**
- * The way back from a revoked operator, which this product could reach and not leave.
- *
- * `revokeOperator` sets the vault's operator to the zero address. Our own resume
- * builder then refuses with `sequence_activation_unavailable` (sequence.ts, the
- * `state.operator !== d.operator` clause) and the screen disables Review
- * activation — correctly, because resuming a vault with no operator would
- * un-pause an automation that cannot execute. But nothing offered the one
- * transaction that undoes it, so a person who revoked from this product could
- * never enable automation from it again.
- *
- * This exercises the whole path against the real component and the real builder.
- * The mock wallet refuses eth_sendTransaction by design, and logs its parameters
- * before refusing — so what WOULD be signed is read from that log, byte for byte,
- * without anything being signed.
- */
-test('a revoked operator can be authorised again, and the transaction is setOperator with the deployment’s own operator', async () => {
-  const s = await scenario();
-  const ZERO = `0x${'00'.repeat(20)}`;
-  const chain = fakeSequenceChain(OWNER, { roots: [100n], operator: ZERO });
-  await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
-  await s.context.addInitScript(() => {
-    let wallet = window.__dominoWalletRequest;
-    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_estimateGas', 'eth_getBalance', 'eth_sendTransaction'].includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
-    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
-  });
-  try {
-    await login(s.page);
-    s.set({ sequenceRelease: { status: 200, body: chain.release } });
-    await s.page.goto(`${s.origin}/#/sequence`);
-    await s.page.reload();
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+// ---- The automation page (the owner's simpler page, 2026-09-24): the wallet's open positions, one action, two wallet steps ----
+//
+// Changed on purpose (owner, 2026-09-24): the Owner controls, Network budget, Create a paused sequence and Manage a sequence cards,
+// every typed NFT id or address, and the review wall are gone, and so are the tests that drove them (operator restoration, rule and
+// limit changes, repairs, recoveries, the receipt check button and activation readiness). finance/sequence.ts keeps that logic,
+// unchanged. What is left is one guided card: pick a position, a mode, the quote currency, keep the limits, consent, and press Set up
+// automation, which runs the approval and the paused creation through the same client, each read back by hash.
+//
+// The positions arrive from useWalletPositions (lib/walletPositions.ts), which answers idle until its endpoint lands; these tests
+// inject them through the test-only lab route (#/sequence-lab/<spec>, App.tsx behind __DOMINO_TEST_HOOKS__), as the hook would.
 
-    const main = s.page.locator('main');
-    // Owner controls are their own path: the sequences are listed from the wallet first.
-    await main.getByRole('button', { name: 'Read my sequences', exact: true }).click();
-    await main.getByLabel('Sequence address').waitFor();
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    const restore = main.getByRole('button', { name: 'Review operator authorisation', exact: true });
-    await restore.waitFor();
-
-    // The dead end itself: activation cannot be reviewed while the operator is gone.
-    const activation = main.getByRole('button', { name: 'Review activation', exact: true });
-    if (await activation.count()) assert.equal(await activation.isDisabled(), true, 'activation stays refused until the operator is back');
-
-    // Every owner step is bounded by the network budget, so it has to be set first.
-    for (const [label, value] of [['Maximum wallet gas units', '300000'], ['Maximum fee per gas (wei)', '2000000000'],
-      ['Maximum priority fee per gas (wei)', '1000000'], ['Keep native gas reserve (wei)', '0']]) {
-      await main.getByLabel(label, { exact: true }).fill(value);
-    }
-    await s.page.waitForFunction(() => {
-      const button = [...document.querySelectorAll('main button')].find((item) => item.textContent === 'Review operator authorisation');
-      return Boolean(button) && !button.disabled;
-    });
-    await restore.click();
-    const panel = main.locator('[role="region"][aria-label="Sequence wallet review"]');
-    await panel.waitFor();
-    const words = await panel.innerText();
-    assert.match(words, /Review operator authorisation/, 'the step is named, not left as a code');
-    assert.match(words, new RegExp(`Authorise operator ${chain.release.deployment.operator} to execute for root NFT #100 again\.`, 'i'), 'the address shown is the deployment’s own operator');
-    assert.match(words, /The root NFT stays in your wallet/);
-    assert.match(words, /no Domino service fee/, 'an owner transaction carries no service fee');
-    assert.doesNotMatch(words, /0x0{40}/, 'the zero address is never offered as an operator');
-
-    await panel.getByRole('checkbox').check();
-    await panel.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
-    for (let waited = 0; chain.sends.length === 0 && waited < 15000; waited += 250) await new Promise((done) => setTimeout(done, 250));
-    assert.equal(chain.sends.length, 1, 'exactly one transaction was offered');
-    const tx = chain.sends[0];
-    assert.equal(String(tx.to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
-    const decoded = decodeFunctionData({ abi: parseAbi(['function setOperator(address next)']), data: tx.data });
-    assert.equal(decoded.functionName, 'setOperator', 'one call, and it is the restoration');
-    assert.deepEqual(decoded.args.map((value) => String(value).toLowerCase()), [chain.release.deployment.operator.toLowerCase()],
-      'the argument is the deployment’s operator, never anything a person typed');
-    assert.deepEqual([...new Set(chain.log)].sort(), ['eth_call', 'eth_estimateGas', 'eth_getBalance', 'eth_getBlockByNumber', 'eth_getCode', 'eth_getTransactionCount', 'eth_sendTransaction'],
-      'reads, one simulation, one send — and nothing else');
-    assert.deepEqual(s.wallet.state.refused, [], 'nothing was asked of the wallet outside its own set');
-  } finally { await s.close(); }
+/** A position as useWalletPositions answers it, in the fake chain's pool. The symbols are what the page shows, never the addresses. */
+const walletPosition = (chain, tokenId, patch = {}) => ({
+  tokenId: String(tokenId), status: 'open', poolId: chain.poolId,
+  currencies: [{ address: chain.poolKey.currency0, symbol: 'AAA', decimals: 18 }, { address: chain.poolKey.currency1, symbol: 'BBB', decimals: 6 }],
+  fee: 3000, tickSpacing: 60, hooks: zeroAddress, tickLower: -60, tickUpper: 60, liquidity: '1000', sqrtPriceX96: null, tick: 0, unclaimedFees: null, principal: null, ...patch,
 });
+const labHash = (spec) => `#/sequence-lab/${encodeURIComponent(JSON.stringify(spec))}`;
+/** Everything the sequence client and the gas suggestion ask of the wallet, past connecting. */
+const CHAIN_METHODS = ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_gasPrice', 'eth_getTransactionCount', 'eth_estimateGas', 'eth_getBalance', 'eth_sendTransaction', 'eth_getTransactionByHash', 'eth_getTransactionReceipt'];
 
-test('with its operator in place a sequence is never offered the restoration', async () => {
-  const s = await scenario();
-  const chain = fakeSequenceChain(OWNER, { roots: [100n] });
-  await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
-  await s.context.addInitScript(() => {
+/** Sends `methods` to the fake chain (or to `answer`), keeping every other wallet method on the mock wallet, which refuses what it does not know. */
+async function routeChain(s, chain, methods, answer = (method, params) => chain.request(method, params)) {
+  await s.context.exposeFunction('__dominoChainRead', answer);
+  await s.context.addInitScript((names) => {
+    // Whichever runs first, this script or the wallet binding, the binding is kept for everything but the chain's methods.
     let wallet = window.__dominoWalletRequest;
-    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber'].includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
+    const request = (id, method, params) => names.includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
     Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
-  });
-  try {
-    await login(s.page);
-    s.set({ sequenceRelease: { status: 200, body: chain.release } });
-    await s.page.goto(`${s.origin}/#/sequence`);
-    await s.page.reload();
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
-    const main = s.page.locator('main');
-    await main.getByRole('button', { name: 'Read my sequences', exact: true }).click();
-    await main.getByLabel('Sequence address').waitFor();
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    await main.getByRole('button', { name: 'Review operator revocation', exact: true }).waitFor();
-    assert.equal(await main.getByRole('button', { name: 'Review operator authorisation' }).count(), 0,
-      'nothing to restore, so nothing is offered');
-  } finally { await s.close(); }
-});
+  }, methods);
+}
 
+/** Connected on Robinhood Chain and no further: Sign in is offered and never pressed. */
+async function connectOnly(page) {
+  await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+  await page.locator('header [aria-haspopup="dialog"]').click();
+  await page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+  await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+  await page.keyboard.press('Escape');
+}
 
-async function openSequenceControls(s, chain) {
-  await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
-  await s.context.addInitScript(() => {
-    let wallet = window.__dominoWalletRequest;
-    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_estimateGas', 'eth_getBalance', 'eth_sendTransaction', 'eth_getTransactionByHash', 'eth_getTransactionReceipt'].includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
-    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
-  });
-  await login(s.page);
+/** A link naming the mode and the position, with the release published: the quote currency 0 chosen, consent ticked, Set up automation pressed. */
+async function setUpFromLink(s, chain, { mode = 'compound', tokenId = '5' } = {}) {
   s.set({ sequenceRelease: { status: 200, body: chain.release } });
-  await s.page.goto(`${s.origin}/#/sequence`);
+  await s.page.goto(`${s.origin}/${labHash({ positions: [walletPosition(chain, tokenId)], mode, tokenId })}`);
   await s.page.reload();
-  await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
-  const main = s.page.locator('main');
-  await main.getByRole('button', { name: 'Read my sequences', exact: true }).click();
-  await main.getByLabel('Sequence address').waitFor();
-  for (const [label, value] of [['Maximum wallet gas units', '300000'], ['Maximum fee per gas (wei)', '2000000000'],
-    ['Maximum priority fee per gas (wei)', '1000000'], ['Keep native gas reserve (wei)', '0']]) {
-    await main.getByLabel(label, { exact: true }).fill(value);
-  }
-  return main;
+  const card = s.page.locator('[data-sequence-create]');
+  await card.waitFor({ timeout: 30_000 });
+  await card.getByRole('radiogroup', { name: 'Quote currency' }).getByRole('radio', { name: 'AAA', exact: true }).click();
+  await card.getByRole('checkbox', { name: /^I consent to using this NFT’s already uncollected fees/ }).check();
+  await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+  return card;
 }
 
-test('creation mode shows 2% or 4%, simple locks one position, and changing mode clears consent and the reviewed transaction', async () => {
+test('with no wallet the page asks to connect; connected, the wallet’s own positions are the only way in, and with none open it points to New position, reading nothing from the chain', async () => {
   const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [] });
-  try {
-    const main = await openSequenceControls(s, chain);
-    await main.getByLabel('Root NFT ID', { exact: true }).fill('300');
-    await main.getByRole('button', { name: 'Read my root NFT', exact: true }).click();
-    const mode = main.getByRole('combobox', { name: /^Automation mode/ });
-    await mode.waitFor();
-    assert.equal(await mode.inputValue(), 'compound');
-    const cap = main.getByLabel('Maximum positions, including root', { exact: true });
-    assert.equal(await cap.inputValue(), '1');
-    assert.equal(await cap.isDisabled(), true);
-    for (const [label, value] of [['Distance to range ceiling (basis points)', '500'], ['Maximum successor overlap (basis points)', '2000'],
-      ['Minimum execution interval (seconds)', '60'], ['Successor upside (basis points)', '5000'], ['Maximum swap slippage (basis points)', '100'],
-      ['Maximum price impact (basis points)', '100'], ['Maximum execution gas cost (wei)', '1000000000000000'], ['Maximum observation age (seconds)', '60'], ['Forecast horizon (seconds)', '3600']]) {
-      await main.getByLabel(label, { exact: true }).fill(value);
-    }
-    const consent = main.getByRole('checkbox', { name: /^I consent to using already uncollected fees/ });
-    await consent.check();
-    await main.getByRole('button', { name: 'Prepare approval or paused creation', exact: true }).click();
-    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
-    await review.waitFor();
-    assert.match(await review.innerText(), /Auto-compound: 2%/);
-    assert.equal(chain.simulations.at(-1).args[0].policy.serviceFeeBps, 200);
-    assert.equal(chain.simulations.at(-1).args[0].policy.maxPositions, 1);
-    await review.getByRole('checkbox').check();
-    await mode.selectOption('domino');
-    assert.equal(await review.count(), 0, 'the old reviewed step is removed');
-    assert.equal(await consent.isChecked(), false, 'the changed price needs fresh consent');
-    assert.equal(await main.getByRole('button', { name: 'Prepare approval or paused creation', exact: true }).isDisabled(), true);
-    assert.equal(await cap.isDisabled(), false);
-    await cap.fill('3');
-    assert.match(await consent.locator('..').innerText(), /service fee is 4%/);
-    await consent.check();
-    await main.getByRole('button', { name: 'Prepare approval or paused creation', exact: true }).click();
-    await review.waitFor();
-    assert.match(await review.innerText(), /Domino-compound: 4%/);
-    assert.equal(await review.getByRole('checkbox').isChecked(), false, 'new review needs its own acknowledgement');
-    assert.equal(chain.simulations.at(-1).args[0].policy.serviceFeeBps, 400);
-    assert.equal(chain.simulations.at(-1).args[0].policy.maxPositions, 3);
-    assert.deepEqual(chain.missing, []);
-    assert.equal(chain.sends.length, 0, 'reviewing alone never sends');
-  } finally { await s.close(); }
-});
-
-test('management reads the current rate and reviews an explicit mode change; a second choice invalidates the acknowledgement', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], serviceFeeBps: 200, maxPositions: 1 });
-  try {
-    const main = await openSequenceControls(s, chain);
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    await main.locator('[data-sequence-current-mode="compound"]').waitFor();
-    assert.match(await main.locator('[data-sequence-current-mode]').innerText(), /Auto-compound · 2%/);
-    await main.getByText('Adjust automation rules', { exact: true }).click();
-    const mode = main.getByRole('combobox', { name: /^Automation mode for rule change/ });
-    assert.equal(await mode.inputValue(), 'compound');
-    await mode.selectOption('domino');
-    for (const [label, value] of [['Distance to range ceiling (basis points)', '500'], ['Maximum successor overlap (basis points)', '2000'],
-      ['Minimum execution interval (seconds)', '60'], ['Maximum positions, including root', '3']]) {
-      await main.getByLabel(label, { exact: true }).fill(value);
-    }
-    await main.getByRole('button', { name: 'Review automation rule change', exact: true }).click();
-    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
-    await review.waitFor();
-    assert.match(await review.innerText(), /New Domino-compound policy: 4%/);
-    assert.equal(chain.simulations.at(-1).args[0].serviceFeeBps, 400);
-    assert.equal(chain.simulations.at(-1).args[0].maxPositions, 3);
-    assert.equal(chain.simulations.at(-1).args[0].paused, false, 'mode change preserves active state');
-    await review.getByRole('checkbox').check();
-    await mode.selectOption('compound');
-    assert.equal(await review.count(), 0);
-    assert.equal(await main.getByLabel('Maximum positions, including root', { exact: true }).inputValue(), '1');
-    await main.getByRole('button', { name: 'Review automation rule change', exact: true }).click();
-    await review.waitFor();
-    assert.equal(await review.getByRole('checkbox').isChecked(), false);
-    assert.match(await review.innerText(), /New Auto-compound policy: 2%/);
-    assert.equal(chain.simulations.at(-1).args[0].serviceFeeBps, 200);
-    assert.equal(chain.simulations.at(-1).args[0].maxPositions, 1);
-    await review.getByRole('checkbox').check();
-    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
-    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
-    assert.equal(chain.sends.length, 1);
-    const { functionName, args } = decodeFunctionData({ abi: chainAbi, data: chain.sends[0].data });
-    assert.equal(functionName, 'setPolicy');
-    assert.equal(args[0].serviceFeeBps, 200);
-    assert.equal(args[0].maxPositions, 1);
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-});
-
-
-test('a Domino sequence with a child cannot prepare a switch to simple mode', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], chains: { 0: [{ id: 101n, active: true }] } });
-  try {
-    const main = await openSequenceControls(s, chain);
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    await main.locator('[data-sequence-current-mode="domino"]').waitFor();
-    await main.getByText('Adjust automation rules', { exact: true }).click();
-    await main.getByRole('combobox', { name: /^Automation mode for rule change/ }).selectOption('compound');
-    for (const [label, value] of [['Distance to range ceiling (basis points)', '500'], ['Maximum successor overlap (basis points)', '2000'], ['Minimum execution interval (seconds)', '60']]) {
-      await main.getByLabel(label, { exact: true }).fill(value);
-    }
-    await main.getByRole('button', { name: 'Review automation rule change', exact: true }).click();
-    await main.locator('[data-notice-code="position_limit_below_membership"]').waitFor();
-    assert.equal(await main.getByRole('region', { name: 'Sequence wallet review', exact: true }).count(), 0);
-    assert.equal(chain.simulations.length, 0);
-    assert.equal(chain.sends.length, 0);
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-});
-
-
-// ---- The five owner functions that gained an interface: what the wallet would actually be asked to sign -----------
-
-/**
- * `setPolicy`, `setExecutionLimits`, `rearmRoot`, `recoverUnmanagedPosition` and `recoverUntrackedCurrency` are owner
- * transactions this product now builds. performance.controller.test.mjs proves the closed ABI carries each signature;
- * these prove the transaction, by decoding the calldata of the one offer each step makes.
- *
- * As in the operator-authorisation case above, nothing is signed: the fake chain records eth_sendTransaction and
- * answers with a hash, so what WOULD be signed is read back byte for byte from what it recorded.
- */
-const sequenceCall = (chain) => decodeFunctionData({ abi: chainAbi, data: chain.sends[0].data });
-
-test('an automation rule change sends the whole policy struct: the four typed fields, the rest exactly as the vault reported it, and the next version', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], serviceFeeBps: 400, maxPositions: 3, policyVersion: 7n, paused: true });
-  try {
-    const main = await openSequenceControls(s, chain);
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    await main.locator('[data-sequence-current-mode="domino"]').waitFor();
-    await main.getByText('Adjust automation rules', { exact: true }).click();
-    for (const [label, value] of [['Distance to range ceiling (basis points)', '1234'], ['Maximum successor overlap (basis points)', '777'],
-      ['Minimum execution interval (seconds)', '900'], ['Maximum positions, including root', '5']]) {
-      await main.getByLabel(label, { exact: true }).fill(value);
-    }
-    await main.getByRole('button', { name: 'Review automation rule change', exact: true }).click();
-    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
-    await review.waitFor();
-    const words = await review.innerText();
-    assert.match(words, /Policy version 7 to 8\./, 'the version is the vault’s own, one higher');
-    assert.match(words, /this sequence stays paused/, 'the paused state is carried, never flipped here');
-    assert.doesNotMatch(words, FORBIDDEN);
-    await review.getByRole('checkbox').check();
-    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
-    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
-    assert.equal(chain.sends.length, 1, 'exactly one transaction was offered');
-    assert.equal(String(chain.sends[0].to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
-    const { functionName, args } = sequenceCall(chain);
-    assert.equal(functionName, 'setPolicy');
-    // paused is carried straight from the chain. serviceFeeBps comes back the same value, but by a
-    // round trip rather than a copy: with no mode chosen, sequence.ts:516 derives the mode from the
-    // fee the vault reported and :523 maps that mode back to a fee. A fee the mapping does not know
-    // refuses as invalid_sequence_policy instead of being silently rewritten. The mode-to-fee
-    // mapping itself is pinned by the tests at :1037 and :1052.
-    assert.deepEqual(args[0], { ...chain.policy, version: chain.policy.version + 1n, triggerDistanceBps: 1234, maxOverlapBps: 777, minimumIntervalSeconds: 900, maxPositions: 5 },
-      'every field of the struct: the four typed, paused and serviceFeeBps as the chain reported them, version exactly one higher');
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-});
-
-test('a safety limit change sends the whole limits struct at the next version, quotes the live values it re-read, and refuses a zero execution gas cap before anything is prepared', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], limitsVersion: 5n });
-  try {
-    const main = await openSequenceControls(s, chain);
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    await main.getByText('Adjust safety limits', { exact: true }).click();
-    const cap = main.getByLabel('Maximum execution gas cost (wei)', { exact: true });
-    for (const [label, value] of [['Successor upside (basis points)', '7500'], ['Maximum swap slippage (basis points)', '250'],
-      ['Maximum price impact (basis points)', '300'], ['Maximum execution gas cost (wei)', '0'], ['Maximum observation age (seconds)', '120'], ['Forecast horizon (seconds)', '7200']]) {
-      await main.getByLabel(label, { exact: true }).fill(value);
-    }
-    const change = main.getByRole('button', { name: 'Review safety limit change', exact: true });
-    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
-    await change.click();
-    await main.locator('[data-notice-code="invalid_sequence_policy"]').waitFor();
-    assert.equal(await review.count(), 0, 'an executor with no gas to spend is refused in words, with nothing prepared');
-    assert.equal(chain.sends.length, 0);
-
-    await cap.fill('2000000000000000');
-    await change.click();
-    await review.waitFor();
-    const words = await review.innerText();
-    assert.match(words, /Successor upside 5000 to 7500 bps/, 'the current side of each pair is the vault’s, not the form’s');
-    assert.match(words, /Limits version 5 to 6\./);
-    assert.doesNotMatch(words, FORBIDDEN);
-    await review.getByRole('checkbox').check();
-    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
-    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
-    assert.equal(chain.sends.length, 1);
-    assert.equal(String(chain.sends[0].to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
-    const { functionName, args } = sequenceCall(chain);
-    assert.equal(functionName, 'setExecutionLimits');
-    assert.deepEqual(args[0], { version: chain.limits.version + 1n, upsideBps: 7500, maxSlippageBps: 250, maxPriceImpactBps: 300,
-      maxGasCostWei: 2_000_000_000_000_000n, maxObservationAgeSeconds: 120, forecastHorizonSeconds: 7200 },
-      'the six typed limits, and the version the vault reported plus one');
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-});
-
-test('a lapsed root permission is repaired with rearmRoot, and the consent its review promises is the boolean the transaction carries', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], rootPermissionValid: false });
-  try {
-    const main = await openSequenceControls(s, chain);
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    const repair = main.getByRole('button', { name: 'Review root permission repair', exact: true });
-    await repair.click();
-    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
-    await review.waitFor();
-    const words = await review.innerText();
-    assert.match(words, /Re-establish this sequence’s permission over root NFT #100\./);
-    assert.match(words, /Fees the root has not collected are consented to as part of it, exactly as at creation\./, 'what the boolean means is said before it is sent');
-    assert.doesNotMatch(words, FORBIDDEN);
-    await review.getByRole('checkbox').check();
-    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
-    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
-    assert.equal(chain.sends.length, 1);
-    assert.equal(String(chain.sends[0].to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
-    const { functionName, args } = sequenceCall(chain);
-    assert.equal(functionName, 'rearmRoot');
-    assert.deepEqual(args, [true], 'consent is granted, never sent as false behind the sentence that promised it');
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-});
-
-test('an NFT the sequence holds but does not manage is recovered by its exact token id, and a registered position is never offered that step', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], chains: { 0: [{ id: 12n, active: false }, { id: 13n, active: true }] }, vaultHeld: [12n] });
-  try {
-    const main = await openSequenceControls(s, chain);
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    await main.locator('[data-sequence-current-mode="domino"]').waitFor();
-    // A valid root permission is not a lapsed one, so the repair of the previous test is not among these controls.
-    assert.equal(await main.getByRole('button', { name: 'Review root permission repair' }).count(), 0);
-    await main.getByText('Child positions and fee reserves', { exact: true }).click();
-    const read = main.getByRole('button', { name: 'Read position and earned-fee reserves', exact: true });
-    const recovery = main.getByRole('button', { name: 'Review unmanaged NFT recovery', exact: true });
-    await read.click();
-    await main.getByRole('button', { name: 'Select successor', exact: true }).waitFor();
-    assert.equal(await recovery.count(), 0, 'the registered root leaves through its own step, never as a stray NFT');
-
-    // An active child IS offered the withdrawal. Without this, the negative below would
-    // hold just as well for a button that had been renamed away, and prove nothing.
-    const withdrawal = main.getByRole('button', { name: 'Review child NFT withdrawal', exact: true });
-    await main.getByLabel('Root or child NFT ID', { exact: true }).fill('13');
-    await read.click();
-    await withdrawal.waitFor();
-    assert.equal(await withdrawal.count(), 1, 'an active child leaves through its own step');
-
-    await main.getByLabel('Root or child NFT ID', { exact: true }).fill('12');
-    await read.click();
-    await recovery.waitFor();
-    assert.equal(await withdrawal.count(), 0, 'a withdrawn child is not offered as an active one');
-    await recovery.click();
-    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
-    await review.waitFor();
-    const words = await review.innerText();
-    assert.match(words, /Return NFT #12, which this sequence holds but does not manage, to your wallet\./);
-    assert.doesNotMatch(words, FORBIDDEN);
-    await review.getByRole('checkbox').check();
-    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
-    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
-    assert.equal(chain.sends.length, 1);
-    assert.equal(String(chain.sends[0].to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
-    const { functionName, args } = sequenceCall(chain);
-    assert.equal(functionName, 'recoverUnmanagedPosition');
-    assert.deepEqual(args, [12n], 'the NFT read back from the vault, never the root and never another member');
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-});
-
-test('an untracked balance is returned as the exact currency and amount chosen, is offered only once the position is read, and refuses an amount of nothing', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], accounted: 250n });
-  const currency = `0x${'61'.repeat(20)}`;
-  try {
-    const main = await openSequenceControls(s, chain);
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    await main.getByText('Child positions and fee reserves', { exact: true }).click();
-    const recovery = main.getByRole('button', { name: 'Review untracked balance recovery', exact: true });
-    await main.getByLabel('Root or child NFT ID', { exact: true }).waitFor();
-    assert.equal(await recovery.count(), 0, 'no currency and no amount before the position and its reserves are read');
-    await main.getByRole('button', { name: 'Read position and earned-fee reserves', exact: true }).click();
-    await recovery.waitFor();
-
-    await main.getByRole('combobox', { name: /^Currency to return/ }).selectOption(currency);
-    const amount = main.getByLabel('Amount to return (smallest units)', { exact: true });
-    const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
-    await amount.fill('0');
-    await recovery.click();
-    await main.locator('[data-notice-code="invalid_amount"]').waitFor();
-    assert.equal(await review.count(), 0, 'returning nothing is not a transaction');
-    assert.equal(chain.sends.length, 0);
-
-    await amount.fill('4200');
-    await recovery.click();
-    await review.waitFor();
-    const words = await review.innerText();
-    assert.match(words, new RegExp(`Return 4200 raw units of ${currency} to your wallet\\.`));
-    assert.match(words, /books account for 250 units of it/, 'what the books already hold is read from the vault, not assumed');
-    assert.doesNotMatch(words, FORBIDDEN);
-    await review.getByRole('checkbox').check();
-    await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
-    await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
-    assert.equal(chain.sends.length, 1);
-    assert.equal(String(chain.sends[0].to).toLowerCase(), chain.vaults[0], 'sent to the sequence itself');
-    const { functionName, args } = sequenceCall(chain);
-    assert.equal(functionName, 'recoverUntrackedCurrency');
-    assert.deepEqual([String(args[0]).toLowerCase(), args[1]], [currency, 4200n], 'the pair chosen, unchanged: never the native default it started on');
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-});
-
-// ---- The sequence receipt: exact identity, a budget for the gas fields, and no way to send again ------------------
-
-/**
- * A wallet may reshape `gas`, `maxFeePerGas` and `maxPriorityFeePerGas` between the review and the chain (Rabby does),
- * and the old check held each to the reviewed figure, so successful transactions were reported as not matching. The
- * check now holds them to the budget the review approved — gas × maxFeePerGas — and the receipt's cost to the same,
- * while hash, from, to, calldata, nonce, value, chain and type stay exact. An inclusion past the budget is its own
- * state, apart from a revert and from a mismatch, and nothing on the screen sends a second time.
- *
- * Each case sends the root permission repair, the shortest owner step: one button, no field, no disclosure to open.
- * The review fixes gas at 120,000 units (the 100,000 estimate plus a fifth) at 2 gwei, so the approved budget is
- * 2.4e14 wei.
- */
-const APPROVED_BUDGET = 120_000n * 2_000_000_000n;
-async function sendRepair(s, chain) {
-  const main = await openSequenceControls(s, chain);
-  await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-  await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-  await main.getByRole('button', { name: 'Review root permission repair', exact: true }).click();
-  const review = main.getByRole('region', { name: 'Sequence wallet review', exact: true });
-  await review.waitFor();
-  await review.getByRole('checkbox').check();
-  await review.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
-  await main.getByRole('heading', { name: 'Transaction receipt', exact: true }).waitFor();
-  assert.equal(chain.sends.length, 1);
-  assert.deepEqual([chain.sends[0].gas, chain.sends[0].maxFeePerGas, chain.sends[0].maxPriorityFeePerGas], [numberToHex(120_000n), numberToHex(2_000_000_000n), numberToHex(1_000_000n)], 'the reviewed gas figures');
-  assert.equal(BigInt(chain.sends[0].gas) * BigInt(chain.sends[0].maxFeePerGas), APPROVED_BUDGET);
-  return main;
-}
-const checkReceipt = async (main, said) => {
-  await main.getByRole('button', { name: 'Check canonical receipt', exact: true }).click();
-  await main.getByRole('status').filter({ hasText: said }).waitFor();
-  return main.getByRole('status').innerText();
-};
-
-test('a receipt whose gas fields the wallet raised above the review is accepted while gas × maxFeePerGas and the cost paid stay within the approved budget, and the hash is shown as text', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], rootPermissionValid: false });
-  try {
-    const main = await sendRepair(s, chain);
-    const hash = `0x${'cc'.repeat(32)}`;
-    // The hash is text to copy, not a link: session.bundle.test.mjs keeps every external endpoint out of the deployable bundle.
-    assert.equal(await main.locator('.dm-acct-hash', { hasText: hash }).count(), 1, 'the hash is shown as text');
-    assert.equal(await main.locator('a[href^="http"]').count(), 0, 'and nothing on the page links out');
-    // Every gas field above the review: 60,000 × 3 gwei = 1.8e14 and 50,000 × 2.5 gwei = 1.25e14, both under the 2.4e14 approved.
-    chain.include({ transaction: { gas: numberToHex(60_000n), maxFeePerGas: numberToHex(3_000_000_000n), maxPriorityFeePerGas: numberToHex(2_000_000_000n) },
-      receipt: { gasUsed: numberToHex(50_000n), effectiveGasPrice: numberToHex(2_500_000_000n) } });
-    assert.equal(await checkReceipt(main, 'Receipt: Finalized.'), 'Receipt: Finalized. Read the root or owned sequence again before continuing.');
-    assert.equal(await main.locator('[data-notice-code]').count(), 0, 'accepted: no error code beside the sentence');
-    assert.equal(chain.sends.length, 1, 'checking a receipt sends nothing');
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-});
-
-test('an included transaction whose gas × maxFeePerGas, or whose cost paid, is past the approved budget is its own state: not a revert, not a mismatch, and nothing is sent again', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], rootPermissionValid: false });
-  try {
-    const main = await sendRepair(s, chain);
-    const over = 'Receipt: Finalized, but past the approved network budget. Nothing was sent again. Read the root or owned sequence again to see where it stands.';
-    // The reviewed 120,000 units at 3 gwei: 3.6e14, past the 2.4e14 approved.
-    chain.include({ transaction: { maxFeePerGas: numberToHex(3_000_000_000n), maxPriorityFeePerGas: numberToHex(2_000_000_000n) } });
-    assert.equal(await checkReceipt(main, 'past the approved network budget'), over);
-    assert.equal(await main.locator('[data-notice-code]').count(), 0, 'a state, not an error');
-    chain.include(null);
-    assert.equal(await checkReceipt(main, 'Waiting to be included'), 'Receipt: Waiting to be included. Check again when the chain has progressed. No transaction is retried.');
-    // The transaction fits, but the receipt says the chain charged 120,000 × 3 gwei: the receipt is held to the budget too.
-    chain.include({ transaction: { gas: numberToHex(60_000n) }, receipt: { gasUsed: numberToHex(120_000n), effectiveGasPrice: numberToHex(3_000_000_000n) } });
-    assert.equal(await checkReceipt(main, 'past the approved network budget'), over);
-    // A revert stays a revert, whatever it cost.
-    chain.include({ transaction: { maxFeePerGas: numberToHex(3_000_000_000n) }, receipt: { status: '0x0' } });
-    assert.equal(await checkReceipt(main, 'Receipt: Reverted.'), 'Receipt: Reverted. Check again when the chain has progressed. No transaction is retried.');
-    // A receipt with no cost on it cannot be held to the budget, and is refused as one that could not be read.
-    chain.include({ receipt: { gasUsed: undefined } });
-    await main.getByRole('button', { name: 'Check canonical receipt', exact: true }).click();
-    await main.locator('[data-notice-code="invalid_receipt"]').waitFor();
-    assert.equal(chain.sends.length, 1, 'across every state, one transaction was ever offered');
-    for (const name of await main.getByRole('button').allInnerTexts()) assert.doesNotMatch(name, /send again|resend|retry|speed up|replace/i, `a control named ${name}`);
-    assert.doesNotMatch(await main.innerText(), FORBIDDEN);
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-});
-
-test('a receipt whose transaction went to another address, or carried other calldata, does not match the reviewed step, whatever it cost', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], rootPermissionValid: false });
-  try {
-    const main = await sendRepair(s, chain);
-    const mismatch = main.locator('[data-notice-code="receipt_identity_changed"]');
-    chain.include({ transaction: { to: chain.release.deployment.factory } });
-    await main.getByRole('button', { name: 'Check canonical receipt', exact: true }).click();
-    await mismatch.waitFor();
-    assert.equal(await mismatch.innerText(), 'That receipt does not match the reviewed step.');
-    chain.include(null);
-    await checkReceipt(main, 'Waiting to be included');
-    chain.include({ transaction: { input: '0x' } });
-    await main.getByRole('button', { name: 'Check canonical receipt', exact: true }).click();
-    await mismatch.waitFor();
-    assert.equal(await mismatch.innerText(), 'That receipt does not match the reviewed step.');
-    // Said apart from the deployment's own sentence, which is about a profile, not a receipt.
-    assert.equal(await main.locator('[data-notice-code="deployment_identity_changed"]').count(), 0);
-    // The same transaction, unchanged, is still accepted afterwards: the refusal was the record's, not the page's.
-    chain.include({});
-    assert.equal(await checkReceipt(main, 'Receipt: Finalized.'), 'Receipt: Finalized. Read the root or owned sequence again before continuing.');
-    assert.equal(chain.sends.length, 1);
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-});
-
-test('when service readiness is unavailable for this vault, activation is withheld while other owner controls remain', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [100n], paused: true });
-  try {
-    const main = await openSequenceControls(s, chain);
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    const why = main.locator('[data-automation-service="not-operational"]');
-    await why.waitFor();
-    assert.equal(await why.innerText(), 'The automation service is not ready for this sequence. Activation is unavailable.');
-    assert.doesNotMatch(await why.innerText(), FORBIDDEN);
-    assert.equal(await main.getByRole('button', { name: 'Review activation' }).count(), 0, 'no activation while nothing would run');
-    assert.match(await main.innerText(), /Root NFT #100 · Paused · Operator 0x/, 'the chain’s own state is still said as the chain says it');
-    // The rule and limit changes sit in closed disclosures; opened, so their buttons count as offered.
-    for (const summary of ['Adjust automation rules', 'Adjust safety limits']) await main.getByText(summary, { exact: true }).click();
-    for (const [name, disabled] of [['Review pause', true], ['Review operator revocation', false], ['Review root NFT approval revocation', false], ['Review automation rule change', false], ['Review safety limit change', false]]) {
-      const button = main.getByRole('button', { name, exact: true });
-      assert.equal(await button.count(), 1, `${name} is still offered`);
-      assert.equal(await button.isDisabled(), disabled, `${name} is ${disabled ? 'disabled, as the sequence is already paused' : 'enabled'}`);
-    }
-    assert.deepEqual(chain.missing, []);
-  } finally { await s.close(); }
-  const active = await scenario(), running = fakeSequenceChain(OWNER, { roots: [100n], paused: false });
-  try {
-    const main = await openSequenceControls(active, running);
-    await main.getByLabel('Sequence address').fill(running.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    await main.getByRole('button', { name: 'Review operator revocation', exact: true }).waitFor();
-    assert.match(await main.innerText(), /Root NFT #100 · Active · Operator 0x/);
-    assert.equal(await main.locator('[data-automation-service]').count(), 0, 'an active sequence has no activation to withhold');
-    assert.equal(await main.getByRole('button', { name: 'Review activation' }).count(), 0);
-  } finally { await active.close(); }
-});
-
-test('a fresh owner-scoped service reply offers activation, then a failed recheck closes it before review', async () => {
-  const chain = fakeSequenceChain(OWNER, { roots: [100n], paused: true });
-  let operational = true;
-  const reads = [];
-  const s = await scenario({ routes: [async (request, url) => {
-    if (url.pathname !== '/api/execution/v1/availability') return;
-    const body = JSON.parse(await request.text());
-    reads.push(body);
-    const now = Math.floor(Date.now() / 1000);
-    return json({ contractVersion: executionRuntime.CONTRACT_VERSION, chainId: 4663, owner: OWNER,
-      vault: body.vault, operational, checkedAtEpoch: now, expiresAtEpoch: operational ? now + 10 : now }, 200,
-    { 'X-Domino-Execution-Contract': executionRuntime.CONTRACT_VERSION });
-  }] });
-  try {
-    const main = await openSequenceControls(s, chain);
-    await main.getByLabel('Sequence address').fill(chain.vaults[0]);
-    await main.getByRole('button', { name: 'Read owned sequence', exact: true }).click();
-    const activation = main.getByRole('button', { name: 'Review activation', exact: true });
-    await activation.waitFor();
-    assert.deepEqual(reads, [{ vault: chain.vaults[0] }]);
-    operational = false;
-    await activation.click();
-    await main.locator('[data-automation-service="not-operational"]').waitFor();
-    assert.equal(await activation.count(), 0);
-    assert.equal(await main.getByRole('region', { name: 'Sequence wallet review' }).count(), 0);
-    assert.equal(chain.sends.length, 0);
-    assert.deepEqual(reads, [{ vault: chain.vaults[0] }, { vault: chain.vaults[0] }]);
-  } finally { await s.close(); }
-});
-
-// ---- The guided creation: from a position link, two reviewed steps, no session ------------------------------------
-
-test('a guided sequence link names a failed wallet read without exposing its provider reply or asking for a signature', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [5n] });
-  const privateReply = 'private-provider-reply SECRET_CALLDATA_0xdeadbeef';
-  await s.context.exposeFunction('__dominoChainRead', (method, params) => {
-    if (method === 'eth_getCode') throw new Error(privateReply);
-    return chain.request(method, params);
-  });
-  await s.context.addInitScript(() => {
-    let wallet = window.__dominoWalletRequest;
-    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber'].includes(method)
-      ? window.__dominoChainRead(method, params) : wallet(id, method, params);
-    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
+  await routeChain(s, chain, CHAIN_METHODS);
+  // The wallet's positions, as the positions endpoint answers them: none (lib/walletPositions.ts answers idle on its own until it lands).
+  const owned = [];
+  await s.context.route(/\/api\/owned\/v2\/positions$/, async route => {
+    owned.push(route.request().method());
+    await route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', body: JSON.stringify({ owner: OWNER, block: 1, positions: [], deposits: [] }) });
   });
   try {
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
-    await s.page.locator('header [aria-haspopup="dialog"]').click();
-    await s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
-    await s.page.keyboard.press('Escape');
     s.set({ sequenceRelease: { status: 200, body: chain.release } });
     await s.page.goto(`${s.origin}/#/sequence/compound/5`);
     await s.page.reload();
     const main = s.page.locator('main');
-    const notice = main.locator('[data-notice-code="sequence_read_code"]');
+    const connect = main.locator('[data-sequence-wallet="none"]');
+    await connect.getByText('Connect your wallet', { exact: true }).waitFor();
+    await connect.getByRole('button', { name: 'Connect wallet', exact: true }).click();
+    const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+    await dialog.getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await s.page.keyboard.press('Escape');
+    const empty = main.locator('[data-sequence-positions="empty"]');
+    await empty.getByText('No open positions', { exact: true }).waitFor();
+    assert.equal(await empty.getByRole('link', { name: 'New position' }).getAttribute('href'), '#/new');
+    assert.equal(await main.locator('input').count(), 0, 'no NFT id or address is ever typed');
+    const text = await main.innerText();
+    assert.doesNotMatch(text, /Owner controls|Network budget|Create a paused sequence|Manage a sequence|Root NFT|Read my sequences|Sequence address/i);
+    assert.doesNotMatch(text, FORBIDDEN);
+    assert.ok(owned.every(method => method === 'POST'), 'the positions are asked for, never sent');
+    assert.deepEqual(chain.log, [], 'nothing is read from the chain by opening the page');
+    assert.deepEqual(chain.sends, []);
+    assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
+  } finally { await s.close(); }
+});
+
+test('a failed wallet read at Set up automation is named without its provider reply, and nothing is sent or signed', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [] });
+  const privateReply = 'private-provider-reply SECRET_CALLDATA_0xdeadbeef';
+  await routeChain(s, chain, ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_gasPrice'], (method, params) => {
+    if (method === 'eth_getCode') throw new Error(privateReply);
+    return chain.request(method, params);
+  });
+  try {
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain);
+    const notice = card.locator('[data-notice-code="sequence_read_code"]');
     await notice.waitFor({ timeout: 30_000 });
-    assert.match(await notice.innerText(), /wallet could not read deployed contract code/i);
-    assert.doesNotMatch(await main.innerText(), /SECRET_CALLDATA|deadbeef/);
-    assert.equal(await main.locator('[data-sequence-create]').count(), 0, 'the guided form stays closed after a failed read');
+    assert.equal(await notice.innerText(), 'The wallet could not read deployed contract code. Check its RPC connection, then press Set up automation again.');
+    assert.equal(await card.locator('[data-wallet-step="approve-root"]').getAttribute('data-step-state'), 'failed');
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /SECRET_CALLDATA|deadbeef/);
     assert.deepEqual(chain.sends, [], 'no wallet transaction was requested');
     assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature was requested');
   } finally { await s.close(); }
 });
 
-test('a rejected guided contract read exposes only the closed function stage', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [5n] });
+test('a rejected contract read at Set up automation exposes only the closed function stage', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [] });
   const privateReply = 'private-provider-reply SECRET_CALLDATA_0xdeadbeef';
   const attempts = [];
-  await s.context.exposeFunction('__dominoChainRead', (method, params) => {
+  await routeChain(s, chain, ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_gasPrice'], (method, params) => {
     if (method === 'eth_call' && params[0].data.startsWith(toFunctionSelector('nextOwnerNonce(address)'))) {
       attempts.push(params[1]);
       throw new Error(privateReply);
     }
     return chain.request(method, params);
   });
-  await s.context.addInitScript(() => {
-    let wallet = window.__dominoWalletRequest;
-    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber'].includes(method)
-      ? window.__dominoChainRead(method, params) : wallet(id, method, params);
-    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
-  });
   try {
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
-    await s.page.locator('header [aria-haspopup="dialog"]').click();
-    await s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
-    await s.page.keyboard.press('Escape');
-    s.set({ sequenceRelease: { status: 200, body: chain.release } });
-    await s.page.goto(`${s.origin}/#/sequence/compound/5`);
-    await s.page.reload();
+    await connectOnly(s.page);
+    const card = await setUpFromLink(s, chain);
     const notice = s.page.locator('main [data-notice-code="sequence_read_call"]');
     await notice.waitFor({ timeout: 30_000 });
     assert.equal(await notice.getAttribute('data-notice-stage'), 'factory_next_owner_nonce');
     assert.ok(attempts.length >= 3, 'a persistent provider rejection exhausts the bounded retry');
     assert.equal(new Set(attempts.slice(0, 3)).size, 1, 'all attempts use the same pinned block');
     assert.doesNotMatch(await s.page.locator('main').innerText(), /SECRET_CALLDATA|deadbeef/);
+    assert.equal(await card.getByRole('button', { name: 'Set up automation', exact: true }).isEnabled(), true, 'pressed again once the wallet recovers');
     assert.deepEqual(chain.sends, []);
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });
 
-test('isolated wallet rejections at the engine verification calls recover at the pinned block without a send', async () => {
-  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [5n] });
+test('isolated wallet rejections at the engine verification calls recover at the pinned block, and the setup carries on', async () => {
+  // Approved already (the fake's default), so the creation is the one step the chain prepares.
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], settled: true });
   const { engine } = chain.release.deployment;
   const selectors = { readHelperHash: toFunctionSelector('readHelperHash()'), priceGuard: toFunctionSelector('priceGuard()') };
   const attempts = { readHelperHash: [], priceGuard: [] };
   const codeAttempts = [];
-  await s.context.exposeFunction('__dominoChainRead', (method, params) => {
+  await routeChain(s, chain, CHAIN_METHODS, (method, params) => {
     if (method === 'eth_getCode' && params[0].toLowerCase() === engine.toLowerCase()) {
       codeAttempts.push(params[1]);
       if (codeAttempts.length === 1) throw new Error('private-provider-reply SECRET_CALLDATA_0xdeadbeef');
@@ -2744,23 +2207,11 @@ test('isolated wallet rejections at the engine verification calls recover at the
     }
     return chain.request(method, params);
   });
-  await s.context.addInitScript(() => {
-    let wallet = window.__dominoWalletRequest;
-    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber'].includes(method)
-      ? window.__dominoChainRead(method, params) : wallet(id, method, params);
-    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
-  });
   try {
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
-    await s.page.locator('header [aria-haspopup="dialog"]').click();
-    await s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
-    await s.page.keyboard.press('Escape');
-    s.set({ sequenceRelease: { status: 200, body: chain.release } });
-    await s.page.goto(`${s.origin}/#/sequence/compound/5`);
-    await s.page.reload();
+    await connectOnly(s.page);
+    await setUpFromLink(s, chain);
     const main = s.page.locator('main');
-    await main.locator('[data-sequence-create]').waitFor({ timeout: 30_000 });
+    await main.locator(`[data-sequence-created="${chain.predict(0)}"]`).waitFor({ timeout: 60_000 });
     assert.ok(codeAttempts.length >= 2, 'the rejected bytecode read was retried');
     assert.equal(codeAttempts[0], codeAttempts[1], 'bytecode retry used the same pinned block');
     for (const name of Object.keys(selectors)) {
@@ -2768,118 +2219,78 @@ test('isolated wallet rejections at the engine verification calls recover at the
       assert.equal(attempts[name][0], attempts[name][1], `${name} retry used the same pinned block`);
     }
     assert.equal(attempts.readHelperHash[0], attempts.priceGuard[0], 'both engine reads belong to one pinned verification');
-    assert.equal(await main.locator('[data-notice-code="sequence_read_call"]').count(), 0);
+    assert.equal(await main.locator('[data-notice-code]').count(), 0);
     assert.doesNotMatch(await main.innerText(), /SECRET_CALLDATA|deadbeef/);
-    assert.deepEqual(chain.sends, []);
+    assert.deepEqual(chain.sends.map(tx => decodeFunctionData({ abi: chainAbi, data: tx.data }).functionName), ['createVault'], 'approved already: only the creation is offered');
     assert.equal(s.wallet.state.signed.length, 0);
   } finally { await s.close(); }
 });
 
 /**
- * SequenceCreate.tsx, driven the way a person reaches it: a link naming the mode and the position NFT, a wallet that
- * is connected and nothing more. The chain is the fake above with nothing approved and every send settled at once, so
- * the approval is the first step the review offers, the creation the second, and each receipt comes back finalized
- * on the first check. What the wallet was asked to sign is decoded from the two transactions the chain recorded.
+ * SequenceCreate.tsx, driven the way a person reaches it: a position page's link naming the mode and the position, a wallet that is
+ * connected and nothing more. The chain is the fake above with nothing approved and every send settled at once, so Set up automation
+ * offers the approval first and the creation second, each receipt finalized on its first check. What the wallet was asked to sign is
+ * decoded from the two transactions the chain recorded.
  */
-test('from a position link, a connected wallet without a session puts the NFT under Domino-compound in two reviewed steps: the approval, then the paused creation, with the defaults on the wire', async () => {
+test('from a position link, one press puts the NFT under Domino-compound: the approval, then the paused creation, each step turning green, with the defaults on the wire', async () => {
   const s = await scenario(), ROOT = 5n;
   const chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true });
   const { factory, positionManager, operator } = chain.release.deployment, vault = chain.predict(0);
-  // Everything the sequence client and the gas suggestion ask of the wallet, past connecting, is the chain's to answer.
-  await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
-  await s.context.addInitScript((methods) => {
-    let wallet = window.__dominoWalletRequest;
-    const request = (id, method, params) => methods.includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
-    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
-  }, ['eth_call', 'eth_getCode', 'eth_getBlockByNumber', 'eth_gasPrice', 'eth_getTransactionCount', 'eth_estimateGas', 'eth_getBalance', 'eth_sendTransaction', 'eth_getTransactionByHash', 'eth_getTransactionReceipt']);
+  await routeChain(s, chain, CHAIN_METHODS);
   const services = [];
   s.page.on('request', request => { if (/\/api\/(deposit|session)\//.test(request.url())) services.push(new URL(request.url()).pathname); });
-  const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
   const lower = value => String(value).toLowerCase();
   try {
-    // Connected on Robinhood Chain, and no further: Sign in is offered and never pressed.
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
-    await s.page.locator('header [aria-haspopup="dialog"]').click();
-    await dialog.getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
-    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
-    await s.page.keyboard.press('Escape');
-
-    // The link: the mode and the NFT in the hash, with the release published. Reloaded so the screen mounts on it.
+    await connectOnly(s.page);
+    // The link: the mode and the NFT, with the wallet's positions (an open one elsewhere, and a closed one) and the release published.
     s.set({ sequenceRelease: { status: 200, body: chain.release } });
-    await s.page.goto(`${s.origin}/#/sequence/domino/${ROOT}`);
+    const positions = [walletPosition(chain, ROOT), walletPosition(chain, 7, { tick: 500 }), walletPosition(chain, 9, { status: 'closed', liquidity: '0' })];
+    await s.page.goto(`${s.origin}/${labHash({ positions, mode: 'domino', tokenId: String(ROOT) })}`);
     await s.page.reload();
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
-    const panel = s.page.locator('[data-sequence-create]');
-    const root = panel.locator(`[data-sequence-root="${ROOT}"]`);
-    // Read without a press: the deployment verified through the wallet, the sequences listed, the NFT inspected.
-    await root.waitFor({ timeout: 30_000 });
-    assert.equal(await panel.getAttribute('data-sequence-create-mode'), 'domino', 'the link’s mode is chosen');
-    assert.equal(await panel.getAttribute('data-sequence-create'), 'limits', 'the position and the mode are in; the limits are next');
-    assert.equal(await panel.locator('[data-sequence-mode="domino"]').getAttribute('aria-checked'), 'true');
-    assert.match(await root.innerText(), new RegExp(`^NFT ${ROOT} · pool 0x[0-9a-f]{4}…[0-9a-f]{4} · ticks -60 to 60 · .* Yours, and not in a sequence\\.$`));
-    assert.equal(await panel.locator('[data-sequence-create-review]').count(), 0, 'nothing is reviewed by arriving');
-    assert.deepEqual(chain.sends, [], 'nothing is sent by arriving');
-    assert.deepEqual([await panel.getByLabel('Positions in the sequence', { exact: true }).inputValue(), await panel.getByLabel('Successor upside (%)', { exact: true }).inputValue()], ['3', '50'], 'the defaults, in the units a person reads');
+    const main = s.page.locator('main');
+    const card = main.locator('[data-sequence-create]');
+    await card.waitFor({ timeout: 30_000 });
 
-    // A quote choice is required even when the link selected the NFT and mode. The pool's token order is not consent.
-    const quote = panel.getByRole('radiogroup', { name: 'Quote currency' });
-    const quote0 = quote.getByRole('radio', { name: /^Quote: currency 0 / });
-    const quote1 = quote.getByRole('radio', { name: /^Quote: currency 1 / });
-    assert.match(await quote.innerText(), new RegExp(chain.poolKey.currency0), 'the full currency0 identity is shown');
-    assert.match(await quote.innerText(), new RegExp(chain.poolKey.currency1), 'the full currency1 identity is shown');
-    assert.equal(await quote0.isChecked(), false);
-    assert.equal(await quote1.isChecked(), false);
-    await panel.getByRole('checkbox', { name: /^I consent to using this NFT’s already uncollected fees/ }).check();
-    assert.equal(await panel.getByRole('button', { name: 'Review the wallet steps', exact: true }).isDisabled(), true);
-    await quote1.check();
-    assert.equal(await panel.getByRole('button', { name: 'Review the wallet steps', exact: true }).isEnabled(), true);
-    // Changing orientation invalidates even a prepared approval; the final choice makes currency0 the quote.
-    await panel.getByRole('button', { name: 'Review the wallet steps', exact: true }).click();
-    await panel.locator('[data-sequence-create-review="approve-root"]').waitFor({ timeout: 30_000 });
-    await quote0.check();
-    assert.equal(await panel.locator('[data-sequence-create-review]').count(), 0);
-    assert.equal(await quote0.isChecked(), true);
-    await panel.getByRole('button', { name: 'Review the wallet steps', exact: true }).click();
-    const review = panel.locator('[data-sequence-create-review]');
-    await panel.locator('[data-sequence-create-review="approve-root"]').waitFor({ timeout: 30_000 });
-    assert.equal(await panel.getAttribute('data-sequence-create'), 'review');
-    let words = await review.innerText();
-    assert.match(words, /Review root NFT approval/, 'the step is named, not left as a code');
-    assert.match(words, new RegExp(`Approve only NFT #${ROOT} to the predicted sequence\\. No approval for all NFTs\\.`));
-    assert.match(words, new RegExp(`Sequence: ${vault}`), 'the predicted address, derived from the factory and the owner’s nonce');
-    assert.doesNotMatch(words, FORBIDDEN);
-    const sendStep = async (kind) => {
-      const step = panel.locator(`[data-sequence-create-review="${kind}"]`);
-      await step.getByRole('checkbox', { name: /^I reviewed the NFT, owner, sequence address, currencies, fees and limits for this single step\./ }).check();
-      await step.getByRole('button', { name: 'Send this step in wallet', exact: true }).click();
-      await panel.locator(`[data-sequence-create-sent="${kind}"][data-sequence-create-receipt="finalized"]`).waitFor({ timeout: 30_000 });
-    };
-    await sendStep('approve-root');
+    // The picker: the wallet's open positions only, the link's one chosen; the link's mode chosen; the quote currency next.
+    const picker = card.getByRole('radiogroup', { name: 'Your open positions' });
+    assert.deepEqual(await picker.getByRole('radio').evaluateAll(items => items.map(item => [item.getAttribute('data-sequence-position'), item.getAttribute('aria-checked')])), [['5', 'true'], ['7', 'false']], 'open positions only; the link preselects its own');
+    assert.match((await picker.getByRole('radio').first().innerText()).trim(), /^AAA \/ BBB\s+0\.30%\s+#5$/);
+    assert.equal(await card.getAttribute('data-sequence-create-mode'), 'domino');
+    assert.equal(await card.getAttribute('data-sequence-create'), 'quote');
+    assert.equal(await card.locator('[data-sequence-mode="domino"]').getAttribute('aria-checked'), 'true');
+    assert.equal(await main.locator('input:not([type="checkbox"])').count(), 0, 'nothing is typed to choose the position');
+    const action = card.getByRole('button', { name: 'Set up automation', exact: true });
+    assert.equal(await action.isDisabled(), true, 'the quote currency and consent come first');
+    // The quote currency: two token buttons, symbols only, neither chosen by the pool's token order.
+    const quote = card.getByRole('radiogroup', { name: 'Quote currency' });
+    assert.match((await quote.innerText()).trim(), /^AAA\s+BBB$/);
+    assert.deepEqual(await quote.getByRole('radio').evaluateAll(items => items.map(item => item.getAttribute('aria-checked'))), ['false', 'false']);
+    await quote.getByRole('radio', { name: 'AAA', exact: true }).click();
+    // The limits a person sets at a glance, at their defaults; the rest folded away under More limits.
+    assert.deepEqual([await card.getByLabel('Next range higher by (%)', { exact: true }).inputValue(), await card.getByLabel('Positions in the sequence', { exact: true }).inputValue()], ['50', '3']);
+    assert.equal(await card.locator('details').evaluate(details => details.open), false, 'More limits starts folded');
+    assert.equal(await card.locator('summary').innerText(), 'More limits');
+    await card.getByRole('checkbox', { name: /^I consent to using this NFT’s already uncollected fees/ }).check();
+    assert.equal(await action.isEnabled(), true);
+    const step = key => card.locator(`[data-wallet-step="${key}"]`);
+    assert.match(await step('approve-root').innerText(), /Approve position #5/);
+    assert.deepEqual([await step('approve-root').getAttribute('data-step-state'), await step('create').getAttribute('data-step-state')], ['upcoming', 'upcoming']);
+    const text = await main.innerText();
+    assert.doesNotMatch(text, /Owner controls|Network budget|Create a paused sequence|Manage a sequence|Root NFT|basis points|\bbps\b|\bwei\b|0x[0-9a-f]{6}/i, 'no removed card, no raw units, no address');
+    assert.doesNotMatch(text, FORBIDDEN);
+    await s.page.screenshot({ path: join(shots(), 'p2-sequence-ready.png'), fullPage: true });
+    await action.click();
 
-    // Its receipt in: the creation is reviewed on its own, with nothing pressed, and the defaults are what it carries.
-    await panel.locator('[data-sequence-create-review="create"]').waitFor({ timeout: 30_000 });
-    words = await review.innerText();
-    assert.match(words, /Review paused sequence creation/);
-    assert.match(words, new RegExp(`Create a paused sequence from NFT #${ROOT}\\.`));
-    assert.match(words, /Your root NFT stays in your wallet\. This does not start automation\./);
-    assert.match(words, new RegExp(`Base: ${chain.poolKey.currency1}\\. Quote: ${chain.poolKey.currency0}\\.`), 'the owner selected currency0 as the quote');
-    assert.match(words, new RegExp(`Operator: ${operator}\\.`));
-    assert.match(words, /Domino-compound: 4% of earned fees consumed, once; never principal or already charged lots\./);
-    assert.match(words, /Trigger distance: 500 bps; maximum overlap: 2000 bps; minimum interval: 3600s; maximum positions: 3\./);
-    assert.match(words, /Successor upside: 5000 bps; maximum slippage: 100 bps; maximum price impact: 100 bps\./);
-    assert.match(words, /Execution gas cost cap: 5000000000000000 wei; observation age: 300s; forecast horizon: 604800s\./);
-    assert.doesNotMatch(words, FORBIDDEN);
-    await sendStep('create');
-
-    // Created: the vault read back from the chain, paused, with the root NFT still in the wallet, and why it stays paused.
-    const created = panel.locator(`[data-sequence-created="${vault}"]`);
-    await created.waitFor({ timeout: 30_000 });
-    assert.equal(await panel.getAttribute('data-sequence-create'), 'done');
-    assert.match(await created.innerText(), new RegExp(`^Domino-compound is set up for position NFT ${ROOT}\\s+Sequence ${vault} · paused · operator 0x[0-9a-f]{4}…[0-9a-f]{4} · your NFT stays in your wallet\\.`));
-    assert.match(await created.innerText(), /Activation is a separate owner transaction\. Owner controls offer it only after a live service check\./);
-    assert.equal(await panel.locator('[data-sequence-create-review]').count(), 0, 'nothing left to send');
-    assert.equal(await panel.locator('[data-notice-code]').count(), 0, 'no error code beside any sentence');
-    assert.doesNotMatch(await panel.innerText(), FORBIDDEN);
+    // Created: both steps green, the vault read back from the chain, and the way to the docs for switching it on.
+    const created = main.locator(`[data-sequence-created="${vault}"]`);
+    await created.waitFor({ timeout: 60_000 });
+    assert.equal(await created.getAttribute('data-sequence-create'), 'done');
+    assert.match(await created.innerText(), /^\s*Domino-compound is set up for position #5\s+It starts paused, and your position stays in your wallet\./);
+    assert.deepEqual(await created.locator('[data-wallet-step]').evaluateAll(items => items.map(item => item.getAttribute('data-step-state'))), ['done', 'done']);
+    assert.equal(await created.getByRole('link', { name: 'How to switch it on' }).getAttribute('href'), '#/docs/domino-compounder#start-and-stop');
+    assert.equal(await main.locator('[data-notice-code]').count(), 0, 'no error code beside any sentence');
+    assert.doesNotMatch(await created.innerText(), FORBIDDEN);
     await s.page.screenshot({ path: join(shots(), 'p2-sequence-create.png'), fullPage: true });
 
     // What the wallet was asked to sign, in order, decoded from the calldata the chain recorded.
@@ -2894,6 +2305,8 @@ test('from a position link, a connected wallet without a session puts the NFT un
       policy: { serviceFeeBps: 400, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 3600, maxPositions: 3, version: 1n, paused: true },
       limits: { version: 1n, upsideBps: 5000, maxSlippageBps: 100, maxPriceImpactBps: 100, maxGasCostWei: 5_000_000_000_000_000n, maxObservationAgeSeconds: 300, forecastHorizonSeconds: 604_800 },
     }, 'the whole InitParams: the pool read from the NFT, the deployment’s operator, consent, the 4% paused policy and the default limits in bps, seconds and wei');
+    // The network budget came from the wallet's own price (finance/gas.ts): twice 0.1 gwei, no priority fee; nobody typed it.
+    assert.deepEqual(chain.sends.map(tx => [tx.maxFeePerGas, tx.maxPriorityFeePerGas]), [['0xbebc200', '0x0'], ['0xbebc200', '0x0']]);
 
     // No service and no session took part, and the wallet was asked nothing outside connecting and the chain's own
     // reads and sends. The one session route seen is the boot-time GET that asks whether a session exists to restore.
@@ -2911,37 +2324,94 @@ test('from a position link, a connected wallet without a session puts the NFT un
 
 // ---------------------------------------------------------------------------
 // Positions: the connected wallet's own list, and a page per position (owner, 2026-09-24)
+// Rewritten later the same day: the list is what DominoSetupV1 minted to the wallet, read from chain by
+// POST /api/owned/v2/positions, every row drawn from that one answer (no nft-positions read, no lookup by NFT id, nothing
+// kept in the browser); a position's page reads the fees relay's /api/fees/v1/state, so it opens while the read service is down.
 // ---------------------------------------------------------------------------
 
-/** What the chain answered for 0xf618…c0a on 2026-09-23: one open position and eleven closed ones. */
-const OWNED_OPEN = '3135288';
-const OWNED_CLOSED = ['2578809', '2540892', '2475975', '2403400', '2232776', '2227392', '2186802', '2186209', '2176619', '2160098', '1932641'];
-const BIG_ID = '57896044618658097711785492504343953926634992332820282019728792003956564819969';
+/** The stub's pool as the chain keys it: ETH against TOKEN, 0.30%, spacing 60, no hooks. */
+const STUB_POOL_ID = keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }, { type: 'int24' }, { type: 'address' }], [zeroAddress, FIXTURE_TOKEN, 3000, 60, zeroAddress]));
+const ETH = { address: zeroAddress, symbol: 'ETH', decimals: 18 };
+const TOKEN = { address: FIXTURE_TOKEN.toLowerCase(), symbol: 'TOKEN', decimals: 6 };
+/** 2^100 of liquidity in -60..60 at tick 0: what removing it pays, v4's own figure. */
+const LIQUIDITY = 2n ** 100n;
+const PRINCIPAL = principalAt(2n ** 96n, 0, -60, 60, LIQUIDITY).map(String);
+
+/** One of the wallet's positions as the endpoint answers it: the stub's pool at tick 0, -60 to 60, unless `patch` says otherwise. */
+const chainPosition = (tokenId, patch = {}) => ({
+  tokenId,
+  status: 'open',
+  poolId: STUB_POOL_ID,
+  currencies: [ETH, TOKEN],
+  fee: 3000,
+  tickSpacing: 60,
+  hooks: zeroAddress,
+  tickLower: -60,
+  tickUpper: 60,
+  liquidity: String(LIQUIDITY),
+  sqrtPriceX96: String(2n ** 96n),
+  tick: 0,
+  unclaimedFees: ['633825300114', '0'],
+  principal: PRINCIPAL,
+  ...patch,
+});
+const closedPosition = (tokenId) => chainPosition(tokenId, { status: 'closed', liquidity: '0', principal: ['0', '0'], unclaimedFees: ['0', '0'] });
+
+/** The same position as the fees relay's /state answers it for `owner`, its pool key `key` (the position's own when none is given). */
+const stateOf = (position, owner, key = {}) => ({
+  tokenId: position.tokenId,
+  ok: true,
+  owner,
+  poolId: position.poolId,
+  poolKey: { currency0: position.currencies[0].address, currency1: position.currencies[1].address, fee: position.fee, tickSpacing: position.tickSpacing, hooks: position.hooks, ...key },
+  currencies: position.currencies,
+  tickLower: position.tickLower,
+  tickUpper: position.tickUpper,
+  liquidity: position.liquidity,
+  sqrtPriceX96: position.sqrtPriceX96,
+  tick: position.tick,
+  feeGrowthInside0X128: '0',
+  feeGrowthInside1X128: '0',
+  feeGrowthInside0LastX128: '0',
+  feeGrowthInside1LastX128: '0',
+  unclaimed0: position.unclaimedFees[0],
+  unclaimed1: position.unclaimedFees[1],
+});
 
 /**
- * The read gateway's nft-positions answer for exactly the ids asked: the read fixture's first position, made `owner`'s
- * NFT of that id in the stub's pool; the open one keeps the fixture's liquidity and amounts, the closed ones hold none.
+ * A same-origin /api/fees/v1/state for the wallet-server: `answer(id, count)` is that id's state, or null for not_found
+ * (`count`: how many times the id was asked). Keeps every question.
  */
-const ownedPositionsRead = (owner) => (route, body) => {
-  if (route !== 'nft-positions') return undefined;
-  const base = readGateway('nft-positions.success');
-  const items = body.tokenIds.map((id) => ({
-    ...base.items[0],
-    tokenId: id,
-    owner,
-    salt: numberToHex(BigInt(id), { size: 32 }),
-    ...(id === OWNED_OPEN ? {} : { hasLiquidity: false, inRange: false, liquidityRaw: '0', principalRaw: ['0', '0'], unsettledFeesRaw: ['0', '0'] }),
-  }));
-  return JSON.stringify({ ...base, items });
-};
+function stateEndpoint(answer) {
+  const asked = [];
+  const counts = new Map();
+  return {
+    asked,
+    async route(request, url) {
+      if (url.pathname !== '/api/fees/v1/state') return undefined;
+      const { tokenIds } = await request.json();
+      asked.push(tokenIds);
+      const positions = tokenIds.map((id) => {
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+        return answer(id, counts.get(id)) ?? { tokenId: id, ok: false, reason: 'not_found' };
+      });
+      return Response.json({ v: 1, block: 70921337, timestamp: 1790000000, positions });
+    },
+  };
+}
 
-/** A same-origin owned-positions endpoint for the wallet-server, answering with `answer(body)` and keeping every request. */
+/** What the chain answered for 0xf618…c0a: one open position created through DominoSetupV1; here, eleven closed ones too. */
+const OWNED_OPEN = '3135288';
+const OWNED_CLOSED = ['3134000', '3133000', '3132000', '3131000', '3130000', '3129000', '3128000', '3127000', '3126000', '3125000', '3124000'];
+const BIG_ID = '57896044618658097711785492504343953926634992332820282019728792003956564819969';
+
+/** A same-origin owned-positions endpoint (v2) for the wallet-server, answering with `answer(body)` and keeping every request. */
 function ownedEndpoint(answer) {
   const asked = [];
   return {
     asked,
     async route(request, url) {
-      if (url.pathname !== '/api/owned/v1/positions') return undefined;
+      if (url.pathname !== '/api/owned/v2/positions') return undefined;
       const body = await request.json();
       asked.push({ method: request.method, search: url.search, type: request.headers.get('content-type'), body });
       return answer(body);
@@ -2949,9 +2419,9 @@ function ownedEndpoint(answer) {
   };
 }
 
-/** The endpoint's answer for one open and eleven closed NFTs, for whichever wallet asks. */
+/** The endpoint's answer for one open and eleven closed positions, for whichever wallet asks. */
 const oneOpenElevenClosed = (deposits = []) => ({ owner }) =>
-  Response.json({ owner, block: 70921337, positions: [{ tokenId: OWNED_OPEN, status: 'open' }, ...OWNED_CLOSED.map((tokenId) => ({ tokenId, status: 'closed' }))], complete: true, deposits });
+  Response.json({ owner, block: 70921337, positions: [chainPosition(OWNED_OPEN), ...OWNED_CLOSED.map(closedPosition)], deposits });
 
 /** Connects Test Wallet A from the header's dialog, on Robinhood Chain, without signing in. */
 async function connectWallet(page) {
@@ -2963,13 +2433,16 @@ async function connectWallet(page) {
   await page.keyboard.press('Escape');
 }
 
-/** The nft-positions questions the page asked, in order. */
+/** The read service's nft-positions questions the page asked, in order: none any more. */
 const nftReads = (read) => read.requests.filter((r) => r.path.endsWith('/nft-positions')).map((r) => JSON.parse(r.body).tokenIds);
+/** Everything the page keeps in the browser that is not the appearance or a session's own key. */
+const kept = (page) => page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter((key) => /position/i.test(key)));
 
-test('Positions lists the connected wallet’s own NFTs, Open 1 and Closed 11, reads their figures ten at a time, and each row opens the position’s page', async () => {
+test('Positions lists the positions the wallet created through Domino, Open 1 and Closed 11, straight from the chain read, and each row opens the position’s page', async () => {
   const owned = ownedEndpoint(oneOpenElevenClosed());
-  const read = createReadStub({ answer: ownedPositionsRead(OWNER) });
-  const s = await scenario({ routes: [owned.route, (request, url) => read.handle(request, url)] });
+  const relay = stateEndpoint((id) => (id === OWNED_OPEN ? stateOf(chainPosition(OWNED_OPEN), OWNER) : id === OWNED_CLOSED[0] ? stateOf(closedPosition(OWNED_CLOSED[0]), OWNER) : null));
+  const read = createReadStub();
+  const s = await scenario({ routes: [owned.route, relay.route, (request, url) => read.handle(request, url)] });
   const chunks = [];
   s.page.on('request', (request) => {
     const name = new URL(request.url()).pathname.split('/').pop();
@@ -2980,7 +2453,7 @@ test('Positions lists the connected wallet’s own NFTs, Open 1 and Closed 11, r
     // No wallet yet: one empty state that asks for one, and nothing is listed or read.
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     assert.equal((await s.page.locator('[data-empty="owned-connect"]').innerText()).replace(/\s+/g, ' '), 'Connect a wallet to see your positions Connect wallet');
-    assert.deepEqual([owned.asked.length, read.requests.length], [0, 0], 'nothing is asked without a wallet');
+    assert.deepEqual([owned.asked.length, nftReads(read).length], [0, 0], 'nothing is asked without a wallet');
 
     await connectWallet(s.page);
     const card = s.page.locator('[data-owned="ready"]');
@@ -2988,41 +2461,40 @@ test('Positions lists the connected wallet’s own NFTs, Open 1 and Closed 11, r
     // One same-origin POST with the address in its body, never in the URL.
     assert.deepEqual(owned.asked, [{ method: 'POST', search: '', type: 'application/json', body: { owner: OWNER } }]);
     const tabs = s.page.getByRole('tab');
-    assert.deepEqual((await tabs.allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim()), ['Open 1', 'Closed 11'], 'the counts come from the endpoint, before any figure');
+    assert.deepEqual((await tabs.allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim()), ['Open 1', 'Closed 11']);
     assert.equal(await s.page.getByRole('tab', { selected: true }).innerText().then((text) => text.replace(/\s+/g, ' ')), 'Open 1');
     assert.equal(await card.getAttribute('data-owned-block'), '70921337');
 
-    // The open position's row, read from nft-positions alone: closed ones are not read until their tab is opened.
-    const row = s.page.locator(`a[data-position-row="${OWNED_OPEN}"][data-snapshot]`);
+    // The open position's row, every figure from the endpoint's answer: the read service is never asked.
+    const row = s.page.locator(`a[data-position-row="${OWNED_OPEN}"][data-snapshot="70921337"]`);
     await row.waitFor();
     assert.equal(await row.getAttribute('href'), `#/positions/${OWNED_OPEN}`);
     const rowText = await row.innerText();
     assert.match(rowText, /ETH\s*\/\s*TOKEN[\s\S]*0\.30%\s*·\s*#3135288[\s\S]*In range/);
-    assert.match(rowText, /3,797,063,508\s+ETH/);
+    assert.match(rowText, /633,825,300,114 ETH|0\.000000633825 ETH/);
     assert.equal(await s.page.locator('[data-position-row]').count(), 1);
-    assert.deepEqual(nftReads(read), [[OWNED_OPEN]]);
-    assert.equal(await s.page.locator('details[data-lookup-disclosure]').evaluate((details) => details.open), false, 'the lookup by NFT id waits, closed');
-    assert.equal(await s.page.locator('#nft-ids').count(), 0);
+    assert.deepEqual(nftReads(read), [], 'no nft-positions read: the rows are the chain read');
+    assert.equal(await s.page.locator('details[data-lookup-disclosure], #nft-ids, #chain-lookup').count(), 0, 'no lookup by NFT id');
     assert.deepEqual(chunks, [], 'no held deposits: their chunk is not loaded');
     await s.page.locator('[data-owned-rows]').screenshot({ path: join(shots(), 'positions-open.png') });
 
-    // Closed: ten rows read in one question, the eleventh behind Show 1 more.
+    // Closed: ten rows, the eleventh behind Show 1 more, all from the same answer.
     await s.page.getByRole('tab', { name: /^Closed/ }).click();
-    await s.page.locator('[data-owned-rows="closed"] a[data-position-row][data-snapshot]').nth(9).waitFor();
-    assert.deepEqual(nftReads(read), [[OWNED_OPEN], OWNED_CLOSED.slice(0, 10)]);
     const closedRows = s.page.locator('[data-owned-rows="closed"] a[data-position-row]');
+    await closedRows.nth(9).waitFor();
     assert.equal(await closedRows.count(), 10);
     assert.deepEqual(await closedRows.locator('[data-position-status]').evaluateAll((pills) => [...new Set(pills.map((pill) => pill.textContent))]), ['Closed']);
     await s.page.getByRole('button', { name: 'Show 1 more', exact: true }).click();
-    await s.page.locator(`[data-owned-rows="closed"] a[data-position-row="${OWNED_CLOSED[10]}"][data-snapshot]`).waitFor();
-    assert.deepEqual(nftReads(read).at(-1), [OWNED_CLOSED[10]]);
+    await s.page.locator(`[data-owned-rows="closed"] a[data-position-row="${OWNED_CLOSED[10]}"]`).waitFor();
     assert.equal(await s.page.getByRole('button', { name: /^Show \d+ more$/ }).count(), 0);
+    assert.deepEqual(owned.asked.length, 1, 'the tabs and Show more ask nothing');
     await s.page.locator('main').screenshot({ path: join(shots(), 'positions-closed.png') });
     const listText = await s.page.locator('main').innerText();
     assert.doesNotMatch(listText, FORBIDDEN);
-    assert.doesNotMatch(listText, /comma|type (?:the|an) NFT id/i, 'no typed ids asked for');
+    assert.doesNotMatch(listText, /comma|type (?:the|an) NFT id|Look up|Position NFTs/i, 'no typed ids asked for');
+    assert.deepEqual(await kept(s.page), [], 'nothing about positions is kept in the browser');
 
-    // A row is a link to the position's own page.
+    // A row is a link to the position's own page, read from the fees relay's /state.
     await s.page.getByRole('tab', { name: /^Open/ }).click();
     await row.click();
     await s.page.waitForFunction((id) => location.hash === `#/positions/${id}`, OWNED_OPEN);
@@ -3032,26 +2504,24 @@ test('Positions lists the connected wallet’s own NFTs, Open 1 and Closed 11, r
     assert.match(await detail.locator('h1').innerText(), /^ETH\s*\/\s*TOKEN$/);
     assert.match(await detail.locator('.dm-pos-chips').innerText(), /Uniswap · 0\.30% · #3135288\s+In range/);
     const stats = await detail.locator('[data-position-stats]').innerText();
-    assert.match(stats, /PRINCIPAL\s+3,797,063,508 ETH/);
-    assert.match(stats, /UNCLAIMED FEES\s+633,825,300,114 ETH\s+0 TOKEN/);
-    assert.match(stats, /PRINCIPAL\s+3,797,063,508 ETH\s+3,797,063,507,756,903,070,969 TOKEN/, 'six significant digits, never fewer than the whole part');
-    assert.match(stats, /CURRENT PRICE\s+≈1,000,000,000,000 TOKEN per ETH/, 'the pool’s price, read on its own, with no button to ask for it');
+    assert.match(stats, /CURRENT PRICE\s+≈1,000,000,000,000 TOKEN per ETH/, 'the pool’s price from the same read, with no button to ask for it');
     assert.match(stats, /RANGE\s+≈994,018,000,000 – ≈1,006,020,000,000/);
+    assert.match(stats, /UNCLAIMED FEES\s+[\d.,]+ ETH\s+0 TOKEN/);
     assert.equal(await detail.getByRole('button', { name: 'Show current price' }).count(), 0);
     const facts = await detail.locator('.dm-pos-facts').innerText();
     assert.match(facts, /NFT id\s+3135288/);
     assert.match(facts, new RegExp(`Owner\\s+${OWNER}`));
-    assert.match(facts, /Liquidity\s+1267650600228229401496703205376/);
+    assert.match(facts, new RegExp(`Liquidity\\s+${LIQUIDITY}`));
     assert.match(facts, /Ticks\s+-60 to 60/);
-    const pool = readGateway('nft-positions.success').items[0].poolId;
     assert.deepEqual(await detail.locator('.dm-pos-links a').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [
-      ['Pool', `#/pool/${pool}/${FIXTURE_TOKEN}`],
-      ['Add to this pool', `#/new/${pool}`],
+      ['Pool', `#/pool/${STUB_POOL_ID}/${FIXTURE_TOKEN.toLowerCase()}`],
+      ['Add to this pool', `#/new/${STUB_POOL_ID}`],
       ['Automate', `#/sequence/compound/${OWNED_OPEN}`],
     ]);
-    assert.deepEqual(nftReads(read).at(-1), [OWNED_OPEN], 'the page reads its one NFT');
-    assert.ok(read.requests.some((r) => r.path.endsWith('/pool-market') && JSON.parse(r.body).poolId === pool), 'and the pool’s price');
-    // The owner's actions have their mount: the chunk is opened on the page, behind the wallet flag (a placeholder until the position-actions branch).
+    assert.ok(relay.asked.some((ids) => ids.length === 1 && ids[0] === OWNED_OPEN), 'the page reads its one NFT from the relay');
+    assert.deepEqual(nftReads(read), [], 'and never from the read service');
+    assert.ok(!read.requests.some((r) => r.path.endsWith('/pool-market')), 'nor the pool’s price: it came with the read');
+    // The owner's actions have their mount: the chunk is opened on the page, behind the wallet flag.
     await s.page.waitForFunction(() => performance.getEntriesByType('resource').some((entry) => /\/PositionActions-[\w-]+\.js$/.test(entry.name)));
     assert.doesNotMatch(await detail.innerText(), FORBIDDEN);
     await s.page.screenshot({ path: join(shots(), 'position-detail.png'), fullPage: true });
@@ -3069,58 +2539,43 @@ test('Positions lists the connected wallet’s own NFTs, Open 1 and Closed 11, r
   } finally { await s.close(); }
 });
 
-test('a list the chain cannot give opens the lookup under it, its reason only in data; a link with several ids is looked up there; the list is asked again on its own and brings the held deposits’ chunk', async () => {
-  const deposit = { operationId: `0x${'33'.repeat(32)}`, currency0: zeroAddress, currency1: FIXTURE_TOKEN, fee: 3000, tickSpacing: 60, hooks: zeroAddress, balance0: '100000', balance1: '0' };
+test('a list the chain cannot give says so only in data, with no lookup and no Retry; a link with several ids is the list; asked again on its own, it brings the held deposit with its tokens', async () => {
+  const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
+  const deposit = { operationId: `0x${'33'.repeat(32)}`, currency0: zeroAddress, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: zeroAddress, balance0: '0', balance1: '100000', currencies: [ETH, { address: USDG, symbol: 'USDG', decimals: 6 }] };
   let answer = () => Response.json({ error: 'chain_busy' }, { status: 502 });
   const owned = ownedEndpoint((body) => answer(body));
-  const read = createReadStub({ answer: ownedPositionsRead(OWNER) });
+  const read = createReadStub();
   const s = await scenario({ routes: [owned.route, (request, url) => read.handle(request, url)] });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     await connectWallet(s.page);
 
-    // The chain could not be read: nothing on the list's face says so; its reason is a data attribute and a title, and the lookup opens by itself.
+    // The chain could not be read: nothing on the list's face says so; its reason is a data attribute and a title.
     const unlisted = s.page.locator('[data-owned="unlisted"]');
     await unlisted.waitFor();
     assert.equal(await unlisted.getAttribute('data-owned-reason'), 'chain_busy');
-    assert.equal(await unlisted.getAttribute('title'), 'Your positions could not be listed just now. Look one up by its NFT id below.');
-    const lookup = s.page.locator('details[data-lookup-disclosure]');
-    await s.page.locator('#nft-ids').waitFor();
-    assert.equal(await lookup.evaluate((details) => details.open), true, 'the lookup opens by itself');
+    assert.equal(await unlisted.getAttribute('title'), 'Your positions could not be read from chain just now. They are asked again on their own.');
     const text = await s.page.locator('main').innerText();
     assert.doesNotMatch(text, FORBIDDEN);
-    assert.doesNotMatch(text, /could not be listed|chain_busy/, 'no status panel: the reason is a title and a data attribute');
+    assert.doesNotMatch(text, /could not be|chain_busy|Look up|NFT id/i, 'no status panel and no lookup: the reason is a title and a data attribute');
     assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'and no Retry');
+    assert.equal(await s.page.locator('details[data-lookup-disclosure], #nft-ids').count(), 0);
 
-    // A link that carries several ids, arriving while the page is open: looked up in the lookup, once, and the list stays.
+    // A link that carries several ids, arriving while the page is open: it is the list, nothing is looked up.
     await s.page.evaluate((big) => { location.hash = `#/positions/1,${big}`; }, BIG_ID);
-    await s.page.locator('#chain-lookup [data-chain-cards="2"]').waitFor();
-    assert.equal(await s.page.inputValue('#nft-ids'), `1, ${BIG_ID}`);
-    assert.deepEqual(nftReads(read), [['1', BIG_ID]]);
-    assert.equal(await s.page.locator('[data-owned]').count(), 1, 'the list stays above it');
+    await s.page.locator('[data-owned]').waitFor();
+    assert.equal(await s.page.locator('[data-position-detail], [data-position-loading]').count(), 0);
+    assert.deepEqual(nftReads(read), [], 'no id of the link is read');
 
-    // The chain answers again: the list, asked again on its own a few seconds later, arrives with a held deposit; its tokens are read and its chunk opens.
+    // The chain answers again: the list, asked again on its own a few seconds later, arrives with a held deposit whose
+    // tokens came with the answer (no token read), and its chunk opens.
     answer = oneOpenElevenClosed([deposit]);
     await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 20_000 });
-    assert.ok(owned.asked.length >= 2 && owned.asked.length <= 3, `asked again twice at most: ${owned.asked.length}`);
+    assert.ok(owned.asked.length >= 2 && owned.asked.length <= 4, `asked again twice at most per visit: ${owned.asked.length}`);
     await s.page.waitForFunction(() => performance.getEntriesByType('resource').some((entry) => /\/HeldDeposits-[\w-]+\.js$/.test(entry.name)));
-    const tokens = read.requests.filter((r) => r.path.endsWith('/token')).map((r) => JSON.parse(r.body).token);
-    assert.ok(tokens.includes(zeroAddress) && tokens.includes(FIXTURE_TOKEN), `the deposit’s tokens were read: ${tokens}`);
-
-    // Review of 2026-09-25: the wallet looks up its own NFT by id in the lookup that opened above. One id is not written
-    // into the link (#/positions/<id> is the position's page, and a replaced hash fires no hashchange), so that NFT's
-    // row still opens its page, and Back comes back to the list rather than to the position.
-    await s.page.fill('#nft-ids', OWNED_OPEN);
-    await s.page.locator('#chain-lookup').getByRole('button', { name: 'Look up positions' }).click();
-    await s.page.locator('#chain-lookup [data-chain-cards="1"]').waitFor();
-    assert.equal(await s.page.evaluate(() => location.hash), '#/positions', 'the list of ids leaves the link; one id is not written into it');
-    await s.page.locator(`a[data-position-row="${OWNED_OPEN}"][data-snapshot]`).click();
-    await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`).waitFor({ timeout: 10_000 });
-    await s.page.goBack();
-    await s.page.locator('[data-owned="ready"]').waitFor();
-    assert.equal(await s.page.evaluate(() => location.hash), '#/positions', 'Back is the list');
-    assert.equal(await s.page.locator('[data-position-detail]').count(), 0);
+    assert.deepEqual(read.requests.filter((r) => r.path.endsWith('/token')), [], 'the deposit’s tokens came with the chain read');
+    assert.deepEqual(await kept(s.page), [], 'nothing about positions is kept in the browser');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
   } finally { await s.close(); }
 });
@@ -3128,33 +2583,13 @@ test('a list the chain cannot give opens the lookup under it, its reason only in
 /** Someone else's wallet: the NFTs a visitor who is not their owner opens. */
 const OTHER_OWNER = '0x3333333333333333333333333333333333333333';
 
-/**
- * The read gateway's nft-positions answer for one id, `answer(id, count)` saying how: null for empty at the snapshot
- * (position_info_empty_at_snapshot), or { owner, poolKey } for the read fixture's first position made that owner's NFT
- * of that id, in that pool key (the fixture's own pool when none is given). `count` is how many times the id was asked.
- */
-const onePositionRead = (answer) => {
-  const asked = new Map();
-  return (route, body) => {
-    if (route !== 'nft-positions') return undefined;
-    const base = readGateway('nft-positions.success');
-    const items = body.tokenIds.map((id) => {
-      asked.set(id, (asked.get(id) ?? 0) + 1);
-      const shape = answer(id, asked.get(id));
-      if (!shape) return { tokenId: id, status: 'position_info_empty_at_snapshot', owner: null, corePositionId: null, nftOwnershipResolved: false };
-      return { ...base.items[0], tokenId: id, owner: shape.owner, salt: numberToHex(BigInt(id), { size: 32 }), poolKey: shape.poolKey ?? base.items[0].poolKey };
-    });
-    return JSON.stringify({ ...base, items });
-  };
-};
-
-// Review of 2026-09-25: Create position opens #/positions/<id> 3 s after the mint, and the read service answers at its own
-// node's head, which can be behind the mint's block. Its first answer was 'empty', and the page said at once, for good,
-// that the NFT no longer exists. An empty answer is now asked again (2, 5, 10 s) with the skeleton kept.
-test('a position’s page asks an NFT that reads empty again, the skeleton kept, and shows the position once the read service has it', async () => {
+// Review of 2026-09-25: Create position opens #/positions/<id> 3 s after the mint. 2026-09-24: the page reads the fees
+// relay, which reads two blocks behind the head and keeps an answer 10 s: an NFT it does not know yet is asked again
+// (3, 8, 12 s) with the skeleton kept, before the page says it no longer exists.
+test('a position’s page asks an NFT the relay does not know yet again, the skeleton kept, and shows the position once it is there', async () => {
   const NEW = '4242';
-  const read = createReadStub({ answer: onePositionRead((_id, count) => (count === 1 ? null : { owner: OTHER_OWNER })) });
-  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  const relay = stateEndpoint((id, count) => (count === 1 ? null : stateOf(chainPosition(id), OTHER_OWNER)));
+  const s = await scenario({ routes: [relay.route] });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
@@ -3169,16 +2604,13 @@ test('a position’s page asks an NFT that reads empty again, the skeleton kept,
       }).observe(document.body, { childList: true, subtree: true, attributes: true });
       location.hash = `#/positions/${id}`;
     }, NEW);
-    // The first answer: empty. The page keeps its skeleton and says nothing yet.
-    for (let i = 0; i < 100 && nftReads(read).length === 0; i++) await s.page.waitForTimeout(50);
-    assert.deepEqual(nftReads(read), [[NEW]]);
+    const pageAsks = () => relay.asked.filter((ids) => ids.length === 1 && ids[0] === NEW).length;
+    for (let i = 0; i < 100 && pageAsks() === 0; i++) await s.page.waitForTimeout(50);
     await s.page.waitForTimeout(700);
     assert.equal(await s.page.locator('[data-position-loading]').count(), 1, 'the skeleton stays while the NFT is asked again');
     assert.equal(await s.page.locator('[data-empty="position-gone"]').count(), 0, 'nothing says it no longer exists');
-    // Asked again about 2 s later: the position.
     const detail = s.page.locator(`[data-position-detail][data-position-id="${NEW}"]`);
     await detail.waitFor({ timeout: 10_000 });
-    assert.deepEqual(nftReads(read), [[NEW], [NEW]], 'asked twice, and not again once it is there');
     assert.deepEqual(await s.page.evaluate(() => window.__positionSeen), ['loading', 'position'], 'the skeleton, then the position, and never the empty state');
     assert.match(await detail.locator('h1').innerText(), /^ETH\s*\/\s*TOKEN$/);
   } finally { await s.close(); }
@@ -3188,10 +2620,9 @@ test('a position’s page asks an NFT that reads empty again, the skeleton kept,
 // New position refuses on arrival with nothing preselected. It links only to a pool Domino can open a position in.
 test('a position’s page offers Add to this pool only for a pool with no hooks and a fixed fee', async () => {
   const [PLAIN, HOOKED, DYNAMIC] = ['4242', '4243', '4244'];
-  const base = readGateway('nft-positions.success').items[0].poolKey;
-  const keys = { [PLAIN]: base, [HOOKED]: { ...base, hooks: `0x${'4a'.repeat(20)}` }, [DYNAMIC]: { ...base, feeMode: 'dynamic', fee_pips: 8388608 } };
-  const read = createReadStub({ answer: onePositionRead((id) => ({ owner: OTHER_OWNER, poolKey: keys[id] })) });
-  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  const keys = { [PLAIN]: {}, [HOOKED]: { hooks: `0x${'4a'.repeat(20)}` }, [DYNAMIC]: { fee: 8388608 } };
+  const relay = stateEndpoint((id) => (keys[id] ? stateOf(chainPosition(id), OTHER_OWNER, keys[id]) : null));
+  const s = await scenario({ routes: [relay.route] });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
@@ -3212,14 +2643,14 @@ test('a position’s page offers Add to this pool only for a pool with no hooks 
 // page opens it only for the NFT's owner, connected on Robinhood Chain.
 test('a position’s page downloads the owner’s actions only for the owner’s wallet: not with no wallet, not for someone else’s NFT', async () => {
   const [THEIRS, MINE] = ['4242', '4243'];
-  const read = createReadStub({ answer: onePositionRead((id) => ({ owner: id === MINE ? OWNER : OTHER_OWNER })) });
-  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  const relay = stateEndpoint((id) => stateOf(chainPosition(id), id === MINE ? OWNER : OTHER_OWNER));
+  const s = await scenario({ routes: [relay.route] });
   const chunks = [];
   s.page.on('request', (request) => {
     const name = new URL(request.url()).pathname.split('/').pop();
     if (/^PositionActions-/.test(name)) chunks.push(name);
   });
-  /** Opens `id`'s page and waits until it has drawn, its pool price read included. */
+  /** Opens `id`'s page and waits until it has drawn, its pool price included. */
   const open = async (id) => {
     await s.page.evaluate((next) => { location.hash = `#/positions/${next}`; }, id);
     const detail = s.page.locator(`[data-position-detail][data-position-id="${id}"]`);

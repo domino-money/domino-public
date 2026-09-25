@@ -29,7 +29,20 @@ export function PendingFigure({ label, className, data }: { label: string; class
  * Size comes from where the figure sits (a 14px table cell, a 16px card
  * figure, a 24px stat); this sets weight, tone and figures only.
  */
-export function PresentedFigure({ shown, retrieved, strong = true, className }: { shown: Presented; retrieved?: string; strong?: boolean; className?: string }) {
+export function PresentedFigure({
+  shown,
+  retrieved,
+  strong = true,
+  tone = 'fg',
+  className,
+}: {
+  shown: Presented
+  retrieved?: string
+  strong?: boolean
+  /** `in`: a yield figure (an APR), in the gains ink (DESIGN-V2 §2.4); stale or current alike. */
+  tone?: 'fg' | 'in'
+  className?: string
+}) {
   if (shown.kind === 'unavailable') {
     return (
       <span className={cx('text-fg-subtle', className)} data-metric={shown.rejected ? 'rejected' : 'unavailable'} title={shown.reason ? `Unavailable: ${reasonText(shown.reason)}` : undefined}>
@@ -60,7 +73,7 @@ export function PresentedFigure({ shown, retrieved, strong = true, className }: 
   // beside the number.
   return (
     <span
-      className={cx('tnum whitespace-nowrap text-fg', strong && 'font-medium', className)}
+      className={cx('tnum whitespace-nowrap', tone === 'in' ? 'text-money-in' : 'text-fg', strong && 'font-medium', className)}
       data-metric={shown.stale ? 'stale' : shown.source ? 'provider' : shown.calculatedFrom ? 'calculated' : 'qualified'}
       title={valueTitle(shown, retrieved)}
     >
@@ -79,10 +92,10 @@ export function valueTitle(shown: Extract<Presented, { kind: 'value' }>, retriev
   return shown.asOf ? `Last observed ${new Date(shown.asOf * 1000).toLocaleString('en-US')}` : 'Last observed value, not current'
 }
 
-/** A market metric, as money or as a percentage. */
-export function MetricCell({ metric, percent, retrieved, className }: { metric: Metric; percent?: boolean; retrieved?: string; className?: string }) {
+/** A market metric, as money or as a percentage. `tone="in"` draws a yield (an APR) in the gains ink. */
+export function MetricCell({ metric, percent, retrieved, tone, className }: { metric: Metric; percent?: boolean; retrieved?: string; tone?: 'fg' | 'in'; className?: string }) {
   const shown = presentMetric(metric, (m) => (percent ? `${percentText(m) ?? 'Unavailable'}%` : compactUsd(m)))
-  return <PresentedFigure shown={shown} retrieved={retrieved} className={className} />
+  return <PresentedFigure shown={shown} retrieved={retrieved} tone={tone} className={className} />
 }
 
 /** Daily volume over TVL, Domino's own ratio of two figures on one basis; unavailable otherwise. */

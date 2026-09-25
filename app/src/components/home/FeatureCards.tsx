@@ -44,26 +44,31 @@ const FEATURES: ReadonlyArray<{
 ]
 
 /**
- * Home's three features, each a small looping drawing on a dotted plate with
- * its caption under it. The columns rise in one after another; each drawing
- * plays only while it is in view. `delay` is the first column's entrance delay in ms.
+ * Home's three features (DESIGN-V2 §7.1-3). Each is one card: a dotted plate
+ * with its looping drawing inset at the top, the words under it. The card is
+ * not a link (its link is), so hovering it only lights its ring and slides the
+ * link's chevron. The cards rise in one after another on the first load
+ * (`delay` is the first one's delay in ms, then 40 ms apart); each drawing
+ * plays only while it is in view.
  */
-export function FeatureCards({ className, delay = 60 }: { className?: string; delay?: number }) {
+export function FeatureCards({ className, delay = 160 }: { className?: string; delay?: number }) {
   return (
-    <div className={cx('grid gap-x-6 gap-y-10 md:grid-cols-3', className)}>
+    <div className={cx('dm-features', className)}>
       {FEATURES.map(({ key, title, body, href, link, roadmap, Art }, index) => (
-        <article key={key} className="dm-vig-feature" style={{ '--delay': `${delay + 120 * index}ms` } as CSSProperties}>
+        <article key={key} className="dm-card dm-feature animate-rise" style={{ '--delay': `${delay + 40 * index}ms` } as CSSProperties}>
           <div className="dm-plate dm-dots-plate dm-vig-plate">
             {/* ROADMAP's pill describes owner-scoped readiness for automated features. */}
-            {roadmap && <RoadmapPill name={roadmap} className="absolute left-3 top-3 z-[1]" />}
+            {roadmap && <RoadmapPill name={roadmap} className="dm-feature-pill" />}
             <Art className="absolute inset-0" />
           </div>
-          <h2 className="mt-5 text-lead font-medium text-fg">{title}</h2>
-          <p className="mt-1 text-body text-fg-muted">{body}</p>
-          <a href={href} className="dm-vig-link">
-            {link}
-            <IconChevronRight size={14} />
-          </a>
+          <div className="dm-feature-body">
+            <h2 className="dm-subtitle">{title}</h2>
+            <p className="dm-feature-text">{body}</p>
+            <a href={href} className="dm-vig-link">
+              {link}
+              <IconChevronRight size={16} />
+            </a>
+          </div>
         </article>
       ))}
     </div>

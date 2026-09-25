@@ -11,11 +11,31 @@ import { MarketCard } from './MarketCard'
 
 const NO_ASKS: readonly CardAsk[] = []
 
-/** Whether the rail can still move back, and forward; the previous value when nothing changed, so a scroll re-renders nothing. */
-function railEdges(node: HTMLElement, prev: { start: boolean; end: boolean }) {
+type Rail = { start: boolean; end: boolean; perView: number; page: number }
+
+/** How far one card steps, and how many whole cards a view holds (the rail's side padding is not a card's). */
+function railPitch(node: HTMLElement) {
+  const cards = node.querySelectorAll<HTMLElement>('[data-market-card]')
+  if (cards.length === 0) return null
+  const step = cards.length > 1 ? cards[1].offsetLeft - cards[0].offsetLeft : cards[0].offsetWidth
+  if (step <= 0) return null
+  const gap = step - cards[0].offsetWidth
+  const style = getComputedStyle(node)
+  const inset = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+  return { step, perView: Math.max(1, Math.round((node.clientWidth - inset + gap) / step)) }
+}
+
+/**
+ * Whether the rail can still move back, and forward, how many cards a view holds and which view is showing (for the
+ * page dots); the previous value when nothing changed, so a scroll re-renders nothing.
+ */
+function railEdges(node: HTMLElement, prev: Rail): Rail {
   const start = node.scrollLeft <= 1
   const end = node.scrollLeft + node.clientWidth >= node.scrollWidth - 1
-  return prev.start === start && prev.end === end ? prev : { start, end }
+  const pitch = railPitch(node)
+  const perView = pitch?.perView ?? 0
+  const page = pitch ? Math.round(node.scrollLeft / (pitch.perView * pitch.step)) : 0
+  return prev.start === start && prev.end === end && prev.perView === perView && prev.page === page ? prev : { start, end, perView, page }
 }
 
 /**
@@ -46,7 +66,7 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
   const [visible, setVisible] = useState<ReadonlySet<string>>(() => new Set())
   const [mode, setMode] = useState<CardMode | null>(null)
   const [reads, setReads] = useState<ReadonlyMap<string, CardAnswer>>(() => new Map())
-  const [edges, setEdges] = useState({ start: true, end: true })
+  const [edges, setEdges] = useState<Rail>({ start: true, end: true, perView: 0, page: 0 })
   const running = useRef(new Map<string, AbortController>())
   const frame = useRef(0)
 
@@ -145,24 +165,36 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
   const scrollPage = (direction: 1 | -1) => {
     const node = rail.current
     if (!node) return
-    const cards = node.querySelectorAll<HTMLElement>('[data-market-card]')
-    if (cards.length === 0) return
-    const step = cards.length > 1 ? cards[1].offsetLeft - cards[0].offsetLeft : cards[0].offsetWidth
-    const gap = step - cards[0].offsetWidth
-    // Whole cards per view: two on a laptop, one on a phone. The rail's 6px padding is not a card's.
-    const perView = Math.max(1, Math.round((node.clientWidth - 12 + gap) / step))
-    node.scrollBy({ left: direction * perView * step })
+    // Whole cards per view: three on a laptop, two on a tablet, one on a phone.
+    const pitch = railPitch(node)
+    if (pitch) node.scrollBy({ left: direction * pitch.perView * pitch.step })
   }
 
   const railed = listings.length > 0
+  // Page dots (DESIGN-V2 §8.1, M18): one per view of cards, as the rail measured itself; the lit one is the view
+  // scrolled to, or the last view once the rail is at its end. Decoration only: the arrows and the rail itself are
+  // what a person and assistive technology use.
+  const views = edges.perView > 0 ? Math.ceil(listings.length / edges.perView) : 0
+  const lit = edges.end && !edges.start ? views - 1 : Math.min(views - 1, edges.page)
+  const dots = (place: 'bar' | 'rail') =>
+    railed && views > 1 ? (
+      <span aria-hidden="true" className="dm-mkt-dots" data-place={place}>
+        {Array.from({ length: views }, (_, index) => (
+          <span key={index} className="dm-mkt-dot" data-lit={index === lit ? '' : undefined} />
+        ))}
+      </span>
+    ) : null
   return (
     <>
       <div className="dm-mkt-titlebar">
         <div className="min-w-0 animate-rise">{heading}</div>
         {railed && (
-          <div className="dm-mkt-arrows">
-            <IconButton label="Previous pools" icon={<IconChevronLeft />} aria-controls="market-rail" disabled={edges.start} onClick={() => scrollPage(-1)} />
-            <IconButton label="Next pools" icon={<IconChevronRight />} aria-controls="market-rail" disabled={edges.end} onClick={() => scrollPage(1)} />
+          <div className="dm-mkt-nav">
+            {dots('bar')}
+            <div className="dm-mkt-arrows">
+              <IconButton label="Previous pools" icon={<IconChevronLeft />} variant="round" aria-controls="market-rail" disabled={edges.start} onClick={() => scrollPage(-1)} />
+              <IconButton label="Next pools" icon={<IconChevronRight />} variant="round" aria-controls="market-rail" disabled={edges.end} onClick={() => scrollPage(1)} />
+            </div>
           </div>
         )}
       </div>
@@ -181,6 +213,7 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
           })}
         </div>
       )}
+      {dots('rail')}
     </>
   )
 }

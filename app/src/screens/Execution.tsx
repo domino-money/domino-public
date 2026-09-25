@@ -143,7 +143,8 @@ function ReceiptItem({ item, refreshFailed, tokens }: { item: ExecutionItem; ref
     </> : <p className="dm-acct-line text-fg-muted">{EXECUTION_STATE_NOTE[item.state]}</p>}
     {item.canCancel && <div className="dm-acct-choices" data-execution-stop="">
       <p className="dm-acct-line">It can still be stopped: pause your sequence before it is signed.</p>
-      <LinkButton href="#/sequence" variant="outline" size="sm">Pause the sequence</LinkButton>
+      {/* 2026-09-24: the sequence page no longer manages sequences (the owner's simpler page); how to pause is on the docs. */}
+      <LinkButton href="#/docs/non-custodial#pause-revoke-withdraw" variant="outline" size="sm">How to pause</LinkButton>
     </div>}
   </Card>
 }

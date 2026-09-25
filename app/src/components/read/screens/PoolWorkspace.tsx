@@ -220,20 +220,23 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
   const price = poolPrice(option, now.wall)
   const fee = option.fee === 'Dynamic' ? 'Dynamic fee' : option.fee
   const status = provenance?.market.status
-  const resting = <span className="mt-2 grid gap-1.5"><Skeleton className="h-2.5 w-20" /><Skeleton className="h-2.5 w-24" /></span>
   // Who reported the figures and when they were retrieved, as words under them; the whole observation is their title.
   const observation = provenance
     ? `Provider market observation${answered?.origin === 'stored' ? ', as the read service stored it' : ''}: ${provenance.market.status}${provenance.market.reason ? ` (${reasonText(provenance.market.reason)})` : ''}, ${retrieved}${provenance.market.cacheAgeSeconds === null ? '' : `, reported cache age ${provenance.market.cacheAgeSeconds} s`}; counted current for ${provenance.market.freshForSeconds} s.`
     : undefined
+  // Where the figures came from is provenance (§0.3): out of the layout, never out of the DOM or the titles.
   const providerLine = !shown
-    ? loading ? resting : undefined
-    : <span className="block" data-market-provenance="" title={observation}>
-        <span className="block">Market data provider</span>
-        {(status === 'available' || status === 'stale') && <span className="block">{retrieved}</span>}
+    ? undefined
+    : <span className="dm-provenance">
+        <span className="block" data-market-provenance="" title={observation}>
+          <span className="block">Market data provider</span>
+          {(status === 'available' || status === 'stale') && <span className="block">{retrieved}</span>}
+        </span>
       </span>
   const HISTORY = 'Domino history'
+  const history = <span className="dm-provenance">{HISTORY}</span>
   const fromHistory = (metric: Metric) => metric.source === undefined && metric.state !== 'unavailable' && metric.state !== 'rejected' && metric.state !== 'absent'
-  const figure = (node: ReactNode) => (shown ? <span className="animate-fade">{node}</span> : loading ? <Skeleton className="mt-1 h-6 w-24" /> : <FigureDash reason={failed} />)
+  const figure = (node: ReactNode) => (shown ? <span className="dm-arrive">{node}</span> : loading ? <Skeleton className="dm-pool-fig-skel" /> : <FigureDash reason={failed} />)
   const metricsFailed = metricsRead && metricsRead.state !== 'ok' && metricsRead.state !== 'aborted' ? sentence(failureText(metricsRead, 'pools')) : undefined
   const apr = shown?.feeAprPercent
   const aprFromHistory = !!apr && apr.value !== null && (apr.state === 'qualified' || apr.state === 'stale')
@@ -254,13 +257,15 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
   const detailRows = 8 + (option.tokenMetadata === 'partial' ? 1 : 0) + (protocol ? 1 : 0)
   const perColumn = Math.ceil(detailRows / 2)
 
-  return <div data-pool-workspace={option.key}>
-    <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
-      <div className="flex min-w-0 items-center gap-4">
+  // One grid for the page (pool.css): the title row, the chart beside the figures card, then the cards below at full
+  // width. The DOM keeps its order (figures before the chart); a phone puts the chart first by `order`.
+  return <div data-pool-workspace={option.key} className="dm-pool-layout">
+    <div className="dm-pool-head dm-pool-a-head">
+      <div className="dm-pool-title">
         <span className="dm-pool-marks"><TokenMarkPair base={currency0} quote={currency1} size={44} ring="var(--bg)" /></span>
         <div className="min-w-0">
-          <h1 className="dm-display dm-display-title"><PoolTokenLabel token={currency0} /> / <PoolTokenLabel token={currency1} /></h1>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <h1 className="dm-display dm-display-h1"><PoolTokenLabel token={currency0} /> / <PoolTokenLabel token={currency1} /></h1>
+          <div className="dm-pool-chips">
             <span className="dm-chip">Uniswap · {fee}</span>
             <span className="dm-chip">Robinhood Chain</span>
             <span className="dm-pool-id" title={option.key} translate="no">
@@ -271,28 +276,32 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
           </div>
         </div>
       </div>
-      {actions && <div className="dm-pool-actions flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="dm-pool-actions">{actions}</div>}
     </div>
 
-    <div className="dm-pool-figures mt-8" data-pool-figures="" data-market-read={shown ? (answered?.origin ?? 'read') : loading ? 'loading' : 'none'} data-market-reason={failure?.state}>
-      <StatStrip cols={5} className={metricsListed ? 'dm-pool-stats-6' : undefined}>
+    <div className="dm-pool-figures dm-pool-a-figs" data-pool-figures="" data-market-read={shown ? (answered?.origin ?? 'read') : loading ? 'loading' : 'none'} data-market-reason={failure?.state}>
+      <StatStrip cols={5} layout="list">
+        {/* The PRICE row is a row like its siblings: the chart header is the page's one big price. The block it was
+            read at is the value's title and screen-reader text, not a line on the card. */}
         <Stat label="Price" className="dm-pool-price-stat" sub={price.state === 'usable'
-          ? <><SymbolText token={price.quote} /> per <SymbolText token={price.base} /> · block {price.block}{price.partial && ' · symbol not read'}</>
+          ? <><SymbolText token={price.quote} /> per <SymbolText token={price.base} /><span className="dm-provenance"> · block {price.block}</span>{price.partial && ' · symbol not read'}</>
           : COPY.range.problems[price.problem]}>
           {price.state === 'usable'
-            ? <span title={`${price.text}. Pool price from on-chain state at block ${price.block}. A ratio between the two tokens, not a dollar price.${price.stale ? ' Read more than 5 minutes ago on this page.' : ''}`}>{price.text}</span>
+            ? <span title={`${price.text}. Pool price from on-chain state at block ${price.block}. A ratio between the two tokens, not a dollar price.${price.stale ? ' Read more than 5 minutes ago on this page.' : ''}`}>
+                {price.text.startsWith('≈') ? <><span className="dm-approx">{'≈'}</span>{price.text.slice(1)}</> : price.text}
+              </span>
             : <FigureDash reason={COPY.range.problems[price.problem]} />}
         </Stat>
-        <Stat label="TVL" sub={shown && fromHistory(shown.tvlUsd) ? HISTORY : providerLine}>{figure(shown && <MetricCell metric={shown.tvlUsd} retrieved={retrieved} />)}</Stat>
-        <Stat label="24h volume" sub={shown && fromHistory(shown.volume24hUsd) ? HISTORY : providerLine}>{figure(shown && <MetricCell metric={shown.volume24hUsd} retrieved={retrieved} />)}</Stat>
+        <Stat label="TVL" sub={shown && fromHistory(shown.tvlUsd) ? history : providerLine}>{figure(shown && <MetricCell metric={shown.tvlUsd} retrieved={retrieved} />)}</Stat>
+        <Stat label="24h volume" sub={shown && fromHistory(shown.volume24hUsd) ? history : providerLine}>{figure(shown && <MetricCell metric={shown.volume24hUsd} retrieved={retrieved} />)}</Stat>
         {metricsListed && (
-          <Stat label="24h fees" sub={shown ? HISTORY : loading ? resting : undefined}>
-            {shown && !metricsRead ? <Skeleton className="mt-1 h-6 w-20" /> : shown && metricsFailed ? <FigureDash reason={metricsFailed} /> : figure(shown && shown.lpFees24hUsd && <MetricCell metric={shown.lpFees24hUsd} />)}
+          <Stat label="24h fees" sub={shown ? history : undefined}>
+            {shown && !metricsRead ? <Skeleton className="dm-pool-fig-skel" /> : shown && metricsFailed ? <FigureDash reason={metricsFailed} /> : figure(shown && shown.lpFees24hUsd && <MetricCell metric={shown.lpFees24hUsd} />)}
           </Stat>
         )}
         {aprFromHistory && apr
-          ? <Stat label="APR" sub={HISTORY}>{figure(<MetricCell metric={apr} percent />)}</Stat>
-          : <Stat label="Est. APR" sub={shown ? 'Estimate, not a return' : undefined}>{figure(shown && <PoolAprEstimate observation={shown.feeAprEstimate} now={now} compact />)}</Stat>}
+          ? <Stat label="APR" sub={history}>{figure(<MetricCell metric={apr} percent tone="in" />)}</Stat>
+          : <Stat label="Est. APR" sub={shown ? 'Estimate, not a return' : loading ? <Skeleton className="dm-pool-fig-sub-skel" /> : undefined}>{figure(shown && <PoolAprEstimate observation={shown.feeAprEstimate} now={now} compact />)}</Stat>}
         <Stat label="Fee tier" sub={option.integration === 'hookless_fixed_fee' ? COPY.picker.hookless : COPY.picker.needsAdapter}>{fee}</Stat>
       </StatStrip>
       <p role="status" aria-live="polite" className="sr-only" data-pool-status={loading ? 'loading' : failure ? failure.state : 'none'}>
@@ -300,13 +309,13 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
       </p>
     </div>
 
-    <div className="mt-8">
+    <div className="dm-pool-a-chart">
       <PoolHistoryChart source={source} option={option} market={shown} loading={loading} failed={failed} />
     </div>
 
-    <div className="dm-card mt-6 animate-rise p-5">
-      <h2 className="dm-display dm-display-card">Pool details</h2>
-      <dl className={cx('dm-kv dm-pool-kv -mx-5 mt-3', perColumn <= 4 ? 'dm-pool-kv--4' : 'dm-pool-kv--5')}>
+    <div className="dm-card dm-pool-card dm-pool-a-details animate-rise">
+      <h2 className="dm-title">Pool details</h2>
+      <dl className={cx('dm-kv dm-pool-kv', perColumn <= 4 ? 'dm-pool-kv--4' : 'dm-pool-kv--5')}>
         <div><dt>Pool id</dt><dd className="text-fg-muted"><Address value={option.key} /></dd></div>
         <div><dt>Currency 0</dt><dd><PoolTokenLabel token={currency0} /> <span className="text-fg-subtle"><Address value={currency0.address} short /></span></dd></div>
         <div><dt>Currency 1</dt><dd><PoolTokenLabel token={currency1} /> <span className="text-fg-subtle"><Address value={currency1.address} short /></span></dd></div>
@@ -333,8 +342,8 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
           </dd>
         </div>
       </dl>
-      <div className="-mx-3 mt-3 grid gap-1">
-        <details className="dm-details">
+      <div className="dm-pool-disclosures">
+        <details className="dm-details dm-pool-quiet">
           <summary>Other provider figures</summary>
           <div className="grid gap-3">
             <ProviderFigure label="Liquidity" figure={option.liquidity} full />
@@ -342,7 +351,7 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
             {option.providerConflict && <p className="text-caption text-money-out">{COPY.picker.providerConflict}</p>}
           </div>
         </details>
-        <details className="dm-details">
+        <details className="dm-details dm-pool-quiet">
           <summary>About the APR</summary>
           <div className="grid gap-3 text-[13px] leading-[18px]">
             <dl data-history-apr="">
@@ -361,10 +370,10 @@ export function PoolWorkspace({ source, option, onOption, range, onRange, action
       </div>
     </div>
 
-    <section className="dm-card mt-6 animate-rise p-5 [--delay:60ms]" aria-labelledby="range-title">
-      <h2 id="range-title" className="dm-display dm-display-card">Plan a range</h2>
-      <p className="mt-1 max-w-[60ch] text-body text-fg-muted">Pick a band to see where it sits against the pool price. Nothing is saved or sent.</p>
-      <div className="mt-5">
+    <section className="dm-card dm-pool-card dm-pool-a-range animate-rise [--delay:40ms]" aria-labelledby="range-title">
+      <h2 id="range-title" className="dm-title">Plan a range</h2>
+      <p className="dm-pool-lead">Pick a band to see where it sits against the pool price. Nothing is saved or sent.</p>
+      <div className="dm-pool-range-body">
         <PoolRangeControls source={source} token={addressKey(currency0.address)} paired={addressKey(currency1.address)} option={option} onOption={onOption} range={range} onRange={onRange} />
       </div>
     </section>

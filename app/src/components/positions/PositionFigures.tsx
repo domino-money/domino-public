@@ -1,6 +1,5 @@
-import type { AmountView, Batch } from '../../lib/read/screens/positions'
-import { utcTime } from '../../lib/read/screens/figures'
-import type { LiveCard } from '../../lib/ownedPositions'
+import type { AmountView } from '../../lib/read/screens/positions'
+import type { LiveCard } from '../../lib/walletCards'
 import { TokenLabel } from '../read/TokenLabel'
 import { Pill } from '../ui'
 import { Figure } from './Figure'
@@ -8,7 +7,8 @@ import { Figure } from './Figure'
 /**
  * An amount in its token's units to six significant digits, every digit in
  * its title; a dash, with the raw amount in its title, when the token's
- * decimals were not read. The symbol is the token's own text, never markup.
+ * decimals were not read; a plain dash when the chain gave no figure. The
+ * symbol is the token's own text, never markup.
  */
 export function Amount({ amount }: { amount: AmountView }) {
   const symbol = (
@@ -16,6 +16,13 @@ export function Amount({ amount }: { amount: AmountView }) {
       <TokenLabel token={amount.token} />
     </span>
   )
+  if (amount.kind === 'unread') {
+    return (
+      <span className="dm-acct-amount" data-amount="unread">
+        <span className="text-fg-subtle">—</span> {symbol}
+      </span>
+    )
+  }
   if (amount.kind === 'raw') {
     return (
       <span className="dm-acct-amount" data-amount="raw" title={`Raw amount ${amount.raw}: the token’s decimals were not read`}>
@@ -60,8 +67,5 @@ export function PairName({ card }: { card: LiveCard }) {
   )
 }
 
-/** The block, time and freshness of the read a position's figures are from: a title, never a line on the page. */
-export function snapshotTitle(batch: Batch) {
-  const age = `${batch.freshness.ageSeconds} s old when read`
-  return `Block ${batch.block.number} · ${utcTime(batch.block.timestamp)} · ${batch.freshness.status === 'stale' ? `stale, ${age}` : `fresh, ${age}`}`
-}
+/** The block a position's figures are from: a title, never a line on the page. */
+export const blockTitle = (block: number) => `Read from chain at block ${block}`

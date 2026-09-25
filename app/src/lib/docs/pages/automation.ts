@@ -30,6 +30,14 @@ export const AUTO_COMPOUND: DocPage = {
       ],
     },
     {
+      id: 'choices',
+      title: 'What you choose',
+      blocks: [
+        p('The quote currency is the token prices are counted in. It sets which way prices count as higher for your sequence, and it cannot be changed once the sequence is created.'),
+        p('Every run also keeps within limits that start at defaults you can change: the least time between runs, the most a swap may lose to slippage or move the price, a gas cap per run, how old a price reading may be, and how far ahead fees are forecast.'),
+      ],
+    },
+    {
       id: 'service-fee',
       title: 'Service fee',
       blocks: [p('2% of the earned fees it consumes, taken once. Only the root position is used, with a position cap of one and no successors. Never on principal, and earned fees that wait are not charged. See ', doc('Fees', 'fees', 'service-fee'), '.')],
@@ -114,10 +122,10 @@ export const DOMINO_COMPOUNDER: DocPage = {
         },
         p(
           'On Automate, ',
-          b('Create or manage a sequence'),
-          ' opens the screen that leads through these steps, each reviewed in your wallet. It is also where you ',
+          b('Set up Domino-compound'),
+          ' opens the setup, where one button asks your wallet for both transactions. You ',
           doc('pause, revoke and withdraw', 'non-custodial', 'pause-revoke-withdraw'),
-          '. Some changes made outside Domino stop automation too: see ',
+          ' with your wallet on your sequence vault. Changes made outside Domino stop automation too: see ',
           doc('Risks', 'risks', 'automation-stops'),
           '.',
         ),

@@ -114,7 +114,7 @@ export const RISKS: DocPage = {
       title: 'Automation can stop',
       blocks: [
         p('Automation stops if the position you started from has its fees collected or its liquidity changed outside Domino, or leaves your wallet. Revoking the operator, or the NFT approval, stops it too.'),
-        p('On Automate, ', b('Create or manage a sequence'), ' can restore the vault’s permission over that position, while the position is still yours and still approved to the vault, and can name the operator again while it is revoked. Activation stays a separate step you sign.'),
+        p('Restoring the vault’s permission over that position, while the position is still yours and still approved to the vault, or naming the operator again while it is revoked, is a transaction your wallet signs on your sequence vault. Activation stays a separate step you sign.'),
         p('Restoring that permission consents again to the fees the position has not collected, exactly as creating the vault did.'),
         p('After you revoke the NFT approval, or the position leaves your wallet, restarting takes a contract call that no Domino screen makes.'),
       ],

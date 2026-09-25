@@ -5,7 +5,7 @@ import { REQUEST_READ_CONTRACT } from '../lib/read/pin'
 import { Button, PageHeader, PageShell, Stat } from '../components/ui'
 import { RoadmapPill } from './Automate'
 
-const rise = (step: number) => ({ '--delay': `${step * 60}ms` }) as CSSProperties
+const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
 
 /** Appearance, and a plain account of what this build can and cannot do. Nothing here is a switch for a capability: those are the server's. */
 export function Settings() {

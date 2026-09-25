@@ -3,8 +3,8 @@
  * it stays in a data attribute beside the sentence.
  */
 
-/** The button each owner screen reads its deployment and the wallet with: Setup's owner recovery, and Your sequences. */
-export type ReadControl = 'Read my operations' | 'Read my sequences' | 'Create position'
+/** The button each owner screen reads its deployment and the wallet with: Setup's owner recovery, the automation page's one action (2026-09-24), and New position's. */
+export type ReadControl = 'Read my operations' | 'Set up automation' | 'Create position'
 
 /** A sentence, or one that names the screen's own read button, since each screen names it differently. */
 const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> = {
@@ -16,17 +16,17 @@ const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> 
   invalid_wallet_reply: 'Your wallet returned an answer that could not be read.',
   invalid_wallet_quantity: 'Your wallet returned an answer that could not be read.',
   invalid_sequence_reply: 'Your wallet returned an answer that could not be read.',
-  sequence_read_provider: 'The connected wallet did not provide an RPC connection. Reconnect it, then press Read my sequences again.',
-  sequence_read_accounts: 'The wallet could not answer the account read. Check its network connection, then press Read my sequences again.',
-  sequence_read_chain: 'The wallet could not answer the network read. Check its Robinhood Chain connection, then press Read my sequences again.',
-  sequence_read_block: 'The wallet could not read a chain block. Check its RPC connection, then press Read my sequences again.',
-  sequence_read_code: 'The wallet could not read deployed contract code. Check its RPC connection, then press Read my sequences again.',
-  sequence_read_call: 'The wallet could not read a contract result. Check its RPC connection, then press Read my sequences again.',
-  sequence_read_timeout: 'The wallet RPC read took too long. Press Read my sequences again after its connection recovers.',
+  sequence_read_provider: (again) => `The connected wallet did not provide an RPC connection. Reconnect it, then press ${again} again.`,
+  sequence_read_accounts: (again) => `The wallet could not answer the account read. Check its network connection, then press ${again} again.`,
+  sequence_read_chain: (again) => `The wallet could not answer the network read. Check its Robinhood Chain connection, then press ${again} again.`,
+  sequence_read_block: (again) => `The wallet could not read a chain block. Check its RPC connection, then press ${again} again.`,
+  sequence_read_code: (again) => `The wallet could not read deployed contract code. Check its RPC connection, then press ${again} again.`,
+  sequence_read_call: (again) => `The wallet could not read a contract result. Check its RPC connection, then press ${again} again.`,
+  sequence_read_timeout: (again) => `The wallet RPC read took too long. Press ${again} again after its connection recovers.`,
   sequence_read_limit: 'The wallet read exceeded its request limit. No transaction was prepared.',
   sequence_read_decode: 'The wallet returned a contract result that could not be decoded. No transaction was prepared.',
   sequence_read_rpc: 'The wallet could not complete a read request. No transaction was prepared.',
-  sequence_read_snapshot_unavailable: 'The trusted read service is unavailable. No transaction was prepared. Press Read my sequences again later.',
+  sequence_read_snapshot_unavailable: (again) => `The trusted read service is unavailable. No transaction was prepared. Press ${again} again later.`,
   sequence_read_snapshot_invalid: 'The trusted read service returned an inconsistent sequence snapshot. No transaction was prepared.',
   sequence_read_unexpected: 'The wallet read ended unexpectedly. No transaction was prepared.',
   invalid_block: 'Your wallet returned a block that could not be read.',
@@ -60,7 +60,7 @@ const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> 
   receipt_not_from_this_review: 'Only a step reviewed on this page can have its receipt checked here.',
   receipt_identity_changed: 'That receipt does not match the reviewed step.',
   setup_release_expired: 'The deployment profile expired. Press Read my operations again.',
-  sequence_release_expired: 'The deployment profile expired. Press Read my sequences again.',
+  sequence_release_expired: (again) => `The deployment profile expired. Press ${again} again.`,
   setup_admission_unavailable: 'The deployment could not be confirmed just now. Nothing was prepared.',
   sequence_admission_unavailable: 'The deployment could not be confirmed just now. Nothing was prepared.',
   deployment_code_changed: 'The deployed code no longer matches its profile. Nothing was prepared.',
@@ -72,7 +72,7 @@ const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> 
   invalid_clone_template: 'The deployment profile is not consistent.',
   invalid_execution_roles: 'The deployment roles are not consistent.',
   unqualified_sequence: 'That address is not a sequence of this deployment.',
-  invalid_root_nft: 'Enter the root NFT ID.',
+  invalid_root_nft: 'Choose one of your positions.',
   unsupported_pool: 'That position is in a pool sequences do not support: hooks, or a fee or tick spacing out of range.',
   invalid_position_identity: 'That position could not be verified.',
   invalid_currency: 'A token of that pool has no contract code.',

@@ -3776,15 +3776,29 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // through the financial client's same-origin fetch (/finance/http.ts), so no new fetcher joins this list.
   const diagnosticPath = '/components/read/LocalDevelopmentBanner.tsx';
   // Changed on purpose (owner, 2026-09-24): Positions lists the connected wallet's position NFTs through the site's own
-  // endpoint (functions/api/owned/v1/positions.ts). /lib/ownedPositions.ts is its one client, pinned below to that one
-  // same-origin POST.
-  const ownedPath = '/lib/ownedPositions.ts';
-  assert.deepEqual(fetchers, [diagnosticPath, '/finance/http.ts', ownedPath, '/lib/read/bridgeSource.ts', '/lib/tokenArtwork.ts', '/screens/LivePreview.tsx', '/wallet/session.ts'], 'product clients, the financial client, the owned-positions client, serve-only diagnostics, the consumer-test preview, and the explicitly authorized decorative token metadata client');
+  // endpoint. 2026-09-24, later: v2 (functions/api/owned/v2/positions.ts) lists only what DominoSetupV1 minted to the
+  // wallet, read from chain; /lib/walletPositions.ts is its one client (replacing /lib/ownedPositions.ts), pinned below
+  // to that one same-origin POST, with nothing kept in the browser's storage.
+  const ownedPath = '/lib/walletPositions.ts';
+  // 2026-09-24 (P6, DESIGN-V2 §15.4, R-10): the fees history's client, /lib/fees/client.ts, joins on purpose: two fixed
+  // same-origin POSTs to the site's own relay (functions/api/fees/v1/{logs,state}.ts), pinned below; the replay worker
+  // that uses it names no fetch of its own.
+  const feesPath = '/lib/fees/client.ts';
+  assert.deepEqual(fetchers, [diagnosticPath, '/finance/http.ts', feesPath, '/lib/read/bridgeSource.ts', '/lib/tokenArtwork.ts', ownedPath, '/screens/LivePreview.tsx', '/wallet/session.ts'], 'product clients, the financial client, the fees and owned-positions clients, serve-only diagnostics, the consumer-test preview, and the explicitly authorized decorative token metadata client');
+  const feesClient = readFileSync(join(SRC, feesPath), 'utf8');
+  assert.equal([...feesClient.matchAll(/\bfetch\s*\(/g)].length, 2, 'exactly two fees fetch calls');
+  assert.match(feesClient, /fetch\('\/api\/fees\/v1\/logs', \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json' \}, body: JSON\.stringify\(request\), credentials: 'same-origin', cache: 'no-store', signal \}\)/);
+  assert.match(feesClient, /fetch\('\/api\/fees\/v1\/state', \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json' \}, body: JSON\.stringify\(\{ tokenIds \}\), credentials: 'same-origin', cache: 'no-store', signal \}\)/);
+  assert.deepEqual([...feesClient.matchAll(/['"`](https?:\/\/[^'"`]+|\/api\/[^'"`]+)['"`]/g)].map((match) => match[1]), ['/api/fees/v1/logs', '/api/fees/v1/state'], 'no other network route in the fees client');
+  assert.doesNotMatch(feesClient, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB)\b/, 'no other network client and no storage');
+  assert.match(feesClient, /function relayed\(\): boolean \{\n  return __DOMINO_DEPLOYABLE__ \|\| __DOMINO_TEST_HOOKS__\n\}/, 'asked only in builds with a relay, decided inside the call');
+  assert.doesNotMatch(readFileSync(join(SRC, 'lib/fees/feesReplay.worker.ts'), 'utf8'), /fetch\(/, 'the worker file names no fetch, not even in a comment');
+  assert.doesNotMatch(readFileSync(join(SRC, 'lib/fees/pipeline.ts'), 'utf8'), /fetch\(/);
   const ownedClient = readFileSync(join(SRC, ownedPath), 'utf8');
   assert.equal([...ownedClient.matchAll(/\bfetch\s*\(/g)].length, 1, 'exactly one owned-positions fetch call');
-  assert.match(ownedClient, /fetch\(OWNED_PATH, \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json' \}, body, credentials: 'same-origin', cache: 'no-store', signal \}\)/, 'a fixed same-origin POST, the address in its body');
-  assert.deepEqual([...ownedClient.matchAll(/['"`](https?:\/\/[^'"`]+|\/api\/[^'"`]+)['"`]/g)].map((match) => match[1]), ['/api/owned/v1/positions'], 'no other network route in the owned-positions client');
-  assert.doesNotMatch(ownedClient, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage)\b/, 'no other network client and no storage');
+  assert.match(ownedClient, /fetch\(WALLET_POSITIONS_PATH, \{ method: 'POST', headers: \{ 'Content-Type': 'application\/json' \}, body, credentials: 'same-origin', cache: 'no-store', signal \}\)/, 'a fixed same-origin POST, the address in its body');
+  assert.deepEqual([...ownedClient.matchAll(/['"`](https?:\/\/[^'"`]+|\/api\/[^'"`]+)['"`]/g)].map((match) => match[1]), ['/api/owned/v2/positions'], 'no other network route in the owned-positions client');
+  assert.doesNotMatch(ownedClient, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB)\b/, 'no other network client and no storage');
 
   const diagnostics = readFileSync(join(SRC, diagnosticPath), 'utf8');
   assert.equal([...diagnostics.matchAll(/\bfetch\s*\(/g)].length, 1, 'exactly one diagnostic fetch call');

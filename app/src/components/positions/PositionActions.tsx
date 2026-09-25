@@ -6,10 +6,13 @@ import type { GasBudget } from '../../finance/setup'
 import { setupWallet } from '../../finance/wallet'
 import { errorCode, financeErrorText } from '../../finance/words'
 import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom } from '../../lib/create/slippage'
+import { formatUsd, usdgValue } from '../../lib/format/usd'
+import type { TokenDisplay } from '../../lib/read/types'
 import { useDialog } from '../../lib/useDialog'
 import { useWalletIdentity, walletKey } from '../../lib/walletIdentity'
 import { SlippageChoice } from '../create/SlippageChoice'
 import { IconClose } from '../icons'
+import { TokenMark } from '../TokenIcon'
 import { Button, IconButton, KeyValue, KeyValueList, Skeleton } from '../ui'
 import { amountText, currencyName, isRejection, outcomeUnknown, watchReceipt } from './walletSteps'
 
@@ -40,6 +43,10 @@ export interface PositionActionsProps {
   hooks: string
   /** Called after a collect or close is included on chain, so the page reads again. */
   onChanged: () => void
+  /** The fees relay's pool price, for a pair with USDG: the dialog adds what it receives in USD beside the pinned amounts. */
+  usd?: { usdgIndex: 0 | 1; sqrtPriceX96: bigint; block: number } | null
+  /** The page's own token marks (already resolved there), drawn beside the dialog's amounts. */
+  tokens?: readonly [TokenDisplay, TokenDisplay] | null
 }
 
 type Action = 'collect' | 'close'
@@ -108,23 +115,24 @@ function paysLess(fresh: PreparedPosition, shown: PreparedPosition, bps: number)
 }
 
 /** One amount of one token, or a dash with the reason in its title when the token's decimals are unknown. */
-function Amount({ raw, currency }: { raw: bigint; currency: PositionCurrency }) {
+function Amount({ raw, currency, token }: { raw: bigint; currency: PositionCurrency; token?: TokenDisplay }) {
   const shown = amountText(raw, currency.decimals)
   const name = currencyName(currency)
   if (!shown) return <span title={`${name}’s decimals are unknown.`}>— {name}</span>
   return (
-    <span className="tnum" title={`${shown.exact} ${name}`}>
+    <span className="dm-receipt-amount tnum" title={`${shown.exact} ${name}`}>
+      {token && <TokenMark token={token} size={20} />}
       {shown.text} {name}
     </span>
   )
 }
 const Dash = ({ reason }: { reason: string }) => <span title={reason}>—</span>
-function Pair({ amounts, currencies }: { amounts: readonly [bigint, bigint] | null; currencies: readonly [PositionCurrency, PositionCurrency] }) {
-  if (!amounts) return <Skeleton className="ml-auto h-4 w-28" />
+function Pair({ amounts, currencies, tokens }: { amounts: readonly [bigint, bigint] | null; currencies: readonly [PositionCurrency, PositionCurrency]; tokens?: readonly [TokenDisplay, TokenDisplay] | null }) {
+  if (!amounts) return <Skeleton className="dm-receipt-skel" />
   return (
-    <span className="grid justify-items-end">
-      <Amount raw={amounts[0]} currency={currencies[0]} />
-      <Amount raw={amounts[1]} currency={currencies[1]} />
+    <span className="dm-receipt-pair">
+      <Amount raw={amounts[0]} currency={currencies[0]} token={tokens?.[0]} />
+      <Amount raw={amounts[1]} currency={currencies[1]} token={tokens?.[1]} />
     </span>
   )
 }
@@ -147,7 +155,7 @@ function ActionDialog({ action, onClose, children, footer }: { action: Action; o
   )
 }
 
-export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged }: PositionActionsProps) {
+export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null }: PositionActionsProps) {
   const identity = useWalletIdentity()
   const wallet = walletKey(identity)
   const mine = wallet !== null && identity.kind === 'connected' && identity.address.toLowerCase() === owner.toLowerCase()
@@ -267,12 +275,15 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
   // Nothing was read: the figures are dashes, with the reason one hover away.
   const unread = !prepared && shown?.stage === 'failed' ? (shown.notice?.text ?? 'The position could not be read.') : null
   const canSend = shown !== null && prepared !== null && (shown.stage === 'ready' || shown.stage === 'failed') && !nothingToCollect && !(open === 'close' && bps === null)
+  // What the dialog receives in USD at the fees relay's pool price (1 USDG = $1): a line of its own, beside the pinned amounts.
+  const [d0, d1] = [currencies[0].decimals, currencies[1].decimals]
+  const receiveUsd = usd && prepared && d0 !== null && d1 !== null ? formatUsd(usdgValue({ amounts: prepared.receive, decimals: [d0, d1], usdgIndex: usd.usdgIndex, sqrtPriceX96: usd.sqrtPriceX96 })) : null
 
   return (
     <div className="flex flex-wrap items-center gap-2" data-position-actions={hooked ? 'hooks' : ''}>
       <Button
         type="button"
-        variant="outline"
+        variant="secondary"
         disabled={hooked || empty || noFees || (pending && run?.action !== 'collect')}
         title={collectReason}
         aria-busy={(pending && run?.action === 'collect') || undefined}
@@ -284,7 +295,7 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
       {!empty && (
         <Button
           type="button"
-          variant="primary"
+          variant="danger"
           disabled={hooked || (pending && run?.action !== 'close')}
           title={hooked ? HOOKED : undefined}
           aria-busy={(pending && run?.action === 'close') || undefined}
@@ -300,28 +311,33 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
           onClose={() => setOpen(null)}
           footer={
             shown?.stage === 'done' ? (
-              <Button type="button" variant="outline" className="ml-auto" onClick={() => setOpen(null)}>
+              <Button type="button" variant="outline" size="lg" className="w-full" onClick={() => setOpen(null)}>
                 Back to position
               </Button>
             ) : (
-              <Button type="button" variant="primary" className="ml-auto" disabled={!canSend} aria-busy={busy || undefined} data-position-send={open} onClick={() => void confirm(open)}>
+              <Button type="button" variant="primary" size="lg" className="w-full" disabled={!canSend} aria-busy={busy || undefined} data-position-send={open} onClick={() => void confirm(open)}>
                 {PRIMARY[open]}
               </Button>
             )
           }
         >
-          <p className="text-body text-fg-muted">
+          <p className="dm-receipt-lede">
             {open === 'collect'
               ? 'The fees this position has earned go to your wallet. The position stays open.'
               : 'All of the liquidity and its fees go to your wallet. The empty position NFT stays in your wallet.'}
           </p>
-          <KeyValueList data-position-receive={open}>
+          <KeyValueList className="dm-receipt" data-position-receive={open}>
             <KeyValue label="You receive">
-              {prepared || !unread ? <Pair amounts={prepared ? prepared.receive : null} currencies={currencies} /> : <Dash reason={unread} />}
+              {prepared || !unread ? <Pair amounts={prepared ? prepared.receive : null} currencies={currencies} tokens={tokens} /> : <Dash reason={unread} />}
             </KeyValue>
+            {receiveUsd && usd && (
+              <p className="dm-usd-line" title={`Pool price at block ${usd.block}`}>
+                {receiveUsd}
+              </p>
+            )}
             {open === 'close' && (
               <KeyValue label="At least" data-position-at-least="">
-                {atLeast ? <Pair amounts={atLeast} currencies={currencies} /> : prepared ? <Dash reason="Choose a slippage limit from 0.1% to 5%." /> : unread ? <Dash reason={unread} /> : <Pair amounts={null} currencies={currencies} />}
+                {atLeast ? <Pair amounts={atLeast} currencies={currencies} tokens={tokens} /> : prepared ? <Dash reason="Choose a slippage limit from 0.1% to 5%." /> : unread ? <Dash reason={unread} /> : <Pair amounts={null} currencies={currencies} />}
               </KeyValue>
             )}
             <KeyValue label="Network fee" data-position-network-fee="">

@@ -30,7 +30,8 @@ execFileSync(
     'tests/build-guard.test.mjs',
     'tests/forwarder.test.mjs',
     'tests/owned.test.mjs',
-    'tests/owned-positions.test.mjs',
+    // 2026-09-24: the wallet's Domino positions from chain replace owned-positions (v1 list, row reads, browser memory).
+    'tests/wallet-positions.test.mjs',
     'tests/release.test.mjs',
     'tests/session.api.test.mjs',
     'tests/session.siwe.test.mjs',
@@ -81,6 +82,18 @@ execFileSync(
     'tests/setup-recovery.test.mjs',
     'tests/setup-quoter.test.mjs',
     'tests/position-actions.test.mjs',
+    // 2026-09-24: V2 foundation, the pure number, USD, time and chart geometry helpers (lib/format, lib/chart).
+    'tests/format.test.mjs',
+    'tests/chart-geometry.test.mjs',
+    // 2026-09-24 (P6): the fees history, its relay, its pins and its store (DESIGN-V2 §15.7, R-11).
+    'tests/fees-replay.test.mjs',
+    'tests/fees-relay.test.mjs',
+    'tests/fees-topics.test.mjs',
+    'tests/fees-store.test.mjs',
+    // 2026-09-24 (P5): the guided creation's successor axis, per-field reasons and the Automate fee meter's rates (DESIGN-V2 §14, R-13, R-18).
+    'tests/automate-successor.test.mjs',
+    // 2026-09-24: the automation page's position picker (the wallet's open positions, a link's preselection, what each option shows).
+    'tests/automate-picker.test.mjs',
   ],
   { stdio: 'inherit' },
 );

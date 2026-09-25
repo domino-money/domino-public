@@ -2,6 +2,7 @@ import { CREATE } from '../../lib/create/copy'
 import type { JourneyState } from '../../lib/create/journey'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../lib/read/types'
+import { IconCheck } from '../icons'
 import { PoolPicker } from '../read/screens/PoolPicker'
 import { SymbolText } from '../read/screens/SymbolText'
 import { TokenMarkPair } from '../TokenIcon'
@@ -20,9 +21,13 @@ export function ChosenPool({ option, onChange }: { option: PoolOption; onChange:
   return (
     <div className="dm-flow-panel" data-chosen-pool={option.key}>
       <div className="dm-flow-pool-head">
-        <TokenMarkPair base={option.currencies[0]} quote={option.currencies[1]} size={28} />
+        {/* The chosen row keeps its place and gains a check where its radio was. */}
+        <span aria-hidden="true" className="dm-flow-chosen-check">
+          <IconCheck size={12} />
+        </span>
+        <TokenMarkPair base={option.currencies[0]} quote={option.currencies[1]} size={32} />
         <div className="dm-flow-pool-name">
-          <p className="truncate text-body font-medium text-fg">
+          <p className="dm-flow-pool-pair">
             <SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} />
           </p>
           <p className="flex flex-wrap items-center gap-1.5">
@@ -47,8 +52,31 @@ export function ChosenPool({ option, onChange }: { option: PoolOption; onChange:
  * picker's `create` variant. A pool with hooks is never a row here, so the
  * chosen pool needs no note about one.
  */
-export function PoolList({ source, state, onPool }: { source: ReadSource; state: JourneyState; onPool: (option: PoolOption | null) => void }) {
+export function PoolList({
+  source,
+  state,
+  onPool,
+  onPreview,
+}: {
+  source: ReadSource
+  state: JourneyState
+  onPool: (option: PoolOption | null) => void
+  onPreview?: (option: PoolOption | null) => void
+}) {
   const token = state.token
   if (!token) return null
-  return <PoolPicker key={`${token.key}:${state.paired?.key ?? ''}`} source={source} token={token.key} paired={state.paired?.key ?? null} pending={state.pool} onPending={onPool} compact variant="create" catalogue={false} />
+  return (
+    <PoolPicker
+      key={`${token.key}:${state.paired?.key ?? ''}`}
+      source={source}
+      token={token.key}
+      paired={state.paired?.key ?? null}
+      pending={state.pool}
+      onPending={onPool}
+      onPreview={onPreview}
+      compact
+      variant="create"
+      catalogue={false}
+    />
+  )
 }

@@ -3,10 +3,11 @@ import type { Candle } from 'api-contracts/read-v1/types'
 import type { RatioCandle } from 'api-contracts/read-v3/types'
 import type { PoolCatalogueEntry, PoolListing } from '../../config/selectedPoolCatalogue'
 import { agedMarket, feeLabel, presentMetric, retrievedAgeSeconds, retrievedText, type Instant, type Market } from '../../lib/markets'
-import { CARD_LINE_PAD, type CardSeries } from '../../lib/read/cardSeries'
+import type { CardSeries } from '../../lib/read/cardSeries'
 import { formatUsdCompact } from '../../lib/read/decimal'
 import { unreadToken } from '../../lib/read/project'
 import { ratioText } from '../../lib/read/ratioSeries'
+import { percentChange } from '../../lib/format/change'
 import { PriceLineSvg } from '../charts/PriceLine'
 import { VolumeBarsSvg } from '../charts/VolumeBars'
 import { MetricCell } from '../explore/MetricCell'
@@ -16,6 +17,21 @@ import { TokenIcon, TokenMark, TokenMarkPair } from '../TokenIcon'
 import { FigureDash } from '../ui'
 
 const hour = (timestamp: number) => new Date(timestamp * 1000).toISOString().slice(11, 16)
+/** A close as the price row shows it: the exact ratio text, its whole part grouped in thousands ("2,656.07"), as the table writes prices. */
+const grouped = (text: string) => text.replace(/^\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ','))
+
+/**
+ * The card plot's height (px): what the card's fixed height (markets.css, 300px) leaves under the head, the price
+ * row and the caption. The line's area runs full bleed into the card's bottom edge.
+ */
+const LINE_HEIGHT = 148
+/** Bars carry no price, so they take the price row's room as well. */
+const BARS_HEIGHT = 200
+/**
+ * Full bleed: the area touches the card's left and bottom edges (it closes to the plot's full height); the line's low
+ * keeps 14px above the bottom edge and its end dot 16px from the right one, so neither meets the card's ring.
+ */
+const LINE_PAD = { left: 0, right: 16, top: 12, bottom: 14 }
 
 /** Bundled artwork by address where the catalogue has it; a read-token mark for other bound addresses; a plain disc otherwise. */
 function CatalogueMarks({ entry }: { entry: PoolCatalogueEntry }) {
@@ -85,7 +101,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   const shownBar = bars && bar && bars.candles.some((candle) => candle.startTimestamp === bar.startTimestamp) ? bar : null
   const shownPoint = line && point && line.history.candles.some((candle) => candle.startTimestamp === point.startTimestamp) ? point : null
   // The plot's ground is set in markets.css, so hovering can change it with the plate.
-  const style = { '--delay': `${Math.min(index, 3) * 60}ms` } as CSSProperties
+  const style = { '--delay': `${Math.min(index, 3) * 40}ms` } as CSSProperties
 
   let caption = null
   if (line && shownPoint) {
@@ -117,9 +133,10 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
 
   let plot = <span aria-hidden="true" className="dm-mkt-baseline" />
   if (line) {
-    plot = <PriceLineSvg history={line.history} label="Pool price, last 24 hours" height={96} pad={CARD_LINE_PAD} title={line.title} onInspect={setPoint} />
+    // Monotone where a run holds 20 hours or more (PriceLineSvg keeps shorter runs straight, §4.1).
+    plot = <PriceLineSvg history={line.history} label="Pool price, last 24 hours" height={LINE_HEIGHT} pad={LINE_PAD} title={line.title} onInspect={setPoint} variant="area" curve="monotone" live />
   } else if (bars) {
-    plot = <VolumeBarsSvg candles={bars.candles} intervalSeconds={bars.intervalSeconds} label="Hourly volume" height={96} title={bars.title} onInspect={setBar} />
+    plot = <VolumeBarsSvg candles={bars.candles} intervalSeconds={bars.intervalSeconds} label="Hourly volume" height={BARS_HEIGHT} title={bars.title} onInspect={setBar} />
   } else if (series.kind === 'figure') {
     // The row's own figure, aged on this card's clock like its TVL; a dash when there is no row or no value.
     const volume = market ? market.volume24hUsd : series.metric
@@ -127,6 +144,43 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
       <span className="dm-mkt-plot-figure" data-chart-unavailable={series.code} title={series.title}>
         {volume && presentMetric(volume).kind === 'value' ? <MetricCell metric={volume} retrieved={retrieved} /> : <FigureDash reason="24h volume unavailable" />}
       </span>
+    )
+  }
+
+  // The price row (DESIGN-V2 §8.1): the latest close, or the inspected one while a pointer is on the line, in the
+  // pool's quote token; beside it, its change from the first close the line draws (the change a reader can see on
+  // the plot, for the hour at rest and the hour inspected alike), but only when that first hour opens the window (a
+  // partial window's change would claim more than it covers). Waiting cards rest bubbles in its place.
+  let price = null
+  if (line) {
+    const candles = line.history.candles
+    const first = candles[0]
+    const last = candles[candles.length - 1]
+    const shown = shownPoint ?? last
+    const whole = first.startTimestamp - line.history.requestedWindow.startTimestamp <= line.history.resolutionSeconds
+    const change = whole && candles.length > 1 ? percentChange(first.close, shown.close) : null
+    price = (
+      <div className="dm-mkt-card-price">
+        <span className="dm-mkt-card-close dm-fig-lg">{grouped(ratioText(shown.close))}</span>
+        {change && (
+          <span className="dm-delta dm-mkt-card-delta" data-sign={change.sign} data-variant="pill">
+            <span className="dm-delta-arrow" aria-hidden="true" />
+            {change.sign !== 0 && <span className="sr-only">{change.sign > 0 ? '+' : '−'}</span>}
+            {change.text}
+          </span>
+        )}
+        <span className="dm-mkt-card-unit">
+          <PoolTokenLabel token={line.quote} /> per <PoolTokenLabel token={line.base} />
+        </span>
+      </div>
+    )
+  } else if (series.kind === 'waiting') {
+    price = (
+      <div className="dm-mkt-card-price" aria-hidden="true">
+        <span className="dm-skel dm-mkt-skel-close" />
+        <span className="dm-skel dm-mkt-skel-delta" />
+        <span className="dm-skel dm-mkt-skel-unit" />
+      </div>
     )
   }
 
@@ -139,12 +193,15 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
           <span className="dm-mkt-card-figure">
             {market ? (
               <MetricCell metric={market.tvlUsd} retrieved={retrieved} />
+            ) : series.kind === 'waiting' ? (
+              <span aria-hidden="true" className="dm-skel dm-mkt-skel-tvl" />
             ) : (
               <FigureDash reason="TVL unavailable" />
             )}
           </span>
         </span>
       </div>
+      {price}
       <div className="dm-mkt-plot" data-series-stale={(line ?? bars)?.stale ? '' : undefined}>
         {plot}
       </div>

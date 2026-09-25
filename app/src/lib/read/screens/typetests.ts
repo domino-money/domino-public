@@ -3,7 +3,6 @@
  * Nothing imports this module; it only has to compile, and each
  * `@ts-expect-error` has to find the error it expects.
  */
-import type { ChainPositionsSection } from '../../../components/read/screens/ChainPositionsSection'
 import type { OpaqueCursor } from '../types'
 import type { AddressKey, PoolIdKey } from './identity'
 import type { ChainPositionCard } from './positions'
@@ -26,6 +25,3 @@ export function aStringIsNotACursor(value: string): OpaqueCursor {
 type UsdKeys<T> = Extract<keyof T, `${string}Usd` | `${string}usd`>
 /** A chain card has no USD field at all: its valuation is only ever "unavailable". */
 export const cardsCarryNoUsdField: [UsdKeys<Extract<ChainPositionCard, { kind: 'live' }>>] extends [never] ? true : false = true
-
-/** The Dashboard slot takes no props, so no chain data can flow out of it into the rest of the app. */
-export const positionsSlotTakesNoProps: Parameters<typeof ChainPositionsSection> extends [] ? true : false = true

@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { WagmiProvider } from 'wagmi'
 import { publishWalletIdentity } from '../../lib/walletIdentity'
 import { privateQueryClient } from '../../session/privateQuery'
@@ -7,6 +7,7 @@ import { walletConfig } from '../../wallet/config'
 import { useSession } from '../../wallet/session'
 import { Button } from '../ui'
 import { IconChevronDown } from '../icons'
+import { tokenHue } from '../../lib/format/tokenHue'
 import { announcement, shortAddress } from './copy'
 import { PrivateReadProbe } from './PrivateReadProbe'
 import { WalletSessionDialog } from './WalletSessionDialog'
@@ -47,7 +48,7 @@ function WalletControl() {
   if (identity.kind === 'connected') {
     label = (
       <>
-        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-money-in" />
+        <span aria-hidden="true" className="dm-wallet-disc" style={{ '--mark-h': 200 + (tokenHue(identity.address) % 120) } as CSSProperties} />
         <span className="sr-only">{view.status === 'signed_in' ? 'Signed in as ' : 'Connected wallet '}</span>
         <span className="tnum font-mono text-[13px] tracking-normal">{shortAddress(identity.address)}</span>
         <IconChevronDown size={14} className="text-fg-subtle" />
@@ -65,8 +66,8 @@ function WalletControl() {
       {(
         <>
           <Button
-            variant={identity.kind === 'connected' ? 'outline' : 'primary'}
-            className="whitespace-nowrap"
+            variant={identity.kind === 'connected' ? 'outline' : 'soft'}
+            className={identity.kind === 'connected' ? 'dm-wallet-pill whitespace-nowrap' : 'whitespace-nowrap'}
             aria-haspopup="dialog"
             aria-expanded={open}
             aria-busy={session.busy || undefined}

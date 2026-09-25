@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { Candle } from 'api-contracts/read-v1/types'
 import type { Market } from '../../../lib/markets'
 import { candleDescription, chartMatches } from '../../../lib/read/chart'
@@ -159,7 +159,7 @@ function plotFor(candles: ReadonlyArray<Candle>, intervalSeconds: number, width:
  * service was busy for is asked again on its own; candles that have expired
  * on screen offer the same ask again, never a separate retry.
  */
-export function PoolPriceChart({ market, autoLoad = false }: { market: Market; autoLoad?: boolean }) {
+export function PoolPriceChart({ market, autoLoad = false, control }: { market: Market; autoLoad?: boolean; /** A control for the header row, beside the title (the pool page's history source). */ control?: ReactNode }) {
   const source = useReadSource()
   const [selected, setSelected] = useState<'base' | 'quote'>(() => (market.chartTokens?.quote === market.tokens.base.address ? 'quote' : 'base'))
   const [attempt, setAttempt] = useState(0)
@@ -263,34 +263,19 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
   const magnitude = change ? change.percentText.replace(/^[+−]/, '') : ''
 
   return (
-    <section className="dm-card dm-pool-chart p-5" aria-labelledby="pool-chart-title" data-pool-chart="">
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-0">
-          <h2 id="pool-chart-title" className="dm-display dm-display-card">
-            USD price and volume
-          </h2>
-        </div>
-        {chartTokens && (
-          <div className="dm-pool-chart-controls flex flex-wrap items-center gap-2">
-            <Segmented
-              label="Chart currency"
-              value={selected}
-              onChange={(side) => {
-                setInspected(null)
-                setSelected(side)
-              }}
-              items={(['base', 'quote'] as const).map((side) => ({ key: side, label: <TokenLabel token={tokenFor(chartTokens[side])} /> }))}
-            />
-          </div>
-        )}
+    <section className="dm-card dm-pool-chart" aria-labelledby="pool-chart-title" data-pool-chart="">
+      <div className="dm-pool-chart-head">
+        <h2 id="pool-chart-title" className="dm-title">
+          USD price and volume
+        </h2>
+        {control}
       </div>
-
       {!chartTokens && <p className="mt-4 text-body text-fg-muted">A verified provider currency pair is needed before requesting a chart.</p>}
 
       {data && current && (
-        <div className="mt-5 min-w-0 animate-fade" data-candle-inspection="">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <p className="tnum text-[24px] leading-[28px] font-medium tracking-[-0.4px] break-all">{formatUsdPrice(current.candle.closeUsd) ?? '—'}</p>
+        <div className="dm-pool-chart-figure animate-fade" data-candle-inspection="">
+          <div className="dm-pool-chart-price">
+            <p className="dm-fig-xl dm-pool-chart-close">{formatUsdPrice(current.candle.closeUsd) ?? '—'}</p>
             {change && (
               <span className="inline-flex" title={CHANGE_TITLE} data-chart-change={change.sign}>
                 <Pill tone={change.sign > 0 ? 'in' : change.sign < 0 ? 'out' : 'neutral'} className="tnum">
@@ -301,10 +286,25 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
               </span>
             )}
           </div>
-          <p className="mt-1 text-caption text-fg-subtle">
+          <p className="dm-pool-chart-date">
             {hourText(current.candle.startTimestamp)} · {inspecting ? 'close' : 'latest close'}
             {current.candle.closed ? '' : ' · open hour'}
           </p>
+        </div>
+      )}
+
+      {chartTokens && (
+        <div className="dm-pool-chart-controls">
+          <Segmented
+            size="sm"
+            label="Chart currency"
+            value={selected}
+            onChange={(side) => {
+              setInspected(null)
+              setSelected(side)
+            }}
+            items={(['base', 'quote'] as const).map((side) => ({ key: side, label: <TokenLabel token={tokenFor(chartTokens[side])} /> }))}
+          />
         </div>
       )}
 
@@ -374,22 +374,23 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
             >
               <defs>
                 <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor="var(--primary-ink)" stopOpacity="0.24" />
-                  <stop offset="1" stopColor="var(--primary-ink)" stopOpacity="0" />
+                  <stop offset="0" className="dm-stop-top" />
+                  <stop offset="0.4" className="dm-stop-mid" />
+                  <stop offset="1" className="dm-stop-bottom" />
                 </linearGradient>
               </defs>
-              {plot.labels.map((label) => (
-                <line key={`grid-${label.y}`} x1={0} x2={plot.width - plot.gutter + 6} y1={label.y} y2={label.y} className="dm-pool-grid" />
-              ))}
               <g className="dm-pool-reveal">
                 <path d={plot.line.areaPath} fill={`url(#${fillId})`} />
-                <path d={plot.line.linePath} className="dm-pool-line" />
-                {!inspecting && <circle cx={last.x} cy={last.y} r="3.5" className="dm-pool-last" data-open={last.candle.closed ? undefined : ''} />}
+                <path d={plot.line.linePath} className="dm-series-glow" />
+                <path d={plot.line.linePath} className="dm-series-line" />
+                {!inspecting && <circle cx={last.x} cy={last.y} r="3.5" className="dm-end-dot" data-open={last.candle.closed ? undefined : ''} />}
               </g>
               {inspecting && (
                 <g>
-                  <line x1={current.x} x2={current.x} y1={0} y2={plot.barsTop + plot.barsHeight} className="dm-pool-crosshair" />
-                  <circle cx={current.x} cy={current.y} r="4" className="dm-pool-ring" />
+                  <line x1={current.x} x2={current.x} y1={0} y2={plot.barsTop + plot.barsHeight} className="dm-crosshair" />
+                  <line x1={0} x2={plot.width - plot.gutter} y1={current.y} y2={current.y} className="dm-crosshair" data-axis="y" />
+                  <circle cx={current.x} cy={current.y} r="8" className="dm-hover-halo" />
+                  <circle cx={current.x} cy={current.y} r="5" className="dm-hover-dot" />
                 </g>
               )}
               <g transform={`translate(0 ${plot.barsTop})`}>
@@ -422,7 +423,7 @@ export function PoolPriceChart({ market, autoLoad = false }: { market: Market; a
 
       {data && (
         <>
-          <details className="dm-details -mx-3 mt-3">
+          <details className="dm-details dm-pool-quiet">
             <summary>Source and exact candle values</summary>
             <div>
               <p className="text-caption text-fg-muted" data-chart-currency="">

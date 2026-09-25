@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { MarketsTable } from '../components/MarketsTable'
 import { BuildBanner } from '../components/read/BuildBanner'
-import { ChainPositionsSection, ChainSelectionPanel } from '../components/read/screens'
+import { ChainSelectionPanel } from '../components/read/screens'
 import type { PickerChrome } from '../lib/read/screens/pickerChrome'
 import { useDialog } from '../lib/useDialog'
 import { Button, Display } from '../components/ui'
@@ -9,11 +9,11 @@ import { READ_RUNTIME } from '../lib/read/contract'
 import { FIXTURE_CATALOG } from '../lib/read/fixtureCatalog'
 import { createFixtureSource, type ReplyScript, type RouteScript } from '../lib/read/fixtureSource'
 import type { MarketsProvider } from '../lib/read/marketsProvider'
-import { FIXTURE_POOL, FIXTURE_TOKEN, MARKET_CASES, MUTATED_CURSOR, NATIVE, errorFixture, gateway, invalidFixture, withCursor, withNextCataloguePage } from '../lib/read/scenarios'
+import { FIXTURE_POOL, FIXTURE_TOKEN, MARKET_CASES, MUTATED_CURSOR, NATIVE, errorFixture, gateway, withCursor, withNextCataloguePage } from '../lib/read/scenarios'
 import { createScheduledSource } from '../lib/read/scheduler'
 import { createAppMarketsProvider } from '../lib/read/screens/appMarkets'
 import { sqrtPriceAtTick } from '../lib/read/screens/poolRange'
-import { FIXTURE_NFT_IDS, FIXTURE_OWNER } from '../lib/read/screens/appScript'
+import { FIXTURE_OWNER } from '../lib/read/screens/appScript'
 import { readWithin, type ScreenOutcome } from '../lib/read/screens/screenRead'
 import { failureText } from '../lib/read/screens/copy'
 import { withDelays, type Delay, type DelayedSource } from '../lib/read/screens/delayedSource'
@@ -67,18 +67,6 @@ const WALLET_MORE = { ...WALLET, cursor: MUTATED_CURSOR }
 const firstPage: ReplyScript = { fixture: gateway('wallet-assets.opaque-page'), mutate: withCursor(MUTATED_CURSOR), expectRequest: WALLET }
 const expired: ReplyScript = { fixture: errorFixture('wallet-assets.invalid_or_expired_cursor'), expectRequest: WALLET_MORE }
 
-const dynamicFee = (body: unknown) => {
-  for (const item of obj(body).items as Json[]) {
-    const key = obj(item.poolKey)
-    key.feeMode = 'dynamic'
-    key.fee_pips = 8388608
-  }
-  return body
-}
-const withError = (code: string) => (body: unknown) => {
-  obj(body).error = code
-  return body
-}
 const withoutItems = (body: unknown) => {
   obj(body).items = []
   return body
@@ -128,15 +116,13 @@ const CATALOGUE_NEXT = { ...CATALOGUE, afterPoolId: FIXTURE_POOL, revision: 2 }
 
 export interface ScreenCase {
   id: string
-  kind: 'lookup' | 'create' | 'figures' | 'flood' | 'budget'
+  kind: 'create' | 'figures' | 'flood' | 'budget'
   script: RouteScript
   delay?: (route: ReadRoute, request: unknown, n: number) => Delay | undefined
   /** The per-read budget of the Top pools reads; the app's is 60 s. */
   budgetMs?: number
 }
 
-const lookup = (id: string, nft: ReplyScript[], extra: Partial<ScreenCase> = {}): ScreenCase => ({ id, kind: 'lookup', script: { 'nft-positions': nft, token: BASE_TOKENS }, ...extra })
-const success: ReplyScript = { fixture: gateway('nft-positions.success') }
 
 const marketScript = (id: string, activity: ReplyScript): RouteScript => ({ ...MARKET_CASES.find((c) => c.id === id)?.script, 'pool-activity': [activity] })
 
@@ -156,43 +142,7 @@ const withDynamicMarket = (script: RouteScript): RouteScript => ({
 })
 
 export const SCREEN_CASES: ScreenCase[] = [
-  lookup('nft.success', [success]),
-  lookup('nft.empty', [{ fixture: gateway('nft-positions.empty') }]),
-  lookup('nft.zero', [{ fixture: gateway('nft-positions.zero') }]),
-  lookup('nft.stale', [{ fixture: gateway('nft-positions.stale') }]),
-  lookup('nft.dynamicFee', [{ fixture: gateway('nft-positions.success'), mutate: dynamicFee }]),
-  // Every NFT's range at the usable tick limits of its pool's spacing: full range, 0 to ∞.
-  lookup('nft.fullRange', [
-    {
-      fixture: gateway('nft-positions.success'),
-      mutate: (body: unknown) => {
-        for (const item of obj(body).items as Json[]) {
-          const spacing = obj(item.poolKey).tick_spacing as number
-          item.tickLower = Math.ceil(-887272 / spacing) * spacing
-          item.tickUpper = Math.floor(887272 / spacing) * spacing
-        }
-        return body
-      },
-    },
-  ]),
-  { id: 'nft.noDecimals', kind: 'lookup', script: { 'nft-positions': [success], token: [BASE_TOKENS[0], { fixture: gateway('token.missing-decimals'), expectRequest: { token: FIXTURE_TOKEN } }] } },
-  lookup('nft.batch503', [success, { fixture: errorFixture('nft-positions.upstream_unavailable'), mutate: withError('nft_live_position_has_no_owner') }]),
-  lookup('nft.refreshFails', [success, { fixture: errorFixture('nft-positions.upstream_unavailable') }]),
-  lookup('nft.refreshIncompatible', [success, { fixture: gateway('nft-positions.success'), transport: 'headerRc2' }]),
-  lookup('nft.refreshInvalid', [success, { fixture: invalidFixture('nft-positions.incompatible-version') }]),
-  lookup('nft.incomplete', [{ fixture: gateway('nft-positions.empty') }]),
-  lookup('nft.gate401', [{ transport: 'gate401' }]),
-  lookup('nft.gate503', [{ transport: 'gate503' }]),
-  lookup('nft.busy', [{ fixture: errorFixture('nft-positions.read_capacity_busy'), retryAfter: '7' }]),
-  lookup('nft.edge', [{ transport: 'edgeHtml502' }]),
-  { id: 'nft.disabled', kind: 'lookup', script: { token: BASE_TOKENS } },
-  lookup('nft.late', [{ fixture: gateway('nft-positions.stale'), expectRequest: { tokenIds: ['1'] } }, { fixture: gateway('nft-positions.success'), expectRequest: { tokenIds: FIXTURE_NFT_IDS } }], {
-    delay: (route, _request, n) => (route === 'nft-positions' && n === 0 ? { delayMs: 1500 } : undefined),
-  }),
-  lookup('nft.hang', [success], { delay: (route) => (route === 'nft-positions' ? { hang: true } : undefined) }),
-  // One reply only: a second NFT read would find nothing scripted.
-  lookup('nft.repeat', [success], { delay: (route, _request, n) => (route === 'nft-positions' && n === 0 ? { delayMs: 1500 } : undefined) }),
-
+  // 2026-09-24: the nft.* cases went with the lookup by typed NFT ids; Positions lists the wallet's own from chain.
   { id: 'create.tokens', kind: 'create', script: { token: PICKER_TOKENS, 'wallet-assets': [firstPage, { fixture: gateway('wallet-assets.last-page'), expectRequest: WALLET_MORE }] } },
   { id: 'create.walletRestart', kind: 'create', script: { token: PICKER_TOKENS, 'wallet-assets': [firstPage, expired] } },
   { id: 'create.walletRestartTwice', kind: 'create', script: { token: PICKER_TOKENS, 'wallet-assets': [firstPage, expired, expired] } },
@@ -358,9 +308,7 @@ function CaseView({ scenario }: { scenario: ScreenCase }) {
     return { source, markets }
   })
   const body =
-    scenario.kind === 'lookup' ? (
-      <ChainPositionsSection />
-    ) : scenario.kind === 'create' ? (
+    scenario.kind === 'create' ? (
       <CreateCase />
     ) : scenario.kind === 'figures' && setup.markets ? (
       <MarketsContext.Provider value={setup.markets}>

@@ -1,44 +1,20 @@
 /**
- * Which Uniswap position NFTs a wallet holds on Robinhood Chain, and the
- * DominoSetupV1 deposits it has not turned into a position: the list behind
- * Positions, so nobody has to type an NFT id to find their own positions.
+ * The chain helpers behind the site's own same-origin reads of Robinhood
+ * Chain: the wallet's Domino positions (functions/_lib/walletPositions.ts,
+ * POST /api/owned/v2/positions) and the fees relay (functions/_lib/fees.ts).
  *
- * The PositionManager is a plain ERC-721 with no enumeration, and the read
- * service has no index by owner, so the list comes from the chain itself:
+ * Here: the pins, the hand-written ABI encoding of Multicall3's aggregate3 and
+ * its results, Keccak-256, the bounded RPC call (a cap on calls, bytes and
+ * time; a 429 waited out with a growing pause), the strict same-origin
+ * {"owner"} request, and the per-owner answer cache (an answer kept 30
+ * seconds, 5 for a fresh question, a failure 12), so a loop of questions is
+ * not a loop of scans.
  *
- *   1. eth_blockNumber: the head every other answer is pinned to.
- *   2. eth_getLogs of the PositionManager's Transfer events TO the owner,
- *      newest first: from the head back to the first one ever emitted (block
- *      9506, the mint of NFT 1). A range the RPC refuses as too large or too
- *      slow is split in halves, the newer half asked first; a 429 is waited
- *      out and asked again. Each range's logs are walked newest to oldest, and
- *      the walk stops at the MAX_IDS most recently received ids, or once the
- *      answer has read MAX_LOG_BYTES of logs, so a busy address costs a few
- *      calls, never its whole history. Every NFT the wallet holds arrived
- *      through one of these events, so the ids received are a superset of the
- *      ids held (all of them, unless the walk stopped early).
- *   3. One Multicall3 aggregate3 eth_call (per 100 ids) at the head:
- *      balanceOf(owner), and per id ownerOf and getPositionLiquidity, each
- *      allowed to fail. Held with liquidity is open, held without is closed; a
- *      burned id (ownerOf reverts) or one sent away since is dropped. The list
- *      is complete when what is left matches balanceOf, whether or not the
- *      walk stopped early: a held NFT older than where it stopped leaves the
- *      count short, so that answer says complete: false.
- *   4. The same call carries DominoSetupV1.ownerNonce(owner). A second one reads
- *      operation(id) and recoveryStarted(id) for the owner's last 8 operation
- *      ids, which are keccak256(abi.encode(4663, setup, owner, nonce)) exactly
- *      as app/src/finance/setup.ts recent() derives them. A deposit still held
- *      (not closed, a balance left, no recovery started) is listed.
- *
- * What this is not: a general RPC proxy. The caller chooses the owner and
- * nothing else, and not the zero address, which every burn is sent to. The
- * endpoint, every method, contract, topic, block range and calldata are fixed
- * here, the ids come from the logs, and the RPC calls and bytes one answer may
- * cost are capped. Per owner, an answer is kept 30 seconds (5 for a fresh
- * question) and a failure 12, so a loop of questions is not a loop of scans.
- * No secret is involved: the RPC is the
- * chain's public one, and the answer is public chain data about a public
- * address, which is why the owner travels in a POST body, never in a URL.
+ * What this is not: a general RPC proxy. The endpoint, every method, contract,
+ * topic, block range and calldata are fixed by the routes that use it. No
+ * secret is involved: the RPC is the chain's public one, and every answer is
+ * public chain data about a public address, which is why the owner travels in
+ * a POST body, never in a URL.
  *
  * The ABI encoding is written by hand (a Function carries no viem), and
  * tests/owned.test.mjs checks every selector, encoding and the Keccak below
@@ -58,21 +34,26 @@ export const FIRST_TRANSFER_BLOCK = 9506
 /** keccak256('Transfer(address,address,uint256)'). */
 export const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
-/** The most NFT ids one answer classifies: the most recently received ones. */
-export const MAX_IDS = 300
-/** Ids per aggregate3 call. */
-export const IDS_PER_CALL = 100
+/**
+ * The block DominoSetupV1 was deployed in (transaction 0xa5e96b18…a21a8, read
+ * from chain on 2026-09-24: its receipt names this contract at this block, and
+ * docs/deployments/v1-robinhood-mainnet-2026-09-21 records the same): no
+ * SetupMinted can be older.
+ */
+export const SETUP_DEPLOY_BLOCK = 69_249_061
+/** keccak256('SetupMinted(bytes32,address,uint256,uint128,uint128,uint128)'): contracts/src/DominoSetup.sol, owner indexed as topic 2. */
+export const SETUP_MINTED_TOPIC = '0xbe9f53385653b534d15ec3cb50f69cebc58346b3279852d27cab1dce0dfd3d9f'
 /** The most RPC calls one answer may cost, retries and splits included. */
 export const MAX_RPC_CALLS = 48
 /**
  * The most log bytes one answer reads, over all its eth_getLogs replies. A
- * Transfer log is about 630 bytes as this RPC sends it, and the RPC refuses a
- * query matching more than 10,000 logs, so one full reply (about 6.3 MB) fits.
- * No range is asked once this is read, and a reply that would pass it is not
- * read to its end: the walk stops there, with the newer ids it has.
+ * SetupMinted log is under 1 kB as this RPC sends it, and the RPC refuses a
+ * query matching more than 10,000 logs, so one full reply fits. No range is
+ * asked once this is read, and a reply that would pass it is not read to its
+ * end: the walk stops there, with the newer ids it has.
  */
 export const MAX_LOG_BYTES = 8 * 1024 * 1024
-/** The most bytes any other reply may have (an aggregate3 of 100 ids is about 30 kB). */
+/** The most bytes any other reply may have (an aggregate3 of 150 sub-calls is well under 100 kB). */
 export const MAX_REPLY_BYTES = 1024 * 1024
 /** How many times a rate-limited call is asked, and the wait before each repeat (× attempt). */
 export const RATE_ATTEMPTS = 4
@@ -93,47 +74,14 @@ const MAX_BODY_BYTES = 512
 
 /** Function selectors, each checked against viem in tests/owned.test.mjs. */
 export const SELECTOR = {
-  balanceOf: '70a08231',
   ownerOf: '6352211e',
   getPositionLiquidity: '1efeed33',
+  getPoolAndPositionInfo: '7ba03aad',
   aggregate3: '82ad56cb',
   ownerNonce: 'e8ad29b4',
   operation: '47da73be',
   recoveryStarted: '20698983',
 } as const
-
-export type OwnedStatus = 'open' | 'closed'
-
-export interface OwnedDeposit {
-  operationId: string
-  currency0: string
-  currency1: string
-  fee: number
-  tickSpacing: number
-  hooks: string
-  balance0: string
-  balance1: string
-}
-
-/** The JSON body of an answer: exactly the five fields the page's parser (src/lib/ownedPositions.ts) takes. */
-export interface OwnedAnswer {
-  owner: string
-  block: number
-  positions: { tokenId: string; status: OwnedStatus }[]
-  /** The positions listed are every NFT the owner holds: their count matches balanceOf. */
-  complete: boolean
-  deposits: OwnedDeposit[]
-}
-
-/**
- * A scan: the answer, and whether the log walk stopped before the first
- * Transfer (MAX_IDS or MAX_LOG_BYTES). `capped` leaves the body alone and
- * travels as the X-Owned-Capped header; `complete` already turns false when
- * that stop hid a held NFT.
- */
-export interface OwnedScan extends OwnedAnswer {
-  capped: boolean
-}
 
 /** What the scan needs from the runtime; tests hand in fakes. */
 export interface OwnedDeps {
@@ -174,9 +122,10 @@ export function classifyRpcError(code: unknown, message: string): Failure {
 // Hex and ABI, by hand
 // ---------------------------------------------------------------------------
 
-const hex = (n: number | bigint) => `0x${n.toString(16)}`
-const word = (n: bigint) => n.toString(16).padStart(64, '0')
-const addressWord = (address: string) => address.slice(2).toLowerCase().padStart(64, '0')
+export const hex = (n: number | bigint) => `0x${n.toString(16)}`
+/** A uint256 (or a negative int, two's complement) as one ABI word. */
+export const word = (n: bigint) => BigInt.asUintN(256, n).toString(16).padStart(64, '0')
+export const addressWord = (address: string) => address.slice(2).toLowerCase().padStart(64, '0')
 
 /** One aggregate3 call: its target and its calldata without 0x. */
 export interface SubCall {
@@ -200,7 +149,7 @@ export function encodeAggregate3(calls: readonly SubCall[]): string {
 }
 
 /** A bounds-checked reader over ABI-encoded return data. */
-function reader(data: string) {
+export function reader(data: string) {
   const body = data.startsWith('0x') ? data.slice(2) : data
   if (!/^(?:[0-9a-fA-F]{2})*$/.test(body)) throw new ChainError('fatal', 'invalid_return_data')
   const bytes = body.length / 2
@@ -237,13 +186,13 @@ export function decodeAggregate3(data: string): { success: boolean; data: string
 }
 
 /** A 32-byte word as an address, refusing anything with bits above 160. */
-function asAddress(value: bigint): string {
+export function asAddress(value: bigint): string {
   if (value >> 160n !== 0n) throw new ChainError('fatal', 'invalid_return_data')
   return `0x${value.toString(16).padStart(40, '0')}`
 }
 
 /** int24 from its two's-complement word. */
-function asInt24(value: bigint): number {
+export function asInt24(value: bigint): number {
   const signed = value >> 255n === 1n ? value - (1n << 256n) : value
   if (signed < -(1n << 23n) || signed >= 1n << 23n) throw new ChainError('fatal', 'invalid_return_data')
   return Number(signed)
@@ -431,7 +380,7 @@ async function rpc(deps: OwnedDeps, budget: Budget, method: string, params: unkn
 }
 
 /** A call asked again after a growing wait while the RPC says it is rate limited. */
-async function paced(deps: OwnedDeps, budget: Budget, method: string, params: unknown[]): Promise<unknown> {
+export async function paced(deps: OwnedDeps, budget: Budget, method: string, params: unknown[]): Promise<unknown> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await rpc(deps, budget, method, params)
@@ -443,69 +392,17 @@ async function paced(deps: OwnedDeps, budget: Budget, method: string, params: un
 }
 
 const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/i
-const HASH = /^0x[0-9a-f]{64}$/i
+export const HASH = /^0x[0-9a-f]{64}$/i
 
-function quantity(value: unknown): number {
+export function quantity(value: unknown): number {
   if (typeof value !== 'string' || !QUANTITY.test(value)) throw new ChainError('fatal', 'invalid_quantity')
   const n = Number(BigInt(value))
   if (!Number.isSafeInteger(n)) throw new ChainError('fatal', 'invalid_quantity')
   return n
 }
 
-/** The NFT id a log names, when it is a PositionManager Transfer to `ownerTopic`; null for anything else. */
-function receivedId(log: unknown, ownerTopic: string): bigint | null {
-  const entry = (log ?? {}) as { address?: unknown; topics?: unknown; removed?: unknown }
-  const topics = entry.topics
-  if (typeof entry.address !== 'string' || entry.address.toLowerCase() !== POSITION_MANAGER || !Array.isArray(topics) || topics.length !== 4) return null
-  if (entry.removed === true || String(topics[0]).toLowerCase() !== TRANSFER_TOPIC || String(topics[2]).toLowerCase() !== ownerTopic || !HASH.test(String(topics[3]))) return null
-  return BigInt(String(topics[3]))
-}
-
-/**
- * The NFT ids the owner received, most recent first, at most MAX_IDS of them.
- * Ranges are asked newest first; one the RPC refuses as too large or too slow
- * is split in two, down to MIN_SPLIT_BLOCKS, and its newer half is asked
- * first. A reply's logs come in chain order, so each is walked from its end.
- * The walk stops at MAX_IDS distinct ids, or when the answer's log bytes
- * (MAX_LOG_BYTES) are used up; `capped` then says that older transfers may
- * name ids not returned.
- */
-export async function receivedIds(deps: OwnedDeps, budget: Budget, owner: string, head: number): Promise<{ ids: bigint[]; capped: boolean }> {
-  const ownerTopic = `0x${addressWord(owner)}`
-  const queue: [number, number][] = head >= FIRST_TRANSFER_BLOCK ? [[FIRST_TRANSFER_BLOCK, head]] : []
-  const ids: bigint[] = []
-  const seen = new Set<bigint>()
-  while (queue.length > 0) {
-    if (budget.logBytes >= MAX_LOG_BYTES) return { ids, capped: true }
-    const [from, to] = queue.shift() as [number, number]
-    let logs: unknown
-    try {
-      logs = await paced(deps, budget, 'eth_getLogs', [{ address: POSITION_MANAGER, fromBlock: hex(from), toBlock: hex(to), topics: [TRANSFER_TOPIC, null, ownerTopic] }])
-    } catch (error) {
-      if (error instanceof ChainError && error.kind === 'bytes') return { ids, capped: true }
-      if (error instanceof ChainError && error.kind === 'range' && to - from + 1 >= 2 * MIN_SPLIT_BLOCKS) {
-        const middle = from + Math.floor((to - from) / 2)
-        queue.unshift([middle + 1, to], [from, middle])
-        continue
-      }
-      throw error
-    }
-    if (!Array.isArray(logs)) throw new ChainError('fatal', 'invalid_logs')
-    for (let i = logs.length - 1; i >= 0; i--) {
-      const id = receivedId(logs[i], ownerTopic)
-      if (id === null || seen.has(id)) continue
-      // An id past the cap: older than every id kept.
-      if (ids.length === MAX_IDS) return { ids, capped: true }
-      seen.add(id)
-      ids.push(id)
-    }
-    // Full, with older ranges never asked.
-    if (ids.length === MAX_IDS && queue.length > 0) return { ids, capped: true }
-  }
-  return { ids, capped: false }
-}
-
-async function aggregate(deps: OwnedDeps, budget: Budget, calls: SubCall[], block: number) {
+/** One Multicall3 aggregate3 eth_call at `block`, every sub-call allowed to fail; its results, one per call. */
+export async function aggregate(deps: OwnedDeps, budget: Budget, calls: SubCall[], block: number) {
   const result = await paced(deps, budget, 'eth_call', [{ to: MULTICALL3, data: encodeAggregate3(calls) }, hex(block)])
   if (typeof result !== 'string') throw new ChainError('fatal', 'invalid_call_result')
   const decoded = decodeAggregate3(result)
@@ -514,84 +411,7 @@ async function aggregate(deps: OwnedDeps, budget: Budget, calls: SubCall[], bloc
 }
 
 /** A 32-byte result word, or null for a failed or short sub-call. */
-const resultWord = (call: { success: boolean; data: string }): bigint | null => (call.success && call.data.length >= 64 ? BigInt(`0x${call.data.slice(0, 64)}`) : null)
-
-/** The whole answer for one owner (lowercase 0x address). */
-export async function scanOwner(deps: OwnedDeps, owner: string): Promise<OwnedScan> {
-  const budget: Budget = { calls: 0, started: deps.now(), logBytes: 0 }
-  const head = quantity(await paced(deps, budget, 'eth_blockNumber', []))
-  const { ids, capped } = await receivedIds(deps, budget, owner, head)
-
-  const positions: { tokenId: bigint; status: OwnedStatus }[] = []
-  let balance: bigint | null = null
-  let nonce: bigint | null = null
-  const chunks = Math.max(1, Math.ceil(ids.length / IDS_PER_CALL))
-  for (let chunk = 0; chunk < chunks; chunk++) {
-    const part = ids.slice(chunk * IDS_PER_CALL, (chunk + 1) * IDS_PER_CALL)
-    const calls: SubCall[] = []
-    if (chunk === 0) {
-      calls.push({ target: POSITION_MANAGER, data: SELECTOR.balanceOf + addressWord(owner) })
-      calls.push({ target: SETUP_CONTRACT, data: SELECTOR.ownerNonce + addressWord(owner) })
-    }
-    for (const id of part) {
-      calls.push({ target: POSITION_MANAGER, data: SELECTOR.ownerOf + word(id) })
-      calls.push({ target: POSITION_MANAGER, data: SELECTOR.getPositionLiquidity + word(id) })
-    }
-    const results = await aggregate(deps, budget, calls, head)
-    let at = 0
-    if (chunk === 0) {
-      balance = resultWord(results[0])
-      nonce = resultWord(results[1])
-      at = 2
-    }
-    for (const id of part) {
-      const holder = resultWord(results[at])
-      const liquidity = resultWord(results[at + 1])
-      at += 2
-      // Burned (ownerOf reverts), sent away since, or unreadable: not listed.
-      if (holder === null || liquidity === null || holder >> 160n !== 0n || asAddress(holder) !== owner) continue
-      positions.push({ tokenId: id, status: liquidity > 0n ? 'open' : 'closed' })
-    }
-  }
-
-  const deposits: OwnedDeposit[] = []
-  if (nonce !== null && nonce > 0n) {
-    const operations: string[] = []
-    for (let n = nonce - 1n; n >= 0n && n >= nonce - BigInt(RECENT_OPERATIONS); n--) operations.push(operationId(owner, n))
-    const calls = operations.flatMap((id) => [
-      { target: SETUP_CONTRACT, data: SELECTOR.operation + id.slice(2) },
-      { target: SETUP_CONTRACT, data: SELECTOR.recoveryStarted + id.slice(2) },
-    ])
-    const results = await aggregate(deps, budget, calls, head)
-    operations.forEach((id, i) => {
-      const [op, recovery] = [results[2 * i], results[2 * i + 1]]
-      if (!op.success || resultWord(recovery) !== 0n) return
-      const value = decodeOperation(op.data)
-      if (value.owner !== owner || value.closed || (value.balance0 === 0n && value.balance1 === 0n)) return
-      deposits.push({
-        operationId: id,
-        currency0: value.currency0,
-        currency1: value.currency1,
-        fee: value.fee,
-        tickSpacing: value.tickSpacing,
-        hooks: value.hooks,
-        balance0: value.balance0.toString(),
-        balance1: value.balance1.toString(),
-      })
-    })
-  }
-
-  // Open first, then closed; newest NFT first within each.
-  positions.sort((a, b) => (a.status === b.status ? (a.tokenId > b.tokenId ? -1 : a.tokenId < b.tokenId ? 1 : 0) : a.status === 'open' ? -1 : 1))
-  return {
-    owner,
-    block: head,
-    positions: positions.map(({ tokenId, status }) => ({ tokenId: tokenId.toString(), status })),
-    complete: balance !== null && BigInt(positions.length) === balance,
-    deposits,
-    capped,
-  }
-}
+export const resultWord = (call: { success: boolean; data: string }): bigint | null => (call.success && call.data.length >= 64 ? BigInt(`0x${call.data.slice(0, 64)}`) : null)
 
 // ---------------------------------------------------------------------------
 // The request
@@ -604,7 +424,7 @@ export interface AnswerCache {
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }
-/** Present, as "true", on an answer whose log walk stopped early (OwnedScan.capped). */
+/** Present, as "true", on an answer whose log walk stopped early (the scan's `capped`). */
 export const CAPPED = 'X-Owned-Capped'
 
 export const refuse = (error: string, status: number, headers: Record<string, string> = {}) =>
@@ -643,11 +463,14 @@ export async function ownerFrom(request: Request, url: URL): Promise<{ owner: st
   return { owner: owner.toLowerCase(), fresh: fresh === true }
 }
 
-/** The cache key for an owner: a digest of the address, so the address itself is never part of a URL, even an internal one. */
-async function cacheKey(url: URL, owner: string): Promise<Request> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`owned/v1|${owner}`)))
+/**
+ * The cache key for an owner under a route's `version` ('v2'): a digest of the address, so the address itself is never
+ * part of a URL, even an internal one.
+ */
+async function cacheKey(url: URL, version: string, owner: string): Promise<Request> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`owned/${version}|${owner}`)))
   const name = Array.from(digest, (b) => b.toString(16).padStart(2, '0')).join('')
-  return new Request(`${url.origin}/api/owned/v1/cache/${name}`)
+  return new Request(`${url.origin}/api/owned/${version}/cache/${name}`)
 }
 
 /** What one scan came to: its answer, or the code of its failure. */
@@ -678,20 +501,33 @@ function fromKept(kept: Response, now: number, fresh: boolean): Response | null 
   return new Response(kept.body, { status: 200, headers: { ...JSON_HEADERS, ...cappedHeader(kept.headers.get(CAPPED) === 'true') } })
 }
 
+/** One scan's answer for an owner: the JSON body, and whether its log walk stopped early (sent as X-Owned-Capped). */
+export interface OwnerScan {
+  body: unknown
+  capped: boolean
+}
+
 /**
- * POST /api/owned/v1/positions with {"owner": "0x…"}: the owner's answer, as
- * JSON. A chain that cannot be read fully is a 502, never a partial list
- * presented as the whole. Per owner, under a digest, the last outcome is kept:
+ * A POST of {"owner": "0x…"} answered by `scan`, as JSON. A chain that cannot
+ * be read fully is a 502, never a partial list presented as the whole. Per
+ * owner, under a digest and the route's `version`, the last outcome is kept:
  * an answer for CACHE_SECONDS (a fresh question takes it only within
  * FRESH_AFTER_MS), a failure for FAILURE_SECONDS whatever the question, so
  * asking in a loop cannot make every question a scan of the public RPC.
  */
-export async function answerOwned(request: Request, deps: OwnedDeps, cache: AnswerCache | null = null, waitUntil?: (work: Promise<unknown>) => void): Promise<Response> {
+export async function answerOwner(
+  request: Request,
+  deps: OwnedDeps,
+  version: string,
+  scan: (deps: OwnedDeps, owner: string) => Promise<OwnerScan>,
+  cache: AnswerCache | null = null,
+  waitUntil?: (work: Promise<unknown>) => void,
+): Promise<Response> {
   const url = new URL(request.url)
   const asked = await ownerFrom(request, url)
   if (asked instanceof Response) return asked
   const { owner, fresh } = asked
-  const key = cache ? await cacheKey(url, owner) : null
+  const key = cache ? await cacheKey(url, version, owner) : null
   if (cache && key) {
     const kept = await cache.match(key).catch(() => undefined)
     const answered = kept ? fromKept(kept, deps.now(), fresh) : null
@@ -701,9 +537,9 @@ export async function answerOwned(request: Request, deps: OwnedDeps, cache: Answ
   let text = ''
   let capped = false
   try {
-    const { capped: stopped, ...answer } = await scanOwner(deps, owner)
-    text = JSON.stringify(answer satisfies OwnedAnswer)
-    capped = stopped
+    const scanned = await scan(deps, owner)
+    text = JSON.stringify(scanned.body)
+    capped = scanned.capped
   } catch (error) {
     outcome = error instanceof ChainError && error.kind === 'rate' ? 'chain_busy' : 'chain_unavailable'
   }

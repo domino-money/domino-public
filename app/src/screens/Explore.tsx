@@ -13,6 +13,7 @@ import { SymbolText } from '../components/read/screens/SymbolText'
 import { TokenLookup } from '../components/read/screens/TokenLookup'
 import { TokenSearch } from '../components/read/screens/TokenSearch'
 import { StoredTokenExplorer } from '../components/read/screens/StoredTokenExplorer'
+import { SectionHead } from '../components/figures'
 import { Button, Card, Display, EmptyState, PageShell } from '../components/ui'
 import { parseAddressInput } from '../lib/read/screens/identity'
 import { useReadSource } from '../lib/read/screens/readContext'
@@ -21,16 +22,16 @@ import { handoffFor, selectable, type TokenCandidate } from '../lib/read/screens
 
 const NONE: ReadonlySet<string> = new Set()
 
-/** The first four blocks of a page rise in, 60ms apart. */
-const rise = (step: number) => ({ '--delay': `${step * 60}ms` }) as CSSProperties
+/** The first four blocks of a page rise in, 40ms apart (first load only: navigation cross-fades). */
+const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
 
 function Title() {
   return (
     <>
-      <Display as="h1" className="dm-display-title">
+      <Display as="h1" className="dm-display-h1">
         Markets
       </Display>
-      <p className="mt-2 text-body text-fg-muted">Uniswap pools on Robinhood Chain.</p>
+      <p className="dm-mkt-lede">Uniswap pools on Robinhood Chain.</p>
     </>
   )
 }
@@ -78,23 +79,28 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
     <>
       <MarketCarousel heading={<Title />} />
       <section className="dm-mkt-pools animate-rise" style={rise(2)} aria-labelledby="markets-pools-title">
-        <div className="dm-mkt-pools-head">
-          <Display as="h2" id="markets-pools-title" className="dm-display-card">
-            Selected pools
-          </Display>
-          {filtered && count && count.shown > 0 && (
-            <span className="tnum text-caption text-fg-subtle" role="status">
-              {count.shown} of {count.total}
-            </span>
-          )}
-        </div>
+        <SectionHead
+          id="markets-pools-title"
+          title="Selected pools"
+          className="dm-mkt-pools-head"
+          aside={
+            filtered && count && count.shown > 0 ? (
+              <span className="tnum" role="status">
+                {count.shown} of {count.total}
+              </span>
+            ) : undefined
+          }
+        />
         <FilterBar asset={asset} query={query} onAsset={setAsset} onQuery={setQuery} />
-        <div className="mt-3">
+        <div className="dm-mkt-pools-table">
           <MarketsTable variant="full" filter={{ asset, query }} onMatchCount={(shown, total) => setCount({ shown, total })} empty={empty} />
         </div>
       </section>
       <details className="dm-details dm-mkt-catalogue animate-rise" style={rise(3)} data-catalogue-search="" open={catalogueOpen} onToggle={(event) => setCatalogueOpen(event.currentTarget.open)}>
-        <summary>Search the pool catalogue</summary>
+        <summary>
+          <IconSearch size={16} className="dm-mkt-catalogue-icon" />
+          Search the pool catalogue
+        </summary>
         <div className="grid gap-4">
           <p className="max-w-[64ch] text-body text-fg-muted">For pools beyond the selected ones, choose a token by name or paste its address.</p>
           {catalogueOpen && source && (
@@ -205,7 +211,7 @@ export function Explore() {
       </nav>
       <div className="dm-mkt-titlebar mt-4 animate-rise" style={rise(1)}>
         <div className="min-w-0">
-          <Display as="h1" className="dm-display-title">Token</Display>
+          <Display as="h1" className="dm-display-h1">Token</Display>
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
             <span className="dm-chip">Uniswap</span>
             <span className="dm-chip">Robinhood Chain</span>
@@ -237,9 +243,9 @@ export function Explore() {
       {storedReads === 'legacy' && showPools && candidate && source && (
         <section className="dm-mkt-found animate-rise" aria-labelledby="found-pools-title" data-found-pools="">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <Display as="h2" id="found-pools-title" className="dm-display-card">
+            <h2 id="found-pools-title" className="dm-title">
               Pools for <SymbolText token={candidate.token} />
-            </Display>
+            </h2>
           </div>
           <Card className="mt-3 p-2">
             <PoolPicker key={candidate.key} source={source} token={candidate.key} paired={null} pending={null} onPending={() => undefined} onOpen={(option) => open(option.key, candidate.wire)} catalogue={false} compact />
@@ -248,7 +254,10 @@ export function Explore() {
       )}
 
       {storedReads === 'legacy' && <details className="dm-details dm-mkt-catalogue" data-catalogue-browser="">
-        <summary>Search the pool catalogue</summary>
+        <summary>
+          <IconSearch size={16} className="dm-mkt-catalogue-icon" />
+          Search the pool catalogue
+        </summary>
         <div className="grid gap-3">
           {canBrowse && candidate && source ? (
             <CatalogueCandidates key={candidate.key} source={source} token={candidate.key} paired={null} verified={NONE} verifiedNote="Verified: opening this pool." onVerified={(option) => open(option.key, candidate.wire)} />

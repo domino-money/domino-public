@@ -76,9 +76,11 @@ export function PoolAprEstimate({ observation, now, detailed = false, compact = 
       </span>
     )
   }
+  // An APR figure in a table cell or a stat is a yield, in the gains ink (DESIGN-V2 §2.4); the ticker's plain form keeps the ink.
+  const ink = compact && shown.text !== null ? 'text-money-in' : tone
   return (
     <span data-apr-estimate={shown.state}>
-      <span className={cx('tnum whitespace-nowrap', compact ? 'font-medium' : undefined, tone)} title={title}>
+      <span className={cx('tnum whitespace-nowrap', compact ? 'font-medium' : undefined, ink)} title={title}>
         {shown.text === null ? 'Est. APR unavailable' : `${shown.text}% ${compact ? 'est.' : 'est. APR'}`}
       </span>
       {!compact && shown.text !== null && <span className="ml-1 text-fg-subtle">from provider-reported inputs</span>}

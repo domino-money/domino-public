@@ -12,28 +12,10 @@
 import { describeFailure, reasonText } from '../describe'
 import type { ReadRoute } from '../types'
 import type { AddressProblem } from './identity'
-import type { IdsProblem } from './positions'
 import type { ScreenOutcome } from './screenRead'
 
 export const COPY = {
   slotFailed: 'Chain data couldn’t load. Reload the page to try again.',
-  lookup: {
-    heading: 'Public chain lookup',
-    pillFixture: 'Fixture read',
-    pillChain: 'Chain read',
-    intro:
-      'Look up any position NFT by its ID. This is public data at one block: it does not show that anyone controls a wallet, and nothing here can be signed or moved.',
-    show: 'Show lookup',
-    hide: 'Hide lookup',
-    label: 'Position NFT IDs',
-    hint: 'Up to 10 IDs, separated by commas, spaces or new lines.',
-    submit: 'Look up positions',
-    loading: 'Reading position NFTs…',
-    retained: 'The cards below are from the last read that worked, with its own block and time.',
-    changedIds: 'New IDs: earlier cards were cleared.',
-    tokenProblems: 'Some token details couldn’t be read, so those amounts are dashes, each with its raw amount in its title.',
-    tokenCap: 'Token details are read for at most 8 currencies per lookup; the other amounts are dashes, each with its raw amount in its title.',
-  },
   card: {
     empty: 'Empty at this block: the NFT has no position info.',
     pool: 'Pool',
@@ -234,15 +216,6 @@ export const ADDRESS_PROBLEM: Record<AddressProblem, string> = {
   prefix: 'Addresses start with lowercase 0x.',
   hex: 'Only 0–9 and a–f can follow 0x.',
   length: 'An address has 40 hexadecimal characters after 0x.',
-}
-
-export const IDS_PROBLEM: Record<IdsProblem, string> = {
-  empty: 'Enter at least one position NFT ID.',
-  not_decimal: 'NFT IDs are whole numbers written with digits only.',
-  leading_zero: 'IDs are written without leading zeros.',
-  too_large: 'That ID is larger than any NFT ID can be.',
-  duplicate: 'Each ID can appear only once.',
-  too_many: 'Up to 10 IDs at a time.',
 }
 
 const SCREEN_REASONS: Record<string, string> = {

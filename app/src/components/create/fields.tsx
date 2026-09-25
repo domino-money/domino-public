@@ -1,91 +1,41 @@
 import type { InputHTMLAttributes, ReactNode } from 'react'
 import { cx } from '../ui'
 
-/**
- * A labelled text input with a hint line and an error line, the one
- * primitive ui.tsx does not have (SearchField is a search box). The error is
- * announced and tied to the input; the hint stays visible either way.
- */
-export function TextField({
-  id,
-  label,
-  hint,
-  error,
-  trailing,
-  className,
-  ...rest
-}: InputHTMLAttributes<HTMLInputElement> & {
-  id: string
-  label: ReactNode
-  hint?: ReactNode
-  error?: string | null
-  /** Text shown after the input, e.g. the unit. */
-  trailing?: ReactNode
-  className?: string
-}) {
-  const hintId = `${id}-hint`
-  const errorId = `${id}-error`
-  return (
-    <div className={cx('min-w-0', className)}>
-      <label htmlFor={id} className="dm-label">
-        {label}
-      </label>
-      <div className="dm-flow-input" data-invalid={error ? '' : undefined}>
-        <input
-          id={id}
-          spellCheck={false}
-          autoComplete="off"
-          autoCapitalize="off"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={cx(hint ? hintId : null, error ? errorId : null) || undefined}
-          className="dm-flow-input-control tnum"
-          {...rest}
-        />
-        {trailing && (
-          <span aria-hidden="true" className="dm-flow-input-unit">
-            {trailing}
-          </span>
-        )}
-      </div>
-      {hint && (
-        <p id={hintId} className="dm-hint">
-          {hint}
-        </p>
-      )}
-      {error && (
-        <p id={errorId} role="alert" className="dm-error">
-          {error}
-        </p>
-      )}
-    </div>
-  )
-}
+/** How large the amount is drawn, by its length, so a long figure shrinks instead of running under its token (DESIGN-V2 §10.2). */
+const lengthStep = (length: number) => (length <= 8 ? 's' : length <= 12 ? 'm' : length <= 16 ? 'l' : 'xl')
 
 /**
- * The deposit budget: one large tabular input with its token beside it, and
- * a line under it for the wallet's balance. The panel shows the focus ring;
- * the hint, the raw units and any error sit below the panel.
+ * The deposit budget, as a swap panel: one large tabular input with its token
+ * in a pill beside it, then its USD value on the left and the wallet's
+ * balance on the right. The panel shows the focus ring; the hint, the raw
+ * units and any error sit below the panel. The figure shrinks as it grows
+ * longer and keeps its full value in its title.
  */
 export function AmountField({
   id,
   label,
   unit,
   footer,
+  usd,
   hint,
   error,
   below,
+  value,
   ...rest
-}: Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> & {
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'id' | 'value'> & {
   id: string
   label: ReactNode
   /** The token, beside the figure. */
   unit: ReactNode
   /** The line inside the panel under the figure: the wallet balance. */
   footer?: ReactNode
+  /** The amount's USD value, under the figure on the left (USDG pairs only). */
+  usd?: ReactNode
   hint?: ReactNode
   error?: string | null
   /** Anything under the panel before the hint, such as the raw units. */
   below?: ReactNode
+  value: string
 }) {
   const hintId = `${id}-hint`
   const errorId = `${id}-error`
@@ -104,10 +54,14 @@ export function AmountField({
             aria-invalid={error ? true : undefined}
             aria-describedby={cx(hint ? hintId : null, error ? errorId : null) || undefined}
             className="dm-flow-amount-input tnum"
+            value={value}
+            title={value || undefined}
+            data-len={lengthStep(value.length)}
             {...rest}
           />
           <span className="dm-flow-amount-unit">{unit}</span>
         </div>
+        {usd && <div className="dm-flow-amount-usd">{usd}</div>}
         {footer && <div className="dm-flow-amount-foot">{footer}</div>}
       </div>
       {error && (

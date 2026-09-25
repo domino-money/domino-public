@@ -1,13 +1,17 @@
+import { Fragment } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import { candidatesFromPool, candidateDecimals, validateBudget, type JourneyState } from '../../lib/create/journey'
 import { pairedAmount } from '../../lib/create/pairAmount'
 import { formatUnits } from '../../lib/read/decimal'
 import type { TokenCandidate } from '../../lib/read/screens/tokens'
 import { SymbolText } from '../read/screens/SymbolText'
+import { UsdText } from '../figures'
+import { IconPlus } from '../icons'
 import { TokenMark } from '../TokenIcon'
 import { Button } from '../ui'
 import { AmountField } from './fields'
 import type { PairBalancesState } from './usePairBalances'
+import { swappedSide, usdOfSide } from './valuation'
 
 /**
  * The deposit as both of the pool's tokens: one row each, the amount typed in
@@ -71,6 +75,12 @@ export function PairedAmounts({
     return { value, note: other.only === null ? null : CREATE.amount.pairOneSided(pool.currencies[other.only].symbol ?? '') }
   }
 
+  // Each amount's raw units, for its USD line: the typed one once it is a real amount, the other once the range pairs one with it.
+  const rawOf = (side: 0 | 1): string | null => (side === independent ? (budget.ok ? budget.raw : null) : other && other.kind === 'amount' ? other.raw : null)
+  // Funded from one token, the other panel is what the pair asks for, not what is deposited (the swap brings it): no USD
+  // of its own, and a quieter figure, so the preview's deposit stays the one statement of value.
+  const swapped = swappedSide(state, balances)
+
   return (
     <div className="dm-flow-pair" data-paired-amounts={independent === -1 ? 'none' : String(independent)}>
       {pool.currencies.map((currency, index) => {
@@ -81,52 +91,63 @@ export function PairedAmounts({
         const shown = mine ? { value: state.budget, note: null } : otherText(side)
         const balance = balances.balances?.[side] ?? null
         const fill = balance?.fact && balance.fact.state === 'value' ? balance.fact.text.replace(/,/g, '') : null
+        const usd = side === swapped ? null : usdOfSide(pool, side, rawOf(side))
         return (
-          <div key={currency.address} className="dm-flow-pair-row" data-pair-side={side} data-pair-role={mine ? 'typed' : 'derived'}>
-            <AmountField
-              id={`create-amount-${side}`}
-              label={
-                <>
-                  <TokenMark token={currency} size={18} /> <SymbolText token={currency} />
-                </>
-              }
-              unit={<SymbolText token={currency} />}
-              inputMode="decimal"
-              placeholder="0.0"
-              value={shown.value}
-              disabled={unreadable}
-              onChange={(event) => (mine ? onBudget(event.target.value) : onDeposit(choice, event.target.value))}
-              error={mine && state.budget !== '' && !budget.ok ? budget.reason : unreadable ? CREATE.amount.pairUnreadable : null}
-              below={shown.note ? <p className="dm-hint">{shown.note}</p> : null}
-              footer={
-                <div className="dm-flow-balance" data-pair-balance={balances.status}>
-                  <p className="dm-flow-balance-line" title={CREATE.amount.balanceNote}>
-                    <span className="text-fg-subtle">
-                      {balances.status === 'disconnected'
-                        ? CREATE.amount.connectForBalance
-                        : balances.status !== 'ready'
-                          ? CREATE.amount.pairReading
-                          : balance?.fact
-                            ? CREATE.amount.balanceAt(null)
-                            : CREATE.amount.pairNone}
-                    </span>{' '}
-                    {balances.status === 'ready' && balance?.fact && <bdi className="tnum text-fg">{balance.fact.text}</bdi>}
-                  </p>
-                  {fill !== null && !unreadable && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      data-pair-max={side}
-                      onClick={() => (mine ? onBudget(fill) : onDeposit(choice, fill))}
-                    >
-                      {CREATE.amount.maxLabel}
-                    </Button>
-                  )}
-                </div>
-              }
-            />
-          </div>
+          <Fragment key={currency.address}>
+            {/* Between the two panels, as the swap form joins its two: decoration only. */}
+            {index === 1 && (
+              <span aria-hidden="true" className="dm-flow-link">
+                <IconPlus size={16} />
+              </span>
+            )}
+            <div className="dm-flow-pair-row" data-pair-side={side} data-pair-role={mine ? 'typed' : 'derived'} data-plan-side={side === swapped ? 'swapped' : undefined}>
+              <AmountField
+                id={`create-amount-${side}`}
+                label={<SymbolText token={currency} />}
+                unit={
+                  <>
+                    <TokenMark token={currency} size={20} />
+                    <SymbolText token={currency} />
+                  </>
+                }
+                inputMode="decimal"
+                placeholder="0.0"
+                value={shown.value}
+                disabled={unreadable}
+                onChange={(event) => (mine ? onBudget(event.target.value) : onDeposit(choice, event.target.value))}
+                error={mine && state.budget !== '' && !budget.ok ? budget.reason : unreadable ? CREATE.amount.pairUnreadable : null}
+                usd={usd !== null ? <UsdText value={usd} /> : undefined}
+                below={shown.note ? <p className="dm-hint">{shown.note}</p> : null}
+                footer={
+                  <div className="dm-flow-balance" data-pair-balance={balances.status}>
+                    <p className="dm-flow-balance-line" title={CREATE.amount.balanceNote}>
+                      <span className="text-fg-subtle">
+                        {balances.status === 'disconnected'
+                          ? CREATE.amount.connectForBalance
+                          : balances.status !== 'ready'
+                            ? CREATE.amount.pairReading
+                            : balance?.fact
+                              ? CREATE.amount.balanceAt(null)
+                              : CREATE.amount.pairNone}
+                      </span>{' '}
+                      {balances.status === 'ready' && balance?.fact && <bdi className="tnum text-fg">{balance.fact.text}</bdi>}
+                    </p>
+                    {fill !== null && !unreadable && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        data-pair-max={side}
+                        onClick={() => (mine ? onBudget(fill) : onDeposit(choice, fill))}
+                      >
+                        {CREATE.amount.maxLabel}
+                      </Button>
+                    )}
+                  </div>
+                }
+              />
+            </div>
+          </Fragment>
         )
       })}
     </div>

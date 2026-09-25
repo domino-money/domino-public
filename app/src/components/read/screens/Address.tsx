@@ -1,9 +1,11 @@
 import { shortAddress } from '../../../lib/read/screens/identity'
 
 /**
- * An address, pool id or NFT id as identity: monospace, never translated,
- * free to break anywhere so a 66-character id never pushes a card sideways.
- * The short form keeps the full value in the DOM for assistive technology.
+ * An address, pool id or NFT id as identity: monospace, never translated.
+ * The full form is one line (`.dm-hex`, DESIGN-V2 §3.14): it ellipsises where
+ * it runs out of room and never wraps, with the whole value still in the DOM
+ * and in its title. The short form keeps the full value in the DOM for
+ * assistive technology.
  */
 export function Address({ value, short = false }: { value: string; short?: boolean }) {
   if (short) {
@@ -15,7 +17,7 @@ export function Address({ value, short = false }: { value: string; short?: boole
     )
   }
   return (
-    <span className="break-all font-mono text-[12px] leading-[18px] tracking-normal" translate="no" data-address="">
+    <span className="dm-hex" translate="no" title={value} data-address="">
       {value}
     </span>
   )

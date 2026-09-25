@@ -207,15 +207,18 @@ test('the owner screens say which of their own buttons reads again: never a bare
   const words = { exports: {} };
   new Function('exports', 'module', ts.transpileModule(source('finance/words.ts'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(words.exports, words);
   const { financeErrorText } = words.exports;
-  for (const [again, screen] of [['Read my operations', 'screens/AdvancedSetup.tsx'], ['Read my sequences', 'screens/Sequence.tsx']]) {
-    assert.match(source(screen), new RegExp(`>${again}</Button>`), `${screen} has a ${again} button`);
+  // Changed on purpose (2026-09-24, the owner's simpler automation page): its one action, Set up automation, replaces Read my sequences.
+  for (const [again, screen] of [['Read my operations', 'screens/AdvancedSetup.tsx'], ['Set up automation', 'screens/SequenceCreate.tsx']]) {
+    assert.match(source(screen), new RegExp(`>\\s*${again}\\s*</Button>`), `${screen} has a ${again} button`);
     assert.match(source(screen), new RegExp(`financeErrorText\\(errorCode\\(error\\), *'[^']*', *'${again}'\\)`), `${screen} names ${again} for its sentences`);
     assert.equal(financeErrorText('wallet_identity_changed', 'fallback', again), `Your wallet account or network changed. Press ${again} again.`);
     assert.equal(financeErrorText('chain_changed', 'fallback', again), `The chain moved on while reading. Press ${again} again.`);
     assert.equal(financeErrorText('some_unknown_code', 'fallback', again), 'fallback');
   }
   assert.equal(financeErrorText('setup_release_expired', 'fallback', 'Read my operations'), 'The deployment profile expired. Press Read my operations again.');
-  assert.equal(financeErrorText('sequence_release_expired', 'fallback', 'Read my sequences'), 'The deployment profile expired. Press Read my sequences again.');
+  assert.equal(financeErrorText('sequence_release_expired', 'fallback', 'Set up automation'), 'The deployment profile expired. Press Set up automation again.');
+  assert.equal(financeErrorText('sequence_read_code', 'fallback', 'Set up automation'), 'The wallet could not read deployed contract code. Check its RPC connection, then press Set up automation again.');
+  assert.doesNotMatch(source('finance/words.ts'), /Read my sequences/, 'no sentence names a button that is gone');
   const every = [...source('finance/words.ts').matchAll(/^\s+[a-z0-9_]+: (?:'([^']*)'|\(again\) => `([^`]*)`),$/gm)].map((match) => match[1] ?? match[2]);
   assert.ok(every.length > 60, `${every.length} sentences`);
   for (const text of every) assert.doesNotMatch(text, /Read again|read again\./i, text);
