@@ -5,6 +5,7 @@ import { mkdtempSync, writeFileSync, symlinkSync, unlinkSync, rmSync } from 'nod
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { chromium } from 'playwright-core'
+import { closeBrowser } from './support/close-browser.mjs'
 import { createGuardedVite } from '../scripts/local-live-vite.mjs'
 import { installWallets } from './support/mock-wallet.mjs'
 
@@ -105,5 +106,5 @@ test('real Vite HMR connects through the admission gate; UI is read-only and rel
       }
     } finally { try { unlinkSync(alias) } finally { rmSync(privateDir, { recursive: true, force: true }) } }
     await assert.rejects(createGuardedVite({ port, handleRead: async () => {} }), /port may already be occupied/)
-  } finally { await browser?.close(); await shell.close() }
+  } finally { await closeBrowser(browser); await shell.close() }
 })

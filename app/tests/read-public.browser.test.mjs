@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 import { chromium } from 'playwright-core'
+import { closeBrowser } from './support/close-browser.mjs'
 import { createWorker } from '../../bridge/src/worker.mjs'
 import { BRIDGE_DIST, DIST, createGatedServer } from '../scripts/gated-server.mjs'
 import { historyFor, overviewFor, SELECTED } from './markets-cards.fixtures.mjs'
@@ -55,7 +56,7 @@ before(async () => {
 })
 after(async () => {
   releaseHistory?.()
-  await browser?.close()
+  await closeBrowser(browser)
   if (server) await new Promise(resolve => { server.close(resolve); server.closeAllConnections() })
 })
 

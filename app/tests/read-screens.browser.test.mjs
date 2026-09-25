@@ -15,6 +15,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import { closeBrowser } from './support/close-browser.mjs';
 import { FIXTURE_DIST, createGatedServer } from '../scripts/gated-server.mjs';
 import { handlePlaces, handleSightings, NOWHERE, watchForHandle } from './handle-watch.mjs';
 
@@ -63,7 +64,7 @@ after(async () => {
     server.close((error) => error ? reject(error) : done());
     server.closeAllConnections();
   }) : Promise.resolve();
-  await Promise.all([serverClosed, browser?.close()]);
+  await Promise.all([serverClosed, closeBrowser(browser)]);
 });
 
 /** A browser context holding the beta cookie, recording alerts and CSP violations on every page. */

@@ -18,6 +18,7 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import { closeBrowser } from './support/close-browser.mjs';
 import { TEXT_FILE, findForbidden } from '../scripts/deploy-markers.mjs';
 import { apiOf, close, go, leaving, open as openPage, problemsOf, reload, shown } from './page-watch.mjs';
 import { TOGGLE_VIEWPORTS, textUnderToggle } from './toggle-overlap.mjs';
@@ -107,7 +108,7 @@ before(async () => {
 });
 
 after(async () => {
-  await browser?.close();
+  await closeBrowser(browser);
   await new Promise((done) => server.close(done));
 });
 

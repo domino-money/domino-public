@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import { closeBrowser } from './support/close-browser.mjs';
 import { leaving, watch } from './page-watch.mjs';
 import { FIXTURE_DIST, createGatedServer } from '../scripts/gated-server.mjs';
 
@@ -75,7 +76,7 @@ before(async () => {
 });
 
 after(async () => {
-  await browser?.close();
+  await closeBrowser(browser);
   await new Promise((done) => server.close(done));
 });
 

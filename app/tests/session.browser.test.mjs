@@ -16,6 +16,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import { closeBrowser } from './support/close-browser.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { RPC_URL, routeChain } from './support/browser-chain.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
@@ -63,7 +64,7 @@ before(async () => {
 });
 
 after(async () => {
-  await browser?.close();
+  await closeBrowser(browser);
   await Promise.all([...servers].map((server) => server.closeAll()));
 });
 

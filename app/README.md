@@ -94,6 +94,19 @@ The browser is whatever Chromium build the machine already has — Chrome on the
 CI runner, Edge on a Windows workstation — so no browser download is added to
 the install. Set `DOMINO_BROWSER_PATH` to use a different binary.
 
+On macOS, branded Chrome starts GoogleUpdater about 20 seconds after launch.
+The updater and the crash handlers inherit the pipes playwright-core opened for
+Chrome's output and can hold them for up to ten minutes after Chrome exits, and
+`browser.close()` waits for them. So every suite closes its browser through
+`tests/support/close-browser.mjs` and runs under `node --test
+--test-force-exit`: a file ends a few seconds after its browser does, whatever
+still holds those pipes. To keep the updater out of local runs altogether,
+point `DOMINO_BROWSER_PATH` at a build that has none, such as Playwright's own
+(`npx playwright-core install chromium` from `app/` puts it under
+`~/Library/Caches/ms-playwright/chromium-*/`; the executable is inside the
+`.app` there). Chrome for Testing 145 from that cache started no updater in 50
+seconds, and its `close()` returned in 73 ms.
+
 For a look rather than a check:
 
 ```sh

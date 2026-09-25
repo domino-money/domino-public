@@ -105,6 +105,8 @@ execFileSync(
     'tests/automate-picker.test.mjs',
     // 2026-09-25: the Positions Wallet card's prices (one provider GET per view, memory only) and main holdings by value.
     'tests/wallet-holdings.test.mjs',
+    // 2026-09-25: closeBrowser, which every browser suite closes Chrome with (on macOS its pipes outlive it).
+    'tests/close-browser.test.mjs',
   ],
   { stdio: 'inherit' },
 );

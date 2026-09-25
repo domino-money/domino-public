@@ -17,6 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { after, afterEach, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import { closeBrowser } from './support/close-browser.mjs';
 import { closeContext, leaving, watch } from './page-watch.mjs';
 import { createWorker } from '../../bridge/src/worker.mjs';
 import { BRIDGE_DIST, createGatedServer } from '../scripts/gated-server.mjs';
@@ -140,7 +141,7 @@ before(async () => {
 afterEach(async () => { await Promise.all(browser.contexts().map(context => context.close())); });
 
 after(async () => {
-  await browser?.close();
+  await closeBrowser(browser);
   await new Promise((done) => server.close(done));
 });
 

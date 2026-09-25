@@ -114,8 +114,11 @@ jobs:
       - run: npm --prefix app run typecheck
       - run: npm --prefix app run lint
       - run: npm --prefix app run build
+      # --test-force-exit, as every browser suite in app/package.json runs:
+      # on macOS, processes Chrome leaves behind can hold its pipes open and
+      # keep a finished test file alive (app/tests/support/close-browser.mjs).
       - name: Check pool estimate contract in a real browser
-        run: node --test api-contracts/read-v2/consumer.browser.test.mjs
+        run: node --test --test-force-exit api-contracts/read-v2/consumer.browser.test.mjs
   frontend_browser:
     name: Frontend browser (${{ matrix.suite }})
     runs-on: ubuntu-24.04

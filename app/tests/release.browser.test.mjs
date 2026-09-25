@@ -48,6 +48,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import { closeBrowser } from './support/close-browser.mjs';
 import { closeContext, leaving, watch } from './page-watch.mjs';
 import { DIST, createGatedServer } from '../scripts/gated-server.mjs';
 import { TOGGLE_VIEWPORTS, textUnderToggle } from './toggle-overlap.mjs';
@@ -261,7 +262,7 @@ before(async () => {
 });
 
 after(async () => {
-  await browser?.close();
+  await closeBrowser(browser);
   await new Promise((done) => server.close(done));
 });
 

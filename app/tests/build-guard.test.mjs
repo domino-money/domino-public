@@ -293,6 +293,55 @@ test('every browser suite offers the msedge channel, so Edge-only machines can r
   assert.deepEqual(missing, [], `these launch a browser without offering Edge: ${missing.join(', ')}`);
 });
 
+// Added 2026-09-25. On macOS, branded Chrome starts GoogleUpdater about 20
+// seconds after launch, and the updater and the crash handlers keep the pipes
+// playwright-core opened for Chrome's output, for up to ten minutes after
+// Chrome exits. browser.close() waits for those pipes, so suites whose tests
+// had all passed sat there for ten minutes and more. closeBrowser
+// (support/close-browser.mjs) stops waiting once the browser is gone, and
+// --test-force-exit ends the file, whose event loop the pipes still hold.
+// These two keep a new suite from bringing the wait back. The unit run
+// (scripts/test.mjs), which also runs local-live-vite, goes without the flag:
+// there it would hide handles a unit test leaks.
+/** The test files that drive a real browser, by their playwright-core import, and each one's text. */
+const BROWSER_SUITES = (() => {
+  const dir = new URL('./', import.meta.url);
+  const imports = /^import .* from 'playwright-core';?$/m;
+  return new Map(readdirSync(dir)
+    .filter((name) => name.endsWith('.mjs'))
+    .map((name) => [name, readFileSync(new URL(name, dir), 'utf8')])
+    .filter(([, text]) => imports.test(text)));
+})();
+
+test('every browser suite closes its browsers through closeBrowser, never browser.close() itself', () => {
+  assert.ok(BROWSER_SUITES.size >= 14, `only ${BROWSER_SUITES.size} files import playwright-core: the pattern went blind, or suites went away (lower the count)`);
+  const direct = [];
+  for (const [name, text] of BROWSER_SUITES) {
+    const launched = [...text.matchAll(/(\w+) = await chromium\.launch\(/g)].map((match) => match[1]);
+    assert.ok(launched.length > 0, `${name} launches a browser this guard cannot follow: assign it as \`name = await chromium.launch(...)\``);
+    const closed = launched.some((variable) => new RegExp(`\\b${variable}\\??\\.close\\(`).test(text));
+    if (closed || !text.includes("from './support/close-browser.mjs'")) direct.push(name);
+  }
+  assert.deepEqual(direct, [], `these close a browser without closeBrowser: ${direct.join(', ')}`);
+});
+
+test('every node --test that runs a browser suite passes --test-force-exit', () => {
+  const suites = [...BROWSER_SUITES.keys()].map((name) => `tests/${name}`);
+  const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const run = new Set();
+  const missing = [];
+  for (const [name, script] of Object.entries(scripts)) {
+    for (const command of script.split('&&').map((part) => part.trim().split(/\s+/))) {
+      if (command[0] !== 'node' || !command.includes('--test')) continue;
+      const browsers = command.filter((word) => suites.includes(word));
+      for (const file of browsers) run.add(file);
+      if (browsers.length > 0 && !command.includes('--test-force-exit')) missing.push(`${name} (${browsers.join(', ')})`);
+    }
+  }
+  assert.deepEqual(missing, [], `these run a browser suite without --test-force-exit: ${missing.join('; ')}`);
+  assert.deepEqual(suites.filter((file) => !run.has(file)), [], 'every browser suite runs from a package script');
+});
+
 // Added 2026-09-21. rugged's backend suite compiles our wallet SDKs ALONE, with
 // plain tsc and no project, to check them against the contracts
 // (backend/tests/test_setup_sdk_evm.py and test_sequence_sdk_evm.py). That

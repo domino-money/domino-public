@@ -15,6 +15,7 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import { closeBrowser } from './support/close-browser.mjs';
 import { decodeAbiParameters, decodeFunctionData, encodeFunctionData } from 'viem';
 import { browserChain, busyHistory, poolIdOf, routeChain } from './support/browser-chain.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
@@ -34,7 +35,7 @@ before(async () => {
   }
   if (!browser) throw new Error('A Chromium browser is required.');
 });
-after(async () => { await browser?.close(); });
+after(async () => { await closeBrowser(browser); });
 
 /** What the product rules keep off these screens (finance.browser.test.mjs FORBIDDEN), and no sample or practice wording. */
 const FORBIDDEN = /not connected yet|not enabled|isn’t enabled|isn't enabled|aren't enabled|not available on this deployment|coming soon|in this release|\bbeta\b|\balpha\b|\bv4\b|read-only|temporarily unavailable|retry after|Last read|sample|practice/i;

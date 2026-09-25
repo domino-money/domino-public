@@ -18,7 +18,12 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
+import { closeBrowser } from './support/close-browser.mjs';
 import { problemsOf, watch } from './page-watch.mjs';
+
+const LAUNCHES = process.env.DOMINO_BROWSER_PATH
+  ? [{ executablePath: process.env.DOMINO_BROWSER_PATH }]
+  : [{ channel: 'chrome' }, { channel: 'chromium' }, { channel: 'msedge' }, {}];
 
 /** Responses held open on purpose, destroyed when the suite ends. */
 const HELD = new Set();
@@ -58,7 +63,7 @@ before(async () => {
   origin = `http://127.0.0.1:${server.address().port}`;
 
   const failures = [];
-  for (const options of [{ channel: 'chrome' }, { channel: 'chromium' }, { channel: 'msedge' }, {}]) {
+  for (const options of LAUNCHES) {
     try {
       browser = await chromium.launch(options);
       break;
@@ -71,7 +76,7 @@ before(async () => {
 
 after(async () => {
   for (const res of HELD) res.destroy();
-  await browser?.close();
+  await closeBrowser(browser);
   await new Promise((done) => server.close(done));
 });
 
@@ -105,7 +110,7 @@ async function page() {
 async function isolatedPage() {
   const failures = [];
   let own;
-  for (const options of [{ channel: 'chrome' }, { channel: 'chromium' }, { channel: 'msedge' }, {}]) {
+  for (const options of LAUNCHES) {
     try {
       own = await chromium.launch(options);
       break;
@@ -117,7 +122,7 @@ async function isolatedPage() {
   const opened = await own.newPage();
   watch(opened);
   await opened.goto(`${origin}/`);
-  return { page: opened, context: { close: () => own.close().catch(() => undefined) } };
+  return { page: opened, context: { close: () => closeBrowser(own).catch(() => undefined) } };
 }
 
 test('an /api body the page stops reading, after its answer arrived, is not the page’s error', async () => {

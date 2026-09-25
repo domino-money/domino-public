@@ -4,6 +4,7 @@ import { after, before, test } from 'node:test';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
+import { closeBrowser } from './support/close-browser.mjs';
 import { concatHex, encodeAbiParameters, keccak256, toFunctionSelector } from 'viem';
 import { createFakeOnboarding } from './support/fake-onboarding.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
@@ -30,7 +31,7 @@ before(async () => {
   }
   if (!browser) throw new Error('A Chromium browser is required.');
 });
-after(async () => { await browser?.close(); });
+after(async () => { await closeBrowser(browser); });
 const fixture = path => JSON.parse(readFileSync(new URL(`../../api-contracts/performance-v2/fixtures/${path}.json`, import.meta.url)));
 const depositFixture = path => JSON.parse(readFileSync(new URL(`../../api-contracts/deposit-v1/fixtures/${path}.json`, import.meta.url)));
 const statusWire = JSON.parse(readFileSync(new URL('../../api-contracts/execution-v1/fixtures/status-wire.json', import.meta.url)));
