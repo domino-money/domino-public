@@ -49,6 +49,10 @@ class LocalRpc:
 
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_EVM') == '1', 'requires isolated local Anvil')
 class EvmHarness(unittest.TestCase):
+    # A class that needs EIP-7702 designators to execute (a delegated owner) asks for prague. Classes that borrow
+    # setUpClass without subclassing keep cancun.
+    HARDFORK = 'cancun'
+
     @classmethod
     def setUpClass(cls):
         cls.artifact_root = Path(os.environ.get('DOMINO_COMPOUND_EVM_ROOT', ROOT)).resolve()
@@ -58,7 +62,7 @@ class EvmHarness(unittest.TestCase):
         cls.rpc = LocalRpc(f'http://127.0.0.1:{port}')
         cls.process = subprocess.Popen([str(cls.artifact_root/'node_modules/.bin/anvil'),
             '--host', '127.0.0.1', '--port', str(port), '--chain-id', '4663',
-            '--hardfork', 'cancun', '--silent'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            '--hardfork', getattr(cls, 'HARDFORK', 'cancun'), '--silent'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         cls.addClassCleanup(cls.stop)
         for _ in range(100):
             try:

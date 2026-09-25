@@ -132,6 +132,26 @@ export function chainDeps(signal?: AbortSignal): ChainDeps {
 }
 
 /**
+ * Create position's batch simulated whole on the chain's RPC (2026-09-25; finance/setup.ts prepareBatch), for a
+ * wallet that does not carry eth_simulateV1: one POST through the module's one network call, a read like the page's
+ * others, bounded to ten seconds. The reply's `result`, or the RPC's error thrown as itself.
+ */
+export async function simulateOnChain(params: unknown[]): Promise<unknown> {
+  pageReading(1)
+  try {
+    const response = await rpcFetch({ method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_simulateV1', params }), signal: AbortSignal.timeout(10_000) })
+    const reply = (await response.json()) as { result?: unknown; error?: { code?: unknown; message?: unknown } } | null
+    if (!response.ok || !reply || reply.error || !('result' in reply)) {
+      throw Object.assign(new Error(typeof reply?.error?.message === 'string' ? reply.error.message : 'simulation_unavailable'), { code: reply?.error?.code })
+    }
+    return reply.result
+  } finally {
+    pageReading(-1)
+  }
+}
+
+/**
  * How the fees worker spends the RPC (2026-09-25). The fees logs are large and
  * only add a chart to a page, so they never compete with the reads the page is
  * made of (the list, a position's state):

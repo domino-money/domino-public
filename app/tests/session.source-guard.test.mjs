@@ -44,6 +44,14 @@ test('only closed financial adapters offer wallet transactions; login cannot spe
   assert.deepEqual([...ALL.find(f => f.path === 'finance/wallet.ts').code.matchAll(/method: '([^']+)'/g)].map(m => m[1]), ['eth_accounts', 'eth_chainId', 'eth_sendTransaction']);
 });
 
+test('batches (EIP-5792) are asked for, offered and read back only by the closed setup client', () => {
+  // Changed on purpose (2026-09-25): Create position's one-signature batch (docs/plans/2026-09-25-eip5792-batches-design.md)
+  // reads what the wallet can batch, offers one batch and reads its status, all in finance/setup.ts; login and every
+  // other screen name none of these methods.
+  const batch = /['"`](wallet_sendCalls|wallet_getCallsStatus|wallet_getCapabilities|wallet_showCallsStatus)['"`]/;
+  assert.deepEqual(hits(ALL, batch), ['finance/setup.ts']);
+});
+
 test('exact approvals are confined to the closed setup and sequence ABIs', () => {
   // The closed ABIs are JSON (so the page ships no ABI parser): an approval is declared as an item named approve.
   const apis =

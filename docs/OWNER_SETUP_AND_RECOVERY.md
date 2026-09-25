@@ -77,6 +77,48 @@ the advanced funding form name the contract and continue only once the person
 confirms they set up that smart account themselves. Refunds and recovery never
 ask; see [wallet sessions](WALLET_SESSIONS.md) for the list and its limits.
 
+### One signature (EIP-5792)
+
+Create position can put the whole deposit into one batch, which the wallet
+executes whole or not at all. The batch holds the exact approvals, the funding,
+a one-token deposit's swap and the mint. Before the press, the app reads the
+wallet's `wallet_getCapabilities` for chain `0x1237`:
+
+- **`supported`** (the account is already a smart account): the press sends
+  the batch, and Review shows one wallet step.
+- **`ready`** (the wallet can upgrade the account): the steps stay the main way.
+  Beside them, **Sign all steps at once** says the wallet will first ask to
+  turn on its smart account (EIP-7702).
+- **Anything else:** today's steps.
+
+The batch opens the operation id `nextOperationId(owner)` gives at preparation,
+and `open` accepts only that id, so a batch that meets another opening first
+reverts whole.
+
+**Sizing.** The swap is the size the pool's own V4Quoter quotes found, as
+before a one-token deposit. It asks for at least its quote less the owner's
+slippage limit. The mint is sized for that least and returns the rest.
+
+**Simulation.** The whole batch is simulated with `eth_simulateV1` through the
+wallet. A wallet without the method is simulated on the chain's public RPC,
+the page's own chain client. With neither, no batch is offered.
+
+**Sending and reading back.** `finance/setup.ts` sends `wallet_sendCalls`
+(version 2.0.0, `atomicRequired: true`). A latch in the nonce journal, keyed
+by the owner and the operation id, keeps a second prompt from opening.
+`wallet_getCallsStatus` is read for the outcome, and the operation's own state
+decides it:
+
+- closed with its NFT is the position;
+- not included (400) or reverted (500) means nothing was deposited.
+
+A wallet that refuses the batch as unsupported goes step by step in the same
+press. A declined upgrade (5750) says so, and nothing is sent.
+
+The design is
+[docs/plans/2026-09-25-eip5792-batches-design.md](plans/2026-09-25-eip5792-batches-design.md).
+The advanced funding form stays step by step.
+
 Recovery requires the setup contract's balance to decrease by exactly the
 debited claim. It lets the owner accept a transfer tax or forward tokens from a
 receipt hook; this does not weaken transfer checks for swap funding, service

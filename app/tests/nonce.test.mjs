@@ -22,6 +22,35 @@ test('only the holder of a definitely rejected claim can release it',async()=>{
  await j.releaseAfterRejection(owner,9n,claim);assert(!j.offered(owner,9n));
  assert(await j.claim(owner,9n));
 });
+test('a batch is latched once per owner and operation id across tabs, keeps the wallet id beside its claim, and is freed only by its claim or that id',async()=>{
+ const s=storage(),l=locks(),a=createNonceJournal(s,l,token),b=createNonceJournal(s,l,token),op='0x'+'c'.repeat(64),next='0x'+'d'.repeat(64);
+ assert.equal(a.batchOffered(owner,op),null);
+ const results=await Promise.allSettled([a.claimBatch(owner,op),b.claimBatch(owner,op)]);
+ assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+ await assert.rejects(b.claimBatch(owner,op),/wallet_batch_already_offered/);
+ const claim=results.find(r=>r.status==='fulfilled').value;
+ // Claimed, not yet answered: latched with no id, which the empty id never frees; another operation or owner is free.
+ assert.equal(b.batchOffered(owner,op),'');
+ await b.releaseBatch(owner,op,'');assert.equal(a.batchOffered(owner,op),'');assert.equal(b.batchOffered(owner,next),null);assert.equal(b.batchOffered(other,op),null);
+ // Only the claim records the wallet's id; the id is kept for a reload, and never an address.
+ await b.recordBatch(owner,op,token(),'0xfeed');assert.equal(a.batchOffered(owner,op),'');
+ await a.recordBatch(owner,op,claim,'0xfeed');assert.equal(createNonceJournal(s,l,token).batchOffered(owner,op),'0xfeed');
+ for(const [key,value] of s.map){assert(!key.includes(owner)&&!value.includes(owner));assert.match(key,/^domino.offered-batch.v1.[0-9a-f]{64}$/)}
+ await assert.rejects(a.recordBatch(owner,op,claim,'a|b'),/invalid_wallet_batch/);
+ await assert.rejects(a.recordBatch(owner,op,claim,''),/invalid_wallet_batch/);
+ // Freed by its claim or by the wallet's id; nothing else, the empty id included, frees it.
+ for(const wrong of [token(),'0xbeef','']){await a.releaseBatch(owner,op,wrong);assert.equal(a.batchOffered(owner,op),'0xfeed')}
+ await a.releaseBatch(owner,op,'0xfeed');assert.equal(a.batchOffered(owner,op),null);
+ const again=await a.claimBatch(owner,op);await a.releaseBatch(owner,op,again);assert.equal(a.batchOffered(owner,op),null);
+ assert.throws(()=>a.batchOffered(owner,'0x'+'c'.repeat(63)),/invalid_wallet_batch/);
+ assert.throws(()=>a.batchOffered('0xABC','0x'+'c'.repeat(64)),/invalid_wallet_batch/);
+});
+test('nonces and batches share one bound on what the journal holds',async()=>{
+ const s=storage(),j=createNonceJournal(s,locks(),token);
+ for(let i=0;i<1024;i++)s.setItem('domino.offered-batch.v1.'+i.toString(16).padStart(64,'0'),token());
+ await assert.rejects(j.claim(owner,1n),/wallet_nonce_journal_full/);
+ await assert.rejects(j.claimBatch(owner,'0x'+'c'.repeat(64)),/wallet_nonce_journal_full/);
+});
 test('storage and coordination failures fail before a wallet request can be claimed',async()=>{
  const broken={...storage(),setItem(){throw new Error('storage unavailable')}};
  await assert.rejects(createNonceJournal(broken,locks(),token).claim(owner,1n),/storage unavailable/);

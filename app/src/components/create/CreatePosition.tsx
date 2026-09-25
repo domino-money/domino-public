@@ -4,12 +4,12 @@ import { confirmDelegate, setupWallet } from '../../finance/wallet'
 import { suggestGasBudget } from '../../finance/gas'
 import { readRelease } from '../../finance/release'
 import { saveSetupProfile } from '../../finance/recoveryProfile'
-import { createSetupClient, deploymentFrom, isRevert, walletBalance, type GasBudget, type PoolKey, type PreparedSetup, type SetupOperation, type WalletRpc } from '../../finance/setup'
+import { atomicStatus, createSetupClient, deploymentFrom, isRevert, walletBalance, type AtomicStatus, type BatchPlan, type BatchState, type GasBudget, type PoolKey, type PreparedBatch, type PreparedSetup, type SetupOperation, type WalletRpc } from '../../finance/setup'
 import { errorCode, financeErrorText } from '../../finance/words'
 import { switchToRobinhood } from '../../wallet/port'
 import { CREATE } from '../../lib/create/copy'
 import { publishCreateProgress, publishCreated, type LiveState, type LiveStep } from '../../lib/create/createProgress'
-import { depositPlan, needsSides, quoteWithin, sizeSwap, swapFeePips, type DepositPlan, type PoolTerms, type Side } from '../../lib/create/depositPlan'
+import { depositPlan, needsSides, quoteWithin, sizeSwap, swapFeePips, type DepositPlan, type PoolTerms, type Side, type SwapSize } from '../../lib/create/depositPlan'
 import { setupDraft, type JourneyState, type SetupDraft } from '../../lib/create/journey'
 import { mintPlanFor } from '../../lib/create/mintPlan'
 import { pairedAmount } from '../../lib/create/pairAmount'
@@ -64,6 +64,8 @@ type Open = { id: Hex; operation: SetupOperation }
 type Phase = 'idle' | 'running' | 'failed' | 'held' | 'done'
 
 const readSetupRelease = () => readRelease('/api/setup/v1/release', (value) => deploymentFrom(value))
+/** A batch simulated on the chain's own RPC, for a wallet without eth_simulateV1: the page's chain code, loaded as its reads load it. */
+const simulateOnChain = async (params: unknown[]) => (await import('../../lib/chain/chainCode')).simulateOnChain(params)
 const currentSetupDeployment = async () => {
   const release = await readSetupRelease()
   return release.kind === 'available' ? release.deployment : null
@@ -99,6 +101,13 @@ const PREFLIGHT = {
   held: 'This pool has no liquidity at its current price, so your deposit cannot be swapped in it. Refund the deposit to your wallet.',
   heldClock: 'Your device’s clock is more than 5 minutes off the network’s time, so the swap cannot be signed. Your deposit is held: set the clock right and press Create position again, or refund it.',
 } as const
+/** What a batch's watch says when it ends without the position (createInOneBatch, watchBatch). */
+const BATCH = {
+  dropped: 'Your wallet did not include the batch. Nothing was deposited. Press Create position again.',
+  reverted: 'The batch reverted on chain: nothing was deposited, only network gas was spent. Press Create position again.',
+  unknown: 'The batch’s outcome could not be read. Check your wallet activity, then press Create position again: the chain is read first, and nothing is sent twice.',
+  waiting: 'The batch is still waiting to be included. Check your wallet activity, then press Create position again: nothing is sent twice.',
+} as const
 /** This page's sentences for the setup client's codes whose shared sentence names a control it does not have. */
 const OWN_TEXT: Readonly<Record<string, string>> = {
   native_gas_reserve_insufficient: 'Keep some ETH for network gas: your ETH does not cover this step. Lower the ETH amount or add ETH.',
@@ -115,6 +124,11 @@ const OWN_TEXT: Readonly<Record<string, string>> = {
   pool_not_initialized: 'This pool has no price on chain yet, so a position cannot be created in it here.',
   // The press checked the account's delegate a moment before; the deposit's own check read another one.
   delegate_unrecognized: 'Your account’s smart-account contract (EIP-7702) changed while the deposit was prepared. Nothing was sent. Press Create position again.',
+  batch_upgrade_declined: 'You declined turning on your wallet’s smart account. Nothing was deposited. Press Create position to go step by step, or sign all steps at once again.',
+  batch_state_changed: 'Another deposit was opened from this wallet meanwhile. Nothing was sent. Press Create position again.',
+  batch_simulation_reverted: 'The batch would fail at the pool’s price now. Nothing was sent. Press Create position again.',
+  batch_coordination_unavailable: 'This browser cannot keep track of a batch here. Nothing was sent. Press Create position to go step by step.',
+  invalid_simulation_reply: 'The batch could not be checked just now. Nothing was sent. Try again in a moment.',
 }
 /**
  * Said before anything is read or asked when the account's EIP-7702 delegate is not one this app recognizes
@@ -193,8 +207,12 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   const [refundFirst, setRefundFirst] = useState(false)
   // The account's unrecognized delegate the last press stopped at, until the person confirms it or presses again.
   const [unrecognized, setUnrecognized] = useState<{ owner: Address; delegate: Address } | null>(null)
+  // What the connected wallet can do with a batch (EIP-5792): null until read, for this wallet only.
+  const [atomic, setAtomic] = useState<AtomicStatus | null>(null)
   const generation = useRef(0)
   const running = useRef(false)
+  // Whether the last press asked for one signature (a batch): its line says so, and a confirmation that runs the press again keeps it.
+  const [batching, setBatching] = useState(false)
   const steps = useRef<readonly LiveStep[]>([])
   // Another wallet or network: whatever was prepared or held for the previous one no longer applies.
   const wallet = walletKey(identity)
@@ -206,6 +224,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     setHeld(null)
     setRefundFirst(false)
     setUnrecognized(null)
+    setAtomic(null)
   }
   // The previous wallet's flow, if one was running, writes nothing more, and Review shows its plan again.
   useEffect(() => {
@@ -228,6 +247,17 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     onBusy?.(phase === 'running')
   }, [phase, onBusy])
   useEffect(() => () => onBusy?.(false), [onBusy])
+  // Whether this wallet executes a batch atomically now (`supported`), could once it turns on its smart account
+  // (`ready`), or neither: asked of the wallet itself, once per wallet, and nothing is signed or sent for it.
+  useEffect(() => {
+    if (wallet === null) return
+    let live = true
+    setupWallet().then((rpc) => atomicStatus(rpc)).then(
+      (status) => { if (live) setAtomic(status) },
+      () => { if (live) setAtomic('unsupported') },
+    )
+    return () => { live = false }
+  }, [wallet])
 
   const ready = draft !== null
   const needs = draft ? needsOf(draft) : null
@@ -385,8 +415,9 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
    * liquidity only picks the sentence when no size fills. Any doubt stops here, with nothing deposited; after the
    * deposit, the setup contract's own quotes still size the swap that is sent (swapIfNeeded).
    */
-  async function swapPreflight(client: Client, key: PoolKey, settled: SetupDraft, from: Side, deposit: bigint, gen: number) {
+  async function swapPreflight(client: Client, key: PoolKey, settled: SetupDraft, from: Side, deposit: bigint, gen: number): Promise<{ sized: SwapSize; price: bigint } | null> {
     mark('swap', 'reading', gen)
+    let checked: { sized: SwapSize; price: bigint } | null = null
     try {
       const onChain = await client.poolState(key)
       const terms: PoolTerms = {
@@ -400,7 +431,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
       // The range takes only the token deposited: nothing will be swapped, so there is nothing to check.
       if (!needsSides(terms)[from === 0 ? 1 : 0]) {
         mark('swap', 'waiting', gen)
-        return
+        return null
       }
       if (Math.abs(Date.now() / 1000 - onChain.chainTime) > CLOCK_SKEW_S) throw new Stop(PREFLIGHT.clock, 'device_clock_off')
       const zeroForOne = from === 0
@@ -421,6 +452,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         slippageBps: settled.slippageBps,
       })
       if (!after) throw new Stop(PREFLIGHT.noPosition, 'swap_makes_no_position')
+      checked = { sized, price: onChain.sqrtPriceX96 }
     } catch (error) {
       if (error instanceof Stop) throw error
       const code = errorCode(error)
@@ -429,6 +461,83 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
       throw new Stop(code === 'quoter_identity_changed' ? PREFLIGHT.quoter : PREFLIGHT.unchecked, code ?? 'pool_check_unavailable')
     }
     mark('swap', 'waiting', gen)
+    return checked
+  }
+
+  /**
+   * Create position in one signature (EIP-5792; docs/plans/2026-09-25-eip5792-batches-design.md): the approvals, the
+   * deposit, a one-token deposit's swap and the mint as one batch the wallet executes whole or not at all. The swap is
+   * the size the preflight's quotes found, asking at least the owner's slippage limit of its output; the mint is sized
+   * for that least, at the price the quotes say the swap leaves, and returns the rest. Null: this wallet cannot make
+   * or simulate the batch after all, and the same press goes on step by step.
+   */
+  async function createInOneBatch(client: Client, gas: GasBudget, key: PoolKey, settled: SetupDraft, plan: DepositPlan, funding: readonly [bigint, bigint],
+    checked: { sized: SwapSize; price: bigint } | null, gen: number): Promise<{ tokenId: bigint } | { held: Open } | null> {
+    // A batch this page or another tab offered for this very operation, its outcome not known yet: watched, never offered twice.
+    const waiting = await client.offeredBatch()
+    if (waiting) {
+      mark('batch', 'chain', gen)
+      return watchBatch(client, waiting.id, waiting.operationId, gen)
+    }
+    let swap: BatchPlan['swap'] = null
+    let balances: readonly [bigint, bigint] = funding
+    let price = await client.price(key)
+    if (plan.kind === 'swap' && checked) {
+      const zeroForOne = plan.from === 0
+      const minOutput = (checked.sized.output * BigInt(10_000 - settled.slippageBps)) / 10_000n
+      if (minOutput <= 0n) throw new Stop(PREFLIGHT.tooThin, 'swap_output_insufficient')
+      swap = { zeroForOne, gross: checked.sized.gross, minOutput, sqrtLimit: swapLimit(checked.price, zeroForOne) }
+      const kept = plan.deposit - checked.sized.gross
+      balances = zeroForOne ? [kept, minOutput] : [minOutput, kept]
+      price = checked.sized.sqrtPriceX96
+    }
+    const minted = mintPlanFor({ sqrtPriceX96: String(price), tickLower: settled.tickLower, tickUpper: settled.tickUpper, balance0: balances[0], balance1: balances[1], slippageBps: settled.slippageBps })
+    if (!minted) throw new Stop(PREFLIGHT.noPosition, 'swap_makes_no_position')
+    stillHere(gen)
+    let prepared: PreparedBatch | null = null
+    try {
+      prepared = await client.prepareBatch({ key, amount0: funding[0], amount1: funding[1], swap, mint: { tickLower: settled.tickLower, tickUpper: settled.tickUpper, ...minted } }, gas)
+    } catch (error) {
+      if (errorCode(error) === 'batch_simulation_unavailable') return null
+      throw error
+    }
+    stillHere(gen)
+    mark('batch', 'wallet', gen)
+    let id = ''
+    try {
+      id = await client.sendBatch(prepared, true)
+    } catch (error) {
+      if (errorCode(error) !== 'batch_unsupported') throw error
+      if (generation.current === gen) setAtomic('unsupported')
+      return null
+    }
+    mark('batch', 'chain', gen)
+    return watchBatch(client, id, prepared.operationId, gen)
+  }
+
+  /** A sent batch, read every two seconds for five minutes at most, until the operation it opened holds the position or cannot. */
+  async function watchBatch(client: Client, id: string, operationId: Hex, gen: number): Promise<{ tokenId: bigint } | { held: Open }> {
+    const until = Date.now() + RECEIPT_WAIT_MS
+    for (let beat = 0; ; beat++) {
+      if (generation.current !== gen) throw new Stop('')
+      let read: BatchState | null = null
+      try {
+        read = await client.batchStatus(id, operationId)
+      } catch (error) {
+        // A read that fails (a busy wallet, a node behind) is read again at the next beat, to the end of the watch.
+        if (Date.now() > until) throw error
+      }
+      if (read?.state === 'created') {
+        mark('batch', 'done', gen)
+        return { tokenId: read.tokenId }
+      }
+      if (read?.state === 'held') return { held: { id: operationId, operation: await client.inspect(operationId) } }
+      if (read?.state === 'dropped') throw new Stop(BATCH.dropped, 'batch_dropped')
+      if (read?.state === 'reverted') throw new Stop(BATCH.reverted, 'batch_reverted')
+      if (read?.state === 'unknown') throw new Stop(BATCH.unknown, 'batch_unknown')
+      if (Date.now() > until) throw new Stop(BATCH.waiting, 'batch_waiting')
+      await sleep(RECEIPT_EVERY_MS)
+    }
   }
 
   async function mintFrom(client: Client, key: PoolKey, gas: GasBudget, open: Open, gen: number): Promise<bigint> {
@@ -451,7 +560,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     const live = await readSetupRelease()
     if (live.kind !== 'available') throw new Stop('The deployment could not be confirmed just now. Nothing was sent. Try again in a moment.')
     const rpc = await setupWallet()
-    const client = createSetupClient(rpc, live.deployment, () => Date.now() / 1000, currentSetupDeployment)
+    const client = createSetupClient(rpc, live.deployment, () => Date.now() / 1000, currentSetupDeployment, { simulate: simulateOnChain })
     const gas = await suggestGasBudget(rpc)
     saveSetupProfile(live.deployment)
     return { client, rpc, gas }
@@ -466,10 +575,12 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     publishCreated(tokenId.toString())
   }
 
-  async function create() {
+  /** `batch`: one signature for every step (EIP-5792), for a wallet that can; by default when it can without an upgrade. */
+  async function create(batch = atomic === 'supported') {
     if (!draft || !needs || running.current) return
     const pool = draft.pool
     const gen = ++generation.current
+    setBatching(batch)
     running.current = true
     setPhase('running')
     setNotice(null)
@@ -535,7 +646,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
           throw new Stop(`Your wallet holds ${units(have, token)} ${symbolOf(token)}${token.address === zeroAddress ? ' after network gas' : ''}; this position needs ${units(plan.need, token)}. Lower the amount, or add ${symbolOf(token)} to your wallet.`)
         }
         const funding: readonly [bigint, bigint] = plan.kind === 'both' ? [plan.amount0, plan.amount1] : plan.from === 0 ? [plan.deposit, 0n] : [0n, plan.deposit]
-        show([
+        const inOrder: readonly LiveStep[] = [
           ...pool.currencies.flatMap((token, index) =>
             token.address !== zeroAddress && funding[index] > 0n ? [{ key: `approve:${token.address}`, title: CREATE.review.approveStep, token, state: 'waiting' as const }] : [],
           ),
@@ -544,9 +655,22 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
             : { key: 'fund', title: CREATE.review.fundStep, state: 'waiting' as const },
           ...(plan.kind === 'swap' ? [{ key: 'swap', title: CREATE.review.swapStep, state: 'waiting' as const }] : []),
           { key: 'mint', title: CREATE.review.mintStep, state: 'waiting' },
-        ], gen)
+        ]
+        show(batch ? [{ key: 'batch', title: CREATE.review.batchStep, state: 'waiting' }] : inOrder, gen)
         // One token alone is deposited only into a pool that can swap part of it: checked before any approval.
-        if (plan.kind === 'swap') await swapPreflight(client, key, draft, plan.from, plan.deposit, gen)
+        const checked = plan.kind === 'swap' ? await swapPreflight(client, key, draft, plan.from, plan.deposit, gen) : null
+        if (batch) {
+          const made = await createInOneBatch(client, gas, key, draft, plan, funding, checked, gen)
+          if (made && 'tokenId' in made) {
+            finish(made.tokenId, gen)
+            return
+          }
+          if (made) {
+            // A batch cannot leave its operation funded and open; if one did, it is a held deposit like any other.
+            open = made.held
+            if (generation.current === gen) setHeld(open)
+          } else show(inOrder, gen)
+        }
         // The deposit keeps ETH back for the swap and the mint, or a refund, that follow it.
         const reserved: GasBudget = { ...gas, reserveWei: kept }
         let asked = 0
@@ -620,7 +744,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     if (!unrecognized || running.current) return
     confirmDelegate(unrecognized.owner, unrecognized.delegate)
     setUnrecognized(null)
-    void create()
+    void create(batching)
   }
 
   const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria-haspopup="dialog"]')?.click()
@@ -641,11 +765,14 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   else if (!connected) reason = 'Connect your wallet to create the position. Each transaction appears in your wallet to sign.'
   else if (phase === 'held' && refundFirst) reason = 'A deposit is held for this pool. Refund it to your wallet.'
   else if (phase === 'held') reason = 'A deposit is held for this pool. Press Create position to create the position from it, or refund it.'
-  else if (busy) reason = 'Confirm each step in your wallet. The list above marks each one as it is done.'
+  else if (busy) reason = batching ? 'Confirm the batch in your wallet: one signature for every step. The list above marks it as it goes.' : 'Confirm each step in your wallet. The list above marks each one as it is done.'
   else if (short) reason = 'Your wallet does not seem to hold enough for this position. Lower the amount, or add the token named above to your wallet.'
   else if (phase === 'failed' && unrecognized) reason = 'Your wallet is asked nothing until you confirm the smart account below, or connect another account.'
   else if (phase === 'failed') reason = 'Press Create position to try again. An allowance already set is not asked for again.'
+  else if (atomic === 'supported') reason = CREATE.review.batchReason
   else reason = 'Your wallet asks you to sign each step in the list above, in order.'
+  // A wallet that could batch once it turns on its smart account: offered beside the steps, never chosen for the person.
+  const offerBatch = atomic === 'ready' && ready && needs !== null && connected && (phase === 'idle' || phase === 'failed') && !unrecognized
 
   return (
     <>
@@ -683,6 +810,16 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         <Button type="button" variant="outline" size="md" className="w-full" onClick={confirmUnrecognized} data-create-confirm-delegate={unrecognized.delegate}>
           I set up this smart account: continue
         </Button>
+      )}
+      {offerBatch && (
+        <>
+          <Button type="button" variant="outline" size="md" className="w-full" onClick={() => void create(true)} data-create-batch="offer" aria-describedby="create-batch-note">
+            {CREATE.review.batchOffer}
+          </Button>
+          <p id="create-batch-note" className="dm-flow-reason" data-align="start">
+            {CREATE.review.batchOfferNote}
+          </p>
+        </>
       )}
       {phase === 'held' && held && (
         <Button

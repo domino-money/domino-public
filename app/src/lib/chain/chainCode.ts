@@ -10,9 +10,11 @@
  * own file. 2026-09-25, later: a position's feature (plain, Auto-compound or
  * Domino-compound) joins, the automation route's own scan
  * (functions/_lib/automation.ts), read here for lib/automationState.ts.
+ * 2026-09-25, EIP-5792: the batch simulation Create position falls back to
+ * when the wallet does not carry eth_simulateV1 (browser.ts simulateOnChain).
  */
 export { ChainError } from '../../../functions/_lib/owned'
 export { scanWallet } from '../../../functions/_lib/walletPositions'
 export { logsOnChain, stateOnChain } from '../../../functions/_lib/fees'
 export { scanAutomation } from '../../../functions/_lib/automation'
-export { chainDeps, memoryCache } from './browser'
+export { chainDeps, memoryCache, simulateOnChain } from './browser'

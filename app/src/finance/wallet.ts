@@ -4,7 +4,7 @@ import { walletConfig } from '../wallet/config'
 import type { WalletHandoff } from '../deposit/handoff'
 import { livePort } from '../session/livePort'
 import type { WalletRpc } from './setup'
-import { claimOwnerNonce, ownerNonceOffered, releaseOwnerNonceAfterRejection } from './nonce'
+import { claimOwnerBatch, claimOwnerNonce, ownerBatchOffered, ownerNonceOffered, recordOwnerBatch, releaseOwnerBatch, releaseOwnerNonceAfterRejection } from './nonce'
 
 interface Provider { request(args: { method: string; params?: unknown[] }): Promise<unknown> }
 // Once offered to a wallet, a nonce stays latched for this page even if the
@@ -29,7 +29,10 @@ export async function setupWallet(): Promise<WalletRpc> {
   }, request: (method, params) => provider.request({ method, params }),
   nonceOffered: nonce => ownerNonceOffered(owner, nonce), claimNonce: nonce => claimOwnerNonce(owner, nonce),
   releaseRejectedNonce: (nonce, token) => releaseOwnerNonceAfterRejection(owner, nonce, token),
-  delegateConfirmed: delegate => confirmedDelegates.has(`${owner}|${delegate.toLowerCase()}`) }
+  delegateConfirmed: delegate => confirmedDelegates.has(`${owner}|${delegate.toLowerCase()}`),
+  batchOffered: operationId => ownerBatchOffered(owner, operationId), claimBatch: operationId => claimOwnerBatch(owner, operationId),
+  recordBatch: (operationId, claim, id) => recordOwnerBatch(owner, operationId, claim, id),
+  releaseBatch: (operationId, claim) => releaseOwnerBatch(owner, operationId, claim) }
 }
 export const liveWalletHandoff: WalletHandoff = {
   available: true,

@@ -89,6 +89,8 @@ execFileSync(
     'tests/setup-recovery.test.mjs',
     // 2026-09-25: the EIP-7702 delegates this app recognizes, and the confirmation funding waits for otherwise.
     'tests/delegates.test.mjs',
+    // 2026-09-25: Create position's batch (EIP-5792): capabilities, composition, simulation, one offer, the outcome by effect.
+    'tests/setup-batch.test.mjs',
     'tests/setup-quoter.test.mjs',
     'tests/position-actions.test.mjs',
     // 2026-09-24: V2 foundation, the pure number, USD, time and chart geometry helpers (lib/format, lib/chart).

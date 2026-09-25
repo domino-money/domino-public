@@ -87,7 +87,40 @@ export interface WalletRpc {
   nonceOffered(nonce: bigint): boolean; claimNonce(nonce: bigint): Promise<string>; releaseRejectedNonce(nonce: bigint, token: string): Promise<void>
   /** Whether the person confirmed on this page that they set up this EIP-7702 delegate themselves (./delegates.ts). */
   delegateConfirmed?(delegate: Address): boolean
+  /** The latch of a batch offered for this owner's operation (./nonce.ts): the wallet's id for it, '' before it answered, null when none. */
+  batchOffered?(operationId: Hex): string | null
+  claimBatch?(operationId: Hex): Promise<string>
+  recordBatch?(operationId: Hex, claim: string, id: string): Promise<void>
+  releaseBatch?(operationId: Hex, claim: string): Promise<void>
 }
+/** What the connected wallet says it can do with a batch on Robinhood Chain (EIP-5792 version 2, `atomic`). */
+export type AtomicStatus = 'supported' | 'ready' | 'unsupported'
+/** One call of a batch, as `wallet_sendCalls` carries it. */
+export interface BatchCall { to: Address; data: Hex; value: Hex }
+/**
+ * What a batch opens and makes (./setup.ts prepareBatch): the funding, the assisted swap of a one-token deposit with
+ * the least it may pay, and the mint sized for that least, all inside the operation the batch opens.
+ */
+export interface BatchPlan {
+  key: PoolKey; amount0: bigint; amount1: bigint
+  swap: { zeroForOne: boolean; gross: bigint; minOutput: bigint; sqrtLimit: bigint } | null
+  mint: { tickLower: number; tickUpper: number; liquidity: bigint; maxAmount0: bigint; maxAmount1: bigint; minSqrtPriceX96: bigint; maxSqrtPriceX96: bigint; initialSqrtPriceX96: bigint }
+}
+export interface PreparedBatch {
+  kind: 'batch'; operationId: Hex; owner: Address; expiresAt: number
+  calls: readonly BatchCall[]
+  /** The gas the simulation used for every call together, and the limit asked of the wallet's budget with room. */
+  gasUsed: bigint; gasLimit: bigint
+  summary: readonly string[]
+}
+/** Where a batch stands, read from the wallet and then from the operation it opened: the effect decides. */
+export type BatchState =
+  | { state: 'pending' }
+  | { state: 'created'; tokenId: bigint }
+  | { state: 'held' }
+  | { state: 'dropped' | 'reverted' | 'unknown' }
+/** A simulation the page can run elsewhere when the wallet does not carry `eth_simulateV1` (CreatePosition passes the chain's own RPC). */
+export type BatchSimulator = (params: unknown[]) => Promise<unknown>
 export interface GasBudget { maxGas: bigint; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint; reserveWei: bigint }
 /** A pool as the chain has it now: StateView's slot0 and in-range liquidity, and the latest block's time (seconds). */
 export interface PoolState { sqrtPriceX96: bigint; tick: number; protocolFee: number; lpFee: number; liquidity: bigint; chainTime: number }
@@ -113,6 +146,11 @@ export const SIGN_WINDOW_S = 180
  * price band, not the deadline, is what bounds the price it executes at.
  */
 export const STEP_DEADLINE_S = SIGN_WINDOW_S + 300
+/**
+ * Gas a batch's own frame may add to its calls' (a delegate's execute, or a bundler's validation and EntryPoint): used
+ * only to check the owner can afford the batch, since the wallet sets the batch's gas itself.
+ */
+const BATCH_FRAME_GAS = 150_000n
 const fail = (code: string): never => { throw new Error(code) }
 const asHex = (value: unknown): Hex => typeof value === 'string' && /^0x(?:[0-9a-fA-F]{2})*$/.test(value) ? value as Hex : fail('invalid_wallet_reply')
 const quantity = (value: unknown): bigint => typeof value === 'string' && /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/.test(value) ? BigInt(value) : fail('invalid_wallet_quantity')
@@ -162,6 +200,33 @@ export async function acceptsNativeEth(read: (method: string, params: unknown[])
     if (isRevert(error)) return false
     throw error
   }
+}
+/**
+ * The connected wallet's EIP-5792 atomic batches on chain 4663, read through its own provider: `supported` when the
+ * account executes a batch atomically now, `ready` when the wallet would first upgrade it (EIP-7702) and asks the person
+ * to, `unsupported` otherwise. A read that fails or times out, and a reply in any other shape, version 1's
+ * `atomicBatch` included, is `unsupported`: no batch is offered then. Reads only.
+ */
+export async function atomicStatus(wallet: WalletRpc, timeoutMs = 5_000): Promise<AtomicStatus> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const reply = await Promise.race([wallet.request('wallet_getCapabilities', [wallet.owner, ['0x1237']]),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), timeoutMs) })])
+    const chain = reply && typeof reply === 'object' ? (reply as Record<string, unknown>)['0x1237'] : null
+    const atomic = chain && typeof chain === 'object' ? (chain as Record<string, unknown>).atomic : null
+    const status = atomic && typeof atomic === 'object' ? (atomic as Record<string, unknown>).status : null
+    return status === 'supported' || status === 'ready' ? status : 'unsupported'
+  } catch {
+    return 'unsupported'
+  } finally { clearTimeout(timer) }
+}
+/** EIP-5792's refusals of a batch the wallet cannot make, and JSON-RPC's unknown method: the step-by-step flow instead. */
+const BATCH_UNSUPPORTED = new Set([4200, -32601, 5700, 5710, 5740, 5760])
+/** An `eth_simulateV1` the provider does not carry, as opposed to a simulation that ran. */
+const unsupportedMethod = (error: unknown) => {
+  const node = error as { code?: unknown; message?: unknown } | null
+  return !!node && (node.code === 4200 || node.code === -32601 || node.code === -32004
+    || (typeof node.message === 'string' && /method .*(not (supported|found|available|exist))|unsupported method|does not exist/i.test(node.message)))
 }
 /**
  * Why V4Quoter refused a size, from its revert data. It re-wraps every failure as UnexpectedRevertBytes(bytes)
@@ -228,9 +293,9 @@ export async function walletBalance(wallet: WalletRpc, currency: Address): Promi
   return decodeFunctionResult({ abi: balanceAbi, functionName: 'balanceOf', data: asHex(await wallet.request('eth_call', [{ to: currency, data }, 'latest'])) })
 }
 export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, now = () => Date.now() / 1000,
-  currentAdmission?: () => Promise<SetupDeployment | null>) {
+  currentAdmission?: () => Promise<SetupDeployment | null>, options: { simulate?: BatchSimulator } = {}) {
   const deployment = Object.freeze({ ...supplied })
-  const issued = new WeakSet<PreparedSetup>(), offered = new Set<string>()
+  const issued = new WeakSet<PreparedSetup>(), offered = new Set<string>(), issuedBatches = new WeakSet<PreparedBatch>()
   const returned = new Map<Hex, PreparedSetup>()
   let busy = false
   /** Whether V4Quoter's code and PoolManager were read back as pinned, once for this client (quotePool). */
@@ -286,10 +351,20 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       if (String(await call(rpc, name)).toLowerCase() !== String(expected)) return fail('deployment_identity_changed')
     }
   }
-  async function operation(rpc: Rpc, id: Hex) {
+  /** The id the setup contract gives this owner's next operation: the one a batch opens, and only that one. */
+  async function nextOperationId(rpc: Rpc): Promise<Hex> {
+    const data = encodeFunctionData({ abi: setupAbi, functionName: 'nextOperationId', args: [wallet.owner] })
+    const id = decodeFunctionResult({ abi: setupAbi, functionName: 'nextOperationId', data: asHex(await rpc('eth_call', [{ to: deployment.setup, data }, 'latest'])) })
+    return (HASH.test(id.toLowerCase()) ? id.toLowerCase() : fail('invalid_operation_id')) as Hex
+  }
+  /** The operation as the setup contract holds it, whoever owns it: an id never opened reads with the zero owner. */
+  async function stored(rpc: Rpc, id: Hex) {
     if (!HASH.test(id)) return fail('invalid_operation_id')
     const data = encodeFunctionData({ abi: setupAbi, functionName: 'operation', args: [id] })
-    const op = decodeFunctionResult({ abi: setupAbi, functionName: 'operation', data: asHex(await rpc('eth_call', [{ to: deployment.setup, data }, 'latest'])) })
+    return decodeFunctionResult({ abi: setupAbi, functionName: 'operation', data: asHex(await rpc('eth_call', [{ to: deployment.setup, data }, 'latest'])) })
+  }
+  async function operation(rpc: Rpc, id: Hex) {
+    const op = await stored(rpc, id)
     if (op.owner.toLowerCase() !== wallet.owner) return fail('operation_not_owned')
     const recoveryData = encodeFunctionData({ abi: setupAbi, functionName: 'recoveryStarted', args: [id] })
     const recoveryStarted = decodeFunctionResult({ abi: setupAbi, functionName: 'recoveryStarted', data: asHex(await rpc('eth_call', [{ to: deployment.setup, data: recoveryData }, 'latest'])) })
@@ -530,6 +605,167 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       const final = await rpc('eth_getBlockByNumber', ['finalized', false]) as { number?: string } | null
       if (!final?.number || quantity(final.number) < quantity(receipt.blockNumber)) return { state: 'included' as const }
       return { state: receipt.status === '0x1' ? 'finalized' as const : 'reverted' as const, blockHash: receipt.blockHash }
+    }),
+    /** A batch this page or another tab offered for the operation the setup contract opens next, still latched: its id, '' when the wallet never answered. */
+    offeredBatch: () => bounded(async (rpc): Promise<{ operationId: Hex; id: string } | null> => {
+      await identity(rpc)
+      const operationId = await nextOperationId(rpc)
+      const id = wallet.batchOffered?.(operationId) ?? null
+      return id === null ? null : { operationId, id }
+    }),
+    /**
+     * The whole deposit as one batch (EIP-5792), prepared against the chain and simulated before the wallet is asked:
+     * the exact approvals the allowances need (a short one reset to zero first, as fund does), the funding into the
+     * operation id the setup contract opens next, the assisted swap of a one-token deposit with the least it may pay,
+     * and the mint sized for that least. The contract opens only that id, so a batch that meets another opening first
+     * reverts whole. Fund's, swap's and mint's checks come first, the delegate's confirmation and the native-ETH probe
+     * included. The simulation (eth_simulateV1: each call from the owner, as the account's own execution makes it,
+     * state carried from one to the next) goes through the wallet, or through `options.simulate` when the wallet does
+     * not carry the method; with neither, there is no batch.
+     */
+    prepareBatch: (plan: BatchPlan, gas: GasBudget) => bounded(async (rpc): Promise<PreparedBatch> => {
+      await verify(rpc); const key = poolKey(plan.key)
+      const { amount0, amount1, swap, mint } = plan
+      if (amount0 < 0n || amount1 < 0n || amount0 >= 2n ** 128n || amount1 >= 2n ** 128n || amount0 + amount1 === 0n) return fail('invalid_funding')
+      if (gas.maxGas < 21000n || gas.maxGas > 15_000_000n || gas.maxFeePerGas <= 0n || gas.maxFeePerGas >= 2n ** 128n || gas.maxPriorityFeePerGas < 0n || gas.maxPriorityFeePerGas > gas.maxFeePerGas || gas.reserveWei < 0n) return fail('invalid_gas_budget')
+      const account = await readAccountCode(rpc, wallet.owner)
+      if (account.kind === 'delegated' && account.known === null && wallet.delegateConfirmed?.(account.delegate) !== true) return fail('delegate_unrecognized')
+      // The mint returns unused ETH, and a refund would too: never lock ETH (or approve anything) for an account that refuses it.
+      if (key.currency0 === zeroAddress && !await acceptsNativeEth(rpc, wallet.owner)) return fail('native_eth_refused')
+      // What the mint may count on: the funding, less the swapped side's gross, plus only the least the swap pays.
+      let balance0 = amount0, balance1 = amount1
+      if (swap) {
+        if (swap.gross <= 0n || swap.gross > (swap.zeroForOne ? amount0 : amount1) || swap.minOutput <= 0n || swap.minOutput >= 2n ** 128n
+          || swap.sqrtLimit <= 0n || swap.sqrtLimit >= 2n ** 160n) return fail('invalid_swap_budget')
+        balance0 = swap.zeroForOne ? amount0 - swap.gross : amount0 + swap.minOutput
+        balance1 = swap.zeroForOne ? amount1 + swap.minOutput : amount1 - swap.gross
+      }
+      if (!Number.isSafeInteger(mint.tickLower) || !Number.isSafeInteger(mint.tickUpper) || mint.tickLower < -887272 || mint.tickUpper > 887272 || mint.tickLower >= mint.tickUpper
+        || mint.tickLower % key.tickSpacing || mint.tickUpper % key.tickSpacing || mint.liquidity <= 0n || mint.liquidity >= 2n ** 127n
+        || mint.maxAmount0 < 0n || mint.maxAmount1 < 0n || mint.maxAmount0 > balance0 || mint.maxAmount1 > balance1
+        || mint.minSqrtPriceX96 <= 0n || mint.maxSqrtPriceX96 < mint.minSqrtPriceX96 || mint.maxSqrtPriceX96 >= 2n ** 160n
+        || mint.initialSqrtPriceX96 < 0n || mint.initialSqrtPriceX96 >= 2n ** 160n) return fail('invalid_mint_limits')
+      const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest'])), pending = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'pending']))
+      if (latest !== pending || offered.has(String(pending)) || wallet.nonceOffered(pending)) return fail('pending_wallet_transaction')
+      const operationId = await nextOperationId(rpc)
+      const latched = wallet.batchOffered?.(operationId)
+      if (latched !== undefined && latched !== null) return fail('batch_already_offered')
+      const calls: BatchCall[] = [], summary: string[] = []
+      for (const [token, amount] of [[key.currency0, amount0], [key.currency1, amount1]] as const) {
+        if (token === zeroAddress || amount === 0n) continue
+        const data = encodeFunctionData({ abi: tokenAbi, functionName: 'allowance', args: [wallet.owner, deployment.setup] })
+        const allowance = decodeFunctionResult({ abi: tokenAbi, functionName: 'allowance', data: asHex(await rpc('eth_call', [{ to: token, data }, 'latest'])) })
+        if (allowance >= amount) continue
+        if (allowance > 0n) calls.push({ to: token, data: encodeFunctionData({ abi: tokenAbi, functionName: 'approve', args: [deployment.setup, 0n] }), value: '0x0' })
+        calls.push({ to: token, data: encodeFunctionData({ abi: tokenAbi, functionName: 'approve', args: [deployment.setup, amount] }), value: '0x0' })
+        summary.push(`Approve ${amount} smallest units of ${token} to ${deployment.setup}${allowance > 0n ? ', after resetting the existing allowance to zero' : ''}. Exact allowance; no unlimited approval.`)
+      }
+      const deadline = BigInt(Math.floor(now()) + STEP_DEADLINE_S), value = key.currency0 === zeroAddress ? amount0 : 0n
+      calls.push({ to: deployment.setup, data: encodeFunctionData({ abi: setupAbi, functionName: 'open', args: [operationId, key, amount0, amount1] }), value: numberToHex(value) })
+      summary.push(`Fund ${amount0} smallest units of ${key.currency0} and ${amount1} of ${key.currency1}.`)
+      if (swap) {
+        calls.push({ to: deployment.setup, data: encodeFunctionData({ abi: setupAbi, functionName: 'swap', args: [{ operationId, zeroForOne: swap.zeroForOne, grossInput: swap.gross, minOutput: swap.minOutput, sqrtPriceLimitX96: swap.sqrtLimit, deadline }] }), value: '0x0' })
+        summary.push(`Swap ${swap.gross} smallest units of ${swap.zeroForOne ? key.currency0 : key.currency1} for at least ${swap.minOutput} of ${swap.zeroForOne ? key.currency1 : key.currency0}. Domino fee ${swap.gross * BigInt(deployment.feeBps) / 10000n} (${deployment.feeBps} bps); recipient ${deployment.feeRecipient}.`)
+      }
+      calls.push({ to: deployment.setup, data: encodeFunctionData({ abi: setupAbi, functionName: 'mint', args: [{ operationId, ...mint, deadline }] }), value: '0x0' })
+      summary.push(`Mint liquidity ${mint.liquidity} in ticks ${mint.tickLower} to ${mint.tickUpper}; caps ${mint.maxAmount0} / ${mint.maxAmount1} smallest units. NFT and unused funds return to ${wallet.owner}.`,
+        'One signature for every call: they execute together or not at all.')
+      const request = [{ blockStateCalls: [{ calls: calls.map(call => ({ from: wallet.owner, to: call.to, data: call.data, value: call.value })) }], validation: false }, 'latest']
+      let reply: unknown
+      try {
+        reply = await rpc('eth_simulateV1', request)
+      } catch (error) {
+        if (!unsupportedMethod(error)) throw error
+        if (!options.simulate) return fail('batch_simulation_unavailable')
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+          reply = await Promise.race([options.simulate(request), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), 10_000) })])
+        } catch { return fail('batch_simulation_unavailable') } finally { clearTimeout(timer) }
+      }
+      const block = Array.isArray(reply) && reply.length === 1 ? reply[0] as { calls?: unknown } : null
+      const results = block && Array.isArray(block.calls) && block.calls.length === calls.length ? block.calls as { status?: unknown; gasUsed?: unknown }[] : fail('invalid_simulation_reply')
+      if (results.some(result => result?.status !== '0x1')) return fail('batch_simulation_reverted')
+      const gasUsed = results.reduce((sum, result) => sum + quantity(result.gasUsed), 0n)
+      // The wallet runs the calls in one transaction of its own (its delegate's execute, or a bundler's): room for that frame.
+      const limit = ((gasUsed + BATCH_FRAME_GAS) * 120n + 99n) / 100n
+      if (limit > gas.maxGas) return fail('gas_budget_exceeded')
+      if (quantity(await rpc('eth_getBalance', [wallet.owner, 'latest'])) < value + limit * gas.maxFeePerGas + gas.reserveWei) return fail('native_gas_reserve_insufficient')
+      summary.push(`Maximum network cost: about ${limit * gas.maxFeePerGas} wei; your wallet sets the final gas.`, `Contract: ${deployment.setup}`)
+      const result: PreparedBatch = Object.freeze({ kind: 'batch' as const, operationId, owner: wallet.owner, expiresAt: now() + 25,
+        calls: Object.freeze(calls.map(call => Object.freeze(call))), gasUsed, gasLimit: limit, summary: Object.freeze(summary) })
+      issuedBatches.add(result); return result
+    }),
+    /**
+     * Offers a prepared batch to the wallet once (EIP-5792 wallet_sendCalls, version 2.0.0, atomic required), after
+     * the latch for its operation id is claimed: another tab, or this one after a lost answer, is refused. A refusal in
+     * the wallet, or a wallet that cannot batch, frees it; an answer that never came keeps it, and the operation's own
+     * state decides later (batchStatus).
+     */
+    sendBatch: (prepared: PreparedBatch, acknowledged: boolean) => bounded(async rpc => {
+      if (!acknowledged || !issuedBatches.has(prepared) || prepared.expiresAt <= now() || prepared.owner !== wallet.owner) return fail('wallet_review_required')
+      const { claimBatch, recordBatch, releaseBatch } = wallet
+      if (!claimBatch || !recordBatch || !releaseBatch) return fail('batch_coordination_unavailable')
+      await verify(rpc)
+      if (await nextOperationId(rpc) !== prepared.operationId) return fail('batch_state_changed')
+      const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest'])), pending = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'pending']))
+      if (latest !== pending || offered.has(String(pending)) || wallet.nonceOffered(pending) || prepared.expiresAt <= now()) return fail('pending_wallet_transaction')
+      const claim = await claimBatch(prepared.operationId)
+      if (!wallet.current() || prepared.expiresAt <= now()) {
+        // The wallet has not been asked, so releasing this claim is certain.
+        await releaseBatch(prepared.operationId, claim)
+        return fail('wallet_review_expired')
+      }
+      issuedBatches.delete(prepared)
+      let reply: unknown
+      try {
+        reply = await rpc('wallet_sendCalls', [{ version: '2.0.0', chainId: '0x1237', from: wallet.owner, atomicRequired: true, calls: prepared.calls }])
+      } catch (error) {
+        const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined
+        // A definite refusal: nothing was sent, and nothing of it can execute.
+        if (code === 4001 || code === 5750 || BATCH_UNSUPPORTED.has(code as number)) await releaseBatch(prepared.operationId, claim)
+        if (code === 5750) return fail('batch_upgrade_declined')
+        if (BATCH_UNSUPPORTED.has(code as number)) return fail('batch_unsupported')
+        throw error
+      }
+      const id = typeof reply === 'string' ? reply : reply && typeof reply === 'object' ? (reply as { id?: unknown }).id : undefined
+      if (typeof id !== 'string') return fail('wallet_result_unknown')
+      await recordBatch(prepared.operationId, claim, id)
+      return id
+    }, SIGN_WINDOW_S),
+    /**
+     * Where a batch stands: the wallet's status (EIP-5792 wallet_getCallsStatus) for what it knows, then the operation
+     * the batch opens for what happened. Read back closed with its NFT is `created`. Its calls cannot leave the
+     * operation funded and open, but such a state reads `held`, for the refund. The zero owner after a confirmation
+     * is a node behind: `pending`. Not included (400) or reverted (500), nothing of it can execute and the latch is
+     * freed; a wallet that no longer knows the batch (5730, or an id it never gave) leaves the operation to decide.
+     */
+    batchStatus: (id: string, operationId: Hex) => bounded(async (rpc): Promise<BatchState> => {
+      await identity(rpc)
+      if (!HASH.test(operationId)) return fail('invalid_operation_id')
+      let status: number | null = null
+      if (id !== '') {
+        try {
+          const reply = await rpc('wallet_getCallsStatus', [id]) as { status?: unknown } | null
+          if (!reply || typeof reply.status !== 'number') return fail('invalid_wallet_reply')
+          status = reply.status
+        } catch (error) {
+          if ((error as { code?: unknown } | null)?.code !== 5730) throw error
+        }
+      }
+      if (status !== null && status >= 100 && status < 200) return { state: 'pending' }
+      const op = await stored(rpc, operationId)
+      if (op.owner === zeroAddress) {
+        // Not included, reverted, or no longer known to the wallet: nothing of it runs through this wallet now, and a
+        // later batch for the same id would revert whole at the contract anyway.
+        if (id !== '' && (status === 400 || status === 500 || status === null)) await wallet.releaseBatch?.(operationId, id)
+        return { state: status === 400 ? 'dropped' : status === 500 ? 'reverted' : status === 200 ? 'pending' : 'unknown' }
+      }
+      if (op.owner.toLowerCase() !== wallet.owner) return fail('operation_not_owned')
+      if (op.closed && op.tokenId > 0n) {
+        if (id !== '') await wallet.releaseBatch?.(operationId, id)
+        return { state: 'created', tokenId: op.tokenId }
+      }
+      return op.closed ? { state: 'unknown' } : { state: 'held' }
     }),
   }
 }

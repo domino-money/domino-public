@@ -618,7 +618,7 @@ const DELEGATES = JSON.parse(readFileSync(new URL('./support/eip7702-delegates.c
  * empty stretch for nothing in and nothing out and fills above it (as v4-core crosses empty ticks), and one that lowers
  * it finds nothing. `quoteDelayMs`: how long each quoter question takes to answer, as a slow wallet's does.
  */
-function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0, ownerCode = '0x', delegateCode = null } = {}) {
+function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0, ownerCode = '0x', delegateCode = null, atomic = null, batchError = null, simulation = 'ok' } = {}) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`;
   const setup = at(0x71), poolManager = at(0x72), positionManager = at(0x73), stateView = at(0x74), feeRecipient = at(0x75);
   const code = { [setup]: '0x6071', [poolManager]: '0x6072', [positionManager]: '0x6073', [stateView]: '0x6074', [QUOTER.address]: QUOTER.code };
@@ -728,6 +728,49 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     if (functionName === 'balanceOf') return encodeFunctionResult({ abi: erc20Abi, functionName, result: lower(args[0]) === lower(owner) ? held.get(to) ?? 0n : 0n });
     throw new Error(`unexpected ${functionName} on ${to}`);
   }
+  /**
+   * A batch (EIP-5792), as a wallet that executes it atomically does: `atomic` is what the wallet says of chain 4663
+   * (`supported`, `ready`, or nothing), `batchError` its answer to the first batch it is offered (a refusal such as
+   * 5750 or 5760), `simulation` whether it carries eth_simulateV1. Each call is checked as the setup contract checks it
+   * (the operation id the owner opens next, the allowance, the ETH carried, the swap's own limits) and applied in turn;
+   * one that fails undoes them all.
+   */
+  const batches = [];
+  let capability = atomic, refuseBatch = batchError;
+  function check(tx) {
+    if (lower(tx.to) !== setup) return;
+    const { functionName, args } = decode(tx);
+    if (functionName === 'open') {
+      const [id, key, amount0, amount1] = args;
+      if (id !== operationId(BigInt(operations.size)) || BigInt(tx.value ?? '0x0') !== (key.currency0 === zeroAddress ? amount0 : 0n)) throw reverting('InvalidSetup()');
+      for (const [currency, amount] of [[key.currency0, amount0], [key.currency1, amount1]]) {
+        if (currency !== zeroAddress && amount > 0n && (allowances.get(lower(currency)) ?? 0n) < amount) throw reverting('the allowance is short');
+      }
+    }
+    if (functionName === 'swap') swapped(args[0]);
+    if (functionName === 'mint' && (operations.get(args[0].operationId)?.closed ?? true)) throw reverting('InvalidSetup()');
+  }
+  function atomically(calls, keep) {
+    const saved = { allowances: new Map(allowances), operations: new Map(operations), sqrtPrice };
+    const results = [];
+    for (const call of calls) {
+      if (results.some(result => result.status === '0x0')) { results.push({ status: '0x0', gasUsed: '0x0' }); continue; }
+      try {
+        const tx = { from: owner, to: call.to, data: call.data, value: call.value };
+        check(tx);
+        include(tx);
+        results.push({ status: '0x1', gasUsed: '0x30d40' });
+      } catch {
+        results.push({ status: '0x0', gasUsed: '0x0' });
+      }
+    }
+    if (!keep || results.some(result => result.status === '0x0')) {
+      allowances.clear(); saved.allowances.forEach((value, key) => allowances.set(key, value));
+      operations.clear(); saved.operations.forEach((value, key) => operations.set(key, value));
+      sqrtPrice = saved.sqrtPrice;
+    }
+    return results;
+  }
   /** What the contracts make of a transaction once it is included. */
   function include(tx) {
     const { functionName, args } = decode(tx);
@@ -757,6 +800,27 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
         case 'eth_chainId': return { result: '0x1237' };
         case 'wallet_switchEthereumChain': return { result: null };
         case 'eth_getCode': return { result: code[lower(params[0])] ?? '0x' };
+        case 'wallet_getCapabilities': return { result: capability ? { '0x1237': { atomic: { status: capability } } } : {} };
+        case 'eth_simulateV1': {
+          if (simulation !== 'ok') return { error: { code: -32601, message: 'the method eth_simulateV1 does not exist/is not available' } };
+          return { result: [{ calls: atomically(params[0].blockStateCalls[0].calls, false) }] };
+        }
+        case 'wallet_sendCalls': {
+          if (refuseBatch) { const error = refuseBatch; refuseBatch = null; return { error }; }
+          const [{ version, chainId, from, atomicRequired, calls }] = params;
+          const results = atomically(calls, true);
+          const done = results.every(result => result.status === '0x1');
+          const id = `0x${(0xba7c0 + batches.length).toString(16)}`;
+          batches.push({ id, version, chainId, from, atomicRequired, calls, status: done ? 200 : 500 });
+          // A wallet that was ready has now turned on its smart account.
+          if (done && capability === 'ready') capability = 'supported';
+          return { result: { id } };
+        }
+        case 'wallet_getCallsStatus': {
+          const batch = batches.find(entry => entry.id === params[0]);
+          if (!batch) return { error: { code: 5730, message: 'Unknown bundle id' } };
+          return { result: { version: '2.0.0', id: batch.id, chainId: '0x1237', status: batch.status, atomic: true, receipts: [] } };
+        }
         case 'eth_gasPrice': return { result: '0x5f5e100' };
         case 'eth_getTransactionCount': return { result: numberToHex(sends.length) };
         case 'eth_estimateGas': return { result: '0x186a0' };
@@ -802,7 +866,11 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     return { error: { code: 4200, message: `${method} is not supported` } };
   }
   return {
-    log, refused, missing, sends, viewed, declined, quotes, quoted, reverts, request, operationId, tokenId, operations, swapOutput, price: () => sqrtPrice, release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
+    log, refused, missing, sends, viewed, declined, quotes, quoted, reverts, request, operationId, tokenId, operations, swapOutput, batches,
+    /** A batch's call decoded against the contract it goes to. */
+    decodeCall: call => decode({ to: call.to, data: call.data }),
+    /** A batch simulated on this chain as the chain's RPC would (eth_simulateV1's calls), changing nothing. */
+    simulate: calls => atomically(calls, false), price: () => sqrtPrice, release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
     /** Where `amount` swapped from the stub's first price leaves the pool's square-root price: through the setup contract (its fee off the gross), or, with `feeBps` 0, a net amount as V4Quoter quotes it. */
     priceAfter: (amount, zeroForOne, feeBps = deployment.feeBps) => swapAt(amount, zeroForOne, STUB_SQRT_PRICE, feeBps)?.[1],
     /** What is in range at a square-root price (`liquidFrom`). */
@@ -1103,6 +1171,126 @@ test('an account delegated (EIP-7702) to a recognized wallet’s contract create
     assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open', 'mint']);
     assert.equal(await s.page.locator('[data-create-notice="delegate_unrecognized"], [data-create-confirm-delegate]').count(), 0);
     await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+/** The wallet's one batch, its calls decoded against the contracts they go to, each with the ETH it carries. */
+const batchCalls = (chain, batch) => batch.calls.map(call => ({ ...chain.decodeCall(call), to: call.to.toLowerCase(), value: BigInt(call.value) }));
+
+test('a wallet that executes batches atomically creates the position with one signature: the exact approval, the deposit and the mint in one batch, and no transaction of their own', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported' });
+  const s = await atReview(chain);
+  const { setup } = chain.release.deployment;
+  try {
+    // The wallet's capability is read before the press, and asks nothing of the person: one signature, nothing to choose.
+    await s.page.locator('#create-reason', { hasText: 'Your wallet asks you to sign once: every step together, or none of them.' }).waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.locator('[data-create-batch]').count(), 0);
+    assert.deepEqual([chain.sends, chain.batches], [[], []], 'nothing asked by arriving');
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-wallet-step="batch"]').waitFor();
+    assert.equal(await s.page.locator('[data-wallet-steps] li').count(), 1, 'one wallet step');
+    assert.match(await s.page.locator('[data-wallet-step="batch"]').innerText(), /Approve, deposit and create the position/);
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.sends, [], 'no transaction of its own: the wallet was asked for one batch');
+    assert.equal(chain.batches.length, 1);
+    const [batch] = chain.batches;
+    assert.deepEqual([batch.version, batch.chainId, batch.from.toLowerCase(), batch.atomicRequired, batch.status], ['2.0.0', '0x1237', OWNER, true, 200]);
+    const [approve, open, mint] = batchCalls(chain, batch);
+    assert.deepEqual([approve.functionName, approve.to, approve.args[0].toLowerCase()], ['approve', FIXTURE_TOKEN, setup]);
+    const [id, key, amount0, amount1] = open.args;
+    assert.deepEqual([open.functionName, open.to, id, open.value, approve.args[1]], ['open', setup, chain.operationId(0n), amount0, amount1], 'the id the contract opens next; the ETH as its value; the exact allowance');
+    assert.deepEqual(lowerKey(key), STUB_POOL_KEY);
+    assert.deepEqual([mint.functionName, mint.args[0].operationId, mint.args[0].maxAmount0 <= amount0, mint.args[0].maxAmount1 <= amount1], ['mint', id, true, true]);
+    assert.equal(chain.operations.get(id).tokenId, 4242n);
+    assert.ok(chain.log.indexOf('eth_simulateV1') < chain.log.indexOf('wallet_sendCalls'), 'simulated whole before the wallet was asked');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('a wallet that can batch once it turns on its smart account is offered one signature beside the steps; declined, nothing is sent, and asked again it creates the position in one batch', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'ready', batchError: { code: 5750, message: 'Atomic-ready wallet rejected upgrade' } });
+  const s = await atReview(chain);
+  try {
+    const offer = s.page.locator('[data-create-batch="offer"]');
+    await offer.waitFor({ timeout: 30_000 });
+    assert.equal(await offer.innerText(), 'Sign all steps at once');
+    assert.equal(await s.page.locator('#create-batch-note').innerText(), 'Your wallet will first ask to turn on its smart account (EIP-7702). Your address stays the same, and your key stays in control.');
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet asks you to sign each step in the list above, in order.', 'the steps stay the main way');
+    await s.page.screenshot({ path: join(shots(), 'create-position-batch-offer.png'), fullPage: true });
+    await offer.click();
+    const notice = s.page.locator('[data-create-notice="batch_upgrade_declined"]');
+    await notice.waitFor({ timeout: 30_000 });
+    assert.equal(await notice.innerText(), 'You declined turning on your wallet’s smart account. Nothing was deposited. Press Create position to go step by step, or sign all steps at once again.');
+    assert.deepEqual([chain.sends, chain.batches], [[], []]);
+    // Still offered, and nothing is latched: asked again, one batch makes the position.
+    await offer.click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.sends, []);
+    assert.deepEqual(batchCalls(chain, chain.batches[0]).map(call => call.functionName), ['approve', 'open', 'mint']);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('a one-token deposit in one batch: the ETH as the deposit’s value, the swap for at least what the quotes found less the slippage limit, and the mint sized for that least', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 18n, atomic: 'supported' });
+  const s = await atReview(chain);
+  const { setup } = chain.release.deployment;
+  try {
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 90_000);
+    assert.deepEqual(chain.sends, []);
+    const [open, swap, mint] = batchCalls(chain, chain.batches[0]);
+    assert.deepEqual([open.functionName, swap.functionName, mint.functionName, open.to, swap.to, mint.to], ['open', 'swap', 'mint', setup, setup, setup], 'ETH needs no approval');
+    const [id, , amount0, amount1] = open.args;
+    assert.deepEqual([amount1, open.value], [0n, amount0], 'ETH alone, as the value');
+    const plan = swap.args[0];
+    assert.deepEqual([plan.operationId, plan.zeroForOne], [id, true]);
+    // What that gross buys at the pool's first price, the one the quotes were read at: the minimum is it less 0.5%, never more.
+    const output = chain.swapOutput(plan.grossInput, true);
+    assert.equal(plan.minOutput, (output * 9950n) / 10000n);
+    const caps = mint.args[0];
+    assert.ok(caps.maxAmount1 <= plan.minOutput && caps.maxAmount0 <= amount0 - plan.grossInput, 'the mint counts only on the least the swap pays');
+    assert.equal(chain.operations.get(id).tokenId, 4242n);
+    await onlyTheWallet(s, chain, { reverts: true });
+  } finally { await s.close(); }
+});
+
+test('a batch the wallet cannot make after all goes step by step in the same press; one the wallet cannot simulate is simulated on the chain’s RPC', async () => {
+  // Said supported, refused as unsupported: asked once, then each step as for any wallet.
+  let chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', batchError: { code: 5760, message: 'Atomicity not supported' } });
+  let s = await atReview(chain);
+  try {
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open', 'mint']);
+    assert.deepEqual(chain.batches, []);
+    assert.equal(chain.log.filter(method => method === 'wallet_sendCalls').length, 1, 'asked once, refused, never again');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+  // No eth_simulateV1 in the wallet: the chain's own RPC simulates the batch, and the wallet still signs it once.
+  chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', simulation: 'unsupported' });
+  s = await atReview(chain);
+  const asked = [];
+  try {
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
+    await s.context.route(/rpc\.mainnet\.chain\.robinhood\.com/, async route => {
+      const request = route.request();
+      if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+      const body = JSON.parse(request.postData() ?? '{}');
+      asked.push(body.method);
+      if (body.method !== 'eth_simulateV1') return route.fulfill({ status: 500, headers: cors, body: '' });
+      return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [{ calls: chain.simulate(body.params[0].blockStateCalls[0].calls) }] }) });
+    });
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(asked, ['eth_simulateV1']);
+    assert.deepEqual(chain.sends, []);
+    assert.equal(chain.batches.length, 1);
+    assert.deepEqual(chain.refused, [], 'the wallet’s refusal of eth_simulateV1 is its own answer, not a method this page needs');
   } finally { await s.close(); }
 });
 

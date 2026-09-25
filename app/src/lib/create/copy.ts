@@ -217,6 +217,15 @@ export const CREATE = {
     fundStep: 'Deposit the tokens',
     fundStepDetail: 'One transaction to Domino’s setup contract, verified on chain first. Native ETH travels with it. The tokens stay yours until the mint, and can be refunded.',
     mintStep: 'Create the position',
+    /**
+     * One signature for every step (EIP-5792), when the wallet executes a batch whole or not at all
+     * (components/create/CreatePosition.tsx; docs/plans/2026-09-25-eip5792-batches-design.md).
+     */
+    batchStep: 'Approve, deposit and create the position',
+    batchReason: 'Your wallet asks you to sign once: every step together, or none of them.',
+    /** Beside the steps when the wallet can batch only after it turns on its smart account: the person chooses. */
+    batchOffer: 'Sign all steps at once',
+    batchOfferNote: 'Your wallet will first ask to turn on its smart account (EIP-7702). Your address stays the same, and your key stays in control.',
     mintStepDetail: 'One transaction: the position NFT is minted to your wallet at your range, and what the range does not use comes back with it.',
     /** The deposit and the swap when the wallet holds one of the two tokens (lib/create/depositPlan.ts). */
     fundOneStep: 'Deposit the token',

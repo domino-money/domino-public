@@ -20,7 +20,11 @@ const KEYS = [
 ];
 export const ACCOUNTS = KEYS.map((key) => privateKeyToAccount(key));
 
+// Changed on purpose (2026-09-25): Review's Create position asks a connected wallet what it can batch (EIP-5792
+// wallet_getCapabilities; docs/plans/2026-09-25-eip5792-batches-design.md), to offer one signature beside the steps.
+// A read that opens nothing in the wallet; these wallets answer that they batch nothing, so every flow here is the steps.
 const ALLOWED = new Set([
+  'wallet_getCapabilities',
   'eth_requestAccounts',
   'eth_accounts',
   'eth_chainId',
@@ -107,6 +111,8 @@ export async function installWallets(context, wallets = DEFAULT_WALLETS) {
     if (wallet.reject.delete(method)) return fail(4001, 'User rejected the request.');
     const account = ACCOUNTS[wallet.account];
     switch (method) {
+      case 'wallet_getCapabilities':
+        return { result: {} };
       case 'eth_requestAccounts':
         wallet.permitted = true;
         return { result: [account.address] };
