@@ -404,6 +404,33 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // 13,710 -> 13,853 B in both builds. Each moves by the minimum: financial
   // 171.7 kB (59 B over the larger build), all lazy 188.5 kB (28 B), chain code
   // 13.9 kB (47 B); the fees worker and 90 kB session/read ceilings are unchanged.
+  // 2026-09-25, round 4 merged on #217 (both sides measured together on
+  // Windows, gzip level 9): .wallet-test-dist all lazy 188,595 B, 95 B over
+  // #217's 188.5 kB, from the fast pool figures (lib/read/scheduler.ts,
+  // marketsProvider.ts catch-up). The all-lazy ceiling moves by the minimum,
+  // to 188.7 kB; financial 171,646 B, chain code 13,874 B and fees worker
+  // 20,523 B stay under #217's and r4/fees' ceilings.
+  // 2026-09-25, r4/fees (the owner: the Fees earned card loaded, then vanished,
+  // on his busy-pool positions): the fees worker replays a busy pool's position
+  // from the Swaps of its own life (src/lib/fees/replay.ts price path,
+  // pipeline.ts path mode), reads them with two kinds of its own
+  // (functions/_lib/feesPath.ts, which the page's chain code does not carry)
+  // and draws an estimate first (src/lib/fees/estimate.ts). Measured on
+  // Windows, gzip level 9, both builds alike: fees worker 20,180 B (15,029 B
+  // before), chain code 13,731 B (/state names the pool's protocol fee). The
+  // fees worker ceiling moves by the minimum, to 20.2 kB (20 B over both
+  // builds); every other ceiling is unchanged.
+  // 2026-09-25, r4/fees after its review: the estimate's windows sized by the
+  // rate they read (a quiet probe made them wide, and they were cut at the
+  // reply's cap live), the exact read keeping its place for a later run, the
+  // lanes of several tabs sharing one pace on their channel, and the price
+  // path's settled amounts marked near. Measured on Windows, gzip level 9, both
+  // builds alike: fees worker 20,523 B; chain code 13,731 B (unchanged). The
+  // fees worker ceiling moves to 20.6 kB, 77 B over both builds: a little more
+  // than the minimum, because CI measures on Linux (the worker's sources are
+  // LF in the index and the working tree, core.autocrlf false, so its input
+  // is the same bytes there; not measured on Linux). Every other ceiling is
+  // unchanged.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -450,7 +477,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 171_700], ['all lazy', allLazy, 188_500], ['fees worker', worker, 16_000], ['chain code', chain, 13_900]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 171_700], ['all lazy', allLazy, 188_700], ['fees worker', worker, 20_600], ['chain code', chain, 13_900]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

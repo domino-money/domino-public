@@ -18,6 +18,7 @@ import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/
 // rate-limits Cloudflare's edge), and a recorded fees case as the chain it was read from.
 import { SETUP_MINTED_TOPIC, browserChain, busyHistory, routeChain as routeRpc } from './support/browser-chain.mjs';
 import { caseChain } from './support/fees/case-chain.mjs';
+import { pathChain } from './support/fees/path-chain.mjs';
 // 2026-09-25: the fees worker's lane to the RPC, whose pace the busy-history test holds it to.
 import { LANE_PACE } from '../.test-build/app/src/lib/chain/browser.js';
 import * as runtime from '../../api-contracts/performance-v2/runtime.mjs';
@@ -3349,6 +3350,84 @@ test('a position’s fees history is read from the chain by the page and its wor
   } finally { await s.close(); }
 });
 
+// 2026-09-25 (r4/fees, the owner: the card loaded, then vanished, on his busy-pool positions): the price path in the
+// browser, through the page's worker, its paced lane and its CSP. PONS/USDG NFT 3202568, recorded, as of block
+// 71,568,000 (about 4.6 hours of its life, some 830 Swaps): the probe sees a busy pool, the card draws an estimate from
+// windows of the life first, marked "est." (its figures the chain's, Time in range left out), then the exact history
+// once the Swaps of the life are read. No pool epoch or swap day is asked, and no route of the site.
+test('a busy pool’s fees history is drawn estimated first, then exact, from the Swaps of its own life', async () => {
+  const chain = pathChain('path-pons', '3202568', 71_568_000);
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    const started = Date.now();
+    await s.page.evaluate(() => { location.hash = '#/positions/3202568'; });
+    await s.page.locator('[data-position-detail][data-position-id="3202568"]').waitFor({ timeout: 15_000 });
+    const estimated = s.page.locator('[data-fees-card][data-fees-state="estimated"]');
+    await estimated.waitFor({ timeout: 30_000 });
+    const drawn = Date.now() - started;
+    assert.equal(await estimated.locator('[data-fees-estimate]').count(), 1, 'marked "est."');
+    assert.match(await estimated.locator('[data-fees-estimate]').innerText(), /^est\.$/);
+    assert.doesNotMatch(await estimated.innerText(), /time in range/i, 'a sampled time in range is not shown');
+    assert.equal(await estimated.locator('svg').count() > 0, true, 'a chart');
+    await s.page.screenshot({ path: join(shots(), 'position-fees-estimated.png'), fullPage: true });
+    const verified = s.page.locator('[data-fees-card][data-fees-state="verified"]');
+    await verified.waitFor({ timeout: 90_000 });
+    const exact = Date.now() - started;
+    assert.equal(await verified.locator('[data-fees-estimate]').count(), 0, 'no mark once exact');
+    assert.match(await verified.innerText(), /time in range/i);
+    await s.page.screenshot({ path: join(shots(), 'position-fees-exact.png'), fullPage: true });
+    const logs = chain.log.filter((call) => call.method === 'eth_getLogs').map((call) => call.params[0]);
+    assert.ok(!logs.some((filter) => Array.isArray(filter.topics[0]) && filter.topics[0].length === 3), 'no epoch of the pool’s history');
+    assert.ok(logs.some((filter) => Array.isArray(filter.address)), 'the owner’s payments, for its settlements');
+    assert.deepEqual(chain.refused, [], 'nothing but the reads');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    console.log(`# estimate drawn after ${drawn} ms, exact after ${exact} ms`);
+  } finally { await s.close(); }
+});
+
+// 2026-09-25 (review of r4/fees): the exact read of a busy pool's life is the longest read the fees worker makes, and each
+// tab has its own worker and lane, where the RPC limits the visitor's address. Here the chain limits one address as the
+// RPC does, at one and a half times the lane's pace: two tabs refining at once, each paced alone, pass it. The lanes
+// share one pace across tabs, so nothing is refused (the page's own reads among them) and both cards reach the exact
+// history.
+test('two tabs reading a busy pool’s history at once share one pace: no call is refused, and both draw the exact history', async () => {
+  // As of block 71,712,000: some 8.6 hours of NFT 3202568's life, 1.6 MB of the RPC's JSON a tab.
+  const chain = pathChain('path-pons', '3202568', 71_712_000, { limit: { capacity: 512 * 1024, perSecond: 144 * 1024 } });
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  let second = null;
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    second = await s.context.newPage();
+    await second.goto(`${s.origin}/#/positions/3202568`);
+    await s.page.evaluate(() => { location.hash = '#/positions/3202568'; });
+    const started = Date.now();
+    const drawn = [];
+    for (const page of [s.page, second]) {
+      if (await page.locator('[data-fees-card][data-fees-state="verified"]').waitFor({ timeout: 150_000 }).then(() => false, () => true)) {
+        // Measured without the shared pace (2026-09-25): the first refusal came 3 s in, and both cards stayed estimated.
+        const states = await Promise.all([s.page, second].map((one) => one.locator('[data-fees-card]').first().getAttribute('data-fees-state').catch(() => 'none')));
+        assert.fail(`not exact: ${states.join(', ')}; ${chain.refusals.length} refused, the first ${chain.refusals[0] ? chain.refusals[0].at - started : '-'} ms in`);
+      }
+      drawn.push(Date.now() - started);
+    }
+    const read = chain.log.filter((call) => call.method === 'eth_getLogs').reduce((sum, call) => sum + call.bytes, 0);
+    console.log(`# two tabs: exact after ${drawn.join(' and ')} ms, ${Math.round(read / 1024)} kB of logs, ${chain.refusals.length} refused`);
+    assert.ok(read > 2 * 400 * 1024, `both tabs read the life (${read} B)`);
+    assert.deepEqual(chain.refusals, [], 'no call of either tab was refused, the page’s own reads among them');
+    for (const page of [s.page, second]) assert.match(await page.locator('[data-position-stats]').innerText(), /UNCLAIMED FEES/);
+    assert.deepEqual(chain.refused, [], 'nothing but the reads');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+  } finally {
+    await second?.close();
+    await s.close();
+  }
+});
+
 // Review of 2026-09-25: the fees replays ran in the visitor's browser with two requests in flight per history and four
 // tries per refused call, used up the public RPC's per-address limit, and the RPC then refused the page's own list and
 // position reads too (the list took 7.4 s to come back; a busy position's card loaded for minutes). Here the chain
@@ -3359,7 +3438,8 @@ test('a position’s fees history is read from the chain by the page and its wor
 // Changed on purpose (2026-09-25, later): the page's budget is 2 MB and a probe comes first. This pool is quiet now (the
 // probe lets the replay start) and its history, 1.7 MB, is read for a while under the budget.
 test('while a busy history is replayed the list and the position’s page come back at once, and a refusal ends the replay instead of a card loading for minutes', async () => {
-  const history = busyHistory({ tokenId: OWNED_OPEN, key: STUB_KEY, owner: OWNER, perEpoch: 200 });
+  // A long history the probe does not see (quietProbe, 2026-09-25): the exact replay of the pool's epochs is chosen.
+  const history = busyHistory({ tokenId: OWNED_OPEN, key: STUB_KEY, owner: OWNER, perEpoch: 200, quietProbe: true });
   const chain = browserChain({ positions: [onChain(OWNED_OPEN)], tokens: TOKENS, history, limit: { capacity: 256 * 1024, perSecond: 400 * 1024 } });
   const site = siteRoutes();
   const s = await scenario({ chain, routes: [site.route] });
@@ -3418,7 +3498,12 @@ test('while a busy history is replayed the list and the position’s page come b
     const refused = chain.refusals.slice(refusedBefore);
     assert.equal(refused.length, 1, `one refused request, and nothing asked again: ${refused.map((r) => r.method).join(', ')}`);
     assert.match(await s.page.locator('[data-position-stats]').innerText(), /UNCLAIMED FEES\s+[\d.,]+ ETH/);
-    assert.equal(await s.page.locator('[data-fees-card]').count(), 0, 'the band shows the unclaimed figure: no card repeats it');
+    // Changed on purpose (2026-09-25, the owner: the card loaded, then vanished): the card stays, with the chain's
+    // unclaimed figure and a flat, quiet plot where no history can be drawn.
+    const quietCard = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"]');
+    assert.equal(await quietCard.count(), 1, 'the card stays');
+    assert.equal(await quietCard.locator('[data-fees-quiet]').count(), 1, 'its plot flat and quiet');
+    assert.match(await quietCard.innerText(), /fees earned[\s\S]*unclaimed/i);
 
     // The RPC lets this address in again: the list is read at once.
     chain.limit = null;
@@ -3458,7 +3543,8 @@ test('the list replays no fees history: each row shows its unclaimed fees from t
 // 2026-09-25 (the owner's positions must never go missing again): a position in a pool busy now (PONS/USDG's history is
 // over 60 MB) can never verify in a browser. Its page probes the pool's last minutes before reading any of its
 // history, and stops there: no pool epoch is read, the card never loads for long, the band keeps the unclaimed figure,
-// and the list and the page come back at once, with no refusal of the page's reads.
+// and the list and the page come back at once, with no refusal of the page's reads. 2026-09-25, later: past the probe
+// the price path asks only the NFT's own settlements and the Swaps of its life (tests/fees-path.test.mjs).
 test('a history the probe says cannot verify is never read: no pool epoch, no card loading for long, the list and the page at once', async () => {
   const history = busyHistory({ tokenId: OWNED_OPEN, key: STUB_KEY, owner: OWNER, recent: 40 });
   const chain = browserChain({ positions: [onChain(OWNED_OPEN)], tokens: TOKENS, history, limit: { capacity: 256 * 1024, perSecond: 400 * 1024 } });
@@ -3489,7 +3575,11 @@ test('a history the probe says cannot verify is never read: no pool epoch, no ca
     assert.equal(asked(3), 0, 'no epoch of the pool’s history is read');
     assert.equal(asked(2), 0, 'nor any swap day');
     assert.match(await s.page.locator('[data-position-stats]').innerText(), /UNCLAIMED FEES\s+[\d.,]+ ETH/);
-    assert.equal(await s.page.locator('[data-fees-card]').count(), 0, 'the band shows the unclaimed figure: no card repeats it, no chart');
+    // Changed on purpose (2026-09-25): past the probe, the price path asks the NFT's own settlements (none here: this
+    // recording has no ModifyLiquidity of its own), and the card stays, with its unclaimed figure and a quiet plot.
+    const quietCard = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"]');
+    assert.equal(await quietCard.count(), 1, 'the card stays, no chart');
+    assert.equal(await quietCard.locator('[data-fees-quiet]').count(), 1);
     // Back to the list, and to the page again: each at once, and nothing of the page's was refused.
     await s.page.evaluate(() => { location.hash = '#/positions'; });
     await within('the list again', s.page.locator('[data-owned="ready"]'), 2_500);

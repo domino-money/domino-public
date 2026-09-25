@@ -3801,15 +3801,20 @@ test('no private API path, no signing or value transfer, no markup injection, no
   assert.match(chainClient, /const elsewhere = \(\) => Promise\.reject\(new TypeError\('not the chain RPC'\)\)/);
   const runtimes = [...chainClient.matchAll(/fetch\(input, init\)/g)].length;
   assert.deepEqual([runtimes, [...chainClient.matchAll(/async fetch\(input, init\) \{\n\s*if \(input !== RPC_URL\) return elsewhere\(\)\n/g)].length], [2, 2], 'both runtimes refuse any other URL first');
-  assert.deepEqual([...chainClient.matchAll(/\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['busy'], 'the channel carries one flag');
+  // Changed on purpose (2026-09-25, review of r4/fees): the fees lanes of other tabs' workers hear on the same channel
+  // what each lane read and each refusal it met (the RPC limits the visitor's address, not a tab): a byte count or the
+  // word 'rest', typed so, and nothing else. The channel is the site's own (same origin only) and names no one.
+  assert.deepEqual([...chainClient.matchAll(/\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['busy', 'news'], 'the channel carries the page’s flag and the lanes’ news');
+  assert.match(chainClient, /const share = \(news: number \| 'rest'\) => \{/, 'the lanes’ news: a byte count or a refusal, nothing else');
+  assert.deepEqual([...chainClient.matchAll(/\bshare\(([^)]*)\)/g)].map((m) => m[1]).sort(), ["'rest'", 'bytes'], 'what each lane read, and that it was refused');
   assert.match(chainClient, /import \{ RPC_URL, type OwnedDeps \} from '\.\.\/\.\.\/\.\.\/functions\/_lib\/owned'/, 'the URL is the routes\' own pin');
   assert.doesNotMatch(chainClient, /['"`]https?:\/\/|['"`]\/api\//, 'no other network route in the chain client');
   assert.doesNotMatch(chainClient, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|localStorage|sessionStorage|indexedDB)\b/, 'no other network client and no storage');
   const owned = readFileSync(join(SRC, '../functions/_lib/owned.ts'), 'utf8');
   assert.match(owned, /^export const RPC_URL = 'https:\/\/rpc\.mainnet\.chain\.robinhood\.com'$/m, 'the one endpoint, Robinhood Chain\'s public RPC');
   // What the page runs against it can only read: the methods the three modules name are the four reads, and never a
-  // send, a signature or a subscription.
-  for (const file of ['owned.ts', 'walletPositions.ts', 'fees.ts', 'automation.ts']) {
+  // send, a signature or a subscription. 2026-09-25: the price path's reads (feesPath.ts, the replay worker's) join them.
+  for (const file of ['owned.ts', 'walletPositions.ts', 'fees.ts', 'automation.ts', 'feesPath.ts']) {
     const code = readFileSync(join(SRC, '../functions/_lib', file), 'utf8');
     const methods = [...new Set([...code.matchAll(/['"`]((?:eth|net|web3|wallet|personal|debug|txpool)_[A-Za-z]+)['"`]/g)].map((match) => match[1]))].sort();
     assert.ok(methods.every((method) => ['eth_blockNumber', 'eth_call', 'eth_getBlockByNumber', 'eth_getLogs'].includes(method)), `${file} names ${methods.join(', ')}`);
@@ -3818,7 +3823,7 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // 2026-09-25 (review of r3/chain): the fees client is split so the page loads the chain code lazily
   // (lib/chain/chainCode.ts) while the replay worker, a single classic file, carries its own: answers.ts holds the
   // build check and the answers' checks, logs.ts the log read both share. None of them fetches.
-  for (const path of ['lib/walletPositions.ts', 'lib/automationState.ts', 'lib/fees/client.ts', 'lib/fees/answers.ts', 'lib/fees/logs.ts', 'lib/chain/chainCode.ts', 'lib/fees/feesReplay.worker.ts', 'lib/fees/pipeline.ts']) {
+  for (const path of ['lib/walletPositions.ts', 'lib/automationState.ts', 'lib/fees/client.ts', 'lib/fees/answers.ts', 'lib/fees/logs.ts', 'lib/chain/chainCode.ts', 'lib/fees/feesReplay.worker.ts', 'lib/fees/pipeline.ts', 'lib/fees/estimate.ts']) {
     const code = readFileSync(join(SRC, path), 'utf8');
     assert.doesNotMatch(code, /fetch\(/, `${path} names no fetch of its own, not even in a comment`);
     assert.doesNotMatch(code, /['"`]\/api\/(?:owned|fees|automation)\//, `${path} asks no route of the site`);

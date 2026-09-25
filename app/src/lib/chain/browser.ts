@@ -65,7 +65,11 @@ function pause(ms: number, signal?: AbortSignal, stop?: () => boolean): Promise<
  * everything from that address, the page's own list and position reads too.
  */
 
-/** The page's reads tell the fees worker's lane when they are on their way: a channel of this site's own, carrying one flag. */
+/**
+ * The page's reads tell the fees worker's lane when they are on their way: a channel of this site's own, carrying one
+ * flag. 2026-09-25 (review): the lanes of other tabs' workers hear on it too what each read (its bytes) and each
+ * refusal ('rest'): the RPC limits the visitor's address, not a tab, and two tabs each paced alone read twice the pace.
+ */
 const CHANNEL = 'domino-chain-reads'
 /** How long after an unreadable reply the page asks the same call once more, before it counts as the RPC's 429. */
 export const REASK_UNREADABLE_MS = 400
@@ -167,7 +171,9 @@ export async function simulateOnChain(params: unknown[]): Promise<unknown> {
  *   after; at half that pace they were not;
  * - at the first reply the worker cannot read, or that says 429, the run stops
  *   (the card keeps its unclaimed figure) and the lane rests `restMs` before it
- *   asks anything again.
+ *   asks anything again;
+ * - 2026-09-25 (review): the pace is the address's, across tabs: every lane
+ *   counts the bytes the others read, and rests when one of them was refused.
  */
 export const LANE_PACE = { bytesPerSecond: 96 * 1024, burstBytes: 128 * 1024, workFactor: 4, graceMs: 2_000, restMs: 30_000 } as const
 export type LanePace = { [key in keyof typeof LANE_PACE]: number }
@@ -276,7 +282,13 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
     listening = openChannel()
     if (listening)
       listening.onmessage = (event: MessageEvent<unknown>) => {
-        if (event.data === true && !pageBusy) {
+        const news = event.data
+        // Another tab's lane: what it read counts against this one's pace too, and its refusal rests this one.
+        if (typeof news === 'number') {
+          refill()
+          tokens -= news
+        } else if (news === 'rest') restUntil = Math.max(restUntil, now() + pace.restMs)
+        else if (event.data === true && !pageBusy) {
           pageBusy = true
           pageBusySince = now()
         } else if (event.data === false) {
@@ -308,6 +320,14 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
     next.start()
   }
   const resting = () => now() < restUntil
+  /** Tells the other tabs' lanes what this one read, or that the RPC refused it. */
+  const share = (news: number | 'rest') => {
+    try {
+      listening?.postMessage(news)
+    } catch {
+      // A channel that closed: this lane's own pace still holds.
+    }
+  }
   return {
     resting,
     close: () => listening?.close(),
@@ -359,6 +379,7 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
             joined.drop()
             refused = true
             restUntil = now() + pace.restMs
+            share('rest')
             await response.body?.cancel().catch(() => undefined)
             return new Response(null, { status: 429, statusText: response.statusText })
           }
@@ -367,6 +388,7 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
             (bytes) => {
               refill()
               tokens -= bytes
+              share(bytes)
             },
             () => {
               joined.drop()

@@ -19,6 +19,24 @@
  * Integer-exact (bigint throughout), no DOM, no clock: time comes from a
  * Timeline the caller builds from block headers. The state is plain data, so
  * a replay can be saved at any log and resumed later (a Checkpoint).
+ *
+ * The price path (2026-09-25, `path` targets): a position's fees from its
+ * pool's Swaps alone, without the tick map. In each step of a swap v4 takes a
+ * fee on the input, amountIn × fee / (1 − fee), and adds fee × 2^128 / L to the
+ * growth, L the step's active liquidity; the input of a step is itself L times
+ * the move of the price (L × Δ(1/√P) in token0, L × Δ√P in token1). So the
+ * growth a step adds is the move of the price times the fee, and L cancels:
+ * the position's fees are its own liquidity times the path of the price
+ * inside its range, whatever the other liquidity was. Only Swaps move the
+ * price, and within one Swap it moves one way, from the one before's end price
+ * to its own: the Swaps of the position's life and its own ModifyLiquidity
+ * events give its fees, where the pool's liquidity history from its creation
+ * (over 60 MB for PONS/USDG) and archive state (the RPC keeps about ten
+ * minutes) are out of reach. Checked on the owner's three busy positions
+ * (3202568, 3203538, 3204536, measured 2026-09-25): their unclaimed fees to
+ * the unit. Rounding differs from the chain's by at most a unit or two per
+ * step (`rounding`, which the caller's check allows for); a Donate needs the
+ * pool's liquidity, which a path does not know exactly (liquidityMismatch).
  */
 import { HOUR_SPAN, POSITION_MANAGER } from './constants'
 import type { CompactLog, FeeEvent, FeeHistory, FeeHour, HourlyPrices } from './types'
@@ -95,6 +113,30 @@ function nextPriceFromInput(price: bigint, liquidity: bigint, amountIn: bigint, 
 }
 
 const floorDiv = (a: number, b: number) => Math.floor(a / b)
+
+/** The most a protocol fee may be, in pips (ProtocolFeeLibrary.MAX_PROTOCOL_FEE). */
+const MAX_PROTOCOL_FEE = 1000n
+const protocolParts = new Map<string, bigint | null>()
+
+/**
+ * The protocol's fee in a Swap of a pool with LP fee `lpFee` whose event names `swapFee` (a path replay reads no
+ * ProtocolFeeUpdated): ProtocolFeeLibrary.calculateSwapFee solved for it; null when none fits. Two can fit one fee (the
+ * floor in it: a 4 % pool's 999 and 1,000 both give 40,960, measured on 2026-09-25 as a 0.0025 % error): `now`, the
+ * pool's protocol fee in that direction as slot0 says it now, when it is one of them, else the least.
+ */
+export function protocolPart(swapFee: bigint, lpFee: bigint, now?: bigint): bigint | null {
+  if (swapFee === lpFee) return 0n
+  const fits = (fee: bigint) => fee >= 1n && fee <= MAX_PROTOCOL_FEE && fee + lpFee - (fee * lpFee) / PIPS === swapFee
+  if (now !== undefined && fits(now)) return now
+  const key = `${swapFee}:${lpFee}`
+  const known = protocolParts.get(key)
+  if (known !== undefined) return known
+  let found: bigint | null = null
+  for (let fee = 1n; fee <= MAX_PROTOCOL_FEE && found === null; fee++) if (fits(fee)) found = fee
+  if (protocolParts.size > 256) protocolParts.clear()
+  protocolParts.set(key, found)
+  return found
+}
 
 // ---------------------------------------------------------------------------
 // The tick map
@@ -221,6 +263,10 @@ export interface ReplayTarget {
   tickSpacing: number
   /** The pool key's fee (pips); a dynamic-fee pool (0x800000) has hooks and is never replayed. */
   fee: number
+  /** 2026-09-25: replay the price path (the pool's Swaps and the NFT's own ModifyLiquidity only), not the tick map. */
+  path?: boolean
+  /** The pool's protocol fee now, as slot0 packs it: which of two protocol fees a Swap's fee fits is the path's. */
+  protocolFee?: number
 }
 
 /** Everything a replay knows: plain, structured-cloneable data (a Checkpoint's core). */
@@ -251,6 +297,8 @@ export interface ReplayData {
   prices: HourlyPrices['hours'][number][]
   events: FeeEvent[]
   checks: ReplayChecks
+  /** A path replay's allowance for rounding, per token: at most about this many units away from the chain's own figure. */
+  rounding?: [number, number]
 }
 
 const topicAddress = (topic: string) => `0x${topic.slice(26)}`
@@ -294,6 +342,7 @@ export class FeeReplay {
       prices: [],
       events: [],
       checks: { swaps: 0, steps: 0, tickMismatch: 0, liquidityMismatch: 0, swapFeeMismatch: 0, inconsistentLastStep: 0, ambiguousLastStep: 0 },
+      ...(target.path ? { rounding: [0, 0] as [number, number] } : {}),
     })
   }
 
@@ -328,6 +377,17 @@ export class FeeReplay {
   /** Fee growth inside accrued since the last settlement (mod 2^256): what the chain's inside − insideLast must equal. */
   accrued(): [bigint, bigint] {
     return [this.d.accrued[0], this.d.accrued[1]]
+  }
+
+  /** A path replay's rounding allowance per token, in units (0 for an exact replay). */
+  rounding(): [number, number] {
+    const r = this.d.rounding
+    return r ? [Math.ceil(r[0]) + 2, Math.ceil(r[1]) + 2] : [0, 0]
+  }
+
+  /** The position's liquidity now, as its own ModifyLiquidity events left it. */
+  positionLiquidity(): bigint {
+    return this.d.positionLiquidity
   }
 
   /** The pool's price, tick and active liquidity now. */
@@ -428,7 +488,7 @@ export class FeeReplay {
     const ts = timeline.at(block)
     if (d.minted === null) {
       // The mint: the pool's active liquidity just before it, from the tick map; the clock starts here.
-      d.liquidity = activeAt(d.map, d.tick)
+      d.liquidity = d.target.path ? null : activeAt(d.map, d.tick)
       d.minted = { block, timestamp: ts }
       d.hour = floorDiv(block, HOUR_SPAN)
       d.lastTs = ts
@@ -437,7 +497,10 @@ export class FeeReplay {
     }
     if (event === 1) this.modifyLiquidity(log, mine, ts)
     else if (event === 4) this.donate(log)
-    else if (event === 3) this.swap(log)
+    else if (event === 3) {
+      if (d.target.path) this.pathSwap(log)
+      else this.swap(log)
+    }
   }
 
   private isMine(log: CompactLog): boolean {
@@ -465,8 +528,10 @@ export class FeeReplay {
       d.positionLiquidity = after
     }
     if (delta !== 0n) {
-      updateTick(d.map, lower, delta, false)
-      updateTick(d.map, upper, delta, true)
+      if (!d.target.path) {
+        updateTick(d.map, lower, delta, false)
+        updateTick(d.map, upper, delta, true)
+      }
       if (d.liquidity !== null && lower <= d.tick && d.tick < upper) d.liquidity += delta
     }
   }
@@ -474,6 +539,8 @@ export class FeeReplay {
   private donate(log: CompactLog): void {
     const d = this.d
     const [amount0, amount1] = dataWords(log[5], 2)
+    // A path knows the pool's liquidity only as the last Swap left it: a Donate's share is not exact.
+    if (d.target.path && this.inRange()) d.checks.liquidityMismatch += 1
     if (d.liquidity !== null && d.liquidity > 0n && this.inRange()) {
       d.accrued[0] = (d.accrued[0] + (amount0 * Q128) / d.liquidity) & U256
       d.accrued[1] = (d.accrued[1] + (amount1 * Q128) / d.liquidity) & U256
@@ -568,6 +635,50 @@ export class FeeReplay {
       liquidity = endLiquidity
     }
     d.liquidity = liquidity
+  }
+
+  /**
+   * One Swap on the price path (see the header): the move of the price from the one before's end to this one's, the
+   * part of it inside the position's range, times the LP's part of the fee, as fee growth per unit of liquidity.
+   */
+  private pathSwap(log: CompactLog): void {
+    const d = this.d
+    const w = dataWords(log[5], 6)
+    const endPrice = w[2]
+    const endLiquidity = w[3]
+    const endTick = Number(BigInt.asIntN(24, w[4]))
+    const swapFee = w[5]
+    d.checks.swaps += 1
+    d.hourSwapped = true
+    const start = d.price
+    const [below, above] = start < endPrice ? [start, endPrice] : [endPrice, start]
+    const lower = sqrtAtTick(d.target.tickLower)
+    const upper = sqrtAtTick(d.target.tickUpper)
+    const from = below > lower ? below : lower
+    const to = above < upper ? above : upper
+    if (to > from && d.positionLiquidity > 0n) {
+      const now = d.target.protocolFee === undefined ? undefined : BigInt(endPrice < start ? d.target.protocolFee % 4096 : d.target.protocolFee >> 12)
+      const protocolFee = protocolPart(swapFee, BigInt(d.target.fee), now)
+      if (protocolFee === null || swapFee >= PIPS) d.checks.swapFeeMismatch += 1
+      else if (swapFee > protocolFee) {
+        d.checks.steps += 1
+        // The LP's fee is amountIn × (swapFee − protocolFee) / (PIPS − swapFee): the fee on the input less the protocol's
+        // share of input plus fee (Pool.swap); here per unit of liquidity, × 2^128.
+        const lp = swapFee - protocolFee
+        const rest = PIPS - swapFee
+        const side = endPrice < start ? 0 : 1
+        const growth = side === 0 ? ((to - from) * Q96 * Q128 * lp) / (to * from * rest) : ((to - from) * Q128 * lp) / (Q96 * rest)
+        d.accrued[side] = (d.accrued[side] + growth) & U256
+        // The chain rounds each step's fee up and its growth down: the position's share of a unit or two per step.
+        const share = endLiquidity > d.positionLiquidity ? Number(d.positionLiquidity) / Number(endLiquidity) : 1
+        if (d.rounding) d.rounding[side] += 2 * share
+      }
+    }
+    // The event's tick is its price's (TickMath.getTickAtSqrtPrice), or the one below a boundary it ended on going down.
+    if (!(sqrtAtTick(endTick) <= endPrice && (endTick === MAX_TICK || endPrice <= sqrtAtTick(endTick + 1)))) d.checks.tickMismatch += 1
+    d.price = endPrice
+    d.tick = endTick
+    d.liquidity = endLiquidity
   }
 
   /**

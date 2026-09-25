@@ -101,6 +101,8 @@ export interface FeesView {
   events: ReadonlyArray<FeesEvent>
   hours: ReadonlyArray<Hour>
   mintedAt: number
+  /** 2026-09-25 (review): the collected amounts are a price path's, within its rounding of the chain's (FeeHistory.near). */
+  near: boolean
 }
 
 const add = (a: readonly [bigint, bigint], b: readonly [bigint, bigint]): readonly [bigint, bigint] => [a[0] + b[0], a[1] + b[1]]
@@ -222,6 +224,7 @@ export function feesView(sources: ReadonlyArray<FeesSource>): FeesView | null {
     events,
     hours,
     mintedAt,
+    near: sources.some((source) => source.history.near === true),
   }
 }
 

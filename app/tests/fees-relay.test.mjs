@@ -143,7 +143,9 @@ test('/state reads each position at head − 2 in three RPC calls and computes v
     const response = await askState(chain, { tokenIds: [id] });
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('Cache-Control'), 'no-store');
-    assert.deepEqual(await response.json(), fixture.state, `${id}: the recorded answer, rebuilt from the same chain values`);
+    // 2026-09-25: /state also names the pool's protocol fee (slot0: 1,000 pips each way on this chain), for the price path.
+    const withFee = { ...fixture.state, positions: fixture.state.positions.map((p) => (p.ok ? { ...p, protocolFee: 4_097_000 } : p)) };
+    assert.deepEqual(await response.json(), withFee, `${id}: the recorded answer, rebuilt from the same chain values`);
     assert.deepEqual(chain.log.map((call) => call.method), ['eth_blockNumber', 'eth_call', 'eth_call']);
     assert.deepEqual(chain.callBlocks, [fixture.state.block, fixture.state.block], 'both reads pinned to head − 2');
   }

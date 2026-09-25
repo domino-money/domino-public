@@ -11,6 +11,7 @@
  *   in   { type: 'run', id, state, growth, budgetBytes, checkpoint }   a new run for `id` (any earlier one is dropped)
  *        { type: 'cancel', id }                                        stop the run for `id`
  *   out  { type: 'progress', id, bytes, daysDone, daysTotal }
+ *        { type: 'estimate', id, history, prices }                   2026-09-25: a busy pool's estimated history, first
  *        { type: 'done', id, result }
  *
  * A classic worker (Vite's default iife format), same-origin, spawned only by
@@ -19,6 +20,7 @@
  */
 import { chainLane, chainDeps, memoryCache } from '../chain/browser'
 import { logsOnChain } from '../../../functions/_lib/fees'
+import { pathLogsOnChain } from '../../../functions/_lib/feesPath'
 import { logsWith } from './logs'
 import { BUDGET_BYTES, BUDGET_MS } from './constants'
 import { runPipeline } from './pipeline'
@@ -34,7 +36,7 @@ const scope = self as unknown as WorkerScope
 const lane = chainLane()
 /** The relay's units this worker has read, kept in its memory as the relay kept them, for as long as it lives. */
 const cache = memoryCache()
-const code = { chainDeps, logsOnChain }
+const code = { chainDeps, logsOnChain, pathLogsOnChain }
 const runs = new Map<string, AbortController>()
 
 /** A pause that ends early when the run is dropped. */
@@ -60,7 +62,7 @@ scope.onmessage = (event) => {
   runs.set(message.id, run)
   // A run with more than the list's budget is a position page's: its reads go before the list's in the lane.
   const urgent = message.budgetBytes > BUDGET_BYTES.list
-  const deadline = Date.now() + (urgent ? BUDGET_MS.page : BUDGET_MS.list)
+  let deadline = Date.now() + (urgent ? BUDGET_MS.page : BUDGET_MS.list)
   const post = (out: FromWorker) => {
     if (!run.signal.aborted) scope.postMessage(out)
   }
@@ -71,6 +73,9 @@ scope.onmessage = (event) => {
       progress: (report) => post({ type: 'progress', id: message.id, ...report }),
       cancelled: () => run.signal.aborted,
       timeUp: () => Date.now() >= deadline,
+      // 2026-09-25: a position page's busy-pool history is drawn estimated first, then read on to its exact one.
+      estimate: urgent ? (partial) => post({ type: 'estimate', id: message.id, ...partial }) : undefined,
+      extend: urgent ? (ms) => void (deadline = Math.max(deadline, Date.now() + ms)) : undefined,
     },
     message,
   )

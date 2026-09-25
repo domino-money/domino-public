@@ -204,14 +204,14 @@ export class RelayError extends Error {
 class Refused extends Error {}
 
 /** What one answer has spent. */
-interface Budget {
+export interface Budget {
   calls: number
   bytes: number
   started: number
   retryAfterMs: number
 }
 
-const newBudget = (rt: FeesRuntime): Budget => ({ calls: 0, bytes: 0, started: rt.deps.now(), retryAfterMs: 0 })
+export const newBudget = (rt: FeesRuntime): Budget => ({ calls: 0, bytes: 0, started: rt.deps.now(), retryAfterMs: 0 })
 
 /** Simultaneous questions for one key in this isolate share one read. */
 const inflight = new Map<string, Promise<unknown>>()
@@ -238,16 +238,16 @@ export function resetRelayMemory(): void {
 // ---------------------------------------------------------------------------
 
 const QUANTITY = /^0x(?:0|[1-9a-f][0-9a-f]*)$/i
-const HASH = /^0x[0-9a-f]{64}$/
+export const HASH = /^0x[0-9a-f]{64}$/
 const DATA = /^0x(?:[0-9a-f]{64})*$/
 const DECIMAL_ID = /^(?:0|[1-9][0-9]{0,77})$/
 const U256 = (1n << 256n) - 1n
 
-const hex = (n: number | bigint) => `0x${n.toString(16)}`
+export const hex = (n: number | bigint) => `0x${n.toString(16)}`
 const word = (n: bigint) => BigInt.asUintN(256, n).toString(16).padStart(64, '0')
-const addressWord = (address: string) => address.slice(2).toLowerCase().padStart(64, '0')
+export const addressWord = (address: string) => address.slice(2).toLowerCase().padStart(64, '0')
 
-function quantity(value: unknown): number {
+export function quantity(value: unknown): number {
   if (typeof value !== 'string' || !QUANTITY.test(value)) throw new RelayError('fatal', 'invalid_quantity')
   const n = Number(BigInt(value))
   if (!Number.isSafeInteger(n)) throw new RelayError('fatal', 'invalid_quantity')
@@ -349,7 +349,7 @@ function retryAfterMs(response: Response): number {
 }
 
 /** One POST to the RPC (one call or a batch), within the answer's caps; its body parsed as JSON. */
-async function post(rt: FeesRuntime, budget: Budget, payload: unknown, logs: boolean, byteLimit = MAX_BYTES): Promise<unknown> {
+export async function post(rt: FeesRuntime, budget: Budget, payload: unknown, logs: boolean, byteLimit = MAX_BYTES): Promise<unknown> {
   if (rt.deps.cancelled?.()) throw new RelayError('fatal', 'cancelled')
   if (budget.calls >= MAX_RPC_CALLS) throw new RelayError('calls', 'rpc_call_cap')
   if (rt.deps.turn) {
@@ -401,7 +401,7 @@ async function post(rt: FeesRuntime, budget: Budget, payload: unknown, logs: boo
 }
 
 /** A JSON-RPC envelope's result, or the failure its error names (error bodies are short; only their first 2 kB are read). */
-function resultOf(envelope: unknown): unknown {
+export function resultOf(envelope: unknown): unknown {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) throw new RelayError('fatal', 'rpc_invalid_envelope')
   const body = envelope as { result?: unknown; error?: { code?: unknown; message?: unknown; data?: unknown } }
   if (body.error) {
@@ -414,7 +414,7 @@ function resultOf(envelope: unknown): unknown {
 }
 
 /** A read asked again after a growing wait (BACKOFF_MS × attempt, or the RPC's Retry-After when longer) while it is rate limited. */
-async function paced<T>(rt: FeesRuntime, budget: Budget, ask: () => Promise<T>): Promise<T> {
+export async function paced<T>(rt: FeesRuntime, budget: Budget, ask: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await ask()
@@ -432,7 +432,7 @@ async function paced<T>(rt: FeesRuntime, budget: Budget, ask: () => Promise<T>):
 const call = (rt: FeesRuntime, budget: Budget, method: string, params: unknown[], byteLimit?: number) =>
   paced(rt, budget, async () => resultOf(await post(rt, budget, { jsonrpc: '2.0', id: budget.calls + 1, method, params }, method === 'eth_getLogs', byteLimit)))
 
-async function headBlock(rt: FeesRuntime, budget: Budget, atLeast: number): Promise<number> {
+export async function headBlock(rt: FeesRuntime, budget: Budget, atLeast: number): Promise<number> {
   const now = rt.deps.now()
   if (lastHead && now >= lastHead.at && now - lastHead.at < 1000 && lastHead.block >= atLeast) return lastHead.block
   const block = quantity(await call(rt, budget, 'eth_blockNumber', []))
@@ -495,7 +495,7 @@ async function keep(rt: FeesRuntime, url: string, value: unknown, seconds: numbe
 // Logs: validation and compaction
 // ---------------------------------------------------------------------------
 
-interface LogFilter {
+export interface LogFilter {
   address: string
   topic0: readonly string[]
   /** topic1 must equal this (a pool id). */
@@ -505,7 +505,7 @@ interface LogFilter {
 }
 
 /** One RPC log, checked against the filter and the range asked, as a CompactLog; any mismatch fails the whole reply. */
-function compact(raw: unknown, filter: LogFilter, from: number, to: number): CompactLog {
+export function compact(raw: unknown, filter: LogFilter, from: number, to: number): CompactLog {
   if (!raw || typeof raw !== 'object') throw new RelayError('fatal', 'invalid_log')
   const log = raw as { address?: unknown; topics?: unknown; data?: unknown; blockNumber?: unknown; logIndex?: unknown; transactionHash?: unknown; removed?: unknown }
   if (log.removed === true) throw new RelayError('fatal', 'removed_log')
@@ -527,6 +527,9 @@ function compact(raw: unknown, filter: LogFilter, from: number, to: number): Com
 }
 
 const byPosition = (a: CompactLog, b: CompactLog) => a[0] - b[0] || a[1] - b[1]
+
+/** The kinds the relay answers: every LogsRequest but the price path's (2026-09-25, feesPath.ts, the replay worker's own). */
+export type RelayRequest = Exclude<LogsRequest, { kind: 'span' | 'settlements' }>
 
 /**
  * eth_getLogs over [from, to], validated and compacted, in chain order. A
@@ -599,16 +602,16 @@ async function bodyOf(request: Request, url: URL, maxBytes: number): Promise<Rec
   return body as Record<string, unknown>
 }
 
-const keysAre = (body: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []) => {
+export const keysAre = (body: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []) => {
   const keys = Object.keys(body)
   return required.every((key) => keys.includes(key)) && keys.every((key) => required.includes(key) || optional.includes(key))
 }
-const blockNumber = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
-const tokenIdOk = (value: unknown): value is string => typeof value === 'string' && DECIMAL_ID.test(value) && BigInt(value) <= U256
-const poolIdOk = (value: unknown): value is string => typeof value === 'string' && HASH.test(value)
+export const blockNumber = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+export const tokenIdOk = (value: unknown): value is string => typeof value === 'string' && DECIMAL_ID.test(value) && BigInt(value) <= U256
+export const poolIdOk = (value: unknown): value is string => typeof value === 'string' && HASH.test(value)
 
 /** A /logs body as a LogsRequest, or null unless it is exactly one (exact keys, safe integers, lowercase hex). */
-export function logsRequestOf(body: Record<string, unknown>): LogsRequest | null {
+export function logsRequestOf(body: Record<string, unknown>): RelayRequest | null {
   switch (body.kind) {
     case 'transfer': {
       if (!keysAre(body, ['kind', 'tokenId'], ['since']) || !tokenIdOk(body.tokenId)) return null
@@ -751,12 +754,12 @@ export async function readState(rt: FeesRuntime, budget: Budget, ids: readonly b
           ],
           block,
         )
-  const slot0 = new Map<string, { sqrtPriceX96: bigint; tick: number } | null>()
+  const slot0 = new Map<string, { sqrtPriceX96: bigint; tick: number; protocolFee: number } | null>()
   pools.forEach((poolId, i) => {
     const result = second[i]
     if (!result.success) return void slot0.set(poolId, null)
-    const [price, current] = words(result.data, 2)
-    slot0.set(poolId, price === 0n ? null : { sqrtPriceX96: bounded(price, 160n), tick: asInt24(current) })
+    const [price, current, protocol] = words(result.data, 3)
+    slot0.set(poolId, price === 0n ? null : { sqrtPriceX96: bounded(price, 160n), tick: asInt24(current), protocolFee: Number(bounded(protocol, 24n)) })
   })
   const tokenAt = pools.length + known.length * 2
   const tokens = new Map<string, StateCurrency>()
@@ -796,6 +799,7 @@ export async function readState(rt: FeesRuntime, budget: Budget, ids: readonly b
       feeGrowthInside1LastX128: last1.toString(),
       unclaimed0: owed(inside[0], last0).toString(),
       unclaimed1: owed(inside[1], last1).toString(),
+      protocolFee: pool.protocolFee,
     })
   })
   const positions = ids.map((id): StatePosition => answered.get(id) ?? { tokenId: id.toString(), ok: false, reason: failures.get(id) ?? 'rpc_unavailable' })
@@ -843,9 +847,9 @@ interface KeptUnit {
 }
 
 const POOL_EVENTS = [TOPIC.Initialize, TOPIC.ModifyLiquidity, TOPIC.ProtocolFeeUpdated]
-const SWAP_EVENTS = [TOPIC.Swap, TOPIC.Donate]
+export const SWAP_EVENTS = [TOPIC.Swap, TOPIC.Donate]
 
-const poolFilter = (poolId: string, topic0: readonly string[]): LogFilter => ({ address: POOL_MANAGER, topic0, topic1: poolId })
+export const poolFilter = (poolId: string, topic0: readonly string[]): LogFilter => ({ address: POOL_MANAGER, topic0, topic1: poolId })
 
 /** A kept unit as it was up to `cut`. */
 function trimmed(unit: KeptUnit, cut: number): KeptUnit {
@@ -1006,7 +1010,7 @@ async function headerTimes(rt: FeesRuntime, budget: Budget, origin: string, head
 const toUnit = (unit: number | null, logs: KeptUnit): LogsUnit => ({ unit, from: logs.from, to: logs.to, final: logs.final, logs: logs.logs })
 
 /** The answer to one LogsRequest. */
-async function readLogs(rt: FeesRuntime, budget: Budget, origin: string, asked: LogsRequest): Promise<LogsResponse> {
+async function readLogs(rt: FeesRuntime, budget: Budget, origin: string, asked: RelayRequest): Promise<LogsResponse> {
   const until = 'until' in asked && asked.until !== undefined ? asked.until : null
   const head = await headBlock(rt, budget, until ?? 0)
   const behind: LogsResponse = { v: 1, kind: asked.kind, behind: true }
@@ -1132,7 +1136,7 @@ export async function answerLogs(request: Request, rt: FeesRuntime): Promise<Res
 // ---------------------------------------------------------------------------
 
 /** A failed read as the page's client used to receive it from a route: the kind, and the wait the route's Retry-After named. */
-function failedRead(error: unknown, budget: Budget): RelayAnswer<never> {
+export function failedRead(error: unknown, budget: Budget): RelayAnswer<never> {
   if (error instanceof Refused) return { ok: false, failure: 'bad_request', retryAfterMs: 0 }
   if (error instanceof RelayError && error.message === 'part_too_large') return { ok: false, failure: 'too_large', retryAfterMs: 0 }
   const retryAfterMs = Math.min(60, Math.ceil(Math.max(budget.retryAfterMs, FAILURE_SECONDS * 1000) / 1000)) * 1000

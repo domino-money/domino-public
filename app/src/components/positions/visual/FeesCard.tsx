@@ -2,7 +2,7 @@ import { useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Delta, LiveFigure, PeriodTabs, StackedBar, UsdText, type PeriodKey } from '../../figures'
 import { TokenMarkPair } from '../../TokenIcon'
-import { cx } from '../../ui'
+import { Badge, cx } from '../../ui'
 import { useFeeHistories } from '../../../lib/fees/useFeeHistory'
 import type { FeeHistoryView, PositionState } from '../../../lib/fees/types'
 import type { TokenDisplay } from '../../../lib/read/types'
@@ -37,15 +37,15 @@ const SHOW_REALISED_APR = false
 /** A symbol from /state as text (untrusted), or the short address when unreadable. */
 const symbolOf = (state: PositionState, i: 0 | 1) => state.currencies[i].symbol ?? `${state.currencies[i].address.slice(0, 6)}…${state.currencies[i].address.slice(-4)}`
 
-/** The token amounts under a legend value: at most six significant digits each, the full value in the title. */
-function Amounts({ amounts, state }: { amounts: readonly [bigint, bigint] | null; state: PositionState }) {
+/** The token amounts under a legend value: at most six significant digits each, the full value in the title (`near`: "≈" before it). */
+function Amounts({ amounts, state, near = false }: { amounts: readonly [bigint, bigint] | null; state: PositionState; near?: boolean }) {
   if (!amounts) return null
   return (
     <span className="dm-fees-amounts">
       {([0, 1] as const).map((i) =>
         state.currencies[i].decimals === null ? null : (
           <span key={i}>
-            <TokenFigure raw={amounts[i]} currency={state.currencies[i]} /> {symbolOf(state, i)}
+            <TokenFigure raw={amounts[i]} currency={state.currencies[i]} near={near} /> {symbolOf(state, i)}
           </span>
         ),
       )}
@@ -81,8 +81,8 @@ function LegendRow({ tone, label, value, amounts, title, money }: { tone: 'colle
   )
 }
 
-/** The head: the title, an optional pair row (standalone) and the period tabs. */
-function Head({ titleId, state, tokens, standalone, tabs }: { titleId: string; state: PositionState | null; tokens?: readonly [TokenDisplay, TokenDisplay]; standalone?: boolean; tabs?: ReactNode }) {
+/** The head: the title, an optional mark (the estimate's "est."), an optional pair row (standalone) and the period tabs. */
+function Head({ titleId, state, tokens, standalone, tabs, mark }: { titleId: string; state: PositionState | null; tokens?: readonly [TokenDisplay, TokenDisplay]; standalone?: boolean; tabs?: ReactNode; mark?: ReactNode }) {
   const marks = tokens ?? (state ? ([stateToken(state.currencies[0]), stateToken(state.currencies[1])] as const) : null)
   return (
     <div className="dm-fees-head">
@@ -90,6 +90,7 @@ function Head({ titleId, state, tokens, standalone, tabs }: { titleId: string; s
         <h2 id={titleId} className="dm-title">
           Fees earned
         </h2>
+        {mark}
         {standalone && marks && state && (
           <span className="dm-fees-pair">
             <TokenMarkPair base={marks[0]} quote={marks[1]} size={24} />
@@ -139,6 +140,20 @@ function UnclaimedRow({ state, basis, large = false }: { state: PositionState; b
   )
 }
 
+/**
+ * The chart's room when no history can be drawn (2026-09-25): the card keeps its place and its exact figures, and the
+ * plot is a flat, quiet line along its foot, at the loaded chart's height (nothing moves when a later run draws one).
+ */
+function QuietPlot() {
+  return (
+    <div className="dm-fees-plot dm-fees-quiet" aria-hidden="true" data-fees-quiet="">
+      <svg className="dm-fees-quiet-line" viewBox="0 0 100 2" preserveAspectRatio="none" focusable="false">
+        <line x1="0" y1="1" x2="100" y2="1" className="dm-fees-flat" />
+      </svg>
+    </div>
+  )
+}
+
 /** Fee APR: the realised rate over the history, when one can be worked out (off until the owner's yes). */
 function AprRow({ view }: { view: FeesView }) {
   const apr = realisedApr(view)
@@ -155,17 +170,18 @@ function AprRow({ view }: { view: FeesView }) {
 function combined(views: ReadonlyArray<FeeHistoryView>): FeeHistoryView['phase'] {
   if (views.length === 0) return 'idle'
   if (views.every((view) => view.phase === 'verified')) return 'verified'
+  if (views.every((view) => view.phase === 'verified' || view.phase === 'estimated')) return 'estimated'
   if (views.some((view) => view.phase === 'loading')) return 'loading'
   if (views.some((view) => view.phase === 'idle')) return 'idle'
   return views.find((view) => view.phase !== 'verified')?.phase ?? 'unavailable'
 }
 
-/** The verified sources, each with its basis; null when any cannot be valued (an unknown decimals: nothing is guessed). */
+/** The drawn sources (verified, or estimated), each with its basis; null when any cannot be valued (an unknown decimals: nothing is guessed). */
 function sourcesOf(ids: readonly string[], views: ReadonlyMap<string, FeeHistoryView>, quoteIndex: 0 | 1): FeesSource[] | null {
   const out: FeesSource[] = []
   for (const id of ids) {
     const view = views.get(id)
-    if (view?.phase !== 'verified') return null
+    if (view?.phase !== 'verified' && view?.phase !== 'estimated') return null
     const basis = basisOf(view.state, quoteIndex)
     if (!basis) return null
     out.push({ id, state: view.state, history: view.history, basis })
@@ -180,7 +196,15 @@ function sourcesOf(ids: readonly string[], views: ReadonlyMap<string, FeeHistory
  * the pool's price now; the chart is its growth in the chosen period, with
  * each bucket's earnings, the settlements and time in range; the activity
  * lists the settlements. Before the replay verifies only the on-chain
- * unclaimed figure may show, and only where the page does not already show it.
+ * unclaimed figure may show.
+ *
+ * 2026-09-25 (the owner: the card loaded, then vanished, on his busy-pool
+ * positions): once shown, the card stays. While the history is read it shows
+ * its exact figures and a calm chart skeleton; a busy pool's history is drawn
+ * estimated first (`estimated`: the chart and its shape marked "est.", the
+ * figures the chain's own, Time in range left out), then exact; a history that
+ * cannot be drawn leaves the card with the chain's unclaimed figure and a flat,
+ * quiet plot, never an empty place where a card was.
  */
 export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex = 1, tokens, standalone = false, empty }: FeesCardProps) {
   const titleId = useId()
@@ -193,7 +217,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   const [inspected, setInspected] = useState<number | null>(null)
 
   const phase = combined(ids.map((id) => views.get(id) ?? { phase: 'idle' as const }))
-  const sources = useMemo(() => (phase === 'verified' ? sourcesOf(ids, views, quoteIndex) : null), [phase, ids, views, quoteIndex])
+  const sources = useMemo(() => (phase === 'verified' || phase === 'estimated' ? sourcesOf(ids, views, quoteIndex) : null), [phase, ids, views, quoteIndex])
   const view = useMemo(() => (sources ? feesView(sources) : null), [sources])
   const period: FeesPeriod = view && chosen && view.periods.includes(chosen) ? chosen : (view?.defaultPeriod ?? 'all')
   const pv = useMemo(() => (view ? periodView(view, period) : null), [view, period])
@@ -203,7 +227,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   }
 
   const first = views.get(ids[0])
-  const state = first && (first.phase === 'loading' || first.phase === 'unclaimed-only' || first.phase === 'verified') ? first.state : null
+  const state = first && (first.phase === 'loading' || first.phase === 'unclaimed-only' || first.phase === 'verified' || first.phase === 'estimated') ? first.state : null
   const reason = first && (first.phase === 'unclaimed-only' || first.phase === 'unavailable') ? first.reason : undefined
   // A currency with unknown decimals: no guessed formatting, no card (§15.6).
   if (state && (state.currencies[0].decimals === null || state.currencies[1].decimals === null)) return null
@@ -215,7 +239,10 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
 
   // The list's aggregate shows only when every history verified: no skeleton that could vanish (§11.1-6).
   if (list && (phase !== 'verified' || !view || !pv)) return null
-  if (phase === 'idle' || phase === 'unavailable') return null
+  if (phase === 'idle') return null
+  // Not even the unclaimed figure could be read: the store reaches this only before the card was ever shown (its first
+  // /state read failed) or once the NFT is gone, so nothing that was on screen goes away.
+  if (phase === 'unavailable') return null
 
   if (phase === 'loading') {
     const basis = state ? basisOf(state, quoteIndex) : null
@@ -229,18 +256,25 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   }
 
   if (phase === 'unclaimed-only') {
-    if (bandPresent || !state) return null
+    if (!state) return null
+    // No history to draw (2026-09-25: the card stays): the chain's unclaimed figure, and the plot flat and quiet.
     return root(
       'unclaimed-only',
       <>
         <Head titleId={titleId} state={state} tokens={tokens} standalone={standalone} />
-        <UnclaimedRow state={state} basis={basisOf(state, quoteIndex)} large />
+        <div className="dm-fees-body">
+          <div className="dm-fees-summary">
+            <UnclaimedRow state={state} basis={basisOf(state, quoteIndex)} large={!bandPresent} />
+          </div>
+          <QuietPlot />
+        </div>
       </>,
-      'dm-fees--compact',
+      bandPresent ? undefined : 'dm-fees--compact',
     )
   }
 
   if (!view || !pv) return null
+  const estimated = phase === 'estimated'
   const { basis } = view
   const lead = view.sources[0].state
   const blockTitle = `Pool price at block ${basis.block}`
@@ -254,16 +288,17 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   const collectedShare = unitsNumber(view.collected)
   const unclaimedShare = unitsNumber(view.unclaimed)
   const split = positive(view.collected) && positive(view.unclaimed)
-  const timeInRange = view.timeInRange
+  // An estimate's time in range is sampled too: left out (the chart's strip, marked "est." with it, shows its look).
+  const timeInRange = estimated ? null : view.timeInRange
 
   const tabs = (
     <PeriodTabs value={period as PeriodKey} onChange={(next) => { setChosen(next); setInspected(null) }} available={view.periods as PeriodKey[]} label="Fees earned" />
   )
 
   return root(
-    'verified',
+    estimated ? 'estimated' : 'verified',
     <>
-      <Head titleId={titleId} state={lead} tokens={tokens} standalone={standalone} tabs={<span className="dm-fees-tabs">{tabs}</span>} />
+      <Head titleId={titleId} state={lead} tokens={tokens} standalone={standalone} tabs={<span className="dm-fees-tabs">{tabs}</span>} mark={estimated ? <Badge kind="estimate" data-fees-estimate="" /> : undefined} />
       <div className="dm-fees-body" data-zero={view.zero ? '' : undefined}>
         <div className="dm-fees-summary">
           <p className="dm-fees-hero" title={blockTitle}>
@@ -282,6 +317,8 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
               <Delta sign={1} size="md" className="dm-fees-delta">
                 {valueFigure(basis, periodGrowth)}
                 {basis.kind === 'quote' ? ` ${symbolOf(lead, basis.into)}` : ''}
+                {/* 2026-09-25 (review): an estimate's growth in the period is sampled too. */}
+                {estimated ? ' est.' : ''}
               </Delta>
             )}
           </p>
@@ -323,7 +360,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
                   label="Collected"
                   title={blockTitle}
                   value={<Value basis={basis} units={view.collected} state={lead} />}
-                  amounts={<Amounts amounts={view.collectedTokens} state={lead} />}
+                  amounts={<Amounts amounts={view.collectedTokens} state={lead} near={view.near} />}
                 />
                 <LegendRow
                   tone="unclaimed"
@@ -350,7 +387,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
           )}
         </div>
         <div className="dm-fees-plot">
-          <FeesChart view={view} pv={pv} zero={view.zero} onInspect={setInspected} />
+          <FeesChart view={view} pv={pv} zero={view.zero} onInspect={setInspected} estimated={estimated} />
         </div>
       </div>
       <FeesActivity view={view} ids={list} />

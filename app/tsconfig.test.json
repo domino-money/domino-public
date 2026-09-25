@@ -115,6 +115,8 @@
     "src/lib/fees/pipeline.ts",
     "src/lib/fees/store.ts",
     "functions/_lib/fees.ts",
+    "functions/_lib/feesPath.ts",
+    "src/lib/fees/estimate.ts",
     "functions/api/fees/v1/logs.ts",
     "functions/api/fees/v1/state.ts",
     "src/lib/automate/successor.ts",

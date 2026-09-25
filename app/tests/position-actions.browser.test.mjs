@@ -429,7 +429,8 @@ test('after Collect and Close on a position’s page, its figures, its fees card
     positions: [{ tokenId: '3135288', holder: OWNER, key, tickLower: NFT.tickLower, tickUpper: NFT.tickUpper, get liquidity() { return chain.nft(NFT.tokenId).liquidity; }, get unclaimed() { return chain.sends.length ? [0n, 0n] : FEES; } }],
     pools: { [poolIdOf(key)]: { sqrtPriceX96: NFT.sqrtPriceX96, tick: NFT.tick } },
     tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [UFG]: { symbol: 'UFG', decimals: 18 } },
-    history: busyHistory({ tokenId: '3135288', key, owner: OWNER, perEpoch: 200 }),
+    // A long history the probe does not see (quietProbe, 2026-09-25): the exact replay of the pool's epochs is chosen.
+    history: busyHistory({ tokenId: '3135288', key, owner: OWNER, perEpoch: 200, quietProbe: true }),
   });
   const HEAD = rpc.head;
   Object.defineProperty(rpc, 'head', { get: () => HEAD + 10 * chain.sends.length });

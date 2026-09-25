@@ -101,6 +101,8 @@ execFileSync(
     'tests/fees-relay.test.mjs',
     'tests/fees-topics.test.mjs',
     'tests/fees-store.test.mjs',
+    // 2026-09-25: the price path (a busy pool's position from the Swaps of its own life), its estimate and its two reads.
+    'tests/fees-path.test.mjs',
     // 2026-09-25: the fees worker's paced lane to the public RPC, and the reads that share it with the page.
     'tests/chain-lane.test.mjs',
     // 2026-09-24 (P5): the guided creation's successor axis, per-field reasons and the Automate fee meter's rates (DESIGN-V2 §14, R-13, R-18).

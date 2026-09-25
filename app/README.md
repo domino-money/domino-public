@@ -437,9 +437,17 @@ selection reads nothing and says "No pools selected yet".
 
 The shared scheduler (`src/lib/read/scheduler.ts`) keeps the tab inside the
 gateway's per-client budget (a burst of 5, then 30 reads a minute, counting every
-attempt), starts reads at least 1.1 s apart, and holds the whole queue for the
-service's Retry-After after any 429. A load whose last viewer leaves keeps
-running for 2 s, so going from Home to Markets joins it. A refresh never shortens
+attempt), starts provider-lane reads at least 1.1 s apart (read-v3's stored
+reads skip that spacing, which the gateway's stored lane does not have), starts
+the markets table's reads before any queued card or page read, and holds the
+whole queue for the service's Retry-After after any 429. When the stored
+overview serves a pool without figures that are coming (figures the provider
+gave before, no failed collection, and the next collection running or due
+within 10 s), the table asks again just after that collection and the row
+waits for them instead of saying "Unavailable"; it says "Unavailable" at once
+otherwise, and after a collection that brought none or 25 s of waiting. A load
+whose last viewer leaves keeps running for 2 s, so going from Home to Markets
+joins it. A refresh never shortens
 the table: a pool whose read fails keeps its last good row, stale and dated.
 What a busy service refused (one pool's market, one token, one pool-metrics
 read), and rows whose provider figures were rate limited, are asked again on

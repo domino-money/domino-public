@@ -57,8 +57,11 @@ export function stateOfCase(fixture) {
  * RelayAnswer instead; `swapBytes` multiplies the size a `swaps` answer
  * reports (the recording is trimmed; the relay's own answers are about three
  * times larger for a busy pool); `requests` records every request asked.
+ * `probeHistory` (2026-09-25): a probe answer carries the pool's recorded liquidity logs only when asked for. Since that
+ * day a probe that sees any leads to the price path (pipeline.ts), so the exact replay's own tests, which replay the
+ * recorded pool history, answer their probes with the recorded Swaps alone.
  */
-export function fixtureRelay(fixture, { maxDays = 7, script = {}, tamper, swapBytes = 1 } = {}) {
+export function fixtureRelay(fixture, { maxDays = 7, script = {}, tamper, swapBytes = 1, probeHistory = false } = {}) {
   const requests = [];
   const head = fixture.state.block + 2;
   const answer = (value) => {
@@ -101,14 +104,28 @@ export function fixtureRelay(fixture, { maxDays = 7, script = {}, tamper, swapBy
       case 'probe': {
         // 2026-09-25: the pool's recorded logs (its epochs and swap days) in [from, to], in chain order.
         const seen = new Set();
-        const logs = [...Object.values(fixture.pool).flat(), ...Object.values(fixture.swaps).flat()]
+        const logs = [...(probeHistory ? Object.values(fixture.pool).flat() : []), ...Object.values(fixture.swaps).flat()]
           .filter((log) => log[0] >= request.from && log[0] <= request.to && !seen.has(`${log[0]}:${log[1]}`) && seen.add(`${log[0]}:${log[1]}`))
           .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
         return answer({ v: 1, kind: 'probe', head, units: [{ unit: null, from: request.from, to: request.to, final: false, logs }], next: null });
       }
       case 'swapBefore': {
-        if (!(request.block in fixture.swapBefore)) throw new Error(`no swapBefore ${request.block} in fixture ${fixture.id}`);
-        return answer({ v: 1, kind: 'swapBefore', head, log: fixture.swapBefore[request.block] });
+        if (request.block in fixture.swapBefore) return answer({ v: 1, kind: 'swapBefore', head, log: fixture.swapBefore[request.block] });
+        // 2026-09-25: the price path asks for the Swap before the mint's own block: the recorded one before it.
+        const recorded = [...Object.values(fixture.swapBefore).filter(Boolean), ...Object.values(fixture.swaps).flat()].filter((log) => log[2] === 3 && log[0] < request.block).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        // None recorded before it: the pool's first Swap came later (3135288's pool never swapped), as the relay says.
+        return answer({ v: 1, kind: 'swapBefore', head, log: recorded[recorded.length - 1] ?? null });
+      }
+      // 2026-09-25: the price path's two reads (functions/_lib/feesPath.ts), from the recorded swap days and pool epochs.
+      case 'span': {
+        const swaps = Object.values(fixture.swaps).flat();
+        const units = request.spans.map(([from, to]) => ({ unit: null, from, to, final: false, logs: swaps.filter((log) => (log[2] === 3 || log[2] === 4) && log[0] >= from && log[0] <= to).sort((a, b) => a[0] - b[0] || a[1] - b[1]) }));
+        return answer({ v: 1, kind: 'span', head, units, next: null });
+      }
+      case 'settlements': {
+        const salt = BigInt(request.tokenId);
+        const own = Object.values(fixture.pool).flat().filter((log) => log[2] === 1 && log[0] >= request.from && log[0] <= request.to && `0x${log[4][1].slice(26)}` === '0x58daec3116aae6d93017baaea7749052e8a04fa7' && BigInt(`0x${log[5].slice(2 + 3 * 64, 2 + 4 * 64)}`) === salt);
+        return answer({ v: 1, kind: 'settlements', head, units: [{ unit: null, from: request.from, to: request.to, final: false, logs: own.sort((a, b) => a[0] - b[0] || a[1] - b[1]) }], next: null });
       }
       case 'headers': {
         const missing = request.blocks.filter((block) => !(block in fixture.headers));

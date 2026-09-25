@@ -99,8 +99,11 @@ export const PROBE_SPAN = 36_000
  * run stops as it does at its byte budget, and the card keeps its unclaimed figure instead of loading for minutes.
  * The page's was 60 s; 20 s since 2026-09-25, with the probe before the pool's history (the owner's USDG/UFG position
  * verifies in about 7 s from Brazil through the paced lane).
+ * 2026-09-25, later: the page's is 30 s. One slow scan of the RPC (the NFT's Transfer over an epoch took 2.2 s, measured
+ * live that day) makes the lane rest four times as long (lib/chain/browser.ts LANE_PACE.workFactor), and took 11 s of
+ * the 20 before the owner's USDG/UFG position could verify. The card shows its exact figures while it waits.
  */
-export const BUDGET_MS = { page: 20_000, list: 10_000 } as const
+export const BUDGET_MS = { page: 30_000, list: 10_000 } as const
 /**
  * Relay requests one history keeps in flight for its pool epochs and headers.
  * 1 since 2026-09-25 (was 2): the replay worker's reads share one paced lane
@@ -108,6 +111,60 @@ export const BUDGET_MS = { page: 20_000, list: 10_000 } as const
  * in it, and was asked before the budget could see the first one's bytes.
  */
 export const CLIENT_CONCURRENCY = 1
+/*
+ * The price path (2026-09-25, pipeline.ts P1 and P2; replay.ts): a busy pool's position replayed from the Swaps of its
+ * own life, sized in the compact bytes the relay's answers take (about 620 bytes a Swap, two thirds of the RPC's JSON).
+ * Measured that day on the owner's positions: USDG/DELTA's day of Swaps is 106 kB, PONS/USDG's 2.7 MB (4,395 Swaps).
+ */
+/** The Swaps of a life read before anything is drawn (about 3 s through the paced lane): past it, an estimate first. */
+export const PATH_NOW_BYTES = 384 * 1024
+/**
+ * How much busier a life may have been than the probe's last minutes (the rate that sizes it before any of it is read):
+ * recorded PONS/USDG, 3,600 blocks before block 71,568,000 said 1.6 bytes a block, where 3202568's 4.6 hours up to it
+ * averaged 4.8 (2026-09-25).
+ */
+export const PATH_BURST = 3
+/**
+ * The price path is for a position that lived a small part of its pool's life: one that lived more than a
+ * 1 / PATH_LIFE_SHARE of it, in a pool whose history the probe says fits, keeps the exact replay of that history.
+ */
+export const PATH_LIFE_SHARE = 4
+/** The windows of Swaps an estimate reads, in all (a few seconds through the lane). */
+export const SAMPLE_BYTES = 160 * 1024
+/**
+ * The compact bytes of a span reply at the worker's cap (functions/_lib/feesPath.ts SPAN_BYTES: the RPC's JSON is about
+ * 1.6 times them). A reply past it is cut by the worker after the RPC has sent it, which the visitor's address pays for.
+ */
+export const SPAN_CAP_BYTES = 240 * 1024
+/**
+ * 2026-09-25 (review): the most compact bytes one request of an estimate's windows is sized for, at PATH_BURST times the
+ * Swaps' rate read so far: half the cap. Windows sized from a quiet probe alone were cut at the cap three times live.
+ */
+export const SAMPLE_BATCH_BYTES = 120 * 1024
+/**
+ * The windows one request of an estimate reads (one batch): four, not the sixteen a request may carry, so no one reply
+ * is a burst of work the lane's pace cannot see (live, 2026-09-25, on an address other runs had kept busy: a batch of
+ * sixteen was refused once, and the third batch of eight a second later).
+ */
+export const SAMPLE_SPANS_PER_REQUEST = 4
+/** The shortest window an estimate reads in a slot (two minutes of blocks), and the width of its first request's one. */
+export const SAMPLE_MIN_BLOCKS = 1_200
+/** The most slots (and windows) an estimate has: an hour each, or a few hours each for an older position. */
+export const MAX_SLOTS = 48
+/**
+ * The exact read after an estimate: at most these many bytes and this long (the worker's deadline runs on to it). A day
+ * of PONS/USDG, 2.7 MB, is read in about a minute at the lane's pace; a longer busy life keeps its estimate.
+ */
+export const PATH_REFINE_BYTES = 6 * 1024 * 1024
+export const PATH_REFINE_MS = 150_000
+/** About the bytes of one span of the exact read: its length follows the Swaps' rate (a reply the RPC answers at once). */
+export const SPAN_TARGET_BYTES = 96 * 1024
+/** The shortest span of the exact read (a minute of blocks) and the longest (a day: functions/_lib/feesPath.ts SPAN_BLOCKS). */
+export const SPAN_MIN_BLOCKS = 600
+export const SPAN_BLOCKS_MAX = 864_000
+/** The most windows one span request reads (feesPath.ts MAX_SPANS), and the most owners a settlements request names (MAX_HOLDERS). */
+export const MAX_SPANS_PER_REQUEST = 16
+export const MAX_HOLDERS = 4
 /** How often a visible page re-reads `/state`. */
 export const STATE_REFRESH_MS = 60_000
 /** A relay that lags the state's block is asked once more after this wait. */

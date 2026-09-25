@@ -73,8 +73,37 @@
  * When the last viewer leaves while a read runs, it is cancelled 2 s later,
  * not at once: a screen that follows straight away (Home to Markets) joins it
  * instead of starting it over.
+ *
+ * Added 2026-09-25 (r4/metrics), from the owner's Home on production, where
+ * ETH/USDG and PONS/USDG said "Unavailable" for a minute while Markets, read
+ * later, had their figures:
+ *
+ *   - every read of a load is asked `priority: 'first'` (scheduler.ts), so the
+ *     table, the ticker and Home wait for no Markets card's history read;
+ *   - a stored overview that serves a pool without its provider figures is
+ *     asked again soon, instead of a minute later, only where they are
+ *     coming (`catchUpInMs`): the provider gave figures for that pool before
+ *     (they aged past the store's five minutes, or its last ask missed), the
+ *     store's last collection did not fail (a failed one backs off for up to
+ *     five minutes and is not brought forward), and its next collection runs
+ *     now (a lease held) or within CATCH_UP_HORIZON_MS. The overview itself
+ *     marks its pools wanted, which brings that collection within five
+ *     seconds (backend/migrations/026_public_demand.sql). The ask goes at
+ *     that collection plus CATCH_UP_MARGIN_MS, CATCH_UP_FLOOR_MS at the
+ *     soonest, the floor 1.4 times longer at each ask in a row (asks at
+ *     about 6.5, 10, 15 and 22 s while a collection runs late).
+ *     Meanwhile such a row says its figures are coming (`figuresPending`),
+ *     not that they are unavailable: nothing has failed yet. It stops
+ *     waiting, and says Unavailable as it is, when a collection published
+ *     since it began brought none, or when its next ask would fall past
+ *     CATCH_UP_WINDOW_MS from the answer it began with; it waits again only
+ *     once it has caught up or stopped being behind. Revised 2026-09-25
+ *     after review: the first cut also waited for a pool whose collection had
+ *     failed (three minutes of placeholder) and for one the provider never
+ *     covered (twenty seconds on every visit).
  */
 import type { PoolMarketResponse, SnapshotPoolEntry } from 'api-contracts/read-v1/types'
+import type { StoredPool } from 'api-contracts/read-v3/types'
 import type { Market, MarketsResult, Metric } from '../markets'
 import { createSnapshotMemo, planSnapshot, SNAPSHOT_MAX_POOLS, type SnapshotMemo } from './marketsSnapshot'
 import { realClock, type Clock } from './pipeline'
@@ -164,6 +193,40 @@ export const BUSY_RECOVERY_ATTEMPTS = 4
 export const PROVIDER_BUSY_ATTEMPTS = 3
 /** The read service's fresh window for provider figures, which a busy provider's row waits out before it is read again. */
 export const PROVIDER_BUSY_WAIT_MS = 60_000
+/**
+ * A pool's next collection further away than this is not waited for. The store brings a wanted pool's within five
+ * seconds (backend/migrations/026_public_demand.sql); the rest is margin.
+ */
+export const CATCH_UP_HORIZON_MS = 10_000
+/** After the producer's next attempt, how long a collection is given to publish before the overview is asked again. */
+export const CATCH_UP_MARGIN_MS = 1_500
+/** The first catch-up is never asked sooner than this after the answer before it; each ask in a row CATCH_UP_BACKOFF times longer. */
+export const CATCH_UP_FLOOR_MS = 2_500
+export const CATCH_UP_BACKOFF = 1.4
+/**
+ * How long a pool's row waits for figures from the answer it began waiting with. The collector takes four pools a
+ * tick, twelve seconds each at the most (backend/manage_public_data.py), so a fifth pool can publish well after the
+ * first four.
+ */
+export const CATCH_UP_WINDOW_MS = 25_000
+
+/**
+ * How far off a stored pool's figures are, when they are coming: in MILLISECONDS of server time from the answer
+ * (`nextAttemptAt - generatedAt`, never this browser's clock), 0 while a collection runs. Null when they are not
+ * coming soon: figures on hand; a pool the provider never gave figures for (`ageSeconds` null: nothing to bring
+ * back); a collection that failed (`reason` set: the store backs it off for up to five minutes and a request does
+ * not bring it forward); a next collection further off than CATCH_UP_HORIZON_MS, or none named; a rejected pool.
+ */
+export function catchUpInMs(entry: StoredPool, generatedAt: number): number | null {
+  const { value, acquisition } = entry
+  if (value === null || acquisition.status !== 'ready' || acquisition.reason !== null) return null
+  const market = value.market.market
+  if (market.status !== 'unavailable' || market.cache.ageSeconds === null) return null
+  if (acquisition.refreshing) return 0
+  if (acquisition.nextAttemptAt === null) return null
+  const inMs = Math.max(0, acquisition.nextAttemptAt - generatedAt) * 1000
+  return inMs <= CATCH_UP_HORIZON_MS ? inMs : null
+}
 
 /**
  * The wait before quiet re-ask `attempt` (from 0) of what a busy service or a
@@ -200,8 +263,10 @@ export const documentVisibility: PageVisibility = {
 export function retainRowAsStale(row: Market, receivedAtMs: number): Market {
   const readAt = Math.floor(receivedAtMs / 1000)
   const age = (m: Metric): Metric => (m.state === 'qualified' || m.state === 'provider' ? { ...m, state: 'stale', asOf: m.asOf ?? readAt } : m)
+  // A kept row is asked again by nobody: figures it was waiting for are not coming with it.
+  const { figuresPending: _waiting, ...kept } = row
   return {
-    ...row,
+    ...kept,
     tvlUsd: age(row.tvlUsd),
     volume24hUsd: age(row.volume24hUsd),
     feeAprPercent: age(row.feeAprPercent),
@@ -245,6 +310,12 @@ export interface LoadOptions {
   metrics?: boolean
   /** The additive stored bundle, preferred when its namespace advertises it. */
   overview?: boolean
+  /**
+   * Whether the row of a stored pool whose figures are coming (`catchUpInMs`, given here) waits for them: the
+   * provider says yes only where it will ask the overview again in time, and such rows say `figuresPending`.
+   * Absent: those rows say what they have, Unavailable.
+   */
+  catchUp?: (entry: StoredPool, inMs: number) => boolean
 }
 
 /** A row's own read: the pool's market read, or its entry in the stored snapshot. */
@@ -285,6 +356,13 @@ interface Load extends LoadedMarkets {
   /** A lease is held: an attempt is in flight right now, so `nextAttemptAt` is already behind. */
   acquisitionRunning?: boolean
   stored?: boolean
+  /**
+   * The rows that wait for figures (`figuresPending`): the soonest of their collections, in MILLISECONDS of server
+   * time from the answer (0 while one runs). Null: no row waits.
+   */
+  catchUpInMs?: number | null
+  /** Every pool of the stored overview whose figures are coming (`catchUpInMs`), lowercase, waiting or not; absent when no overview was read. */
+  behind?: string[]
 }
 
 /** One problem per read: a pool's market read, a pool's pool-metrics read, or a token. */
@@ -313,6 +391,10 @@ async function readMarkets(
   const tokensAgain = new Set(again?.plan.tokens ?? [])
   const metricsAgain = new Set(again?.plan.metrics ?? [])
   const pendingTokens = new Set<string>()
+  /** Pools whose figures the producer is about to collect, while the provider will ask again for them. */
+  const figuresBehind = new Set<string>()
+  // Every read of the table goes before any queued read that did not ask first: a Markets card's history, say.
+  const asked = { signal, priority: 'first' as const }
 
   const setProblem = (problem: MarketProblem) => {
     const at = ledger.problems.findIndex((p) => problemKey(p) === problemKey(problem))
@@ -342,7 +424,8 @@ async function readMarkets(
       const reads = { metrics: ledger.metrics.get(key(poolId)) ?? null, tokens }
       const projected = row.kind === 'market' ? projectMarketRow({ market: row.outcome, ...reads }) : projectSnapshotRow({ snapshot: row.outcome, entry: row.entry, ...reads })
       const pending = (!settled && tokens.size < new Set(currenciesOf(row).map(key)).size) || currenciesOf(row).some((address) => pendingTokens.has(key(address)))
-      return [pending ? { ...projected, tokensPending: true as const } : projected]
+      const waiting = figuresBehind.has(key(poolId))
+      return [pending || waiting ? { ...projected, ...(pending ? { tokensPending: true as const } : {}), ...(waiting ? { figuresPending: true as const } : {}) } : projected]
     })
   const emit = () => onProgress?.(rows(false))
   const finish = (blocking: FailedOutcome | null, aborted = false): Load => ({ rows: rows(true), problems: ledger.problems, blocking, aborted, ledger, read })
@@ -353,7 +436,7 @@ async function readMarkets(
   async function readToken(poolId: string, currency: string): Promise<Load | null> {
     const address = key(currency)
     tokensAgain.delete(address)
-    const outcome = await source.read('token', { token: currency }, { signal })
+    const outcome = await source.read('token', { token: currency }, asked)
     if (outcome.state === 'aborted') return finish(null, true)
     ledger.tokens.set(address, outcome)
     dropProblem({ poolId, token: address, route: 'token' })
@@ -394,7 +477,7 @@ async function readMarkets(
       for (const poolId of poolIds) setProblem({ poolId, outcome: check.outcome })
       return finish(null)
     } else if (check.state === 'enabled') {
-      const overview = await source.read('overview', { poolIds: poolIds.map(key) }, { signal })
+      const overview = await source.read('overview', { poolIds: poolIds.map(key) }, asked)
       if (overview.state === 'aborted') return finish(null, true)
       if (overview.state !== 'ok') {
         if (stopsTable(overview)) return finish(overview)
@@ -413,6 +496,19 @@ async function readMarkets(
         ledger.sources.set(key(entry.poolId), { kind: 'market', outcome })
         read.add(key(entry.poolId))
       }
+      // Pools served without their provider figures that are coming (see the header): this very request marked them
+      // wanted. Their rows wait for the figures instead of calling them unavailable where the provider will ask again
+      // in time; the others say what they have.
+      const behind: string[] = []
+      let soonest: number | null = null
+      for (const entry of overview.data.pools) {
+        const inMs = catchUpInMs(entry, overview.data.generatedAt)
+        if (inMs === null) continue
+        behind.push(key(entry.poolId))
+        if (!options.catchUp?.(entry, inMs)) continue
+        figuresBehind.add(key(entry.poolId))
+        soonest = soonest === null ? inMs : Math.min(soonest, inMs)
+      }
       emit()
       const waiting = [...overview.data.pools, ...overview.data.tokens].filter((entry) => entry.acquisition.status === 'pending')
       // The soonest any pending entry will be tried, so one slow row never holds the others.
@@ -422,6 +518,8 @@ async function readMarkets(
         acquiring: waiting.length > 0,
         acquisitionRunning: waiting.some((entry) => entry.acquisition.refreshing),
         acquisitionInMs: due.length ? Math.max(0, Math.min(...due) - overview.data.generatedAt) * 1000 : null,
+        catchUpInMs: soonest,
+        behind,
       }
     }
   }
@@ -437,7 +535,7 @@ async function readMarkets(
       // Anything else, a hop refusing the GET included, is the snapshot not listed: the pools' own reads ask again.
       if (stopsTable(check.outcome)) return finish(reroute(check.outcome, 'pool-market'))
     } else if (check.state === 'enabled') {
-      const snapshot = await source.read('markets-snapshot', { poolIds: poolIds.map(key) }, { signal })
+      const snapshot = await source.read('markets-snapshot', { poolIds: poolIds.map(key) }, asked)
       if (snapshot.state === 'aborted') return finish(null, true)
       if (snapshot.state === 'ok') {
         memo.succeeded()
@@ -465,7 +563,7 @@ async function readMarkets(
 
   // 3. The pools' own market reads, each row's tokens right after it.
   for (const poolId of markets) {
-    const market = await source.read('pool-market', tableMarketRequest(poolId), { signal })
+    const market = await source.read('pool-market', tableMarketRequest(poolId), asked)
     if (market.state === 'aborted') return finish(null, true)
     if (market.state !== 'ok') {
       if (stopsTable(market)) return finish(market)
@@ -519,7 +617,7 @@ async function readMarkets(
       if (stopsTable(check.outcome)) return finish(check.outcome)
     } else if (check.state === 'enabled') {
       for (const poolId of history) {
-        const outcome = await source.read('pool-metrics', { poolId }, { signal })
+        const outcome = await source.read('pool-metrics', { poolId }, asked)
         if (outcome.state === 'aborted') return finish(null, true)
         // Only the page stops the load here. Any other answer, a payload refused as incompatible included, is this row's.
         if (outcome.state !== 'ok' && isPageWide(outcome)) return finish(outcome)
@@ -607,6 +705,13 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
   let cancelRefreshVisibility: (() => void) | null = null
   let refreshDueAt: number | null = null
   let refreshFailures = 0
+  /**
+   * The pools whose figures are coming (see the header), by lowercase id: when this page first saw each behind (the
+   * answer's arrival, monotonic), the store's observation of it then, and whether its row has stopped waiting.
+   */
+  const behindSince = new Map<string, { since: number; observedAt: number | null; over: boolean }>()
+  /** Catch-up asks in a row; each waits at least CATCH_UP_BACKOFF times as long as the one before. */
+  let catchUpAsks = 0
   // The same interval for stored and live loads (changed 2026-09-24): a settled
   // stored overview used to be asked again every 5 s, about eleven extra reads a
   // minute through the tab's one queue and its 30-a-minute budget, ahead of the
@@ -615,7 +720,31 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
 
   /** Never ask faster than this, whatever the producer's schedule says. */
   const ACQUISITION_FLOOR_MS = 5000
-  const nextRefresh = (failed: boolean, hasData: boolean, acquiring = false, schedule?: { inMs: number | null; running: boolean }) => {
+  /** The wait before the next catch-up ask, for a collection `inMs` away in server time. */
+  const catchUpIntervalMs = (inMs: number) => Math.max(Math.round(CATCH_UP_FLOOR_MS * CATCH_UP_BACKOFF ** catchUpAsks), inMs + CATCH_UP_MARGIN_MS)
+
+  /**
+   * Whether a behind pool's row waits for its figures (LoadOptions.catchUp), asked as its answer arrives: not once
+   * a collection published since it began waiting brought none, nor when the ask that would bring them falls past
+   * CATCH_UP_WINDOW_MS from the answer it began waiting with, or at the ordinary refresh, nor while no screen holds
+   * the quiet re-asks.
+   */
+  const catchUpWaits = (entry: StoredPool, inMs: number) => {
+    // Only a screen holding the quiet re-asks (the table) has this provider ask again on its own.
+    if (holders === 0) return false
+    const id = key(entry.poolId)
+    const at = clock.monotonic()
+    const seen = behindSince.get(id)
+    if (seen?.over) return false
+    const collected = seen !== undefined && (entry.observedAt ?? -1) > (seen.observedAt ?? -1)
+    const since = seen?.since ?? at
+    const interval = catchUpIntervalMs(inMs)
+    const over = collected || interval >= activeRefreshMs || at - since + interval > CATCH_UP_WINDOW_MS
+    behindSince.set(id, { since, observedAt: seen ? seen.observedAt : entry.observedAt, over })
+    return !over
+  }
+
+  const nextRefresh = (failed: boolean, hasData: boolean, acquiring = false, schedule?: { inMs: number | null; running: boolean }, catchUp: number | null = null) => {
     if (refreshMs <= 0 || (!hasData && !acquiring)) { refreshDueAt = null; return }
     refreshFailures = failed ? Math.min(refreshFailures + 1, 3) : 0
     // While acquiring, the producer publishes when it will try again; use that
@@ -625,7 +754,9 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
     const acquisitionMs = schedule?.running || schedule?.inMs == null
       ? ACQUISITION_FLOOR_MS
       : Math.min(activeRefreshMs, Math.max(ACQUISITION_FLOOR_MS, schedule.inMs))
-    const interval = acquiring ? acquisitionMs : activeRefreshMs * 2 ** refreshFailures
+    // Rows waiting for figures are asked again just after the producer's collection (catchUpIntervalMs), not a
+    // minute later, whatever else is due.
+    const interval = acquiring ? Math.min(acquisitionMs, catchUp ?? Infinity) : catchUp ?? activeRefreshMs * 2 ** refreshFailures
     refreshDueAt = clock.monotonic() + interval * (1 + clock.random() * 0.1)
   }
 
@@ -681,6 +812,8 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
     const retrying = from.phase === 'failed' ? from.failure : from.phase === 'loading' ? from.retrying : null
     const problemsBefore = from.phase === 'ready' ? from.problems : []
     if (!inPlace) set({ phase: 'loading', previous, retrying })
+    // Rows whose figures are coming wait for them only where this provider asks again on its own.
+    memory.catchUp = refreshMs > 0 ? catchUpWaits : undefined
     const loaded = await readMarkets(
       source,
       poolIds,
@@ -728,7 +861,11 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
       const good = kept.get(key(poolId))
       return good ? [retainRowAsStale(good.row, good.receivedAt)] : []
     })
-    if (!quiet) nextRefresh(loaded.problems.length > 0, markets.length > 0, loaded.acquiring, { inMs: loaded.acquisitionInMs ?? null, running: loaded.acquisitionRunning === true })
+    // A pool no longer behind waits afresh the next time it is; a catch-up is asked while rows wait.
+    if (loaded.behind) for (const id of behindSince.keys()) if (!loaded.behind.includes(id)) behindSince.delete(id)
+    const catchUp = !quiet && loaded.catchUpInMs != null ? catchUpIntervalMs(loaded.catchUpInMs) : null
+    if (!quiet) catchUpAsks = catchUp === null ? 0 : catchUpAsks + 1
+    if (!quiet) nextRefresh(loaded.problems.length > 0, markets.length > 0, loaded.acquiring, { inMs: loaded.acquisitionInMs ?? null, running: loaded.acquisitionRunning === true }, catchUp)
     set({ phase: 'ready', result: resultOf(markets), problems: loaded.problems, ...(loaded.acquiring ? { acquiring: true } : {}) })
   }
 

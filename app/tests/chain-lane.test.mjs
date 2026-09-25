@@ -136,6 +136,29 @@ test('the first refusal stops the run and rests the lane; an unreadable reply is
   } finally { lane.close(); }
 });
 
+// 2026-09-25 (review of r4/fees): each tab has its own fees worker and lane, and the RPC limits the visitor's address,
+// not a tab: two busy-pool pages each paced alone read at twice the pace. Two lanes in one process hear each other on the
+// channel as two tabs' workers do.
+test('two tabs’ lanes share one pace: each counts the bytes the other read, and rests when the other was refused', async () => {
+  const a = chainLane(PACE);
+  const b = chainLane(PACE);
+  try {
+    const tabA = a.deps();
+    const tabB = b.deps();
+    assert.ok((await tabB.turn()) < 20, 'B goes at once while nothing was read');
+    await withFetch(() => new Response('x'.repeat(8_000)), () => call(tabA));
+    await wait(10);
+    const waited = await tabB.turn();
+    assert.ok(waited >= 30 && waited < 400, `B waits for the 7,000 bytes A read past the burst, about 70 ms at 100 kB/s (${waited} ms)`);
+    await withFetch(() => new Response('Too Many Requests', { status: 429 }), () => tabA.fetch(RPC, { method: 'POST', body: '{}' }));
+    await wait(10);
+    assert.equal(b.resting(), true, 'A’s refusal rests B too');
+    assert.equal(b.deps().cancelled(), true);
+    await wait(PACE.restMs + 20);
+    assert.equal(b.resting(), false);
+  } finally { a.close(); b.close(); }
+});
+
 test('a run’s time budget ends its piece of work too: no wait past it, nothing asked after it, and the unit says its budget is spent', async () => {
   const lane = chainLane(PACE);
   try {

@@ -20,11 +20,14 @@ function Glyph({ kind }: { kind: FeesEvent['kind'] }) {
 
 const STEP = 5
 
-/** A token amount as the value band writes it (six significant digits), every digit in its title. */
-export function TokenFigure({ raw, currency }: { raw: bigint; currency: StateCurrency }) {
+/**
+ * A token amount as the value band writes it (six significant digits), every digit in its title; `near` (2026-09-25,
+ * review): a price path's settled amount, within its rounding of the chain's, whose title says so ("≈").
+ */
+export function TokenFigure({ raw, currency, near = false }: { raw: bigint; currency: StateCurrency; near?: boolean }) {
   const texts = amountTexts(raw, currency)
   if (!texts) return null
-  return <span title={texts.text === texts.full ? undefined : texts.full}>{texts.text}</span>
+  return <span title={near ? `≈ ${texts.full}` : texts.text === texts.full ? undefined : texts.full}>{texts.text}</span>
 }
 
 /** A symbol from /state, as text (untrusted); the short address when unreadable. */
@@ -86,7 +89,7 @@ export function FeesActivity({ view, ids = false }: { view: FeesView; ids?: bool
                     {([0, 1] as const).map((i) =>
                       positive(event.fees[i]) ? (
                         <span key={i}>
-                          <TokenFigure raw={event.fees[i]} currency={currencies[i]} /> {symbolOf(currencies[i])}
+                          <TokenFigure raw={event.fees[i]} currency={currencies[i]} near={view.near} /> {symbolOf(currencies[i])}
                         </span>
                       ) : null,
                     )}

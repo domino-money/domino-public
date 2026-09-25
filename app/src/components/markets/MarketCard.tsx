@@ -154,9 +154,11 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   } else if (series.kind === 'figure') {
     // The row's own figure, aged on this card's clock like its TVL; a dash when there is no row or no value.
     const volume = market ? market.volume24hUsd : series.metric
+    // A figure the store is about to collect rests as a bubble, as the TVL does, never a dash while it is coming.
+    const coming = market?.figuresPending === true && (!volume || presentMetric(volume).kind === 'unavailable')
     plot = (
       <span className="dm-mkt-plot-figure" data-chart-unavailable={series.code} title={series.title}>
-        {volume && presentMetric(volume).kind === 'value' ? <MetricCell metric={volume} retrieved={retrieved} /> : <FigureDash reason="24h volume unavailable" />}
+        {volume && presentMetric(volume).kind === 'value' ? <MetricCell metric={volume} retrieved={retrieved} /> : coming ? <span aria-hidden="true" className="dm-skel dm-mkt-skel-tvl" /> : <FigureDash reason="24h volume unavailable" />}
       </span>
     )
   }
@@ -195,9 +197,10 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
         <span className="dm-mkt-card-tvl">
           <span className="dm-mkt-card-label">TVL</span>
           <span className="dm-mkt-card-figure">
-            {market ? (
+            {market && !(market.figuresPending && presentMetric(market.tvlUsd).kind === 'unavailable') ? (
               <MetricCell metric={market.tvlUsd} retrieved={retrieved} />
-            ) : series.kind === 'waiting' ? (
+            ) : market || series.kind === 'waiting' ? (
+              // Waiting for the card's read, or for figures the store is about to collect (marketsProvider.ts, catch-up).
               <span aria-hidden="true" className="dm-skel dm-mkt-skel-tvl" />
             ) : (
               <FigureDash reason="TVL unavailable" />

@@ -15,7 +15,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { fixtureRelay, loadCase } from './support/fees/relay-fixture.mjs';
+import { fixtureRelay, loadCase, stateOfCase } from './support/fees/relay-fixture.mjs';
 
 const require = createRequire(import.meta.url);
 const { createFeesStore, RELEASE_MS } = require('../.test-build/app/src/lib/fees/store.js');
@@ -298,7 +298,10 @@ test('a run that could not reach the chain waits for the next newer block before
 // position page's larger budget then starts that history over.
 test('a list budget spent before the swap days: a position page starts the history over with its larger budget', async () => {
   const fixture = loadCase('3136705');
-  const relay = fixtureRelay(fixture);
+  // Changed on purpose (2026-09-25, the price path): its probe answered as a quiet pool's, so the exact replay of the
+  // pool's history is the one chosen under both budgets (a probe past the list's budget now leads to the price path).
+  const quietProbe = (request) => ({ ok: true, value: { v: 1, kind: 'probe', head: fixture.state.block + 2, units: [{ unit: null, from: request.from, to: request.to, final: false, logs: [] }], next: null }, bytes: 100 });
+  const relay = fixtureRelay(fixture, { script: { probe: Array.from({ length: 20 }, () => quietProbe) } });
   // Each of its four epochs answered at 300 kB (2026-09-25, the budgets are 1 MB and 2 MB): the list's is spent by them.
   const heavy = { logs: async (request) => { const a = await relay.logs(request); return request.kind === 'pool' && a.ok ? { ...a, bytes: 300 * 1024 } : a; } };
   const { store, workers } = storeWith({ relays: { 3136705: heavy } });
@@ -369,8 +372,10 @@ test('client.ts: no request in a build without the chain; the relay’s own read
     const fixture = loadCase('3136705');
     const state = await client.chainState(['3136705']);
     assert.equal(state.ok, true);
-    assert.deepEqual(state.value, fixture.state, 'the recorded /state answer, rebuilt by the page from the same chain values');
-    assert.equal(state.bytes, JSON.stringify(fixture.state).length);
+    // 2026-09-25: with the pool's protocol fee (slot0: 1,000 pips each way in the USDG/UFG pools), for the price path.
+    const withFee = { ...fixture.state, positions: fixture.state.positions.map((p) => (p.ok ? { ...p, protocolFee: 4_097_000 } : p)) };
+    assert.deepEqual(state.value, withFee, 'the recorded /state answer, rebuilt by the page from the same chain values');
+    assert.equal(state.bytes, JSON.stringify(withFee).length);
     assert.deepEqual(chain.log.map((call) => call.method), ['eth_blockNumber', 'eth_call', 'eth_call']);
     for (const [url, init] of sent) {
       assert.equal(url, 'https://rpc.mainnet.chain.robinhood.com');
@@ -411,6 +416,11 @@ test('the page’s own chain reads rebuild each recorded history exactly, and a 
   const original = globalThis.fetch;
   globalThis.__DOMINO_DEPLOYABLE__ = true;
   const relay = require('../.test-build/app/functions/_lib/fees.js');
+  // The logs as the replay worker reads them (logs.ts with its own chain code, the price path's reads included).
+  const { logsWith } = require('../.test-build/app/src/lib/fees/logs.js');
+  const { chainDeps, memoryCache } = require('../.test-build/app/src/lib/chain/browser.js');
+  const { pathLogsOnChain } = require('../.test-build/app/functions/_lib/feesPath.js');
+  const code = { chainDeps, logsOnChain: relay.logsOnChain, pathLogsOnChain };
   const through = async (chain) => {
     // One chain per recording, each at its own head: nothing read for another may be reused.
     relay.resetRelayMemory();
@@ -419,14 +429,18 @@ test('the page’s own chain reads rebuild each recorded history exactly, and a 
     const answer = await client.chainState([chain.id]);
     assert.equal(answer.ok, true);
     const { state, growth } = stateOf(answer.value.positions[0], answer.value.block, answer.value.timestamp);
-    return runPipeline({ logs: (request) => client.chainLogs(request), sleep: async () => {} }, { id: chain.id, state, growth, budgetBytes: 64 * 1024 * 1024, checkpoint: null });
+    const cache = memoryCache();
+    return runPipeline({ logs: (request) => logsWith(code, cache, request), sleep: async () => {} }, { id: chain.id, state, growth, budgetBytes: 64 * 1024 * 1024, checkpoint: null });
   };
   try {
     for (const id of ['3136705', '2310187', '3165100', '3135288']) {
       const fixture = loadCase(id);
-      const result = await through(caseChain(id));
+      // The exact replay of each recorded pool history (a probe that sees none of it: see case-chain.mjs quietProbe).
+      const result = await through(caseChain(id, { quietProbe: true }));
       // Changed on purpose (2026-09-25): 3165100's pool swapped 908 times in its last hour, more than the page's probe
       // may read (functions/_lib/fees.ts PROBE_BYTES): its history, 10.9 MB, is never read in a browser, whatever the budget.
+      // 2026-09-25, later: the probe then leads to the price path (its own settlements, the Swap before its mint), whose
+      // exact read of the life is past PATH_REFINE_BYTES at that rate; with no estimate asked for, it stops there.
       if (id === '3165100') {
         assert.deepEqual([result.ok, result.reason], [false, 'too_much_history'], id);
         continue;
@@ -437,7 +451,7 @@ test('the page’s own chain reads rebuild each recorded history exactly, and a 
       assert.deepEqual(result.history.collected.map(String), fixture.expect.collected, id);
       assert.equal(result.history.checks.swaps, fixture.expect.checks.swaps, id);
     }
-    const off = await through(caseChain('3136705', { edit: (p) => ({ ...p, feeGrowthInside0X128: String(BigInt(p.feeGrowthInside0X128) + (1n << 128n) / BigInt(p.liquidity) + 1n) }) }));
+    const off = await through(caseChain('3136705', { quietProbe: true, edit: (p) => ({ ...p, feeGrowthInside0X128: String(BigInt(p.feeGrowthInside0X128) + (1n << 128n) / BigInt(p.liquidity) + 1n) }) }));
     assert.deepEqual([off.ok, off.reason], [false, 'replay_mismatch']);
   } finally {
     globalThis.fetch = original;
@@ -468,4 +482,217 @@ test('the test servers\u2019 fees answers: every position not_found by default; 
   const stop = store.subscribeHistory(['3136705'], 'page', () => {});
   await until(() => store.view('3136705').phase === 'verified', 'verified through the route');
   stop();
+});
+
+// 2026-09-25: a busy pool's history is drawn estimated first (the worker's `estimate` message, pipeline.ts P2), then
+// exact. The estimate stays when the exact read runs out of its budget, its time or the RPC's patience; only a replay
+// that disagrees with the chain takes it down; and it never takes the place of a verified history.
+test('an estimate is shown until the exact history verifies; it stays past a budget or a failed read; a mismatch takes it down', async () => {
+  const fixture = loadCase('3136705');
+  const { state, growth } = stateOfCase(fixture);
+  const verified = await runPipeline({ logs: fixtureRelay(fixture).logs, sleep: async () => {} }, { id: '3136705', state, growth, budgetBytes: BUDGET_BYTES.page, checkpoint: null });
+  assert.equal(verified?.ok, true);
+  const estimate = { type: 'estimate', id: '3136705', history: verified.history, prices: verified.prices };
+  /** A store whose worker only records what it is asked; the test answers for it. */
+  const scripted = () => {
+    const workers = [];
+    const { store } = storeWith({
+      spawn: () => {
+        const worker = { posted: [], onmessage: null, onerror: null, onmessageerror: null, terminated: false, postMessage(message) { this.posted.push(structuredClone(message)); }, terminate() { this.terminated = true; } };
+        workers.push(worker);
+        return worker;
+      },
+    });
+    const send = (message) => workers[0].onmessage?.({ data: structuredClone(message) });
+    return { store, workers, send };
+  };
+
+  for (const [reason, stays] of [['too_much_history', true], ['rpc_unavailable', true], ['replay_mismatch', false]]) {
+    const { store, workers, send } = scripted();
+    const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+    await until(() => workers[0]?.posted.some((m) => m.type === 'run'), 'the run');
+    send(estimate);
+    assert.equal(store.view('3136705').phase, 'estimated', 'the estimate is drawn at once');
+    assert.equal(store.view('3136705').history.earned[0], verified.history.earned[0]);
+    send({ type: 'done', id: '3136705', result: { ok: false, reason, prices: null, checkpoint: null, bytes: 1 } });
+    assert.equal(store.view('3136705').phase, stays ? 'estimated' : 'unclaimed-only', `after ${reason}`);
+    stop();
+  }
+
+  // The exact history replaces the estimate; a later estimate never replaces a verified one.
+  const { store, workers, send } = scripted();
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => workers[0]?.posted.some((m) => m.type === 'run'), 'the run');
+  send(estimate);
+  send({ type: 'done', id: '3136705', result: verified });
+  assert.equal(store.view('3136705').phase, 'verified');
+  send(estimate);
+  assert.equal(store.view('3136705').phase, 'verified', 'an estimate after it changes nothing');
+  stop();
+});
+
+// ---------------------------------------------------------------------------
+// 2026-09-25 (review of r4/fees): no run is asked again at once after a stop, and an estimate follows the chain.
+// ---------------------------------------------------------------------------
+
+/** A store whose worker only records what it is asked (the test answers for it), over a /state the test edits. */
+function scriptedStore() {
+  const fixture = loadCase('3136705');
+  const workers = [];
+  const chain = { bump: 0, unclaimed: null };
+  const service = {
+    async postState() {
+      const p = fixture.state.positions[0];
+      const position = { ...p, ...(chain.unclaimed ? { unclaimed0: String(chain.unclaimed[0]), unclaimed1: String(chain.unclaimed[1]) } : {}) };
+      return { ok: true, value: { v: 1, block: fixture.state.block + chain.bump, timestamp: fixture.state.timestamp + Math.round(chain.bump / 10), positions: [position] }, bytes: 100 };
+    },
+  };
+  const time = clock();
+  const store = createFeesStore({
+    spawn: () => {
+      const worker = { posted: [], onmessage: null, onerror: null, onmessageerror: null, terminated: false, postMessage(message) { this.posted.push(structuredClone(message)); }, terminate() { this.terminated = true; } };
+      workers.push(worker);
+      return worker;
+    },
+    postState: (ids) => service.postState(ids),
+    later: time.later,
+    timer: time.timer,
+  });
+  const send = (message) => workers[0].onmessage?.({ data: structuredClone(message) });
+  const runs = () => (workers[0]?.posted ?? []).filter((m) => m.type === 'run');
+  /** The next minute's /state read, `bump` blocks past the recorded one. */
+  const minute = async (bump) => {
+    chain.bump = bump;
+    assert.equal(time.fire('later'), 1, 'one refresh pending');
+    for (let i = 0; i < 20; i++) await settle();
+  };
+  return { fixture, store, chain, send, runs, minute };
+}
+
+async function verifiedResult() {
+  const fixture = loadCase('3136705');
+  const { state, growth } = stateOfCase(fixture);
+  const verified = await runPipeline({ logs: fixtureRelay(fixture).logs, sleep: async () => {} }, { id: '3136705', state, growth, budgetBytes: BUDGET_BYTES.page, checkpoint: null });
+  assert.equal(verified?.ok, true);
+  return verified;
+}
+
+test('a verified history whose later run stops at its budget keeps its chart and waits for a newer block, three times at most', async () => {
+  const verified = await verifiedResult();
+  const { store, send, runs, minute } = scriptedStore();
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => runs().length === 1, 'the first run');
+  send({ type: 'done', id: '3136705', result: verified });
+  const chart = store.view('3136705');
+  assert.equal(chart.phase, 'verified');
+  // The tab comes back after a night: a much newer block, whose run stops at the page's budget with nothing kept.
+  const stopped = { type: 'done', id: '3136705', result: { ok: false, reason: 'too_much_history', prices: null, checkpoint: null, bytes: BUDGET_BYTES.page } };
+  for (const [k, bump] of [[1, 600_000], [2, 600_010], [3, 600_020]]) {
+    await minute(bump);
+    assert.equal(runs().length, 1 + k, `the newer block ${bump} asks once`);
+    send(stopped);
+    for (let i = 0; i < 20; i++) await settle();
+    assert.equal(runs().length, 1 + k, 'never again at once');
+    assert.equal(store.view('3136705'), chart, 'the chart stays');
+    await minute(bump);
+    assert.equal(runs().length, 1 + k, 'the same block asks nothing');
+  }
+  await minute(600_030);
+  assert.equal(runs().length, 4, 'three stops without progress: no fourth run this visit');
+  assert.equal(store.view('3136705'), chart);
+  stop();
+});
+
+test('a price path’s read that ran out of its run’s budget keeps its place: the next newer block goes on from it, not at once', async () => {
+  const verified = await verifiedResult();
+  const { store, send, runs, minute } = scriptedStore();
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => runs().length === 1, 'the first run');
+  send({ type: 'done', id: '3136705', result: verified });
+  await minute(600_000);
+  assert.equal(runs().length, 2);
+  const place = verified.checkpoint;
+  send({ type: 'done', id: '3136705', result: { ok: false, reason: 'too_much_history', prices: null, checkpoint: place, bytes: BUDGET_BYTES.page, later: true } });
+  for (let i = 0; i < 20; i++) await settle();
+  assert.equal(runs().length, 2, 'not at once');
+  assert.equal(store.view('3136705').phase, 'verified');
+  await minute(600_010);
+  assert.equal(runs().length, 3, 'the next newer block goes on');
+  assert.deepEqual(runs()[2].checkpoint, place, 'from the place kept');
+  send({ type: 'done', id: '3136705', result: verified });
+  assert.equal(store.view('3136705').phase, 'verified');
+  stop();
+});
+
+test('an estimate whose exact read stopped follows every newer /state; after a Collect the card shows the new figures, quiet', async () => {
+  const verified = await verifiedResult();
+  const { fixture, store, send, runs, minute, chain } = scriptedStore();
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => runs().length === 1, 'the first run');
+  send({ type: 'estimate', id: '3136705', history: verified.history, prices: verified.prices });
+  send({ type: 'done', id: '3136705', result: { ok: false, reason: 'too_much_history', prices: null, checkpoint: null, bytes: 1 } });
+  assert.equal(store.view('3136705').phase, 'estimated');
+  const p = fixture.state.positions[0];
+  const before = [BigInt(p.unclaimed0), BigInt(p.unclaimed1)];
+  // Ten minutes of newer blocks (6,000 each, past an hour's end), the fees growing: the estimate's end follows them.
+  for (let k = 1; k <= 10; k++) {
+    chain.unclaimed = [before[0] + BigInt(k) * 1_000_000n, before[1] + BigInt(k) * 10n ** 15n];
+    await minute(6_000 * k);
+    const view = store.view('3136705');
+    assert.equal(view.phase, 'estimated', `minute ${k}`);
+    assert.equal(view.state.block, fixture.state.block + 6_000 * k);
+    assert.deepEqual(view.history.earned, chain.unclaimed, 'the end is the chain’s figures');
+    assert.deepEqual(view.history.hourly.at(-1).earned, chain.unclaimed);
+    assert.equal(view.history.hourly.at(-1).t, view.state.timestamp);
+    assert.equal(view.history.hourly.at(-1).anchor, Math.floor(view.state.block / 36_000));
+    for (let i = 1; i < view.history.hourly.length; i++) {
+      const [a, b] = [view.history.hourly[i - 1], view.history.hourly[i]];
+      assert.ok(b.anchor === a.anchor + 1 && b.t >= a.t && b.earned[0] >= a.earned[0] && b.earned[1] >= a.earned[1], `hour ${i} of minute ${k}`);
+    }
+  }
+  assert.equal(runs().length, 1, 'no run: the estimate is carried, nothing read');
+  // The owner's Collect: Position detail reads /state again at once; nothing is unclaimed now.
+  chain.unclaimed = [0n, 0n];
+  chain.bump = 60_050;
+  store.refresh(['3136705']);
+  for (let i = 0; i < 20; i++) await settle();
+  const after = store.view('3136705');
+  assert.deepEqual([after.phase, after.state.block, after.state.unclaimed], ['unclaimed-only', fixture.state.block + 60_050, [0n, 0n]], 'the quiet card with the chain’s new figures');
+  assert.equal(runs().length, 1);
+  stop();
+});
+
+test('an estimate drawn for an older state is carried to the state read since its run began, or gives way to the quiet card', async () => {
+  const verified = await verifiedResult();
+  for (const collected of [false, true]) {
+    const { fixture, store, send, runs, minute, chain } = scriptedStore();
+    const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+    await until(() => runs().length === 1, 'the first run');
+    const p = fixture.state.positions[0];
+    chain.unclaimed = collected ? [0n, 0n] : [BigInt(p.unclaimed0) + 5n, BigInt(p.unclaimed1) + 5n];
+    await minute(700);
+    assert.equal(store.view('3136705').phase, 'loading');
+    send({ type: 'estimate', id: '3136705', history: verified.history, prices: verified.prices });
+    const view = store.view('3136705');
+    assert.equal(view.state.block, fixture.state.block + 700);
+    assert.equal(view.phase, collected ? 'unclaimed-only' : 'estimated');
+    if (!collected) assert.deepEqual(view.history.earned, chain.unclaimed);
+    stop();
+  }
+});
+
+test('carriedEstimate: the same view for an older block; null when the liquidity or the range changed or an amount fell', async () => {
+  const { carriedEstimate } = require('../.test-build/app/src/lib/fees/store.js');
+  const verified = await verifiedResult();
+  const { state } = stateOfCase(loadCase('3136705'));
+  const view = { phase: 'estimated', state, history: verified.history, prices: verified.prices };
+  assert.equal(carriedEstimate(view, { ...state, block: state.block - 1 }), view);
+  assert.equal(carriedEstimate(view, state), view);
+  const newer = { ...state, block: state.block + 10, timestamp: state.timestamp + 1 };
+  assert.equal(carriedEstimate(view, { ...newer, liquidity: state.liquidity + 1n }), null);
+  assert.equal(carriedEstimate(view, { ...newer, tickLower: state.tickLower - 1 }), null);
+  assert.equal(carriedEstimate(view, { ...newer, unclaimed: [state.unclaimed[0] - 1n, state.unclaimed[1]] }), null);
+  const same = carriedEstimate(view, newer);
+  assert.equal(same.history.hourly.length, verified.history.hourly.length, 'the same hour: its end moves');
+  assert.equal(same.history.hourly.at(-1).t, newer.timestamp);
 });

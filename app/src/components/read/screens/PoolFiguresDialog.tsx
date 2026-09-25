@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from
 import { formatUsdCompact } from '../../../lib/read/decimal'
 import { reasonText } from '../../../lib/read/describe'
 import { compactUsd, percentText, presentMetric, readNow, type Market, type Metric } from '../../../lib/markets'
+import { presentAprEstimate } from '../../../lib/read/aprEstimate'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { ACTIVITY_TOO_OLD, activityAge, activityFacts, activityStaleText, heldSeconds, type ActivityFacts, type AttributedFigure } from '../../../lib/read/screens/figures'
 import { useReadSource } from '../../../lib/read/screens/readContext'
@@ -130,6 +131,15 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
   const facts = activity.kind === 'ok' && !tooOld ? activity.facts : null
   const activityReason = activity.kind === 'failed' ? activity.reason : (staleText ?? undefined)
   const fact = (node: ReactNode) => (facts ? node : activity.kind === 'failed' || tooOld ? <FigureDash reason={activityReason} /> : <Skeleton className="ml-auto h-4 w-16" />)
+  // Figures the store is collecting (marketsProvider.ts, `figuresPending`, added 2026-09-25): loading here as in the
+  // row behind the dialog, never "no provider figure" while they are coming.
+  const coming = market.figuresPending === true
+  const loading = (label: string, data: Record<`data-${string}`, string>) => (
+    <span className="inline-flex" {...data}>
+      <Skeleton className="h-4 w-24" />
+      <span className="sr-only">{label} loading</span>
+    </span>
+  )
 
   return (
     <div role="presentation" className="dm-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -150,7 +160,9 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
 
         <div className="grid gap-3">
           <Panel id="figures-estimate" heading="Estimated pool fee APR">
-            <PoolAprEstimate observation={market.feeAprEstimate} now={readNow()} detailed />
+            {coming && presentAprEstimate(market.feeAprEstimate, readNow()).text === null
+              ? loading('Estimated APR', { 'data-apr-estimate': 'pending' })
+              : <PoolAprEstimate observation={market.feeAprEstimate} now={readNow()} detailed />}
           </Panel>
 
           <Panel id="figures-qualified" heading="Domino history, 24h" data-figures-qualified={qualified ? 'yes' : 'no'}>
@@ -182,6 +194,8 @@ export function PoolFiguresDialog({ market, onClose }: { market: Market; onClose
                 {liquidity && <ProviderFigure label="Liquidity" figure={liquidity} full />}
                 {volume && <ProviderFigure label="24h volume" figure={volume} full />}
               </>
+            ) : coming ? (
+              loading('Provider figures', { 'data-metric': 'pending' })
             ) : (
               <p className="text-[13px] leading-[18px]" data-no-provider-figure="">
                 <FigureDash reason={noProviderFigure} />

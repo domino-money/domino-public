@@ -14,14 +14,16 @@ const NO_APR = 'Est. APR —'
 /**
  * The backend estimate in the strip: its figure when there is one; otherwise
  * the one label a pool without a figure has, why in the title, and the
- * estimate's state as data.
+ * estimate's state as data. A row waiting for figures the store is collecting
+ * (`figuresPending`, marketsProvider.ts) is loading, as the table's cell says,
+ * not unavailable (added 2026-09-25, r4/metrics).
  */
-function EstimateApr({ observation, now }: { observation?: AprEstimateObservation; now: Instant }) {
+function EstimateApr({ observation, now, pending = false }: { observation?: AprEstimateObservation; now: Instant; pending?: boolean }) {
   const shown = presentAprEstimate(observation, now)
   if (shown.text !== null) return <PoolAprEstimate observation={observation} now={now} />
   return (
-    <span data-apr-estimate={shown.state}>
-      <span className="tnum whitespace-nowrap text-fg-subtle" title={estimateTitle(observation, now)}>
+    <span data-apr-estimate={pending ? 'pending' : shown.state}>
+      <span className="tnum whitespace-nowrap text-fg-subtle" title={pending ? 'Est. APR loading' : estimateTitle(observation, now)}>
         {NO_APR}
       </span>
     </span>
@@ -100,7 +102,7 @@ export function Ticker() {
         <PoolTokenLabel token={m.tokens.base} />/<PoolTokenLabel token={m.tokens.quote} />
       </span>
       <span className="tnum">{feeLabel(m)}</span>
-      {historicalApr(m.feeAprPercent) ? <Apr metric={m.feeAprPercent} /> : <EstimateApr observation={m.feeAprEstimate} now={now} />}
+      {historicalApr(m.feeAprPercent) ? <Apr metric={m.feeAprPercent} /> : <EstimateApr observation={m.feeAprEstimate} now={now} pending={m.figuresPending === true} />}
     </a>
   ) : catalogue ? <a href={`#/pool/${poolId}`} key={poolId} tabIndex={copy ? -1 : undefined} className="dm-ticker-item" data-pool-catalogue={poolId}>
     <PoolCatalogueIdentity entry={catalogue} compact />

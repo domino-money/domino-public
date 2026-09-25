@@ -11,13 +11,17 @@
  * reads never meet a refusal the fees logs caused.
  */
 import type { FeesCache } from '../../../functions/_lib/fees'
+import type { pathLogsOnChain } from '../../../functions/_lib/feesPath'
 import type { ChainLane } from '../chain/browser'
 import type * as ChainCodeModule from '../chain/chainCode'
 import { UNAVAILABLE, chainRead, checked, isLogsResponse } from './answers'
 import type { LogsRequest, LogsResponse, RelayAnswer } from './types'
 
-/** The chain code a context reads with (lib/chain/chainCode.ts). */
-export type ChainCode = Pick<typeof ChainCodeModule, 'chainDeps' | 'logsOnChain'>
+/**
+ * The chain code a context reads with (lib/chain/chainCode.ts). The replay worker's also reads the path kinds
+ * (2026-09-25, functions/_lib/feesPath.ts), which the page never asks: without it they answer `unavailable`.
+ */
+export type ChainCode = Pick<typeof ChainCodeModule, 'chainDeps' | 'logsOnChain'> & { pathLogsOnChain?: typeof pathLogsOnChain }
 
 /**
  * How a unit of logs is read: `lane` is the replay worker's, `urgent` a position page's run, `until` the time (as
@@ -46,7 +50,10 @@ export async function logsWith(code: ChainCode, cache: FeesCache, request: LogsR
       if (spent()) return TIME_SPENT
       if (lane && (signal?.aborted || lane.resting())) return UNAVAILABLE
       const deps = lane ? lane.deps(signal, options.until) : code.chainDeps(signal)
-      const answer = checked(await code.logsOnChain({ deps, cache }, KEY_ORIGIN, request), (value): value is LogsResponse => isLogsResponse(value, request.kind))
+      const path = request.kind === 'span' || request.kind === 'settlements' ? request : null
+      if (path && !code.pathLogsOnChain) return UNAVAILABLE
+      const raw = path && code.pathLogsOnChain ? await code.pathLogsOnChain({ deps, cache }, path) : await code.logsOnChain({ deps, cache }, KEY_ORIGIN, request)
+      const answer = checked(raw, (value): value is LogsResponse => isLogsResponse(value, request.kind))
       if (!answer.ok && spent() && !signal?.aborted) return TIME_SPENT
       return lane && !answer.ok && answer.failure === 'rate_limited' ? UNAVAILABLE : answer
     } catch {

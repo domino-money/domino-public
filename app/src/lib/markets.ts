@@ -147,6 +147,14 @@ export interface Market {
    * a token read that settled without them. Never set on a settled result.
    */
   tokensPending?: true
+  /**
+   * Set while the stored overview served this pool without its provider
+   * figures and its producer is about to collect them, and the markets
+   * provider will ask again for them (marketsProvider.ts, catch-up, added
+   * 2026-09-25): its TVL, 24h volume and estimate are coming, not unavailable.
+   * Never set on a row kept from an earlier read.
+   */
+  figuresPending?: true
 }
 
 /** A row's carried hourly candles, with the ages its answer reported and when that answer arrived on this page. */

@@ -98,8 +98,11 @@ const edgeLabel = (t: number) => `${shortDate(t)} ${shortTime(t)}`
  * bucket. With nothing earned yet (`zero`) it is a timeline waiting for its
  * first fee: the real flat line in a quiet ink from the mint pip to the end
  * dot at now, and the two dates it spans.
+ *
+ * 2026-09-25 (review of r4/fees): an estimated history's (`estimated`) bucket values are sampled: each one's figure
+ * carries "est." in its tooltip and its label, and its sampled time in range is left out, as the card leaves it out.
  */
-export function FeesChart({ view, pv, onInspect, zero }: { view: FeesView; pv: FeesPeriodView; onInspect: (index: number | null) => void; zero: boolean }) {
+export function FeesChart({ view, pv, onInspect, zero, estimated = false }: { view: FeesView; pv: FeesPeriodView; onInspect: (index: number | null) => void; zero: boolean; estimated?: boolean }) {
   const phone = useMediaQuery('(max-width: 767px)')
   const height = zero ? (phone ? HEIGHT_ZERO_PHONE : HEIGHT_ZERO) : phone ? 200 : 240
   const pad = zero ? (phone ? PAD_ZERO_PHONE : PAD_ZERO) : phone ? PAD_PHONE : PAD
@@ -259,7 +262,7 @@ export function FeesChart({ view, pv, onInspect, zero }: { view: FeesView; pv: F
   const overlay = (plot: Plot, index: number | null) => {
     const { x, y } = scales(plot)
     const bucket = index === null ? null : buckets[index]
-    const share = bucket && bucket.seconds > 0 ? bucket.inRange / bucket.seconds : null
+    const share = bucket && bucket.seconds > 0 && !estimated ? bucket.inRange / bucket.seconds : null
     // Desktop: the chip in the gutter at the end's level. Phone: just above the end dot (earned only grows, so nothing is drawn there).
     const chipY = phone ? y(lastN) - 16 : y(lastN)
     return (
@@ -267,7 +270,7 @@ export function FeesChart({ view, pv, onInspect, zero }: { view: FeesView; pv: F
         {!zero && <LastValueChip yPct={(chipY / plot.height) * 100}>{lastText}</LastValueChip>}
         {bucket && (
           <ChartTooltip x={x(bucket.end)} plot={plot} head={bucketLabel(bucket.start, bucket.end)}>
-            <ChartTooltipRow label="Fees earned">{valueFigure(view.basis, bucket.earnedIn)}</ChartTooltipRow>
+            <ChartTooltipRow label="Fees earned">{`${valueFigure(view.basis, bucket.earnedIn)}${estimated ? ' est.' : ''}`}</ChartTooltipRow>
             {tokenRows(bucket.tokensIn)}
             {positive(bucket.collectedIn) && <ChartTooltipRow label="Collected">{valueFigure(view.basis, bucket.collectedIn)}</ChartTooltipRow>}
             {share !== null && <ChartTooltipRow label="Time in range">{percentText(share)}</ChartTooltipRow>}
@@ -287,9 +290,9 @@ export function FeesChart({ view, pv, onInspect, zero }: { view: FeesView; pv: F
   const valueText = useMemo(
     () => (index: number) => {
       const bucket = buckets[index]
-      return bucket ? `${bucketLabel(bucket.start, bucket.end)}, ${valueFigure(view.basis, bucket.earned)}` : ''
+      return bucket ? `${bucketLabel(bucket.start, bucket.end)}, ${valueFigure(view.basis, bucket.earned)}${estimated ? ' est.' : ''}` : ''
     },
-    [buckets, view.basis],
+    [buckets, view.basis, estimated],
   )
 
   const indexAt = (px: number, plot: Plot) => {

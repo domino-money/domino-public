@@ -205,6 +205,13 @@ export interface ReadOptions {
   deadlineAt?: number
   /** Told as each attempt goes out, retries included, so a queue can pace from the last one. */
   onAttempt?: () => void
+  /**
+   * `first`: a queue starts this read before every queued read without it
+   * (scheduler.ts), and among its own kind in order. The markets provider's
+   * reads carry it (added 2026-09-25): the figures Home, its ticker and the
+   * Markets table show wait for no card's price history.
+   */
+  priority?: 'first'
 }
 
 /**

@@ -1,11 +1,13 @@
 /**
  * The bridge-test build's one read source for the whole app: the same-origin
- * bridge behind slice A's scheduler. Deployed reads keep 1.1 s spacing, the
- * gateway's per-client budget (five at once, then 30 a minute) and a hold for
- * the Retry-After of any busy answer; local-live uses 10.1 s to fit the
- * development reader's six starts/minute and two-second minimum, without
- * increasing any remote limit. The landing table, position lookup, pickers
- * and figures dialog share one source, so one budget.
+ * bridge behind slice A's scheduler. Deployed reads keep 1.1 s spacing on the
+ * gateway's provider lane, the gateway's per-client budget (five at once, then
+ * 30 a minute) and a hold for the Retry-After of any busy answer; read-v3's
+ * stored reads skip the spacing, which the gateway's stored lane does not
+ * have (scheduler.ts, 2026-09-25). local-live uses 10.1 s for every read to
+ * fit the development reader's six starts/minute and two-second minimum,
+ * without increasing any remote limit. The landing table, position lookup,
+ * pickers and figures dialog share one source, so one budget.
  */
 import { CAPABILITIES } from '../../capabilities'
 import * as estimateRuntime from 'api-contracts/read-v2/runtime.mjs'
@@ -24,7 +26,7 @@ export const BRIDGE_SPACING_MS = __DOMINO_LOCAL_LIVE__ ? 10_100 : 1100
 export function createAppBridgeSource(): ReadSource {
   const options = { enabled: CAPABILITIES.liveReadsBuilt, validators: READ_RUNTIME }
   const source = createPublicSource(createEstimateSource(options, estimateRuntime), options, publicRuntime)
-  return createPublicMetadataCache(createScheduledSource(source, { minIntervalMs: BRIDGE_SPACING_MS }))
+  return createPublicMetadataCache(createScheduledSource(source, { minIntervalMs: BRIDGE_SPACING_MS, unspacedStored: !__DOMINO_LOCAL_LIVE__ }))
 }
 
 let shared: ReadSource | null = null

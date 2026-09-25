@@ -279,9 +279,9 @@ export async function routeChain(context, chain = browserChain()) {
  * gets that far in the tests that use it. `recent` more ModifyLiquidity logs
  * in the pool's last few hundred blocks make it a pool busy now, whose
  * history the page's probe (functions/_lib/fees.ts PROBE_SPAN) projects far
- * past any budget.
+ * past any budget. `quietProbe` hides the history from the probe (see below).
  */
-export function busyHistory({ tokenId, key, owner, head = 71_700_000, epochs = 12, perEpoch = 400, recent = 0 }) {
+export function busyHistory({ tokenId, key, owner, head = 71_700_000, epochs = 12, perEpoch = 400, recent = 0, quietProbe = false }) {
   const EPOCH = fees.EPOCH_SPAN;
   const poolId = poolIdOf(key);
   const word = (value) => pad(numberToHex(BigInt.asUintN(256, BigInt(value))), { size: 32 });
@@ -312,7 +312,10 @@ export function busyHistory({ tokenId, key, owner, head = 71_700_000, epochs = 1
     const out = [];
     if (first.includes(fees.TOPIC.Initialize) && initBlock >= from && initBlock <= to)
       out.push(logOf(fees.POOL_MANAGER, [fees.TOPIC.Initialize, poolId, pad(key.currency0), pad(key.currency1)], data(word(key.fee), word(key.tickSpacing), word(0), word(2n ** 96n), word(0)), initBlock));
-    if (first.includes(fees.TOPIC.ModifyLiquidity)) {
+    // `quietProbe` (2026-09-25): the page's probe (its five kinds of log) sees none of this history, a burst its samples
+    // miss, so the exact replay of the pool's history is the one chosen (any liquidity log in a sample leads to the
+    // price path, pipeline.ts) and the tests that pace a long read of epochs still read them.
+    if (first.includes(fees.TOPIC.ModifyLiquidity) && !(quietProbe && first.length === 5)) {
       // Every `step` blocks from the Initialize on, within the range asked.
       const start = Math.max(from, initBlock + 1);
       for (let block = start + ((step - ((start - initBlock - 1) % step)) % step); block <= Math.min(to, head); block += step) out.push(modify(block));

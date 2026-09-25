@@ -29,6 +29,9 @@ test('production and development builds remove the local flag and reject local m
   for (const marker of ['local-live', 'dev-read.domino.money', 'CF-Access-Client-Secret', 'CF-Access-Client-Id', '__DOMINO_LOCAL_LIVE__', 'Local real-data development']) assert.ok(findForbidden(marker).length)
 })
 
+// Changed 2026-09-25 (r4/metrics): the deployed source also passes `unspacedStored: true`, so read-v3's stored reads
+// skip the 1.1 s the gateway's stored lane never had (scheduler.ts); local-live passes false and keeps 10.1 s for
+// every read. The deadline and queue bounds are still the scheduler's defaults.
 test('the real source factory paces only local-live at 10.1 s; deployed reads retain 1.1 s and shared deadlines', () => {
   const source = readFileSync(resolve(root, 'src/lib/read/screens/appSourceBridge.ts'), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
@@ -57,7 +60,8 @@ test('the real source factory paces only local-live at 10.1 s; deployed reads re
     assert.equal(calls[1][3], publicRuntime, 'canonical V3 validation is supplied')
     assert.equal(calls[2][1], publicSource, 'all versions share the existing scheduler')
     assert.equal(calls[2][2].minIntervalMs, localLive ? 10_100 : 1100)
-    assert.deepEqual(Object.keys(calls[2][2]), ['minIntervalMs'], '60 s total deadline and queue bounds are not changed')
+    assert.equal(calls[2][2].unspacedStored, !localLive, 'only deployed stored reads skip the spacing; local-live spaces every read')
+    assert.deepEqual(Object.keys(calls[2][2]), ['minIntervalMs', 'unspacedStored'], '60 s total deadline and queue bounds are not changed')
     assert.equal(calls[3][1], scheduled, 'only scheduled public outcomes enter the metadata cache')
   }
 })

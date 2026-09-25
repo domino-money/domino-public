@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { catalogueTokenLabel, poolListings, type PoolCatalogueEntry, type PoolListing } from '../config/selectedPoolCatalogue'
-import { agedMarket, feeLabel, providerStale, retrievedAgeSeconds, retrievedText, type Instant, type Market, type MarketProvenance } from '../lib/markets'
+import { agedMarket, feeLabel, presentMetric, providerStale, retrievedAgeSeconds, retrievedText, type Instant, type Market, type MarketProvenance, type Metric } from '../lib/markets'
+import { presentAprEstimate } from '../lib/read/aprEstimate'
 import { reasonText } from '../lib/read/describe'
 import { marketPoolPrice } from '../lib/read/marketPrice'
 import type { MarketsProvider } from '../lib/read/marketsProvider'
@@ -143,6 +144,10 @@ function Row({ m: read, now, full, onFigures, poolToken }: { m: Market; now: Ins
   const line = p ? provenanceLine(p, age, stale) : undefined
   // Domino's own qualified history when there is one; the attributed backend estimate otherwise, marked as one.
   const qualified = m.feeAprPercent.value !== null && (m.feeAprPercent.state === 'qualified' || m.feeAprPercent.state === 'stale')
+  // Figures the store is about to collect (marketsProvider.ts, catch-up): a quiet placeholder where they will land,
+  // never "Unavailable" while they are coming. Only a figure that would say unavailable waits.
+  const coming = (metric: Metric) => read.figuresPending === true && presentMetric(metric).kind === 'unavailable'
+  const aprComing = read.figuresPending === true && !qualified && presentAprEstimate(m.feeAprEstimate, now).text === null
   const name = (
     <>
       <PoolTokenLabel token={m.tokens.base} />/<PoolTokenLabel token={m.tokens.quote} />
@@ -171,13 +176,19 @@ function Row({ m: read, now, full, onFigures, poolToken }: { m: Market; now: Ins
         <PriceCell market={m} now={now} />
       </Td>
       <Td numeric className="dm-mkt-num">
-        <MetricCell metric={m.tvlUsd} retrieved={retrieved} />
+        {coming(m.tvlUsd) ? <PendingFigure label="TVL" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.tvlUsd} retrieved={retrieved} />}
       </Td>
       <Td numeric col="wide" className="dm-mkt-num">
-        <MetricCell metric={m.volume24hUsd} retrieved={retrieved} />
+        {coming(m.volume24hUsd) ? <PendingFigure label="24h volume" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.volume24hUsd} retrieved={retrieved} />}
       </Td>
       <Td numeric className="dm-mkt-num dm-mkt-apr">
-        {qualified ? <MetricCell metric={m.feeAprPercent} percent tone="in" /> : <PoolAprEstimate observation={m.feeAprEstimate} now={now} compact />}
+        {qualified ? (
+          <MetricCell metric={m.feeAprPercent} percent tone="in" />
+        ) : aprComing ? (
+          <PendingFigure label="APR" data={{ 'data-apr-estimate': 'pending' }} />
+        ) : (
+          <PoolAprEstimate observation={m.feeAprEstimate} now={now} compact />
+        )}
       </Td>
       <Td numeric className="dm-mkt-end">
         <span className="dm-row-end">

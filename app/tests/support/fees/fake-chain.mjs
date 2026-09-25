@@ -42,7 +42,7 @@ const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(b
  * most logs one eth_getLogs may match. `script`: per method, answers given
  * first (a Response, or { error }). `deps.time` is the clock in ms.
  */
-export function fakeChain({ head = 71_500_000, logs = [], headers = {}, views = () => ({ success: false, returnData: '0x' }), logLimit = Infinity, script = {} } = {}) {
+export function fakeChain({ head = 71_500_000, logs = [], headers = {}, views = () => ({ success: false, returnData: '0x' }), logLimit = Infinity, script = {}, tokens = [] } = {}) {
   const log = [];
   const slept = [];
   const answer = (method, params, id) => {
@@ -53,16 +53,19 @@ export function fakeChain({ head = 71_500_000, logs = [], headers = {}, views = 
     if (method === 'eth_getLogs') {
       const [filter] = params;
       assert.deepEqual(Object.keys(filter).sort(), ['address', 'fromBlock', 'toBlock', 'topics']);
-      assert.ok([fees.POOL_MANAGER, owned.POSITION_MANAGER].includes(filter.address), `logs of ${filter.address}`);
+      // 2026-09-25: the price path's settlements read also asks the pool's ERC-20 currencies (`tokens`), several at once.
+      const addresses = Array.isArray(filter.address) ? filter.address : [filter.address];
+      assert.ok(addresses.length > 0 && addresses.every((address) => [fees.POOL_MANAGER, owned.POSITION_MANAGER, ...tokens].includes(address)), `logs of ${filter.address}`);
       const from = Number(filter.fromBlock);
       const to = Number(filter.toBlock);
       assert.ok(from <= to && to <= chain.head, `range ${from}..${to} (head ${chain.head})`);
       const [topic0, topic1, topic2, topic3] = filter.topics;
       const first = Array.isArray(topic0) ? topic0 : [topic0];
+      const match = (want, got) => want == null || (Array.isArray(want) ? want.includes(got) : want === got);
       const hits = chain.logs.filter((entry) => {
         const block = Number(entry.blockNumber);
-        return entry.address === filter.address && block >= from && block <= to && first.includes(entry.topics[0])
-          && (topic1 == null || entry.topics[1] === topic1) && (topic2 == null || entry.topics[2] === topic2) && (topic3 == null || entry.topics[3] === topic3);
+        return addresses.includes(entry.address) && block >= from && block <= to && first.includes(entry.topics[0])
+          && match(topic1, entry.topics[1]) && match(topic2, entry.topics[2]) && match(topic3, entry.topics[3]);
       });
       if (hits.length > logLimit) return { error: { code: -32005, message: `query exceeds limit of ${logLimit}` } };
       return { result: hits };

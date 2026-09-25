@@ -83,8 +83,19 @@ test('the grid and the limits the relay and the client share are one set of numb
   assert.equal(fees.MAX_HEADERS, constants.MAX_HEADERS_PER_REQUEST);
   // Changed on purpose (2026-09-25): every byte is read by the visitor's own browser under the RPC's per-address limit.
   assert.deepEqual(constants.BUDGET_BYTES, { page: 2 * 1024 * 1024, list: 1024 * 1024 });
-  assert.deepEqual(constants.BUDGET_MS, { page: 20_000, list: 10_000 });
+  // Changed on purpose (2026-09-25, later): the page's 30 s (one slow scan and the lane's rest after it took 11 s of 20).
+  assert.deepEqual(constants.BUDGET_MS, { page: 30_000, list: 10_000 });
   assert.equal(constants.MAX_SWAP_DAYS, 30);
+  // 2026-09-25: the price path's reads (functions/_lib/feesPath.ts) and the pipeline that asks them share their limits.
+  const feesPath = require('../.test-build/app/functions/_lib/feesPath.js');
+  assert.equal(feesPath.SPAN_BLOCKS, constants.SPAN_BLOCKS_MAX);
+  assert.equal(feesPath.MAX_SPANS, constants.MAX_SPANS_PER_REQUEST);
+  assert.equal(feesPath.MAX_HOLDERS, constants.MAX_HOLDERS);
+  assert.equal(feesPath.SETTLE_SPAN, constants.MAX_SWAP_DAYS * constants.DAY_SPAN);
+  assert.ok(constants.SPAN_TARGET_BYTES * 1.5 * 1.6 < feesPath.SPAN_BYTES, 'a span that grew by half still fits a reply (the RPC’s JSON is about 1.6 times the compact bytes)');
+  // 2026-09-25 (review): the compact bytes of a reply at the worker's cap, which size the estimate's windows.
+  assert.equal(constants.SPAN_CAP_BYTES * 1.6, feesPath.SPAN_BYTES);
+  assert.ok(constants.SAMPLE_BATCH_BYTES * 2 <= constants.SPAN_CAP_BYTES);
 });
 
 test('a pool id is keccak256(abi.encode(PoolKey)), as viem encodes it', () => {

@@ -1,0 +1,2174 @@
+{
+ "acquisitionAccepted": true,
+ "chainId": 4663,
+ "completeHistory": false,
+ "discoveryCoverage": "known_verified_pools_only",
+ "executionAvailable": false,
+ "generatedAt": 1790255669,
+ "hasMore": false,
+ "mode": "stored_public_overview",
+ "nextAfterPoolId": null,
+ "pools": [
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "32.129999953703135121",
+     "inputs": {
+      "currentLpFeePips": 200,
+      "protocolFeeRaw": 213044,
+      "reportedLiquidityUsd": "375104.19",
+      "volume24hUsd": "1651058.13"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "chainId": 4663,
+       "currencies": [
+        "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "375104.19",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+       "volume24hUsd": "1651058.13"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      ],
+      "currentLpFeePips": 200,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+      "poolKey": {
+       "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+       "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "feeMode": "fixed",
+       "fee_pips": 200,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 4
+      },
+      "protocolFeeRaw": 213044,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "4083186564842220249465497",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": -197475
+     },
+     "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+    "schemaVersion": 1
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "181.249511361187882891",
+     "inputs": {
+      "currentLpFeePips": 50000,
+      "protocolFeeRaw": 4097000,
+      "reportedLiquidityUsd": "13412.77",
+      "volume24hUsd": "1333.42"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+       "chainId": 4663,
+       "currencies": [
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "13412.77",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+       "volume24hUsd": "1333.42"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723"
+      ],
+      "currentLpFeePips": 50000,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+      "poolKey": {
+       "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "currency1": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+       "feeMode": "fixed",
+       "fee_pips": 50000,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 500
+      },
+      "protocolFeeRaw": 4097000,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "6884713008207319394315985391235159424",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": 365623
+     },
+     "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+    "schemaVersion": 1
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "23.859999819038553531",
+     "inputs": {
+      "currentLpFeePips": 1500,
+      "protocolFeeRaw": 1073414,
+      "reportedLiquidityUsd": "1030955.37",
+      "volume24hUsd": "449407.15"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0xcec185eb182c47d1ba1efc84e6959e18cd620be4",
+       "chainId": 4663,
+       "currencies": [
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "0xcec185eb182c47d1ba1efc84e6959e18cd620be4"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "1030955.37",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+       "volume24hUsd": "449407.15"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "0xcec185eb182c47d1ba1efc84e6959e18cd620be4"
+      ],
+      "currentLpFeePips": 1500,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+      "poolKey": {
+       "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "currency1": "0xcec185eb182c47d1ba1efc84e6959e18cd620be4",
+       "feeMode": "fixed",
+       "fee_pips": 1500,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 15
+      },
+      "protocolFeeRaw": 1073414,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "2740427284257297194695840452",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": -67288
+     },
+     "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+    "schemaVersion": 1
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "2.160000000378040366",
+     "inputs": {
+      "currentLpFeePips": 75,
+      "protocolFeeRaw": 81940,
+      "reportedLiquidityUsd": "3041560.12",
+      "volume24hUsd": "2399963.93"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0xce24439f2d9c6a2289f741120fe202248b666666",
+       "chainId": 4663,
+       "currencies": [
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "0xce24439f2d9c6a2289f741120fe202248b666666"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "3041560.12",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+       "volume24hUsd": "2399963.93"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "0xce24439f2d9c6a2289f741120fe202248b666666"
+      ],
+      "currentLpFeePips": 75,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+      "poolKey": {
+       "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "currency1": "0xce24439f2d9c6a2289f741120fe202248b666666",
+       "feeMode": "fixed",
+       "fee_pips": 75,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 1
+      },
+      "protocolFeeRaw": 81940,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "79265097335595678017107785249441892",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": 276333
+     },
+     "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+    "schemaVersion": 1
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "71.930000000643290874",
+     "inputs": {
+      "currentLpFeePips": 100,
+      "protocolFeeRaw": 102425,
+      "reportedLiquidityUsd": "381417.66",
+      "volume24hUsd": "7516728.27"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0x0000000000000000000000000000000000000000",
+       "chainId": 4663,
+       "currencies": [
+        "0x0000000000000000000000000000000000000000",
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "381417.66",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+       "volume24hUsd": "7516728.27"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x0000000000000000000000000000000000000000",
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      ],
+      "currentLpFeePips": 100,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+      "poolKey": {
+       "currency0": "0x0000000000000000000000000000000000000000",
+       "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "feeMode": "fixed",
+       "fee_pips": 100,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 1
+      },
+      "protocolFeeRaw": 102425,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "4083272310341935801837789",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": -197474
+     },
+     "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+    "schemaVersion": 1
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "100.349999941681629604",
+     "inputs": {
+      "currentLpFeePips": 3000,
+      "protocolFeeRaw": 2048500,
+      "reportedLiquidityUsd": "6812304.55",
+      "volume24hUsd": "6246180.27"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+       "chainId": 4663,
+       "currencies": [
+        "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "6812304.55",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+       "volume24hUsd": "6246180.27"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x39dbed3a2bd333467115de45665cc57f813c4571",
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      ],
+      "currentLpFeePips": 3000,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+      "poolKey": {
+       "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+       "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "feeMode": "fixed",
+       "fee_pips": 3000,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 60
+      },
+      "protocolFeeRaw": 2048500,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "62259602825886506270629",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": -281145
+     },
+     "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+    "schemaVersion": 1
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "92.366813973703398928",
+     "inputs": {
+      "currentLpFeePips": 2690,
+      "protocolFeeRaw": 1794486,
+      "reportedLiquidityUsd": "2455129.70",
+      "volume24hUsd": "2310657.21"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+       "chainId": 4663,
+       "currencies": [
+        "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "2455129.70",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b",
+       "volume24hUsd": "2310657.21"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      ],
+      "currentLpFeePips": 2690,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b",
+      "poolKey": {
+       "currency0": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+       "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "feeMode": "fixed",
+       "fee_pips": 2690,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 54
+      },
+      "protocolFeeRaw": 1794486,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "30897915417580564445409",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": -295158
+     },
+     "poolId": "0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b",
+    "schemaVersion": 1
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "195.003273616927116761",
+     "inputs": {
+      "currentLpFeePips": 2300,
+      "protocolFeeRaw": 1524084,
+      "reportedLiquidityUsd": "1829486.76",
+      "volume24hUsd": "4251205.12"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0x2e8c31162b855a2ffa90f6f8634643ad6f111e18",
+       "chainId": 4663,
+       "currencies": [
+        "0x2e8c31162b855a2ffa90f6f8634643ad6f111e18",
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "1829486.76",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
+       "volume24hUsd": "4251205.12"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x2e8c31162b855a2ffa90f6f8634643ad6f111e18",
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+      ],
+      "currentLpFeePips": 2300,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
+      "poolKey": {
+       "currency0": "0x2e8c31162b855a2ffa90f6f8634643ad6f111e18",
+       "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "feeMode": "fixed",
+       "fee_pips": 2300,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 23
+      },
+      "protocolFeeRaw": 1524084,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "37428576930170703651918",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": -291323
+     },
+     "poolId": "0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
+    "schemaVersion": 1
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "396.753666781556018547",
+     "inputs": {
+      "currentLpFeePips": 9000,
+      "protocolFeeRaw": 4097000,
+      "reportedLiquidityUsd": "1651937.25",
+      "volume24hUsd": "1997163.56"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0xab093def657f15df31b33922a95e047add645b29",
+       "chainId": 4663,
+       "currencies": [
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "0xab093def657f15df31b33922a95e047add645b29"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "1651937.25",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4",
+       "volume24hUsd": "1997163.56"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "0xab093def657f15df31b33922a95e047add645b29"
+      ],
+      "currentLpFeePips": 9000,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4",
+      "poolKey": {
+       "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "currency1": "0xab093def657f15df31b33922a95e047add645b29",
+       "feeMode": "fixed",
+       "fee_pips": 9000,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 90
+      },
+      "protocolFeeRaw": 4097000,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "628290656519978980763790623237014458",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": 317739
+     },
+     "poolId": "0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4",
+    "schemaVersion": 1
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "125.307869431759526429",
+     "inputs": {
+      "currentLpFeePips": 19900,
+      "protocolFeeRaw": 4097000,
+      "reportedLiquidityUsd": "204468.54",
+      "volume24hUsd": "35309.65"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0xe8ffd7e24187f72afb08d75b1bb13088a989a791",
+       "chainId": 4663,
+       "currencies": [
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "0xe8ffd7e24187f72afb08d75b1bb13088a989a791"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "204468.54",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66",
+       "volume24hUsd": "35309.65"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "0xe8ffd7e24187f72afb08d75b1bb13088a989a791"
+      ],
+      "currentLpFeePips": 19900,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66",
+      "poolKey": {
+       "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "currency1": "0xe8ffd7e24187f72afb08d75b1bb13088a989a791",
+       "feeMode": "fixed",
+       "fee_pips": 19900,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 199
+      },
+      "protocolFeeRaw": 4097000,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "534864272331525963527304040298174395",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": 314519
+     },
+     "poolId": "0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66",
+    "schemaVersion": 1
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "observedAt": 1790255655,
+   "poolId": "0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03",
+   "value": {
+    "chainId": 4663,
+    "estimate": {
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeAprEstimate24hPercent": "529.826829545844025221",
+     "inputs": {
+      "currentLpFeePips": 40000,
+      "protocolFeeRaw": 4097000,
+      "reportedLiquidityUsd": "70898.77",
+      "volume24hUsd": "25754.57"
+     },
+     "limitations": [
+      "provider_reported_volume_and_tvl_unreconciled",
+      "provider_update_time_unknown",
+      "current_tvl_not_time_weighted",
+      "assumes_current_fixed_lp_fee_for_24h_volume",
+      "protocol_fee_effect_not_reconciled",
+      "no_full_day_coverage_proof",
+      "excludes_rewards_gas_service_fees_and_price_pnl",
+      "pool_estimate_not_position_apr_or_apy",
+      "not_a_return_forecast_or_recommendation"
+     ],
+     "method": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+     "metric": "feeAprEstimate24hPercent",
+     "poolId": "0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03",
+     "precision": {
+      "decimalPlaces": 18,
+      "rounding": "half_up"
+     },
+     "provenance": {
+      "asOfBlock": null,
+      "asOfTimestamp": null,
+      "cacheAgeSeconds": 14,
+      "cacheStatus": "hit",
+      "effectiveMarketAgeSeconds": 14,
+      "evaluatedAt": 1790255669,
+      "freshForSeconds": 60,
+      "marketReason": null,
+      "marketStatus": "available",
+      "maxStaleSeconds": 300,
+      "providerUpdateTimeKnown": false,
+      "retrievedAt": 1790255655,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "snapshotAgeSeconds": 12,
+      "snapshotFreshForSeconds": 120,
+      "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03"
+     },
+     "providerMetricsReconciled": false,
+     "reasons": [],
+     "scope": "pool",
+     "source": "geckoterminal",
+     "status": "available",
+     "suggested": false,
+     "version": "pool-apr-estimate-v0"
+    },
+    "executionAvailable": false,
+    "market": {
+     "aprReason": "provider_lp_fee_history_unavailable",
+     "chainId": 4663,
+     "executionAvailable": false,
+     "feeApr24h": null,
+     "issues": [],
+     "market": {
+      "cache": {
+       "ageSeconds": 14,
+       "freshForSeconds": 60,
+       "maxStaleSeconds": 300,
+       "providerUpdateTimeKnown": false,
+       "scope": "process_local",
+       "status": "hit"
+      },
+      "reason": null,
+      "status": "available",
+      "data": {
+       "asOfBlock": null,
+       "asOfTimestamp": null,
+       "baseToken": "0xefab538cf3c29237a47c6afb145d50ddf204a0a3",
+       "chainId": 4663,
+       "currencies": [
+        "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "0xefab538cf3c29237a47c6afb145d50ddf204a0a3"
+       ],
+       "dexLabel": "uniswap-v4-robinhood",
+       "poolId": "0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03",
+       "providerReported": true,
+       "quoteToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "reportedLiquidityUsd": "70898.77",
+       "retrievedAt": 1790255655,
+       "source": "geckoterminal",
+       "sourceUrl": "https://api.geckoterminal.com/api/v2/networks/robinhood/pools/0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03",
+       "volume24hUsd": "25754.57"
+      }
+     },
+     "mode": "on_demand_provider_market",
+     "pool": {
+      "aprReason": "reconciled_fee_history_unavailable",
+      "currencies": [
+       "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "0xefab538cf3c29237a47c6afb145d50ddf204a0a3"
+      ],
+      "currentLpFeePips": 40000,
+      "executionAvailable": false,
+      "executionReason": "public_execution_not_implemented",
+      "feeApr24h": null,
+      "identityStatus": "verified_at_block",
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03",
+      "poolKey": {
+       "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+       "currency1": "0xefab538cf3c29237a47c6afb145d50ddf204a0a3",
+       "feeMode": "fixed",
+       "fee_pips": 40000,
+       "hooks": "0x0000000000000000000000000000000000000000",
+       "tick_spacing": 400
+      },
+      "protocolFeeRaw": 4097000,
+      "snapshot": {
+       "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+       "number": 71396966,
+       "timestamp": 1790255657
+      },
+      "sqrtPriceX96": "1598938909564257056860417764689081436",
+      "suggested": false,
+      "suggestionReason": "metrics_and_policy_not_qualified",
+      "tick": 336422
+     },
+     "poolId": "0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03",
+     "priceHistory": {
+      "cache": null,
+      "data": null,
+      "reason": null,
+      "status": "not_requested"
+     },
+     "providerMetricsReconciled": false,
+     "requiresLocalHistory": false,
+     "schemaVersion": 1,
+     "snapshot": {
+      "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+      "number": 71396966,
+      "timestamp": 1790255657
+     },
+     "suggested": false
+    },
+    "poolId": "0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03",
+    "schemaVersion": 1
+   }
+  }
+ ],
+ "requestedPoolIds": [
+  "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+  "0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7",
+  "0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a",
+  "0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c",
+  "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+  "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+  "0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b",
+  "0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995",
+  "0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4",
+  "0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66",
+  "0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03"
+ ],
+ "revision": 1842,
+ "schemaVersion": 1,
+ "selectedToken": null,
+ "tokens": [
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "decimals": 18,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "WETH"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "decimals": 6,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "USDG"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0xab35d04e1ee39c789c4a65d522417b3c7f2e4723",
+     "decimals": 18,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "MARLIN"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0xcec185eb182c47d1ba1efc84e6959e18cd620be4",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0xcec185eb182c47d1ba1efc84e6959e18cd620be4",
+     "decimals": 8,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "cbBTC"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0xce24439f2d9c6a2289f741120fe202248b666666",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0xce24439f2d9c6a2289f741120fe202248b666666",
+     "decimals": 18,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "U"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0x0000000000000000000000000000000000000000",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0x0000000000000000000000000000000000000000",
+     "decimals": 18,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "native",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "ETH"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+     "decimals": 18,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "PONS"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0x020bfc650a365f8bb26819deaabf3e21291018b4",
+     "decimals": 18,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "CASHCAT"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0x2e8c31162b855a2ffa90f6f8634643ad6f111e18",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0x2e8c31162b855a2ffa90f6f8634643ad6f111e18",
+     "decimals": 18,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "AI"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0xab093def657f15df31b33922a95e047add645b29",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0xab093def657f15df31b33922a95e047add645b29",
+     "decimals": 18,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "SHROOM"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0xe8ffd7e24187f72afb08d75b1bb13088a989a791",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0xe8ffd7e24187f72afb08d75b1bb13088a989a791",
+     "decimals": 18,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "DELTA"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "nextAttemptAt": null,
+    "reason": null,
+    "refreshing": false,
+    "status": "ready"
+   },
+   "address": "0xefab538cf3c29237a47c6afb145d50ddf204a0a3",
+   "observedAt": 1790255639,
+   "value": {
+    "asset": {
+     "address": "0xefab538cf3c29237a47c6afb145d50ddf204a0a3",
+     "decimals": 18,
+     "displayUnitsAvailable": true,
+     "executionAvailable": false,
+     "kind": "erc20_candidate",
+     "metadataIssues": {},
+     "readStatus": "available",
+     "symbol": "UFG"
+    },
+    "chainId": 4663,
+    "liveExecution": false,
+    "mode": "public_token_read_only",
+    "schemaVersion": 1,
+    "snapshot": {
+     "hash": "0x3e51da313c30ada6459068e042669b7e24dcf1b97664de07711edf9fa292031d",
+     "number": 71396966,
+     "timestamp": 1790255657
+    }
+   }
+  }
+ ]
+}

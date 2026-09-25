@@ -73,6 +73,7 @@ function position(value: unknown): value is StatePosition {
     && typeof key.fee === 'number' && Number.isInteger(key.fee) && int24(key.tickSpacing) && typeof key.hooks === 'string' && ADDRESS.test(key.hooks)
     && Array.isArray(p.currencies) && p.currencies.length === 2 && p.currencies.every(currency)
     && int24(p.tickLower) && int24(p.tickUpper) && int24(p.tick) && decimals.every((name) => typeof p[name] === 'string' && DECIMAL.test(p[name] as string))
+    && (p.protocolFee === undefined || (typeof p.protocolFee === 'number' && Number.isInteger(p.protocolFee) && p.protocolFee >= 0 && p.protocolFee < 16_777_216))
 }
 
 /** A /state answer, checked field by field. */

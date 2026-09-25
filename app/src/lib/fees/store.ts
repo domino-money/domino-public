@@ -9,6 +9,17 @@
  * - A history is rebuilt by the replay worker, one run per id at a time; every
  *   screen showing the id shares it. When a later `/state` answer names a newer
  *   block, the worker resumes from the last checkpoint for the new logs only.
+ * - 2026-09-25: a busy pool's run hands an estimated history first (the worker's
+ *   `estimate` message): it is shown (`estimated`) until the exact one verifies,
+ *   and stays when the exact read runs out of its budget or its time; only a
+ *   replay that disagrees with the chain takes it down.
+ * - 2026-09-25 (review): an estimate follows every newer `/state` (its end is the
+ *   chain's figures: `carriedEstimate`); after a settlement it gives way to the
+ *   quiet card with the new figures. A price path's read that runs out of its
+ *   run's budget or time keeps its place (`later`), and the next newer state
+ *   block goes on from it; a verified history's later run that gets no further
+ *   waits for a newer block too, three times at most. No run starts again at
+ *   once after a stop.
  * - The worker is created on the first run and terminated once nothing has
  *   been shown for a moment. If it fails (onerror, messageerror: a stale
  *   worker file after a deploy answers with the page), every history shows its
@@ -19,7 +30,7 @@
  * Views are immutable objects replaced on change, so useSyncExternalStore can
  * compare them by identity. Nothing here reads a clock or renders.
  */
-import { BUDGET_BYTES, MAX_STATE_IDS, STATE_REFRESH_MS } from './constants'
+import { BUDGET_BYTES, HOUR_SPAN, MAX_STATE_IDS, STATE_REFRESH_MS } from './constants'
 import type { Checkpoint, FeeHistoryView, FeesReason, FeesScope, FromWorker, PositionState, RelayAnswer, StatePositionOk, StateResponse, ToWorker, WorkerResult } from './types'
 
 /** The part of a Worker the store uses (a real one from spawn.ts; a fake in the tests). */
@@ -70,6 +81,11 @@ export const RELEASE_MS = 3_000
 const RUN_ATTEMPTS = 3
 /** After an action, the second /state read: past the few blocks head − 2 may still lack (as the position page reads again). */
 export const AFTER_ACTION_MS = 11_000
+/**
+ * 2026-09-25 (review): how many times per id and visit a price path's read that ran out of its run's budget or time goes
+ * on from its place (each a newer state block later, each run at most the page's budget: 16 MB in all at most).
+ */
+export const MAX_RESUMES = 8
 
 interface Run {
   state: PositionState
@@ -96,6 +112,8 @@ interface Entry {
   settled: FeesReason | null
   settledBudget: number
   failures: number
+  /** Price-path runs that went on from a place kept (MAX_RESUMES), since the last verified one. */
+  resumes: number
   /**
    * The state block of the last run that could not reach the chain: the next run waits for a newer block (the next
    * /state read, a minute later), never starting again at once (2026-09-25: the RPC limits each visitor's address, and
@@ -119,12 +137,71 @@ export function stateOf(position: StatePositionOk, block: number, timestamp: num
     poolId: position.poolId,
     owner: position.owner,
     currencies: [{ ...position.currencies[0] }, { ...position.currencies[1] }],
+    ...(position.protocolFee === undefined ? {} : { protocolFee: position.protocolFee }),
   }
   const growth: readonly [bigint, bigint] = [
     (BigInt(position.feeGrowthInside0X128) - BigInt(position.feeGrowthInside0LastX128)) & U256,
     (BigInt(position.feeGrowthInside1X128) - BigInt(position.feeGrowthInside1LastX128)) & U256,
   ]
   return { state, growth }
+}
+
+type Estimated = Extract<FeeHistoryView, { phase: 'estimated' }>
+
+/**
+ * An estimated history carried to a newer state (2026-09-25, review: an estimate whose exact read had stopped kept its
+ * first figures for the visit, and after the owner's Collect contradicted the page above it). Its end is the chain's own
+ * figures, so with no settlement since (the same liquidity and range, no unclaimed amount lower) the end moves to the
+ * new state's, and the hours from the old end to it are drawn straight between the two (by blocks); the in-range time
+ * of those hours follows the new tick. Null after a settlement: what it collected would be a guess.
+ */
+export function carriedEstimate(view: Estimated, state: PositionState): Estimated | null {
+  const old = view.state
+  if (state.block <= old.block) return view
+  if (
+    state.poolId !== old.poolId ||
+    state.tickLower !== old.tickLower ||
+    state.tickUpper !== old.tickUpper ||
+    state.liquidity !== old.liquidity ||
+    state.unclaimed[0] < old.unclaimed[0] ||
+    state.unclaimed[1] < old.unclaimed[1]
+  )
+    return null
+  const hours = view.history.hourly
+  const last = hours[hours.length - 1]
+  if (!last) return null
+  const span = BigInt(state.block - old.block)
+  const at = (block: number, side: 0 | 1) => old.unclaimed[side] + ((state.unclaimed[side] - old.unclaimed[side]) * BigInt(block - old.block)) / span
+  const timeAt = (block: number) => old.timestamp + Math.round(((state.timestamp - old.timestamp) * (block - old.block)) / (state.block - old.block))
+  const inRange = state.tickLower <= state.tick && state.tick < state.tickUpper
+  const hourly = hours.slice(0, -1)
+  const lastAnchor = Math.floor(state.block / HOUR_SPAN)
+  let from = old.timestamp
+  let added = 0
+  for (let anchor = last.anchor; anchor <= lastAnchor; anchor++) {
+    const end = anchor === lastAnchor ? state.block : (anchor + 1) * HOUR_SPAN
+    const t = anchor === lastAnchor ? state.timestamp : timeAt(end)
+    const seconds = inRange ? Math.max(0, t - from) : 0
+    added += seconds
+    from = t
+    hourly.push({
+      anchor,
+      t,
+      earned: anchor === lastAnchor ? [state.unclaimed[0], state.unclaimed[1]] : [at(end, 0), at(end, 1)],
+      collected: [0n, 0n],
+      inRangeSeconds: (anchor === last.anchor ? last.inRangeSeconds : 0) + seconds,
+      sqrtPriceX96Close: anchor === lastAnchor ? state.sqrtPriceX96 : last.sqrtPriceX96Close,
+      tickClose: anchor === lastAnchor ? state.tick : last.tickClose,
+    })
+  }
+  const { timeInRange } = view.history
+  const history = {
+    ...view.history,
+    earned: [state.unclaimed[0], state.unclaimed[1]] as const,
+    timeInRange: { inSeconds: timeInRange.inSeconds + added, totalSeconds: timeInRange.totalSeconds + Math.max(0, state.timestamp - old.timestamp) },
+    hourly,
+  }
+  return { phase: 'estimated', state, history, prices: view.prices }
 }
 
 export function createFeesStore(deps: StoreDeps): FeesStore {
@@ -142,7 +219,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const entry = (id: string): Entry => {
     let found = entries.get(id)
     if (!found) {
-      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, state: null, growth: null, stateReason: null, answered: false, view: IDLE, running: null, checkpoint: null, settled: null, settledBudget: 0, failures: 0, failedAt: null, release: null }
+      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, state: null, growth: null, stateReason: null, answered: false, view: IDLE, running: null, checkpoint: null, settled: null, settledBudget: 0, failures: 0, resumes: 0, failedAt: null, release: null }
       entries.set(id, found)
     }
     return found
@@ -170,7 +247,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     for (const e of entries.values()) {
       if (!e.running) continue
       e.running = null
-      if (e.view.phase !== 'verified') setView(e, e.state ? { phase: 'unclaimed-only', state: e.state, reason: 'worker_failed', prices: null } : { phase: 'unavailable', reason: 'worker_failed' })
+      if (e.view.phase !== 'verified' && e.view.phase !== 'estimated') setView(e, e.state ? { phase: 'unclaimed-only', state: e.state, reason: 'worker_failed', prices: null } : { phase: 'unavailable', reason: 'worker_failed' })
     }
   }
 
@@ -190,7 +267,14 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   }
 
   function received(message: FromWorker): void {
-    if (!message || typeof message !== 'object' || message.type !== 'done') return
+    if (!message || typeof message !== 'object') return
+    if (message.type === 'estimate') {
+      const e = entries.get(message.id)
+      // An estimate never takes the place of a verified history; it is carried to a state read since its run began.
+      if (e?.running && e.view.phase !== 'verified') carry(e, { phase: 'estimated', state: e.running.state, history: message.history, prices: message.prices })
+      return
+    }
+    if (message.type !== 'done') return
     const e = entries.get(message.id)
     if (!e || !e.running) return
     const run = e.running
@@ -199,10 +283,21 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     next(e)
   }
 
+  /**
+   * Shows `view` (an estimate; by default the one shown) carried to the newest state: the same estimate when nothing
+   * newer was read, the quiet card with the new figures after a settlement.
+   */
+  function carry(e: Entry, view: FeeHistoryView = e.view): void {
+    if (view.phase !== 'estimated') return
+    const carried = e.state ? carriedEstimate(view, e.state) : view
+    setView(e, carried ?? { phase: 'unclaimed-only', state: e.state ?? view.state, reason: 'too_much_history', prices: null })
+  }
+
   function finished(e: Entry, run: Run, result: WorkerResult): void {
     if (result.ok) {
       e.checkpoint = result.checkpoint
       e.failures = 0
+      e.resumes = 0
       e.failedAt = null
       e.settled = null
       setView(e, { phase: 'verified', state: run.state, history: result.history, prices: result.prices })
@@ -216,14 +311,27 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     if (result.reason === 'rpc_unavailable' || result.reason === 'worker_failed') {
       e.failures += 1
       e.failedAt = run.state.block
-      // A verified history stays up while the relay has a bad moment; the next state block asks again.
-      if (e.view.phase === 'verified') return
+    } else if (result.reason === 'too_much_history' && result.later && result.checkpoint !== null && e.resumes < MAX_RESUMES) {
+      // 2026-09-25 (review): a price path's read that ran out of its run's budget or time kept its place, and the next
+      // newer state block goes on from it, never at once (the RPC limits the visitor's address).
+      e.checkpoint = result.checkpoint
+      e.resumes += 1
+      e.failedAt = run.state.block
+    } else if (result.reason === 'too_much_history' && e.view.phase === 'verified') {
+      // A verified history's later run that got no further (2026-09-25, review: it used to be asked again at once, over and
+      // over): the chart stays, the chain's at its own block, and the next run waits for a newer block, three at most.
+      e.failures += 1
+      e.failedAt = run.state.block
     } else {
       e.settled = result.reason
       e.settledBudget = run.budget
       if (result.reason === 'too_much_history') e.checkpoint = result.checkpoint
       else e.checkpoint = null
     }
+    // A verified history (or an estimated one) stays up past a stop or a bad moment of the RPC; a replay that disagrees
+    // with the chain takes an estimate down.
+    if (e.view.phase === 'verified' && result.reason !== 'replay_mismatch') return
+    if (e.view.phase === 'estimated' && result.reason !== 'replay_mismatch') return carry(e)
     const state = e.state ?? run.state
     setView(e, { phase: 'unclaimed-only', state, reason: result.reason, prices: result.prices })
   }
@@ -284,6 +392,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       if (view.phase === 'idle' || view.phase === 'unavailable') setView(e, { phase: 'loading', state })
       else if (view.phase === 'loading') setView(e, { phase: 'loading', state })
       else if (view.phase === 'unclaimed-only') setView(e, { ...view, state })
+      else if (view.phase === 'estimated') carry(e)
     }
     notify(e)
     next(e)

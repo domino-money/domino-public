@@ -36,8 +36,19 @@ function rpcOf([block, index, event, tx, topics, data]) {
   };
 }
 
-/** `edit(position)` may change the recorded /state position first (a chain that disagrees with the replay). */
-export function caseChain(id, { edit = (position) => position } = {}) {
+/**
+ * The USDG/UFG pools' protocol fee as slot0 packs it (1,000 pips each way, read on 2026-09-25): the recordings predate
+ * /state naming it, and the price path needs it in the 4 % pool, where a Swap's fee fits 999 as well as 1,000.
+ */
+const USDG_UFG = ['0x5fc5360d0400a0fd4f2af552add042d716f1d168', '0xefab538cf3c29237a47c6afb145d50ddf204a0a3'];
+export const UFG_PROTOCOL_FEE = 4_097_000;
+
+/**
+ * `edit(position)` may change the recorded /state position first (a chain that disagrees with the replay).
+ * `quietProbe` (2026-09-25): the page's probe (its five kinds of log) sees the Swaps only, not the pool's liquidity
+ * logs, so the exact replay of the recorded pool history is the one chosen (any liquidity log leads to the price path).
+ */
+export function caseChain(id, { edit = (position) => position, quietProbe = false } = {}) {
   const fixture = loadCase(id);
   const position = edit(structuredClone(fixture.state.positions[0]));
   const block = fixture.state.block;
@@ -73,7 +84,8 @@ export function caseChain(id, { edit = (position) => position } = {}) {
     if (target === fees.STATE_VIEW) {
       const { functionName, args } = decodeFunctionData({ abi: stateViewAbi, data });
       if (args[0] !== position.poolId) return revert;
-      if (functionName === 'getSlot0') return ok(stateViewAbi, functionName, [BigInt(position.sqrtPriceX96), position.tick, 0, key.fee]);
+      const protocolFee = key.currency0 === USDG_UFG[0] && key.currency1 === USDG_UFG[1] ? UFG_PROTOCOL_FEE : 0;
+      if (functionName === 'getSlot0') return ok(stateViewAbi, functionName, [BigInt(position.sqrtPriceX96), position.tick, protocolFee, key.fee]);
       if (functionName === 'getFeeGrowthInside') return ok(stateViewAbi, functionName, [BigInt(position.feeGrowthInside0X128), BigInt(position.feeGrowthInside1X128)]);
       if (BigInt(args[4]) !== BigInt(position.tokenId)) return revert;
       return ok(stateViewAbi, functionName, [BigInt(position.liquidity), BigInt(position.feeGrowthInside0LastX128), BigInt(position.feeGrowthInside1LastX128)]);
@@ -90,10 +102,15 @@ export function caseChain(id, { edit = (position) => position } = {}) {
       const [{ address, fromBlock, toBlock, topics }] = params;
       const from = Number(fromBlock);
       const to = Number(toBlock);
-      const first = Array.isArray(topics[0]) ? topics[0] : [topics[0]];
+      const asked = Array.isArray(topics[0]) ? topics[0] : [topics[0]];
+      const first = quietProbe && asked.length === 5 ? asked.filter((topic) => topic === fees.TOPIC.Swap || topic === fees.TOPIC.Donate) : asked;
+      // 2026-09-25: the price path's settlements read names the pool's currencies (a recorded case holds none of their
+      // Transfers) and places that match any of several topics.
+      const addresses = (Array.isArray(address) ? address : [address]).map((one) => one.toLowerCase());
+      const match = (want, got) => want == null || (Array.isArray(want) ? want.includes(got) : want === got);
       const hits = all.filter((log) => {
         const at = Number(log.blockNumber);
-        return log.address === address.toLowerCase() && at >= from && at <= to && first.includes(log.topics[0]) && [1, 2, 3].every((i) => topics[i] == null || log.topics[i] === topics[i]);
+        return addresses.includes(log.address) && at >= from && at <= to && first.includes(log.topics[0]) && [1, 2, 3].every((i) => match(topics[i], log.topics[i]));
       });
       return { result: hits };
     }

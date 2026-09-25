@@ -27,7 +27,11 @@ export type FeesReason = 'rpc_unavailable' | 'too_much_history' | 'replay_mismat
  * - `loading`: the on-chain state or the history is on its way; `state` is set once `/state` answered.
  * - `unclaimed-only`: only the on-chain unclaimed figure (`state.unclaimed`) may be shown; the history
  *   could not be rebuilt or did not verify (`reason`). `prices` are the hourly closes read so far, if any.
- * - `verified`: the replay equals the chain bit for bit (§15.5-8); the history may be drawn.
+ * - `verified`: the replay equals the chain bit for bit (§15.5-8); the history may be drawn. A busy pool's price path
+ *   (2026-09-25, pipeline.ts) verifies to its rounding: its end is the chain's own figures, and the fees of each
+ *   settlement it replayed are its own, within a few smallest units a swap of the chain's (FeeHistory.near).
+ * - `estimated` (2026-09-25): a busy pool's history drawn from samples of its swaps while the exact one is still being
+ *   read (pipeline.ts, path mode): its end is the chain's own figures, its shape an estimate, marked "est." on screen.
  * - `unavailable`: nothing may be shown, not even an unclaimed figure.
  */
 export type FeeHistoryView =
@@ -35,6 +39,7 @@ export type FeeHistoryView =
   | { phase: 'loading'; state: PositionState | null }
   | { phase: 'unclaimed-only'; state: PositionState; reason: FeesReason; prices: HourlyPrices | null }
   | { phase: 'verified'; state: PositionState; history: FeeHistory; prices: HourlyPrices }
+  | { phase: 'estimated'; state: PositionState; history: FeeHistory; prices: HourlyPrices }
   | { phase: 'unavailable'; reason: FeesReason }
 
 /** One currency of the pool. `symbol` is untrusted text from the token contract (render it as text only); null when unreadable. */
@@ -59,6 +64,8 @@ export interface PositionState {
   tickLower: number
   tickUpper: number
   liquidity: bigint
+  /** 2026-09-25: the pool's protocol fee now, as slot0 packs it (StatePositionOk.protocolFee); absent when not read. */
+  protocolFee?: number
   /** 0x + 64 lowercase hex. */
   poolId: string
   /** 0x + 40 lowercase hex. */
@@ -115,6 +122,12 @@ export interface FeeHistory {
   hourly: ReadonlyArray<FeeHour>
   events: ReadonlyArray<FeeEvent>
   checks: { swaps: number; steps: number; tickMismatch: number; liquidityMismatch: number; swapFeeMismatch: number; inconsistentLastStep: number }
+  /**
+   * 2026-09-25 (review): the price path's settlements (pipeline.ts): what each collected, and so `collected`, is the path's
+   * own figure, within a few smallest units a swap of the chain's (about 2e-7 relative on the recorded 2310187: 737.589775
+   * against 737.589891 USDG). The screens write "≈" before every digit of those amounts. Absent when exact.
+   */
+  near?: true
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +169,12 @@ export type StatePositionOk = {
   /** L × ((inside − last) mod 2^256) / 2^128, exact, as decimal strings. */
   unclaimed0: string
   unclaimed1: string
+  /**
+   * 2026-09-25: the pool's protocol fee now (slot0: the lower 12 bits zeroForOne, the upper 12 bits oneForZero), for the
+   * price path, where a Swap's fee alone can fit two protocol fees (a 4 % pool's 999 and 1,000 give the same fee).
+   * Absent in answers recorded before it.
+   */
+  protocolFee?: number
 }
 
 export type StatePositionFailed = { tokenId: string; ok: false; reason: 'not_found' | 'rpc_unavailable' | 'hooked_pool' }
@@ -206,6 +225,17 @@ export type LogsRequest =
   | { kind: 'probe'; poolId: Hex32; from: number; to: number }
   /** Block timestamps; 1..50 blocks, each a multiple of 36_000 or exactly a request's `until`. */
   | { kind: 'headers'; blocks: number[] }
+  /**
+   * 2026-09-25, the replay worker only (functions/_lib/feesPath.ts): the pool's Swap and Donate logs in 1..16 spans of
+   * blocks, read in one batch, each span at most a day and the reply capped: a position's own swaps, not whole days.
+   */
+  | { kind: 'span'; poolId: Hex32; spans: Array<[from: number, to: number]> }
+  /**
+   * 2026-09-25, the replay worker only: the NFT's own ModifyLiquidity logs (sender the PositionManager, salt the token
+   * id) in [from, to], looked for in `from` (the mint's block) and in every block where the pool's currencies moved
+   * between the PoolManager and one of `holders` (the NFT's owners): its mint and every settlement an owner made.
+   */
+  | { kind: 'settlements'; poolId: Hex32; tokenId: string; holders: Hex20[]; currencies: [Hex20, Hex20]; from: number; to: number }
 
 export type LogsKind = LogsRequest['kind']
 
@@ -220,7 +250,7 @@ export interface LogsUnit {
 }
 
 export type LogsResponse =
-  | { v: 1; kind: 'transfer' | 'initialize' | 'pool' | 'swaps' | 'probe'; head: number; units: LogsUnit[]; next: number | null }
+  | { v: 1; kind: 'transfer' | 'initialize' | 'pool' | 'swaps' | 'probe' | 'span' | 'settlements'; head: number; units: LogsUnit[]; next: number | null }
   | { v: 1; kind: 'swapBefore'; head: number; log: CompactLog | null }
   | { v: 1; kind: 'headers'; head: number; headers: Array<[block: number, timestamp: number]> }
   | { v: 1; kind: LogsKind; behind: true }
@@ -258,12 +288,18 @@ export type ToWorker =
   | { type: 'run'; id: string; state: PositionState; growth: readonly [bigint, bigint]; budgetBytes: number; checkpoint: Checkpoint | null }
   | { type: 'cancel'; id: string }
 
+/**
+ * `later` (2026-09-25, review): the checkpoint is a price path's that ran out of its run's budget or time, and any later
+ * run goes on from it (each counts its own bytes); without it, only a run with a larger budget does.
+ */
 export type WorkerResult =
   | { ok: true; history: FeeHistory; prices: HourlyPrices; checkpoint: Checkpoint }
-  | { ok: false; reason: FeesReason; prices: HourlyPrices | null; checkpoint: Checkpoint | null; bytes: number }
+  | { ok: false; reason: FeesReason; prices: HourlyPrices | null; checkpoint: Checkpoint | null; bytes: number; later?: true }
 
 export type FromWorker =
   | { type: 'progress'; id: string; bytes: number; daysDone: number; daysTotal: number }
+  /** 2026-09-25: an estimated history, while the run goes on to the exact one (a busy pool's: pipeline.ts, path mode). */
+  | { type: 'estimate'; id: string; history: FeeHistory; prices: HourlyPrices }
   | { type: 'done'; id: string; result: WorkerResult }
 
 /** How much the history of one subscriber may download: the position page, or the Positions list's aggregate. */

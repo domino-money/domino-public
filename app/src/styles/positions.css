@@ -569,6 +569,12 @@
   .dm-fees-chart { margin-top: -4px; }
   .dm-fees-body[data-zero] .dm-fees-chart { margin-top: 0; }
   .dm-fees-flat { fill: none; stroke: var(--fg-subtle); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  /* No history to draw (2026-09-25: the card stays): the plot keeps the loaded chart's height and room (dates under it,
+     the gutter at the right on a desktop), with one flat line along its foot in the faintest ink. */
+  .dm-fees-quiet { display: flex; align-items: flex-end; height: 200px; padding: 0 8px 44px 0; }
+  @media (min-width: 768px) { .dm-fees-quiet { height: 240px; padding-right: 72px; } }
+  .dm-fees-quiet-line { display: block; width: 100%; height: 2px; overflow: visible; }
+  .dm-fees-quiet-line .dm-fees-flat { stroke: var(--fg-faint); stroke-width: 1; opacity: 0.6; }
   /* Each bucket's earnings: slim bars that tint the area (the line is drawn again over them), quieter on white. */
   .dm-fees-chart .dm-chart-series .dm-bar { opacity: 0.18; }
   .dark .dm-fees-chart .dm-chart-series .dm-bar { opacity: 0.35; }
