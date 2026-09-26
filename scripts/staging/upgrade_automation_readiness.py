@@ -2,7 +2,8 @@
 """Upgrade an installed, OFF automation stack with the read-only readiness gate.
 
 This is deliberately separate from the first-install path. It applies only
-039_automation_readiness.sql and 040_gas_finalized_quote_lag.sql, stages immutable automation/execution-status
+039_automation_readiness.sql, 040_gas_finalized_quote_lag.sql and
+046_gas_answer_heartbeat.sql, stages immutable automation/execution-status
 source, and repoints four inactive units. It does not read private configuration,
 touch keys, change peers, start sockets/timers/services, or enable execution.
 """
@@ -23,10 +24,11 @@ import upgrade_financial as financial
 import install_automation as automation
 
 require = base.require
-MIGRATIONS = automation.MIGRATIONS[-2:]
+MIGRATIONS = automation.MIGRATIONS[-3:]
 assert MIGRATIONS == ('backend/migrations/039_automation_readiness.sql',
-                      'backend/migrations/040_gas_finalized_quote_lag.sql')
-PRIOR_MIGRATIONS = automation.MIGRATIONS[:-2]
+                      'backend/migrations/040_gas_finalized_quote_lag.sql',
+                      'backend/migrations/046_gas_answer_heartbeat.sql')
+PRIOR_MIGRATIONS = automation.MIGRATIONS[:-3]
 UNITS = (automation.UNIT, 'domino-gas-reservation.service',
          'domino-gas-settlement.service', 'domino-execution-status.service')
 OFF_UNITS = (*UNITS, 'domino-gas-reservation.socket', 'domino-gas-settlement.timer',
@@ -56,7 +58,7 @@ def plan(files, commit, digest):
                       'domino-execution-status.service': financial.unit_text('execution-status', commit)},
             'sourceDirectory': str(financial.ROOT / 'releases' / commit),
             'servicesStarted': False, 'privateConfigurationChanged': False,
-            'rollback': 'restore four OFF units; retain receipted 039/040 schema and immutable source'}
+            'rollback': 'restore four OFF units; retain receipted 039/040/046 schema and immutable source'}
 
 
 def _install_receipt(table):
@@ -196,7 +198,7 @@ def baseline(files, planned):
 
 
 def migration_sql(files, planned, prior_receipt):
-    """One atomic 039+040+receipt transaction; the 028–038 receipt stays immutable."""
+    """One atomic 039+040+046+receipt transaction; the 028–038 receipt stays immutable."""
     old = json.dumps(prior_receipt, sort_keys=True, separators=(',', ':'))
     require("'" not in old, 'prior_install_receipt_invalid')
     migration_statements = '\n'.join(files[path][0].decode('utf-8') for path in MIGRATIONS)
@@ -267,7 +269,7 @@ def _replace_unit(path, raw):
 
 
 def rollback(planned):
-    """Restore only the four previously OFF units. The 039/040 receipts are retained."""
+    """Restore only the four previously OFF units. The 039/040/046 receipts are retained."""
     directory = _journal_dir(planned)
     base.trusted_parents(directory)
     require(json.loads(financial.read_file(directory / 'plan.json')) == planned,

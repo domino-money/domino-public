@@ -15,7 +15,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from chainlink_history import ETH_FEED
-from gas_usd_budget import EthUsdReader, GasBudgetError, GasUsdBudget, GasBudgetService
+from gas_usd_budget import EthUsdReader, GasBudgetError, GasUsdBudget, GasBudgetService, QuotePolicy
 from execution_pg import ExecutionPostgres
 from publisher_signer import PublicationJournal
 
@@ -101,9 +101,12 @@ class EthUsdReaderTests(unittest.TestCase):
         self.assertEqual(quote.usd_micros_for_wei(1), 1)
 
     def test_stale_wrong_feed_and_reorg_fail_closed(self):
-        self.rpc.updated_at = self.now - 5100
-        self.assertEqual(self.reader.quote().answer_updated_at, self.now - 5100)
-        self.rpc.updated_at = self.now - 7201
+        # The feed's round stands until the price moves past its threshold or
+        # its 24h heartbeat comes: a calm answer 7201 s old is current.
+        for age in (5100, 7201, 90000):
+            self.rpc.updated_at = self.now - age
+            self.assertEqual(self.reader.quote().answer_updated_at, self.now - age)
+        self.rpc.updated_at = self.now - 90001
         with self.assertRaisesRegex(GasBudgetError, 'gas_quote_answer_stale'):
             self.reader.quote()
         self.rpc.updated_at = self.now - 20
@@ -115,6 +118,13 @@ class EthUsdReaderTests(unittest.TestCase):
         self.rpc.reorg = True
         with self.assertRaisesRegex(GasBudgetError, 'gas_quote_reorganized'):
             self.reader.quote()
+
+    def test_policy_cannot_outlast_the_database_ceiling(self):
+        # 046 holds 90000 s in the database; a longer policy would only be refused there.
+        self.assertEqual(QuotePolicy().max_answer_age_seconds, 90000)
+        self.assertEqual(QuotePolicy(max_answer_age_seconds=7200).max_answer_age_seconds, 7200)
+        with self.assertRaisesRegex(GasBudgetError, 'gas_quote_policy_invalid'):
+            QuotePolicy(max_answer_age_seconds=90001)
 
     def test_round_without_positive_answer_is_unusable(self):
         self.rpc.answer = 0
@@ -155,7 +165,8 @@ class GasBudgetPostgresTests(unittest.TestCase):
                          '036_gas_settlement_journal_read',
                          '037_gas_settlement_receipt_evidence',
                          '038_gas_settlement_quote_witness',
-                         '040_gas_finalized_quote_lag'):
+                         '040_gas_finalized_quote_lag',
+                         '046_gas_answer_heartbeat'):
                 conn.execute((Path(__file__).resolve().parents[1] / 'migrations' /
                               f'{name}.sql').read_text())
             conn.execute('ALTER ROLE domino_gas_budget_worker LOGIN')
@@ -420,6 +431,45 @@ class GasBudgetPostgresTests(unittest.TestCase):
                              '%s,%s,%s,%s,%s,%s,%s,%s)',
                              (CYCLE_2, 'publisher', 2000 * 10**8, PHASE_ROUND,
                               stale - 1, 998, FeedRpc._hash(998), stale))
+
+    def test_each_database_gate_takes_a_calm_answer_up_to_the_heartbeat(self):
+        # 046: reserve, authorized, attest_settlement_quote and settle each hold
+        # the answer's age ceiling. A calm round 7201 s old, refused before,
+        # passes every one of them; a round past the heartbeat fails each closed.
+        def quote_args(age, block_age):
+            now = int(time.time())
+            return (2000 * 10**8, PHASE_ROUND, now - age, 998, FeedRpc._hash(998), now - block_age)
+        reserve = 'SELECT state FROM domino_gas_budget.reserve(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)'
+        attest = 'SELECT round FROM domino_gas_budget.attest_settlement_quote(%s,%s,%s,%s,%s,%s,%s,%s)'
+        with psycopg.connect(**self.pg.settings, user='domino_gas_budget_worker') as conn:
+            self.assertEqual(conn.execute(reserve, (CYCLE_1, 'publisher', ADDRESS, 5 * 10**15,
+                                                    *quote_args(7201, 5), 12000)).fetchone(), ('reserved',))
+            with self.assertRaisesRegex(psycopg.errors.CheckViolation, 'gas_reservation_invalid'):
+                with conn.transaction():
+                    conn.execute(reserve, (CYCLE_2, 'publisher', ADDRESS, 5 * 10**15,
+                                           *quote_args(90100, 5), 12000))
+            self.assertEqual(conn.execute(attest, (CYCLE_1, 'publisher', *quote_args(7201, 900))).fetchone(),
+                             (PHASE_ROUND,))
+            with self.assertRaisesRegex(psycopg.errors.CheckViolation, 'gas_settlement_quote_invalid'):
+                with conn.transaction():
+                    conn.execute(attest, (CYCLE_1, 'publisher', *quote_args(90100, 900)))
+            conn.commit()
+        with psycopg.connect(**self.pg.settings, user='domino_execution_publisher') as conn:
+            gate = 'SELECT domino_gas_budget.authorized(%s,%s,%s,%s)'
+            self.assertEqual(conn.execute(gate, (CYCLE_1, 'publisher', ADDRESS, 5 * 10**15)).fetchone(), (True,))
+            for age, expected in ((89900, True), (90100, False)):
+                with self.pg.admin() as admin:
+                    admin.execute('UPDATE domino_gas_budget.claims SET reserve_updated_at=%s WHERE cycle_id=%s',
+                                  (int(time.time()) - age, CYCLE_1))
+                self.assertEqual(conn.execute(gate, (CYCLE_1, 'publisher', ADDRESS, 5 * 10**15)).fetchone(),
+                                 (expected,), age)
+        settle = 'SELECT * FROM domino_gas_budget.settle(%s,%s,%s,%s,%s,%s,%s)'
+        with psycopg.connect(**self.pg.settings, user='domino_gas_settlement_worker') as conn:
+            for age, error in ((7201, 'gas_reservation_missing'), (90100, 'gas_settlement_invalid')):
+                answer, round_, updated, _, _, block_timestamp = quote_args(age, 900)
+                with self.assertRaisesRegex(psycopg.errors.CheckViolation, error):
+                    with conn.transaction():
+                        conn.execute(settle, (CYCLE_2, 'publisher', 10**15, answer, round_, updated, block_timestamp))
 
     def test_old_quote_witness_cannot_be_replayed_to_release_cap(self):
         budget = self.budget()

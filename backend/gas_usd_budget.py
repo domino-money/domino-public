@@ -36,13 +36,16 @@ _HEX = re.compile(r'^0x(?:[0-9a-fA-F]{2})*$')
 
 @dataclass(frozen=True)
 class QuotePolicy:
-    # The feed's reviewed heartbeat is 24h; 2h is an independent, stricter
-    # operating ceiling for gas accounting. The 20% buffer is not a price SLA.
+    # The block read must be fresh. The 20% buffer is not a price SLA.
     max_head_age_seconds: int = 180
     # Robinhood Chain finality is currently about 14 minutes behind latest.
     # This bound applies only to canonical finalized settlement quotes.
     max_finalized_lag_seconds: int = 1800
-    max_answer_age_seconds: int = 7200
+    # The feed writes a round past its deviation threshold and at least every
+    # 24h, so an unchanged answer is still within that threshold: its heartbeat
+    # plus an hour for delivery. 2h refused it for a fifth of the calm time
+    # (migration 046 holds the same ceiling in the database).
+    max_answer_age_seconds: int = 90000
     confirmations: int = 2
     reservation_bps: int = 12000
 
@@ -52,7 +55,7 @@ class QuotePolicy:
                 type(self.max_finalized_lag_seconds) is not int or
                 not 180 <= self.max_finalized_lag_seconds <= 1800 or
                 type(self.max_answer_age_seconds) is not int or
-                not 1 <= self.max_answer_age_seconds <= 7200 or
+                not 1 <= self.max_answer_age_seconds <= 90000 or
                 type(self.confirmations) is not int or
                 not 2 <= self.confirmations <= 100 or
                 type(self.reservation_bps) is not int or

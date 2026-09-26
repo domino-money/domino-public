@@ -2,8 +2,8 @@
 """Install the automation cycle beside the financial services; never start it.
 
 One immutable source release for the `automation` component, three system users,
-five disabled systemd units without [Install] sections, migrations 028 to 038
-in one receipted transaction, and distinct peer identities for
+five disabled systemd units without [Install] sections, migrations 028 to 040
+and 046 in one receipted transaction, and distinct peer identities for
 execution, gas reservation and gas settlement. No configuration, key, funding or
 activation: the units have no private configuration, and nothing here reads,
 creates or returns it. The financial
@@ -43,7 +43,8 @@ MIGRATIONS = ('backend/migrations/028_automation_cycle.sql', 'backend/migrations
               'backend/migrations/037_gas_settlement_receipt_evidence.sql',
               'backend/migrations/038_gas_settlement_quote_witness.sql',
               'backend/migrations/039_automation_readiness.sql',
-              'backend/migrations/040_gas_finalized_quote_lag.sql')
+              'backend/migrations/040_gas_finalized_quote_lag.sql',
+              'backend/migrations/046_gas_answer_heartbeat.sql')
 SOURCES = ('backend/automation_cli.py', 'backend/automation_cycle.py', 'backend/automation_ledger.py',
            'backend/automation_config.py', 'backend/automation_observer.py', 'backend/automation_evidence.py',
            'backend/automation_plan.py', 'backend/automation_store.py', 'backend/publisher_signer.py',
@@ -317,6 +318,8 @@ def baseline(files, planned):
     require(not {OS_USER, *(row[0] for row in GAS_ACCESS)} & {p.pw_name for p in pwd.getpwall()},
             'automation_os_identity_already_exists')
     require(not os.path.lexists(financial.release_root(planned['commit'], COMPONENT)), 'automation_release_already_exists')
+    for directory in (financial.ROOT / 'releases', financial.ROOT / 'releases' / planned['commit']):
+        if os.path.lexists(directory): traversable(directory)
     require(not os.path.lexists(RUNTIME) and not any(os.path.lexists(path) for path in (
         PRIVATE, financial.PRIVATE / 'gas-reservation', financial.PRIVATE / 'gas-settlement')),
         'automation_directories_already_exist')
@@ -331,10 +334,21 @@ def baseline(files, planned):
             'peers': {name: sha(read_file(base.CONFIG / name)) for name in ('pg_hba.conf', 'pg_ident.conf')}}
 
 
+def traversable(path):
+    """The units run as unprivileged users, who must pass through every root-owned
+    directory above their component; a 0700 one fails them at CHDIR."""
+    require(base.trusted(path).st_mode & 0o001, 'release_directory_not_traversable')
+
+
 def install_source(files, commit):
+    traversable(financial.ROOT / 'releases')
     release = financial.ROOT / 'releases' / commit
-    if release.exists(): base.trusted_parents(release)
-    else: release.mkdir(mode=0o755)
+    created = not release.exists()
+    if created: release.mkdir(mode=0o755)
+    else:
+        # Another installer made it for the same commit and may have left it closed.
+        base.trusted_parents(release)
+        traversable(release)
     root = release / COMPONENT
     root.mkdir(mode=0o755)
     for name, (raw, executable) in files.items():
@@ -344,6 +358,8 @@ def install_source(files, commit):
         base.exclusive_file(path, raw, 0o555 if executable else 0o444)
     (root / 'backend/runtime').mkdir(mode=0o700)
     for path, _, _ in os.walk(root, topdown=False): os.chmod(path, 0o555)
+    # Explicit, whatever the umask: the documented procedure runs under umask 077.
+    if created: os.chmod(release, 0o555)
 
 
 def apply(files, planned, expected):

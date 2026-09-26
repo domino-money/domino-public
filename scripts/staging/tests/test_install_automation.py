@@ -4,10 +4,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install_automation as automation
@@ -65,6 +67,91 @@ class AutomationInstallTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'automation_source_missing'):
                 automation.plan({k: v for k, v in self.files.items() if k != name}, self.commit, self.digest)
 
+    def stage(self, root):
+        """install_source into a temporary /opt/domino/financial, as the current user."""
+        files = {'backend/automation_cycle.py': (b'cycle', False), 'backend/runtime_helpers/tool.py': (b'tool', True),
+                 'backend/tests/test_cycle.py': (b'test', False)}
+        exclusive = base.exclusive_file
+        def fixture_file(path, raw, mode=0o600, **kwargs):
+            return exclusive(path, raw, mode=mode, uid=os.getuid(), gid=os.getgid())
+        with patch.object(automation.financial, 'ROOT', root), \
+             patch.object(automation.base, 'trusted_parents'), \
+             patch.object(automation.base, 'trusted', side_effect=lambda p: Path(p).lstat()), \
+             patch.object(automation.base, 'exclusive_file', side_effect=fixture_file):
+            automation.install_source(files, self.commit)
+
+    def test_a_new_release_is_traversable_whatever_the_umask(self):
+        # 23 Sep 2026: installed under the documented umask 077, the commit's
+        # directory came out 0700, and every unit would have failed at CHDIR.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'releases').mkdir()
+            os.chmod(root / 'releases', 0o755)
+            previous = os.umask(0o077)
+            try:
+                self.stage(root)
+            finally:
+                os.umask(previous)
+            release = root / 'releases' / self.commit
+            self.assertEqual(stat.S_IMODE(release.stat().st_mode), 0o555)
+            component = release / 'automation'
+            for directory in (component, *(p for p in component.rglob('*') if p.is_dir())):
+                self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o555, directory)
+            self.assertEqual((component / 'backend/automation_cycle.py').read_bytes(), b'cycle')
+            self.assertFalse((component / 'backend/tests').exists())
+
+    def test_an_existing_release_is_shared_only_if_traversable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            release = root / 'releases' / self.commit
+            (release / 'execution-status').mkdir(parents=True)
+            os.chmod(root / 'releases', 0o755)
+            os.chmod(release, 0o700)
+            with self.assertRaisesRegex(ValueError, 'release_directory_not_traversable'):
+                self.stage(root)
+            self.assertFalse((release / 'automation').exists())
+            os.chmod(release, 0o755)
+            self.stage(root)
+            # Not this installer's directory: its mode is left as it was.
+            self.assertEqual(stat.S_IMODE(release.stat().st_mode), 0o755)
+            self.assertEqual(sorted(p.name for p in release.iterdir()), ['automation', 'execution-status'])
+
+    def test_the_releases_root_itself_must_be_traversable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'releases').mkdir()
+            os.chmod(root / 'releases', 0o750)
+            with self.assertRaisesRegex(ValueError, 'release_directory_not_traversable'):
+                self.stage(root)
+            self.assertFalse((root / 'releases' / self.commit).exists())
+
+    def test_inspection_refuses_a_closed_release_before_the_database(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            release = root / 'releases' / self.commit
+            release.mkdir(parents=True)
+            os.chmod(root / 'releases', 0o755)
+            units = root / 'units'
+            units.mkdir()
+            with patch.object(automation.os, 'geteuid', return_value=0), \
+                 patch.object(automation.financial, 'ROOT', root), \
+                 patch.object(automation.base, 'UNIT_DIR', units), \
+                 patch.object(automation.base, 'trusted_parents'), \
+                 patch.object(automation.base, 'pg_parents'), \
+                 patch.object(automation.base, 'dependency_preflight'), \
+                 patch.object(automation.base, 'trusted', side_effect=lambda p: Path(p).lstat()), \
+                 patch.object(automation, 'RUNTIME', root / 'runtime'), \
+                 patch.object(automation, 'PRIVATE', root / 'private'), \
+                 patch.object(automation.financial, 'PRIVATE', root / 'financial-private'), \
+                 patch.object(automation, 'sql', side_effect=AssertionError('reached the database')):
+                for closed in (release, root / 'releases'):
+                    os.chmod(closed, 0o700)
+                    with self.assertRaisesRegex(ValueError, 'release_directory_not_traversable'):
+                        automation.baseline(self.files, self.planned)
+                    os.chmod(closed, 0o755)
+                with self.assertRaisesRegex(AssertionError, 'reached the database'):
+                    automation.baseline(self.files, self.planned)
+
     def test_unit_is_off_hardened_and_reads_only_its_private_configuration(self):
         text = self.planned['unit']
         self.assertIn('ConditionPathExists=/etc/domino/financial/automation/config.json\n', text)
@@ -100,7 +187,7 @@ class AutomationInstallTests(unittest.TestCase):
         self.assertTrue(query.startswith('BEGIN;'))
         self.assertTrue(query.endswith('COMMIT;\n'))
         migrations = [self.files[name][0].decode() for name in automation.MIGRATIONS]
-        self.assertEqual(len(migrations), 13)
+        self.assertEqual(len(migrations), 14)
         for earlier, later in zip(migrations, migrations[1:]):
             self.assertLess(query.index(earlier), query.index(later))
         first = migrations[0]

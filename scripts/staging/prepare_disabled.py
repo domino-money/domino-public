@@ -171,6 +171,9 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/044_demand_horizon.sql',
     # The featured-pools live list: health tracking and the owner's phase; same vehicle as 024.
     'backend/migrations/045_featured_live.sql',
+    # The gas cap accepts an ETH/USD answer as old as the feed's heartbeat; same
+    # vehicle as 032 (the automation installer and its readiness upgrade).
+    'backend/migrations/046_gas_answer_heartbeat.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

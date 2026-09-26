@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "kind": "domino-automation-profile",
+  "configVersion": "pilot-v1-2026-09-26",
+  "releaseTag": "v1-release-2026-09-21",
+  "operatorPolicy": {
+    "max_gas": 3000000,
+    "max_fee_per_gas": 500000000,
+    "priority_fee_per_gas": 1,
+    "max_total_cost": 1500000000000000,
+    "max_replacements": 0,
+    "bump_bps": 1000,
+    "enabled": true
+  },
+  "publisher": {
+    "maxGas": 400000,
+    "maxFeePerGas": 500000000,
+    "priorityFeePerGas": 1,
+    "maxTotalCostWei": 200000000000000,
+    "expirySeconds": 60,
+    "enabled": true
+  },
+  "planner": {
+    "version": "0x57ab05035c2d787c529aa8822b2e43059132e5b48f529f9a6c6a9ab84b13e378",
+    "minimumSamples": 3,
+    "minimumSampleSeconds": 1800,
+    "maximumMeasurementSeconds": 3600,
+    "maximumSampleAgeSeconds": 1200,
+    "maximumForecastSeconds": 604800,
+    "forecastHaircutBps": 2000,
+    "minimumOwnerBenefitQuote": 0,
+    "operatorCostBufferBps": 1500,
+    "serviceRealizationBps": 9800,
+    "overlapChoicesBps": [
+      0,
+      500,
+      1000,
+      2000
+    ],
+    "liquidityFractionChoicesBps": [
+      2500,
+      5000,
+      7500,
+      10000
+    ]
+  },
+  "pricing": {
+    "kind": "pool_spot",
+    "valuationBandBps": 25,
+    "wrappedNative": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+    "gasPools": {
+      "0x5fc5360d0400a0fd4f2af552add042d716f1d168": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "fee": 8388608,
+        "tickSpacing": 10,
+        "hooks": "0x06a889870c8f83640d6816319f72e2aa579b6080"
+      }
+    },
+    "gasPriceBufferBps": 100
+  },
+  "swapCap": {
+    "depthMultiplierBps": 5000
+  },
+  "gas": {
+    "publishGasUnits": 175000,
+    "executeGasUnits": {
+      "direct": 1300000,
+      "swap": 2500000,
+      "mint": 2100000,
+      "fund": 1450000
+    },
+    "priorityFeePerGasWei": 1,
+    "basePriceBufferBps": 2500,
+    "l1DataComponent": "node_interface",
+    "operatorMinimumBalanceWei": 3000000000000000,
+    "publisherMinimumBalanceWei": 400000000000000
+  },
+  "destinations": {
+    "maxLiquidityIncreaseBpsOfActive": 1000,
+    "maxLiquidityIncreaseAbsolute": 170141183460469231731687303715884105727,
+    "competingLiquidityHaircutBps": 1000,
+    "totalLiquidityMarginBps": 1000,
+    "activeFractionHaircutBps": 1000,
+    "successorActiveFractionBps": 5000,
+    "exposureLossBps": 0,
+    "swapFractionsBps": [
+      2500,
+      5000,
+      7500,
+      10000
+    ],
+    "minimumSwapFractionBps": 1000,
+    "quoteSlippageBps": 50,
+    "maxSimulationSteps": 64
+  },
+  "history": {
+    "samplerVersion": "pilot-sampler-1",
+    "sampleIntervalSeconds": 900,
+    "maximumSampleGapSeconds": 1800
+  },
+  "plan": {
+    "deadlineSeconds": 60,
+    "maxGasCostWei": 1500000000000000,
+    "preferNetPath": true,
+    "liquiditySlackBps": 50
+  },
+  "scheduling": {
+    "evaluationIntervalSeconds": 10,
+    "minimumBackoffSeconds": 30,
+    "maximumBackoffSeconds": 300,
+    "leaseSeconds": 120,
+    "publicationWindowSeconds": 86400,
+    "maxPublicationsPerWindow": 3,
+    "publicationWaitSeconds": 15,
+    "executionWaitSeconds": 10,
+    "maxSourceBlockAge": 100,
+    "cycleBudgetSeconds": 90,
+    "jitterBps": 2000,
+    "latencyTargetSeconds": 5,
+    "failureBackoffAfter": 2
+  },
+  "finality": {
+    "publicationConfirmations": 0
+  },
+  "ledger": {
+    "indexer": "inline",
+    "maxBlocksPerPass": 20000,
+    "maxLogsPerPass": 1024
+  },
+  "paused": false
+}

@@ -10,9 +10,10 @@ and both signer keys stay outside the repository.
 
 What it is today: a **library and an integration tested on a disposable chain and
 database** (`backend/tests/test_automation_cycle_evm.py`). It is **not an active
-service**: no production configuration, admission profile, key or host unit exists in
-this repository, and the mainnet deployment's `executionAvailable` stays `false` until
-the [activation](#activation) steps below are done and recorded.
+service**: the repository holds a versioned pilot parameter profile and the generator
+that composes the private files from it ([pilot configuration](AUTOMATION_PILOT_CONFIGURATION.md)),
+but no key and no admitted vault, and the mainnet deployment's `executionAvailable`
+stays `false` until the [activation](#activation) steps below are done and recorded.
 
 ## Components
 
@@ -68,7 +69,11 @@ checkout (the same rules as the other private services). `schemaVersion: 1`,
 | `paused` | bool | A file-level pause; the database `controls.paused` switch is the runtime one. |
 
 `backend/tests/automation_fixtures.py::sample_config` shows the complete shape with test
-values. They are not production values.
+values. They are not production values. The production file is composed by
+`backend/configure_automation.py` from the release record and the committed profile
+`docs/deployments/v1-robinhood-mainnet-2026-09-21/automation-pilot-v1.json`; the
+[pilot configuration](AUTOMATION_PILOT_CONFIGURATION.md) gives every value's basis and
+the combinations the generator refuses.
 
 ## Installation
 
@@ -79,8 +84,8 @@ values. They are not production values.
    `033_gas_budget_claim_read.sql`, `034_gas_settlement_sweep.sql`,
    `035_cancel_unsigned_gas_claims.sql`, `036_gas_settlement_journal_read.sql` and
    `037_gas_settlement_receipt_evidence.sql` and
-   `038_gas_settlement_quote_witness.sql`, `039_automation_readiness.sql` and
-   `040_gas_finalized_quote_lag.sql` (after the financial upgrade's 015 and 019; 028 creates
+   `038_gas_settlement_quote_witness.sql`, `039_automation_readiness.sql`,
+   `040_gas_finalized_quote_lag.sql` and `046_gas_answer_heartbeat.sql` (after the financial upgrade's 015 and 019; 028 creates
    the `domino_execution_publisher` role, 029 adds the ledger reader's tables to the
    existing `domino_execution_ledger` role, 030 the pools' shared swap budget and the
    failure count, 031 lets an expired publication be sent again; 032–038 install
@@ -88,7 +93,9 @@ values. They are not production values.
    unsigned cancellation tombstone, scoped settlement witnesses and an
    append-only reverted operator receipt; 039 exposes owner-scoped readiness;
    040 permits a canonical finalized gas quote up to 30 minutes old while
-   reservation quotes retain their 180-second ceiling) and the peer
+   reservation quotes retain their 180-second ceiling; 046 accepts an ETH/USD
+   answer as old as the feed's 24-hour heartbeat plus an hour, since the feed
+   writes a round only past its deviation threshold) and the peer
    mappings from the service user to `domino_execution_worker`, `domino_execution_signer`,
    `domino_execution_publisher` and `domino_execution_ledger`. The two gas
    privilege roles remain `NOLOGIN`, behind separate peer-login bridge identities.
@@ -192,7 +199,7 @@ Deploying the contracts did not enable this. To activate, in order and recorded:
 
 1. A verified production configuration (this document's table), with a gas pool for
    every non-ETH quote currency and the gas units re-measured on the deployed contracts.
-2. Migrations 028 to 040 applied; the four execution roles and two isolated gas
+2. Migrations 028 to 040 and 046 applied; the four execution roles and two isolated gas
    peers verified, with the reservation and settlement runtime boundary and
    receipt sweep tested end to end.
 3. Both keys placed and funded; the guard's publisher equal to the publisher key.

@@ -233,6 +233,9 @@ def create_database(name):
             conn.execute((ROOT/'migrations/038_gas_settlement_quote_witness.sql').read_text())
         # Replaces only the two finalized settlement quote functions from 038.
         conn.execute((ROOT/'migrations/040_gas_finalized_quote_lag.sql').read_text())
+        # Replaces four gas functions, 040's two included, to take an ETH/USD
+        # answer as old as the feed's heartbeat; it applies again safely.
+        conn.execute((ROOT/'migrations/046_gas_answer_heartbeat.sql').read_text())
         # 041 only widens the session policy and adds a nullable column, so it
         # applies again safely.
         conn.execute((ROOT/'migrations/041_session_delegated_accounts.sql').read_text())
