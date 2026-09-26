@@ -13,7 +13,7 @@ const require = createRequire(import.meta.url);
 const { createPerformanceController, formatMetricUsd, formatMetricPercent, exactDecimal, enrollmentFailureText, performanceReasonText,
   PERFORMANCE_STATUS_TEXT, ENROLLMENT_STATUS_TEXT, ENROLLMENT_REASON_TEXT, COLLECTION_TEXT, SEQUENCE_LIST_TRIES, PERFORMANCE_RETRY_MS, trackableSequence } = require('../.test-build/app/src/finance/performance.js');
 // Compiled into the test build through performance.ts's import of its types.
-const { createSequenceClient, sequenceAbi, sequenceIdentity, cloneRuntime, sequenceProviderReadError, sequenceReadError, sequenceReadStage, SEQUENCE_LIST_LIMIT, SEQUENCE_MEMBER_STEPS, sequenceIdParameters, poolKeyParameters } = require('../.test-build/app/src/finance/sequence.js');
+const { createSequenceClient, sequenceAbi, sequenceIdentity, cloneRuntime, sequenceProviderReadError, sequenceReadError, sequenceReadStage, SEQUENCE_LIST_LIMIT, SEQUENCE_MEMBER_STEPS, SEQUENCE_READ_WIDTH, sequenceIdParameters, poolKeyParameters } = require('../.test-build/app/src/finance/sequence.js');
 const { setupAbi, tokenAbi, quoterAbi, operationIdParameters } = require('../.test-build/app/src/finance/setup.js');
 const { sequenceDeploymentFrom } = require('../.test-build/app/src/finance/sequence.js');
 const { deploymentFrom } = require('../.test-build/app/src/finance/setup.js');
@@ -694,6 +694,62 @@ test('an NFT something is already subscribed to is refused before any approval i
   assert.equal(fetched, 1);
 });
 
+// Added 2026-09-26: Set up automation never reached the wallet on domino.money. Its ~50 reads were pinned to one block and
+// asked one by one through the wallet at ~300 ms each; the public node keeps a block's state about 12 s, and it answered
+// "historical state … is not available" at read #43 of the NFT's inspection (the read snapshot took over) and at read #88
+// of the preparation, which has no snapshot. Here each reply takes at least 10 ms and a pinned read older than 400 ms is
+// refused the same way: one by one, the ~50 reads cannot take less than 500 ms; together they take about nine replies.
+test('Set up automation reads its pinned block together, inside a node\'s short state history', async () => {
+  const chain = await rootChain();
+  const LATENCY_MS = 10, HISTORY_MS = 400;
+  let pinnedAt = 0, inFlight = 0, widest = 0, snapshots = 0;
+  const request = async (method, params) => {
+    if (method === 'eth_getBlockByNumber' && params[0] === 'latest') pinnedAt = performance.now();
+    widest = Math.max(widest, ++inFlight);
+    try { await new Promise(resolve => setTimeout(resolve, LATENCY_MS)); } finally { inFlight--; }
+    if ((method === 'eth_call' || method === 'eth_getCode') && params[1] !== 'latest' && performance.now() - pinnedAt > HISTORY_MS)
+      throw Object.assign(new Error('historical state 773a0a87eecdc80f3609e3e35d079586abb3b879d378e41ab586aca212b587f9 is not available'), { code: -32000 });
+    return chain.wallet.request(method, params);
+  };
+  const client = createSequenceClient({ ...chain.wallet, request }, chain.d, () => 1000, async () => chain.d, async () => { snapshots++; return chain.snapshot; });
+  assert.equal((await client.inspectRoot(chain.rootTokenId)).tokenId, chain.rootTokenId);
+  assert.equal((await client.create(chain.options, ROOT_GAS)).kind, 'approve-root');
+  assert.equal(snapshots, 0, 'the wallet answered every read: the read snapshot was never needed');
+  assert.ok(widest > 1 && widest <= SEQUENCE_READ_WIDTH, `reads went together, at most ${SEQUENCE_READ_WIDTH} at once (measured ${widest})`);
+});
+
+// Reads together still fail as they did one by one: the error is the one the first failing read in the old order meets.
+test('reads of one block together report the failure the reads one by one met first', async () => {
+  // A vault address that is not one of the deployment's clones: its code is refused before any other read of it counts.
+  const chain = await rootChain();
+  const notAVault = hexOf(0x77, 20);
+  const client = createSequenceClient(chain.wallet, chain.d, () => 1000, async () => chain.d);
+  await assert.rejects(client.inspect(notAVault), error => error.message === 'unqualified_sequence');
+  // Another wallet's NFT, whose position read is refused in the same round: refused as another wallet's, as before.
+  const gone = await rootChain({ holder: hexOf(0xdd, 20) });
+  const refusing = { ...gone.wallet, request: (method, params) => method === 'eth_call'
+    && decodeFunctionData({ abi: sequenceAbi, data: params[0].data }).functionName === 'getPoolAndPositionInfo'
+    ? Promise.reject(new Error('refused')) : gone.wallet.request(method, params) };
+  await assert.rejects(createSequenceClient(refusing, gone.d, () => 1000, async () => gone.d).create(gone.options, ROOT_GAS),
+    error => error.message === 'position_not_in_wallet');
+});
+
+test('after the first failing read of a block, no new read of it starts', async () => {
+  const chain = await rootChain();
+  const d = { ...chain.d, codeHashes: { ...chain.d.codeHashes, factory: hexOf(0x99, 32) } };
+  let pinned = 0;
+  const request = async (method, params) => {
+    const read = (method === 'eth_call' || method === 'eth_getCode') && params[1] !== 'latest';
+    if (read) pinned++;
+    // The factory's code, the first read listed, answers first; the rest of the first reads are slower.
+    await new Promise(resolve => setTimeout(resolve, read && !(method === 'eth_getCode' && params[0] === d.factory) ? 30 : 5));
+    return chain.wallet.request(method, params);
+  };
+  await assert.rejects(createSequenceClient({ ...chain.wallet, request }, d, () => 1000, async () => d).create(chain.options, ROOT_GAS),
+    error => error.message === 'deployment_code_changed');
+  assert.equal(pinned, SEQUENCE_READ_WIDTH, 'only the reads already under way when the factory\'s code failed');
+});
+
 // Added 2026-09-24 (audit): a listed NFT the wallet no longer held was refused with a sentence that blamed the deployment.
 test('a listed NFT this wallet no longer holds is refused as that, never as a changed deployment', async () => {
   const gone = await rootChain({ holder: hexOf(0xdd,20) });
@@ -723,10 +779,10 @@ test('sequence preparation never uses the read snapshot after a wallet refusal',
 
 test('disabled snapshot bridge preserves the closed wallet read error without replaying reads', async () => {
   const chain=fakeChain({sequences:0}), original=chain.wallet.request;
-  let rejected=0, snapshots=0;
+  const rejected=new Map(); let snapshots=0;
   const wallet={...chain.wallet,request:(method,params)=>{
     if(method==='eth_call' && decodeFunctionData({abi:sequenceAbi,data:params[0].data}).functionName==='implementation'){
-      rejected++;return Promise.reject(new Error('private provider data'));
+      rejected.set(params[0].to,(rejected.get(params[0].to)??0)+1);return Promise.reject(new Error('private provider data'));
     }
     return original(method,params);
   }};
@@ -739,7 +795,9 @@ test('disabled snapshot bridge preserves the closed wallet read error without re
     assert.equal(JSON.stringify(error).includes('private provider data'),false);
     return true;
   });
-  assert.equal(rejected,3);
+  // The factory's and the implementation's implementation() are read together (2026-09-26): each is tried three
+  // times, once, the error named is the factory's, which came first, and the disabled bridge replays neither.
+  assert.deepEqual(Object.fromEntries(rejected),{[chain.d.factory]:3,[chain.d.implementation]:3});
   assert.equal(snapshots,1);
   assert.equal(chain.log.includes('claimNonce'),false);
 });

@@ -186,6 +186,8 @@ export interface OwnedSequence { vault: Address; sequenceId: Hex; ownerNonce: bi
 export const SEQUENCE_LIST_LIMIT = 8
 /** The most successors a member read follows, so one read stays inside its wallet-call ceiling. */
 export const SEQUENCE_MEMBER_STEPS = 30
+/** Reads of one pinned block in flight at once (see `inOrder`). */
+export const SEQUENCE_READ_WIDTH = 8
 export interface PreparedSequence {
   kind: 'approve-root' | 'create' | 'resume' | 'pause' | 'restore-operator' | 'revoke-operator' | 'revoke-root' | 'withdraw-child' | 'withdraw-fees' | 'rearm-root' | 'recover-position' | 'recover-currency'
   owner: Address; vault: Address; expiresAt: number; summary: readonly string[]
@@ -288,6 +290,8 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   const d = Object.freeze({ ...deployment, codeHashes: Object.freeze({ ...deployment.codeHashes }) })
   type Rpc = (method: string, params: unknown[], rejected?: (error: unknown) => Promise<void>) => Promise<unknown>
   type Context = { rpc: Rpc; block: Hex; hash: Hex; diagnoseRead: boolean }
+  /** One read of the pinned block with its own check: a check that fails is that read's failure, in its place (`inOrder`). */
+  type Read = () => Promise<unknown>
   const issued = new WeakMap<PreparedSequence, (c: Context) => Promise<void>>()
   const issuedBatches = new WeakMap<PreparedSequenceBatch, (c: Context) => Promise<void>>()
   const sent = new Map<Hex, PreparedSequence>()
@@ -465,16 +469,37 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   async function code(c: Context, component: Component) {
     if (keccak256(hex(await c.rpc('eth_getCode', [d[component], c.block]))) !== d.codeHashes[component]) fail('deployment_code_changed')
   }
-  async function links(c: Context, to: Address, values: Partial<Record<ViewName, unknown>>) {
+  function linkReads(c: Context, to: Address, values: Partial<Record<ViewName, unknown>>): Read[] {
     // The same call as `call`, left untyped: a link is only compared as text, and typing one result over every view name is needlessly deep for the compiler.
     const abi: Abi = sequenceAbi
-    for (const [functionName, expected] of Object.entries(values) as [string,unknown][]) {
+    return (Object.entries(values) as [string,unknown][]).map(([functionName, expected]) => async () => {
       const data = await readCall(c, to, functionName, [])
       let decoded: unknown
       try { decoded = decodeFunctionResult({ abi, functionName, data }) }
       catch (error) { if (c.diagnoseRead) fail('sequence_read_decode'); throw error }
       equal(decoded, expected)
+    })
+  }
+  /**
+   * Reads of one pinned block, SEQUENCE_READ_WIDTH at a time, with their results in the order listed. A public Robinhood
+   * Chain node keeps a block's state about twelve seconds at ten blocks a second: on 26 Sep 2026 the ~50 reads of Set up
+   * automation, one by one through the wallet at ~300 ms each, outlived the block they were pinned to, and the node
+   * answered "historical state … is not available". The first failure stops new reads; the one thrown is the failure the
+   * same reads, one by one, would have met first, since every read listed before it has started and is awaited.
+   */
+  async function inOrder(reads: readonly Read[]): Promise<unknown[]> {
+    const settled: (PromiseSettledResult<unknown> | undefined)[] = []
+    let next = 0, stopped = false
+    const lane = async () => {
+      while (!stopped && next < reads.length) {
+        const index = next++
+        try { settled[index] = { status: 'fulfilled', value: await reads[index]() } }
+        catch (reason) { settled[index] = { status: 'rejected', reason }; stopped = true }
+      }
     }
+    await Promise.all(Array.from({ length: Math.min(SEQUENCE_READ_WIDTH, reads.length) }, lane))
+    for (const result of settled) if (result?.status === 'rejected') throw result.reason
+    return settled.map(result => (result as PromiseFulfilledResult<unknown>).value)
   }
   async function verify(c: Context, recovery = false) {
     if (!recovery && now() >= d.expiresAt) fail('sequence_release_expired')
@@ -489,22 +514,23 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     }
     if (keccak256(cloneRuntime(d.implementation)) !== d.codeHashes.vault) fail('invalid_clone_template')
     // Recovery does not require the engine, publisher, read service or session.
-    for (const k of recovery ? ['factory','implementation'] as Component[] : components) await code(c, k)
-    await links(c, d.factory, { implementation: d.implementation, implementationCodeHash: d.codeHashes.implementation,
-      poolManager: d.poolManager, positionManager: d.positionManager, stateView: d.stateView, serviceFeeRecipient: d.serviceFeeRecipient })
-    await links(c, d.implementation, { factory: d.factory, implementation: d.implementation, implementationVersion: 4,
-      poolManager: d.poolManager, positionManager: d.positionManager, stateView: d.stateView, serviceFeeRecipient: d.serviceFeeRecipient,
-      readHelper: d.readHelper, executionEngine: d.engine })
-    if (recovery) return
+    const reads: Read[] = [...(recovery ? ['factory','implementation'] as Component[] : components).map(k => () => code(c, k)),
+      ...linkReads(c, d.factory, { implementation: d.implementation, implementationCodeHash: d.codeHashes.implementation,
+        poolManager: d.poolManager, positionManager: d.positionManager, stateView: d.stateView, serviceFeeRecipient: d.serviceFeeRecipient }),
+      ...linkReads(c, d.implementation, { factory: d.factory, implementation: d.implementation, implementationVersion: 4,
+        poolManager: d.poolManager, positionManager: d.positionManager, stateView: d.stateView, serviceFeeRecipient: d.serviceFeeRecipient,
+        readHelper: d.readHelper, executionEngine: d.engine })]
+    if (recovery) { await inOrder(reads); return }
+    await inOrder(reads)
     if (d.operator === wallet.owner || d.pricePublisher === wallet.owner) fail('invalid_execution_roles')
-    for (const eoa of [d.operator,d.pricePublisher]) if (hex(await c.rpc('eth_getCode', [eoa, c.block])) !== '0x') fail('invalid_execution_roles')
-    await links(c, d.implementation, { readHelperCodeHash: d.codeHashes.readHelper, executionEngineCodeHash: d.codeHashes.engine,
-      poolManagerCodeHash: d.codeHashes.poolManager, positionManagerCodeHash: d.codeHashes.positionManager, stateViewCodeHash: d.codeHashes.stateView })
-    await links(c, d.positionManager, { poolManager: d.poolManager }); await links(c, d.stateView, { poolManager: d.poolManager })
-    await links(c, d.readHelper, { positionManager: d.positionManager, stateView: d.stateView })
-    await links(c, d.engine, { factory: d.factory, readHelper: d.readHelper, routingHelper: d.routing, priceGuard: d.priceGuard,
-      readHelperHash: d.codeHashes.readHelper, routingHelperHash: d.codeHashes.routing, priceGuardHash: d.codeHashes.priceGuard })
-    await links(c, d.priceGuard, { publisher: d.pricePublisher })
+    await inOrder([...[d.operator,d.pricePublisher].map(eoa => async () => { if (hex(await c.rpc('eth_getCode', [eoa, c.block])) !== '0x') fail('invalid_execution_roles') }),
+      ...linkReads(c, d.implementation, { readHelperCodeHash: d.codeHashes.readHelper, executionEngineCodeHash: d.codeHashes.engine,
+        poolManagerCodeHash: d.codeHashes.poolManager, positionManagerCodeHash: d.codeHashes.positionManager, stateViewCodeHash: d.codeHashes.stateView }),
+      ...linkReads(c, d.positionManager, { poolManager: d.poolManager }), ...linkReads(c, d.stateView, { poolManager: d.poolManager }),
+      ...linkReads(c, d.readHelper, { positionManager: d.positionManager, stateView: d.stateView }),
+      ...linkReads(c, d.engine, { factory: d.factory, readHelper: d.readHelper, routingHelper: d.routing, priceGuard: d.priceGuard,
+        readHelperHash: d.codeHashes.readHelper, routingHelperHash: d.codeHashes.routing, priceGuardHash: d.codeHashes.priceGuard }),
+      ...linkReads(c, d.priceGuard, { publisher: d.pricePublisher })])
   }
   async function canonical(c: Context) {
     const block = record(await c.rpc('eth_getBlockByNumber', [c.block, false]))
@@ -512,19 +538,26 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   }
   async function owned(c: Context, vault: Address): Promise<SequenceState> {
     address(vault)
-    if (hex(await c.rpc('eth_getCode', [vault, c.block])) !== cloneRuntime(d.implementation) || !await call(c, d.factory, 'isVault', [vault])) fail('unqualified_sequence')
-    equal(await call(c, vault, 'owner'), wallet.owner)
-    const id = await call(c, vault, 'sequenceId') as Hex
+    // Read together (see `inOrder`), in three rounds; each check sits in its read, in the order they ran one by one.
+    const [, , , sequenceId] = await inOrder([async () => { if (hex(await c.rpc('eth_getCode', [vault, c.block])) !== cloneRuntime(d.implementation)) fail('unqualified_sequence') },
+      async () => { if (!await call(c, d.factory, 'isVault', [vault])) fail('unqualified_sequence') },
+      async () => equal(await call(c, vault, 'owner'), wallet.owner), () => call(c, vault, 'sequenceId')])
+    const id = sequenceId as Hex
     equal(await call(c, d.factory, 'vaultForSequence', [id]), vault)
-    const p = await call(c, vault, 'policy')
-    return { vault, sequenceId: id, rootTokenId: await call(c, vault, 'rootTokenId'), operator: String(await call(c, vault, 'operator')).toLowerCase() as Address,
-      paused: p.paused, rootPermissionValid: await call(c, vault, 'rootPermissionValid'), baseCurrency: String(await call(c, vault, 'baseCurrency')).toLowerCase() as Address,
-      quoteCurrency: String(await call(c, vault, 'quoteCurrency')).toLowerCase() as Address, stateNonce: await call(c, vault, 'stateNonce'), serviceFeeBps: p.serviceFeeBps, automationMode: automationModeForFee(p.serviceFeeBps) }
+    const [p, rootTokenId, operator, rootPermissionValid, baseCurrency, quoteCurrency, stateNonce] = await inOrder([() => call(c, vault, 'policy'),
+      () => call(c, vault, 'rootTokenId'), () => call(c, vault, 'operator'), () => call(c, vault, 'rootPermissionValid'),
+      () => call(c, vault, 'baseCurrency'), () => call(c, vault, 'quoteCurrency'), () => call(c, vault, 'stateNonce')]) as
+      [ContractFunctionReturnType<typeof sequenceAbi, 'view', 'policy'>, bigint, Address, boolean, Address, Address, bigint]
+    return { vault, sequenceId: id, rootTokenId, operator: String(operator).toLowerCase() as Address,
+      paused: p.paused, rootPermissionValid, baseCurrency: String(baseCurrency).toLowerCase() as Address,
+      quoteCurrency: String(quoteCurrency).toLowerCase() as Address, stateNonce, serviceFeeBps: p.serviceFeeBps, automationMode: automationModeForFee(p.serviceFeeBps) }
   }
   async function root(c: Context, tokenId: bigint) {
     if (uint(tokenId,256) === 0n) fail('invalid_root_nft')
-    if (String(await call(c, d.positionManager, 'ownerOf', [tokenId])).toLowerCase() !== wallet.owner) fail('position_not_in_wallet')
-    const [rawKey, packed] = await call(c, d.positionManager, 'getPoolAndPositionInfo', [tokenId])
+    // Read together (see `inOrder`), in three rounds; each check sits in its read, in the order they ran one by one.
+    const [, info] = await inOrder([async () => { if (String(await call(c, d.positionManager, 'ownerOf', [tokenId])).toLowerCase() !== wallet.owner) fail('position_not_in_wallet') },
+      () => call(c, d.positionManager, 'getPoolAndPositionInfo', [tokenId])])
+    const [rawKey, packed] = info as ContractFunctionReturnType<typeof sequenceAbi, 'view', 'getPoolAndPositionInfo'>
     // The low byte of PositionInfo is the manager's hasSubscriber flag, set exactly while subscriber(tokenId) is not zero
     // (v4-periphery Notifier). A sequence subscribes to its root, and a vault refuses a root another contract is subscribed
     // to, so a new sequence here would only move the approval off the one it has. No read is added: the read snapshot has it.
@@ -534,11 +567,14 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     const poolId = keccak256(encodeAbiParameters(poolKeyParameters, [key]))
     const lower = Number(BigInt.asIntN(24, packed >> 8n)), upper = Number(BigInt.asIntN(24, packed >> 32n))
     if (packed >> 56n !== BigInt(poolId) >> 56n || lower < -887272 || upper > 887272 || lower >= upper || lower % key.tickSpacing || upper % key.tickSpacing) fail('invalid_position_identity')
-    for (const currency of [key.currency0,key.currency1]) if (currency !== zeroAddress && hex(await c.rpc('eth_getCode', [currency,c.block])) === '0x') fail('invalid_currency')
-    const ownerNonce = await call(c,d.factory,'nextOwnerNonce',[wallet.owner]) as bigint, predicted = sequenceIdentity(d,wallet.owner,ownerNonce)
-    equal(await call(c,d.factory,'predictVault',[wallet.owner,ownerNonce]),predicted.vault)
-    if (hex(await c.rpc('eth_getCode',[predicted.vault,c.block])) !== '0x') fail('sequence_already_exists')
-    return { tokenId, key, poolId, lower, upper, ownerNonce, ...predicted, approved: String(await call(c,d.positionManager,'getApproved',[tokenId])).toLowerCase() as Address }
+    const [, , nonce] = await inOrder([...[key.currency0,key.currency1].map(currency => async () => {
+      if (currency !== zeroAddress && hex(await c.rpc('eth_getCode', [currency,c.block])) === '0x') fail('invalid_currency')
+    }), () => call(c,d.factory,'nextOwnerNonce',[wallet.owner])])
+    const ownerNonce = nonce as bigint, predicted = sequenceIdentity(d,wallet.owner,ownerNonce)
+    const [, , approved] = await inOrder([async () => equal(await call(c,d.factory,'predictVault',[wallet.owner,ownerNonce]),predicted.vault),
+      async () => { if (hex(await c.rpc('eth_getCode',[predicted.vault,c.block])) !== '0x') fail('sequence_already_exists') },
+      () => call(c,d.positionManager,'getApproved',[tokenId])])
+    return { tokenId, key, poolId, lower, upper, ownerNonce, ...predicted, approved: String(approved).toLowerCase() as Address }
   }
   function options(o: SequenceOptions) {
     if (o.automationMode !== 'compound' && o.automationMode !== 'domino') fail('invalid_sequence_policy')
