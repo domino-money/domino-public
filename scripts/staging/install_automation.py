@@ -50,7 +50,7 @@ SOURCES = ('backend/automation_cli.py', 'backend/automation_cycle.py', 'backend/
            'backend/automation_plan.py', 'backend/automation_store.py', 'backend/publisher_signer.py',
            'backend/gas_usd_budget.py', 'backend/gas_budget_bridge.py',
            'backend/gas_receipt_settlement.py', 'backend/gas_settlement_cli.py',
-           'backend/chainlink_history.py')
+           'backend/chainlink_history.py', 'backend/automation_keys.py')
 PRIVATE = financial.PRIVATE / COMPONENT
 RUNTIME = financial.RUNTIME / COMPONENT
 RECEIPTS = financial.RECEIPTS / COMPONENT

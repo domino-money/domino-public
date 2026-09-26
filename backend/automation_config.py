@@ -29,6 +29,7 @@ Positive = Annotated[StrictInt, Field(gt=0, lt=2**256)]
 Bps = Annotated[StrictInt, Field(ge=0, le=10000)]
 Version = Annotated[str, Field(pattern=r'^[A-Za-z0-9_.-]{1,64}$')]
 Path = Annotated[str, Field(pattern=r'^/[A-Za-z0-9_./-]{1,400}$')]
+Credential = Annotated[str, Field(pattern=r'^[a-z0-9][a-z0-9-]{0,62}$')]
 
 
 class Frozen(BaseModel):
@@ -225,13 +226,29 @@ class SignerPolicyConfig(Frozen):
     enabled: bool
 
 
-class OperatorConfig(Frozen):
-    keyFile: Path
+class SignerKey(Frozen):
+    """Where a signer's key is: a V3 keystore whose password is a systemd credential
+    of the unit (automation_keys.py; the owner's choice of 26 September 2026), or a
+    plain 64-hex key file. Exactly one of the two."""
+    keyFile: Path | None = None
+    keystore: Path | None = None
+    passwordCredential: Credential | None = None
+
+    @model_validator(mode='after')
+    def one_key(self):
+        if (self.keyFile is None) == (self.keystore is None) or (self.keystore is None) != (self.passwordCredential is None):
+            raise ValueError('signer_key_ambiguous')
+        return self
+
+    def key_source(self):
+        return self.keystore or self.keyFile
+
+
+class OperatorConfig(SignerKey):
     policy: SignerPolicyConfig
 
 
-class PublisherConfig(Frozen):
-    keyFile: Path
+class PublisherConfig(SignerKey):
     maxGas: Positive
     maxFeePerGas: Positive
     priorityFeePerGas: Positive
@@ -329,7 +346,9 @@ class AutomationConfig(Frozen):
         keys = [(s.owner, s.vault) for s in self.sequences]
         if len(set(keys)) != len(keys):
             raise ValueError('duplicate_sequence_admission')
-        if self.operator.keyFile == self.publisher.keyFile:
+        if (self.operator.key_source() == self.publisher.key_source()
+                or self.operator.passwordCredential is not None
+                and self.operator.passwordCredential == self.publisher.passwordCredential):
             raise ValueError('operator_publisher_key_not_separate')
         return self
 

@@ -65,8 +65,11 @@ class GeneratorTests(unittest.TestCase):
         pinned = json.loads((RELEASE / 'sequence-release.json').read_text())['deployment']
         self.assertEqual(config['deployment'], pinned)
         self.assertEqual(config['sequences'], [{'owner': OWNER, 'vault': VAULT, 'expiresAt': self.expiry, 'suspended': False}])
-        self.assertEqual(config['operator']['keyFile'], '/run/domino-financial-automation-config/operator.key')
-        self.assertEqual(config['publisher']['keyFile'], '/run/domino-financial-automation-config/publisher.key')
+        # The owner's choice (26 Sep 2026): encrypted keystores, their passwords systemd credentials of the unit.
+        for role in ('operator', 'publisher'):
+            self.assertEqual(config[role]['keystore'], f'/run/domino-financial-automation-config/{role}.keystore.json')
+            self.assertEqual(config[role]['passwordCredential'], f'{role}-keystore-password')
+            self.assertNotIn('keyFile', config[role])
         self.assertEqual(config['scheduling']['workerId'], WORKER)
         self.assertEqual(config['database'], {'host': '/run/postgresql-domino', 'port': 8877, 'dbname': 'domino_catalogue'})
         self.assertEqual(config['rpcEndpoint'], 'http://127.0.0.1:18547/')
@@ -223,9 +226,15 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in target.iterdir()), ['automation', 'gas-reservation', 'gas-settlement'])
         for folder in target.iterdir():
             self.assertEqual(stat.S_IMODE(folder.stat().st_mode), 0o700)
-            path = folder / 'config.json'
-            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
-            self.assertEqual(summary['files'][str(path)], generator.hashlib.sha256(path.read_bytes()).hexdigest())
+            for path in folder.iterdir():
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                self.assertEqual(summary['files'][str(path)], generator.hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(sorted(p.name for p in (target / 'automation').iterdir()), ['40-keystore-credentials.conf', 'config.json'])
+        # The drop-in hands the unit exactly the two credentials its configuration names, from the private directory.
+        self.assertEqual((target / 'automation/40-keystore-credentials.conf').read_text().splitlines()[2:], [
+            '[Service]',
+            'LoadCredentialEncrypted=operator-keystore-password:/etc/domino/financial/automation/operator-keystore-password.cred',
+            'LoadCredentialEncrypted=publisher-keystore-password:/etc/domino/financial/automation/publisher-keystore-password.cred'])
         # The service's own loader, with its private-file rules, accepts the result.
         parsed = load_config(target / 'automation/config.json')
         self.assertEqual(str(parsed.scheduling.workerId), WORKER)

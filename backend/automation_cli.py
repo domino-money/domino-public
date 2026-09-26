@@ -12,6 +12,7 @@ import sys
 
 from automation_config import load_config
 from automation_cycle import CycleError, SequenceCycle, serve
+from automation_keys import keystore_key
 from automation_ledger import LedgerIndexer, catch_up
 from automation_observer import ObservationError, derive_admission
 from automation_plan import PlanError
@@ -26,6 +27,13 @@ def read_key(path):
     if len(key) != 64 or any(c not in '0123456789abcdef' for c in key):
         raise ExecutionError('execution_private_configuration')
     return bytes.fromhex(key)
+
+
+def signer_key(signer, expected):
+    """A signer's key from its keystore and credential, or from its plain key file."""
+    if signer.keystore is not None:
+        return keystore_key(signer.keystore, signer.passwordCredential, expected)
+    return read_key(signer.keyFile)
 
 
 def select(config, spec):
@@ -51,8 +59,8 @@ def main(argv=None):
     try:
         config = load_config(args.config)
         needs_keys = args.operation in ('run-once', 'serve')
-        cycle = SequenceCycle(config, operator_key=read_key(config.operator.keyFile) if needs_keys else None,
-                              publisher_key=read_key(config.publisher.keyFile) if needs_keys else None)
+        cycle = SequenceCycle(config, operator_key=signer_key(config.operator, config.deployment.operator) if needs_keys else None,
+                              publisher_key=signer_key(config.publisher, config.deployment.pricePublisher) if needs_keys else None)
         if args.operation == 'status':
             result = [cycle.status(entry) for entry in select(config, args.sequence)]
         elif args.operation == 'evaluate':

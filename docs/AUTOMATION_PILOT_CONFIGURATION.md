@@ -9,12 +9,13 @@ and a few host values:
 | The release record | `docs/deployments/v1-robinhood-mainnet-2026-09-21/deployment.json` | The pin (SHA-256) of the sequence profile and every address, role, tariff, expiry and runtime hash it must agree with |
 | The sequence profile | `…/sequence-release.json` | The `deployment` admission, copied as is once it matches the record |
 | The parameter profile | `…/automation-pilot-v1.json` | Every operational number: planner, pricing, swap cap, gas, destinations, history, plan, scheduling, finality, ledger, both signers' caps |
-| The host | fixed by the [installer](AUTOMATION_INSTALL.md) | The financial database socket, the VM-local loopback RPC `http://127.0.0.1:18547/`, and the key paths inside the unit's read-only mount `/run/domino-financial-automation-config/` |
+| The host | fixed by the [installer](AUTOMATION_INSTALL.md) | The financial database socket, the VM-local loopback RPC `http://127.0.0.1:18547/`, and the keystore paths inside the unit's read-only mount `/run/domino-financial-automation-config/` |
 | The operator's command | `--sequence owner:vault`, `--sequence-expires-at`, `--worker-id` | Which vaults are admitted, until when, and the host's stable worker identity |
 
 It reads no key and writes none: the configuration only names where the unit finds
-`operator.key` and `publisher.key`, and their owner places them. Nothing is defaulted
-from test fixtures, and every file is validated by the loader that will read it.
+each signer's encrypted keystore and the systemd credential that holds its password
+(see [the signers' keys](#the-signers-keys)). Nothing is defaulted from test fixtures,
+and every file is validated by the loader that will read it.
 
 ```sh
 python backend/configure_automation.py \
@@ -25,8 +26,9 @@ python backend/configure_automation.py \
 ```
 
 It writes `automation/config.json`, `gas-reservation/config.json` and
-`gas-settlement/config.json` (0600, in new 0700 directories; nothing is overwritten)
-and prints each file's SHA-256 and the worker id. Keep the worker id: passing it again
+`gas-settlement/config.json`, and beside the first the systemd drop-in
+`automation/40-keystore-credentials.conf` (0600, in new 0700 directories; nothing is
+overwritten), and prints each file's SHA-256 and the worker id. Keep the worker id: passing it again
 with `--worker-id` when the file is regenerated lets a restarted service resume its own
 leases. On the VM, as root, each file goes to its peer's directory with its owner:
 
@@ -36,11 +38,63 @@ install -o domino-gas-reservation -g domino-gas-reservation -m 0600 gas-reservat
 install -o domino-gas-settlement -g domino-gas-settlement -m 0600 gas-settlement/config.json /etc/domino/financial/gas-settlement/config.json
 ```
 
-The two keys (64 lowercase hex characters each) go to
-`/etc/domino/financial/automation/operator.key` and `publisher.key`, 0600, owned by
-`domino-automation`. The operator key's address must be the release's `operator`, the
-publisher key's its `pricePublisher` and the price guard's `publisher()`. Keys never
-pass through a repository, a log or an assistant.
+## The signers' keys
+
+The owner's choice (26 September 2026): each signer's key is an encrypted Ethereum V3
+keystore (scrypt), and its password is a systemd credential that the VM's systemd
+decrypts for the automation unit alone, at each start (`LoadCredentialEncrypted=`,
+read by `backend/automation_keys.py`). Neither the key nor the password is ever a plain
+file on the VM. The VM has no TPM, so the credential is sealed with the host's own key
+(`/var/lib/systemd/credential.secret`): a copy of the configuration or a backup does
+not open the keys, and root on the VM can. The service refuses a keystore whose key is
+not its role's (the operator is the release's `operator`, the publisher its
+`pricePublisher` and the price guard's `publisher()`): before deriving anything when
+the keystore names an address, as geth's do, and on the decrypted key always, since
+Foundry's name none. It also refuses a scrypt cost above geth's (n 2^18, r 8, p 1),
+and a keystore others can read or whose directory is not the service's own 0700 one.
+Keys and passwords never pass through a repository, a log or an assistant.
+
+1. On the owner's own machine, not the VM, import each role's existing key into a
+   keystore. Foundry asks for the key and a password and writes a V3 scrypt keystore
+   under `~/.foundry/keystores/`:
+
+   ```sh
+   cast wallet import domino-operator --interactive
+   cast wallet import domino-publisher --interactive
+   ```
+
+2. Copy both to the VM and place them, as root, owned by the service:
+
+   ```sh
+   scp -F ~/.ssh/domino_vm_config ~/.foundry/keystores/domino-operator domino-alpha:operator.keystore.json
+   scp -F ~/.ssh/domino_vm_config ~/.foundry/keystores/domino-publisher domino-alpha:publisher.keystore.json
+   # on the VM:
+   sudo install -o domino-automation -g domino-automation -m 0600 operator.keystore.json /etc/domino/financial/automation/operator.keystore.json
+   sudo install -o domino-automation -g domino-automation -m 0600 publisher.keystore.json /etc/domino/financial/automation/publisher.keystore.json
+   shred -u operator.keystore.json publisher.keystore.json
+   ```
+
+3. On the VM, type each password once, into `systemd-creds`. The name is part of the
+   sealed credential and must be exactly this:
+
+   ```sh
+   sudo systemd-ask-password -n "Operator keystore password:" | sudo systemd-creds encrypt --with-key=host --name=operator-keystore-password - /etc/domino/financial/automation/operator-keystore-password.cred
+   sudo systemd-ask-password -n "Publisher keystore password:" | sudo systemd-creds encrypt --with-key=host --name=publisher-keystore-password - /etc/domino/financial/automation/publisher-keystore-password.cred
+   ```
+
+4. Install the generator's drop-in, which hands the two credentials to the unit, and
+   reload systemd. Nothing starts:
+
+   ```sh
+   sudo install -D -m 0644 automation/40-keystore-credentials.conf /etc/systemd/system/domino-automation.service.d/40-keystore-credentials.conf
+   sudo systemctl daemon-reload
+   systemctl show domino-automation -p LoadCredentialEncrypted
+   ```
+
+A keystore or a password can change later: replace the file, or encrypt the new
+password under the same name, and the next start reads it. A plain 64-hex `keyFile`
+remains accepted in the configuration for tests and other hosts; the generator never
+writes one.
 
 ## What the generator refuses
 

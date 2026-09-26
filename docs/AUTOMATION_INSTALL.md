@@ -106,10 +106,12 @@ Nothing here activates the service. After the installer:
    refreshes missing finality witnesses in bounded rotating passes, including
    after a cycle has left the live-publication queue.
 2. Place `config.json` (the runbook's configuration, `schemaVersion: 1`,
-   `kind: "domino-automation-cycle"`) and the two key files in
-   `/etc/domino/financial/automation`, mode `0600`, owned by `domino-automation`. The
-   unit binds that directory read-only at `/run/domino-financial-automation-config`, so
-   the configuration's `operator.keyFile` and `publisher.keyFile` are
+   `kind: "domino-automation-cycle"`) and the two signers' encrypted keystores in
+   `/etc/domino/financial/automation`, mode `0600`, owned by `domino-automation`, with
+   their passwords sealed there by `systemd-creds` and handed to the unit by a
+   `LoadCredentialEncrypted=` drop-in ([pilot configuration](AUTOMATION_PILOT_CONFIGURATION.md#the-signers-keys)).
+   The unit binds that directory read-only at `/run/domino-financial-automation-config`, so
+   the configuration's `operator.keystore` and `publisher.keystore` are
    `/run/domino-financial-automation-config/<name>`, and `database` is the financial
    socket: `{"host": "/run/postgresql-domino", "port": 8877, "dbname": "domino_catalogue"}`.
 3. `rpcEndpoint` must be reachable inside `IPAddressAllow=localhost`: the own node

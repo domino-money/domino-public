@@ -15,8 +15,10 @@ sequence profile, taken only after its SHA-256 matches the release record and
 every address, role, tariff, expiry and runtime hash agrees with it. The host
 layout is the one the installer creates: the financial database socket, the
 VM-local loopback RPC, and the unit's read-only configuration mount. Keys are
-never read or written; the configuration only names where the unit finds them,
-and their owner places them there.
+never read or written: each signer is an encrypted keystore whose password is a
+systemd credential of the unit (the owner's choice of 26 September 2026), and
+this writes only where the unit finds them, and the drop-in that hands the two
+credentials to it. Their owner places the keystores and encrypts the passwords.
 """
 import argparse
 import hashlib
@@ -45,7 +47,10 @@ CHAIN_ID = 4663
 # here, and every financial service reaches PostgreSQL through this socket.
 CONFIG_MOUNT = '/run/domino-financial-automation-config'
 DATABASE = {'host': '/run/postgresql-domino', 'port': 8877, 'dbname': 'domino_catalogue'}
-KEY_FILES = {'operator': CONFIG_MOUNT + '/operator.key', 'publisher': CONFIG_MOUNT + '/publisher.key'}
+PRIVATE = '/etc/domino/financial/automation'
+KEYSTORES = {role: f'{CONFIG_MOUNT}/{role}.keystore.json' for role in ('operator', 'publisher')}
+CREDENTIALS = {role: f'{role}-keystore-password' for role in ('operator', 'publisher')}
+DROPIN = 'domino-automation.service.d/40-keystore-credentials.conf'
 PROFILE_SECTIONS = ('operatorPolicy', 'publisher', 'planner', 'pricing', 'swapCap', 'gas', 'destinations',
                     'history', 'plan', 'scheduling', 'finality', 'ledger', 'paused')
 CONTRACTS = ('factory', 'readHelper', 'routing', 'priceGuard', 'engine', 'implementation')
@@ -179,8 +184,10 @@ def compose(release, profile, sequences, *, expires_at, worker_id, rpc_endpoint=
         'database': dict(DATABASE), 'rpcEndpoint': rpc_endpoint, 'deployment': deployment,
         'sequences': [{'owner': owner, 'vault': vault, 'expiresAt': expires_at, 'suspended': False}
                       for owner, vault in sequences],
-        'operator': {'keyFile': KEY_FILES['operator'], 'policy': profile['operatorPolicy']},
-        'publisher': {'keyFile': KEY_FILES['publisher'], **profile['publisher']},
+        'operator': {'keystore': KEYSTORES['operator'], 'passwordCredential': CREDENTIALS['operator'],
+                     'policy': profile['operatorPolicy']},
+        'publisher': {'keystore': KEYSTORES['publisher'], 'passwordCredential': CREDENTIALS['publisher'],
+                      **profile['publisher']},
         **{name: profile[name] for name in ('planner', 'pricing', 'swapCap', 'gas', 'destinations',
                                             'history', 'plan', 'finality', 'ledger', 'paused')},
         'scheduling': {'workerId': worker_id, **profile['scheduling']},
@@ -202,6 +209,15 @@ def encode(value):
     return (json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + '\n').encode()
 
 
+def credentials_dropin():
+    """The unit's two keystore passwords, which systemd decrypts for it alone at each start."""
+    lines = ['# Written by backend/configure_automation.py: the signers\' keystore passwords, encrypted',
+             '# with systemd-creds on this host and handed to this unit alone (automation_keys.py).',
+             '[Service]']
+    lines += [f'LoadCredentialEncrypted={CREDENTIALS[role]}:{PRIVATE}/{CREDENTIALS[role]}.cred' for role in ('operator', 'publisher')]
+    return ('\n'.join(lines) + '\n').encode()
+
+
 def write(out, documents):
     """A new 0700 directory holding each peer's 0600 config.json; nothing is overwritten."""
     out = Path(out)
@@ -212,13 +228,15 @@ def write(out, documents):
         folder = out / directory
         folder.mkdir(mode=0o700)
         os.chmod(folder, 0o700)
-        path = folder / 'config.json'
-        raw = encode(document)
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(fd, 'wb') as stream:
-            os.fchmod(stream.fileno(), 0o600)
-            stream.write(raw)
-        written[str(path)] = hashlib.sha256(raw).hexdigest()
+        files = {folder / 'config.json': encode(document)}
+        if directory == 'automation':
+            files[folder / Path(DROPIN).name] = credentials_dropin()
+        for path, raw in files.items():
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'wb') as stream:
+                os.fchmod(stream.fileno(), 0o600)
+                stream.write(raw)
+            written[str(path)] = hashlib.sha256(raw).hexdigest()
     return written
 
 
