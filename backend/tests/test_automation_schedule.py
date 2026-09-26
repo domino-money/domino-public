@@ -2,6 +2,9 @@
 consecutive failed attempts, the swap's share of its pool's cap taken before
 the intent exists, and a service loop that sleeps until the earliest due
 sequence instead of a fixed interval."""
+import contextlib
+import io
+import json
 from pathlib import Path
 import os
 import random
@@ -12,8 +15,10 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import automation_cli
 from automation_cycle import CycleError, SequenceCycle, serve, service_readiness_probe, service_ready_after_pass
 from automation_fixtures import address, identity, sample_automation_config
+from execution_signer import ExecutionError
 from execution_store import ExecutionStoreError
 from gas_budget_bridge import GasBudgetClient
 from eth_account import Account
@@ -125,6 +130,7 @@ class FakeCycle:
                                                sequences=[{'owner': address(1), 'vault': address(3), 'expiresAt': 2000000000, 'suspended': False},
                                                           {'owner': address(2), 'vault': address(4), 'expiresAt': 2000000000, 'suspended': False}])
         self.outcomes, self.now, self.calls = list(outcomes), now, []
+        self.recovery_errors, self.events = [], []
         self.finality_passes = 0
         self.finality_error = None
         self.readiness = []
@@ -133,8 +139,16 @@ class FakeCycle:
     def clock(self):
         return self.now
 
+    def recover_publications(self):
+        if self.recovery_errors:
+            self.events.append('recovery_failed')
+            raise self.recovery_errors.pop(0)
+        self.events.append('recovered')
+        return []
+
     def run(self, entry, *, respect_due):
         self.calls.append((entry.vault, respect_due))
+        self.events.append('run')
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -194,6 +208,46 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(sleeps, [30.0])
         self.assertTrue(all('automation_unavailable' in line and 'boom' not in line for line in logs))
         self.assertEqual([ready for _, _, ready in fake.readiness], [False, False])
+
+
+    def test_live_publications_are_recovered_before_any_cycle_and_retried_until_they_can_be(self):
+        fake = FakeCycle([{'outcome': 'wait', 'nextDueEpoch': 1012.0}, {'outcome': 'wait', 'nextDueEpoch': 1012.0}], interval=10)
+        # At boot the unit may start before the RPC tunnel or the database is back.
+        fake.recovery_errors = [ExecutionError('execution_rpc_unavailable'),
+                                ExecutionStoreError('execution_store_unavailable'), RuntimeError('boom')]
+        sleeps, logs = self.serve(fake, 4)
+        self.assertEqual(fake.events, ['recovery_failed'] * 3 + ['recovered', 'run', 'run'])
+        # Each failure waits one interval; the pass that follows sleeps as before.
+        self.assertEqual(sleeps, [10.0, 10.0, 10.0, 10.0])
+        self.assertEqual([json.loads(line) for line in logs[:3]],
+                         [{'event': 'publication_recovery', 'code': 'execution_rpc_unavailable'},
+                          {'event': 'publication_recovery', 'code': 'execution_store_unavailable'},
+                          {'event': 'publication_recovery', 'code': 'publication_recovery_unavailable'}])
+        self.assertFalse(any('boom' in line for line in logs))
+        self.assertEqual(len(fake.readiness), 2)
+
+    def test_a_stop_while_recovering_ends_serve_before_any_cycle_or_heartbeat(self):
+        fake = FakeCycle([], interval=10)
+        fake.recovery_errors = [ExecutionError('execution_rpc_unavailable')] * 5
+        sleeps, logs = self.serve(fake, 2)
+        self.assertEqual((sleeps, fake.events), ([10.0, 10.0], ['recovery_failed'] * 2))
+        self.assertEqual((fake.calls, fake.readiness, fake.finality_passes), ([], [], 0))
+
+    def test_the_command_leaves_publication_recovery_to_serve(self):
+        failing = FakeCycle([])
+        failing.recovery_errors = [ExecutionError('execution_rpc_unavailable')]
+        served = []
+        config = SimpleNamespace(operator=None, publisher=None,
+                                 deployment=SimpleNamespace(operator=None, pricePublisher=None))
+        with patch.object(automation_cli, 'load_config', lambda path: config), \
+                patch.object(automation_cli, 'signer_key', lambda signer, expected: b'key'), \
+                patch.object(automation_cli, 'SequenceCycle', lambda config, **keys: failing), \
+                patch.object(automation_cli, 'serve', lambda cycle, stop: served.append(cycle)), \
+                patch.object(automation_cli.signal, 'signal'), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(automation_cli.main(['--config', '/unused', 'serve']), 0)
+        self.assertEqual((served, failing.events), ([failing], []))
+        self.assertEqual(json.loads(out.getvalue()), {'stopped': True})
 
 
 class ReadinessTests(unittest.TestCase):

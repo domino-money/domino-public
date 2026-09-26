@@ -122,7 +122,10 @@ the combinations the generator refuses.
 5. `serve` loops over the admitted sequences, honouring each one's due time and backoff:
    a sequence that is not due and has nothing open is skipped from the database alone,
    without a chain read, a lease or an evaluation, and the loop sleeps until the earliest due time (at least one second, at
-   most `evaluationIntervalSeconds`). Due times carry the jitter. It stops cleanly on
+   most `evaluationIntervalSeconds`). Due times carry the jitter. Before its first pass
+   it drives every live publication to a receipt, as `run-once` does, and while the
+   node or the database is not up yet (at boot, before the RPC tunnel is back) it
+   retries every `evaluationIntervalSeconds` and runs no cycle. It stops cleanly on
    `SIGTERM`. `run-once` and `evaluate` always evaluate. Install it as a systemd unit with the same hardening
    as the other financial services (`upgrade_financial.unit_text`), `IPAddressAllow`
    limited to the node's tunnel, no environment fallback.

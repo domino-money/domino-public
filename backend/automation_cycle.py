@@ -885,8 +885,24 @@ def serve(cycle, *, stop, sleep=time.sleep, log=print):
     """Round-robin over the admitted sequences, each at its own due time: a
     pass skips a sequence that is not due and has nothing open, and the loop
     then sleeps until the earliest due time, at least a second and at most the
-    configured interval. Due times carry the jitter, so the pauses do too."""
+    configured interval. Due times carry the jitter, so the pauses do too.
+
+    First it drives every live publication to a receipt, and no cycle runs
+    before that succeeds. A node or a database that is not up yet, as at boot
+    when the unit starts before the RPC tunnel is back, is retried every
+    interval instead of ending the process: three quick failures would exhaust
+    the unit's start limit and leave the automation off."""
     interval = cycle.config.scheduling.evaluationIntervalSeconds
+    while not stop():
+        try:
+            cycle.recover_publications()
+            break
+        except (ExecutionStoreError, ExecutionError) as error:
+            log(json.dumps({'event': 'publication_recovery',
+                            'code': getattr(error, 'code', 'publication_recovery_unavailable')}))
+        except Exception:
+            log(json.dumps({'event': 'publication_recovery', 'code': 'publication_recovery_unavailable'}))
+        sleep(float(interval))
     while not stop():
         due = []
         finality_ready = True

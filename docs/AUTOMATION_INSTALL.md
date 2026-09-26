@@ -183,6 +183,39 @@ runner's own systemd, with and without the keystore drop-in, and compares what
 it shows with the units written for the new release
 (`test_financial_release_systemd.py`).
 
+## Bringing the automation back after a reboot
+
+The installer's units are static: `domino-automation`, the gas reservation
+socket and the settlement timer have no `[Install]` section, so a reboot leaves
+them off. `scripts/staging/install_automation_boot.py` writes
+`domino-automation.target`, which wants those three, and enables it the way
+`systemctl enable` would, with a link in `multi-user.target.wants`; the VM's
+other families come back the same way, through `domino-continuous-reads.target`
+and `domino-public-data.target`. The units, their drop-ins and the
+configuration stay as they are: the reservation service still starts from its
+socket and the settlement pass from its timer. It refuses a member unit that is
+not loaded from `/etc/systemd/system`, and a target or a link under its names
+that it did not write.
+
+At boot the serve loop may start before the RPC tunnel is back. It drives every
+live publication to a receipt before any cycle and retries that every
+`evaluationIntervalSeconds` until the node and the database answer, so the wait
+never spends the unit's start limit of three starts a minute.
+
+```sh
+python3 scripts/staging/install_automation_boot.py --inspect
+sudo -n python3 scripts/staging/install_automation_boot.py --apply
+sudo systemctl daemon-reload
+systemctl is-enabled domino-automation.target
+sudo systemctl start domino-automation.target
+```
+
+Starting the target starts only what is not running. `--rollback` removes the
+link, then the target: nothing stops, and the next boot no longer starts the
+units. The hygiene job loads the target and its link into the runner's own
+systemd and checks what it wants and what wants it
+(`test_financial_release_systemd.py`).
+
 ## Scoped recovery
 
 ```sh

@@ -5,7 +5,10 @@ systemd. On 24 September that model was wrong: it kept BindPaths and
 BindReadOnlyPaths apart, and a drop-in that reset one lost the other in
 production. Here systemd itself loads each unit the financial upgrade and the
 automation installer write, under each installer's release drop-in, and must
-show the same service as the unit written for the new release. A drop-in that resets BindPaths and gives back
+show the same service as the unit written for the new release. The target
+that brings the automation back after a reboot is loaded the same way, with the
+link `systemctl enable` would make, and must be wanted at boot and want the
+three units it names. A drop-in that resets BindPaths and gives back
 only that bind must lose the read-only configuration bind, or the model the
 offline tests share is wrong.
 
@@ -22,6 +25,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install_auth_release as auth
+import install_automation_boot as boot
 import install_automation_release as automation
 import install_financial_release as installer
 import upgrade_financial as financial
@@ -142,6 +146,33 @@ class RealSystemdTests(unittest.TestCase):
                       binds['BindReadOnlyPaths'])
         self.assertIn(f'/var/lib/domino-financial/automation:{root}/backend/runtime', binds['BindPaths'])
         self.assertEqual(self.show('domino-automation-keyed'), self.show('domino-automation-keyed-expected'))
+
+
+    def test_the_automation_target_is_wanted_at_boot_and_wants_its_three_units(self):
+        target = RUNTIME_UNITS / boot.TARGET
+        wants = RUNTIME_UNITS / 'multi-user.target.wants'
+        self.assertFalse(os.path.lexists(target), target)
+        self.written.append(target)
+        target.write_text(boot.target_text())
+        if not wants.exists():
+            self.written.append(wants)
+            wants.mkdir()
+        link = wants / boot.TARGET
+        self.written.append(link)
+        link.symlink_to(target)
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+
+        def show(unit, *properties):
+            raw = subprocess.run(['systemctl', 'show', '--all', unit, '--property=' + ','.join(properties)],
+                                 check=True, capture_output=True, text=True).stdout
+            return {key: value.split() for key, value in (line.split('=', 1) for line in raw.splitlines() if '=' in line)}
+        shown = show(boot.TARGET, 'LoadState', 'Wants', 'After', 'WantedBy')
+        self.assertEqual(shown['LoadState'], ['loaded'])
+        for member in boot.MEMBERS:
+            self.assertIn(member, shown['Wants'])
+            self.assertIn(member, shown['After'])
+        self.assertIn('multi-user.target', shown['WantedBy'])
+        self.assertIn(boot.TARGET, show('multi-user.target', 'Wants')['Wants'])
 
 
 if __name__ == '__main__':

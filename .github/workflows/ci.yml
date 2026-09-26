@@ -57,7 +57,7 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_auth_release.py -v
       - name: Check the performance and execution-status release installer without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_financial_release.py -v
-      - name: Check every release installer's drop-ins against the runner's own systemd
+      - name: Check every release installer's drop-ins and the automation boot target against the runner's own systemd
         run: sudo -n env DOMINO_TEST_REAL_SYSTEMD=1 python3 -B -m unittest discover -s scripts/staging/tests -p test_financial_release_systemd.py -v
       - name: Check the public-data installer and rollback without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_public_data.py -v
@@ -67,6 +67,8 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_upgrade_automation_readiness.py -v
       - name: Check the automation release installer without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_automation_release.py -v
+      - name: Check the automation boot target installer without host access
+        run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_automation_boot.py -v
       - name: Check the inactive reference-collector unit candidates
         run: |
           python3 -B -m unittest discover -s scripts/reference-collector/tests -v

@@ -73,7 +73,7 @@ def main(argv=None):
             stopping = []
             for name in (signal.SIGTERM, signal.SIGINT):
                 signal.signal(name, lambda *_: stopping.append(True))
-            cycle.recover_publications()
+            # serve() recovers live publications first, retrying until the node answers.
             serve(cycle, stop=lambda: bool(stopping))
             result = {'stopped': True}
         elif args.operation in ('pause', 'resume'):

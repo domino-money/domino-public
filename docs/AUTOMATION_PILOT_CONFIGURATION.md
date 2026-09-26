@@ -167,4 +167,6 @@ Measured only on the real chain, and compared on the first cycles:
 
 Any change is a new profile version and a regenerated file. The activation order stays
 the [runbook's](AUTOMATION_CYCLE_RUNBOOK.md#activation): keyless `status` and `evaluate`,
-a keyless settlement pass, the gas peers, one `run-once`, then `serve`.
+a keyless settlement pass, the gas peers, one `run-once`, then `serve`, and the
+[boot target](AUTOMATION_INSTALL.md#bringing-the-automation-back-after-a-reboot)
+so that a reboot brings it back.
