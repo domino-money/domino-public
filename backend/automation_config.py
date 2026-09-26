@@ -306,6 +306,22 @@ class SequenceAdmission(Frozen):
     suspended: bool = False
 
 
+class FactoryDiscovery(Frozen):
+    """Every vault the deployment's factory creates, admitted beside `sequences`.
+
+    The serve loop reads the factory's VaultCreated events from `fromBlock` to
+    `confirmations` blocks below the head, at most `maxBlocksPerScan` blocks per
+    read, and admits each vault until `expiresAt`, while the admitted sequences
+    number at most `maxSequences`. An event only proposes a vault: every
+    evaluation still derives its admission on chain (automation_observer).
+    """
+    fromBlock: Annotated[StrictInt, Field(ge=1, lt=2**63)]
+    expiresAt: UInt
+    confirmations: Annotated[StrictInt, Field(ge=0, le=10000)]
+    maxBlocksPerScan: Annotated[StrictInt, Field(ge=1, le=1000000)]
+    maxSequences: Annotated[StrictInt, Field(ge=1, le=256)]
+
+
 class LedgerPolicy(Frozen):
     """Who reads the vault's fee events into the ledger, and how much per pass.
     `inline`: the cycle reads them itself before every evaluation, under the
@@ -325,6 +341,7 @@ class AutomationConfig(Frozen):
     rpcEndpoint: Annotated[str, Field(min_length=1, max_length=2048)]
     deployment: DeploymentAdmission
     sequences: Annotated[tuple[SequenceAdmission, ...], Field(max_length=256)]
+    discovery: FactoryDiscovery | None = None
     operator: OperatorConfig
     publisher: PublisherConfig
     planner: dict
@@ -346,6 +363,9 @@ class AutomationConfig(Frozen):
         keys = [(s.owner, s.vault) for s in self.sequences]
         if len(set(keys)) != len(keys):
             raise ValueError('duplicate_sequence_admission')
+        # A discovered vault admitted past the release profile's expiry would outlive what admits it.
+        if self.discovery is not None and self.discovery.expiresAt > self.deployment.expiresAt:
+            raise ValueError('discovery_expiry_invalid')
         if (self.operator.key_source() == self.publisher.key_source()
                 or self.operator.passwordCredential is not None
                 and self.operator.passwordCredential == self.publisher.passwordCredential):

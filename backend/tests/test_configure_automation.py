@@ -152,6 +152,46 @@ class GeneratorTests(unittest.TestCase):
         with self.assertRaisesRegex(generator.ConfigurationError, 'worker_id_invalid'):
             self.compose(worker_id=WORKER.upper())
 
+    def test_discovery_admits_the_factorys_vaults_from_the_releases_first_block(self):
+        first = generator.first_block(RELEASE)
+        record = json.loads((RELEASE / 'deployment.json').read_text())
+        self.assertEqual(first, min(receipt['blockNumber'] for receipt in record['receipts']))
+        automation = self.compose(sequences=(), discover_from=first)['automation']
+        self.assertEqual(automation['discovery'], {'fromBlock': first, 'expiresAt': self.expiry, **generator.DISCOVERY})
+        self.assertEqual(automation['sequences'], [])
+        # Beside named sequences too; never with neither.
+        self.assertEqual(len(self.compose(discover_from=first)['automation']['sequences']), 1)
+        self.assertNotIn('discovery', self.compose()['automation'])
+        with self.assertRaisesRegex(generator.ConfigurationError, 'sequence_required'):
+            self.compose(sequences=())
+        # The ceilings this delivery measured: two seconds below the head, 64 vaults.
+        self.assertEqual(generator.DISCOVERY, {'confirmations': 20, 'maxBlocksPerScan': 100000, 'maxSequences': 64})
+
+    def test_the_cli_discovers_without_a_named_sequence(self):
+        path = self.temp / 'profile.json'
+        path.write_text(json.dumps(fixture_profile()))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = generator.main(['--release', str(RELEASE), '--profile', str(path), '--discover',
+                                   '--sequence-expires-at', str(self.expiry), '--worker-id', WORKER,
+                                   '--out', str(self.temp / 'discovering')])
+        summary = json.loads(out.getvalue())
+        self.assertEqual((code, summary['sequences'], summary['discovery']['fromBlock']),
+                         (0, [], generator.first_block(RELEASE)))
+        self.assertEqual(load_config(self.temp / 'discovering/automation/config.json').discovery.maxSequences, 64)
+
+    def test_the_first_block_comes_from_the_release_receipts(self):
+        copy_dir = self.temp / 'release'
+        shutil.copytree(RELEASE, copy_dir)
+        record = json.loads((copy_dir / 'deployment.json').read_text())
+        for receipts in ([], None, [{'blockNumber': '69239633'}], [{'blockNumber': 0}], [{}], [{'blockNumber': 5}, {}]):
+            (copy_dir / 'deployment.json').write_text(json.dumps({**record, 'receipts': receipts}))
+            with self.subTest(receipts=receipts), self.assertRaisesRegex(generator.ConfigurationError, 'release_record_invalid'):
+                generator.first_block(copy_dir)
+        # The earliest receipt, in whatever order the record lists them.
+        (copy_dir / 'deployment.json').write_text(json.dumps({**record, 'receipts': [{'blockNumber': 20}, {'blockNumber': 10}]}))
+        self.assertEqual(generator.first_block(copy_dir), 10)
+
     def test_the_heartbeat_must_stay_fresh_enough_for_the_app(self):
         scheduling = {**fixture_profile()['scheduling'], 'evaluationIntervalSeconds': 16, 'maximumBackoffSeconds': 60}
         with self.assertRaisesRegex(generator.ConfigurationError, 'evaluation_interval_above_readiness'):

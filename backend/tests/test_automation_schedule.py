@@ -16,7 +16,9 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import automation_cli
+from automation_config import SequenceAdmission
 from automation_cycle import CycleError, SequenceCycle, serve, service_readiness_probe, service_ready_after_pass
+from automation_observer import ObservationError
 from automation_fixtures import address, identity, sample_automation_config
 from execution_signer import ExecutionError
 from execution_store import ExecutionStoreError
@@ -131,6 +133,8 @@ class FakeCycle:
                                                           {'owner': address(2), 'vault': address(4), 'expiresAt': 2000000000, 'suspended': False}])
         self.outcomes, self.now, self.calls = list(outcomes), now, []
         self.recovery_errors, self.events = [], []
+        # What the factory's events add, pass by pass; an exception is a failed read.
+        self.discoveries, self.discovered = [], []
         self.finality_passes = 0
         self.finality_error = None
         self.readiness = []
@@ -145,6 +149,16 @@ class FakeCycle:
             raise self.recovery_errors.pop(0)
         self.events.append('recovered')
         return []
+
+    def discover(self):
+        found = self.discoveries.pop(0) if self.discoveries else {'admitted': [], 'leftOut': 0}
+        if isinstance(found, Exception):
+            raise found
+        self.discovered.extend(found['admitted'])
+        return found
+
+    def admitted(self):
+        return [*self.config.sequences, *self.discovered]
 
     def run(self, entry, *, respect_due):
         self.calls.append((entry.vault, respect_due))
@@ -237,7 +251,7 @@ class ServeTests(unittest.TestCase):
         failing = FakeCycle([])
         failing.recovery_errors = [ExecutionError('execution_rpc_unavailable')]
         served = []
-        config = SimpleNamespace(operator=None, publisher=None,
+        config = SimpleNamespace(operator=None, publisher=None, sequences=(),
                                  deployment=SimpleNamespace(operator=None, pricePublisher=None))
         with patch.object(automation_cli, 'load_config', lambda path: config), \
                 patch.object(automation_cli, 'signer_key', lambda signer, expected: b'key'), \
@@ -248,6 +262,51 @@ class ServeTests(unittest.TestCase):
             self.assertEqual(automation_cli.main(['--config', '/unused', 'serve']), 0)
         self.assertEqual((served, failing.events), ([failing], []))
         self.assertEqual(json.loads(out.getvalue()), {'stopped': True})
+
+
+    def test_each_pass_admits_what_the_factory_created_and_serves_it_with_a_heartbeat(self):
+        created = SequenceAdmission(owner=address(6), vault=address(5), expiresAt=2000000000)
+        fake = FakeCycle([{'outcome': 'wait', 'nextDueEpoch': 1010.0}] * 5, interval=10)
+        fake.discoveries = [{'admitted': [], 'leftOut': 0}, {'admitted': [created], 'leftOut': 0}]
+        sleeps, logs = self.serve(fake, 2)
+        # The second pass serves the new vault after the configured two, with its own heartbeat.
+        self.assertEqual([vault for vault, _ in fake.calls], [address(3), address(4), address(3), address(4), address(5)])
+        self.assertEqual([vault for _, vault, _ in fake.readiness][-3:], [address(3), address(4), address(5)])
+        self.assertIn({'event': 'admitted', 'owner': address(6), 'vault': address(5)}, [json.loads(line) for line in logs])
+
+    def test_a_failed_discovery_keeps_every_vault_already_admitted(self):
+        created = SequenceAdmission(owner=address(6), vault=address(5), expiresAt=2000000000)
+        fake = FakeCycle([{'outcome': 'wait', 'nextDueEpoch': 1010.0}] * 6, interval=10)
+        fake.discoveries = [{'admitted': [created], 'leftOut': 2}, ObservationError('automation_rpc_unavailable'),
+                            RuntimeError('boom')]
+        sleeps, logs = self.serve(fake, 3)
+        self.assertEqual(len(fake.calls), 9)
+        self.assertEqual([vault for vault, _ in fake.calls][-3:], [address(3), address(4), address(5)])
+        events = [json.loads(line) for line in logs if 'discovery' in line]
+        self.assertEqual(events, [{'event': 'discovery', 'code': 'discovery_capacity_reached', 'leftOut': 2},
+                                  {'event': 'discovery', 'code': 'automation_rpc_unavailable'},
+                                  {'event': 'discovery', 'code': 'discovery_unavailable'}])
+
+    def test_a_command_reads_the_factory_once_and_names_a_discovered_vault(self):
+        created = SequenceAdmission(owner=address(6), vault=address(5), expiresAt=2000000000)
+        fake = FakeCycle([])
+        fake.discoveries = [{'admitted': [created], 'leftOut': 0}]
+        seen = []
+        fake.status = lambda entry: seen.append(entry.vault) or {'vault': entry.vault}
+        config = SimpleNamespace(operator=None, publisher=None, sequences=fake.config.sequences,
+                                 deployment=SimpleNamespace(operator=None, pricePublisher=None))
+        with patch.object(automation_cli, 'load_config', lambda path: config), \
+                patch.object(automation_cli, 'SequenceCycle', lambda config, **keys: fake), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(automation_cli.main(['--config', '/unused', 'status', '--sequence', f'{address(6)}:{address(5)}']), 0)
+            self.assertEqual(automation_cli.main(['--config', '/unused', 'status']), 0)
+        self.assertEqual(seen, [address(5), address(3), address(4), address(5)])
+        self.assertEqual(fake.discoveries, [])
+        with patch.object(automation_cli, 'load_config', lambda path: config), \
+                patch.object(automation_cli, 'SequenceCycle', lambda config, **keys: fake), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(automation_cli.main(['--config', '/unused', 'status', '--sequence', f'{address(7)}:{address(8)}']), 1)
+        self.assertIn('automation_sequence_not_admitted', out.getvalue())
 
 
 class ReadinessTests(unittest.TestCase):

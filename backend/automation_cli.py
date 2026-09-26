@@ -36,11 +36,12 @@ def signer_key(signer, expected):
     return read_key(signer.keyFile)
 
 
-def select(config, spec):
+def select(entries, spec):
+    """Every admitted sequence, or the one `owner:vault` names."""
     if spec is None:
-        return list(config.sequences)
+        return list(entries)
     owner, _, vault = spec.partition(':')
-    chosen = [s for s in config.sequences if s.owner == owner.lower() and s.vault == vault.lower()]
+    chosen = [s for s in entries if s.owner == owner.lower() and s.vault == vault.lower()]
     if not chosen:
         raise CycleError('automation_sequence_not_admitted')
     return chosen
@@ -61,13 +62,18 @@ def main(argv=None):
         needs_keys = args.operation in ('run-once', 'serve')
         cycle = SequenceCycle(config, operator_key=signer_key(config.operator, config.deployment.operator) if needs_keys else None,
                               publisher_key=signer_key(config.publisher, config.deployment.pricePublisher) if needs_keys else None)
+        admitted = config.sequences
+        if args.operation != 'serve':
+            # serve reads the factory itself, every pass; a command reads it once.
+            cycle.discover()
+            admitted = cycle.admitted()
         if args.operation == 'status':
-            result = [cycle.status(entry) for entry in select(config, args.sequence)]
+            result = [cycle.status(entry) for entry in select(admitted, args.sequence)]
         elif args.operation == 'evaluate':
-            result = [cycle.run(entry, act=False) for entry in select(config, args.sequence)]
+            result = [cycle.run(entry, act=False) for entry in select(admitted, args.sequence)]
         elif args.operation == 'run-once':
             publications = cycle.recover_publications()
-            cycles = [cycle.run(entry) for entry in select(config, args.sequence)]
+            cycles = [cycle.run(entry) for entry in select(admitted, args.sequence)]
             result = {'publications': publications, 'cycles': cycles}
         elif args.operation == 'serve':
             stopping = []
@@ -82,7 +88,7 @@ def main(argv=None):
             result = {'paused': args.operation == 'pause'}
         elif args.operation in ('suspend', 'unsuspend'):
             result = []
-            for entry in select(config, args.sequence):
+            for entry in select(admitted, args.sequence):
                 status = cycle.status(entry)
                 seq_hash = status['sequenceHash']
                 lease = cycle.store.acquire_sequence(entry.owner, seq_hash, cycle.worker, lease_seconds=30)
@@ -92,7 +98,7 @@ def main(argv=None):
             ledger = config.ledger
             indexer = LedgerIndexer(cycle.reader, cycle.index_store, max_blocks=ledger.maxBlocksPerPass, max_logs=ledger.maxLogsPerPass)
             result = []
-            for entry in select(config, args.sequence):
+            for entry in select(admitted, args.sequence):
                 cycle.reader.reset()
                 admission = derive_admission(cycle.reader, config.deployment, entry.owner, entry.vault, cycle.reader.head())
                 seq_hash = admission.sequence.digest()
@@ -106,7 +112,7 @@ def main(argv=None):
         elif args.operation == 'acknowledge':
             if args.sequence is None or args.exception is None:
                 raise CycleError('automation_acknowledgement_incomplete')
-            entry = select(config, args.sequence)[0]
+            entry = select(admitted, args.sequence)[0]
             result = cycle.index_store.acknowledge(entry.owner, args.exception, args.reason)
         else:
             result = cycle.journal.live(config.deployment.pricePublisher)

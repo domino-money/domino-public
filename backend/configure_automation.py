@@ -6,8 +6,12 @@ Example, from a checkout; it writes into a new private directory:
   python backend/configure_automation.py \
     --release docs/deployments/v1-robinhood-mainnet-2026-09-21 \
     --profile docs/deployments/v1-robinhood-mainnet-2026-09-21/automation-pilot-v1.json \
-    --sequence 0x<owner>:0x<vault> --sequence-expires-at <unix seconds> \
+    --discover --sequence-expires-at <unix seconds> \
     --out /private/automation-config
+
+`--discover` admits every vault the release's factory creates, from the
+release's first block (the owner's decision of 26 September 2026); a
+`--sequence owner:vault` admits one vault by name, beside or instead of it.
 
 Every operational number comes from the profile; nothing is defaulted here and
 nothing comes from test fixtures. The deployment admission is the release's
@@ -56,6 +60,11 @@ PROFILE_SECTIONS = ('operatorPolicy', 'publisher', 'planner', 'pricing', 'swapCa
 CONTRACTS = ('factory', 'readHelper', 'routing', 'priceGuard', 'engine', 'implementation')
 DEPENDENCIES = ('poolManager', 'positionManager', 'stateView')
 PEERS = (('gas-reservation', 'domino-gas-reservation'), ('gas-settlement', 'domino-gas-settlement'))
+# The host's discovery policy. A vault shows Turn on once its heartbeat is written, so
+# discovery reads a couple of seconds below the head, not the finalized block ~18 minutes
+# back: admission is derived on chain anyway. Each admitted vault costs a readiness read
+# of about twenty calls every pass, so the ceiling bounds what the loop asks of the node.
+DISCOVERY = {'confirmations': 20, 'maxBlocksPerScan': 100000, 'maxSequences': 64}
 ADDRESS = re.compile(r'0x[0-9a-f]{40}')
 
 
@@ -107,6 +116,16 @@ def load_release(directory):
     if type(record.get('releaseTag')) is not str:
         refuse('release_record_invalid')
     return record['releaseTag'], deployment
+
+
+def first_block(directory):
+    """The release's first deployment receipt: nothing of its factory is older."""
+    _, record = read_json(Path(directory) / 'deployment.json')
+    receipts = record.get('receipts') if type(record) is dict else None
+    blocks = [r.get('blockNumber') for r in receipts] if type(receipts) is list and receipts else [None]
+    if any(type(block) is not int or block < 1 for block in blocks):
+        refuse('release_record_invalid')
+    return min(blocks)
 
 
 def planner_version(planner):
@@ -165,13 +184,14 @@ def check_operation(config):
         refuse('sample_age_below_interval')
 
 
-def compose(release, profile, sequences, *, expires_at, worker_id, rpc_endpoint=SNAPSHOT_LOOPBACK_RPC, now=None):
+def compose(release, profile, sequences, *, expires_at, worker_id, rpc_endpoint=SNAPSHOT_LOOPBACK_RPC, now=None,
+            discover_from=None):
     """The automation configuration and both gas peers', each validated by its own loader."""
     tag, deployment = release
     now = int(time.time()) if now is None else now
     if profile['releaseTag'] != tag:
         refuse('automation_profile_for_another_release')
-    if not sequences:
+    if not sequences and discover_from is None:
         refuse('sequence_required')
     # A sequence admitted past the release profile's expiry would outlive what admits it.
     if type(expires_at) is not int or not now < expires_at <= deployment['expiresAt']:
@@ -184,6 +204,8 @@ def compose(release, profile, sequences, *, expires_at, worker_id, rpc_endpoint=
         'database': dict(DATABASE), 'rpcEndpoint': rpc_endpoint, 'deployment': deployment,
         'sequences': [{'owner': owner, 'vault': vault, 'expiresAt': expires_at, 'suspended': False}
                       for owner, vault in sequences],
+        **({'discovery': {'fromBlock': discover_from, 'expiresAt': expires_at, **DISCOVERY}}
+           if discover_from is not None else {}),
         'operator': {'keystore': KEYSTORES['operator'], 'passwordCredential': CREDENTIALS['operator'],
                      'policy': profile['operatorPolicy']},
         'publisher': {'keystore': KEYSTORES['publisher'], 'passwordCredential': CREDENTIALS['publisher'],
@@ -245,6 +267,8 @@ def main(argv=None):
     parser.add_argument('--release', required=True, help='docs/deployments/<release> directory')
     parser.add_argument('--profile', required=True, help='the committed parameter profile')
     parser.add_argument('--sequence', action='append', default=[], help='owner:vault, repeatable')
+    parser.add_argument('--discover', action='store_true',
+                        help="admit every vault the release's factory creates, from the release's first block")
     parser.add_argument('--sequence-expires-at', type=int, required=True, help='unix seconds, at most the release expiry')
     parser.add_argument('--worker-id', help='keep the host\'s existing worker id; a new one is made otherwise')
     parser.add_argument('--rpc-endpoint', default=SNAPSHOT_LOOPBACK_RPC)
@@ -257,7 +281,8 @@ def main(argv=None):
         worker_id = args.worker_id or str(uuid.uuid4())
         documents = compose(load_release(args.release), load_profile(args.profile), sequences,
                             expires_at=args.sequence_expires_at, worker_id=worker_id,
-                            rpc_endpoint=args.rpc_endpoint)
+                            rpc_endpoint=args.rpc_endpoint,
+                            discover_from=first_block(args.release) if args.discover else None)
         written = write(args.out, documents)
     except ValidationError as error:
         # Field paths only: which number the profile is missing or has out of bounds.
@@ -272,7 +297,8 @@ def main(argv=None):
         print(json.dumps({'error': code if re.fullmatch(r'[a-z0-9_]{3,64}', code) else 'automation_configuration_refused'}))
         return 1
     print(json.dumps({'configVersion': documents['automation']['configVersion'], 'workerId': worker_id,
-                      'sequences': documents['automation']['sequences'], 'files': written},
+                      'sequences': documents['automation']['sequences'],
+                      'discovery': documents['automation'].get('discovery'), 'files': written},
                      indent=2, sort_keys=True))
     return 0
 

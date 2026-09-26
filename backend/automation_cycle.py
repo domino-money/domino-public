@@ -20,6 +20,7 @@ import execution_models as m
 import execution_planner as p
 import general_compound_receipts as g
 from automation_config import AutomationConfig
+from automation_discovery import FactoryDiscovery
 from automation_evidence import PPM, SWAP_WINDOW_BLOCKS, build_evidence, exposure_ppm
 from automation_ledger import LedgerIndexStore, LedgerIndexer
 from automation_observer import (POLICY_TYPE, ChainReader, ObservationError, derive_admission, ledger_balances, measurement_history,
@@ -187,6 +188,7 @@ class SequenceCycle:
         self.indexer = (LedgerIndexer(self.reader, self.index_store, max_blocks=ledger.maxBlocksPerPass, max_logs=ledger.maxLogsPerPass)
                         if ledger.indexer == 'inline' else None)
         self.worker = worker_id or config.scheduling.workerId or str(uuid.uuid4())
+        self.discovery = FactoryDiscovery(config)
         self.clock = clock
         # Unpredictable to anyone outside: the jitter hides when a sequence observes.
         self.random = rng or random.SystemRandom()
@@ -881,6 +883,17 @@ class SequenceCycle:
         return self.journal.finalize_pending(self.config.deployment.pricePublisher, self.rpc,
             confirmations=self.config.finality.publicationConfirmations, limit=8)
 
+    def discover(self):
+        """Vaults the factory created since the last read; none without a discovery policy."""
+        if self.config.discovery is None:
+            return {'admitted': [], 'leftOut': 0}
+        self.reader.reset()
+        return self.discovery.scan(self.reader, max_logs=self.config.ledger.maxLogsPerPass)
+
+    def admitted(self):
+        """The configuration's sequences, then the discovered ones."""
+        return self.discovery.admitted()
+
 def serve(cycle, *, stop, sleep=time.sleep, log=print):
     """Round-robin over the admitted sequences, each at its own due time: a
     pass skips a sequence that is not due and has nothing open, and the loop
@@ -916,7 +929,18 @@ def serve(cycle, *, stop, sleep=time.sleep, log=print):
             finality_ready = False
             log(json.dumps({'event': 'publication_finality',
                             'code': 'publisher_finality_unavailable'}))
-        for entry in cycle.config.sequences:
+        try:
+            found = cycle.discover()
+            for entry in found['admitted']:
+                log(json.dumps({'event': 'admitted', 'owner': entry.owner, 'vault': entry.vault}))
+            if found['leftOut']:
+                log(json.dumps({'event': 'discovery', 'code': 'discovery_capacity_reached', 'leftOut': found['leftOut']}))
+        except (ObservationError, ExecutionError) as error:
+            log(json.dumps({'event': 'discovery', 'code': getattr(error, 'code', 'discovery_unavailable')}))
+        except Exception:
+            log(json.dumps({'event': 'discovery', 'code': 'discovery_unavailable'}))
+        # A failed read keeps every vault already admitted; the next pass reads the span again.
+        for entry in cycle.admitted():
             if stop():
                 break
             summary = None

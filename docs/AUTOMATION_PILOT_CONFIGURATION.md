@@ -10,7 +10,7 @@ and a few host values:
 | The sequence profile | `…/sequence-release.json` | The `deployment` admission, copied as is once it matches the record |
 | The parameter profile | `…/automation-pilot-v1.json` | Every operational number: planner, pricing, swap cap, gas, destinations, history, plan, scheduling, finality, ledger, both signers' caps |
 | The host | fixed by the [installer](AUTOMATION_INSTALL.md) | The financial database socket, the VM-local loopback RPC `http://127.0.0.1:18547/`, and the keystore paths inside the unit's read-only mount `/run/domino-financial-automation-config/` |
-| The operator's command | `--sequence owner:vault`, `--sequence-expires-at`, `--worker-id` | Which vaults are admitted, until when, and the host's stable worker identity |
+| The operator's command | `--discover` and/or `--sequence owner:vault`, `--sequence-expires-at`, `--worker-id` | Which vaults are admitted (every vault the factory creates, or the ones named), until when, and the host's stable worker identity |
 
 It reads no key and writes none: the configuration only names where the unit finds
 each signer's encrypted keystore and the systemd credential that holds its password
@@ -21,7 +21,7 @@ and every file is validated by the loader that will read it.
 python backend/configure_automation.py \
   --release docs/deployments/v1-robinhood-mainnet-2026-09-21 \
   --profile docs/deployments/v1-robinhood-mainnet-2026-09-21/automation-pilot-v1.json \
-  --sequence 0x<owner>:0x<vault> --sequence-expires-at <unix seconds> \
+  --discover --sequence-expires-at <unix seconds> \
   --out /private/automation-config
 ```
 
@@ -37,6 +37,28 @@ install -o domino-automation -g domino-automation -m 0600 automation/config.json
 install -o domino-gas-reservation -g domino-gas-reservation -m 0600 gas-reservation/config.json /etc/domino/financial/gas-reservation/config.json
 install -o domino-gas-settlement -g domino-gas-settlement -m 0600 gas-settlement/config.json /etc/domino/financial/gas-settlement/config.json
 ```
+
+## Every vault the site creates
+
+The owner's decision of 26 September 2026: automation for every sequence created on
+the site, not a list. With `--discover` the configuration carries a `discovery`
+policy, and the serve loop reads the factory's `VaultCreated` events every pass,
+from the release's first block (its earliest deployment receipt) to 20 blocks
+below the head, 100000 blocks per read. It admits each vault beside any
+`--sequence`, in the order the chain created them, until the sequence expiry; a
+new vault's heartbeat, and with it the site's Turn on, follows its creation by a
+few seconds. The node answers the whole range since the release in one
+bloom-indexed read (4.1 million blocks in 0.02 s on 26 September), so a restart
+reads it again rather than keeping a cursor.
+
+An event only proposes a vault: every evaluation still derives its admission on
+chain (factory, clone code, owner, implementation), so a vault whose event a
+reorganization removed is refused there. A vault of another implementation is
+left alone. The ceiling is 64 admitted vaults: each one costs a readiness read of
+about twenty calls every pass, and past it the loop logs
+`discovery_capacity_reached` with the count left out. A vault nobody should serve
+is suspended by name: `automation_cli.py --config <file> suspend --sequence
+owner:vault`.
 
 ## The signers' keys
 

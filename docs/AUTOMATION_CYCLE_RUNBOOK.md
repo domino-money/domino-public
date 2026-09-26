@@ -125,7 +125,10 @@ the combinations the generator refuses.
    most `evaluationIntervalSeconds`). Due times carry the jitter. Before its first pass
    it drives every live publication to a receipt, as `run-once` does, and while the
    node or the database is not up yet (at boot, before the RPC tunnel is back) it
-   retries every `evaluationIntervalSeconds` and runs no cycle. It stops cleanly on
+   retries every `evaluationIntervalSeconds` and runs no cycle. Under a `discovery`
+   policy each pass first admits the vaults the factory created since the last read
+   ([pilot configuration](AUTOMATION_PILOT_CONFIGURATION.md#every-vault-the-site-creates));
+   a failed read keeps every vault already admitted. It stops cleanly on
    `SIGTERM`. `run-once` and `evaluate` always evaluate. Install it as a systemd unit with the same hardening
    as the other financial services (`upgrade_financial.unit_text`), `IPAddressAllow`
    limited to the node's tunnel, no environment fallback.
