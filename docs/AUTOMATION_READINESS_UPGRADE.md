@@ -76,4 +76,5 @@ sudo -n python3 scripts/staging/upgrade_automation_readiness.py \
 Rollback refuses a running financial unit or unit drift. The upgrade does not
 activate automation by itself. The private profiles, own-node RPC, gas peers,
 vault admission and bounded operational rehearsal remain separate activation
-steps under the automation runbook.
+steps under the automation runbook. A later release of the three units moves
+with [`install_automation_release.py`](AUTOMATION_INSTALL.md#moving-the-automation-to-a-newer-release).

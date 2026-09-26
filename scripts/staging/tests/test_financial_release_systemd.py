@@ -3,9 +3,9 @@
 The installers' offline tests fold a drop-in over a unit with a model of
 systemd. On 24 September that model was wrong: it kept BindPaths and
 BindReadOnlyPaths apart, and a drop-in that reset one lost the other in
-production. Here systemd itself loads each unit the financial upgrade writes,
-under each installer's release drop-in, and must show the same service as the
-unit written for the new release. A drop-in that resets BindPaths and gives back
+production. Here systemd itself loads each unit the financial upgrade and the
+automation installer write, under each installer's release drop-in, and must
+show the same service as the unit written for the new release. A drop-in that resets BindPaths and gives back
 only that bind must lose the read-only configuration bind, or the model the
 offline tests share is wrong.
 
@@ -22,6 +22,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install_auth_release as auth
+import install_automation_release as automation
 import install_financial_release as installer
 import upgrade_financial as financial
 
@@ -114,6 +115,33 @@ class RealSystemdTests(unittest.TestCase):
                 self.assertEqual(hosts, wanted)
                 self.assertIn(config, hosts['BindReadOnlyPaths'])
                 self.assertIn(f'/etc/domino/continuous-reads/{component}.hosts:/etc/hosts', hosts['BindReadOnlyPaths'])
+
+
+    def test_each_automation_release_dropin_loads_as_the_unit_written_for_its_release(self):
+        # The configuration generator's drop-in sorts before the release's and names no release.
+        keystore = ('[Service]\nLoadCredentialEncrypted=operator-keystore-password:'
+                    '/etc/domino/financial/automation/operator-keystore-password.cred\n')
+        for name in automation.UNITS:
+            unit = f'domino-{name}'
+            self.install(unit, automation.unit_text(name, BEFORE), **{'50-release': automation.dropin_text(name, AFTER)})
+            self.install(f'{unit}-expected', automation.unit_text(name, AFTER))
+        self.install('domino-automation-keyed', automation.unit_text('automation', BEFORE),
+                     **{'40-keystore-credentials': keystore, '50-release': automation.dropin_text('automation', AFTER)})
+        self.install('domino-automation-keyed-expected', automation.unit_text('automation', AFTER),
+                     **{'40-keystore-credentials': keystore})
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+        root = financial.release_root(AFTER, 'automation')
+        for name in automation.UNITS:
+            with self.subTest(unit=name):
+                actual = self.show(f'domino-{name}')
+                self.assertEqual(actual['LoadState'], 'loaded')
+                self.assertEqual(actual['WorkingDirectory'], str(root))
+                self.assertEqual(actual, self.show(f'domino-{name}-expected'))
+        binds = self.show('domino-automation')
+        self.assertIn('/etc/domino/financial/automation:/run/domino-financial-automation-config',
+                      binds['BindReadOnlyPaths'])
+        self.assertIn(f'/var/lib/domino-financial/automation:{root}/backend/runtime', binds['BindPaths'])
+        self.assertEqual(self.show('domino-automation-keyed'), self.show('domino-automation-keyed-expected'))
 
 
 if __name__ == '__main__':

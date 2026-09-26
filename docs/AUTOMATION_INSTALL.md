@@ -131,6 +131,58 @@ Nothing here activates the service. After the installer:
    `run-once` by hand on one sequence, then `systemctl start domino-automation.service`.
    `executionAvailable` in the public profiles remains a separate change.
 
+## Moving the automation to a newer release
+
+The installer and the [readiness upgrade](AUTOMATION_READINESS_UPGRADE.md) are
+one-shot. `scripts/staging/install_automation_release.py` moves the three units
+that run from the automation release, `domino-automation`,
+`domino-gas-reservation` and `domino-gas-settlement`, together, the way
+[`install_financial_release.py`](FINANCIAL_BACKEND_UPGRADE.md) moves
+execution-status:
+
+- the archive's `backend/` goes to
+  `/opt/domino/financial/releases/<commit>/automation`, beside whatever
+  component is already there;
+- one drop-in per unit, `domino-<unit>.service.d/50-release.conf`, names that
+  release: `Description` and `WorkingDirectory`, and for the automation
+  `BindPaths` (reset first) and `BindReadOnlyPaths`, as the installer renders
+  them for the commit. The unit files stay as the installer or the readiness
+  upgrade wrote them, the private runtime stays at
+  `/var/lib/domino-financial/automation`, so its state carries over, and the
+  generator's `40-keystore-credentials.conf` stays beside the automation's
+  drop-in;
+- the receipt goes to `/var/backups/domino-automation-release/`.
+
+It refuses three units that do not run one release, a unit loaded from
+elsewhere, edited or awaiting a reload, and a drop-in it did not write other
+than the keystore credentials beside the automation. It refuses a release whose
+`scripts/staging/install_automation.py` differs from the one running the tool,
+since the units and the migration list come from it: run the tool from the
+release's own tree. It refuses a different `backend/requirements-api.lock`,
+which would need a new interpreter, and any automation migration the release
+lists that the install and readiness receipts do not record with the same
+SHA-256: a new migration needs its own step first. It starts, stops and reloads
+nothing, and reads no private configuration, keystore or credential.
+
+```sh
+git archive --format=tar -o automation-release.tar "$RELEASE_SHA"
+sha256sum automation-release.tar
+sudo -n python3 scripts/staging/install_automation_release.py \
+  --archive automation-release.tar --archive-sha256 "$ARCHIVE_SHA256" --commit "$RELEASE_SHA" --inspect
+sudo -n python3 scripts/staging/install_automation_release.py \
+  --archive automation-release.tar --archive-sha256 "$ARCHIVE_SHA256" --commit "$RELEASE_SHA" --apply
+sudo systemctl daemon-reload
+systemctl show domino-automation.service -p WorkingDirectory -p BindPaths -p BindReadOnlyPaths
+```
+
+A unit that is off runs the release from its next start; one that runs keeps
+the old release until it restarts. `--rollback <commit>` checks the three
+drop-ins first, then puts back the ones that commit replaced, or removes them;
+releases and receipts stay. The hygiene job loads the three drop-ins into the
+runner's own systemd, with and without the keystore drop-in, and compares what
+it shows with the units written for the new release
+(`test_financial_release_systemd.py`).
+
 ## Scoped recovery
 
 ```sh
