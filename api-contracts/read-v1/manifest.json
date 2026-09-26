@@ -1084,7 +1084,7 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "3492b0498b1431e61b6c2c7600dc2e65a038626d7013fcec9beb917dfe52a748"
+      "sha256": "1ed5b4762152260a45aa0032ffb164363f5b4ac7148a37a4d2e934e62cf5fe7c"
     },
     {
       "path": "backend/read_service.py",
@@ -1116,7 +1116,7 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "caecf6685aedd4d0b81c27c46956dc6027c81f8e41f0f715baf8865f68192dbf"
+      "sha256": "bc5d87803bb5b316e2c3c4ccf99a42b2200a803f2d70c78b8a4a54205e6538fa"
     },
     {
       "path": "backend/bridge_state.py",
@@ -1124,7 +1124,7 @@
     },
     {
       "path": "backend/bridge_http.py",
-      "sha256": "20708626ee8039aea592bf526d6911f098628b548f755f10eccd178c5589a87b"
+      "sha256": "a2e9939658856c4b32c7522db2e2fc7453396abda7bc17a1fdce6980024112aa"
     },
     {
       "path": "backend/metrics_service.py",

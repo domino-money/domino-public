@@ -1,0 +1,148 @@
+{
+  "chainId": 4663,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": {
+    "lastListedVolume24hUsd": "513000",
+    "pages": 10,
+    "source": "geckoterminal_dex_pools_by_h24_volume",
+    "truncated": true
+  },
+  "effectiveAt": 1790424000,
+  "evaluation": {
+    "candidates": 212,
+    "eligible": 25,
+    "rejectedByReason": {
+      "pool_too_young": 55,
+      "tvl_below_floor": 63
+    },
+    "shortlisted": 38
+  },
+  "executionAvailable": false,
+  "generatedAt": 1790422200,
+  "limitations": [
+    "provider_reported_volume_and_tvl_unreconciled",
+    "provider_listed_universe_only",
+    "no_wash_trading_certification",
+    "not_a_return_forecast_or_recommendation"
+  ],
+  "listId": "0xa31440477931b17beba49932d8500a71fe993756521ada0db4401ee34b7bdcbd",
+  "mode": "stored_featured_pools",
+  "policyVersion": "featured-v1:3f9c2a1b7d0e",
+  "pools": [
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": {
+        "evaluatedAt": 1790422260,
+        "freshApr": "551.0",
+        "prevApr": "546.1",
+        "rankApr": "546.1",
+        "referenceDepthUsd": "41000.5",
+        "reportedLiquidityUsd": "620000",
+        "volume24hUsd": "1170000"
+      },
+      "slot": 1,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "catalogue_event",
+      "identitySource": "catalogue_event",
+      "initializeBlock": 57898668,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0xa4bbc1230b3262ebaa5d96c204c2e768fecd467307970f6c4d09bed0ca9c5610",
+      "poolKey": {
+        "currency0": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "currency1": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": {
+        "evaluatedAt": 1790422260,
+        "freshApr": "551.0",
+        "prevApr": "546.1",
+        "rankApr": "546.1",
+        "referenceDepthUsd": "41000.5",
+        "reportedLiquidityUsd": "620000",
+        "volume24hUsd": "1170000"
+      },
+      "slot": 2,
+      "source": "ranked",
+      "tokens": [
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        },
+        {
+          "address": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "decimals": 18,
+          "symbol": "TKNB"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    }
+  ],
+  "revision": 41,
+  "rules": {
+    "estimateMethod": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+    "marketSource": "geckoterminal",
+    "maxAprPercent": "1000",
+    "maxTurnover24h": "25",
+    "minPoolAgeHours": 72,
+    "minReferenceDepthUsd": "10000",
+    "minTvlUsd": "250000",
+    "minVolume24hUsd": "250000",
+    "rankBy": "min_fresh_and_previous_day_feeAprEstimate24hPercent",
+    "size": 6
+  },
+  "schemaVersion": 1,
+  "selectionDate": "2026-09-26",
+  "servedAt": 1790431234,
+  "status": "current",
+  "suggested": false,
+  "upcoming": null,
+  "validUntil": 1790553600,
+  "window": {
+    "end": 1790422200,
+    "start": 1790335800
+  },
+  "withdrawn": [
+    {
+      "at": 1790172034,
+      "poolId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "reason": "excluded_by_owner"
+    }
+  ]
+}

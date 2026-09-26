@@ -240,6 +240,10 @@ def create_database(name):
         conn.execute((ROOT/'migrations/042_provider_priority.sql').read_text())
         # 043 creates the featured-pools tables if absent and re-grants, so it applies again safely.
         conn.execute((ROOT/'migrations/043_featured_pools.sql').read_text())
+        # 044 only adds a nullable column if absent, so it applies again safely.
+        conn.execute((ROOT/'migrations/044_demand_horizon.sql').read_text())
+        # 045 creates its table if absent and replaces two checks, so it applies again safely.
+        conn.execute((ROOT/'migrations/045_featured_live.sql').read_text())
         # Development mirrors the production split: callable NOLOGIN privilege
         # roles, each inherited by exactly one unprivileged LOGIN bridge.
         for login, privilege in (

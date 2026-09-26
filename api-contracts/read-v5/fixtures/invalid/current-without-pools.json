@@ -1,0 +1,63 @@
+{
+  "chainId": 4663,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": {
+    "lastListedVolume24hUsd": "513000",
+    "pages": 10,
+    "source": "geckoterminal_dex_pools_by_h24_volume",
+    "truncated": true
+  },
+  "effectiveAt": 1790424000,
+  "evaluation": {
+    "candidates": 212,
+    "eligible": 25,
+    "rejectedByReason": {
+      "pool_too_young": 55,
+      "tvl_below_floor": 63
+    },
+    "shortlisted": 38
+  },
+  "executionAvailable": false,
+  "generatedAt": 1790422200,
+  "limitations": [
+    "provider_reported_volume_and_tvl_unreconciled",
+    "provider_listed_universe_only",
+    "no_wash_trading_certification",
+    "not_a_return_forecast_or_recommendation"
+  ],
+  "listId": "0xa31440477931b17beba49932d8500a71fe993756521ada0db4401ee34b7bdcbd",
+  "mode": "stored_featured_pools",
+  "policyVersion": "featured-v1:3f9c2a1b7d0e",
+  "pools": [],
+  "revision": 41,
+  "rules": {
+    "estimateMethod": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+    "marketSource": "geckoterminal",
+    "maxAprPercent": "1000",
+    "maxTurnover24h": "25",
+    "minPoolAgeHours": 72,
+    "minReferenceDepthUsd": "10000",
+    "minTvlUsd": "250000",
+    "minVolume24hUsd": "250000",
+    "rankBy": "min_fresh_and_previous_day_feeAprEstimate24hPercent",
+    "size": 6
+  },
+  "schemaVersion": 1,
+  "selectionDate": "2026-09-26",
+  "servedAt": 1790431234,
+  "status": "current",
+  "suggested": false,
+  "upcoming": null,
+  "validUntil": 1790553600,
+  "window": {
+    "end": 1790422200,
+    "start": 1790335800
+  },
+  "withdrawn": [
+    {
+      "at": 1790172034,
+      "poolId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "reason": "excluded_by_owner"
+    }
+  ]
+}

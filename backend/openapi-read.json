@@ -745,6 +745,28 @@
         "title": "AssetsRequest",
         "type": "object"
       },
+      "Block": {
+        "additionalProperties": false,
+        "properties": {
+          "hash": {
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Hash",
+            "type": "string"
+          },
+          "number": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "number",
+          "hash"
+        ],
+        "title": "Block",
+        "type": "object"
+      },
       "CacheObservation": {
         "additionalProperties": false,
         "properties": {
@@ -1910,6 +1932,47 @@
         "title": "CorePosition",
         "type": "object"
       },
+      "Coverage": {
+        "additionalProperties": false,
+        "properties": {
+          "lastListedVolume24hUsd": {
+            "anyOf": [
+              {
+                "maxLength": 224,
+                "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastlistedvolume24Husd"
+          },
+          "pages": {
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Pages",
+            "type": "integer"
+          },
+          "source": {
+            "const": "geckoterminal_dex_pools_by_h24_volume",
+            "title": "Source",
+            "type": "string"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "pages",
+          "lastListedVolume24hUsd",
+          "truncated"
+        ],
+        "title": "Coverage",
+        "type": "object"
+      },
       "DiscoveryPool": {
         "additionalProperties": false,
         "properties": {
@@ -2407,6 +2470,334 @@
           "error"
         ],
         "title": "ErrorResponse",
+        "type": "object"
+      },
+      "Evaluation": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Candidates",
+            "type": "integer"
+          },
+          "eligible": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Eligible",
+            "type": "integer"
+          },
+          "rejectedByReason": {
+            "additionalProperties": {
+              "maximum": 9007199254740991.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "propertyNames": {
+              "enum": [
+                "identity_unresolved",
+                "provider_currency_or_pool_mismatch",
+                "provider_dex_unconfirmed",
+                "hooked_pool_unsupported",
+                "dynamic_fee_unsupported",
+                "fixed_fee_mismatch",
+                "fee_out_of_range",
+                "invalid_protocol_fee",
+                "protocol_fee_directional_unsupported",
+                "no_reference_side",
+                "same_asset_pair",
+                "token_no_code",
+                "token_metadata_unreadable",
+                "token_symbol_unsafe",
+                "token_lookalike",
+                "token_symbol_duplicate",
+                "token_upgradeable_unreviewed",
+                "token_code_changed",
+                "token_protected_unreviewed",
+                "token_symbol_forbidden",
+                "token_unreviewed",
+                "excluded_by_owner",
+                "estimate_not_available",
+                "no_active_liquidity",
+                "volume_below_floor",
+                "tvl_below_floor",
+                "reference_depth_below_floor",
+                "reference_depth_unmeasurable",
+                "apr_above_ceiling",
+                "turnover_above_ceiling",
+                "pool_too_young",
+                "age_unknown",
+                "activity_below_floor",
+                "volume_faded",
+                "not_persistent",
+                "price_move_outlier",
+                "provider_price_disagreement"
+              ]
+            },
+            "title": "Rejectedbyreason",
+            "type": "object"
+          },
+          "shortlisted": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Shortlisted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candidates",
+          "shortlisted",
+          "eligible",
+          "rejectedByReason"
+        ],
+        "title": "Evaluation",
+        "type": "object"
+      },
+      "FeaturedPoolsRequest": {
+        "additionalProperties": false,
+        "description": "The route takes no parameters: the list is the same for everyone.",
+        "properties": {},
+        "title": "FeaturedPoolsRequest",
+        "type": "object"
+      },
+      "FeaturedPoolsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "chainId": {
+            "const": 4663,
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "contractVersion": {
+            "const": "1.0.0-rc.1",
+            "title": "Contractversion",
+            "type": "string"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Coverage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveAt": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effectiveat"
+          },
+          "evaluation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Evaluation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executionAvailable": {
+            "const": false,
+            "title": "Executionavailable",
+            "type": "boolean"
+          },
+          "generatedAt": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generatedat"
+          },
+          "limitations": {
+            "items": {
+              "enum": [
+                "provider_reported_volume_and_tvl_unreconciled",
+                "provider_listed_universe_only",
+                "no_wash_trading_certification",
+                "not_a_return_forecast_or_recommendation"
+              ],
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "listId": {
+            "anyOf": [
+              {
+                "pattern": "^0x[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Listid"
+          },
+          "mode": {
+            "const": "stored_featured_pools",
+            "title": "Mode",
+            "type": "string"
+          },
+          "policyVersion": {
+            "anyOf": [
+              {
+                "pattern": "^featured-v1:[0-9a-f]{12}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policyversion"
+          },
+          "pools": {
+            "items": {
+              "$ref": "#/components/schemas/Pool"
+            },
+            "maxItems": 12,
+            "title": "Pools",
+            "type": "array"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Rules"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schemaVersion": {
+            "const": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "selectionDate": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selectiondate"
+          },
+          "servedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Servedat",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "current",
+              "repaired",
+              "carried_over",
+              "manual",
+              "none"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suggested": {
+            "const": false,
+            "title": "Suggested",
+            "type": "boolean"
+          },
+          "upcoming": {
+            "title": "Upcoming",
+            "type": "null"
+          },
+          "validUntil": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validuntil"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Window"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "withdrawn": {
+            "items": {
+              "$ref": "#/components/schemas/Withdrawn"
+            },
+            "maxItems": 24,
+            "title": "Withdrawn",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "chainId",
+          "mode",
+          "status",
+          "revision",
+          "listId",
+          "policyVersion",
+          "selectionDate",
+          "generatedAt",
+          "effectiveAt",
+          "validUntil",
+          "servedAt",
+          "window",
+          "coverage",
+          "rules",
+          "pools",
+          "withdrawn",
+          "upcoming",
+          "evaluation",
+          "suggested",
+          "executionAvailable",
+          "limitations"
+        ],
+        "title": "FeaturedPoolsResponse",
         "type": "object"
       },
       "FeesReconciled": {
@@ -3497,6 +3888,53 @@
           "reason"
         ],
         "title": "InventoryUnavailable",
+        "type": "object"
+      },
+      "Key": {
+        "additionalProperties": false,
+        "properties": {
+          "currency0": {
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Currency0",
+            "type": "string"
+          },
+          "currency1": {
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Currency1",
+            "type": "string"
+          },
+          "feeMode": {
+            "const": "fixed",
+            "title": "Feemode",
+            "type": "string"
+          },
+          "fee_pips": {
+            "exclusiveMaximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Fee Pips",
+            "type": "integer"
+          },
+          "hooks": {
+            "const": "0x0000000000000000000000000000000000000000",
+            "title": "Hooks",
+            "type": "string"
+          },
+          "tick_spacing": {
+            "maximum": 32767.0,
+            "minimum": 1.0,
+            "title": "Tick Spacing",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency0",
+          "currency1",
+          "fee_pips",
+          "tick_spacing",
+          "hooks",
+          "feeMode"
+        ],
+        "title": "Key",
         "type": "object"
       },
       "LiveNft": {
@@ -4665,6 +5103,117 @@
           "executionAvailable"
         ],
         "title": "OverviewResponse",
+        "type": "object"
+      },
+      "Pool": {
+        "additionalProperties": false,
+        "properties": {
+          "ageSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "catalogue_event",
+                  "provider_pool_created_at",
+                  "initialize_scan"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agesource"
+          },
+          "identitySource": {
+            "enum": [
+              "catalogue_event",
+              "catalogue_hint",
+              "position_manager",
+              "initialize_scan"
+            ],
+            "title": "Identitysource",
+            "type": "string"
+          },
+          "initializeBlock": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initializeblock"
+          },
+          "integrationClass": {
+            "const": "hookless_fixed_fee",
+            "title": "Integrationclass",
+            "type": "string"
+          },
+          "poolId": {
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Poolid",
+            "type": "string"
+          },
+          "poolKey": {
+            "$ref": "#/components/schemas/Key"
+          },
+          "rankInputs": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RankInputs"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slot": {
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Slot",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "pinned",
+              "ranked",
+              "carried",
+              "fallback",
+              "manual"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/Token"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Tokens",
+            "type": "array"
+          },
+          "verifiedAt": {
+            "$ref": "#/components/schemas/Block"
+          }
+        },
+        "required": [
+          "slot",
+          "source",
+          "poolId",
+          "poolKey",
+          "integrationClass",
+          "tokens",
+          "identitySource",
+          "ageSource",
+          "initializeBlock",
+          "verifiedAt",
+          "rankInputs"
+        ],
+        "title": "Pool",
         "type": "object"
       },
       "PoolActivityLiveWindow": {
@@ -6503,6 +7052,64 @@
         "title": "ProviderMetrics",
         "type": "object"
       },
+      "RankInputs": {
+        "additionalProperties": false,
+        "properties": {
+          "evaluatedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Evaluatedat",
+            "type": "integer"
+          },
+          "freshApr": {
+            "maxLength": 97,
+            "pattern": "^(?:0|[1-9][0-9]{0,77})(?:\\.[0-9]{1,18})?$",
+            "title": "Freshapr",
+            "type": "string"
+          },
+          "prevApr": {
+            "maxLength": 97,
+            "pattern": "^(?:0|[1-9][0-9]{0,77})(?:\\.[0-9]{1,18})?$",
+            "title": "Prevapr",
+            "type": "string"
+          },
+          "rankApr": {
+            "maxLength": 97,
+            "pattern": "^(?:0|[1-9][0-9]{0,77})(?:\\.[0-9]{1,18})?$",
+            "title": "Rankapr",
+            "type": "string"
+          },
+          "referenceDepthUsd": {
+            "maxLength": 224,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Referencedepthusd",
+            "type": "string"
+          },
+          "reportedLiquidityUsd": {
+            "maxLength": 224,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Reportedliquidityusd",
+            "type": "string"
+          },
+          "volume24hUsd": {
+            "maxLength": 224,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Volume24Husd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rankApr",
+          "freshApr",
+          "prevApr",
+          "volume24hUsd",
+          "reportedLiquidityUsd",
+          "referenceDepthUsd",
+          "evaluatedAt"
+        ],
+        "title": "RankInputs",
+        "type": "object"
+      },
       "RatioCandle": {
         "additionalProperties": false,
         "properties": {
@@ -6619,6 +7226,82 @@
           "reason"
         ],
         "title": "RejectedCandidate",
+        "type": "object"
+      },
+      "Rules": {
+        "additionalProperties": false,
+        "properties": {
+          "estimateMethod": {
+            "const": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+            "title": "Estimatemethod",
+            "type": "string"
+          },
+          "marketSource": {
+            "const": "geckoterminal",
+            "title": "Marketsource",
+            "type": "string"
+          },
+          "maxAprPercent": {
+            "maxLength": 224,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Maxaprpercent",
+            "type": "string"
+          },
+          "maxTurnover24h": {
+            "maxLength": 224,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Maxturnover24H",
+            "type": "string"
+          },
+          "minPoolAgeHours": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Minpoolagehours",
+            "type": "integer"
+          },
+          "minReferenceDepthUsd": {
+            "maxLength": 224,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Minreferencedepthusd",
+            "type": "string"
+          },
+          "minTvlUsd": {
+            "maxLength": 224,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Mintvlusd",
+            "type": "string"
+          },
+          "minVolume24hUsd": {
+            "maxLength": 224,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+            "title": "Minvolume24Husd",
+            "type": "string"
+          },
+          "rankBy": {
+            "const": "min_fresh_and_previous_day_feeAprEstimate24hPercent",
+            "title": "Rankby",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rankBy",
+          "estimateMethod",
+          "marketSource",
+          "minVolume24hUsd",
+          "minTvlUsd",
+          "minReferenceDepthUsd",
+          "maxAprPercent",
+          "maxTurnover24h",
+          "minPoolAgeHours",
+          "size"
+        ],
+        "title": "Rules",
         "type": "object"
       },
       "SearchRequest": {
@@ -6986,6 +7669,35 @@
           "absoluteTurnover"
         ],
         "title": "SwapLeg",
+        "type": "object"
+      },
+      "Token": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Address",
+            "type": "string"
+          },
+          "decimals": {
+            "maximum": 36.0,
+            "minimum": 0.0,
+            "title": "Decimals",
+            "type": "integer"
+          },
+          "symbol": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "symbol",
+          "decimals"
+        ],
+        "title": "Token",
         "type": "object"
       },
       "TokenMetadata": {
@@ -7877,6 +8589,69 @@
           "discoveredByProvider"
         ],
         "title": "WalletItem",
+        "type": "object"
+      },
+      "Window": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "End",
+            "type": "integer"
+          },
+          "start": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "Window",
+        "type": "object"
+      },
+      "Withdrawn": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "At",
+            "type": "integer"
+          },
+          "poolId": {
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Poolid",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "excluded_by_owner",
+              "pool_integration_unsupported",
+              "fixed_fee_mismatch",
+              "invalid_protocol_fee",
+              "protocol_fee_directional_unsupported",
+              "token_code_changed",
+              "tvl_collapse",
+              "price_fall",
+              "apr_or_turnover_above_ceiling",
+              "estimate_unavailable",
+              "volume_collapse"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "poolId",
+          "reason",
+          "at"
+        ],
+        "title": "Withdrawn",
         "type": "object"
       }
     }
@@ -9762,6 +10537,144 @@
           }
         },
         "summary": "Owner Sequence Snapshot"
+      }
+    },
+    "/v5/read/featured-pools": {
+      "post": {
+        "operationId": "featured_pools_v5_read_featured_pools_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeaturedPoolsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeaturedPoolsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "Featured Pools"
       }
     }
   }

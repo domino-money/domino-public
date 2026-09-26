@@ -1,0 +1,30 @@
+{
+  "chainId": 4663,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": null,
+  "effectiveAt": null,
+  "evaluation": null,
+  "executionAvailable": false,
+  "generatedAt": null,
+  "limitations": [
+    "provider_reported_volume_and_tvl_unreconciled",
+    "provider_listed_universe_only",
+    "no_wash_trading_certification",
+    "not_a_return_forecast_or_recommendation"
+  ],
+  "listId": null,
+  "mode": "stored_featured_pools",
+  "policyVersion": null,
+  "pools": [],
+  "revision": null,
+  "rules": null,
+  "schemaVersion": 1,
+  "selectionDate": null,
+  "servedAt": 1790431234,
+  "status": "none",
+  "suggested": false,
+  "upcoming": null,
+  "validUntil": null,
+  "window": null,
+  "withdrawn": []
+}

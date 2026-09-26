@@ -167,6 +167,10 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/042_provider_priority.sql',
     # The featured-pools selection's tables; same vehicle as 024.
     'backend/migrations/043_featured_pools.sql',
+    # The public collector's demand horizon; same vehicle as 024.
+    'backend/migrations/044_demand_horizon.sql',
+    # The featured-pools live list: health tracking and the owner's phase; same vehicle as 024.
+    'backend/migrations/045_featured_live.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

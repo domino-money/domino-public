@@ -25,6 +25,35 @@ from rpc_config import configured_rpc_urls, configured_history_rpc_urls
 # Recalibrate together with the ceiling in 042_provider_priority.sql.
 IDLE_PROVIDER_HEADROOM = 8
 
+# The demand horizon (044_demand_horizon.sql): seconds since a visitor last
+# asked for a pool, up to which each tier holds, then its refresh period and
+# whether it keeps the provider, the activity queue and a history job. Browser
+# demand is debounced by 15 s in PostgreSQL; a minute of grace tolerates that
+# debounce without keeping abandoned tabs hot.
+TIERS = (
+    {'name': 'hot', 'upTo': 60, 'delay': 5, 'provider': True, 'activity': True, 'history': True},
+    {'name': 'recent', 'upTo': 86400, 'delay': 120, 'provider': True, 'activity': True, 'history': True},
+    {'name': 'week', 'upTo': 7 * 86400, 'delay': 900, 'provider': True, 'activity': False, 'history': True},
+    {'name': 'cold', 'upTo': None, 'delay': 3600, 'provider': False, 'activity': False, 'history': False},
+)
+WEEK = TIERS[2]
+
+
+def interest_tier(now, last_requested_at, keep_warm_until=None):
+    """The tier of a pool last asked for at `last_requested_at`.
+
+    The epoch means never asked for: a background prerequisite, cold. A pool
+    the featured-pools selection keeps warm never falls below the week tier.
+    """
+    requested = last_requested_at.timestamp()
+    tier = TIERS[-1]
+    if requested > 0:
+        age = now - requested
+        tier = next(item for item in TIERS if item['upTo'] is None or age <= item['upTo'])
+    if keep_warm_until is not None and keep_warm_until.timestamp() > now and tier['name'] == 'cold':
+        tier = WEEK
+    return tier
+
 
 class PublicCollector:
     def __init__(self, repository, service, *, history=None, requests=None, clock=time.time):
@@ -132,25 +161,20 @@ class PublicCollector:
             if previous is not None and claim.get('observed_at') is not None:
                 self.service.market_cache.restore_pool(entity_id,previous['market'],
                     elapsed_seconds=max(0,int(self.clock())-claim['observed_at']))
-            explicit=claim['last_requested_at'].timestamp()>0
-            # Browser demand is debounced by 15s in PostgreSQL. A minute of
-            # grace tolerates that debounce without keeping abandoned tabs hot.
-            # Claim order stays oldest-due first for active and idle pools alike.
-            active = self.clock() - claim['last_requested_at'].timestamp() <= 60
-            # A pool asked for once stays explicit and is refreshed for good.
-            # While nobody reads it, it spends the provider allowance only when
-            # enough is left for the pools on screen (042_provider_priority.sql).
+            tier = interest_tier(self.clock(), claim['last_requested_at'], claim.get('keep_warm_until'))
+            # Only a pool on screen keeps the whole provider allowance. The others
+            # spend a call only when enough is left for it (042_provider_priority.sql).
             cache=self.service.market_cache
-            if not active:
+            if tier['name'] != 'hot':
                 cache.reserve_provider=lambda:self.repository.reserve_provider_if_headroom(IDLE_PROVIDER_HEADROOM)
             try:
-                payload = self.service.pool_market(entity_id,allow_provider=explicit)
+                payload = self.service.pool_market(entity_id,allow_provider=tier['provider'])
             finally:
                 cache.reserve_provider=self.repository.reserve_provider
-            self.repository.publish(claim,payload,delay=5 if active else 120)
-            if explicit and self.requests is not None:
+            self.repository.publish(claim,payload,delay=tier['delay'])
+            if tier['activity'] and self.requests is not None:
                 self.requests.enqueue(entity_id)
-            if explicit and self.history is not None:
+            if tier['history'] and self.history is not None:
                 self.history.request(entity_id,86400)
 
 

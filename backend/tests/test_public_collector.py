@@ -17,7 +17,7 @@ from discovery import Block, DataError, ZERO
 from eth_abi import encode
 from eth_hash.auto import keccak
 from discovery import POOL_MANAGER
-from manage_public_data import IDLE_PROVIDER_HEADROOM, PublicCollector
+from manage_public_data import IDLE_PROVIDER_HEADROOM, PublicCollector, TIERS, interest_tier
 from market_cache import MarketCache
 from public_observations import PgPublicData
 from public_data_service import PublicDataService
@@ -43,7 +43,7 @@ class PublicCollectorTests(unittest.TestCase):
         with psycopg.connect(**cls.settings,user=ADMIN) as conn:
             for name in ('001_catalogue','002_activity','020_pool_requests','023_pool_request_scheduling',
                          '024_public_observations','025_public_history','026_public_demand',
-                         '042_provider_priority'):
+                         '042_provider_priority','044_demand_horizon'):
                 conn.execute((migrations/(name+'.sql')).read_text())
 
     def setUp(self):
@@ -514,6 +514,50 @@ class PublicCollectorTests(unittest.TestCase):
         self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
         self.assertEqual(self.provider.calls,['pool'])
         self.assertEqual(self.provider_calls_spent(),25)
+
+    def horizon(self,age,warm=None):
+        """One refresh of POOL, last asked for `age` seconds before the collector's clock."""
+        now=3_000_000
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('TRUNCATE domino_public.entities,domino_public.provider_requests')
+        self.service.market_cache=MarketCache(self.provider,clock=lambda:1010)
+        _,market=fixtures();self.writer.request('pool',POOL)
+        self.writer.publish(self.writer.claim('pool')[0],market)
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_public.entities SET last_requested_at=to_timestamp(%s),keep_warm_until=%s::timestamptz WHERE entity_id=%s",
+                         (now-age if age is not None else 0,warm,POOL))
+        self.due('pool',POOL);self.provider.calls.clear();self.requests.reset_mock();self.history.reset_mock()
+        collector=PublicCollector(self.writer,self.service,history=self.history,requests=self.requests,clock=lambda:now)
+        self.assertEqual(collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            wait=conn.execute("SELECT extract(epoch FROM next_due-clock_timestamp()) FROM domino_public.entities WHERE entity_id=%s",
+                              (POOL,)).fetchone()[0]
+        return (round(float(wait)/5)*5,bool(self.provider.calls),self.requests.enqueue.called,self.history.request.called)
+
+    def test_the_demand_horizon_sets_period_provider_activity_and_history(self):
+        self.assertEqual(self.horizon(30),(5,True,True,True))
+        self.assertEqual(self.horizon(2*3600),(120,True,True,True))
+        self.assertEqual(self.horizon(2*86400),(900,True,False,True))
+        self.assertEqual(self.horizon(8*86400),(3600,False,False,False))
+        self.assertEqual(self.horizon(None),(3600,False,False,False))
+
+    def test_a_pool_kept_warm_never_falls_below_the_week_tier(self):
+        self.assertEqual(self.horizon(8*86400,warm='2999-01-01T00:00:00Z'),(900,True,False,True))
+        self.assertEqual(self.horizon(None,warm='2999-01-01T00:00:00Z'),(900,True,False,True))
+        # Expired before the collector's clock (3,000,000 s): the pool is cold again.
+        self.assertEqual(self.horizon(8*86400,warm='1970-01-01T00:00:10Z'),(3600,False,False,False))
+
+    def test_tier_boundaries(self):
+        from datetime import datetime,timezone
+        at=lambda seconds:datetime.fromtimestamp(seconds,timezone.utc)
+        now=10**9
+        names=[interest_tier(now,at(now-age))['name'] for age in (60,61,86400,86401,7*86400,7*86400+1)]
+        self.assertEqual(names,['hot','recent','recent','week','week','cold'])
+        self.assertEqual(interest_tier(now,at(0))['name'],'cold')
+        self.assertEqual(interest_tier(now,at(0),at(now+1))['name'],'week')
+        self.assertEqual(interest_tier(now,at(now-10),at(now+1))['name'],'hot')
+        self.assertEqual(interest_tier(now,at(0),at(now))['name'],'cold')
+        self.assertEqual([tier['delay'] for tier in TIERS],[5,120,900,3600])
 
     def test_background_pool_keeps_onchain_state_without_consuming_provider_quota(self):
         self.writer.ensure('pool',POOL)

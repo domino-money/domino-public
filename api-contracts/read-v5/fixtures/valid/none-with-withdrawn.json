@@ -1,0 +1,41 @@
+{
+  "chainId": 4663,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": null,
+  "effectiveAt": null,
+  "evaluation": null,
+  "executionAvailable": false,
+  "generatedAt": null,
+  "limitations": [
+    "provider_reported_volume_and_tvl_unreconciled",
+    "provider_listed_universe_only",
+    "no_wash_trading_certification",
+    "not_a_return_forecast_or_recommendation"
+  ],
+  "listId": null,
+  "mode": "stored_featured_pools",
+  "policyVersion": null,
+  "pools": [],
+  "revision": null,
+  "rules": null,
+  "schemaVersion": 1,
+  "selectionDate": null,
+  "servedAt": 1790431234,
+  "status": "none",
+  "suggested": false,
+  "upcoming": null,
+  "validUntil": null,
+  "window": null,
+  "withdrawn": [
+    {
+      "at": 1790172034,
+      "poolId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "reason": "excluded_by_owner"
+    },
+    {
+      "at": 1790430634,
+      "poolId": "0xa4bbc1230b3262ebaa5d96c204c2e768fecd467307970f6c4d09bed0ca9c5610",
+      "reason": "tvl_collapse"
+    }
+  ]
+}

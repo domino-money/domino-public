@@ -1,0 +1,65 @@
+{
+  "chainId": 4663,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": null,
+  "effectiveAt": 1790424000,
+  "evaluation": null,
+  "executionAvailable": false,
+  "generatedAt": 1790422200,
+  "limitations": [
+    "provider_reported_volume_and_tvl_unreconciled",
+    "provider_listed_universe_only",
+    "no_wash_trading_certification",
+    "not_a_return_forecast_or_recommendation"
+  ],
+  "listId": "0x136aeff22664e62612371d8e59c4e995ffaeb1b9a2d2b69192b6d2a2e3da3ae2",
+  "mode": "stored_featured_pools",
+  "policyVersion": null,
+  "pools": [
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 1,
+      "source": "manual",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    }
+  ],
+  "revision": 43,
+  "rules": null,
+  "schemaVersion": 1,
+  "selectionDate": "2026-09-26",
+  "servedAt": 1790431234,
+  "status": "manual",
+  "suggested": false,
+  "upcoming": null,
+  "validUntil": 1790553600,
+  "window": null,
+  "withdrawn": []
+}

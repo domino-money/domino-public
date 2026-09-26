@@ -12,7 +12,8 @@ User=domino-write
 Group=domino-write
 SupplementaryGroups=domino-db
 WorkingDirectory=@PUBLIC_ROOT@/current/backend
-ExecStart=@QUEUE_ROOT@/venv/bin/python -B manage_featured.py serve --period 60
+# 30 s: a newcomer being warmed up is asked for again before it stops being hot (60 s).
+ExecStart=@QUEUE_ROOT@/venv/bin/python -B manage_featured.py serve --period 30
 Restart=on-failure
 RestartSec=30
 # A selection is one transaction; a stop mid-run records nothing and the next

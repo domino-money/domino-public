@@ -40,7 +40,7 @@
 export const OPENAPI_NON_READ_PATHS = [
   'GET /health', 'GET /v1/capabilities',
   'POST /v3/read/history', 'POST /v3/read/overview', 'POST /v3/read/search',
-  'POST /v4/read/sequence-snapshot',
+  'POST /v4/read/sequence-snapshot', 'POST /v5/read/featured-pools',
 ];
 
 /** Error statuses in read-v1 that no OpenAPI read route declares, with their codes. */

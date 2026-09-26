@@ -221,6 +221,11 @@ class PublicHistory:
                 WHERE next_due<=clock_timestamp() AND (lease_until IS NULL OR lease_until<clock_timestamp())
                 AND (window_seconds=86400 OR EXISTS(SELECT 1 FROM domino_public.history_jobs recent
                   WHERE recent.pool_id=q.pool_id AND recent.window_seconds=86400 AND recent.completed_at IS NOT NULL))
+                -- The demand horizon (044): a pool nobody asked for in a week runs no history job,
+                -- unless the featured-pools selection keeps it warm.
+                AND (q.last_requested_at>=clock_timestamp()-interval '7 days' OR EXISTS(SELECT 1
+                  FROM domino_public.entities warm WHERE warm.kind='pool' AND warm.entity_id=q.pool_id
+                  AND warm.keep_warm_until>clock_timestamp()))
                 ORDER BY CASE WHEN EXISTS(SELECT 1 FROM domino_public.entities e
                   WHERE e.kind='pool' AND e.entity_id=q.pool_id
                     AND e.last_requested_at>=clock_timestamp()-interval '60 seconds')=%s THEN 1 ELSE 0 END,

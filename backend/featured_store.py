@@ -6,6 +6,7 @@ written, and one selection per date and phase exists at most.
 """
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
+import re
 
 import psycopg
 from psycopg.rows import dict_row
@@ -60,16 +61,25 @@ class FeaturedStore:
               AND selection_date=%s AND outcome=ANY(%s) LIMIT 1''', (phase, day, list(DONE))).fetchone() is not None
 
     def previous_evaluation(self, phase, now, hours):
-        """The most recent completed run within `hours`: {poolId: its evaluation}, or None."""
+        """The most recent completed run within `hours`, of either phase: {poolId: its evaluation}.
+
+        A shadow run is the same evaluation a live one makes, so going live
+        does not cost a day without an evaluation to persist against.
+        """
         with self.connection() as conn:
-            row = conn.execute('''SELECT id,evaluation FROM domino_public.featured_runs WHERE phase=%s
-              AND outcome=ANY(%s) AND started_at>=to_timestamp(%s) ORDER BY started_at DESC,id DESC LIMIT 1''',
-              (phase, list(DONE), now - hours * 3600)).fetchone()
+            row = conn.execute('''SELECT id,evaluation FROM domino_public.featured_runs
+              WHERE outcome=ANY(%s) AND started_at>=to_timestamp(%s) ORDER BY started_at DESC,id DESC LIMIT 1''',
+              (list(DONE), now - hours * 3600)).fetchone()
         if row is None:
             return None
         return {'runId': row['id'], 'pools': {item['poolId']: item for item in row['evaluation']['evaluations']}}
 
     def previous_list(self, phase):
+        """The list the next selection starts from: the served one when live."""
+        if phase == 'live':
+            served = self.current()
+            return None if served is None else {'revision': served['revision'], 'listId': served['list_id'],
+                                                 'pools': served['payload']['pools']}
         with self.connection() as conn:
             row = conn.execute('''SELECT revision,list_id,payload FROM domino_public.featured_lists
               WHERE phase=%s ORDER BY revision DESC LIMIT 1''', (phase,)).fetchone()
@@ -83,30 +93,60 @@ class FeaturedStore:
               WHERE revoked_at IS NULL AND (until IS NULL OR until>to_timestamp(%s)) ORDER BY id''',
               (now,)).fetchall()
         pins = [{'poolId': row['subject'], 'slot': row['value']['slot']} for row in rows if row['kind'] == 'pin']
+        latest = {row['kind']: row for row in rows}   # rows are in id order: the last one of a kind wins
         return {'pins': pins,
                 'excludedPools': sorted(row['subject'] for row in rows if row['kind'] == 'exclude_pool'),
                 'excludedTokens': sorted(row['subject'] for row in rows if row['kind'] == 'exclude_token'),
+                'mode': latest['mode']['subject'] if 'mode' in latest else 'auto',
+                'manualPools': latest['manual']['value']['pools'] if 'manual' in latest else [],
+                'vetoes': sorted(row['subject'] for row in rows if row['kind'] == 'veto'),
+                'phase': latest['phase']['subject'] if 'phase' in latest else 'shadow',
                 'ids': [row['id'] for row in rows]}
 
     def add_override(self, kind, subject, *, reason, value=None, until=None):
-        if kind not in ('pin', 'exclude_pool', 'exclude_token'):
+        subjects = {'mode': ('auto', 'manual', 'off'), 'phase': ('shadow', 'live'), 'manual': ('manual',)}
+        if kind in subjects:
+            if subject not in subjects[kind]:
+                raise DataError('invalid_featured_override')
+        elif kind == 'veto':
+            if not isinstance(subject, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', subject):
+                raise DataError('invalid_featured_override')
+            try:
+                date.fromisoformat(subject)
+            except ValueError:
+                raise DataError('invalid_featured_override') from None
+        elif kind in ('pin', 'exclude_pool', 'exclude_token'):
+            subject = address(subject) if kind == 'exclude_token' else bytes32(subject)
+        else:
             raise DataError('invalid_featured_override')
-        subject = address(subject) if kind == 'exclude_token' else bytes32(subject)
         if not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 500:
             raise DataError('invalid_featured_override')
         if kind == 'pin' and (not isinstance(value, dict) or set(value) != {'slot'} or type(value['slot']) is not int):
             raise DataError('invalid_featured_override')
+        if kind == 'manual':
+            pools = value.get('pools') if isinstance(value, dict) and set(value) == {'pools'} else None
+            if not isinstance(pools, list) or not 1 <= len(pools) <= 12:
+                raise DataError('invalid_featured_override')
+            value = {'pools': [bytes32(pool_id) for pool_id in pools]}
+            if len(set(value['pools'])) != len(value['pools']):
+                raise DataError('invalid_featured_override')
         with self.connection() as conn:
+            # One pin per pool, one mode, one manual list, one phase: the new one replaces the old.
             if kind == 'pin':
-                # One pin per pool: a new slot replaces the old pin.
                 conn.execute('''UPDATE domino_public.featured_overrides SET revoked_at=clock_timestamp()
                   WHERE kind='pin' AND subject=%s AND revoked_at IS NULL''', (subject,))
+            elif kind in ('mode', 'manual', 'phase'):
+                conn.execute('''UPDATE domino_public.featured_overrides SET revoked_at=clock_timestamp()
+                  WHERE kind=%s AND revoked_at IS NULL''', (kind,))
             return conn.execute('''INSERT INTO domino_public.featured_overrides(kind,subject,value,reason,until)
               VALUES(%s,%s,%s,%s,to_timestamp(%s)) RETURNING id''',
               (kind, subject, Jsonb(value or {}), reason.strip(), until)).fetchone()['id']
 
     def revoke_override(self, kind, subject):
-        subject = address(subject) if kind == 'exclude_token' else bytes32(subject)
+        if kind in ('pin', 'exclude_pool'):
+            subject = bytes32(subject)
+        elif kind == 'exclude_token':
+            subject = address(subject)
         with self.connection() as conn:
             return [row['id'] for row in conn.execute('''UPDATE domino_public.featured_overrides
               SET revoked_at=clock_timestamp() WHERE kind=%s AND subject=%s AND revoked_at IS NULL
@@ -161,6 +201,65 @@ class FeaturedStore:
             conn.execute('''DELETE FROM domino_public.featured_runs WHERE phase=%s AND
               finished_at<to_timestamp(%s)-(%s*interval '1 day')''', (phase, finished_at, RUN_RETENTION_DAYS))
         return {'runId': run, 'revision': revision}
+
+    def current(self):
+        """The revision served now (featured_current), or None."""
+        with self.connection() as conn:
+            return conn.execute('''SELECT l.* FROM domino_public.featured_current c
+              JOIN domino_public.featured_lists l ON l.revision=c.revision WHERE c.singleton''').fetchone()
+
+    def draft(self, day):
+        """The day's live selection, not yet served."""
+        with self.connection() as conn:
+            return conn.execute('''SELECT * FROM domino_public.featured_lists WHERE phase='live'
+              AND status='draft' AND selection_date=%s ORDER BY revision DESC LIMIT 1''', (day,)).fetchone()
+
+    def run(self, run_id):
+        with self.connection() as conn:
+            return conn.execute('SELECT * FROM domino_public.featured_runs WHERE id=%s', (run_id,)).fetchone()
+
+    def latest_run(self, *, within_hours, now):
+        """The most recent completed run of either phase, with its evaluation."""
+        with self.connection() as conn:
+            return conn.execute('''SELECT * FROM domino_public.featured_runs WHERE outcome=ANY(%s)
+              AND started_at>=to_timestamp(%s) ORDER BY started_at DESC,id DESC LIMIT 1''',
+              (list(DONE), now - within_hours * 3600)).fetchone()
+
+    def serve(self, *, status, payload, day, run_id, generated_at, effective_at, valid_until):
+        """A new live revision, served at once: the list row and the pointer in one transaction."""
+        if status not in ('current', 'repaired', 'carried_over', 'manual', 'none'):
+            raise DataError('invalid_featured_run')
+        with self.connection() as conn:
+            try:
+                revision = conn.execute('''INSERT INTO domino_public.featured_lists(phase,status,list_id,
+                  selection_date,run_id,generated_at,effective_at,valid_until,payload)
+                  VALUES('live',%s,%s,%s,%s,%s,%s,%s,%s) RETURNING revision''',
+                  (status, payload['listId'], day, run_id, generated_at, effective_at, valid_until,
+                   Jsonb(payload))).fetchone()['revision']
+            except psycopg.errors.UniqueViolation:
+                raise DataError('featured_selection_exists') from None
+            conn.execute('''INSERT INTO domino_public.featured_current(singleton,revision) VALUES(true,%s)
+              ON CONFLICT(singleton) DO UPDATE SET revision=EXCLUDED.revision''', (revision,))
+        return revision
+
+    def observe_health(self, seen, now):
+        """Record the conditions seen now per pool; clear the ones that went away.
+
+        `seen` maps each served pool to the set of conditions it shows now.
+        Returns {(poolId, condition): (first_seen_at, checks)} after the update.
+        """
+        with self.connection() as conn:
+            for pool_id, conditions in seen.items():
+                conn.execute('''DELETE FROM domino_public.featured_health WHERE pool_id=%s
+                  AND NOT (condition=ANY(%s))''', (pool_id, sorted(conditions)))
+                for condition in sorted(conditions):
+                    conn.execute('''INSERT INTO domino_public.featured_health(pool_id,condition,first_seen_at,last_seen_at)
+                      VALUES(%s,%s,%s,%s) ON CONFLICT(pool_id,condition) DO UPDATE
+                      SET last_seen_at=EXCLUDED.last_seen_at,checks=domino_public.featured_health.checks+1''',
+                      (pool_id, condition, now, now))
+            conn.execute('DELETE FROM domino_public.featured_health WHERE NOT (pool_id=ANY(%s))', (sorted(seen),))
+            rows = conn.execute('SELECT * FROM domino_public.featured_health').fetchall()
+        return {(row['pool_id'], row['condition']): (row['first_seen_at'], row['checks']) for row in rows}
 
     def status(self, phase):
         with self.connection() as conn:

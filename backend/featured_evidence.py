@@ -95,6 +95,12 @@ def _code(rpc, account, block):
     return bytes.fromhex(raw[2:])
 
 
+def code_hash(rpc, account, block):
+    """keccak of the account's code at `block`, or None when it has none."""
+    code = _code(rpc, address(account), block)
+    return '0x' + keccak(code).hex() if code else None
+
+
 def token_evidence(rpc, token, block):
     """What TA-1..TA-5 read: code, its hash, whether it delegates, decimals and symbol.
 

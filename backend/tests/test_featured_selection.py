@@ -16,10 +16,12 @@ import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import psycopg
 from psycopg import sql
+from psycopg.types.json import Jsonb
 
 from catalogue import PgCatalogue
 from dev_postgres import ADMIN, PORT, SOCKET
-from discovery import DataError
+from discovery import Block, DataError
+from featured_contract import rules_of
 from featured_pools import load_policy
 from featured_selector import Selector
 from featured_store import FeaturedStore
@@ -32,6 +34,7 @@ DAY=86400
 UNKNOWN='0x'+'5a'*32
 YOUNG='0x'+'6b'*32
 USDG='0x5fc5360d0400a0fd4f2af552add042d716f1d168'
+STORED_KEY=dict(zip(('currency0','currency1','fee_pips','tick_spacing','hooks'),KEY))   # the catalogue's form
 
 
 def gt_pool(pool_id,base,quote,*,volume='1000000',tvl='2000000',created=NOW-10*DAY,price='0.000000000001'):
@@ -89,7 +92,7 @@ class FeaturedTests(unittest.TestCase):
         with psycopg.connect(**cls.settings,user=ADMIN) as conn:
             for name in ('001_catalogue','002_activity','020_pool_requests','023_pool_request_scheduling',
                          '024_public_observations','025_public_history','026_public_demand',
-                         '042_provider_priority','043_featured_pools'):
+                         '042_provider_priority','043_featured_pools','044_demand_horizon','045_featured_live'):
                 conn.execute((migrations/(name+'.sql')).read_text())
 
     def setUp(self):
@@ -142,7 +145,9 @@ class FeaturedTests(unittest.TestCase):
         self.assertEqual(self.store.overrides(NOW+30*DAY)['excludedTokens'],[])
         self.assertEqual(len(self.store.revoke_override('pin',POOL)),1)
         self.assertEqual(self.store.overrides(NOW)['pins'],[])
-        for kind,subject,value in (('mode','auto',None),('pin',POOL,{'slot':'1'}),('exclude_pool','0x12',None)):
+        for kind,subject,value in (('mode','sometimes',None),('pin',POOL,{'slot':'1'}),('exclude_pool','0x12',None),
+                                   ('veto','2026-02-30',None),('phase','live!',None),('manual','manual',{'pools':[]}),
+                                   ('manual','manual',{'pools':[POOL,POOL]}),('ranking','auto',None)):
             with self.subTest(kind=kind),self.assertRaises(DataError):
                 self.store.add_override(kind,subject,reason='x',value=value)
         with self.assertRaisesRegex(DataError,'invalid_featured_override'):
@@ -195,9 +200,41 @@ class FeaturedTests(unittest.TestCase):
         # 1M volume x 0.3% x 365 x 100 / 2M liquidity, the site's own estimate, on both days.
         self.assertEqual(Decimal(entry['rankInputs']['rankApr']),Decimal('54.75'))
         self.assertRegex(latest['listId'],r'^0x[0-9a-f]{64}$')
+        self.assertIsNone(entry['initializeBlock'])
+        # What read-v5 states about the list, recorded with it: not recomputed when served.
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            payload=conn.execute('SELECT payload FROM domino_public.featured_lists WHERE revision=%s',
+                                 (latest['revision'],)).fetchone()[0]
+        self.assertEqual(payload['evaluation'],{'candidates':second['candidates'],'shortlisted':second['evaluated'],
+                                                'eligible':second['eligible'],
+                                                'rejectedByReason':second['rejectedByReason']})
+        self.assertNotEqual(second['evaluated'],second['screened'])
+        self.assertEqual(payload['rules'],rules_of(self.policy))
+        self.assertEqual(payload['window'],{'start':NOW,'end':NOW+DAY})
         baseline=self.store.token_baselines()[TOKEN]
         self.assertEqual(baseline['symbol_reading'],'TOKEN')
         self.assertRegex(baseline['listed_code_hash'],r'^0x[0-9a-f]{64}$')
+
+    def test_identity_and_age_come_from_the_catalogue_when_it_has_the_pool(self):
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('''INSERT INTO domino_catalogue.chunks(start_block,end_block,end_hash) VALUES(1000,2000,%s)
+              ON CONFLICT DO NOTHING''',('0x'+'ab'*32,))
+            conn.execute('''INSERT INTO domino_catalogue.events(pool_id,currency0,currency1,pool_key,block_number,
+              block_hash,tx_hash,log_index,chunk_start) VALUES(%s,%s,%s,%s,1500,%s,%s,0,1000)''',
+              (POOL,ZERO,TOKEN,Jsonb(STORED_KEY),'0x'+'ab'*32,'0x'+'cd'*32))
+        self.selector().select(now=NOW)
+        item=self.store.previous_evaluation('shadow',NOW+60,48)['pools'][POOL]
+        self.assertEqual((item['identitySource'],item['ageSource'],item['initializeBlock']),
+                         ('catalogue_event','catalogue_event',1500))
+        # The node dates every block five seconds ago: the Initialize block, not the listing, sets the age.
+        self.assertIn('pool_too_young',item['reasons'])
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('TRUNCATE domino_catalogue.events,domino_public.featured_runs')
+        self.catalogue.seed([{'poolId':POOL,'poolKey':STORED_KEY}],Block(700,'0x'+'ab'*32,0))
+        self.selector().select(now=NOW)
+        item=self.store.previous_evaluation('shadow',NOW+60,48)['pools'][POOL]
+        self.assertEqual((item['identitySource'],item['ageSource'],item['initializeBlock']),
+                         ('catalogue_hint','provider_pool_created_at',None))
 
     def test_the_shadow_creates_no_demand_seed_or_history_job(self):
         self.selector().select(now=NOW)
@@ -286,7 +323,7 @@ class FeaturedTests(unittest.TestCase):
         self.assertEqual(tick(self.selector(),self.store,self.policy,first-1)['status'],'idle')
         self.assertEqual(tick(self.selector(),self.store,self.policy,at)['status'],'idle')
         self.clock[0]=first
-        self.assertEqual(tick(self.selector(),self.store,self.policy,first)['outcome'],'bootstrap')
+        self.assertEqual(tick(self.selector(),self.store,self.policy,first)['selection']['outcome'],'bootstrap')
 
 
 if __name__=='__main__':unittest.main()

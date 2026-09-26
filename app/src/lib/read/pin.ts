@@ -41,6 +41,11 @@
  * The deposit-v1 digest moved once more because its manifest hashes
  * backend/tests/test_deposit_receipt.py, whose local Anvil now starts through
  * backend/local_anvil.py; nothing in the contract changed.
+ * The read-v1 and read-v2 digests, and the OpenAPI below, moved with the
+ * featured pools list: a separate read-v5 route (`POST /v5/read/featured-pools`,
+ * api-contracts/read-v5) was added to the reader, the gateway and the bridge
+ * client those manifests hash. No read-v1 or read-v2 route, schema or version
+ * changed.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -48,7 +53,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: 'a5e6e7fa47468ea5d39855beb62be40e314c2fd4831a192a1fb16ea91c31549b',
+      manifestSha256: '4db208d39094d79b90d831f1b1101bc447e241135867ef3a1fe61a2f09eb5612',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -68,7 +73,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '704ce295f5383c2a53402702fe889a7d19bf911a116e80b00187c6889bf0fa71',
+  manifestSha256: 'c72ca7f43924b69760c9fd7d8c0bf9fb0bcb7b842b218a722cf077e7f7825e38',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
@@ -89,7 +94,7 @@ export const READ_V3_PIN = {
 export const BACKEND_OPENAPI_PIN = {
   path: 'backend/openapi-read.json',
   infoVersion: '0.8.0',
-  sha256: 'f5dc031e09d3ecf6a49d6697ee776a8e369b896b4a155b1a816e52466f3ef3d9',
+  sha256: '47d530e2b2365ff5873516772d5411ce3fdf2663f93262a8ddc40e91b6518392',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

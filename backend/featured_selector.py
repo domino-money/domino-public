@@ -13,6 +13,7 @@ import time
 from discovery import Block, DataError
 import featured_evidence as evidence
 import featured_pools as rules
+from featured_contract import rules_of
 from featured_store import utc_date
 from gt_listing import MAX_MULTI, PAGE_SIZE, GeckoListing
 from market_cache import MarketCache
@@ -35,7 +36,22 @@ class _NoProvider:
 
 
 def _decimal_text(fraction):
-    return str(Decimal(fraction.numerator) / Decimal(fraction.denominator))
+    # Fixed notation: a dust-sized depth must not read as 1.2E-7.
+    return format(Decimal(fraction.numerator) / Decimal(fraction.denominator), 'f')
+
+
+def list_entry(entry, item):
+    """A list's pool: the slot and source composed, and what the evaluation verified."""
+    return {**entry, 'poolKey': item['poolKey'], 'tokens': item['tokens'],
+            'integrationClass': 'hookless_fixed_fee', 'identitySource': item['identitySource'],
+            'ageSource': item['ageSource'], 'initializeBlock': item.get('initializeBlock'),
+            'reference': item['reference'],
+            'verifiedAt': {'number': item['block']['number'], 'hash': item['block']['hash']},
+            'selectionSqrtPriceX96': item['sqrtPriceX96'],
+            'rankInputs': None if entry['source'] != 'ranked' else {
+                'rankApr': item['rankApr'], 'freshApr': item['freshApr'], 'prevApr': item['prevApr'],
+                'volume24hUsd': item['volume24hUsd'], 'reportedLiquidityUsd': item['reportedLiquidityUsd'],
+                'referenceDepthUsd': item['referenceDepthUsd'], 'evaluatedAt': item['block']['timestamp']}}
 
 
 class Selector:
@@ -110,7 +126,7 @@ class Selector:
         listing = item['listing'] if item else None
         candidate = {'poolId': pool_id, 'market': market, 'listing': listing,
                      'age': {'createdAt': listing['createdAt'] if listing else None}}
-        extra = {'poolKey': None, 'tokens': None, 'identitySource': None,
+        extra = {'poolKey': None, 'tokens': None, 'identitySource': None, 'sqrtPriceX96': None, 'initializeBlock': None,
                  'ageSource': 'provider_pool_created_at' if listing and listing['createdAt'] is not None else None,
                  'block': None, 'error': None}
         service, rpc = ctx['service'], ctx['rpc']
@@ -125,14 +141,14 @@ class Selector:
                 known = self._catalogue_identity(pool_id)
                 response = service.pool_market(pool_id, allow_provider=False)
                 pool, block = response['pool'], Block(**response['snapshot'])
-                extra.update(poolKey=pool['poolKey'], block=response['snapshot'],
+                extra.update(poolKey=pool['poolKey'], block=response['snapshot'], sqrtPriceX96=pool['sqrtPriceX96'],
                              identitySource=known['source'] if known else 'position_manager')
                 candidate['estimate'] = estimate_pool_apr(response, now=int(self.clock()))
                 liquidity = evidence.active_liquidity(rpc, pool_id, block)
                 candidate['chain'] = {'pool': pool, 'liquidity': liquidity}
                 if known and known['block_number'] is not None:
                     candidate['age'] = {'createdAt': evidence.block_timestamp(rpc, known['block_number'])}
-                    extra['ageSource'] = 'catalogue_event'
+                    extra.update(ageSource='catalogue_event', initializeBlock=known['block_number'])
                 side, _ = rules.reference_side(pool['currencies'], self.policy)
                 if side is not None:
                     reference, other, major = side
@@ -158,6 +174,29 @@ class Selector:
         return {**result, **extra, 'depth': candidate.get('depth'),
                 'providerPriceDeviation': candidate.get('providerPriceDeviation')}
 
+    def _context(self, now, overrides, previous):
+        baselines = self.store.token_baselines()
+        service, spent = self._service()
+        return ({'now': now, 'service': service, 'rpc': service._rpc(service.transport_factory()),
+                 'previous': previous['pools'] if previous else {}, 'baselines': baselines, 'tokens': {},
+                 'readings': {row['symbol_reading']: token for token, row in baselines.items() if row['symbol_reading']},
+                 'excludedPools': set(overrides['excludedPools']), 'excludedTokens': set(overrides['excludedTokens'])},
+                spent)
+
+    def check(self, pool_ids, *, now):
+        """Evaluate these pools now (the owner's manual list): one multi read, nothing recorded."""
+        overrides = self.store.overrides(now)
+        previous = self.store.previous_evaluation('live', now, self.policy['persistenceLookbackHours'])
+        ctx, _ = self._context(now, overrides, previous)
+        pool_ids = list(dict.fromkeys(pool_ids))
+        found = {}
+        for start in range(0, len(pool_ids), MAX_MULTI):
+            try:
+                found.update({item['poolId']: item for item in self.listing.multi(pool_ids[start:start + MAX_MULTI])['items']})
+            except DataError:
+                pass
+        return [self._evaluate(pool_id, found.get(pool_id), relaxed=False, ctx=ctx) for pool_id in pool_ids]
+
     # ------------------------------------------------------------ selecting
     def select(self, *, now=None, phase='shadow', final=True):
         """One selection for the UTC date of `now`; at most one completed per date.
@@ -167,7 +206,7 @@ class Selector:
         list (`carried_over`). The first run with no evaluation to persist
         against only records one (`bootstrap`).
         """
-        if phase != 'shadow':
+        if phase not in ('shadow', 'live'):
             raise DataError('featured_phase_unavailable')
         now = int(self.clock()) if now is None else now
         day, started = utc_date(now), int(self.clock())
@@ -180,13 +219,9 @@ class Selector:
         prior = self.store.previous_list(phase)
         incumbents = [entry['poolId'] for entry in prior['pools']] if prior else list(self.embedded)
         pinned = [pin['poolId'] for pin in overrides['pins']]
-        shown = set(incumbents) | set(self.embedded) | set(pinned)
-        baselines = self.store.token_baselines()
-        service, spent = self._service()
-        ctx = {'now': now, 'service': service, 'rpc': service._rpc(service.transport_factory()),
-               'previous': previous['pools'] if previous else {}, 'baselines': baselines, 'tokens': {},
-               'readings': {row['symbol_reading']: token for token, row in baselines.items() if row['symbol_reading']},
-               'excludedPools': set(overrides['excludedPools']), 'excludedTokens': set(overrides['excludedTokens'])}
+        # Every pool the site could show today is evaluated, listed by the provider or not.
+        shown = set(incumbents) | set(self.embedded) | set(pinned) | set(overrides['manualPools'])
+        ctx, spent = self._context(now, overrides, previous)
         floor = Decimal(self.policy['thresholds']['minVolume24hUsd'])
         coverage = {'source': 'geckoterminal_dex_pools_by_h24_volume', 'pages': 0, 'truncated': False,
                     'lastListedVolume24hUsd': None, 'stoppedBy': None, 'rejectedItems': 0}
@@ -253,23 +288,20 @@ class Selector:
             outcome = 'selected' if composed['status'] == 'current' else 'carried_over'
         by_id = {item['poolId']: item for item in evaluations}
         if outcome == 'selected':
-            entries = []
-            for entry in composed['pools']:
-                item = by_id[entry['poolId']]
-                entries.append({**entry, 'poolKey': item['poolKey'], 'tokens': item['tokens'],
-                                'integrationClass': 'hookless_fixed_fee', 'identitySource': item['identitySource'],
-                                'ageSource': item['ageSource'],
-                                'rankInputs': None if entry['source'] != 'ranked' else {
-                                    'rankApr': item['rankApr'], 'freshApr': item['freshApr'], 'prevApr': item['prevApr'],
-                                    'volume24hUsd': item['volume24hUsd'],
-                                    'reportedLiquidityUsd': item['reportedLiquidityUsd'],
-                                    'referenceDepthUsd': item['referenceDepthUsd']}})
+            entries = [list_entry(entry, by_id[entry['poolId']]) for entry in composed['pools']]
             listing = {'schemaVersion': 1, 'phase': phase, 'selectionDate': day.isoformat(), 'generatedAt': now,
                        'policyVersion': version, 'listId': rules.list_id(entries), 'pools': entries,
                        'rankedSwaps': composed['rankedSwaps'], 'coverage': coverage,
-                       'previousRevision': prior['revision'] if prior else None}
+                       'previousRevision': prior['revision'] if prior else None,
+                       # What the served list states about itself (read-v5): recorded now, not recomputed.
+                       'rules': rules_of(self.policy), 'window': {'start': now - 86400, 'end': now}}
         reasons = Counter(reason for item in evaluations for reason in item['reasons'])
         reasons.update(reason for item in screened for reason in item['reasons'])
+        if listing is not None:
+            # shortlisted: passed the listing screen (or is shown today) and was read in full.
+            listing['evaluation'] = {'candidates': len(seen), 'shortlisted': len(evaluations),
+                                     'eligible': sum(1 for item in evaluations if item['eligible']),
+                                     'rejectedByReason': dict(sorted(reasons.items()))}
         summary = {'outcome': outcome, 'selectionDate': day.isoformat(), 'policyVersion': version,
                    'candidates': len(seen), 'screened': len(screened), 'evaluated': len(evaluations),
                    'eligible': sum(1 for item in evaluations if item['eligible']),

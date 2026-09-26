@@ -38,6 +38,8 @@ from public_data_contract import (CONTRACT_VERSION as V3_CONTRACT_VERSION,
                                   validate_request_response as validate_v3_request_response)
 from sequence_snapshot import (CONTRACT_VERSION as V4_CONTRACT_VERSION,
                                SequenceSnapshotRequest, validate_snapshot_response)
+from featured_contract import (CONTRACT_VERSION as V5_CONTRACT_VERSION, FeaturedPoolsRequest,
+                               validate_featured_response)
 
 REQUEST_MODELS = {'token': TokenRequest, 'pools': PoolsRequest, 'pool-market': PoolMarketRequest,
                   'wallet-assets': AssetsRequest, 'nft-positions': NftPositionsRequest,
@@ -65,24 +67,29 @@ def checked_retry_after(value):
 class Gateway:
     def __init__(self, *, verifier=None, upstream=None, enabled=False, enabled_reads=(),
                  enabled_v2=False, enabled_v2_reads=(), enabled_v3=False, enabled_v3_reads=(), budgets=None, cursors=None,
-                 enabled_v4=False, enabled_v4_reads=(), gate=None, clock=time.monotonic, wall_clock=time.time):
+                 enabled_v4=False, enabled_v4_reads=(), enabled_v5=False, enabled_v5_reads=(), gate=None,
+                 clock=time.monotonic, wall_clock=time.time):
         if (type(enabled) is not bool or not set(enabled_reads) <= set(REQUEST_MODELS) or
                 type(enabled_v2) is not bool or not set(enabled_v2_reads) <= set(V2_REQUEST_MODELS) or
                 type(enabled_v3) is not bool or not set(enabled_v3_reads) <= set(V3_REQUEST_MODELS) or
-                type(enabled_v4) is not bool or not set(enabled_v4_reads) <= {'sequence-snapshot'}):
+                type(enabled_v4) is not bool or not set(enabled_v4_reads) <= {'sequence-snapshot'} or
+                type(enabled_v5) is not bool or not set(enabled_v5_reads) <= {'featured-pools'}):
             raise DataError('invalid_gateway_config')
         if ((enabled and (verifier is None or not enabled_reads)) or
                 (enabled_v2 and (verifier is None or not enabled_v2_reads)) or
                 (enabled_v3 and (verifier is None or not enabled_v3_reads)) or
-                (enabled_v4 and (verifier is None or not enabled_v4_reads))):
+                (enabled_v4 and (verifier is None or not enabled_v4_reads)) or
+                (enabled_v5 and (verifier is None or not enabled_v5_reads))):
             raise DataError('invalid_gateway_config')
         self.enabled, self.enabled_reads = enabled, frozenset(enabled_reads)
         self.enabled_v2, self.enabled_v2_reads = enabled_v2, frozenset(enabled_v2_reads)
         self.enabled_v3, self.enabled_v3_reads = enabled_v3, frozenset(enabled_v3_reads)
         self.enabled_v4, self.enabled_v4_reads = enabled_v4, frozenset(enabled_v4_reads)
+        self.enabled_v5, self.enabled_v5_reads = enabled_v5, frozenset(enabled_v5_reads)
         self.verifier, self.upstream = verifier, upstream or LocalReaderHTTP()
         self.budgets, self.cursors = budgets or ClientBudgets(), cursors or OpaqueCursors()
-        self.gate = gate or (ReadGate(stored_capacity=4,stored_interval=0) if enabled_v3 else ReadGate())
+        # Stored reads (v3, the featured list) get the stored lane's capacity, as in the reader.
+        self.gate = gate or (ReadGate(stored_capacity=4,stored_interval=0) if enabled_v3 or enabled_v5 else ReadGate())
         self.clock, self.wall_clock = clock, wall_clock
 
     def execute(self, route, body, assertion, client, deadline, *, version='v1', request_id=None):
@@ -145,14 +152,16 @@ class Gateway:
                 sent = {'poolId': body['poolId'], 'includePriceHistory': False}
             if route == 'wallet-assets' and sent.get('cursor') is not None:
                 sent['cursor'] = self.cursors.unwrap(sent['cursor'], body)
-            protocol = {'version': version} if version in ('v3', 'v4') else {}
+            protocol = {'version': version} if version in ('v3', 'v4', 'v5') else {}
             status, data, metadata = self.upstream.request(route, sent, deadline=deadline, request_id=request_id, **protocol)
             if metadata.get('generation') != generation:
                 if metadata.get('generation'):
                     self.cursors.observe_generation(metadata['generation'])
                 raise DataError('upstream_unavailable')
-            producer_contract = V4_CONTRACT_VERSION if version == 'v4' else V3_CONTRACT_VERSION if version == 'v3' else CONTRACT_VERSION
-            validator = validate_snapshot_response if version == 'v4' else validate_v3_response if version == 'v3' else validate_response
+            producer_contract = {'v5': V5_CONTRACT_VERSION, 'v4': V4_CONTRACT_VERSION,
+                                 'v3': V3_CONTRACT_VERSION}.get(version, CONTRACT_VERSION)
+            validator = {'v5': validate_featured_response, 'v4': validate_snapshot_response,
+                         'v3': validate_v3_response}.get(version, validate_response)
             if metadata.get('contract') != producer_contract:
                 raise DataError('upstream_contract_mismatch')
             if status != 200:
@@ -218,11 +227,12 @@ def create_gateway(gateway=None):
             deadline = opened + 20
             request_id = secrets.token_hex(16)
             path = request.scope.get('raw_path', b'').decode('ascii', errors='replace')
-            version = ('v4' if path.startswith('/internal/read/v4/') else
+            version = ('v5' if path.startswith('/internal/read/v5/') else
+                       'v4' if path.startswith('/internal/read/v4/') else
                        'v3' if path.startswith('/internal/read/v3/') else
                        'v2' if path.startswith('/internal/read/v2/') else 'v1')
-            contract_version = {'v1': CONTRACT_VERSION, 'v2': V2_CONTRACT_VERSION,
-                                'v3': V3_CONTRACT_VERSION, 'v4': V4_CONTRACT_VERSION}[version]
+            contract_version = {'v1': CONTRACT_VERSION, 'v2': V2_CONTRACT_VERSION, 'v3': V3_CONTRACT_VERSION,
+                                'v4': V4_CONTRACT_VERSION, 'v5': V5_CONTRACT_VERSION}[version]
             route_name = 'unmatched'
             notes = hop_log.open_notes()
             recorded = []
@@ -247,8 +257,9 @@ def create_gateway(gateway=None):
                     # the client budget's, or this gate's — never a constant.
                     headers['Retry-After'] = str(retry_after or gateway.gate.retry_after(gateway.gate.PROVIDER))
                 return JSONResponse(data, status_code=status, headers=headers)
-            models = {'v1': REQUEST_MODELS, 'v2': V2_REQUEST_MODELS,
-                      'v3': V3_REQUEST_MODELS, 'v4': {'sequence-snapshot': SequenceSnapshotRequest}}[version]
+            models = {'v1': REQUEST_MODELS, 'v2': V2_REQUEST_MODELS, 'v3': V3_REQUEST_MODELS,
+                      'v4': {'sequence-snapshot': SequenceSnapshotRequest},
+                      'v5': {'featured-pools': FeaturedPoolsRequest}}[version]
             match = re.fullmatch(r'/internal/read/' + version + r'/(' + '|'.join(models) + r')', path)
             if match:
                 route_name = match[1]
@@ -256,10 +267,11 @@ def create_gateway(gateway=None):
                 return result(404, {'error': 'route_not_available'})
             if request.method != 'POST':
                 return result(405, {'error': 'method_not_allowed'})
-            enabled = {'v1': gateway.enabled, 'v2': gateway.enabled_v2,
-                       'v3': gateway.enabled_v3, 'v4': gateway.enabled_v4}[version]
+            enabled = {'v1': gateway.enabled, 'v2': gateway.enabled_v2, 'v3': gateway.enabled_v3,
+                       'v4': gateway.enabled_v4, 'v5': gateway.enabled_v5}[version]
             enabled_reads = {'v1': gateway.enabled_reads, 'v2': gateway.enabled_v2_reads,
-                             'v3': gateway.enabled_v3_reads, 'v4': gateway.enabled_v4_reads}[version]
+                             'v3': gateway.enabled_v3_reads, 'v4': gateway.enabled_v4_reads,
+                             'v5': gateway.enabled_v5_reads}[version]
             if not enabled or match[1] not in enabled_reads:
                 return result(404, {'error': 'route_not_available'})
             headers = {}
@@ -356,6 +368,7 @@ def main():
     parser.add_argument('--enable-v2', action='store_true', help='Opt in to the separate pool estimate candidate')
     parser.add_argument('--enable-v3', action='store_true', help='Opt in to the durable stored public read contract')
     parser.add_argument('--enable-v4', action='store_true', help='Opt in to the fixed sequence snapshot read')
+    parser.add_argument('--enable-v5', action='store_true', help='Opt in to the stored featured pools list')
     args = parser.parse_args()
     try:
         if args.port in (8765, args.reader_port) or not 1024 <= args.port <= 65535:
@@ -370,7 +383,7 @@ def main():
         reads = ()
         v2_reads = ()
         v3_reads = ()
-        if args.enable or args.enable_v2 or args.enable_v3 or args.enable_v4:
+        if args.enable or args.enable_v2 or args.enable_v3 or args.enable_v4 or args.enable_v5:
             verifier = AccessVerifier(os.environ.get('DOMINO_ACCESS_ISSUER'),
                                       os.environ.get('DOMINO_ACCESS_AUDIENCE'),
                                       os.environ.get('DOMINO_ACCESS_SERVICE_ID'))
@@ -381,10 +394,12 @@ def main():
         if args.enable_v3:
             v3_reads = tuple(os.environ.get('DOMINO_BRIDGE_V3_READS', '').split(','))
         v4_reads = tuple(os.environ.get('DOMINO_BRIDGE_V4_READS', '').split(',')) if args.enable_v4 else ()
+        v5_reads = tuple(os.environ.get('DOMINO_BRIDGE_V5_READS', '').split(',')) if args.enable_v5 else ()
         gateway = Gateway(enabled=args.enable, enabled_reads=reads, verifier=verifier,
                           enabled_v2=args.enable_v2, enabled_v2_reads=v2_reads,
                           enabled_v3=args.enable_v3, enabled_v3_reads=v3_reads,
                           enabled_v4=args.enable_v4, enabled_v4_reads=v4_reads,
+                          enabled_v5=args.enable_v5, enabled_v5_reads=v5_reads,
                           upstream=LocalReaderHTTP(args.reader_port))
     except (DataError, OSError):
         parser.exit(2, 'Gateway configuration invalid or process already running.\n')

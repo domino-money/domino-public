@@ -1,0 +1,506 @@
+{
+  "chainId": 4663,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": {
+    "lastListedVolume24hUsd": "513000",
+    "pages": 10,
+    "source": "geckoterminal_dex_pools_by_h24_volume",
+    "truncated": true
+  },
+  "effectiveAt": 1790424000,
+  "evaluation": {
+    "candidates": 212,
+    "eligible": 25,
+    "rejectedByReason": {
+      "pool_too_young": 55,
+      "tvl_below_floor": 63
+    },
+    "shortlisted": 38
+  },
+  "executionAvailable": false,
+  "generatedAt": 1790422200,
+  "limitations": [
+    "provider_reported_volume_and_tvl_unreconciled",
+    "provider_listed_universe_only",
+    "no_wash_trading_certification",
+    "not_a_return_forecast_or_recommendation"
+  ],
+  "listId": "0xa31440477931b17beba49932d8500a71fe993756521ada0db4401ee34b7bdcbd",
+  "mode": "stored_featured_pools",
+  "policyVersion": "featured-v1:3f9c2a1b7d0e",
+  "pools": [
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 1,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x0000000000000000000000000000000000000000000000000000000000000002",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 2,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x0000000000000000000000000000000000000000000000000000000000000003",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 3,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x0000000000000000000000000000000000000000000000000000000000000004",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 4,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x0000000000000000000000000000000000000000000000000000000000000005",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 5,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x0000000000000000000000000000000000000000000000000000000000000006",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 6,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x0000000000000000000000000000000000000000000000000000000000000007",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 7,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x0000000000000000000000000000000000000000000000000000000000000008",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 8,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x0000000000000000000000000000000000000000000000000000000000000009",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 9,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x000000000000000000000000000000000000000000000000000000000000000a",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 10,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 11,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x000000000000000000000000000000000000000000000000000000000000000c",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 12,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    },
+    {
+      "ageSource": "provider_pool_created_at",
+      "identitySource": "catalogue_hint",
+      "initializeBlock": null,
+      "integrationClass": "hookless_fixed_fee",
+      "poolId": "0x000000000000000000000000000000000000000000000000000000000000000d",
+      "poolKey": {
+        "currency0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "feeMode": "fixed",
+        "fee_pips": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tick_spacing": 60
+      },
+      "rankInputs": null,
+      "slot": 13,
+      "source": "pinned",
+      "tokens": [
+        {
+          "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+          "decimals": 18,
+          "symbol": "PONS"
+        },
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "decimals": 6,
+          "symbol": "USDG"
+        }
+      ],
+      "verifiedAt": {
+        "hash": "0xabababababababababababababababababababababababababababababababab",
+        "number": 73400000
+      }
+    }
+  ],
+  "revision": 41,
+  "rules": {
+    "estimateMethod": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
+    "marketSource": "geckoterminal",
+    "maxAprPercent": "1000",
+    "maxTurnover24h": "25",
+    "minPoolAgeHours": 72,
+    "minReferenceDepthUsd": "10000",
+    "minTvlUsd": "250000",
+    "minVolume24hUsd": "250000",
+    "rankBy": "min_fresh_and_previous_day_feeAprEstimate24hPercent",
+    "size": 6
+  },
+  "schemaVersion": 1,
+  "selectionDate": "2026-09-26",
+  "servedAt": 1790431234,
+  "status": "current",
+  "suggested": false,
+  "upcoming": null,
+  "validUntil": 1790553600,
+  "window": {
+    "end": 1790422200,
+    "start": 1790335800
+  },
+  "withdrawn": [
+    {
+      "at": 1790172034,
+      "poolId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+      "reason": "excluded_by_owner"
+    }
+  ]
+}

@@ -168,6 +168,22 @@ class HistoryPostgresTests(unittest.TestCase):
         self.due();self.assertEqual(self.tick()['status'],'current')
         self.assertEqual(self.read()['candles'][0]['swapCount'],3)
 
+    def test_a_pool_nobody_asked_for_in_a_week_runs_no_history_job_unless_kept_warm(self):
+        self.assertTrue(self.reader.request(POOL,86400))
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_public.history_jobs SET last_requested_at=clock_timestamp()-interval '7 days 1 minute'")
+        self.assertIsNone(self.writer.claim())
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute("INSERT INTO domino_public.entities(kind,entity_id,keep_warm_until) VALUES('pool',%s,clock_timestamp()-interval '1 second')",(POOL,))
+        self.assertIsNone(self.writer.claim())
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_public.entities SET keep_warm_until=clock_timestamp()+interval '1 hour' WHERE entity_id=%s",(POOL,))
+        self.assertEqual(self.writer.claim()['pool_id'],POOL)
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute("UPDATE domino_public.entities SET keep_warm_until=NULL")
+            conn.execute("UPDATE domino_public.history_jobs SET last_requested_at=clock_timestamp()-interval '6 days 23 hours',lease_token=NULL,lease_until=NULL")
+        self.assertEqual(self.writer.claim()['pool_id'],POOL)
+
     def test_seven_days_cannot_take_a_lease_before_recent_day_completed(self):
         self.reader.request(POOL,604800)
         claim=self.writer.claim();self.assertEqual(claim['window_seconds'],86400)

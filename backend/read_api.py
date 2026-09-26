@@ -24,6 +24,8 @@ from read_service import ReadService
 from sequence_snapshot import (CONTRACT_VERSION as V4_CONTRACT_VERSION,
                                SequenceSnapshotRequest, validate_snapshot_response)
 from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, validate_response, sanitize_error, unsigned_string_pattern
+from featured_contract import (CONTRACT_VERSION as V5_CONTRACT_VERSION, FeaturedPoolsRequest,
+                               FeaturedPoolsResponse, FeaturedReader, validate_featured_response)
 from public_data_contract import (CONTRACT_VERSION as V3_CONTRACT_VERSION,
                                   REQUEST_MODELS as V3_REQUEST_MODELS,
                                   RESPONSE_MODELS as V3_RESPONSE_MODELS,
@@ -129,7 +131,7 @@ class ReadGate:
     """
 
     PROVIDER, STORED = 'provider', 'stored'
-    STORED_ROUTES = frozenset({'catalogue', 'markets-snapshot', *V3_REQUEST_MODELS})
+    STORED_ROUTES = frozenset({'catalogue', 'markets-snapshot', *V3_REQUEST_MODELS, 'featured-pools'})
     # Admission stays fail-fast with a client backoff, the reviewed design of
     # #157. What it never did was tell the truth about the wait: a constant one
     # second against a slot a six-second read owns sent three visitors opening
@@ -321,6 +323,9 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
                                                        path=SNAPSHOT_STORE))
         if public_data is not None:
             service.market_cache.reserve_provider = public_data.repository.reserve_provider
+    # The featured list lives beside the public observations, read through the same reader role.
+    repository = getattr(getattr(service, 'public_data', None), 'repository', None)
+    featured = FeaturedReader(repository) if repository is not None else None
     gate = gate or (ReadGate(stored_capacity=4,stored_interval=0)
                    if getattr(service,'public_data',None) is not None else ReadGate())
     # A schema export or a test double may hand in a service with no store;
@@ -356,7 +361,9 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
                       or secrets.token_hex(16))
         v3 = request.url.path.startswith('/v3/read/')
         v4 = request.url.path.startswith('/v4/read/')
-        contract_version = V4_CONTRACT_VERSION if v4 else V3_CONTRACT_VERSION if v3 else CONTRACT_VERSION
+        v5 = request.url.path.startswith('/v5/read/')
+        contract_version = (V5_CONTRACT_VERSION if v5 else V4_CONTRACT_VERSION if v4 else
+                            V3_CONTRACT_VERSION if v3 else CONTRACT_VERSION)
         # Bounding a liveness answer by the read budget lets a reader that is
         # only slow to warm up report 504, which the gateway reads as the whole
         # upstream being unavailable. A probe answers on its own bound.
@@ -393,7 +400,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         tail = request.url.path.rsplit('/', 1)[-1]
         route = (tail if (request.url.path == '/v1/read/' + tail and tail in RESPONSE_MODELS
                          or request.url.path == '/v3/read/' + tail and tail in V3_RESPONSE_MODELS
-                         or request.url.path == '/v4/read/sequence-snapshot' and tail == 'sequence-snapshot')
+                         or request.url.path == '/v4/read/sequence-snapshot' and tail == 'sequence-snapshot'
+                         or request.url.path == '/v5/read/featured-pools' and tail == 'featured-pools')
                  else {'/health': 'health', '/v1/capabilities': 'capabilities'}.get(
                      request.url.path, 'unmatched'))
         hop_log.emit(service='read-api', requestId=request_id, route=route,
@@ -542,6 +550,15 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
     @app.post('/v3/read/search', responses={200: {'model': V3_RESPONSE_MODELS['search']}, **error_responses})
     def search(body: SearchRequest):
         return stored_public('search', body)
+
+    @app.post('/v5/read/featured-pools', responses={200: {'model': FeaturedPoolsResponse}, **error_responses})
+    def featured_pools(body: FeaturedPoolsRequest):
+        # The served list only: one stored read, the same answer for everyone.
+        def operation():
+            if featured is None:
+                raise DataError('upstream_unavailable')
+            return featured.read()
+        return run_read(operation, 'featured-pools', body.model_dump(), validator=validate_featured_response)
 
     @app.post('/v4/read/sequence-snapshot')
     def owner_sequence_snapshot(body: SequenceSnapshotRequest):

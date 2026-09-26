@@ -440,6 +440,55 @@ def _depth_key(evaluation):
     return (-Decimal(evaluation['reportedLiquidityUsd'] or 0),) + rank_key(evaluation)[1:]
 
 
+class Diversity:
+    """One pool per non-reference token, at most `maxMajorPairs` pools with two
+    reference sides, and no two tokens whose symbols read alike."""
+    def __init__(self, policy, taken=()):
+        self.max_major = policy['diversity']['maxMajorPairs']
+        self.tokens, self.readings, self.majors = {}, {}, 0
+        for item in taken:
+            self.take(item)
+
+    def reason(self, item):
+        if item['major']:
+            return 'diversity_major_pair' if self.majors >= self.max_major else None
+        if item['token'] in self.tokens:
+            return 'diversity_same_token'
+        owner = self.readings.get(item['symbolReading'])
+        if item['symbolReading'] and owner is not None and owner != item['token']:
+            return 'token_symbol_duplicate'
+        return None
+
+    def take(self, item):
+        if item['major']:
+            self.majors += 1
+        else:
+            self.tokens[item['token']] = item['poolId']
+            if item['symbolReading']:
+                self.readings[item['symbolReading']] = item['token']
+
+
+def refill(kept, evaluations, policy, *, embedded=(), ready=lambda pool_id: True):
+    """Pools that complete a repaired list: ranked eligible pools, then the
+    embedded list's safe ones, each ready and admissible beside those kept."""
+    by_id = {item['poolId']: item for item in evaluations}
+    held = [by_id[pool_id] for pool_id in kept if pool_id in by_id]
+    diversity, listed, added = Diversity(policy, held), set(kept), []
+    ranked = sorted((item for item in evaluations if item['eligible']), key=rank_key)
+    for source, pool_ids in (('ranked', [item['poolId'] for item in ranked]), ('fallback', list(embedded))):
+        for pool_id in pool_ids:
+            if len(kept) + len(added) >= policy['size']:
+                return added
+            item = by_id.get(pool_id)
+            if (pool_id in listed or item is None or not item['safe'] or diversity.reason(item)
+                    or not ready(pool_id)):
+                continue
+            diversity.take(item)
+            listed.add(pool_id)
+            added.append({'poolId': pool_id, 'source': source})
+    return added
+
+
 def compose(evaluations, policy, *, previous_list, pins=(), embedded=()):
     """The day's list from eligible pools, the previous list and the owner's pins.
 
@@ -471,28 +520,8 @@ def compose(evaluations, policy, *, previous_list, pins=(), embedded=()):
             dropped.append({'poolId': pin['poolId'], 'reason': 'pin_failed_safety'})
         else:
             pinned[pin['slot']] = item
-    taken_tokens = {item['token']: item['poolId'] for item in pinned.values() if not item['major']}
-    readings = {item['symbolReading']: item['token'] for item in pinned.values() if item['symbolReading']}
-    majors = sum(1 for item in pinned.values() if item['major'])
-
-    def admissible(item):
-        if item['major']:
-            return 'diversity_major_pair' if majors >= policy['diversity']['maxMajorPairs'] else None
-        if item['token'] in taken_tokens:
-            return 'diversity_same_token'
-        owner = readings.get(item['symbolReading'])
-        if item['symbolReading'] and owner is not None and owner != item['token']:
-            return 'token_symbol_duplicate'
-        return None
-
-    def take(item):
-        nonlocal majors
-        if item['major']:
-            majors += 1
-        else:
-            taken_tokens[item['token']] = item['poolId']
-            if item['symbolReading']:
-                readings[item['symbolReading']] = item['token']
+    diversity = Diversity(policy, pinned.values())
+    admissible, take = diversity.reason, diversity.take
 
     pinned_ids = {item['poolId'] for item in pinned.values()}
     eligible = [item for item in evaluations if item['eligible'] and item['poolId'] not in pinned_ids]

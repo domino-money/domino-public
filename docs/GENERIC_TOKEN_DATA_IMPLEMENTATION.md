@@ -61,6 +61,8 @@ Apply migrations in order through the existing privileged deployment path:
 | `026_public_demand.sql` | Explicit token-discovery demand separated from metadata prerequisites, plus durable history span recovery. |
 | `042_provider_priority.sql` | Provider calls by priority from the same allowance: an idle refresh spends one only while enough of the minute is left for the pools on screen. Apply as the owner of 024's functions. |
 | `043_featured_pools.sql` | The featured-pools selection's runs, lists, owner overrides and token baselines; the reader may read lists only ([featured pools](FEATURED_POOLS.md)). |
+| `044_demand_horizon.sql` | The demand horizon: a pool's refresh period, provider use, activity requests and history job follow how long ago someone asked for it; `keep_warm_until` keeps the featured lists' pools in the week tier. |
+| `045_featured_live.sql` | The live featured list's health tracking, and the owner's phase, mode, manual list and vetoes ([featured pools](FEATURED_POOLS.md)). |
 
 Token metadata prerequisites do not request discovery. Only an explicit token
 lookup starts its catalogue/provider pool discovery; discovering a pool may
