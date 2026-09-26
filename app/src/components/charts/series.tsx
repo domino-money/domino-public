@@ -29,7 +29,7 @@ function pieces(segments: ReadonlyArray<ReadonlyArray<Point>>, curve: Curve) {
 
 /**
  * The Tangerine area: a three-stop gradient down to `baseline`, a soft glow
- * (visible in dark only, by token) and a 2px line. Segments are never joined
+ * (--series-glow) and a 2px line. Segments are never joined
  * across a gap; a segment of one point is a small dot. `neutral` is a plain
  * 1.5px muted line with no area and no glow.
  */

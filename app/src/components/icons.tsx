@@ -276,23 +276,6 @@ export function IconReceipt({ size, className }: IconProps) {
   )
 }
 
-export function IconSun({ size, className }: IconProps) {
-  return (
-    <Svg size={size} className={className}>
-      <circle cx="8" cy="8" r="3" />
-      <path d="M8 1.5V2.75M8 13.25V14.5M1.5 8H2.75M13.25 8H14.5M3.4 3.4l.88.88M11.72 11.72l.88.88M3.4 12.6l.88-.88M11.72 4.28l.88-.88" />
-    </Svg>
-  )
-}
-
-export function IconMoon({ size, className }: IconProps) {
-  return (
-    <Svg size={size} className={className}>
-      <path d="M13.25 9.6A5.5 5.5 0 1 1 6.4 2.75a4.5 4.5 0 0 0 6.85 6.85z" />
-    </Svg>
-  )
-}
-
 /** Two bars. */
 export function IconPause({ size, className }: IconProps) {
   return (

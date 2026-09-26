@@ -18,9 +18,9 @@ export const PRIMARY_NAV: ReadonlyArray<{ label: string; href: string; icon: Com
 
 /**
  * The ≡ menu (DESIGN.md D.3). Every entry is a route or a section of Home.
- * No wallet control, no appearance or motion toggle and no external link live
- * here: the wallet control stays the header's only dialog trigger, and both
- * toggles stay in the footer's flow.
+ * No wallet control, no motion toggle and no external link live here: the
+ * wallet control stays the header's only dialog trigger, and the motion toggle
+ * stays in the footer's flow.
  */
 export function HeaderMenu({ page }: { page: Page }) {
   const items: MenuEntry[] = [

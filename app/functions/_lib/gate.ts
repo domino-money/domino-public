@@ -162,8 +162,8 @@ const FAVICON =
 /**
  * The access page. Self-contained and without script: the app's upright tile
  * mark and wordmark (src/components/Header.tsx), and its warm palette
- * (src/styles/tokens.css), inlined. Dark, as the app opens, and light where the
- * viewer's system asks for light.
+ * (src/styles/tokens.css), inlined. Dark only, like the app (owner, 2026-09-26:
+ * dark only): the viewer's system setting is not consulted.
  */
 export function accessPage(state: PageState): string {
   const body =
@@ -186,7 +186,7 @@ export function accessPage(state: PageState): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
-<meta name="color-scheme" content="dark light" />
+<meta name="color-scheme" content="dark" />
 <title>Domino · Access</title>
 <link rel="icon" type="image/svg+xml" href="${FAVICON}" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Geist:wght@400;500&display=swap" />
@@ -205,19 +205,6 @@ export function accessPage(state: PageState): string {
     --gutter: 16px; --header-h: 56px;
     --font-display: 'Instrument Serif', ui-serif, Georgia, 'Times New Roman', serif;
     --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  }
-  @media (prefers-color-scheme: light) {
-    :root {
-      color-scheme: light;
-      --bg: #f3f0ec; --surface-1: #f9f7f4; --surface-2: #ffffff; --surface-3: #ebe7e2;
-      --fg: #1b1815; --fg-muted: #48423c; --fg-subtle: #675f58; --fg-faint: #8f8881;
-      --border: rgb(28 24 20 / 0.08); --border-lip: rgb(28 24 20 / 0.11); --border-strong: rgb(28 24 20 / 0.18);
-      --btn: #1b1815; --btn-fg: #faf7f3; --btn-hover: #36302b;
-      --primary: #ff843d; --primary-fg: #24201c; --ring: #b24413;
-      --money-out: #c62d4a;
-      --elev-card: inset 0 0 0 1px rgb(28 24 20 / 0.08), 0 1px 2px rgb(28 24 20 / 0.05), 0 10px 28px -14px rgb(28 24 20 / 0.18);
-      --elev-button: 0 1px 2px rgb(28 24 20 / 0.10), 0 2px 6px -2px rgb(28 24 20 / 0.12);
-    }
   }
   @media (min-width: 768px) { :root { --gutter: 24px; --header-h: 72px; } }
   @media (min-width: 1024px) { :root { --gutter: 40px; } }

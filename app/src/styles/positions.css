@@ -575,9 +575,8 @@
   @media (min-width: 768px) { .dm-fees-quiet { height: 240px; padding-right: 72px; } }
   .dm-fees-quiet-line { display: block; width: 100%; height: 2px; overflow: visible; }
   .dm-fees-quiet-line .dm-fees-flat { stroke: var(--fg-faint); stroke-width: 1; opacity: 0.6; }
-  /* Each bucket's earnings: slim bars that tint the area (the line is drawn again over them), quieter on white. */
-  .dm-fees-chart .dm-chart-series .dm-bar { opacity: 0.18; }
-  .dark .dm-fees-chart .dm-chart-series .dm-bar { opacity: 0.35; }
+  /* Each bucket's earnings: slim bars that tint the area (the line is drawn again over them). */
+  .dm-fees-chart .dm-chart-series .dm-bar { opacity: 0.35; }
   .dm-fees-hover-bars .dm-bar:not([data-hovered]) { opacity: 0; }
   /* A phone's y labels sit inside the plot: a halo in the card's colour keeps them clear of the bars and the area. */
   .dm-fees-axis-inside .dm-axis { paint-order: stroke; stroke: var(--card); stroke-width: 3px; stroke-linejoin: round; }

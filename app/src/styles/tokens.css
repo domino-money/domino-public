@@ -13,116 +13,112 @@
 @import './docs.css';     /* docs: #/docs layout, sidebar, prose, on-this-page */
 @import './three.css';    /* the three features joined up: rows, a position's page, New position's success, Automate */
 
-@custom-variant dark (&:is(.dark *));
-
-/* Domino design tokens, V2 (DESIGN-V2 §2). `:root` is light, `.dark` (on <html>) is dark; the OS setting is
-   not consulted. Every colour is defined in both blocks. Tangerine (--primary, --accent, --accent-fg, --ring,
-   --primary-ink) keeps its approved values; --primary-line is Tangerine as a graphic and as large text.
-   Cards are flat: a fill, a 1px ring and, in dark, a 1px lit lip. Only floating layers (menus, dialogs,
-   tooltips) cast a shadow. Radii nest: 20 cards, 16 plates, 12 controls, 8 small items. Contrast figures
-   are WCAG 2.1 (DESIGN-V2 §16.1). */
+/* Domino design tokens, V2 (DESIGN-V2 §2). One palette, the dark one (owner, 2026-09-26: dark only): `:root`
+   holds every colour, with nothing to switch between and no OS setting consulted. Tangerine (--primary,
+   --accent, --accent-fg, --ring, --primary-ink) keeps its approved values; --primary-line is Tangerine as a
+   graphic and as large text. Cards are flat: a fill, a 1px ring and a 1px lit lip. Only floating layers
+   (menus, dialogs, tooltips) cast a shadow. Radii nest: 20 cards, 16 plates, 12 controls, 8 small items.
+   Contrast figures are WCAG 2.1 (DESIGN-V2 §16.1). */
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
-  /* Surfaces: page, plate, (control), control, control hover */
-  --bg: #fbfaf8;          /* page ground: near-white warm */
-  --surface-1: #f5f2ee;   /* plates, bands, fields and tracks: darker than the page, as a lowered surface */
-  --surface-2: #ffffff;   /* controls and floating layers: menus, listboxes, dialogs */
-  --surface-3: #ebe7e2;   /* controls: chips on plates, active nav indicator, segmented thumb, markers */
-  --surface-4: #e0dbd5;   /* control hover (never behind fg-subtle text) */
-  --wash: rgb(28 24 20 / 0.05);         /* hover wash on transparent controls */
-  --wash-strong: rgb(28 24 20 / 0.07);  /* chip fill */
-  --skeleton: rgb(28 24 20 / 0.07);
-  --skeleton-shine: rgb(255 255 255 / 0.55);
+  /* Surfaces: page, plate, (control), control, control hover. Hue 22 to 30 degrees, visibly warm; lightness
+     4 / 8 / 11 / 16 / 21 % */
+  --bg: #0d0a08;
+  --surface-1: #171310;
+  --surface-2: #1f1a17;
+  --surface-3: #2c2723;
+  --surface-4: #3a332f;   /* control hover (never behind fg-subtle text) */
+  --wash: rgb(255 236 220 / 0.05);         /* hover wash on transparent controls */
+  --wash-strong: rgb(255 236 220 / 0.08);  /* chip fill */
+  --skeleton: rgb(255 236 220 / 0.08);
+  --skeleton-shine: rgb(255 236 220 / 0.07);
 
-  /* Cards (V2): a flat fill, a 1px ring, a lip that is only visible in dark */
-  --card: #ffffff;
-  --card-hover: #fdfcfb;
-  --card-lip: rgb(255 255 255 / 0);
-  --border-card: rgb(28 24 20 / 0.09);
-  --border-card-hover: rgb(28 24 20 / 0.16);
-  --band: rgb(28 24 20 / 0.05);         /* table and list header band */
-  --row-hover: rgb(28 24 20 / 0.035);   /* table and list row hover */
-  --page-glow: rgb(255 132 61 / 0.05);  /* the warm light over the header */
+  /* Cards (V2): a flat fill, a 1px ring, a lit lip */
+  --card: #14100d;
+  --card-hover: #181411;
+  --card-lip: rgb(255 236 220 / 0.05);
+  --border-card: rgb(255 236 220 / 0.11);        /* 1.27:1 on the page: decorative */
+  --border-card-hover: rgb(255 236 220 / 0.18);
+  --band: rgb(255 236 220 / 0.045);     /* table and list header band */
+  --row-hover: rgb(255 236 220 / 0.04); /* table and list row hover */
+  --page-glow: rgb(255 157 98 / 0.07);  /* the warm light over the header */
 
   /* Text: primary, secondary, muted, faint */
-  --fg: #1b1815;          /* 17.68:1 on --card, 16.94:1 on --bg */
-  --fg-muted: #48423c;    /* 9.91:1 on --card, 9.50:1 on --bg: descriptions, idle nav */
-  --fg-subtle: #675f58;   /* 6.26:1 on --card, 6.00:1 on --bg, 5.61:1 on --surface-1, 5.09:1 on --surface-3: labels, captions, units */
-  --fg-faint: #8f8881;    /* 3.50:1 on --card, 3.13:1 on --surface-1: graphics only (idle bars, dashed slots), never text */
+  --fg: #f7f1ea;         /* 16.87:1 on --card, 17.60:1 on --bg */
+  --fg-muted: #c8beb4;   /* 10.35:1 on --card: descriptions, idle nav */
+  --fg-subtle: #9b9289;  /* 6.19:1 on --card, 6.45:1 on --bg, 6.04:1 on --surface-1, 4.83:1 on --surface-3: labels, captions, units */
+  --fg-faint: #6e665e;   /* 3.36:1 on --card: graphics only (idle bars, dashed slots), never text */
 
   /* Lines */
-  --border: rgb(28 24 20 / 0.08);        /* inner ring, dividers */
-  --border-lip: rgb(28 24 20 / 0.11);    /* key/value row rules, field and outline-button ring */
-  --border-strong: rgb(28 24 20 / 0.18); /* hover ring, focus of fields, crosshair */
+  --border: rgb(255 236 220 / 0.07);        /* inner ring, dividers */
+  --border-lip: rgb(255 236 220 / 0.10);    /* key/value row rules, field and outline-button ring */
+  --border-strong: rgb(255 236 220 / 0.16); /* hover ring, focus of fields, crosshair */
 
   /* The pre-V2 ink button, kept for old callers; V2 buttons do not use it */
-  --btn: #1b1815;
-  --btn-fg: #faf7f3;
-  --btn-hover: #36302b;
+  --btn: #faf7f3;
+  --btn-fg: #161412;
+  --btn-hover: #ebe6e0;
 
-  /* Tangerine: values unchanged */
-  --primary: #ff843d;
-  --primary-fg: #24201c;  /* 6.64:1 on --primary, 5.67:1 on --primary-hover, 4.83:1 on --primary-press */
-  --primary-hover: #f5732a;
-  --primary-press: #e8641c;
-  --accent: #fff0e4;
-  --accent-fg: #a43d0f;
-  --ring: #b24413;
-  /* Tangerine that carries information as small text on a light ground: 5.63:1 on white, 5.40:1 on --bg,
-     5.05:1 on --surface-1, 5.06:1 on --primary-wash. #ff843d there is 2.1 to 2.4:1 and fails. */
-  --primary-ink: #b24413;
-  /* Tangerine as a graphic and as large text (24px and up): chart lines, range edges, pips, handles, the light
-     hero phrase. 3.80:1 on white, 3.65:1 on --bg, 3.41:1 on --surface-1. Never text under 24px. */
-  --primary-line: #dc5a1a;
-  --primary-wash: rgb(255 132 61 / 0.12);     /* selected option, soft button, callouts */
-  --primary-glow: rgb(255 132 61 / 0.18);     /* hero floor glow, domino stage glow, primary hover glow */
-  --primary-area-top: rgb(220 90 26 / 0.22);  /* area gradient stops: 0 %, 40 %, 100 % */
-  --primary-area-mid: rgb(220 90 26 / 0.10);
-  --primary-area-bottom: rgb(220 90 26 / 0);
-  --series-glow: rgb(0 0 0 / 0);              /* the glow under chart lines: dark only */
-  --band-fill: rgb(220 90 26 / 0.14);         /* a range band */
+  /* Tangerine */
+  --primary: #ff9d62;
+  --primary-fg: #24201c;  /* 7.90:1 on --primary, 9.06:1 on --primary-hover, 6.56:1 on --primary-press */
+  --primary-hover: #ffb07f;
+  --primary-press: #f28a4c;
+  --accent: #422e25;
+  --accent-fg: #ffb98c;
+  --ring: #ff9d62;
+  /* Tangerine that carries information as small text: 9.24:1 on --card, 7.56:1 on --primary-wash. */
+  --primary-ink: #ff9d62;
+  /* Tangerine as a graphic and as large text: chart lines, range edges, pips, handles. */
+  --primary-line: #ff9d62;
+  --primary-wash: rgb(255 157 98 / 0.12);     /* selected option, soft button, callouts */
+  --primary-glow: rgb(255 157 98 / 0.16);     /* hero floor glow, domino stage glow, primary hover glow */
+  --primary-area-top: rgb(255 157 98 / 0.30); /* area gradient stops: 0 %, 40 %, 100 % */
+  --primary-area-mid: rgb(255 157 98 / 0.14);
+  --primary-area-bottom: rgb(255 157 98 / 0);
+  --series-glow: rgb(255 157 98 / 0.14);      /* the glow under chart lines */
+  --band-fill: rgb(255 157 98 / 0.18);        /* a range band */
 
   /* Semantics: up/in, down/out, wait/stale */
-  --money-in: #17663e;     /* 6.98:1 on --card, 6.21:1 on its pill */
-  --money-in-bg: #e7f5ec;
-  --money-out: #c62d4a;    /* 5.42:1 on --card, 4.75:1 on its pill; hue 349, Tangerine is hue 23 */
-  --money-out-bg: #fdecef;
-  --money-wait: #865100;
-  --money-wait-bg: #fcf1d9;
-  /* Direction as a graphic (2026-09-25, the Markets cards' price line and its area): up is --money-in's hue a step
-     lighter for a 2px line (4.76:1 on --card), down is --money-out; the area's strength at its top and mid stop. */
-  --chart-up: #1a8350;
-  --chart-down: #c62d4a;
-  --spark-area-top: 13%;
-  --spark-area-mid: 4%;
+  --money-in: #5fd09a;                    /* 9.89:1 on --card, 8.06:1 on its pill */
+  --money-in-bg: rgb(95 208 154 / 0.12);
+  --money-out: #f4607a;                   /* 6.13:1 on --card, 5.30:1 on its pill */
+  --money-out-bg: rgb(244 96 122 / 0.12);
+  --money-wait: #f2c14e;                  /* 10.3:1 */
+  --money-wait-bg: rgb(242 193 78 / 0.12);
+  /* Direction as a graphic (2026-09-25, the Markets cards' price line and its area): up is --money-in, down is
+     --money-out; the area's strength at its top and mid stop. */
+  --chart-up: #5fd09a;
+  --chart-down: #f4607a;
+  --spark-area-top: 18%;
+  --spark-area-mid: 5%;
 
   /* Chart tooltip: a glass layer with its own ring */
-  --tooltip-bg: rgb(255 255 255 / 0.94);
-  --tooltip-border: rgb(28 24 20 / 0.10);
+  --tooltip-bg: rgb(23 19 16 / 0.92);
+  --tooltip-border: rgb(255 236 220 / 0.12);
 
   /* Address-derived token discs: saturation and lightness (DESIGN-V2 §3.8) */
-  --disc-s: 52%;
-  --disc-l: 70%;
+  --disc-s: 32%;
+  --disc-l: 30%;
 
   /* Dotted grids */
-  --dot-hero: rgb(28 24 20 / 0.10);
-  --dot-plate: rgb(28 24 20 / 0.06);
-  --dot-chart: rgb(28 24 20 / 0.09);
+  --dot-hero: rgb(255 236 220 / 0.11);
+  --dot-plate: rgb(255 236 220 / 0.045);
+  --dot-chart: rgb(255 236 220 / 0.07);
 
-  /* Elevation. Cards: an inner lip and an inner ring, no drop shadow. Rings are always INNER (inset).
-     These expressions read the per-theme colours above, so they are written once. */
+  /* Elevation. Cards: an inner lip and an inner ring, no drop shadow. Rings are always INNER (inset). */
   --elev-card: inset 0 1px 0 0 var(--card-lip), inset 0 0 0 1px var(--border-card);
   --elev-card-hover: inset 0 1px 0 0 var(--card-lip), inset 0 0 0 1px var(--border-card-hover);
   --elev-pill: inset 0 0 0 1px var(--border-card);
   --elev-field: inset 0 0 0 1px var(--border-lip);
   --elev-primary-hover: 0 6px 20px -8px var(--primary-glow);
-  --elev-button: 0 1px 2px rgb(28 24 20 / 0.12);
-  --elev-tooltip: 0 8px 24px -8px rgb(28 24 20 / 0.18), inset 0 0 0 1px var(--tooltip-border);
-  --elev-menu: inset 0 0 0 1px rgb(28 24 20 / 0.09), 0 12px 36px -6px rgb(28 24 20 / 0.22);
+  --elev-button: 0 1px 2px rgb(0 0 0 / 0.35);
+  --elev-tooltip: 0 12px 28px -10px rgb(0 0 0 / 0.6), inset 0 0 0 1px var(--tooltip-border);
+  --elev-menu: inset 0 0 0 1px rgb(255 236 220 / 0.10), 0 16px 40px -10px rgb(0 0 0 / 0.65);
   /* The header's soft fall once something scrolls under it */
-  --elev-header: 0 8px 16px -12px rgb(28 24 20 / 0.18);
+  --elev-header: 0 8px 16px -12px rgb(0 0 0 / 0.6);
 
   /* Shape: nested radii */
   --radius-xs: 4px;      /* ticks, tiny bars */
@@ -189,88 +185,6 @@
   --press-scale-card: 0.995;
 
   /* Dialog scrim (blurred 6px from 640px) */
-  --backdrop: rgb(28 24 20 / 0.28);
-}
-
-.dark {
-  color-scheme: dark;
-
-  /* Hue 22 to 30 degrees, visibly warm; lightness 4 / 8 / 11 / 16 / 21 % */
-  --bg: #0d0a08;
-  --surface-1: #171310;
-  --surface-2: #1f1a17;
-  --surface-3: #2c2723;
-  --surface-4: #3a332f;
-  --wash: rgb(255 236 220 / 0.05);
-  --wash-strong: rgb(255 236 220 / 0.08);
-  --skeleton: rgb(255 236 220 / 0.08);
-  --skeleton-shine: rgb(255 236 220 / 0.07);
-
-  --card: #14100d;
-  --card-hover: #181411;
-  --card-lip: rgb(255 236 220 / 0.05);
-  --border-card: rgb(255 236 220 / 0.11);        /* 1.27:1 on the page: decorative */
-  --border-card-hover: rgb(255 236 220 / 0.18);
-  --band: rgb(255 236 220 / 0.045);
-  --row-hover: rgb(255 236 220 / 0.04);
-  --page-glow: rgb(255 157 98 / 0.07);
-
-  --fg: #f7f1ea;         /* 16.87:1 on --card, 17.60:1 on --bg */
-  --fg-muted: #c8beb4;   /* 10.35:1 on --card */
-  --fg-subtle: #9b9289;  /* 6.19:1 on --card, 6.45:1 on --bg, 6.04:1 on --surface-1, 4.83:1 on --surface-3 */
-  --fg-faint: #6e665e;   /* 3.36:1 on --card: graphics only */
-
-  --border: rgb(255 236 220 / 0.07);
-  --border-lip: rgb(255 236 220 / 0.10);
-  --border-strong: rgb(255 236 220 / 0.16);
-
-  --btn: #faf7f3;
-  --btn-fg: #161412;
-  --btn-hover: #ebe6e0;
-
-  --primary: #ff9d62;
-  --primary-fg: #24201c;  /* 7.90:1 on --primary, 9.06:1 on --primary-hover, 6.56:1 on --primary-press */
-  --primary-hover: #ffb07f;
-  --primary-press: #f28a4c;
-  --accent: #422e25;
-  --accent-fg: #ffb98c;
-  --ring: #ff9d62;
-  --primary-ink: #ff9d62; /* 9.24:1 on --card, 7.56:1 on --primary-wash */
-  --primary-line: #ff9d62;
-  --primary-wash: rgb(255 157 98 / 0.12);
-  --primary-glow: rgb(255 157 98 / 0.16);
-  --primary-area-top: rgb(255 157 98 / 0.30);
-  --primary-area-mid: rgb(255 157 98 / 0.14);
-  --primary-area-bottom: rgb(255 157 98 / 0);
-  --series-glow: rgb(255 157 98 / 0.14);
-  --band-fill: rgb(255 157 98 / 0.18);
-
-  --money-in: #5fd09a;                    /* 9.89:1 on --card, 8.06:1 on its pill */
-  --money-in-bg: rgb(95 208 154 / 0.12);
-  --money-out: #f4607a;                   /* 6.13:1 on --card, 5.30:1 on its pill */
-  --money-out-bg: rgb(244 96 122 / 0.12);
-  --money-wait: #f2c14e;                  /* 10.3:1 */
-  --money-wait-bg: rgb(242 193 78 / 0.12);
-  --chart-up: #5fd09a;
-  --chart-down: #f4607a;
-  --spark-area-top: 18%;
-  --spark-area-mid: 5%;
-
-  --tooltip-bg: rgb(23 19 16 / 0.92);
-  --tooltip-border: rgb(255 236 220 / 0.12);
-
-  --disc-s: 32%;
-  --disc-l: 30%;
-
-  --dot-hero: rgb(255 236 220 / 0.11);
-  --dot-plate: rgb(255 236 220 / 0.045);
-  --dot-chart: rgb(255 236 220 / 0.07);
-
-  --elev-button: 0 1px 2px rgb(0 0 0 / 0.35);
-  --elev-tooltip: 0 12px 28px -10px rgb(0 0 0 / 0.6), inset 0 0 0 1px var(--tooltip-border);
-  --elev-menu: inset 0 0 0 1px rgb(255 236 220 / 0.10), 0 16px 40px -10px rgb(0 0 0 / 0.65);
-  --elev-header: 0 8px 16px -12px rgb(0 0 0 / 0.6);
-
   --backdrop: rgb(0 0 0 / 0.6);
 }
 

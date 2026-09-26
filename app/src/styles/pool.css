@@ -15,10 +15,8 @@
   /* One column below 1024px, the chart before the figures by `order` (the DOM keeps figures first); from 1024px the
      chart and the 360px figures card side by side, every other card at full width. */
   .dm-pool-layout { display: flex; flex-direction: column; gap: 16px; }
-  /* Bubbles are opaque on the page's cards, so a dot grid never speckles them; light gets a firmer bubble and a softer
-     sweep (the page's wash at 7 % nearly vanished on white). */
-  .dm-pool-layout { --skeleton: color-mix(in srgb, var(--fg) 9%, var(--card)); --skeleton-shine: rgb(255 255 255 / 0.35); }
-  .dark .dm-pool-layout { --skeleton: color-mix(in srgb, var(--fg) 8%, var(--card)); --skeleton-shine: rgb(255 236 220 / 0.07); }
+  /* Bubbles are opaque on the page's cards, so a dot grid never speckles them. */
+  .dm-pool-layout { --skeleton: color-mix(in srgb, var(--fg) 8%, var(--card)); --skeleton-shine: rgb(255 236 220 / 0.07); }
   .dm-pool-layout > * { order: 3; min-width: 0; }
   .dm-pool-layout > .dm-pool-a-head { order: 0; margin-bottom: 8px; }
   .dm-pool-layout > .dm-pool-a-chart { order: 1; }
@@ -238,7 +236,7 @@
     margin: -20px 0 0 -8px;
     border-radius: var(--radius-pill);
     /* Tangerine, like the band's edges they move (a range visual, exempt from the Tangerine count): the drag targets
-       are the control's most visible part in both themes, ringed in the field's ground. */
+       are the control's most visible part, ringed in the field's ground. */
     background: linear-gradient(var(--primary-fg), var(--primary-fg)) 5px 50% / 1px 14px no-repeat, linear-gradient(var(--primary-fg), var(--primary-fg)) 10px 50% / 1px 14px no-repeat, var(--primary-line);
     box-shadow: 0 0 0 2px var(--surface-1), var(--elev-button);
     transition: left var(--dur-step) var(--ease-enter);

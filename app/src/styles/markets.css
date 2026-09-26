@@ -54,12 +54,9 @@
   .dm-mkt-card {
     --dm-mkt-hover: var(--card-hover);
     /* Bubbles are opaque on the card, so the dot grid never speckles them (the page's --skeleton is a wash). */
-    --skeleton: color-mix(in srgb, var(--fg) 9%, var(--card));
-    --skeleton-shine: rgb(255 255 255 / 0.35);
+    --skeleton: color-mix(in srgb, var(--fg) 8%, var(--card));
+    --skeleton-shine: rgb(255 236 220 / 0.07);
   }
-  .dark .dm-mkt-card { --skeleton: color-mix(in srgb, var(--fg) 8%, var(--card)); --skeleton-shine: rgb(255 236 220 / 0.07); }
-  /* Light: the hovered card stays white, so it lifts rather than sinks into the page; its ring and the 2px lift say hover. */
-  :root:not(.dark) .dm-mkt-card { --dm-mkt-hover: var(--card); }
   .dm-mkt-card.dm-plate {
     --chart-ground: var(--card);
     display: grid;
@@ -100,7 +97,7 @@
     transition: box-shadow var(--dur-fast) var(--ease-fast);
   }
   .dm-mkt-card > * { position: relative; z-index: 1; min-width: 0; }
-  /* Pressable card (§3.16, M16): it lifts, its ring steps up (and its fill, in dark), and the area under the line
+  /* Pressable card (§3.16, M16): it lifts, its ring and its fill step up, and the area under the line
      comes to full strength. Cards cast no shadow (P1): nothing for the rail's scroll box to clip. */
   .dm-mkt-card.dm-plate:hover { --chart-ground: var(--dm-mkt-hover); translate: 0 var(--lift); background-color: var(--dm-mkt-hover); }
   .dm-mkt-card.dm-plate:hover::after { box-shadow: var(--elev-card-hover); }
@@ -189,7 +186,7 @@
   .dm-mkt-pools-head { margin-bottom: 16px; }
   .dm-mkt-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
   .dm-mkt-search { width: 320px; max-width: 100%; }
-  /* The search wears the select's skin beside it: the card's fill and pill ring, one control family in both themes. */
+  /* The search wears the select's skin beside it: the card's fill and pill ring, one control family. */
   .dm-mkt-search .dm-search-input { border-radius: var(--radius-pill); padding-left: 38px; background: var(--card); box-shadow: var(--elev-pill); }
   .dm-mkt-search .dm-search-input:hover { background: var(--card-hover); box-shadow: var(--elev-card-hover); }
   .dm-mkt-search .dm-search-input:focus-visible { background: var(--card); box-shadow: inset 0 0 0 1px var(--border-strong); }
@@ -203,14 +200,12 @@
   }
 
   /* ---- The pools table (§8.3), on the page (flat) on Home and Markets ---- */
-  .dm-mkt-table { --dm-mkt-ring: var(--bg); --skeleton: color-mix(in srgb, var(--fg) 9%, var(--bg)); --skeleton-shine: rgb(255 255 255 / 0.35); }
-  .dark .dm-mkt-table { --skeleton: color-mix(in srgb, var(--fg) 8%, var(--bg)); --skeleton-shine: rgb(255 236 220 / 0.07); }
+  .dm-mkt-table { --dm-mkt-ring: var(--bg); --skeleton: color-mix(in srgb, var(--fg) 8%, var(--bg)); --skeleton-shine: rgb(255 236 220 / 0.07); }
   /* Fixed columns at every width: the loading bubbles and the figures that replace them share each column's x. */
   .dm-mkt-table .dm-table { table-layout: fixed; }
   .dm-mkt-table tbody tr { cursor: pointer; }
   /* The marks' cut-out ring follows the row's hover fill, so the overlap stays a clean cut. */
-  .dm-mkt-table tbody tr:is(:hover, :focus-within) { --dm-mkt-ring: color-mix(in srgb, rgb(28 24 20) 3.5%, var(--bg)); }
-  .dark .dm-mkt-table tbody tr:is(:hover, :focus-within) { --dm-mkt-ring: color-mix(in srgb, rgb(255 236 220) 4%, var(--bg)); }
+  .dm-mkt-table tbody tr:is(:hover, :focus-within) { --dm-mkt-ring: color-mix(in srgb, rgb(255 236 220) 4%, var(--bg)); }
   .dm-mkt-pool { display: flex; align-items: center; gap: 12px; min-width: 0; }
   a.dm-mkt-pool { width: fit-content; max-width: 100%; }
   .dm-mkt-marks { display: inline-flex; flex-shrink: 0; }

@@ -136,8 +136,9 @@ const visibleText = (locator) =>
     for (const hidden of copy.querySelectorAll('.sr-only')) hidden.remove();
     return copy.textContent.replace(/\s+/g, ' ').trim();
   });
-/** What the page keeps in the browser, but the appearance. */
-const keptKeys = (page) => page.evaluate(() => Object.keys(localStorage).concat(Object.keys(sessionStorage)).filter((key) => key !== 'domino-appearance'));
+/** What the page keeps in the browser. Changed on purpose (owner, 2026-09-26: dark only): the appearance key it once let
+ * through is gone with the light theme, so nothing is excused. */
+const keptKeys = (page) => page.evaluate(() => Object.keys(localStorage).concat(Object.keys(sessionStorage)));
 
 test('the positions route reads nothing and offers no lookup by NFT id; every request is same-origin or one the app itself names', async () => {
   const { page, errors, requests } = await tracked();

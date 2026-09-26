@@ -1,6 +1,6 @@
 /* docs builder: the documentation at #/docs and #/docs/<slug>. The frame (sidebar, article, "On this
-   page"), the prose blocks, the pager and the index. Classes are prefixed dm-docs-. Tokens only, both
-   themes; no Tangerine and no amber: a page's status is the neutral roadmap pill. */
+   page"), the prose blocks, the pager and the index. Classes are prefixed dm-docs-. Tokens only; no
+   Tangerine and no amber: a page's status is the neutral roadmap pill. */
 
 @layer components {
   /* ---- Frame. The columns follow what DocsLayout rendered for the width: the sidebar from 1024px,

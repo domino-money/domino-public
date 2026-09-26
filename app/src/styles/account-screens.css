@@ -7,8 +7,6 @@
   /* A reading column inside the one 1200px container (DESIGN-V2 2.7). */
   .dm-acct-settings { display: grid; gap: 24px; max-width: 880px; margin-top: 32px; }
   .dm-acct-set-title { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
-  .dm-acct-set-note { margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-acct-set-appearance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 20px; }
   .dm-acct-set-card { padding: 20px; }
   .dm-acct-build { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 24px; margin: 20px 0 0; }
   /* A build fact is words, not a figure: it wraps instead of truncating, at body-lead size. */

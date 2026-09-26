@@ -1,6 +1,6 @@
 /* home (DESIGN-V2 §7, §5.2 M3): the hero's horizon, the three feature vignettes and the nav icon gestures. Every
-   colour is a token: fills in --primary, strokes in --primary-line (the deeper light-theme Tangerine for graphics),
-   so both themes follow the class switch. Art rests at its own composition: the static CSS, the 0% keyframe and
+   colour is a token: fills in --primary, strokes in --primary-line (Tangerine for graphics). Art rests at its own
+   composition: the static CSS, the 0% keyframe and
    the 100% keyframe of every loop are the same complete picture, so a paused loop, a loop still inside its delay
    and `animation: none` (reduced motion, html.dm-still: tokens.css) all show it. Loops play only while the art
    root carries .is-running, which an IntersectionObserver sets while the art is in view. */
@@ -27,26 +27,20 @@
      none) or paused before it starts, the picture is the same complete composition: every tile standing, the
      new tile on the top step. */
   .dm-hero-art {
-    --hero-tile: var(--card);
+    --hero-tile: var(--surface-2);
     --hero-edge: color-mix(in srgb, var(--primary-line) 58%, transparent);
     --hero-pip: color-mix(in srgb, var(--primary-line) 78%, transparent);
-    --hero-shadow: rgb(28 24 20 / 0.10);
+    --hero-shadow: rgb(0 0 0 / 0.45);
     /* A fallen tile warms to a tint, it is not lit: the one fully lit tile is the new one on the top step, and
        Explore markets stays the loudest Tangerine on the plate. */
-    --hero-lit: color-mix(in srgb, var(--primary) 30%, var(--hero-tile));
-    /* The warmth under the staircase. A light plate's own floor glow already warms it, so there it is half. */
-    --hero-warm: 0.5;
+    --hero-lit: color-mix(in srgb, var(--primary) 26%, var(--hero-tile));
+    /* The warmth under the staircase. */
+    --hero-warm: 1;
     --hero-delay: 0.8s;
     display: block; width: 100%; height: 100%;
     /* The run fades in from the left edge; the staircase at the right is the climax and is never cut. */
     -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10%);
     mask-image: linear-gradient(90deg, transparent 0, #000 10%);
-  }
-  .dark .dm-hero-art {
-    --hero-tile: var(--surface-2);
-    --hero-shadow: rgb(0 0 0 / 0.45);
-    --hero-lit: color-mix(in srgb, var(--primary) 26%, var(--hero-tile));
-    --hero-warm: 1;
   }
   /* A phone shows only the run's last tiles and the staircase (x 680 to 1200), which the loop reaches at about
      5 s: there the timeline starts 3.6 s in, so the visible tiles begin to fall about 1.3 s after the hero

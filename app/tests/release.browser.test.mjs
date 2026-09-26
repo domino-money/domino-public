@@ -51,7 +51,7 @@ import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { closeContext, leaving, watch } from './page-watch.mjs';
 import { DIST, createGatedServer } from '../scripts/gated-server.mjs';
-import { TOGGLE_VIEWPORTS, textUnderToggle } from './toggle-overlap.mjs';
+import { CONTROL_VIEWPORTS, textUnderMotionControl } from './motion-overlap.mjs';
 
 const PASSWORD = 'release-test-beta-password';
 const GATE = { BETA_PASSWORD: PASSWORD, BETA_COOKIE_KEY: 'Rk2mP9vQx4Lr7TbW1cNy6ZsJ3dGa8FeU5oViRtYqWeC' };
@@ -711,17 +711,19 @@ test('(k) #93 per row: a 504 on one pool drops only that pool, whose own row say
   }
 });
 
-test('(m) with all six pools on screen, the appearance toggle covers no figure, heading or footer text at 390, 768 or 1280 wide', async () => {
+// Changed on purpose (owner, 2026-09-26: dark only): the appearance toggle is gone with the light theme. The footer's motion
+// control, which sat beside it, keeps the same check.
+test('(m) with all six pools on screen, the footer’s motion control covers no figure, heading or footer text at 390, 768 or 1280 wide', async () => {
   const { context, page, errors } = await visit(bridgeStub());
   try {
     assert.equal(await settled(page), 'none');
     assert.equal(await liveRows(page).count(), 6);
-    for (const [width, height] of TOGGLE_VIEWPORTS) {
+    for (const [width, height] of CONTROL_VIEWPORTS) {
       await page.setViewportSize({ width, height });
       await page.waitForTimeout(100);
-      const { hits, seen } = await textUnderToggle(page, ['#pools table', 'footer']);
+      const { hits, seen } = await textUnderMotionControl(page, ['#pools table', 'footer']);
       assert.deepEqual(seen, ['#pools table', 'footer'], `${width}px`);
-      assert.deepEqual(hits, [], `the toggle covers text at ${width}x${height}:\n${hits.join('\n')}`);
+      assert.deepEqual(hits, [], `the motion control covers text at ${width}x${height}:\n${hits.join('\n')}`);
     }
     assert.deepEqual(errors, []);
   } finally {

@@ -93,6 +93,24 @@ test('a visitor without the password sees only the access page', async () => {
   await closeContext(context);
 });
 
+// Owner, 2026-09-26: dark only. The access page is part of the site: it had a light variant for a system that asked for
+// light, and now keeps the app's one dark palette whatever the system asks for.
+test('the access page is dark even where the system asks for light', async () => {
+  const { context, page } = await visitor();
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
+  const look = await page.evaluate(() => ({
+    scheme: getComputedStyle(document.documentElement).colorScheme,
+    meta: document.querySelector('meta[name="color-scheme"]')?.getAttribute('content'),
+    body: getComputedStyle(document.body).backgroundColor,
+    text: getComputedStyle(document.body).color,
+  }));
+  assert.deepEqual(look, { scheme: 'dark', meta: 'dark', body: 'rgb(13, 10, 8)', text: 'rgb(247, 241, 234)' });
+  const raw = await (await fetch(`${origin}/`, { headers: { 'Sec-Fetch-Mode': 'navigate' } })).text();
+  assert.doesNotMatch(raw, /prefers-color-scheme|color-scheme:\s*light/, 'no light variant');
+  await closeContext(context);
+});
+
 test('the built files themselves cannot be fetched without the password', async () => {
   // Fetched with the browser context's own HTTP client, which carries the
   // visitor's cookies. Not from inside the access page: its CSP forbids

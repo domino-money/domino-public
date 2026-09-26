@@ -150,7 +150,7 @@ export function monogramOf(symbol: string | null, address: string): string {
   return letters !== '' ? letters : /^0x[0-9a-fA-F]{2}/.test(address) ? address.slice(2, 4).toUpperCase() : ''
 }
 
-/** A 1px inner line from the theme's strong border: visible on light and dark cards alike. */
+/** A 1px inner line from the strong border token, visible on every card. */
 const DISC_LINE = 'inset 0 0 0 1px var(--border-strong)'
 
 export function TokenMark({ token, size = 24, ring, style, monogram }: MarkProps) {

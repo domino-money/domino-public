@@ -28,7 +28,7 @@ export function cx(...parts: Array<string | false | null | undefined>) {
 const vars = (values: Record<string, string | number>) => values as CSSProperties
 
 /**
- * A panel. Level 1 is the flat card (fill, 1px ring, a lit lip in dark),
+ * A panel. Level 1 is the flat card (fill, 1px ring, a lit lip),
  * level 2 an inset plate inside a card, level 3 a control-coloured block.
  * `interactive` gives it the hover ring and press of a card that is itself a
  * target (data-interactive). `pad="md"` pads it 24px (16px on a phone);

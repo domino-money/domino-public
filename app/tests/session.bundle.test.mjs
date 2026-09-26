@@ -192,6 +192,9 @@ test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s
     // (SwapProvenance.endpoint): a value the validator compares, never a
     // destination. The page only ever posts to its own /api/onboarding/v1/.
     'trade-api.gateway.uniswap.org',
+    // 2026-09-26 (owner): Domino's X account, linked once from the footer (src/components/Footer.tsx X_PROFILE). A
+    // navigation target in a new tab, never fetched, so no CSP directive names it (tests/render.test.mjs pins the link).
+    'x.com',
   ]);
   // Exactly those, and only where the deployed CSP admits the two that are ever contacted.
   const csp = readFileSync(join(APP, 'functions', '_middleware.ts'), 'utf8');

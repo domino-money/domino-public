@@ -71,7 +71,7 @@ and errors, it exercises the behaviour a helper test cannot prove: a real
 pointer drag on the simulator chart (a still pointer must hold a still price),
 section links landing on their target across and within routes, the price
 slider's value-to-thumb mapping, that no route shows a dollar figure, that
-Connect wallet is disabled on every route and only the appearance is stored,
+Connect wallet is disabled on every route and nothing is stored in the browser,
 the honest positions screen, and the not-connected landing: one capabilities
 GET, no POST and no figure. It scans every text file of `dist` for sample,
 practice, fixture and test-only markers. It also asserts that exactly one
@@ -580,7 +580,7 @@ not part of the frontend CI job.
 | `#/automate` | Auto-compound and Domino-compound, with the ways into Setup and the sequence screen |
 | `#/setup`, `#/sequence` | The owner's wallet screens: create or recover a position, and create or manage a sequence |
 | `#/docs`, `#/docs/<slug>` | The documentation |
-| `#/settings` | Appearance, build facts, capabilities |
+| `#/settings` | Build facts, capabilities |
 
 ### Read-only pool exploration
 
@@ -630,11 +630,9 @@ sections run it on a position of no particular size (`src/lib/scenario.ts`)
 and show only ratios: multiples of the start price and shares of the starting
 value.
 
-The app keeps one thing in the browser: light or dark, under the
-`domino-appearance` key the workbench also uses (`src/lib/appearance.ts`).
-There is no practice workspace and no `domino-practice-v1` storage.
-`localStorage` is scoped per origin, so the two apps' appearance choices stay
-separate unless they are served from one origin.
+The app has one palette, the dark one (`src/styles/tokens.css`), and keeps
+nothing in the browser for it. There is no practice workspace and no
+`domino-practice-v1` storage.
 
 ## Toolchain
 

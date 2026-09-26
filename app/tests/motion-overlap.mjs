@@ -1,33 +1,43 @@
 /**
- * Whether the appearance toggle covers any text, for the tests that drive a
- * built page in a browser (render.test.mjs, release.browser.test.mjs).
+ * Whether the footer's motion control (Pause motion / Resume motion) covers
+ * any text, for the tests that drive a built page in a browser
+ * (render.test.mjs, release.browser.test.mjs).
+ *
+ * Changed on purpose (owner, 2026-09-26: dark only): this checked the
+ * appearance toggle, which is gone with the light theme. The motion control
+ * sat beside it in the footer's last row and is what remains there, so it
+ * keeps the same protection: in the footer's own flow, never over the page.
  *
  * Scrolls the page from top to bottom a third of a viewport at a time, then
  * brings the top and the bottom of each of `stops` (selectors) to the edge
  * of the viewport, and at every position lists each visible text node whose
- * box meets the toggle's. Returns those hits, and which stops were found, so
+ * box meets the control's. Returns those hits, and which stops were found, so
  * a caller can tell the parts it asked about were really on the page.
  */
 
-/** The widths the toggle is checked at: a phone, a tablet at md, a laptop. */
-export const TOGGLE_VIEWPORTS = [
+/** The widths the control is checked at: a phone, a tablet at md, a laptop. */
+export const CONTROL_VIEWPORTS = [
   [390, 844],
   [768, 1024],
   [1280, 900],
 ];
 
-export function textUnderToggle(page, stops = []) {
-  return page.evaluate(async (selectors) => {
-    const toggle = document.querySelector('button[aria-label^="Switch to"]');
-    if (!toggle) return { hits: ['no appearance toggle'], seen: [] };
+/** The motion control's accessible name, in either of its two states. */
+export const MOTION_CONTROL = /^(Pause|Resume) motion$/;
+
+export function textUnderMotionControl(page, stops = []) {
+  return page.evaluate(async ({ selectors, name }) => {
+    const pattern = new RegExp(name);
+    const control = [...document.querySelectorAll('footer button')].find((button) => pattern.test(button.textContent.trim()));
+    if (!control) return { hits: ['no motion control'], seen: [] };
     const hits = [];
     const seen = [];
     const settle = () => new Promise((done) => setTimeout(done, 30));
     const check = (where) => {
-      const t = toggle.getBoundingClientRect();
+      const t = control.getBoundingClientRect();
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        if (!node.textContent.trim() || toggle.contains(node)) continue;
+        if (!node.textContent.trim() || control.contains(node)) continue;
         const style = getComputedStyle(node.parentElement);
         if (style.visibility === 'hidden' || style.display === 'none' || node.parentElement.closest('[aria-hidden="true"], .sr-only')) continue;
         const range = document.createRange();
@@ -58,5 +68,5 @@ export function textUnderToggle(page, stops = []) {
       }
     }
     return { hits: [...new Set(hits)], seen };
-  }, stops);
+  }, { selectors: stops, name: MOTION_CONTROL.source });
 }

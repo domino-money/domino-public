@@ -10,7 +10,7 @@
   .dm-page--narrow { max-width: calc(var(--content-narrow) + 2 * var(--gutter)); }
   @media (min-width: 768px) { .dm-page { padding-top: 40px; } }
 
-  /* ---- Surfaces (§3.1): flat cards (a fill, an inner ring, a lip in dark); plates sit lower ------- */
+  /* ---- Surfaces (§3.1): flat cards (a fill, an inner ring, a lit lip); plates sit lower ------- */
   .dm-card { min-width: 0; background: var(--card); border-radius: var(--radius-card); box-shadow: var(--elev-card); }
   .dm-card[data-interactive], a.dm-card { transition: background-color var(--dur-hover) var(--ease-std), box-shadow var(--dur-hover) var(--ease-std), scale var(--dur-press) var(--ease-std); }
   .dm-card[data-interactive]:hover, a.dm-card:hover { background: var(--card-hover); box-shadow: var(--elev-card-hover); }
@@ -87,7 +87,7 @@
   .dm-btn--ghost:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--wash); color: var(--fg); }
   .dm-btn--danger { background: transparent; color: var(--money-out); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--money-out) 45%, transparent); }
   .dm-btn--danger:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--money-out-bg); }
-  /* Off is a flat token'd state, never a wash: --fg-subtle on --surface-1 (5.61:1 light, 6.04:1 dark).
+  /* Off is a flat token'd state, never a wash: --fg-subtle on --surface-1 (6.04:1).
      aria-disabled here is busy ("Refreshing…") or nothing-left ("All pages loaded"), news the reader needs.
      Outline and danger keep a quiet ring; ghost stays transparent. */
   .dm-btn:disabled, .dm-btn[aria-disabled="true"] { background: var(--surface-1); color: var(--fg-subtle); box-shadow: none; cursor: not-allowed; }
@@ -185,12 +185,11 @@
   .dm-pre { background: var(--bg); border-radius: var(--radius-sm); padding: 12px; font-family: var(--font-mono); font-size: 12px; line-height: 18px; letter-spacing: 0; color: var(--fg-muted); max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 
   /* Checkboxes and radios stay native and hit-testable, drawn by CSS. The check is a data URL with a literal
-     colour per theme (a data URL cannot read a variable); the radio's dot is a thick inner ring. */
+     colour (a data URL cannot read a variable); the radio's dot is a thick inner ring. */
   input[type="checkbox"], input[type="radio"] { appearance: none; -webkit-appearance: none; display: inline-grid; place-content: center; width: 18px; height: 18px; margin: 0; flex-shrink: 0; vertical-align: middle; background: var(--card) center / 12px no-repeat; box-shadow: inset 0 0 0 1.5px var(--border-strong); cursor: pointer; transition: box-shadow var(--dur-fast) var(--ease-std), background-color var(--dur-fast) var(--ease-std); }
   input[type="checkbox"] { border-radius: 5px; }
   input[type="radio"] { border-radius: var(--radius-pill); }
-  input[type="checkbox"]:checked { background-color: var(--primary-line); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='%23ffffff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); box-shadow: none; }
-  .dark input[type="checkbox"]:checked { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='%2324201c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+  input[type="checkbox"]:checked { background-color: var(--primary-line); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='%2324201c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); box-shadow: none; }
   input[type="radio"]:checked { box-shadow: inset 0 0 0 5px var(--primary-line); }
   :is(input[type="checkbox"], input[type="radio"]):hover:not(:disabled):not(:checked) { box-shadow: inset 0 0 0 1.5px var(--fg-subtle); }
   :is(input[type="checkbox"], input[type="radio"]):disabled { opacity: 0.5; cursor: not-allowed; }
@@ -501,6 +500,11 @@
   .dm-footer-links { display: grid; justify-items: start; gap: 12px; margin: 16px 0 0; padding: 0; list-style: none; }
   .dm-footer-link { border-radius: 4px; font-size: 14px; line-height: 20px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease; }
   .dm-footer-link:hover { color: var(--fg); }
+  /* Domino's X account (2026-09-26): a quiet pill under the brand line, the footer's muted ink until hovered. */
+  .dm-footer-social { display: inline-flex; align-items: center; gap: 8px; height: 32px; margin-top: 20px; padding: 0 12px 0 10px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; line-height: 20px; letter-spacing: -0.1px; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease, border-color var(--dur-hover) ease; }
+  .dm-footer-social:hover { color: var(--fg); border-color: var(--border-strong); }
+  .dm-footer-social:focus-visible { outline: 2px solid var(--ring); outline-offset: var(--focus-offset); }
+  .dm-footer-social-mark { flex: none; }
   /* The network facts keep the link columns' 14/20 on their 32px rhythm, so every column shares its baselines. */
   .dm-footer-note { font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-subtle); }
   .dm-footer-bottom { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 48px; }
@@ -572,13 +576,13 @@
   /* ---- Token marks (§3.8): missing artwork is a calm disc from the address, never letters ---------- */
   .dm-token-disc { background: radial-gradient(120% 120% at 30% 25%, hsl(var(--mark-h, 0) var(--disc-s) calc(var(--disc-l) + 6%)), hsl(var(--mark-h, 0) var(--disc-s) var(--disc-l))); box-shadow: inset 0 0 0 1px var(--border-strong); }
   /* The monogram a vetted list may ask for (TokenMark `monogram`, 2026-09-25): the symbol's first letters in the disc's own
-     hue, deep on the light disc and pale on the dark one, so it reads as a coin and never as an empty circle. */
+     hue, pale on the dark disc, so it reads as a coin and never as an empty circle. */
   .dm-token-mono { place-items: center; overflow: hidden; font-family: var(--font-sans); font-weight: 600; line-height: 1; letter-spacing: -0.02em;
     color: color-mix(in srgb, hsl(var(--mark-h, 0) 55% 50%) 30%, var(--fg)); user-select: none; }
   /* Drawn from the attribute, not as text, so copying a row never picks the letters up. */
   .dm-token-mono::before { content: attr(data-letters); }
   /* Token art gets the disc's hairline too, painted over the image (an inset shadow would sit under it), so art on a
-     white or transparent field (a lone glyph, a pale letter) still reads as a coin in light. TokenIcon sets the offset:
+     transparent field (a lone glyph, a pale letter) still reads as a coin. TokenIcon sets the offset:
      -1px, or -3px inside a 2px overlap ring. */
   .dm-token-img { outline: 1px solid var(--border-strong); }
 }

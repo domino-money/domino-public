@@ -1,6 +1,6 @@
 /* home (DESIGN-V2 §7): Home's layout and looks, P1's partial. The drawings themselves (hero horizon, vignettes)
    are art.css's. Every colour is a token; the few page-local ones are scoped to their block and derived from global
-   tokens, so both themes follow the class switch. Entrances are .animate-rise (first load only, §5.5); no section
+   tokens. Entrances are .animate-rise (first load only, §5.5); no section
    box moves; nothing here tweens a number. */
 
 @layer components {
@@ -19,16 +19,14 @@
      keeps the drawing's last 520 units across the plate (the last tiles and the staircase) and grows no taller than
      150px; a wider screen shows more of the run. */
   .dm-hero { display: flex; flex-direction: column; align-items: center; min-height: 520px; padding: 40px 20px 0; border-radius: var(--radius-card); text-align: center; }
-  /* The floor glow: a warm pool of light under the staircase, above the dots and under everything else. On the
-     light plate it is about half as strong, so it reads as light and never as a stain. */
-  .dm-hero { --hero-floor: color-mix(in srgb, var(--primary-glow) 55%, transparent); }
-  .dark .dm-hero { --hero-floor: var(--primary-glow); }
+  /* The floor glow: a warm pool of light under the staircase, above the dots and under everything else. */
+  .dm-hero { --hero-floor: var(--primary-glow); }
   .dm-hero::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(40% 60% at 82% 100%, var(--hero-floor), transparent 70%); }
   .dm-hero-body { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 880px; padding-bottom: 24px; }
   /* Two lines on every screen wider than a phone: the first line's clause is about 8em and the whole headline about
      14.5em, so at 10.5em it always breaks after the comma (balance keeps the accent phrase whole on the second). */
   .dm-hero-title { max-width: 10.5em; margin-top: 20px; text-wrap: balance; }
-  /* Large text (44 px and up): --primary-line is 3.41:1 on the light plate, and equals --primary in dark. */
+  /* Large text (44 px and up): --primary-line, which equals --primary. */
   .dm-hero-accent { color: var(--primary-line); white-space: nowrap; }
   .dm-hero-lede { max-width: 52ch; margin-top: 16px; text-wrap: pretty; }
   .dm-hero-actions { display: flex; justify-content: center; gap: 12px; width: 100%; margin-top: 28px; }
@@ -149,18 +147,16 @@
   @media (min-width: 768px) { .dm-rc-plot { height: 260px; } }
   .dm-rc-grid { position: absolute; inset: 0; border-radius: var(--radius-sm); pointer-events: none; }
   /* The range: a Tangerine band with 2px edges, centred on the range's ends. It slides when the range changes. */
-  .dm-rc-band { position: absolute; top: 0; bottom: 0; margin-left: -1px; background: var(--band-fill); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); pointer-events: none; transition: left var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter); }
-  /* In dark the band and the wash under the curve would stack into one flat slab: both step back, and the band's
+  /* The band and the wash under the curve would stack into one flat slab: both step back, and the band's
      edges and the curve keep their full strength. */
-  .dark .dm-rc-band { background: color-mix(in srgb, var(--band-fill) 50%, transparent); }
+  .dm-rc-band { position: absolute; top: 0; bottom: 0; margin-left: -1px; background: color-mix(in srgb, var(--band-fill) 50%, transparent); box-shadow: inset 2px 0 0 var(--primary-line), inset -2px 0 0 var(--primary-line); pointer-events: none; transition: left var(--dur-step) var(--ease-enter), width var(--dur-step) var(--ease-enter); }
   .dm-rc-series { position: absolute; inset: 0; pointer-events: none; }
   .dm-rc-series > svg { display: block; width: 100%; height: 100%; overflow: visible; }
   /* A change of range reshapes the curve (both paths have the same 97 points); where `d` does not animate it
      simply changes. */
   .dm-rc-curve, .dm-rc-area { transition: d var(--dur-step) var(--ease-enter); }
   /* The area is a wash under the curve; the band carries the range's own colour. */
-  .dm-rc-area { opacity: 0.7; }
-  .dark .dm-rc-area { opacity: 0.55; }
+  .dm-rc-area { opacity: 0.55; }
   /* First draw, once the chart is in view: the curve wipes in from the left, then the knob pops onto it. */
   .dm-rc-plot:not([data-seen]) .dm-rc-series { clip-path: inset(0 100% 0 0); }
   .dm-rc-plot[data-seen] .dm-rc-series { animation: dm-reveal var(--dur-wipe) var(--ease-enter) backwards; }

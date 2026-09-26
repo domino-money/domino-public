@@ -318,7 +318,7 @@
 
   /* The aside: the mode at work, the axis, and the wallet steps with the step in hand opened in place. */
   /* The aside is a column of the same card, not a card inside it: a hairline divides it from the steps (above it on a phone),
-     so both themes keep one elevation and every drawing sits on the same --surface-1 plate. */
+     so the page keeps one elevation and every drawing sits on the same --surface-1 plate. */
   .dm-seq-aside { display: grid; gap: 16px; align-content: start; min-width: 0; padding: 24px 0 0; border-top: 1px solid var(--border); }
   @media (min-width: 1024px) {
     /* Sticky; taller than the window (a review open in it), it is carried by the grid, so its foot meets the Review row. */

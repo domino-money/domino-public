@@ -21,7 +21,7 @@ import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { TEXT_FILE, findForbidden } from '../scripts/deploy-markers.mjs';
 import { apiOf, close, go, leaving, open as openPage, problemsOf, reload, shown } from './page-watch.mjs';
-import { TOGGLE_VIEWPORTS, textUnderToggle } from './toggle-overlap.mjs';
+import { CONTROL_VIEWPORTS, MOTION_CONTROL, textUnderMotionControl } from './motion-overlap.mjs';
 import { feesAnswer } from './support/fees/stub.mjs';
 
 const DIST = resolve(import.meta.dirname, '../dist');
@@ -181,7 +181,8 @@ test('every route in the header renders', async () => {
     ['/portfolio', /Wallet/],
     ['/new', /New position/],
     ['/automate', /Automate[\s\S]*Auto-compound[\s\S]*Domino-compound/],
-    ['/settings', /Appearance|Compound|Capabilities/i],
+    // Changed on purpose (owner, 2026-09-26: dark only): Settings no longer opens on an Appearance card.
+    ['/settings', /Settings[\s\S]*This build[\s\S]*Capabilities/],
     ['/docs', /Docs[\s\S]*What Domino is[\s\S]*Non-custodial/],
     ['/docs/non-custodial', /Non-custodial[\s\S]*On this page/],
     // The owner's wallet screens ship in the deployable build (vite.config.ts MODES: wallet true). Signed out, with no release behind this server and no
@@ -342,24 +343,66 @@ test('the page survives a narrow viewport without spilling sideways', async () =
   await close(page);
 });
 
-for (const [width, height] of TOGGLE_VIEWPORTS) {
-  test(`at ${width}x${height} the appearance toggle never covers text on the landing page, its pools table or the footer, wherever the page is scrolled`, async () => {
+// Changed on purpose (owner, 2026-09-26: dark only): this was the appearance toggle's check, and the toggle is gone with
+// the light theme. The footer's motion control, which sat beside it, keeps the same protection, and nothing else is there.
+for (const [width, height] of CONTROL_VIEWPORTS) {
+  test(`at ${width}x${height} the footer's motion control is its only control and never covers text on the landing page, its pools table or the footer, wherever the page is scrolled`, async () => {
     const page = await open('/');
     await page.setViewportSize({ width, height });
     await page.waitForTimeout(100);
-    const { hits, seen } = await textUnderToggle(page, ['#pools', 'footer']);
+    const { hits, seen } = await textUnderMotionControl(page, ['#pools', 'footer']);
     assert.deepEqual(seen, ['#pools', 'footer'], 'the pools table and the footer are on the landing page');
-    assert.deepEqual(hits, [], `the toggle covers text at ${width}x${height}:\n${hits.join('\n')}`);
+    assert.deepEqual(hits, [], `the motion control covers text at ${width}x${height}:\n${hits.join('\n')}`);
+    assert.deepEqual(await page.locator('footer button').allInnerTexts(), ['Pause motion'], 'the footer holds one control, and no appearance toggle');
     // Still reachable and working at this width.
-    const toggle = page.locator('button[aria-label^="Switch to"]');
-    await toggle.scrollIntoViewIfNeeded();
-    const before = await page.evaluate(() => document.documentElement.classList.contains('dark'));
-    await toggle.click();
-    assert.notEqual(await page.evaluate(() => document.documentElement.classList.contains('dark')), before);
-    clean(page, `appearance toggle at ${width}px`);
+    const control = page.locator('footer').getByRole('button', { name: MOTION_CONTROL });
+    await control.scrollIntoViewIfNeeded();
+    await control.click();
+    assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dm-still')), true, 'Pause motion stills the page');
+    assert.equal(await control.innerText(), 'Resume motion');
+    clean(page, `motion control at ${width}px`);
     await close(page);
   });
 }
+
+// Owner, 2026-09-26: dark only. One palette, whatever the system asks for, and nothing to switch it with.
+test('the site is dark whatever the system asks for, and offers no light theme', async () => {
+  const page = await open('/');
+  for (const scheme of ['light', 'dark', 'no-preference']) {
+    await page.emulateMedia({ colorScheme: scheme });
+    const look = await page.evaluate(() => ({
+      scheme: getComputedStyle(document.documentElement).colorScheme,
+      page: getComputedStyle(document.documentElement).backgroundColor,
+      body: getComputedStyle(document.body).backgroundColor,
+      text: getComputedStyle(document.body).color,
+      classes: document.documentElement.className.split(/\s+/).filter((name) => /dark|light|theme/i.test(name)),
+      themed: document.documentElement.hasAttribute('data-theme'),
+    }));
+    assert.deepEqual(look, { scheme: 'dark', page: 'rgb(13, 10, 8)', body: 'rgb(13, 10, 8)', text: 'rgb(247, 241, 234)', classes: [], themed: false }, `system ${scheme}`);
+  }
+  assert.equal(await page.getByRole('button', { name: /light|dark|appearance|theme/i }).count(), 0, 'no control to change the look');
+  clean(page, 'dark only');
+  await close(page);
+});
+
+test('dist carries no theme switch: no light palette, no theme selector, no stored appearance', () => {
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) walk(join(dir, entry.name));
+      else files.push(join(dir, entry.name));
+    }
+  };
+  walk(DIST);
+  const css = files.filter((file) => file.endsWith('.css'));
+  assert.ok(css.length >= 1, 'the stylesheet is in dist');
+  const text = files.filter((file) => TEXT_FILE.test(file)).map((file) => readFileSync(file, 'utf8')).join('\n');
+  assert.doesNotMatch(text, /domino-appearance/, 'nothing reads or writes the old appearance key');
+  assert.doesNotMatch(text, /prefers-color-scheme/, 'the system setting is not consulted');
+  const styles = css.map((file) => readFileSync(file, 'utf8')).join('\n');
+  assert.doesNotMatch(styles, /\.dark\b|\[data-theme|color-scheme:\s*light/, 'no theme selector and no light palette');
+  assert.match(styles, /color-scheme:\s*dark/, 'the one palette is dark');
+});
 
 // ---------------------------------------------------------------------------
 // Flow behaviour asked for on #12, exercised through the DOM of the served
@@ -469,14 +512,23 @@ test('every footer and navigation link goes somewhere this app has: no "#/" plac
     })),
   );
   assert.ok(links.some((l) => l.footer), 'the footer has links');
+  // Changed on purpose (owner, 2026-09-26): Domino's X account is the footer's one link that leaves the app, and only it.
+  // It is exactly the confirmed profile, opens in a new tab with no opener and no referrer, and says so to a screen reader.
+  const external = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('footer a')).filter((a) => !(a.getAttribute('href') ?? '').startsWith('#')).map((a) => ({
+      href: a.getAttribute('href'), target: a.getAttribute('target'), rel: a.getAttribute('rel'), label: a.getAttribute('aria-label'), text: a.textContent.trim(),
+    })),
+  );
+  assert.deepEqual(external, [{ href: 'https://x.com/dominomoney', target: '_blank', rel: 'noopener noreferrer', label: 'Domino on X (opens in a new tab)', text: '@dominomoney' }], 'the footer leaves the app only for Domino’s X account');
   assert.deepEqual(
-    links.filter((l) => l.footer).map((l) => l.text),
+    links.filter((l) => l.footer && l.href.startsWith('#')).map((l) => l.text),
     ['Markets', 'Positions', 'Automate', 'New position', 'Settings', 'Docs', 'How it works', 'Ranges explained', 'What Domino does not do'],
     'the footer names the product pages, the docs and the guides on the landing',
   );
   // The routes App.tsx wires, with the older spellings it keeps: `#/explore` and `#/pools` are Markets, `#/app` is Positions.
   const ROUTES = ['/', '/markets', '/explore', '/pools', '/pool', '/positions', '/app', '/portfolio', '/new', '/automate', '/settings', '/docs'];
   for (const link of links) {
+    if (link.footer && link.href === 'https://x.com/dominomoney') continue
     const label = `${link.footer ? 'footer' : 'header'} link "${link.text}" (${link.href})`;
     assert.ok(link.href !== null && link.href.trim() !== '', `${label} has no target`);
     assert.notEqual(link.href, '#', `${label} goes nowhere`);
@@ -494,9 +546,10 @@ test('every footer and navigation link goes somewhere this app has: no "#/" plac
       assert.ok(await page.evaluate((id) => Boolean(document.getElementById(id)), section), `${label} names a section that does not exist`);
     }
   }
-  // No social icon, and no legal documents until they exist: neither a link nor a line saying they will come.
+  // No other social link, and no legal documents until they exist: neither a link nor a line saying they will come.
+  // (2026-09-26: 'X' left this list when the owner confirmed the account; its one link is pinned above.)
   const footer = page.locator('footer');
-  for (const name of ['X', 'Discord', 'Telegram', 'GitHub', 'Documentation', 'Security', 'Status', 'Fees and profit']) {
+  for (const name of ['Discord', 'Telegram', 'GitHub', 'Documentation', 'Security', 'Status', 'Fees and profit']) {
     assert.equal(await footer.getByRole('link', { name, exact: true }).count(), 0, `footer still links "${name}"`);
   }
   assert.equal(await footer.getByRole('link', { name: /Terms|Privacy/ }).count(), 0, 'no legal documents are linked');
@@ -713,6 +766,9 @@ test('Settings describes owner-scoped automated signing and wallet transactions 
   assert.doesNotMatch(text, /Planned/, 'no Planned pill');
   assert.doesNotMatch(text, /Enabled\b/, 'nothing is reported as enabled');
   assert.equal(await page.locator('[data-build-banner]').count(), 0, 'no fixture or test-build banner');
+  // Owner, 2026-09-26: dark only. Settings has no Appearance card and no word of a look to choose.
+  assert.doesNotMatch(text, /\b(appearance|theme|light|dark)\b/i, 'no appearance or theme choice');
+  assert.equal(await page.locator('main button').count(), 0, 'nothing to switch on Settings');
   clean(page, 'settings');
   await close(page);
 });
@@ -741,7 +797,7 @@ test('Automate shows the plain position, then its two cards and nothing under th
 /** The routes that open Positions, whose list asks for a wallet in its own empty state. */
 const POSITIONS_ROUTES = new Set(['/positions', '/app', '/portfolio']);
 
-test('the wallet control is on every route and ready, no route mentions practice, and only the appearance is stored', async () => {
+test('the wallet control is on every route and ready, no route mentions practice, and nothing is stored', async () => {
   for (const route of ROUTES) {
     const page = await open(route);
     // No wallet is injected in this suite, so the control invites one. It is
@@ -757,8 +813,10 @@ test('the wallet control is on every route and ready, no route mentions practice
     for (const button of buttons) assert.equal(await button.isDisabled(), false, `Connect wallet is disabled on ${route}`);
     assert.equal(await page.locator('header').getByRole('button', { name: 'Connect wallet' }).count(), 1, `the control is not in the header on ${route}`);
     assert.doesNotMatch(await page.locator('#root').innerText(), /practice/i, `practice on ${route}`);
-    await page.getByRole('button', { name: /Switch to (light|dark) appearance/ }).click();
-    assert.deepEqual(await page.evaluate(() => Object.keys(localStorage)), ['domino-appearance'], `${route} stored something besides the appearance`);
+    // Changed on purpose (owner, 2026-09-26: dark only): the appearance, the one thing kept here, is gone with the light
+    // theme. The footer's remaining control, Pause motion, is used instead, and it is kept in memory only.
+    await page.locator('footer').getByRole('button', { name: 'Pause motion', exact: true }).click();
+    assert.deepEqual(await page.evaluate(() => Object.keys(localStorage)), [], `${route} stored something`);
     clean(page, `wallet on ${route}`);
     await close(page);
   }

@@ -11,9 +11,8 @@ import { Automate } from './screens/Automate'
 import { NewPosition } from './screens/NewPosition'
 import { Docs } from './screens/Docs'
 import { Button } from './components/ui'
-import { IconMoon, IconPause, IconPlay, IconSun } from './components/icons'
+import { IconPause, IconPlay } from './components/icons'
 import { BuildBanner } from './components/read/BuildBanner'
-import { useAppearance } from './lib/appearance'
 import { scrollToSection } from './lib/sectionScroll'
 import { appMarketsProvider } from './lib/read/buildMode'
 import { MarketsContext } from './lib/read/useMarkets'
@@ -163,15 +162,10 @@ const FLAGGED: Partial<Record<Page, unknown>> = {
 export default function App() {
   const { page: route, param } = useHashLocation()
   const page: Page = Object.hasOwn(FLAGGED, route) && !FLAGGED[route] ? 'overview' : route
-  const { dark, setDark } = useAppearance()
-  // Pause motion: kept in memory for this visit only, never stored, so the one stored key stays the appearance.
+  // Pause motion: kept in memory for this visit only, never stored.
   const [still, setStill] = useState(false)
   // One provider for the whole app, so the ticker and the table share one load.
   const [markets] = useState(appMarketsProvider)
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
-  }, [dark])
 
   useEffect(() => {
     document.documentElement.classList.toggle('dm-still', still)
@@ -203,18 +197,12 @@ export default function App() {
       {page === 'overview' && <Ticker />}
       <Header page={page} />
       <Screen page={page} param={param} />
-      {/* Both footer controls sit in the footer's own flow at every width, never floating over the page, so they can never cover text. */}
+      {/* The footer's motion control sits in its own flow at every width, never floating over the page, so it can never cover text. */}
       <Footer
         motion={
           <Button variant="outline" size="sm" onClick={() => setStill(!still)}>
             {still ? <IconPlay /> : <IconPause />}
             {still ? 'Resume motion' : 'Pause motion'}
-          </Button>
-        }
-        appearance={
-          <Button variant="outline" size="sm" onClick={() => setDark(!dark)} aria-label={dark ? 'Switch to light appearance' : 'Switch to dark appearance'}>
-            {dark ? <IconSun /> : <IconMoon />}
-            {dark ? 'Light' : 'Dark'}
           </Button>
         }
       />

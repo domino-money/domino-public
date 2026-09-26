@@ -6,10 +6,26 @@
  * not shown at all, rather than pointing nowhere. The same holds for the Terms
  * of Service and the Privacy Policy: the footer neither links nor names them
  * until the documents exist.
+ *
+ * 2026-09-26: the owner confirmed Domino's X account, https://x.com/dominomoney,
+ * so it is the one link that leaves the app. It opens in a new tab with no
+ * opener and no referrer, and nothing is ever fetched from it.
  */
 import type { ReactNode } from 'react'
 import { CAPABILITIES } from '../lib/capabilities'
 import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref, settingsHref } from './explore/routes'
+
+/** Domino's X account, confirmed by the owner on 2026-09-26. */
+export const X_PROFILE = 'https://x.com/dominomoney'
+
+/** The X mark (Simple Icons, CC0), drawn in the link's own colour. */
+function XMark() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false" className="dm-footer-social-mark">
+      <path fill="currentColor" d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" />
+    </svg>
+  )
+}
 
 const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: string; href: string }> }> = [
   {
@@ -34,11 +50,12 @@ const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: st
 ]
 
 /**
- * The page's only `<footer>`. `motion` (Pause motion / Resume motion) and
- * `appearance` (the appearance toggle) come from App and sit together in the
- * last row, in the footer's own flow, where they can never cover text.
+ * The page's only `<footer>`. `motion` (Pause motion / Resume motion) comes
+ * from App and sits in the last row, in the footer's own flow, where it can
+ * never cover text. The site has one look, the dark one (owner, 2026-09-26:
+ * dark only), so there is no control for it.
  */
-export function Footer({ appearance, motion }: { appearance?: ReactNode; motion?: ReactNode }) {
+export function Footer({ motion }: { motion?: ReactNode }) {
   return (
     <footer className="dm-footer">
       <div className="dm-footer-inner">
@@ -54,6 +71,10 @@ export function Footer({ appearance, motion }: { appearance?: ReactNode; motion?
               <p className="mt-4 max-w-[42ch] text-body text-fg-muted">
                 Domino opens Uniswap positions on Robinhood Chain and puts their earned fees to work, only within limits your wallet signs.
               </p>
+              <a href={X_PROFILE} target="_blank" rel="noopener noreferrer" className="dm-footer-social" aria-label="Domino on X (opens in a new tab)">
+                <XMark />
+                <span>@dominomoney</span>
+              </a>
             </div>
 
             {COLUMNS.map((column) => (
@@ -81,11 +102,8 @@ export function Footer({ appearance, motion }: { appearance?: ReactNode; motion?
           </div>
 
           <div className="dm-footer-bottom">
-            {/* The motion and appearance controls: at the start of the row on a phone, like the rest of the footer, and at its end from 768px. */}
-            <div className="dm-footer-controls md:ml-auto">
-              {motion}
-              {appearance}
-            </div>
+            {/* The motion control: at the start of the row on a phone, like the rest of the footer, and at its end from 768px. */}
+            <div className="dm-footer-controls md:ml-auto">{motion}</div>
           </div>
         </div>
       </div>

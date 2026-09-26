@@ -3120,7 +3120,7 @@ async function connectWallet(page) {
 
 /** The read service's nft-positions questions the page asked, in order: none any more. */
 const nftReads = (read) => read.requests.filter((r) => r.path.endsWith('/nft-positions')).map((r) => JSON.parse(r.body).tokenIds);
-/** Everything the page keeps in the browser that is not the appearance or a session's own key. */
+/** Everything the page keeps in the browser about positions (owner, 2026-09-26: dark only, so no appearance key either). */
 const kept = (page) => page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter((key) => /position/i.test(key)));
 
 /** What the list card showed since recordList, once a wallet was connected (the no-wallet and waiting cards left out). */
