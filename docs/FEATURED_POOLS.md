@@ -35,6 +35,10 @@ sets the phase:
 1. **Listing.** GeckoTerminal's Uniswap v4 pools on Robinhood by 24 h volume,
    20 a page, at most 10 pages, until a page ends below the volume floor.
    Each page first reserves a call with `reserve_provider_if_headroom(2)`.
+   GeckoTerminal answers this host about six calls a minute, shared with the
+   site's own reads, so the selection spaces its calls 20 s apart, and a 429
+   or a full allowance waits 30 s and asks again for the same page, until the
+   selection's 10-minute deadline.
 2. **Screen.** Pools not already shown are dropped on provider fields alone
    (reference side, volume, liquidity, turnover, age, activity, fading
    volume, price move) before any chain read.
@@ -43,7 +47,9 @@ sets the phase:
    verified read the collector uses: the key rehashed to the pool id, the
    state at one block, the provider's currencies and DEX checked against it.
    `estimate_pool_apr` then gives the APR the site itself shows.
-4. **Evidence.** Active liquidity; the reference depth (`reference_depth`:
+4. **Evidence.** Read through an RPC of its own at the block of the pool's
+   verified market read (the production failover RPC reads state only at a
+   block it has observed itself): active liquidity; the reference depth (`reference_depth`:
    the pool's liquidity walked tick by tick until the non-reference side is
    10% cheaper, so a narrow position counts only for its width); the token's
    code, symbol and decimals.

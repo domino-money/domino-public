@@ -24,6 +24,13 @@ from read_service import ReadService
 from selected_pools import SELECTED_POOLS
 
 CANDIDATE_SECONDS = 30
+# GeckoTerminal answers this host about six calls a minute, and the site's own
+# reads share them: the selection spaces its calls, and a 429 or a full shared
+# allowance waits and asks again for the same page until the deadline, instead
+# of ending the listing (featured-pools v1 §9.8).
+PROVIDER_SPACING = 20
+RATE_LIMIT_WAIT = 30
+RATE_LIMITED = ('http_429', 'provider_capacity_busy')
 
 
 class _NoProvider:
@@ -56,17 +63,34 @@ def list_entry(entry, item):
 
 class Selector:
     def __init__(self, *, store, catalogue, policy, public_data=None, rpc_urls=None, rpc_factory=None,
-                 transport_factory=None, listing=None, clock=time.time, max_rpc_calls=3000, max_seconds=240,
-                 embedded=SELECTED_POOLS):
+                 transport_factory=None, listing=None, clock=time.time, max_rpc_calls=3000, max_seconds=600,
+                 embedded=SELECTED_POOLS, sleep=time.sleep, monotonic=time.monotonic):
         if listing is None and public_data is None:
             raise DataError('featured_listing_unconfigured')
         self.store, self.catalogue, self.policy, self.clock = store, catalogue, policy, clock
         self.rpc_urls, self.rpc_factory, self.transport_factory = rpc_urls, rpc_factory, transport_factory
         self.max_rpc_calls, self.max_seconds, self.embedded = max_rpc_calls, max_seconds, list(embedded)
+        self.sleep, self.monotonic, self.provider_at = sleep, monotonic, float('-inf')
         self.listing = listing or GeckoListing(clock=clock, reserve=lambda: public_data.reserve_provider_if_headroom(
             policy['listingProviderHeadroom']))
 
     # ------------------------------------------------------------ reading
+    def _provider(self, fetch, deadline):
+        """One provider call, at least PROVIDER_SPACING after the previous one."""
+        while True:
+            start = max(self.monotonic(), self.provider_at + PROVIDER_SPACING)
+            if start > deadline:
+                raise DataError('featured_time_budget_exhausted')
+            if start > self.monotonic():
+                self.sleep(start - self.monotonic())
+            self.provider_at = self.monotonic()
+            try:
+                return fetch()
+            except DataError as error:
+                if str(error) not in RATE_LIMITED or self.monotonic() + RATE_LIMIT_WAIT > deadline:
+                    raise
+                self.sleep(RATE_LIMIT_WAIT)
+
     def _service(self):
         options = dict(catalogue=self.catalogue, clock=self.clock, rpc_urls=self.rpc_urls,
                        rpc_factory=self.rpc_factory, public_data=None, requests=None, snapshot=MarketsSnapshot(),
@@ -129,7 +153,7 @@ class Selector:
         extra = {'poolKey': None, 'tokens': None, 'identitySource': None, 'sqrtPriceX96': None, 'initializeBlock': None,
                  'ageSource': 'provider_pool_created_at' if listing and listing['createdAt'] is not None else None,
                  'block': None, 'error': None}
-        service, rpc = ctx['service'], ctx['rpc']
+        service = ctx['service']
         try:
             with read_deadline(CANDIDATE_SECONDS):
                 if market is not None:
@@ -143,7 +167,15 @@ class Selector:
                 pool, block = response['pool'], Block(**response['snapshot'])
                 extra.update(poolKey=pool['poolKey'], block=response['snapshot'], sqrtPriceX96=pool['sqrtPriceX96'],
                              identitySource=known['source'] if known else 'position_manager')
-                candidate['estimate'] = estimate_pool_apr(response, now=int(self.clock()))
+                try:
+                    candidate['estimate'] = estimate_pool_apr(response, now=int(self.clock()))
+                except ValueError:
+                    # A response the contract refuses has no estimate (E8), not a failed selection.
+                    candidate['estimate'] = None
+                # One RPC per pool: the production RPC reads state only at blocks it has
+                # observed itself, at most 16, and each pool is read at its own block.
+                rpc = service._rpc(service.transport_factory())
+                evidence.pin_block(rpc, block)
                 liquidity = evidence.active_liquidity(rpc, pool_id, block)
                 candidate['chain'] = {'pool': pool, 'liquidity': liquidity}
                 if known and known['block_number'] is not None:
@@ -177,7 +209,7 @@ class Selector:
     def _context(self, now, overrides, previous):
         baselines = self.store.token_baselines()
         service, spent = self._service()
-        return ({'now': now, 'service': service, 'rpc': service._rpc(service.transport_factory()),
+        return ({'now': now, 'service': service,
                  'previous': previous['pools'] if previous else {}, 'baselines': baselines, 'tokens': {},
                  'readings': {row['symbol_reading']: token for token, row in baselines.items() if row['symbol_reading']},
                  'excludedPools': set(overrides['excludedPools']), 'excludedTokens': set(overrides['excludedTokens'])},
@@ -189,10 +221,12 @@ class Selector:
         previous = self.store.previous_evaluation('live', now, self.policy['persistenceLookbackHours'])
         ctx, _ = self._context(now, overrides, previous)
         pool_ids = list(dict.fromkeys(pool_ids))
-        found = {}
+        found, deadline = {}, self.monotonic() + self.max_seconds
         for start in range(0, len(pool_ids), MAX_MULTI):
+            chunk = pool_ids[start:start + MAX_MULTI]
             try:
-                found.update({item['poolId']: item for item in self.listing.multi(pool_ids[start:start + MAX_MULTI])['items']})
+                found.update({item['poolId']: item for item in
+                              self._provider(lambda: self.listing.multi(chunk), deadline)['items']})
             except DataError:
                 pass
         return [self._evaluate(pool_id, found.get(pool_id), relaxed=False, ctx=ctx) for pool_id in pool_ids]
@@ -226,7 +260,7 @@ class Selector:
         coverage = {'source': 'geckoterminal_dex_pools_by_h24_volume', 'pages': 0, 'truncated': False,
                     'lastListedVolume24hUsd': None, 'stoppedBy': None, 'rejectedItems': 0}
         evaluations, screened, seen = [], [], set()
-        deadline = time.monotonic() + self.max_seconds
+        deadline = self.monotonic() + self.max_seconds
 
         def consider(item):
             pool_id = item['poolId']
@@ -244,11 +278,11 @@ class Selector:
             evaluations.append(self._evaluate(pool_id, item, relaxed=pool_id in incumbents, ctx=ctx))
 
         for number in range(1, self.policy['maxListingPages'] + 1):
-            if time.monotonic() > deadline:
+            if self.monotonic() > deadline:
                 coverage['stoppedBy'] = 'featured_time_budget_exhausted'
                 break
             try:
-                page = self.listing.page(number)
+                page = self._provider(lambda: self.listing.page(number), deadline)
             except DataError as error:
                 coverage['stoppedBy'] = str(error)
                 break
@@ -266,7 +300,7 @@ class Selector:
         for start in range(0, len(missing), MAX_MULTI):
             chunk = missing[start:start + MAX_MULTI]
             try:
-                found = {item['poolId']: item for item in self.listing.multi(chunk)['items']}
+                found = {item['poolId']: item for item in self._provider(lambda: self.listing.multi(chunk), deadline)['items']}
             except DataError as error:
                 coverage['multiStoppedBy'] = str(error)
                 found = {}

@@ -10,6 +10,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from discovery import DataError
 from gt_listing import GeckoListing, MAX_MULTI, listing_url, multi_url, pool_item
 from market_data import GeckoMarketData
+from read_contract import MarketData
 
 FIXTURES=Path(__file__).resolve().parent/'fixtures'
 PONS='0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a'
@@ -34,19 +35,17 @@ class ListingParseTests(unittest.TestCase):
     page=recorded('geckoterminal-listing-page1-2026-09-25.json')
 
     def test_every_recorded_item_is_the_collector_s_own_observation(self):
-        url=listing_url(1)
         for row in self.page['data']:
             with self.subTest(pool=row['id']):
-                item=pool_item(row,url=url,retrieved=1790380000)
+                item=pool_item(row,retrieved=1790380000)
                 pool_id=item['poolId']
                 collector=GeckoMarketData(transport=Transport({'data':row}),clock=lambda:1790380000).pool(pool_id)
-                self.assertEqual({**item['market'],'sourceUrl':None},{**collector,'sourceUrl':None})
-                self.assertEqual(item['market']['sourceUrl'],url)
+                self.assertEqual(item['market'],collector)
                 self.assertEqual(item['market']['dexLabel'],'uniswap-v4-robinhood')
 
     def test_the_listing_fields_the_rules_read(self):
         items={item['poolId']:item for item in
-               (pool_item(row,url=listing_url(1),retrieved=1) for row in self.page['data'])}
+               (pool_item(row,retrieved=1) for row in self.page['data'])}
         pons=items[PONS]['listing']
         row=next(row for row in self.page['data'] if row['id']=='robinhood_'+PONS)['attributes']
         self.assertEqual(row['pool_created_at'],'2026-07-18T01:42:13Z')
@@ -64,23 +63,23 @@ class ListingParseTests(unittest.TestCase):
         row=copy.deepcopy(self.page['data'][0])
         for text,expected in (('2026-07-18T01:42:13Z',1784338933),('2026-07-18T01:42:13.5Z',1784338933)):
             row['attributes']['pool_created_at']=text
-            self.assertEqual(pool_item(row,url='u',retrieved=1)['listing']['createdAt'],expected)
+            self.assertEqual(pool_item(row,retrieved=1)['listing']['createdAt'],expected)
         for text in ('2026-07-18 01:42:13','2026-02-30T00:00:00Z','2026-07-18T01:42:13+00:00',1784338933):
             row['attributes']['pool_created_at']=text
             with self.subTest(text=text),self.assertRaisesRegex(DataError,'invalid_market_timestamp'):
-                pool_item(row,url='u',retrieved=1)
+                pool_item(row,retrieved=1)
         row['attributes']['pool_created_at']=None
-        self.assertIsNone(pool_item(row,url='u',retrieved=1)['listing']['createdAt'])
+        self.assertIsNone(pool_item(row,retrieved=1)['listing']['createdAt'])
 
     def test_a_signed_price_change_keeps_its_sign_and_exactness(self):
         row=copy.deepcopy(self.page['data'][0])
         for text,expected in (('-0.115','-0.115'),('12.50','12.5'),('-0','0'),('0','0')):
             row['attributes']['price_change_percentage']={'h24':text}
-            self.assertEqual(pool_item(row,url='u',retrieved=1)['listing']['priceChange24hPercent'],expected)
+            self.assertEqual(pool_item(row,retrieved=1)['listing']['priceChange24hPercent'],expected)
         for text in ('--1','-1e999','1.5.5',-1.5):
             row['attributes']['price_change_percentage']={'h24':text}
             with self.subTest(text=text),self.assertRaisesRegex(DataError,'invalid_market_number'):
-                pool_item(row,url='u',retrieved=1)
+                pool_item(row,retrieved=1)
 
     def test_identity_and_count_errors_have_fixed_codes(self):
         base=self.page['data'][0]
@@ -97,7 +96,7 @@ class ListingParseTests(unittest.TestCase):
         for change,code in cases:
             row=copy.deepcopy(base);change(row)
             with self.subTest(code=code),self.assertRaisesRegex(DataError,'^'+code+'$'):
-                pool_item(row,url='u',retrieved=1)
+                pool_item(row,retrieved=1)
 
 
 class ListingCallTests(unittest.TestCase):
@@ -147,6 +146,9 @@ class ListingCallTests(unittest.TestCase):
         self.assertEqual(sorted(item['poolId'] for item in result['items']),sorted([PONS,ETH_USDG]))
         pons=next(item for item in result['items'] if item['poolId']==PONS)
         self.assertEqual(pons['market']['quoteToken'],USDG)
+        # The pool's own resource, not the call: 30 ids would exceed the contract's 512 bytes.
+        self.assertEqual(pons['market']['sourceUrl'],'https://api.geckoterminal.com/api/v2/networks/robinhood/pools/'+PONS)
+        MarketData.model_validate(pons['market'])
         self.assertEqual(pons['listing']['createdAt'],1784338933)
         self.assertEqual(result['rejected'],[])
 

@@ -26,6 +26,19 @@ def _pool_bytes(pool_id):
     return bytes.fromhex(bytes32(pool_id)[2:])
 
 
+def pin_block(rpc, block):
+    """Read `block`'s header through `rpc`, and require the one the market read verified.
+
+    The production RPC (rpc_failover.FailoverReadRpc) reads state only at a block
+    that same instance has observed: the evidence of a pool is read at the block
+    of its verified market read, so that header comes first, from this RPC.
+    """
+    observed = parse_block(rpc.request('eth_getBlockByNumber', [block.tag, False]))
+    if (observed.number, observed.hash) != (block.number, block.hash):
+        raise DataError('snapshot_reorganized')
+    return observed
+
+
 def active_liquidity(rpc, pool_id, block):
     return rpc.call(STATE_VIEW, 'getLiquidity(bytes32)', ['bytes32'], [_pool_bytes(pool_id)], ['uint128'],
                     block=block.tag)[0]

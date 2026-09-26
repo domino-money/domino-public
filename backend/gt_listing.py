@@ -79,11 +79,12 @@ def _timestamp(value):
     return int(moment.timestamp())
 
 
-def pool_item(item, *, url, retrieved):
+def pool_item(item, *, retrieved):
     """One listing item as {poolId, market, listing}; a fixed DataError code otherwise.
 
     `market` is field for field what `GeckoMarketData.pool` returns for the
-    same object, except `sourceUrl`, which names the call it came from.
+    same object, its `sourceUrl` included: the pool's own provider resource.
+    A multi call's URL names up to 30 pools, beyond the contract's 512 bytes.
     """
     data = _object(item)
     attributes = _object(data.get('attributes'))
@@ -111,7 +112,7 @@ def pool_item(item, *, url, retrieved):
     changes = attributes.get('price_change_percentage')
     changes = _object(changes) if changes is not None else {}
     market = {'source': SOURCE, 'chainId': CHAIN_ID, 'retrievedAt': retrieved, 'asOfTimestamp': None,
-              'asOfBlock': None, 'poolId': pool_id, 'sourceUrl': url, 'providerReported': True,
+              'asOfBlock': None, 'poolId': pool_id, 'sourceUrl': ROOT + '/pools/' + pool_id, 'providerReported': True,
               **currencies, 'dexLabel': label,
               'reportedLiquidityUsd': _number(attributes.get('reserve_in_usd'), optional=True),
               'volume24hUsd': _number(volume.get('h24'), optional=True)}
@@ -155,7 +156,7 @@ class GeckoListing:
         items, rejected = [], []
         for index, row in enumerate(rows):
             try:
-                items.append(pool_item(row, url=url, retrieved=retrieved))
+                items.append(pool_item(row, retrieved=retrieved))
             except DataError as error:
                 rejected.append({'index': index, 'reason': str(error)})
         return {'url': url, 'retrievedAt': retrieved, 'items': items, 'rejected': rejected,

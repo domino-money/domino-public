@@ -30,6 +30,7 @@ from featured_selector import list_entry
 from featured_store import FeaturedStore
 import manage_featured
 from public_observations import PgPublicData
+from test_featured_selection import Anchored
 from test_public_observations import fixtures
 
 ZERO='0x'+'0'*40
@@ -137,7 +138,7 @@ class LiveTests(unittest.TestCase):
 
     def live(self):
         return Live(store=self.store,public=self.public,history=self.charts,catalogue=self.catalogue,
-                    policy=self.policy,selector=self.checker,rpc_factory=lambda:self.node,embedded=self.embedded)
+                    policy=self.policy,selector=self.checker,rpc_factory=lambda:Anchored(self.node),embedded=self.embedded)
 
     # ---------------------------------------------------------------- fixtures
     def figures(self,token,*,at,**changes):

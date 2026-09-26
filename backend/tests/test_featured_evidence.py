@@ -8,7 +8,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from eth_hash.auto import keccak
 
 from discovery import Block, DataError, STATE_VIEW
-from featured_evidence import (active_liquidity, delegates, depth, eth_price, strip_metadata,
+from featured_evidence import (active_liquidity, delegates, depth, eth_price, pin_block, strip_metadata,
                                token_evidence)
 from featured_pools import eth_usd, load_policy, reference_depth
 from test_featured_pools import bitmaps
@@ -57,6 +57,31 @@ class Node:
         self.reads.append('symbol()')
         if isinstance(self.symbol_value,Exception):raise self.symbol_value
         return self.symbol_value
+
+
+class Headers:
+    """A node that answers one header for every block it is asked about."""
+    def __init__(self, number, block_hash):
+        self.number, self.hash, self.asked = number, block_hash, []
+
+    def request(self, method, params=()):
+        self.asked.append((method, list(params)))
+        return {'number': hex(self.number), 'hash': self.hash, 'timestamp': hex(1000)}
+
+
+class PinBlockTests(unittest.TestCase):
+    def test_the_evidence_rpc_reads_the_market_read_s_block_first(self):
+        block = Block(700, '0x' + 'ab' * 32, 1000)
+        node = Headers(700, block.hash)
+        self.assertEqual(pin_block(node, block), block)
+        self.assertEqual(node.asked, [('eth_getBlockByNumber', ['0x2bc', False])])
+
+    def test_another_header_at_that_number_is_a_reorganization(self):
+        block = Block(700, '0x' + 'ab' * 32, 1000)
+        for node in (Headers(700, '0x' + 'cd' * 32), Headers(701, block.hash)):
+            with self.subTest(number=node.number), self.assertRaises(DataError) as caught:
+                pin_block(node, block)
+            self.assertEqual(str(caught.exception), 'snapshot_reorganized')
 
 
 class DelegateScanTests(unittest.TestCase):

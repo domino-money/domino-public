@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import psycopg
@@ -20,10 +21,10 @@ from psycopg.types.json import Jsonb
 
 from catalogue import PgCatalogue
 from dev_postgres import ADMIN, PORT, SOCKET
-from discovery import Block, DataError
+from discovery import Block, DataError, parse_block
 from featured_contract import rules_of
 from featured_pools import load_policy
-from featured_selector import Selector
+from featured_selector import PROVIDER_SPACING, RATE_LIMIT_WAIT, Selector
 from featured_store import FeaturedStore
 from gt_listing import GeckoListing, listing_url
 from manage_featured import tick, window
@@ -50,12 +51,40 @@ def gt_pool(pool_id,base,quote,*,volume='1000000',tvl='2000000',created=NOW-10*D
                              'dex':{'data':{'id':'uniswap-v4-robinhood','type':'dex'}}}}
 
 
+class Anchored:
+    """The production RPC's rule (rpc_failover.FailoverReadRpc): state is read only at a block
+    this very instance has observed, at most 16 of them, and every ReadService._rpc() is a new one."""
+    def __init__(self,node):
+        self.node,self.anchors=node,set()
+    def _state(self,tag):
+        if tag not in self.anchors:raise DataError('block_unavailable')
+    def request(self,method,params=()):
+        if method in ('eth_call','eth_getCode','eth_getBalance'):self._state(params[-1] if params else None)
+        result=self.node.request(method,params)
+        if method=='eth_getBlockByNumber':
+            tag=parse_block(result).tag
+            if tag not in self.anchors and len(self.anchors)>=16:raise DataError('request_budget_exhausted')
+            self.anchors.add(tag)
+        return result
+    def call(self,target,signature,inputs=(),values=(),outputs=(),*,block):
+        self._state(block)
+        return self.node.call(target,signature,inputs,values,outputs,block=block)
+    def symbol(self,token,*,block):
+        self._state(block)
+        return self.node.symbol(token,block=block)
+    def __getattr__(self,name):
+        return getattr(self.node,name)
+
+
 class Provider:
     """GeckoTerminal as the selector sees it: listing pages and multi reads."""
     def __init__(self,pages,multi=()):
         self.pages,self.multi_rows,self.urls,self.fail,self.fail_multi=pages,list(multi),[],None,None
+        self.fail_once={}   # URL fragment: the error its first request gets
     def __call__(self,url,timeout=None):
         self.urls.append(url)
+        for fragment in [fragment for fragment in self.fail_once if fragment in url]:
+            raise DataError(self.fail_once.pop(fragment))
         if self.fail:raise DataError(self.fail)
         if self.fail_multi and '/pools/multi/' in url:raise DataError(self.fail_multi)
         if '/pools/multi/' in url:
@@ -105,6 +134,8 @@ class FeaturedTests(unittest.TestCase):
         self.store=FeaturedStore(self.catalogue)
         self.policy={**load_policy(),'minPublishable':1}
         self.clock=[NOW]
+        # The selection's monotonic clock: its waits advance it, nothing sleeps.
+        self.monotonic,self.waits=[0.0],[]
         self.node=Node(self.clock)
         eligible=gt_pool(POOL,TOKEN,ZERO)
         young=gt_pool(YOUNG,TOKEN,USDG,created=NOW-DAY)
@@ -114,8 +145,13 @@ class FeaturedTests(unittest.TestCase):
     def selector(self,**changes):
         options=dict(store=self.store,catalogue=self.catalogue,policy=self.policy,
                      listing=GeckoListing(transport=self.provider,clock=lambda:self.clock[0],reserve=lambda:True),
-                     rpc_factory=lambda:self.node,clock=lambda:self.clock[0],embedded=[POOL])
+                     rpc_factory=lambda:Anchored(self.node),clock=lambda:self.clock[0],embedded=[POOL],
+                     sleep=self.wait,monotonic=lambda:self.monotonic[0])
         return Selector(**{**options,**changes})
+
+    def wait(self,seconds):
+        self.waits.append(seconds)
+        self.monotonic[0]+=seconds
 
     def count(self,table):
         with psycopg.connect(**self.settings,user=ADMIN) as conn:
@@ -261,6 +297,61 @@ class FeaturedTests(unittest.TestCase):
         last=self.selector().select(now=NOW+60,final=True)
         self.assertEqual((last['outcome'],last['revision']),('carried_over',None))
         self.assertTrue(self.store.selection_done('shadow',date(2026,9,25)))
+
+    def test_the_listing_spaces_its_calls_and_waits_out_a_rate_limit(self):
+        # A full first page (screened out on its figures, so the listing goes on), then our pool.
+        filler=[gt_pool('0x%064x'%n,TOKEN,USDG,volume=str(10**7),tvl='1000') for n in range(1,21)]
+        self.provider.pages=[filler,[gt_pool(POOL,TOKEN,ZERO)]]
+        self.provider.fail_once={'page=2':'http_429'}
+        result=self.selector().select(now=NOW)
+        self.assertEqual((result['outcome'],result['evaluated']),('bootstrap',1),result)
+        self.assertEqual([url.rsplit('=',1)[1] for url in self.provider.urls if 'page=' in url],['1','2','2'])
+        # Page 2 waits its 20 s after page 1; the 429 waits 30 s, which already spaces the retry.
+        self.assertEqual(self.waits,[PROVIDER_SPACING,RATE_LIMIT_WAIT])
+        self.assertIn(POOL,self.store.previous_evaluation('shadow',NOW+60,48)['pools'])
+
+    def test_a_full_shared_allowance_also_waits_and_asks_again(self):
+        answers=[False,True]
+        listing=GeckoListing(transport=self.provider,clock=lambda:self.clock[0],
+                             reserve=lambda:answers.pop(0) if answers else True)
+        result=self.selector(listing=listing).select(now=NOW)
+        self.assertEqual(result['outcome'],'bootstrap',result)
+        self.assertEqual((len(self.provider.urls),self.waits[:1]),(1,[RATE_LIMIT_WAIT]))
+
+    def test_no_call_starts_after_the_deadline(self):
+        filler=[gt_pool('0x%064x'%n,TOKEN,USDG,volume=str(10**7),tvl='1000') for n in range(1,21)]
+        self.provider.pages=[filler,[gt_pool(POOL,TOKEN,ZERO)]]
+        result=self.selector(max_seconds=PROVIDER_SPACING-1).select(now=NOW,final=False)
+        self.assertEqual(result['outcome'],'incomplete')
+        self.assertEqual([url.rsplit('=',1)[1] for url in self.provider.urls if 'page=' in url],['1'])
+        self.assertEqual(self.waits,[])
+
+    def test_the_owner_s_list_is_checked_now_through_one_paced_multi_read(self):
+        self.provider.fail_once={'/pools/multi/':'http_429'}
+        items=self.selector().check([POOL,POOL],now=NOW)
+        self.assertEqual([item['poolId'] for item in items],[POOL])
+        # The retried read brought the pool's figures: without them the estimate, a safety rule, fails.
+        self.assertTrue(items[0]['safe'],items[0]['reasons'])
+        self.assertEqual((sum('/pools/multi/' in url for url in self.provider.urls),self.waits),(2,[RATE_LIMIT_WAIT]))
+        self.assertEqual(self.count('domino_public.featured_runs'),0)
+
+    def test_a_market_response_the_contract_refuses_is_no_estimate_not_a_failed_run(self):
+        def refused(response,*,now):raise ValueError('invalid_pool_market_response')
+        with patch('featured_selector.estimate_pool_apr',refused):
+            result=self.selector().select(now=NOW)
+        self.assertEqual(result['outcome'],'bootstrap')
+        item=self.store.previous_evaluation('shadow',NOW+60,48)['pools'][POOL]
+        self.assertIn('estimate_not_available',item['reasons'])
+
+    def test_a_rate_limit_that_outlasts_the_deadline_ends_the_listing(self):
+        self.provider.fail='http_429'
+        result=self.selector().select(now=NOW,final=False)
+        self.assertEqual(result['outcome'],'incomplete')
+        self.assertLessEqual(self.monotonic[0],600)
+        tries=len(self.provider.urls)
+        self.assertGreater(tries,1)
+        # One try every 30 s at most: about two calls a minute while GeckoTerminal refuses.
+        self.assertLessEqual(tries,600//max(PROVIDER_SPACING,RATE_LIMIT_WAIT)+1)
 
     def test_shown_pools_the_provider_could_not_read_make_the_run_incomplete(self):
         self.provider.pages=[[]]
