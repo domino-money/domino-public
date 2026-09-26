@@ -127,6 +127,24 @@ class ReadinessUpgradeTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'financial_service_must_be_off'):
                     self.baseline_on(Path(temp), state)
 
+    @staticmethod
+    def systemd(name, active=()):
+        """What `systemctl show` gives on systemd 255: MainPID for a service, none for a socket or a timer."""
+        state = {'ActiveState': 'active' if name in active else 'inactive', 'SubState': 'running' if name in active else 'dead'}
+        if name.endswith('.service'):
+            state['MainPID'] = '4242' if name in active else '0'
+        return state
+
+    def test_a_socket_and_a_timer_are_off_by_their_state_alone(self):
+        # 26 Sep 2026 on domino-alpha-01: the first --inspect stopped with KeyError
+        # 'MainPID' at domino-gas-reservation.socket, which systemd shows without one.
+        with tempfile.TemporaryDirectory() as temp:
+            self.assertFalse(self.baseline_on(Path(temp), self.systemd)['migrationCommitted'])
+        for running in ('domino-gas-reservation.socket', 'domino-gas-settlement.timer'):
+            with self.subTest(running), tempfile.TemporaryDirectory() as temp:
+                with self.assertRaisesRegex(ValueError, 'financial_service_must_be_off'):
+                    self.baseline_on(Path(temp), lambda name: self.systemd(name, active=(running,)))
+
     def test_the_live_session_listener_and_execution_status_are_left_as_they_run(self):
         # 26 Sep 2026: sign-in live since the 25th, execution-status since the 26th
         # under install_financial_release.py's drop-in. Neither blocks the upgrade,

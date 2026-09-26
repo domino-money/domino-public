@@ -116,6 +116,12 @@ def _old_units(automation_commit):
             'domino-gas-settlement.service': peer['domino-gas-settlement.service']}
 
 
+def _off(state):
+    """Inactive with no main process. systemd shows MainPID for a service only:
+    a socket or a timer has none, and its ActiveState alone says it is off."""
+    return state['ActiveState'] == 'inactive' and state.get('MainPID', '0') == '0'
+
+
 def _source_root(planned):
     return financial.ROOT / 'releases' / planned['commit']
 
@@ -186,7 +192,7 @@ def baseline(files, planned):
         unit_bytes[name] = financial.sha(raw)
     for name in OFF_UNITS:
         state = financial.unit_state(name)
-        require(state['ActiveState'] == 'inactive' and state['MainPID'] == '0',
+        require(_off(state),
                 'financial_service_must_be_off')
     protected = {name: financial.unit_state(name) for name in WATCHED}
     return {'planSha256': financial.sha(financial.json_bytes(planned)),
@@ -294,7 +300,7 @@ def rollback(planned):
                 'readiness_rollback_unit_drift')
     for name in OFF_UNITS:
         state = financial.unit_state(name)
-        require(state['ActiveState'] == 'inactive' and state['MainPID'] == '0',
+        require(_off(state),
                 'financial_service_must_be_off')
     for name in UNITS:
         path = base.UNIT_DIR / name
@@ -352,7 +358,7 @@ def apply(files, planned, expected):
                 'protected_lane_changed')
         for name in OFF_UNITS:
             state = financial.unit_state(name)
-            require(state['ActiveState'] == 'inactive' and state['MainPID'] == '0',
+            require(_off(state),
                     'financial_service_started_unexpectedly')
         financial.journal(directory, {'phase': 'installed_off', 'migrationCommitted': True,
                                       'servicesStarted': False})
