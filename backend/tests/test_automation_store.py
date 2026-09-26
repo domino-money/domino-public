@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import psycopg
 from automation_fixtures import address, identity
 from automation_store import CycleStore
-from execution_status import ExecutionStatusReader
+from execution_status import READINESS_FRESH_SECONDS, ExecutionStatusReader
 from execution_pg import ExecutionPostgres
 from execution_store import ExecutionStoreError
 
@@ -133,9 +133,12 @@ class CycleStoreTests(unittest.TestCase):
         self.assertEqual(response['expiresAtEpoch'] - response['checkedAtEpoch'], 10)
         self.assertFalse(reader.availability(address(2), vault)['operational'])
         self.assertFalse(reader.availability(OWNER, address(4))['operational'])
-        with self.pg.admin() as conn:
-            conn.execute("UPDATE domino_execution.controls SET updated_at=clock_timestamp()-interval '46 seconds' WHERE key=%s", ('automation_ready_' + vault[2:],))
-        self.assertFalse(reader.availability(OWNER, vault)['operational'])
+        # Fresh through the window a compound can hold serve's loop for, and no longer.
+        for age, operational in ((READINESS_FRESH_SECONDS - 5, True), (READINESS_FRESH_SECONDS + 1, False)):
+            with self.pg.admin() as conn:
+                conn.execute("UPDATE domino_execution.controls SET updated_at=clock_timestamp()-make_interval(secs => %s) WHERE key=%s",
+                             (age, 'automation_ready_' + vault[2:]))
+            self.assertIs(reader.availability(OWNER, vault)['operational'], operational, age)
         self.store.record_readiness(OWNER, vault, False)
         self.assertFalse(reader.availability(OWNER, vault)['operational'])
         with psycopg.connect(**self.pg.settings, user='domino_execution_reader', options='-c search_path=domino_execution') as conn:

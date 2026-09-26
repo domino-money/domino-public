@@ -67,7 +67,7 @@
     },
     {
       "path": "backend/execution_status.py",
-      "sha256": "49d80c50818f3def306eb742a187cb76020e8fe32e7df7c2443ada68e46ef78e"
+      "sha256": "6a145f0a090242fc0dbcf686c890952ab90bd8e1877c0972a6344bbf5cfb8d6c"
     },
     {
       "path": "backend/access_transport.py",

@@ -54,9 +54,13 @@ reads it again rather than keeping a cursor.
 An event only proposes a vault: every evaluation still derives its admission on
 chain (factory, clone code, owner, implementation), so a vault whose event a
 reorganization removed is refused there. A vault of another implementation is
-left alone. The ceiling is 64 admitted vaults: each one costs a readiness read of
-about twenty calls every pass, and past it the loop logs
-`discovery_capacity_reached` with the count left out. A vault nobody should serve
+left alone. The ceiling is 256 admitted vaults, the configuration's own maximum:
+each one costs a readiness probe every pass, measured at 45 calls in about 0.06 s,
+so at the ceiling a pass takes ~15 s and asks the node for ~460 calls a second,
+against about 4,000 it answered on 26 September. Past it the loop logs
+`discovery_capacity_reached` with the count left out. Turn on shows while serve's
+heartbeat is at most 120 s old: a compound holds the loop up to its 90 s cycle
+budget, and within that window the button does not flicker while one runs. A vault nobody should serve
 is suspended by name: `automation_cli.py --config <file> suspend --sequence
 owner:vault`.
 

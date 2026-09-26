@@ -16,6 +16,11 @@ HEADER='X-Domino-Execution-Contract'
 ERROR_STATUS_BY_CODE={**ERROR_STATUS,'execution_capacity_busy':429,'execution_store_unavailable':503,
                       'onboarding_rate_limited':429,'onboarding_capacity_busy':429}
 MAX_BODY=2048
+# How old serve's heartbeat may be for Turn on to show. A compound holds serve's
+# loop up to its cycle budget (90 s in the pilot) and a pass over 256 vaults takes
+# about 15 s more; within this the button no longer flickers while one compounds.
+# A stopped service disappears from the page within it.
+READINESS_FRESH_SECONDS=120
 MAX_RESPONSE=131072
 
 class ExecutionStatusError(Exception):
@@ -190,7 +195,7 @@ class ExecutionStatusReader(_Store):
             value = row['value']
             ready = (type(value) is dict and set(value) == {'owner','vault','ready'}
                      and value['owner'] == owner and value['vault'] == vault and value['ready'] is True
-                     and 0 <= now - row['observed'] <= 45)
+                     and 0 <= now - row['observed'] <= READINESS_FRESH_SECONDS)
             return {'operational': ready, 'checkedAtEpoch': now, 'expiresAtEpoch': now + (10 if ready else 0)}
         return self._transaction(owner, op)
 

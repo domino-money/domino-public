@@ -164,8 +164,8 @@ class GeneratorTests(unittest.TestCase):
         self.assertNotIn('discovery', self.compose()['automation'])
         with self.assertRaisesRegex(generator.ConfigurationError, 'sequence_required'):
             self.compose(sequences=())
-        # The ceilings this delivery measured: two seconds below the head, 64 vaults.
-        self.assertEqual(generator.DISCOVERY, {'confirmations': 20, 'maxBlocksPerScan': 100000, 'maxSequences': 64})
+        # The ceilings measured: two seconds below the head, the configuration's own 256 vaults.
+        self.assertEqual(generator.DISCOVERY, {'confirmations': 20, 'maxBlocksPerScan': 100000, 'maxSequences': 256})
 
     def test_the_cli_discovers_without_a_named_sequence(self):
         path = self.temp / 'profile.json'
@@ -178,7 +178,16 @@ class GeneratorTests(unittest.TestCase):
         summary = json.loads(out.getvalue())
         self.assertEqual((code, summary['sequences'], summary['discovery']['fromBlock']),
                          (0, [], generator.first_block(RELEASE)))
-        self.assertEqual(load_config(self.temp / 'discovering/automation/config.json').discovery.maxSequences, 64)
+        self.assertEqual(load_config(self.temp / 'discovering/automation/config.json').discovery.maxSequences, 256)
+
+    def test_turn_on_outlasts_a_compound_and_a_full_pass(self):
+        # A compound holds serve's loop up to its cycle budget, and the next heartbeat
+        # of every vault waits at most one more evaluation interval behind it.
+        from execution_status import READINESS_FRESH_SECONDS
+        pilot = json.loads(PILOT.read_text())['scheduling']
+        self.assertEqual(READINESS_FRESH_SECONDS, 120)
+        self.assertGreaterEqual(READINESS_FRESH_SECONDS,
+                                pilot['cycleBudgetSeconds'] + generator.READINESS_MAX_INTERVAL_SECONDS)
 
     def test_the_first_block_comes_from_the_release_receipts(self):
         copy_dir = self.temp / 'release'

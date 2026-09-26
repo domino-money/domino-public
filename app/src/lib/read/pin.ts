@@ -52,6 +52,10 @@
  * once, a wallet's inventory page is reused for five minutes, and the
  * authenticated APIs take eight requests at once. Only backend sources those
  * manifests hash changed; no route, schema, reason code or version did.
+ * The execution-v1 digest moved again when availability started reporting
+ * operational for a heartbeat up to 120 s old instead of 45 s, so one compound
+ * holding the automation's loop no longer hides Turn on; the route, its schema
+ * and its version are unchanged.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -126,5 +130,5 @@ export const PERFORMANCE_V2_PIN = {
 /** Sanitized private execution status, finalized receipts and short-lived service availability. */
 export const EXECUTION_V1_PIN = {
   version: '1.0.0-rc.1',
-  manifestSha256: 'a295956ecd875801dfa9d108ad6a4a0c4a1b4848dc01c4a8f0541b3011fbdf0f',
+  manifestSha256: 'd9c354cf27beca2e8a7068eec6ba45e98a3c56b71e2e569f393817185a299308',
 } as const
