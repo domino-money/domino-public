@@ -55,6 +55,10 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_read_release.py -v
       - name: Check the session listener release installer without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_auth_release.py -v
+      - name: Check the performance and execution-status release installer without host access
+        run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_financial_release.py -v
+      - name: Check both release installers' drop-ins against the runner's own systemd
+        run: sudo -n env DOMINO_TEST_REAL_SYSTEMD=1 python3 -B -m unittest discover -s scripts/staging/tests -p test_financial_release_systemd.py -v
       - name: Check the public-data installer and rollback without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_public_data.py -v
       - name: Check the automation installer without host access

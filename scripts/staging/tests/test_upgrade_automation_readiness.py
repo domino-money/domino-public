@@ -102,6 +102,36 @@ class ReadinessUpgradeTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'financial_service_must_be_off'):
                     upgrade.baseline(self.files, self.planned)
 
+    def test_baseline_refuses_execution_status_under_a_release_dropin(self):
+        with tempfile.TemporaryDirectory() as temp:
+            units = Path(temp)
+            old_automation, old_financial = 'a' * 40, 'b' * 40
+            old = upgrade._old_units(old_automation, old_financial)
+            for name in upgrade.UNITS:
+                (units / name).write_text(old[name])
+            dropin = units / 'domino-execution-status.service.d/50-release.conf'
+            dropin.parent.mkdir()
+            dropin.write_text('[Service]\n')
+            inactive = {'ActiveState': 'inactive', 'MainPID': '0'}
+            with patch.object(upgrade.os, 'geteuid', return_value=0), \
+                 patch.object(upgrade.base, 'UNIT_DIR', units), \
+                 patch.object(upgrade.base, 'trusted_parents'), \
+                 patch.object(upgrade.base, 'pg_parents'), \
+                 patch.object(upgrade.base, 'dependency_preflight'), \
+                 patch.object(upgrade.base, 'trusted', side_effect=lambda p: Path(p).stat()), \
+                 patch.object(upgrade, '_prior_receipts', return_value=(old_automation, old_financial)), \
+                 patch.object(upgrade, '_upgrade_receipt', return_value=False), \
+                 patch.object(upgrade, '_source_present', return_value=False), \
+                 patch.object(upgrade, '_journal_dir', return_value=units / 'absent-journal'), \
+                 patch.object(upgrade.financial, 'unit_state', return_value=inactive), \
+                 patch.object(upgrade.financial, 'sql', return_value='0'), \
+                 patch.object(upgrade.base, 'run', side_effect=AssertionError('host mutation')):
+                with self.assertRaisesRegex(ValueError, 'execution_status_release_dropin'):
+                    upgrade.baseline(self.files, self.planned)
+                # Without it, the same off host is a baseline.
+                dropin.unlink()
+                self.assertFalse(upgrade.baseline(self.files, self.planned)['migrationCommitted'])
+
     def test_source_stage_is_immutable_and_contains_both_backend_components(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp); (root / 'releases').mkdir()

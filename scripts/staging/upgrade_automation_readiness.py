@@ -179,6 +179,11 @@ def baseline(files, planned):
         if not has_receipt:
             require(raw == old_units[name].encode(), 'readiness_unit_prematurely_replaced')
         unit_bytes[name] = financial.sha(raw)
+    # install_financial_release.py names execution-status's release in a drop-in,
+    # which outranks the unit this upgrade rewrites: repointing the unit under it
+    # would change nothing that runs. Take that release back with its --rollback first.
+    require(not os.path.lexists(base.UNIT_DIR / 'domino-execution-status.service.d' / '50-release.conf'),
+            'execution_status_release_dropin')
     for name in OFF_UNITS:
         state = financial.unit_state(name)
         require(state['ActiveState'] == 'inactive' and state['MainPID'] == '0',

@@ -175,6 +175,58 @@ same way. Releases and receipts stay. A commit is applied once: after a failed
 or rolled-back apply, install a new commit, or remove that release directory by
 hand first.
 
+## Moving performance, its collector and execution-status
+
+The same one-shot installer left `domino-performance`,
+`domino-performance-collector` and `domino-execution-status` on `fbc0d5e`. That
+release predates the status reader's loopback RPC and JWKS route (#207), its
+`/availability` route (#205) and the allowlist's removal (#182). The automation
+readiness upgrade, the only other tool that repoints execution-status, refuses
+while any other financial unit runs, the live session listener included.
+`scripts/staging/install_financial_release.py --component <name>` moves one of
+the three the way `install_auth_release.py` moves the session listener:
+
+- the archive's `backend/` goes to
+  `/opt/domino/financial/releases/<commit>/<name>`, beside whatever component
+  is already there, the session listener included;
+- one drop-in, `domino-<name>.service.d/50-release.conf`, names that release
+  with the unit's `Description`, `WorkingDirectory`, `BindPaths` and
+  `BindReadOnlyPaths` as `unit_text` renders them for the commit. The private
+  runtime stays at `/var/lib/domino-financial/<name>`, outside every release,
+  so its state carries over;
+- the receipt goes to `/var/backups/domino-<name>-release/`.
+
+It refuses what the session listener's installer refuses, except the session
+trigger, and for the two listeners it refuses a database without 041's
+`sessions.delegate`, which their session store reads. For execution-status it
+reports whether 039's policy lets the status reader see automation readiness:
+until the readiness upgrade applies 039, `/availability` fails while `list` and
+`status` answer. The readiness upgrade refuses to repoint execution-status
+under this drop-in; take the release back with `--rollback` first.
+
+```sh
+git archive --format=tar -o financial-release.tar "$RELEASE_SHA"
+sha256sum financial-release.tar
+sudo -n python3 scripts/staging/install_financial_release.py --component performance \
+  --archive financial-release.tar --archive-sha256 "$ARCHIVE_SHA256" --commit "$RELEASE_SHA" --inspect
+sudo -n python3 scripts/staging/install_financial_release.py --component performance \
+  --archive financial-release.tar --archive-sha256 "$ARCHIVE_SHA256" --commit "$RELEASE_SHA" --apply
+# The same for performance-collector and execution-status, then once:
+sudo systemctl daemon-reload
+systemctl show domino-performance.service -p WorkingDirectory -p BindPaths -p BindReadOnlyPaths -p ExecStart
+```
+
+The hygiene job loads both installers' drop-ins into the runner's own systemd
+and compares what it shows with the unit written for the new release
+(`test_financial_release_systemd.py`); the offline tests only model systemd.
+
+A unit no target holds runs the release from its next start. A family the
+continuous egress policy names is only wanted by the target, so restart it
+alone. `--rollback <commit>` with the same `--component` puts back the drop-in
+that commit replaced, or removes it. The private configuration, the egress
+policy and the Access applications are not this tool's; see
+[continuous egress](CONTINUOUS_EGRESS.md).
+
 ## Scoped recovery
 
 `--rollback` with the same archive/commit restores the original three financial

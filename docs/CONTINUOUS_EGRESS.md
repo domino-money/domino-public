@@ -187,9 +187,11 @@ account, mode `0600`, an `rpcUrl` on an allowed host), `profile.json` for
 `performance` and `execution-status` — the Access application and hostname,
 the tunnel route, the Worker's service token and flag (#170–#174). For `auth`,
 the release the listener runs is named by its own `50-release.conf`, written by
-`install_auth_release.py` ([financial upgrade](FINANCIAL_BACKEND_UPGRADE.md));
-the egress drop-in sorts after it and replaces only `ExecStart`, whose relative
-script path resolves in that release.
+`install_auth_release.py`, and for `performance`, `performance-collector` and
+`execution-status` by `install_financial_release.py`
+([financial upgrade](FINANCIAL_BACKEND_UPGRADE.md)); the egress drop-in sorts
+after it and replaces only `ExecStart`, whose relative script path resolves in
+that release.
 
 A family in the target's `Requires=` shares its failures with the read path.
 systemd propagates a member's restart to the target that requires it, and the
