@@ -14,6 +14,7 @@ import { SlippageChoice } from '../create/SlippageChoice'
 import { IconClose } from '../icons'
 import { TokenMark } from '../TokenIcon'
 import { Button, IconButton, KeyValue, KeyValueList, Skeleton } from '../ui'
+import { SequenceSwitch } from './SequenceSwitch'
 import { amountText, currencyName, isRejection, outcomeUnknown, watchReceipt } from './walletSteps'
 
 /**
@@ -27,6 +28,11 @@ import { amountText, currencyName, isRejection, outcomeUnknown, watchReceipt } f
  * Shown only when the connected wallet, on Robinhood Chain, is the NFT's
  * owner as the read service reported it; the chain is asked again before
  * anything is sent. Opened lazily by the Positions screens in wallet builds.
+ *
+ * 2026-09-25 (the owner: "vamos ligar tudo"): for the root of one of Domino's
+ * sequences, Turn on or Pause stands first (SequenceSwitch.tsx), in the place
+ * of the page's own way on (`automate`: Automate, or the docs on switching a
+ * sequence on), which is shown whenever the switch offers nothing.
  */
 
 export interface PositionCurrency { address: string; symbol: string | null; decimals: number | null }
@@ -47,6 +53,8 @@ export interface PositionActionsProps {
   usd?: { usdgIndex: 0 | 1; sqrtPriceX96: bigint; block: number } | null
   /** The page's own token marks (already resolved there), drawn beside the dialog's amounts. */
   tokens?: readonly [TokenDisplay, TokenDisplay] | null
+  /** The page's own way on for this position (Automate, or the docs on switching its sequence on), shown first unless Turn on or Pause takes its place. */
+  automate?: ReactNode
 }
 
 type Action = 'collect' | 'close'
@@ -156,7 +164,7 @@ function ActionDialog({ action, onClose, children, footer }: { action: Action; o
   )
 }
 
-export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null }: PositionActionsProps) {
+export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null }: PositionActionsProps) {
   const identity = useWalletIdentity()
   const wallet = walletKey(identity)
   const mine = wallet !== null && identity.kind === 'connected' && identity.address.toLowerCase() === owner.toLowerCase()
@@ -281,95 +289,98 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
   const receiveUsd = usd && prepared && d0 !== null && d1 !== null ? formatUsd(usdgValue({ amounts: prepared.receive, decimals: [d0, d1], usdgIndex: usd.usdgIndex, sqrtPriceX96: usd.sqrtPriceX96 })) : null
 
   return (
-    <div className="flex flex-wrap items-center gap-2" data-position-actions={hooked ? 'hooks' : ''}>
-      <Button
-        type="button"
-        variant="secondary"
-        disabled={hooked || empty || noFees || (pending && run?.action !== 'collect')}
-        title={collectReason}
-        aria-busy={(pending && run?.action === 'collect') || undefined}
-        data-position-action="collect"
-        onClick={() => void show('collect')}
-      >
-        Collect fees
-      </Button>
-      {!empty && (
+    <>
+      <SequenceSwitch tokenId={tokenId} holder={owner} liquid={!empty} fallback={automate} />
+      <div className="flex flex-wrap items-center gap-2" data-position-actions={hooked ? 'hooks' : ''}>
         <Button
           type="button"
-          variant="danger"
-          disabled={hooked || (pending && run?.action !== 'close')}
-          title={hooked ? HOOKED : undefined}
-          aria-busy={(pending && run?.action === 'close') || undefined}
-          data-position-action="close"
-          onClick={() => void show('close')}
+          variant="secondary"
+          disabled={hooked || empty || noFees || (pending && run?.action !== 'collect')}
+          title={collectReason}
+          aria-busy={(pending && run?.action === 'collect') || undefined}
+          data-position-action="collect"
+          onClick={() => void show('collect')}
         >
-          Close position
+          Collect fees
         </Button>
-      )}
-      {open && (
-        <ActionDialog
-          action={open}
-          onClose={() => setOpen(null)}
-          footer={
-            shown?.stage === 'done' ? (
-              <Button type="button" variant="outline" size="lg" className="w-full" onClick={() => setOpen(null)}>
-                Back to position
-              </Button>
-            ) : (
-              <Button type="button" variant="primary" size="lg" className="w-full" disabled={!canSend} aria-busy={busy || undefined} data-position-send={open} onClick={() => void confirm(open)}>
-                {PRIMARY[open]}
-              </Button>
-            )
-          }
-        >
-          <p className="dm-receipt-lede">
-            {open === 'collect'
-              ? 'The fees this position has earned go to your wallet. The position stays open.'
-              : 'All of the liquidity and its fees go to your wallet. The empty position NFT stays in your wallet.'}
-          </p>
-          <KeyValueList className="dm-receipt" data-position-receive={open}>
-            <KeyValue label="You receive">
-              {prepared || !unread ? <Pair amounts={prepared ? prepared.receive : null} currencies={currencies} tokens={tokens} /> : <Dash reason={unread} />}
-            </KeyValue>
-            {receiveUsd && usd && (
-              <p className="dm-usd-line" title={`Pool price at block ${usd.block}`}>
-                {receiveUsd}
+        {!empty && (
+          <Button
+            type="button"
+            variant="danger"
+            disabled={hooked || (pending && run?.action !== 'close')}
+            title={hooked ? HOOKED : undefined}
+            aria-busy={(pending && run?.action === 'close') || undefined}
+            data-position-action="close"
+            onClick={() => void show('close')}
+          >
+            Close position
+          </Button>
+        )}
+        {open && (
+          <ActionDialog
+            action={open}
+            onClose={() => setOpen(null)}
+            footer={
+              shown?.stage === 'done' ? (
+                <Button type="button" variant="outline" size="lg" className="w-full" onClick={() => setOpen(null)}>
+                  Back to position
+                </Button>
+              ) : (
+                <Button type="button" variant="primary" size="lg" className="w-full" disabled={!canSend} aria-busy={busy || undefined} data-position-send={open} onClick={() => void confirm(open)}>
+                  {PRIMARY[open]}
+                </Button>
+              )
+            }
+          >
+            <p className="dm-receipt-lede">
+              {open === 'collect'
+                ? 'The fees this position has earned go to your wallet. The position stays open.'
+                : 'All of the liquidity and its fees go to your wallet. The empty position NFT stays in your wallet.'}
+            </p>
+            <KeyValueList className="dm-receipt" data-position-receive={open}>
+              <KeyValue label="You receive">
+                {prepared || !unread ? <Pair amounts={prepared ? prepared.receive : null} currencies={currencies} tokens={tokens} /> : <Dash reason={unread} />}
+              </KeyValue>
+              {receiveUsd && usd && (
+                <p className="dm-usd-line" title={`Pool price at block ${usd.block}`}>
+                  {receiveUsd}
+                </p>
+              )}
+              {open === 'close' && (
+                <KeyValue label="At least" data-position-at-least="">
+                  {atLeast ? <Pair amounts={atLeast} currencies={currencies} tokens={tokens} /> : prepared ? <Dash reason="Choose a slippage limit from 0.1% to 5%." /> : unread ? <Dash reason={unread} /> : <Pair amounts={null} currencies={currencies} />}
+                </KeyValue>
+              )}
+              <KeyValue label="Network fee" data-position-network-fee="">
+                {fee ? <span className="tnum" title={`${fee.exact} ETH at most`}>Up to {fee.text} ETH</span> : unread ? <Dash reason={unread} /> : <Skeleton className="ml-auto h-4 w-20" />}
+              </KeyValue>
+            </KeyValueList>
+            {open === 'close' && (
+              <SlippageChoice id="close-slippage" label="Slippage limit" bps={slippage} onChange={setSlippage} disabled={busy || shown?.stage === 'done'} />
+            )}
+            {prepared?.state.hasSubscriber && (
+              <p className="text-body text-fg-muted" data-position-warning="automation">
+                {AUTOMATION}
               </p>
             )}
-            {open === 'close' && (
-              <KeyValue label="At least" data-position-at-least="">
-                {atLeast ? <Pair amounts={atLeast} currencies={currencies} tokens={tokens} /> : prepared ? <Dash reason="Choose a slippage limit from 0.1% to 5%." /> : unread ? <Dash reason={unread} /> : <Pair amounts={null} currencies={currencies} />}
-              </KeyValue>
+            {nothingToCollect && shown?.stage !== 'done' && (
+              <p className="text-body text-fg-muted" data-position-nothing="">
+                There are no fees to collect right now.
+              </p>
             )}
-            <KeyValue label="Network fee" data-position-network-fee="">
-              {fee ? <span className="tnum" title={`${fee.exact} ETH at most`}>Up to {fee.text} ETH</span> : unread ? <Dash reason={unread} /> : <Skeleton className="ml-auto h-4 w-20" />}
-            </KeyValue>
-          </KeyValueList>
-          {open === 'close' && (
-            <SlippageChoice id="close-slippage" label="Slippage limit" bps={slippage} onChange={setSlippage} disabled={busy || shown?.stage === 'done'} />
-          )}
-          {prepared?.state.hasSubscriber && (
-            <p className="text-body text-fg-muted" data-position-warning="automation">
-              {AUTOMATION}
-            </p>
-          )}
-          {nothingToCollect && shown?.stage !== 'done' && (
-            <p className="text-body text-fg-muted" data-position-nothing="">
-              There are no fees to collect right now.
-            </p>
-          )}
-          {shown && PROGRESS[shown.stage] && (
-            <p role="status" className="text-body font-medium text-fg" data-position-progress={shown.stage}>
-              {PROGRESS[shown.stage]}
-            </p>
-          )}
-          {shown?.notice && (
-            <p role="alert" className="text-body text-fg-muted" data-position-notice={shown.notice.code ?? 'said'}>
-              {shown.notice.text}
-            </p>
-          )}
-        </ActionDialog>
-      )}
-    </div>
+            {shown && PROGRESS[shown.stage] && (
+              <p role="status" className="text-body font-medium text-fg" data-position-progress={shown.stage}>
+                {PROGRESS[shown.stage]}
+              </p>
+            )}
+            {shown?.notice && (
+              <p role="alert" className="text-body text-fg-muted" data-position-notice={shown.notice.code ?? 'said'}>
+                {shown.notice.text}
+              </p>
+            )}
+          </ActionDialog>
+        )}
+      </div>
+    </>
   )
 }

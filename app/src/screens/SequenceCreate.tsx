@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Hex } from 'viem'
-import { AUTOMATION_FEE_BPS, sequenceReadError, sequenceReadStage, type createSequenceClient, type PreparedSequence } from '../finance/sequence'
+import { AUTOMATION_FEE_BPS, sequenceReadError, sequenceReadStage, type PreparedSequence } from '../finance/sequence'
+import { RECEIPT_EVERY_MS, RECEIPT_WAIT_MS, settleStep, type Connected, type SequenceClient } from '../finance/sequenceLive'
 import type { GasBudget } from '../finance/setup'
 import type { AtomicStatus } from '../finance/batch'
 import { errorCode, financeErrorText } from '../finance/words'
@@ -18,6 +19,7 @@ import { SuccessorAxis } from '../components/automate/SuccessorAxis'
 import { CompoundPreview } from '../components/automate/CompoundPreview'
 import { PositionPicker } from '../components/automate/PositionPicker'
 import { AddressMark } from '../components/automate/marks'
+import { SequenceSwitch } from '../components/positions/SequenceSwitch'
 
 /**
  * Putting a position's earned fees to work (the owner's simpler page,
@@ -37,31 +39,23 @@ import { AddressMark } from '../components/automate/marks'
  * needs no private session and no running service.
  */
 
-type Client = ReturnType<typeof createSequenceClient>
+type Client = SequenceClient
 /** `batch`: the approval and the creation as one batch (EIP-5792), one signature, when the wallet can. */
 type StepKey = 'approve-root' | 'create' | 'batch'
 /** `chain`: sent, its receipt read while the press runs. `sent`: sent, and the press ended before its receipt settled it: no spinner, no caption, since nothing reads it any more. */
 type StepState = 'upcoming' | 'reading' | 'wallet' | 'chain' | 'sent' | 'done' | 'failed'
 type Notice = { text: string; code: string | null; stage: string | null }
-type Receipt = Awaited<ReturnType<Client['receipt']>>['state']
 
 export interface SequenceIntent {
   mode: SequenceMode | null
   tokenId: string | null
 }
 
-/** What pressing Set up automation needs, fresh at each press: the verified client, a network budget from the wallet's own price, and a way to keep the verified profile. */
-export interface Connected {
-  client: Client
-  gas: GasBudget
-  verified: () => void
-}
+/** What pressing Set up automation needs, fresh at each press (finance/sequenceLive.ts connectSequence). */
+export type { Connected }
 
 /** The primary action's name: the sentences that send the owner back to it name it (finance/words.ts). */
 const ACTION = 'Set up automation'
-const RECEIPT_WAIT_MS = 240_000
-const RECEIPT_EVERY_MS = 3_000
-const SETTLED: readonly Receipt[] = ['confirming', 'finalized', 'reverted', 'reorged', 'over_budget', 'over_budget_finalized']
 // wallet_review_expired: a batch's review that ran out while its latch was claimed, freed before the wallet was asked (finance/batch.ts).
 const BEFORE_WALLET = ['review_required', 'sequence_admission_unavailable', 'sequence_release_expired', 'sequence_activation_unavailable', 'sequence_tariff_changed', 'deployment_code_changed', 'deployment_identity_changed', 'root_approval_changed', 'wallet_review_expired']
 /**
@@ -127,18 +121,9 @@ class Offered extends Error {
   }
 }
 
-/** Reads a sent step's receipt every few seconds until it settles; throws unless it landed, and stops quietly once the page moved on. */
+/** Reads a sent step's receipt every few seconds until it settles (finance/sequenceLive.ts); throws unless it landed, and stops quietly once the page moved on. */
 async function settle(client: Client, hash: Hex, here: () => boolean) {
-  let state: Receipt = 'pending'
-  const until = Date.now() + RECEIPT_WAIT_MS
-  while (Date.now() < until && !SETTLED.includes(state)) {
-    await new Promise((resolve) => setTimeout(resolve, RECEIPT_EVERY_MS))
-    if (!here()) throw new Left()
-    state = (await client.receipt(hash)).state
-  }
-  if (!SETTLED.includes(state)) throw new Error('sequence_receipt_waiting')
-  if (state === 'reverted') throw new Error('sequence_step_reverted')
-  if (state === 'reorged') throw new Error('sequence_step_reorged')
+  if ((await settleStep(client, hash, here)) === 'left') throw new Left()
 }
 
 /**
@@ -462,10 +447,19 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
           <LinkButton href={positionHref(created.tokenId)} size="lg" className="dm-seq-done-link" data-sequence-created-position={created.tokenId}>
             View position
           </LinkButton>
-          <LinkButton href={chosen.key === 'domino' ? '#/docs/domino-compounder#start-and-stop' : '#/docs/auto-compound#where-it-starts'} variant="outline" size="lg" className="dm-seq-done-link">
-            How to switch it on
-            <IconChevronRight />
-          </LinkButton>
+          {/* Turn on once the automation service says it is ready for this sequence (2026-09-25); until then, the docs. */}
+          <SequenceSwitch
+            tokenId={created.tokenId}
+            liquid
+            signIn={false}
+            size="lg"
+            fallback={
+              <LinkButton href={chosen.key === 'domino' ? '#/docs/domino-compounder#start-and-stop' : '#/docs/auto-compound#where-it-starts'} variant="outline" size="lg" className="dm-seq-done-link">
+                How to switch it on
+                <IconChevronRight />
+              </LinkButton>
+            }
+          />
         </div>
       </section>
     )

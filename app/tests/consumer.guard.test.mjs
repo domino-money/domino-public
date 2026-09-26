@@ -125,7 +125,9 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lab scree
   // AdvancedSetup.tsx, inside the lazy Setup screen. Changed on purpose (owner, 2026-09-22): New position's deposit
   // amounts (G8) were deleted from Review, so components/create/DepositAmounts.tsx, the lazy chunk Review opens behind
   // __DOMINO_WALLET_SESSION__ (checked below), is Create position alone and is scanned like any other file here.
-  for (const { path, code } of ALL.filter(({ path }) => !isConsumer(path) && !/^finance\/|^screens\/(Setup|AdvancedSetup|Performance|Execution|Sequence)\.tsx$/.test(path))) {
+  // Changed on purpose (owner, 2026-09-25): a sequence's Turn on reads the session through the live port to ask the
+  // automation service (components/positions/SequenceSwitch.tsx), as the owner-only activation check on Sequence.tsx did.
+  for (const { path, code } of ALL.filter(({ path }) => !isConsumer(path) && !/^finance\/|^screens\/(Setup|AdvancedSetup|Performance|Execution|Sequence)\.tsx$|^components\/positions\/SequenceSwitch\.tsx$/.test(path))) {
     for (const spec of specifiers(code)) {
       if (spec.startsWith('.') && isConsumerTarget(target(path, spec))) offenders.push(`${path}: ${spec}`);
     }
@@ -139,7 +141,8 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lab scree
     ALL.filter(({ path, code }) => specifiers(code).some((spec) => spec.startsWith('.') && target(path, spec) === wanted)).map(({ path }) => path);
   // Setup's preview consumer reads the session through the live port, as Performance, Execution and the owner-only sequence activation check do; New position does not.
   // Changed on purpose (2026-09-24): the automation page lost its owner controls, and with them the activation check that read the live port.
-  assert.deepEqual(importersOf('session/livePort'), ['finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
+  // Changed on purpose (owner, 2026-09-25): that check is back, behind a sequence's Turn on (components/positions/SequenceSwitch.tsx).
+  assert.deepEqual(importersOf('session/livePort'), ['components/positions/SequenceSwitch.tsx', 'finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
   // Create position's chunk and what it is made of ask no preview and read no session: it signs through the wallet alone.
   for (const path of ['components/create/DepositAmounts.tsx', 'components/create/CreatePosition.tsx', 'components/create/StageReview.tsx', 'lib/create/depositPlan.ts', 'lib/create/createProgress.ts']) {
     const targets = specifiers(byPath(path).code).filter((spec) => spec.startsWith('.')).map((spec) => target(path, spec));
@@ -178,7 +181,8 @@ test('DF-11: prepare has exactly one call site, inside issueWalletStep; create a
   // 2026-09-24: the expert creation card left Sequence.tsx; SequenceCreate's one action is the only sequence creation.
   assert.deepEqual(hits(ALL, /\.create\(/), ['screens/SequenceCreate.tsx', 'screens/Setup.tsx']);
   // 2026-09-24: the owner's Collect fees / Close position and the refund of a held setup deposit send one reviewed step each, on purpose.
-  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['components/create/CreatePosition.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/PositionActions.tsx', 'screens/AdvancedSetup.tsx', 'screens/SequenceCreate.tsx']);
+  // 2026-09-25 (owner): and a sequence's Turn on or Pause, the one owner transaction its vault takes (components/positions/SequenceSwitch.tsx).
+  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['components/create/CreatePosition.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/PositionActions.tsx', 'components/positions/SequenceSwitch.tsx', 'screens/AdvancedSetup.tsx', 'screens/SequenceCreate.tsx']);
   assert.deepEqual(hits(MINE, /available:\s*true/), [], 'no handoff says it is available');
   assert.deepEqual(hits(MINE, /executionAvailable:\s*true|automationAvailable:\s*true|serverBroadcastAvailable:\s*true/), []);
 });

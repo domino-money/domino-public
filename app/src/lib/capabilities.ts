@@ -52,13 +52,16 @@ export const ROADMAP_PILL: Partial<Record<Availability, string>> = {
 /** What Settings lists, and where each stands today. */
 export const ROADMAP: Array<{ name: string; status: Availability; note: string }> = [
   // Changed on purpose (2026-09-25, audit of 754014c): no screen of this site activates, pauses or withdraws any more.
-  { name: 'Compound', status: 'owner-scoped', note: 'Earned fees go back into the same position. A new sequence starts paused; your wallet activates it on your sequence vault once the service confirms readiness. No Domino screen makes that transaction today.' },
+  // Changed on purpose again (owner, 2026-09-25): a position's page offers Turn on once the service is ready, and Pause.
+  { name: 'Compound', status: 'owner-scoped', note: 'Earned fees go back into the same position. A new sequence starts paused; once the service confirms readiness, your position’s page offers Turn on, and your wallet activates it on your sequence vault.' },
   { name: 'Fee-balancing swaps', status: 'owner-scoped', note: 'Bounded swaps can balance uneven earned fees during an admitted sequence’s automatic cycle. Its service fee covers them; an unavailable service sends none.' },
   { name: 'Domino', status: 'owner-scoped', note: 'Fees from one position can open the next one higher up. A new sequence starts paused; activation requires a live owner-specific service check.' },
+  // Changed on purpose (review of 2026-09-25): Turn on and Pause have no review wall (the owner's rule), so only creating a
+  // sequence shows its amounts and limits first; the two go straight to the wallet.
   {
     name: 'Wallet permissions',
     status: 'connected',
-    note: 'Sign-in proves your address. Your wallet approves one position NFT to its own sequence vault and creates the sequence here. Authorising or revoking the operator, pausing and withdrawing are transactions it signs on that vault, which no Domino screen makes today. Each step shows its amounts and limits before your wallet requests transaction approval.',
+    note: 'Sign-in proves your address. Your wallet approves one position NFT to its own sequence vault and creates the sequence here. Turning on and pausing are transactions it signs on that vault, from your position’s page; authorising or revoking the operator and withdrawing have no Domino screen today. Creating a sequence shows its amounts and limits before your wallet requests approval; Turn on and Pause go straight to your wallet, which shows the transaction.',
   },
   {
     name: 'Service pricing',

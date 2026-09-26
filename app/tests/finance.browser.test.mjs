@@ -2191,6 +2191,8 @@ const chainAbi = parseAbi([
   // Simulated before it is offered, so the call has to resolve here too.
   'function setOperator(address next)', 'function setPolicy(Policy next)', 'function setExecutionLimits(ExecutionLimits next)',
   'function rearmRoot(bool consentToUncollectedFees)', 'function recoverUnmanagedPosition(uint256 tokenId)', 'function recoverUntrackedCurrency(address currency, uint256 amount)',
+  // 2026-09-25 (owner): a sequence's Turn on and Pause, the owner's one transaction each on the vault.
+  'function resume()', 'function pause()',
 ]);
 
 /**
@@ -2247,7 +2249,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
   const policy = { serviceFeeBps, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 60, maxPositions, version: policyVersion, paused };
   const limits = { version: limitsVersion, upsideBps: 5000, maxSlippageBps: 100, maxPriceImpactBps: 100, maxGasCostWei: 1_000_000_000_000_000n, maxObservationAgeSeconds: 60, forecastHorizonSeconds: 3600 };
   // The owner steps the vault can be asked to sign; each is simulated before it is offered, and none of them answers anything.
-  const WRITES = ['setOperator', 'setPolicy', 'setExecutionLimits', 'rearmRoot', 'recoverUnmanagedPosition', 'recoverUntrackedCurrency'];
+  const WRITES = ['setOperator', 'setPolicy', 'setExecutionLimits', 'rearmRoot', 'recoverUnmanagedPosition', 'recoverUntrackedCurrency', 'resume', 'pause'];
   // Two distinct fee sources, so a position's four reserve balances are four distinct source-and-currency pairs.
   const position = (known, active, isRoot, parentTokenId) => ({ known, active, isRoot, parentTokenId, generation: 0n, tickLower: -60, tickUpper: 60, registrationBaselineId: zero, identity: zero, source0: at(0x71, 32), source1: at(0x72, 32) });
   function answer(to, name, args) {
@@ -2311,9 +2313,18 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
   const hashOf = index => at(0xcc + index, 32);
   let included = settled ? { transaction: {}, receipt: {} } : null;
   const include = (patch) => { included = patch ? { transaction: patch.transaction ?? {}, receipt: patch.receipt ?? {} } : null; };
-  /** What the contracts make of a sent transaction: an approval is recorded against its NFT, a creation registers the vault it predicted. */
+  /**
+   * What the contracts make of a sent transaction: an approval is recorded against its NFT, a creation registers the vault
+   * it predicted, and a vault's resume or pause (2026-09-25) flips its policy's paused flag.
+   */
   function apply(tx) {
     const to = String(tx.to).toLowerCase();
+    const vault = vaults.get(to);
+    if (vault) {
+      const { functionName } = decodeFunctionData({ abi: chainAbi, data: tx.data });
+      if (functionName === 'resume' || functionName === 'pause') vault.policy = { ...(vault.policy ?? policy), paused: functionName === 'pause' };
+      return;
+    }
     if (to !== deployment.positionManager && to !== deployment.factory) return;
     const { functionName, args } = decodeFunctionData({ abi: chainAbi, data: tx.data });
     if (to === deployment.positionManager && functionName === 'approve' && !lostApproval) approvals.set(args[1], String(args[0]).toLowerCase());
@@ -3562,6 +3573,240 @@ test('a paused Auto-compound says so on its row and its page, offers how to swit
     assert.ok(reads.some((data) => data.includes('652b9b41') && data.includes('0505c8c9')), 'and the vault, once');
     assert.deepEqual([site.asked, chain.missing, chain.refused], [[], [], []], 'no route of the site; nothing but the reads');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
+  } finally { await s.close(); }
+});
+
+// ---- A sequence's Turn on and Pause (the owner, 2026-09-25: "vamos ligar tudo") ------------------------------------
+// A sequence is created paused, and since Manage a sequence left (2026-09-24) nothing switched it on. Its root position's
+// page now offers Turn on once the automation service says, through the signed-in session, that it is ready for this
+// owner and vault (POST /api/execution/v1/availability), and Pause while it runs. Each press is the one owner
+// transaction the vault takes, prepared through the sequence client and read back by hash; the pill follows at once.
+
+/**
+ * The execution route's availability answer: `ready` says what the service says; every question is kept, with the
+ * test's `phase` at the time it came. Each answer expires `lifetime` seconds after its check (the contract's most is
+ * 10), and a test can hold the answer to a question until it lets it go (`gate`, given the question's index).
+ */
+function availabilityRoute(owner, ready) {
+  const service = {
+    asked: [],
+    phases: [],
+    phase: null,
+    lifetime: 10,
+    gate: null,
+    answered: 0,
+    async route(request, url) {
+      if (url.pathname !== '/api/execution/v1/availability') return undefined;
+      assert.ok(request.headers.get('cookie')?.includes('__Host-domino-session='), 'asked within the session');
+      assert.ok(request.headers.get('X-Domino-CSRF'), 'with its CSRF');
+      const body = JSON.parse(await request.text());
+      const index = service.asked.push(body) - 1;
+      service.phases.push(service.phase);
+      await service.gate?.(index);
+      const now = Math.floor(Date.now() / 1000);
+      const answer = { contractVersion: executionRuntime.CONTRACT_VERSION, chainId: 4663, owner, vault: body.vault, operational: ready(), checkedAtEpoch: now, expiresAtEpoch: now + service.lifetime };
+      assert.ok(executionRuntime.validateResponse('availability', answer));
+      service.answered += 1;
+      return json(answer, 200, { 'X-Domino-Execution-Contract': executionRuntime.CONTRACT_VERSION });
+    },
+  };
+  return service;
+}
+
+/**
+ * OWNED_OPEN as the root of a paused Domino-compound sequence this wallet created: the public RPC reads it so (its
+ * subscriber, the factory's vault, paused), and the wallet's chain (fakeSequenceChain) holds that vault. A resume or
+ * pause the wallet sends lands on both at once, as one chain would show it.
+ */
+function pausedRoot() {
+  const seq = fakeSequenceChain(OWNER, { roots: [BigInt(OWNED_OPEN)], paused: true, settled: true });
+  const [VAULT] = seq.vaults;
+  const chain = browserChain({
+    positions: [onChain(OWNED_OPEN, { subscriber: VAULT })],
+    tokens: TOKENS,
+    vaults: { [VAULT]: { root: OWNED_OPEN, feeBps: 400, paused: true, valid: true } },
+  });
+  const answer = async (method, params) => {
+    const reply = await seq.request(method, params);
+    if (method === 'eth_sendTransaction' && String(params[0].to).toLowerCase() === VAULT) {
+      const { functionName } = decodeFunctionData({ abi: chainAbi, data: params[0].data });
+      chain.vaults[VAULT].paused = functionName === 'pause';
+    }
+    return reply;
+  };
+  return { seq, chain, VAULT, answer };
+}
+
+/** Opens OWNED_OPEN's page and waits for its pill. */
+async function openRoot(s) {
+  await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+  const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
+  await detail.waitFor({ timeout: 10_000 });
+  await detail.locator('.dm-pos-chips [data-automation="domino"]').waitFor({ timeout: 10_000 });
+  return detail;
+}
+
+test('a paused sequence’s page offers Turn on once the service says it is ready: one resume to the vault, the pill says Active, and Pause pauses it again', async () => {
+  const { seq, chain, VAULT, answer } = pausedRoot();
+  const service = availabilityRoute(OWNER, () => true);
+  const s = await scenario({ chain, routes: [service.route] });
+  await routeChain(s, seq, CHAIN_METHODS, answer);
+  // The wallet's chain methods reach the fake chain from the next load on.
+  await s.page.reload();
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    s.set({ sequenceRelease: { status: 200, body: seq.release } });
+    await login(s.page);
+    const detail = await openRoot(s);
+    const pill = detail.locator('.dm-pos-chips [data-automation="domino"]');
+    assert.equal(await pill.innerText(), 'Domino-compound · Paused');
+
+    // The service's word, asked for this vault within the session: Turn on, in the place of the docs link.
+    const turnOn = detail.locator('[data-position-actions] button[data-sequence-switch="turn-on"]');
+    await turnOn.waitFor({ timeout: 10_000 });
+    assert.equal(await turnOn.innerText(), 'Turn on');
+    assert.deepEqual(service.asked, [{ vault: VAULT }]);
+    assert.equal(await detail.locator('a[data-automate-docs], a[data-automate-entry]').count(), 0, 'Turn on stands where the docs link stood');
+    assert.deepEqual(await detail.locator('[data-position-actions] button').allInnerTexts(), ['Turn on', 'Collect fees', 'Close position']);
+    await s.page.screenshot({ path: join(shots(), 'p2-sequence-turn-on.png'), fullPage: true });
+
+    // The page also asks again just before each answer lapses (about every 8 seconds), so the questions are counted
+    // by the phase they came in rather than in total (the review of 2026-09-25).
+    service.phase = 'turn-on';
+    await turnOn.click();
+    const pause = detail.locator('[data-position-actions] button[data-sequence-switch="pause"]');
+    await pause.waitFor({ timeout: 30_000 });
+    service.phase = 'active';
+    assert.equal(await pill.innerText(), 'Domino-compound · Active', 'the pill follows at once');
+    assert.equal(await detail.locator('[data-sequence-switch-note]').innerText(), 'Turned on.');
+    // One transaction, the vault's resume(), asked again of the service before it was prepared and before it was sent.
+    assert.equal(seq.sends.length, 1);
+    assert.equal(String(seq.sends[0].to).toLowerCase(), VAULT);
+    assert.equal(decodeFunctionData({ abi: chainAbi, data: seq.sends[0].data }).functionName, 'resume');
+    assert.equal(seq.sends[0].value, '0x0');
+    assert.ok(service.phases.filter((phase) => phase === 'turn-on').length >= 2, 'asked twice more before the wallet was asked');
+
+    // Pause: no service asked, the vault's pause(), and Turn on is back once the service is asked again.
+    await s.page.waitForTimeout(500);
+    service.phase = 'pause';
+    await pause.click();
+    await turnOn.waitFor({ timeout: 30_000 });
+    assert.equal(await pill.innerText(), 'Domino-compound · Paused');
+    assert.equal(seq.sends.length, 2);
+    assert.equal(decodeFunctionData({ abi: chainAbi, data: seq.sends[1].data }).functionName, 'pause');
+    assert.equal(service.phases.filter((phase) => phase === 'active').length, 0, 'nothing is asked of the service while the sequence runs');
+    assert.ok(service.phases.filter((phase) => phase === 'pause').length >= 1, 'Pause asked nothing of the service; the paused sequence was asked for again');
+    assert.deepEqual([...new Set(service.asked.map((body) => body.vault))], [VAULT], 'only ever this vault');
+    assert.doesNotMatch(await detail.innerText(), FORBIDDEN);
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /review|network budget|Owner controls|Manage a sequence/i, 'no review wall and none of the removed cards');
+    assert.deepEqual([seq.missing, seq.refused], [[], []]);
+    assert.equal(s.wallet.state.signed.length, 1, 'only the sign-in');
+  } finally { await s.close(); }
+});
+
+// The review of 2026-09-25: the execution contract lets a "ready" live at most 10 seconds after the service's check, so
+// Turn on never stands on an answer the service has declared expired. Here the service's first answer holds 3 seconds
+// and its next is held back: Turn on goes when the first lapses, with no newer answer in, and the docs link is back;
+// when the next ready arrives, Turn on returns. Nothing is sent.
+test('Turn on goes when the service’s ready answer expires with no newer one, and returns with the next ready', async () => {
+  const { seq, chain, VAULT, answer } = pausedRoot();
+  const service = availabilityRoute(OWNER, () => true);
+  service.lifetime = 3;
+  let letGo;
+  const held = new Promise((resolve) => { letGo = resolve; });
+  service.gate = (index) => (index >= 1 ? held : undefined);
+  const s = await scenario({ chain, routes: [service.route] });
+  await routeChain(s, seq, CHAIN_METHODS, answer);
+  await s.page.reload();
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    s.set({ sequenceRelease: { status: 200, body: seq.release } });
+    await login(s.page);
+    const detail = await openRoot(s);
+    const turnOn = detail.locator('[data-position-actions] button[data-sequence-switch="turn-on"]');
+    await turnOn.waitFor({ timeout: 10_000 });
+    assert.equal(service.answered, 1);
+    // Asked again a second before it lapses; that answer is held, so the first one lapses and Turn on goes.
+    await turnOn.waitFor({ state: 'detached', timeout: 5_000 });
+    assert.equal(service.answered, 1, 'gone with no newer answer in');
+    for (let wait = 0; wait < 20 && service.asked.length < 2; wait += 1) await s.page.waitForTimeout(100);
+    assert.deepEqual(service.asked, [{ vault: VAULT }, { vault: VAULT }], 'asked again before it lapsed');
+    const docs = detail.locator('[data-position-actions] a[data-automate-docs]');
+    await docs.waitFor({ timeout: 2_000 });
+    assert.equal(await detail.locator('.dm-pos-chips [data-automation="domino"]').innerText(), 'Domino-compound · Paused');
+    // The held answer arrives, ready for another 10 seconds: Turn on is back.
+    service.lifetime = 10;
+    letGo();
+    await turnOn.waitFor({ timeout: 5_000 });
+    assert.equal(service.answered, 2);
+    assert.equal(seq.sends.length, 0, 'nothing was sent');
+  } finally {
+    letGo();
+    await s.close();
+  }
+});
+
+// The automation page's success (SequenceCreate.tsx): View position stays, and Turn on takes the place of the docs link
+// once the service says the new sequence is ready; until then the docs link stays (the guided creation test above).
+test('the success card offers Turn on in the place of the docs link once the service says the new sequence is ready, and turns it on', async () => {
+  const chain = fakeSequenceChain(OWNER, { roots: [], settled: true });
+  const vault = chain.predict(0);
+  const service = availabilityRoute(OWNER, () => true);
+  const s = await scenario({ routes: [service.route] });
+  await routeChain(s, chain, CHAIN_METHODS);
+  try {
+    await login(s.page);
+    await setUpFromLink(s, chain);
+    const created = s.page.locator(`[data-sequence-created="${vault}"]`);
+    await created.waitFor({ timeout: 60_000 });
+    const turnOn = created.locator('button[data-sequence-switch="turn-on"]');
+    await turnOn.waitFor({ timeout: 10_000 });
+    assert.equal(await turnOn.innerText(), 'Turn on');
+    assert.equal(await created.getByRole('link', { name: 'How to switch it on' }).count(), 0, 'Turn on stands where the docs link stood');
+    assert.equal(await created.getByRole('link', { name: 'View position' }).getAttribute('href'), '#/positions/5');
+    assert.deepEqual(service.asked, [{ vault }]);
+    await turnOn.click();
+    await created.locator('button[data-sequence-switch="pause"]').waitFor({ timeout: 30_000 });
+    assert.equal(await created.locator('[data-sequence-switch-note]').innerText(), 'Turned on.');
+    assert.deepEqual(chain.sends.map((tx) => decodeFunctionData({ abi: chainAbi, data: tx.data }).functionName), ['createVault', 'resume']);
+    assert.equal(String(chain.sends[1].to).toLowerCase(), vault);
+    assert.deepEqual([chain.missing, chain.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
+test('with the execution route not available, a paused sequence’s page shows nothing new: signed out, the way to sign in; signed in, the pill and the docs link, and nothing is sent', async () => {
+  const { seq, chain, answer } = pausedRoot();
+  const s = await scenario({ chain });
+  await routeChain(s, seq, CHAIN_METHODS, answer);
+  await s.page.reload();
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    // The execution bridge Worker switched off, as it is in production today: route_not_available (404).
+    s.set({ sequenceRelease: { status: 200, body: seq.release }, execution: 'off' });
+    await connectWallet(s.page);
+    const detail = await openRoot(s);
+
+    // Connected, not signed in: the service can only be asked within a session, so the way to sign in stands there.
+    const signIn = detail.locator('[data-position-actions] [data-sequence-switch="sign-in"]');
+    await signIn.waitFor({ timeout: 10_000 });
+    assert.equal(await signIn.innerText(), 'Sign in to turn on');
+    assert.deepEqual(s.executions, [], 'nothing private is asked without a session');
+    await signIn.click();
+    const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+    await dialog.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await s.page.keyboard.press('Escape');
+
+    // Signed in: the route answers route_not_available, which is "not ready". Nothing new: the pill and the docs link.
+    const docs = detail.locator('[data-position-actions] a[data-automate-docs]');
+    await docs.waitFor({ timeout: 10_000 });
+    for (let wait = 0; wait < 100 && s.executions.length === 0; wait += 1) await s.page.waitForTimeout(100);
+    await s.page.waitForTimeout(500);
+    assert.deepEqual(s.executions, ['/api/execution/v1/availability']);
+    assert.equal(await detail.locator('[data-sequence-switch]').count(), 0, 'no Turn on, and no way to sign in any more');
+    assert.equal(await detail.locator('.dm-pos-chips [data-automation="domino"]').innerText(), 'Domino-compound · Paused');
+    assert.equal(await docs.innerText(), 'How to switch it on');
+    assert.equal(seq.sends.length, 0, 'nothing was sent');
   } finally { await s.close(); }
 });
 

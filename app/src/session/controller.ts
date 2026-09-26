@@ -22,14 +22,27 @@ import {
  * the machine and the flow that uses them.
  *
  * It also owns time: when the session is checked with me, and when it is
- * renewed with POST refresh. A refresh is asked for only while the tab shows
- * a signed-in session, is visible, and has seen user activity since the
- * session was last renewed, so a session nobody is using still idles out.
+ * renewed with POST refresh. A refresh is asked for whenever a tab shows a
+ * signed-in session: 20 minutes after the last renewal, whether the tab is
+ * visible or in use, and at once when the tab comes back into view or takes
+ * focus with a renewal older than 10 minutes. Tabs share each renewal
+ * (broadcastRenewal / renewedElsewhere): the tab that made the last renewal
+ * makes the next, a tab that only heard of it waits a little longer, and a
+ * hidden tab longer still, plus a stagger of its own, so one tab renews and
+ * the others hear of it instead of all refreshing.
  *
- * That timing (a refresh 20 minutes after the last renewal, only while the
- * tab is visible and in use, at most three retries, one read-only me after a
- * CSRF refusal) is this client's policy. The producer accepted it as policy on
+ * That timing (with at most three retries, and one read-only me after a CSRF
+ * refusal) is this client's policy. The producer accepted it as policy on
  * #14; session-v1 does not guarantee any of it on the wire.
+ *
+ * Changed on purpose (owner, 2026-09-25): the refresh used to wait for a
+ * visible tab with user activity since the last renewal, so a tab left in the
+ * background, or a page read without touching it, lost its session after 30
+ * minutes and the owner had to sign in again "all the time". The session now
+ * lives as long as the site is open in any tab. It still ends on the
+ * producer's rules alone: 30 minutes after its last renewal once no tab of
+ * the site is open (or the browser holds them all back), and at the 12-hour
+ * absolute limit.
  */
 
 export type SignOutcome = { ok: true; signature: string } | { ok: false; reason: 'user_rejected' | 'provider_error' }
@@ -42,11 +55,19 @@ export interface ControllerPorts {
   broadcast(): void
   /** Tells other tabs this session's idle deadline was just renewed. Carries nothing else. */
   broadcastRenewal(): void
-  /** Whether the page is visible. A hidden tab never refreshes. */
+  /** Whether the page is visible. A hidden tab refreshes too, later than a visible one (HIDDEN_DEFER_MS). */
   isVisible(): boolean
+  /**
+   * This tab's own extra wait, in milliseconds, before it refreshes while hidden: tabs in the background spread out,
+   * so the first renews and the others hear of it. At most HIDDEN_STAGGER_MS; none unless given.
+   */
+  hiddenStaggerMs?: number
   now(): number
-  /** Returns a function that cancels the timer. */
-  setTimer(callback: () => void, ms: number): () => void
+  /**
+   * Returns a function that cancels the timer. `purpose` says what it is for, a session check or a refresh; it changes
+   * nothing, and lets a test tell the two apart now that a signed-in tab always has a refresh planned (2026-09-25).
+   */
+  setTimer(callback: () => void, ms: number, purpose?: 'check' | 'refresh'): () => void
   origin: string
   checksum(address: string): string
 }
@@ -93,10 +114,35 @@ const MAX_TIMER_MS = 2_147_483_647
 export const SESSION_IDLE_MS = 30 * 60_000
 
 /**
- * How old a renewal may get before an active tab renews it: ten minutes
- * before the idle deadline, which leaves room for the retries below.
+ * How old a renewal may get before a tab renews it: ten minutes before the
+ * idle deadline, which leaves room for the retries below.
  */
 export const REFRESH_AFTER_MS = 20 * 60_000
+
+/**
+ * A tab that comes back into view, or takes focus, renews at once a renewal
+ * older than this, instead of waiting for REFRESH_AFTER_MS: a browser may have
+ * held back a background tab's timers.
+ */
+export const RETURN_REFRESH_MS = 10 * 60_000
+
+/**
+ * How much later a tab that only heard of the last renewal refreshes than the
+ * tab that made it: that tab keeps renewing, and the others hear of it before
+ * their own turn. Should it close, the next tab renews half a minute later.
+ */
+export const FOLLOW_DEFER_MS = 30_000
+
+/**
+ * How much later than a visible tab a hidden one refreshes, so that a visible
+ * tab renews first and the hidden ones hear of it. With FOLLOW_DEFER_MS,
+ * HIDDEN_STAGGER_MS and the retries below, a hidden tab's last try stays well
+ * before the idle deadline (20 + 0.5 + 1 + 1 + 3.5 minutes).
+ */
+export const HIDDEN_DEFER_MS = 60_000
+
+/** The most a tab's own stagger (ControllerPorts.hiddenStaggerMs) adds for a hidden tab. */
+export const HIDDEN_STAGGER_MS = 60_000
 
 /**
  * Waits before retrying a refresh the service could not serve (503, 504, 429,
@@ -121,9 +167,10 @@ export const NO_SESSION: unique symbol = Symbol('no session')
 
 export interface SessionController {
   dispatch(event: Event): void
-  /** The user did something in this tab (a key, a pointer, a wheel). */
-  activity(): void
-  /** The tab may have come back into view: a refresh that waited for it can run. */
+  /**
+   * The tab came back into view or took focus: a renewal older than RETURN_REFRESH_MS is renewed at once, and a
+   * refresh that waited for the tab to be visible runs.
+   */
   wake(): void
   /** Another tab renewed the session; this tab's idle deadline moves with it. */
   renewedElsewhere(): void
@@ -155,11 +202,17 @@ export function createSessionController(ports: ControllerPorts): SessionControll
   // Refresh bookkeeping, reset for every new epoch (a new session or identity).
   // Local-clock time of the last renewal this tab knows of, its own or
   // another tab's. Null for a session restored through me: when it last
-  // renewed is unknown, so the first activity after the restore renews it.
+  // renewed is unknown, so it is renewed as soon as the tab shows it.
   let renewedAt: number | null = null
   // When this tab started showing the current session.
   let shownAt = 0
-  let lastActivity = Number.NEGATIVE_INFINITY
+  // Whether that renewal was this tab's own (a verify or a refresh it sent),
+  // not one another tab told it of.
+  let renewedHere = false
+  // When the tab last came back into view or took focus while its renewal was
+  // older than RETURN_REFRESH_MS: that refresh is due then. Null once asked.
+  let returnedAt: number | null = null
+  const stagger = Math.min(Math.max(ports.hiddenStaggerMs ?? 0, 0), HIDDEN_STAGGER_MS)
   let refreshEpoch = machine.epoch
   let refreshFailures = 0
   // No refresh is sent before this time: one in flight, or a retry's wait.
@@ -186,7 +239,9 @@ export function createSessionController(ports: ControllerPorts): SessionControll
     if (step.machine.epoch !== refreshEpoch) {
       refreshEpoch = step.machine.epoch
       renewedAt = null
+      renewedHere = false
       shownAt = ports.now()
+      returnedAt = null
       refreshFailures = 0
       notBefore = 0
       refreshRefused = false
@@ -202,16 +257,22 @@ export function createSessionController(ports: ControllerPorts): SessionControll
     planRefresh()
   }
 
-  /** Whether this tab has a reason to renew the session it shows. */
+  /** Whether this tab has a reason to renew the session it shows: it shows one, and nothing stopped its refreshes. */
   function refreshWanted(): boolean {
-    if (machine.view.status !== 'signed_in' || machine.flow.kind !== 'idle' || refreshRefused || retriesExhausted) return false
-    // Activity since the last renewal (or since the session appeared here).
-    return lastActivity > (renewedAt ?? shownAt)
+    return machine.view.status === 'signed_in' && machine.flow.kind === 'idle' && !refreshRefused && !retriesExhausted
   }
 
-  /** When the next refresh is due, on the local clock. */
+  /**
+   * When the next refresh is due, on the local clock: REFRESH_AFTER_MS after the last renewal (at once for a restored
+   * session, whose last renewal is unknown), later for a tab that only heard of that renewal and later still for a
+   * hidden one, and at the tab's return when the renewal it knew then was older than RETURN_REFRESH_MS. Never before
+   * a retry's wait.
+   */
   function refreshDue(): number {
-    return Math.max(renewedAt === null ? shownAt : renewedAt + REFRESH_AFTER_MS, notBefore)
+    let due = renewedAt === null ? shownAt : renewedAt + REFRESH_AFTER_MS + (renewedHere ? 0 : FOLLOW_DEFER_MS)
+    if (!ports.isVisible()) due += HIDDEN_DEFER_MS + stagger
+    if (returnedAt !== null && (renewedAt === null || returnedAt - renewedAt >= RETURN_REFRESH_MS)) due = Math.min(due, returnedAt)
+    return Math.max(due, notBefore)
   }
 
   /** Keeps exactly one refresh timer, and only while a refresh is wanted. */
@@ -226,7 +287,7 @@ export function createSessionController(ports: ControllerPorts): SessionControll
       cancelRefresh = null
       refreshAt = null
       maybeRefresh()
-    }, Math.min(Math.max(at - ports.now(), 0), MAX_TIMER_MS))
+    }, Math.min(Math.max(at - ports.now(), 0), MAX_TIMER_MS), 'refresh')
   }
 
   function maybeRefresh() {
@@ -234,11 +295,11 @@ export function createSessionController(ports: ControllerPorts): SessionControll
     const now = ports.now()
     if (now < refreshDue()) return planRefresh()
     // Past the idle deadline the session has ended; the check placed for that
-    // moment finds it. A hidden tab waits for wake().
+    // moment finds it.
     if (idleDeadline !== null && now >= idleDeadline) return
-    if (!ports.isVisible()) return
     // At most one refresh at a time; its result resets or extends this.
     notBefore = now + REFRESH_RETRY_MS[0]
+    returnedAt = null
     dispatch({ type: 'refresh' })
   }
 
@@ -290,7 +351,7 @@ export function createSessionController(ports: ControllerPorts): SessionControll
     cancelExpiry = ports.setTimer(() => {
       cancelExpiry = null
       dispatch({ type: 'recheck', cause: 'expiry' })
-    }, Math.min(...delays, MAX_TIMER_MS))
+    }, Math.min(...delays, MAX_TIMER_MS), 'check')
   }
 
   function run(effect: Effect) {
@@ -312,6 +373,8 @@ export function createSessionController(ports: ControllerPorts): SessionControll
         return
       case 'schedule_expiry':
         schedule(effect.expiresAt, effect.fresh)
+        // A verify or a refresh this tab sent: it makes the next renewal too.
+        if (effect.fresh) renewedHere = true
         return
       case 'private_identity': {
         const scope = privateScope(snapshotOf(machine))
@@ -361,6 +424,7 @@ export function createSessionController(ports: ControllerPorts): SessionControll
         refreshFailures = 0
         retriesExhausted = false
         notBefore = 0
+        returnedAt = null
         ports.broadcastRenewal()
         return
       case 'refresh_failed': {
@@ -382,23 +446,25 @@ export function createSessionController(ports: ControllerPorts): SessionControll
 
   return {
     dispatch,
-    activity() {
-      lastActivity = ports.now()
-      maybeRefresh()
-    },
     wake() {
+      const now = ports.now()
+      // Kept until a refresh is asked (a me check the return started may run first) or a renewal lands.
+      if (machine.view.status === 'signed_in' && (renewedAt === null || now - renewedAt >= RETURN_REFRESH_MS)) returnedAt = now
       maybeRefresh()
     },
     renewedElsewhere() {
       // The same cookie, so the same session: its idle deadline moved. No
-      // request: that is what keeps two active tabs from both refreshing.
+      // request: that is what keeps two tabs from both refreshing.
       if (machine.view.status !== 'signed_in' || lastExpiresAt === null) return
       // A new renewal window, so the outage retries start over. A refusal
       // stays: it is about this session, not about one window.
       refreshFailures = 0
       retriesExhausted = false
+      returnedAt = null
       if (!refreshRefused) notBefore = 0
       schedule(lastExpiresAt, true)
+      // Another tab made this renewal: it makes the next one, and this tab waits FOLLOW_DEFER_MS longer.
+      renewedHere = false
       dispatch({ type: 'renewed_elsewhere' })
     },
     subscribe(listener) {

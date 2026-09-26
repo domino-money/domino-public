@@ -90,6 +90,7 @@
     "src/lib/create/reviewPlan.ts",
     "src/lib/create/sequenceDefaults.ts",
     "src/finance/automationAvailability.ts",
+    "src/lib/automate/switchGate.ts",
     "src/lib/create/slippage.ts",
     "src/lib/read/screens/rowApr.ts",
     "src/lib/docs/registry.ts",

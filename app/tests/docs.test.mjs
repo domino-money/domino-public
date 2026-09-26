@@ -500,7 +500,9 @@ test('Domino V1 is deployed; owner-scoped automation copy keeps each new sequenc
   // activates, pauses, revokes or withdraws any more. The docs and Settings said this site offered activation after a
   // readiness check; they now say what is true: those are transactions the wallet signs on the sequence vault,
   // activation once the service confirms readiness, and no Domino screen makes them today.
-  const TRUE = /A new sequence starts paused\. Activation, pause, revocation and withdrawal are transactions your wallet signs on your sequence vault, activation only once the automation service confirms readiness for it\. No Domino screen makes them today\./;
+  // Changed on purpose again (owner, 2026-09-25): a position's page offers Turn on once the automation service confirms it
+  // is ready for that sequence, and Pause while it runs (components/positions/SequenceSwitch.tsx); the docs say so.
+  const TRUE = /A new sequence starts paused\. Activation, pause, revocation and withdrawal are transactions your wallet signs on your sequence vault\. Your position’s page offers Turn on once the automation service confirms it is ready for your sequence, and Pause while it runs\./;
   for (const [slug, section] of [['auto-compound', 'where-it-starts'], ['domino-compounder', 'start-and-stop']]) {
     const copy = sectionText(page(slug), section);
     assert.match(copy, /Per sequence\nAutomation availability is checked for each owner and sequence\./);
@@ -511,8 +513,15 @@ test('Domino V1 is deployed; owner-scoped automation copy keeps each new sequenc
   assert.match(sectionText(page('what-is-domino'), 'your-wallet-signs'), TRUE);
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /offers? activation|review activation|may activate|remain available through your wallet/i, entry.slug);
   for (const row of ROADMAP) assert.doesNotMatch(row.note, /may activate|pauses or recovers|authorises or revokes the operator, and/i, row.name);
-  assert.match(ROADMAP.find((row) => row.name === 'Compound').note, /A new sequence starts paused; your wallet activates it on your sequence vault once the service confirms readiness\. No Domino screen makes that transaction today\./);
-  assert.match(ROADMAP.find((row) => row.name === 'Wallet permissions').note, /Authorising or revoking the operator, pausing and withdrawing are transactions it signs on that vault, which no Domino screen makes today\./);
+  assert.match(ROADMAP.find((row) => row.name === 'Compound').note, /A new sequence starts paused; once the service confirms readiness, your position’s page offers Turn on, and your wallet activates it on your sequence vault\./);
+  assert.match(ROADMAP.find((row) => row.name === 'Wallet permissions').note, /Turning on and pausing are transactions it signs on that vault, from your position’s page; authorising or revoking the operator and withdrawing have no Domino screen today\./);
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /No Domino screen makes them today/, entry.slug);
+  // The review of 2026-09-25: Turn on and Pause have no review wall (the owner's rule), so no text may say that every
+  // wallet step shows its amounts and limits first. Settings says only creation does; the docs name the two exceptions.
+  const permissions = ROADMAP.find((row) => row.name === 'Wallet permissions').note;
+  assert.match(permissions, /Creating a sequence shows its amounts and limits before your wallet requests approval; Turn on and Pause go straight to your wallet, which shows the transaction\.$/);
+  assert.doesNotMatch(permissions, /Each step shows/);
+  assert.match(sectionText(page('what-is-domino'), 'your-wallet-signs'), /and Pause while it runs\. Turn on and Pause go straight to your wallet, which shows the transaction\./);
   assert.match(sectionText(page('what-is-domino'), 'built-on-uniswap'), /Domino’s own contracts, Domino V1, are deployed there as well: Setup opens positions, and a factory creates your sequence vault\./);
   assert.match(sectionText(page('contracts'), 'domino-contracts'), /deployed on Robinhood Chain as Domino V1\.[\s\S]*Service readiness is checked for each owner and vault before activation/);
   assert.match(sectionText(page('wallet'), 'what-needs-sign-in'), /Checking whether the automation service is ready for your sequence before activation/);

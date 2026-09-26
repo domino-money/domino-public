@@ -1309,9 +1309,12 @@ test('a verify replayed after it succeeded is refused, creates nothing, and leav
 });
 
 // ---- refresh (POST /refresh renews the 30-minute idle deadline) -------------
-
-/** A trusted key press: user activity in this tab, with no effect on the page. */
-const act = (page) => page.keyboard.press('Shift');
+//
+// Changed on purpose (owner, 2026-09-25): a signed-in tab renews its session whether it is visible or in use, and at
+// once when it comes back into view or takes focus with a renewal older than 10 minutes (session/controller.ts). The
+// refresh used to wait for a visible tab with user activity, so a tab in the background, or a page read without
+// touching it, lost the session and the owner had to sign in again all the time. The cases below hold the new rule;
+// the session still ends on the producer's rules when no tab runs (a tab held back past the idle deadline).
 
 /** Polls a condition on the test side (the fake's log), not in the page. */
 async function eventually(check, label, timeout = WAIT_MS) {
@@ -1331,7 +1334,11 @@ const setVisibility = (page, state) =>
     document.dispatchEvent(new Event('visibilitychange'));
   }, state);
 
-test('while the user is active in a visible tab, refresh keeps the session alive well past 30 idle minutes', async () => {
+/** Waits until the page shows a signed-in session with nothing in flight. */
+const settledIn = (page, label = 'settled') =>
+  until(page, () => window.__dominoSessionProbe.view().status === 'signed_in' && !document.querySelector('[aria-busy="true"]'), null, label);
+
+test('with nothing done in it, a signed-in tab renews its session every 20 minutes and stays signed in well past 30 minutes', async () => {
   const s = await scenario({ clockAt: Date.now() });
   const page = await s.open();
   await connect(page);
@@ -1340,14 +1347,13 @@ test('while the user is active in a visible tab, refresh keeps the session alive
   const [scope] = await privateKeys(page);
 
   for (let round = 1; round <= 3; round += 1) {
-    await act(page);
     s.fake.advance(21 * 60_000);
     await jump(page, '21:00');
     await eventually(() => s.fake.count('refresh') === round, `refresh ${round}`);
-    await until(page, () => window.__dominoSessionProbe.view().status === 'signed_in' && !document.querySelector('[aria-busy="true"]'), null, 'settled');
+    await settledIn(page);
   }
 
-  // 63 minutes after sign-in, with no request but GET me and refresh.
+  // 63 minutes after sign-in, with no request but GET me and refresh, and nothing pressed.
   assert.equal((await view(page)).status, 'signed_in');
   const [alive] = activeSessions(s, ADDR_A);
   assert.ok(alive, 'the server session is still active');
@@ -1361,16 +1367,33 @@ test('while the user is active in a visible tab, refresh keeps the session alive
   await s.close();
 });
 
-test('without activity the session is not refreshed and idles out as before', async () => {
+test('a tab in the background renews its session too, a little after a visible one would; held back past the idle deadline, it finds the session ended on its return', async () => {
   const s = await scenario({ clockAt: Date.now() });
   const page = await s.open();
   await connect(page);
   await signIn(s, page);
+  await setVisibility(page, 'hidden');
+  s.fake.advance(20 * 60_000 + 30_000);
+  await jump(page, '20:30');
+  await sleep(300);
+  assert.equal(s.fake.count('refresh'), 0, 'not at a visible tab’s 20 minutes');
+  // A hidden tab waits a minute more, plus its own stagger of at most a minute.
+  s.fake.advance(90_000);
+  await jump(page, '01:30');
+  await eventually(() => s.fake.count('refresh') === 1, 'the hidden tab refreshed');
+  await settledIn(page);
+  assert.equal(s.fake.calls('refresh')[0].status, 200);
+
+  // The browser holds the tab back (a sleeping laptop, a frozen tab): the server's 30 minutes pass with no timer run
+  // here. The session ended on the producer's rule, and the return finds it, with no refresh sent for a dead session
+  // before the check.
   s.fake.advance(31 * 60_000);
-  await jump(page, '31:00');
+  await setVisibility(page, 'visible');
   const ended = await viewIs(page, 'signed_out');
   assert.equal(ended.reason, 'session_ended');
-  assert.equal(s.fake.count('refresh'), 0);
+  assert.deepEqual(await privateKeys(page), []);
+  assert.equal(s.fake.count('refresh'), 1, 'its renewal was young by its own clock: the return read me, and sent no refresh');
+  assert.equal(s.wallet.state.signed.length, 1);
   await s.close();
 });
 
@@ -1382,23 +1405,21 @@ test("two tabs refreshing the same session keep one CSRF, and neither breaks the
   const second = await s.open();
   await viewIs(second, 'signed_in');
   const [session] = activeSessions(s, ADDR_A);
-  const reads = s.fake.count('me');
 
-  // The restored tab does not know when the session last renewed, so the
-  // first activity there refreshes at once, and tells the other tab.
-  await act(second);
+  // The restored tab does not know when the session last renewed, so it
+  // refreshes at once, and tells the other tab.
   await eventually(() => s.fake.count('refresh') === 1, 'the restored tab refreshed');
+  const reads = s.fake.count('me');
   await sleep(300);
   assert.equal(s.fake.count('me'), reads, 'a renewal notice makes no tab read me');
 
-  // Both tabs in use through the next window.
-  await act(first);
-  await act(second);
+  // Both tabs open through the next window, nothing done in either.
   s.fake.advance(21 * 60_000);
   await jump(first, '21:00');
   await eventually(() => s.fake.count('refresh') >= 2, 'a refresh in the next window');
   await sleep(500);
   const refreshes = s.fake.calls('refresh');
+  // One jump runs both tabs' timers at once, before either hears of the other's renewal: at most one each.
   assert.ok(refreshes.length <= 3, `at most one refresh per tab per window, not ${refreshes.length}`);
   for (const call of refreshes) {
     assert.equal(call.csrf, session.csrf);
@@ -1431,7 +1452,6 @@ test('a refresh after the session is revoked signs out and clears private data, 
   await signIn(s, page);
   assert.equal((await privateKeys(page)).length, 1);
 
-  await act(page);
   const held = s.fake.hold('refresh', 'before');
   s.fake.advance(21 * 60_000);
   await jump(page, '21:00');
@@ -1455,7 +1475,6 @@ test('a refresh the store cannot serve keeps the session, says so, and retries a
   await signIn(s, page);
   const [scope] = await privateKeys(page);
 
-  await act(page);
   s.fake.controls.storeDown.add('refresh');
   s.fake.advance(21 * 60_000);
   await jump(page, '21:00');
@@ -1493,13 +1512,9 @@ test('a tab whose outage retries ran out refreshes again once another tab has re
   const first = await s.open();
   await connect(first);
   await signIn(s, first);
-  // A second tab restores the session, and stays untouched through the outage.
-  const second = await s.open();
-  await viewIs(second, 'signed_in');
   const [session] = activeSessions(s, ADDR_A);
 
   // The first tab's refresh and all three of its retries meet an outage.
-  await act(first);
   s.fake.controls.storeDown.add('refresh');
   s.fake.advance(21 * 60_000);
   await jump(first, '21:00');
@@ -1517,10 +1532,11 @@ test('a tab whose outage retries ran out refreshes again once another tab has re
   await sleep(300);
   assert.equal(s.fake.count('refresh'), 4, 'the retries stop within the outage');
 
-  // The service is back. The second tab's first activity renews the session
-  // and tells the first; then the second tab goes to the background.
+  // The service is back. A second tab opens: it restores the session and renews it at once, and tells the first; then
+  // it goes to the background.
   s.fake.controls.storeDown.delete('refresh');
-  await act(second);
+  const second = await s.open();
+  await viewIs(second, 'signed_in');
   await eventually(() => s.fake.count('refresh') === 5, 'the second tab renewed');
   assert.equal(s.fake.calls('refresh').at(-1).status, 200);
   await until(first, () => {
@@ -1529,11 +1545,10 @@ test('a tab whose outage retries ran out refreshes again once another tab has re
   }, null, 'the first tab heard of the renewal');
   await setVisibility(second, 'hidden');
 
-  // The user keeps working in the first tab only. It renews the session
-  // itself before the idle deadline the second tab's renewal set.
-  await act(first);
-  s.fake.advance(21 * 60_000);
-  await jump(first, '21:00');
+  // The first tab, in view, renews the session itself before the idle deadline the second tab's renewal set: half a
+  // minute after the second would have, had it been in view, and before the hidden second tab's turn.
+  s.fake.advance(20 * 60_000 + 45_000);
+  await jump(first, '20:45');
   await eventually(() => s.fake.count('refresh') === 6, 'the first tab refreshes in the new window');
   assert.equal(s.fake.calls('refresh').at(-1).status, 200);
   assert.equal(s.fake.calls('refresh').at(-1).csrf, session.csrf);
@@ -1543,11 +1558,11 @@ test('a tab whose outage retries ran out refreshes again once another tab has re
     const v = window.__dominoSessionProbe.view();
     return v.status === 'signed_in' && v.notice === undefined && !document.querySelector('[aria-busy="true"]');
   }, null, 'the sixth refresh settled in the first tab');
-  // Past the deadline the second tab's renewal set, the session lives on.
-  await act(first);
+  // Past the deadline the second tab's renewal set, the session lives on, renewed once.
   s.fake.advance(11 * 60_000);
   await jump(first, '11:00');
   await sleep(300);
+  assert.equal(s.fake.count('refresh'), 6, 'the hidden tab heard of it and did not refresh too');
   assert.equal(activeSessions(s, ADDR_A).length, 1, 'the server session is still active');
   assert.equal((await view(first)).status, 'signed_in');
   assert.equal(s.wallet.state.signed.length, 1, 'no signature after sign-in');
@@ -1560,7 +1575,6 @@ test('a refresh that fails once and then succeeds clears the notice and renews t
   await connect(page);
   await signIn(s, page);
 
-  await act(page);
   s.fake.controls.failNext.set('refresh', 'upstream_timeout');
   s.fake.advance(21 * 60_000);
   await jump(page, '21:00');
@@ -1616,11 +1630,11 @@ test('the CSRF is only compared in memory: never stored, in a URL, a query key, 
   await signIn(s, first);
   const second = await s.open();
   await viewIs(second, 'signed_in');
-  // An active tab refreshes; the other hears of the renewal.
-  await act(first);
+  // The restored tab refreshes at once, and each tab renews through the next window; each hears of the other's renewals.
+  await eventually(() => s.fake.count('refresh') === 1, 'the restored tab’s refresh');
   s.fake.advance(21 * 60_000);
   await jump(first, '21:00');
-  await eventually(() => s.fake.count('refresh') === 1, 'the refresh');
+  await eventually(() => s.fake.count('refresh') >= 2, 'the refresh in the next window');
   await until(first, () => window.__dominoSessionProbe.view().status === 'signed_in' && !document.querySelector('[aria-busy="true"]'), null, 'settled');
 
   // Every CSRF the service issued: the preauth one, then the session one.
@@ -1655,29 +1669,43 @@ test('the CSRF is only compared in memory: never stored, in a URL, a query key, 
   await s.close();
 });
 
-test('no refresh while signed out, nor while the tab is hidden; coming back into view refreshes', async () => {
+test('no refresh while signed out; back in view, or taking focus, a tab renews at once a renewal older than 10 minutes', async () => {
   const s = await scenario({ clockAt: Date.now() });
   const page = await s.open();
   await connect(page);
-  // Signed out: activity and time never refresh.
-  await act(page);
+  // Signed out: time and returns never refresh.
   await jump(page, '25:00');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await sleep(300);
   assert.equal(s.fake.count('refresh'), 0, 'nothing to refresh while signed out');
 
   await signIn(s, page);
-  await act(page);
   await setVisibility(page, 'hidden');
-  s.fake.advance(21 * 60_000);
-  await jump(page, '21:00');
-  await sleep(500);
-  assert.equal(s.fake.count('refresh'), 0, 'a hidden tab never refreshes');
-  assert.equal((await view(page)).status, 'signed_in');
-
-  await jump(page, '00:31');
+  s.fake.advance(12 * 60_000);
+  await jump(page, '12:00');
+  await sleep(300);
+  assert.equal(s.fake.count('refresh'), 0, 'not yet: its turn is at 21 minutes and more while hidden');
   await setVisibility(page, 'visible');
   await eventually(() => s.fake.count('refresh') === 1, 'the refresh on coming back');
   assert.equal(s.fake.calls('refresh')[0].status, 200);
+  await settledIn(page);
+
+  // Back again after a few minutes: a young renewal waits for its turn.
+  await setVisibility(page, 'hidden');
+  await jump(page, '03:00');
+  await setVisibility(page, 'visible');
+  await sleep(300);
+  assert.equal(s.fake.count('refresh'), 1, 'a renewal younger than 10 minutes is not renewed again');
+
+  // In view all along, the window brought back into focus 11 minutes after that renewal.
+  s.fake.advance(14 * 60_000);
+  await jump(page, '08:00');
+  await sleep(300);
+  assert.equal(s.fake.count('refresh'), 1);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await eventually(() => s.fake.count('refresh') === 2, 'the refresh on focus');
+  assert.equal(s.fake.calls('refresh')[1].status, 200);
   await viewIs(page, 'signed_in');
+  assert.equal(s.wallet.state.signed.length, 1);
   await s.close();
 });

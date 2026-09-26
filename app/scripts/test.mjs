@@ -85,6 +85,8 @@ execFileSync(
     'tests/performance.controller.test.mjs',
     'tests/execution.controller.test.mjs',
     'tests/automation-availability.test.mjs',
+    // 2026-09-25 (owner): a sequence's Turn on and Pause, offered only on the automation service's fresh word.
+    'tests/sequence-switch.test.mjs',
     'tests/nonce.test.mjs',
     'tests/setup-recovery.test.mjs',
     // 2026-09-25: the EIP-7702 delegates this app recognizes, and the confirmation funding waits for otherwise.

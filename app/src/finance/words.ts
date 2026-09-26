@@ -3,8 +3,11 @@
  * it stays in a data attribute beside the sentence.
  */
 
-/** The button each owner screen reads its deployment and the wallet with: Setup's owner recovery, the automation page's one action (2026-09-24), and New position's. */
-export type ReadControl = 'Read my operations' | 'Set up automation' | 'Create position'
+/**
+ * The button each owner screen reads its deployment and the wallet with: Setup's owner recovery, the automation page's
+ * one action (2026-09-24), New position's, and a sequence's Turn on and Pause (2026-09-25).
+ */
+export type ReadControl = 'Read my operations' | 'Set up automation' | 'Create position' | 'Turn on' | 'Pause'
 
 /** A sentence, or one that names the screen's own read button, since each screen names it differently. */
 const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> = {

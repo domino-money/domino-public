@@ -116,7 +116,10 @@ test('the wallet feature is reached only through the build flag', () => {
   // held setup deposit sign through the wallet too (components/positions/PositionActions.tsx and HeldDeposits.tsx),
   // written with or without their extension like Create position's chunk, so their importers are checked (below);
   // screens/PositionLab.tsx mounts them alone in test builds only (App.tsx, behind __DOMINO_TEST_HOOKS__).
-  const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits)(\.tsx)?$/;
+  // Changed on purpose (owner, 2026-09-25): a sequence's Turn on and Pause (components/positions/SequenceSwitch.tsx) sign
+  // through the wallet and ask the automation service through the session; only the owner's actions and the automation
+  // page's success, both wallet feature code already, show it.
+  const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits|SequenceSwitch)(\.tsx)?$/;
   // The onboarding previews and the deposit consumer (#38, #40/#44) read the
   // session through session/port.ts, and the preview screen also through
   // session/livePort.ts. Their lab screens live in chunks of the consumer-test

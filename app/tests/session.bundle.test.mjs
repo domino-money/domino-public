@@ -441,6 +441,32 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // 188,595 -> 190,263 B. Each moves by the minimum: financial 173.4 kB (83 B
   // over the larger build), all lazy 190.3 kB (37 B); the fees worker, chain
   // code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-25, the owner's "vamos ligar tudo": a sequence's Turn on and Pause
+  // on its root position's page and on the automation page's success
+  // (components/positions/SequenceSwitch.tsx, lib/automate/switchGate.ts, and
+  // finance/sequenceLive.ts, the automation page's own connect and receipt
+  // read moved there to be shared). Turn on asks the automation service
+  // through the session, so the execution-v1 runtime, until now the Execution
+  // screen's alone, becomes a shared chunk (runtime, closed-schema), and the
+  // sequence client is shared by the automation page and the owner's actions.
+  // Measured on Windows, gzip level 9, against main 75b04c4 on the same
+  // machine (whose figures match CI's above): dist financial 172,120 ->
+  // 175,865 B, all lazy 188,936 -> 192,764 B; .wallet-test-dist financial
+  // 173,317 -> 177,584 B, all lazy 190,263 -> 194,672 B. Each moves by the
+  // minimum: financial 177.6 kB (16 B over the larger build), all lazy
+  // 194.7 kB (28 B); the fees worker, chain code and 90 kB session/read
+  // ceilings are unchanged.
+  // 2026-09-25, the review of Turn on: a "ready" is kept no longer than the
+  // automation service's own expiry (at most 10 s by the execution contract,
+  // capped at 9 s) and asked again just before it lapses, so the availability
+  // client now returns that expiry (finance/automationAvailability.ts
+  // automationReadyUntil) and the gate keeps it (lib/automate/switchGate.ts
+  // readyUntil, renewIn). Measured on Windows, gzip level 9, both builds from
+  // this tree: dist financial 175,865 -> 175,933 B, all lazy 192,764 ->
+  // 192,838 B; .wallet-test-dist financial 177,584 -> 177,656 B, all lazy
+  // 194,672 -> 194,747 B. Each moves by the minimum: financial 177.7 kB (44 B
+  // over the larger build), all lazy 194.8 kB (53 B); every other ceiling is
+  // unchanged.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -487,7 +513,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 173_400], ['all lazy', allLazy, 190_300], ['fees worker', worker, 20_600], ['chain code', chain, 13_900]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 177_700], ['all lazy', allLazy, 194_800], ['fees worker', worker, 20_600], ['chain code', chain, 13_900]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { newPositionHref, poolHref, positionsHref } from '../components/explore/routes'
 import { IconChevronLeft, IconMarkets, IconPlus, IconSearch } from '../components/icons'
 import { Amount, PairName, PositionStatus, blockTitle } from '../components/positions/PositionFigures'
@@ -40,6 +40,8 @@ interface ActionsProps {
   usd?: { usdgIndex: 0 | 1; sqrtPriceX96: bigint; block: number } | null
   /** The page's token marks, beside the dialogs' amounts. */
   tokens?: readonly [TokenDisplay, TokenDisplay] | null
+  /** The page's way on (Automate, or the docs on switching a sequence on), shown first unless Turn on or Pause takes its place (2026-09-25). */
+  automate?: ReactNode
 }
 
 // The owner's Collect fees and Close position, in builds that carry the wallet
@@ -163,6 +165,9 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
   const usdgIndex = state ? usdgSide(state.currencies) : null
   const series = usePriceSeries(card.tokenId)
   const phone = useMediaQuery('(max-width: 767px)')
+  // The way on: Automate, or the docs on switching a sequence on. The owner's actions show it first, unless a
+  // sequence's Turn on or Pause takes its place (2026-09-25), and it stands alone while their chunk loads.
+  const entry = <AutomateEntry tokenId={card.tokenId} open={automatable} variant="action" />
   return (
     <div data-position-detail="" data-position-id={card.tokenId} data-snapshot={block}>
       <div className="dm-pos-title">
@@ -185,8 +190,7 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
         </div>
         {PositionActions && mine && (
           <div className="dm-pos-actions" data-position-actions="">
-            <AutomateEntry tokenId={card.tokenId} open={automatable} variant="action" />
-            <Suspense fallback={null}>
+            <Suspense fallback={entry}>
               <PositionActions
                 tokenId={card.tokenId}
                 owner={card.owner.address}
@@ -197,6 +201,7 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
                 onChanged={onChanged}
                 usd={state && usdgIndex !== null ? { usdgIndex, sqrtPriceX96: state.sqrtPriceX96, block: state.block } : null}
                 tokens={[base, quote]}
+                automate={entry}
               />
             </Suspense>
           </div>

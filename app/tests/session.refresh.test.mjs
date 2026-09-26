@@ -9,6 +9,10 @@
  * The machine's part (what each answer means) is walked as a pure function;
  * the controller's part (when to ask) runs with a fake clock, fake timers and
  * a visibility switch. The browser tests prove the same end to end.
+ *
+ * Changed on purpose (owner, 2026-09-25): a signed-in tab renews whether it
+ * is visible or in use (session/controller.ts); the cases that held the old
+ * rule (a refresh only for a visible tab with user activity) hold the new one.
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -18,7 +22,7 @@ import { FIXTURES, runtime, siweMessage } from './support/session-fixtures.mjs';
 
 const require = createRequire(import.meta.url);
 const { reduce, initialMachine } = require('../.test-build/app/src/session/machine.js');
-const { createSessionController, REFRESH_AFTER_MS, REFRESH_RETRY_MS, SESSION_IDLE_MS } = require('../.test-build/app/src/session/controller.js');
+const { createSessionController, FOLLOW_DEFER_MS, HIDDEN_DEFER_MS, HIDDEN_STAGGER_MS, REFRESH_AFTER_MS, REFRESH_RETRY_MS, RETURN_REFRESH_MS, SESSION_IDLE_MS } = require('../.test-build/app/src/session/controller.js');
 
 const ORIGIN = 'https://app.example.invalid';
 const env = { origin: ORIGIN, checksum: getAddress };
@@ -241,7 +245,7 @@ test('machine: an account switch during a refresh abandons it and signs the old 
 // The controller: when to ask
 // ---------------------------------------------------------------------------
 
-function harness({ onRenewal, onBroadcast } = {}) {
+function harness({ onRenewal, onBroadcast, stagger } = {}) {
   const log = { calls: [], signs: [], clears: 0, stored: [], broadcasts: 0, renewals: 0, timers: [] };
   const clock = { now: NOW, visible: true };
   const held = (route) => (...args) =>
@@ -263,9 +267,10 @@ function harness({ onRenewal, onBroadcast } = {}) {
       onRenewal?.();
     },
     isVisible: () => clock.visible,
+    hiddenStaggerMs: stagger,
     now: () => clock.now,
-    setTimer: (callback, ms) => {
-      const timer = { callback, ms, at: clock.now + ms, cancelled: false, fired: false };
+    setTimer: (callback, ms, purpose) => {
+      const timer = { callback, ms, purpose, at: clock.now + ms, cancelled: false, fired: false };
       log.timers.push(timer);
       return () => {
         timer.cancelled = true;
@@ -318,37 +323,38 @@ async function signIn(h, address = ADDR_A, csrf = CSRF_A) {
   await h.answer('verify', ok('verify', session(address, csrf)));
 }
 
-/** Runs time forward, answering every me check with the live session, until a refresh is asked for. */
+/** Runs time forward, answering every me check with the live session, until a refresh is asked for (`ms` included). */
 async function untilRefresh(h, ms, body = session(ADDR_A)) {
   const until = h.clock.now + ms;
-  while (h.clock.now < until && !h.pending('refresh')) {
+  for (;;) {
     await h.advance(until - h.clock.now);
-    if (h.pending('me')) await h.answer('me', ok('me', body));
+    if (h.pending('refresh')) return h.pending('refresh');
+    if (h.pending('me')) {
+      await h.answer('me', ok('me', body));
+      continue;
+    }
+    if (h.clock.now >= until) return undefined;
   }
-  return h.pending('refresh');
 }
 
-test('controller: an active, visible tab renews before each idle deadline and stays signed in past 30 minutes', async () => {
-  const h = harness();
-  h.controller.activity(); // before verify: sign-in itself is not activity since renewal
-  await signIn(h);
-  const epoch = h.controller.getSnapshot().epoch;
-  const clears = h.log.clears;
-  assert.equal(await untilRefresh(h, SESSION_IDLE_MS - MINUTE), undefined, 'no refresh without activity since the renewal');
-
-  // The same session again, with activity this time.
+// Changed on purpose (owner, 2026-09-25): a signed-in tab renews its session whether it is visible or in use. The
+// refresh used to wait for a visible tab with user activity since the last renewal, so a tab in the background, or a
+// page read without touching it, lost the session after 30 minutes and the owner had to sign in again all the time.
+test('controller: a signed-in tab renews 20 minutes after each renewal, with no activity, visible or hidden, and stays signed in past 30 minutes', async () => {
   const g = harness();
   await signIn(g);
   const signedAt = g.clock.now;
   const scope = g.controller.getSnapshot().epoch;
+  const clears = g.log.clears;
   for (let round = 1; round <= 4; round += 1) {
-    g.clock.now += 1000;
-    g.controller.activity();
-    const renewedAt = g.clock.now - 1000;
-    const call = await untilRefresh(g, REFRESH_AFTER_MS);
-    assert.ok(call, `round ${round}: a refresh was asked for`);
+    // The last two windows pass with the tab in the background.
+    g.clock.visible = round <= 2;
+    const renewedAt = g.clock.now;
+    const call = await untilRefresh(g, SESSION_IDLE_MS);
+    assert.ok(call, `round ${round}: a refresh was asked for, with nothing done in the tab`);
     assert.equal(call.args[0], CSRF_A, 'with the session CSRF');
-    assert.ok(g.clock.now - renewedAt >= REFRESH_AFTER_MS && g.clock.now - renewedAt < SESSION_IDLE_MS, 'before the idle deadline');
+    assert.equal(g.clock.now - renewedAt, round <= 2 ? REFRESH_AFTER_MS : REFRESH_AFTER_MS + HIDDEN_DEFER_MS, 'visible at 20 minutes, hidden a minute later');
+    assert.ok(g.clock.now - renewedAt < SESSION_IDLE_MS, 'before the idle deadline');
     await g.answer('refresh', ok('refresh', session(ADDR_A)));
     assert.equal(g.view().status, 'signed_in');
     assert.equal(g.log.renewals, round, 'other tabs are told of each renewal');
@@ -356,38 +362,53 @@ test('controller: an active, visible tab renews before each idle deadline and st
   assert.ok(g.clock.now - signedAt > 2 * SESSION_IDLE_MS, 'well past one idle period');
   assert.equal(g.controller.getSnapshot().epoch, scope, 'the same scope throughout');
   assert.equal(g.log.signs.length, 1);
-  assert.equal(h.controller.getSnapshot().epoch, epoch);
-  assert.equal(h.log.clears, clears);
+  assert.equal(g.log.clears, clears);
 });
 
-test('controller: without activity since the last renewal, nothing is refreshed and the session idles out', async () => {
+test('controller: a hidden tab waits a minute more, plus its own stagger (at most a minute), and stays well before the idle deadline', async () => {
+  for (const [stagger, extra] of [[0, 0], [25_000, 25_000], [HIDDEN_STAGGER_MS * 5, HIDDEN_STAGGER_MS], [-5, 0]]) {
+    const h = harness({ stagger });
+    await signIn(h);
+    h.clock.visible = false;
+    const renewedAt = h.clock.now;
+    assert.ok(await untilRefresh(h, SESSION_IDLE_MS), `stagger ${stagger}`);
+    assert.equal(h.clock.now - renewedAt, REFRESH_AFTER_MS + HIDDEN_DEFER_MS + extra, `stagger ${stagger}`);
+    // Its retries included, a hidden tab's last try still lands before the idle deadline.
+    assert.ok(h.clock.now - renewedAt + FOLLOW_DEFER_MS + REFRESH_RETRY_MS.reduce((a, b) => a + b, 0) < SESSION_IDLE_MS);
+  }
+});
+
+test('controller: the session still ends when nothing renews it: a refused refresh leaves it to idle out at its deadline', async () => {
   const h = harness();
   await signIn(h);
-  assert.equal(await untilRefresh(h, SESSION_IDLE_MS - MINUTE), undefined);
+  const signedAt = h.clock.now;
+  await untilRefresh(h, REFRESH_AFTER_MS);
+  await h.answer('refresh', code('refresh', 'csrf_invalid'));
+  await h.answer('me', ok('me', session(ADDR_A)));
+  assert.equal(await untilRefresh(h, SESSION_IDLE_MS - (h.clock.now - signedAt) - 1), undefined, 'no second refresh for this session');
   await h.advance(2 * MINUTE);
   await h.answer('me', code('me', 'session_required'));
   assert.deepEqual(h.view(), { status: 'signed_out', reason: 'session_ended' });
-  assert.equal(h.count('refresh'), 0);
+  assert.equal(h.count('refresh'), 1);
 });
 
-test('controller: a restored session, whose last renewal is unknown, is renewed at the first activity', async () => {
+test('controller: a restored session, whose last renewal is unknown, is renewed as soon as the tab shows it', async () => {
   const h = harness();
   h.controller.dispatch({ type: 'identity', identity: wallet(ADDR_A) });
   await h.answer('me', ok('me', session(ADDR_A)));
-  assert.equal(h.count('refresh'), 0, 'loading the page is not activity');
-  h.clock.now += 1000;
-  h.controller.activity();
+  await h.advance(0);
   assert.ok(h.pending('refresh'), 'renewed at once: the idle deadline could be close');
   await h.answer('refresh', ok('refresh', session(ADDR_A)));
-  h.controller.activity();
+  h.controller.wake();
   assert.equal(h.count('refresh'), 1, 'and then not again until it is due');
+  assert.equal(await untilRefresh(h, REFRESH_AFTER_MS - 1000), undefined);
+  assert.ok(await untilRefresh(h, 1000), 'due 20 minutes after that renewal');
 });
 
-test('controller: no refresh while signed out, or while hidden; it runs when the tab is visible again', async () => {
+test('controller: nothing is refreshed while signed out; back in view or in focus, a renewal older than 10 minutes is renewed at once', async () => {
   const h = harness();
   h.controller.dispatch({ type: 'identity', identity: wallet(ADDR_A) });
   await h.answer('me', code('me', 'session_required'));
-  h.controller.activity();
   h.controller.wake();
   await h.advance(SESSION_IDLE_MS);
   assert.equal(h.count('refresh'), 0, 'nothing to renew while signed out');
@@ -395,20 +416,33 @@ test('controller: no refresh while signed out, or while hidden; it runs when the
 
   const g = harness();
   await signIn(g);
-  g.clock.now += 1000;
-  g.controller.activity();
   g.clock.visible = false;
-  assert.equal(await untilRefresh(g, REFRESH_AFTER_MS + MINUTE), undefined, 'a hidden tab never refreshes');
+  assert.equal(await untilRefresh(g, RETURN_REFRESH_MS - 1000), undefined);
   g.clock.visible = true;
   g.controller.wake();
-  assert.ok(g.pending('refresh'), 'coming back into view runs the refresh that waited');
+  assert.equal(g.pending('refresh'), undefined, 'a renewal younger than 10 minutes waits for its turn');
+  assert.equal(await untilRefresh(g, 1000), undefined);
+  g.controller.wake();
+  assert.ok(g.pending('refresh'), 'a renewal 10 minutes old is renewed at once on return');
+  await g.answer('refresh', ok('refresh', session(ADDR_A)));
+  assert.equal(g.view().status, 'signed_in');
+
+  // A return while a me check runs (the page reads me when it comes back into view) renews once the check ends.
+  const k = harness();
+  await signIn(k);
+  assert.equal(await untilRefresh(k, 12 * MINUTE), undefined);
+  k.controller.dispatch({ type: 'recheck', cause: 'visible' });
+  k.controller.wake();
+  assert.equal(k.pending('refresh'), undefined, 'not while me is asked');
+  await k.answer('me', ok('me', session(ADDR_A)));
+  await k.advance(0);
+  assert.ok(k.pending('refresh'), 'right after it');
+  assert.equal(k.count('refresh'), 1);
 });
 
 test('controller: refresh session_required signs out, clears private data and asks for no signature', async () => {
   const h = harness();
   await signIn(h);
-  h.clock.now += 1000;
-  h.controller.activity();
   await untilRefresh(h, REFRESH_AFTER_MS);
   const clears = h.log.clears;
   const broadcasts = h.log.broadcasts;
@@ -417,15 +451,14 @@ test('controller: refresh session_required signs out, clears private data and as
   assert.equal(h.log.clears, clears + 1);
   assert.equal(h.log.broadcasts, broadcasts + 1, 'the other tabs look for themselves');
   assert.equal(h.log.signs.length, 1);
-  h.controller.activity();
+  h.controller.wake();
+  assert.equal(await untilRefresh(h, SESSION_IDLE_MS), undefined);
   assert.equal(h.count('refresh'), 1);
 });
 
 test('controller: a refresh 503 keeps the session and retries after 30 s, 60 s and 120 s, then stops', async () => {
   const h = harness();
   await signIn(h);
-  h.clock.now += 1000;
-  h.controller.activity();
   await untilRefresh(h, REFRESH_AFTER_MS);
   const clears = h.log.clears;
   const waits = [];
@@ -444,16 +477,13 @@ test('controller: a refresh 503 keeps the session and retries after 30 s, 60 s a
   }
   assert.deepEqual(waits, REFRESH_RETRY_MS);
   assert.equal(h.log.clears, clears, 'private data stays through the outage');
-  h.controller.activity();
   h.controller.wake();
-  assert.equal(h.count('refresh'), 1 + REFRESH_RETRY_MS.length);
+  assert.equal(h.count('refresh'), 1 + REFRESH_RETRY_MS.length, 'a return does not lift the bound');
 });
 
 test('controller: retries used up in an outage stop only that renewal window; a renewal elsewhere starts a new one', async () => {
   const h = harness();
   await signIn(h);
-  h.clock.now += 1000;
-  h.controller.activity();
   await untilRefresh(h, REFRESH_AFTER_MS);
   // The outage outlasts every retry: 1 refresh and 3 retries, then this tab waits.
   for (let attempt = 0; attempt <= REFRESH_RETRY_MS.length; attempt += 1) {
@@ -468,16 +498,10 @@ test('controller: retries used up in an outage stop only that renewal window; a 
   assert.equal(h.view().status, 'signed_in');
   assert.equal(h.view().notice, undefined);
   const renewedAt = h.clock.now;
-  // The user keeps working in this tab only.
-  let due;
-  for (let minute = 0; minute < 25 && !due; minute += 1) {
-    h.clock.now += 1000;
-    h.controller.activity();
-    due = await untilRefresh(h, MINUTE - 1000);
-  }
+  // Should that tab close, this one renews the session again before it idles out, half a minute after it would have.
+  const due = await untilRefresh(h, SESSION_IDLE_MS);
   assert.ok(due, 'this tab renews the session again before it idles out');
-  assert.ok(h.clock.now - renewedAt >= REFRESH_AFTER_MS, 'not before the new window is due');
-  assert.ok(h.clock.now - renewedAt < SESSION_IDLE_MS, 'before the idle deadline');
+  assert.equal(h.clock.now - renewedAt, REFRESH_AFTER_MS + FOLLOW_DEFER_MS, 'not before the new window is due');
   assert.equal(due.args[0], CSRF_A);
   // With its full set of retries again.
   const sentAt = h.clock.now;
@@ -493,8 +517,6 @@ test('controller: retries used up in an outage stop only that renewal window; a 
 test('controller: retries used up in an outage start over after this tab’s own renewal', async () => {
   const h = harness();
   await signIn(h);
-  h.clock.now += 1000;
-  h.controller.activity();
   await untilRefresh(h, REFRESH_AFTER_MS);
   for (let attempt = 0; attempt < REFRESH_RETRY_MS.length; attempt += 1) {
     await h.answer('refresh', code('refresh', 'session_store_unavailable'));
@@ -504,8 +526,6 @@ test('controller: retries used up in an outage start over after this tab’s own
   await h.answer('refresh', ok('refresh', session(ADDR_A)));
   assert.equal(h.view().notice, undefined);
   // The next window has its own retries, even though the last one used all of them.
-  h.clock.now += 1000;
-  h.controller.activity();
   assert.ok(await untilRefresh(h, REFRESH_AFTER_MS));
   for (let attempt = 0; attempt < REFRESH_RETRY_MS.length; attempt += 1) {
     await h.answer('refresh', code('refresh', 'upstream_timeout'));
@@ -519,8 +539,6 @@ test('controller: retries used up in an outage start over after this tab’s own
 test('controller: a Retry-After longer than the backoff is honoured, and a later success resets it', async () => {
   const h = harness();
   await signIn(h);
-  h.clock.now += 1000;
-  h.controller.activity();
   await untilRefresh(h, REFRESH_AFTER_MS);
   const sentAt = h.clock.now;
   await h.answer('refresh', code('refresh', 'session_rate_limited', 90));
@@ -529,8 +547,6 @@ test('controller: a Retry-After longer than the backoff is honoured, and a later
   await h.answer('refresh', ok('refresh', session(ADDR_A)));
   assert.equal(h.view().notice, undefined);
   // A new renewal window, with the full set of retries again.
-  h.clock.now += 1000;
-  h.controller.activity();
   assert.ok(await untilRefresh(h, REFRESH_AFTER_MS));
   await h.answer('refresh', code('refresh', 'upstream_timeout'));
   const again = h.clock.now;
@@ -541,8 +557,6 @@ test('controller: a Retry-After longer than the backoff is honoured, and a later
 test('controller: a CSRF refusal reads me once and never loops', async () => {
   const h = harness();
   await signIn(h);
-  h.clock.now += 1000;
-  h.controller.activity();
   await untilRefresh(h, REFRESH_AFTER_MS);
   const reads = h.count('me');
   await h.answer('refresh', code('refresh', 'csrf_invalid'));
@@ -551,7 +565,6 @@ test('controller: a CSRF refusal reads me once and never loops', async () => {
   assert.equal(h.view().status, 'signed_in');
   for (let i = 0; i < 3; i += 1) {
     h.clock.now += MINUTE;
-    h.controller.activity();
     h.controller.wake();
   }
   assert.equal(h.count('refresh'), 1, 'no second refresh for this session');
@@ -559,11 +572,8 @@ test('controller: a CSRF refusal reads me once and never loops', async () => {
   // A renewal in another tab does not lift it: the refusal is about this
   // session, not about one renewal window.
   h.controller.renewedElsewhere();
-  for (let i = 0; i < 25; i += 1) {
-    h.clock.now += 1000;
-    h.controller.activity();
-    await untilRefresh(h, MINUTE - 1000);
-  }
+  await untilRefresh(h, 25 * MINUTE);
+  h.controller.wake();
   assert.equal(h.count('refresh'), 1, 'still no second refresh for this session');
   assert.equal(h.log.signs.length, 1, 'never a signature');
 });
@@ -578,9 +588,8 @@ test('controller: a new server session for the same owner, found by a background
   assert.equal(h.controller.getSnapshot().epoch, before + 1, 'a new epoch, so a new private scope');
   assert.equal(h.log.clears, clears + 1, 'the old session’s private data is dropped first');
   assert.deepEqual(h.log.stored.at(-1).scope.epoch, before + 1);
-  // Its renewal history is its own: unknown, so the first activity renews it, with its own CSRF.
-  h.clock.now += 1000;
-  h.controller.activity();
+  // Its renewal history is its own: unknown, so it is renewed at once, with its own CSRF.
+  await h.advance(0);
   assert.equal(h.pending('refresh').args[0], CSRF_B);
 });
 
@@ -593,29 +602,33 @@ test('controller: two tabs share renewals, so they do not both refresh, and neit
   second.controller.dispatch({ type: 'identity', identity: wallet(ADDR_A) });
   await second.answer('me', ok('me', session(ADDR_A)));
 
-  // The restored tab renews at its first activity, and the first tab hears of it.
+  // The restored tab does not know when the session last renewed: it renews at once, and the first tab hears of it.
   first.clock.now = second.clock.now = NOW + MINUTE;
-  second.controller.activity();
+  await second.advance(0);
   await second.answer('refresh', ok('refresh', session(ADDR_A)));
   assert.equal(first.count('refresh'), 0);
   assert.equal(first.count('me'), 1, 'a renewal notice sends nothing');
 
-  // Both in use. The first tab would have been due 20 minutes after its
-  // sign-in; the renewal moved that for both.
-  first.clock.now = second.clock.now = NOW + 2 * MINUTE;
-  first.controller.activity();
-  second.controller.activity();
-  await untilRefresh(first, REFRESH_AFTER_MS - 2 * MINUTE + 30_000);
-  assert.equal(first.count('refresh'), 0, 'not at its old deadline');
-  second.clock.now = first.clock.now;
-  const due = await untilRefresh(first, MINUTE);
-  assert.ok(due, 'the first tab renews at the shared deadline');
-  second.clock.now = first.clock.now;
-  await first.answer('refresh', ok('refresh', session(ADDR_A)));
-  // The second tab's timer is now for the new deadline, not this one.
-  const stale = await untilRefresh(second, 5_000);
+  // Both open and visible, nothing done in either. The second tab made the last renewal, so it makes the next, at
+  // 20 minutes; the first, which only heard of it, would wait half a minute more and hears of the next one first.
+  const renewedAt = first.clock.now;
+  assert.equal(await untilRefresh(first, REFRESH_AFTER_MS), undefined, 'not at its old deadline, nor at the shared one');
+  const due = await untilRefresh(second, REFRESH_AFTER_MS);
+  assert.ok(due, 'the tab that renewed last renews again');
+  assert.equal(second.clock.now - renewedAt, REFRESH_AFTER_MS);
+  first.clock.now = second.clock.now;
+  await second.answer('refresh', ok('refresh', session(ADDR_A)));
+  // The first tab's timer is now for the new window, not this one.
+  const stale = await untilRefresh(first, FOLLOW_DEFER_MS + 5_000);
   assert.equal(stale, undefined, 'one refresh per renewal window, not one per tab');
-  assert.equal(second.count('refresh'), 1);
+  assert.equal(first.count('refresh'), 0);
+  assert.equal(second.count('refresh'), 2);
+
+  // Should the second tab close, the first renews in its place, half a minute after the second would have.
+  const closedAt = second.clock.now;
+  const instead = await untilRefresh(first, SESSION_IDLE_MS);
+  assert.ok(instead);
+  assert.equal(first.clock.now - closedAt, REFRESH_AFTER_MS + FOLLOW_DEFER_MS);
 
   for (const tab of [first, second]) {
     assert.equal(tab.view().status, 'signed_in');
@@ -629,8 +642,6 @@ test('controller: two tabs share renewals, so they do not both refresh, and neit
 test('controller: a Sign out click during a refresh aborts it and logs out', async () => {
   const h = harness();
   await signIn(h);
-  h.clock.now += 1000;
-  h.controller.activity();
   const call = await untilRefresh(h, REFRESH_AFTER_MS);
   h.controller.dispatch({ type: 'sign_out' });
   assert.equal(call.signal.aborted, true);

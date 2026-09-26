@@ -4,10 +4,12 @@ import type { DocPage } from '../types'
 /**
  * Public terms stay accurate whether one admitted pilot vault is live or none are. Changed on purpose (2026-09-25, audit
  * of 754014c): the automation page no longer has owner controls, so no screen of this site activates, pauses, revokes or
- * withdraws; the note no longer says this site offers activation.
+ * withdraws; the note no longer says this site offers activation. Changed on purpose again (owner, 2026-09-25): a
+ * position's page offers Turn on once the service confirms it is ready for that sequence, and Pause while it runs
+ * (components/positions/SequenceSwitch.tsx); revocation and withdrawal still have no screen.
  */
 const SERVICE_SCOPE = note(
-  ['Automation availability is checked for each owner and sequence. A new sequence starts paused. Activation, pause, revocation and withdrawal are transactions your wallet signs on your sequence vault, activation only once the automation service confirms readiness for it. No Domino screen makes them today.'],
+  ['Automation availability is checked for each owner and sequence. A new sequence starts paused. Activation, pause, revocation and withdrawal are transactions your wallet signs on your sequence vault. Your position’s page offers Turn on once the automation service confirms it is ready for your sequence, and Pause while it runs.'],
   'Per sequence',
 )
 

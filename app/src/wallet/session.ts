@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { getAddress } from 'viem'
 import { createSessionApi } from '../session/api'
 import { sessionRuntime } from '../session/contract'
-import { createSessionController, type Snapshot } from '../session/controller'
+import { createSessionController, HIDDEN_STAGGER_MS, type Snapshot } from '../session/controller'
 import { clearPrivate, privateQueryClient, storePrivate } from '../session/privateQuery'
 import { probeReads } from '../session/testProbe'
 import { signLoginMessage, startIdentityFeed } from './port'
@@ -18,8 +18,6 @@ import { signLoginMessage, startIdentityFeed } from './port'
 const CHANNEL = 'domino-session-v1'
 /** How often a tab coming back into view may re-read me. */
 const VISIBLE_RECHECK_MS = 30_000
-/** What counts as the user being active in this tab, for session refresh. */
-const ACTIVITY = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const
 
 const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(CHANNEL) : null
 
@@ -35,6 +33,8 @@ export const sessionController = createSessionController({
   // idle deadline moved too, and it need not refresh or read anything.
   broadcastRenewal: () => channel?.postMessage({ t: 'renewed' }),
   isVisible: () => document.visibilityState === 'visible',
+  // Each tab its own: tabs in the background spread their refreshes out, so one renews and the others hear of it.
+  hiddenStaggerMs: Math.floor(Math.random() * HIDDEN_STAGGER_MS),
   now: () => Date.now(),
   setTimer: (callback, ms) => {
     const id = window.setTimeout(callback, ms)
@@ -62,15 +62,13 @@ document.addEventListener('visibilitychange', () => {
     lastVisibleCheck = now
     sessionController.dispatch({ type: 'recheck', cause: 'visible' })
   }
-  // A refresh that came due while the tab was hidden runs now (after the
-  // check above, if one started).
+  // A renewal older than ten minutes is renewed now (after the check above,
+  // if one started): the browser may have held back this tab's timers.
   sessionController.wake()
 })
-
-// Only the time of the last activity is kept: never what was pressed or where.
-for (const type of ACTIVITY) {
-  window.addEventListener(type, () => sessionController.activity(), { capture: true, passive: true })
-}
+// Taking focus is a return too (owner, 2026-09-25): a window brought back
+// from behind another one may never have been hidden.
+window.addEventListener('focus', () => sessionController.wake())
 
 // The contract runtime validates messages with String#isWellFormed (Chrome
 // 111, Safari 16.4, Firefox 119). Older browsers get an explicit state rather

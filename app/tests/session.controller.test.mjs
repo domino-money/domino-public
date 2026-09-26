@@ -64,8 +64,8 @@ function harness({ now = NOW, onBroadcast, onRenewal, ...overrides } = {}) {
     },
     isVisible: () => clock.visible,
     now: () => clock.now,
-    setTimer: (callback, ms) => {
-      const timer = { callback, ms, cancelled: false };
+    setTimer: (callback, ms, purpose) => {
+      const timer = { callback, ms, purpose, cancelled: false };
       log.timers.push(timer);
       return () => {
         timer.cancelled = true;
@@ -84,7 +84,10 @@ function harness({ now = NOW, onBroadcast, onRenewal, ...overrides } = {}) {
     return call;
   }
   const view = () => controller.getSnapshot().view;
-  return { controller, log, clock, answer, pending, view };
+  // The session checks alone. Changed on purpose (owner, 2026-09-25): a signed-in tab always has a refresh planned
+  // too (session/controller.ts), so the newest timer is not always the check.
+  const checks = () => log.timers.filter((timer) => timer.purpose === 'check');
+  return { controller, log, clock, answer, pending, view, checks };
 }
 
 async function signIn(h, address = ADDR_A, csrf = CSRF_A) {
@@ -158,7 +161,7 @@ test('the expiry timer is placed by the server clock and re-reads me when it fir
   // The server's clock is five minutes behind this machine's: 11:55 there, and
   // the session expires at 11:58 server time, inside the regular check.
   await h.answer('me', ok('me', session(ADDR_A, CSRF_A, '2026-09-10T11:58:00Z'), NOW - 5 * 60_000));
-  const timer = h.log.timers.at(-1);
+  const timer = h.checks().at(-1);
   assert.equal(timer.ms, 3 * 60_000 + 1000);
   timer.callback();
   assert.ok(h.pending('me'));
@@ -171,31 +174,31 @@ test('an expiry that already looks past is never scheduled, so a fast local cloc
   h.controller.dispatch({ type: 'identity', identity: wallet(ADDR_A) });
   await h.answer('me', ok('me', session(ADDR_A, CSRF_A, '2026-09-11T00:00:00Z')));
   assert.equal(h.view().status, 'signed_in');
-  // Only the regular check is placed, never an immediate one.
-  assert.deepEqual(h.log.timers.map((timer) => timer.ms), [SESSION_CHECK_MS]);
-  h.log.timers.at(-1).callback();
+  // Only the regular check is placed, never an immediate one (the refresh planned beside it is not a check).
+  assert.deepEqual(h.checks().map((timer) => timer.ms), [SESSION_CHECK_MS]);
+  h.checks().at(-1).callback();
   await h.answer('me', ok('me', session(ADDR_A, CSRF_A, '2026-09-11T00:00:00Z')));
-  assert.deepEqual(h.log.timers.map((timer) => timer.ms), [SESSION_CHECK_MS, SESSION_CHECK_MS]);
+  assert.deepEqual(h.checks().map((timer) => timer.ms), [SESSION_CHECK_MS, SESSION_CHECK_MS]);
   assert.equal(h.log.calls.filter((call) => call.route === 'me').length, 2);
 });
 
 test('a fresh sign-in is checked again when its idle deadline passes, not only at the absolute expiry', async () => {
   const h = harness();
   await signIn(h);
-  assert.equal(h.log.timers.at(-1).ms, SESSION_CHECK_MS, 'the regular check comes first');
+  assert.equal(h.checks().at(-1).ms, SESSION_CHECK_MS, 'the regular check comes first');
   // Regular checks while the session lives keep the idle deadline in view.
   for (let round = 0; round < 5; round += 1) {
     h.clock.now += SESSION_CHECK_MS;
-    h.log.timers.at(-1).callback();
+    h.checks().at(-1).callback();
     await h.answer('me', ok('me', session(ADDR_A)));
   }
   h.clock.now += 60_000;
-  h.log.timers.at(-1).callback();
+  h.checks().at(-1).callback();
   await h.answer('me', ok('me', session(ADDR_A)));
   // 26 minutes after verify: the idle deadline is 4 minutes away.
-  assert.equal(h.log.timers.at(-1).ms, SESSION_IDLE_MS - 26 * 60_000 + 1000);
+  assert.equal(h.checks().at(-1).ms, SESSION_IDLE_MS - 26 * 60_000 + 1000);
   h.clock.now += 4 * 60_000 + 1000;
-  h.log.timers.at(-1).callback();
+  h.checks().at(-1).callback();
   await h.answer('me', required('me'));
   assert.deepEqual(h.view(), { status: 'signed_out', reason: 'session_ended' });
 });
@@ -205,9 +208,9 @@ test('a restored session, whose idle deadline is unknown, is read again every fe
   h.controller.dispatch({ type: 'identity', identity: wallet(ADDR_A) });
   await h.answer('me', ok('me', session(ADDR_A)));
   assert.equal(h.view().status, 'signed_in');
-  assert.equal(h.log.timers.at(-1).ms, SESSION_CHECK_MS);
+  assert.equal(h.checks().at(-1).ms, SESSION_CHECK_MS);
   assert.ok(SESSION_CHECK_MS <= 10 * 60_000);
-  h.log.timers.at(-1).callback();
+  h.checks().at(-1).callback();
   await h.answer('me', required('me'));
   assert.deepEqual(h.view(), { status: 'signed_out', reason: 'session_ended' });
   assert.ok(h.log.clears >= 1);
@@ -216,7 +219,7 @@ test('a restored session, whose idle deadline is unknown, is read again every fe
 test('signing out cancels the expiry timer', async () => {
   const h = harness();
   await signIn(h);
-  const timer = h.log.timers.at(-1);
+  const timer = h.checks().at(-1);
   h.controller.dispatch({ type: 'sign_out' });
   assert.equal(timer.cancelled, true);
 });

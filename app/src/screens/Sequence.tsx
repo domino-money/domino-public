@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
 import { setupWallet } from '../finance/wallet'
 import { atomicStatus } from '../finance/batch'
-import { suggestGasBudget } from '../finance/gas'
-import { readRelease, type ReleaseRead } from '../finance/release'
-import { createSequenceClient, sequenceDeploymentFrom, sequenceProviderReadError, type SequenceDeployment } from '../finance/sequence'
-import { readSequenceSnapshot } from '../finance/sequenceSnapshot'
+import type { ReleaseRead } from '../finance/release'
+import type { SequenceDeployment } from '../finance/sequence'
+import { connectSequence, readSequenceRelease } from '../finance/sequenceLive'
 import { switchToRobinhood } from '../wallet/port'
 import { Button, Display, EmptyState, LinkButton, Skeleton } from '../components/ui'
 import { IconAutomate, IconPlus, IconWallet } from '../components/icons'
@@ -14,46 +13,12 @@ import { createdHere } from '../lib/create/createProgress'
 import { pickerList } from '../lib/automate/picker'
 import { useWalletIdentity, walletKey } from '../lib/walletIdentity'
 import { useWalletAnswer, type WalletPosition, type WalletPositionsState } from '../lib/walletPositions'
-import SequenceCreate, { type Connected, type SequenceIntent } from './SequenceCreate'
+import SequenceCreate, { type SequenceIntent } from './SequenceCreate'
 
 type Release = { kind: 'loading' } | ReleaseRead<SequenceDeployment>
-/** Kept after a verified creation, for Start tracking's reads when no release is published (screens/Performance.tsx). It never holds owner data or a key. */
-const cacheKey = 'domino.sequence.public-recovery.v1'
-const readSequenceRelease = () => readRelease('/api/setup/v1/sequence-release', (value) => sequenceDeploymentFrom(value))
-/** For a loaded client: the published profile now, or null when it is no longer published. */
-const currentSequenceDeployment = async (): Promise<SequenceDeployment | null> => {
-  const release = await readSequenceRelease()
-  return release.kind === 'available' ? release.deployment : null
-}
 
-/**
- * What Set up automation needs at each press, asked again then: the published
- * release (a release switched off since the page opened never prepares a
- * step), the connected wallet, the sequence client over it, and a network
- * budget from the wallet's own price (finance/gas.ts), so nobody types gas.
- */
 /** What the connected wallet can do with a batch (EIP-5792): read once by the creation screen, which offers one signature for it. */
 const capabilities = () => setupWallet().then((wallet) => atomicStatus(wallet))
-/** A batch simulated on the chain's own RPC, for a wallet without eth_simulateV1: the page's chain code, loaded as its reads load it. */
-const simulateOnChain = async (params: unknown[]) => (await import('../lib/chain/chainCode')).simulateOnChain(params)
-
-async function connect(): Promise<Connected> {
-  const live = await readSequenceRelease()
-  if (live.kind !== 'available') throw new Error('sequence_admission_unavailable')
-  const wallet = await setupWallet().catch((error) => {
-    throw sequenceProviderReadError(error)
-  })
-  const client = createSequenceClient(wallet, live.deployment, () => Date.now() / 1000, currentSequenceDeployment, readSequenceSnapshot, { simulate: simulateOnChain })
-  const gas = await suggestGasBudget(wallet)
-  const verified = () => {
-    try {
-      localStorage.setItem(cacheKey, JSON.stringify({ contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment: live.deployment }))
-    } catch {
-      /* Optional: tracking still reads the published release. */
-    }
-  }
-  return { client, gas, verified }
-}
 
 /** Test builds only (App.tsx routes `#/sequence-lab/<spec>` behind __DOMINO_TEST_HOOKS__): the wallet's positions injected, as useWalletPositions would answer them. */
 interface Lab {
@@ -175,7 +140,7 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
         }
       />
     )
-  else body = <SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connect} capabilities={capabilities} />
+  else body = <SequenceCreate key={owner} positions={list.positions} intent={intent} connect={connectSequence} capabilities={capabilities} />
 
   return (
     <main className="dm-page dm-page--narrow dm-seq">

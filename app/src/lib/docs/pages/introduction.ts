@@ -47,7 +47,9 @@ export const WHAT_IS_DOMINO: DocPage = {
         p('Signing in is not one of those steps: it proves you control an address and allows nothing. See ', doc('what signing in proves', 'wallet', 'sign-in'), '.'),
         p('Once you activate automation, its operator sends automation transactions within the limits you signed. See ', doc('what the operator can do', 'non-custodial', 'operator'), '.'),
         // Changed on purpose (2026-09-25, audit of 754014c): no screen of this site offers activation any more.
-        p('A new sequence starts paused. Activation, pause, revocation and withdrawal are transactions your wallet signs on your sequence vault, activation only once the automation service confirms readiness for it. No Domino screen makes them today.'),
+        // Changed on purpose again (owner, 2026-09-25): a position's page offers Turn on once the service is ready, and Pause.
+        // Turn on and Pause have no review wall (the owner's rule), so they go straight to the wallet (review of 2026-09-25).
+        p('A new sequence starts paused. Activation, pause, revocation and withdrawal are transactions your wallet signs on your sequence vault. Your position’s page offers Turn on once the automation service confirms it is ready for your sequence, and Pause while it runs. Turn on and Pause go straight to your wallet, which shows the transaction.'),
       ],
     },
     {
