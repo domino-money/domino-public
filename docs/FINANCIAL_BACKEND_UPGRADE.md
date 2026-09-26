@@ -180,9 +180,7 @@ hand first.
 The same one-shot installer left `domino-performance`,
 `domino-performance-collector` and `domino-execution-status` on `fbc0d5e`. That
 release predates the status reader's loopback RPC and JWKS route (#207), its
-`/availability` route (#205) and the allowlist's removal (#182). The automation
-readiness upgrade, the only other tool that repoints execution-status, refuses
-while any other financial unit runs, the live session listener included.
+`/availability` route (#205) and the allowlist's removal (#182).
 `scripts/staging/install_financial_release.py --component <name>` moves one of
 the three the way `install_auth_release.py` moves the session listener:
 
@@ -201,8 +199,8 @@ trigger, and for the two listeners it refuses a database without 041's
 `sessions.delegate`, which their session store reads. For execution-status it
 reports whether 039's policy lets the status reader see automation readiness:
 until the readiness upgrade applies 039, `/availability` fails while `list` and
-`status` answer. The readiness upgrade refuses to repoint execution-status
-under this drop-in; take the release back with `--rollback` first.
+`status` answer. The readiness upgrade leaves execution-status, its drop-in and
+the live session listener as they run.
 
 ```sh
 git archive --format=tar -o financial-release.tar "$RELEASE_SHA"

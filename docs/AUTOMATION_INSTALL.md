@@ -75,7 +75,7 @@ moves the units there, so that directory is no longer used.
 
 For a host that has already installed 028–038, use the separate
 [readiness upgrade](AUTOMATION_READINESS_UPGRADE.md) to apply 039, 040 and 046 and pin the
-inactive automation and execution-status units to the new source release.
+inactive automation and gas units to the new source release.
 
 ## Private configuration and activation boundary
 

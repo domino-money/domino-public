@@ -3,9 +3,12 @@
 
 This is deliberately separate from the first-install path. It applies only
 039_automation_readiness.sql, 040_gas_finalized_quote_lag.sql and
-046_gas_answer_heartbeat.sql, stages immutable automation/execution-status
-source, and repoints four inactive units. It does not read private configuration,
-touch keys, change peers, start sockets/timers/services, or enable execution.
+046_gas_answer_heartbeat.sql, stages an immutable automation source release, and
+repoints the three inactive automation and gas units to it. It does not read
+private configuration, touch keys, change peers, start sockets/timers/services,
+or enable execution. The session listener and execution-status may be live: they
+are neither required off nor touched, and apply proves them unchanged.
+execution-status moves with its own tool, install_financial_release.py.
 """
 import argparse
 import fcntl
@@ -29,11 +32,15 @@ assert MIGRATIONS == ('backend/migrations/039_automation_readiness.sql',
                       'backend/migrations/040_gas_finalized_quote_lag.sql',
                       'backend/migrations/046_gas_answer_heartbeat.sql')
 PRIOR_MIGRATIONS = automation.MIGRATIONS[:-3]
-UNITS = (automation.UNIT, 'domino-gas-reservation.service',
-         'domino-gas-settlement.service', 'domino-execution-status.service')
+UNITS = (automation.UNIT, 'domino-gas-reservation.service', 'domino-gas-settlement.service')
+# Off: the units repointed here, their socket and timer, and the standalone
+# signer, whose gas gate 046 replaces.
 OFF_UNITS = (*UNITS, 'domino-gas-reservation.socket', 'domino-gas-settlement.timer',
-             *(f'domino-{component}.service' for component in financial.COMPONENTS
-               if component != 'execution-status'))
+             'domino-execution-signer.service')
+# Every other financial listener may be live (the session listener has been
+# since 25 Sep 2026, execution-status since 26 Sep); each must come out unchanged.
+WATCHED = (*financial.PROTECTED, *(f'domino-{component}.service' for component in financial.COMPONENTS
+                                   if f'domino-{component}.service' not in OFF_UNITS))
 LOCK = base.BASE / '.automation-install.lock'
 RECEIPT_QUERY = "SELECT value::text FROM domino_automation_install.receipt WHERE singleton=true"
 UPGRADE_TABLE = 'domino_automation_install.readiness_upgrade_receipt'
@@ -45,20 +52,16 @@ def plan(files, commit, digest):
             'invalid_release_pin')
     require(all(path in files for path in MIGRATIONS), 'readiness_migration_missing')
     automation.plan(files, commit, digest)
-    require('backend/execution_status.py' in files
-            and 'backend/execution_status_runtime.py' in files,
-            'execution_status_source_missing')
     return {'version': 1, 'kind': 'domino-automation-readiness-upgrade',
             'commit': commit, 'archiveSha256': digest,
             'migrations': [{'path': path, 'sha256': financial.sha(files[path][0])}
                            for path in MIGRATIONS],
             'units': {automation.UNIT: automation.unit_text(commit),
                       'domino-gas-reservation.service': automation.peer_unit_texts(commit)['domino-gas-reservation.service'],
-                      'domino-gas-settlement.service': automation.peer_unit_texts(commit)['domino-gas-settlement.service'],
-                      'domino-execution-status.service': financial.unit_text('execution-status', commit)},
-            'sourceDirectory': str(financial.ROOT / 'releases' / commit),
+                      'domino-gas-settlement.service': automation.peer_unit_texts(commit)['domino-gas-settlement.service']},
+            'sourceDirectory': str(financial.release_root(commit, automation.COMPONENT)),
             'servicesStarted': False, 'privateConfigurationChanged': False,
-            'rollback': 'restore four OFF units; retain receipted 039/040/046 schema and immutable source'}
+            'rollback': 'restore three OFF units; retain receipted 039/040/046 schema and immutable source'}
 
 
 def _install_receipt(table):
@@ -106,12 +109,11 @@ def _prior_receipts(files):
     return previous['commit'], previous_financial['commit']
 
 
-def _old_units(automation_commit, financial_commit):
+def _old_units(automation_commit):
     peer = automation.peer_unit_texts(automation_commit)
     return {automation.UNIT: automation.unit_text(automation_commit),
             'domino-gas-reservation.service': peer['domino-gas-reservation.service'],
-            'domino-gas-settlement.service': peer['domino-gas-settlement.service'],
-            'domino-execution-status.service': financial.unit_text('execution-status', financial_commit)}
+            'domino-gas-settlement.service': peer['domino-gas-settlement.service']}
 
 
 def _source_root(planned):
@@ -119,23 +121,20 @@ def _source_root(planned):
 
 
 def _source_present(files, planned):
-    root = _source_root(planned)
-    if not os.path.lexists(root):
+    component_root = _source_root(planned) / automation.COMPONENT
+    if not os.path.lexists(component_root):
         return False
-    base.trusted_parents(root)
-    for component in ('automation', 'execution-status'):
-        component_root = root / component
-        base.trusted_parents(component_root)
-        for name, (raw, executable) in files.items():
-            if not name.startswith('backend/') or name.startswith('backend/tests/'):
-                continue
-            path = component_root / name
-            base.trusted_parents(path.parent)
-            info = base.trusted(path)
-            require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
-                    and stat.S_IMODE(info.st_mode) == (0o555 if executable else 0o444)
-                    and financial.sha(financial.read_file(path)) == financial.sha(raw),
-                    'readiness_source_drift')
+    base.trusted_parents(component_root)
+    for name, (raw, executable) in files.items():
+        if not name.startswith('backend/') or name.startswith('backend/tests/'):
+            continue
+        path = component_root / name
+        base.trusted_parents(path.parent)
+        info = base.trusted(path)
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                and stat.S_IMODE(info.st_mode) == (0o555 if executable else 0o444)
+                and financial.sha(financial.read_file(path)) == financial.sha(raw),
+                'readiness_source_drift')
     return True
 
 
@@ -150,7 +149,11 @@ def baseline(files, planned):
     base.pg_parents(base.CONFIG)
     base.dependency_preflight(files)
     old_automation, old_financial = _prior_receipts(files)
-    old_units = _old_units(old_automation, old_financial)
+    old_units = _old_units(old_automation)
+    # The units run as unprivileged users that must pass through both directories.
+    for directory in (financial.ROOT / 'releases', _source_root(planned)):
+        if os.path.lexists(directory):
+            automation.traversable(directory)
     has_receipt = _upgrade_receipt(planned)
     source_present = _source_present(files, planned)
     journal_present = os.path.lexists(_journal_dir(planned))
@@ -158,7 +161,7 @@ def baseline(files, planned):
         base.trusted_parents(_journal_dir(planned))
         require(json.loads(financial.read_file(_journal_dir(planned) / 'plan.json')) == planned,
                 'readiness_upgrade_journal_mismatch')
-        for name, old in _old_units(old_automation, old_financial).items():
+        for name, old in _old_units(old_automation).items():
             require(financial.read_file(_journal_dir(planned) / (name + '.old')) == old.encode(),
                     'readiness_upgrade_journal_mismatch')
     if has_receipt:
@@ -181,16 +184,11 @@ def baseline(files, planned):
         if not has_receipt:
             require(raw == old_units[name].encode(), 'readiness_unit_prematurely_replaced')
         unit_bytes[name] = financial.sha(raw)
-    # install_financial_release.py names execution-status's release in a drop-in,
-    # which outranks the unit this upgrade rewrites: repointing the unit under it
-    # would change nothing that runs. Take that release back with its --rollback first.
-    require(not os.path.lexists(base.UNIT_DIR / 'domino-execution-status.service.d' / '50-release.conf'),
-            'execution_status_release_dropin')
     for name in OFF_UNITS:
         state = financial.unit_state(name)
         require(state['ActiveState'] == 'inactive' and state['MainPID'] == '0',
                 'financial_service_must_be_off')
-    protected = {name: financial.unit_state(name) for name in financial.PROTECTED}
+    protected = {name: financial.unit_state(name) for name in WATCHED}
     return {'planSha256': financial.sha(financial.json_bytes(planned)),
             'oldAutomationCommit': old_automation, 'oldFinancialCommit': old_financial,
             'migrationCommitted': has_receipt, 'sourcePresent': source_present,
@@ -232,31 +230,46 @@ COMMIT;
 
 
 def _install_source(files, planned):
-    root = _source_root(planned)
+    """The automation component, staged under a private name and renamed into
+    place, beside whatever another installer put at the same commit."""
     if _source_present(files, planned):
         return
-    base.trusted_parents(root.parent)
-    staging = Path(tempfile.mkdtemp(prefix='.' + planned['commit'] + '.readiness-', dir=root.parent))
+    release = _source_root(planned)
+    base.trusted_parents(release.parent)
+    automation.traversable(release.parent)
+    created = not os.path.lexists(release)
+    if created:
+        release.mkdir(mode=0o755)
+    else:
+        base.trusted_parents(release)
+        automation.traversable(release)
+    staging = Path(tempfile.mkdtemp(prefix='.automation-readiness-', dir=release))
     try:
-        for component in ('automation', 'execution-status'):
-            component_root = staging / component
-            component_root.mkdir(mode=0o755)
-            for name, (raw, executable) in files.items():
-                if not name.startswith('backend/') or name.startswith('backend/tests/'):
-                    continue
-                path = component_root / name
-                path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-                base.exclusive_file(path, raw, 0o555 if executable else 0o444)
-            (component_root / 'backend/runtime').mkdir(mode=0o700)
-            for directory, _, _ in os.walk(component_root, topdown=False):
-                os.chmod(directory, 0o555)
-        os.chmod(staging, 0o555)
-        require(not os.path.lexists(root), 'readiness_source_exists')
-        os.replace(staging, root)
-        base.fsync_directory(root.parent)
-    finally:
+        for name, (raw, executable) in files.items():
+            if not name.startswith('backend/') or name.startswith('backend/tests/'):
+                continue
+            path = staging / name
+            path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+            base.exclusive_file(path, raw, 0o555 if executable else 0o444)
+        (staging / 'backend/runtime').mkdir(mode=0o700)
+        for directory, _, _ in os.walk(staging, topdown=False):
+            os.chmod(directory, 0o555)
+        require(not os.path.lexists(release / automation.COMPONENT), 'readiness_source_exists')
+        os.replace(staging, release / automation.COMPONENT)
+        base.fsync_directory(release)
+        if created:
+            # Explicit, whatever the umask: 0700 here would stop every unit at CHDIR.
+            os.chmod(release, 0o555)
+    except BaseException:
         if os.path.lexists(staging):
+            for directory, _, _ in os.walk(staging):
+                os.chmod(directory, 0o700)
             shutil.rmtree(staging)
+        if created:
+            # Only while empty: once the component is in place the release stays.
+            try: release.rmdir()
+            except OSError: pass
+        raise
     require(_source_present(files, planned), 'readiness_source_install_failed')
 
 
@@ -269,7 +282,7 @@ def _replace_unit(path, raw):
 
 
 def rollback(planned):
-    """Restore only the four previously OFF units. The 039/040/046 receipts are retained."""
+    """Restore only the three previously OFF units. The 039/040/046 receipts are retained."""
     directory = _journal_dir(planned)
     base.trusted_parents(directory)
     require(json.loads(financial.read_file(directory / 'plan.json')) == planned,
@@ -315,7 +328,7 @@ def apply(files, planned, expected):
     else:
         require(json.loads(financial.read_file(directory / 'plan.json')) == planned,
                 'readiness_upgrade_journal_mismatch')
-        old = _old_units(actual['oldAutomationCommit'], actual['oldFinancialCommit'])
+        old = _old_units(actual['oldAutomationCommit'])
         for name in UNITS:
             require(financial.read_file(directory / (name + '.old')) == old[name].encode(),
                     'readiness_upgrade_journal_mismatch')
@@ -335,7 +348,7 @@ def apply(files, planned, expected):
                 _replace_unit(path, planned['units'][name].encode())
         base.run(['/usr/bin/systemd-analyze', 'verify', *(str(base.UNIT_DIR / name) for name in UNITS)])
         base.run(['/usr/bin/systemctl', 'daemon-reload'])
-        require({name: financial.unit_state(name) for name in financial.PROTECTED} == actual['protected'],
+        require({name: financial.unit_state(name) for name in WATCHED} == actual['protected'],
                 'protected_lane_changed')
         for name in OFF_UNITS:
             state = financial.unit_state(name)

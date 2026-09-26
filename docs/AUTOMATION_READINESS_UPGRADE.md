@@ -8,16 +8,32 @@ existing users, units, private directories and schema.
 The upgrade accepts a plain Git archive pinned by the full source commit and
 archive SHA256. It verifies the old automation and financial SQL receipts,
 checks that 028–038 match both the old immutable source and the new archive,
-requires all financial/automation/gas units to be inactive, and records the
-existing four unit files. It then stages new immutable `automation` and
-`execution-status` source, applies only `039_automation_readiness.sql`,
+requires the automation and gas units, the gas socket and timer, and the
+standalone execution signer (whose gas gate 046 replaces) to be inactive, and
+records the existing three unit files. It then stages a new immutable
+`automation` source, applies only `039_automation_readiness.sql`,
 `040_gas_finalized_quote_lag.sql` and `046_gas_answer_heartbeat.sql` in one
-transaction with its own database receipt, and repoints four inactive services:
-`domino-automation`, `domino-gas-reservation`, `domino-gas-settlement`, and
-`domino-execution-status`. It neither changes private configuration/key files
-nor starts or enables a unit. The socket and settlement timer remain OFF.
-The public reader, gateway, tunnel and development lanes are captured before
-the operation and required unchanged afterward.
+transaction with its own database receipt, and repoints three inactive services:
+`domino-automation`, `domino-gas-reservation` and `domino-gas-settlement`. It
+neither changes private configuration/key files nor starts or enables a unit.
+The socket and settlement timer remain OFF.
+
+The session listener and `domino-execution-status` may be live, as they are on
+the VM since 25 and 26 September 2026. The upgrade neither requires them off nor
+touches them: execution-status moves with its own tool,
+[`install_financial_release.py`](FINANCIAL_BACKEND_UPGRADE.md), and 039 only
+adds the policy that lets its reader see the automation's readiness. Every other
+financial listener, with the public reader, gateway, tunnel and development
+lanes, is captured before the operation and required unchanged afterward: a
+restart or a changed drop-in in between fails the apply, which then restores
+the three unit files.
+
+The source goes to `/opt/domino/financial/releases/<commit>/automation`, staged
+under a private name and renamed into place, beside any component another
+installer put at the same commit. A commit directory it creates is `0555`
+whatever the umask; a releases root, or an existing commit directory, that the
+service users could not traverse is refused (`release_directory_not_traversable`),
+at inspection before the database and again at apply.
 
 From a trusted local copy of the exact released script and sibling staging
 helpers, first produce a plan and root-only baseline, then apply that baseline:
@@ -38,7 +54,7 @@ sudo -n python3 scripts/staging/upgrade_automation_readiness.py \
 The exact 039/040/046 receipts make a retry idempotent: if a client loses the SQL
 response or a later file update fails, inspect again and apply using the new
 baseline. A receipt for a different commit or migration digest refuses the
-retry. The journal and four original unit files are retained at
+retry. The journal and three original unit files are retained at
 `/var/backups/domino-financial/automation/readiness-<commit>/`. A scoped
 rollback restores only those OFF unit files and keeps the committed 039/040/046
 schema. Migration 039 adds a SELECT-only readiness policy. Migration 040
