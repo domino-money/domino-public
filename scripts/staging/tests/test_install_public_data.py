@@ -113,6 +113,10 @@ class PublicInstallTests(unittest.TestCase):
             self.assertIn(setting,queue)
         self.assertIn('TimeoutStartSec=65',queue)
         self.assertIn('OnUnitInactiveSec=60s',units['domino-queue-worker.timer.d/90-public-data.conf'])
+        for timer in ('domino-queue-worker','domino-catalogue-follower'):
+            with self.subTest(timer=timer):
+                # Re-armed by every activation, not only by boot or by the service's last run.
+                self.assertIn('\nOnActiveSec=30s\n',units[timer+'.timer.d/90-public-data.conf'])
 
 
 if __name__=='__main__':unittest.main()
