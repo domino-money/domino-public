@@ -15,6 +15,7 @@ from deposit_api import DepositGateway, create_deposit_app, load_admission, main
 from deposit_models import DepositError
 from deposit_contract_fixtures import build_fixtures
 from test_deposit_prepare import signed_manifest
+from authenticated_api import MAX_WORKERS
 
 ORIGIN='https://domino.money'
 HEADERS={'Content-Type':'application/json','X-Domino-Deposit-Contract':'1.1.0-rc.4',
@@ -80,12 +81,13 @@ class DepositApiTests(unittest.TestCase):
             self.assertEqual(self.post(headers={**HEADERS,'X-Domino-Deposit-Contract':version}).status_code,502)
         self.service.execute.assert_not_called()
         self.assertEqual(self.post(headers=[*HEADERS.items(),('x-domino-session','c'*43)]).status_code,400)
-        self.gateway.slot.acquire();self.gateway.slot.acquire()
+        for _ in range(MAX_WORKERS): self.gateway.slot.acquire()
         try:
             result=self.post();self.assertEqual(result.status_code,429)
             self.assertEqual(result.json(),{'error':'deposit_capacity_busy'})
             self.assertEqual(result.headers['Retry-After'],'60')
-        finally:self.gateway.slot.release();self.gateway.slot.release()
+        finally:
+            for _ in range(MAX_WORKERS): self.gateway.slot.release()
 
 
 class DepositLauncherTests(unittest.TestCase):

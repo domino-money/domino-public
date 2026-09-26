@@ -1,7 +1,9 @@
 """Read orchestration with optional public catalogue; no accounts or signer."""
+from collections import OrderedDict
 from dataclasses import asdict
 from copy import deepcopy
 from functools import wraps
+from threading import BoundedSemaphore, Lock
 import time
 import re
 
@@ -86,6 +88,17 @@ def bounded_snapshot_loopback_transport(seconds=60):
     return transport
 
 
+# The wallet inventory is the one third-party quota on the wallet path (Alchemy's
+# token list). Which tokens a wallet holds changes slowly, so its first page is
+# reused for a few minutes and, while the provider is busy, for up to an hour; the
+# balances themselves are read on chain on every request. On 26 September 2026 the
+# page and the probes of its twenty candidates were 1.2 s of a 1.6 s wallet read.
+INVENTORY_FRESH_SECONDS = 300
+INVENTORY_STALE_SECONDS = 3600
+INVENTORY_CACHE_SIZE = 4096
+INVENTORY_CONCURRENCY = 2
+
+
 class ReadService:
     def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, historical_rpc_url=None,
                  historical_rpc_urls=None, clock=time.time,
@@ -98,6 +111,8 @@ class ReadService:
         if type(snapshot_loopback) is not bool:
             raise DataError('invalid_local_provider_config')
         self.snapshot_loopback = snapshot_loopback
+        self._inventory_pages, self._inventory_lock = OrderedDict(), Lock()
+        self._inventory_slot = BoundedSemaphore(INVENTORY_CONCURRENCY)
         self.historical_rpc_url = historical_rpc_url
         self.historical_rpc_urls = tuple(historical_rpc_urls) if historical_rpc_urls is not None else None
         self.rpc_factory, self.inventory = rpc_factory, inventory
@@ -659,6 +674,37 @@ class ReadService:
         return {'schemaVersion': 1, 'mode': 'public_token_read_only', 'chainId': CHAIN_ID,
                 'snapshot': asdict(block), 'asset': asset, 'liveExecution': False}
 
+    def _inventory_page(self, provider, wallet, key):
+        """The provider's first page for this wallet, reused while fresh; later pages always go to it.
+
+        At most INVENTORY_CONCURRENCY provider calls run at once. A caller that
+        finds them all taken gets a page up to INVENTORY_STALE_SECONDS old, or
+        provider_capacity_busy, and the balances of the tokens it named still.
+        A page reports when the provider returned it (retrievedAt), cached or not;
+        wallet_assets only reads it.
+        """
+        cache_key = (wallet, provider.context) if key is None else None
+        with self._inventory_lock:
+            cached = self._inventory_pages.get(cache_key) if cache_key else None
+        age = self.clock() - cached['retrievedAt'] if cached else None
+        if cached and age < INVENTORY_FRESH_SECONDS:
+            return cached
+        if not self._inventory_slot.acquire(blocking=False):
+            if cached and age < INVENTORY_STALE_SECONDS:
+                return cached
+            raise DataError('provider_capacity_busy')
+        try:
+            page = provider.page(wallet, key)
+        finally:
+            self._inventory_slot.release()
+        if cache_key:
+            with self._inventory_lock:
+                self._inventory_pages[cache_key] = page
+                self._inventory_pages.move_to_end(cache_key)
+                while len(self._inventory_pages) > INVENTORY_CACHE_SIZE:
+                    self._inventory_pages.popitem(last=False)
+        return page
+
     @public_response('wallet-assets')
     def wallet_assets(self, wallet, tokens=(), *, auto_discover=True, cursor=None):
         wallet = address(wallet)
@@ -680,7 +726,7 @@ class ReadService:
         if auto_discover and provider:
             try:
                 check_read_deadline()
-                page = provider.page(wallet, key)
+                page = self._inventory_page(provider, wallet, key)
                 check_read_deadline()
                 candidates = page['currencies']
                 # Bound the candidates probed on-chain so a full provider page

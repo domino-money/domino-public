@@ -46,6 +46,12 @@
  * api-contracts/read-v5) was added to the reader, the gateway and the bridge
  * client those manifests hash. No read-v1 or read-v2 route, schema or version
  * changed.
+ * The read-v1, read-v2, session-v1, onboarding-v1, deposit-v1, performance-v2
+ * and execution-v1 digests moved with the read path's capacity for 100+ users
+ * (26 September 2026): the reader and gateway admit eight provider reads at
+ * once, a wallet's inventory page is reused for five minutes, and the
+ * authenticated APIs take eight requests at once. Only backend sources those
+ * manifests hash changed; no route, schema, reason code or version did.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -53,19 +59,19 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '4db208d39094d79b90d831f1b1101bc447e241135867ef3a1fe61a2f09eb5612',
+      manifestSha256: 'a2528967edf591baf87da9cbbf3a658287e908c7f019ff9a6ce8d9fed38a72b4',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
-      manifestSha256: '6cb8e872afa15b1a0bcc085a4c192f580dceb2a7f9f8e5a9b072ebf48a44406c',
+      manifestSha256: 'e10f66fae4d045632b5667aacc7f30c4e77ecc3d5b4e4472baeefe101d9ce5ac',
     },
     'onboarding-v1': {
       version: '1.0.0',
-      manifestSha256: 'ad75636852aa4e2aff84d8b5f007150bfa6b6de85d1398eb7f0b755efcef8812',
+      manifestSha256: 'ab9019d4033a9d699e318319a978ecfe68ab22bd4ce1c9cc500121fcd341a160',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
-      manifestSha256: '088714f989945b9da5536d13f6f86907562aa96a35b492a0607120d0e861b66c',
+      manifestSha256: '616d430fed52a9c37ffd0e38968622fd82d196cbd34075bddb4f1ac59f257f39',
     },
   },
 } as const
@@ -73,7 +79,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'c72ca7f43924b69760c9fd7d8c0bf9fb0bcb7b842b218a722cf077e7f7825e38',
+  manifestSha256: 'fa304c61ae2cb0c4388df54963cf594e689403dc20dbd9ddba20e9a2d554480f',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
@@ -114,11 +120,11 @@ export const REQUEST_READ_CONTRACT: ReadContractPin = PRODUCER_PIN.packages['rea
 /** Authenticated private numeric history, independent of public pool estimates. */
 export const PERFORMANCE_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '12317dd036574dd777c25235242ca00bec4645268ec91bc96ea42879c47e5733',
+  manifestSha256: '66938a010968f16fc6ed8192e536287ad6f691b63f5f7e8e3cc5bcf46f84ea00',
 } as const
 
 /** Sanitized private execution status, finalized receipts and short-lived service availability. */
 export const EXECUTION_V1_PIN = {
   version: '1.0.0-rc.1',
-  manifestSha256: '938ab09a9e3901e4a427b9b1ce13bfd538ed3292b07b31fe2bac0dc83e30cfef',
+  manifestSha256: 'a295956ecd875801dfa9d108ad6a4a0c4a1b4848dc01c4a8f0541b3011fbdf0f',
 } as const

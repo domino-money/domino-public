@@ -22,7 +22,9 @@ from read_deadline import read_deadline
 from session_models import SessionError
 
 
-MAX_WORKERS = 2
+# Requests at once per service. Each is a short database read or write; 26 September
+# 2026: availability polls answer in ~20 ms, and two slots refused bursts of a busy page.
+MAX_WORKERS = 8
 TOTAL_SECONDS = 20
 UPLOAD_SECONDS = 5
 

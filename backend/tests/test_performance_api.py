@@ -19,6 +19,7 @@ from performance_models import (CONTRACT_VERSION, MAX_BODY, PERFORMANCE_REASONS,
 from performance_service import PerformanceService
 from performance_store import PerformanceStoreError
 from session_models import ERROR_STATUS, SessionError, token
+from authenticated_api import MAX_WORKERS
 
 OWNER = '0x'+'aa'*20
 OTHER = '0x'+'cc'*20
@@ -287,13 +288,13 @@ class PerformanceApiTests(unittest.TestCase):
         self.assertEqual(self.post(headers=[*HEADERS.items(), ('x-domino-session', SESSION)]).status_code, 400)
 
     def test_capacity_and_store_errors_are_bounded_sanitized(self):
-        self.gateway.slot.acquire(); self.gateway.slot.acquire()
+        for _ in range(MAX_WORKERS): self.gateway.slot.acquire()
         try:
             response = self.post()
             self.assertEqual((response.status_code, response.json()), (429, {'error': 'performance_capacity_busy'}))
             self.assertEqual(response.headers['Retry-After'], '60')
         finally:
-            self.gateway.slot.release(); self.gateway.slot.release()
+            for _ in range(MAX_WORKERS): self.gateway.slot.release()
         self.reader.list_epochs.side_effect = PerformanceStoreError('performance_store_unavailable')
         response = self.post()
         self.assertEqual((response.status_code, response.json()), (503, {'error': 'performance_store_unavailable'}))

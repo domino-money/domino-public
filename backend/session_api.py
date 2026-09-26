@@ -28,7 +28,8 @@ from read_deadline import read_deadline
 from session_models import (CONTRACT_VERSION, MAX_BODY, REQUEST_MODELS, RESPONSE_MODELS,
                             SessionError, token, validate_body)
 
-MAX_WORKERS=4
+# Sign-ins and session checks at once; each is a signature check and a short database step.
+MAX_WORKERS=8
 TOTAL_SECONDS=20
 UPLOAD_SECONDS=5
 PREFIX='/internal/session/v1/'

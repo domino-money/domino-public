@@ -23,7 +23,7 @@ from pydantic import ValidationError
 from bridge_identity import AccessVerifier
 from bridge_state import ClientBudgets, OpaqueCursors, strict_json
 from discovery import DataError
-from read_api import (AssetsRequest, TokenRequest, PoolsRequest, PoolMarketRequest, NftPositionsRequest,
+from read_api import (public_gate, AssetsRequest, TokenRequest, PoolsRequest, PoolMarketRequest, NftPositionsRequest,
                       CatalogueRequest, ActivityRequest, MarketsSnapshotRequest, ReadGate)
 from bridge_http import LocalReaderHTTP
 from read_deadline import read_deadline
@@ -88,8 +88,8 @@ class Gateway:
         self.enabled_v5, self.enabled_v5_reads = enabled_v5, frozenset(enabled_v5_reads)
         self.verifier, self.upstream = verifier, upstream or LocalReaderHTTP()
         self.budgets, self.cursors = budgets or ClientBudgets(), cursors or OpaqueCursors()
-        # Stored reads (v3, the featured list) get the stored lane's capacity, as in the reader.
-        self.gate = gate or (ReadGate(stored_capacity=4,stored_interval=0) if enabled_v3 or enabled_v5 else ReadGate())
+        # The reader's own lanes: the provider lane's capacity and the stored lane (v3, the featured list).
+        self.gate = gate or (public_gate() if enabled_v3 or enabled_v5 else ReadGate())
         self.clock, self.wall_clock = clock, wall_clock
 
     def execute(self, route, body, assertion, client, deadline, *, version='v1', request_id=None):

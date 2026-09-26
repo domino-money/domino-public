@@ -1084,11 +1084,11 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "1ed5b4762152260a45aa0032ffb164363f5b4ac7148a37a4d2e934e62cf5fe7c"
+      "sha256": "e68cc39a59ef73fc42f23303181ad4cf0c28c7975ebc7522dab593e410e574bb"
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "f5e81e7172935d3ef1724a0bb20f6f66d0e6ce62e34d83caa4d397e0fe49a5c5"
+      "sha256": "8613d5fee0b0393c4c30c6bd9a345f70c9dd0f81dbc2106f182cf1996de6b058"
     },
     {
       "path": "backend/rpc_failover.py",
@@ -1116,7 +1116,7 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "bc5d87803bb5b316e2c3c4ccf99a42b2200a803f2d70c78b8a4a54205e6538fa"
+      "sha256": "8cc7e4c8895fc04e2b8a4e7dc6b3ab20aff1fc8d69c8659a1eef5723bcb064b8"
     },
     {
       "path": "backend/bridge_state.py",
