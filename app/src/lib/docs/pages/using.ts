@@ -11,7 +11,7 @@ export const MARKETS: DocPage = {
       id: 'pools-table',
       title: 'The pools table',
       blocks: [
-        p('Markets lists selected Uniswap pools on Robinhood Chain. The selection is not a ranking or a recommendation.'),
+        p('Markets lists selected Uniswap pools on Robinhood Chain. Once a day, at 12:00 UTC, Domino ranks pools with no hooks, a fixed fee and a minimum 24h volume and liquidity by estimated 24h fee APR; the line under the title states the thresholds. When that list is unavailable, a fixed selection is shown instead. Neither is a recommendation.'),
         p('Each row shows a pool’s price, TVL, 24h volume and APR, and opens the pool’s page. The APR is Domino’s own where its history covers the day, and the estimated APR otherwise. Filter the rows by asset or by pair name.'),
         p('Price is the pool’s own ratio between its two tokens, not a dollar price.'),
       ],
