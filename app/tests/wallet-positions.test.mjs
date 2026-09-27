@@ -302,3 +302,265 @@ test('a later read of the same wallet reads the logs only since shortly before t
   assert.deepEqual(ranges(full), [[69_249_061, NEXT]]);
   client.forgetMinted();
 });
+
+// 2026-09-27, the owner's OK ("pode fazer") on the study of 7074cbd: Your positions reads itself again every 30 s while
+// the tab is visible (src/lib/walletPositions.ts askWallet, useWalletAnswer's `every`), in place. An answer from an older
+// block, one that read fewer figures, and one that shows the same are never drawn over the answer on screen; a refresh
+// that fails keeps it and is asked again after 60 s, then 120 s, never after the 2/5/10 s ladder; a wallet whose scan is
+// not incremental is never refreshed; a hidden tab asks nothing.
+test('a refresh is drawn only when it is newer, as complete and different: an older block, fewer figures and the same answer keep the one on screen', () => {
+  const next = clone(REPLY);
+  next.block += 5;
+  assert.equal(client.sameRows(REPLY, next), true, 'the same rows and figures at a later block');
+  next.positions[0].unclaimedFees = ['13', '34'];
+  assert.equal(client.sameRows(REPLY, next), false, 'a figure changed');
+  assert.equal(client.poorer(REPLY, next), false, 'changed figures are no fewer');
+  // Each figure the chain may leave unread, lost where the answer on screen had it: a refresh that failed.
+  const lost = [
+    (r) => Object.assign(r.positions[0], { sqrtPriceX96: null, tick: null, principal: null }),
+    (r) => (r.positions[0].unclaimedFees = null),
+    (r) => (r.positions[0].principal = null),
+    (r) => (r.positions[1].currencies[1] = token(TOKEN, null, 6)),
+    (r) => (r.positions[0].currencies[0] = token(USDG, 'USDG', null)),
+    (r) => (r.deposits[0].currencies[1] = token(r.deposits[0].currency1, null, null)),
+  ];
+  for (const [i, change] of lost.entries()) {
+    const reply = clone(REPLY);
+    change(reply);
+    assert.equal(client.poorer(REPLY, reply), true, `case ${i}: ${change}`);
+  }
+  // Nothing was lost: a new row the chain could not price, a row that was already unread, a row that is gone.
+  const unread = clone(REPLY);
+  Object.assign(unread.positions[0], { sqrtPriceX96: null, tick: null, principal: null, unclaimedFees: null });
+  assert.equal(client.poorer(unread, unread), false, 'still unread is not fewer');
+  assert.equal(client.poorer(unread, REPLY), false, 'read now');
+  const added = clone(REPLY);
+  added.positions.push({ ...clone(POSITION), tokenId: '3200000', sqrtPriceX96: null, tick: null, principal: null, unclaimedFees: null });
+  assert.equal(client.poorer(REPLY, added), false, 'a new position read without its price');
+  const gone = clone(REPLY);
+  gone.positions.pop();
+  gone.deposits = [];
+  assert.equal(client.poorer(REPLY, gone), false, 'a closed NFT sent away, a deposit refunded');
+  assert.deepEqual([client.REFRESH_MS, client.REFRESH_FLOOR_MS, [...client.REFRESH_FAILED_MS]], [30_000, 15_000, [60_000, 120_000]]);
+});
+
+/** A document that is shown or hidden as a test says, for the page's visibility rule (lib/read/screens/quietRead.ts). */
+function fakeDocument() {
+  const doc = new EventTarget();
+  doc.hidden = false;
+  doc.show = (shown) => {
+    doc.hidden = !shown;
+    doc.dispatchEvent(new Event('visibilitychange'));
+  };
+  return doc;
+}
+/** Lets every settled read's answer reach the loop. */
+const settle = () => new Promise((done) => setImmediate(done));
+const answerAt = (block, patch = {}) => ({ ok: true, answer: { ...clone(REPLY), block, ...patch } });
+
+/**
+ * askWallet over reads a test answers (`answers`, one per read, in order; a function is called with the read's number),
+ * a document it shows and hides, and node's mock setTimeout. `minted`: whether the page's memory holds the wallet's
+ * minted ids (a real scan of a fake chain puts them there), which is what lets the list refresh at all.
+ */
+async function loop(t, { every = client.REFRESH_MS, minted = true, paused, answers = [] } = {}) {
+  client.forgetMinted();
+  if (minted) {
+    const chain = fakeChain({ minted: [{ block: 69_300_000, id: 7 }], nfts: { 7: nft() } });
+    await withFetch((url, init) => chain.deps.fetch(url, init), () => client.readWalletPositions(OWNER, never()));
+  }
+  const doc = fakeDocument();
+  const before = globalThis.document;
+  globalThis.document = doc;
+  t.after(() => {
+    globalThis.document = before;
+    client.forgetMinted();
+  });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const reads = [];
+  const puts = [];
+  const shown = { current: null };
+  const read = async (owner, signal) => {
+    reads.push({ owner, signal });
+    const next = answers.shift();
+    return typeof next === 'function' ? next(reads.length) : (next ?? { ok: false, reason: 'chain_unavailable' });
+  };
+  const cancel = client.askWallet(OWNER, shown, (value) => puts.push(value), every, paused, read);
+  await settle();
+  /** Moves the clock by `ms` and lets the read it caused settle. */
+  const pass = async (ms) => {
+    t.mock.timers.tick(ms);
+    await settle();
+  };
+  return { doc, reads, puts, shown, cancel, pass, answers };
+}
+
+test('the list refreshes every 30 s after its last read settled: an older block, fewer figures or the same answer draws nothing, and a new one is drawn in place', async (t) => {
+  const first = answerAt(100);
+  const newer = answerAt(140);
+  newer.answer.positions[0].unclaimedFees = ['99', '34'];
+  const poorer = answerAt(150);
+  poorer.answer.positions[0].unclaimedFees = null;
+  const same = answerAt(160);
+  same.answer.positions[0].unclaimedFees = ['99', '34'];
+  const s = await loop(t, { answers: [first, answerAt(90, { positions: [] }), newer, same, poorer] });
+  assert.deepEqual([s.reads.length, s.puts.map((put) => put.phase)], [1, ['ready']]);
+  assert.equal(s.shown.current, first.answer);
+  await s.pass(29_999);
+  assert.equal(s.reads.length, 1, 'not before 30 s');
+  await s.pass(1);
+  assert.equal(s.reads.length, 2);
+  assert.equal(s.puts.length, 1, '(a) an older block (a node behind the head) is not drawn, though it lists nothing');
+  await s.pass(30_000);
+  assert.equal(s.reads.length, 3, 'and the refresh goes on at its pace');
+  assert.deepEqual([s.puts.length, s.puts[1].phase, s.puts[1].answer], [2, 'ready', newer.answer], 'a newer answer is drawn');
+  await s.pass(30_000);
+  assert.equal(s.reads.length, 4);
+  assert.equal(s.puts.length, 2, '(c) the same rows and figures at a later block draw nothing');
+  assert.equal(s.shown.current, newer.answer, 'the very object on screen stays');
+  await s.pass(30_000);
+  assert.equal(s.reads.length, 5);
+  assert.equal(s.puts.length, 2, '(b) an answer with fewer figures is not drawn');
+  // Taken as a failed refresh: asked again after 60 s, not 30.
+  s.answers.push(answerAt(170));
+  await s.pass(30_000);
+  assert.equal(s.reads.length, 5, 'a refresh that read fewer figures waits 60 s');
+  await s.pass(30_000);
+  assert.equal(s.reads.length, 6);
+  assert.equal(s.puts.at(-1).answer.block, 170);
+  // The loop stops with its screen: nothing is asked after the cancel, and the read on its way is dropped.
+  s.cancel();
+  await s.pass(600_000);
+  assert.equal(s.reads.length, 6);
+  assert.equal(s.reads.at(-1).signal.aborted, true);
+});
+
+test('a refresh that fails keeps the answer on screen and no line over it: asked again after 60 s, then every 120 s, never after 2, 5 or 10 s, and back to 30 s once it answers', async (t) => {
+  const s = await loop(t, { answers: [answerAt(100), { ok: false, reason: 'chain_busy' }, { ok: false, reason: 'chain_unavailable' }, { ok: false, reason: 'invalid_reply' }, answerAt(200, { deposits: [] }), answerAt(300)] });
+  await s.pass(30_000);
+  assert.equal(s.reads.length, 2, 'the first refresh');
+  assert.deepEqual(s.puts.map((put) => put.phase), ['ready'], 'a failed refresh draws nothing: no retrying, no failed, no loading');
+  // 2, 5 and 10 s after it (17 s in all), then the list's own 30 s: none of them asks.
+  for (const ms of [2_000, 3_000, 5_000, 7_000, 13_000]) await s.pass(ms);
+  assert.equal(s.reads.length, 2, 'never the quick ladder, and not at the list’s own pace');
+  await s.pass(29_999);
+  assert.equal(s.reads.length, 2);
+  await s.pass(1);
+  assert.equal(s.reads.length, 3, 'after 60 s');
+  await s.pass(119_999);
+  assert.equal(s.reads.length, 3);
+  await s.pass(1);
+  assert.equal(s.reads.length, 4, 'then after 120 s');
+  await s.pass(120_000);
+  assert.equal(s.reads.length, 5, 'and 120 s again');
+  assert.deepEqual([s.puts.length, s.puts[1].answer.block], [2, 200], 'drawn once it answers');
+  await s.pass(30_000);
+  assert.equal(s.reads.length, 6, 'at the list’s own pace again');
+  assert.equal(s.puts.at(-1).answer.block, 300);
+  s.cancel();
+});
+
+test('a hidden tab asks nothing: a refresh due while it is hidden waits and runs once when it is shown again; a paused list and a wallet at the scan’s cap are never refreshed; the pace is never under 15 s', async (t) => {
+  const s = await loop(t, { answers: [answerAt(100), answerAt(200), answerAt(300)] });
+  s.doc.show(false);
+  await s.pass(30_000);
+  await s.pass(600_000);
+  assert.equal(s.reads.length, 1, 'nothing while hidden');
+  s.doc.show(true);
+  await settle();
+  assert.equal(s.reads.length, 2, 'once, when shown again');
+  s.doc.show(false);
+  s.doc.show(true);
+  await settle();
+  assert.equal(s.reads.length, 2, 'showing the tab asks nothing more before the next refresh is due');
+  await s.pass(30_000);
+  assert.equal(s.reads.length, 3);
+  s.cancel();
+  t.mock.timers.reset();
+
+  // A held deposit's refund on its way: the refresh waits, and goes on once it is over.
+  const paused = { current: false };
+  const held = await loop(t, { paused, answers: [answerAt(100), answerAt(200)] });
+  paused.current = true;
+  await held.pass(30_000);
+  await held.pass(30_000);
+  assert.equal(held.reads.length, 1, 'no refresh while a refund is on its way');
+  paused.current = false;
+  await held.pass(30_000);
+  assert.equal(held.reads.length, 2);
+  // A refresh that failed waits for the refund too before it is asked again.
+  await held.pass(30_000);
+  assert.equal(held.reads.length, 3, 'this one fails');
+  paused.current = true;
+  await held.pass(60_000);
+  await held.pass(30_000);
+  assert.equal(held.reads.length, 3, 'its retry waits while a refund is on its way');
+  paused.current = false;
+  await held.pass(30_000);
+  assert.equal(held.reads.length, 4);
+  held.cancel();
+  t.mock.timers.reset();
+
+  // The pace asked for is never under 15 s.
+  const quick = await loop(t, { every: 1_000, answers: [answerAt(100), answerAt(200)] });
+  await quick.pass(14_999);
+  assert.equal(quick.reads.length, 1);
+  await quick.pass(1);
+  assert.equal(quick.reads.length, 2);
+  quick.cancel();
+  t.mock.timers.reset();
+
+  // A wallet the scan stopped at its cap for has no minted ids in the page's memory: each read would scan from the
+  // contract's deployment, so it is never refreshed.
+  const capped = await loop(t, { minted: false, answers: [answerAt(100)] });
+  await capped.pass(600_000);
+  assert.deepEqual([capped.reads.length, capped.puts.length], [1, 1]);
+  capped.cancel();
+});
+
+test('with the refresh off (the picker, the automation page, a position’s page) nothing is read again on its own; a first read that fails is still asked after 2, 5, 10 and then every 30 s', async (t) => {
+  const off = await loop(t, { every: null, answers: [answerAt(100)] });
+  await off.pass(600_000);
+  assert.equal(off.reads.length, 1);
+  off.cancel();
+  t.mock.timers.reset();
+  const failing = await loop(t, { every: null });
+  assert.deepEqual(failing.puts.map((put) => put.phase), ['retrying']);
+  for (const [ms, count] of [[2_000, 2], [5_000, 3], [10_000, 4], [30_000, 5], [30_000, 6]]) {
+    await failing.pass(ms - 1);
+    assert.equal(failing.reads.length, count - 1);
+    await failing.pass(1);
+    assert.equal(failing.reads.length, count, `after ${ms} ms`);
+  }
+  assert.deepEqual(failing.puts.map((put) => put.phase), ['retrying', 'retrying', 'retrying', 'failed', 'failed', 'failed']);
+  assert.deepEqual(failing.puts.map((put) => put.reason), Array(6).fill('chain_unavailable'));
+  failing.cancel();
+});
+
+// The review of 2026-09-27: the guards are the refresh's only. A reader with it off (the Sequence picker, the automation
+// page's useListedPosition) asks again only after an action (`asked` grows), over the answer already on screen: what it
+// reads is drawn and ends its reads, as before the refresh, whatever it read. With the guards on, an answer that read
+// fewer figures was taken as a failure and asked again after 2, 5 and 10 s, then every 30 s, for ever.
+test('with the refresh off, a read asked again over the answer on screen is drawn and ends the reads, even when it read fewer figures, is older or is the same', async (t) => {
+  const s = await loop(t, { every: null, answers: [answerAt(100)] });
+  assert.deepEqual([s.reads.length, s.puts.length], [1, 1]);
+  s.cancel();
+  const fewer = answerAt(200);
+  fewer.answer.positions[0].unclaimedFees = null;
+  const older = answerAt(90);
+  older.answer.positions[0].unclaimedFees = ['99', '34'];
+  const same = answerAt(300);
+  same.answer.positions[0].unclaimedFees = ['99', '34'];
+  for (const [label, next] of [['fewer figures', fewer], ['an older block', older], ['the same rows', same]]) {
+    const reads = [];
+    const puts = [];
+    // What useWalletAnswer does when `asked` grows: a new askWallet over the same answer on screen.
+    const cancel = client.askWallet(OWNER, s.shown, (value) => puts.push(value), null, undefined, async () => (reads.push(1), next));
+    await settle();
+    assert.deepEqual(puts, [{ phase: 'ready', answer: next.answer }], `${label}: drawn`);
+    assert.equal(s.shown.current, next.answer);
+    await s.pass(600_000);
+    assert.equal(reads.length, 1, `${label}: and nothing more is asked`);
+    cancel();
+  }
+});

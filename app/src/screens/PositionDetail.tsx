@@ -18,6 +18,7 @@ import { refreshFeeStates } from '../lib/fees/useFeeHistory'
 import type { StatePositionOk } from '../lib/fees/types'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import { NATIVE_CURRENCY } from '../lib/read/screens/identity'
+import { whenVisibleAfter } from '../lib/read/screens/quietRead'
 import { cardPoolUsableForDomino, type RangeEnd } from '../lib/read/screens/positions'
 import type { TokenDisplay } from '../lib/read/types'
 import { positionOfState, walletCard, walletState, type CurrencyView, type LiveCard } from '../lib/walletCards'
@@ -78,26 +79,19 @@ const NOT_FOUND_REASK_MS = [3_000, 8_000, 12_000] as const
  * since the page reads the chain itself).
  */
 const AFTER_ACTION_MS = 11_000
-
-/** `run` after `ms`, or once the page is shown again when it is hidden by then. Returns a cancel. */
-function whenVisibleAfter(ms: number, run: () => void): () => void {
-  let cancelled = false
-  const whenVisible = () => {
-    if (document.hidden) return
-    document.removeEventListener('visibilitychange', whenVisible)
-    if (!cancelled) run()
-  }
-  const timer = setTimeout(() => {
-    if (cancelled) return
-    if (document.hidden) document.addEventListener('visibilitychange', whenVisible)
-    else run()
-  }, ms)
-  return () => {
-    cancelled = true
-    clearTimeout(timer)
-    document.removeEventListener('visibilitychange', whenVisible)
-  }
-}
+/**
+ * The page reads itself again a minute after each read that succeeded, while it is visible (the owner's OK,
+ * 2026-09-27): the header's principal, unclaimed fees, price against the range and USD change in place. Test builds
+ * only when a test asks for it before the page loads (window.__dominoRefresh), so every other suite counts its reads as
+ * before.
+ */
+const REFRESH_MS = __DOMINO_TEST_HOOKS__ && !(window as { __dominoRefresh?: boolean }).__dominoRefresh ? 0 : 60_000
+/**
+ * With the refresh on, once the page shows a position, a read that fails or finds nothing, whatever the reason, keeps it
+ * and is asked again after 60 s, then every 120 s, for as long as the page is open (the list's REFRESH_FAILED_MS; the
+ * 2026-09-27 review): never REASK_MS's quick waits in a 429 episode, and never a stop that would leave the header stale.
+ */
+const REFRESH_FAILED_MS = [60_000, 120_000] as const
 
 /** A token as the actions take it: its address and what the chain said about it. */
 const currency = (token: TokenDisplay): CurrencyView => ({ address: token.address, symbol: token.symbol, decimals: token.decimals })
@@ -330,7 +324,10 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
  * against the public RPC since 2026-09-25, so it opens whether or not the read
  * service or the site's routes are up. A read that failed only for
  * the moment is asked again on its own while the page is visible; the owner's
- * actions ask the page to read again once they are included on chain.
+ * actions ask the page to read again once they are included on chain; and a
+ * minute after each read that succeeded, it reads again (REFRESH_MS), a read
+ * that fails then being asked again after 60 s and every 120 s after that
+ * (REFRESH_FAILED_MS).
  */
 export default function PositionDetail({ tokenId }: { tokenId: string }) {
   const [detail, setDetail] = useState<Detail>({ phase: 'loading' })
@@ -339,8 +336,13 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
     const controller = new AbortController()
     let attempts = 0
     let empties = 0
+    // Whether the page shows a position: it does once a read succeeded, and it did before an action asked again, since
+    // only a position on screen offers the actions (`asked`), and the page never leaves 'ready' once there.
+    let shown = asked > 0
     let cancel: (() => void) | null = null
     const askAfter = (wait: number) => {
+      // One wait at a time: a refresh set after the read an action asked for replaces the one set before it.
+      cancel?.()
       cancel = whenVisibleAfter(wait, () => {
         cancel = null
         ask()
@@ -354,6 +356,13 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
           const block = answer.value.block
           // An answer from an older block than the one on screen (the relay's cache, right after an action) changes nothing.
           setDetail((before) => (before.phase === 'ready' && before.block > block ? before : { phase: 'ready', position: found, block }))
+          attempts = empties = 0
+          shown = true
+          if (REFRESH_MS) askAfter(REFRESH_MS)
+          return
+        }
+        if (REFRESH_MS && shown) {
+          askAfter(Math.max(REFRESH_FAILED_MS[attempts++ ? 1 : 0], answer.ok ? 0 : answer.retryAfterMs))
           return
         }
         if (answer.ok && found && !found.ok && found.reason === 'not_found') {

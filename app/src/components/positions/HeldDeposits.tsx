@@ -38,7 +38,8 @@ export interface HeldDeposit {
   balance1: string
   currencies: readonly [PositionCurrency, PositionCurrency]
 }
-export interface HeldDepositsProps { owner: string; deposits: readonly HeldDeposit[]; onChanged: () => void }
+/** `onBusy`: told true when a refund starts and false once it is over, whatever became of it (the list's refresh waits meanwhile). */
+export interface HeldDepositsProps { owner: string; deposits: readonly HeldDeposit[]; onChanged: () => void; onBusy?: (busy: boolean) => void }
 
 type Stage = 'wallet' | 'chain' | 'done' | 'failed'
 /**
@@ -94,7 +95,7 @@ function Amount({ raw, currency }: { raw: string; currency: PositionCurrency }) 
   )
 }
 
-export default function HeldDeposits({ owner, deposits, onChanged }: HeldDepositsProps) {
+export default function HeldDeposits({ owner, deposits, onChanged, onBusy }: HeldDepositsProps) {
   const identity = useWalletIdentity()
   const wallet = walletKey(identity)
   const mine = wallet !== null && identity.kind === 'connected' && identity.address.toLowerCase() === owner.toLowerCase()
@@ -126,6 +127,7 @@ export default function HeldDeposits({ owner, deposits, onChanged }: HeldDeposit
     const gen = generation.current
     const alive = () => generation.current === gen
     mark(id, { stage: 'wallet', notice: null })
+    onBusy?.(true)
     let sent = false
     try {
       const live = await readSetupRelease()
@@ -154,6 +156,8 @@ export default function HeldDeposits({ owner, deposits, onChanged }: HeldDeposit
     } catch (error) {
       // Once sent, a failure is a watch that could not conclude, never a refund known to have failed.
       if (alive()) mark(id, { stage: 'failed', notice: sent ? { text: WATCHED_TEXT.unknown, code: errorCode(error) ?? 'unknown' } : failureText(error) })
+    } finally {
+      onBusy?.(false)
     }
   }
 

@@ -29,9 +29,12 @@
  * Nothing is stored: an answer lives in React state for as long as the screen
  * shows it.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { OwnedDeps } from '../../functions/_lib/owned'
 import type { MintedMemory } from '../../functions/_lib/walletPositions'
+// The read screens' own wait that holds while the page is hidden. 2026-09-27: this module's copy of it went; quietRead.ts
+// is in the entry chunk every page loads, so the picker loads nothing more for it.
+import { whenVisibleAfter } from './read/screens/quietRead'
 
 export interface WalletToken {
   /** Lowercase address; the zero address is native ETH. */
@@ -272,30 +275,6 @@ export const REASK_MS = [2_000, 5_000, 10_000] as const
 export const LATER_MS = 30_000
 
 /**
- * `run` after `ms`, or, when the page is hidden by then, once it is shown
- * again (lib/read/screens/quietRead.ts's rule, kept here so the Automate
- * screens' picker does not load the read screens' words). Returns a cancel.
- */
-function whenVisibleAfter(ms: number, run: () => void): () => void {
-  let cancelled = false
-  const whenVisible = () => {
-    if (document.hidden) return
-    document.removeEventListener('visibilitychange', whenVisible)
-    if (!cancelled) run()
-  }
-  const timer = setTimeout(() => {
-    if (cancelled) return
-    if (document.hidden) document.addEventListener('visibilitychange', whenVisible)
-    else run()
-  }, ms)
-  return () => {
-    cancelled = true
-    clearTimeout(timer)
-    document.removeEventListener('visibilitychange', whenVisible)
-  }
-}
-
-/**
  * The whole answer for one wallet, as the Positions list draws it (its held
  * deposits included). `retrying`: a read failed and is asked again on its own
  * (REASK_MS), so nothing is said about the list yet; `failed`: those failed
@@ -310,44 +289,114 @@ export type WalletAnswerState =
   | { phase: 'failed'; reason: string }
 
 /**
+ * The list's own refresh (the owner's OK of 2026-09-27, "pode fazer", on the study made at 7074cbd): the answer on
+ * screen is read again every 30 s while the tab is visible, never sooner than 15 s after the last read settled, and only
+ * for a wallet whose next scan is incremental (its minted ids in this page's memory, `minted` above): a wallet at the
+ * scan's cap would scan from the contract's deployment each time. A refresh that fails, or that reads fewer figures
+ * than the answer on screen, keeps that answer and is asked again after 60 s, then every 120 s.
+ */
+export const REFRESH_MS = 30_000
+export const REFRESH_FLOOR_MS = 15_000
+export const REFRESH_FAILED_MS = [60_000, 120_000] as const
+
+/** A row of an answer, a position or a held deposit, as the refresh compares them. */
+interface Row {
+  tokenId?: string
+  operationId?: string
+  currencies: readonly [WalletToken, WalletToken]
+  sqrtPriceX96?: string | null
+  unclaimedFees?: readonly [string, string] | null
+  principal?: readonly [string, string] | null
+}
+const rows = (answer: WalletAnswer): Row[] => [...answer.positions, ...answer.deposits]
+/** What of a row the chain may leave unread (null): the pool's price, the unclaimed fees, the principal, its tokens' names. */
+const figures = (row: Row) => [row.sqrtPriceX96, row.unclaimedFees, row.principal, ...row.currencies.flatMap((token) => [token.symbol, token.decimals])]
+
+/**
+ * Whether `next` read fewer figures than `shown`: a price, fees, a principal or a token's name that `shown` had for a
+ * row (the same NFT or held deposit) is null in `next`. Such an answer is a refresh that failed, never drawn over `shown`.
+ */
+export function poorer(shown: WalletAnswer, next: WalletAnswer): boolean {
+  const had = new Map(rows(shown).map((row) => [row.tokenId ?? row.operationId, figures(row)]))
+  return rows(next).some((row) => figures(row).some((value, i) => value === null && had.get(row.tokenId ?? row.operationId)?.[i] != null))
+}
+
+/** Whether two answers show the same rows with the same figures, whatever their blocks. */
+export const sameRows = (a: WalletAnswer, b: WalletAnswer) => JSON.stringify(rows(a)) === JSON.stringify(rows(b))
+
+/**
+ * One wallet's reads, for useWalletAnswer (exported for its tests): the first at once, each later one only after the
+ * one before it settled. `shown` is the answer on screen, kept across the hook's runs; `put` draws a new state; `every`
+ * turns the refresh on; `paused` holds it back while it is true. Returns the cancel.
+ *
+ * With the refresh on, an answer is drawn unless (a) its block is older than the one on screen (a node behind the
+ * head), (b) it read fewer figures (poorer: taken as a failed read) or (c) it shows the same rows and figures: then the
+ * answer on screen stays, the very object, so nothing renders again. (d) A read that fails while an answer is on screen
+ * draws nothing over it; the refreshing list asks again after REFRESH_FAILED_MS, never after REASK_MS's quick waits.
+ * With it off, every answer read is drawn and ends the reads, as it did before the refresh (2026-09-27 review).
+ */
+export function askWallet(owner: string, shown: { current: WalletAnswer | null }, put: (value: WalletAnswerState) => void, every: number | null = null, paused?: { readonly current: boolean }, read = readWalletPositions): () => void {
+  const controller = new AbortController()
+  let attempts = 0
+  let cancel: (() => void) | null = null
+  // One wait at a time; cancelling one that already ran does nothing.
+  const after = (ms: number, run: () => void) => {
+    cancel = whenVisibleAfter(ms, run)
+  }
+  const pace = every && Math.max(every, REFRESH_FLOOR_MS)
+  // A read the refresh asks on its own, held back while `paused` (a held deposit's refund on its way, which a new list
+  // could unmount mid-refund).
+  const later = (ms: number): void => after(ms, () => (paused?.current ? later(pace!) : ask()))
+  const ask = () => {
+    void read(owner, controller.signal).then((result) => {
+      if (controller.signal.aborted) return
+      const before = shown.current?.owner === owner ? shown.current : null
+      // (a)-(c) only with the refresh on: a reader without it (the picker, the automation page) draws each answer it
+      // read and asks no more, as before the refresh.
+      const kept = pace && before
+      if (result.ok && !(kept && poorer(kept, result.answer))) {
+        const { answer } = result
+        attempts = 0
+        if (!kept || (answer.block >= kept.block && !sameRows(kept, answer))) put({ phase: 'ready', answer: (shown.current = answer) })
+        if (pace && minted.has(owner)) later(pace)
+        return
+      }
+      const reason = result.ok ? 'poorer' : result.reason
+      const again = passingWalletFailure(reason)
+      if (!before) {
+        shown.current = null
+        put({ phase: again && attempts < REASK_MS.length ? 'retrying' : 'failed', reason })
+      }
+      if (!again) return
+      if (before && pace) later(REFRESH_FAILED_MS[attempts ? 1 : 0])
+      else after(attempts < REASK_MS.length ? REASK_MS[attempts] : LATER_MS, ask)
+      attempts += 1
+    })
+  }
+  ask()
+  return () => {
+    controller.abort()
+    cancel?.()
+  }
+}
+
+/**
  * The connected wallet's answer: asked whenever `owner` is set (a lowercase
  * address, the wallet connected on Robinhood Chain), and again each time
  * `asked` grows (after an action changed it). A read that failed is asked
  * again on its own while the page is visible, after 2, 5 and 10 seconds and
  * then every 30; an answer already on screen stays there when a later one
- * fails.
+ * fails. `every` (Your positions only, REFRESH_MS) reads it again on its own
+ * while the tab is visible, held back while `paused` is true (askWallet).
  */
-export function useWalletAnswer(owner: string | null, asked = 0): WalletAnswerState {
+export function useWalletAnswer(owner: string | null, asked = 0, every: number | null = null, paused?: { readonly current: boolean }): WalletAnswerState {
   const [state, setState] = useState<{ owner: string; value: WalletAnswerState } | null>(null)
+  // The answer on screen, which each later one is measured against.
+  const shown = useRef<WalletAnswer | null>(null)
   useEffect(() => {
     if (!owner) return
-    const controller = new AbortController()
-    let attempts = 0
-    let cancel: (() => void) | null = null
-    const ask = () => {
-      void readWalletPositions(owner, controller.signal).then((result) => {
-        if (controller.signal.aborted) return
-        if (result.ok) {
-          setState({ owner, value: { phase: 'ready', answer: result.answer } })
-          return
-        }
-        const again = passingWalletFailure(result.reason)
-        const value: WalletAnswerState = again && attempts < REASK_MS.length ? { phase: 'retrying', reason: result.reason } : { phase: 'failed', reason: result.reason }
-        setState((before) => (before?.owner === owner && before.value.phase === 'ready' ? before : { owner, value }))
-        if (!again) return
-        cancel = whenVisibleAfter(attempts < REASK_MS.length ? REASK_MS[attempts] : LATER_MS, () => {
-          cancel = null
-          attempts += 1
-          ask()
-        })
-      })
-    }
-    ask()
-    return () => {
-      controller.abort()
-      cancel?.()
-    }
-  }, [owner, asked])
+    return askWallet(owner, shown, (value) => setState({ owner, value }), every, paused)
+  }, [owner, asked, every, paused])
   if (!owner) return { phase: 'idle' }
   // Another wallet's answer is never shown for this one: loading until this one's arrives.
   return state && state.owner === owner ? state.value : { phase: 'loading' }

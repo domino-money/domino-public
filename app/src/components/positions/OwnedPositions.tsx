@@ -1,7 +1,7 @@
-import { Fragment, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CHAIN_ID } from '../../lib/read/screens/identity'
 import { walletCard, walletState } from '../../lib/walletCards'
-import { useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
+import { REFRESH_MS, useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
 import type { WalletIdentityView } from '../../lib/walletIdentity'
 import { newPositionHref } from '../explore/routes'
 import { IconSearch, IconWallet } from '../icons'
@@ -11,11 +11,21 @@ import { automatable } from '../../lib/automate/picker'
 import { PendingRow, PendingRows, PendingSummary, PositionRow } from './PositionRow'
 import { PortfolioSummary, portfolioOf } from './visual/PortfolioSummary'
 
-/** What Positions hands the held deposits: drawn by the lazily loaded HeldDeposits in wallet builds. */
-export type DepositsSlot = (props: { owner: string; deposits: readonly WalletDeposit[]; onChanged: () => void }) => ReactNode
+/**
+ * What Positions hands the held deposits: drawn by the lazily loaded HeldDeposits in wallet builds. `onBusy` says when a
+ * refund is on its way and when it is over: the list's refresh waits meanwhile, so a new list never unmounts it mid-refund.
+ */
+export type DepositsSlot = (props: { owner: string; deposits: readonly WalletDeposit[]; onChanged: () => void; onBusy?: (busy: boolean) => void }) => ReactNode
 
 /** Rows shown at a time, before Show more. */
 const PAGE_SIZE = 10
+
+/**
+ * The list reads itself again every 30 s while the tab is visible (the owner's OK, 2026-09-27; lib/walletPositions.ts
+ * askWallet). Test builds only when a test asks for it before the page loads (window.__dominoRefresh), so every other
+ * suite counts its reads as before.
+ */
+const REFRESH = __DOMINO_TEST_HOOKS__ && !(window as { __dominoRefresh?: boolean }).__dominoRefresh ? null : REFRESH_MS
 
 type Status = 'open' | 'closed'
 
@@ -117,7 +127,13 @@ export default function OwnedPositions({ identity, deposits, onEmptyAction }: Ow
 function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsProps, 'identity' | 'kit'> & { owner: string }) {
   // How many times the page has asked again after an action (a refund) changed the answer: each asks fresh.
   const [asked, setAsked] = useState(0)
-  const answer = useWalletAnswer(owner, asked)
+  // A held deposit's refund on its way: the refresh waits until it is over (its timer reads the ref, set after each render).
+  const [refunding, setRefunding] = useState(false)
+  const refundingRef = useRef(false)
+  useEffect(() => {
+    refundingRef.current = refunding
+  }, [refunding])
+  const answer = useWalletAnswer(owner, asked, REFRESH, refundingRef)
   const ready = answer.phase === 'ready' ? answer.answer : null
   const reason = answer.phase === 'failed' || answer.phase === 'retrying' ? answer.reason : null
   // Given up on for now (the quick re-asks failed too): one calm line. Still reading, or asked again: the loading rows.
@@ -248,7 +264,14 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
           fees from the list's own read, and only a position's page replays its history, bounded. The list's aggregate card
           replayed every open position's history from the visitor's browser, which the public RPC's per-address limit could
           not bear (PONS/USDG's is over 60 MB), and its refusals then held back the list's own reads. */}
-      {deposits && held.length > 0 && deposits({ owner, deposits: held, onChanged: () => setAsked((n) => n + 1) })}
+      {deposits &&
+        held.length > 0 &&
+        deposits({
+          owner,
+          deposits: held,
+          onChanged: () => setAsked((n) => n + 1),
+          onBusy: setRefunding,
+        })}
     </>
   )
 }

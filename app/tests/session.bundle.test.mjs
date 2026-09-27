@@ -478,6 +478,21 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // tree's figure on an arm64 Mac, 194,634 B, times CI's ratio to that Mac on the other three families (1.0020-1.0022).
   // Each moves by the minimum at 0.1 kB: financial 178.0 kB (64 B over the larger build), all lazy 195.1 kB; the fees
   // worker, chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-27, the Positions auto-refresh (the owner's OK, "pode fazer", on the study made at 7074cbd): Your positions
+  // reads itself again every 30 s and a position's page every 60 s while the tab is visible, in place
+  // (lib/walletPositions.ts askWallet, with its block, completeness and same-answer guards and its 60/120 s retry, behind
+  // useWalletAnswer's `every`; HeldDeposits.tsx's onBusy, which holds the refresh during a refund; PositionDetail.tsx's
+  // tick). walletPositions.ts is the picker's shared chunk, so the financial closure carries the loop too. Made smaller
+  // first: walletPositions.ts and PositionDetail.tsx dropped their own copies of the visibility wait for quietRead.ts's,
+  // which the entry already carries, and the loop was trimmed (from +361 B to +256 B financial in .wallet-test-dist).
+  // Measured on Windows, gzip level 9, both builds from each tree, against 9131592 (the featured pools branch, PR #242):
+  // dist financial 176,183 -> 176,442 B, all lazy 193,080 -> 193,305 B; .wallet-test-dist financial 177,902 ->
+  // 178,158 B, all lazy 194,986 -> 195,250 B. Each moves by the minimum at 0.1 kB: financial 178.2 kB (42 B over the
+  // larger build), all lazy 195.3 kB (50 B); the fees worker, chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-27, its review: a position's page keeps asking after a failed refresh (60 s, then every 120 s, with no end),
+  // and the list's guards hold only with the refresh on. Measured the same way against f9dca1d: dist financial 176,442
+  // -> 176,456 B, all lazy 193,305 -> 193,354 B; .wallet-test-dist financial 178,158 -> 178,149 B, all lazy 195,250 ->
+  // 195,282 B. Within the ceilings (51 B and 18 B to spare in the larger build), which are unchanged.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -524,7 +539,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 178_000], ['all lazy', allLazy, 195_100], ['fees worker', worker, 20_600], ['chain code', chain, 13_900]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 178_200], ['all lazy', allLazy, 195_300], ['fees worker', worker, 20_600], ['chain code', chain, 13_900]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

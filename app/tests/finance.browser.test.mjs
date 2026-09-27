@@ -16,11 +16,15 @@ import { FIXTURE_TOKEN, createReadStub } from './support/read-stub.mjs';
 import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/create/mintPlan.js';
 // 2026-09-25: the public RPC as the page reads it, answered by a fake chain (the page reads the chain itself since the RPC
 // rate-limits Cloudflare's edge), and a recorded fees case as the chain it was read from.
-import { SETUP_MINTED_TOPIC, browserChain, busyHistory, routeChain as routeRpc } from './support/browser-chain.mjs';
+import { SETUP_MINTED_TOPIC, browserChain, busyHistory, opIdOf, routeChain as routeRpc } from './support/browser-chain.mjs';
+// 2026-09-27: a wallet that refunds a held deposit, for the test that holds the list's refresh during a refund.
+import { createPositionChain } from './support/position-chain.mjs';
 import { caseChain } from './support/fees/case-chain.mjs';
 import { pathChain } from './support/fees/path-chain.mjs';
 // 2026-09-25: the fees worker's lane to the RPC, whose pace the busy-history test holds it to.
 import { LANE_PACE } from '../.test-build/app/src/lib/chain/browser.js';
+// 2026-09-27: how far back a later scan of the same wallet reads its logs, for the refresh tests.
+import { REREAD_BLOCKS } from '../.test-build/app/functions/_lib/walletPositions.js';
 import * as runtime from '../../api-contracts/performance-v2/runtime.mjs';
 import * as executionRuntime from '../../api-contracts/execution-v1/runtime.mjs';
 import * as depositRuntime from '../../api-contracts/deposit-v1/runtime.mjs';
@@ -44,9 +48,10 @@ const RELEASE_OFF = { status: 200, body: { contractVersion: '1.0.0-rc.1', chainI
 
 /**
  * `chain`: what the public RPC answers the page (tests/support/browser-chain.mjs), an empty chain unless one is given
- * (no position, no deposit, every NFT unknown), as the site's routes answered before 2026-09-25.
+ * (no position, no deposit, every NFT unknown), as the site's routes answered before 2026-09-25. `refresh` (2026-09-27):
+ * Your positions and a position's page read themselves again on their own, as they do outside test builds.
  */
-async function scenario({ clock = false, routes = [], chain = browserChain() } = {}) {
+async function scenario({ clock = false, routes = [], chain = browserChain(), refresh = false } = {}) {
   const fake = createFakeSession();
   const calls = [], executions = [], releases = [], deposits = [], errors = [];
   const state = { performance: 'available', execution: 'on', setupRelease: RELEASE_OFF, sequenceRelease: RELEASE_OFF, deposit: null };
@@ -88,6 +93,7 @@ async function scenario({ clock = false, routes = [], chain = browserChain() } =
   const origin = `http://127.0.0.1:${server.address().port}`; fake.origin = origin;
   const context = await browser.newContext({ viewport: { width: 1320, height: 1000 } });
   if (clock) await context.clock.install({ time: Date.now() });
+  if (refresh) await context.addInitScript(() => { window.__dominoRefresh = true; });
   await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   const rpc = await routeRpc(context, chain);
   const wallet = await installWallets(context);
@@ -3108,12 +3114,12 @@ function siteRoutes() {
   };
 }
 
-/** Connects Test Wallet A from the header's dialog, on Robinhood Chain, without signing in. */
-async function connectWallet(page) {
+/** Connects Test Wallet A (or the wallet `name`s) from the header's dialog, on Robinhood Chain, without signing in. */
+async function connectWallet(page, name = 'Test Wallet A') {
   await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
   await page.locator('header [aria-haspopup="dialog"]').click();
   const dialog = page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
-  await dialog.getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+  await dialog.getByRole('button', { name: `Connect ${name}`, exact: true }).click();
   await page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
   await page.keyboard.press('Escape');
 }
@@ -3320,6 +3326,316 @@ test('a read that fails is never “no positions”: the loading rows and one qu
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
     assert.deepEqual(await kept(s.page), [], 'nothing about positions is kept in the browser');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
+  } finally { await s.close(); }
+});
+
+// 2026-09-27, the owner's OK ("pode fazer") on the study of 7074cbd: Your positions reads itself again every 30 s and a
+// position's page every 60 s, while the tab is visible, with no reload: only the figures change, in place. These three
+// run with the refresh on (scenario's `refresh`, window.__dominoRefresh in test builds only) on Playwright's clock, so
+// one jump past a refresh's time is one refresh.
+
+/** The wallet's SetupMinted log reads, each as the block range it asked: one per scan of its list. */
+const mintedRanges = (chain) => chain.log.filter((call) => call.method === 'eth_getLogs' && call.params[0].topics?.[0] === SETUP_MINTED_TOPIC).map((call) => [Number(call.params[0].fromBlock), Number(call.params[0].toBlock)]);
+/** The exact unclaimed amount the open row shows first, in its title (ETH, 18 decimals). */
+const rowFees = (page) => page.locator(`a[data-position-row="${OWNED_OPEN}"] [data-cell="fees"] [data-amount]`).first().getAttribute('title');
+/**
+ * From now on, whether the list card ever shows its loading rows, a skeleton, its quiet line or a reason, and whether the
+ * open row and the card are still the elements they were (a refresh changes them in place).
+ */
+const watchInPlace = (page) =>
+  page.evaluate((id) => {
+    const card = document.querySelector('[data-owned]');
+    const row = document.querySelector(`a[data-position-row="${id}"]`);
+    window.__inPlace = { loading: [], same: () => document.querySelector('[data-owned]') === card && document.querySelector(`a[data-position-row="${id}"]`) === row };
+    const note = () => {
+      const now = document.querySelector('[data-owned]');
+      for (const what of ['[data-owned-loading]', '.dm-skel', '.dm-own-skel-band', '[data-owned-note]', '[data-empty]', '[data-owned-reason]']) {
+        if (now?.matches(what) || now?.querySelector(what)) window.__inPlace.loading.push(what);
+      }
+    };
+    new MutationObserver(note).observe(document.body, { childList: true, subtree: true, attributes: true });
+  }, OWNED_OPEN);
+const inPlace = (page) => page.evaluate(() => ({ loading: [...new Set(window.__inPlace.loading)], same: window.__inPlace.same() }));
+/** Polls `check` in this process until it holds. */
+async function until(check, label, timeout = 10_000) {
+  const deadline = Date.now() + timeout;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+    await new Promise((done) => setTimeout(done, 25));
+  }
+}
+/**
+ * A scenario on Playwright's clock with the refresh on, the wallet connected and its list read once. `wallet`: a wallet
+ * of the test's own ({ request, release }, tests/support/position-chain.mjs), announced as the Deposit Wallet before the
+ * page loads again and connected instead of Test Wallet A, with its setup release published.
+ */
+async function refreshing(chain, { wallet = null } = {}) {
+  const site = siteRoutes();
+  const read = createReadStub();
+  const s = await scenario({ clock: true, refresh: true, chain, routes: [site.route, (request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  if (wallet) {
+    await installDepositWallet(s.context, wallet);
+    s.set({ setupRelease: { status: 200, body: wallet.release } });
+    await s.page.reload();
+  }
+  await s.page.locator('[data-empty="owned-connect"]').waitFor();
+  await connectWallet(s.page, wallet ? 'Deposit Wallet' : undefined);
+  await s.page.locator(`[data-owned="ready"][data-owned-block="${chain.head}"] a[data-position-row="${OWNED_OPEN}"]`).waitFor();
+  // The open row's feature, read from the chain once the list is in: read before any clock jump, so every later call is the refresh's.
+  await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor();
+  assert.equal(chain.scans(OWNER), 1);
+  return { s, site, read };
+}
+/**
+ * From now on, whether a position's page ever shows its skeleton, its unread or its gone state, and whether it is still
+ * the element it was (a refresh changes its header in place).
+ */
+const watchDetail = (page) =>
+  page.evaluate(() => {
+    const at = document.querySelector('[data-position-detail]');
+    window.__detail = { loading: [], same: () => document.querySelector('[data-position-detail]') === at };
+    new MutationObserver(() => {
+      for (const what of ['[data-position-loading]', '[data-empty="position-unread"]', '[data-empty="position-gone"]']) if (document.querySelector(what)) window.__detail.loading.push(what);
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+const detailInPlace = (page) => page.evaluate(() => ({ loading: [...new Set(window.__detail.loading)], same: window.__detail.same() }));
+
+test('Your positions and a position’s page read themselves again while the tab is shown: new figures in place, no loading rows or skeleton, the same answer draws nothing, and the list’s next scan reads only the recent logs', async () => {
+  const open = onChain(OWNED_OPEN);
+  const chain = browserChain({ positions: [open, closedOnChain(OWNED_CLOSED[0])], tokens: TOKENS });
+  const first = chain.head;
+  const { s, site } = await refreshing(chain);
+  try {
+    assert.equal(await rowFees(s.page), '0.000000633825300114');
+    await recordList(s.page);
+    await watchInPlace(s.page);
+
+    // Fees accrue: 30 s later the list reads the chain again and the row's figures change where they stand.
+    chain.head = first + 120;
+    open.unclaimed = [1_267_650_600_228n, 0n];
+    await jump(s.page, '00:31');
+    await s.page.locator(`[data-owned="ready"][data-owned-block="${chain.head}"]`).waitFor();
+    await s.page.waitForFunction((id) => document.querySelector(`a[data-position-row="${id}"] [data-cell="fees"] [data-amount]`)?.getAttribute('title') === '0.000001267650600228', OWNED_OPEN);
+    assert.equal(chain.scans(OWNER), 2);
+    assert.deepEqual(await inPlace(s.page), { loading: [], same: true }, 'the same card and row, never a loading row, a skeleton or a line');
+    assert.deepEqual(await listSeen(s.page), ['ready'], 'ready all along');
+    assert.equal(await s.page.locator(`a[data-position-row="${OWNED_OPEN}"]`).getAttribute('data-snapshot'), String(chain.head));
+    // The scan's memory of the wallet's minted ids: the second read asks only the logs since shortly before the first.
+    assert.deepEqual(mintedRanges(chain).map(([from]) => from > first - REREAD_BLOCKS), [false, true]);
+    assert.deepEqual(mintedRanges(chain)[1], [first - REREAD_BLOCKS + 1, chain.head]);
+
+    // Nothing changed but the head: read, and nothing is drawn again (the block on screen stays the one it was read at).
+    const drawn = chain.head;
+    chain.head += 120;
+    await jump(s.page, '00:31');
+    await until(() => chain.scans(OWNER) === 3, 'the third scan');
+    await s.page.waitForTimeout(300);
+    assert.equal(await s.page.locator('[data-owned]').getAttribute('data-owned-block'), String(drawn), 'the same answer is not drawn again');
+    assert.deepEqual(await inPlace(s.page), { loading: [], same: true });
+
+    // A position's page: its header reads itself again a minute later, in place.
+    await s.page.locator(`a[data-position-row="${OWNED_OPEN}"]`).click();
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
+    await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
+    const fees = () => detail.locator('[data-stat="fees"] [data-amount]').first().getAttribute('title');
+    assert.equal(await fees(), '0.000001267650600228');
+    const read = await detail.getAttribute('data-snapshot');
+    await watchDetail(s.page);
+    chain.head += 120;
+    open.unclaimed = [2_535_301_200_456n, 0n];
+    await jump(s.page, '00:31');
+    await s.page.waitForTimeout(300);
+    assert.equal(await detail.getAttribute('data-snapshot'), read, 'not before a minute');
+    await jump(s.page, '00:31');
+    await s.page.waitForFunction((block) => document.querySelector('[data-position-detail]')?.getAttribute('data-snapshot') === String(block), chain.head - 2);
+    await s.page.waitForFunction(() => document.querySelector('[data-position-detail] [data-stat="fees"] [data-amount]')?.getAttribute('title') === '0.000002535301200456');
+    assert.deepEqual(await detailInPlace(s.page), { loading: [], same: true }, 'the same page, never the skeleton');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    assert.deepEqual([chain.refused, chain.missing], [[], []]);
+    assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
+  } finally { await s.close(); }
+});
+
+test('a hidden tab asks nothing: the list’s refresh waits while the tab is hidden and runs once when it is shown again', async () => {
+  const open = onChain(OWNED_OPEN);
+  const chain = browserChain({ positions: [open], tokens: TOKENS });
+  const { s } = await refreshing(chain);
+  try {
+    await setVisibility(s.page, 'hidden');
+    const asked = chain.log.length;
+    chain.head += 120;
+    open.unclaimed = [1_267_650_600_228n, 0n];
+    await jump(s.page, '00:31');
+    await jump(s.page, '10:00');
+    await s.page.waitForTimeout(500);
+    assert.deepEqual(chain.log.slice(asked).map((call) => call.method), [], 'nothing is asked of the chain while the tab is hidden');
+    assert.equal(await rowFees(s.page), '0.000000633825300114');
+    await setVisibility(s.page, 'visible');
+    await until(() => chain.scans(OWNER) === 2, 'the refresh once the tab is shown');
+    await s.page.waitForFunction((id) => document.querySelector(`a[data-position-row="${id}"] [data-cell="fees"] [data-amount]`)?.getAttribute('title') === '0.000001267650600228', OWNED_OPEN);
+    await s.page.waitForTimeout(500);
+    assert.equal(chain.scans(OWNER), 2, 'once');
+  } finally { await s.close(); }
+});
+
+test('a failed refresh keeps the figures: no loading rows, no line and no reason over them, not asked again at 2, 5 or 10 s nor at 30 s but after 60 s, and drawn once the chain answers', async () => {
+  const open = onChain(OWNED_OPEN);
+  const chain = browserChain({ positions: [open], tokens: TOKENS });
+  const { s } = await refreshing(chain);
+  try {
+    await recordList(s.page);
+    await watchInPlace(s.page);
+    const refused = [];
+    chain.outage = (call) => (refused.push(call.method), 500);
+    await jump(s.page, '00:31');
+    await until(() => refused.length === 1, 'the refresh the chain refused');
+    await s.page.waitForTimeout(500);
+    const card = s.page.locator('[data-owned]');
+    assert.deepEqual([await card.getAttribute('data-owned'), await card.getAttribute('data-owned-reason'), await card.getAttribute('data-owned-block')], ['ready', null, String(chain.head)]);
+    assert.equal(await rowFees(s.page), '0.000000633825300114', 'the figures on screen stay');
+    assert.deepEqual(await inPlace(s.page), { loading: [], same: true });
+    assert.deepEqual(await listSeen(s.page), ['ready']);
+    assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'and no Retry');
+
+    // 31 s later (past the quick waits and the list's own 30 s): not asked again.
+    await jump(s.page, '00:31');
+    await s.page.waitForTimeout(500);
+    assert.deepEqual(refused, ['eth_blockNumber'], 'not asked again before 60 s');
+    // Past 60 s: asked again, and this time the chain answers.
+    chain.outage = null;
+    chain.head += 120;
+    open.unclaimed = [1_267_650_600_228n, 0n];
+    await jump(s.page, '00:31');
+    await s.page.locator(`[data-owned="ready"][data-owned-block="${chain.head}"]`).waitFor();
+    assert.equal(await rowFees(s.page), '0.000001267650600228');
+    assert.deepEqual(await inPlace(s.page), { loading: [], same: true });
+    assert.deepEqual(await listSeen(s.page), ['ready']);
+    assert.equal(chain.scans(OWNER), 2);
+  } finally { await s.close(); }
+});
+
+// The review of 2026-09-27: a position's page stopped reading itself for good after a short outage (its tick fell back
+// to the 3/12/30 s waits, then ended), which left its header stale for the rest of the visit. Once it shows a position,
+// a refresh that fails or finds nothing now keeps the header and is asked again after 60 s, then every 120 s, for as long
+// as the page is open, whatever the reason.
+test('a position’s page keeps its header through refreshes that fail or find nothing: asked again after 60 s, never sooner, then every 120 s with no end, and drawn in place once the chain answers', async () => {
+  const open = onChain(OWNED_OPEN);
+  const chain = browserChain({ positions: [open], tokens: TOKENS });
+  const { s } = await refreshing(chain);
+  try {
+    await s.page.locator(`a[data-position-row="${OWNED_OPEN}"]`).click();
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
+    await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
+    const header = async () => [await detail.getAttribute('data-snapshot'), await detail.locator('[data-stat="fees"] [data-amount]').first().getAttribute('title')];
+    /** The header once it shows the chain's head (read at head − 2) and these fees. */
+    const drawn = (fees) => s.page.waitForFunction(([block, title]) => {
+      const page = document.querySelector('[data-position-detail]');
+      return page?.getAttribute('data-snapshot') === String(block) && page.querySelector('[data-stat="fees"] [data-amount]')?.getAttribute('title') === title;
+    }, [chain.head - 2, fees]);
+    assert.deepEqual(await header(), [String(chain.head - 2), '0.000000633825300114']);
+    await watchDetail(s.page);
+    const refused = [];
+    const down = () => { chain.outage = (call) => (refused.push(call.method), 500); };
+    /** From now on, whether one more read was refused, or asked for the NFT (ownerOf). */
+    const refusedOnce = () => { const n = refused.length; return () => refused.length > n; };
+    const readOnce = () => { const n = chain.asked.get(OWNED_OPEN) ?? 0; return () => (chain.asked.get(OWNED_OPEN) ?? 0) > n; };
+    /** Jumps the clock, waits for the read it set off (`done`), and lets the page take its answer. */
+    const leap = async (ticks, done = () => true) => {
+      await jump(s.page, ticks);
+      await until(done, `the read after ${ticks}`);
+      await s.page.waitForTimeout(1_000);
+    };
+
+    // The minute's refresh is refused, and the chain answers again at once: not asked before 60 s (the old waits were
+    // 3, 12 and 30 s), then asked, and drawn.
+    down();
+    await leap('01:01', refusedOnce());
+    const shown = await header();
+    chain.outage = null;
+    chain.head += 120;
+    open.unclaimed = [1_267_650_600_228n, 0n];
+    await leap('00:31');
+    assert.deepEqual(await header(), shown, 'not asked again before 60 s');
+    await jump(s.page, '00:31');
+    await drawn('0.000001267650600228');
+
+    // Eight refreshes in a row that fail: the RPC's 500s, then four reads of an NFT its node does not know (not_found),
+    // then the 500s three more times. The old page ended its reads at the fourth not_found (after three quick asks), and
+    // at the fourth failure (its tick and three retries); this one keeps asking, 60 s after the first and every 120 s
+    // after that, and draws the chain's answer in place once there is one.
+    const kept = await header();
+    down();
+    await leap('01:01', refusedOnce());
+    chain.outage = null;
+    open.burned = true;
+    await leap('01:01', readOnce());
+    for (let i = 0; i < 3; i++) await leap('02:01', readOnce());
+    open.burned = false;
+    down();
+    for (let i = 0; i < 3; i++) await leap('02:01', refusedOnce());
+    assert.deepEqual(await header(), kept, 'the header stays through them all');
+    chain.outage = null;
+    chain.head += 120;
+    open.unclaimed = [2_535_301_200_456n, 0n];
+    await jump(s.page, '02:01');
+    await drawn('0.000002535301200456');
+    assert.deepEqual(await detailInPlace(s.page), { loading: [], same: true }, 'the same page all along: never the skeleton, the unread or the gone state');
+    assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'and no Retry');
+  } finally { await s.close(); }
+});
+
+// The study's risk 4 (2026-09-27 review): a refresh must never unmount the held deposits mid-refund. HeldDeposits says
+// when a refund is on its way (onBusy) and OwnedPositions holds the list's refresh until it is over.
+test('a held deposit’s refund holds the list’s refresh: nothing is read while the wallet is asked, the deposit and its line stay, and the list is read again once the refund is over, then every 30 s', async () => {
+  const key = { currency0: zeroAddress, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
+  const deposit = { key, balance0: 0n, balance1: 100000n };
+  const chain = browserChain({ positions: [onChain(OWNED_OPEN)], tokens: { ...TOKENS, [USDG]: { symbol: 'USDG', decimals: 6 } }, deposits: { [OWNER]: [deposit] } });
+  // The wallet: a chain of its own that holds the same deposit, under the operation id the list read, and refunds it.
+  // Its prompt to send is held until the test lets it go, as a person reading it in their wallet would.
+  const wallet = createPositionChain(OWNER, { deposits: [{ key, balance0: 0n, balance1: 100000n }], timestamp: chain.timestamp });
+  const operationId = opIdOf(OWNER, 0);
+  wallet.operations.set(operationId, wallet.operations.get(wallet.operationId(0n)));
+  let prompt = null, confirm;
+  const confirmed = new Promise((done) => (confirm = done));
+  const request = async (method, params) => {
+    if (method === 'eth_sendTransaction') {
+      prompt = params[0];
+      await confirmed;
+    }
+    return wallet.request(method, params);
+  };
+  const { s } = await refreshing(chain, { wallet: { request, release: wallet.release } });
+  try {
+    const card = s.page.locator('[data-held-deposits]');
+    const row = card.locator(`[data-held-deposit="${operationId}"]`);
+    await row.waitFor();
+    await card.getByRole('button', { name: 'Refund to wallet', exact: true }).click();
+    await until(() => prompt !== null, 'the wallet asked to send the refund');
+    assert.equal(await row.locator('[data-held-progress="wallet"]').innerText(), 'Confirm in your wallet…');
+
+    // Two of the list's 30 s refreshes fall due while the wallet is asked (the refund's button is busy): neither reads,
+    // not even the head a scan starts with.
+    const asked = chain.log.length;
+    await jump(s.page, '00:31', { pending: true });
+    await jump(s.page, '00:31', { pending: true });
+    await s.page.waitForTimeout(1_000);
+    assert.deepEqual(chain.log.slice(asked).map((call) => call.method), [], 'no refresh while the refund is on its way');
+    assert.equal(chain.scans(OWNER), 1);
+    assert.equal(await row.locator('[data-held-progress="wallet"]').count(), 1, 'the deposit and its line stay');
+
+    // Confirmed: the refund is sent and included, and the list is read again at once, without the deposit.
+    deposit.closed = true;
+    confirm();
+    await until(() => chain.scans(OWNER) === 2, 'the list read again once the refund is over', 30_000);
+    assert.deepEqual([wallet.sends.length, wallet.paid], [1, [{ to: OWNER, currencies: [zeroAddress, USDG], amounts: [0n, 100000n] }]]);
+    await card.waitFor({ state: 'detached' });
+    await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor();
+    // And the refresh goes on at its own pace.
+    await jump(s.page, '00:31');
+    await until(() => chain.scans(OWNER) === 3, 'the refresh 30 s later');
+    assert.deepEqual([wallet.refused, wallet.missing], [[], []], 'the wallet was asked only what it answers');
+    assert.deepEqual([chain.refused, chain.missing], [[], []]);
   } finally { await s.close(); }
 });
 
