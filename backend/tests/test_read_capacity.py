@@ -86,16 +86,16 @@ class ProviderLaneTests(unittest.TestCase):
                 ReadGate(provider_capacity=value)
         self.assertEqual(ReadGate(provider_capacity=16).provider_capacity, 16)
 
-    def test_the_public_reader_and_gateway_admit_eight_reads_at_once(self):
+    def test_the_public_reader_and_gateway_admit_sixteen_reads_at_once(self):
         gate = public_gate()
-        self.assertEqual(PROVIDER_CAPACITY, 8)
-        self.assertEqual((gate.provider_capacity, gate.interval, gate.stored_capacity, gate.stored_interval), (8, 0, 4, 0))
-        self.assertTrue(all(gate.enter() for _ in range(8)))
+        self.assertEqual(PROVIDER_CAPACITY, 16)
+        self.assertEqual((gate.provider_capacity, gate.interval, gate.stored_capacity, gate.stored_interval), (16, 0, 4, 0))
+        self.assertTrue(all(gate.enter() for _ in range(16)))
         self.assertFalse(gate.enter())
         # The gateway in front of the reader has the same lanes; a gateway serving no stored route keeps the old one.
         v3 = sorted(read_api.V3_REQUEST_MODELS)[:1]
-        self.assertEqual(Gateway(verifier=object(), enabled_v3=True, enabled_v3_reads=v3).gate.provider_capacity, 8)
-        self.assertEqual(Gateway(verifier=object(), enabled_v5=True, enabled_v5_reads=['featured-pools']).gate.provider_capacity, 8)
+        self.assertEqual(Gateway(verifier=object(), enabled_v3=True, enabled_v3_reads=v3).gate.provider_capacity, 16)
+        self.assertEqual(Gateway(verifier=object(), enabled_v5=True, enabled_v5_reads=['featured-pools']).gate.provider_capacity, 16)
         self.assertEqual(Gateway().gate.provider_capacity, 1)
         # The reader uses the public lanes exactly when it serves public data.
         made = []
@@ -106,7 +106,7 @@ class ProviderLaneTests(unittest.TestCase):
 
     def test_uvicorn_admits_more_connections_than_the_gate_so_the_gate_refuses_in_json(self):
         gate = public_gate()
-        self.assertEqual(read_api.CONNECTION_LIMIT, 32)
+        self.assertEqual(read_api.CONNECTION_LIMIT, 64)
         self.assertGreater(read_api.CONNECTION_LIMIT, gate.provider_capacity + gate.stored_capacity + 1)
         for module in (read_api, read_gateway):
             self.assertIn('limit_concurrency=CONNECTION_LIMIT', inspect.getsource(module.main))

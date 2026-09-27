@@ -242,12 +242,18 @@ class ReadGate:
 
 
 # The public reader's and gateway's provider lane: reads at once, no start interval.
-PROVIDER_CAPACITY = 8
-# Connections uvicorn itself admits, above the gate's lanes (8 provider, 4 stored) and
-# the health checks: past it uvicorn answers a bare 503, so the gate, which refuses in
-# JSON with an honest Retry-After, must be what shapes load. 8 here refused three of
-# eight concurrent wallet reads on 26 September 2026.
-CONNECTION_LIMIT = 32
+# 26 September 2026, 100 simulated visitors for three minutes: 8 lanes refused 26% of
+# the provider reads at first ask and 5% after the app's three, while the reader used
+# 22% of a core and added ~60 requests a second at the node's edge. The edge allows an
+# address 100 a second and 20 connections, and a read holds one connection at a time;
+# lanes add no demand, they only admit it sooner, so 16 stays inside both.
+PROVIDER_CAPACITY = 16
+# Connections uvicorn itself admits, above the gate's lanes (16 provider, 4 stored),
+# the health checks and cloudflared's idle keep-alive connections: past it uvicorn
+# answers a bare 503, so the gate, which refuses in JSON with an honest Retry-After,
+# must be what shapes load. 8 here refused three of eight concurrent wallet reads on
+# 26 September 2026.
+CONNECTION_LIMIT = 64
 
 
 def public_gate():

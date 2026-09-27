@@ -59,6 +59,8 @@
  * The read-v1 and read-v2 digests moved once more when the reader and gateway
  * admitted 32 connections, above their lanes, and a wallet read began waiting
  * up to two seconds for one of four inventory calls; the wire is unchanged.
+ * They moved again when a 100-visitor load test sent both to sixteen provider
+ * lanes and 64 connections; the wire is unchanged.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -66,7 +68,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: 'c19238b2621ff86c9ca106242a4f6b6c447607a0fabf70a8c45bd208bc0f312c',
+      manifestSha256: 'b07c60fead1716c89774fbee64f29f96e93576fcca71db418ec1ac5796a0b493',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -86,7 +88,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '16f4201457536586b0325c2f3e9402b82c321d752ec99da9ec4f1f1a0aff6ba9',
+  manifestSha256: '3956960dac6f8e4bdca44fe50700475542ef70debdc6f1e98dcccfc6a3a3df93',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
