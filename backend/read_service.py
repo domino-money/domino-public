@@ -9,7 +9,8 @@ import re
 
 from discovery import (CHAIN_ID, RPC_URL, ZERO, DataError, DiscoveryReader,
                        ReadRpc, Block, address, bytes32, decode_result, discover,
-                       json_http, parse_block, SNAPSHOT_LOOPBACK_RPC, snapshot_loopback_http)
+                       json_http, parse_block, prefetched, SNAPSHOT_LOOPBACK_RPC,
+                       snapshot_loopback_http)
 from inventory import AlchemyInventory, CursorCodec
 from rpc_failover import FailoverReadRpc, HistoricalReadRpc
 from rpc_config import LOCAL_RPC_HOST, rpc_endpoint
@@ -871,9 +872,15 @@ class ReadService:
                 failed.append({'currency': currency,
                                'reason': record.get('dead', 'token_has_no_code') if record else 'token_has_no_code'})
                 continue
-            balance = record['balance_raw']
-            if isinstance(balance, DataError):
-                failed.append({'currency': currency, 'reason': str(balance)})
+            try:
+                # A contract may answer balanceOf with success and no data
+                # rather than revert. The spoofed "ETH"/"USDG" contracts that
+                # emit fake transfers from a wallet do, and they reach its
+                # provider page (found 27 Sep 2026). As on the sequential path,
+                # that balance fails this asset, never the whole read.
+                raw, = decode_result(['uint256'], prefetched(record['balance_raw']))
+            except DataError as error:
+                failed.append({'currency': currency, 'reason': str(error)})
                 continue
             decimals, symbol, issues = None, None, dict(record['issues'])
             try:
@@ -895,7 +902,6 @@ class ReadService:
             except DataError as error:
                 issues['symbol'] = str(error)
                 symbol = None
-            raw, = decode_result(['uint256'], balance)
             items.append({'address': currency, 'kind': 'erc20_candidate', 'decimals': decimals, 'symbol': symbol,
                           'readStatus': 'partial' if issues else 'available', 'metadataIssues': issues,
                           'displayUnitsAvailable': decimals is not None, 'executionAvailable': False,

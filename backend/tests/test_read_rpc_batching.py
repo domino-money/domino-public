@@ -10,12 +10,16 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from eth_abi import encode
 from eth_hash.auto import keccak
+from fastapi.testclient import TestClient
 from discovery import (CHAIN_ID, DEFAULT_READ_CALL_GAS, DataError, DiscoveryReader,
                        POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ZERO, ReadRpc, discover, json_http)
+from inventory import AlchemyInventory
+from read_api import ReadGate, create_app
 from read_deadline import read_deadline
 from read_service import ReadService
 from rpc_failover import FailoverReadRpc
-from test_discovery import BLOCK, KEY, KEY_TYPES, POOL, TOKEN, candidate
+from test_discovery import BLOCK, KEY, KEY_TYPES, OWNER, POOL, TOKEN, candidate
+from test_inventory import URL as INVENTORY_URL, ProviderTransport, page
 
 # Four verified pools pairing the selected token with distinct counterparties,
 # so the token-metadata stage has real fan-out beyond the cached selection.
@@ -42,6 +46,7 @@ class Provider:
         self.blocks={}
         self.codes={}
         self.managers={}
+        self.balances={}
         self.reorg=False
         self.block_reads=0
         self.clock=None
@@ -84,7 +89,11 @@ class Provider:
                         continue
                     result='0x'+encode(['uint8'],[int(params[0]['to'][-2:],16)%9+6]).hex()
                 elif selector==keccak(b'symbol()')[:4].hex():result='0x'+encode(['string'],['TOK'+params[0]['to'][2:6].upper()]).hex()
-                elif selector==keccak(b'balanceOf(address)')[:4].hex():result='0x'+encode(['uint256'],[5]).hex()
+                elif selector==keccak(b'balanceOf(address)')[:4].hex():
+                    result=self.balances.get(params[0]['to'],'0x'+encode(['uint256'],[5]).hex())
+                    if isinstance(result,dict):
+                        responses.append({'jsonrpc':'2.0','id':record['id'],'error':result})
+                        continue
                 else:raise AssertionError('unexpected read selector')
             else:raise AssertionError('unexpected RPC method')
             responses.append({'jsonrpc':'2.0','id':record['id'],'result':result})
@@ -530,6 +539,48 @@ class DiscoveryBatchTests(unittest.TestCase):
                   if item['method']=='eth_call' and item['params'][0]['to']==capped
                   and item['params'][0]['data'][2:10]==decimals)
         self.assertEqual(spent,1,'a refused item must not re-spend its chunk')
+
+    def test_a_balance_that_does_not_decode_fails_its_own_asset_not_the_read(self):
+        # 27 Sep 2026: spoofed "ETH"/"USDG" contracts emit fake transfers from a
+        # wallet, so its provider page lists them, and their balanceOf succeeds
+        # with no data. Batched, that one reply failed the wallet's whole read
+        # with 503 invalid_abi_response. Named or discovered, a balance that does
+        # not decode is now that asset's failure, as the sequential path reports
+        # it, and a refused balance keeps its own reason.
+        empty,short,null,reverted=('0x'+f'{byte:02x}'*20 for byte in (0x26,0x27,0x28,0x29))
+        named=[COUNTERPARTIES[0],short]
+        listed=[COUNTERPARTIES[1],empty,null,reverted,COUNTERPARTIES[2]]
+        bodies=[]
+        for batched in (True,False):
+            provider=self.keyed_provider()
+            provider.balances.update({empty:'0x',short:'0x'+'00'*31,null:None,
+                                      reverted:{'code':3,'message':'execution reverted','data':'0x'}})
+            inventory=AlchemyInventory(INVENTORY_URL,transport=ProviderTransport([page(listed)]),clock=lambda:1010)
+            if batched:  # the VM's shape: failover over the configured URLs, batching on
+                service=ReadService(rpc_urls=(PRIMARY,),transport_factory=lambda:provider,
+                                    inventory=inventory,clock=lambda:1010)
+            else:
+                service=ReadService(rpc_factory=lambda:FailoverReadRpc((PRIMARY,),transport=provider),
+                                    transport_factory=lambda:provider,inventory=inventory,clock=lambda:1010)
+            with TestClient(create_app(service,gate=ReadGate(interval=0)),base_url='http://127.0.0.1:8876') as client:
+                response=client.post('/v1/read/wallet-assets',json={'wallet':OWNER,'tokens':named,'autoDiscover':True})
+            self.assertEqual(response.status_code,200,f'batched={batched}: {response.text}')
+            bodies.append(response.json())
+        for batched,body in zip((True,False),bodies):
+            with self.subTest(batched=batched):
+                self.assertEqual(body['unavailableAssets'],
+                                 [{'currency':short,'reason':'invalid_abi_response'},
+                                  {'currency':empty,'reason':'invalid_abi_response'},
+                                  {'currency':null,'reason':'invalid_abi_response'},
+                                  {'currency':reverted,'reason':'rpc_call_reverted'}])
+                # Never a fabricated zero: the good assets keep their balances.
+                self.assertEqual([(item['address'],item['amountRaw']) for item in body['items'][1:]],
+                                 [(currency,'5') for currency in COUNTERPARTIES[:3]])
+                self.assertEqual((body['inventory']['status'],body['inventory']['candidatesProbed']),
+                                 ('page_received',5))
+        # The native row is left out: the two paths already disagree on its
+        # requestedByAddress, which has nothing to do with token balances.
+        self.assertEqual(bodies[0]['items'][1:],bodies[1]['items'][1:])
 
     def test_failover_batch_failure_after_the_snapshot_fails_the_read_closed(self):
         # The failover deliberately poisons a non-retryable post-dispatch envelope

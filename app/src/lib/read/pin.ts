@@ -61,6 +61,10 @@
  * up to two seconds for one of four inventory calls; the wire is unchanged.
  * They moved again when a 100-visitor load test sent both to sixteen provider
  * lanes and 64 connections; the wire is unchanged.
+ * They moved once more when a wallet read stopped failing whole on one token
+ * whose balanceOf answers with no data: that token is now listed in
+ * `unavailableAssets` with `invalid_abi_response`, a shape and reason code the
+ * contract already had. No route, schema, reason code or version changed.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -68,7 +72,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: 'b07c60fead1716c89774fbee64f29f96e93576fcca71db418ec1ac5796a0b493',
+      manifestSha256: '1909b426a1afd8a4b41d18fa60c9f2b5369ca6cbf4bf04082ecbbb6e41c988e1',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -88,7 +92,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '3956960dac6f8e4bdca44fe50700475542ef70debdc6f1e98dcccfc6a3a3df93',
+  manifestSha256: '5ef074f3b2aecae842157ea96377adcbfb184efce8e1da5494d9514dd9034b03',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
