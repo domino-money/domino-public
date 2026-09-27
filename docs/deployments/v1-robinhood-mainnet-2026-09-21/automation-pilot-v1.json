@@ -111,7 +111,7 @@
     "maximumBackoffSeconds": 300,
     "leaseSeconds": 120,
     "publicationWindowSeconds": 86400,
-    "maxPublicationsPerWindow": 3,
+    "maxPublicationsPerWindow": 1000000,
     "publicationWaitSeconds": 15,
     "executionWaitSeconds": 10,
     "maxSourceBlockAge": 100,

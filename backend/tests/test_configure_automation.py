@@ -189,6 +189,13 @@ class GeneratorTests(unittest.TestCase):
         self.assertGreaterEqual(READINESS_FRESH_SECONDS,
                                 pilot['cycleBudgetSeconds'] + generator.READINESS_MAX_INTERVAL_SECONDS)
 
+    def test_the_pilot_does_not_count_publications(self):
+        # 27 September 2026: three publications per chained 24 hours held a sequence
+        # ready to compound for 45 minutes, and the owner lifted the count. The
+        # planner's economics and the shared daily gas cap bound compounding.
+        pilot = json.loads(PILOT.read_text())['scheduling']
+        self.assertEqual((pilot['publicationWindowSeconds'], pilot['maxPublicationsPerWindow']), (86400, 1000000))
+
     def test_the_first_block_comes_from_the_release_receipts(self):
         copy_dir = self.temp / 'release'
         shutil.copytree(RELEASE, copy_dir)
