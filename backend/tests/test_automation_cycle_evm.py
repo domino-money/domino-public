@@ -342,6 +342,40 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertEqual(self.cycle.run(self.entry)['outcome'], 'completed')
         self.assertEqual((self.counts()['effects'], self.counts()['publications']), (2, 2))
 
+    def test_a_base_fee_rise_after_the_reservation_still_publishes(self):
+        # 27 September 2026: the cycle reserved the publisher's claim at one
+        # base fee and the envelope was priced from a later, higher one. One
+        # publication attempt in three stopped at publisher_gas_reservation_required.
+        self.setup()
+        self.cycle.run(self.entry)
+        self.warm_up()
+        self.advance(2)
+        self.trade()
+        reserved, request = {}, self.rpc.request
+
+        class Capped(SyntheticGasBudget):
+            def reserve_pair(self, publication, publisher, publisher_max, *operator):
+                reserved[publication] = publisher_max
+                return super().reserve_pair(publication, publisher, publisher_max, *operator)
+
+            def require_reservation(self, cycle, leg, signer, required):
+                if leg == 'publisher' and required > reserved[cycle]:
+                    raise ValueError('gas_reservation_not_authorized')
+
+        def rising(method, params):
+            reply = request(method, params)
+            if reserved and method == 'eth_getBlockByNumber' and params[0] == 'latest':
+                reply = {**reply, 'baseFeePerGas': hex(int(reply['baseFeePerGas'], 16) + 1)}
+            return reply
+        cycle = SequenceCycle(self.config, rpc=self.rpc, operator_key=OPERATOR_KEY, publisher_key=PUBLISHER_KEY, gas_budget=Capped())
+        self.rpc.request = rising
+        try:
+            acted = cycle.run(self.entry)
+        finally:
+            self.rpc.request = request
+        self.assertEqual(acted['outcome'], 'executing', acted)
+        self.assertEqual((len(reserved), self.counts()['publications']), (1, 1))
+
     def test_restarts_between_transitions_never_duplicate_publication_or_signature(self):
         self.setup()
         self.warm_up()

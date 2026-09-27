@@ -21,6 +21,29 @@ PLAN_TYPE = '(' + ','.join((g.PLAN_TYPE, 'uint8', 'uint256', 'int24', 'int24', '
 EXECUTE_SIGNATURE = 'execute(' + PLAN_TYPE + ')'
 ADAPTER_ID = '0x' + keccak(b'DominoExecutionEngineV4:single-pool-exact-input').hex()
 ADAPTER_VERSION = '1'
+# Every custom error contracts/src declares, kept equal to the sources by
+# tests/test_execution_v4_reverts.py. A reverted qualification is reported by
+# the contract's own error name, never as an unreachable node.
+CONTRACT_ERRORS = (
+    'AlreadyInitialized()', 'ExcessiveFee()', 'ExcessiveOverlap()', 'ExcessiveTriggerDistance()', 'ForeignSubscription()',
+    'InsufficientReserve()', 'InvalidAmount()', 'InvalidCurrency()', 'InvalidExecution()', 'InvalidGeometry()',
+    'InvalidIdentity()', 'InvalidL2BlockContext()', 'InvalidLimits()', 'InvalidManagerConfiguration()',
+    'InvalidMaxPositions()', 'InvalidMinimumInterval()', 'InvalidObservation()', 'InvalidOwner()', 'InvalidPolicyVersion()',
+    'InvalidPosition()', 'InvalidPrice()', 'InvalidRoute()', 'InvalidSetup()', 'InvalidTransition()', 'ManagerMismatch()',
+    'MissingConsent()', 'NonceExhausted()', 'OwnerNonceExhausted()', 'PauseChangeRequiresTransition()',
+    'PermissionUnavailable()', 'PositionLimitBelowMembership()', 'ReadHelperUnavailable()', 'ReentrantCall()',
+    'ReentrantCreate()', 'SequenceAlreadyCreated()', 'TransferFailed()', 'Unauthorized()', 'UnbackedReserve()',
+    'UnexpectedCallback()', 'UnexpectedOwnerNonce(uint256,uint256)', 'UnknownSource()', 'UnsupportedChain()',
+    'VaultDeploymentFailed()')
+REVERT_NAMES = {'0x' + keccak(error.encode())[:4].hex(): error.split('(')[0] for error in CONTRACT_ERRORS}
+
+
+def revert_code(revert):
+    """The code of a call the chain reverted: our contracts' error name, the
+    bare selector for anyone else's, `empty` for a revert without data."""
+    if len(revert) < 10:
+        return 'v4_call_reverted_empty'
+    return 'v4_call_reverted_' + REVERT_NAMES.get(revert[:10], revert[:10])
 
 class PositionRef(m.Record):
     tokenId: m.Raw256
@@ -182,7 +205,12 @@ class ReceiptReconciler(g.CompoundReceiptReconciler):
         self.requests += 1
         if self.requests > 768: raise ValueError('v4_receipt_request_budget')
         try: result = self.rpc.request(method,list(params))
-        except Exception: raise ValueError('v4_rpc_unavailable') from None
+        except Exception as error:
+            # A reverted call is the chain's answer: name what refused it.
+            revert = getattr(error,'revert',None)
+            if getattr(error,'code',None)=='execution_call_reverted' and type(revert) is str:
+                raise ValueError(revert_code(revert)) from None
+            raise ValueError('v4_rpc_unavailable') from None
         check_read_deadline()
         return result
 

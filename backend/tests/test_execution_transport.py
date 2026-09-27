@@ -48,6 +48,24 @@ class ExecutionTransportTests(unittest.TestCase):
         self.status=302
         with self.assertRaisesRegex(ExecutionError,'^execution_rpc_unavailable$'):self.rpc.request('eth_chainId',[])
         self.assertEqual(len(self.requests),5)
+    def test_a_call_the_chain_reverted_is_named_not_unavailable(self):
+        # 27 September 2026: an execution simulation reverted InvalidAmount and
+        # was logged as an unreachable node, hiding why the plan failed.
+        self.body=b'{"jsonrpc":"2.0","id":1,"error":{"code":3,"message":"execution reverted","data":"0x2c5211c6"}}'
+        for method in ('eth_call','eth_estimateGas'):
+            with self.assertRaisesRegex(ExecutionError,'^execution_call_reverted$') as caught:self.rpc.request(method,[])
+            self.assertEqual(caught.exception.revert,'0x2c5211c6')
+        self.body=b'{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"execution reverted"}}'
+        with self.assertRaisesRegex(ExecutionError,'^execution_call_reverted$') as caught:self.rpc.request('eth_call',[])
+        self.assertEqual(caught.exception.revert,'0x')
+        # Only calls revert. Anything else, or a malformed revert, stays unavailable.
+        for method,body in (('eth_chainId',b'{"jsonrpc":"2.0","id":1,"error":{"code":3,"message":"execution reverted","data":"0x2c5211c6"}}'),
+                            ('eth_call',b'{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"header not found"}}'),
+                            ('eth_call',b'{"jsonrpc":"2.0","id":1,"error":{"code":3,"message":"execution reverted","data":"0x2c5"}}'),
+                            ('eth_call',b'{"jsonrpc":"2.0","id":2,"error":{"code":3,"message":"execution reverted","data":"0x2c5211c6"}}')):
+            self.body=body
+            with self.subTest(method=method,body=body),self.assertRaisesRegex(ExecutionError,'^execution_rpc_unavailable$'):
+                self.rpc.request(method,[])
     def test_shared_deadline_caps_real_http_and_prevents_later_request(self):
         self.delay=.06
         with self.assertRaises(Exception):

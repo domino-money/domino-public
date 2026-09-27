@@ -578,7 +578,10 @@ class SequenceCycle:
                 raise ExecutionError('execution_gas_budget')
             self.gas_budget.reserve_pair(anchor, self.publisher.address, pub_max,
                 intent, self.config.deployment.operator, op_max)
-            publication = self.journal.prepare(self.publisher, point, max_source_age=scheduling.maxSourceBlockAge)
+            # Sign at the fee the claim was reserved at: priced from a later
+            # base fee, the envelope could cost more than the claim covers.
+            publication = self.journal.prepare(self.publisher, point, max_source_age=scheduling.maxSourceBlockAge,
+                                               fee=pub_fee)
         except GasBudgetError as error:
             return self._abandon(owner, cycle_id, intent, fence, updates, 'publish_' + error.code,
                                  result, latency=latency)

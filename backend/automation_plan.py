@@ -50,6 +50,28 @@ def addition_amounts(destination, sqrt_price, liquidity):
     return amount_delta(spot, upper, liquidity, 0, True), amount_delta(lower, spot, liquidity, 1, True)
 
 
+def exact_floors(obs, allocations):
+    """The net amount per currency the engine spends before any collection cap.
+
+    Each allocated lot is an exact on-chain floor. The engine charges one
+    budget per fee source and currency, with the service cut floored once on
+    that budget's original part, and its first allocation pass spends every
+    floor in full: an addition smaller than these amounts reverts
+    InvalidAmount whatever the price.
+    """
+    pair = (obs.sequence.poolKey.currency0, obs.sequence.poolKey.currency1)
+    lots = {b.lotId: b for b in obs.balances}
+    budgets = {}
+    for allocation in allocations:
+        lot = lots[allocation.lotId]
+        budgets.setdefault((lot.source.digest(), lot.currency), [0, 0])[int(lot.convertedCharged)] += int(allocation.amountRaw)
+    fee = obs.policy.serviceFeeBps
+    floors = [0, 0]
+    for (_, currency), (original, charged) in budgets.items():
+        floors[pair.index(currency)] += original - original * fee // 10000 + charged
+    return tuple(floors)
+
+
 def size_addition(ctx, candidate, plan_policy, *, reader=None, state_view=None, max_steps=64):
     """The liquidity the plan commits to and the amounts it will cost.
 
@@ -60,6 +82,10 @@ def size_addition(ctx, candidate, plan_policy, *, reader=None, state_view=None, 
     addition at the price it leaves, keeps the configured slack, and checks the
     M-2 bound - the whole actual output must fit inside the addition - before
     committing. A swap whose output cannot be consumed is not representable.
+
+    Without a swap the slack comes out of the collections only. Allocated lots
+    are exact floors: an addition shrunk below them reverts on chain whatever
+    the price, as a currency funded by old lots alone did on 27 September 2026.
     """
     obs = ctx.observation
     dest = candidate.destination
@@ -68,6 +94,21 @@ def size_addition(ctx, candidate, plan_policy, *, reader=None, state_view=None, 
     slack = plan_policy.liquiditySlackBps
     if candidate.swap is None:
         sized = max(1, liquidity * (10000 - slack) // 10000)
+        floors = exact_floors(obs, candidate.allocations)
+        def covers(size):
+            needs = addition_amounts(dest, spot, size)
+            return needs[0] >= floors[0] and needs[1] >= floors[1]
+        if not covers(sized):
+            if not covers(liquidity):
+                raise PlanError('automation_allocations_not_consumable')
+            low, high = sized, liquidity
+            while low < high:
+                mid = (low + high) // 2
+                if covers(mid):
+                    high = mid
+                else:
+                    low = mid + 1
+            sized = low
         return sized, addition_amounts(dest, spot, sized)
     pair = (obs.sequence.poolKey.currency0, obs.sequence.poolKey.currency1)
     swap = candidate.swap

@@ -5,6 +5,7 @@ process owns its key, private DB role and RPC; the runner receives status only.
 """
 from dataclasses import dataclass
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -64,14 +65,35 @@ class ExecutionRpc:
             if len(data)>self.max_bytes:
                 raise ValueError()
             reply=strict_json(data)
+            if type(reply) is dict and set(reply)=={'jsonrpc','id','error'} and type(reply.get('id')) is int and reply['id']==1 and reply.get('jsonrpc')=='2.0':
+                revert=_reverted(method,reply['error'])
+                if revert is not None:
+                    failure=ExecutionError('execution_call_reverted');failure.revert=revert
+                    raise failure
             if type(reply) is not dict or set(reply)!={'jsonrpc','id','result'} or type(reply.get('id')) is not int or reply['id']!=1 or reply.get('jsonrpc')!='2.0':
                 raise ValueError()
             return reply['result']
         except urllib.error.HTTPError as error:
             error.close()
             raise ExecutionError('execution_rpc_unavailable') from None
-        except Exception:
+        except Exception as error:
+            if isinstance(error,ExecutionError) and error.code=='execution_call_reverted':
+                raise
             raise ExecutionError('execution_rpc_unavailable') from None
+
+
+def _reverted(method, error):
+    """The selector of a call the node executed and the chain refused, or
+    `0x` without revert data; None for every other error, which stays
+    unavailable. Only the selector leaves: never the node's diagnostic."""
+    if method not in ('eth_call','eth_estimateGas') or type(error) is not dict:
+        return None
+    code,message,data=error.get('code'),error.get('message'),error.get('data','0x')
+    if not ((type(code) is int and code==3) or (type(message) is str and message.startswith('execution reverted'))):
+        return None
+    if type(data) is not str or len(data)>2+2*4096 or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})*',data):
+        return None
+    return data[:10].lower()
 
 
 @dataclass(frozen=True)

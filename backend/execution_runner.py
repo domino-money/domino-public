@@ -20,6 +20,16 @@ SIGNER_ROLE='domino_execution_signer'
 TRANSIENT={'compound_receipt_unavailable','compound_finality_unavailable','compound_rpc_unavailable','v4_rpc_unavailable'}
 
 
+def receipt_read_failed(code):
+    """The journal state and reason a failed receipt verification leaves. A read
+    the node could not serve is retried; so is one the chain reverted, which
+    was reported as unavailable before reverts had names. Anything else needs
+    attention."""
+    if code in TRANSIENT or code.startswith('v4_call_reverted_'):
+        return 'included','execution_receipt_pending'
+    return 'attention','execution_receipt_unqualified'
+
+
 def json_record(value):
     return json.loads(json.dumps(value,default=lambda x:x.model_dump(mode='json'),allow_nan=False))
 
@@ -360,9 +370,7 @@ class ExecutionRunner:
                 result=self.signer.verifier().reconcile(cp,self.signer.admission,attempt['transaction_hash'],
                     e1_plan=_model(m.ExecutionPlan,data['intent']['plan']),observation=_model(m.Observation,data['intent']['observation']))
             except ValueError as error:
-                code=str(error)
-                self.journal.state(owner,identifier,worker,fence,'included' if code in TRANSIENT else 'attention',
-                    'execution_receipt_pending' if code in TRANSIENT else 'execution_receipt_unqualified')
+                self.journal.state(owner,identifier,worker,fence,*receipt_read_failed(str(error)))
                 return self.journal.status(owner,identifier)
             self.journal.record_effect(owner,identifier,worker,fence,result)
             return self.journal.status(owner,identifier)

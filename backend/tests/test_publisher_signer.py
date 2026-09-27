@@ -175,6 +175,45 @@ class PublisherSignerTests(unittest.TestCase):
         with self.assertRaisesRegex(ExecutionError, 'publisher_gas_reservation_required'):
             self.signer.sign(POINT, envelope)
 
+    def test_prepare_signs_at_the_fee_the_claim_was_reserved_at(self):
+        # 27 September 2026: one publication attempt in three stopped at
+        # publisher_gas_reservation_required. The cycle reserved the claim at
+        # one base fee; the envelope was priced from a later block's, higher one.
+        identifier = observation_id(GUARD, POINT)
+        fee = min(self.policy.max_fee_per_gas, 2 * self.rpc.base + self.policy.priority_fee_per_gas)
+        reserved = {identifier: self.policy.max_gas * fee}
+
+        class Claim:
+            def require_reservation(self, cycle, leg, signer, required):
+                if required > reserved[cycle]:
+                    raise ValueError('gas_reservation_not_authorized')
+
+        signer = PublisherSigner(self.rpc, KEY, GUARD, self.policy, gas_budget=Claim())
+        self.rpc.base += 1  # the next block's base fee
+
+        class Conn:
+            """The journal's transaction for one new publication row."""
+            def execute(self, query, args):
+                self.query, self.args = query, args
+                return self
+
+            def fetchone(self):
+                if self.query.startswith('SELECT next_nonce'):
+                    return {'next_nonce': 5}
+                if self.query.startswith('INSERT INTO publications'):
+                    return {'envelope': self.args[10].obj}
+                return None
+
+        journal = object.__new__(PublicationJournal)
+        journal._transaction = lambda operation: operation(Conn())
+        journal._status = lambda row: row
+        journal.resend_unspent = lambda *args: []
+        with self.assertRaisesRegex(ExecutionError, 'publisher_gas_reservation_required'):
+            journal.prepare(signer, POINT, max_source_age=200)
+        row = journal.prepare(signer, POINT, max_source_age=200, fee=fee)
+        self.assertEqual(row['envelope']['maxFeePerGas'], fee)
+        self.assertEqual(row['envelope']['gas'] * row['envelope']['maxFeePerGas'], reserved[identifier])
+
     def test_legacy_signed_publication_cannot_resend_without_counted_claim(self):
         envelope = self.signer.envelope(POINT, 5)
         raw, digest = self.signer.sign(POINT, envelope)

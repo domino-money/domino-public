@@ -69,6 +69,10 @@
  * whose balanceOf answers with no data: that token is now listed in
  * `unavailableAssets` with `invalid_abi_response`, a shape and reason code the
  * contract already had. No route, schema, reason code or version changed.
+ * The performance-v2 digest moved when the V4 receipt verifier began naming a
+ * call the chain reverted by the contract's own error instead of reporting an
+ * unreachable node; the manifest hashes backend/execution_v4.py. Its routes,
+ * schemas, reason codes and version are unchanged.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -147,7 +151,7 @@ export const REQUEST_READ_CONTRACT: ReadContractPin = PRODUCER_PIN.packages['rea
 /** Authenticated private numeric history, independent of public pool estimates. */
 export const PERFORMANCE_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '66938a010968f16fc6ed8192e536287ad6f691b63f5f7e8e3cc5bcf46f84ea00',
+  manifestSha256: 'eee2ae03822d3ae6a9d2d9b8d6cb5250a7c73666d5b2a07e3b36f8d99062b971',
 } as const
 
 /** Sanitized private execution status, finalized receipts and short-lived service availability. */

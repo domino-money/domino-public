@@ -198,11 +198,15 @@ class PublicationJournal:
         identifier = _hash(identifier)
         return self._transaction(lambda conn: self._row(conn, identifier))
 
-    def prepare(self, signer, point, *, max_source_age):
+    def prepare(self, signer, point, *, max_source_age, fee=None):
         """Qualify, claim the next nonce, sign and persist in one transaction.
         An existing row for this id is returned as is: same point, same bytes.
         Earlier nonces the chain still waits for go out first (resend_unspent),
-        so no nonce is claimed behind a gap this journal's own bytes can close."""
+        so no nonce is claimed behind a gap this journal's own bytes can close.
+
+        `fee` is the fee ceiling the caller reserved the claim at. The base fee
+        moves with nearly every 100 ms block: an envelope priced from a later
+        read may cost more than the claim covers, and the signer refuses it."""
         record = point_record(point)
         identifier = observation_id(signer.guard, point)
         self.resend_unspent(signer.address, signer.rpc)
@@ -219,7 +223,7 @@ class PublicationJournal:
             nonce = max(int(head['next_nonce']), pending, latest)
             if nonce >= 2**64 - 1:
                 raise ExecutionError('execution_nonce_exhausted')
-            envelope = signer.envelope(point, nonce)
+            envelope = signer.envelope(point, nonce, fee=fee)
             raw, digest = signer.sign(point, envelope)
             conn.execute('UPDATE publisher_heads SET next_nonce=greatest(next_nonce,%s) WHERE chain_id=4663 AND signer=%s', (nonce + 1, signer.address))
             row = conn.execute('INSERT INTO publications(observation_id,guard,pool_id,block_number,block_hash,block_timestamp,expires_at,sqrt_price,'
