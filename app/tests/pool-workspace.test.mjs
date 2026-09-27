@@ -82,6 +82,10 @@ function load(name, dependencies, expose = '') {
     COPY: { range: { problems: { decimals_unknown: 'Decimals unknown', tick_mismatch: 'Tick mismatch', not_initialized: 'Not initialised', beyond_display: 'Beyond display' } }, picker: { hookless: 'No hooks, fixed fee', needsAdapter: 'Needs a separate adapter', partialMetadata: '', providerConflict: '', checking: 'Checking…' }, figures: { activityLoading: '' }, selection: { decimalsUnavailable: 'decimals unavailable' } },
     // An entry with no addresses keeps its order (read.test.mjs checks inPoolOrder itself).
     SELECTED_POOL_CATALOGUE: [{ poolId: id('a'), labels: ['A', 'B'], fee: '0.3%', artwork: [null, null] }], SELECTED_POOLS_COMMON_TOKEN: addr('5'), inPoolOrder: (entry) => entry,
+    // 2026-09-26 (featured pools v1): the list on screen is the embedded one here, and an entry without addresses is
+    // verified against the token every embedded pool holds, as config/selectedPoolCatalogue.ts entryToken says.
+    useFeatured: () => ({ source: 'bundled', entries: [], listId: null, method: null, settled: true, withdrawn: new Set() }),
+    entryToken: (entry) => entry.addresses ? entry.addresses[1] : addr('5'),
     ...dependencies,
   }
   new Function('require', 'module', 'exports', code)((name) => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : common, mod, mod.exports)

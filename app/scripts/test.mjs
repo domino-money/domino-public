@@ -30,10 +30,14 @@ execFileSync(
     'tests/read.test.mjs',
     'tests/read-estimate.test.mjs',
     'tests/read-public.test.mjs',
+    // 2026-09-26: the featured pools list (read-v5): validation, the fallback table, the refresh rules, the binding.
+    'tests/featured-list.test.mjs',
     'tests/contract-pin.test.mjs',
     'tests/backend-contract.test.mjs',
     'tests/build-guard.test.mjs',
     'tests/forwarder.test.mjs',
+    // 2026-09-26: the featured pools list's route, its 60-second edge cache and what it may answer from it (featured-pools v1 §10.6).
+    'tests/featured-edge.test.mjs',
     'tests/owned.test.mjs',
     // 2026-09-24: the wallet's Domino positions from chain replace owned-positions (v1 list, row reads, browser memory).
     'tests/wallet-positions.test.mjs',

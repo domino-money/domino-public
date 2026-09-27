@@ -23,6 +23,7 @@ import {
   type Stage,
   type TickRange,
 } from '../../lib/create/journey'
+import { featuredStore, useFeatured } from '../../lib/read/featuredSource'
 import { verifyCandidate } from '../../lib/read/screens/catalogueSession'
 import { failureText } from '../../lib/read/screens/copy'
 import { DYNAMIC_FEE_PIPS } from '../../lib/read/screens/fee'
@@ -40,8 +41,8 @@ import { StageToken, type PreselectStatus } from './StageToken'
 import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
 import { PositionPreview } from './PositionPreview'
 
-/** The outcomes only the verification read can produce. */
-type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'unsupported' | 'failed' }>
+/** The outcomes only the verification read, or the featured list before it, can produce. */
+type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'unsupported' | 'failed' | 'withdrawn' }>
 
 /** How many times a failed verification of the linked pool is asked again on its own, and the first wait. */
 const VERIFY_ATTEMPTS = 3
@@ -112,6 +113,8 @@ export function Journey({ poolId }: { poolId: string }) {
   // A pool row pointed at or focused in step 1 while nothing is chosen: the preview beside the steps shows it.
   const [preview, setPreview] = useState<PoolOption | null>(null)
   const running = useRef<AbortController | null>(null)
+  // The list on screen (lib/read/featuredSource.ts): a linked pool it names is found by its entry.
+  const featured = useFeatured()
 
   useEffect(() => () => running.current?.abort(), [])
 
@@ -120,12 +123,23 @@ export function Journey({ poolId }: { poolId: string }) {
   // if the source or the link changes first. State changes only when the
   // read answers; what to show meanwhile is derived below.
   useEffect(() => {
-    const linked = preselectFrom(poolId)
-    if (!linked.ok || !source) return
+    const listed = featuredStore()
+    if (!source || !preselectFrom(poolId).ok) return
     running.current?.abort()
     const controller = new AbortController()
     running.current = controller
-    void verifyCandidate(source, verificationToken(linked), null, linked.key, { signal: controller.signal }).then((result) => {
+    // The featured list first (its first answer is the page's one read of it, at most 1.5 s): a pool it withdrew by a
+    // safety rule is refused from a link, never verified or preselected (featured pools v1 §11.5). The list as it is
+    // now, once that first answer is in: a later refresh may have withdrawn the pool since (fixed 2026-09-26 after review).
+    void listed.ensure().then(async () => {
+      const list = listed.getSnapshot()
+      const linked = preselectFrom(poolId, list.entries)
+      if (controller.signal.aborted || !linked.ok) return
+      if (list.withdrawn.has(linked.key)) {
+        setVerified({ poolId, attempt, outcome: { kind: 'withdrawn' } })
+        return
+      }
+      const result = await verifyCandidate(source, verificationToken(linked), null, linked.key, { signal: controller.signal })
       if (controller.signal.aborted) return
       if (result.failure) {
         if (result.failure.state !== 'aborted') setVerified({ poolId, attempt, outcome: { kind: 'failed', line: failureText(result.failure, 'pools') } })
@@ -178,7 +192,7 @@ export function Journey({ poolId }: { poolId: string }) {
     }
   }, [verified, poolId, attempt])
 
-  const linked = preselectFrom(poolId)
+  const linked = preselectFrom(poolId, featured.entries)
   const preselect: PreselectStatus = !linked.ok
     ? { kind: linked.reason === 'malformed' ? 'malformed' : 'none' }
     : verified?.poolId === poolId && verified.attempt === attempt

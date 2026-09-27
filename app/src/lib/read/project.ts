@@ -563,6 +563,7 @@ export function projectFamily<R extends ReadRoute>(outcome: Extract<ReadOutcome<
     case 'overview':
     case 'history':
     case 'search':
+    case 'featured-pools':
       throw new Error('stored public reads are projected by their dedicated consumers')
     default:
       return outcome.route satisfies never

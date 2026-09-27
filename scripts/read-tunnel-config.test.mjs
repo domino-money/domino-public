@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { extendReadTunnelConfig, V3_READ_TUNNEL_IDS, V4_READ_TUNNEL_IDS } from './read-tunnel-config.mjs';
+import { extendReadTunnelConfig, storedPath, READ_TUNNEL_IDS, V3_READ_TUNNEL_IDS, V4_READ_TUNNEL_IDS, V5_READ_TUNNEL_IDS } from './read-tunnel-config.mjs';
 
 const PROD = '31526265-ca63-40f2-bbb7-bd37a537f899';
 const DEV = '7abb1264-ee70-4b69-a33c-b75a9deb4589';
@@ -69,6 +69,97 @@ test('V4 opens only the fixed production snapshot and preserves an existing V3 p
   assert.throws(()=>extendReadTunnelConfig(PROD,both,{enableV3:true,disableV4:true}),/mismatch/);
   assert.throws(()=>extendReadTunnelConfig(DEV,fixture(DEV),{enableV4:true}),/mismatch/);
   assert.throws(()=>extendReadTunnelConfig(DEV,fixture(DEV),{disableV4:true}),/mismatch/);
+});
+
+/**
+ * The production states published before read-v5 existed, spelled exactly as
+ * read-tunnel-config.mjs wrote them then (2026-09-26): each must stay a state
+ * the rule accepts, with the same meaning, or a live tunnel would be refused.
+ */
+const PRE_V5 = {
+  next: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)|v2/pool-market)$',
+  v3: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)|v2/pool-market|v3/(overview|history|search))$',
+  v4: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)|v2/pool-market|v4/sequence-snapshot)$',
+  v3v4: '^/internal/read/(v1/(token|pools|pool-market|wallet-assets|nft-positions|catalogue|pool-activity|pool-positions|pool-metrics|markets-snapshot)|v2/pool-market|v3/(overview|history|search)|v4/sequence-snapshot)$',
+};
+
+test('the states published before read-v5 keep their spelling, stay accepted and keep their meaning', () => {
+  assert.equal(storedPath(), PRE_V5.next);
+  assert.equal(storedPath({ v3: true }), PRE_V5.v3);
+  assert.equal(storedPath({ v4: true }), PRE_V5.v4);
+  assert.equal(storedPath({ v3: true, v4: true }), PRE_V5.v3v4);
+  for (const [name, path] of Object.entries(PRE_V5)) {
+    const input = fixture(PROD, path);
+    // An ordinary publication changes nothing about an already current state.
+    assert.deepEqual(extendReadTunnelConfig(PROD, input), input, name);
+    const pattern = new RegExp(extendReadTunnelConfig(PROD, input, { enableV5: true }).ingress[1].path);
+    assert.equal(pattern.test('/internal/read/v5/featured-pools'), true, name);
+    assert.equal(pattern.test('/internal/read/v3/overview'), name.includes('v3'), name);
+    assert.equal(pattern.test('/internal/read/v4/sequence-snapshot'), name.includes('v4'), name);
+  }
+});
+
+test('V5 opens only the fixed production featured pools path and preserves V3 and V4', () => {
+  assert.deepEqual(V5_READ_TUNNEL_IDS, [PROD]);
+  assert.deepEqual(READ_TUNNEL_IDS, [PROD, DEV]);
+  const baseline = extendReadTunnelConfig(PROD, fixture(PROD));
+  const before = structuredClone(baseline);
+  const v5 = extendReadTunnelConfig(PROD, baseline, { enableV5: true });
+  assert.deepEqual(baseline, before);
+  const expected = structuredClone(before);
+  expected.ingress[1].path = v5.ingress[1].path;
+  assert.deepEqual(v5, expected, 'only the one path changes');
+  const pattern = new RegExp(v5.ingress[1].path);
+  assert.equal(pattern.test('/internal/read/v5/featured-pools'), true);
+  for (const path of ['/internal/read/v5/capabilities', '/internal/read/v5/featured-pools/', '/internal/read/v5/featured-pools/extra',
+    '/internal/read/v5/%66eatured-pools', '/internal/read/v5/featured-pools?limit=1', '/internal/read/v5/featured_pools',
+    '/internal/read/v5/overview', '/internal/read/v4/featured-pools', '/internal/read/v1/featured-pools', '/internal/read/v3/overview',
+    '/internal/read/v4/sequence-snapshot', '/prefix/internal/read/v5/featured-pools']) {
+    assert.equal(pattern.test(path), false, path);
+  }
+  for (const route of [...V1, ...STORED]) assert.ok(pattern.test('/internal/read/v1/' + route), route);
+  assert.ok(pattern.test('/internal/read/v2/pool-market'));
+  // Idempotent, and an ordinary publication keeps it.
+  assert.deepEqual(extendReadTunnelConfig(PROD, v5), v5);
+  assert.deepEqual(extendReadTunnelConfig(PROD, v5, { enableV5: true }), v5);
+  // Every stored protocol together, in any order of opening, is one path.
+  const all = extendReadTunnelConfig(PROD, extendReadTunnelConfig(PROD, extendReadTunnelConfig(PROD, baseline, { enableV4: true }), { enableV5: true }), { enableV3: true });
+  const allPattern = new RegExp(all.ingress[1].path);
+  for (const path of ['/internal/read/v3/overview', '/internal/read/v4/sequence-snapshot', '/internal/read/v5/featured-pools']) assert.equal(allPattern.test(path), true, path);
+  assert.deepEqual(extendReadTunnelConfig(PROD, baseline, { enableV3: true, enableV4: true, enableV5: true }), all);
+  assert.deepEqual(extendReadTunnelConfig(PROD, all), all);
+  // The other rollback keeps V5, and V5's own rollback keeps V3 and V4.
+  const withoutV4 = new RegExp(extendReadTunnelConfig(PROD, all, { disableV4: true }).ingress[1].path);
+  assert.equal(withoutV4.test('/internal/read/v5/featured-pools'), true);
+  assert.equal(withoutV4.test('/internal/read/v4/sequence-snapshot'), false);
+  const withoutV5 = extendReadTunnelConfig(PROD, all, { disableV5: true });
+  const rollback = new RegExp(withoutV5.ingress[1].path);
+  assert.equal(rollback.test('/internal/read/v5/featured-pools'), false);
+  assert.equal(rollback.test('/internal/read/v3/overview'), true);
+  assert.equal(rollback.test('/internal/read/v4/sequence-snapshot'), true);
+  assert.equal(rollback.test('/internal/read/v2/pool-market'), true);
+  assert.equal(withoutV5.ingress[1].path, PRE_V5.v3v4, 'rolling V5 back returns to the state published before it');
+  assert.deepEqual(extendReadTunnelConfig(PROD, withoutV5, { disableV5: true }), withoutV5);
+  assert.equal(extendReadTunnelConfig(PROD, v5, { disableV5: true }).ingress[1].path, PRE_V5.next);
+});
+
+test('a V5 rollback on a tunnel that never opened V5 is a true no-op, and a rollback opens nothing', () => {
+  for (const path of [...PUBLISHED[PROD], ...Object.values(PRE_V5)]) {
+    const input = fixture(PROD, path);
+    assert.deepEqual(extendReadTunnelConfig(PROD, input, { disableV5: true }), input, path);
+  }
+  const v5 = extendReadTunnelConfig(PROD, fixture(PROD), { enableV5: true });
+  for (const options of [{ enableV5: true, disableV5: true }, { enableV3: true, disableV5: true }, { enableV4: true, disableV5: true },
+    { disableV4: true, disableV5: true }, { enableV5: true, disableV4: true }, { enableV5: 'true' }, { disableV5: 1 }]) {
+    assert.throws(() => extendReadTunnelConfig(PROD, v5, options), /^Error: read_tunnel_configuration_mismatch$/, JSON.stringify(options));
+  }
+  assert.throws(() => extendReadTunnelConfig(DEV, fixture(DEV), { enableV5: true }), /mismatch/);
+  assert.throws(() => extendReadTunnelConfig(DEV, fixture(DEV), { disableV5: true }), /mismatch/);
+  // A path that opens V5 some other way is not a state this rule knows.
+  for (const path of [PRE_V5.next.replace('v2/pool-market', 'v2/pool-market|v5/(featured-pools|capabilities)'),
+    PRE_V5.next.replace('v2/pool-market', 'v5/featured-pools|v2/pool-market'), PRE_V5.next.replace('v2/pool-market', 'v2/pool-market|v5/.*')]) {
+    assert.throws(() => extendReadTunnelConfig(PROD, fixture(PROD, path)), /mismatch/, path);
+  }
 });
 
 function fixture(id, path = PUBLISHED[id][0]) {

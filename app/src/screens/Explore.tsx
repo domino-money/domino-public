@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
-import { catalogueTokens } from '../config/selectedPoolCatalogue'
+import { SELECTED_POOL_CATALOGUE, catalogueTokens } from '../config/selectedPoolCatalogue'
 import { exploreHref, marketsHref, parseExploreHash, poolHref } from '../components/explore/routes'
 import { useHash } from '../components/explore/useHash'
 import { IconChevronLeft, IconSearch } from '../components/icons'
@@ -16,6 +16,8 @@ import { StoredTokenExplorer } from '../components/read/screens/StoredTokenExplo
 import { SectionHead } from '../components/figures'
 import { Button, Card, Display, EmptyState, PageShell } from '../components/ui'
 import { parseAddressInput } from '../lib/read/screens/identity'
+import { featuredTitle } from '../lib/read/featuredList'
+import { useFeatured } from '../lib/read/featuredSource'
 import { useReadSource } from '../lib/read/screens/readContext'
 import { knownTokens } from '../lib/read/screens/tokenSearch'
 import { handoffFor, selectable, type TokenCandidate } from '../lib/read/screens/tokens'
@@ -48,7 +50,11 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
   const [query, setQuery] = useState('')
   const [count, setCount] = useState<{ shown: number; total: number } | null>(null)
   const [catalogueOpen, setCatalogueOpen] = useState(false)
-  const known = knownTokens({ catalogue: catalogueTokens(), candidates: [] })
+  // The list on screen (lib/read/featuredSource.ts) names the section and the tokens the search knows by name.
+  const featured = useFeatured()
+  // The embedded list's tokens stay known by name after the list's own, so a featured list never makes one unfindable.
+  const known = knownTokens({ catalogue: catalogueTokens(featured.source === 'bundled' ? featured.entries : [...featured.entries, ...SELECTED_POOL_CATALOGUE]), candidates: [] })
+  const ranked = __DOMINO_POOL_SET__ === 'selected' && featured.source === 'server'
   // An address typed as a pair name matches no pool; the token search starts from it instead.
   const pasted = parseAddressInput(query.trim())
   const seed = pasted.ok ? pasted.wire : undefined
@@ -81,7 +87,7 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
       <section className="dm-mkt-pools animate-rise" style={rise(2)} aria-labelledby="markets-pools-title">
         <SectionHead
           id="markets-pools-title"
-          title="Selected pools"
+          title={featuredTitle(ranked ? 'server' : 'bundled')}
           className="dm-mkt-pools-head"
           aside={
             filtered && count && count.shown > 0 ? (
@@ -91,6 +97,7 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
             ) : undefined
           }
         />
+        {ranked && featured.method && <p className="dm-mkt-method" data-featured-method="">{featured.method}</p>}
         <FilterBar asset={asset} query={query} onAsset={setAsset} onQuery={setQuery} />
         <div className="dm-mkt-pools-table">
           <MarketsTable variant="full" filter={{ asset, query }} onMatchCount={(shown, total) => setCount({ shown, total })} empty={empty} />

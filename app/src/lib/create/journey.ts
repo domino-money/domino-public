@@ -15,7 +15,7 @@
  * approves, deposits or swaps, and nothing implies it can.
  */
 import type { PositionPreviewRequest } from 'api-contracts/onboarding-v1/types'
-import { SELECTED_POOL_CATALOGUE, type PoolCatalogueEntry } from '../../config/selectedPoolCatalogue'
+import { SELECTED_POOL_CATALOGUE, entryToken, type PoolCatalogueEntry } from '../../config/selectedPoolCatalogue'
 import { CAPABILITIES } from '../capabilities'
 import { parseDecimal } from '../read/decimal'
 import { tokenText } from '../read/project'
@@ -168,19 +168,25 @@ export const USDG = addressKey('0x5fc5360d0400a0fd4f2af552add042d716f1d168')
 /**
  * The second hash segment is untrusted: it becomes a pool id only when it is
  * exactly one, and it is never shown as anything else. Verification against
- * the chain happens in the screen, through `verifyCandidate`.
+ * the chain happens in the screen, through `verifyCandidate`. `listed` is the
+ * list on screen (lib/read/featuredSource.ts) before the embedded one, so a
+ * pool of either is found; the embedded list alone by default.
  */
-export function preselectFrom(param: string): Preselect {
+export function preselectFrom(param: string, listed: readonly PoolCatalogueEntry[] = SELECTED_POOL_CATALOGUE): Preselect {
   if (param === '') return { ok: false, reason: 'empty' }
   if (!/^0x[0-9a-fA-F]{64}$/.test(param)) return { ok: false, reason: 'malformed' }
   const key = poolIdKey(param)
-  return { ok: true, key, catalogue: SELECTED_POOL_CATALOGUE.find((entry) => entry.poolId === key) ?? null }
+  return { ok: true, key, catalogue: listed.find((entry) => entry.poolId === key) ?? SELECTED_POOL_CATALOGUE.find((entry) => entry.poolId === key) ?? null }
 }
 
-/** The address the verification read names for a linked pool: USDG, which every catalogue pool holds. */
+/**
+ * The address the verification read names for a linked pool: one of the
+ * currencies its list entry names (USDG where it holds it, featured pools v1
+ * §11.6), else USDG, which every pool of the embedded list holds.
+ */
 export const verificationToken = (preselect: Extract<Preselect, { ok: true }>): AddressKey => {
-  const paired = preselect.catalogue?.addresses?.[1]
-  return paired ? addressKey(paired) : USDG
+  const token = preselect.catalogue ? entryToken(preselect.catalogue) : null
+  return token ? addressKey(token) : USDG
 }
 
 /* ---------------------------------------------------------------------------

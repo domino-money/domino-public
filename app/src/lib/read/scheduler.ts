@@ -11,7 +11,8 @@
  *
  * The queue also keeps the gateway's per-client budget for this tab: a burst
  * of five, then one more read every two seconds (30 a minute). Every attempt
- * on the wire takes one, an automatic retry included, so the queue waits for
+ * on the wire takes one, an automatic retry included (a route answered at the
+ * edge, EDGE_ANSWERED, takes none), so the queue waits for
  * the budget the way the gateway counts it instead of drawing its 429, with
  * a quarter of a read kept in hand for requests that meet less transit delay
  * than the one before them. And
@@ -68,10 +69,21 @@ export const GATEWAY_BUDGET: ReadBudget = { burst: 5, perMinute: 30 }
 export const BUDGET_RESERVE = 0.25
 
 /**
- * The read-v3 routes the gateway admits on its stored lane: four at a time, no start interval. Listed only where
- * read-v3 is enabled, which is where the gateway builds that lane (backend/read_gateway.py).
+ * The stored routes the gateway admits on its stored lane: four at a time, no start interval. Listed only where
+ * read-v3 is enabled, which is where the gateway builds that lane (backend/read_gateway.py). read-v5's featured list
+ * (2026-09-26) is a stored read too, one answer the same for everyone (featured pools v1 §10.6, §11.1).
  */
-export const STORED_LANE: ReadonlySet<ReadRoute> = new Set<ReadRoute>(['overview', 'history', 'search'])
+export const STORED_LANE: ReadonlySet<ReadRoute> = new Set<ReadRoute>(['overview', 'history', 'search', 'featured-pools'])
+
+/**
+ * Routes answered at the edge, which the gateway's per-client budget does not count, so this tab neither waits for
+ * its budget nor spends it on them (added 2026-09-26 after review). read-v5's featured list is one: while it is off,
+ * the forwarder's or the Worker's own 404 answers it; once on, the Pages Function's 60 s cache answers almost every
+ * one (featured pools v1 §10.6). Spending a read on it moved every Markets card's history read one budget slot, two
+ * seconds, later. A cache miss that does reach the gateway costs at most one read there a minute, which a 429's
+ * Retry-After absorbs.
+ */
+export const EDGE_ANSWERED: ReadonlySet<ReadRoute> = new Set<ReadRoute>(['featured-pools'])
 
 export interface SchedulerOptions {
   minIntervalMs?: number
@@ -99,6 +111,8 @@ interface Job {
   spaced: boolean
   /** Asked with `priority: 'first'`. */
   first: boolean
+  /** Counted in the tab's budget: every route but one answered at the edge (EDGE_ANSWERED). */
+  budgeted: boolean
 }
 
 export function createScheduledSource(
@@ -164,7 +178,7 @@ export function createScheduledSource(
         const now = clock.monotonic()
         // One wait for all three: the spacing (a spaced read's only), a busy answer's hold, and the budget. Nothing
         // else spends it meanwhile.
-        const wait = Math.max(job.spaced ? lastStart + minIntervalMs - now : 0, holdUntil - now, budgetWait())
+        const wait = Math.max(job.spaced ? lastStart + minIntervalMs - now : 0, holdUntil - now, job.budgeted ? budgetWait() : 0)
         if (wait > 0) {
           const nap = new AbortController()
           const stop = () => nap.abort()
@@ -243,12 +257,14 @@ export function createScheduledSource(
           resolve = done
         })
         const spaced = !(unspacedStored && STORED_LANE.has(route))
-        // Every attempt of the job, an automatic retry included, spends the budget, and a spaced one moves the pace on.
+        const budgeted = !EDGE_ANSWERED.has(route)
+        // Every attempt of the job, an automatic retry included, spends the budget (a route the gateway counts), and a
+        // spaced one moves the pace on.
         const onAttempt = () => {
           if (spaced) lastStart = clock.monotonic()
-          spend()
+          if (budgeted) spend()
         }
-        job = { key, run: (signal) => source.read(route, request, { signal, deadlineAt, onAttempt }), controller: new AbortController(), waiters: 0, promise, resolve, spaced, first }
+        job = { key, run: (signal) => source.read(route, request, { signal, deadlineAt, onAttempt }), controller: new AbortController(), waiters: 0, promise, resolve, spaced, first, budgeted }
         byKey.set(key, job)
         enqueue(job)
       } else if (first && !job.first) {

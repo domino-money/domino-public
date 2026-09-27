@@ -18,12 +18,16 @@ import type {
 } from 'api-contracts/read-v1/types'
 import type { CapabilitiesResponse as V2Capabilities, PoolAprEstimate } from 'api-contracts/read-v2/types'
 import type { ReadV3Requests, ReadV3Responses } from 'api-contracts/read-v3/types'
+import type { ReadV5Requests, ReadV5Responses } from 'api-contracts/read-v5/runtime.mjs'
 
-/** Both namespaces expose the same flags; each wire validator requires its exact version. */
-export type ReadResponses = Omit<V1ReadResponses, 'capabilities'> & Omit<ReadV3Responses, 'capabilities'> & { capabilities: V1ReadResponses['capabilities'] | V2Capabilities | ReadV3Responses['capabilities'] }
-export type ReadRequests = V1ReadRequests & ReadV3Requests
+/**
+ * Both namespaces expose the same flags; each wire validator requires its exact version. read-v5's one route, the
+ * featured pools list (added 2026-09-26, lib/read/featuredList.ts), is POSTed with no capabilities question of its own.
+ */
+export type ReadResponses = Omit<V1ReadResponses, 'capabilities'> & Omit<ReadV3Responses, 'capabilities'> & ReadV5Responses & { capabilities: V1ReadResponses['capabilities'] | V2Capabilities | ReadV3Responses['capabilities'] }
+export type ReadRequests = V1ReadRequests & ReadV3Requests & ReadV5Requests
 
-/** Every read family across the three contracts, exactly the `ReadRequests` keys. */
+/** Every read family across the four contracts, exactly the `ReadRequests` keys. */
 export type ReadRoute = keyof ReadRequests
 /** Those routes plus the bridge's capabilities GET, which has a response but no request body. */
 export type ReadKey = keyof ReadResponses

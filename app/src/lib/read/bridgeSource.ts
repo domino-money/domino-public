@@ -149,9 +149,15 @@ export async function rawReplyFrom(response: Response, signal?: AbortSignal): Pr
 
 export interface BridgeOptions {
   /** Closed same-origin namespaces; never supplied by a request or URL parameter. */
-  namespace?: 'v1' | 'v2' | 'v3'
+  namespace?: 'v1' | 'v2' | 'v3' | 'v5'
   /** CAPABILITIES.liveDataEnabled. False means no request is ever made. */
   enabled: boolean
+  /**
+   * False: a read is POSTed without asking the capabilities first, and its own answer (route_not_available when the
+   * route is off) says whether it is on. read-v5's featured list only (lib/read/featuredList.ts, 2026-09-26): one
+   * request on Home's critical path instead of two. Absent or true: the capabilities are asked, as before.
+   */
+  askCapabilities?: boolean
   validators: ReadValidators
   fetch?: FetchLike
   clock?: Clock
@@ -269,9 +275,11 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
       if (!enabled) return { route, provenance: stamp(deadlineAt), state: 'disabled', reason: 'live_data_disabled' }
       if (!validators.validateRequest(route, request)) return { route, provenance: stamp(deadlineAt), state: 'invalid', reason: 'request_contract' }
 
-      const listed = await listedReads(route, opts.signal, deadlineAt)
-      if (!listed.ok) return listed.outcome
-      if (!listed.reads.has(route)) return { route, provenance: stamp(deadlineAt), state: 'disabled', reason: 'route_not_enabled' }
+      if (options.askCapabilities !== false) {
+        const listed = await listedReads(route, opts.signal, deadlineAt)
+        if (!listed.ok) return listed.outcome
+        if (!listed.reads.has(route)) return { route, provenance: stamp(deadlineAt), state: 'disabled', reason: 'route_not_enabled' }
+      } else if (opts.signal?.aborted) return { route, provenance: stamp(deadlineAt), state: 'aborted' }
 
       return runRead({
         route,

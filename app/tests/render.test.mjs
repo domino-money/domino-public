@@ -129,7 +129,11 @@ const clean = (page, label) => assert.deepEqual(problemsOf(page), [], `${label} 
  * with no /api. Its not_connected answer ends the load, so the estimate
  * namespace is never asked and no data POST is sent.
  */
-const CAPABILITIES = ['GET /api/read/v3/capabilities', 'GET /api/read/v1/capabilities'];
+// Changed on purpose (2026-09-26, featured pools v1 §11.1): the featured list's one POST goes first. With no /api
+// behind this server it meets the static index page (not_connected), so the page keeps the embedded list and its
+// title, and the capabilities are asked as before.
+const FEATURED = 'POST /api/read/v5/featured-pools';
+const CAPABILITIES = [FEATURED, 'GET /api/read/v3/capabilities', 'GET /api/read/v1/capabilities'];
 
 test('the built landing page renders its content without a single browser error', async () => {
   const page = await open('/');
@@ -174,6 +178,9 @@ test('every route in the header renders', async () => {
     ['/', /Robinhood Chain/],
     ['/markets', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
     [`/markets/0x${'1'.repeat(40)}`, /Markets[\s\S]*Search the pool catalogue/],
+    // 2026-09-26 (featured pools v1, kept after review): a pool page with no token, for a pool outside the list, says
+    // today's words while the embedded list is on screen.
+    [`/pool/0x${'2'.repeat(64)}`, /Open this pool from Markets[\s\S]*is not one of the selected six, and this link names no token to verify it with\./],
     ['/explore', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
     ['/pools', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
     ['/positions', /Positions[\s\S]*Managed positions/],
@@ -233,9 +240,9 @@ test('the mobile Positions screen leads to Markets: reachable, bounded to the vi
   await entrance.click();
   await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
   await shown(page, '/markets');
-  // The selected pools are on the page, so Markets asks the capabilities the way the landing does, and posts nothing.
+  // The selected pools are on the page, so Markets asks the featured list and the capabilities the way the landing does, and posts nothing else.
   const trail = () => [...(apiOf(page).at(-1) ?? [])];
-  assert.deepEqual(trail(), CAPABILITIES, 'Markets checks each needed namespace once and posts nothing');
+  assert.deepEqual(trail(), CAPABILITIES, 'Markets asks the list and checks each needed namespace once');
 
   // A pair-name filter that no selected pool matches: nothing is read to decide.
   const address = '0x1111111111111111111111111111111111111111';
@@ -611,6 +618,15 @@ async function catalogueOnly(page, label) {
   assert.equal(await page.locator('[data-ticker] [data-metric], [data-ticker] [data-apr-estimate]').count(), 0, `${label}: no figure in the ticker`);
   // A fee tier (0.02%) is a label from the catalogue; a dollar figure or an APR percentage would be an invention.
   assert.doesNotMatch(await page.locator('[data-ticker]').innerText(), /\$\s?\d|\d%\s*est/, `${label}: no figure in the ticker`);
+  // 2026-09-26 (featured pools v1 §11.2): with no list served, the embedded list in its order under today's title, no
+  // method line and no Pinned chip; every link names the pool and USDG, the token to verify it with (§11.6).
+  assert.equal(await page.locator('#pools [data-featured-source]').getAttribute('data-featured-source'), 'bundled', `${label}: the embedded list`);
+  assert.equal(await page.locator('#pools h2').first().innerText(), 'Selected pools', `${label}: today's title`);
+  assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.getAttribute('data-pool-catalogue'))), SELECTED, `${label}: the embedded six, in order`);
+  assert.equal(await page.locator('[data-featured-method], [data-pinned]').count(), 0, `${label}: no method line, no Pinned chip`);
+  const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
+  assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SELECTED.map((id) => `#/pool/${id}/${USDG}`), `${label}: row links`);
+  assert.deepEqual(await items.evaluateAll((as) => as.map((a) => a.getAttribute('href'))), SELECTED.map((id) => `#/pool/${id}/${USDG}`), `${label}: ticker links`);
 }
 
 /**
@@ -658,7 +674,7 @@ test('the landing reads through the bridge, and with no /api behind this server 
 
 const SELECTED = readFileSync(resolve(import.meta.dirname, '../src/config/selectedPools.ts'), 'utf8').match(/0x[0-9a-f]{64}/g);
 
-test('selected pool screens check each needed namespace once and post nothing when disconnected; owner screens ask only their release; other routes ask nothing', async () => {
+test('selected pool screens ask the featured list, check each needed namespace once and post nothing else when disconnected; New position asks the list; owner screens ask only their release; other routes ask nothing', async () => {
   const seen = [];
   for (const route of ROUTES) {
     const page = await open(route);
@@ -667,7 +683,7 @@ test('selected pool screens check each needed namespace once and post nothing wh
     clean(page, `requests on ${route}`);
     await close(page);
   }
-  // Per document: the first load and the reload each ask once per namespace, and post nothing.
+  // Per document: the first load and the reload each ask the list once and once per namespace, and post nothing else.
   const once = CAPABILITIES;
   assert.deepEqual(seen, [
     ['/', [once, once]],
@@ -677,7 +693,8 @@ test('selected pool screens check each needed namespace once and post nothing wh
     ['/positions', [[], []]],
     ['/app', [[], []]],
     ['/portfolio', [[], []]],
-    ['/new', [[], []]],
+    // 2026-09-26: New position asks the featured list once (its pools are named first, and a pool it withdrew is refused from a link).
+    ['/new', [[FEATURED], [FEATURED]]],
     ['/automate', [[], []]],
     ['/settings', [[], []]],
     ['/docs', [[], []]],

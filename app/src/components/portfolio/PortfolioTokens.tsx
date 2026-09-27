@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { catalogueTokens } from '../../config/selectedPoolCatalogue'
+import { WALLET_FALLBACK_TOKENS } from '../../config/selectedPoolCatalogue'
 import { formatUsd } from '../../lib/format/usd'
 import { scaledText } from '../../lib/format/decimal'
 import type { WalletRow, WalletView } from '../../lib/read/pagers'
@@ -23,8 +23,11 @@ type Step = 'first' | 'more' | 'restart'
 
 const addressOf = (token: TokenDisplay) => (token.origin === 'read' ? token.address : '')
 
-/** The selected pools' tokens by address: the list's fallback check, and the tokens asked for when a list shows none held. */
-const SELECTED_TOKENS: string[] = catalogueTokens().map((token) => token.address)
+/**
+ * The main tokens and the embedded list's, by address (config/selectedPoolCatalogue.ts WALLET_FALLBACK_TOKENS, never a
+ * daily featured list's): the list's fallback check, and the tokens asked for when a list shows none held.
+ */
+const SELECTED_TOKENS: string[] = [...WALLET_FALLBACK_TOKENS]
 
 /** The pager's own closing sentence; the title says the same thing with the block number in it. */
 const PAGER_FOOTNOTE = 'Balances at the snapshot block. Not proof of wallet control.'

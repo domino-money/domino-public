@@ -6,11 +6,11 @@
  * touches Cloudflare.
  */
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { test } from 'node:test';
-import { WRANGLER, deploy, deployCommand, inventory, record, verify } from '../scripts/release.mjs';
+import { BUNDLED, WRANGLER, deploy, deployCommand, inventory, record, verify } from '../scripts/release.mjs';
 
 /** A stand-in commit for the manifest; never a real one. */
 const HEAD = 'test-head';
@@ -314,4 +314,52 @@ test('the README deploys production from the checkout that deployed the preview,
   assert.match(release, /Deploy production from the same checkout that deployed the preview\./);
   assert.match(release, /`\.release\/deployed\.json`, is written in that checkout and ignored by git/);
   assert.match(release, /In a new checkout, run `npm run release:build` and `npm run deploy:preview` there first/);
+});
+
+// 2026-09-26: the featured pools list's route (functions/api/read/v5/featured-pools.ts)
+// is the first Pages Function to import a file from outside functions/, read-v5's
+// runtime, and wrangler bundles what it imports at upload. The digest has to cover
+// those bytes too, or a record could name a function the deploy does not upload.
+test('the digest covers the files outside functions/ that a function imports, and each one is listed', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'domino-release-bundled-'));
+  const root = join(parent, 'app');
+  const put = (path, text) => {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), text);
+  };
+  try {
+    for (const [path, text] of Object.entries(BASE)) put(path, text);
+    const without = inventory(root);
+    assert.deepEqual(Object.keys(without.files).filter((path) => path.startsWith('../')), [], 'absent, nothing is listed');
+    for (const path of BUNDLED) put(path, `// ${path}`);
+    const one = inventory(root);
+    assert.deepEqual(Object.keys(one.files).filter((path) => path.startsWith('../')), [...BUNDLED].sort());
+    assert.notEqual(one.digest, without.digest);
+    for (const path of BUNDLED) {
+      put(path, `// ${path} changed`);
+      assert.notEqual(inventory(root).digest, one.digest, `${path} is covered`);
+      put(path, `// ${path}`);
+    }
+    assert.equal(inventory(root).digest, one.digest);
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+
+  // Every value import that leaves functions/, and every import those files make, is in BUNDLED.
+  const app = resolve(import.meta.dirname, '..');
+  const imports = (file) => [...readFileSync(file, 'utf8').matchAll(/\b(?:import|export)\s+(type\s+)?[^'"`]*?\bfrom\s+'([^']+)'/g)]
+    .filter((match) => !match[1] && match[2].startsWith('.')).map((match) => resolve(dirname(file), match[2]));
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true })
+    .flatMap((entry) => entry.isDirectory() ? walk(join(dir, entry.name)) : entry.name.endsWith('.ts') ? [join(dir, entry.name)] : []);
+  const functions = join(app, 'functions');
+  const outside = new Set();
+  const pending = walk(functions).flatMap(imports).filter((target) => !target.startsWith(functions + sep));
+  while (pending.length) {
+    const target = relative(app, pending.pop()).split(sep).join('/');
+    if (outside.has(target)) continue;
+    outside.add(target);
+    pending.push(...imports(join(app, target)));
+  }
+  assert.deepEqual([...outside].sort(), [...BUNDLED].sort(), 'functions/ imports from outside itself exactly the listed files');
+  assert.deepEqual(Object.keys(inventory(app).files).filter((path) => path.startsWith('../')), [...BUNDLED].sort());
 });

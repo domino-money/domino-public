@@ -11,7 +11,8 @@
  * (scripts/deploy-markers.mjs), and a checkout with uncommitted changes, so
  * the commit it records, which every deploy passes as --commit-hash, is the
  * one dist was built from. It hashes every file of dist, functions/ and
- * wrangler.toml (SHA-256, sorted relative paths) into one tree digest and
+ * wrangler.toml, plus the few files outside functions/ that wrangler bundles
+ * into them (BUNDLED), by SHA-256 over sorted relative paths, into one tree digest and
  * writes .release/manifest.json. `verify` recomputes both and fails on any
  * difference. `deploy` verifies first and uploads ./dist with no build step
  * of its own, so what is deployed is what was recorded. wrangler compiles
@@ -115,16 +116,27 @@ function listFiles(root, dir) {
 }
 
 /**
+ * The files outside functions/ that a Pages Function imports, which wrangler
+ * therefore compiles into the upload, relative to the app. Added 2026-09-26:
+ * the featured pools list's route (functions/api/read/v5/featured-pools.ts)
+ * checks each list with read-v5's runtime, which takes read-v1's error table.
+ * tests/release.test.mjs fails when functions/ imports anything else from
+ * outside itself, so no uploaded byte escapes the digest.
+ */
+export const BUNDLED = Object.freeze(['../api-contracts/read-v1/runtime.mjs', '../api-contracts/read-v5/runtime.mjs'])
+
+/**
  * What a deploy uploads: every file of dist, the Pages Functions wrangler
- * compiles and wrangler.toml, each with its SHA-256, and one digest over the
- * sorted list. The same bytes give the same digest, whenever and in whatever
- * order they were written.
+ * compiles (functions/ and BUNDLED) and wrangler.toml, each with its SHA-256,
+ * and one digest over the sorted list. The same bytes give the same digest,
+ * whenever and in whatever order they were written.
  */
 export function inventory(root = APP) {
   const paths = [...listFiles(root, join(root, 'dist')), ...listFiles(root, join(root, 'functions'))]
-  const toml = join(root, 'wrangler.toml')
-  const tomlStat = entryStat(toml)
-  if (tomlStat !== null && regularOnly(root, toml, tomlStat).isFile()) paths.push('wrangler.toml')
+  for (const path of ['wrangler.toml', ...BUNDLED]) {
+    const stat = entryStat(join(root, path))
+    if (stat !== null && regularOnly(root, join(root, path), stat).isFile()) paths.push(path)
+  }
   paths.sort()
   const files = Object.fromEntries(paths.map((path) => [path, sha256(readFileSync(join(root, path)))]))
   const digest = sha256(paths.map((path) => `${files[path]}  ${path}\n`).join(''))

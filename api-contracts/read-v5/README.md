@@ -35,3 +35,11 @@ Three rules go beyond the spec's list, and the fixtures hold them:
 
 The Worker's `runtime.mjs` (`CONTRACT_VERSION`, `ROUTES`, `validateRequest`,
 `validateResponse`) and the app's consumption are the bridge side's (§10.3).
+
+`runtime.mjs` is written by hand in read-v4's pattern, with `runtime.d.mts`
+for TypeScript. `runtime.test.mjs` walks both fixture sets, checks that each
+invalid fixture differs from `valid/current.json` only where its name says,
+and reads the producer's vocabulary from its source; the bridge's
+`npm run check` runs it. The app pins the runtime's SHA-256 as
+`READ_V5_PIN` (`app/src/lib/read/pin.ts`), so any edit to it fails
+`app/tests/contract-pin.test.mjs` until the pin moves with it.

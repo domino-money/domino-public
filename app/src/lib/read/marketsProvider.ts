@@ -102,7 +102,7 @@
  *     failed (three minutes of placeholder) and for one the provider never
  *     covered (twenty seconds on every visit).
  */
-import type { PoolMarketResponse, SnapshotPoolEntry } from 'api-contracts/read-v1/types'
+import type { PoolMarketResponse, SnapshotPoolEntry, VerifiedPool } from 'api-contracts/read-v1/types'
 import type { StoredPool } from 'api-contracts/read-v3/types'
 import type { Market, MarketsResult, Metric } from '../markets'
 import { createSnapshotMemo, planSnapshot, SNAPSHOT_MAX_POOLS, type SnapshotMemo } from './marketsSnapshot'
@@ -316,6 +316,11 @@ export interface LoadOptions {
    * Absent: those rows say what they have, Unavailable.
    */
   catchUp?: (entry: StoredPool, inMs: number) => boolean
+  /**
+   * Whether a pool's own read matches the list's entry for it (featured pools v1 §11.3): a row whose read does not
+   * is left out of the rows, and named in `unbound`. Absent: every read row stands.
+   */
+  binds?: (poolId: string, pool: VerifiedPool) => boolean
 }
 
 /** A row's own read: the pool's market read, or its entry in the stored snapshot. */
@@ -363,6 +368,8 @@ interface Load extends LoadedMarkets {
   catchUpInMs?: number | null
   /** Every pool of the stored overview whose figures are coming (`catchUpInMs`), lowercase, waiting or not; absent when no overview was read. */
   behind?: string[]
+  /** Pools whose read did not bind to their entry (LoadOptions.binds), lowercase: they have no row. */
+  unbound: string[]
 }
 
 /** One problem per read: a pool's market read, a pool's pool-metrics read, or a token. */
@@ -391,6 +398,13 @@ async function readMarkets(
   const tokensAgain = new Set(again?.plan.tokens ?? [])
   const metricsAgain = new Set(again?.plan.metrics ?? [])
   const pendingTokens = new Set<string>()
+  const unbound: string[] = []
+  /** Whether a read row may stand: it binds to its entry, or nothing asks. A row that does not is dropped here, before it is ever shown. */
+  const bound = (poolId: string, pool: VerifiedPool) => {
+    if (!options.binds || options.binds(poolId, pool)) return true
+    if (!unbound.includes(key(poolId))) unbound.push(key(poolId))
+    return false
+  }
   /** Pools whose figures the producer is about to collect, while the provider will ask again for them. */
   const figuresBehind = new Set<string>()
   // Every read of the table goes before any queued read that did not ask first: a Markets card's history, say.
@@ -428,7 +442,7 @@ async function readMarkets(
       return [pending || waiting ? { ...projected, ...(pending ? { tokensPending: true as const } : {}), ...(waiting ? { figuresPending: true as const } : {}) } : projected]
     })
   const emit = () => onProgress?.(rows(false))
-  const finish = (blocking: FailedOutcome | null, aborted = false): Load => ({ rows: rows(true), problems: ledger.problems, blocking, aborted, ledger, read })
+  const finish = (blocking: FailedOutcome | null, aborted = false): Load => ({ rows: rows(true), problems: ledger.problems, blocking, aborted, ledger, read, unbound })
 
   /** Whether this load reads a token: asked again and not read again yet, or neither read nor kept. */
   const wanted = (address: string) => tokensAgain.has(address) || (!ledger.tokens.has(address) && !options.tokens?.has(address))
@@ -492,7 +506,7 @@ async function readMarkets(
       }
       for (const entry of overview.data.pools) {
         const outcome = storedPoolRead(entry, overview.data.generatedAt, overview.provenance)
-        if (!outcome) continue
+        if (!outcome || !bound(entry.poolId, outcome.data.pool)) continue
         ledger.sources.set(key(entry.poolId), { kind: 'market', outcome })
         read.add(key(entry.poolId))
       }
@@ -503,7 +517,7 @@ async function readMarkets(
       let soonest: number | null = null
       for (const entry of overview.data.pools) {
         const inMs = catchUpInMs(entry, overview.data.generatedAt)
-        if (inMs === null) continue
+        if (inMs === null || unbound.includes(key(entry.poolId))) continue
         behind.push(key(entry.poolId))
         if (!options.catchUp?.(entry, inMs)) continue
         figuresBehind.add(key(entry.poolId))
@@ -541,6 +555,7 @@ async function readMarkets(
         memo.succeeded()
         const plan = planSnapshot(snapshot.data, poolIds)
         for (const [poolId, entry] of plan.entries) {
+          if (!bound(poolId, entry.pool)) continue
           ledger.sources.set(poolId, { kind: 'snapshot', outcome: snapshot, entry })
           read.add(poolId)
         }
@@ -574,9 +589,10 @@ async function readMarkets(
       if (market.state === 'disabled') break
       continue
     }
+    dropProblem({ poolId, route: 'pool-market' })
+    if (!bound(poolId, market.data.pool)) continue
     ledger.sources.set(key(poolId), { kind: 'market', outcome: market })
     read.add(key(poolId))
-    dropProblem({ poolId, route: 'pool-market' })
     // The row now, named from the catalogue until its tokens land right after it.
     emit()
     const stopped = await readTokensOf(poolId)
@@ -656,10 +672,32 @@ export async function loadSelectedPools(
   return { rows, problems, blocking, aborted }
 }
 
+/**
+ * A list of pools that can change while the page is open (bridgeMarkets.ts: the featured pools list,
+ * lib/read/featuredList.ts). The provider asks it to bring itself up to date before each load, the first and every
+ * refresh (never a quiet re-ask), reads the pools it names then, drops a row whose read does not bind to its entry,
+ * and follows the list when it changes between loads: pools that left it leave the rows at once, and a list with new
+ * pools is read.
+ */
+export interface PoolList {
+  /** The pools on screen now, in the order the rows keep. */
+  ids(): readonly string[]
+  /** Brings the list up to date: its first read (`first`), or a refresh's. Never rejects. */
+  update(first: boolean, signal: AbortSignal): Promise<unknown>
+  /** Whether a pool's own read matches the list's entry for it. */
+  binds(poolId: string, pool: VerifiedPool): boolean
+  /** Rows whose read did not bind: the list lets them go. */
+  unbind(poolIds: readonly string[]): void
+  /** Word when the pools on screen change. Returns the unsubscribe. */
+  subscribe(listener: () => void): () => void
+}
+
 export interface ReadMarketsOptions {
   source: ReadSource
-  /** The pools to read, in the order the rows keep. */
+  /** The pools to read, in the order the rows keep; with `pools`, only until the list answers. */
   poolIds: readonly string[]
+  /** A list of pools that can change (PoolList). Absent: `poolIds`, fixed. */
+  pools?: PoolList
   kind: 'fixture' | 'bridge'
   /** Shown beside the rows: the fixture build says they are fixtures. */
   notice?: string
@@ -675,7 +713,20 @@ export interface ReadMarketsOptions {
   refreshMs?: number
 }
 
-export function createReadMarketsProvider({ source, poolIds, kind, notice, now, monotonic, clock = realClock, visibility = documentVisibility, refreshMs = 0 }: ReadMarketsOptions): MarketsProvider {
+export function createReadMarketsProvider({ source, poolIds: initialIds, pools, kind, notice, now, monotonic, clock = realClock, visibility = documentVisibility, refreshMs = 0 }: ReadMarketsOptions): MarketsProvider {
+  /** The pools read now, in row order: `initialIds`, or the list's (`pools`) as it changes. */
+  let poolIds: readonly string[] = pools ? pools.ids() : initialIds
+  /**
+   * When the list was last brought up to date (monotonic), null before its first answer is asked for. A load asks it
+   * again only once a whole refresh interval has passed: a catch-up for figures that are coming, seconds after the
+   * last load, reads the markets alone.
+   */
+  let listedAt: number | null = null
+  const listEveryMs = refreshMs > 0 ? refreshMs : 60_000
+  /** While a load brings the list up to date: its own changes are read by that load, not followed here. */
+  let updating = false
+  /** The list gained pools while a load ran for the old ones: read again once it settles. */
+  let reloadAfter = false
   const wall = now ?? (() => clock.now())
   const steady = monotonic ?? (() => clock.monotonic())
   const resultOf = (markets: Market[]): MarketsResult => ({ source: kind === 'bridge' ? 'live' : kind, chainId: 4663, network: 'Robinhood Chain', markets, notice })
@@ -814,6 +865,22 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
     if (!inPlace) set({ phase: 'loading', previous, retrying })
     // Rows whose figures are coming wait for them only where this provider asks again on its own.
     memory.catchUp = refreshMs > 0 ? catchUpWaits : undefined
+    if (pools) {
+      // The list first (featured pools v1 §11.1): its first answer, or a refresh's, then the markets of its pools.
+      const first = listedAt === null
+      if (!quiet && (first || clock.monotonic() - (listedAt ?? 0) >= listEveryMs)) {
+        listedAt = clock.monotonic()
+        updating = true
+        try {
+          await pools.update(first, mine.signal)
+        } finally {
+          updating = false
+        }
+        if (mine.signal.aborted || controller !== mine) return
+      }
+      poolIds = pools.ids()
+      memory.binds = (poolId, pool) => pools.binds(poolId, pool)
+    }
     const loaded = await readMarkets(
       source,
       poolIds,
@@ -852,6 +919,7 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
     if (failure) {
       if (!quiet) nextRefresh(true, kept.size > 0)
       set({ phase: 'failed', failure, retained: retained() })
+      settledLoad(loaded.unbound)
       return
     }
     // A pool with no row from these reads keeps its last good one, stale and dated, in its place.
@@ -867,7 +935,39 @@ export function createReadMarketsProvider({ source, poolIds, kind, notice, now, 
     if (!quiet) catchUpAsks = catchUp === null ? 0 : catchUpAsks + 1
     if (!quiet) nextRefresh(loaded.problems.length > 0, markets.length > 0, loaded.acquiring, { inMs: loaded.acquisitionInMs ?? null, running: loaded.acquisitionRunning === true }, catchUp)
     set({ phase: 'ready', result: resultOf(markets), problems: loaded.problems, ...(loaded.acquiring ? { acquiring: true } : {}) })
+    settledLoad(loaded.unbound)
   }
+
+  /** After a load settles: rows that did not bind leave the list, and a list that gained pools meanwhile is read. */
+  function settledLoad(unbound: readonly string[]) {
+    if (pools && unbound.length > 0) pools.unbind(unbound)
+    if (!reloadAfter || controller) return
+    reloadAfter = false
+    void run(undefined, state.phase === 'ready')
+  }
+
+  /** The list changed between loads: pools that left it leave the rows now; a list with new pools is read. */
+  function followList() {
+    if (!pools || updating) return
+    const next = pools.ids()
+    if (next.map(key).join() === poolIds.map(key).join()) return
+    const was = new Set(poolIds.map(key))
+    const removals = next.every((id) => was.has(key(id)))
+    poolIds = next
+    if (controller) {
+      // A load running for the old pools maps its rows through `poolIds` as they land; new pools need a load of their own.
+      if (!removals) reloadAfter = true
+      return
+    }
+    if (!started) return
+    if (removals && state.phase === 'ready') {
+      const wanted = new Set(next.map(key))
+      set({ ...state, result: resultOf(state.result.markets.filter((row) => wanted.has(key(row.poolId)))) })
+      return
+    }
+    void run(undefined, state.phase === 'ready')
+  }
+  pools?.subscribe(followList)
 
   function stopTimer() {
     cancelTimer?.()

@@ -2,6 +2,8 @@ import { Suspense, useEffect, useRef, useState, type MouseEvent, type ReactNode 
 import { catalogueTokenLabel, poolListings, type PoolCatalogueEntry, type PoolListing } from '../config/selectedPoolCatalogue'
 import { agedMarket, feeLabel, presentMetric, providerStale, retrievedAgeSeconds, retrievedText, type Instant, type Market, type MarketProvenance, type Metric } from '../lib/markets'
 import { presentAprEstimate } from '../lib/read/aprEstimate'
+import { featuredTitle } from '../lib/read/featuredList'
+import { useFeatured } from '../lib/read/featuredSource'
 import { reasonText } from '../lib/read/describe'
 import { marketPoolPrice } from '../lib/read/marketPrice'
 import type { MarketsProvider } from '../lib/read/marketsProvider'
@@ -132,7 +134,7 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
   )
 }
 
-function Row({ m: read, now, full, onFigures, poolToken }: { m: Market; now: Instant; full: boolean; onFigures: () => void; poolToken?: string }) {
+function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; now: Instant; full: boolean; onFigures: () => void; poolToken?: string | null; pinned: boolean }) {
   const p = read.provenance
   const age = p ? retrievedAgeSeconds(p.market, now) : null
   const stale = p ? providerStale(p.market, now) : false
@@ -140,7 +142,7 @@ function Row({ m: read, now, full, onFigures, poolToken }: { m: Market; now: Ins
   // The same projection the figures dialog is given, so the row and the dialog
   // it opens never disagree about whether a figure is still current.
   const m = agedMarket(read, now)
-  const href = poolHref(m.poolId, poolToken)
+  const href = poolHref(m.poolId, poolToken ?? null)
   const line = p ? provenanceLine(p, age, stale) : undefined
   // Domino's own qualified history when there is one; the attributed backend estimate otherwise, marked as one.
   const qualified = m.feeAprPercent.value !== null && (m.feeAprPercent.state === 'qualified' || m.feeAprPercent.state === 'stale')
@@ -169,6 +171,7 @@ function Row({ m: read, now, full, onFigures, poolToken }: { m: Market; now: Ins
               <span className="font-medium">{name}</span>
             </a>
             <Chip className="dm-mkt-venue">Uniswap · {feeLabel(m)}</Chip>
+            {pinned && <PinnedChip />}
           </div>
         </div>
       </Td>
@@ -215,11 +218,19 @@ function Row({ m: read, now, full, onFigures, poolToken }: { m: Market; now: Ins
 }
 
 /**
- * A pool from the reviewed catalogue whose live row has not arrived: its
+ * A featured list's pinned pool, under its criterion title only (§11.7, option B): pinned by the owner, not ranked.
+ * A chip with words, never a colour alone.
+ */
+function PinnedChip() {
+  return <Chip className="dm-mkt-venue" data-pinned="">Pinned</Chip>
+}
+
+/**
+ * A pool from the list on screen whose live row has not arrived: its
  * labels only, every figure a dash. It still opens its pool page.
  */
-function CatalogueRow({ poolId, entry, full, loading }: { poolId: string; entry: PoolCatalogueEntry; full: boolean; loading: boolean }) {
-  const href = poolHref(poolId)
+function CatalogueRow({ poolId, entry, full, loading, token, pinned }: { poolId: string; entry: PoolCatalogueEntry; full: boolean; loading: boolean; token: string | null; pinned: boolean }) {
+  const href = poolHref(poolId, token)
   // While the first markets read is out, each figure rests as a bubble at its text line's size, so the row keeps
   // its height and nothing reads as missing; once it has settled without a row, the dashes say what is unavailable.
   const bubble = (className: string) => <Skeleton className={cx('dm-mkt-bubble', className)} />
@@ -229,6 +240,7 @@ function CatalogueRow({ poolId, entry, full, loading }: { poolId: string; entry:
         <a href={href} className="dm-mkt-pool dm-mkt-name" title="Listed on Uniswap. Pool figures are unavailable.">
           <PoolCatalogueIdentity entry={entry} />
         </a>
+        {pinned && <PinnedChip />}
       </Td>
       <Td numeric col="wide">
         {loading ? <span className="dm-mkt-bubbles">{bubble('dm-mkt-bubble--price')}{bubble('dm-mkt-bubble--unit')}</span> : <FigureDash reason="Price unavailable" />}
@@ -293,7 +305,12 @@ export function MarketsTable({
   useQuietRecovery(provider, !diagnostics)
   const result = shownResult(state)
   const markets = result?.markets ?? []
-  const listings = poolListings(markets, includeCatalogue && __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge')
+  // The list on screen (lib/read/featuredSource.ts): the featured list with its title, or the embedded one with today's.
+  const featured = useFeatured()
+  const listed = includeCatalogue && __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge'
+  const listings = poolListings(markets, listed ? featured.entries : null)
+  const ranked = listed && featured.source === 'server'
+  const title = featuredTitle(listed ? featured.source : 'bundled')
   const matches = full && filter ? listings.filter((listing) => matchesFilter(listing, filter)) : listings
   const now = useNow(markets.length > 0)
   // The pool whose figures are open, held by key rather than by value: the
@@ -359,11 +376,15 @@ export function MarketsTable({
   const said = marketsStatus(state)
   const status = diagnostics ? <ReadStatus status={said} onRetry={retry} /> : <ReadStatus status={said} quiet />
 
+  // The method line under the criterion title (§11.7, option B): the answer's own rules and time, no link.
+  const method = !full && ranked && featured.method ? <p className="dm-mkt-method" data-featured-method="">{featured.method}</p> : null
+
   const table = (
     <TableShell
-      label="Selected pools"
+      label={title}
       className="dm-mkt-table"
-      title={full ? undefined : 'Selected pools'}
+      title={full ? undefined : title}
+      data={{ 'featured-source': listed ? featured.source : 'bundled', ...(nothingMatches ? { 'filter-empty': '' } : {}) }}
       titleRef={full ? undefined : heading}
       action={
         full ? undefined : (
@@ -383,6 +404,7 @@ export function MarketsTable({
       status={
         full ? undefined : (
           <>
+            {method}
             {notice}
             {status}
           </>
@@ -390,8 +412,7 @@ export function MarketsTable({
       }
       rowHeight={64}
       surface="flat"
-      // With no rows to scroll, the token search's list may open past the card's edge (markets.css).
-      data={nothingMatches ? { 'filter-empty': '' } : undefined}
+      // With no rows to scroll, the token search's list may open past the card's edge (markets.css): `filter-empty` above.
     >
       <thead>
         <tr>
@@ -416,11 +437,11 @@ export function MarketsTable({
       </thead>
       {matchCount > 0 && (
         <tbody key={filtering} className={full ? 'animate-fade' : undefined}>
-          {matches.map(({ poolId, market, catalogue }) =>
+          {matches.map(({ poolId, market, catalogue, token }) =>
             market ? (
-              <Row key={poolId} m={market} now={now} full={full} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken} />
+              <Row key={poolId} m={market} now={now} full={full} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken ?? token} pinned={ranked && catalogue?.pinned === true} />
             ) : catalogue ? (
-              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} loading={state.phase === 'loading'} />
+              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} loading={state.phase === 'loading'} token={token} pinned={ranked && catalogue.pinned === true} />
             ) : null,
           )}
         </tbody>

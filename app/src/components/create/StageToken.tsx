@@ -26,8 +26,10 @@ export type PreselectStatus =
   /** The linked pool is verified, but Domino cannot open a position in it (hooks, or a dynamic fee): nothing is preselected. */
   | { kind: 'unsupported'; reason: 'hooks' | 'dynamic' }
   | { kind: 'failed'; line: StatusLine }
+  /** The featured list withdrew the linked pool by a safety rule (featured pools v1 §11.5): refused, never verified or preselected. */
+  | { kind: 'withdrawn' }
 
-/** What a screen reader hears about the link; nothing of it is a panel on screen. */
+/** What a screen reader hears about the link; nothing of it is a panel on screen but the withdrawn pool's line. */
 function preselectWords(status: PreselectStatus): string {
   switch (status.kind) {
     case 'none':
@@ -44,6 +46,8 @@ function preselectWords(status: PreselectStatus): string {
       return `${CREATE.token.preselectHeading}: ${status.reason === 'dynamic' ? CREATE.pool.unsupportedDynamic : CREATE.pool.unsupportedHooks}`
     case 'failed':
       return `${CREATE.token.preselectHeading}: ${status.line.title}.`
+    case 'withdrawn':
+      return `${CREATE.token.preselectHeading}: ${CREATE.token.preselectWithdrawn}`
     default:
       return status satisfies never
   }
@@ -123,6 +127,12 @@ export function StageToken({
       <p role="status" aria-live="polite" className="sr-only">
         {preselectWords(preselect)}
       </p>
+      {/* The one link outcome said on screen: a short plain line, and the step stays open for another pool. */}
+      {preselect.kind === 'withdrawn' && !state.pool && (
+        <p className="text-caption text-fg-muted" data-preselect-withdrawn="" aria-hidden="true">
+          {CREATE.token.preselectWithdrawn}
+        </p>
+      )}
       {checking ? (
         // The shape of what a verified link brings: the chosen-pool panel, then the deposit
         // choice, because a link carries a pool and no token. Both are direct children of

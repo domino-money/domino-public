@@ -5,7 +5,8 @@ import { IconChevronLeft } from '../components/icons'
 import { PoolWorkspace } from '../components/read/screens/PoolWorkspace'
 import { TokenMarkPair } from '../components/TokenIcon'
 import { EmptyState, LinkButton, Skeleton, Stat, StatStrip } from '../components/ui'
-import { SELECTED_POOL_CATALOGUE, SELECTED_POOLS_COMMON_TOKEN, inPoolOrder, type PoolCatalogueEntry } from '../config/selectedPoolCatalogue'
+import { SELECTED_POOL_CATALOGUE, entryToken, inPoolOrder, type PoolCatalogueEntry } from '../config/selectedPoolCatalogue'
+import { useFeatured } from '../lib/read/featuredSource'
 import { verifyCandidate } from '../lib/read/screens/catalogueSession'
 import { overviewPoolOption } from '../lib/read/publicOverview'
 import { failureText } from '../lib/read/screens/copy'
@@ -140,10 +141,14 @@ export function PoolDetail({ poolId }: { poolId: string }) {
   const source = useReadSource()
   const linked = parsePoolHash(useHash())
   const id = POOL_ID.test(poolId) ? poolId.toLowerCase() : null
+  // The list on screen first (lib/read/featuredSource.ts), then the embedded list: a pool of either is named at once.
+  const featured = useFeatured()
   // Named in the pool's order, as the verified page will name it, so the heading keeps its order when it arrives.
-  const listed = id ? SELECTED_POOL_CATALOGUE.find((item) => item.poolId === id) : undefined
+  const listed = id ? (featured.entries.find((item) => item.poolId === id) ?? SELECTED_POOL_CATALOGUE.find((item) => item.poolId === id)) : undefined
   const entry = listed && inPoolOrder(listed)
-  const tokenInput = entry ? parseAddressInput(SELECTED_POOLS_COMMON_TOKEN) : linked.token ? parseAddressInput(linked.token) : null
+  // Verified against a token the list names for it (USDG where it holds it), else the one the link names.
+  const listedToken = entry ? entryToken(entry) : null
+  const tokenInput = listedToken ? parseAddressInput(listedToken) : linked.token ? parseAddressInput(linked.token) : null
   const tokenKey = tokenInput?.ok ? tokenInput.key : null
   const key = id && tokenKey ? `${id}:${tokenKey}` : null
   const [state, setState] = useState<{ key: string; resolution: Resolution } | null>(null)
@@ -224,12 +229,14 @@ export function PoolDetail({ poolId }: { poolId: string }) {
       </div>
     )
   } else if (!tokenKey) {
+    // Today's words while the embedded list is on screen, so the site reads as before until the list is served
+    // (2026-09-26, featured pools v1 §11.7; kept after review).
     body = (
       <div className="dm-card animate-rise">
         <h1 className="sr-only">Pool</h1>
         <EmptyState
           title="Open this pool from Markets"
-          body={<>Pool <span className="font-mono" title={id}>{shortAddress(id)}</span> is not one of the selected six, and this link names no token to verify it with. Search one of its tokens on Markets and open the pool from there: every pool page starts from a verified read.</>}
+          body={<>Pool <span className="font-mono" title={id}>{shortAddress(id)}</span> is not one of the {featured.source === 'bundled' ? 'selected six' : 'selected pools'}, and this link names no token to verify it with. Search one of its tokens on Markets and open the pool from there: every pool page starts from a verified read.</>}
           action={<LinkButton href={exploreHref()} variant="outline">Go to Markets</LinkButton>}
         />
       </div>

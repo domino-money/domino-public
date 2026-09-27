@@ -93,8 +93,14 @@ test('a token outside the selected list opens from one stored overview and pool 
   await context.close()
 })
 
-/** POST arrivals at the edge within the gateway's per-client budget (backend ClientBudgets: a burst of five, 30 a minute). */
-function assertWithinBudget(posts) {
+/**
+ * POST arrivals at the edge within the gateway's per-client budget (backend ClientBudgets: a burst of five, 30 a minute).
+ * Changed on purpose (2026-09-26, after review): the featured list's POST is answered at the edge, never by the gateway
+ * (here the Worker's own route_not_available; once on, the Pages Function's cache, featured pools v1 §10.6), so the page
+ * spends none of its budget on it (scheduler.ts EDGE_ANSWERED) and it is not counted here.
+ */
+function assertWithinBudget(allPosts) {
+  const posts = allPosts.filter(post => post.path !== '/api/read/v5/featured-pools')
   let tokens = 5
   for (let i = 0; i < posts.length; i++) {
     if (i > 0) tokens = Math.min(5, tokens + (posts[i].at - posts[i - 1].at) / 2000)
@@ -162,7 +168,13 @@ test('Markets on the deployable build: all six cards draw a real chart within se
 
     const posts = edge.filter(read => read.method === 'POST')
     assert.equal(posts.filter(read => read.path.startsWith('/api/read/v1/')).length, 0, 'no provider read: no read-v1 pool-market, nothing else of read-v1')
-    assert.deepEqual(posts.map(read => read.path), ['/api/read/v3/overview', ...SELECTED.map(() => '/api/read/v3/history')], 'the table’s one overview, then one history read per card')
+    // Changed on purpose (2026-09-26, featured pools v1 §11.1): the featured list's one POST comes first; this Worker
+    // has no read-v5, so the page keeps the embedded six and its title.
+    assert.deepEqual(posts.map(read => read.path), ['/api/read/v5/featured-pools', '/api/read/v3/overview', ...SELECTED.map(() => '/api/read/v3/history')], 'the list, the table’s one overview, then one history read per card')
+    // Added 2026-09-26 after review: the list's POST spends none of the tab's budget, so the six cards' history reads
+    // go when they did before it: the last about 4.5 s after the table's overview (measured 4.50 s), not 6.5 s.
+    const overviewAt = posts[1].at, lastHistoryAt = posts.at(-1).at
+    assert.ok(lastHistoryAt - overviewAt < 5500, `the last card's history read went ${lastHistoryAt - overviewAt} ms after the overview: ${posts.map(post => post.at - posts[0].at).join(', ')} ms`)
     // Changed 2026-09-25 (r4/metrics): stored reads are no longer held 1.1 s apart, a rule of the gateway's provider
     // lane its stored lane does not have (scheduler.ts). They keep the gateway's per-client budget, counted here as
     // the gateway counts it, at arrival: a burst of five, then one every two seconds.
@@ -311,7 +323,8 @@ test('Home, its ticker, Markets and its cards show one set of figures for the si
     assert.doesNotMatch(await page.locator('main').innerText(), /Unavailable/)
 
     const posts = edge.filter(read => read.method === 'POST')
-    assert.deepEqual(posts.map(read => read.path), ['/api/read/v3/overview', '/api/read/v3/overview', ...SELECTED.map(() => '/api/read/v3/history')], 'the table’s overview and its one catch-up, then the cards; no provider read')
+    // Changed on purpose (2026-09-26): the featured list is read once, first; a catch-up seconds later reads the markets alone.
+    assert.deepEqual(posts.map(read => read.path), ['/api/read/v5/featured-pools', '/api/read/v3/overview', '/api/read/v3/overview', ...SELECTED.map(() => '/api/read/v3/history')], 'the list, the table’s overview and its one catch-up, then the cards; no provider read')
     assertWithinBudget(posts)
 
     // Added after review, 2026-09-25: a later visit meets a store whose collection of those two failed (backed off
@@ -328,7 +341,7 @@ test('Home, its ticker, Markets and its cards show one set of figures for the si
     const failedTicker = await tickerApr()
     for (const poolId of behind) assert.equal(failedTicker[poolId].state, 'unavailable', `the ticker for ${poolId}`)
     await new Promise(resolve => setTimeout(resolve, 8000))
-    assert.deepEqual(edge.slice(visit).filter(read => read.method === 'POST').map(read => read.path), ['/api/read/v3/overview'], 'one overview for the visit, no catch-up')
+    assert.deepEqual(edge.slice(visit).filter(read => read.method === 'POST').map(read => read.path), ['/api/read/v5/featured-pools', '/api/read/v3/overview'], 'the list and one overview for the visit, no catch-up')
     assert.equal(await page.locator('#pools [data-metric="pending"], #pools [data-apr-estimate="pending"]').count(), 0)
     assert.deepEqual(errors, [])
   } finally {

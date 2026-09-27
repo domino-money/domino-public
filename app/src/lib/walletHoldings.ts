@@ -21,9 +21,11 @@
  * Two holdings that still read alike are marked `twin`, so the card can name
  * each by its address, quietly. Exact bigint arithmetic; pure and Node-safe.
  */
+import { MAIN_TOKENS } from '../config/mainTokens'
 import { catalogueTokens } from '../config/selectedPoolCatalogue'
 import type { WalletRow } from './read/pagers'
 import { parseScaled } from './format/decimal'
+import { symbolReading } from './symbolReading'
 import { PRICE_BATCH } from './tokenArtwork'
 import { NATIVE, USDG, USDG_QUOTE, WETH, type TokenQuote } from './walletPrices'
 
@@ -53,31 +55,16 @@ export type HoldingsView =
     }
   | { mode: 'amounts'; shown: Holding[] }
 
-// Letters that only look Latin (Cyrillic and Greek capitals), and digits that pass for letters, as the Latin letter they imitate.
-const LOOKS: Readonly<Record<string, string>> = {
-  // Cyrillic
-  '\u0410': 'A', '\u0412': 'B', '\u0415': 'E', '\u041A': 'K', '\u041C': 'M', '\u041D': 'H', '\u041E': 'O', '\u0420': 'P', '\u0421': 'C', '\u0422': 'T', '\u0425': 'X', '\u0423': 'Y', '\u0406': 'I', '\u0405': 'S',
-  // Greek
-  '\u0391': 'A', '\u0392': 'B', '\u0395': 'E', '\u0396': 'Z', '\u0397': 'H', '\u0399': 'I', '\u039A': 'K', '\u039C': 'M', '\u039D': 'N', '\u039F': 'O', '\u03A1': 'P', '\u03A4': 'T', '\u03A5': 'Y', '\u03A7': 'X',
-  // Digits and signs
-  '0': 'O', '1': 'I', L: 'I', '|': 'I', '5': 'S', '$': 'S',
-}
+export { symbolReading }
 
 /**
- * A symbol as it reads: compatibility forms and precomposed letters taken
- * apart (NFKD), invisible and combining marks and spaces dropped, upper case,
- * look-alike letters and digits mapped. "PONS" with a zero-width space inside
- * it, "P0NS", "ÜSDG" and "USDĢ" read "PONS" and "USDG".
+ * The main tokens by how their symbol reads, each bound to its one address: the embedded selected pools' tokens,
+ * then native ETH, WETH and USDG from config/mainTokens.ts, which come last so no label can re-point them. Only the
+ * embedded list (config/selectedPoolCatalogue.ts): a daily featured list never adds to this (2026-09-26).
  */
-export function symbolReading(symbol: string): string {
-  const plain = symbol.normalize('NFKD').replace(/[\p{Cf}\p{Mn}\p{Me}\p{Z}\s]/gu, '').toUpperCase()
-  return [...plain].map((ch) => LOOKS[ch] ?? ch).join('')
-}
-
-/** The main tokens by how their symbol reads: native ETH, WETH and the selected pools' tokens, each bound to its one address. */
 const MAIN_BY_READING: ReadonlyMap<string, string> = new Map([
-  [symbolReading('ETH'), NATIVE],
   ...catalogueTokens().map((token) => [symbolReading(token.label), token.address] as const),
+  ...MAIN_TOKENS.map((token) => [symbolReading(token.symbol), token.address] as const),
 ])
 
 /** A token whose symbol reads as a main token's but lives at another address. */

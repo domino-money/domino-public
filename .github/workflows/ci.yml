@@ -106,6 +106,8 @@ jobs:
         run: |
           node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v3/types.ts api-contracts/read-v3/runtime.d.mts api-contracts/read-v3/consumer.typecheck.mts
           node --test api-contracts/read-v3/consumer.test.mjs
+      - name: Check featured pools list types
+        run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v5/runtime.d.mts
       - name: Check shared session types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/session-v1/types.ts api-contracts/session-v1/runtime.d.mts
       - name: Check shared onboarding types

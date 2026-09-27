@@ -12,7 +12,9 @@
 import { CAPABILITIES } from '../../capabilities'
 import * as estimateRuntime from 'api-contracts/read-v2/runtime.mjs'
 import * as publicRuntime from 'api-contracts/read-v3/runtime.mjs'
+import * as featuredRuntime from 'api-contracts/read-v5/runtime.mjs'
 import { createEstimateSource } from '../estimateSource'
+import { createFeaturedReadSource } from '../featuredList'
 import { createPublicSource } from '../publicSource'
 import { READ_RUNTIME } from '../contract'
 import { createScheduledSource } from '../scheduler'
@@ -25,7 +27,8 @@ export const BRIDGE_SPACING_MS = __DOMINO_LOCAL_LIVE__ ? 10_100 : 1100
 
 export function createAppBridgeSource(): ReadSource {
   const options = { enabled: CAPABILITIES.liveReadsBuilt, validators: READ_RUNTIME }
-  const source = createPublicSource(createEstimateSource(options, estimateRuntime), options, publicRuntime)
+  // read-v5's featured pools list rides the same queue and budget as every other read (featuredList.ts).
+  const source = createFeaturedReadSource(createPublicSource(createEstimateSource(options, estimateRuntime), options, publicRuntime), options, featuredRuntime)
   return createPublicMetadataCache(createScheduledSource(source, { minIntervalMs: BRIDGE_SPACING_MS, unspacedStored: !__DOMINO_LOCAL_LIVE__ }))
 }
 

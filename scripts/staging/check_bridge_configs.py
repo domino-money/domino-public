@@ -62,7 +62,8 @@ def validate(service, config):
             **({"ENABLED_READS": "", "READ_V2_BRIDGE_ENABLED": "false",
                 "ENABLED_V2_READS": "", "READ_V3_BRIDGE_ENABLED": "false",
                 "ENABLED_V3_READS": "", "READ_V4_BRIDGE_ENABLED": "false",
-                "ENABLED_V4_READS": ""} if service == "read" else {}),
+                "ENABLED_V4_READS": "", "READ_V5_BRIDGE_ENABLED": "false",
+                "ENABLED_V5_READS": ""} if service == "read" else {}),
         },
     }
     if service == "setup":

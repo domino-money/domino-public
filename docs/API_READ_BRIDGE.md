@@ -206,7 +206,12 @@ No automatic bridge retry. Provider outages must not spawn backfills, duplicate
 work or unbounded pending tasks. If the authoritative limiter or gateway is
 unavailable, return 503 rather than bypassing controls.
 
-Do not add CDN, BFF or whole-response stale caching initially. Keep PR #10's
+Do not add CDN, BFF or whole-response stale caching initially. (One exception,
+2026-09-26, featured-pools v1 §10.6: the featured pools list, read-v5, is the
+same for every visitor and changes once a day, so its Pages Function,
+`app/functions/api/read/v5/featured-pools.ts`, keeps a 200 that passes read-v5's
+runtime in the edge cache for 60 seconds; browsers still get `no-store`.)
+Keep PR #10's
 bounded market-observation cache: fresh for 60 seconds, stale fallback up to
 300 seconds of age since its original successful retrieval, and a 15-second
 error cooldown. Fresh means age <60 seconds; after refresh failure, stale data

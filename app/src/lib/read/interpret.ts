@@ -94,6 +94,7 @@ export function answersRequest<R extends ReadKey>(route: R, request: RequestOf<R
     case 'overview':
     case 'history':
     case 'search':
+    case 'featured-pools':
       return false
     case 'token': {
       const q = request as unknown as ReadRequests['token']
@@ -205,6 +206,11 @@ export function observe<R extends ReadKey>(route: R, data: ReadResponses[R]): Ob
       return { block: (data as ReadResponses['history']).snapshot, providers: [] }
     case 'search':
       return { block: null, providers: [] }
+    case 'featured-pools': {
+      // One list the same for everyone, dated by the server's own times (lib/read/featuredList.ts): no block, no provider.
+      const revision = (data as ReadResponses['featured-pools']).revision
+      return revision === null ? { block: null, providers: [] } : { block: null, revision, providers: [] }
+    }
     case 'token': {
       const d = data as ReadResponses['token']
       return { block: d.snapshot, providers: [] }

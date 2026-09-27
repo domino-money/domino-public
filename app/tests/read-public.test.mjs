@@ -288,7 +288,8 @@ const historyOf = (i) => ({ poolId: `0x${(i + 1).toString(16).padStart(64, '0')}
 const tokenOf = (i) => ({ token: `0x${(i + 1).toString(16).padStart(40, '0')}` });
 
 test('stored reads skip the provider lane’s 1.1 s and wait for the tab’s budget alone; provider-lane reads keep 1.1 s among themselves', async () => {
-  assert.deepEqual([...STORED_LANE].sort(), ['history', 'overview', 'search'], 'read-v3’s routes: the gateway’s stored lane, four slots and no start interval');
+  // Changed on purpose (2026-09-26, featured pools v1 §11.1): read-v5's featured list is a stored read on the same lane.
+  assert.deepEqual([...STORED_LANE].sort(), ['featured-pools', 'history', 'overview', 'search'], 'the stored routes: the gateway’s stored lane, four slots and no start interval');
 
   // Markets opening: the table’s overview, then the six cards’ histories, then two provider-lane reads.
   const clock = instantClock();

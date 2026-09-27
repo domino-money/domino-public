@@ -6,7 +6,7 @@
  * amounts; a value is a decimal string with 18 fraction digits (PRICE_SCALE),
  * and only the screens round it, for display. Pure and Node-safe.
  */
-import { SELECTED_POOLS_COMMON_TOKEN } from '../../../config/selectedPoolCatalogue'
+import { USDG } from '../../../config/mainTokens'
 import { shortAmount } from '../../../lib/format/amount'
 import { group, scaledText } from '../../../lib/format/decimal'
 import { PRICE_SCALE, valueIn } from '../../../lib/format/price'
@@ -30,7 +30,7 @@ export interface Basis {
   symbol: string | null
 }
 
-export const isUsdg = (address: string) => address.toLowerCase() === SELECTED_POOLS_COMMON_TOKEN
+export const isUsdg = (address: string) => address.toLowerCase() === USDG
 
 /** USDG's side of a pair, or null when neither currency is USDG. */
 export function usdgSide(currencies: readonly [{ address: string }, { address: string }]): 0 | 1 | null {

@@ -5,7 +5,9 @@ import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { TokenMarkPair } from './TokenIcon'
 import { PoolAprEstimate } from './read/screens/PoolAprEstimate'
 import { useNow } from '../lib/read/useNow'
+import { useFeatured } from '../lib/read/featuredSource'
 import { poolListings } from '../config/selectedPoolCatalogue'
+import { poolHref } from './explore/routes'
 import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
 
 /** The strip's words for an APR it has no figure for: the same for a pool not read yet and a read pool without an estimate. */
@@ -90,13 +92,17 @@ export function Ticker() {
   const result = shownResult(state)
   const markets = result?.markets ?? []
   const now = useNow(markets.length > 0)
-  const listings = poolListings(markets, __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge')
+  // The list on screen (lib/read/featuredSource.ts): the featured list, or the embedded one.
+  const featured = useFeatured()
+  const listings = poolListings(markets, __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge' ? featured.entries : null)
 
-  // Each item opens its pool page, by PoolId. The divider between items is a
-  // pseudo-element, so the strip's children stay exactly the items. The
-  // seamless second copy takes its links out of the tab order.
-  const render = (copy: boolean) => listings.map(({ poolId, market: m, catalogue }) => m ? (
-    <a href={`#/pool/${m.poolId}`} key={m.key} tabIndex={copy ? -1 : undefined} className="dm-ticker-item">
+  // Each item opens its pool page, by PoolId and the token to verify it with
+  // (`#/pool/<id>/<token>`), so a link still opens once the pool has left the
+  // list. The divider between items is a pseudo-element, so the strip's
+  // children stay exactly the items. The seamless second copy takes its links
+  // out of the tab order.
+  const render = (copy: boolean) => listings.map(({ poolId, market: m, catalogue, token }) => m ? (
+    <a href={poolHref(m.poolId, token)} key={m.key} tabIndex={copy ? -1 : undefined} className="dm-ticker-item">
       <TokenMarkPair base={m.tokens.base} quote={m.tokens.quote} size={16} ring="var(--bg)" />
       <span className="dm-ticker-pair">
         <PoolTokenLabel token={m.tokens.base} />/<PoolTokenLabel token={m.tokens.quote} />
@@ -104,7 +110,7 @@ export function Ticker() {
       <span className="tnum">{feeLabel(m)}</span>
       {historicalApr(m.feeAprPercent) ? <Apr metric={m.feeAprPercent} /> : <EstimateApr observation={m.feeAprEstimate} now={now} pending={m.figuresPending === true} />}
     </a>
-  ) : catalogue ? <a href={`#/pool/${poolId}`} key={poolId} tabIndex={copy ? -1 : undefined} className="dm-ticker-item" data-pool-catalogue={poolId}>
+  ) : catalogue ? <a href={poolHref(poolId, token)} key={poolId} tabIndex={copy ? -1 : undefined} className="dm-ticker-item" data-pool-catalogue={poolId}>
     <PoolCatalogueIdentity entry={catalogue} compact />
     <span className="tnum whitespace-nowrap text-fg-subtle" title="Pool figures are unavailable, so there is no estimated APR.">{NO_APR}</span>
   </a> : null)

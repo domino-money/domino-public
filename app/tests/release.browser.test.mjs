@@ -297,7 +297,15 @@ async function settled(page) {
 /** Waits until the landing's status is `code`, whatever it passes through on the way. */
 const statusIs = (page, code) =>
   page.waitForFunction((wanted) => document.querySelector('#pools [data-read-status]')?.getAttribute('data-read-status') === wanted, code, { timeout: 30_000 });
-const wire = () => reads.map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '').replace('/api/read/v2/', 'v2 ').replace('/api/read/v3/', 'v3 ')}`);
+/**
+ * The markets' reads, in order. Changed on purpose (2026-09-26, featured pools v1 §11.1): the page's featured list
+ * POST (read-v5), asked before them, is left out here and checked on its own (`listReads`, tests (r) to (u)); the
+ * stub answers it route_not_available under another contract, so every test above keeps the embedded list.
+ */
+const FEATURED_PATH = '/api/read/v5/featured-pools';
+const wire = () => reads.filter((r) => r.path !== FEATURED_PATH).map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '').replace('/api/read/v2/', 'v2 ').replace('/api/read/v3/', 'v3 ')}`);
+/** The featured list's reads, and where each stood among all the page's reads. */
+const listReads = () => reads.flatMap((r, index) => (r.path === FEATURED_PATH ? [{ index, method: r.method, body: r.body }] : []));
 
 /**
  * Home asks a read service that was only busy again on its own, the one read
@@ -745,7 +753,7 @@ test('(l) #93 per row: a 429 that outlasts R-1 on one pool leaves the other pool
     assert.ok(attempts >= 1 && attempts <= 3, `the busy pool is asked at most three times under R-1 (${wire()})`);
     // Every other read in its place: each row's tokens right after its market read, the busy pool reading none.
     assert.deepEqual(
-      reads.filter((r) => !busyPool(r)).map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '').replace('/api/read/v2/', 'v2 ').replace('/api/read/v3/', 'v3 ')}`),
+      reads.filter((r) => !busyPool(r) && r.path !== FEATURED_PATH).map((r) => `${r.method} ${r.path.replace('/api/read/v1/', '').replace('/api/read/v2/', 'v2 ').replace('/api/read/v3/', 'v3 ')}`),
       ['GET v3 capabilities', 'GET capabilities', 'GET v2 capabilities', ...loadWire([SELECTED[1]]).filter((line, index) => !(line === 'POST pool-market' && index === 3))],
     );
     const rows = liveRows(page);
@@ -758,6 +766,8 @@ test('(l) #93 per row: a 429 that outlasts R-1 on one pool leaves the other pool
     // Busy was all that went wrong, and Home has no Retry, so Home asks again on its own: not before the
     // service's wait and 4 s (within ±25%) have passed, and only the read that was busy. The busy pool's row comes.
     const first = reads.length;
+    // The markets' own reads so far (wire() leaves the featured list's out).
+    const firstWire = wire().length;
     busy = false;
     await page.waitForFunction(
       () => document.querySelector('#pools [data-read-status]')?.getAttribute('data-read-status') === 'none' && document.querySelectorAll('#pools tbody tr[data-pool-catalogue]').length === 0,
@@ -765,14 +775,14 @@ test('(l) #93 per row: a 429 that outlasts R-1 on one pool leaves the other pool
       { timeout: 30_000 },
     );
     // The capabilities answer and every token's metadata were read on the first load and are kept for the page.
-    assert.deepEqual(wire().slice(first), ['POST pool-market'], 'asked again once, on its own: that pool’s market read alone, with the capabilities and token answers kept');
+    assert.deepEqual(wire().slice(firstWire), ['POST pool-market'], 'asked again once, on its own: that pool’s market read alone, with the capabilities and token answers kept');
     assert.deepEqual(reads[first].body, { poolId: SELECTED[1], includePriceHistory: false });
     assert.ok(reads[first].at - loadEnded >= EARLIEST_BUSY_RECOVERY_MS - 100, `asked again ${reads[first].at - loadEnded} ms after the busy answer, before its wait had passed`);
     assert.equal(await liveRows(page).count(), 6);
     assert.equal((await rowView(liveRows(page).nth(1))).pair, 'TKY/TKZ', 'the row that came back is named from the kept token metadata');
     await saidQuietly(page, 'none', '');
     await page.waitForTimeout(PAST_BUSY_RECOVERY_MS);
-    assert.deepEqual(wire().slice(first), ['POST pool-market'], 'and nothing more once every pool has its row');
+    assert.deepEqual(wire().slice(firstWire), ['POST pool-market'], 'and nothing more once every pool has its row');
   } finally {
     await closeContext(context);
   }
@@ -948,6 +958,107 @@ test('(q) the rows complete one by one: a price waits quietly while its row’s 
     const settledPrices = await liveRows(page).evaluateAll((trs) => trs.map((tr) => tr.querySelector('[data-pool-price]').getAttribute('data-pool-price')));
     assert.deepEqual(settledPrices, SELECTED.map(() => 'usable'));
     assert.equal(await page.locator('#pools [data-pool-price="loading"]').count(), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    await closeContext(context);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The featured pools list (read-v5, featured pools v1 §11, added 2026-09-26), served and not. The deployable build
+// reads it first, as one POST of {}, then the markets of the pools it names. Served and current: its pools in its
+// order, "Top pools · last 24h", the method line and a Pinned chip. Not served: the embedded six under "Selected
+// pools", exactly as before. A pool it withdrew is refused on New position when a link opens it.
+// ---------------------------------------------------------------------------
+
+const V5 = '1.0.0-rc.1';
+const LIST = JSON.parse(readFileSync(new URL('../../api-contracts/read-v5/fixtures/valid/current.json', import.meta.url), 'utf8'));
+const SYMBOL_OF = { [NATIVE]: 'ETH', ...SYMBOLS };
+/** A featured pool for one of the stub's pools: the key its pool-market read has (3000 pips, spacing 60, no hooks). */
+function listed(poolId, slot, pinned) {
+  const [currency0, currency1] = PAIRS[poolId];
+  const base = JSON.parse(JSON.stringify(LIST.pools[pinned ? 0 : 1]));
+  return {
+    ...base, slot, poolId,
+    poolKey: { currency0, currency1, feeMode: 'fixed', fee_pips: 3000, hooks: NATIVE, tick_spacing: 60 },
+    tokens: [currency0, currency1].map((address) => ({ address, decimals: 18, symbol: SYMBOL_OF[address] })),
+  };
+}
+/** The list served now: SELECTED[5] pinned, then SELECTED[0], an order the reviewed list does not have. */
+const SERVED = [SELECTED[5], SELECTED[0]];
+const servedList = (patch = {}) => ({ ...JSON.parse(JSON.stringify(LIST)), pools: [listed(SERVED[0], 1, true), listed(SERVED[1], 2, false)], withdrawn: [], ...patch });
+const v5 = (status, body) => json(status, body, { 'X-Domino-Read-Contract': V5 });
+const withList = (answer, options = {}) => bridgeStub({ ...options, reply: (route, body) => (route === FEATURED_PATH ? answer() : options.reply?.(route, body)) });
+const SERVED_LINKS = [`#/pool/${SERVED[0]}/${TOKEN_Z}`, `#/pool/${SERVED[1]}/${TOKEN_Y}`];
+
+test('(r) a list served and current: its pools in its order, read first, under "Top pools · last 24h" with the method line and a Pinned chip; links name the pool and a token', async () => {
+  const { context, page, errors } = await visit(withList(() => v5(200, servedList())));
+  try {
+    assert.equal(await settled(page), 'none');
+    assert.deepEqual(listReads(), [{ index: 0, method: 'POST', body: {} }], 'the list is the page’s first read, one POST of {}');
+    assert.deepEqual(reads.filter((r) => r.path.endsWith('/pool-market')).map((r) => r.body.poolId), SERVED, 'then the markets of its pools, in its order');
+    assert.equal(await page.locator('#pools [data-featured-source]').getAttribute('data-featured-source'), 'server');
+    assert.equal(await page.locator('#pools h2').first().innerText(), 'Top pools · last 24h');
+    assert.equal(await page.locator('#pools [data-featured-method]').innerText(), 'Ranked daily at 12:00 UTC by estimated 24h fee APR among pools with no hooks, a fixed fee, at least $250K 24h volume and $250K liquidity. Order is set at selection; figures update live. Not a recommendation.');
+    const rows = liveRows(page);
+    assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SERVED_LINKS);
+    assert.equal(await catalogueRows(page).count(), 0);
+    assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('[data-pinned]')?.textContent ?? null)), ['Pinned', null], 'the pinned pool says so, in words');
+    assert.deepEqual(await page.locator('.dm-marquee > a:not([data-pool-catalogue])').evaluateAll((as) => as.map((a) => a.getAttribute('href'))), SERVED_LINKS, 'the ticker shows the same list');
+    assert.deepEqual(errors, []);
+  } finally {
+    await closeContext(context);
+  }
+});
+
+test('(s) the list off (route_not_available), none, older than 72 h or invalid: the embedded six under "Selected pools", nothing else changed', async () => {
+  for (const [label, answer] of [
+    ['route_not_available', () => v5(404, { error: 'route_not_available' })],
+    ['none', () => v5(200, JSON.parse(readFileSync(new URL('../../api-contracts/read-v5/fixtures/valid/none.json', import.meta.url), 'utf8')))],
+    ['older than 72 h', () => v5(200, servedList({ servedAt: LIST.generatedAt + 72 * 3600 + 1 }))],
+    ['invalid', () => v5(200, { ...servedList(), extra: true })],
+  ]) {
+    const { context, page, errors } = await visit(withList(answer));
+    try {
+      assert.equal(await settled(page), 'none', label);
+      assert.equal(listReads().length, 1, `${label}: one list read`);
+      assert.equal(await page.locator('#pools [data-featured-source]').getAttribute('data-featured-source'), 'bundled', label);
+      assert.equal(await page.locator('#pools h2').first().innerText(), 'Selected pools', label);
+      assert.deepEqual(reads.filter((r) => r.path.endsWith('/pool-market')).map((r) => r.body.poolId), SELECTED, `${label}: the embedded six are read`);
+      assert.equal(await liveRows(page).count(), 6, label);
+      assert.equal(await page.locator('[data-featured-method], [data-pinned]').count(), 0, `${label}: no method line, no Pinned chip`);
+      assert.deepEqual(errors, [], label);
+    } finally {
+      await closeContext(context);
+    }
+  }
+});
+
+test('(t) a stale list (validUntil passed, within 72 h) and a carried_over one keep their pools under the neutral title', async () => {
+  for (const [label, patch] of [['stale', { servedAt: LIST.validUntil + 60 }], ['carried_over', { status: 'carried_over' }]]) {
+    const { context, page } = await visit(withList(() => v5(200, servedList(patch))));
+    try {
+      assert.equal(await settled(page), 'none', label);
+      assert.equal(await page.locator('#pools [data-featured-source]').getAttribute('data-featured-source'), 'server_neutral', label);
+      assert.equal(await page.locator('#pools h2').first().innerText(), 'Selected pools', label);
+      assert.deepEqual(await liveRows(page).evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SERVED_LINKS, `${label}: the server’s pools`);
+      assert.equal(await page.locator('[data-featured-method], [data-pinned]').count(), 0, `${label}: no ranking claim`);
+    } finally {
+      await closeContext(context);
+    }
+  }
+});
+
+test('(u) New position refuses a pool the list withdrew, opened by a link, with the owner’s plain line, and verifies nothing', async () => {
+  const none = JSON.parse(readFileSync(new URL('../../api-contracts/read-v5/fixtures/valid/none-with-withdrawn.json', import.meta.url), 'utf8'));
+  none.withdrawn = [{ ...none.withdrawn[0], poolId: SELECTED[1] }];
+  const { context, page, errors } = await visit(withList(() => v5(200, none)));
+  try {
+    leaving(page);
+    await page.goto(`${origin}/#/new/${SELECTED[1]}`, { waitUntil: 'networkidle' });
+    await page.locator('[data-preselect="withdrawn"]').waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('[data-preselect-withdrawn]').innerText(), 'This pool was removed from the featured list for safety. Choose another pool.');
+    assert.equal(reads.filter((r) => r.path.endsWith('/pools')).length, 0, 'the withdrawn pool is never verified');
     assert.deepEqual(errors, []);
   } finally {
     await closeContext(context);

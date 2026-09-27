@@ -3009,9 +3009,11 @@ test('the six selected chain-4663 pools retain the original two and exclude stoc
   assert.deepEqual(code.match(/0x[0-9a-f]+/g), SELECTED_POOLS, 'nothing but pool ids');
 });
 
+// Changed on purpose (2026-09-26, featured pools v1 §11.1): poolListings takes the list on screen (the embedded list
+// here, lib/read/featuredSource.ts in the app) instead of a flag, and null where a screen lists read rows alone.
 test('the display catalogue has six immediate rows and no invented financial observations', () => {
   const { poolListings, SELECTED_POOL_CATALOGUE } = require('../.test-build/app/src/config/selectedPoolCatalogue.js');
-  const first = poolListings([], true);
+  const first = poolListings([], SELECTED_POOL_CATALOGUE);
   assert.equal(first.length, 6);
   assert.ok(first.every((row) => row.market === undefined));
   assert.ok(SELECTED_POOL_CATALOGUE.every((entry) => !/AAPL|SPY|GOOGL|NVDA|stock/i.test(entry.labels.join('/'))));
@@ -3020,16 +3022,19 @@ test('the display catalogue has six immediate rows and no invented financial obs
     if (entry.addresses) for (const address of entry.addresses) assert.match(address, /^0x[0-9a-f]{40}$/);
     assert.match(entry.sourceUrl, /^https:\/\/app\.uniswap\.org\/explore\/pools\/robinhood\/0x[0-9a-f]{64}$/);
   }
-  const observed = { poolId: first[2].poolId, tvlUsd: { value: '0', state: 'provider' } };
-  const merged = poolListings([observed], true);
+  // A read row names its tokens: its link names one of them (2026-09-26, `#/pool/<id>/<token>`).
+  const observed = { poolId: first[2].poolId, tvlUsd: { value: '0', state: 'provider' }, tokens: { base: { address: `0x${'cc'.repeat(20)}` }, quote: { address: `0x${'5f'.repeat(20)}` } } };
+  const merged = poolListings([observed], SELECTED_POOL_CATALOGUE);
   assert.equal(merged[2].market, observed);
+  assert.equal(merged[2].token, `0x${'cc'.repeat(20)}`);
+  assert.ok(first.every((row) => row.token === '0x5fc5360d0400a0fd4f2af552add042d716f1d168'), 'every embedded row links with USDG');
   assert.equal(merged.length, 6);
-  assert.deepEqual(poolListings([], false), [], 'fixtures and unconfigured readers do not get catalogue rows');
+  assert.deepEqual(poolListings([], null), [], 'fixtures and unconfigured readers do not get catalogue rows');
 });
 
 test('a catalogue row names its pair in the pool’s own order of currencies, so the name does not flip when its read lands', async () => {
   const { poolListings, inPoolOrder, catalogueTokenLabel, SELECTED_POOL_CATALOGUE } = require('../.test-build/app/src/config/selectedPoolCatalogue.js');
-  const rows = poolListings([], true);
+  const rows = poolListings([], SELECTED_POOL_CATALOGUE);
   assert.deepEqual(rows.map(({ catalogue }) => catalogue.labels.join('/')), ['WETH/USDG', 'USDG/MARLIN', 'USDG/cbBTC', 'USDG/U', 'ETH/USDG', 'PONS/USDG']);
   for (const { poolId, catalogue } of rows) {
     if (!catalogue.addresses) continue;

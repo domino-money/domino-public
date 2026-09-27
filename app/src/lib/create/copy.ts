@@ -53,6 +53,8 @@ export const CREATE = {
     preselectVerified: (block: number) => `Verified at block ${block}. Pick the token you deposit below.`,
     preselectNotFound: 'The linked pool id was not returned by the read service, so it is not preselected. Search for a token below to choose a pool.',
     preselectMalformed: 'The link does not carry a valid pool id, so nothing is preselected.',
+    // The owner's words (featured pools v1 §11.5): a pool the featured list withdrew by a safety rule, opened by a link.
+    preselectWithdrawn: 'This pool was removed from the featured list for safety. Choose another pool.',
     nativeNote: 'Native ETH is its own currency at address 0x0000…0000. Wrapped ETH is a separate contract at its own address. Their pools are different pools.',
   },
   pool: {

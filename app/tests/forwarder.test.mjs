@@ -66,11 +66,15 @@ const DISABLED = {
     READ_BRIDGE_ENABLED: 'false',
     READ_V2_BRIDGE_ENABLED: 'false',
     READ_V3_BRIDGE_ENABLED: 'false',
+    READ_V4_BRIDGE_ENABLED: 'false',
+    READ_V5_BRIDGE_ENABLED: 'false',
     APP_ORIGIN: 'https://domino.money',
     GATEWAY_ORIGIN: 'https://vm-read.domino.money',
     ENABLED_READS: '',
     ENABLED_V2_READS: '',
     ENABLED_V3_READS: '',
+    ENABLED_V4_READS: '',
+    ENABLED_V5_READS: '',
   },
   session: {
     SESSION_BRIDGE_ENABLED: 'false',
@@ -408,6 +412,11 @@ test('each family goes to its own binding and to no other', async () => {
   await pages(call('/api/read/v1/capabilities/'), env);
   await pages(call('/api/read/v4/sequence-snapshot', { method: 'POST', body: '{}' }), env);
   assert.equal(bound.read.calls.length, 4, 'V4 goes to the same read binding');
+  // 2026-09-26: read-v5, the featured pools list, too (its route file calls forward() as the catch-all does).
+  await pages(call('/api/read/v5/featured-pools', { method: 'POST', body: '{}' }), env);
+  await pages(call('/api/read/v5/capabilities'), env);
+  assert.equal(bound.read.calls.length, 6, 'V5 goes to the same read binding');
+  for (const other of FAMILIES.filter((family) => family !== 'read')) assert.equal(bound[other].calls.length, 0, other);
 });
 
 test("the stand-in routes /api as wrangler's bundle does: no path with an empty segment reaches functions/api/[[path]].ts", () => {
@@ -435,7 +444,10 @@ test('an /api path no family owns gets a JSON 404 from the forwarder, never inde
     '/api/x',
     '/api/read',
     '/api/read/v1',
-    '/api/read/v5/capabilities',
+    '/api/read/v6/capabilities',
+    '/api/read/v5',
+    '/api/read//v5/featured-pools',
+    '/api/read/v5//featured-pools',
     '/api/readx/v1/capabilities',
     '/api/sessions/v1/me',
     '/api/deposit/v1',
@@ -1243,6 +1255,41 @@ test('read-v3 uses the existing beta-gated binding and remains independently dis
   assert.equal(traced.handed[0]?.headers.get('Cookie'), null);
   assert.deepEqual(calls, ['read GET https://domino.money/api/read/v3/capabilities']);
   assert.deepEqual(upstream, []);
+});
+
+test('read-v5 uses the existing beta-gated binding and the committed config keeps it off', async () => {
+  const { env, calls } = workers();
+  const traced = tracedPages(call('/api/read/v5/featured-pools', {
+    method: 'POST', body: '{}', cookie: JAR, headers: { 'X-Domino-Read-Contract': '1.0.0-rc.1' },
+  }), env);
+  const response = await traced.response;
+  // route_not_available is what the app reads as "no served list": it keeps the embedded one.
+  assert.equal(response.status, 404);
+  assert.equal(response.headers.get('x-domino-read-contract'), '1.0.0-rc.1');
+  assert.deepEqual(await response.json(), { error: 'route_not_available' });
+  assert.equal(traced.handed[0]?.headers.get('Cookie'), null);
+  const capabilities = await (tracedPages(call('/api/read/v5/capabilities', { cookie: JAR }), env).response);
+  assert.equal((await capabilities.json()).dataMode, 'disabled');
+  assert.deepEqual(calls, ['read POST https://domino.money/api/read/v5/featured-pools', 'read GET https://domino.money/api/read/v5/capabilities']);
+  assert.deepEqual(upstream, []);
+});
+
+test('read-v5 forwarding keeps the empty request and its version, and removes cookies and credentials', async () => {
+  const { bound, env } = recorders();
+  const traced = tracedPages(call('/api/read/v5/featured-pools', {
+    method: 'POST', body: '{}', cookie: JAR,
+    headers: { 'X-Domino-Read-Contract': '1.0.0-rc.1', Authorization: 'Bearer forbidden',
+      'CF-Access-Client-Secret': 'forbidden', 'X-Domino-Client-Id': '192.0.2.99', 'X-Domino-CSRF': CSRF },
+  }), env);
+  assert.equal((await traced.response).status, 200);
+  const [seen] = bound.read.calls;
+  assert.equal(seen.url, `${ORIGIN}/api/read/v5/featured-pools`);
+  assert.equal(new TextDecoder().decode(seen.body), '{}');
+  assert.equal(seen.headers['x-domino-read-contract'], '1.0.0-rc.1');
+  assert.equal(seen.headers['cf-connecting-ip'], '203.0.113.9');
+  for (const name of ['cookie', 'authorization', 'cf-access-client-secret', 'x-domino-client-id', 'x-domino-csrf']) {
+    assert.equal(name in seen.headers, false, name);
+  }
 });
 
 test('read-v3 forwarding preserves selection and removes cookies and credentials', async () => {

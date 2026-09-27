@@ -414,6 +414,24 @@ names and figures come from validated reads, and its order is not a ranking.
 The ticker and the Selected pools table share one provider and one result
 set. There are no sample rows anywhere.
 
+**The featured pools list** (read-v5, `src/lib/read/featuredList.ts`, added
+2026-09-26). Before the markets, the deployable build asks the daily list once,
+`POST /api/read/v5/featured-pools` with `{}`, first in the queue and for 1.5 s
+at most, with no capabilities GET. The edge answers it, so it spends none of
+the tab's gateway budget. A current or repaired list the contract's runtime and
+the app's own checks accept (no hooks, a fixed fee, no token that reads as ETH,
+WETH or USDG on another contract, no symbol with the text of a web address,
+nothing in `FEATURED_DENY`) becomes the rows, under "Top pools · last 24h" with
+its method line (always "Ranked daily at 12:00 UTC") and a Pinned chip; a carried-over, manual or stale one (within 72 h, by the server's
+clock) keeps the neutral "Selected pools". Anything else (`none`,
+`route_not_available`, an error, an invalid answer, the 1.5 s passing) keeps
+the embedded list above, exactly as before the list existed. Every 60 s the
+list is read again: the same list changes nothing, pools that left it leave at
+once, `none` switches back to the embedded list at once, and new pools or a new
+order wait for a reload. `src/lib/read/featuredSource.ts` is the one place
+screens take the list from; the main tokens are frozen in
+`src/config/mainTokens.ts`, so no list can re-point USDG.
+
 **Read budget.** The read capabilities are asked first, with no POST and no
 place in the queue, and they decide which routes a load uses
 (`src/lib/read/marketsProvider.ts`). With only the lean routes listed, a load

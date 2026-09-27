@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { catalogueTokens } from '../../../config/selectedPoolCatalogue'
+import { WALLET_FALLBACK_TOKENS } from '../../../config/selectedPoolCatalogue'
 import type { WalletView } from '../../../lib/read/pagers'
 import { ADDRESS_PROBLEM, COPY, failureText } from '../../../lib/read/screens/copy'
 import { parseAddressInput } from '../../../lib/read/screens/identity'
@@ -157,7 +157,7 @@ export function WalletCandidates({
     checks.current?.abort()
     checks.current = new AbortController()
     subject.current = addressKey(parsed.wire)
-    session.current = createWalletSession(source, { wallet: parsed.wire, tokens: parts, fallbackTokens: catalogueTokens().map((token) => token.address) })
+    session.current = createWalletSession(source, { wallet: parsed.wire, tokens: parts, fallbackTokens: WALLET_FALLBACK_TOKENS })
     setSnap(null)
     run(
       (s, signal) => s.first(signal),

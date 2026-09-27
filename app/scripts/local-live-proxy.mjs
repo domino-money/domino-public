@@ -5,9 +5,10 @@ import { createHash } from 'node:crypto'
 import { CONTRACT_VERSION, validateResponse, validateError } from '../../api-contracts/read-v1/runtime.mjs'
 import * as readV2 from '../../api-contracts/read-v2/runtime.mjs'
 import * as readV3 from '../../api-contracts/read-v3/runtime.mjs'
+import * as readV5 from '../../api-contracts/read-v5/runtime.mjs'
 import { parseStrictJson } from '../../bridge/src/strict-json.mjs'
 import { validateRequest } from '../../bridge/src/request-contract.mjs'
-import { REQUEST_LIMIT, RESPONSE_LIMIT, DEADLINE_MS, READS, READS_V3, readRoute } from './local-live-boundary.mjs'
+import { REQUEST_LIMIT, RESPONSE_LIMIT, DEADLINE_MS, READS, READS_V3, READS_V5, readRoute } from './local-live-boundary.mjs'
 import { validateStatus } from './local-live-status.mjs'
 
 const DESTINATION = 'https://dev-read.domino.money'
@@ -24,9 +25,11 @@ const FAMILY = {
   v1: { version: CONTRACT_VERSION, reads: READS, validateResponse, validateRequest },
   v2: { version: readV2.CONTRACT_VERSION, reads: readV2.ENABLED_READS, validateResponse: readV2.validateResponse, validateRequest: readV2.validateRequest },
   v3: { version: readV3.CONTRACT_VERSION, reads: READS_V3, validateResponse: readV3.validateResponse, validateRequest: readV3.validateRequest },
+  v5: { version: readV5.CONTRACT_VERSION, reads: READS_V5, validateResponse: readV5.validateResponse, validateRequest: readV5.validateRequest },
 }
 /** The family a raw URL belongs to, for the replies sent before a route is resolved. */
-const familyForUrl = (url) => url.startsWith('/api/read/v3/') ? FAMILY.v3 : url.startsWith('/api/read/v2/') ? FAMILY.v2 : FAMILY.v1
+const familyForUrl = (url) => url.startsWith('/api/read/v5/') ? FAMILY.v5 : url.startsWith('/api/read/v3/') ? FAMILY.v3
+  : url.startsWith('/api/read/v2/') ? FAMILY.v2 : FAMILY.v1
 /** Every key of a read-v2 pool-market reply, and nothing else. */
 const ESTIMATE_REPLY_KEYS = ['chainId', 'estimate', 'executionAvailable', 'market', 'poolId', 'schemaVersion']
 /**

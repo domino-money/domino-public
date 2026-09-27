@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ENABLED_READS as V3_ENABLED_READS } from '../../api-contracts/read-v3/runtime.mjs'
-import { parsePort, permittedBrowserRequest, readRoute, READS, READS_V3 } from '../scripts/local-live-boundary.mjs'
+import { ENABLED_READS as V5_ENABLED_READS } from '../../api-contracts/read-v5/runtime.mjs'
+import { parsePort, permittedBrowserRequest, readRoute, READS, READS_V3, READS_V5 } from '../scripts/local-live-boundary.mjs'
 
 const port = 5273
 const origin = `http://127.0.0.1:${port}`
@@ -69,4 +70,20 @@ test('the local lane routes read-v3, keeps the families apart, and cannot drift 
   for (const path of ['/api/read/v3/overview?', '/api/read/v3//overview', '/api/read/v3/a/../overview', '/api/read/v3/%6fverview', '/api/read/v3/overview/', '/api/read/v4/overview']) {
     assert.equal(readRoute(path, 'POST'), null, path)
   }
+})
+
+// Added 2026-09-26: read-v5, the featured pools list, on the local lane as on the
+// site (functions/_lib/bridge.ts, bridge/src/worker.mjs): one exact POST, in a
+// family of its own, so a name can never cross between v5 and another version.
+test('the local lane routes read-v5 featured-pools exactly, and no other name crosses into or out of it', () => {
+  assert.deepEqual([...READS_V5], [...V5_ENABLED_READS], 'the list here is exactly what read-v5 enables')
+  assert.deepEqual(readRoute('/api/read/v5/featured-pools', 'POST'), { route: 'featured-pools', path: '/internal/read/v5/featured-pools', version: 'v5' })
+  assert.equal(readRoute('/api/read/v5/featured-pools', 'GET'), null, 'a v5 read is a POST')
+  for (const path of ['/api/read/v5/featured-pools?', '/api/read/v5/featured-pools/', '/api/read/v5//featured-pools', '/api/read/v5/%66eatured-pools',
+    '/api/read/v5/a/../featured-pools', '/api/read/v5/capabilities', '/api/read/v4/featured-pools', '/api/read/v3/featured-pools',
+    '/api/read/v2/featured-pools', '/api/read/v1/featured-pools']) {
+    assert.equal(readRoute(path, 'POST'), null, path)
+    assert.equal(readRoute(path, 'GET'), null, path)
+  }
+  for (const route of [...READS, ...READS_V3, 'pool-market', 'sequence-snapshot']) assert.equal(readRoute(`/api/read/v5/${route}`, 'POST'), null, `${route} is not a v5 route`)
 })

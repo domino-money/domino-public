@@ -21,6 +21,7 @@ import { tokenDisplay, unreadToken } from '../project'
 import type { TokenDisplay } from '../types'
 import { COPY } from './copy'
 import { DYNAMIC_FEE_PIPS, feeLabel } from './fee'
+import type { PoolCatalogueEntry } from '../../../config/selectedPoolCatalogue'
 import { featuredPoolIds } from './featuredPools'
 import { addressKey, NATIVE_CURRENCY, poolIdKey, type AddressKey, type PoolIdKey } from './identity'
 import { figureFromProviderMetrics, retrievalNote, type AttributedFigure } from './figures'
@@ -209,8 +210,8 @@ export const MAX_POOL_HINTS = 10
  * plain read above. Nothing the hints say is shown: a named pool the chain
  * does not confirm is not an option. Fixed key order, as above.
  */
-export function usablePoolsRequest(token: AddressKey, paired: AddressKey | null, hints: readonly PoolIdKey[]): PoolsRequest {
-  const poolIds = [...new Set([...featuredPoolIds(token, paired), ...hints])].slice(0, MAX_POOL_HINTS)
+export function usablePoolsRequest(token: AddressKey, paired: AddressKey | null, hints: readonly PoolIdKey[], featured?: readonly PoolCatalogueEntry[]): PoolsRequest {
+  const poolIds = [...new Set([...featuredPoolIds(token, paired, featured), ...hints])].slice(0, MAX_POOL_HINTS)
   if (poolIds.length === 0) return poolsRequest(token, paired)
   return paired ? { token, pairedToken: paired, maxPools: poolIds.length, poolIds } : { token, maxPools: poolIds.length, poolIds }
 }

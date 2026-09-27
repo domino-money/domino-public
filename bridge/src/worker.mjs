@@ -15,6 +15,11 @@ import {
   ROUTES as V4_ROUTES, validateRequest as validateV4Request,
   validateResponse as validateV4Response, matchesRequest as matchesV4Request,
 } from '../../api-contracts/read-v4/runtime.mjs';
+import {
+  CONTRACT_VERSION as V5_CONTRACT_VERSION, ERROR_STATUS_BY_CODE as V5_ERROR_STATUS_BY_CODE,
+  ROUTES as V5_ROUTES, validateRequest as validateV5Request,
+  validateResponse as validateV5Response, matchesRequest as matchesV5Request,
+} from '../../api-contracts/read-v5/runtime.mjs';
 
 const CONTRACT_HEADER = 'X-Domino-Read-Contract';
 // Only the exact public path chooses a protocol. Neither deployment variables
@@ -43,6 +48,14 @@ const V4_PROTOCOL = Object.freeze({
   enabledFlag: 'READ_V4_BRIDGE_ENABLED', readsFlag: 'ENABLED_V4_READS', routes: V4_ROUTES,
   validateRequest: validateV4Request, validateResponse: validateV4Response,
   errors: V4_ERROR_STATUS_BY_CODE, matchesRequest: matchesV4Request,
+});
+// The featured pools list (featured-pools v1 §10.3): one stored route whose
+// request names nothing, so every visitor asks the same question.
+const V5_PROTOCOL = Object.freeze({
+  prefix: '/api/read/v5/', upstreamPrefix: '/internal/read/v5/', version: V5_CONTRACT_VERSION,
+  enabledFlag: 'READ_V5_BRIDGE_ENABLED', readsFlag: 'ENABLED_V5_READS', routes: V5_ROUTES,
+  validateRequest: validateV5Request, validateResponse: validateV5Response,
+  errors: V5_ERROR_STATUS_BY_CODE, matchesRequest: matchesV5Request,
 });
 export const LIMITS = Object.freeze({ requestBytes: 8192, responseBytes: 1024 * 1024, bodyMs: 5000, totalMs: 20000, upstreamMs: 15000 });
 
@@ -328,7 +341,8 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
       };
       try {
         const url = new URL(request.url);
-        if (url.pathname.startsWith(V4_PROTOCOL.prefix)) protocol = V4_PROTOCOL;
+        if (url.pathname.startsWith(V5_PROTOCOL.prefix)) protocol = V5_PROTOCOL;
+        else if (url.pathname.startsWith(V4_PROTOCOL.prefix)) protocol = V4_PROTOCOL;
         else if (url.pathname.startsWith(V3_PROTOCOL.prefix)) protocol = V3_PROTOCOL;
         else if (url.pathname.startsWith(V2_PROTOCOL.prefix)) protocol = V2_PROTOCOL;
         const settings = config(env, protocol);

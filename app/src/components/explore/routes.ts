@@ -5,7 +5,7 @@
  * App.tsx hands a screen only the second segment. Markets takes a token
  * address there (`#/markets/<token>`; the older `#/explore/<token>` still
  * reads), the pool page a pool id there and a token after it
- * (`#/pool/<id>/<token>`) for a pool outside the selected six. Both are
+ * (`#/pool/<id>/<token>`), which every list writes (2026-09-26). Both are
  * untrusted text from the address bar: a segment is used only when it has
  * exactly the shape of an address or a pool id, and every read made with it
  * is still bound to it by the read pipeline. Older links put a pool id in the

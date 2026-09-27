@@ -10,6 +10,16 @@ export function PoolTokenLabel({ token }: { token: TokenDisplay }) {
 }
 
 /**
+ * A list's label for one side of a pool: text only, in `<bdi>`, cut at 14ch as
+ * TokenLabel cuts a read symbol. A featured list's labels are its symbols,
+ * untrusted text from a service (lib/read/featuredList.ts), so they get the
+ * same treatment as a read symbol.
+ */
+export function CatalogueLabel({ text }: { text: string }) {
+  return <bdi className="inline-block max-w-[14ch] truncate align-bottom">{text}</bdi>
+}
+
+/**
  * Catalogue labels only. Never passed to a token selector or a transaction.
  * Full size in a table row or a pool heading (pair over a "Uniswap · fee" chip);
  * compact in the ticker (small marks, pair, fee).
@@ -27,7 +37,7 @@ export function PoolCatalogueIdentity({ entry, compact = false }: { entry: PoolC
             : <span key={index} className="inline-block rounded-full bg-surface-3" style={{ width: size, height: size, boxShadow: `0 0 0 2px ${ring}`, ...style }} />
       })}
     </span>
-    <span className={compact ? 'font-medium text-fg' : 'min-w-0 font-medium'}><bdi>{entry.labels[0]}</bdi>/<bdi>{entry.labels[1]}</bdi>
+    <span className={compact ? 'font-medium text-fg' : 'min-w-0 font-medium'}><CatalogueLabel text={entry.labels[0]} />/<CatalogueLabel text={entry.labels[1]} />
       {!compact && <span className="dm-chip mt-1 flex w-fit font-sans font-medium">Uniswap · {entry.fee}</span>}
     </span>
     {compact && <span className="tnum">{entry.fee}</span>}

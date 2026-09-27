@@ -9,14 +9,17 @@
  * id on chain and attaches its own figures, and a pool it does not confirm is
  * not an option (poolsList.ts `usablePoolsRequest`).
  */
-import { SELECTED_POOL_CATALOGUE, SELECTED_POOLS_COMMON_TOKEN } from '../../../config/selectedPoolCatalogue'
+import { SELECTED_POOL_CATALOGUE, SELECTED_POOLS_COMMON_TOKEN, type PoolCatalogueEntry } from '../../../config/selectedPoolCatalogue'
 import { NATIVE_CURRENCY, poolIdKey, type AddressKey, type PoolIdKey } from './identity'
 
 /**
- * The featured pools read on chain on 2026-09-23 (each pool's Initialize
+ * The embedded list's pools read on chain on 2026-09-23 (each pool's Initialize
  * event on the PoolManager) as having no hooks and a fixed fee, the only
  * pools Domino opens a position in. A catalogue row added later is not named
- * until its pool is read the same way.
+ * until its pool is read the same way. A featured list's pools need no such
+ * set: every entry it shows passed the contract's runtime and the app's own
+ * checks as hookless with a fixed fee, and carries its key (2026-09-26,
+ * featured pools v1 §11.5).
  */
 const HOOKLESS_FIXED_FEE: ReadonlySet<string> = new Set([
   '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6', // WETH/USDG, fee 200
@@ -38,15 +41,35 @@ const READ_CURRENCIES: Readonly<Record<string, readonly [string, string]>> = {
 }
 
 /**
- * The featured pools that hold `token` and, when given, `paired` on the other
- * side, in catalogue order, lowercase, each once.
+ * An entry's currencies when New position may name it, lowercase: a featured
+ * list's from its validated key, an embedded one's when the hand-written set
+ * above has it; null otherwise.
  */
-export function featuredPoolIds(token: AddressKey, paired: AddressKey | null): PoolIdKey[] {
+function namedCurrencies(entry: PoolCatalogueEntry): string[] | null {
+  if (entry.poolKey) return [entry.poolKey.currency0, entry.poolKey.currency1]
+  const poolId = entry.poolId.toLowerCase()
+  if (!HOOKLESS_FIXED_FEE.has(poolId)) return null
+  return (entry.addresses ?? READ_CURRENCIES[poolId])?.map((address) => address.toLowerCase()) ?? null
+}
+
+/** The list on screen, as lib/read/featuredSource.ts hands it over; the embedded list until it does. */
+let listed: () => readonly PoolCatalogueEntry[] = () => SELECTED_POOL_CATALOGUE
+
+/** Called once by lib/read/featuredSource.ts, so New position names the pools of the list on screen. */
+export function followFeaturedList(entries: () => readonly PoolCatalogueEntry[]) {
+  listed = entries
+}
+
+/**
+ * The featured pools that hold `token` and, when given, `paired` on the other
+ * side, in list order, lowercase, each once. `entries` is the list on screen
+ * (lib/read/featuredSource.ts) unless a caller names one.
+ */
+export function featuredPoolIds(token: AddressKey, paired: AddressKey | null, entries: readonly PoolCatalogueEntry[] = listed()): PoolIdKey[] {
   const ids: PoolIdKey[] = []
-  for (const entry of SELECTED_POOL_CATALOGUE) {
+  for (const entry of entries) {
     const poolId = entry.poolId.toLowerCase()
-    if (!HOOKLESS_FIXED_FEE.has(poolId)) continue
-    const currencies = (entry.addresses ?? READ_CURRENCIES[poolId])?.map((address) => address.toLowerCase())
+    const currencies = namedCurrencies(entry)
     if (!currencies) continue
     const at = currencies.indexOf(token)
     if (at === -1) continue

@@ -293,3 +293,30 @@ test('v2 capabilities retain their version and share the one local slot with v1'
     assert.equal(result.status, 200); assert.equal((await result.json()).contractVersion, '2.0.0-rc.1')
   } finally { release(); await s.close() }
 })
+
+// Added 2026-09-26: read-v5's featured pools list through the local lane, validated both ways by read-v5's runtime.
+test('v5 is a fixed featured-pools namespace with its own version, an empty request and a validated list', async () => {
+  const fixture = (kind, name) => readFileSync(resolve(import.meta.dirname, `../../api-contracts/read-v5/fixtures/${kind}/${name}.json`), 'utf8')
+  let reply = fixture('valid', 'current'); let calls = 0; let sent
+  const s = await server(async (url, options) => { calls++; sent = { url, options }; return new Response(reply, { headers: { ...headers, 'X-Domino-Read-Contract': '1.0.0-rc.1' } }) })
+  try {
+    const valid = await post(s, '{}', '/api/read/v5/featured-pools')
+    assert.equal(valid.status, 200); assert.equal(valid.headers.get('X-Domino-Read-Contract'), '1.0.0-rc.1')
+    assert.deepEqual(await valid.json(), JSON.parse(reply))
+    assert.equal(sent.url, 'https://dev-read.domino.money/internal/read/v5/featured-pools')
+    assert.equal(sent.options.headers['X-Domino-Read-Contract'], '1.0.0-rc.1')
+    assert.equal(sent.options.body.toString(), '{}')
+    for (const body of ['{"poolIds":[]}', '{"limit":6}', '[]', 'null']) assert.equal((await post(s, body, '/api/read/v5/featured-pools')).status, 422, body)
+    assert.equal((await post(s, '{}', '/api/read/v5/capabilities')).status, 404)
+    assert.equal((await post(s, '{}', '/api/read/v5/featured-pools?limit=1')).status, 404)
+    assert.equal(calls, 1)
+    reply = fixture('invalid', 'hooked-pool')
+    const refused = await post(s, '{}', '/api/read/v5/featured-pools')
+    assert.equal(refused.status, 502); assert.deepEqual(await refused.json(), { error: 'upstream_invalid_response' })
+    assert.equal(refused.headers.get('X-Domino-Read-Contract'), '1.0.0-rc.1')
+    reply = JSON.stringify({ error: 'route_not_available' })
+    const absent = await fetch(`${s.origin}/api/read/v5/featured-pools`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    assert.equal(absent.status, 502, 'a 200 that is an error body is not a list')
+    assert.equal(calls, 3)
+  } finally { await s.close() }
+})

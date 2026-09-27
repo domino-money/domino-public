@@ -13,7 +13,7 @@ import { PriceLineSvg } from '../charts/PriceLine'
 import { VolumeBarsSvg } from '../charts/VolumeBars'
 import { MetricCell } from '../explore/MetricCell'
 import { poolHref } from '../explore/routes'
-import { PoolTokenLabel } from '../PoolCatalogueIdentity'
+import { CatalogueLabel, PoolTokenLabel } from '../PoolCatalogueIdentity'
 import { TokenIcon, TokenMark, TokenMarkPair } from '../TokenIcon'
 import { FigureDash } from '../ui'
 
@@ -67,7 +67,7 @@ function Pair({ market, catalogue }: { market: Market | null; catalogue?: PoolCa
     <span className="dm-chip dm-chip--plate dm-mkt-pair">
       <CatalogueMarks entry={catalogue} />
       <span className="dm-mkt-pair-name">
-        <bdi>{catalogue.labels[0]}</bdi>/<bdi>{catalogue.labels[1]}</bdi>
+        <CatalogueLabel text={catalogue.labels[0]} />/<CatalogueLabel text={catalogue.labels[1]} />
       </span>
       <span className="dm-mkt-pair-fee">
         · <span className="dm-mkt-pair-venue">Uniswap </span>
@@ -92,7 +92,7 @@ function Pair({ market, catalogue }: { market: Market | null; catalogue?: PoolCa
 export function MarketCard({ listing, index, now, series }: { listing: PoolListing; index: number; now: Instant; series: CardSeries }) {
   const [bar, setBar] = useState<Candle | null>(null)
   const [point, setPoint] = useState<RatioCandle | null>(null)
-  const { poolId, market: read, catalogue } = listing
+  const { poolId, market: read, catalogue, token } = listing
   const market = read ? agedMarket(read, now) : null
   const retrieved = market?.provenance ? retrievedText(retrievedAgeSeconds(market.provenance.market, now)) : undefined
   const bars = series.kind === 'bars' ? series : null
@@ -191,7 +191,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   }
 
   return (
-    <a href={poolHref(poolId)} data-market-card={poolId} data-card-series={series.kind} className="dm-plate dm-dots-chart dm-mkt-card animate-rise" style={style}>
+    <a href={poolHref(poolId, token)} data-market-card={poolId} data-card-series={series.kind} className="dm-plate dm-dots-chart dm-mkt-card animate-rise" style={style}>
       <div className="dm-mkt-card-head">
         <Pair market={market} catalogue={catalogue} />
         <span className="dm-mkt-card-tvl">

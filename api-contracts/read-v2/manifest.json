@@ -322,7 +322,7 @@
     },
     {
       "path": "bridge/src/worker.mjs",
-      "sha256": "325fa540a063f4ad7698eee57e2f88a770fe44e7ccbb18708ad377d76b351c15"
+      "sha256": "16176e6daeef0252142a530726a33e90de363200ca5eda64bc8da724af2f8807"
     },
     {
       "path": "bridge/src/strict-json.mjs",
@@ -330,11 +330,11 @@
     },
     {
       "path": "app/functions/_lib/bridge.ts",
-      "sha256": "87706ac32da5f9b145c3b9a84b673487ee453df4d3a23ae3271b121ecbf5436d"
+      "sha256": "1b0d641189e3e7e5a58751b7e975682c4aaa6fc9be93e3c18a20bd2b8f4474e3"
     },
     {
       "path": "bridge/wrangler.read.toml",
-      "sha256": "c97c6c23ef923e3d3e482d91d0cc252b4c8fdf83034b9cd5d97931572d381eee"
+      "sha256": "8ce38c492957746053917c76e2ef1ae69908f45a7a6a846f281571fba27a07f4"
     },
     {
       "path": "backend/tests/read_v2_contract_fixtures.py",

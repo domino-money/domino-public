@@ -9,6 +9,9 @@
  *   functions/api/[[path]].ts    every /api/* request the gate admits, but
  *                                one with an empty segment, which the
  *                                middleware hands to forward() itself
+ *   functions/api/read/v5/       the featured pools list's one path, which
+ *     featured-pools.ts          hands its request to forward() too and
+ *                                keeps a valid answer at the edge for 60 s
  *   forward() below              one fixed prefix → one fixed binding
  *   env.<SVC>_BRIDGE.fetch()     that family's Worker from bridge/src
  *
@@ -62,7 +65,7 @@ export interface BridgeEnv {
 }
 
 /** The Workers' APP_ORIGIN, exactly: the only origin whose API calls are forwarded. */
-const APP_ORIGIN = 'https://domino.money'
+export const APP_ORIGIN = 'https://domino.money'
 
 interface Family {
   prefix: string
@@ -81,6 +84,9 @@ const FAMILIES: readonly Family[] = [
   { prefix: '/api/read/v2/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
   { prefix: '/api/read/v3/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
   { prefix: '/api/read/v4/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
+  // The featured pools list. Its one route, featured-pools, is answered by
+  // functions/api/read/v5/featured-pools.ts, which calls forward() itself.
+  { prefix: '/api/read/v5/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
   {
     prefix: '/api/session/v1/',
     binding: 'SESSION_BRIDGE',

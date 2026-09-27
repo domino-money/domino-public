@@ -9,6 +9,14 @@ export const DEADLINE_MS = 20000
 export const READS = Object.freeze(['token', 'pools', 'pool-market', 'wallet-assets', 'nft-positions', 'catalogue', 'pool-activity', 'pool-positions', 'pool-metrics', 'markets-snapshot'])
 /** read-v3's own routes; never merged with READS, so a v1 name can never open a v3 path or the reverse. */
 export const READS_V3 = Object.freeze(['overview', 'history', 'search'])
+/**
+ * read-v5's one route, the featured pools list (featured-pools v1 §10.3), in a
+ * family of its own like read-v3's. The development gateway does not serve it
+ * yet (the spec leaves that optional), so on this lane it ends in an upstream
+ * refusal, and the app shows its embedded list, as it does whenever the list
+ * is unavailable.
+ */
+export const READS_V5 = Object.freeze(['featured-pools'])
 
 export function parsePort(args) {
   if (!args.length) return 5273
@@ -61,6 +69,7 @@ export function readRoute(path, method) {
   if (path === '/api/read/v2/pool-market') return method === 'POST' ? { route: 'pool-market', path: '/internal/read/v2/pool-market', version: 'v2' } : null
   if (path === '/api/dev/v1/status') return method === 'GET' ? { route: 'status', path: '/internal/dev/v1/status' } : null
   if (path === '/api/read/v3/capabilities') return method === 'GET' ? { route: 'capabilities', path: '/internal/read/v3/capabilities', version: 'v3' } : null
+  if (path === '/api/read/v5/featured-pools') return method === 'POST' ? { route: 'featured-pools', path: '/internal/read/v5/featured-pools', version: 'v5' } : null
   const v3 = path.startsWith('/api/read/v3/') ? path.slice('/api/read/v3/'.length) : ''
   if (v3) return method === 'POST' && READS_V3.includes(v3) ? { route: v3, path: `/internal/read/v3/${v3}`, version: 'v3' } : null
   if (path === '/api/read/v1/capabilities') return method === 'GET' ? { route: 'capabilities', path: '/internal/read/v1/capabilities' } : null

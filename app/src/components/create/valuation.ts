@@ -1,4 +1,4 @@
-import { SELECTED_POOLS_COMMON_TOKEN } from '../../config/selectedPoolCatalogue'
+import { USDG } from '../../config/mainTokens'
 import { priceFromSqrt } from '../../lib/format/price'
 import { usdgValue } from '../../lib/format/usd'
 import type { JourneyState, TickRange } from '../../lib/create/journey'
@@ -56,7 +56,7 @@ export function rangeView(range: TickRange, price: Usable, pool: PoolOption): Ra
 
 /** Which side of the pair is USDG (0 or 1), or null: USD is shown for USDG pairs only (§0.7). */
 export function usdgSide(pool: PoolOption): 0 | 1 | null {
-  const usdg = SELECTED_POOLS_COMMON_TOKEN.toLowerCase()
+  const usdg = USDG
   if (pool.currencies[0].address.toLowerCase() === usdg) return 0
   if (pool.currencies[1].address.toLowerCase() === usdg) return 1
   return null

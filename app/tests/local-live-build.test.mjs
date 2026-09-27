@@ -32,17 +32,21 @@ test('production and development builds remove the local flag and reject local m
 // Changed 2026-09-25 (r4/metrics): the deployed source also passes `unspacedStored: true`, so read-v3's stored reads
 // skip the 1.1 s the gateway's stored lane never had (scheduler.ts); local-live passes false and keeps 10.1 s for
 // every read. The deadline and queue bounds are still the scheduler's defaults.
+// Changed on purpose (2026-09-26, featured pools v1 §11.1): read-v5's featured list joins the same source before the
+// scheduler (lib/read/featuredList.ts createFeaturedReadSource), with the same options and its own runtime.
 test('the real source factory paces only local-live at 10.1 s; deployed reads retain 1.1 s and shared deadlines', () => {
   const source = readFileSync(resolve(root, 'src/lib/read/screens/appSourceBridge.ts'), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   for (const localLive of [true, false]) {
-    const validators = {}; const estimateRuntime = {}; const publicRuntime = {}; const bridge = {}; const publicSource = {}; const scheduled = {}; const cached = {}; const calls = []
+    const validators = {}; const estimateRuntime = {}; const publicRuntime = {}; const featuredRuntime = {}; const bridge = {}; const publicSource = {}; const featuredSource = {}; const scheduled = {}; const cached = {}; const calls = []
     const exports = {}
     runInNewContext(compiled, { exports, __DOMINO_LOCAL_LIVE__: localLive, require: (path) => {
       if (path === '../../capabilities') return { CAPABILITIES: { liveReadsBuilt: true } }
       if (path === '../contract') return { READ_RUNTIME: validators }
       if (path === 'api-contracts/read-v2/runtime.mjs') return estimateRuntime
       if (path === 'api-contracts/read-v3/runtime.mjs') return publicRuntime
+      if (path === 'api-contracts/read-v5/runtime.mjs') return featuredRuntime
+      if (path === '../featuredList') return { createFeaturedReadSource: (input, options, runtime) => { calls.push(['featured', input, options, runtime]); return featuredSource } }
       if (path === '../estimateSource') return { createEstimateSource: (options, runtime) => { calls.push(['bridge', options, runtime]); return bridge } }
       if (path === '../publicSource') return { createPublicSource: (input, options, runtime) => { calls.push(['public', input, options, runtime]); return publicSource } }
       if (path === '../scheduler') return { createScheduledSource: (input, options) => { calls.push(['scheduler', input, options]); return scheduled } }
@@ -58,10 +62,14 @@ test('the real source factory paces only local-live at 10.1 s; deployed reads re
     assert.equal(calls[1][1], bridge, 'V3 keeps the legacy V1/V2 source')
     assert.equal(calls[1][2], calls[0][1], 'the additive source uses the same options')
     assert.equal(calls[1][3], publicRuntime, 'canonical V3 validation is supplied')
-    assert.equal(calls[2][1], publicSource, 'all versions share the existing scheduler')
-    assert.equal(calls[2][2].minIntervalMs, localLive ? 10_100 : 1100)
-    assert.equal(calls[2][2].unspacedStored, !localLive, 'only deployed stored reads skip the spacing; local-live spaces every read')
-    assert.deepEqual(Object.keys(calls[2][2]), ['minIntervalMs', 'unspacedStored'], '60 s total deadline and queue bounds are not changed')
-    assert.equal(calls[3][1], scheduled, 'only scheduled public outcomes enter the metadata cache')
+    assert.equal(calls[2][0], 'featured')
+    assert.equal(calls[2][1], publicSource, 'the featured list sits beside the public source')
+    assert.equal(calls[2][2], calls[0][1], 'the featured list uses the same options')
+    assert.equal(calls[2][3], featuredRuntime, 'canonical V5 validation is supplied')
+    assert.equal(calls[3][1], featuredSource, 'all versions share the existing scheduler')
+    assert.equal(calls[3][2].minIntervalMs, localLive ? 10_100 : 1100)
+    assert.equal(calls[3][2].unspacedStored, !localLive, 'only deployed stored reads skip the spacing; local-live spaces every read')
+    assert.deepEqual(Object.keys(calls[3][2]), ['minIntervalMs', 'unspacedStored'], '60 s total deadline and queue bounds are not changed')
+    assert.equal(calls[4][1], scheduled, 'only scheduled public outcomes enter the metadata cache')
   }
 })

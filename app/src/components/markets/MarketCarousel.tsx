@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { poolListings } from '../../config/selectedPoolCatalogue'
 import { followCardMode, watchCard, type CardMode } from '../../lib/read/cardReads'
 import { cardAsk, inAskOrder, mergeAnswer, pickSeries, type CardAnswer, type CardAsk } from '../../lib/read/cardSeries'
+import { useFeatured } from '../../lib/read/featuredSource'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { shownResult, useMarkets } from '../../lib/read/useMarkets'
 import { useNow } from '../../lib/read/useNow'
@@ -59,7 +60,9 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
   const source = useReadSource()
   const { state, provider } = useMarkets()
   const markets = shownResult(state)?.markets ?? []
-  const listings = poolListings(markets, __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge')
+  // The list on screen (lib/read/featuredSource.ts): the featured list, or the embedded one.
+  const featured = useFeatured()
+  const listings = poolListings(markets, __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge' ? featured.entries : null)
   const settled = state.phase !== 'loading'
 
   const rail = useRef<HTMLDivElement>(null)
@@ -199,7 +202,7 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
         )}
       </div>
       {railed && (
-        <div id="market-rail" ref={rail} role="region" aria-label="Selected pools, last 24 hours" className="dm-mkt-rail" onScroll={onScroll}>
+        <div id="market-rail" ref={rail} role="region" aria-label={featured.source === 'server' ? 'Top pools, last 24 hours' : 'Selected pools, last 24 hours'} className="dm-mkt-rail" onScroll={onScroll}>
           {listings.map((listing, index) => {
             const ask = asks[index] ?? null
             const own = ask ? reads.get(ask.key) : undefined

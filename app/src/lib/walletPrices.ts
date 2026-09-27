@@ -27,13 +27,14 @@
  * These prices are indicative, shown in that card only: never an amount, a
  * quote, a position figure, or anything sent anywhere.
  */
-import { SELECTED_POOLS_COMMON_TOKEN } from '../config/selectedPoolCatalogue'
+import { NATIVE_ETH, USDG as MAIN_USDG, WETH as MAIN_WETH } from '../config/mainTokens'
 import { parseScaled, scaledText } from './format/decimal'
 import { PRICE_BATCH, artworkFromPairs, tokenArtwork } from './tokenArtwork'
 
-export const NATIVE = '0x0000000000000000000000000000000000000000'
-export const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73'
-export const USDG = SELECTED_POOLS_COMMON_TOKEN
+// The main tokens' own addresses (config/mainTokens.ts, frozen): never a list's label for them.
+export const NATIVE = NATIVE_ETH
+export const WETH = MAIN_WETH
+export const USDG = MAIN_USDG
 /** The least liquidity (USD) a provider pair needs for its price to count. */
 export const MIN_LIQUIDITY_USD = 10_000
 /** How long an answered price is reused in this visit. */

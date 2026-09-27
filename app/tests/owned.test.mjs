@@ -483,11 +483,15 @@ test('wrangler 4.130.0 routes /api/owned/v2/positions to its own function, ahead
     // 2026-09-24 (P6, DESIGN-V2 §15.1, R-14): the fees relay's two routes join, ahead of the catch-all like owned's.
     // 2026-09-24: owned v1 (every NFT the wallet held) is replaced by v2 (what DominoSetupV1 minted to it).
     // 2026-09-24 (the three features joined up): a position's feature (functions/api/automation/v1/state.ts) joins, ahead of it too.
+    // 2026-09-26 (featured-pools v1 §10.6): the featured pools list's edge cache (functions/api/read/v5/featured-pools.ts)
+    // takes its one path ahead of the catch-all; it hands the request to forward() itself, and every other /api/read/v5/ path
+    // still reaches the catch-all.
     assert.deepEqual(handlers, [
       ['/api/automation/v1/state', 'api/automation/v1/state.ts:onRequest'],
       ['/api/fees/v1/logs', 'api/fees/v1/logs.ts:onRequest'],
       ['/api/fees/v1/state', 'api/fees/v1/state.ts:onRequest'],
       ['/api/owned/v2/positions', 'api/owned/v2/positions.ts:onRequest'],
+      ['/api/read/v5/featured-pools', 'api/read/v5/featured-pools.ts:onRequest'],
       ['/api/:path*', 'api/[[path]].ts:onRequest'],
     ], 'Pages takes the first route that matches, after the root middleware');
     assert.deepEqual(routes.filter((entry) => entry.middleware).map((entry) => [entry.routePath, entry.middleware.join()]), [['/', '_middleware.ts:onRequest']], 'the beta gate still runs before every route');
