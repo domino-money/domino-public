@@ -243,6 +243,11 @@ class ReadGate:
 
 # The public reader's and gateway's provider lane: reads at once, no start interval.
 PROVIDER_CAPACITY = 8
+# Connections uvicorn itself admits, above the gate's lanes (8 provider, 4 stored) and
+# the health checks: past it uvicorn answers a bare 503, so the gate, which refuses in
+# JSON with an honest Retry-After, must be what shapes load. 8 here refused three of
+# eight concurrent wallet reads on 26 September 2026.
+CONNECTION_LIMIT = 32
 
 
 def public_gate():
@@ -613,7 +618,7 @@ def main():
     # Explicit loopback only. No proxy-trust or request-body/access logging.
     uvicorn.run(create_app(read_budget_seconds=args.read_budget, snapshot_refresh_seconds=args.snapshot_refresh),
                 host='127.0.0.1', port=args.port, access_log=False,
-                proxy_headers=False, server_header=False, limit_concurrency=8, workers=1)
+                proxy_headers=False, server_header=False, limit_concurrency=CONNECTION_LIMIT, workers=1)
 
 
 if __name__ == '__main__':

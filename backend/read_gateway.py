@@ -23,7 +23,7 @@ from pydantic import ValidationError
 from bridge_identity import AccessVerifier
 from bridge_state import ClientBudgets, OpaqueCursors, strict_json
 from discovery import DataError
-from read_api import (public_gate, AssetsRequest, TokenRequest, PoolsRequest, PoolMarketRequest, NftPositionsRequest,
+from read_api import (CONNECTION_LIMIT, public_gate, AssetsRequest, TokenRequest, PoolsRequest, PoolMarketRequest, NftPositionsRequest,
                       CatalogueRequest, ActivityRequest, MarketsSnapshotRequest, ReadGate)
 from bridge_http import LocalReaderHTTP
 from read_deadline import read_deadline
@@ -404,7 +404,7 @@ def main():
     except (DataError, OSError):
         parser.exit(2, 'Gateway configuration invalid or process already running.\n')
     uvicorn.run(create_gateway(gateway), host='127.0.0.1', port=args.port, workers=1,
-                proxy_headers=False, access_log=False, server_header=False, limit_concurrency=16)
+                proxy_headers=False, access_log=False, server_header=False, limit_concurrency=CONNECTION_LIMIT)
 
 
 if __name__ == '__main__':

@@ -56,6 +56,9 @@
  * operational for a heartbeat up to 120 s old instead of 45 s, so one compound
  * holding the automation's loop no longer hides Turn on; the route, its schema
  * and its version are unchanged.
+ * The read-v1 and read-v2 digests moved once more when the reader and gateway
+ * admitted 32 connections, above their lanes, and a wallet read began waiting
+ * up to two seconds for one of four inventory calls; the wire is unchanged.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -63,7 +66,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: 'a2528967edf591baf87da9cbbf3a658287e908c7f019ff9a6ce8d9fed38a72b4',
+      manifestSha256: 'c19238b2621ff86c9ca106242a4f6b6c447607a0fabf70a8c45bd208bc0f312c',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -83,7 +86,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'fa304c61ae2cb0c4388df54963cf594e689403dc20dbd9ddba20e9a2d554480f',
+  manifestSha256: '16f4201457536586b0325c2f3e9402b82c321d752ec99da9ec4f1f1a0aff6ba9',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

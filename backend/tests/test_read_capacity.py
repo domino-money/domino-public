@@ -1,6 +1,8 @@
 """The read path's capacity: bounded provider lanes and a wallet inventory reused while fresh."""
+import inspect
 from pathlib import Path
 import sys
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -9,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import authenticated_api
 import read_api
+import read_gateway
 import read_service as rs
 import session_api
 from discovery import CHAIN_ID, DataError
@@ -101,6 +104,13 @@ class ProviderLaneTests(unittest.TestCase):
                 read_api.create_app(SimpleNamespace(public_data=public_data))
         self.assertEqual(made, [True])
 
+    def test_uvicorn_admits_more_connections_than_the_gate_so_the_gate_refuses_in_json(self):
+        gate = public_gate()
+        self.assertEqual(read_api.CONNECTION_LIMIT, 32)
+        self.assertGreater(read_api.CONNECTION_LIMIT, gate.provider_capacity + gate.stored_capacity + 1)
+        for module in (read_api, read_gateway):
+            self.assertIn('limit_concurrency=CONNECTION_LIMIT', inspect.getsource(module.main))
+
     def test_the_session_services_take_eight_requests_at_once(self):
         self.assertEqual((authenticated_api.MAX_WORKERS, session_api.MAX_WORKERS), (8, 8))
 
@@ -156,6 +166,7 @@ class InventoryReuseTests(unittest.TestCase):
         service.wallet_assets(OWNER, cursor=cursor)
         self.assertEqual(provider.wallets, [OWNER, OTHER, OWNER, OWNER])
 
+    @patch.object(rs, 'INVENTORY_WAIT_SECONDS', 0.05)
     def test_a_busy_provider_serves_an_hour_old_list_or_says_so_and_still_reads_the_named_tokens(self):
         provider = Pages([page([TOKEN])])
         service = self.service(provider)
@@ -177,6 +188,21 @@ class InventoryReuseTests(unittest.TestCase):
             for _ in range(rs.INVENTORY_CONCURRENCY):
                 service._inventory_slot.release()
         self.assertEqual(provider.wallets, [OWNER])
+
+    @patch.object(rs, 'INVENTORY_WAIT_SECONDS', 2)
+    def test_a_read_waits_for_a_provider_call_to_free_before_it_answers_without_a_list(self):
+        provider = Pages([page([TOKEN])])
+        service = self.service(provider)
+        for _ in range(rs.INVENTORY_CONCURRENCY):
+            self.assertTrue(service._inventory_slot.acquire(blocking=False))
+        # One call finishes a moment later: the waiting read takes its slot and gets the list.
+        threading.Timer(0.1, service._inventory_slot.release).start()
+        try:
+            result = service.wallet_assets(OWNER)
+        finally:
+            for _ in range(rs.INVENTORY_CONCURRENCY - 1):
+                service._inventory_slot.release()
+        self.assertEqual((result['inventory']['status'], provider.wallets), ('page_received', [OWNER]))
 
     def test_a_failed_provider_call_gives_its_slot_back(self):
         provider = Pages([], failure='http_503')
@@ -206,7 +232,7 @@ class InventoryReuseTests(unittest.TestCase):
 
     def test_the_inventory_limits_are_the_ones_measured(self):
         self.assertEqual((rs.INVENTORY_FRESH_SECONDS, rs.INVENTORY_STALE_SECONDS, rs.INVENTORY_CACHE_SIZE,
-                          rs.INVENTORY_CONCURRENCY), (300, 3600, 4096, 2))
+                          rs.INVENTORY_CONCURRENCY, rs.INVENTORY_WAIT_SECONDS), (300, 3600, 4096, 4, 2))
 
 
 if __name__ == '__main__':

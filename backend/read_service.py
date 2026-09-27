@@ -93,10 +93,14 @@ def bounded_snapshot_loopback_transport(seconds=60):
 # reused for a few minutes and, while the provider is busy, for up to an hour; the
 # balances themselves are read on chain on every request. On 26 September 2026 the
 # page and the probes of its twenty candidates were 1.2 s of a 1.6 s wallet read.
+# Four calls at once stay far inside the provider's per-second allowance; a read
+# waits up to two seconds for one, so a burst of new wallets still gets its lists,
+# before it answers without one.
 INVENTORY_FRESH_SECONDS = 300
 INVENTORY_STALE_SECONDS = 3600
 INVENTORY_CACHE_SIZE = 4096
-INVENTORY_CONCURRENCY = 2
+INVENTORY_CONCURRENCY = 4
+INVENTORY_WAIT_SECONDS = 2
 
 
 class ReadService:
@@ -677,9 +681,10 @@ class ReadService:
     def _inventory_page(self, provider, wallet, key):
         """The provider's first page for this wallet, reused while fresh; later pages always go to it.
 
-        At most INVENTORY_CONCURRENCY provider calls run at once. A caller that
-        finds them all taken gets a page up to INVENTORY_STALE_SECONDS old, or
-        provider_capacity_busy, and the balances of the tokens it named still.
+        At most INVENTORY_CONCURRENCY provider calls run at once. A caller waits
+        up to INVENTORY_WAIT_SECONDS for one, then gets a page up to
+        INVENTORY_STALE_SECONDS old, or provider_capacity_busy, and the balances
+        of the tokens it named still.
         A page reports when the provider returned it (retrievedAt), cached or not;
         wallet_assets only reads it.
         """
@@ -689,7 +694,7 @@ class ReadService:
         age = self.clock() - cached['retrievedAt'] if cached else None
         if cached and age < INVENTORY_FRESH_SECONDS:
             return cached
-        if not self._inventory_slot.acquire(blocking=False):
+        if not self._inventory_slot.acquire(timeout=INVENTORY_WAIT_SECONDS):
             if cached and age < INVENTORY_STALE_SECONDS:
                 return cached
             raise DataError('provider_capacity_busy')
