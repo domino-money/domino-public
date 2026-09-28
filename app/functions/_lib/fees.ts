@@ -34,6 +34,8 @@
 import {
   BACKOFF_MS,
   FIRST_TRANSFER_BLOCK,
+  LOG_BLOCKS_MANY,
+  LOG_BLOCKS_ONE,
   MIN_SPLIT_BLOCKS,
   MULTICALL3,
   POSITION_MANAGER,
@@ -514,19 +516,47 @@ const byPosition = (a: CompactLog, b: CompactLog) => a[0] - b[0] || a[1] - b[1]
 /** The kinds the relay answers: every LogsRequest but the price path's (2026-09-25, feesPath.ts, the replay worker's own). */
 export type RelayRequest = Exclude<LogsRequest, { kind: 'span' | 'settlements' | 'modifies' }>
 
+/** One batch of eth_getLogs (one POST), each envelope's result in the order asked (a list of logs each, unchecked). */
+export async function logsBatch(rt: FeesRuntime, budget: Budget, filters: unknown[], byteLimit?: number): Promise<unknown[]> {
+  const reply = await paced(rt, budget, () => post(rt, budget, filters.map((filter, id) => ({ jsonrpc: '2.0', id, method: 'eth_getLogs', params: [filter] })), true, byteLimit))
+  if (!Array.isArray(reply) || reply.length !== filters.length) throw new RelayError('fatal', 'invalid_batch')
+  const out: unknown[] = Array.from({ length: filters.length })
+  const seen = new Set<number>()
+  for (const envelope of reply) {
+    const id = (envelope as { id?: unknown } | null)?.id
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 0 || id >= filters.length || seen.has(id)) throw new RelayError('fatal', 'invalid_batch')
+    seen.add(id)
+    const result = resultOf(envelope)
+    if (!Array.isArray(result)) throw new RelayError('fatal', 'invalid_logs')
+    out[id] = result
+  }
+  return out
+}
+
+/**
+ * 2026-09-28 (owned.ts LOG_BLOCKS_MANY): the events a read of `blocks` blocks asks per filter: all of them in one below
+ * that width, else one each (the filters of one batch). `topicOf0` is a filter's first topic for them.
+ */
+export const eachEvent = (topic0: readonly string[], blocks: number): (readonly string[])[] => (topic0.length > 1 && blocks > LOG_BLOCKS_MANY ? topic0.map((topic) => [topic]) : [topic0])
+export const topicOf0 = (topic0: readonly string[]): string | readonly string[] => (topic0.length === 1 ? topic0[0] : topic0)
+
 /**
  * eth_getLogs over [from, to], validated and compacted, in chain order. A
  * range the RPC refuses as too large or too slow is halved down to
  * MIN_SPLIT_BLOCKS, unless the call is a first try with its own byte limit
  * (a whole day), whose refusal the caller answers by asking hour by hour.
+ * 2026-09-28 (owned.ts LOG_BLOCKS_ONE): a range wider than the RPC serves at all is asked in windows of that width,
+ * oldest first, rather than refused first and halved; and several events over more than LOG_BLOCKS_MANY blocks are
+ * asked as one filter per event, in one batch (one POST, one reply whose bytes count as the one reply did), each
+ * event's logs checked against its own filter.
  */
 async function rangeLogs(rt: FeesRuntime, budget: Budget, filter: LogFilter, from: number, to: number, byteLimit?: number): Promise<CompactLog[]> {
-  const topics: (string | string[] | null)[] = [filter.topic0.length === 1 ? filter.topic0[0] : [...filter.topic0]]
-  if (filter.topic1 !== undefined) topics.push(filter.topic1)
-  if (filter.topic3 !== undefined) topics.push(null, null, filter.topic3)
-  let result: unknown
+  if (byteLimit === undefined && to - from >= LOG_BLOCKS_ONE) return [...(await rangeLogs(rt, budget, filter, from, from + LOG_BLOCKS_ONE - 1)), ...(await rangeLogs(rt, budget, filter, from + LOG_BLOCKS_ONE, to))]
+  const parts = eachEvent(filter.topic0, to - from + 1)
+  const filters = parts.map((topic0) => ({ address: filter.address, fromBlock: hex(from), toBlock: hex(to), topics: [topicOf0(topic0), ...(filter.topic1 === undefined ? [] : [filter.topic1]), ...(filter.topic3 === undefined ? [] : [null, null, filter.topic3])] }))
+  let results: unknown[]
   try {
-    result = await call(rt, budget, 'eth_getLogs', [{ address: filter.address, fromBlock: hex(from), toBlock: hex(to), topics }], byteLimit)
+    results = parts.length > 1 ? await logsBatch(rt, budget, filters, byteLimit) : [await call(rt, budget, 'eth_getLogs', filters, byteLimit)]
   } catch (error) {
     if (error instanceof RelayError && error.kind === 'range' && byteLimit === undefined && to - from + 1 >= 2 * MIN_SPLIT_BLOCKS) {
       const middle = from + Math.floor((to - from) / 2)
@@ -534,8 +564,13 @@ async function rangeLogs(rt: FeesRuntime, budget: Budget, filter: LogFilter, fro
     }
     throw error
   }
-  if (!Array.isArray(result)) throw new RelayError('fatal', 'invalid_logs')
-  return result.map((raw) => compact(raw, filter, from, to)).sort(byPosition)
+  return results
+    .flatMap((result, i) => {
+      if (!Array.isArray(result)) throw new RelayError('fatal', 'invalid_logs')
+      const own: LogFilter = { ...filter, topic0: parts[i] }
+      return result.map((raw) => compact(raw, own, from, to))
+    })
+    .sort(byPosition)
 }
 
 // ---------------------------------------------------------------------------
@@ -1018,7 +1053,17 @@ async function readLogs(rt: FeesRuntime, budget: Budget, origin: string, asked: 
       const url = cacheUrl(origin, 'initialize', asked.poolId, 0)
       const hit = await kept<KeptUnit>(rt, url)
       if (hit?.value.final) return { v: 1, kind: 'initialize', head, units: [toUnit(null, hit.value)], next: null }
-      const logs = await shared(url, () => rangeLogs(rt, budget, poolFilter(asked.poolId, [TOPIC.Initialize]), 0, head))
+      // 2026-09-28 (owned.ts LOG_BLOCKS_ONE): the whole chain is more than one read may cover, and a pool is initialized
+      // once: its windows are asked newest first, and the first that holds it is the last asked (live, the owner's
+      // USDG/UFG pool: 2 reads, not the 8 windows of the whole chain, a burst the RPC refused the next call after).
+      const logs = await shared(url, async () => {
+        const filter = poolFilter(asked.poolId, [TOPIC.Initialize])
+        for (let top = head; top >= 0; top -= LOG_BLOCKS_ONE) {
+          const found = await rangeLogs(rt, budget, filter, Math.max(0, top - LOG_BLOCKS_ONE + 1), top)
+          if (found.length > 0) return found
+        }
+        return []
+      })
       // A pool is initialized once: found and final, the answer can no longer change.
       const final = logs.length > 0 && logs[0][0] <= head - SAFE_DEPTH
       const unit: KeptUnit = { from: 0, to: head, final, logs }

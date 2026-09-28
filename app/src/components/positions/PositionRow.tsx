@@ -63,7 +63,7 @@ function Money({ card, state, which, label }: { card: LiveCard; state: PositionS
   )
 }
 
-/** Your APR (listApr.ts): the page's own figure, a calm bubble while it is measured, a dash when the list has none. */
+/** Your APR (listApr.ts): the page's own figure once its page drew it this visit, a calm dash otherwise. */
 function Apr({ apr }: { apr: RowApr | null }) {
   let figure: ReactNode = <span className="dm-own-dash">—</span>
   let title: string | undefined = 'Shown on the position’s page'
@@ -76,10 +76,6 @@ function Apr({ apr }: { apr: RowApr | null }) {
       </>
     )
   } else if (apr?.kind === 'missing') title = apr.words
-  else if (apr?.kind === 'waiting') {
-    title = undefined
-    figure = <Skeleton className="dm-own-skel-apr" />
-  }
   return (
     <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : (apr?.kind ?? 'none')} title={title}>
       <span className="dm-own-label">Your APR</span>

@@ -95,13 +95,6 @@ export const REASK_UNREADABLE_MS = 400
 
 let channel: BroadcastChannel | null | undefined
 let reading = 0
-/**
- * 2026-09-28 (the owner's phone: Your positions stayed on its loading rows): the page's side of the channel. Until when
- * this browser's low-priority reads (the list's APR) rest after a refusal any read of it met, in any tab, and when
- * another tab last said it reads.
- */
-let restUntil = 0
-let othersAt = 0
 /** A channel of our own name; in Node (the tests, the live proofs) it does not keep the process running. */
 function openChannel(): BroadcastChannel | null {
   if (typeof BroadcastChannel !== 'function') return null
@@ -109,23 +102,15 @@ function openChannel(): BroadcastChannel | null {
   ;(opened as unknown as { unref?: () => void }).unref?.()
   return opened
 }
-/** The rest after a refusal: as long as the lanes' own (LANE_PACE.restMs). */
-const rest = () => void (restUntil = Date.now() + LANE_PACE.restMs)
 /**
  * Says on the channel that a page read is on its way (true), that the last one ended (false) or that the RPC refused one
  * ('rest'); quiet where there is no channel (a browser without BroadcastChannel, or one that refuses to open it).
+ * 2026-09-28 (hotfix): the page no longer listens (it did for the list's APR queue, which is gone).
  */
-function tell(news?: boolean | 'rest'): void {
+function tell(news: boolean | 'rest'): void {
   try {
-    if (channel === undefined) {
-      channel = openChannel()
-      if (channel)
-        channel.onmessage = ({ data }: MessageEvent<unknown>) => {
-          if (data === 'rest') rest()
-          else if (typeof data === 'boolean') othersAt = data ? Date.now() : 0
-        }
-    }
-    if (news !== undefined) channel?.postMessage(news)
+    if (channel === undefined) channel = openChannel()
+    channel?.postMessage(news)
   } catch {
     channel = null
   }
@@ -141,23 +126,13 @@ function pageReading(step: 1 | -1): void {
 }
 
 /**
- * 2026-09-28: the list's read holds every tab's lane, and the page's own low-priority reads, for the whole of it, its
- * waits between refused calls included (before, only while a call was on its way, so a fees log read went in the list's
- * 3 and 4.5 s waits). Returns the release.
+ * 2026-09-28: the list's read holds every tab's lane for the whole of it, its waits between refused calls included
+ * (before, only while a call was on its way, so a fees log read went in the list's 3 and 4.5 s waits). Returns the
+ * release.
  */
 export function holdReads(): () => void {
   pageReading(1)
   return () => pageReading(-1)
-}
-
-/**
- * How long the page's low-priority reads (the list's APR) wait before they may ask (0: now): the rest after a refusal
- * any read of this browser met, or a read of this page or another tab on its way.
- */
-export function quietIn(): number {
-  tell()
-  const at = Date.now()
-  return Math.max(restUntil - at, reading || at - othersAt < PAGE_HOLD_MS ? LANE_PACE.graceMs : 0, 0)
 }
 
 /** The runtime for one read: `signal` aborted means nobody wants the answer, and no further call is made. */
@@ -191,11 +166,8 @@ export function chainDeps(signal?: AbortSignal): ChainDeps {
         }
         // Still unreadable: the RPC's 429, which the chain code waits out and asks again, as it does a 429 it can read.
         const response = sent.response ?? new Response(null, { status: 429, statusText: 'Unreadable reply' })
-        // 2026-09-28: a refusal rests every tab's lane and the list's APR, so the page's own next call meets a quiet address.
-        if (response.status === 429 || response.status === 503) {
-          rest()
-          tell('rest')
-        }
+        // 2026-09-28: a refusal rests every tab's lane, so the page's own next call meets a quiet address.
+        if (response.status === 429 || response.status === 503) tell('rest')
         return response
       } finally {
         pageReading(-1)

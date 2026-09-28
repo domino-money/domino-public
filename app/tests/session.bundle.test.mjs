@@ -691,6 +691,19 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // 64,122 B; .wallet-test-dist financial 179,288 B, all lazy 200,745 B, session/public reads 64,656 B; chain code
   // 18,085 B and fees worker 24,761 B in both. Every ceiling holds (all lazy 55 B to spare, chain code 15 B, fees worker
   // 39 B, financial 112 B), so none moves.
+  // 2026-09-28, hotfix/charts (the owner: from that morning, for everyone, a position's Fees earned chart and Your APR
+  // often did not show, and it took many reloads): the chain's RPC now refuses an eth_getLogs over more than 10,000,000
+  // blocks, or over more than 100,000 when one place of its filter holds several values, and every fees history older
+  // than a few hours ended as too_much_history. The relay's log reads (functions/_lib/fees.ts rangeLogs, in the chain code
+  // and the worker) ask several events over a wide range as one filter each, in one batch (logsBatch, moved there from
+  // feesPath.ts), and the widest range in windows; a pool's Initialize is looked for newest window first; the price
+  // path's spans and settlements (feesPath.ts, the worker only) name one value a place over a wide range. The list's APR
+  // queue is gone (OwnedPositions.tsx, listApr.ts), and with it the page's quietIn (lib/chain/browser.ts): smaller lazy
+  // chunks. Made smaller first: one helper for the events a read asks (eachEvent, topicOf0), windows by recursion, the
+  // settlements' own windows left to the range split. Measured on Windows, gzip level 9, both builds from this tree
+  // (dist and wallet-test mode alike): chain code 18,085 -> 18,172 B, fees worker 24,761 -> 25,036 B. The chain code and
+  // fees worker ceilings move by the minimum at 0.1 kB: 18.2 kB (28 B over both builds) and 25.1 kB (64 B); the
+  // financial, all lazy and 90 kB session/read ceilings are unchanged.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -737,7 +750,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 179_400], ['all lazy', allLazy, 200_800], ['fees worker', worker, 24_800], ['chain code', chain, 18_100]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 179_400], ['all lazy', allLazy, 200_800], ['fees worker', worker, 25_100], ['chain code', chain, 18_200]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

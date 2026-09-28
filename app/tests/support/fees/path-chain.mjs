@@ -22,6 +22,7 @@ import { createRequire } from 'node:module';
 import { decodeFunctionData, encodeFunctionResult, numberToHex } from 'viem';
 import { erc20Abi, fees, multicallAbi, owned, positionManagerAbi, stateViewAbi } from './fake-chain.mjs';
 import { loadPath } from './path-fixture.mjs';
+import { logLimitError } from '../log-limits.mjs';
 
 const require = createRequire(import.meta.url);
 const { FeeReplay, Timeline } = require('../../../.test-build/app/src/lib/fees/replay.js');
@@ -101,6 +102,9 @@ export function pathChain(name, id, top, { limit = null } = {}) {
     if (method === 'eth_blockNumber') return { result: numberToHex(head) };
     if (method === 'eth_getLogs') {
       const [{ address, fromBlock, toBlock, topics }] = params;
+      // 2026-09-28: the RPC's gateway refuses a range past its limits (tests/support/log-limits.mjs), as it does live.
+      const limited = logLimitError(params[0]);
+      if (limited) return { error: limited };
       const addresses = (Array.isArray(address) ? address : [address]).map((one) => one.toLowerCase());
       const from = Number(fromBlock);
       const to = Number(toBlock);

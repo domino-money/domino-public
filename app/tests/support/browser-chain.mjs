@@ -43,6 +43,7 @@
 import { createRequire } from 'node:module';
 import { decodeFunctionData, encodeAbiParameters, encodeFunctionResult, keccak256, numberToHex, pad, parseAbi } from 'viem';
 import { FALLBACK_ROUTE, fallbackReply } from './fallbacks.mjs';
+import { logLimitError } from './log-limits.mjs';
 
 const require = createRequire(import.meta.url);
 const owned = require('../../.test-build/app/functions/_lib/owned.js');
@@ -196,6 +197,9 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
     if (method === 'eth_blockNumber') return { result: numberToHex(chain.head) };
     if (method === 'eth_getLogs') {
       const [filter] = params;
+      // 2026-09-28: the RPC's gateway refuses a range past its limits (tests/support/log-limits.mjs), as it does live.
+      const limited = logLimitError(filter);
+      if (limited) return { error: limited };
       const from = Number(filter.fromBlock);
       const to = Number(filter.toBlock);
       const logs = chain.history?.(filter, from, to);

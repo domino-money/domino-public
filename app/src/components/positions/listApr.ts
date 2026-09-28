@@ -4,31 +4,15 @@
  * same fees history, which the fees store keeps per position for the visit (lib/fees/store.ts): a position whose page
  * was opened shows its APR on the list at once, with nothing read again.
  *
- * The others are measured here, lazily (the queue below): one position at a time, only the list's open rows that are
- * on the screen, only while the tab is visible, each through the fees store exactly as its page would (the same run,
- * so a page opened meanwhile takes that run over, and one opened later has its history at once). Low priority by the
- * fees worker's own lane (lib/chain/browser.ts LANE_PACE): it reads the RPC paced, one request at a time, never while
- * the page itself reads nor just after, and rests after a refusal. And bounded here:
- *
- * - a position is let go as soon as its history can be drawn (verified, or a busy pool's estimate: the page's own first
- *   figure), or said it cannot be, or at CAP_MS: the store then stops its run within its RELEASE_MS, cleanly, inside
- *   the page's own time (BUDGET_MS.page), so a page opened later starts it afresh, estimate first;
- * - each position is asked once a visit; one the RPC refused, once more a minute later at the earliest (its /state read
- *   asked again too); one let go at its cap, once more after the lane's rest; a second try only once no first ask is
- *   left on the screen;
- * - after a refusal nothing more is asked for REST_MS (the lane's rest, LANE_PACE.restMs);
- * - a pool whose history is too much even for a position's page (too_much_history) is not asked again for its other
- *   positions this visit;
- * - GAP_MS between two positions, SETTLE_MS when the one let go still had a run on its way: never two runs at once;
- *   2026-09-28, never less than the time the last one took, and nothing while a read of the page (the list's first) is
- *   on its way or a refusal of any tab's read rests this browser's reads (`quiet`).
- *
- * A row waits with a calm pulse as long as it will be asked (a second try included), so its cell never goes from a dash
- * back to a pulse. Nothing is kept in the browser: memory only, for the visit, as the fees store. Pure and Node-safe
- * (the tests drive the queue with the real fees store or a fake); OwnedPositions.tsx gives it the page's fees store.
+ * 2026-09-28 (the owner: from that morning, for everyone, a position's Fees earned chart and Your APR often did not
+ * show, and it took many reloads): the list measures nothing itself any more. Its queue replayed each open position's
+ * history from the list, at a position page's budget, in every tab showing it: live that evening it drew the RPC's
+ * refusals of the list's own read, and a history it could not finish stayed the fees store's answer for the visit, so
+ * the position's page opened from the list showed its unclaimed figure only, read nothing more, and only a reload
+ * brought the chart back. A row whose page was not opened this visit shows the calm dash ("Shown on the position's
+ * page"). Pure and Node-safe; nothing is kept in the browser.
  */
-import type { FeesStore } from '../../lib/fees/store'
-import type { FeeHistoryView, FeesReason } from '../../lib/fees/types'
+import type { FeeHistoryView } from '../../lib/fees/types'
 import { APR_MISSING, aprText, positionApr } from '../../lib/positionApr'
 import { usdgSide } from './visual/value'
 
@@ -37,9 +21,7 @@ export type RowApr =
   | { kind: 'rate'; text: string; estimated: boolean }
   /** The history is drawn but says no rate (under 6 hours, nothing earned yet...): a dash, the reason in words. */
   | { kind: 'missing'; words: string }
-  /** Being measured, or waiting its turn: a calm placeholder. */
-  | { kind: 'waiting' }
-  /** Not measured on the list (asked and not drawable, or not asked in this build): a dash. */
+  /** No history drawn this visit (its page was not opened, or could not draw one): a calm dash. */
   | { kind: 'none' }
 
 const drawnMemo = new WeakMap<object, RowApr>()
@@ -55,206 +37,14 @@ export function aprOfView(view: FeeHistoryView): RowApr | null {
   return apr
 }
 
-/**
- * How long one position is held at most, from the moment it is asked (its /state read and the worker's start count):
- * the page's own time (BUDGET_MS.page, 30 s from its run's start) less the store's RELEASE_MS and a margin, so the store
- * stops the run before it could stop at its time with its place kept (a page opened later then starts afresh).
- * 2026-09-28 (review): 14 s let the owner's own 3325113 go for good when the RPC answered in 400 ms a call (its page drew
- * it in 19.6 s).
- */
-export const CAP_MS = 24_000
-/**
- * Between two positions whose runs are over, at the least. 2026-09-28 (the owner's phone: Your positions stayed on its
- * loading rows): and never less than the time the last one took, so the list's measuring holds the RPC half the time at
- * most.
- */
-export const GAP_MS = 1_000
-/**
- * After a position let go with its run still on its way (at its cap, mid-way, or at a busy pool's estimate, whose exact
- * read goes on): past the store's RELEASE_MS, which stops it, so two runs never share the worker. Also how long a run
- * found on its way (a page's, just left) is given before it is looked at again.
- */
-export const SETTLE_MS = 4_000
-/** After a refusal: the lane's rest (lib/chain/browser.ts LANE_PACE.restMs), nothing asked meanwhile; a capped position's second try waits as long. */
-export const REST_MS = 30_000
-/** A position the RPC refused is asked once more, no sooner than this after. */
-export const AGAIN_MS = 60_000
-
-/** One open row on the screen: its NFT and its pool. */
-export interface AprRow {
-  id: string
-  pool: string
-}
-
-/** The part of the fees store the queue uses (lib/fees/store.ts: spawn.ts feesStore in the app; the real store or a fake in the tests). */
-export type AprStore = Pick<FeesStore, 'view' | 'subscribeHistory' | 'refresh'>
-
-export interface AprQueueDeps {
-  store: AprStore
-  /** A plain timer; returns its cancel. */
-  timer(ms: number, run: () => void): () => void
-  /** Whether the tab is visible. */
-  visible(): boolean
-  now(): number
-  /**
-   * 2026-09-28: how long to wait before a position may be asked (0: now): the rest after a refusal any read of this
-   * browser met, in any tab, or the list's read (any page read) on its way (lib/chain/browser.ts quietIn).
-   */
-  quiet?(): number
-}
-
-export interface AprQueue {
-  /** The open rows on the screen now, in the list's order (none: stop). */
-  want(rows: readonly AprRow[]): void
-  /** The tab was shown or hidden. */
-  wake(): void
-  /** Whether a position will be (or is being) measured, now or on a later try: its cell waits calmly meanwhile. */
-  pending(id: string, pool: string): boolean
-  /** Tells `listener` when `pending` may have changed. */
-  subscribe(listener: () => void): () => void
-  /** A number that changes whenever `pending` may have (for useSyncExternalStore). */
-  version(): number
-}
-
-type Tried = { at: number; reason: FeesReason | 'drawn' | 'cap'; times: number }
-
-export function createAprQueue({ store, timer, visible, now, quiet }: AprQueueDeps): AprQueue {
-  let wanted: readonly AprRow[] = []
-  const tried = new Map<string, Tried>()
-  const heavyPools = new Set<string>()
-  const listeners = new Set<() => void>()
-  let current: { row: AprRow; stop: () => void } | null = null
-  let restUntil = 0
-  let waking: (() => void) | null = null
-  let changes = 0
-
-  const tell = () => {
-    changes += 1
-    for (const listener of Array.from(listeners)) listener()
-  }
-  /** Whether `row` may be asked now (false: not again this visit; a time: not before it). */
-  const due = (row: AprRow): boolean | number => {
-    const view = store.view(row.id)
-    // Drawn already (its page was opened, or measured before), or its pool's history is too much: nothing to ask.
-    if (heavyPools.has(row.pool) || view.phase === 'verified' || view.phase === 'estimated') return false
-    const before = tried.get(row.id)
-    const at = now()
-    // Asked here before: once more after a refusal (a minute later) or its cap (after the lane's rest), never a third
-    // time. Not yet: a position no page read, one on its way elsewhere, or one whose read the RPC refused elsewhere.
-    let when = before
-      ? before.times < 2 && (before.reason === 'rpc_unavailable' ? before.at + AGAIN_MS : before.reason === 'cap' && before.at + REST_MS)
-      : view.phase === 'idle' || view.phase === 'loading' || (view as { reason?: FeesReason }).reason === 'rpc_unavailable'
-    // A run still on its way (one let go a moment ago: the store stops it RELEASE_MS later): looked at after that.
-    if (when !== false && view.phase === 'loading') when = Math.max(+when, at + SETTLE_MS)
-    return typeof when === 'number' ? when <= at || when : when
-  }
-
-  function schedule(ms: number): void {
-    waking?.()
-    waking = timer(ms, () => {
-      waking = null
-      pump()
-    })
-  }
-
-  function pump(): void {
-    if (current || wanted.length === 0 || !visible()) return
-    const at = now()
-    const wait = Math.max(restUntil - at, quiet?.() ?? 0)
-    if (wait > 0) return schedule(wait)
-    let soonest = Infinity
-    let again: AprRow | undefined
-    for (const row of wanted) {
-      const when = due(row)
-      // A first ask goes before a second try (a refused or capped position), whatever its place in the list.
-      if (when === true && !tried.has(row.id)) return start(row)
-      if (when === true) again ??= row
-      else if (when) soonest = Math.min(soonest, when)
-    }
-    if (again) return start(again)
-    if (soonest < Infinity) schedule(soonest - at)
-  }
-
-  function start(row: AprRow): void {
-    const before = store.view(row.id)
-    const began = now()
-    let done = false
-    let release: (() => void) | null = null
-    const finish = (reason: Tried['reason'] | null) => {
-      if (done) return
-      done = true
-      cap()
-      release?.()
-      current = null
-      const at = now()
-      // The pause before the next, whatever asks for it (a scroll, the list's refresh): the lane's rest after a refusal,
-      // and past the store's stop of a run still on its way.
-      const live = !reason || reason === 'cap' || store.view(row.id).phase === 'estimated'
-      restUntil = at + (reason === 'rpc_unavailable' || reason === 'worker_failed' ? REST_MS : Math.max(live ? SETTLE_MS : GAP_MS, at - began))
-      // Let go without an outcome (the row left the screen, the tab was hidden): asked again when it is back.
-      if (reason) {
-        tried.set(row.id, { at, reason, times: (tried.get(row.id)?.times ?? 0) + 1 })
-        if (reason === 'too_much_history') heavyPools.add(row.pool)
-      }
-      tell()
-      pump()
-    }
-    const check = () => {
-      const view = store.view(row.id)
-      if (view.phase === 'verified' || view.phase === 'estimated') finish('drawn')
-      // A view that was already quiet before this run (an earlier refusal) is its old answer: wait for this run's own.
-      else if ((view.phase === 'unclaimed-only' || view.phase === 'unavailable') && view !== before) finish(view.reason)
-    }
-    const cap = timer(CAP_MS, () => finish('cap'))
-    current = { row, stop: () => finish(null) }
-    // 2026-09-28 (review): a /state read the RPC refused stays the store's answer (it asks a position's state once a
-    // visit, then only for what is shown): this try asks it again, through the store's public refresh.
-    if (before.phase === 'unavailable' && before.reason === 'rpc_unavailable') store.refresh([row.id])
-    // The page's own scope: the same run its page would start, so the page takes it over or finds it done.
-    const held = store.subscribeHistory([row.id], 'page', check)
-    // Answered while it was being held (a store that knew it could not be read): let go at once.
-    if (done) return held()
-    release = held
-    tell()
-    check()
-  }
-
-  return {
-    want(rows) {
-      wanted = rows
-      // The one being measured left the screen: let go, and the next after the usual pause.
-      if (current && !rows.some((row) => row.id === current?.row.id)) return current.stop()
-      pump()
-    },
-    wake() {
-      if (!visible()) current?.stop()
-      pump()
-    },
-    pending(id, pool) {
-      return current?.row.id === id || due({ id, pool }) !== false
-    },
-    subscribe(listener) {
-      listeners.add(listener)
-      return () => {
-        listeners.delete(listener)
-      }
-    },
-    version: () => changes,
-  }
-}
-
-const WAITING: RowApr = { kind: 'waiting' }
 const NONE: RowApr = { kind: 'none' }
 
-/**
- * Each open row's APR cell: the drawn history's (the store's views, for the visit), else a calm bubble while `queue`
- * will measure it, else a dash. `queue` null: nothing is measured here (a test build that did not ask for it).
- */
-export function rowAprs(rows: readonly AprRow[], views: ReadonlyMap<string, FeeHistoryView>, queue: AprQueue | null): ReadonlyMap<string, RowApr> {
+/** Each row's APR cell, by its token id: the drawn history's (the fees store's views, for the visit), else a dash. */
+export function rowAprs(ids: readonly string[], views: ReadonlyMap<string, FeeHistoryView>): ReadonlyMap<string, RowApr> {
   const aprs = new Map<string, RowApr>()
-  for (const row of rows) {
-    const view = views.get(row.id)
-    aprs.set(row.id, (view && aprOfView(view)) ?? (queue?.pending(row.id, row.pool) ? WAITING : NONE))
+  for (const id of ids) {
+    const view = views.get(id)
+    aprs.set(id, (view && aprOfView(view)) ?? NONE)
   }
   return aprs
 }

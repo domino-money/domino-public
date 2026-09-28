@@ -235,13 +235,6 @@ const ZERO_OWNER = /^0x0{40}$/
  * fresh at its own head. Only the page's own runtime keeps it; a read handed its runtime (the tests) scans in full.
  */
 const minted = new Map<string, MintedMemory>()
-/** The chain code, once a read of the page's own has loaded it. */
-let loaded: typeof import('./chain/chainCode') | null = null
-/**
- * 2026-09-28: how long the page's low-priority reads (the list's APR) wait before they may ask (0: now), from the chain
- * code (lib/chain/browser.ts quietIn) once a read has loaded it: a refusal's rest, or a read of the page on its way.
- */
-export const quietIn = () => loaded?.quietIn() ?? 0
 /** For tests: forget what earlier scans found. */
 export function forgetMinted(): void {
   minted.clear()
@@ -260,9 +253,9 @@ export async function readWalletPositions(owner: string, signal: AbortSignal, de
   let body: WalletAnswer
   try {
     const code = await import('./chain/chainCode')
-    // 2026-09-28 (the owner's phone): the list goes first. Its read holds every tab's fees lane and the list's APR for the
-    // whole of it, its waits between refused calls included.
-    const release = deps ? null : (loaded = code).holdReads()
+    // 2026-09-28 (the owner's phone): the list goes first. Its read holds every tab's fees lane for the whole of it, its
+    // waits between refused calls included.
+    const release = deps ? null : code.holdReads()
     try {
       const scan = await code.scanWallet(deps ?? code.chainDeps(signal), lower, deps ? null : (minted.get(lower) ?? null))
       body = scan.body

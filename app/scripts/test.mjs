@@ -45,6 +45,8 @@ execFileSync(
     'tests/automation-state.test.mjs',
     // 2026-09-27: what the automation did for a position (its vault's executions and fees, and the card's figures).
     'tests/automation-impact.test.mjs',
+    // 2026-09-28 (hotfix): the chain RPC's eth_getLogs limits, and the fees history's reads inside them.
+    'tests/rpc-log-limits.test.mjs',
     'tests/release.test.mjs',
     'tests/session.api.test.mjs',
     'tests/session.siwe.test.mjs',

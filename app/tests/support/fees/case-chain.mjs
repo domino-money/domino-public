@@ -18,6 +18,7 @@
 import { decodeFunctionData, encodeFunctionResult, numberToHex } from 'viem';
 import { erc20Abi, fees, multicallAbi, owned, positionManagerAbi, stateViewAbi } from './fake-chain.mjs';
 import { loadCase } from './relay-fixture.mjs';
+import { logLimitError } from '../log-limits.mjs';
 
 const TOPICS = [fees.TOPIC.Initialize, fees.TOPIC.ModifyLiquidity, fees.TOPIC.ProtocolFeeUpdated, fees.TOPIC.Swap, fees.TOPIC.Donate, fees.TOPIC.Transfer];
 
@@ -100,6 +101,9 @@ export function caseChain(id, { edit = (position) => position, quietProbe = fals
     if (method === 'eth_blockNumber') return { result: numberToHex(head) };
     if (method === 'eth_getLogs') {
       const [{ address, fromBlock, toBlock, topics }] = params;
+      // 2026-09-28: the RPC's gateway refuses a range past its limits (tests/support/log-limits.mjs), as it does live.
+      const limited = logLimitError(params[0]);
+      if (limited) return { error: limited };
       const from = Number(fromBlock);
       const to = Number(toBlock);
       const asked = Array.isArray(topics[0]) ? topics[0] : [topics[0]];

@@ -21,5 +21,5 @@ export { ChainError, paced } from '../../../functions/_lib/owned'
 export { scanWallet } from '../../../functions/_lib/walletPositions'
 export { logsOnChain, stateOnChain } from '../../../functions/_lib/fees'
 export { scanAutomation } from '../../../functions/_lib/automation'
-// 2026-09-28: the list's read holds the lanes and the list's APR (holdReads), which asks how long to wait (quietIn).
-export { chainDeps, holdReads, memoryCache, quietIn, simulateOnChain } from './browser'
+// 2026-09-28: the list's read holds the lanes (holdReads).
+export { chainDeps, holdReads, memoryCache, simulateOnChain } from './browser'

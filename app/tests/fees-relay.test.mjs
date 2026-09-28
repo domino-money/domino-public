@@ -230,7 +230,15 @@ test('transfer, initialize and pool epochs: fixed filters, compact logs, the hea
   const init = rpcLog({ topics: [fees.TOPIC.Initialize, POOL, addressTopic('0x5fc5360d0400a0fd4f2af552add042d716f1d168'), addressTopic('0x7777777777777777777777777777777777777777')], data: `0x${[40000, 400, 0, 1n << 96n, 0].map(word).join('')}`, block: 57_898_668 });
   const chain = fakeChain({ head: 71_500_000, logs: [transferLog(70_126_907, zero, owner), init, modifyLog(70_126_907, 3), modifyLog(71_499_990, 1)] });
   const transfer = await (await askLogs(chain, { kind: 'transfer', tokenId: TOKEN })).json();
-  assert.deepEqual(chain.log[1].params[0], { address: owned.POSITION_MANAGER, fromBlock: numberToHex(9506), toBlock: numberToHex(71_500_000), topics: [fees.TOPIC.Transfer, null, null, topicOf(TOKEN)] });
+  // Changed on purpose (2026-09-28: the RPC now serves at most owned.LOG_BLOCKS_ONE blocks a filter, tests/support/log-limits.mjs):
+  // the scan from the first Transfer to the head is asked in windows of that width, oldest first, with the same filter.
+  const scans = chain.log.filter((c) => c.method === 'eth_getLogs').map((c) => c.params[0]);
+  assert.deepEqual(scans[0], { address: owned.POSITION_MANAGER, fromBlock: numberToHex(9506), toBlock: numberToHex(9506 + owned.LOG_BLOCKS_ONE - 1), topics: [fees.TOPIC.Transfer, null, null, topicOf(TOKEN)] });
+  assert.equal(scans.length, Math.ceil((71_500_000 - 9506 + 1) / owned.LOG_BLOCKS_ONE));
+  scans.forEach((scan, i) => {
+    assert.equal(Number(scan.fromBlock), 9506 + i * owned.LOG_BLOCKS_ONE, 'contiguous, oldest first');
+    assert.equal(Number(scan.toBlock), Math.min(71_500_000, 9506 + (i + 1) * owned.LOG_BLOCKS_ONE - 1));
+  });
   assert.deepEqual(transfer, { v: 1, kind: 'transfer', head: 71_500_000, units: [{ unit: null, from: 9506, to: 71_500_000, final: false, logs: [[70_126_907, 0, 5, `0x${'11'.repeat(32)}`, [addressTopic(zero), addressTopic(owner), topicOf(TOKEN)], '0x']] }], next: null });
 
   const initialized = await (await askLogs(chain, { kind: 'initialize', poolId: POOL })).json();
@@ -240,9 +248,12 @@ test('transfer, initialize and pool epochs: fixed filters, compact logs, the hea
   const epoch = Math.floor(71_499_990 / fees.EPOCH_SPAN);
   const cut = await (await askLogs(chain, { kind: 'pool', poolId: POOL, epoch, until: 71_499_000 })).json();
   assert.deepEqual(cut.units.map((u) => [u.unit, u.from, u.to, u.final, u.logs.map((log) => log[0])]), [[epoch, epoch * fees.EPOCH_SPAN, 71_499_000, false, [70_126_907]]], 'nothing past `until`');
-  const filter = chain.log.at(-1).params[0];
-  assert.deepEqual(filter.topics, [[fees.TOPIC.Initialize, fees.TOPIC.ModifyLiquidity, fees.TOPIC.ProtocolFeeUpdated], POOL]);
-  assert.equal(filter.address, fees.POOL_MANAGER);
+  // Changed on purpose (2026-09-28: the RPC serves a filter with several topics in one place over owned.LOG_BLOCKS_MANY blocks
+  // at most): the epoch's three events, over its 3.1 million blocks up to `until`, are one filter each, in one batch.
+  assert.deepEqual(chain.posts.at(-1), ['eth_getLogs', 'eth_getLogs', 'eth_getLogs']);
+  const filters = chain.log.slice(-3).map((c) => c.params[0]);
+  assert.deepEqual(filters.map((filter) => filter.topics), [[fees.TOPIC.Initialize, POOL], [fees.TOPIC.ModifyLiquidity, POOL], [fees.TOPIC.ProtocolFeeUpdated, POOL]]);
+  assert.ok(filters.every((filter) => filter.address === fees.POOL_MANAGER && Number(filter.fromBlock) === epoch * fees.EPOCH_SPAN && Number(filter.toBlock) === 71_499_000));
 
   const lagging = await (await askLogs(chain, { kind: 'pool', poolId: POOL, epoch, until: 71_500_001 })).json();
   assert.deepEqual(lagging, { v: 1, kind: 'pool', behind: true });
@@ -325,6 +336,8 @@ test('every log is validated before it is used or kept: a foreign topic, a remov
     const original = chain.deps.fetch;
     chain.deps.fetch = async (url, init) => {
       const body = JSON.parse(init.body);
+      // 2026-09-28: a day's Swaps and Donates are one filter each, in one batch: each is answered the tampered log.
+      if (Array.isArray(body) && body.every((one) => one.method === 'eth_getLogs')) return new Response(JSON.stringify(body.map((one) => ({ jsonrpc: '2.0', id: one.id, result: [bad] }))));
       if (body.method === 'eth_getLogs') return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [bad] }));
       return original(url, init);
     };
@@ -344,6 +357,9 @@ test('swap days: a final day is kept for a year, the head day 10 s and only for 
   const kept = stored.get(`${ORIGIN}/api/fees/v1/cache/c1/swaps/${POOL}/81`);
   assert.match(kept.headers.get('Cache-Control'), /max-age=31536000/);
   assert.match(stored.get(`${ORIGIN}/api/fees/v1/cache/c1/swaps/${POOL}/82`).headers.get('Cache-Control'), /max-age=10$/);
+  // Changed on purpose (2026-09-28, owned.LOG_BLOCKS_MANY): a day's Swaps and Donates are one filter each, in one batch, so
+  // each read of a day is one POST of two calls.
+  assert.ok(chain.log.filter((c) => c.method === 'eth_getLogs').every((c) => typeof c.params[0].topics[0] === 'string'), 'one event a filter');
   const calls = chain.log.filter((c) => c.method === 'eth_getLogs').length;
   // The same question within 10 s, and an earlier cut: both from the cache.
   const again = await (await askLogs(chain, { kind: 'swaps', poolId: POOL, day: 81, count: 2, until: 71_480_000 }, cache)).json();
@@ -351,12 +367,12 @@ test('swap days: a final day is kept for a year, the head day 10 s and only for 
   assert.equal(chain.log.filter((c) => c.method === 'eth_getLogs').length, calls);
   // A later cut is read again.
   await askLogs(chain, { kind: 'swaps', poolId: POOL, day: 82, count: 1, until: 71_499_000 }, cache);
-  assert.equal(chain.log.filter((c) => c.method === 'eth_getLogs').length, calls + 1);
+  assert.equal(chain.log.filter((c) => c.method === 'eth_getLogs').length, calls + 2);
   // Past 10 s, the head day is read again even for the same cut; the final day never.
   chain.deps.time += 11_000;
   await askLogs(chain, { kind: 'swaps', poolId: POOL, day: 81, count: 2, until: 71_499_000 }, cache);
   const asked = chain.log.filter((c) => c.method === 'eth_getLogs').map((c) => Number(c.params[0].fromBlock));
-  assert.deepEqual(asked.slice(calls + 1), [82 * DAY]);
+  assert.deepEqual(asked.slice(calls + 2), [82 * DAY, 82 * DAY]);
 });
 
 test('a busy day falls back to its hours, each kept on its own; the answer stops at its caps and says where to go on', async () => {
@@ -370,8 +386,10 @@ test('a busy day falls back to its hours, each kept on its own; the answer stops
   const answer = await (await askLogs(chain, { kind: 'swaps', poolId: POOL, day, count: 1 }, cache)).json();
   assert.deepEqual(answer.units.map((u) => [u.unit, u.logs.length, u.final]), [[day, 90, true]]);
   const ranges = chain.log.filter((c) => c.method === 'eth_getLogs').map((c) => [Number(c.params[0].fromBlock) - day * DAY, Number(c.params[0].toBlock) - day * DAY]);
-  assert.deepEqual(ranges[0], [0, DAY - 1], 'the whole day first');
-  assert.deepEqual(ranges.slice(1), Array.from({ length: 24 }, (_, h) => [h * HOUR, h * HOUR + HOUR - 1]), 'then its 24 hours');
+  // Changed on purpose (2026-09-28, owned.LOG_BLOCKS_MANY): the whole day is one filter per event, in one batch; an hour,
+  // under that many blocks, is still one filter for both.
+  assert.deepEqual(ranges.slice(0, 2), [[0, DAY - 1], [0, DAY - 1]], 'the whole day first');
+  assert.deepEqual(ranges.slice(2), Array.from({ length: 24 }, (_, h) => [h * HOUR, h * HOUR + HOUR - 1]), 'then its 24 hours');
   assert.ok(stored.has(`${ORIGIN}/api/fees/v1/cache/c1/swapsBusy/${POOL}/${day}`));
   assert.ok(stored.has(`${ORIGIN}/api/fees/v1/cache/c1/swapsHour/${POOL}/${day * 24 + 2}`));
   // Kept: the next answer needs no RPC call but the head.
@@ -388,7 +406,7 @@ test('a busy day falls back to its hours, each kept on its own; the answer stops
   const partial = await (await askLogs(capped, { kind: 'swaps', poolId: POOL, day: 70, count: 7 }, memoryCache().cache)).json();
   assert.equal(partial.units.length, 1, 'one busy day costs 25 calls; the second cannot finish within 32');
   assert.equal(partial.next, 71);
-  assert.ok(capped.log.length <= fees.MAX_RPC_CALLS);
+  assert.ok(capped.posts.length <= fees.MAX_RPC_CALLS, `${capped.posts.length} POSTs`);
 });
 
 test('the byte cap: a day that does not fit is left for the next answer, with its complete hours kept', async () => {
@@ -440,8 +458,13 @@ test('swapBefore: windows of 3,000 blocks growing ×4, at most 8, the last reach
   const empty = await (await askLogs(none, { kind: 'swapBefore', poolId: POOL, block: target }, memoryCache().cache)).json();
   assert.equal(empty.log, null);
   const all = none.log.filter((c) => c.method === 'eth_getLogs');
-  assert.equal(all.length, 8);
-  assert.equal(Number(all.at(-1).params[0].fromBlock), 0, 'the last window reaches the chain’s start');
+  // Changed on purpose (2026-09-28, owned.LOG_BLOCKS_ONE): a window wider than the RPC serves in one filter (the seventh,
+  // 12 million blocks, and the eighth, from block 0) is asked in windows of that width, oldest first; together they are
+  // still every block below the target, once.
+  const spans = all.map((c) => [Number(c.params[0].fromBlock), Number(c.params[0].toBlock)]).sort((a, b) => a[0] - b[0]);
+  assert.equal(spans[0][0], 0, 'the last window reaches the chain’s start');
+  assert.equal(spans.at(-1)[1], target - 1);
+  assert.ok(spans.every(([from, to], i) => to - from + 1 <= owned.LOG_BLOCKS_ONE && (i === 0 || from === spans[i - 1][1] + 1)), JSON.stringify(spans));
 });
 
 // 2026-09-25: the page's replay reads the chain from the visitor's own address, under the RPC's limit. Its cheap bound, the
@@ -504,7 +527,8 @@ test('simultaneous questions for one unit make one RPC read', async () => {
   const { cache } = memoryCache();
   const answers = await Promise.all([1, 2, 3].map(() => askLogs(chain, { kind: 'swaps', poolId: POOL, day: 81, count: 1 }, cache)));
   assert.deepEqual(answers.map((a) => a.status), [200, 200, 200]);
-  assert.equal(chain.log.filter((c) => c.method === 'eth_getLogs').length, 1);
+  // Changed on purpose (2026-09-28, owned.LOG_BLOCKS_MANY): the day's one read is one POST of two filters, Swaps and Donates.
+  assert.deepEqual(chain.posts.filter((post) => post.includes('eth_getLogs')), [['eth_getLogs', 'eth_getLogs']]);
 });
 
 test('SEND_GZIP stays off until the preview measurement; the answer is plain JSON either way', async () => {
@@ -564,8 +588,11 @@ test('a busy pool epoch (more ModifyLiquidity than one call returns) falls back 
   const answer = await (await askLogs(chain, { kind: 'pool', poolId: POOL, epoch, until: head }, cache)).json();
   assert.deepEqual(answer.units.map((u) => [u.unit, u.logs.length, u.final]), [[epoch, 500, true]]);
   const ranges = chain.log.filter((c) => c.method === 'eth_getLogs').map((c) => [Number(c.params[0].fromBlock) - start, Number(c.params[0].toBlock) - start]);
-  assert.deepEqual(ranges[0], [0, fees.EPOCH_SPAN - 1], 'the whole epoch first');
-  assert.deepEqual(ranges.slice(1), Array.from({ length: 10 }, (_, k) => [k * fees.EPOCH_PART_SPAN, k * fees.EPOCH_PART_SPAN + fees.EPOCH_PART_SPAN - 1]), 'then its tenths');
+  // Changed on purpose (2026-09-28, owned.LOG_BLOCKS_MANY): the whole epoch and each tenth are one filter per event, three
+  // in one batch.
+  const tenths = Array.from({ length: 10 }, (_, k) => [k * fees.EPOCH_PART_SPAN, k * fees.EPOCH_PART_SPAN + fees.EPOCH_PART_SPAN - 1]);
+  assert.deepEqual(ranges.slice(0, 3), Array(3).fill([0, fees.EPOCH_SPAN - 1]), 'the whole epoch first');
+  assert.deepEqual(ranges.slice(3), tenths.flatMap((tenth) => [tenth, tenth, tenth]), 'then its tenths');
   assert.ok(stored.has(`${ORIGIN}/api/fees/v1/cache/c1/poolBusy/${POOL}/${epoch}`));
   assert.ok(stored.has(`${ORIGIN}/api/fees/v1/cache/c1/poolPart/${POOL}/${epoch * 10 + 3}`));
 

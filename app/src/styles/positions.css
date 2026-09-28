@@ -265,9 +265,6 @@
   .dm-own-skel-fig { width: min(64px, 100%); height: 12px; margin: 5px 0; }
   .dm-own-skel-fig--short { width: min(48px, 80%); }
   .dm-own-skel-apr { width: 40px; height: 12px; margin: 5px 0; border-radius: var(--radius-xs); }
-  /* A row's Your APR waiting its turn (listApr.ts measures one position at a time, so a lower row may wait a minute):
-     a soft pulse, not a loading bar's shimmer. */
-  [data-apr="waiting"] .dm-own-skel-apr { background-image: none; animation: var(--animate-pulse-soft); animation-duration: 2.4s; }
   .dm-own-skel-tabs { width: 176px; height: 36px; border-radius: var(--radius-pill); }
   /* The portfolio band on its way: bubbles at the size of its label and figures, on the band's own grid. */
   .dm-own-skel-label { width: 56px; height: 12px; margin: 3px 0; }

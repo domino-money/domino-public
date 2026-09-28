@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { decodeFunctionData, encodeFunctionResult, numberToHex, parseAbi } from 'viem';
+import { logLimitError } from '../log-limits.mjs';
 
 const require = createRequire(import.meta.url);
 export const fees = require('../../../.test-build/app/functions/_lib/fees.js');
@@ -44,6 +45,7 @@ const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(b
  */
 export function fakeChain({ head = 71_500_000, logs = [], headers = {}, views = () => ({ success: false, returnData: '0x' }), logLimit = Infinity, script = {}, tokens = [] } = {}) {
   const log = [];
+  const posts = [];
   const slept = [];
   const answer = (method, params, id) => {
     if (method === 'eth_blockNumber') {
@@ -59,6 +61,9 @@ export function fakeChain({ head = 71_500_000, logs = [], headers = {}, views = 
       const from = Number(filter.fromBlock);
       const to = Number(filter.toBlock);
       assert.ok(from <= to && to <= chain.head, `range ${from}..${to} (head ${chain.head})`);
+      // 2026-09-28: the RPC's gateway refuses a range past its limits (tests/support/log-limits.mjs), as it does live.
+      const limited = logLimitError(filter);
+      if (limited) return { error: limited };
       const [topic0, topic1, topic2, topic3] = filter.topics;
       const first = Array.isArray(topic0) ? topic0 : [topic0];
       const match = (want, got) => want == null || (Array.isArray(want) ? want.includes(got) : want === got);
@@ -97,6 +102,8 @@ export function fakeChain({ head = 71_500_000, logs = [], headers = {}, views = 
       assert.equal(init.method, 'POST');
       const body = JSON.parse(init.body);
       const calls = Array.isArray(body) ? body : [body];
+      // 2026-09-28: each POST's methods, a batch's all of them (a relay answer's call cap counts POSTs).
+      posts.push(calls.map((one) => one.method));
       for (const one of calls) {
         assert.deepEqual(Object.keys(one).sort(), ['id', 'jsonrpc', 'method', 'params']);
         log.push({ method: one.method, params: one.params });
@@ -109,7 +116,7 @@ export function fakeChain({ head = 71_500_000, logs = [], headers = {}, views = 
       return json({ jsonrpc: '2.0', id: body.id, ...answer(body.method, body.params, body.id) });
     },
   };
-  const chain = { head, logs, headers, views, deps, log, slept, callBlocks: [] };
+  const chain = { head, logs, headers, views, deps, log, posts, slept, callBlocks: [] };
   return chain;
 }
 

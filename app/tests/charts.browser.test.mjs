@@ -143,9 +143,16 @@ test('an automated position: the card says in two lines what Auto-compound put b
     // transfers out of it in those executions' blocks (the service fees); no route of the site.
     const blocks = chain.fixture.expect.events.map((event) => event[1]);
     const executed = PAIRS.filter((_, i) => i !== 1).map((prefix) => chain.fixture.expect.events.find((event) => event[2].startsWith(prefix))[1]);
+    // Changed on purpose (2026-09-28, hotfix: the chain's RPC serves one filter over 10,000,000 blocks at most, and one with
+    // several addresses over 100,000): this record's 11.8 million blocks are two windows, oldest first, and the fees paid
+    // over its 8.8 million blocks of executions are asked one currency at a time.
+    const window = 10_000_000;
+    assert.ok(Math.max(...blocks) - blocks[0] + 1 > window && executed.at(-1) - executed[0] + 1 > 100_000, 'a record past both limits');
     assert.deepEqual(chain.vaultAsked, [
-      { fromBlock: blocks[0], toBlock: Math.max(...blocks) },
-      { transfers: true, address: ['0x5fc5360d0400a0fd4f2af552add042d716f1d168', '0xefab538cf3c29237a47c6afb145d50ddf204a0a3'], fromBlock: executed[0], toBlock: executed.at(-1) },
+      { fromBlock: blocks[0], toBlock: blocks[0] + window - 1 },
+      { fromBlock: blocks[0] + window, toBlock: Math.max(...blocks) },
+      { transfers: true, address: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', fromBlock: executed[0], toBlock: executed.at(-1) },
+      { transfers: true, address: '0xefab538cf3c29237a47c6afb145d50ddf204a0a3', fromBlock: executed[0], toBlock: executed.at(-1) },
     ]);
     assert.deepEqual(s.asked, []);
 

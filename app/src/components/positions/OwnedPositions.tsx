@@ -4,14 +4,14 @@ import { feesStore } from '../../lib/fees/spawn'
 import type { FeeHistoryView } from '../../lib/fees/types'
 import { CHAIN_ID } from '../../lib/read/screens/identity'
 import { walletCard, walletState } from '../../lib/walletCards'
-import { REFRESH_MS, parseWalletAnswer, quietIn, useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
+import { REFRESH_MS, parseWalletAnswer, useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
 import type { WalletIdentityView } from '../../lib/walletIdentity'
 import { newPositionHref } from '../explore/routes'
 import { IconSearch, IconWallet } from '../icons'
 import { Button, EmptyState, LinkButton, Skeleton, Tabs } from '../ui'
 import { AutomateEntry } from './AutomateEntry'
 import { automatable } from '../../lib/automate/picker'
-import { createAprQueue, rowAprs, type AprQueue, type AprRow, type RowApr } from './listApr'
+import { rowAprs, type RowApr } from './listApr'
 import { PendingRow, PendingRows, PendingSummary, PositionRow, RowsHead } from './PositionRow'
 import { PortfolioSummary, portfolioOf } from './visual/PortfolioSummary'
 
@@ -33,43 +33,26 @@ const REFRESH = __DOMINO_TEST_HOOKS__ && !(window as { __dominoRefresh?: boolean
 
 type Status = 'open' | 'closed'
 
-/**
- * Your APR on the rows (round 6, listApr.ts): every position whose history this visit already read shows it at once;
- * the others are measured one at a time while on the screen. Test builds measure only when a test asks for it before
- * the page loads (window.__dominoListApr), so every other suite counts its reads as before. 2026-09-28 (the owner's
- * phone): only from the chain's own list, never while a read of the page or a refusal's rest holds this browser's reads
- * (quietIn), and nowhere without IntersectionObserver.
- */
-const QUEUE: AprQueue | null =
-  (__DOMINO_TEST_HOOKS__ && !(window as { __dominoListApr?: boolean }).__dominoListApr) || typeof IntersectionObserver !== 'function'
-    ? null
-    : createAprQueue({
-        store: feesStore,
-        timer: (ms, run) => {
-          const timer = setTimeout(run, ms)
-          return () => clearTimeout(timer)
-        },
-        visible: () => document.visibilityState === 'visible',
-        now: Date.now,
-        quiet: quietIn,
-      })
-
 function quiet() {}
 const noViews: ReadonlyMap<string, FeeHistoryView> = new Map()
-const idleSubscribe = () => quiet
-const zero = () => 0
 
-/** The APR cell of each of `rows` (the list's open positions shown), from the fees store's views and the queue. */
-function useRowAprs(rows: readonly AprRow[]): ReadonlyMap<string, RowApr> {
-  const key = rows.map((row) => row.id).join(',')
+/**
+ * Your APR on the rows (round 6, listApr.ts): the history a position's page drew this visit, from the fees store, which
+ * the list only watches. 2026-09-28 (the owner: from that morning, a position's Fees earned chart and Your APR often did
+ * not show, and it took many reloads): the list no longer measures anything itself. Its queue replayed each open
+ * position's history from the list, in every tab, as the position's page would (the load the 2026-09-25 review had taken
+ * off the list): live, it drew the RPC's refusals of the list's own read, and a history it could not finish stayed the
+ * fees store's answer for the visit, so the position's page opened from the list showed its unclaimed figure only and
+ * read nothing more until a reload. A row whose page was not opened this visit shows the calm dash (its title: shown on
+ * the position's page).
+ */
+function useRowAprs(ids: readonly string[]): ReadonlyMap<string, RowApr> {
+  const key = ids.join(',')
   const watch = useCallback((listener: () => void) => (key === '' ? quiet : feesStore.watch(key.split(','), listener)), [key])
   const snapshot = useCallback(() => (key === '' ? noViews : feesStore.views(key.split(','))), [key])
   const views = useSyncExternalStore(watch, snapshot, () => noViews)
-  const version = useSyncExternalStore(QUEUE ? QUEUE.subscribe : idleSubscribe, QUEUE ? QUEUE.version : zero, zero)
-  // `version`: the queue's own changes (what it will measure), which the views do not show.
-  return useMemo(() => (version >= 0 ? rowAprs(rows, views, QUEUE) : noAprs), [rows, views, version])
+  return useMemo(() => rowAprs(key === '' ? [] : key.split(','), views), [key, views])
 }
-const noAprs: ReadonlyMap<string, RowApr> = new Map()
 
 /** Opens the header's wallet dialog, where a wallet is connected or switched to Robinhood Chain. */
 const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria-haspopup="dialog"]')?.click()
@@ -230,39 +213,10 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
 
   const shown = tabs ? tabs[tab].slice(0, pages[tab] * PAGE_SIZE) : []
   const more = tabs ? tabs[tab].length - shown.length : 0
-  // The open positions on the list's open page, whose APR the rows show (and the queue measures while on screen).
-  const measured = useMemo(() => (tabs ? tabs.open.slice(0, pages.open * PAGE_SIZE).filter((row) => row.card.hasLiquidity).map((row) => ({ id: row.card.tokenId, pool: row.card.poolId })) : []), [tabs, pages.open])
+  // The open positions on the list's open page, whose APR the rows show when their page drew it this visit.
+  const measured = useMemo(() => (tabs ? tabs.open.slice(0, pages.open * PAGE_SIZE).filter((row) => row.card.hasLiquidity).map((row) => row.card.tokenId) : []), [tabs, pages.open])
   const aprs = useRowAprs(measured)
-  const measuredKey = measured.map((row) => `${row.id}:${row.pool}`).join(',')
-  const listRef = useRef<HTMLDivElement>(null)
-  // The rows on the screen, in the list's order, for the queue: only while the Open tab shows them and the tab is visible.
   const fresh = ready !== null
-  useEffect(() => {
-    const list = listRef.current
-    if (!QUEUE || !list || !fresh || tab !== 'open' || measuredKey === '') return
-    const queue = QUEUE
-    const rows = measuredKey.split(',').map((entry) => {
-      const [id, pool] = entry.split(':')
-      return { id, pool }
-    })
-    const seen = new Set<string>()
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        const id = (entry.target as HTMLElement).dataset.positionRow
-        if (id && entry.isIntersecting) seen.add(id)
-        else if (id) seen.delete(id)
-      }
-      queue.want(rows.filter((row) => seen.has(row.id)))
-    })
-    for (const row of list.querySelectorAll<HTMLElement>('a[data-position-row]')) observer.observe(row)
-    const wake = () => queue.wake()
-    document.addEventListener('visibilitychange', wake)
-    return () => {
-      observer.disconnect()
-      document.removeEventListener('visibilitychange', wake)
-      queue.want([])
-    }
-  }, [measuredKey, tab, fresh])
   const total = tabs ? tabs.open.length + tabs.closed.length : 0
   const phase = ready ? 'ready' : copy ? 'kept' : unread ? 'unlisted' : answer.phase === 'retrying' ? 'retrying' : 'loading'
   // `No positions yet` carries its own New position: the page's title row steps its own back (before paint, no flash).
@@ -302,7 +256,7 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
     body = <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />
   } else {
     body = (
-      <div ref={listRef} className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
+      <div className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
         {/* The column names for the eye; each row's own cells carry their names for a screen reader. */}
         <RowsHead closed={tab === 'closed'} />
         {shown.map((row) => (

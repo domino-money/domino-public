@@ -122,8 +122,11 @@ function productionClosures() {
   // 2026-09-28, fix/rpc-fallback after its review: 24,800 B, the same ceiling as tests/session.bundle.test.mjs (the
   // router leaves a failing fallback alone and probes the chain's RPC for a call only it serves: 24,761 B measured on
   // Windows, both builds alike; it was 24,636 B at 9847335c).
+  // 2026-09-28, hotfix/charts: 25,100 B, the same ceiling as tests/session.bundle.test.mjs (the fees history's log reads
+  // keep inside the chain RPC's new eth_getLogs limits: 25,036 B measured on Windows, both builds alike; it was 24,761 B
+  // at 5d8051bf).
   const workers = scripts.filter((file) => /^feesReplay\.worker-/.test(file));
-  for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 24_800, `${file} is over its 24,800 B gzip ceiling`);
+  for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 25_100, `${file} is over its 25,100 B gzip ceiling`);
   // 2026-09-25: the chain code the page runs (src/lib/chain/chainCode.ts: the routes' scan and relay reads, the RPC runtime,
   // Keccak), one chunk loaded by dynamic import on a page's first read of the chain, is an admitted root of its own
   // (tests/session.bundle.test.mjs measures it, with its own ceiling).

@@ -3820,10 +3820,12 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // Changed on purpose (2026-09-28, the owner's phone: Your positions stayed on its loading rows while the RPC refused
   // his address): the page says on it too that the RPC refused one of its reads ('rest', which rests every lane), and
   // hears there the lanes' refusals and the other tabs' reads, for the list's APR (quietIn): a flag or the word, nothing else.
+  // Changed on purpose (2026-09-28, hotfix: the list's APR queue replayed the fees histories from the list and is gone):
+  // the page only speaks on the channel now, and hears nothing from it.
   assert.deepEqual([...chainClient.matchAll(/\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['news', 'news'], 'the channel carries the page’s news and the lanes’ news');
-  assert.match(chainClient, /function tell\(news\?: boolean \| 'rest'\): void \{/, 'the page’s news: a read on its way or not, or a refusal it met');
-  assert.deepEqual([...chainClient.matchAll(/\btell\(([^)]*)\)/g)].map((m) => m[1]).sort(), ['', "'rest'", "news?: boolean | 'rest'", 'step > 0'], 'the page says nothing else');
-  assert.match(chainClient, /if \(data === 'rest'\) rest\(\)\n\s*else if \(typeof data === 'boolean'\) othersAt = data \? Date\.now\(\) : 0\n/, 'and takes nothing else from it');
+  assert.match(chainClient, /function tell\(news: boolean \| 'rest'\): void \{/, 'the page’s news: a read on its way or not, or a refusal it met');
+  assert.deepEqual([...chainClient.matchAll(/\btell\(([^)]*)\)/g)].map((m) => m[1]).sort(), ["'rest'", "news: boolean | 'rest'", 'step > 0'], 'the page says nothing else');
+  assert.equal([...chainClient.matchAll(/\.onmessage = /g)].length, 1, 'only the lanes listen');
   assert.match(chainClient, /const share = \(news: number \| 'rest'\) => \{/, 'the lanes’ news: a byte count or a refusal, nothing else');
   assert.deepEqual([...chainClient.matchAll(/\bshare\(([^)]*)\)/g)].map((m) => m[1]).sort(), ["'rest'", 'bytes'], 'what each lane read, and that it was refused');
   assert.match(chainClient, /import \{ MAX_RPC_CALLS, RPC_URL, type OwnedDeps \} from '\.\.\/\.\.\/\.\.\/functions\/_lib\/owned'/, 'the URL is the routes\' own pin');

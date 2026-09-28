@@ -28,6 +28,7 @@ import { createRequire } from 'node:module';
 import { decodeFunctionData, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, encodeFunctionResult, numberToHex, pad, parseAbi } from 'viem';
 import { caseChain } from './case-chain.mjs';
 import { fees as feesLib, multicallAbi, owned } from './fake-chain.mjs';
+import { logLimitError } from '../log-limits.mjs';
 
 const require = createRequire(import.meta.url);
 const automation = require('../../../.test-build/app/functions/_lib/automation.js');
@@ -136,6 +137,9 @@ export function automatedChain(id, { vault = null, feeBps = 200, executions = []
   }
 
   async function one(call) {
+    // 2026-09-28: the RPC's gateway refuses a range past its limits (tests/support/log-limits.mjs), as it does live.
+    const limited = call.method === 'eth_getLogs' ? logLimitError(call.params[0]) : null;
+    if (limited) return { jsonrpc: '2.0', id: call.id, error: limited };
     if (vault && call.method === 'eth_getLogs' && String(call.params[0].address).toLowerCase() === lower) {
       const { fromBlock, toBlock, topics } = call.params[0];
       chain.vaultAsked.push({ fromBlock: Number(fromBlock), toBlock: Number(toBlock) });

@@ -215,6 +215,13 @@ export function automationImpact({
 
 /** The fewest blocks a log range the RPC refuses as too large is split down to (functions/_lib/owned.ts MIN_SPLIT_BLOCKS). */
 const MIN_SPLIT = 2_000
+/**
+ * 2026-09-28: the most blocks the RPC reads for one filter, and for a filter with several addresses
+ * (functions/_lib/owned.ts LOG_BLOCKS_ONE and LOG_BLOCKS_MANY): a longer record is asked in windows of the first, oldest
+ * first, and the vault's payments over a longer span than the second one currency at a time, not refused and halved.
+ */
+const ONE_VALUE_BLOCKS = 10_000_000
+const MANY_VALUES_BLOCKS = 100_000
 
 /**
  * The vault's record for `tokenId` in blocks [from, to], read from the chain by the page: its executions (one
@@ -235,6 +242,10 @@ export async function readVault(vault: string, tokenId: string, currencies: read
       const out: unknown[] = []
       while (queue.length > 0) {
         const [start, end] = queue.shift() as [number, number]
+        if (end - start >= ONE_VALUE_BLOCKS) {
+          queue.unshift([start, start + ONE_VALUE_BLOCKS - 1], [start + ONE_VALUE_BLOCKS, end])
+          continue
+        }
         try {
           const got = await code.paced(rt, budget, 'eth_getLogs', [{ ...filter, fromBlock: `0x${start.toString(16)}`, toBlock: `0x${end.toString(16)}` }])
           if (!Array.isArray(got)) throw new code.ChainError('fatal', 'invalid_logs')
@@ -253,7 +264,9 @@ export async function readVault(vault: string, tokenId: string, currencies: read
     if (executions.length === 0) return { executions, paid: new Map() }
     if (pair.includes(NATIVE)) return { executions, paid: null }
     const vaultWord = `0x${vault.slice(2).padStart(64, '0')}`
-    const paid = paymentsOf(await logs({ address: [...pair], topics: [TRANSFER, vaultWord] }, executions[0].block, executions[executions.length - 1].block), vault, pair, new Set(executions.map((execution) => execution.tx)))
+    const [first, last] = [executions[0].block, executions[executions.length - 1].block]
+    const transfers = last - first + 1 > MANY_VALUES_BLOCKS ? [...(await logs({ address: pair[0], topics: [TRANSFER, vaultWord] }, first, last)), ...(await logs({ address: pair[1], topics: [TRANSFER, vaultWord] }, first, last))] : await logs({ address: [...pair], topics: [TRANSFER, vaultWord] }, first, last)
+    const paid = paymentsOf(transfers, vault, pair, new Set(executions.map((execution) => execution.tx)))
     return paid ? { executions, paid } : null
   } catch {
     return null

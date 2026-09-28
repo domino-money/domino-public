@@ -54,7 +54,7 @@ const RELEASE_OFF = { status: 200, body: { contractVersion: '1.0.0-rc.1', chainI
  * (no position, no deposit, every NFT unknown), as the site's routes answered before 2026-09-25. `refresh` (2026-09-27):
  * Your positions and a position's page read themselves again on their own, as they do outside test builds.
  */
-async function scenario({ clock = false, routes = [], chain = browserChain(), refresh = false, listApr = false } = {}) {
+async function scenario({ clock = false, routes = [], chain = browserChain(), refresh = false } = {}) {
   const fake = createFakeSession();
   const calls = [], executions = [], releases = [], deposits = [], errors = [];
   const state = { performance: 'available', execution: 'on', setupRelease: RELEASE_OFF, sequenceRelease: RELEASE_OFF, deposit: null };
@@ -97,8 +97,6 @@ async function scenario({ clock = false, routes = [], chain = browserChain(), re
   const context = await browser.newContext({ viewport: { width: 1320, height: 1000 } });
   if (clock) await context.clock.install({ time: Date.now() });
   if (refresh) await context.addInitScript(() => { window.__dominoRefresh = true; });
-  // 2026-09-27, round 6: Your APR measured on the Your positions table (OwnedPositions.tsx), which test builds do only when asked.
-  if (listApr) await context.addInitScript(() => { window.__dominoListApr = true; });
   await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   const rpc = await routeRpc(context, chain);
   const wallet = await installWallets(context);
@@ -3692,6 +3690,22 @@ function refusing(chain) {
   };
   return state;
 }
+/**
+ * 2026-09-28 (hotfix: the chain's RPC refuses an eth_getLogs over 100,000 blocks when one place of its filter holds several
+ * values, tests/support/log-limits.mjs): a read of the pool's epochs asks their three events in one filter, or over a
+ * wider range one filter each, in one batch (functions/_lib/fees.ts). `epochRead`: the three in one filter, a
+ * ProtocolFeeUpdated filter, or a ModifyLiquidity filter of the pool naming no sender. `swapRead`: a day's or a span's
+ * Swaps and Donates, both in one filter or a Donate filter of its own (a Swap before the mint is a Swap filter alone).
+ */
+const EPOCH_TOPICS = { modify: '0xf208f4912782fd25c7f114ca3723a2d5dd6f3bcc3ac8db5af63baa85f711d5ec', protocolFee: '0xe9c42593e71f84403b84352cd168d693e2c9fcd1fdbcc3feb21d92b43e6696f9', donate: '0x29ef05caaff9404b7cb6d1c0e9bbae9eaa7ab2541feba1a9c4248594c08156cb' };
+const epochRead = (filter) => {
+  const first = [filter.topics?.[0]].flat();
+  return first.length === 3 || (first.length === 1 && (first[0] === EPOCH_TOPICS.protocolFee || (first[0] === EPOCH_TOPICS.modify && filter.topics.length === 2)));
+};
+const swapRead = (filter) => {
+  const first = [filter.topics?.[0]].flat();
+  return first.length === 2 || (first.length === 1 && first[0] === EPOCH_TOPICS.donate);
+};
 /** Whether a request is the fees worker's (a history's logs or block headers), not the list's or a position's state. */
 const feesRead = (request) => request.calls.some((call) => call.method === 'eth_getBlockByNumber' || (call.method === 'eth_getLogs' && call.topic !== SETUP_MINTED_TOPIC));
 /** After a reload or in a new tab: the wallet connects again by itself, or is connected again from the header. */
@@ -4796,7 +4810,7 @@ test('the owner’s Auto-compound position draws its fees from its own life: set
     const drawn = Date.now() - started;
     const logs = chain.log.filter((call) => call.method === 'eth_getLogs');
     const filters = logs.map((call) => call.params[0]);
-    assert.ok(!filters.some((filter) => Array.isArray(filter.topics[0]) && filter.topics[0].length === 3), 'no epoch of the pool’s history');
+    assert.ok(!filters.some(epochRead), 'no epoch of the pool’s history');
     assert.ok(filters.some((filter) => filter.topics[0] === MODIFY && filter.topics[2] === PM_WORD && Number(filter.toBlock) > Number(filter.fromBlock)), 'its settlements, among the PositionManager’s ModifyLiquidity over its life');
     const read = logs.reduce((sum, call) => sum + call.bytes, 0);
     assert.ok(read < 256 * 1024, `${read} B of logs, where its pool’s history alone was 866 kB`);
@@ -4818,11 +4832,14 @@ test('the owner’s Auto-compound position draws its fees from its own life: set
 
 // 2026-09-27, round 6 (the owner: add each position's APR to Your positions, and keep the table clean): the owner's own
 // Auto-compound 3325113 (recorded, tests/support/fees/3325113.json.gz, held by a vault Domino's factory made) beside a
-// plain position whose history the chain cannot give. The list measures Your APR itself, lazily: one position at a time,
-// in the list's order, through the fees store as the position's page would, and shows the page's own figure; the one it
-// cannot measure shows a calm dash. The page then finds the history done (nothing is replayed again), and so does the
-// list on the way back. Nothing is kept in the browser.
-test('Your positions shows each position’s APR, the page’s own figure, measured one position at a time; the page and the way back read nothing again', async () => {
+// plain position. The row shows the page's own figure. Nothing is kept in the browser.
+// Changed on purpose (2026-09-28, hotfix: from that morning, for everyone, a position's Fees earned chart and Your APR
+// often did not show, and it took many reloads): the list measures nothing itself any more. Its queue replayed each open
+// position's history from the list, at a page's budget; live, it drew the RPC's refusals of the list's own read, and a
+// history it could not finish stayed the fees store's answer, so the page opened from the list read nothing more until a
+// reload. Now the list starts no history run: each row shows a calm dash until its page drew the history this visit, and
+// then the page's own figure, with nothing read again on the way back.
+test('Your positions replays no history: each row shows its page’s own APR once the page drew it this visit, a calm dash until then, and the way back reads nothing again', async () => {
   const VAULT = `0x${'5a'.repeat(20)}`;
   const recorded = automatedChain('3325113', { vault: VAULT, owner: ACCOUNTS[0].address, executions: [] });
   const position = recorded.fixture.state.positions[0];
@@ -4835,7 +4852,7 @@ test('Your positions shows each position’s APR, the page’s own figure, measu
   });
   const chain = listChain({ recorded, base, vault: VAULT });
   const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route], listApr: true });
+  const s = await scenario({ chain, routes: [site.route] });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     // Every run the fees store sends its worker and every cancel, and each run's end the worker sends back, in order.
@@ -4872,18 +4889,15 @@ test('Your positions shows each position’s APR, the page’s own figure, measu
     const order = await s.page.locator('a[data-position-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-position-row')));
     assert.deepEqual([...order].sort(), ['3135288', '3325113']);
 
-    // The recorded position's APR, as its page works it out; the other a calm dash once the chain said it has no history.
-    const apr = s.page.locator('[data-position-row="3325113"] [data-cell="apr"][data-apr="ready"]');
-    await apr.waitFor({ timeout: 45_000 });
-    const figure = (await apr.locator('.dm-own-fig').innerText()).trim();
-    assert.match(figure, /^[\d,]+(\.\d)?%$/);
-    assert.equal(await apr.getAttribute('title'), 'Since the position opened');
-    const dash = s.page.locator(`[data-position-row="${OWNED_OPEN}"] [data-cell="apr"][data-apr="none"]`);
-    await dash.waitFor({ timeout: 45_000 });
-    assert.equal((await dash.innerText()).replace(/\s+/g, ' ').trim(), 'Your APR —');
-    // One position at a time, in the list's order: each run is sent once, and the next only after the one before is over.
-    const runs = await s.page.evaluate(() => window.__feesRuns);
-    assert.deepEqual(runs.filter((entry) => !entry.startsWith('cancel')), order.flatMap((id) => [`run ${id}`, `done ${id}`]), 'each position once, in the list’s order, one at a time');
+    // Every row a calm dash, and no history run at all from the list, however long it stays on screen.
+    await s.page.waitForTimeout(3_000);
+    for (const id of order) {
+      const dash = s.page.locator(`[data-position-row="${id}"] [data-cell="apr"][data-apr="none"]`);
+      assert.equal((await dash.innerText()).replace(/\s+/g, ' ').trim(), 'Your APR —', id);
+      assert.equal(await dash.getAttribute('title'), 'Shown on the position’s page');
+    }
+    assert.deepEqual(await s.page.evaluate(() => window.__feesRuns), [], 'the list replays no history');
+    assert.ok(!chain.log.some((call) => call.method === 'eth_getBlockByNumber'), 'nor reads any of one');
     // The automation beside it: a small badge that runs, in the row's Automation column.
     const badge = s.page.locator('[data-position-item="3325113"] > [data-position-automation="3325113"][data-automation="compound"]');
     await badge.waitFor();
@@ -4891,29 +4905,33 @@ test('Your positions shows each position’s APR, the page’s own figure, measu
     // Changed on purpose (2026-09-28, review): no tooltip on the cell, a click on the badge being the row's (below).
     assert.equal(await badge.getAttribute('title'), null);
     await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor();
-    // Nothing moved: the figures stand where they were drawn, now that the badges and the APR are in (their columns
-    // kept their room from the first paint).
+    // Nothing moved: the figures stand where they were drawn, now that the badges are in (their columns kept their room
+    // from the first paint).
     const drawn = await s.page.evaluate(() => window.__drawn);
-    assert.equal(drawn.late, 0, 'measured before the badges and the APR came');
+    assert.equal(drawn.late, 0, 'measured before the badges came');
     assert.deepEqual(await s.page.evaluate(() => window.__rowEdges()), drawn.edges, 'every figure where it was first drawn');
 
-    // Its page, opened by a click on the badge (2026-09-28, review: the badge was a dead spot in the row): the same
-    // figure, from the history the list read, and no replay again.
-    const before = (await s.page.evaluate(() => window.__feesRuns)).length;
+    // Its page, opened by a click on the badge (2026-09-28, review: the badge was a dead spot in the row): its own run,
+    // the chart and Your APR.
     const onBadge = await badge.locator('.dm-own-badge').boundingBox();
     await s.page.mouse.click(onBadge.x + onBadge.width / 2, onBadge.y + onBadge.height / 2);
     const detail = s.page.locator('[data-position-detail][data-position-id="3325113"]');
     await detail.waitFor({ timeout: 15_000 });
     assert.equal(await s.page.evaluate(() => location.hash), '#/positions/3325113');
+    await s.page.locator('[data-fees-card][data-fees-state="verified"]').first().waitFor({ timeout: 45_000 });
     const pageApr = detail.locator('[data-cell="apr"][data-apr="ready"]');
     await pageApr.waitFor({ timeout: 10_000 });
-    const pageText = (await pageApr.innerText()).replace(/\s+/g, ' ');
-    assert.ok(pageText.startsWith(`YOUR APR ${figure} Since opened`), pageText);
-    await s.page.locator('[data-fees-card][data-fees-state="verified"]').first().waitFor({ timeout: 10_000 });
-    // Back: the figure at once.
+    const figure = (await pageApr.locator('.dm-pos-apr').innerText()).trim().split(/\s/)[0];
+    assert.match(figure, /^[\d,]+(\.\d)?%$/);
+    assert.deepEqual((await s.page.evaluate(() => window.__feesRuns)).filter((entry) => entry.startsWith('run')), ['run 3325113'], 'the page’s own run, once');
+    // Back: the page's figure at once on its row, the other row still a dash, and nothing replayed again.
+    const before = (await s.page.evaluate(() => window.__feesRuns)).length;
     await s.page.evaluate(() => { location.hash = '#/positions'; });
-    await s.page.locator('[data-position-row="3325113"] [data-apr="ready"]').waitFor({ timeout: 5_000 });
-    assert.equal((await s.page.locator('[data-position-row="3325113"] [data-apr="ready"] .dm-own-fig').innerText()).trim(), figure);
+    const apr = s.page.locator('[data-position-row="3325113"] [data-cell="apr"][data-apr="ready"]');
+    await apr.waitFor({ timeout: 5_000 });
+    assert.equal((await apr.locator('.dm-own-fig').innerText()).trim(), figure);
+    assert.equal(await apr.getAttribute('title'), 'Since the position opened');
+    assert.equal(await s.page.locator(`[data-position-row="${OWNED_OPEN}"] [data-cell="apr"][data-apr="none"]`).count(), 1);
     await s.page.waitForTimeout(1_500);
     assert.deepEqual((await s.page.evaluate(() => window.__feesRuns)).slice(before).filter((entry) => entry.startsWith('run')), [], 'no history replayed again');
     // Changed on purpose (2026-09-28): the list's display copy, and nothing else (no APR, no history).
@@ -5106,17 +5124,16 @@ test('a copy kept over an hour ago shows no USD figure and no Total value until 
 });
 
 // 2026-09-28 (the owner, on his phone, with five tabs open: Your positions stayed on its loading rows while the public
-// RPC refused his address; round 6's list APR replays each open position's history in every tab that shows the list,
-// and the list's own read had no way ahead of it). Two tabs of one browser: A shows the list and measures its APR (the
-// recorded 3325113, its history replayed by A's fees worker); B opens Positions while the RPC refuses this address for a
-// few seconds, as it does live. B draws this browser's copy at once and the chain's list as soon as the RPC lets it in;
-// from B's first call on, no tab's fees worker or APR asks anything: B's read holds every lane for the whole of it, its
-// refusals rest them all, and A's queue waits on both (lib/chain/browser.ts holdReads and quietIn).
+// RPC refused his address, and the list's own read had no way ahead of the fees histories). Two tabs of one browser: A
+// shows a position's page (the recorded 3325113, its history replayed by A's fees worker); B opens Positions while the RPC
+// refuses this address for a few seconds, as it does live. B draws this browser's copy at once and the chain's list as
+// soon as the RPC lets it in; from B's first call on, no tab's fees worker asks anything: B's read holds every lane for
+// the whole of it, and its refusals rest them all (lib/chain/browser.ts holdReads).
 // Before the fix (measured on d1197112, twice, with this test's assertions logged instead): B showed its loading rows
-// until the chain answered, 10.4 s after its first call; meanwhile A's queue started two APR runs (at 6.1 and 10.3 s)
-// and A's fees worker read the history from 8.1 s on, in B's 4.5 s wait before its next call. Live, those reads are what
-// the RPC refuses the address for.
-test('the RPC refusing for a few seconds while another tab measures its APR: the list is drawn at once from this browser’s copy and from the chain as soon as the RPC lets it in, and no fees or APR read is asked meanwhile', async () => {
+// until the chain answered, 10.4 s after its first call, while the other tab's fees reads went on in B's waits.
+// Changed on purpose (2026-09-28, hotfix): tab A shows a position's page, not the list measuring its APR: the list
+// measures nothing any more (tests/list-apr.test.mjs), so no tab starts a history run from the list.
+test('the RPC refusing for a few seconds while another tab reads a position’s history: the list is drawn at once from this browser’s copy and from the chain as soon as the RPC lets it in, and no fees read is asked meanwhile', async () => {
   const VAULT = `0x${'5a'.repeat(20)}`;
   const recorded = automatedChain('3325113', { vault: VAULT, owner: ACCOUNTS[0].address, executions: [] });
   const position = recorded.fixture.state.positions[0];
@@ -5129,7 +5146,7 @@ test('the RPC refusing for a few seconds while another tab measures its APR: the
   const chain = listChain({ recorded, base, vault: VAULT });
   const rpc = refusing(chain);
   const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route], listApr: true });
+  const s = await scenario({ chain, routes: [site.route] });
   let b = null;
   // Every run a tab's fees store sends its worker, and when (the page's clock: this machine's, as the fake RPC's).
   const countRuns = (page) => page.evaluate(() => {
@@ -5145,8 +5162,9 @@ test('the RPC refusing for a few seconds while another tab measures its APR: the
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     await countRuns(s.page);
     await connectWallet(s.page);
+    // A's list (it keeps this browser's copy), then 3325113's page: its run is on, and its worker reads the history.
     await s.page.locator('[data-owned="ready"] a[data-position-row="3325113"]').waitFor({ timeout: 20_000 });
-    // A measures 3325113's APR: its run is on, and its worker reads the history.
+    await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
     await s.page.waitForFunction(() => window.__feesRuns.some((run) => run.id === '3325113'), null, { timeout: 20_000 });
     await until(() => rpc.asked.filter(feesRead).length >= 2, 'A’s fees worker reading the history', 20_000);
 
@@ -5173,13 +5191,13 @@ test('the RPC refusing for a few seconds while another tab measures its APR: the
     assert.ok(late < 6_000, `B’s list from the chain ${late} ms after the RPC let the address in`);
     assert.deepEqual(await listSeen(b), ['kept', 'ready'], 'B: the copy, then the chain’s list; never the loading rows or a line');
 
-    // Nothing of the fees histories or the APR from B's first call to its list, nor for a while after (the rest).
+    // Nothing of the fees histories from B's first call to its list, nor for a while after (the rest).
     await new Promise((done) => setTimeout(done, 3_000));
     const meanwhile = rpc.asked.filter((request) => request.at > first + 100 && feesRead(request));
     assert.deepEqual(meanwhile.map((request) => `${request.at - first} ms ${request.refused ? 'refused' : 'answered'} ${request.calls.map((call) => call.method).join('+')}`), [], 'no tab’s fees worker asked anything');
     const runs = [];
     for (const page of [s.page, b]) runs.push(...(await page.evaluate(() => window.__feesRuns ?? [])).filter((run) => run.at > first));
-    assert.deepEqual(runs, [], 'no APR run was started in either tab');
+    assert.deepEqual(runs, [], 'no history run was started in either tab');
     const refused = rpc.asked.filter((request) => request.refused);
     assert.ok(refused.length > 0 && refused.every((request) => request.at >= first && request.calls.every((call) => call.method === 'eth_blockNumber')), 'only the list’s first call was asked while refused');
     console.log(`# B: its copy at once, the chain’s list ${late} ms after the RPC let the address in; ${refused.length} refused, each the list’s first call; no fees read from its first call to 3 s after its list`);
@@ -5368,8 +5386,10 @@ test('a busy pool’s fees history is drawn estimated first, then exact, from th
     assert.match(await verified.innerText(), /time in range/i);
     await s.page.screenshot({ path: join(shots(), 'position-fees-exact.png'), fullPage: true });
     const logs = chain.log.filter((call) => call.method === 'eth_getLogs').map((call) => call.params[0]);
-    assert.ok(!logs.some((filter) => Array.isArray(filter.topics[0]) && filter.topics[0].length === 3), 'no epoch of the pool’s history');
-    assert.ok(logs.some((filter) => Array.isArray(filter.address)), 'the owner’s payments, for its settlements');
+    assert.ok(!logs.some(epochRead), 'no epoch of the pool’s history');
+    // Changed on purpose (2026-09-28, hotfix: the RPC's eth_getLogs limits): over its 4.6 hours of life, more than 100,000
+    // blocks, the owner's payments are one filter per currency (an ERC-20 Transfer: three topics).
+    assert.ok(logs.some((filter) => filter.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' && filter.topics.length === 3 && typeof filter.address === 'string'), 'the owner’s payments, for its settlements');
     assert.deepEqual(chain.refused, [], 'nothing but the reads');
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
     console.log(`# estimate drawn after ${drawn} ms, exact after ${exact} ms`);
@@ -5432,7 +5452,7 @@ test('while a busy history is replayed the list and the position’s page come b
   const site = siteRoutes();
   const s = await scenario({ chain, routes: [site.route] });
   // The pool's epochs: Initialize, ModifyLiquidity and ProtocolFeeUpdated (the probe asks five kinds, the swap days two).
-  const poolLogs = () => chain.log.filter((call) => call.method === 'eth_getLogs' && Array.isArray(call.params[0].topics[0]) && call.params[0].topics[0].length === 3).length;
+  const poolLogs = () => chain.log.filter((call) => call.method === 'eth_getLogs' && epochRead(call.params[0])).length;
   const within = async (what, locator, ms) => {
     const started = Date.now();
     await locator.waitFor({ timeout: 15_000 });
@@ -5465,7 +5485,7 @@ test('while a busy history is replayed the list and the position’s page come b
     // Paced by bytes (changed on purpose, 2026-09-25: a pool's epochs may be asked in capped tenths, small replies a few
     // milliseconds apart within the lane's burst): the worker's pool log reads never ran ahead of the lane's burst and
     // rate (lib/chain/browser.ts LANE_PACE), by more than the one reply that may overdraw it.
-    const reads = chain.log.filter((call) => call.method === 'eth_getLogs' && Array.isArray(call.params[0].topics[0]) && call.params[0].topics[0].length === 3);
+    const reads = chain.log.filter((call) => call.method === 'eth_getLogs' && epochRead(call.params[0]));
     let read = 0;
     for (const [i, call] of reads.entries()) {
       const allowed = LANE_PACE.burstBytes + (LANE_PACE.bytesPerSecond * (call.at - reads[0].at)) / 1000 + Math.max(0, ...reads.slice(0, i).map((r) => r.bytes));
@@ -5561,8 +5581,8 @@ test('a history the probe says cannot verify is never read: no pool epoch, no ca
     assert.equal(Number(probe.toBlock) - Number(probe.fromBlock) + 1, 3_600, 'of the pool’s last 3,600 blocks, six minutes');
     await s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 5_000 });
     await new Promise((done) => setTimeout(done, 2_000));
-    assert.equal(asked(3), 0, 'no epoch of the pool’s history is read');
-    assert.equal(asked(2), 0, 'nor any swap day');
+    assert.equal(chain.log.filter((call) => call.method === 'eth_getLogs' && epochRead(call.params[0])).length, 0, 'no epoch of the pool’s history is read');
+    assert.equal(chain.log.filter((call) => call.method === 'eth_getLogs' && swapRead(call.params[0])).length, 0, 'nor any swap day');
     assert.match(await s.page.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
     // Changed on purpose (2026-09-25): past the probe, the price path asks the NFT's own settlements (none here: this
     // recording has no ModifyLiquidity of its own), and the card stays, with its unclaimed figure and a quiet plot.

@@ -67,6 +67,18 @@ export const BACKOFF_MS = 1500
 /** A log range is not split below this many blocks. */
 export const MIN_SPLIT_BLOCKS = 2000
 /**
+ * 2026-09-28 (the owner: from that morning, for everyone, a position's Fees earned chart and Your APR stopped showing):
+ * the chain's RPC now refuses, at its gateway and at once, an eth_getLogs over more blocks than LOG_BLOCKS_ONE, or than
+ * LOG_BLOCKS_MANY when any place of its filter holds several values (an address list, topics OR-ed in one position; a
+ * list of one counts as one): -32602 "query spans 237864 blocks (73235611 to 73473474), but only 100000 are allowed for
+ * this request; narrow the block range, or send one value per position" (measured live that evening). Such a refusal
+ * reads as a range to split ("block range"), and the fees history's reads that OR several values over a wider range
+ * (a pool epoch's three events, a day's Swaps and Donates, a settlements read's currencies and owners) ask one filter
+ * per value instead, in one batch (functions/_lib/fees.ts, feesPath.ts; lib/automationImpact.ts keeps its own copy).
+ */
+export const LOG_BLOCKS_ONE = 10_000_000
+export const LOG_BLOCKS_MANY = 100_000
+/**
  * The owner's most recent setup operations that are read, for the deposits still held in them. Changed on purpose
  * (2026-09-25, audit of 754014c): it was 8, and a deposit older than the owner's last 8 operations was left out with
  * nothing to say so, its Refund to wallet gone while the funds stayed in DominoSetupV1. Every operation is read now, up

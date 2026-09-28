@@ -30,7 +30,7 @@
  * and filter is fixed here, the caller names only a pool, a token id, blocks,
  * the NFT's owners and the pool's two currencies (checked as addresses).
  */
-import { POSITION_MANAGER } from './owned'
+import { LOG_BLOCKS_MANY, POSITION_MANAGER } from './owned'
 import {
   HASH,
   POOL_MANAGER,
@@ -41,18 +41,18 @@ import {
   addressWord,
   blockNumber,
   compact,
+  eachEvent,
   failedRead,
   headBlock,
   hex,
   keysAre,
+  logsBatch,
   newBudget,
-  paced,
   poolFilter,
   poolIdOk,
-  post,
   quantity,
-  resultOf,
   tokenIdOk,
+  topicOf0,
   type Budget,
   type FeesRuntime,
 } from './fees'
@@ -127,37 +127,28 @@ export function pathRequestOf(body: Record<string, unknown>): PathRequest | null
   return null
 }
 
-/** One batch of eth_getLogs (one POST), each envelope's result in the order asked. */
-async function logsBatch(rt: FeesRuntime, budget: Budget, filters: unknown[], byteLimit: number): Promise<unknown[]> {
-  const reply = await paced(rt, budget, () => post(rt, budget, filters.map((filter, id) => ({ jsonrpc: '2.0', id, method: 'eth_getLogs', params: [filter] })), true, byteLimit))
-  if (!Array.isArray(reply) || reply.length !== filters.length) throw new RelayError('fatal', 'invalid_batch')
-  const out: unknown[] = Array.from({ length: filters.length })
-  const seen = new Set<number>()
-  for (const envelope of reply) {
-    const id = (envelope as { id?: unknown } | null)?.id
-    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 0 || id >= filters.length || seen.has(id)) throw new RelayError('fatal', 'invalid_batch')
-    seen.add(id)
-    const result = resultOf(envelope)
-    if (!Array.isArray(result)) throw new RelayError('fatal', 'invalid_logs')
-    out[id] = result
-  }
-  return out
-}
-
 const byPosition = (a: CompactLog, b: CompactLog) => a[0] - b[0] || a[1] - b[1]
 
-/** Swap and Donate logs in each span, one batch; a reply past SPAN_BYTES is too_large (the caller asks shorter spans). */
+/**
+ * Swap and Donate logs in each span, one batch; a reply past SPAN_BYTES is too_large (the caller asks shorter spans).
+ * 2026-09-28 (owned.ts LOG_BLOCKS_MANY): a span wider than the RPC serves for two events at once is asked as one filter
+ * per event, in the same batch, each event's logs checked against its own filter.
+ */
 async function spanLogs(rt: FeesRuntime, budget: Budget, poolId: string, spans: ReadonlyArray<[number, number]>): Promise<CompactLog[][]> {
-  const filter = poolFilter(poolId, SWAP_EVENTS)
-  const topics = [[...SWAP_EVENTS], poolId]
+  const asks = spans.flatMap(([from, to], span) => eachEvent(SWAP_EVENTS, to - from + 1).map((topic0) => ({ span, topic0 })))
   let results: unknown[]
   try {
-    results = await logsBatch(rt, budget, spans.map(([from, to]) => ({ address: POOL_MANAGER, fromBlock: hex(from), toBlock: hex(to), topics })), SPAN_BYTES)
+    results = await logsBatch(rt, budget, asks.map(({ span, topic0 }) => ({ address: POOL_MANAGER, fromBlock: hex(spans[span][0]), toBlock: hex(spans[span][1]), topics: [topicOf0(topic0), poolId] })), SPAN_BYTES)
   } catch (error) {
     if (error instanceof RelayError && (error.kind === 'bytes' || error.kind === 'range')) throw new RelayError('fatal', 'part_too_large')
     throw error
   }
-  return results.map((result, i) => (result as unknown[]).map((raw) => compact(raw, filter, spans[i][0], spans[i][1])).sort(byPosition))
+  const out: CompactLog[][] = spans.map(() => [])
+  results.forEach((result, i) => {
+    const { span, topic0 } = asks[i]
+    out[span].push(...(result as unknown[]).map((raw) => compact(raw, poolFilter(poolId, topic0), spans[span][0], spans[span][1])))
+  })
+  return out.map((logs) => logs.sort(byPosition))
 }
 
 /** The blocks in [from, to] where one of `currencies` moved between the PoolManager and one of `holders`, in either direction. */
@@ -170,10 +161,22 @@ async function paidBlocks(rt: FeesRuntime, budget: Budget, holders: readonly str
   // in about 250 ms (measured 2026-09-25); with the PoolManager allowed on both sides (it is in nearly every block) the
   // one query had to open every block, and timed out after 2.2 s ("log query timed out"). A range the node still gives
   // up on (twelve million blocks did, once, the same day) is asked in halves, down to SETTLE_SPLIT_BLOCKS.
-  const filters = (a: number, b: number) => [
-    { address: tokens, fromBlock: hex(a), toBlock: hex(b), topics: [TOPIC.Transfer, pool, owners] },
-    { address: tokens, fromBlock: hex(a), toBlock: hex(b), topics: [TOPIC.Transfer, owners, pool] },
-  ]
+  // 2026-09-28 (owned.ts LOG_BLOCKS_MANY): over more blocks than the RPC serves for several values in one place, one
+  // filter per currency and owner, each way, in the same batch (at most 2 × 4 × 2). A life wider than the RPC serves at
+  // all (LOG_BLOCKS_ONE, about 11 days) is refused as a range, and halved.
+  const filters = (a: number, b: number) => {
+    const range = { fromBlock: hex(a), toBlock: hex(b) }
+    if (b - a + 1 <= LOG_BLOCKS_MANY || (tokens.length === 1 && owners.length === 1)) {
+      return [
+        { address: tokens, ...range, topics: [TOPIC.Transfer, pool, owners] },
+        { address: tokens, ...range, topics: [TOPIC.Transfer, owners, pool] },
+      ]
+    }
+    return tokens.flatMap((token) => owners.flatMap((owner) => [
+      { address: token, ...range, topics: [TOPIC.Transfer, pool, owner] },
+      { address: token, ...range, topics: [TOPIC.Transfer, owner, pool] },
+    ]))
+  }
   const read = async (a: number, b: number): Promise<unknown[]> => {
     try {
       return (await logsBatch(rt, budget, filters(a, b), SETTLE_TRANSFER_BYTES)).flat()

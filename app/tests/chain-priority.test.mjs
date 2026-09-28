@@ -7,9 +7,10 @@
  *
  * Here, in a process of its own (the page's side of the channel is module state, and the lanes of other suites'
  * tests would rest it), the page's runtime (src/lib/chain/browser.ts): the list's read holds every tab's fees lane for
- * the whole of it, its waits between refused calls included; a refusal any page read meets rests every lane at once;
- * and the page's low-priority reads (the list's APR, components/positions/listApr.ts) wait on both (quietIn). The
- * queue's side is tests/list-apr.test.mjs; the page's, tests/finance.browser.test.mjs.
+ * the whole of it, its waits between refused calls included; a refusal any page read meets rests every lane at once.
+ * The page's side is tests/finance.browser.test.mjs. Changed on purpose (2026-09-28, hotfix): the list's APR queue is gone
+ * (it replayed the fees histories from the list), and with it the page's low-priority wait (quietIn): the list measures
+ * nothing (tests/list-apr.test.mjs).
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -18,40 +19,35 @@ import { fakeChain, nft, OWNER } from './owned-chain.mjs';
 import { reachable } from './support/reach.mjs';
 
 const require = createRequire(import.meta.url);
-const { chainDeps, chainLane, holdReads, quietIn, routing, LANE_PACE } = require('../.test-build/app/src/lib/chain/browser.js');
+const browser = require('../.test-build/app/src/lib/chain/browser.js');
+const { chainDeps, chainLane, holdReads, routing, LANE_PACE } = browser;
 const walletPositions = require('../.test-build/app/src/lib/walletPositions.js');
 
 const RPC = 'https://rpc.mainnet.chain.robinhood.com';
 const PACE = { bytesPerSecond: 100_000, burstBytes: 1_000, workFactor: 1, graceMs: 60, restMs: 150 };
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 
-test('another tab’s read and this page’s own hold the list’s APR, and a hold keeps every lane waiting until it is released, however long', async () => {
+// Changed on purpose (2026-09-28, hotfix): no low-priority read of the page waits on the channel any more (the list's APR
+// queue is gone), so the page exports no quietIn; a hold still keeps every lane waiting.
+test('a hold keeps every lane waiting until it is released, however long; the page has no low-priority reads of its own', async () => {
+  assert.equal('quietIn' in browser, false, 'no list APR queue to hold');
   const lane = chainLane(PACE);
-  const other = new BroadcastChannel('domino-chain-reads');
   try {
-    assert.equal(quietIn(), 0, 'nothing on its way, nothing refused: the APR may ask');
-    other.postMessage(true);
-    await wait(20);
-    assert.equal(quietIn(), LANE_PACE.graceMs, 'another tab’s read holds this page’s APR too');
-    other.postMessage(false);
-    await wait(20);
-    assert.equal(quietIn(), 0);
     const release = holdReads();
-    assert.equal(quietIn(), LANE_PACE.graceMs, 'and a read of this page');
     const held = Date.now();
+    // The lane hears the hold on the channel (a message, delivered after this turn of the event loop).
+    await wait(20);
     const turn = lane.deps().turn();
-    await wait(PACE.graceMs * 4);
+    await wait(PACE.graceMs * 4 - 20);
     release();
     await turn;
     assert.ok(Date.now() - held >= PACE.graceMs * 5 - 10, `the lane waited for the release and its grace (${Date.now() - held} ms)`);
-    assert.equal(quietIn(), 0);
   } finally {
-    other.close();
     lane.close();
   }
 });
 
-test('the list’s read holds every lane for the whole of it, its wait between refused calls included; the refusal it met rests every lane and the list’s APR', async () => {
+test('the list’s read holds every lane for the whole of it, its wait between refused calls included; the refusal it met rests every lane', async () => {
   const lane = chainLane(PACE);
   walletPositions.forgetMinted();
   // Its first call refused (two unreadable replies: the RPC's 429 as a browser sees it), the scan's 1.5 s wait, then the chain.
@@ -65,7 +61,6 @@ test('the list’s read holds every lane for the whole of it, its wait between r
     while (refused < 2) await wait(5);
     await wait(20);
     assert.equal(lane.resting(), true, 'the page’s refusal rests the lane at once');
-    assert.ok(quietIn() > LANE_PACE.restMs - 1_000, `and the list’s APR for the lanes’ own rest (${quietIn()} ms)`);
     // The lane's own rest (its test pace's) is over while the scan still waits out its 1.5 s: the lane is still held.
     await wait(PACE.restMs + 30);
     assert.equal(lane.resting(), false);

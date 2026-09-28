@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
+import { logLimitError } from './support/log-limits.mjs';
 
 const require = createRequire(import.meta.url);
 const impact = require('../.test-build/app/src/lib/automationImpact.js');
@@ -212,12 +213,16 @@ test('the vault is read from the chain by the page: its executions from the mint
       now: () => Date.now(),
     });
     const chain = (filter) => {
+      // 2026-09-28: the RPC's gateway refuses a range past its limits (tests/support/log-limits.mjs), as it does live.
+      const limited = logLimitError(filter);
+      if (limited) return { error: limited };
       if (filter.topics[0] === impact.EXECUTION_COMPLETED) {
         // The RPC refuses the whole range once: the page asks it in two halves.
         if (Number(filter.toBlock) - Number(filter.fromBlock) > 400_000) return { error: { code: -32005, message: 'block range is too wide' } };
         return { result: LOGS.filter((log) => Number(log.blockNumber) >= Number(filter.fromBlock) && Number(log.blockNumber) <= Number(filter.toBlock)) };
       }
-      return { result: TRANSFERS };
+      const addresses = [filter.address].flat();
+      return { result: TRANSFERS.filter((log) => addresses.includes(log.address)) };
     };
     const record = await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363, deps(chain));
     assert.deepEqual(record.executions.map((e) => e.tx), [TX.net, TX.second, TX.third]);
@@ -226,7 +231,10 @@ test('the vault is read from the chain by the page: its executions from the mint
       [VAULT, 73_233_307, 73_705_363],
       [VAULT, 73_233_307, 73_469_335],
       [VAULT, 73_469_336, 73_705_363],
-      [[USDG, UFG], 73_468_040, 73_705_363],
+      // Changed on purpose (2026-09-28: the RPC serves a filter with several addresses over 100,000 blocks at most): the
+      // fees paid over these 237,324 blocks are asked one currency at a time.
+      [USDG, 73_468_040, 73_705_363],
+      [UFG, 73_468_040, 73_705_363],
     ]);
     // A native currency leaves no log: no transfer read, fees by the policy's rate.
     asked.length = 0;

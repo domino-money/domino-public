@@ -141,8 +141,9 @@ export const POSITIONS: DocPage = {
         // 2026-09-28: the list shows this browser's copy of it at once while the chain is read (OwnedPositions.tsx).
         p('Connect your wallet on Robinhood Chain and Positions lists the positions it created with Domino, read from the chain: there is no ID to type, and your browser keeps only a copy of the list. ', b('Open'), ' positions still hold liquidity; ', b('Closed'), ' ones hold none. Position NFTs made elsewhere are not listed.'),
         // 2026-09-27 (the owner's point 6): the product's plain words, Value and Fees ready to collect, once Principal and Unclaimed fees.
-        // Round 6 (2026-09-27): each row's Your APR, the figure its page shows; in as many words as before.
-        p('Each row shows the pair, whether the price is in range, its value, its fees ready to collect and ', b('Your APR'), ', as on its page. It updates itself every 30 seconds; select a row to open its page.'),
+        // Round 6 (2026-09-27): each row's Your APR, the figure its page shows; in as many words as before. 2026-09-28
+        // (hotfix): the list no longer works it out itself, so a row shows it once its page was opened.
+        p('Each row shows the pair, whether the price is in range, its value, its fees ready to collect and ', b('Your APR'), ', once you open its page. It updates itself every 30 seconds; select a row to open its page.'),
         p('Open rows also say how their fees are used, or offer ', b('Automate'), '. Deposits that never became a position are listed too, with their refund.'),
       ],
     },

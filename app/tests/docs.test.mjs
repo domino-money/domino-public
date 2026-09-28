@@ -466,7 +466,8 @@ test('the docs use the product’s words for a position’s figures, say what Au
   // Principal and Unclaimed fees are Position value (Value on the list) and Fees ready to collect on every screen.
   assert.doesNotMatch(all, /Unclaimed fees|unclaimed fees|the principal \(/);
   // Changed on purpose (round 6, 2026-09-27, the owner: each position's APR on the list): the row's Your APR too.
-  assert.match(sectionText(positions, 'your-positions'), /its value, its fees ready to collect and Your APR, as on its page\./);
+  // Changed on purpose (2026-09-28, hotfix: the list no longer measures the APR itself): once its page was opened.
+  assert.match(sectionText(positions, 'your-positions'), /its value, its fees ready to collect and Your APR, once you open its page\./);
   const details = sectionText(positions, 'position-details');
   for (const label of ['Position value', 'Fees ready to collect', 'Your APR', 'Current price']) assert.match(details, new RegExp(`\\n${label}: `), label);
   assert.match(details, /Your APR: this position’s own fees as a yearly rate, from its history\. Not the pool’s APR, and not a promise\./);
