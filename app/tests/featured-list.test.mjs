@@ -155,7 +155,9 @@ test('fallback: current and repaired while valid are the server’s list with it
   assert.equal(current.source, 'server');
   assert.deepEqual(idsOf(current), [A.poolId, B.poolId]);
   assert.equal(featured.featuredTitle(current.source), 'Top pools · last 24h');
-  assert.equal(current.method, 'Ranked daily at 12:00 UTC by estimated 24h fee APR among pools with no hooks, a fixed fee, at least $250K 24h volume and $250K liquidity. Order is set at selection; figures update live. Not a recommendation.');
+  // Changed on purpose 2026-09-28 (the owner: "Não precisa ter essa descrição"): the method line under the title is
+  // gone, and the list carries no text for it.
+  assert.equal('method' in current, false, 'no method line');
   assert.equal(featured.listFrom(answered(read('valid/repaired.json'))).source, 'server');
   for (const [label, body] of [
     ['carried_over', answer([A, B], { status: 'carried_over' })],
@@ -165,7 +167,6 @@ test('fallback: current and repaired while valid are the server’s list with it
   ]) {
     const list = featured.listFrom(answered(body));
     assert.equal(list.source, 'server_neutral', label);
-    assert.equal(list.method, null, label);
     assert.equal(featured.featuredTitle(list.source), 'Selected pools', label);
     assert.ok(list.entries.length > 0, label);
   }
@@ -187,10 +188,12 @@ test('fallback: current and repaired while valid are the server’s list with it
 // Added 2026-09-26 after review: the service sets effectiveAt to when it served the list (backend/featured_live.py
 // `_serve`), so a repair, or a list published late, carries a time that is not the selection's. The fixtures all say
 // 12:00 and could not show it.
-test('the method line names the owner’s selection time, 12:00 UTC, never the answer’s effectiveAt: a repair at 17:42 or a list published at 12:07', () => {
+// Changed on purpose 2026-09-28 (the owner: "Não precisa ter essa descrição"): the method line that printed the
+// selection time is gone. What stays is the title: a repair or a late publication keeps "Top pools · last 24h", and a
+// current list that does not name its rules takes the neutral title, as it did when the line could not be written.
+test('a repair at 17:42 or a list published at 12:07 keeps the criterion title; a current list without its rules takes the neutral one', () => {
   const noon = CURRENT.effectiveAt;
   assert.equal(new Date(noon * 1000).toISOString().slice(11, 16), '12:00', 'the fixtures’ own time');
-  const expected = 'Ranked daily at 12:00 UTC by estimated 24h fee APR among pools with no hooks, a fixed fee, at least $250K 24h volume and $250K liquidity. Order is set at selection; figures update live. Not a recommendation.';
   for (const [label, body] of [
     ['repaired at 17:42', { ...read('valid/repaired.json'), effectiveAt: noon + 5 * 3600 + 42 * 60, servedAt: noon + 5 * 3600 + 42 * 60 }],
     ['current published at 12:07', { ...clone(CURRENT), effectiveAt: noon + 7 * 60, servedAt: noon + 7 * 60 }],
@@ -198,10 +201,12 @@ test('the method line names the owner’s selection time, 12:00 UTC, never the a
     assert.ok(featured.validateFeatured(v5, body), `${label}: a valid answer`);
     const list = featured.listFrom(answered(body));
     assert.equal(list.source, 'server', label);
-    assert.equal(list.method, expected, label);
-    assert.doesNotMatch(list.method, /17:42|12:07/, label);
+    assert.equal(featured.featuredTitle(list.source), 'Top pools · last 24h', label);
   }
-  assert.equal(featured.FEATURED_SELECTION_TIME_UTC, '12:00');
+  const unruled = { ...clone(CURRENT), rules: null };
+  assert.ok(featured.validateFeatured(v5, unruled), 'rules may be null on the wire');
+  assert.equal(featured.listFrom(answered(unruled)).source, 'server_neutral', 'no rules, no criterion title');
+  assert.equal('methodLine' in featured, false, 'nothing writes a method line');
 });
 
 /** The app's composition, over a fake fetch: the featured route beside the stored and legacy namespaces. */
@@ -367,7 +372,6 @@ test('the same list gone stale keeps its pools and drops its criterion title', a
   assert.equal(store.getSnapshot().source, 'server');
   await store.refresh();
   assert.equal(store.getSnapshot().source, 'server_neutral');
-  assert.equal(store.getSnapshot().method, null);
   assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId]);
 });
 

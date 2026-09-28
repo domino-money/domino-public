@@ -42,7 +42,6 @@ import type { FeaturedPool, FeaturedPoolsResponse } from 'api-contracts/read-v5/
 import { mainTokenAt, readsAsMainToken } from '../../config/mainTokens'
 import { SELECTED_POOL_CATALOGUE, catalogueTokens, type PoolCatalogueEntry } from '../../config/selectedPoolCatalogue'
 import { createBridgeSource, type BridgeOptions } from './bridgeSource'
-import { formatUsdCompact } from './decimal'
 import type { PoolList } from './marketsProvider'
 import { realClock, type Clock } from './pipeline'
 import { fixedFeePercent } from './screens/fee'
@@ -203,12 +202,10 @@ export interface FeaturedList {
   entries: readonly PoolCatalogueEntry[]
   /** The server's listId; null for the embedded list. */
   listId: string | null
-  /** The method line of a `server` list (§11.7, option B), from the answer's own rules; null otherwise. */
-  method: string | null
 }
 
 /** The embedded list: config/selectedPools.ts with its labels. */
-export const BUNDLED_LIST: FeaturedList = Object.freeze({ source: 'bundled', entries: SELECTED_POOL_CATALOGUE, listId: null, method: null })
+export const BUNDLED_LIST: FeaturedList = Object.freeze({ source: 'bundled', entries: SELECTED_POOL_CATALOGUE, listId: null })
 
 /** Bundled artwork for a token by its exact address: the main tokens', else the embedded list's; none for any other token. */
 function artworkAt(address: string) {
@@ -256,29 +253,6 @@ export function bindsToEntry(entry: PoolCatalogueEntry | undefined, pool: Verifi
     && currencies.length === 2 && currencies[0] === want.currency0 && currencies[1] === want.currency1
 }
 
-/** "$250K", "$1.5M": a rule's USD floor as the method line writes it. */
-function usdFloor(text: string): string | null {
-  return formatUsdCompact(text)?.replace(/\.0(?=[KMB]$)/, '') ?? null
-}
-
-/**
- * The hour of the daily selection, as the owner approved it (spec §15, question 8: "12:00 UTC, one a day"): the
- * policy's `selectionHourUtc`, which the answer does not carry. Never the answer's `effectiveAt`: the service sets
- * that to when it served the list, so a repair at 17:42 or a list published at 12:07 would print that time (fixed
- * 2026-09-26 after review).
- */
-export const FEATURED_SELECTION_TIME_UTC = '12:00'
-
-/** The method line of §11.7 option B, from the answer's rules; null without them. */
-export function methodLine(answer: FeaturedPoolsResponse): string | null {
-  const rules = answer.rules
-  if (!rules) return null
-  const volume = usdFloor(rules.minVolume24hUsd)
-  const tvl = usdFloor(rules.minTvlUsd)
-  if (!volume || !tvl) return null
-  return `Ranked daily at ${FEATURED_SELECTION_TIME_UTC} UTC by estimated 24h fee APR among pools with no hooks, a fixed fee, at least ${volume} 24h volume and ${tvl} liquidity. Order is set at selection; figures update live. Not a recommendation.`
-}
-
 /** The list an answer puts on screen by itself (§11.2), as on a page's first read. */
 export function listFrom(answer: FeaturedAnswer): FeaturedList {
   if (answer.kind !== 'list') return BUNDLED_LIST
@@ -287,8 +261,9 @@ export function listFrom(answer: FeaturedAnswer): FeaturedList {
   // Every time is the server's own. A list without them, or older than 72 h when served, is not shown.
   if (pools.length === 0 || generatedAt === null || validUntil === null || servedAt > generatedAt + FEATURED_MAX_AGE_SECONDS) return BUNDLED_LIST
   const current = (body.status === 'current' || body.status === 'repaired') && servedAt <= validUntil
-  const method = current ? methodLine(body) : null
-  return { source: current && method ? 'server' : 'server_neutral', entries: pools.map(entryOf), listId: body.listId, method }
+  // The criterion title only for a list that names the rules it was ranked by. The method line that spelled them out
+  // under the title was removed 2026-09-28 (the owner: "Não precisa ter essa descrição"); the docs page says how.
+  return { source: current && body.rules !== null ? 'server' : 'server_neutral', entries: pools.map(entryOf), listId: body.listId }
 }
 
 const idsOf = (list: FeaturedList) => list.entries.map((entry) => entry.poolId)
@@ -310,7 +285,7 @@ export function nextList(shown: FeaturedList, waiting: FeaturedList | null, answ
   const candidate = listFrom(answer)
   if (candidate.source === 'bundled') return { shown: BUNDLED_LIST, waiting: null }
   // The same list: its pools and order stay; its title follows the answer (a list gone stale says so).
-  if (shown.source !== 'bundled' && candidate.listId === shown.listId) return { shown: { ...shown, source: candidate.source, method: candidate.method }, waiting: null }
+  if (shown.source !== 'bundled' && candidate.listId === shown.listId) return { shown: { ...shown, source: candidate.source }, waiting: null }
   const ids = idsOf(candidate)
   if (shown.source !== 'bundled' && onlyRemovals(idsOf(shown), ids)) return { shown: candidate, waiting: null }
   // New pools or a new order wait. Pools the service no longer lists leave the list on screen at once, unless none would stay.
@@ -366,9 +341,9 @@ export function createFeaturedStore({ read, clock = realClock }: { read: (signal
     const ids = idsOf(shown).join()
     if (ids !== idsOf(snapshot).join()) shownAt = clock.monotonic()
     const same = snapshot.settled && ids === idsOf(snapshot).join() && shown.listId === snapshot.listId && shown.source === snapshot.source
-      && shown.method === snapshot.method && [...withdrawn].join() === [...snapshot.withdrawn].join()
+      && [...withdrawn].join() === [...snapshot.withdrawn].join()
     if (same) return
-    snapshot = { source: shown.source, entries: shown.entries, listId: shown.listId, method: shown.method, settled: true, withdrawn }
+    snapshot = { source: shown.source, entries: shown.entries, listId: shown.listId, settled: true, withdrawn }
     for (const listener of listeners) listener()
   }
   // A failure says nothing about removals: the ones known stay.

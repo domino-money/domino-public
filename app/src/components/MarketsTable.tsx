@@ -229,8 +229,9 @@ function PinnedChip() {
  */
 function CatalogueRow({ poolId, entry, full, loading, token, pinned }: { poolId: string; entry: PoolCatalogueEntry; full: boolean; loading: boolean; token: string | null; pinned: boolean }) {
   const href = poolHref(poolId, token)
-  // While the first markets read is out, each figure rests as a bubble at its text line's size, so the row keeps
-  // its height and nothing reads as missing; once it has settled without a row, the dashes say what is unavailable.
+  // While the first markets read is out, or briefly while the store is about to collect the pool for the first time
+  // (2026-09-28), each figure rests as a bubble at its text line's size, so the row keeps its height and nothing reads
+  // as missing; once it has settled without a row, the dashes say what is unavailable.
   const bubble = (className: string) => <Skeleton className={cx('dm-mkt-bubble', className)} />
   return (
     <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} data-row-loading={loading ? '' : undefined} onClick={(event) => followRow(event, href)}>
@@ -374,9 +375,6 @@ export function MarketsTable({
   const said = marketsStatus(state)
   const status = diagnostics ? <ReadStatus status={said} onRetry={retry} /> : <ReadStatus status={said} quiet />
 
-  // The method line under the criterion title (§11.7, option B): the answer's own rules and time, no link.
-  const method = !full && ranked && featured.method ? <p className="dm-mkt-method" data-featured-method="">{featured.method}</p> : null
-
   const table = (
     <TableShell
       label={title}
@@ -402,7 +400,6 @@ export function MarketsTable({
       status={
         full ? undefined : (
           <>
-            {method}
             {notice}
             {status}
           </>
@@ -439,7 +436,8 @@ export function MarketsTable({
             market ? (
               <Row key={poolId} m={market} now={now} full={full} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken ?? token} pinned={ranked && catalogue?.pinned === true} />
             ) : catalogue ? (
-              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} loading={state.phase === 'loading'} token={token} pinned={ranked && catalogue.pinned === true} />
+              // A pool the store is about to collect for the first time keeps its placeholder briefly (marketsProvider.ts).
+              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} loading={state.phase === 'loading' || (state.phase === 'ready' && state.placeholders?.includes(poolId.toLowerCase()) === true)} token={token} pinned={ranked && catalogue.pinned === true} />
             ) : null,
           )}
         </tbody>

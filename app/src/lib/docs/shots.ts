@@ -4,7 +4,7 @@
  * a made-up world. Do not edit by hand: re-run the script (its header has the command), and commit this file with the images.
  */
 export const SHOTS = {
-  'markets': { width: 1672, height: 1115, phone: { width: 780, height: 1177 }, alt: 'The Markets page: a table of pools, each with its pair, fee, price, TVL, 24-hour volume and APR.' },
+  'markets': { width: 1672, height: 1035, phone: { width: 780, height: 1033 }, alt: 'The Markets page: a table of pools, each with its pair, fee, price, TVL, 24-hour volume and APR.' },
   'pool': { width: 1672, height: 911, phone: { width: 780, height: 941 }, alt: 'A pool’s page: the pair, its fee and the Create a position button at the top, one sentence on what the pool earns, then its APR, 24-hour volume, TVL and price.' },
   'new-pool': { width: 1672, height: 1980, phone: { width: 780, height: 2128 }, alt: 'New position, step 1: a token is typed, the pools that trade it are listed with their figures, and one of them is chosen.' },
   'new-range': { width: 1672, height: 1436, phone: { width: 780, height: 1488 }, alt: 'New position, step 2: today’s price, the choice of how wide the range is, and its lowest and highest price.' },

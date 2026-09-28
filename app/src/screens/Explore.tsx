@@ -97,7 +97,6 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
             ) : undefined
           }
         />
-        {ranked && featured.method && <p className="dm-mkt-method" data-featured-method="">{featured.method}</p>}
         <FilterBar asset={asset} query={query} onAsset={setAsset} onQuery={setQuery} />
         <div className="dm-mkt-pools-table">
           <MarketsTable variant="full" filter={{ asset, query }} onMatchCount={(shown, total) => setCount({ shown, total })} empty={empty} />

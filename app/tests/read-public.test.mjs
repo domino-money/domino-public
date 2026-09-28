@@ -396,7 +396,7 @@ test('the markets provider asks every read of its load first', () => {
  * Markets hold it, its timers fired one at a time. Each look: the timer planned after a load (ms), whether the row
  * waits for its figures, its TVL state, its estimate's status, and the monotonic ms when that load settled.
  */
-async function catchUpTrace(answers, { loads = answers.length, after = () => fixture('overview'), holder = true } = {}) {
+async function catchUpTrace(answers, { loads = answers.length, after = () => fixture('overview'), holder = true, view = null } = {}) {
   let steady = 0;
   const timers = [];
   // The reads' own deadlines never fire here; the provider's timers are the ones this test fires, one at a time.
@@ -418,7 +418,8 @@ async function catchUpTrace(answers, { loads = answers.length, after = () => fix
   });
   const row = () => provider.getSnapshot().result.markets[0];
   const seen = [];
-  const look = () => seen.push({ at: steady, next: timers.at(-1)?.ms ?? null, pending: row().figuresPending === true, tvl: row().tvlUsd.state, apr: row().feeAprEstimate.data?.status });
+  // `view` (added 2026-09-28) looks at something else than the row, for a pool that has none yet.
+  const look = () => seen.push({ at: steady, next: timers.at(-1)?.ms ?? null, ...(view ? view(provider.getSnapshot()) : { pending: row().figuresPending === true, tvl: row().tvlUsd.state, apr: row().feeAprEstimate.data?.status }) });
   look();
   for (let i = 1; i < loads; i++) {
     const before = timers.length;
@@ -472,10 +473,10 @@ test('a pool whose figures are not coming says Unavailable at once, and the page
   // The next collection is two minutes off (an idle pool another tab asked for moments ago).
   const far = await catchUpTrace([behind({ inSeconds: 120 })], { loads: 2 });
   assert.deepEqual(far.seen, [says(0, 60_000), figures(60_000)]);
-  // The provider never gave this pool figures: a collection brings none back.
-  const never = await catchUpTrace([behind({ neverCovered: true })], { loads: 2, after: behind({ neverCovered: true }) });
-  assert.deepEqual(never.seen, [says(0, 60_000), says(60_000, 60_000)]);
-  assert.equal(never.overviews, 2, 'no extra overview POST');
+  // Changed on purpose 2026-09-28 (the owner's Home, the first day of the daily list): a pool whose collector holds no
+  // provider figures for it (cache age null) said Unavailable at once here, though the overview's own request brings
+  // its collection within seconds. It now waits for that collection, and one that brings none ends the wait at once
+  // (the tests after 'a pool stops waiting…').
   // No table holds the quiet re-asks (a pool page's ticker alone): nothing will ask again soon, so nothing waits.
   const alone = await catchUpTrace([behind()], { loads: 1, holder: false });
   assert.equal(alone.seen[0].pending, false);
@@ -505,6 +506,87 @@ test('a pool stops waiting when a collection since brought no figures, or when i
   const again = await catchUpTrace([behind(), behind({ observedAt: generatedAt + 6 }), caughtUp, behind()], { loads: 5 });
   assert.deepEqual(again.seen, [waits(0, 6_500), says(6_500, 60_000), figures(66_500), { at: 126_500, next: 6_500, pending: true, tvl: 'stale', apr: 'available' }, figures(133_000)]);
   assert.equal(again.row().tvlUsd.state, 'provider', 'the collection’s own figures replace the kept ones');
+});
+
+// ---------------------------------------------------------------------------
+// Added 2026-09-28. The owner, on production, the first day of the daily list (read-v5 live at 12:00 UTC): Home's "Top
+// pools · last 24h" showed ETH/NOTE and PONS/USDG with Unavailable TVL and 24h volume, and the Worker saw the overview
+// asked at 12:53:13, :16 and :19, then nothing. The store serves a pool's cache age as null whenever its collector
+// holds no provider figures for it at all (backend/market_cache.py `_result`), and a pool it never collected with no
+// stored value (acquisition pending); the page waited for neither, though the overview's own request brings either
+// collection within five seconds (026_public_demand.sql). A collection the provider was rate limited for (about six
+// GeckoTerminal calls a minute from the VM) ended a wait at once too.
+// ---------------------------------------------------------------------------
+const { withPendingPools } = await import('./support/stale-store.mjs');
+const limited = (options) => behind({ neverCovered: true, providerBusy: true, ...options });
+const pending = (options) => () => withPendingPools(fixture('overview'), [pool], options);
+/** A look at a pool with no row yet: whether its catalogue row shows a placeholder, and its row's TVL once it has one. */
+const shownAs = (snapshot) => ({ placeholder: snapshot.placeholders?.includes(pool.toLowerCase()) === true, row: snapshot.result.markets[0]?.tvlUsd.state ?? null });
+
+test('a pool the collector holds no figures for waits for the collection the request brings; one that brings none ends the wait at once', async () => {
+  const { generatedAt } = fixture('overview');
+  // The collection lands with figures: the row waits, then shows them, as a pool whose figures aged out does.
+  const lands = await catchUpTrace([behind({ neverCovered: true }), caughtUp]);
+  assert.deepEqual(lands.seen, [waits(0, 6_500), figures(6_500)]);
+  assert.equal(lands.fanned, 0, 'no provider read fanned out');
+  // The provider does not list the pool (a 404 is provider_unavailable, market_cache.py): the collection publishes
+  // without figures and the wait ends there, one ask later; the page is back to its minute.
+  const unlisted = await catchUpTrace([behind({ neverCovered: true }), behind({ neverCovered: true, observedAt: generatedAt + 6 }), behind({ neverCovered: true, observedAt: generatedAt + 66 })], { loads: 3 });
+  assert.deepEqual(unlisted.seen, [waits(0, 6_500), says(6_500, 60_000), says(66_500, 60_000)]);
+  assert.equal(unlisted.overviews, 3, 'one ask more than before, once a visit');
+});
+
+test('a collection the provider was rate limited for does not end the wait: the asks go on within the window, and the figures land', async () => {
+  const { generatedAt } = fixture('overview');
+  // 12:53:13 as the store would serve it: no figures in the collector, a collection under way. The one published at
+  // +3 s was rate limited (a 429, provider_rate_limited); the one after the provider's 15 s cooldown brings figures.
+  const once = await catchUpTrace([limited({ refreshing: true }), limited({ refreshing: true, observedAt: generatedAt + 3 }), limited({ observedAt: generatedAt + 8 }), caughtUp]);
+  assert.deepEqual(once.seen, [waits(0, CATCH_UP_FLOOR_MS), waits(2_500, 3_500), says(6_000, 6_500), figures(12_500)]);
+  assert.equal(once.fanned, 0, 'no provider read fanned out');
+  // The same collection without figures for any other reason ends the wait, as before.
+  const other = await catchUpTrace([behind({ neverCovered: true, refreshing: true }), behind({ neverCovered: true, refreshing: true, observedAt: generatedAt + 3 })]);
+  assert.deepEqual(other.seen, [waits(0, CATCH_UP_FLOOR_MS), says(2_500, 60_000)]);
+  // Rate limited at every collection: the placeholder stands CATCH_UP_SHOWN_MS at the most, the asks end with
+  // CATCH_UP_WINDOW_MS (17.76 + 9.6 > 25 s), and the page is back to its slow cadence: the busy row's own quiet
+  // re-ask a minute after it was first seen (PROVIDER_BUSY_WAIT_MS), then the ordinary minute.
+  const always = await catchUpTrace([0, 3, 6, 10, 17].map((s) => limited({ refreshing: true, observedAt: generatedAt + s })));
+  assert.deepEqual(always.seen, [waits(0, 2_500), waits(2_500, 3_500), says(6_000, 4_900), says(10_900, 6_860), says(17_760, 42_240)]);
+  assert.equal(always.overviews, 5);
+});
+
+test('a row still unavailable after the window is asked again each minute, quietly, and fills in without a reload', async () => {
+  const { generatedAt } = fixture('overview');
+  // The collection after the request brought none; forty seconds later the provider answers, and the next minute's
+  // ask shows it.
+  const later = await catchUpTrace([behind({ neverCovered: true }), behind({ neverCovered: true, observedAt: generatedAt + 6 }), behind({ neverCovered: true, observedAt: generatedAt + 45 }), caughtUp]);
+  assert.deepEqual(later.seen, [waits(0, 6_500), says(6_500, 60_000), says(66_500, 60_000), figures(126_500)]);
+  assert.equal(later.fanned, 0, 'the overview alone, no provider read');
+});
+
+test('a pool the store never collected keeps a placeholder in its catalogue row while its first collection runs, never for long', async () => {
+  // The overview's own request creates the pool's entry, due at once: asked again at CATCH_UP_FLOOR_MS, the lease
+  // held, then 3.5 s later, when the collection has published.
+  const first = await catchUpTrace([pending(), pending({ refreshing: true }), caughtUp], { view: shownAs });
+  assert.deepEqual(first.seen, [
+    { at: 0, next: 2_500, placeholder: true, row: null },
+    { at: 2_500, next: 3_500, placeholder: true, row: null },
+    { at: 6_000, next: 60_000, placeholder: false, row: 'provider' },
+  ]);
+  assert.equal(first.fanned, 0);
+  // The collector does not come: the placeholder stands CATCH_UP_SHOWN_MS at the most, then the row's dashes say what
+  // it has, and the catch-up ends with its window. An entry still pending is asked at the store's own five-second
+  // floor, as before this change.
+  const down = await catchUpTrace([pending(), pending(), pending(), pending(), pending()], { view: shownAs });
+  assert.deepEqual(down.seen, [
+    { at: 0, next: 2_500, placeholder: true, row: null },
+    { at: 2_500, next: 3_500, placeholder: true, row: null },
+    { at: 6_000, next: 4_900, placeholder: false, row: null },
+    { at: 10_900, next: 5_000, placeholder: false, row: null },
+    { at: 15_900, next: 5_000, placeholder: false, row: null },
+  ]);
+  // A pool whose first collection failed (last_error set, backed off) is not waited for.
+  const failed = await catchUpTrace([pending({ reason: 'collection_failed', inSeconds: 60 })], { loads: 1, view: shownAs });
+  assert.equal(failed.seen[0].placeholder, false);
 });
 
 // ---------------------------------------------------------------------------

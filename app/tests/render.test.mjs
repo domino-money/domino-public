@@ -714,12 +714,13 @@ async function catalogueOnly(page, label) {
   assert.equal(await page.locator('[data-ticker] [data-metric], [data-ticker] [data-apr-estimate]').count(), 0, `${label}: no figure in the ticker`);
   // A fee tier (0.02%) is a label from the catalogue; a dollar figure or an APR percentage would be an invention.
   assert.doesNotMatch(await page.locator('[data-ticker]').innerText(), /\$\s?\d|\d%\s*est/, `${label}: no figure in the ticker`);
-  // 2026-09-26 (featured pools v1 §11.2): with no list served, the embedded list in its order under today's title, no
-  // method line and no Pinned chip; every link names the pool and USDG, the token to verify it with (§11.6).
+  // 2026-09-26 (featured pools v1 §11.2): with no list served, the embedded list in its order under today's title and
+  // no Pinned chip; every link names the pool and USDG, the token to verify it with (§11.6). The method line is gone
+  // for every list since 2026-09-28 (the owner).
   assert.equal(await page.locator('#pools [data-featured-source]').getAttribute('data-featured-source'), 'bundled', `${label}: the embedded list`);
   assert.equal(await page.locator('#pools h2').first().innerText(), 'Selected pools', `${label}: today's title`);
   assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.getAttribute('data-pool-catalogue'))), SELECTED, `${label}: the embedded six, in order`);
-  assert.equal(await page.locator('[data-featured-method], [data-pinned]').count(), 0, `${label}: no method line, no Pinned chip`);
+  assert.equal(await page.locator('[data-pinned]').count(), 0, `${label}: no Pinned chip`);
   const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
   assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SELECTED.map((id) => `#/pool/${id}/${USDG}`), `${label}: row links`);
   assert.deepEqual(await items.evaluateAll((as) => as.map((a) => a.getAttribute('href'))), SELECTED.map((id) => `#/pool/${id}/${USDG}`), `${label}: ticker links`);

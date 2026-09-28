@@ -392,8 +392,12 @@ const SCENES = [
       await go('#/markets');
       await poolRowsRead(page, POOLS.length);
       await settle(page, 1200);
-      // The pools section: its title, the line that says how the list is made, the filters and the table.
-      return { keep: [page.locator('section[aria-labelledby="markets-pools-title"]')] };
+      // The pools section: its title, the filters and the table. Changed on purpose (2026-09-28, the owner: "Não
+      // precisa ter essa descrição"): no line under the title says how the list is made, and a picture that would
+      // show one fails its scene, so the docs never show a line the site no longer has.
+      const section = page.locator('section[aria-labelledby="markets-pools-title"]');
+      if (/ranked daily|not a recommendation/i.test(await section.innerText())) throw new Error('the pools section says how the list is made, under its title');
+      return { keep: [section] };
     },
   },
   {

@@ -968,8 +968,9 @@ test('(q) the rows complete one by one: a price waits quietly while its row’s 
 // ---------------------------------------------------------------------------
 // The featured pools list (read-v5, featured pools v1 §11, added 2026-09-26), served and not. The deployable build
 // reads it first, as one POST of {}, then the markets of the pools it names. Served and current: its pools in its
-// order, "Top pools · last 24h", the method line and a Pinned chip. Not served: the embedded six under "Selected
-// pools", exactly as before. A pool it withdrew is refused on New position when a link opens it.
+// order, "Top pools · last 24h" and a Pinned chip (the method line under the title was removed 2026-09-28, the owner:
+// "Não precisa ter essa descrição"). Not served: the embedded six under "Selected pools", exactly as before. A pool
+// it withdrew is refused on New position when a link opens it.
 // ---------------------------------------------------------------------------
 
 const V5 = '1.0.0-rc.1';
@@ -992,7 +993,7 @@ const v5 = (status, body) => json(status, body, { 'X-Domino-Read-Contract': V5 }
 const withList = (answer, options = {}) => bridgeStub({ ...options, reply: (route, body) => (route === FEATURED_PATH ? answer() : options.reply?.(route, body)) });
 const SERVED_LINKS = [`#/pool/${SERVED[0]}/${TOKEN_Z}`, `#/pool/${SERVED[1]}/${TOKEN_Y}`];
 
-test('(r) a list served and current: its pools in its order, read first, under "Top pools · last 24h" with the method line and a Pinned chip; links name the pool and a token', async () => {
+test('(r) a list served and current: its pools in its order, read first, under "Top pools · last 24h" with a Pinned chip and no line under the title; links name the pool and a token', async () => {
   const { context, page, errors } = await visit(withList(() => v5(200, servedList())));
   try {
     assert.equal(await settled(page), 'none');
@@ -1004,7 +1005,8 @@ test('(r) a list served and current: its pools in its order, read first, under "
     assert.deepEqual(reads.filter((r) => r.path.endsWith('/pool-market')).map((r) => r.body.poolId), SERVED, 'then the markets of its pools, in its order');
     assert.equal(await page.locator('#pools [data-featured-source]').getAttribute('data-featured-source'), 'server');
     assert.equal(await page.locator('#pools h2').first().innerText(), 'Top pools · last 24h');
-    assert.equal(await page.locator('#pools [data-featured-method]').innerText(), 'Ranked daily at 12:00 UTC by estimated 24h fee APR among pools with no hooks, a fixed fee, at least $250K 24h volume and $250K liquidity. Order is set at selection; figures update live. Not a recommendation.');
+    // Changed on purpose 2026-09-28 (the owner: "Não precisa ter essa descrição"): no method line under the title.
+    assert.doesNotMatch(await page.locator('body').innerText(), /Ranked daily|Not a recommendation/, 'no method line anywhere');
     const rows = liveRows(page);
     assert.deepEqual(await rows.evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SERVED_LINKS);
     assert.equal(await catalogueRows(page).count(), 0);
@@ -1031,7 +1033,7 @@ test('(s) the list off (route_not_available), none, older than 72 h or invalid: 
       assert.equal(await page.locator('#pools h2').first().innerText(), 'Selected pools', label);
       assert.deepEqual(reads.filter((r) => r.path.endsWith('/pool-market')).map((r) => r.body.poolId), SELECTED, `${label}: the embedded six are read`);
       assert.equal(await liveRows(page).count(), 6, label);
-      assert.equal(await page.locator('[data-featured-method], [data-pinned]').count(), 0, `${label}: no method line, no Pinned chip`);
+      assert.equal(await page.locator('[data-pinned]').count(), 0, `${label}: no Pinned chip`);
       assert.deepEqual(errors, [], label);
     } finally {
       await closeContext(context);
@@ -1047,7 +1049,7 @@ test('(t) a stale list (validUntil passed, within 72 h) and a carried_over one k
       assert.equal(await page.locator('#pools [data-featured-source]').getAttribute('data-featured-source'), 'server_neutral', label);
       assert.equal(await page.locator('#pools h2').first().innerText(), 'Selected pools', label);
       assert.deepEqual(await liveRows(page).evaluateAll((trs) => trs.map((tr) => tr.querySelector('a').getAttribute('href'))), SERVED_LINKS, `${label}: the server’s pools`);
-      assert.equal(await page.locator('[data-featured-method], [data-pinned]').count(), 0, `${label}: no ranking claim`);
+      assert.equal(await page.locator('[data-pinned]').count(), 0, `${label}: no ranking claim`);
     } finally {
       await closeContext(context);
     }

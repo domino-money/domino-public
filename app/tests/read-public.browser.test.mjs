@@ -10,7 +10,7 @@ import { closeBrowser } from './support/close-browser.mjs'
 import { createWorker } from '../../bridge/src/worker.mjs'
 import { BRIDGE_DIST, DIST, createGatedServer } from '../scripts/gated-server.mjs'
 import { historyFor, overviewFor, SELECTED } from './markets-cards.fixtures.mjs'
-import { withStalePools } from './support/stale-store.mjs'
+import { withPendingPools, withStalePools } from './support/stale-store.mjs'
 
 const fixture = name => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v3/fixtures/${name}.json`, import.meta.url), 'utf8'))
 const TOKEN = '0x1111111111111111111111111111111111111111'
@@ -403,6 +403,72 @@ test('Home asks again soon after a first overview that failed, and a later visit
     assert.equal(site.counts.overview, 4, 'its failed overview was asked again')
     assert.equal(await again.evaluate(figured), 6)
     assert.equal(await again.evaluate(() => window.__lost), 0, 'no figure left the table meanwhile')
+    assert.deepEqual(errors, [])
+  } finally {
+    await context.close()
+    await site.close()
+  }
+})
+
+// Added 2026-09-28. The owner, on production, the first day of the daily list: Home's "Top pools · last 24h" showed
+// ETH/NOTE and PONS/USDG with Unavailable TVL and 24h volume, and the Worker saw the overview asked at 12:53:13, :16
+// and :19, then nothing. The store serves a pool's cache age as null whenever its collector holds no provider figures
+// for it (backend/market_cache.py), and a pool it never collected with no stored value; the page waited for neither,
+// and a collection the provider was rate limited for ended a wait at once. Here the first answer serves one pool with
+// no figures in the collector, its collection under way, and one pool never collected; the second, one collection
+// later, has the new pool's figures and the other rate limited once more; the third has them all.
+test('Home on the first day of the daily list: a pool the collector holds no figures for, rate limited once, and a pool never collected wait for their first collection, and nothing says Unavailable', { timeout: 60000 }, async () => {
+  if (!existsSync(join(DIST, 'index.html'))) throw new Error('dist/index.html is missing. Run `npm run build` before this test.')
+  const { startLatencySite, signIn } = await import('./support/markets-latency.mjs')
+  const [limited, fresh] = SELECTED.slice(-2)
+  const noFigures = { neverCovered: true, providerBusy: true, refreshing: true }
+  const site = await startLatencySite({ latency: { edge: 10, featured: 20, overview: 40, history: 20, asset: 0 }, store: (body, n) =>
+    n === 1 ? withPendingPools(withStalePools(body, [limited], noFigures), [fresh])
+      : n === 2 ? withStalePools(body, [limited], { ...noFigures, observedAt: body.generatedAt + 3 })
+        : body })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  const errors = []
+  try {
+    await context.route('**/*', route => route.request().url().startsWith(site.origin) ? route.continue() : route.abort())
+    await signIn(context, site.origin)
+    const page = await context.newPage()
+    page.on('pageerror', error => errors.push(error.message))
+    // Watches the table from the first paint: any "Unavailable", and the new pool's catalogue row showing dashes.
+    await page.addInitScript(fresh => {
+      window.__said = 0
+      window.__dashes = 0
+      setInterval(() => {
+        const table = document.querySelector('#pools table')
+        if (!table) return
+        if (/Unavailable/.test(table.innerText)) window.__said += 1
+        const row = table.querySelector(`tr[data-pool-catalogue="${fresh}"]`)
+        if (row && !row.hasAttribute('data-row-loading')) window.__dashes += 1
+      }, 10)
+    }, fresh)
+    const opened = Date.now()
+    await page.goto(`${site.origin}/#/`)
+    // The first answer: five rows read; the pool with no figures waits in its row, the new one in its catalogue row.
+    await page.waitForFunction(() => document.querySelectorAll('#pools tbody tr.dm-mkt-row:not([data-pool-catalogue])').length === 5, null, { timeout: 15000 })
+    assert.equal(site.counts.overview, 1)
+    assert.equal(await page.locator(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${limited}"]) [data-metric="pending"]`).count(), 2, 'TVL and 24h volume wait')
+    assert.equal(await page.locator(`#pools tr[data-pool-catalogue="${fresh}"][data-row-loading]`).count(), 1, 'the new pool keeps its placeholder')
+    // Asked again at the store's collection, then once more after the rate limited one, within seconds.
+    await page.waitForFunction(() => document.querySelectorAll('#pools [data-metric="pending"], #pools [data-apr-estimate="pending"], #pools tr[data-row-loading]').length === 0
+      && document.querySelectorAll('#pools tbody tr.dm-mkt-row:not([data-pool-catalogue])').length === 6, null, { timeout: 20000 })
+    const caughtUp = Date.now() - opened
+    assert.ok(caughtUp < 12_000, `the two pools had their figures after ${caughtUp} ms`)
+    assert.equal(site.counts.overview, 3, 'the first answer and two catch-ups')
+    for (const poolId of [limited, fresh]) {
+      const cells = await page.locator(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${poolId}"]) td`).allInnerTexts()
+      assert.deepEqual(cells.slice(2, 5).map(text => text.trim().replace(/\s+/g, ' ')), RECORDED_FIGURES[poolId], `the recorded figures for ${poolId}`)
+    }
+    assert.equal(await page.evaluate(() => window.__said), 0, 'no row said Unavailable meanwhile')
+    assert.equal(await page.evaluate(() => window.__dashes), 0, 'the new pool never showed dashes meanwhile')
+    const posts = site.edge.filter(read => read.method === 'POST')
+    assert.deepEqual(posts.map(read => read.path), ['/api/read/v5/featured-pools', '/api/read/v3/overview', '/api/read/v3/overview', '/api/read/v3/overview'], 'the list, the overview and its two catch-ups; no provider read')
+    const asked = posts.filter(read => read.path.endsWith('/overview')).map(read => read.at)
+    assert.ok(asked[1] - asked[0] >= 2400 && asked[1] - asked[0] < 4500, `the first catch-up ${asked[1] - asked[0]} ms later`)
+    assertWithinBudget(posts)
     assert.deepEqual(errors, [])
   } finally {
     await context.close()

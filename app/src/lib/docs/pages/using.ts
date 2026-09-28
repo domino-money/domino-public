@@ -11,7 +11,9 @@ export const MARKETS: DocPage = {
       id: 'pools-table',
       title: 'The pools table',
       blocks: [
-        p('Markets lists selected Uniswap pools on Robinhood Chain. Once a day, at 12:00 UTC, Domino ranks pools with no hooks, a fixed fee and a minimum 24h volume and liquidity by estimated 24h fee APR; the line under the title states the thresholds. When that list is unavailable, a fixed selection is shown instead. Neither is a recommendation.'),
+        // 2026-09-28: the line under the table's title that stated the thresholds was removed (the owner), so this no
+        // longer points to it.
+        p('Markets lists selected Uniswap pools on Robinhood Chain. Once a day, at 12:00 UTC, Domino ranks pools with no hooks, a fixed fee and a minimum 24h volume and liquidity by estimated 24h fee APR. When that list is unavailable, a fixed selection is shown instead. Neither is a recommendation.'),
         shot('markets', 'Each row is a pool. Select it to open the pool’s page.'),
         list(
           [b('Price'), ': the pool’s own price between its two tokens, not a dollar price.'],

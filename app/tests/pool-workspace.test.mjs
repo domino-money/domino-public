@@ -91,7 +91,7 @@ function load(name, dependencies, expose = '') {
     SELECTED_POOL_CATALOGUE: [{ poolId: id('a'), labels: ['A', 'B'], fee: '0.3%', artwork: [null, null] }], SELECTED_POOLS_COMMON_TOKEN: addr('5'), inPoolOrder: (entry) => entry,
     // 2026-09-26 (featured pools v1): the list on screen is the embedded one here, and an entry without addresses is
     // verified against the token every embedded pool holds, as config/selectedPoolCatalogue.ts entryToken says.
-    useFeatured: () => ({ source: 'bundled', entries: [], listId: null, method: null, settled: true, withdrawn: new Set() }),
+    useFeatured: () => ({ source: 'bundled', entries: [], listId: null, settled: true, withdrawn: new Set() }),
     entryToken: (entry) => entry.addresses ? entry.addresses[1] : addr('5'),
     ...dependencies,
   }

@@ -139,6 +139,38 @@
  * store's own time), 0.2 s on a later visit (1.6 s before, 2.7 s and 3.5 s
  * when the list or the store was slow), 7.4 s after a first overview that
  * failed (never before).
+ *
+ * Changed 2026-09-28, from the owner's Home on production, the first day of
+ * the daily list: ETH/NOTE and PONS/USDG said Unavailable within seconds, the
+ * overview was asked at 12:53:13, :16 and :19, and then not before the
+ * minute. The rule above waited only for a pool whose provider figures the
+ * store had once kept (`ageSeconds` set), and stopped at the first collection
+ * published without figures, even one the provider had rate limited. The
+ * store serves `ageSeconds` null whenever its collector holds no figures for
+ * the pool at all (backend/market_cache.py `_result`): never fetched since the
+ * collector started, and every call since refused, rate limited or failed. A
+ * pool never collected has no stored value at all (acquisition `pending`).
+ * Both are collected within five seconds of this very request as well, so:
+ *
+ *   - a pool whose figures are coming is one with none on hand (no stored
+ *     value, or provider figures unavailable) whose store's last collection
+ *     did not fail and whose next one runs now or within
+ *     CATCH_UP_HORIZON_MS, whatever `ageSeconds` says (catchUpInMs);
+ *   - a pool with no stored value shows its placeholder in the catalogue row
+ *     (`placeholders`) under the same CATCH_UP_SHOWN_MS as a read row;
+ *   - a collection the provider was busy or rate limited for (providerWasBusy)
+ *     does not end the wait: the next one, seconds later while the pool is
+ *     wanted, may bring the figures, so the asks go on to the end of
+ *     CATCH_UP_WINDOW_MS. A collection that brought none for any other reason
+ *     (the provider does not list the pool, say) still ends it at once, so
+ *     such a pool costs a visit an ask or two and a placeholder of a few
+ *     seconds (6.5 s when the store collects on time, CATCH_UP_SHOWN_MS at the
+ *     most), not the twenty seconds that made the review of 2026-09-25 leave
+ *     it out.
+ *
+ * A row still unavailable after the window is asked again with the ordinary
+ * refresh, once a minute while the page can be seen (a hidden page waits
+ * until it can be), in place and quietly; nothing else changes.
  */
 import type { PoolMarketResponse, SnapshotPoolEntry, VerifiedPool } from 'api-contracts/read-v1/types'
 import type { StoredPool } from 'api-contracts/read-v3/types'
@@ -167,7 +199,14 @@ export interface Retained {
 export type MarketsState =
   /** `retrying` is the failure a refresh is trying to get past, still on screen meanwhile. */
   | { phase: 'loading'; previous: MarketsResult | null; retrying: FailedOutcome | null }
-  | { phase: 'ready'; result: MarketsResult; problems: MarketProblem[]; acquiring?: boolean }
+  | {
+      phase: 'ready'
+      result: MarketsResult
+      problems: MarketProblem[]
+      acquiring?: boolean
+      /** Pools with no row yet whose figures are coming: their catalogue rows show a placeholder, lowercase (see the header). */
+      placeholders?: readonly string[]
+    }
   /** Nothing new to show. `retained` is the last good read, already marked stale. */
   | { phase: 'failed'; failure: FailedOutcome; retained: Retained | null }
 
@@ -258,15 +297,15 @@ export const CATCH_UP_SHOWN_MS = 8_000
 /**
  * How far off a stored pool's figures are, when they are coming: in MILLISECONDS of server time from the answer
  * (`nextAttemptAt - generatedAt`, never this browser's clock), 0 while a collection runs. Null when they are not
- * coming soon: figures on hand; a pool the provider never gave figures for (`ageSeconds` null: nothing to bring
- * back); a collection that failed (`reason` set: the store backs it off for up to five minutes and a request does
- * not bring it forward); a next collection further off than CATCH_UP_HORIZON_MS, or none named; a rejected pool.
+ * coming soon: figures on hand, or provider figures rejected; a collection that failed (`reason` set: the store backs
+ * it off for up to five minutes and a request does not bring it forward); a next collection further off than
+ * CATCH_UP_HORIZON_MS, or none named; a rejected pool. Changed 2026-09-28 (see the header): a pool with no stored
+ * value yet, and one whose collector holds no figures for it (`ageSeconds` null), are coming too.
  */
 export function catchUpInMs(entry: StoredPool, generatedAt: number): number | null {
   const { value, acquisition } = entry
-  if (value === null || acquisition.status !== 'ready' || acquisition.reason !== null) return null
-  const market = value.market.market
-  if (market.status !== 'unavailable' || market.cache.ageSeconds === null) return null
+  if (acquisition.status === 'rejected' || acquisition.reason !== null) return null
+  if (value !== null && value.market.market.status !== 'unavailable') return null
   if (acquisition.refreshing) return 0
   if (acquisition.nextAttemptAt === null) return null
   const inMs = Math.max(0, acquisition.nextAttemptAt - generatedAt) * 1000
@@ -431,6 +470,8 @@ interface Load extends LoadedMarkets {
   catchUpInMs?: number | null
   /** Every pool of the stored overview whose figures are coming (`catchUpInMs`), lowercase, waiting or not; absent when no overview was read. */
   behind?: string[]
+  /** Pools with no row whose figures are coming, shown as a placeholder (MarketsState `placeholders`), lowercase. */
+  placeholders?: string[]
   /** Pools whose read did not bind to their entry (LoadOptions.binds), lowercase: they have no row. */
   unbound: string[]
   /** The stored overview this load read, as it came: what this browser keeps a copy of (marketsPaint.ts). */
@@ -605,6 +646,7 @@ async function readMarkets(
         acquisitionInMs: due.length ? Math.max(0, Math.min(...due) - overview.data.generatedAt) * 1000 : null,
         catchUpInMs: soonest,
         behind,
+        placeholders: [...figuresBehind].filter((id) => !ledger.sources.has(id)),
       }
     }
   }
@@ -865,7 +907,8 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
 
   /**
    * Whether a behind pool's row waits for its figures (LoadOptions.catchUp), asked as its answer arrives: not once
-   * a collection published since it began waiting brought none, nor when the ask that would bring them falls past
+   * a collection published since it began waiting brought none (unless the provider was busy or rate limited for
+   * it: the next collection may bring them; changed 2026-09-28), nor when the ask that would bring them falls past
    * CATCH_UP_WINDOW_MS from the answer it began waiting with, or at the ordinary refresh, nor while no screen holds
    * the quiet re-asks. It shows a placeholder only while that ask falls within CATCH_UP_SHOWN_MS.
    */
@@ -876,7 +919,7 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     const at = clock.monotonic()
     const seen = behindSince.get(id)
     if (seen?.over) return false
-    const collected = seen !== undefined && (entry.observedAt ?? -1) > (seen.observedAt ?? -1)
+    const collected = seen !== undefined && (entry.observedAt ?? -1) > (seen.observedAt ?? -1) && !(entry.value && providerWasBusy(entry.value.market.market))
     const since = seen?.since ?? at
     const interval = catchUpIntervalMs(inMs)
     const over = collected || interval >= activeRefreshMs || at - since + interval > CATCH_UP_WINDOW_MS
@@ -957,7 +1000,6 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
       if (age >= TOKEN_METADATA_CACHE_MS || age < 0) memory.tokens?.delete(address)
     }
     const retrying = from.phase === 'failed' ? from.failure : from.phase === 'loading' ? from.retrying : null
-    const problemsBefore = from.phase === 'ready' ? from.problems : []
     if (!inPlace) set({ phase: 'loading', previous, retrying })
     // Rows whose figures are coming wait for them only where this provider asks again on its own.
     memory.catchUp = refreshMs > 0 ? catchUpWaits : undefined
@@ -999,7 +1041,7 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
           const row = read ? withKept(read) : previous?.markets.find((m) => key(m.poolId) === key(poolId))
           return row ? [row] : []
         })
-        set(inPlace ? { phase: 'ready', result: resultOf(markets), problems: problemsBefore } : { phase: 'loading', retrying, previous: resultOf(markets) })
+        set(inPlace && from.phase === 'ready' ? { ...from, result: resultOf(markets) } : { phase: 'loading', retrying, previous: resultOf(markets) })
       },
       memory,
       quiet && ledger && again ? { ledger, plan: again } : undefined,
@@ -1056,7 +1098,7 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     const catchUp = !quiet && loaded.catchUpInMs != null ? catchUpIntervalMs(loaded.catchUpInMs) : null
     if (!quiet) catchUpAsks = catchUp === null ? 0 : catchUpAsks + 1
     if (!quiet) nextRefresh(loaded.problems.length > 0, markets.length > 0, loaded.acquiring, { inMs: loaded.acquisitionInMs ?? null, running: loaded.acquisitionRunning === true }, catchUp)
-    set({ phase: 'ready', result: resultOf(markets), problems: loaded.problems, ...(loaded.acquiring ? { acquiring: true } : {}) })
+    set({ phase: 'ready', result: resultOf(markets), problems: loaded.problems, ...(loaded.acquiring ? { acquiring: true } : {}), ...(loaded.placeholders?.length ? { placeholders: loaded.placeholders } : {}) })
     settledLoad(loaded.unbound)
   }
 
