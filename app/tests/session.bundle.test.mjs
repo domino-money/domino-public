@@ -129,6 +129,7 @@ test('the wallet-test build writes its own directory and loads the feature lazil
   assert.ok(islandText.includes('__dominoSessionProbe'), 'the probes are what this build is for');
 });
 
+// Changed on purpose (2026-09-28): and, while that RPC cannot be reached, its three public fallbacks (see allowedHosts).
 // Changed on purpose (2026-09-25): one public RPC endpoint is now reached, Robinhood Chain's own
 // (rpc.mainnet.chain.robinhood.com), for reads only, by the page's own chain reads (src/lib/chain/browser.ts): the RPC
 // answers 429 to every call from Cloudflare's edge, so the site's routes that read it for the page failed. Wallet
@@ -181,6 +182,13 @@ test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s
     'cdn.dexscreener.com',
     'api.dexscreener.com',
     'rpc.mainnet.chain.robinhood.com',
+    // 2026-09-28: the chain's three public fallbacks (src/lib/chain/endpoints.ts), read with the same fixed calls while
+    // the chain's own RPC cannot be reached (the DNS of Vivo, a large Brazilian ISP, answers NXDOMAIN for every host under
+    // chain.robinhood.com), each checked to be chain 4663 first (src/lib/chain/failover.ts). Reads only, named in both
+    // connect-src directives below, and pinned in tests/read.test.mjs.
+    'robinhood-rpc.publicnode.com',
+    'rpc.ordofi.network',
+    'robinhood.drpc.org',
     // The reviewed pool catalogue records where its labels were inspected
     // (src/config/selectedPoolCatalogue.ts, sourceUrl): a citation kept as
     // data, never rendered as a link and never fetched (tests/read.test.mjs
@@ -201,8 +209,10 @@ test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s
   assert.ok(csp.includes("img-src 'self' data: https://cdn.dexscreener.com"), 'the CSP names the artwork CDN');
   assert.ok(csp.includes("connect-src 'self' https://api.dexscreener.com"), 'the CSP names the artwork metadata endpoint');
   // 2026-09-25: and the chain's RPC, for the page and for the fees worker, which loads nothing and reaches nothing else.
-  assert.ok(csp.includes(`"connect-src 'self' https://api.dexscreener.com https://rpc.mainnet.chain.robinhood.com",`), 'the page\u2019s CSP names the chain\u2019s RPC');
-  assert.ok(csp.includes(`export const WORKER_CSP = "default-src 'none'; connect-src https://rpc.mainnet.chain.robinhood.com"`), 'the fees worker\u2019s own CSP names only the chain\u2019s RPC');
+  // 2026-09-28: and its three public fallbacks, exactly those, in both.
+  const chainHosts = 'https://rpc.mainnet.chain.robinhood.com https://robinhood-rpc.publicnode.com https://rpc.ordofi.network https://robinhood.drpc.org';
+  assert.ok(csp.includes(`"connect-src 'self' https://api.dexscreener.com ${chainHosts}",`), 'the page\u2019s CSP names the chain\u2019s RPC and its fallbacks');
+  assert.ok(csp.includes(`export const WORKER_CSP = "default-src 'none'; connect-src ${chainHosts}"`), 'the fees worker\u2019s own CSP names only the chain\u2019s RPC and its fallbacks');
   assert.doesNotMatch(csp, /app\.uniswap\.org/, 'the catalogue citation is never a destination');
   assert.doesNotMatch(csp, /gateway\.uniswap\.org/, 'the swap provenance label is never a destination');
   for (const [label, dir] of [
@@ -622,6 +632,65 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // chain code 13,983 B unchanged. All lazy moves by the minimum at 0.1 kB, to 200.4 kB (7 B over the larger build; a
   // change to any chunk or to the stylesheet's hashed name moves it by tens of bytes, so measure again after one); the
   // financial (166 B to spare), fees worker, chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-28, fix/positions-stuck (the owner, on his phone: Your positions stayed on its loading rows, "Reading your
+  // positions from the chain…", while the public RPC refused his address): the list's read holds every tab's fees lane
+  // for the whole of it and a refusal any page read meets rests them all (lib/chain/browser.ts holdReads, quietIn and
+  // the page's side of the channel); the list's APR waits on both, and after each position as long as it took
+  // (components/positions/listApr.ts); a first read the RPC refused is asked again 2 s later each time
+  // (lib/walletPositions.ts); the list draws this browser's copy of the chain's last answer while the chain is read
+  // (OwnedPositions.tsx, on finance/privateCards.ts keep, readKept and drop); and a WebView whose fetch gives no body
+  // stream has its replies read whole (functions/_lib/owned.ts bodyWithin). Made smaller first: the fees relay's own copy
+  // of bodyWithin is gone for owned.ts's (in the chain code and the fees worker alike), the fees worker no longer carries
+  // the page's runtime it never used (it reads through its lane only), and the list's APR reads its wait through
+  // walletPositions.ts's own import of the chain code rather than an import of its own. Measured on Windows, gzip level
+  // 9, both builds from this tree and from main d1197112: dist financial 177,935 -> 178,010 B, all lazy 198,897 ->
+  // 199,167 B, chain code 13,983 -> 14,150 B, fees worker 21,331 -> 21,131 B; .wallet-test-dist financial 179,203 ->
+  // 179,288 B, all lazy 200,342 -> 200,635 B, chain code 13,983 -> 14,150 B, fees worker 21,331 -> 21,131 B. All lazy
+  // and the chain code move by the minimum at 0.1 kB: 200.7 kB (65 B over the larger build) and 14.2 kB (50 B); the
+  // financial (112 B to spare), fees worker (269 B) and 90 kB session/read ceilings are unchanged.
+  // 2026-09-28, fix/rpc-fallback (the DNS of Vivo, a large Brazilian ISP, answers NXDOMAIN for every host under
+  // chain.robinhood.com, and there the page read nothing: Your positions "couldn't be read"): the page's and the fees
+  // worker's runtime (lib/chain/browser.ts) send through a router (lib/chain/failover.ts) over a registry of the chain's
+  // own RPC and three measured public fallbacks (lib/chain/endpoints.ts): the reach probe that tells the RPC's unreadable
+  // 429 from a name that does not resolve, the quiet probe that brings the calls back, each fallback's chain id check,
+  // its budget and rest, its windows of logs; and the wallet scan finds its ids in DominoSetupV1's state when no endpoint
+  // reads wide log ranges (functions/_lib/walletPositions.ts operationIds). Both the chain code and the worker carry the
+  // router (a classic worker cannot load it later). Made smaller first: one table for the state reads, one reading of an
+  // error's words (owned.ts classifyRpcError, already in both), the test hooks the router's own records, bare Infinity,
+  // short refusals: 10,744 -> 9,960 B minified. Measured on Windows, gzip level 9, both builds from this tree and from
+  // 0e0a5193: chain code 14,150 -> 17,968 B and fees worker 21,131 -> 24,636 B in both builds; financial, all lazy and
+  // session/public reads move by a few bytes only, with the chunks' hashed names (dist 178,010 -> 177,995 B, 199,167 ->
+  // 199,147 B, 63,987 -> 63,980 B; .wallet-test-dist 179,288 -> 179,290 B, 200,635 -> 200,633 B, 64,543 -> 64,539 B):
+  // the router is in neither. The chain code and fees worker ceilings move by the minimum at 0.1 kB: 18.0 kB (32 B over
+  // both builds) and 24.7 kB (64 B); the financial, all lazy and 90 kB session/read ceilings are unchanged.
+  // 2026-09-28, fix/rpc-fallback after its review: a blip is not an outage (the chain's RPC is left alone 20 s at first,
+  // doubled at each probe it does not answer, and a call only it serves probes it at once, at most every 15 s), and a
+  // fallback that fails its chain-id check, or answers anything but JSON-RPC with a 2xx, is left alone (doubled at each
+  // time in a row) while the call goes to the next. Made smaller first: the router takes owned.ts's hex, its chain-id
+  // and log-window bodies spread the call, its abort reason check is one test, and its 2xx and 429 replies carry no
+  // status text. Measured on Windows, gzip level 9, both builds from this tree and from 9847335c: chain code 17,968 ->
+  // 18,085 B and fees worker 24,636 -> 24,761 B in both builds; financial, all lazy and session/public reads move by a
+  // few bytes only, with the chunks' hashed names (dist 177,995 -> 177,996 B, 199,147 -> 199,148 B, 63,980 -> 63,981 B;
+  // .wallet-test-dist 179,290 -> 179,299 B, 200,633 -> 200,647 B, 64,539 -> 64,539 B): the router is in neither. The
+  // chain code and fees worker ceilings move by the minimum at 0.1 kB: 18.1 kB (15 B over both builds) and 24.8 kB
+  // (39 B); the financial, all lazy and 90 kB session/read ceilings are unchanged.
+  // 2026-09-28, fix/positions-stuck, after its review: a first read the RPC refused is asked again 2 s later twice, then
+  // on the owner's ladder (lib/walletPositions.ts; the endless 2 s loop is gone); the list's copy is dated, and past an
+  // hour (the Wallet card's WALLET_PRICE_MAX_AGE_MS) its rows show their token amounts only and the band waits
+  // (OwnedPositions.tsx, on privateCards.ts readKept, which now tells its check when the entry was kept); and the card's
+  // quiet and calm lines stand over the copy too (one note element for both). A variant computing the copy's end time in
+  // recall measured 1 B larger. Measured on Windows, gzip level 9, both builds from this tree: dist financial 178,015 B,
+  // all lazy 199,282 B, chain code 14,150 B, fees worker 21,131 B; .wallet-test-dist financial 179,282 B, all lazy
+  // 200,342 B at d1197112 -> 200,635 B at 0e0a5193 -> 200,736 B. All lazy moves by the minimum at 0.1 kB, to 200.8 kB
+  // (64 B over the larger build); the financial (118 B to spare), chain code (50 B), fees worker (269 B) and 90 kB
+  // session/read ceilings are unchanged.
+  // 2026-09-28, fix/vivo-release (fix/rpc-fallback, then fix/positions-stuck, merged on main bc3f5248 with
+  // featured-polish): no ceiling was raised by both branches past their shared 0e0a5193, so each keeps its own: all lazy
+  // 200.8 kB (fix/positions-stuck), fees worker 24.8 kB and chain code 18.1 kB (fix/rpc-fallback). Measured on Windows,
+  // gzip level 9, clean builds of the merged tree: dist financial 178,040 B, all lazy 199,317 B, session/public reads
+  // 64,122 B; .wallet-test-dist financial 179,288 B, all lazy 200,745 B, session/public reads 64,656 B; chain code
+  // 18,085 B and fees worker 24,761 B in both. Every ceiling holds (all lazy 55 B to spare, chain code 15 B, fees worker
+  // 39 B, financial 112 B), so none moves.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -668,7 +737,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 179_400], ['all lazy', allLazy, 200_400], ['fees worker', worker, 21_400], ['chain code', chain, 14_000]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 179_400], ['all lazy', allLazy, 200_800], ['fees worker', worker, 24_800], ['chain code', chain, 18_100]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

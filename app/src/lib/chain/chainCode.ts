@@ -14,9 +14,12 @@
  * when the wallet does not carry eth_simulateV1 (browser.ts simulateOnChain).
  * 2026-09-27: the owned scan's paced call, for a position's automation vault's ExecutionCompleted logs
  * (lib/automationImpact.ts): one eth_getLogs, no new code.
+ * 2026-09-28: the runtime sends through the page's router (lib/chain/failover.ts) to the chain's own RPC or, while it
+ * cannot be reached, to its public fallbacks (lib/chain/endpoints.ts); nothing new is exported.
  */
 export { ChainError, paced } from '../../../functions/_lib/owned'
 export { scanWallet } from '../../../functions/_lib/walletPositions'
 export { logsOnChain, stateOnChain } from '../../../functions/_lib/fees'
 export { scanAutomation } from '../../../functions/_lib/automation'
-export { chainDeps, memoryCache, simulateOnChain } from './browser'
+// 2026-09-28: the list's read holds the lanes and the list's APR (holdReads), which asks how long to wait (quietIn).
+export { chainDeps, holdReads, memoryCache, quietIn, simulateOnChain } from './browser'

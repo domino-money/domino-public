@@ -435,7 +435,9 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   assert.deepEqual(blocksOf(newPosition).find((block) => block.kind === 'steps').items.map((step) => step.title), ['Pool', 'Range', 'Amount', 'Review']);
   const positions = page('positions');
   // Changed on purpose (owner, 2026-09-24): the list is the positions the wallet created with Domino, read from chain; no lookup by NFT id.
-  assert.match(sectionText(positions, 'your-positions'), /Positions lists the positions it created with Domino, read from the chain for your address: there is no ID to type, and nothing is kept in your browser\./);
+  // Changed on purpose (2026-09-28, the owner's phone: the list stayed on its loading rows while the RPC refused his
+  // address): the browser keeps a copy of the list, drawn at once while the chain is read (OwnedPositions.tsx).
+  assert.match(sectionText(positions, 'your-positions'), /Positions lists the positions it created with Domino, read from the chain: there is no ID to type, and your browser keeps only a copy of the list\./);
   assert.match(sectionText(positions, 'your-positions'), /Position NFTs made elsewhere are not listed\./);
   assert.doesNotMatch(sectionText(positions, 'your-positions'), /Look up by NFT id|enter up to 10 IDs/);
   assert.doesNotMatch(textOf(positions), /always looked up by its ID|cannot list the positions a wallet holds/);

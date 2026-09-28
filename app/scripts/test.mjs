@@ -119,6 +119,10 @@ execFileSync(
     'tests/fees-path.test.mjs',
     // 2026-09-25: the fees worker's paced lane to the public RPC, and the reads that share it with the page.
     'tests/chain-lane.test.mjs',
+    // 2026-09-28: the list's read goes first: it holds every lane for the whole of it, and a refusal rests them all.
+    'tests/chain-priority.test.mjs',
+    // 2026-09-28: the page's fallbacks while the chain's own RPC cannot be reached (a large ISP's DNS answers NXDOMAIN for it).
+    'tests/rpc-failover.test.mjs',
     // 2026-09-24 (P5): the guided creation's successor axis, per-field reasons and the Automate fee meter's rates (DESIGN-V2 §14, R-13, R-18).
     'tests/automate-successor.test.mjs',
     // 2026-09-24: the automation page's position picker (the wallet's open positions, a link's preselection, what each option shows).

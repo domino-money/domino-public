@@ -19,7 +19,9 @@
  * - after a refusal nothing more is asked for REST_MS (the lane's rest, LANE_PACE.restMs);
  * - a pool whose history is too much even for a position's page (too_much_history) is not asked again for its other
  *   positions this visit;
- * - GAP_MS between two positions, SETTLE_MS when the one let go still had a run on its way: never two runs at once.
+ * - GAP_MS between two positions, SETTLE_MS when the one let go still had a run on its way: never two runs at once;
+ *   2026-09-28, never less than the time the last one took, and nothing while a read of the page (the list's first) is
+ *   on its way or a refusal of any tab's read rests this browser's reads (`quiet`).
  *
  * A row waits with a calm pulse as long as it will be asked (a second try included), so its cell never goes from a dash
  * back to a pulse. Nothing is kept in the browser: memory only, for the visit, as the fees store. Pure and Node-safe
@@ -61,7 +63,11 @@ export function aprOfView(view: FeeHistoryView): RowApr | null {
  * it in 19.6 s).
  */
 export const CAP_MS = 24_000
-/** Between two positions whose runs are over. */
+/**
+ * Between two positions whose runs are over, at the least. 2026-09-28 (the owner's phone: Your positions stayed on its
+ * loading rows): and never less than the time the last one took, so the list's measuring holds the RPC half the time at
+ * most.
+ */
 export const GAP_MS = 1_000
 /**
  * After a position let go with its run still on its way (at its cap, mid-way, or at a busy pool's estimate, whose exact
@@ -90,6 +96,11 @@ export interface AprQueueDeps {
   /** Whether the tab is visible. */
   visible(): boolean
   now(): number
+  /**
+   * 2026-09-28: how long to wait before a position may be asked (0: now): the rest after a refusal any read of this
+   * browser met, in any tab, or the list's read (any page read) on its way (lib/chain/browser.ts quietIn).
+   */
+  quiet?(): number
 }
 
 export interface AprQueue {
@@ -107,7 +118,7 @@ export interface AprQueue {
 
 type Tried = { at: number; reason: FeesReason | 'drawn' | 'cap'; times: number }
 
-export function createAprQueue({ store, timer, visible, now }: AprQueueDeps): AprQueue {
+export function createAprQueue({ store, timer, visible, now, quiet }: AprQueueDeps): AprQueue {
   let wanted: readonly AprRow[] = []
   const tried = new Map<string, Tried>()
   const heavyPools = new Set<string>()
@@ -149,7 +160,8 @@ export function createAprQueue({ store, timer, visible, now }: AprQueueDeps): Ap
   function pump(): void {
     if (current || wanted.length === 0 || !visible()) return
     const at = now()
-    if (at < restUntil) return schedule(restUntil - at)
+    const wait = Math.max(restUntil - at, quiet?.() ?? 0)
+    if (wait > 0) return schedule(wait)
     let soonest = Infinity
     let again: AprRow | undefined
     for (const row of wanted) {
@@ -165,6 +177,7 @@ export function createAprQueue({ store, timer, visible, now }: AprQueueDeps): Ap
 
   function start(row: AprRow): void {
     const before = store.view(row.id)
+    const began = now()
     let done = false
     let release: (() => void) | null = null
     const finish = (reason: Tried['reason'] | null) => {
@@ -177,7 +190,7 @@ export function createAprQueue({ store, timer, visible, now }: AprQueueDeps): Ap
       // The pause before the next, whatever asks for it (a scroll, the list's refresh): the lane's rest after a refusal,
       // and past the store's stop of a run still on its way.
       const live = !reason || reason === 'cap' || store.view(row.id).phase === 'estimated'
-      restUntil = at + (reason === 'rpc_unavailable' || reason === 'worker_failed' ? REST_MS : live ? SETTLE_MS : GAP_MS)
+      restUntil = at + (reason === 'rpc_unavailable' || reason === 'worker_failed' ? REST_MS : Math.max(live ? SETTLE_MS : GAP_MS, at - began))
       // Let go without an outcome (the row left the screen, the tab was hidden): asked again when it is back.
       if (reason) {
         tried.set(row.id, { at, reason, times: (tried.get(row.id)?.times ?? 0) + 1 })

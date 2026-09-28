@@ -136,13 +136,19 @@ test('the wallet feature is reached only through the build flag', () => {
   // here so that the importer check admits them once the position-actions branch makes the two files wallet feature code.
   const POSITION_CHUNKS = { 'screens/PositionDetail.tsx': '../components/positions/PositionActions', 'screens/Positions.tsx': '../components/positions/HeldDeposits' };
   const positionsOpens = (path, spec) => POSITION_CHUNKS[path] === spec;
+  // Changed on purpose (2026-09-28, the owner's phone: Your positions stayed on its loading rows while the RPC refused his
+  // address): the list, itself opened only behind the flag (Positions.tsx), keeps its display copy with the private
+  // cards' keep, readKept and drop (finance/privateCards.ts), a module that names no wallet code (asserted here).
+  const listKeeps = (path, spec) => path === 'components/positions/OwnedPositions.tsx' && spec === '../../finance/privateCards';
+  const keeper = ALL.find(({ path }) => path === 'finance/privateCards.ts');
+  assert.deepEqual(specifiers(keeper.code), ['react', '../lib/walletIdentity'], 'the copies’ module imports React and the wallet’s address, nothing of the wallet feature');
   const offenders = [];
   for (const { path, code } of ALL.filter(({ path }) => !feature.test(path))) {
     for (const spec of specifiers(code)) {
       if (/^(wagmi|viem|@tanstack\/)/.test(spec)) offenders.push(`${path}: ${spec}`);
       if (!spec.startsWith('.')) continue;
       const target = posix.normalize(posix.join(posix.dirname(path), spec));
-      if (feature.test(target) && target !== 'components/wallet/WalletBoundary' && spec !== './wallet/WalletSessionIsland' && spec !== './wallet/LocalWalletIsland' && !consumerMayUse(path, target) && !reviewOpens(path, spec) && !positionsOpens(path, spec)) {
+      if (feature.test(target) && target !== 'components/wallet/WalletBoundary' && spec !== './wallet/WalletSessionIsland' && spec !== './wallet/LocalWalletIsland' && !consumerMayUse(path, target) && !reviewOpens(path, spec) && !positionsOpens(path, spec) && !listKeeps(path, spec)) {
         offenders.push(`${path}: ${spec}`);
       }
     }

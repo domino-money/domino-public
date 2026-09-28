@@ -13,9 +13,11 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { KEY, OWNER, POOL, TOKEN, USDG, ZERO, fakeChain, memoryCache, nft, wallet as endpoint } from './owned-chain.mjs';
+import { reachable } from './support/reach.mjs';
 
 const require = createRequire(import.meta.url);
 const client = require('../.test-build/app/src/lib/walletPositions.js');
+const routingOf = () => require('../.test-build/app/src/lib/chain/browser.js').routing();
 const cards = require('../.test-build/app/src/lib/walletCards.js');
 const positions = require('../.test-build/app/src/lib/read/screens/positions.js');
 
@@ -105,13 +107,18 @@ const never = () => new AbortController().signal;
 const routeAnswer = async (chain, owner = OWNER) =>
   (await endpoint.answerWalletPositions(new Request('https://domino.money/api/owned/v2/positions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ owner }) }), chain.deps)).json();
 
+// Changed on purpose (2026-09-28, the page's fallbacks for an RPC it cannot reach): every stub here is the chain's own
+// RPC, there to be reached. The router's reach probe (a no-cors GET, src/lib/chain/failover.ts) is answered as a browser
+// answers it for such a server, and is not one of the requests counted; each stub starts with a router that knows
+// nothing. tests/rpc-failover.test.mjs has the RPC that cannot be reached.
 async function withFetch(answer, run) {
   const sent = [];
   const original = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
+  routingOf().reset();
+  globalThis.fetch = reachable(async (url, init) => {
     sent.push({ url, init });
     return answer(url, init);
-  };
+  });
   try {
     return { result: await run(), sent };
   } finally {
@@ -265,8 +272,28 @@ test('a position’s page reads its /api/fees/v1/state answer as the same Wallet
   assert.equal(cards.walletState({ ...POSITION, sqrtPriceX96: null, tick: null }, 1, OWNER), null);
 });
 
-test('nothing about positions is kept in the browser: no module of the list or the page names any storage, and the memory of created ids is gone', () => {
+// Changed on purpose (2026-09-28, the owner, on his phone: Your positions stayed on its loading rows while the RPC refused
+// his address): the list keeps one copy of what the chain last answered, per wallet and chain, through the private cards'
+// own helpers (finance/privateCards.ts keep and readKept, versioned, dated and bounded), and draws it while the chain is
+// read. Display only: checked field by field by parseWalletAnswer, its positions only, never a held deposit. Still, no
+// module of the list or the page names any storage itself, and the memory of created ids is gone.
+test('nothing about positions is kept in the browser but the list’s display copy: no module of the list or the page names any storage, and the memory of created ids is gone', () => {
   const src = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
+  const list = src('components/positions/OwnedPositions.tsx');
+  assert.match(list, /const copyName = \(owner: string\) => `owned\.\$\{CHAIN_ID\}\.\$\{owner\}`/, 'one copy per wallet and chain');
+  assert.match(list, /readKept\(copyName\(owner\), 7 \* 86_400_000, \(data, at\) => \{\s+const answer = parseWalletAnswer\(data, owner\)\s+return answer\?\.positions\.length \? \{ answer, at \} : null/, 'at most a week old, checked as a chain answer, with a position in it, and dated');
+  // 2026-09-28 (review): a copy's USD figures are its own pool prices, as old as it is. Past the Wallet card's own limit
+  // for a price (lib/walletMemory.ts WALLET_PRICE_MAX_AGE_MS, an hour: "an older price gives no value and no total"), its
+  // rows are valued at no state (their token amounts only) and the band waits for the chain, as while the list is read.
+  const { WALLET_PRICE_MAX_AGE_MS } = require('../.test-build/app/src/lib/walletMemory.js');
+  assert.equal(Number(/const PRICED_MS = ([\d_]+)/.exec(list)?.[1].replaceAll('_', '')), WALLET_PRICE_MAX_AGE_MS, 'the Wallet card’s own limit for a price');
+  assert.match(list, /useState\(\(\) => !!copy && Date\.now\(\) - copy\.at <= PRICED_MS\)/, 'measured against the copy’s own time');
+  assert.match(list, /setTimeout\(\(\) => setValued\(false\), copy\.at \+ PRICED_MS - Date\.now\(\)\)/, 'and no longer valued once that time passes on screen');
+  assert.match(list, /state: priced \? walletState\(position, list\.block, owner\) : null/, 'amounts only past it');
+  assert.match(list, /\(!tabs \|\| !priced\) && !unread \? <PendingSummary \/>/, 'no total: the band waits for the chain');
+  assert.match(list, /keep\(copyName\(owner\), \{ \.\.\.ready, deposits: \[\] \}\)/, 'the chain’s answers only, without their held deposits');
+  assert.equal([...list.matchAll(/\bkeep\(/g)].length, 1, 'kept in one place');
+  assert.match(list, /else if \(ready\) drop\(copyName\(owner\)\)/, 'and forgotten once the chain says the wallet has none');
   // 2026-09-24 (the three features): the position page's Automate check and the ids Create position made during a visit
   // (kept in the module's memory only, for one fresh list read) are held to the same rule.
   for (const path of ['lib/walletPositions.ts', 'lib/walletCards.ts', 'components/positions/OwnedPositions.tsx', 'components/positions/PositionRow.tsx', 'screens/Positions.tsx', 'screens/PositionDetail.tsx', 'components/create/CreatePosition.tsx', 'components/positions/AutomateEntry.tsx', 'lib/create/createProgress.ts', 'screens/NewPosition.tsx']) {
@@ -516,6 +543,43 @@ test('a hidden tab asks nothing: a refresh due while it is hidden waits and runs
   await capped.pass(600_000);
   assert.deepEqual([capped.reads.length, capped.puts.length], [1, 1]);
   capped.cancel();
+});
+
+// 2026-09-28 (the owner, on his phone: Your positions stayed on its loading rows, "Reading your positions from the
+// chain…"): a first read the RPC refused (chain_busy) is asked again 2 s later twice (it held every other read of this
+// browser meanwhile: lib/chain/browser.ts holdReads, and a refusal rests every lane and the list's APR), then after the
+// ladder's 10 s and every 30 s: as many reads as the owner's ladder of 2026-09-25, none of them later. Changed on purpose
+// (review, 2026-09-28): 2 s every time, for ever, sent three times the requests while refused, and against a limiter
+// that lengthens its refusal at each refused call it never let the list in (tests/chain-priority.test.mjs proves the
+// bounded waits do). The card's lines are the same: retrying three times, then the calm one. Any other failure keeps
+// the ladder (below).
+test('a first read the RPC refused is asked again 2 s later twice, then after 10 s and every 30 s, never more often than the ladder, and drawn once it answers', async (t) => {
+  const busy = await loop(t, { answers: Array.from({ length: 6 }, () => ({ ok: false, reason: 'chain_busy' })) });
+  for (const [ms, count] of [[2_000, 2], [2_000, 3], [10_000, 4], [30_000, 5], [30_000, 6]]) {
+    await busy.pass(ms - 1);
+    assert.equal(busy.reads.length, count - 1);
+    await busy.pass(1);
+    assert.equal(busy.reads.length, count, `read ${count}, ${ms} ms after the one before`);
+  }
+  assert.deepEqual(busy.puts.map((put) => put.phase), ['retrying', 'retrying', 'retrying', 'failed', 'failed', 'failed']);
+  assert.deepEqual(busy.puts.map((put) => put.reason), Array(6).fill('chain_busy'));
+  busy.answers.push(answerAt(100));
+  await busy.pass(29_999);
+  assert.equal(busy.reads.length, 6, 'no read sooner than every 30 s once the ladder is spent');
+  await busy.pass(1);
+  assert.equal(busy.reads.length, 7);
+  assert.equal(busy.puts.at(-1).phase, 'ready');
+  busy.cancel();
+  // A refusal among other failures: 2 s only where the ladder's second wait (5 s) would be.
+  t.mock.timers.reset();
+  const mixed = await loop(t, { every: null, answers: [{ ok: false, reason: 'chain_unavailable' }, { ok: false, reason: 'chain_busy' }, { ok: false, reason: 'chain_busy' }, { ok: false, reason: 'chain_busy' }] });
+  for (const [ms, count] of [[2_000, 2], [2_000, 3], [10_000, 4], [30_000, 5]]) {
+    await mixed.pass(ms - 1);
+    assert.equal(mixed.reads.length, count - 1);
+    await mixed.pass(1);
+    assert.equal(mixed.reads.length, count, `mixed: read ${count}, ${ms} ms after the one before`);
+  }
+  mixed.cancel();
 });
 
 test('with the refresh off (the picker, the automation page, a position’s page) nothing is read again on its own; a first read that fails is still asked after 2, 5, 10 and then every 30 s', async (t) => {

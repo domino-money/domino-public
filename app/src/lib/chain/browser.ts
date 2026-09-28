@@ -21,9 +21,19 @@
  * what is read lives for the visit, in this page's or this worker's memory.
  * The document's CSP and the worker's own name the RPC in connect-src
  * (functions/_middleware.ts).
+ *
+ * 2026-09-28 (a large Brazilian ISP's DNS answers NXDOMAIN for every host under chain.robinhood.com): the chain code
+ * still names the chain's own RPC, and each runtime here still refuses any other URL first, but what they send goes
+ * through this context's router (lib/chain/failover.ts): to the chain's own RPC while it can be reached, else to the
+ * public fallbacks of lib/chain/endpoints.ts, each checked to be chain 4663 first and held to its own budget, and back
+ * to the chain's own as soon as a quiet probe finds it again. The module still has one network call (rpcFetch), and
+ * it reaches only those endpoints. A read's runtime also says whether wide log ranges can be read now (wideLogs): the
+ * Positions list finds the owner's ids another way when they cannot (functions/_lib/walletPositions.ts).
  */
-import { RPC_URL, type OwnedDeps } from '../../../functions/_lib/owned'
-import type { FeesCache } from '../../../functions/_lib/fees'
+import { MAX_RPC_CALLS, RPC_URL, type OwnedDeps } from '../../../functions/_lib/owned'
+import { MAX_RPC_CALLS as RELAY_CALLS, type FeesCache } from '../../../functions/_lib/fees'
+import { FALLBACKS, PRIMARY } from './endpoints'
+import { failover, type Router } from './failover'
 
 /** What the chain code takes from the page (OwnedDeps and FeesDeps are the same shape). */
 export type ChainDeps = Required<OwnedDeps>
@@ -31,11 +41,15 @@ export type ChainDeps = Required<OwnedDeps>
 /** Refused before anything is sent: the chain code names its endpoint itself, and this page reaches no other with it. */
 const elsewhere = () => Promise.reject(new TypeError('not the chain RPC'))
 
-/** One POST to the RPC, with no credentials and no referrer. */
-function rpcFetch(init: RequestInit): Promise<Response> {
+/** The only URLs this module's one network call reaches: the chain's own RPC and its fallbacks (lib/chain/endpoints.ts). */
+const ENDPOINT_URLS: ReadonlySet<string> = new Set([PRIMARY, ...FALLBACKS].map((endpoint) => endpoint.url))
+
+/** One request to one of the endpoints, with no credentials and no referrer. */
+function rpcFetch(url: string, init: RequestInit): Promise<Response> {
+  if (!ENDPOINT_URLS.has(url)) return elsewhere()
   // No `cache` mode: a POST is never answered from the HTTP cache, and Chromium skips its CORS preflight cache for a
   // no-store request, which cost every call a preflight (the RPC allows 600 s of it).
-  return fetch(RPC_URL, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer' })
+  return fetch(url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer' })
 }
 
 /** Whether the browser says it has no network at all: a failed call is then not the RPC's rate limit. */
@@ -54,6 +68,11 @@ function pause(ms: number, signal?: AbortSignal, stop?: () => boolean): Promise<
     signal?.addEventListener('abort', finish, { once: true })
   })
 }
+
+/** This context's router to the chain (one per page, one per fees worker): what it knows lasts as long as the context. */
+const router: Router = failover({ send: rpcFetch, now: () => Date.now(), pause: (ms, signal) => pause(ms, signal), offline })
+/** For tests: this context's router, to read what it knows or forget it. */
+export const routing = (): Router => router
 
 /*
  * The RPC's limit, as measured from one address on 2026-09-25: it tracks the
@@ -76,6 +95,13 @@ export const REASK_UNREADABLE_MS = 400
 
 let channel: BroadcastChannel | null | undefined
 let reading = 0
+/**
+ * 2026-09-28 (the owner's phone: Your positions stayed on its loading rows): the page's side of the channel. Until when
+ * this browser's low-priority reads (the list's APR) rest after a refusal any read of it met, in any tab, and when
+ * another tab last said it reads.
+ */
+let restUntil = 0
+let othersAt = 0
 /** A channel of our own name; in Node (the tests, the live proofs) it does not keep the process running. */
 function openChannel(): BroadcastChannel | null {
   if (typeof BroadcastChannel !== 'function') return null
@@ -83,31 +109,71 @@ function openChannel(): BroadcastChannel | null {
   ;(opened as unknown as { unref?: () => void }).unref?.()
   return opened
 }
-/** Says on the channel whether the page has a read on its way (nothing else crosses it); quiet where there is none. */
-function tell(busy: boolean): void {
+/** The rest after a refusal: as long as the lanes' own (LANE_PACE.restMs). */
+const rest = () => void (restUntil = Date.now() + LANE_PACE.restMs)
+/**
+ * Says on the channel that a page read is on its way (true), that the last one ended (false) or that the RPC refused one
+ * ('rest'); quiet where there is no channel (a browser without BroadcastChannel, or one that refuses to open it).
+ */
+function tell(news?: boolean | 'rest'): void {
   try {
-    channel ??= openChannel()
-    channel?.postMessage(busy)
+    if (channel === undefined) {
+      channel = openChannel()
+      if (channel)
+        channel.onmessage = ({ data }: MessageEvent<unknown>) => {
+          if (data === 'rest') rest()
+          else if (typeof data === 'boolean') othersAt = data ? Date.now() : 0
+        }
+    }
+    if (news !== undefined) channel?.postMessage(news)
   } catch {
     channel = null
   }
 }
-/** One more (or one fewer) page read on its way; the lane hears only the first and the last. */
+/**
+ * One more (or one fewer) page read on its way. The lanes hear every read that starts (2026-09-28: their hold lasts
+ * PAGE_HOLD_MS from the last they heard, so a list read that waits between refused calls holds them throughout) and the
+ * last that ends.
+ */
 function pageReading(step: 1 | -1): void {
   reading += step
-  if ((step === 1 && reading === 1) || (step === -1 && reading === 0)) tell(step === 1)
+  if (step > 0 || !reading) tell(step > 0)
+}
+
+/**
+ * 2026-09-28: the list's read holds every tab's lane, and the page's own low-priority reads, for the whole of it, its
+ * waits between refused calls included (before, only while a call was on its way, so a fees log read went in the list's
+ * 3 and 4.5 s waits). Returns the release.
+ */
+export function holdReads(): () => void {
+  pageReading(1)
+  return () => pageReading(-1)
+}
+
+/**
+ * How long the page's low-priority reads (the list's APR) wait before they may ask (0: now): the rest after a refusal
+ * any read of this browser met, or a read of this page or another tab on its way.
+ */
+export function quietIn(): number {
+  tell()
+  const at = Date.now()
+  return Math.max(restUntil - at, reading || at - othersAt < PAGE_HOLD_MS ? LANE_PACE.graceMs : 0, 0)
 }
 
 /** The runtime for one read: `signal` aborted means nobody wants the answer, and no further call is made. */
 export function chainDeps(signal?: AbortSignal): ChainDeps {
+  // The read's own account with the fallbacks: the endpoint it keeps to, and no more requests than its chain code's cap.
+  const session = router.session(MAX_RPC_CALLS)
   const once = (init: RequestInit) =>
-    rpcFetch(init).then(
+    router.send(init, session).then(
       (response) => ({ response, unreadable: false }),
       (error: unknown) => {
         // The RPC sends its 429 with `access-control-allow-origin: *,*`, which a browser refuses as a CORS failure: the
         // page sees only a TypeError, never the 429 (seen 2026-09-25 in Chromium's net log). A time-out (an
         // AbortSignal's TimeoutError) is not a TypeError and keeps its own meaning, and so does a browser with no
-        // network at all: that read fails at once, and is asked again on the page's own schedule.
+        // network at all: that read fails at once, and is asked again on the page's own schedule. 2026-09-28: the router
+        // hands back a TypeError only once its probe found the RPC there (so this is its refusal), or when no endpoint
+        // at all could be reached; an RPC whose name does not resolve is not one: its calls went to the fallbacks.
         if (error instanceof TypeError && !offline()) return { response: null, unreadable: true }
         throw error
       },
@@ -124,7 +190,13 @@ export function chainDeps(signal?: AbortSignal): ChainDeps {
           sent = await once(init)
         }
         // Still unreadable: the RPC's 429, which the chain code waits out and asks again, as it does a 429 it can read.
-        return sent.response ?? new Response(null, { status: 429, statusText: 'Unreadable reply' })
+        const response = sent.response ?? new Response(null, { status: 429, statusText: 'Unreadable reply' })
+        // 2026-09-28: a refusal rests every tab's lane and the list's APR, so the page's own next call meets a quiet address.
+        if (response.status === 429 || response.status === 503) {
+          rest()
+          tell('rest')
+        }
+        return response
       } finally {
         pageReading(-1)
       }
@@ -132,6 +204,7 @@ export function chainDeps(signal?: AbortSignal): ChainDeps {
     sleep: (ms) => pause(ms, signal),
     now: () => Date.now(),
     cancelled: () => signal?.aborted === true,
+    wideLogs: () => router.primaryUp(),
   }
 }
 
@@ -143,7 +216,7 @@ export function chainDeps(signal?: AbortSignal): ChainDeps {
 export async function simulateOnChain(params: unknown[]): Promise<unknown> {
   pageReading(1)
   try {
-    const response = await rpcFetch({ method: 'POST', headers: { 'content-type': 'application/json' },
+    const response = await router.send({ method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_simulateV1', params }), signal: AbortSignal.timeout(10_000) })
     const reply = (await response.json()) as { result?: unknown; error?: { code?: unknown; message?: unknown } } | null
     if (!response.ok || !reply || reply.error || !('result' in reply)) {
@@ -291,10 +364,11 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
           refill()
           tokens -= news
         } else if (news === 'rest') restUntil = Math.max(restUntil, now() + pace.restMs)
-        else if (event.data === true && !pageBusy) {
+        // 2026-09-28: every read the page starts says so again, and its hold counts from the last.
+        else if (news === true) {
           pageBusy = true
           pageBusySince = now()
-        } else if (event.data === false) {
+        } else if (news === false) {
           pageBusy = false
           pageDoneAt = now()
         }
@@ -352,10 +426,13 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
     },
     deps(signal, until = Number.POSITIVE_INFINITY) {
       let refused = false
+      // This piece of work's account with the fallbacks: no more requests than the relay's own cap (fees.ts MAX_RPC_CALLS).
+      const session = router.session(RELAY_CALLS)
       const stopped = () => refused || signal?.aborted === true || resting() || now() >= until
       return {
         now,
         cancelled: stopped,
+        wideLogs: () => router.primaryUp(),
         // Once refused, the chain code's wait before asking again is no wait: it asks nothing more.
         sleep: (ms) => pause(ms, signal, stopped),
         async turn() {
@@ -370,7 +447,7 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
           const sent = now()
           let response: Response
           try {
-            response = await rpcFetch({ ...init, signal: joined.signal })
+            response = await router.send({ ...init, signal: joined.signal }, session)
           } catch (error) {
             joined.drop()
             // A call nobody wants any more is not a slow one either (see counted).

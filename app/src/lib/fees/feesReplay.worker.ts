@@ -16,9 +16,11 @@
  *
  * A classic worker (Vite's default iife format), same-origin, spawned only by
  * spawn.ts. Its only requests are logs.ts's, to the chain's RPC, which its
- * own CSP names in connect-src (functions/_middleware.ts WORKER_CSP).
+ * own CSP names in connect-src (functions/_middleware.ts WORKER_CSP). 2026-09-28: and, while that RPC cannot be
+ * reached, to its public fallbacks, which the lane's runtime asks through the worker's own router
+ * (lib/chain/failover.ts) and the same CSP names.
  */
-import { chainLane, chainDeps, memoryCache } from '../chain/browser'
+import { chainLane, memoryCache } from '../chain/browser'
 import { logsOnChain } from '../../../functions/_lib/fees'
 import { pathLogsOnChain } from '../../../functions/_lib/feesPath'
 import { logsWith } from './logs'
@@ -36,7 +38,9 @@ const scope = self as unknown as WorkerScope
 const lane = chainLane()
 /** The relay's units this worker has read, kept in its memory as the relay kept them, for as long as it lives. */
 const cache = memoryCache()
-const code = { chainDeps, logsOnChain, pathLogsOnChain }
+// Every read here goes through the lane (logs.ts asks chainDeps only without one): 2026-09-28, the page's own runtime,
+// with its hold and its channel, is left out of this file.
+const code = { chainDeps: lane.deps, logsOnChain, pathLogsOnChain }
 const runs = new Map<string, AbortController>()
 
 /** A pause that ends early when the run is dropped. */

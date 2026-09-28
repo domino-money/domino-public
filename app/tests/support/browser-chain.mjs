@@ -29,10 +29,20 @@
  * spent every request is refused with a 429 whose
  * `access-control-allow-origin: *,*` a browser cannot read, as the RPC sends
  * it. Refused requests are listed in `refusals`.
+ *
+ * 2026-09-28 (a large Brazilian ISP's DNS answers NXDOMAIN for chain.robinhood.com): routeChain also answers the
+ * chain's three public fallbacks (src/lib/chain/endpoints.ts) from the same chain, each refusing what it refused when
+ * it was measured (tests/support/fallbacks.mjs), and lists what they were asked in `fallbackLog`. `primary` is how the
+ * chain's own RPC answers: 'up', or 'dns' (every request to it fails as a name that does not resolve does,
+ * net::ERR_NAME_NOT_RESOLVED; `primaryAsked` lists them). A no-cors GET to it (the page's reach probe) is answered as
+ * the RPC answers a GET, and counted in `probes`. `operations: true` makes each position minted by an owner one of its
+ * DominoSetupV1 operations too (after its deposits), as the contract records it, so the list can be read from the
+ * contract's state (functions/_lib/walletPositions.ts operationIds).
  * Not a suite of its own.
  */
 import { createRequire } from 'node:module';
 import { decodeFunctionData, encodeAbiParameters, encodeFunctionResult, keccak256, numberToHex, pad, parseAbi } from 'viem';
+import { FALLBACK_ROUTE, fallbackReply } from './fallbacks.mjs';
 
 const require = createRequire(import.meta.url);
 const owned = require('../../.test-build/app/functions/_lib/owned.js');
@@ -106,14 +116,17 @@ const needed = (owed, l) => (l === 0n ? 0n : (BigInt(owed) * Q128 + l - 1n) / l)
  * the owner's operation n). `vaults`: per lowercase address { root, feeBps, paused, valid, made }: a sequence vault
  * Domino's factory made (made: false, one it did not), for the automation read.
  */
-export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, positions = [], pools = {}, tokens = {}, deposits = {}, vaults = {}, history = null, limit = null } = {}) {
-  const chain = { head, timestamp, positions, pools, tokens, deposits, vaults, history, limit, outage: null, log: [], missing: [], refused: [], refusals: [], asked: new Map() };
+export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, positions = [], pools = {}, tokens = {}, deposits = {}, vaults = {}, history = null, limit = null, operations = false } = {}) {
+  const chain = { head, timestamp, positions, pools, tokens, deposits, vaults, history, limit, operations, outage: null, primary: 'up', primaryAsked: [], probes: 0, fallbackLog: [], log: [], missing: [], refused: [], refusals: [], asked: new Map() };
   const lower = (value) => String(value).toLowerCase();
   const position = (id) => chain.positions.find((p) => String(p.tokenId) === String(id));
   const ok = (abi, functionName, result) => ({ success: true, returnData: encodeFunctionResult({ abi, functionName, result }) });
   const revert = { success: false, returnData: '0x' };
   const poolOf = (id) => chain.pools[id] ?? { sqrtPriceX96: 2n ** 96n, tick: 0 };
   const known = (p) => p && !p.burned && (chain.asked.get(String(p.tokenId)) ?? 0) > (p.from ?? 0);
+  /** With `operations`: the positions `owner` minted, in the order their SetupMinted logs come (their operations' order). */
+  const mintBlock = (p) => p.mintBlock ?? chain.head - 1000 * (chain.positions.length - chain.positions.indexOf(p));
+  const mintedBy = (owner) => (chain.operations ? chain.positions.filter((p) => lower(p.minter ?? p.holder) === owner).sort((a, b) => mintBlock(a) - mintBlock(b)) : []);
 
   function view(target, data) {
     if (target === PM) {
@@ -143,11 +156,17 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
     }
     if (target === SETUP) {
       const { functionName, args } = decodeFunctionData({ abi: setupAbi, data });
-      if (functionName === 'ownerNonce') return ok(setupAbi, functionName, BigInt((chain.deposits[lower(args[0])] ?? []).length));
+      if (functionName === 'ownerNonce') return ok(setupAbi, functionName, BigInt((chain.deposits[lower(args[0])] ?? []).length + mintedBy(lower(args[0])).length));
       if (functionName === 'recoveryStarted') return ok(setupAbi, functionName, false);
       for (const [owner, list] of Object.entries(chain.deposits)) {
         const i = list.findIndex((_, n) => opIdOf(owner, n) === args[0]);
         if (i >= 0) return ok(setupAbi, functionName, { owner, key: list[i].key, balance0: BigInt(list[i].balance0), balance1: BigInt(list[i].balance1), swapped: false, closed: list[i].closed === true, tokenId: 0n });
+      }
+      // A minted position's operation (`operations`): closed, its NFT's id kept, after the owner's deposits.
+      for (const p of chain.operations ? chain.positions : []) {
+        const owner = lower(p.minter ?? p.holder);
+        const n = (chain.deposits[owner] ?? []).length + mintedBy(owner).indexOf(p);
+        if (opIdOf(owner, n) === args[0]) return ok(setupAbi, functionName, { owner, key: p.key, balance0: 0n, balance1: 0n, swapped: false, closed: true, tokenId: BigInt(p.tokenId) });
       }
       return ok(setupAbi, functionName, { owner: ZERO, key: { currency0: ZERO, currency1: ZERO, fee: 0, tickSpacing: 0, hooks: ZERO }, balance0: 0n, balance1: 0n, swapped: false, closed: false, tokenId: 0n });
     }
@@ -251,17 +270,45 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
  * Answers the RPC for every page of `context` from `chain` (an empty chain unless one is given), CORS included, as the
  * public RPC does (any origin, POST, content-type). A reply that throws is a 500 and is kept in `chain.errors`.
  */
-export async function routeChain(context, chain = browserChain()) {
+export async function routeChain(context, chain = browserChain(), { primary = chain.primary ?? 'up' } = {}) {
   chain.errors ??= [];
+  chain.primary = primary;
+  chain.primaryAsked ??= [];
+  chain.fallbackLog ??= [];
+  chain.probes ??= 0;
   const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
   await context.route(RPC_ROUTE, async (route) => {
     const request = route.request();
+    // 2026-09-28: a name that does not resolve fails every request, the preflight and the reach probe included.
+    if (chain.primary === 'dns') {
+      chain.primaryAsked.push(request.method());
+      return route.abort('namenotresolved');
+    }
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    // The page's reach probe (a no-cors GET, src/lib/chain/failover.ts): the RPC answers a GET as it answers anything
+    // it does not serve; the page learns only that it was reached.
+    if (request.method() === 'GET') {
+      chain.probes += 1;
+      return route.fulfill({ status: 405, headers: cors, body: '' });
+    }
     try {
       const reply = await chain.fetch(RPC_URL, { method: request.method(), body: request.postData() ?? '' });
       // A reply may carry its own allow-origin (the RPC's refusal: `*,*`, which a browser refuses to read).
       const origin = reply.headers.get('access-control-allow-origin');
       return route.fulfill({ status: reply.status, headers: { ...cors, ...(origin ? { 'access-control-allow-origin': origin } : {}), 'content-type': reply.headers.get('content-type') ?? 'text/plain' }, body: await reply.text() });
+    } catch (error) {
+      chain.errors.push(String(error?.stack ?? error));
+      return route.fulfill({ status: 500, headers: cors, body: '' });
+    }
+  });
+  // The three public fallbacks, over the same chain, each as it was measured (tests/support/fallbacks.mjs).
+  await context.route(FALLBACK_ROUTE, async (route) => {
+    const request = route.request();
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+    try {
+      const own = (body) => chain.fetch(RPC_URL, { method: 'POST', body });
+      const reply = await fallbackReply(request.url().replace(/\/$/, ''), request.postData() ?? '', { own, head: () => chain.head, log: chain.fallbackLog });
+      return route.fulfill({ status: reply.status, headers: { ...cors, 'content-type': 'application/json' }, body: await reply.text() });
     } catch (error) {
       chain.errors.push(String(error?.stack ?? error));
       return route.fulfill({ status: 500, headers: cors, body: '' });

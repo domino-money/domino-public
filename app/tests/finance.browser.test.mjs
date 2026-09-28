@@ -17,6 +17,7 @@ import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/
 // 2026-09-25: the public RPC as the page reads it, answered by a fake chain (the page reads the chain itself since the RPC
 // rate-limits Cloudflare's edge), and a recorded fees case as the chain it was read from.
 import { SETUP_MINTED_TOPIC, browserChain, busyHistory, opIdOf, routeChain as routeRpc } from './support/browser-chain.mjs';
+import { FALLBACK_URLS, ORDOFI, PUBLICNODE } from './support/fallbacks.mjs';
 // 2026-09-27: a wallet that refunds a held deposit, for the test that holds the list's refresh during a refund.
 import { createPositionChain } from './support/position-chain.mjs';
 import { caseChain } from './support/fees/case-chain.mjs';
@@ -1253,6 +1254,39 @@ test('a wallet that can batch once it turns on its smart account is offered one 
     assert.deepEqual(chain.sends, []);
     assert.deepEqual(batchCalls(chain, chain.batches[0]).map(call => call.functionName), ['approve', 'open', 'mint']);
     await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// 2026-09-28 (the chain's own RPC unreachable on Vivo's DNS): a wallet that does not simulate a batch has it simulated
+// at a public fallback that does (publicnode, else dRPC; ordofi has no simulation), checked to be chain 4663 first.
+test('with the chain’s own RPC behind a name that does not resolve, a batch the wallet cannot simulate is simulated at a public fallback, and signed once', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', simulation: 'unsupported' });
+  const s = await atReview(chain);
+  const asked = [];
+  const primary = [];
+  try {
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
+    await s.context.route(/rpc\.mainnet\.chain\.robinhood\.com/, (route) => {
+      primary.push(route.request().method());
+      return route.abort('namenotresolved');
+    });
+    await s.context.route(/^https:\/\/(?:robinhood-rpc\.publicnode\.com|rpc\.ordofi\.network|robinhood\.drpc\.org)\/?$/, async (route) => {
+      const request = route.request();
+      if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+      const body = JSON.parse(request.postData() ?? '{}');
+      asked.push(`${new URL(request.url()).hostname} ${body.method}`);
+      const reply = body.method === 'eth_chainId' ? { result: '0x1237' } : body.method === 'eth_simulateV1' ? { result: [{ calls: chain.simulate(body.params[0].blockStateCalls[0].calls) }] } : null;
+      if (!reply) return route.fulfill({ status: 500, headers: cors, body: '' });
+      return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: body.id, ...reply }) });
+    });
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.ok(primary.length > 0, 'the chain’s own RPC was asked first');
+    assert.deepEqual(asked.filter((line) => /eth_simulateV1|eth_chainId/.test(line)).slice(0, 2), ['robinhood-rpc.publicnode.com eth_chainId', 'robinhood-rpc.publicnode.com eth_simulateV1'], 'checked to be chain 4663, then simulated');
+    assert.ok(!asked.some((line) => line.startsWith('rpc.ordofi.network eth_simulateV1')), 'never ordofi, which has no simulation');
+    assert.deepEqual(chain.sends, []);
+    assert.equal(chain.batches.length, 1, 'signed once');
   } finally { await s.close(); }
 });
 
@@ -3631,8 +3665,42 @@ async function connectWallet(page, name = 'Test Wallet A') {
 
 /** The read service's nft-positions questions the page asked, in order: none any more. */
 const nftReads = (read) => read.requests.filter((r) => r.path.endsWith('/nft-positions')).map((r) => JSON.parse(r.body).tokenIds);
-/** Everything the page keeps in the browser about positions (owner, 2026-09-26: dark only, so no appearance key either). */
-const kept = (page) => page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter((key) => /position/i.test(key)));
+/**
+ * Everything the page keeps in the browser about positions (owner, 2026-09-26: dark only, so no appearance key either).
+ * Changed on purpose (2026-09-28, the owner, on his phone: Your positions stayed on its loading rows while the RPC
+ * refused his address): the list keeps one display copy of the chain's last answer per wallet and chain (OWNED_COPY),
+ * which it draws at once on the next visit while the chain is read.
+ */
+const kept = (page) => page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter((key) => /position|owned/i.test(key)));
+/** The list's display copy for Test Wallet A on Robinhood Chain (components/positions/OwnedPositions.tsx). */
+const OWNED_COPY = `domino.kept.v1.owned.4663.${OWNER}`;
+
+/**
+ * 2026-09-28: the public RPC refusing this browser's address as it does live, while `until` (a time) is ahead: every
+ * request is answered 429 with the allow-origin `*,*` a browser cannot read, so the page sees a failed fetch. `asked`
+ * keeps every request, answered or refused, with its time and its calls (method, and a log read's first topic).
+ */
+function refusing(chain) {
+  const answer = chain.fetch;
+  const state = { until: 0, asked: [] };
+  chain.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    const refused = Date.now() < state.until;
+    state.asked.push({ at: Date.now(), refused, calls: (Array.isArray(body) ? body : [body]).map((call) => ({ method: call.method, topic: call.params?.[0]?.topics?.[0] })) });
+    if (refused) return new Response('Too Many Requests', { status: 429, headers: { 'access-control-allow-origin': '*,*', 'content-type': 'text/plain' } });
+    return answer(url, init);
+  };
+  return state;
+}
+/** Whether a request is the fees worker's (a history's logs or block headers), not the list's or a position's state. */
+const feesRead = (request) => request.calls.some((call) => call.method === 'eth_getBlockByNumber' || (call.method === 'eth_getLogs' && call.topic !== SETUP_MINTED_TOPIC));
+/** After a reload or in a new tab: the wallet connects again by itself, or is connected again from the header. */
+async function reconnect(page) {
+  await page.waitForFunction(() => ['no-wallet', 'kept', 'ready', 'loading', 'retrying', 'unlisted'].includes(document.querySelector('[data-owned]')?.getAttribute('data-owned')), null, { timeout: 15_000 });
+  if ((await page.locator('[data-owned]').getAttribute('data-owned')) === 'no-wallet') await connectWallet(page);
+}
+/** The rows of Your positions as they read, in order. */
+const ownedRows = (page) => page.locator('[data-owned] a[data-position-row]').evaluateAll((rows) => rows.map((row) => `${row.getAttribute('data-position-row')} ${row.innerText.replace(/\s+/g, ' ').trim()}`));
 
 /** What the list card showed since recordList, once a wallet was connected (the no-wallet and waiting cards left out). */
 const listSeen = (page) => page.evaluate(() => window.__ownedSeen.filter((what) => !/^(?:no-wallet|waiting|other-network)\b/.test(what)));
@@ -3722,7 +3790,8 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     const listText = await s.page.locator('main').innerText();
     assert.doesNotMatch(listText, FORBIDDEN);
     assert.doesNotMatch(listText, /comma|type (?:the|an) NFT id|Look up|Position NFTs/i, 'no typed ids asked for');
-    assert.deepEqual(await kept(s.page), [], 'nothing about positions is kept in the browser');
+    // Changed on purpose (2026-09-28): the list's display copy of the chain's answer, and nothing else.
+    assert.deepEqual(await kept(s.page), [OWNED_COPY], 'nothing about positions is kept in the browser but the list’s copy');
 
     // A row is a link to the position's own page, read from the chain by the page.
     await s.page.getByRole('tab', { name: /^Open/ }).click();
@@ -3865,7 +3934,8 @@ test('a read that fails is never “no positions”: the loading rows and one qu
     assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'and no Retry');
     assert.doesNotMatch(await s.page.locator('main').innerText(), /No positions/);
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
-    assert.deepEqual(await kept(s.page), [], 'nothing about positions is kept in the browser');
+    // Changed on purpose (2026-09-28): the first wallet's list, read, is kept as its display copy; the other's never was.
+    assert.deepEqual(await kept(s.page), [OWNED_COPY], 'nothing about positions is kept in the browser but the list’s copy');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
   } finally { await s.close(); }
 });
@@ -4846,11 +4916,278 @@ test('Your positions shows each position’s APR, the page’s own figure, measu
     assert.equal((await s.page.locator('[data-position-row="3325113"] [data-apr="ready"] .dm-own-fig').innerText()).trim(), figure);
     await s.page.waitForTimeout(1_500);
     assert.deepEqual((await s.page.evaluate(() => window.__feesRuns)).slice(before).filter((entry) => entry.startsWith('run')), [], 'no history replayed again');
-    assert.deepEqual(await kept(s.page), [], 'nothing about positions is kept in the browser');
+    // Changed on purpose (2026-09-28): the list's display copy, and nothing else (no APR, no history).
+    assert.deepEqual(await kept(s.page), [OWNED_COPY], 'nothing about positions is kept in the browser but the list’s copy');
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
     assert.deepEqual(chain.refused, [], 'nothing but the reads');
     await s.page.locator('[data-owned]').screenshot({ path: join(shots(), 'positions-apr.png') });
   } finally { await s.close(); }
+});
+
+// 2026-09-28 (the owner, on his phone, in a wallet's in-app browser: Your positions stayed on its loading rows with
+// "Reading your positions from the chain…" while the public RPC refused his address). The list keeps this browser's copy
+// of the chain's last answer, per wallet and chain, and draws it at once on the next visit (data-owned="kept") while the
+// chain is read, then the chain's own list in its place, as soon as the RPC lets the address in. Display only: the held
+// deposit and its refund, the automation's badges and reads wait for the chain; a copy the parser refuses (another
+// wallet's answer under this one's name, a broken field) or one over a week old is dropped, never drawn; and the chain
+// saying the wallet has none forgets it. Review of 2026-09-28: once a read failed, the card's one quiet line stands over
+// the copy as it stands over the loading rows (the next test: its calm line, and a copy too old for its USD figures).
+test('Your positions draws this browser’s copy at once while the RPC refuses, then the chain’s list in its place; a broken, another wallet’s or an old copy is never drawn', async () => {
+  const deposit = { key: { currency0: zeroAddress, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: zeroAddress }, balance0: 0n, balance1: 100000n };
+  const chain = browserChain({ positions: [onChain(OWNED_OPEN), closedOnChain(OWNED_CLOSED[0])], tokens: { ...TOKENS, [USDG]: { symbol: 'USDG', decimals: 6 } }, deposits: { [OWNER]: [deposit] } });
+  const rpc = refusing(chain);
+  const site = siteRoutes();
+  const read = createReadStub();
+  const s = await scenario({ chain, routes: [site.route, (request, url) => read.handle(request, url)] });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await connectWallet(s.page);
+    await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
+    await s.page.locator('[data-held-deposit]').waitFor();
+    await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor();
+    const fresh = await ownedRows(s.page);
+    const tabs = async () => (await s.page.getByRole('tab').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+    assert.deepEqual(await tabs(), ['Open 1', 'Closed 1']);
+    const copy = JSON.parse(await s.page.evaluate((name) => localStorage.getItem(name), OWNED_COPY));
+    assert.deepEqual(Object.keys(copy).sort(), ['at', 'data'], 'dated');
+    assert.deepEqual([copy.data.owner, copy.data.block, copy.data.positions.map((p) => p.tokenId), copy.data.deposits], [OWNER, chain.head, [OWNED_OPEN, OWNED_CLOSED[0]], []], 'the chain’s answer, never its held deposit');
+    assert.deepEqual(await kept(s.page), [OWNED_COPY]);
+
+    // Reloaded while the RPC refuses this address, as it does live: the copy at once, as it was drawn, and nothing that
+    // acts or reads for it; then the chain's list in its place once the RPC lets the address in.
+    rpc.until = Date.now() + 60_000;
+    await s.page.reload();
+    await recordList(s.page);
+    await reconnect(s.page);
+    await s.page.locator(`[data-owned="kept"][data-owned-block="${chain.head}"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 5_000 });
+    assert.deepEqual(await ownedRows(s.page), fresh, 'the rows as they were drawn');
+    assert.deepEqual(await tabs(), ['Open 1', 'Closed 1']);
+    // Changed on purpose (review, 2026-09-28): no line only while the first read is on its way (its refused calls and
+    // the scan's waits take 10 s); the loading rows and the empty state never.
+    assert.equal(await s.page.locator('[data-owned] [data-owned-loading], [data-owned] [data-owned-note], [data-owned] [data-empty]').count(), 0, 'no loading rows, no line yet, no empty state');
+    assert.equal(await s.page.locator('[data-held-deposit], [data-position-automation]').count(), 0, 'no held deposit to refund, no automation read for the copy');
+    await until(() => rpc.asked.some((request) => request.refused), 'the list asked the chain, refused');
+    // Review of 2026-09-28: the copy is never drawn as the chain's answer of now. Once the first read failed and is asked
+    // again, the one quiet line the loading rows have stands over the copy's rows, which stay.
+    const note = s.page.locator('[data-owned="kept"] [data-owned-note="rereading"]');
+    await note.waitFor({ timeout: 20_000 });
+    assert.equal(await note.innerText(), 'Reading your positions from the chain…');
+    assert.equal(await s.page.locator('[data-owned]').getAttribute('data-owned-reason'), 'chain_busy');
+    assert.deepEqual(await ownedRows(s.page), fresh, 'the copy’s rows stay under it');
+    assert.equal(await s.page.locator('[data-owned] [data-owned-loading], [data-owned] [data-empty]').count(), 0);
+    const lifted = Date.now();
+    rpc.until = 0;
+    await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
+    const late = Date.now() - lifted;
+    assert.ok(late < 6_000, `the chain’s list ${late} ms after the RPC let the address in`);
+    assert.equal(await s.page.locator('[data-owned] [data-owned-note]').count(), 0, 'and no line over the chain’s list');
+    await s.page.locator('[data-held-deposit]').waitFor();
+    await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor();
+    assert.deepEqual(await listSeen(s.page), ['kept', 'kept:rereading', 'ready'], 'the copy, the copy under the quiet line, then the chain’s list: never the loading rows');
+    assert.deepEqual(await ownedRows(s.page), fresh);
+    assert.equal(rpc.asked.filter((request) => request.refused && request.calls.some((call) => call.method !== 'eth_blockNumber')).length, 0, 'while refused, only the list’s first call was asked again');
+
+    // Copies that are never drawn: the reload finds none it may draw, the chain refusing meanwhile, and drops them.
+    const other = ACCOUNTS[1].address.toLowerCase();
+    const week = 7 * 86_400_000;
+    const broken = { ...copy.data, positions: [{ ...copy.data.positions[0], liquidity: '0' }] };
+    for (const [label, entry] of [
+      ['another wallet’s answer under this one’s name', { at: Date.now(), data: { ...copy.data, owner: other } }],
+      ['an open position with no liquidity', { at: Date.now(), data: broken }],
+      ['older than a week', { at: Date.now() - week - 60_000, data: copy.data }],
+    ]) {
+      await s.page.evaluate(([name, value]) => localStorage.setItem(name, JSON.stringify(value)), [OWNED_COPY, entry]);
+      rpc.until = Date.now() + 60_000;
+      await s.page.reload();
+      await recordList(s.page);
+      await reconnect(s.page);
+      await s.page.locator('[data-owned] [data-owned-loading]').waitFor({ timeout: 15_000 });
+      assert.equal(await s.page.locator('[data-owned] a[data-position-row]').count(), 0, `${label}: not drawn`);
+      assert.equal(await s.page.evaluate((name) => localStorage.getItem(name), OWNED_COPY), null, `${label}: dropped`);
+      assert.ok(!(await listSeen(s.page)).includes('kept'), label);
+    }
+
+    // The chain says the wallet has none now: the list says so, and the copy is forgotten.
+    rpc.until = 0;
+    await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
+    assert.notEqual(await s.page.evaluate((name) => localStorage.getItem(name), OWNED_COPY), null, 'kept again from the chain’s answer');
+    chain.positions.length = 0;
+    chain.deposits[OWNER] = [];
+    await s.page.reload();
+    await reconnect(s.page);
+    await s.page.locator('[data-owned="ready"] [data-empty="owned-none"]').waitFor({ timeout: 20_000 });
+    assert.deepEqual(await kept(s.page), [], 'forgotten');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
+    // 2026-09-28: the RPC's refusal, which the browser cannot read (a TypeError, as a name that does not resolve is), was
+    // told from one by the page's reach probe (a no-cors GET the RPC answered): no public fallback was ever asked.
+    assert.ok(chain.probes >= 1, `the page asked whether the RPC was there (${chain.probes})`);
+    assert.deepEqual(chain.fallbackLog, [], 'no fallback was asked anything');
+  } finally { await s.close(); }
+});
+
+// Review of 2026-09-28. This browser's copy is the chain's answer of when it was kept, its USD figures valued at that
+// block's pool prices. The Wallet card counts a price for an hour and no longer ("an older price gives no value and no
+// total": lib/walletMemory.ts WALLET_PRICE_MAX_AGE_MS); so does the copy. Kept a moment ago it is drawn as it was, its
+// USD figures and Total value included; kept two hours ago, its rows show their token amounts only, and the band waits
+// in its place for the chain, as while the list is read. And a copy is never drawn as the chain's answer of now: while
+// the chain fails, the card's quiet line stands over it, then its calm line once the quick re-asks failed too (the band
+// leaves then, as it does over the loading rows); the chain's own list, once it answers, has its figures and no line.
+test('a copy kept over an hour ago shows no USD figure and no Total value until the chain answers, and the card’s lines stand over a copy while the chain fails', async () => {
+  const usdgKey = (fee) => ({ currency0: zeroAddress, currency1: USDG, fee, tickSpacing: 60, hooks: zeroAddress });
+  const chain = browserChain({ positions: [onChain('5', { key: usdgKey(3000), unclaimed: [0n, 2_500_000n] }), onChain('7', { key: usdgKey(500) })], tokens: { [USDG]: { symbol: 'USDG', decimals: 6 } } });
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  const card = s.page.locator('[data-owned]');
+  const usd = () => card.locator('[data-cell="principal"] .dm-own-fig, [data-cell="fees"] .dm-own-fig').allInnerTexts();
+  const band = card.locator('.dm-portfolio:not(.dm-own-skel-band)');
+  const again = async () => {
+    await s.page.reload();
+    await recordList(s.page);
+    await reconnect(s.page);
+  };
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await connectWallet(s.page);
+    await s.page.locator('[data-owned="ready"] a[data-position-row="5"]').waitFor({ timeout: 20_000 });
+    const fresh = await ownedRows(s.page);
+    const figures = await usd();
+    assert.equal(figures.length, 4, 'Value and Fees ready to collect in USD, on both rows');
+    assert.ok(figures.every((figure) => /^\$/.test(figure)), figures.join(' '));
+    const total = await band.innerText();
+    assert.match(total, /Total value/);
+
+    // Kept a moment ago, the chain failing: drawn as it was, its USD figures and its total included.
+    chain.outage = 500;
+    await again();
+    await s.page.locator('[data-owned="kept"] a[data-position-row="5"]').waitFor({ timeout: 5_000 });
+    assert.deepEqual(await ownedRows(s.page), fresh, 'the rows as they were drawn');
+    assert.equal(await band.innerText(), total, 'and the band');
+
+    // Kept two hours ago: the token amounts only, no USD and no total; the band waits in its place.
+    await s.page.evaluate((name) => {
+      const entry = JSON.parse(localStorage.getItem(name));
+      localStorage.setItem(name, JSON.stringify({ ...entry, at: Date.now() - 2 * 3_600_000 }));
+    }, OWNED_COPY);
+    await again();
+    await s.page.locator('[data-owned="kept"] a[data-position-row="5"]').waitFor({ timeout: 5_000 });
+    assert.deepEqual(await usd(), [], 'no USD figure on the rows');
+    assert.doesNotMatch(await card.innerText(), /\$|Total value/, 'no USD anywhere on the card, and no total');
+    assert.equal(await card.locator('.dm-own-skel-band').count(), 1, 'the band waits in its place');
+    assert.match(await s.page.locator('a[data-position-row="5"]').innerText(), /2\.5 USDG/, 'the copy’s own token amounts');
+    assert.equal(await s.page.locator('[data-owned] a[data-position-row]').count(), 2);
+
+    // The chain keeps failing: the quiet line over the copy while it is asked again, then the calm one; the copy stays.
+    const note = card.locator('[data-owned-note]');
+    await card.locator('[data-owned-note="rereading"]').waitFor({ timeout: 5_000 });
+    assert.equal(await note.innerText(), 'Reading your positions from the chain…');
+    await card.locator('[data-owned-note="unread"]').waitFor({ timeout: 30_000 });
+    assert.equal(await note.innerText(), 'Your positions couldn’t be read right now.');
+    assert.deepEqual([await card.getAttribute('data-owned'), await card.getAttribute('data-owned-reason')], ['kept', 'chain_unavailable']);
+    assert.equal(await card.locator('.dm-portfolio').count(), 0, 'the band leaves once the list could not be read');
+    assert.equal(await s.page.locator('[data-owned] a[data-position-row]').count(), 2, 'the copy stays');
+    assert.equal(await card.locator('[data-owned-loading], [data-empty]').count(), 0);
+    assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'no Retry');
+    const seen = await listSeen(s.page);
+    assert.ok(seen.every((what) => /^kept(?::rereading|:unread)?$/.test(what)) && seen.at(-1) === 'kept:unread', seen.join(' → '));
+
+    // The chain answers: its USD figures and total, no line, and the copy kept again at this time.
+    chain.outage = null;
+    await again();
+    await s.page.locator('[data-owned="ready"] a[data-position-row="5"]').waitFor({ timeout: 15_000 });
+    assert.deepEqual(await ownedRows(s.page), fresh);
+    assert.equal(await band.innerText(), total);
+    assert.equal(await note.count(), 0);
+    assert.ok(Date.now() - JSON.parse(await s.page.evaluate((name) => localStorage.getItem(name), OWNED_COPY)).at < 60_000, 'kept again, now');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+  } finally { await s.close(); }
+});
+
+// 2026-09-28 (the owner, on his phone, with five tabs open: Your positions stayed on its loading rows while the public
+// RPC refused his address; round 6's list APR replays each open position's history in every tab that shows the list,
+// and the list's own read had no way ahead of it). Two tabs of one browser: A shows the list and measures its APR (the
+// recorded 3325113, its history replayed by A's fees worker); B opens Positions while the RPC refuses this address for a
+// few seconds, as it does live. B draws this browser's copy at once and the chain's list as soon as the RPC lets it in;
+// from B's first call on, no tab's fees worker or APR asks anything: B's read holds every lane for the whole of it, its
+// refusals rest them all, and A's queue waits on both (lib/chain/browser.ts holdReads and quietIn).
+// Before the fix (measured on d1197112, twice, with this test's assertions logged instead): B showed its loading rows
+// until the chain answered, 10.4 s after its first call; meanwhile A's queue started two APR runs (at 6.1 and 10.3 s)
+// and A's fees worker read the history from 8.1 s on, in B's 4.5 s wait before its next call. Live, those reads are what
+// the RPC refuses the address for.
+test('the RPC refusing for a few seconds while another tab measures its APR: the list is drawn at once from this browser’s copy and from the chain as soon as the RPC lets it in, and no fees or APR read is asked meanwhile', async () => {
+  const VAULT = `0x${'5a'.repeat(20)}`;
+  const recorded = automatedChain('3325113', { vault: VAULT, owner: ACCOUNTS[0].address, executions: [] });
+  const position = recorded.fixture.state.positions[0];
+  const base = browserChain({
+    head: recorded.head,
+    timestamp: recorded.fixture.state.timestamp,
+    positions: [{ tokenId: '3325113', holder: OWNER, key: position.poolKey, tickLower: position.tickLower, tickUpper: position.tickUpper, liquidity: 1n, unclaimed: [0n, 0n] }, onChain(OWNED_OPEN)],
+    tokens: TOKENS,
+  });
+  const chain = listChain({ recorded, base, vault: VAULT });
+  const rpc = refusing(chain);
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route], listApr: true });
+  let b = null;
+  // Every run a tab's fees store sends its worker, and when (the page's clock: this machine's, as the fake RPC's).
+  const countRuns = (page) => page.evaluate(() => {
+    const send = Worker.prototype.postMessage;
+    window.__feesRuns = [];
+    Worker.prototype.postMessage = function (message, ...rest) {
+      if (message?.type === 'run') window.__feesRuns.push({ id: message.id, at: Date.now() });
+      return send.call(this, message, ...rest);
+    };
+  });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await countRuns(s.page);
+    await connectWallet(s.page);
+    await s.page.locator('[data-owned="ready"] a[data-position-row="3325113"]').waitFor({ timeout: 20_000 });
+    // A measures 3325113's APR: its run is on, and its worker reads the history.
+    await s.page.waitForFunction(() => window.__feesRuns.some((run) => run.id === '3325113'), null, { timeout: 20_000 });
+    await until(() => rpc.asked.filter(feesRead).length >= 2, 'A’s fees worker reading the history', 20_000);
+
+    // B opens Positions; the RPC refuses this address for six seconds from B's first call.
+    b = await s.context.newPage();
+    let first = 0;
+    await b.route(/^https:\/\/rpc\.mainnet\.chain\.robinhood\.com\/?$/, (route) => {
+      if (!first) {
+        first = Date.now();
+        rpc.until = first + 6_000;
+      }
+      return route.fallback();
+    });
+    await b.goto(`${s.origin}/#/app`);
+    await countRuns(b);
+    await recordList(b);
+    await reconnect(b);
+    // B's copy (A kept it) at once, before any answer.
+    await b.locator('[data-owned="kept"] a[data-position-row="3325113"]').waitFor({ timeout: 5_000 });
+    await until(() => first > 0, 'B’s first call');
+    await b.locator('[data-owned="ready"] a[data-position-row="3325113"]').waitFor({ timeout: 30_000 });
+    const ready = Date.now();
+    const late = ready - rpc.until;
+    assert.ok(late < 6_000, `B’s list from the chain ${late} ms after the RPC let the address in`);
+    assert.deepEqual(await listSeen(b), ['kept', 'ready'], 'B: the copy, then the chain’s list; never the loading rows or a line');
+
+    // Nothing of the fees histories or the APR from B's first call to its list, nor for a while after (the rest).
+    await new Promise((done) => setTimeout(done, 3_000));
+    const meanwhile = rpc.asked.filter((request) => request.at > first + 100 && feesRead(request));
+    assert.deepEqual(meanwhile.map((request) => `${request.at - first} ms ${request.refused ? 'refused' : 'answered'} ${request.calls.map((call) => call.method).join('+')}`), [], 'no tab’s fees worker asked anything');
+    const runs = [];
+    for (const page of [s.page, b]) runs.push(...(await page.evaluate(() => window.__feesRuns ?? [])).filter((run) => run.at > first));
+    assert.deepEqual(runs, [], 'no APR run was started in either tab');
+    const refused = rpc.asked.filter((request) => request.refused);
+    assert.ok(refused.length > 0 && refused.every((request) => request.at >= first && request.calls.every((call) => call.method === 'eth_blockNumber')), 'only the list’s first call was asked while refused');
+    console.log(`# B: its copy at once, the chain’s list ${late} ms after the RPC let the address in; ${refused.length} refused, each the list’s first call; no fees read from its first call to 3 s after its list`);
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+  } finally {
+    await b?.close();
+    await s.close();
+  }
 });
 
 // 2026-09-27 (the owner: the Fees earned chart took far too long; traced live on his 3325113 at the integration of round 5):
@@ -5238,6 +5575,186 @@ test('a history the probe says cannot verify is never read: no pool epoch, no ca
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     await within('the position’s page again', s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`), 2_500);
     assert.deepEqual(chain.refusals, [], 'no read was refused');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+  } finally { await s.close(); }
+});
+
+// 2026-09-28: the DNS of Vivo, one of Brazil's largest ISPs, answers NXDOMAIN for every host under chain.robinhood.com. On
+// that network the page met net::ERR_NAME_NOT_RESOLVED for the chain's own RPC: Your positions "couldn't be read", and a
+// position's fees read nothing. The owner asked for no backend change and the same screens: the page now reads through
+// the chain's public fallbacks while its own RPC cannot be reached (src/lib/chain/endpoints.ts and failover.ts), each
+// answering here as it was measured that day (tests/support/fallbacks.mjs), and the list finds the wallet's ids in
+// DominoSetupV1's own state, since none of them reads the millions of blocks of logs the list's first scan asks.
+test('the chain’s own RPC behind a name that does not resolve: Your positions, a position’s page and its fees card read through the public fallbacks, word for word as through the RPC, the list from DominoSetupV1’s state and not one log', async () => {
+  const make = () => browserChain({ positions: [onChain(OWNED_OPEN), ...OWNED_CLOSED.slice(0, 3).map((id) => closedOnChain(id))], tokens: TOKENS, operations: true });
+  const seen = async (chain) => {
+    const site = siteRoutes();
+    const s = await scenario({ chain, routes: [site.route] });
+    try {
+      await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+      await s.page.locator('[data-empty="owned-connect"]').waitFor();
+      await recordList(s.page);
+      await connectWallet(s.page);
+      await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
+      await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor({ timeout: 15_000 });
+      const list = { seen: await listSeen(s.page), rows: await ownedRows(s.page), text: await s.page.locator('[data-owned]').innerText() };
+      await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+      await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`).waitFor({ timeout: 15_000 });
+      await s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card]').length > 0 && document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 45_000 });
+      const page = { stats: await s.page.locator('[data-position-stats]').innerText(), card: await s.page.locator('[data-fees-card]').first().getAttribute('data-fees-state') };
+      const text = await s.page.locator('main').innerText();
+      assert.doesNotMatch(text, FORBIDDEN);
+      assert.deepEqual(site.asked, [], 'no route of the site is asked');
+      return { list, page, text };
+    } finally { await s.close(); }
+  };
+  const direct = make();
+  const expected = await seen(direct);
+  const through = make();
+  through.primary = 'dns';
+  const read = await seen(through);
+  assert.deepEqual(read.list, expected.list, 'the list: the loading rows, then the same rows, word for word');
+  assert.equal(read.page.stats, expected.page.stats, 'the position’s figures, word for word');
+  assert.match(read.page.stats, /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
+  assert.ok(['unclaimed-only', expected.page.card].includes(read.page.card), `the fees card as the RPC gives it, or its unclaimed figure alone (${read.page.card})`);
+  assert.ok(direct.scans(OWNER) >= 1, 'through the RPC: its SetupMinted logs');
+  assert.equal(through.scans(OWNER), 0, 'through the fallbacks: not one SetupMinted log, the ids from DominoSetupV1’s state');
+  assert.ok(through.primaryAsked.length > 0, 'the chain’s own RPC was asked first');
+  assert.ok(through.fallbackLog.length > 0 && through.fallbackLog.every((call) => FALLBACK_URLS.includes(call.host)), 'then only the three fallbacks');
+  assert.ok(through.fallbackLog.some((call) => call.host === PUBLICNODE && call.method === 'eth_call'), 'the state near the head at publicnode');
+  const wide = through.fallbackLog.filter((call) => call.method === 'eth_getLogs' && Number(call.params[0].toBlock) - Number(call.params[0].fromBlock) + 1 > (call.host === ORDOFI ? 5_000 : 100));
+  assert.deepEqual(wide, [], 'no range wider than a fallback reads in one call was sent');
+  assert.deepEqual(direct.fallbackLog, [], 'with the RPC there, no fallback is asked');
+  assert.deepEqual(through.refused, [], 'nothing but the reads');
+});
+
+// 2026-09-28 (fix/vivo-release): the same outage, and its end, in one page. While the chain's own RPC cannot be reached,
+// Your positions, a position's header and figures and its fees card (its unclaimed figure: this chain keeps no history,
+// the next test replays one) are drawn through the public fallbacks; once it answers again, the page's quiet probe
+// (lib/chain/failover.ts, FIRST_DOWN_MS after the RPC was found unreachable) finds it on the list's next read, and every
+// read of the page after that goes to it and to no fallback.
+test('the chain’s own RPC unreachable, then back: Your positions, a position’s header and figures and its fees card are drawn through the fallbacks, and once the RPC answers again the page’s reads go back to it', async () => {
+  const open = onChain(OWNED_OPEN);
+  const chain = browserChain({ positions: [open, ...OWNED_CLOSED.slice(0, 3).map((id) => closedOnChain(id))], tokens: TOKENS, operations: true });
+  chain.primary = 'dns';
+  const site = siteRoutes();
+  const s = await scenario({ clock: true, refresh: true, chain, routes: [site.route] });
+  // What the chain's own RPC is sent once it answers again: each POST's methods, in order (the reach probe, a GET, aside).
+  const answered = [];
+  await s.context.route(/^https:\/\/rpc\.mainnet\.chain\.robinhood\.com\/?$/, (route) => {
+    const request = route.request();
+    if (chain.primary !== 'dns' && request.method() === 'POST') answered.push([JSON.parse(request.postData() ?? 'null')].flat().map((call) => call?.method));
+    return route.fallback();
+  });
+  const feesDrawn = () => s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card]').length > 0 && document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 45_000 });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await connectWallet(s.page);
+    await s.page.locator(`[data-owned="ready"][data-owned-block="${chain.head}"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
+    const rows = await ownedRows(s.page);
+    assert.ok(rows.some((row) => row.startsWith(`${OWNED_OPEN} `)), 'the open position’s row');
+    assert.equal(chain.scans(OWNER), 0, 'the ids from DominoSetupV1’s state, not one SetupMinted log');
+    assert.ok(chain.primaryAsked.length > 0, 'the chain’s own RPC was asked first');
+    assert.ok(chain.fallbackLog.length > 0 && chain.fallbackLog.every((call) => FALLBACK_URLS.includes(call.host)), 'then only the three fallbacks');
+
+    // The position's page: its header (pair, fee, id, state), its figures and its fees card, through the fallbacks.
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
+    await detail.waitFor({ timeout: 15_000 });
+    await feesDrawn();
+    const header = await detail.locator('.dm-pos-name').innerText();
+    assert.match(header, new RegExp(`#${OWNED_OPEN}`));
+    assert.equal(await detail.locator('[data-position-status]').getAttribute('data-position-status'), 'in-range');
+    const stats = await detail.locator('[data-position-stats]').innerText();
+    assert.match(stats, /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
+    const card = await detail.locator('[data-fees-card]').first().getAttribute('data-fees-state');
+    assert.ok(!['loading', 'unavailable'].includes(card), `the fees card is drawn (${card})`);
+    assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
+    assert.deepEqual(answered, [], 'nothing reached the chain’s own RPC while its name did not resolve');
+
+    // The RPC answers again. Back on the list, its next read (30 s on, past the RPC's first down period) finds it with
+    // the page's quiet probe. Each read below brings new fees, so the list draws it (the same answer draws nothing).
+    chain.primary = 'up';
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor();
+    const ids = (list) => list.map((row) => row.split(' ')[0]);
+    const refreshed = async (unclaimed, title) => {
+      await s.page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
+      open.unclaimed = [unclaimed, 0n];
+      chain.head += 120;
+      await jump(s.page, '00:31');
+      await s.page.locator(`[data-owned="ready"][data-owned-block="${chain.head}"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
+      assert.equal(await rowFees(s.page), title);
+      assert.deepEqual(ids(await ownedRows(s.page)), ids(rows), 'the same positions');
+    };
+    await refreshed(1_267_650_600_228n, '0.000001267650600228');
+    assert.ok(answered.some((methods) => methods.length === 1 && methods[0] === 'eth_blockNumber'), 'the page’s quiet probe reached the RPC');
+
+    // From here every read of the page goes to the RPC: the list's next read, whole, and the position's page again (its
+    // fees card's worker, let go while the list was shown, starts afresh).
+    const fallbackAt = chain.fallbackLog.length;
+    const answeredAt = answered.length;
+    const scans = chain.scans(OWNER);
+    await refreshed(1_901_475_900_342n, '0.000001901475900342');
+    assert.ok(answered.length > answeredAt, 'the RPC answered the list’s read');
+    assert.equal(chain.scans(OWNER), scans + 1, 'the list’s read asks the RPC its SetupMinted logs again');
+    assert.deepEqual(chain.fallbackLog.slice(fallbackAt), [], 'the list’s read asked no fallback');
+    const listed = answered.length;
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    await detail.waitFor({ timeout: 15_000 });
+    await feesDrawn();
+    // The automation chip comes from its own read, which can land after the fees card on a slow runner (CI, 2026-09-28).
+    await detail.locator('.dm-pos-name', { hasText: header.split('\n').pop() }).waitFor({ timeout: 15_000 });
+    assert.equal(await detail.locator('.dm-pos-name').innerText(), header, 'the same header, word for word');
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
+    assert.ok(answered.length > listed, 'the RPC answered the position’s page');
+    assert.deepEqual(chain.fallbackLog.slice(fallbackAt), [], 'nothing of the page asked a fallback');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+  } finally { await s.close(); }
+});
+
+// 2026-09-28 (fix/vivo-release): the fees card's own reads, in the fees worker, which has a router of its own. A recorded
+// position (NFT 3325113) opened with the chain's own RPC unreachable: its header and figures are drawn through the
+// public fallbacks, and its fees card keeps the chain's unclaimed figure (none of the fallbacks reads a history's weeks of
+// logs within the budgets). Once the RPC answers again, the card's next run finds it (the worker's router probes it
+// when a call only it serves is asked) and reads the history there: the chart is drawn, as with the RPC there all along.
+test('a position’s page with the chain’s own RPC unreachable, then back: its header, figures and fees card are drawn through the fallbacks, and once the RPC answers again the card’s next run reads the history at the RPC and draws the chart', async () => {
+  const chain = caseChain('3325113');
+  chain.primary = 'dns';
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  // What the chain's own RPC is sent once it answers again: each POST's methods (the reach probe, a GET, aside).
+  const answered = [];
+  await s.context.route(/^https:\/\/rpc\.mainnet\.chain\.robinhood\.com\/?$/, (route) => {
+    const request = route.request();
+    if (chain.primary !== 'dns' && request.method() === 'POST') answered.push([JSON.parse(request.postData() ?? 'null')].flat().map((call) => call?.method));
+    return route.fallback();
+  });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
+    const detail = s.page.locator('[data-position-detail][data-position-id="3325113"]');
+    await detail.waitFor({ timeout: 15_000 });
+    await s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card]').length > 0 && document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 45_000 });
+    const header = await detail.locator('.dm-pos-name').innerText();
+    assert.match(header, /#3325113/);
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT/);
+    const card = detail.locator('[data-fees-card]').first();
+    assert.equal(await card.getAttribute('data-fees-state'), 'unclaimed-only', 'the card keeps the chain’s unclaimed figure');
+    assert.ok(chain.primaryAsked.length > 0, 'the chain’s own RPC was asked first');
+    assert.ok(chain.fallbackLog.length > 0 && chain.fallbackLog.every((call) => FALLBACK_URLS.includes(call.host)), 'then only the three fallbacks');
+    assert.deepEqual(answered, [], 'nothing reached the chain’s own RPC while its name did not resolve');
+
+    // The RPC answers again: the card's next run reads the history there, and the chart is drawn.
+    chain.primary = 'up';
+    await detail.locator('[data-fees-card][data-fees-state="verified"]').first().waitFor({ timeout: 90_000 });
+    assert.ok(answered.some((methods) => methods.includes('eth_getBlockByNumber')), 'the history’s block headers, at the RPC');
+    assert.ok(answered.some((methods) => methods.includes('eth_getLogs')), 'the history’s logs, at the RPC');
+    await detail.locator('.dm-pos-name', { hasText: header.split('\n').pop() }).waitFor({ timeout: 15_000 });
+    assert.equal(await detail.locator('.dm-pos-name').innerText(), header, 'the same header, word for word');
+    assert.deepEqual(chain.refused, [], 'nothing but the reads');
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
   } finally { await s.close(); }
 });

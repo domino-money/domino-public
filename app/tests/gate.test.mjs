@@ -260,8 +260,11 @@ test('hashed assets stay cacheable, but only in the browser that authenticated',
 // worker's file carries one that loads nothing and reaches only the RPC. No other script gets a CSP of its own.
 test('the page and the fees worker may reach the chain’s RPC, and nothing else is opened', async () => {
   const connect = APP_CSP.split('; ').find((part) => part.startsWith('connect-src '));
-  assert.equal(connect, "connect-src 'self' https://api.dexscreener.com https://rpc.mainnet.chain.robinhood.com");
-  assert.equal(WORKER_CSP, "default-src 'none'; connect-src https://rpc.mainnet.chain.robinhood.com");
+  // Changed on purpose (2026-09-28: a large Brazilian ISP's DNS answers NXDOMAIN for chain.robinhood.com): the chain's three
+  // public fallbacks (src/lib/chain/endpoints.ts), which the page and the fees worker read while the RPC cannot be reached.
+  const fallbacks = 'https://robinhood-rpc.publicnode.com https://rpc.ordofi.network https://robinhood.drpc.org';
+  assert.equal(connect, `connect-src 'self' https://api.dexscreener.com https://rpc.mainnet.chain.robinhood.com ${fallbacks}`);
+  assert.equal(WORKER_CSP, `default-src 'none'; connect-src https://rpc.mainnet.chain.robinhood.com ${fallbacks}`);
   const cookie = await signIn();
   const asset = (path) => onRequest({ request: fetchLike(path, { Cookie: cookie }), env: ENV, next: async () => new Response('x', { headers: { 'Content-Type': 'text/javascript' } }) });
   const worker = await asset('/assets/feesReplay.worker-CdlBbZHL.js');

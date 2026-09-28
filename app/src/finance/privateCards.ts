@@ -22,15 +22,18 @@ const PREFIX = 'domino.kept.v1.'
 /** The most characters one entry may hold: a copy too large for it is not kept. */
 const MAX_CHARS = 120_000
 
-/** What was kept under `name`, when it is younger than `maxAgeMs` and `check` accepts it; else null, and the entry is dropped. */
-export function readKept<T>(name: string, maxAgeMs: number, check: (data: unknown) => T | null): T | null {
+/**
+ * What was kept under `name`, when it is younger than `maxAgeMs` and `check` accepts it; else null, and the entry is
+ * dropped. `check` is told when it was kept too (2026-09-28: Your positions' copy draws no USD from old prices).
+ */
+export function readKept<T>(name: string, maxAgeMs: number, check: (data: unknown, at: number) => T | null): T | null {
   let value: T | null = null
   try {
     const raw = localStorage.getItem(PREFIX + name)
     if (raw === null) return null
     const entry = raw.length <= MAX_CHARS ? JSON.parse(raw) : null
     const age = Date.now() - entry?.at
-    value = age >= 0 && age <= maxAgeMs ? check(entry.data) : null
+    value = age >= 0 && age <= maxAgeMs ? check(entry.data, +entry.at) : null
   } catch {
     // Unreadable, or storage is blocked: dropped below, when it can be.
   }
@@ -38,7 +41,8 @@ export function readKept<T>(name: string, maxAgeMs: number, check: (data: unknow
   return value
 }
 
-function drop(name: string) {
+/** Forgets what was kept under `name` (2026-09-28: also Your positions', once the wallet has none). */
+export function drop(name: string) {
   try {
     localStorage.removeItem(PREFIX + name)
   } catch {

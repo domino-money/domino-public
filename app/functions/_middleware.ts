@@ -73,6 +73,12 @@ const MAX_FORM_BYTES = 1024
  * 429 to every call from Cloudflare's shared egress, so the site's own routes
  * that read it for the page failed in production. Public chain data only;
  * nothing is sent there but the reads' fixed calls, with no credentials.
+ *
+ * 2026-09-28: and the chain's three public fallbacks, which the page reads the
+ * same calls from while the chain's own RPC cannot be reached (a large
+ * Brazilian ISP's DNS answers NXDOMAIN for chain.robinhood.com):
+ * src/lib/chain/endpoints.ts names them and what each serves, and
+ * src/lib/chain/failover.ts when they are asked. Exactly those hosts.
  */
 export const APP_CSP = [
   "default-src 'self'",
@@ -80,7 +86,7 @@ export const APP_CSP = [
   "style-src 'self' https://fonts.googleapis.com",
   'font-src https://fonts.gstatic.com',
   "img-src 'self' data: https://cdn.dexscreener.com",
-  "connect-src 'self' https://api.dexscreener.com https://rpc.mainnet.chain.robinhood.com",
+  "connect-src 'self' https://api.dexscreener.com https://rpc.mainnet.chain.robinhood.com https://robinhood-rpc.publicnode.com https://rpc.ordofi.network https://robinhood.drpc.org",
   "object-src 'none'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
@@ -96,8 +102,9 @@ export const API_CSP = "default-src 'none'; frame-ancestors 'none'"
  * the page's, so its file carries one: it loads nothing, and reaches only the
  * chain's public RPC, where it reads the fees history's logs itself since the
  * RPC rate-limits Cloudflare's edge (src/lib/fees/logs.ts, through its paced lane).
+ * 2026-09-28: and the chain's three public fallbacks, as the page's (above).
  */
-export const WORKER_CSP = "default-src 'none'; connect-src https://rpc.mainnet.chain.robinhood.com"
+export const WORKER_CSP = "default-src 'none'; connect-src https://rpc.mainnet.chain.robinhood.com https://robinhood-rpc.publicnode.com https://rpc.ordofi.network https://robinhood.drpc.org"
 /** Vite's name for that worker's file: src/lib/fees/feesReplay.worker.ts, content-hashed, under /assets/. */
 export const WORKER_PATH = /^\/assets\/feesReplay\.worker-[\w-]+\.js$/
 

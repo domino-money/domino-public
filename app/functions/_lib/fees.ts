@@ -39,6 +39,7 @@ import {
   POSITION_MANAGER,
   RATE_ATTEMPTS,
   RPC_URL,
+  bodyWithin,
   classifyRpcError,
   decodeAggregate3,
   encodeAggregate3,
@@ -318,31 +319,6 @@ export function decodeSymbol(data: string): string | null {
 // The RPC
 // ---------------------------------------------------------------------------
 
-/** A body as text, read no further than `limit` bytes: null past it. */
-async function bodyWithin(body: ReadableStream<Uint8Array> | null, limit: number): Promise<{ text: string | null; bytes: number }> {
-  if (!body) return { text: '', bytes: 0 }
-  const reader = body.getReader()
-  const parts: Uint8Array[] = []
-  let bytes = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    bytes += value.byteLength
-    if (bytes > limit) {
-      await reader.cancel().catch(() => undefined)
-      return { text: null, bytes }
-    }
-    parts.push(value)
-  }
-  const joined = new Uint8Array(bytes)
-  let at = 0
-  for (const part of parts) {
-    joined.set(part, at)
-    at += part.byteLength
-  }
-  return { text: new TextDecoder().decode(joined), bytes }
-}
-
 function retryAfterMs(response: Response): number {
   const seconds = Number(response.headers.get('Retry-After') ?? Number.NaN)
   return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 30) * 1000 : 0
@@ -386,7 +362,7 @@ export async function post(rt: FeesRuntime, budget: Budget, payload: unknown, lo
   const limit = Math.min(byteLimit, MAX_BYTES - budget.bytes)
   let read: { text: string | null; bytes: number }
   try {
-    read = await bodyWithin(response.body, limit)
+    read = await bodyWithin(response, limit)
   } catch (error) {
     throw slow(error) ?? new RelayError('fatal', 'rpc_read_failed')
   }
@@ -594,7 +570,7 @@ async function bodyOf(request: Request, url: URL, maxBytes: number): Promise<Rec
   if (Number(request.headers.get('Content-Length') ?? '0') > maxBytes) return bad()
   let text: string | null
   try {
-    text = (await bodyWithin(request.body, maxBytes)).text
+    text = (await bodyWithin(request, maxBytes)).text
   } catch {
     return bad()
   }

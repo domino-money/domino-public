@@ -114,6 +114,13 @@ export interface OwnedDeps {
   now: () => number
   /** True once nobody wants the answer any more (the page left): no further call is made. Optional; a Function has none. */
   cancelled?: () => boolean
+  /**
+   * 2026-09-28: false while the runtime cannot read a wide range of logs in one call, as the chain's own RPC does (the
+   * page's, while that RPC is unreachable and its public fallbacks serve it: none reads more than a few thousand blocks
+   * of logs at once, src/lib/chain/endpoints.ts). The wallet scan then finds its ids another way (walletPositions.ts
+   * operationIds). Optional; a Function's runtime and the tests' fakes read the chain's own RPC and have none.
+   */
+  wideLogs?: () => boolean
 }
 
 /** Wait and ask again; split the range; stop; or (logs only) the answer's log bytes are used up. */
@@ -329,13 +336,18 @@ export interface Budget {
 }
 
 /**
- * A reply's body as text, read no further than `limit` bytes: null past it.
- * The RPC sends its replies chunked, with no length, so the size is known
- * only by reading.
+ * A reply's (or a request's) body as text, read no further than `limit` bytes:
+ * null past it. The RPC sends its replies chunked, with no length, so the size
+ * is known only by reading. 2026-09-28: the fees relay's copy of it is this one
+ * now (functions/_lib/fees.ts), and a WebView (a wallet's in-app browser) whose
+ * fetch gives no body stream has its text read whole, then measured.
  */
-async function bodyWithin(response: Response, limit: number): Promise<{ text: string | null; bytes: number }> {
-  if (!response.body) return { text: '', bytes: 0 }
-  const reader = response.body.getReader()
+export async function bodyWithin(message: Request | Response, limit: number): Promise<{ text: string | null; bytes: number }> {
+  if (!message.body) {
+    const text = await message.text()
+    return { text: text.length > limit ? null : text, bytes: text.length }
+  }
+  const reader = message.body.getReader()
   const parts: Uint8Array[] = []
   let bytes = 0
   for (;;) {

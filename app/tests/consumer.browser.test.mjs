@@ -95,6 +95,8 @@ async function scenario({ clockAt, wallets, reads = false } = {}) {
   const problems = [];
   const external = [];
   const requests = [];
+  // 2026-09-28, on purpose: the chain's three public fallbacks (src/lib/chain/endpoints.ts) are not admitted here. They are
+  // asked only while the chain's own RPC cannot be reached, and here it answers (routeChain): a request to one is a fault.
   context.on('request', (request) => {
     const url = request.url();
     requests.push(url);

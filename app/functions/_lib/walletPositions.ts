@@ -14,6 +14,10 @@
  *      NFTs the wallet holds that were minted elsewhere are never named.
  *      The page's later scans of the same wallet (2026-09-25) start shortly
  *      before its last scan's block instead (MintedMemory).
+ *      2026-09-28: while the runtime cannot read wide log ranges (the page's,
+ *      when the chain's own RPC is unreachable and only its public fallbacks
+ *      answer, OwnedDeps.wideLogs), the same ids come from DominoSetupV1's own
+ *      state instead (operationIds): no log is read at all.
  *   3. One Multicall3 aggregate3 at the head (per IDS_PER_CALL ids): per id
  *      ownerOf, getPositionLiquidity and getPoolAndPositionInfo, and the
  *      owner's DominoSetupV1.ownerNonce. An id burned (ownerOf reverts) or
@@ -213,6 +217,45 @@ export async function mintedIds(deps: OwnedDeps, budget: Budget, owner: string, 
   return { ids: merged.slice(0, MAX_POSITIONS), capped: merged.length > MAX_POSITIONS }
 }
 
+/**
+ * How many of the owner's most recent setup operations operationIds reads (two aggregate3 calls at most): an owner with
+ * more has its older ones left out, and the answer says so (`capped`), as the log walk does past MAX_POSITIONS.
+ */
+export const MINTED_OPERATIONS = 2 * 150
+
+/**
+ * The ids DominoSetupV1 minted to the owner, most recent operation first, at most MAX_POSITIONS, read from the
+ * contract's own state at `head` rather than from its SetupMinted logs (2026-09-28). The page asks this while the chain's
+ * own RPC cannot be reached: its public fallbacks read logs only a few thousand blocks at a time, and the log walk from
+ * the deployment block covers millions (endpoints.ts).
+ *
+ * The same set as the log walk's, by the contract's own rules (contracts/src/DominoSetup.sol): every operation of an
+ * owner is operationId(owner, n) for n below ownerNonce(owner), since open() takes only nextOperationId(msg.sender) and
+ * records msg.sender as its owner; mint() is the only SetupMinted, it names the operation's owner, and it records the
+ * NFT id in the operation's tokenId and closes it, so an operation mints at most once and keeps that id. So the ids of
+ * the owner's operations whose tokenId is not zero are exactly the ids its SetupMinted logs name. An operation that is
+ * not the owner's (a reply that cannot be trusted) fails the answer, as a log that is not the one asked for does.
+ */
+export async function operationIds(deps: OwnedDeps, budget: Budget, owner: string, head: number): Promise<{ ids: bigint[]; capped: boolean }> {
+  const [asked] = await aggregate(deps, budget, [{ target: SETUP_CONTRACT, data: SELECTOR.ownerNonce + addressWord(owner) }], head)
+  const nonce = resultWord(asked)
+  if (nonce === null) throw new ChainError('fatal', 'nonce_unread')
+  const oldest = nonce > BigInt(MINTED_OPERATIONS) ? nonce - BigInt(MINTED_OPERATIONS) : 0n
+  const operations: string[] = []
+  for (let n = nonce - 1n; n >= oldest; n--) operations.push(operationId(owner, n))
+  const results = operations.length > 0 ? await aggregateAll(deps, budget, operations.map((id) => ({ target: SETUP_CONTRACT, data: SELECTOR.operation + id.slice(2) })), head) : []
+  const ids: bigint[] = []
+  for (const call of results) {
+    if (!call.success) throw new ChainError('fatal', 'operation_unread')
+    const operation = decodeOperation(call.data)
+    if (operation.owner !== owner) throw new ChainError('fatal', 'invalid_operation')
+    if (operation.tokenId === 0n) continue
+    if (ids.length === MAX_POSITIONS) return { ids, capped: true }
+    ids.push(operation.tokenId)
+  }
+  return { ids, capped: oldest > 0n }
+}
+
 /** Several aggregate3 calls of at most `per` sub-calls each, at one block; their results in order. */
 async function aggregateAll(deps: OwnedDeps, budget: Budget, calls: SubCall[], block: number, per = CALLS_PER_AGGREGATE) {
   const out: { success: boolean; data: string }[] = []
@@ -245,8 +288,13 @@ interface Held {
 export async function scanWallet(deps: OwnedDeps, owner: string, earlier: MintedMemory | null = null): Promise<OwnerScan & { body: WalletAnswer; minted: MintedMemory | null }> {
   const budget: Budget = { calls: 0, started: deps.now(), logBytes: 0 }
   const head = quantity(await paced(deps, budget, 'eth_blockNumber', []))
-  // A node behind the earlier scan's block reads the logs from where it stands; the earlier ids are kept.
-  const { ids, capped } = await mintedIds(deps, budget, owner, head, earlier && earlier.block <= head ? earlier : earlier ? { block: head, ids: earlier.ids } : null)
+  // A node behind the earlier scan's block reads the logs from where it stands; the earlier ids are kept. 2026-09-28: a
+  // runtime that cannot read wide log ranges now (the page's, on the chain's public fallbacks) reads the ids from
+  // DominoSetupV1's state instead, whatever an earlier scan found: every one of them, at this head.
+  const { ids, capped } =
+    deps.wideLogs?.() === false
+      ? await operationIds(deps, budget, owner, head)
+      : await mintedIds(deps, budget, owner, head, earlier && earlier.block <= head ? earlier : earlier ? { block: head, ids: earlier.ids } : null)
 
   // First read: which ids the owner still holds, their pool keys, ranges and liquidity, and the owner's setup nonce.
   const held: Held[] = []

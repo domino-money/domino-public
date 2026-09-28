@@ -137,6 +137,8 @@
     "src/components/automate/feeMeter.ts",
     "src/lib/walletPrices.ts",
     "src/lib/walletHoldings.ts",
-    "src/lib/walletMemory.ts"
+    "src/lib/walletMemory.ts",
+    "src/lib/chain/endpoints.ts",
+    "src/lib/chain/failover.ts"
   ]
 }

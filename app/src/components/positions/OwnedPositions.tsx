@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { drop, keep, readKept } from '../../finance/privateCards'
 import { feesStore } from '../../lib/fees/spawn'
 import type { FeeHistoryView } from '../../lib/fees/types'
 import { CHAIN_ID } from '../../lib/read/screens/identity'
 import { walletCard, walletState } from '../../lib/walletCards'
-import { REFRESH_MS, useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
+import { REFRESH_MS, parseWalletAnswer, quietIn, useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
 import type { WalletIdentityView } from '../../lib/walletIdentity'
 import { newPositionHref } from '../explore/routes'
 import { IconSearch, IconWallet } from '../icons'
@@ -35,10 +36,12 @@ type Status = 'open' | 'closed'
 /**
  * Your APR on the rows (round 6, listApr.ts): every position whose history this visit already read shows it at once;
  * the others are measured one at a time while on the screen. Test builds measure only when a test asks for it before
- * the page loads (window.__dominoListApr), so every other suite counts its reads as before.
+ * the page loads (window.__dominoListApr), so every other suite counts its reads as before. 2026-09-28 (the owner's
+ * phone): only from the chain's own list, never while a read of the page or a refusal's rest holds this browser's reads
+ * (quietIn), and nowhere without IntersectionObserver.
  */
 const QUEUE: AprQueue | null =
-  __DOMINO_TEST_HOOKS__ && !(window as { __dominoListApr?: boolean }).__dominoListApr
+  (__DOMINO_TEST_HOOKS__ && !(window as { __dominoListApr?: boolean }).__dominoListApr) || typeof IntersectionObserver !== 'function'
     ? null
     : createAprQueue({
         store: feesStore,
@@ -48,6 +51,7 @@ const QUEUE: AprQueue | null =
         },
         visible: () => document.visibilityState === 'visible',
         now: Date.now,
+        quiet: quietIn,
       })
 
 function quiet() {}
@@ -73,10 +77,28 @@ const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria
 /**
  * The one quiet line while a read that failed is asked again (2, 5 and 10 s), and the one calm line once those failed
  * too (it is still asked now and then). Never the empty state: a read that failed says nothing about the wallet
- * (the owner's rule, 2026-09-25). The failure's code is in the card's data attribute only.
+ * (the owner's rule, 2026-09-25). The failure's code is in the card's data attribute only. 2026-09-28 (review): over
+ * this browser's copy too, so the copy never reads as the chain's answer of now.
  */
 const REREADING = 'Reading your positions from the chain…'
 const UNREAD = 'Your positions couldn’t be read right now.'
+
+/**
+ * 2026-09-28 (the owner's phone: the card stayed on its loading rows while the RPC refused his address): this browser's
+ * copy of the wallet's last list, per wallet and chain, drawn at once (`data-owned="kept"`) while the chain is read, then
+ * replaced by the chain's answer. Display only: checked field by field as a chain answer is, at most a week old, its
+ * positions only (never a held deposit and its refund), and no APR or automation is asked for it. A wallet with no
+ * position keeps none: only the chain says a wallet has none. Its USD figures are from its own pool prices: past
+ * PRICED_MS its rows show their token amounts only, and no total (review, 2026-09-28).
+ */
+const copyName = (owner: string) => `owned.${CHAIN_ID}.${owner}`
+const recall = (owner: string) =>
+  readKept(copyName(owner), 7 * 86_400_000, (data, at) => {
+    const answer = parseWalletAnswer(data, owner)
+    return answer?.positions.length ? { answer, at } : null
+  })
+/** How long a copy's prices count: the Wallet card's rule (lib/walletMemory.ts WALLET_PRICE_MAX_AGE_MS, an hour; not imported, it is that card's chunk). */
+const PRICED_MS = 3_600_000
 
 /** The card's frame: its title, and the tabs once there is something to put in them. */
 function Frame({ children, tabs, data }: { children: ReactNode; tabs?: ReactNode; data?: Record<string, string | undefined> }) {
@@ -112,7 +134,8 @@ export interface OwnedPositionsProps {
  * them the deposits it has not turned into a position yet. Without a wallet, or on another
  * network, one empty state says what to do. Nothing is read until a wallet is
  * connected on Robinhood Chain, no NFT id is ever asked for, and nothing is
- * kept in the browser (the owner's rule, 2026-09-24).
+ * kept in the browser (the owner's rule, 2026-09-24) but, since 2026-09-28,
+ * the list's display copy (copyName below).
  */
 export default function OwnedPositions({ identity, deposits, onEmptyAction }: OwnedPositionsProps) {
   if (identity.kind === 'unknown') {
@@ -176,11 +199,26 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   const reason = answer.phase === 'failed' || answer.phase === 'retrying' ? answer.reason : null
   // Given up on for now (the quick re-asks failed too): one calm line. Still reading, or asked again: the loading rows.
   const unread = answer.phase === 'failed'
+  // This browser's copy until the chain answers; each answer of the chain is kept for the next visit.
+  const [copy] = useState(() => recall(owner))
+  const list = ready ?? copy?.answer
+  // Whether the copy's prices still count: from PRICED_MS after it was kept, its rows show their amounts only.
+  const [valued, setValued] = useState(() => !!copy && Date.now() - copy.at <= PRICED_MS)
+  useEffect(() => {
+    if (!valued || ready || !copy) return
+    const timer = setTimeout(() => setValued(false), copy.at + PRICED_MS - Date.now())
+    return () => clearTimeout(timer)
+  }, [valued, ready, copy])
+  const priced = !!ready || valued
+  useEffect(() => {
+    if (ready?.positions.length) keep(copyName(owner), { ...ready, deposits: [] })
+    else if (ready) drop(copyName(owner))
+  }, [ready, owner])
 
   // Every row straight from the chain read: its card, and the state its USD is valued at (the same read, the same block).
   const rows = useMemo(
-    () => (ready ? ready.positions.map((position) => ({ position, card: walletCard(position, owner), state: walletState(position, ready.block, owner) })) : null),
-    [ready, owner],
+    () => (list ? list.positions.map((position) => ({ position, card: walletCard(position, owner), state: priced ? walletState(position, list.block, owner) : null })) : null),
+    [list, owner, priced],
   )
   const tabs = useMemo(() => (rows ? { open: rows.filter((row) => row.position.status === 'open'), closed: rows.filter((row) => row.position.status === 'closed') } : null), [rows])
   const portfolio = useMemo(() => (tabs ? portfolioOf(tabs.open) : null), [tabs])
@@ -198,9 +236,10 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   const measuredKey = measured.map((row) => `${row.id}:${row.pool}`).join(',')
   const listRef = useRef<HTMLDivElement>(null)
   // The rows on the screen, in the list's order, for the queue: only while the Open tab shows them and the tab is visible.
+  const fresh = ready !== null
   useEffect(() => {
     const list = listRef.current
-    if (!QUEUE || !list || tab !== 'open' || measuredKey === '' || typeof IntersectionObserver === 'undefined') return
+    if (!QUEUE || !list || !fresh || tab !== 'open' || measuredKey === '') return
     const queue = QUEUE
     const rows = measuredKey.split(',').map((entry) => {
       const [id, pool] = entry.split(':')
@@ -223,9 +262,9 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
       document.removeEventListener('visibilitychange', wake)
       queue.want([])
     }
-  }, [measuredKey, tab])
+  }, [measuredKey, tab, fresh])
   const total = tabs ? tabs.open.length + tabs.closed.length : 0
-  const phase = ready ? 'ready' : unread ? 'unlisted' : answer.phase === 'retrying' ? 'retrying' : 'loading'
+  const phase = ready ? 'ready' : copy ? 'kept' : unread ? 'unlisted' : answer.phase === 'retrying' ? 'retrying' : 'loading'
   // `No positions yet` carries its own New position: the page's title row steps its own back (before paint, no flash).
   const emptyAction = tabs !== null && total === 0
   useLayoutEffect(() => {
@@ -236,22 +275,13 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   // A read that failed is never "no positions": its code is a data attribute, and the one line says it is read again or could not be.
   const status = !tabs ? (unread ? UNREAD : 'Listing your positions…') : `${tabs.open.length} open and ${tabs.closed.length} closed positions.`
 
+  // The one line while a failed read is asked again, or once it could not be: over the loading rows, or over this
+  // browser's copy (2026-09-28, review), never over the chain's own list.
+  const note = unread ? 'unread' : answer.phase === 'retrying' ? 'rereading' : null
+
   let body: ReactNode
   if (!tabs) {
-    body = unread ? (
-      <p className="dm-own-note" data-owned-note="unread">
-        {UNREAD}
-      </p>
-    ) : (
-      <>
-        {answer.phase === 'retrying' && (
-          <p className="dm-own-note" data-owned-note="rereading">
-            {REREADING}
-          </p>
-        )}
-        <PendingRows loading />
-      </>
-    )
+    body = !unread && <PendingRows loading />
   } else if (total === 0) {
     body = (
       <EmptyState
@@ -279,10 +309,10 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
           <PositionRow
             key={row.card.tokenId}
             card={row.card}
-            block={ready?.block ?? 0}
+            block={list?.block ?? 0}
             state={row.state}
             apr={aprs.get(row.card.tokenId) ?? null}
-            automation={<AutomateEntry tokenId={row.card.tokenId} open={automatable(row.position)} />}
+            automation={fresh && <AutomateEntry tokenId={row.card.tokenId} open={automatable(row.position)} />}
           />
         ))}
       </div>
@@ -295,7 +325,7 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
         data={{
           'data-owned': phase,
           'data-owned-reason': reason ?? undefined,
-          'data-owned-block': ready ? String(ready.block) : undefined,
+          'data-owned-block': list ? String(list.block) : undefined,
         }}
         tabs={
           tabs && total > 0 ? (
@@ -317,8 +347,13 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
           {status}
         </p>
         {/* The totals are the open positions': shown over their tab only, never over the closed rows. While the list is on
-            its way the band keeps its place, so the rows never move when it fills. */}
-        {tab === 'open' && (portfolio?.totals ? <PortfolioSummary {...portfolio.totals} /> : !tabs && !unread ? <PendingSummary /> : null)}
+            its way, or this browser's copy is too old to value, the band keeps its place, so the rows never move when it fills. */}
+        {tab === 'open' && (portfolio?.totals ? <PortfolioSummary {...portfolio.totals} /> : (!tabs || !priced) && !unread ? <PendingSummary /> : null)}
+        {note && (
+          <p className="dm-own-note" data-owned-note={note}>
+            {note === 'unread' ? UNREAD : REREADING}
+          </p>
+        )}
         {body}
         {more > 0 && (
           <div className="dm-own-more">

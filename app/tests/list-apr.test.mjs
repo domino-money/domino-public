@@ -130,6 +130,8 @@ const quiet = (reason) => ({ phase: 'unclaimed-only', state: {}, reason, prices:
 
 // 2026-09-28 (review): after a busy pool's estimate the next position waits SETTLE_MS, no longer GAP_MS: the estimate's
 // exact read goes on until the store stops it RELEASE_MS after the let-go, and two runs never share the worker.
+// Changed on purpose (2026-09-28, the owner's phone: Your positions stayed on its loading rows while the RPC refused his
+// address): the next position waits at least as long as the one before took (here 5 s), never only GAP_MS.
 test('one position at a time, in the list’s order, each let go as soon as its history can be drawn', () => {
   const h = harness();
   const queue = createAprQueue(h.deps);
@@ -142,8 +144,8 @@ test('one position at a time, in the list’s order, each let go as soon as its 
   h.set('1', drawn('verified'));
   assert.deepEqual(h.released, ['1'], 'let go at once');
   assert.equal(queue.pending('1', 'pool-1'), false);
-  h.tick(GAP_MS - 1);
-  assert.deepEqual(h.held, ['1'], 'a pause between two');
+  h.tick(5_000 - 1);
+  assert.deepEqual(h.held, ['1'], 'a pause between two, as long as the first took');
   h.tick(1);
   assert.deepEqual(h.held, ['1', '2']);
   // A busy pool's estimate is the page's own first figure: drawn, let go (the store stops its exact read).
@@ -177,6 +179,8 @@ test('a history the fees store already holds (its page was opened) is shown with
 // cap, while its page drew it in 19.6 s): the cap is the page's own time less the store's stop, the next position waits
 // until the capped run is stopped, and a capped position gets one more try once the rows never asked are done and the
 // lane has rested. Its cell keeps its calm pulse between the two tries, never a dash first.
+// Changed on purpose (2026-09-28, the owner's phone): the next waits as long as the capped one took (CAP_MS), past the
+// store's stop of its run too.
 test('a position that takes too long is let go at its cap, the next waits for its run to stop, and it gets one more try after the others', () => {
   const h = harness();
   const queue = createAprQueue(h.deps);
@@ -192,6 +196,8 @@ test('a position that takes too long is let go at its cap, the next waits for it
   assert.deepEqual(h.held, ['1'], 'not while its run may still be on its way');
   // The store stopped it (RELEASE_MS after the let-go).
   h.set('1', { phase: 'idle' });
+  h.tick(CAP_MS - SETTLE_MS);
+  assert.deepEqual(h.held, ['1'], 'nor as long again as it took');
   h.tick(1);
   assert.deepEqual(h.held, ['1', '2']);
   h.set('2', drawn('verified'));
@@ -416,8 +422,11 @@ test('never two runs at once: the next position goes to the worker only once the
   assert.equal(queue.pending('1', 'pool-1'), false);
   await pass(h, SETTLE_MS);
   assert.deepEqual(real.timeline, ['run 1', 'cancel 1', 'run 2']);
-  // The next never answers: let go at its cap, and the third starts once the store stopped it.
+  // The next never answers: let go at its cap, and the third starts once the store stopped it and as long again as it
+  // took (changed on purpose, 2026-09-28, the owner's phone: before, SETTLE_MS after the cap).
   await pass(h, CAP_MS + SETTLE_MS);
+  assert.deepEqual(real.timeline, ['run 1', 'cancel 1', 'run 2', 'cancel 2']);
+  await pass(h, CAP_MS - SETTLE_MS);
   assert.deepEqual(real.timeline, ['run 1', 'cancel 1', 'run 2', 'cancel 2', 'run 3']);
   assert.equal(queue.pending('2', 'pool-2'), true, 'the capped one waits calmly for its second try');
   real.done('3');
@@ -437,4 +446,39 @@ test('never two runs at once: the next position goes to the worker only once the
   }
   await pass(h, 10 * 60_000);
   assert.equal(real.timeline.filter((entry) => entry.startsWith('run')).length, 4, 'nothing more');
+});
+
+// 2026-09-28 (the owner, on his phone: Your positions stayed on its loading rows while the RPC refused his address; round
+// 6's list APR replays each open position's history, in every tab that shows the list). The queue asks nothing while a
+// read of the page is on its way (the list's first among them) or while a refusal of any tab's read rests this
+// browser's reads (`quiet`: lib/chain/browser.ts quietIn), and asks again as soon as neither holds.
+test('nothing is asked while a read of the page is on its way or a refusal rests this browser’s reads, and at once when neither holds', () => {
+  const h = harness();
+  let quiet = 2_000;
+  const asked = [];
+  const queue = createAprQueue({ ...h.deps, quiet: () => (asked.push(h.now()), quiet) });
+  queue.want(rows('1', '2'));
+  assert.deepEqual(h.held, [], 'held: nothing');
+  assert.equal(queue.pending('1', 'pool-1'), true, 'the cells wait calmly');
+  h.tick(10_000);
+  assert.deepEqual(h.held, [], 'still held: still nothing, however long');
+  assert.ok(asked.length >= 5, 'asked again as the wait it was told ends');
+  quiet = 0;
+  h.tick(2_000);
+  assert.deepEqual(h.held, ['1'], 'asked once nothing holds');
+  // A rest that begins while one is measured does not end it (its lane rests too, and ends its run); the next waits.
+  quiet = 30_000;
+  h.set('1', drawn('verified'));
+  h.tick(29_999);
+  assert.deepEqual(h.held, ['1']);
+  quiet = 0;
+  h.tick(30_000);
+  assert.deepEqual(h.held, ['1', '2']);
+  // A hidden tab asks nothing either, held or not.
+  const hidden = harness();
+  hidden.visible = false;
+  const other = createAprQueue({ ...hidden.deps, quiet: () => 0 });
+  other.want(rows('1'));
+  hidden.tick(60_000);
+  assert.deepEqual(hidden.held, []);
 });

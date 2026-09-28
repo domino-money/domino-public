@@ -3803,18 +3803,54 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // else, and sends through the module's one network call, rpcFetch. The lane hears from the page over a
   // BroadcastChannel of the site's own that carries one flag (a read on its way or not), and nothing else.
   assert.equal([...chainClient.matchAll(/\bfetch\s*\((?!input, init\))/g)].length, 1, 'exactly one chain fetch call');
-  assert.match(chainClient, /function rpcFetch\(init: RequestInit\): Promise<Response> \{\n(?:\s*\/\/.*\n)*\s*return fetch\(RPC_URL, \{ \.\.\.init, credentials: 'omit', referrerPolicy: 'no-referrer' \}\)\n\}/, 'the RPC\'s fixed URL only, with no credentials and no referrer');
+  // Changed on purpose (2026-09-28: the DNS of Vivo, a large Brazilian ISP, answers NXDOMAIN for every host under
+  // chain.robinhood.com, and the page read nothing there): the one fetch now takes its URL from the page's router
+  // (lib/chain/failover.ts), and refuses any URL but the chain's own RPC and its three public fallbacks
+  // (lib/chain/endpoints.ts, pinned below) before anything is sent; still no credentials and no referrer.
+  assert.match(chainClient, /function rpcFetch\(url: string, init: RequestInit\): Promise<Response> \{\n\s*if \(!ENDPOINT_URLS\.has\(url\)\) return elsewhere\(\)\n(?:\s*\/\/.*\n)*\s*return fetch\(url, \{ \.\.\.init, credentials: 'omit', referrerPolicy: 'no-referrer' \}\)\n\}/, 'the registry\'s endpoints only, with no credentials and no referrer');
+  assert.match(chainClient, /const ENDPOINT_URLS: ReadonlySet<string> = new Set\(\[PRIMARY, \.\.\.FALLBACKS\]\.map\(\(endpoint\) => endpoint\.url\)\)/, 'the endpoints are the registry\'s');
+  assert.match(chainClient, /import \{ FALLBACKS, PRIMARY \} from '\.\/endpoints'/);
+  assert.match(chainClient, /const router: Router = failover\(\{ send: rpcFetch, /, 'the router sends through the one fetch');
   assert.match(chainClient, /const elsewhere = \(\) => Promise\.reject\(new TypeError\('not the chain RPC'\)\)/);
   const runtimes = [...chainClient.matchAll(/fetch\(input, init\)/g)].length;
   assert.deepEqual([runtimes, [...chainClient.matchAll(/async fetch\(input, init\) \{\n\s*if \(input !== RPC_URL\) return elsewhere\(\)\n/g)].length], [2, 2], 'both runtimes refuse any other URL first');
   // Changed on purpose (2026-09-25, review of r4/fees): the fees lanes of other tabs' workers hear on the same channel
   // what each lane read and each refusal it met (the RPC limits the visitor's address, not a tab): a byte count or the
   // word 'rest', typed so, and nothing else. The channel is the site's own (same origin only) and names no one.
-  assert.deepEqual([...chainClient.matchAll(/\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['busy', 'news'], 'the channel carries the page’s flag and the lanes’ news');
+  // Changed on purpose (2026-09-28, the owner's phone: Your positions stayed on its loading rows while the RPC refused
+  // his address): the page says on it too that the RPC refused one of its reads ('rest', which rests every lane), and
+  // hears there the lanes' refusals and the other tabs' reads, for the list's APR (quietIn): a flag or the word, nothing else.
+  assert.deepEqual([...chainClient.matchAll(/\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['news', 'news'], 'the channel carries the page’s news and the lanes’ news');
+  assert.match(chainClient, /function tell\(news\?: boolean \| 'rest'\): void \{/, 'the page’s news: a read on its way or not, or a refusal it met');
+  assert.deepEqual([...chainClient.matchAll(/\btell\(([^)]*)\)/g)].map((m) => m[1]).sort(), ['', "'rest'", "news?: boolean | 'rest'", 'step > 0'], 'the page says nothing else');
+  assert.match(chainClient, /if \(data === 'rest'\) rest\(\)\n\s*else if \(typeof data === 'boolean'\) othersAt = data \? Date\.now\(\) : 0\n/, 'and takes nothing else from it');
   assert.match(chainClient, /const share = \(news: number \| 'rest'\) => \{/, 'the lanes’ news: a byte count or a refusal, nothing else');
   assert.deepEqual([...chainClient.matchAll(/\bshare\(([^)]*)\)/g)].map((m) => m[1]).sort(), ["'rest'", 'bytes'], 'what each lane read, and that it was refused');
-  assert.match(chainClient, /import \{ RPC_URL, type OwnedDeps \} from '\.\.\/\.\.\/\.\.\/functions\/_lib\/owned'/, 'the URL is the routes\' own pin');
+  assert.match(chainClient, /import \{ MAX_RPC_CALLS, RPC_URL, type OwnedDeps \} from '\.\.\/\.\.\/\.\.\/functions\/_lib\/owned'/, 'the URL is the routes\' own pin');
   assert.doesNotMatch(chainClient, /['"`]https?:\/\/|['"`]\/api\//, 'no other network route in the chain client');
+  // 2026-09-28: the registry. The chain's own RPC is the routes' pin and comes first; the three fallbacks are the ones
+  // measured from a Vivo line that day, as https origins with no path, and nothing else names a host.
+  const registry = readFileSync(join(SRC, 'lib/chain/endpoints.ts'), 'utf8');
+  assert.deepEqual([...registry.matchAll(/['"`](https?:\/\/[^'"`]*)['"`]/g)].map((m) => m[1]), ['https://robinhood-rpc.publicnode.com', 'https://rpc.ordofi.network', 'https://robinhood.drpc.org'], 'exactly the three fallbacks, and no other host');
+  assert.match(registry, /import \{ RPC_URL \} from '\.\.\/\.\.\/\.\.\/functions\/_lib\/owned'/);
+  assert.match(registry, /export const PRIMARY: Endpoint = \{\n\s*url: RPC_URL,/, 'the primary is the routes\' own pin');
+  assert.match(registry, /export const FALLBACKS: readonly Endpoint\[\] = \[PUBLICNODE, ORDOFI, DRPC\]/);
+  assert.doesNotMatch(registry, /\b(?:fetch|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB)\b(?!\s+TypeError)/, 'the registry is data');
+  // The router reaches the network only through what it is handed (browser.ts rpcFetch), to the endpoints it is handed,
+  // with the chain's reads and nothing else: its own calls are eth_chainId (a fallback's check) and eth_blockNumber
+  // (the primary's quiet probe); the others it only reads, to know where a call may go.
+  const route = readFileSync(join(SRC, 'lib/chain/failover.ts'), 'utf8');
+  assert.doesNotMatch(route, /\bfetch\s*\(|['"`]https?:\/\/|['"`]\/api\/|\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|localStorage|sessionStorage|indexedDB)\b/, 'no network of its own, no host, no storage');
+  assert.deepEqual([...route.matchAll(/runtime\s*\.send\(([^,]+),/g)].map((m) => m[1].trim()).sort(), ['endpoint.url', 'primary.url', 'primary.url', 'primary.url'], 'only to an endpoint it was handed');
+  const code = route.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const routed = [...new Set([...code.matchAll(/\b((?:eth|net|web3|wallet|personal|debug|txpool)_[A-Za-z0-9]+)\b/g)].map((m) => m[1]))].sort();
+  assert.deepEqual(routed, ['eth_blockNumber', 'eth_call', 'eth_chainId', 'eth_getBalance', 'eth_getBlockByNumber', 'eth_getCode', 'eth_getLogs', 'eth_simulateV1'], 'reads only');
+  assert.match(route, /BigInt\(result\) === BigInt\(CHAIN_ID\)/, 'a fallback is trusted only once it says it is chain 4663');
+  // The page's and the fees worker's connect-src name exactly these endpoints (and the site and the artwork host).
+  const hosts = ['https://rpc.mainnet.chain.robinhood.com', 'https://robinhood-rpc.publicnode.com', 'https://rpc.ordofi.network', 'https://robinhood.drpc.org'].join(' ');
+  const middleware = readFileSync(join(SRC, '../functions/_middleware.ts'), 'utf8');
+  assert.ok(middleware.includes(`"connect-src 'self' https://api.dexscreener.com ${hosts}",`), 'the page’s CSP');
+  assert.ok(middleware.includes(`export const WORKER_CSP = "default-src 'none'; connect-src ${hosts}"`), 'the fees worker’s CSP');
   assert.doesNotMatch(chainClient, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|localStorage|sessionStorage|indexedDB)\b/, 'no other network client and no storage');
   const owned = readFileSync(join(SRC, '../functions/_lib/owned.ts'), 'utf8');
   assert.match(owned, /^export const RPC_URL = 'https:\/\/rpc\.mainnet\.chain\.robinhood\.com'$/m, 'the one endpoint, Robinhood Chain\'s public RPC');

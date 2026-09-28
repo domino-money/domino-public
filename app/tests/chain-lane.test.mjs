@@ -15,8 +15,10 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 
+import { isProbe, reachable } from './support/reach.mjs';
+
 const require = createRequire(import.meta.url);
-const { chainDeps, chainLane, LANE_PACE } = require('../.test-build/app/src/lib/chain/browser.js');
+const { chainDeps, chainLane, LANE_PACE, routing } = require('../.test-build/app/src/lib/chain/browser.js');
 const client = require('../.test-build/app/src/lib/fees/client.js');
 const relay = require('../.test-build/app/functions/_lib/fees.js');
 
@@ -24,13 +26,18 @@ const RPC = 'https://rpc.mainnet.chain.robinhood.com';
 const PACE = { bytesPerSecond: 100_000, burstBytes: 1_000, workFactor: 1, graceMs: 60, restMs: 150 };
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 
+// Changed on purpose (2026-09-28, the page's fallbacks for an RPC it cannot reach): every stub here is the chain's own
+// RPC, there to be reached. The router's reach probe (a no-cors GET, src/lib/chain/failover.ts) is answered as a browser
+// answers it for such a server, and is not one of the requests counted; each stub starts with a router that knows
+// nothing, so no suite's RPC is taken for unreachable by an earlier one's.
 async function withFetch(answer, run) {
   const sent = [];
   const original = globalThis.fetch;
-  globalThis.fetch = async (url, init) => {
-    sent.push({ url, init });
+  routing().reset();
+  globalThis.fetch = reachable(async (url, init) => {
+    if (!isProbe(init)) sent.push({ url, init });
     return answer(url, init);
-  };
+  });
   try {
     return { result: await run(), sent };
   } finally {

@@ -499,3 +499,21 @@ test('wrangler 4.130.0 routes /api/owned/v2/positions to its own function, ahead
     rmSync(out, { recursive: true, force: true });
   }
 });
+
+// 2026-09-28 (the owner's phone, a wallet's in-app browser): a WebView whose fetch gives a reply, or a request, with no
+// body stream still has its text, read whole and then measured; before, such a reply read as '' and then as invalid
+// JSON. The fees relay reads through the same function (functions/_lib/fees.ts). Review of 2026-09-28: tested here.
+test('a reply or a request with no body stream is read whole, and refused past the limit', async () => {
+  const streamless = (message) => Object.defineProperty(message, 'body', { value: null });
+  const text = '{"jsonrpc":"2.0","id":1,"result":"0x1"}';
+  const reply = streamless(new Response(text));
+  assert.equal(reply.body, null, 'no body stream, as such a WebView gives');
+  assert.deepEqual(await owned.bodyWithin(reply, 1_000), { text, bytes: text.length });
+  assert.deepEqual(await owned.bodyWithin(streamless(new Response(text)), text.length - 1), { text: null, bytes: text.length }, 'past the limit: no text');
+  const request = streamless(new Request('https://domino.money/api/fees/v1/state', { method: 'POST', body: text }));
+  assert.deepEqual(await owned.bodyWithin(request, 1_000), { text, bytes: text.length }, 'a request too');
+  assert.deepEqual(await owned.bodyWithin(streamless(new Response(null)), 1_000), { text: '', bytes: 0 }, 'an empty one is empty');
+  // With a stream, as every browser but those gives: the same text, and the same refusal past the limit.
+  assert.deepEqual(await owned.bodyWithin(new Response(text), 1_000), { text, bytes: text.length });
+  assert.deepEqual(await owned.bodyWithin(new Response(text), 10), { text: null, bytes: text.length });
+});

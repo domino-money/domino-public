@@ -103,6 +103,8 @@ async function scenario({ gate = null, intercept, clockAt, allowConsoleErrors = 
   const wallet = await installWallets(context, wallets);
   const problems = [];
   const external = [];
+  // 2026-09-28, on purpose: the chain's three public fallbacks (src/lib/chain/endpoints.ts) are not admitted here. They are
+  // asked only while the chain's own RPC cannot be reached, and here it answers (routeChain): a request to one is a fault.
   context.on('request', (request) => {
     const url = request.url();
     if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url) && url !== `${RPC_URL}/`) external.push(url);

@@ -116,8 +116,14 @@ function productionClosures() {
   // 2026-09-27, r5/feesfast (the owner: the Fees earned chart took far too long): 21,400 B, the same ceiling as
   // tests/session.bundle.test.mjs (a young position's price path with its settlements scan: 21,309 B measured on
   // Windows, both builds alike; it was 20,561 B at main 4f66233).
+  // 2026-09-28, fix/rpc-fallback: 24,700 B, the same ceiling as tests/session.bundle.test.mjs (the worker's runtime sends
+  // through the page's router to the chain's RPC and its public fallbacks, lib/chain/failover.ts: 24,636 B measured on
+  // Windows, both builds alike; it was 21,131 B at 0e0a5193).
+  // 2026-09-28, fix/rpc-fallback after its review: 24,800 B, the same ceiling as tests/session.bundle.test.mjs (the
+  // router leaves a failing fallback alone and probes the chain's RPC for a call only it serves: 24,761 B measured on
+  // Windows, both builds alike; it was 24,636 B at 9847335c).
   const workers = scripts.filter((file) => /^feesReplay\.worker-/.test(file));
-  for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 21_400, `${file} is over its 21,400 B gzip ceiling`);
+  for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 24_800, `${file} is over its 24,800 B gzip ceiling`);
   // 2026-09-25: the chain code the page runs (src/lib/chain/chainCode.ts: the routes' scan and relay reads, the RPC runtime,
   // Keccak), one chunk loaded by dynamic import on a page's first read of the chain, is an admitted root of its own
   // (tests/session.bundle.test.mjs measures it, with its own ceiling).

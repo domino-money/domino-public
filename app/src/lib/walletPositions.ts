@@ -25,6 +25,11 @@
  * The scan and its runtime are loaded on the first read (lib/chain/chainCode.ts),
  * so the screens that import this module do not carry them until they read.
  *
+ * 2026-09-28: while the chain's own RPC cannot be reached (the DNS of Vivo, a large Brazilian ISP, answers NXDOMAIN for
+ * chain.robinhood.com), the same read goes to the chain's public fallbacks (lib/chain/failover.ts), and the scan finds
+ * the wallet's ids in DominoSetupV1's own state rather than its logs (functions/_lib/walletPositions.ts operationIds):
+ * the same answer, through the same parser, and the same screens.
+ *
  * This module holds the wire types, the parser, the read and the hooks.
  * Nothing is stored: an answer lives in React state for as long as the screen
  * shows it.
@@ -230,6 +235,13 @@ const ZERO_OWNER = /^0x0{40}$/
  * fresh at its own head. Only the page's own runtime keeps it; a read handed its runtime (the tests) scans in full.
  */
 const minted = new Map<string, MintedMemory>()
+/** The chain code, once a read of the page's own has loaded it. */
+let loaded: typeof import('./chain/chainCode') | null = null
+/**
+ * 2026-09-28: how long the page's low-priority reads (the list's APR) wait before they may ask (0: now), from the chain
+ * code (lib/chain/browser.ts quietIn) once a read has loaded it: a refusal's rest, or a read of the page on its way.
+ */
+export const quietIn = () => loaded?.quietIn() ?? 0
 /** For tests: forget what earlier scans found. */
 export function forgetMinted(): void {
   minted.clear()
@@ -248,6 +260,9 @@ export async function readWalletPositions(owner: string, signal: AbortSignal, de
   let body: WalletAnswer
   try {
     const code = await import('./chain/chainCode')
+    // 2026-09-28 (the owner's phone): the list goes first. Its read holds every tab's fees lane and the list's APR for the
+    // whole of it, its waits between refused calls included.
+    const release = deps ? null : (loaded = code).holdReads()
     try {
       const scan = await code.scanWallet(deps ?? code.chainDeps(signal), lower, deps ? null : (minted.get(lower) ?? null))
       body = scan.body
@@ -258,6 +273,8 @@ export async function readWalletPositions(owner: string, signal: AbortSignal, de
     } catch (error) {
       if (signal.aborted) return { ok: false, reason: 'aborted' }
       return { ok: false, reason: error instanceof code.ChainError && error.kind === 'rate' ? 'chain_busy' : 'chain_unavailable' }
+    } finally {
+      release?.()
     }
   } catch {
     // The chain code's chunk could not be loaded (a file of an earlier deploy): as a read that failed, asked again.
@@ -269,7 +286,13 @@ export async function readWalletPositions(owner: string, signal: AbortSignal, de
   return answer ? { ok: true, answer } : { ok: false, reason: 'invalid_reply' }
 }
 
-/** The waits before a failed read is asked again, while the page is visible (the owner's rule, 2026-09-25). */
+/**
+ * The waits before a failed read is asked again, while the page is visible (the owner's rule, 2026-09-25). 2026-09-28
+ * (the owner's phone: the list stayed on its loading rows): a read the RPC refused (chain_busy) is asked again after the
+ * first wait twice, since it held every other read of this browser meanwhile (holdReads), then after the ladder's 10 s
+ * and every 30 s: as many reads as the ladder, none later. Bounded (review, 2026-09-28): 2 s every time never let the
+ * list in past a limiter that lengthens its refusal at each refused call (the harness: 6 s a call kept it out for good).
+ */
 export const REASK_MS = [2_000, 5_000, 10_000] as const
 /** After those, the read is still asked again on its own, this often, while the page is visible. */
 export const LATER_MS = 30_000
@@ -369,7 +392,7 @@ export function askWallet(owner: string, shown: { current: WalletAnswer | null }
       }
       if (!again) return
       if (before && pace) later(REFRESH_FAILED_MS[attempts ? 1 : 0])
-      else after(attempts < REASK_MS.length ? REASK_MS[attempts] : LATER_MS, ask)
+      else after(attempts < REASK_MS.length ? REASK_MS[reason === 'chain_busy' && attempts === 1 ? 0 : attempts] : LATER_MS, ask)
       attempts += 1
     })
   }
@@ -384,8 +407,8 @@ export function askWallet(owner: string, shown: { current: WalletAnswer | null }
  * The connected wallet's answer: asked whenever `owner` is set (a lowercase
  * address, the wallet connected on Robinhood Chain), and again each time
  * `asked` grows (after an action changed it). A read that failed is asked
- * again on its own while the page is visible, after 2, 5 and 10 seconds and
- * then every 30; an answer already on screen stays there when a later one
+ * again on its own while the page is visible, after 2, 5 (2 for a read the
+ * RPC refused) and 10 seconds and then every 30; an answer already on screen stays there when a later one
  * fails. `every` (Your positions only, REFRESH_MS) reads it again on its own
  * while the tab is visible, held back while `paused` is true (askWallet).
  */
