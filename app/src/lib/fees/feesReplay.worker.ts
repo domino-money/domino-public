@@ -12,7 +12,7 @@
  *        { type: 'cancel', id }                                        stop the run for `id`
  *   out  { type: 'progress', id, bytes, daysDone, daysTotal }
  *        { type: 'estimate', id, history, prices }                   2026-09-25: a busy pool's estimated history, first
- *        { type: 'done', id, result }
+ *        { type: 'done', id, result, wait }                          2026-09-27: `wait`, the lane's rest (ms) left
  *
  * A classic worker (Vite's default iife format), same-origin, spawned only by
  * spawn.ts. Its only requests are logs.ts's, to the chain's RPC, which its
@@ -24,7 +24,7 @@ import { pathLogsOnChain } from '../../../functions/_lib/feesPath'
 import { logsWith } from './logs'
 import { BUDGET_BYTES, BUDGET_MS } from './constants'
 import { runPipeline } from './pipeline'
-import type { FromWorker, ToWorker } from './types'
+import type { FromWorker, ToWorker, WorkerResult } from './types'
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<ToWorker>) => void) | null
@@ -79,10 +79,11 @@ scope.onmessage = (event) => {
     },
     message,
   )
+    .catch((): WorkerResult => ({ ok: false, reason: 'rpc_unavailable', prices: null, checkpoint: null, bytes: 0 }))
     .then((result) => {
-      if (result) post({ type: 'done', id: message.id, result })
+      // 2026-09-27: with the lane's wait (its rest after a refusal): the store asks a failed run again once it is over.
+      if (result) post({ type: 'done', id: message.id, result, wait: lane.wait() })
     })
-    .catch(() => post({ type: 'done', id: message.id, result: { ok: false, reason: 'rpc_unavailable', prices: null, checkpoint: null, bytes: 0 } }))
     .finally(() => {
       if (runs.get(message.id) === run) runs.delete(message.id)
     })

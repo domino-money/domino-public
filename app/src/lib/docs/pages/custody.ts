@@ -14,7 +14,9 @@ export const NON_CUSTODIAL: DocPage = {
       blocks: [
         p('A position you create is a standard Uniswap position NFT, minted to the wallet that signs the mint.'),
         p('When you start Auto-compound or Domino-compound from it, that NFT stays in your wallet. You approve that one NFT to your sequence vault, never all of your NFTs.'),
-        p('In Setup’s advanced section, with the assisted swap, the tokens you fund wait in a setup operation until you mint or refund. Only your wallet can do either, and a refund carries no Domino fee.'),
+        // 2026-09-27: Create position deposits through Domino's Setup contract itself (since 2026-09-23), and Setup's own
+        // screen is linked from nowhere, so the sentence says where a reader meets a setup operation.
+        p('Create position first deposits your tokens in Domino’s Setup contract, then turns them into your position. Until then the tokens you fund wait in a setup operation until you mint or refund. Only your wallet can do either, and a refund carries no Domino fee.'),
       ],
     },
     {
@@ -66,8 +68,8 @@ export const NON_CUSTODIAL: DocPage = {
             { label: 'Pause', value: 'You or the operator', note: 'Stops automation. Only you can resume it.' },
             { label: 'Change your limits', value: 'You', note: 'The automation rules, and the limits every run is bound by. The paused state is unchanged.' },
             { label: 'Revoke the operator', value: 'You', note: 'Removes the operator’s authority over your vault. Once revoked, you can authorise the same operator again.' },
-            { label: 'Revoke the NFT approval', value: 'You', note: 'Takes back the vault’s approval for the position you started from, which stops automation.' },
-            { label: 'Withdraw', value: 'You', note: 'Returns a position the vault holds, or earned fees it holds, to your wallet.' },
+            { label: 'Revoke the NFT approval', value: 'You', note: 'Takes back the vault’s approval of your starting position, which stops automation.' },
+            { label: 'Withdraw', value: 'You', note: 'Returns a position or earned fees the vault holds to your wallet.' },
           ],
         },
         p('Each is a transaction your wallet signs, and each works while automation is paused and without the operator. Withdrawals carry no Domino service fee.'),
@@ -91,7 +93,7 @@ export const RISKS: DocPage = {
     {
       id: 'market-risk',
       title: 'Prices move',
-      blocks: [p('Prices move and your position moves with them. Domino does not remove market risk.')],
+      blocks: [p('Prices move, and what your position holds moves with them. Domino does not remove market risk.')],
     },
     {
       id: 'out-of-range',
@@ -113,7 +115,9 @@ export const RISKS: DocPage = {
       id: 'automation-stops',
       title: 'Automation can stop',
       blocks: [
-        p('Automation stops if the position you started from has its fees collected or its liquidity changed outside Domino, or leaves your wallet. Revoking the operator, or the NFT approval, stops it too.'),
+        // 2026-09-27: a position's page collects fees and closes (components/positions/PositionActions.tsx, since 2026-09-24),
+        // and either stops automation on it, as its dialog says; the sentence names them.
+        p('Automation stops if the position you started from has its fees collected or its liquidity changed outside Domino, or leaves your wallet. Collect fees and Close position on its page stop it too, and so does revoking the operator or the NFT approval.'),
         p('Restoring the vault’s permission over that position, while the position is still yours and still approved to the vault, or naming the operator again while it is revoked, is a transaction your wallet signs on your sequence vault. Activation stays a separate step you sign.'),
         p('Restoring that permission consents again to the fees the position has not collected, exactly as creating the vault did.'),
         p('After you revoke the NFT approval, or the position leaves your wallet, restarting takes a contract call that no Domino screen makes.'),

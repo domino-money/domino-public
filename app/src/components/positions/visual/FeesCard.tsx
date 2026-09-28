@@ -6,6 +6,9 @@ import { Badge, cx } from '../../ui'
 import { useFeeHistories } from '../../../lib/fees/useFeeHistory'
 import type { FeeHistoryView, PositionState } from '../../../lib/fees/types'
 import type { TokenDisplay } from '../../../lib/read/types'
+import { automationImpact, useVaultRecord } from '../../../lib/automationImpact'
+import { useAutomation } from '../../../lib/automationState'
+import { AUTOMATION_NAME, AutomationImpact } from './AutomationImpact'
 import { AutomationFrame } from './AutomationFrame'
 import { FeesActivity, TokenFigure } from './FeesActivity'
 import { FeesChart, percentText } from './FeesChart'
@@ -29,6 +32,8 @@ export interface FeesCardProps {
   standalone?: boolean
   /** Automation kinds: the caller's existing sentence. */
   empty?: ReactNode
+  /** Whether the card lists the activity under its chart (a position's page shows it in a card of its own, 2026-09-27). */
+  activity?: boolean
 }
 
 /** The realised Fee APR row (§13.2-5) waits for the owner's yes (§21-3): built, and off. */
@@ -115,7 +120,7 @@ function UnclaimedRow({ state, basis, large = false }: { state: PositionState; b
       <div className="dm-fees-compact-row" data-tone="unclaimed">
         <span className="dm-fees-legend-label">
           <span aria-hidden="true" className="dm-fees-dot" data-tone="unclaimed" />
-          Unclaimed
+          Ready to collect
         </span>
         <span className="dm-fees-compact-value">
           {basis && units !== null ? (
@@ -131,7 +136,7 @@ function UnclaimedRow({ state, basis, large = false }: { state: PositionState; b
   return (
     <LegendRow
       tone="unclaimed"
-      label="Unclaimed"
+      label="Ready to collect"
       money={earning}
       title={title}
       value={basis && units !== null ? <Value basis={basis} units={units} state={state} /> : null}
@@ -206,7 +211,7 @@ function sourcesOf(ids: readonly string[], views: ReadonlyMap<string, FeeHistory
  * cannot be drawn leaves the card with the chain's unclaimed figure and a flat,
  * quiet plot, never an empty place where a card was.
  */
-export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex = 1, tokens, standalone = false, empty }: FeesCardProps) {
+export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex = 1, tokens, standalone = false, empty, activity = true }: FeesCardProps) {
   const titleId = useId()
   const list = 'tokenIds' in source
   // One string per id set, so a new array with the same ids is the same card.
@@ -221,6 +226,33 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   const view = useMemo(() => (sources ? feesView(sources) : null), [sources])
   const period: FeesPeriod = view && chosen && view.periods.includes(chosen) ? chosen : (view?.defaultPeriod ?? 'all')
   const pv = useMemo(() => (view ? periodView(view, period) : null), [view, period])
+
+  // 2026-09-27 (the owner: show what Domino's automation did): one position's page reads its sequence (the chip's own
+  // read, shared) and, when a vault holds it, that vault's record up to the NFT's latest settlement; a new settlement
+  // is the only thing that can bring a new execution, so nothing more is read until the history shows one.
+  const single = kind === 'plain' && !list
+  const automation = useAutomation(single ? ids[0] : null)
+  const sequence = automation.phase === 'ready' && automation.state.automation !== 'plain' && automation.state.automation !== 'other' ? automation.state : null
+  const own = sources?.[0] ?? null
+  const from = own ? own.history.mintedAt.block : 0
+  const to = own ? own.history.events.reduce((top, event) => Math.max(top, event.block), from) : 0
+  const pair = own ? ([own.state.currencies[0].address, own.state.currencies[1].address] as const) : null
+  const vault = useVaultRecord(sequence && own ? sequence.vault : null, ids[0], pair, from, to)
+  const record = vault.record
+  const impact = useMemo(
+    () => (sequence && own && record ? automationImpact({ tokenId: ids[0], kind: sequence.automation, history: own.history, state: own.state, basis: own.basis, record }) : null),
+    [sequence, own, record, ids],
+  )
+  // 2026-09-27 (review: the lines arrived after the chart and pushed it down): the lines come with the card, never
+  // after it. One position's card stays in its loading state until the chip's read answered and, when a vault holds
+  // the NFT, until the vault's first read answered or failed (a read that failed is asked again; only then can lines
+  // arrive later).
+  const waiting = single && (automation.phase === 'loading' || (sequence !== null && own !== null && !vault.settled))
+  // While it waits, the card keeps the look it had: a history drawn after a quiet plot (read again after a failure)
+  // does not pass through the skeleton.
+  const [before, setBefore] = useState<'loading' | 'unclaimed-only'>('loading')
+  if ((phase === 'loading' || phase === 'unclaimed-only') && phase !== before) setBefore(phase)
+  const shown = waiting && (phase === 'verified' || phase === 'estimated') ? before : phase
 
   if (kind !== 'plain') {
     return <AutomationFrame title="Fees earned" art={kind} empty={empty} />
@@ -244,7 +276,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   // /state read failed) or once the NFT is gone, so nothing that was on screen goes away.
   if (phase === 'unavailable') return null
 
-  if (phase === 'loading') {
+  if (shown === 'loading') {
     const basis = state ? basisOf(state, quoteIndex) : null
     return root(
       'loading',
@@ -255,7 +287,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
     )
   }
 
-  if (phase === 'unclaimed-only') {
+  if (shown === 'unclaimed-only') {
     if (!state) return null
     // No history to draw (2026-09-25: the card stays): the chain's unclaimed figure, and the plot flat and quiet.
     return root(
@@ -336,7 +368,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
                 </span>
                 <span className="dm-fees-legend-label">
                   <span aria-hidden="true" className="dm-fees-dot" data-tone="unclaimed" />
-                  Unclaimed
+                  Ready to collect
                   <span className="dm-fig-xs dm-fees-zero-fig">
                     <Value basis={basis} units={view.unclaimed} state={lead} />
                   </span>
@@ -364,7 +396,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
                 />
                 <LegendRow
                   tone="unclaimed"
-                  label="Unclaimed"
+                  label="Ready to collect"
                   title={blockTitle}
                   money={positive(view.unclaimed)}
                   value={<Value basis={basis} units={view.unclaimed} state={lead} />}
@@ -372,6 +404,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
                 />
                 {SHOW_REALISED_APR && <AprRow view={view} />}
               </div>
+              {impact && <AutomationImpact impact={impact} basis={basis} symbol={basis.kind === 'quote' ? symbolOf(lead, basis.into) : null} />}
             </>
           )}
 
@@ -387,10 +420,10 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
           )}
         </div>
         <div className="dm-fees-plot">
-          <FeesChart view={view} pv={pv} zero={view.zero} onInspect={setInspected} estimated={estimated} />
+          <FeesChart view={view} pv={pv} zero={view.zero} onInspect={setInspected} estimated={estimated} automation={impact ? { adds: impact.adds, by: AUTOMATION_NAME[impact.kind], exactFees: impact.exactFees } : undefined} />
         </div>
       </div>
-      <FeesActivity view={view} ids={list} />
+      {activity && <FeesActivity view={view} ids={list} automatic={impact ? { adds: impact.adds, by: AUTOMATION_NAME[impact.kind] } : undefined} />}
     </>,
     list ? 'dm-arrive' : undefined,
   )

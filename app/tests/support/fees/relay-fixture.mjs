@@ -26,6 +26,13 @@ export function loadCase(id) {
   return loaded.get(id);
 }
 
+/**
+ * 2026-09-27: probe answers with no log at all, as many as a run asks: a pool whose samples saw no Swap, whose history
+ * the exact replay reads (a young position in a pool whose Swaps the probe sees takes the price path: pipeline.ts P5).
+ * For fixtureRelay's `script.probe`.
+ */
+export const quietProbes = (fixture) => Array.from({ length: 10 }, () => (request) => ({ ok: true, value: { v: 1, kind: 'probe', head: fixture.state.block + 2, units: [{ unit: null, from: request.from, to: request.to, final: false, logs: [] }], next: null }, bytes: 100 }));
+
 const EPOCH = 3_600_000;
 const DAY = 864_000;
 const U256 = (1n << 256n) - 1n;
@@ -75,8 +82,8 @@ export function fixtureRelay(fixture, { maxDays = 7, script = {}, tamper, swapBy
     const until = request.until ?? head;
     switch (request.kind) {
       case 'transfer':
-        // From `since` when asked (2026-09-25), as the relay reads it.
-        return answer({ v: 1, kind: 'transfer', head, units: [{ unit: null, from: Math.max(9506, request.since ?? 0), to: head, final: false, logs: fixture.transfer.filter((log) => log[0] >= (request.since ?? 0)) }], next: null });
+        // From `since` when asked (2026-09-25), to `until` when asked (2026-09-27), as the relay reads it.
+        return answer({ v: 1, kind: 'transfer', head, units: [{ unit: null, from: Math.max(9506, request.since ?? 0), to: request.until ?? head, final: false, logs: fixture.transfer.filter((log) => log[0] >= (request.since ?? 0) && log[0] <= (request.until ?? head)) }], next: null });
       case 'initialize':
         return answer({ v: 1, kind: 'initialize', head, units: [{ unit: null, from: 0, to: head, final: true, logs: fixture.initialize }], next: null });
       case 'pool': {
@@ -126,6 +133,16 @@ export function fixtureRelay(fixture, { maxDays = 7, script = {}, tamper, swapBy
         const salt = BigInt(request.tokenId);
         const own = Object.values(fixture.pool).flat().filter((log) => log[2] === 1 && log[0] >= request.from && log[0] <= request.to && `0x${log[4][1].slice(26)}` === '0x58daec3116aae6d93017baaea7749052e8a04fa7' && BigInt(`0x${log[5].slice(2 + 3 * 64, 2 + 4 * 64)}`) === salt);
         return answer({ v: 1, kind: 'settlements', head, units: [{ unit: null, from: request.from, to: request.to, final: false, logs: own.sort((a, b) => a[0] - b[0] || a[1] - b[1]) }], next: null });
+      }
+      // 2026-09-27: the price path's own-settlements scan: every PositionManager ModifyLiquidity of the pool in each span
+      // (the recorded epochs hold all of them), the NFT's own answered, what they all cost as the answer's bytes.
+      case 'modifies': {
+        const salt = BigInt(request.tokenId);
+        const managed = Object.values(fixture.pool).flat().filter((log) => log[2] === 1 && `0x${log[4][1].slice(26)}` === '0x58daec3116aae6d93017baaea7749052e8a04fa7');
+        const units = request.spans.map(([from, to]) => ({ unit: null, from, to, final: false, logs: managed.filter((log) => log[0] >= from && log[0] <= to && BigInt(`0x${log[5].slice(2 + 3 * 64, 2 + 4 * 64)}`) === salt).sort((a, b) => a[0] - b[0] || a[1] - b[1]) }));
+        const read = managed.filter((log) => request.spans.some(([from, to]) => log[0] >= from && log[0] <= to));
+        const replied = answer({ v: 1, kind: 'modifies', head, units, next: null });
+        return { ...replied, bytes: Math.max(replied.bytes, JSON.stringify(read).length) };
       }
       case 'headers': {
         const missing = request.blocks.filter((block) => !(block in fixture.headers));

@@ -55,6 +55,8 @@ export interface PositionActionsProps {
   tokens?: readonly [TokenDisplay, TokenDisplay] | null
   /** The page's own way on for this position (Automate, or the docs on switching its sequence on), shown first unless Turn on or Pause takes its place. */
   automate?: ReactNode
+  /** Collect fees is the primary button: a plain position's (2026-09-27); a sequence's is outlined. */
+  primary?: boolean
 }
 
 type Action = 'collect' | 'close'
@@ -164,7 +166,7 @@ function ActionDialog({ action, onClose, children, footer }: { action: Action; o
   )
 }
 
-export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null }: PositionActionsProps) {
+export default function PositionActions({ tokenId, owner, liquidityRaw, unsettledFeesRaw, currencies, hooks, onChanged, usd = null, tokens = null, automate = null, primary }: PositionActionsProps) {
   const identity = useWalletIdentity()
   const wallet = walletKey(identity)
   const mine = wallet !== null && identity.kind === 'connected' && identity.address.toLowerCase() === owner.toLowerCase()
@@ -292,9 +294,11 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
     <>
       <SequenceSwitch tokenId={tokenId} holder={owner} liquid={!empty} fallback={automate} />
       <div className="flex flex-wrap items-center gap-2" data-position-actions={hooked ? 'hooks' : ''}>
+        {/* One primary (2026-09-27, Domino's buttons): Collect fees for a plain position; for one of Domino's sequences,
+            which collects and re-adds its fees itself, outlined, and the sequence's own Turn on is the primary. */}
         <Button
           type="button"
-          variant="secondary"
+          variant={primary ? 'primary' : 'outline'}
           disabled={hooked || empty || noFees || (pending && run?.action !== 'collect')}
           title={collectReason}
           aria-busy={(pending && run?.action === 'collect') || undefined}

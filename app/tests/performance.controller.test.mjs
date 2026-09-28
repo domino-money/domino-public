@@ -197,6 +197,8 @@ test('statuses, reasons and refusals read as words; none is a code or a not-yet'
       'unqualified_sequence', 'sequence_members_incomplete', 'sequence_members_unbounded', 'wallet_timeout', 'wallet_read_failed', 'connect_robinhood_wallet', 'no_deployment'].map(enrollmentFailureText),
     ...['snapshot_stale', 'capital_coverage_incomplete', 'full_l2_cost_unqualified'].map(performanceReasonText)];
   for (const text of words) assert.doesNotMatch(text, /_|not connected|not enabled|in this release|coming soon|yet\b/i, text);
+  // 2026-09-27 (round 5 review): the line under a position waiting for its first figures is on Positions, for people new to pools.
+  for (const text of Object.values(ENROLLMENT_REASON_TEXT)) assert.doesNotMatch(text, /observation|canonical|collection|chain|baseline/i, text);
   assert.equal(performanceReasonText('some_new_reason'), 'some new reason.', 'an unknown code is spelled out, never dropped');
 });
 

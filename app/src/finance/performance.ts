@@ -352,11 +352,12 @@ export const ENROLLMENT_STATUS_TEXT: Readonly<Record<Enrollment['status'], strin
   blocked: 'Tracking stopped',
 }
 
+/** Under a position that waits for its first figures, on Positions: plain words (2026-09-27, round 5 review, the owner's point 6). */
 export const ENROLLMENT_REASON_TEXT: Readonly<Record<Enrollment['reason'], string>> = {
-  awaiting_baseline: 'Waiting for the first observation.',
-  forward_collection: 'Collecting from the chain.',
-  collection_failed: 'The last collection failed.',
-  baseline_reorged: 'The first observation left the canonical chain.',
+  awaiting_baseline: 'Waiting for its first figures.',
+  forward_collection: 'Gathering its figures.',
+  collection_failed: 'Its latest figures couldn’t be read.',
+  baseline_reorged: 'Its first figures have to be read again.',
 }
 
 export const COLLECTION_TEXT: Readonly<Record<TrackedCard['collectionReason'], string>> = {

@@ -171,7 +171,8 @@ export async function simulateOnChain(params: unknown[]): Promise<unknown> {
  *   after; at half that pace they were not;
  * - at the first reply the worker cannot read, or that says 429, the run stops
  *   (the card keeps its unclaimed figure) and the lane rests `restMs` before it
- *   asks anything again;
+ *   asks anything again; 2026-09-27: the fees store asks that run again as
+ *   soon as the rest is over (`wait`), no longer a minute later;
  * - 2026-09-25 (review): the pace is the address's, across tabs: every lane
  *   counts the bytes the others read, and rests when one of them was refused.
  */
@@ -197,6 +198,8 @@ export interface ChainLane {
   deps(signal?: AbortSignal, until?: number): LaneDeps
   /** Whether the lane is resting after a refusal: nothing may be asked until it ends. */
   resting(): boolean
+  /** 2026-09-27: how long before the lane asks anything again (0: at once): its rest, or the work its last reply cost. */
+  wait(): number
   /** Stops listening to the page (the tests' lanes). */
   close(): void
 }
@@ -330,6 +333,7 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
   }
   return {
     resting,
+    wait: () => Math.max(due(), restUntil - now()),
     close: () => listening?.close(),
     queue(work, urgent) {
       return new Promise((resolve, reject) => {

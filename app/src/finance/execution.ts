@@ -70,20 +70,25 @@ export const EXECUTION_STATE_TEXT: Readonly<Record<ExecutionItem['state'], strin
   reorged: 'Chain reorganized',
 }
 
-/** One sentence per state for an intent shown without a finalized receipt. */
+/**
+ * One sentence per state for an intent shown without a finalized receipt, in
+ * plain words (2026-09-27, round 5 review: a receipt's detail spoke of slots,
+ * inclusion, finality, nonces and the canonical chain). The exact state is the
+ * chip's title (EXECUTION_STATE_TEXT).
+ */
 export const EXECUTION_STATE_NOTE: Readonly<Record<ExecutionItem['state'], string>> = {
-  planned: 'Planned within your sequence limits. Nothing has been signed.',
-  reserved: 'A transaction slot is reserved. Nothing has been sent.',
+  planned: 'Planned within your automation limits. Nothing has been sent.',
+  reserved: 'Getting ready. Nothing has been sent.',
   cancelled: 'Cancelled before it was sent.',
   signing: 'Being signed. Nothing has been sent.',
-  signed: 'Signed and recorded. Not sent to the network.',
-  submitted: 'Sent to the network. Waiting for inclusion.',
-  broadcast_unknown: 'The network did not confirm the broadcast. It is never sent again with a new nonce.',
-  included: 'Included in a block. Waiting for finality.',
-  reconciled: 'Finalized.',
-  reverted: 'The transaction reverted.',
-  attention: 'Held for review. It is not shown as completed.',
-  reorged: 'Its block left the canonical chain, so it is not shown as completed.',
+  signed: 'Signed and ready. Nothing has been sent.',
+  submitted: 'Sent. Waiting for the network to confirm it.',
+  broadcast_unknown: 'Sent. The network hasn’t confirmed it, and it is never sent twice.',
+  included: 'Almost done: waiting for the network’s final confirmation.',
+  reconciled: 'Done.',
+  reverted: 'The network turned it down: nothing changed and no fee was taken.',
+  attention: 'On hold for a check, so it isn’t counted as done yet.',
+  reorged: 'The network is checking it again, so it isn’t counted as done yet.',
 }
 
 /**

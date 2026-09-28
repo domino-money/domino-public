@@ -30,7 +30,8 @@ export const FEES: DocPage = {
       id: 'service-fee',
       title: 'Domino service fee',
       blocks: [
-        p('Auto-compound charges 2% of consumed earned fees. Domino-compound charges 4% for every automated recipe, including reinvestment into the source. Each is taken once; changing the mode and rate requires a reviewed owner transaction.'),
+        // 2026-09-27 (review of 260a76a): the example counts the fees Auto-compound uses, of which 98 go back.
+        p('Auto-compound charges 2% of the earned fees it uses. Domino-compound charges 4% for every automated recipe, including putting fees back into the same position. Each is taken once: of 100 USDG of fees Auto-compound uses, 2 go to the service fee and 98 back into your position.'),
         p('It is never charged on principal, on a direct deposit or on a withdrawal. Earned fees that wait are not charged, and an automation transaction that fails charges nothing.'),
         p('Gas for automation transactions is paid by the operator that sends them, and is included in the fee.'),
       ],
@@ -180,22 +181,41 @@ export const GLOSSARY: DocPage = {
   summary: 'The words Domino uses, in one place.',
   sections: [
     {
+      // 2026-09-27 (the owner: Domino is for people who know nothing about liquidity pools): the words a first-time reader meets first.
+      id: 'the-basics',
+      title: 'The basics',
+      blocks: [
+        {
+          kind: 'terms',
+          items: [
+            { id: 'liquidity', term: 'Liquidity', text: ['Tokens supplied to a pool so others can trade.'] },
+            { id: 'liquidity-provider', term: 'Liquidity provider', text: ['Someone who supplies a pool’s two tokens and earns a share of its fees.'] },
+            { id: 'position', term: 'Position', text: ['Your tokens in one pool, between the lowest and highest price you chose.'] },
+            { id: 'apr', term: 'APR', text: ['A yearly rate: a period’s fees scaled to a year. It describes the past, not a promise.'] },
+            { id: 'slippage', term: 'Slippage tolerance', text: ['How far the price may move against you before a step stops instead of going through.'] },
+            { id: 'gas', term: 'Gas', text: ['The network fee every transaction pays, in ETH.'] },
+            { id: 'smart-contract', term: 'Smart contract', text: ['A program on the chain that anyone can read.'] },
+          ],
+        },
+      ],
+    },
+    {
       id: 'pools-and-positions',
       title: 'Pools and positions',
       blocks: [
         {
           kind: 'terms',
           items: [
-            { id: 'pool', term: 'Pool', text: ['A Uniswap pool that trades two tokens, defined by its tokens, fee, tick spacing and hooks.'] },
-            { id: 'pool-id', term: 'Pool id', text: ['The identifier a pool’s definition gives it. Domino identifies a pool by its id, never by a symbol.'] },
-            { id: 'fee-tier', term: 'Fee tier', text: ['The share of every swap a pool charges, paid by swappers to its liquidity providers.'] },
-            { id: 'dynamic-fee', term: 'Dynamic fee', text: ['A fee set by a hook contract instead of fixed in the pool.'] },
+            { id: 'pool', term: 'Pool', text: ['Where two tokens are traded for each other, on Uniswap.'] },
+            { id: 'pool-id', term: 'Pool id', text: ['A pool’s identifier. Domino names pools by id, never by symbol.'] },
+            { id: 'fee-tier', term: 'Fee tier', text: ['The share of every swap a pool charges, paid to its liquidity providers.'] },
+            { id: 'hook', term: 'Hook', text: ['A contract attached to a pool that can change its fee or add rules. Domino uses pools without one.'] },
             { id: 'protocol-fee', term: 'Protocol fee', text: ['Uniswap’s fee on a pool’s swaps, taken from what a swap sells into the pool before the fee tier. It does not go to liquidity providers.'] },
-            { id: 'range', term: 'Range', text: ['The lower and upper price a position provides liquidity between.'] },
-            { id: 'tick', term: 'Tick', text: ['Uniswap’s unit of price, a 0.01% step. Range bounds are multiples of a pool’s tick spacing.'] },
-            { id: 'in-range', term: 'In range', text: ['A position is in range while the pool price sits inside its range. Only then does it earn trading fees.'] },
-            { id: 'position-nft', term: 'Position NFT', text: ['The standard Uniswap NFT that represents a position. Positions lists the ones your wallet created with Domino.'] },
-            { id: 'principal', term: 'Principal', text: ['The liquidity deposited in a position. Automation never reduces it.'] },
+            { id: 'range', term: 'Range', text: ['The lowest and highest price a position provides liquidity between.'] },
+            { id: 'tick', term: 'Tick', text: ['Uniswap’s price step, 0.01%. Ranges end on multiples of a pool’s tick spacing.'] },
+            { id: 'in-range', term: 'In range', text: ['The pool price is inside a position’s range. Only then does it earn fees.'] },
+            { id: 'position-nft', term: 'Position NFT', text: ['The standard Uniswap token that stands for a position. Positions lists the ones your wallet created with Domino.'] },
+            { id: 'principal', term: 'Principal', text: ['What a position holds, not counting its fees: its Position value. Automation never reduces it.'] },
           ],
         },
       ],
@@ -208,11 +228,13 @@ export const GLOSSARY: DocPage = {
           kind: 'terms',
           items: [
             { id: 'earned-fees', term: 'Earned fees', text: ['Trading fees a position has earned while in range.'] },
-            { id: 'unsettled-fees', term: 'Unsettled fees', text: ['Earned fees not yet collected from a position.'] },
-            { id: 'service-fee', term: 'Service fee', text: ['Domino’s fee on automation: Auto-compound 2%; Domino-compound 4% of earned fees consumed, once.'] },
-            { id: 'assisted-swap-fee', term: 'Assisted swap fee', text: ['The fee on the swap Create position makes when your wallet holds one of the two tokens: 0.65% of the amount swapped.'] },
+            // 2026-09-27: the product's words (Fees ready to collect), and the owner's point 4, Your APR.
+            { id: 'fees-ready-to-collect', term: 'Fees ready to collect', text: ['Earned fees not yet collected. Collect fees sends them to your wallet.'] },
+            { id: 'your-apr', term: 'Your APR', text: ['A position’s own fees as a yearly rate. Not the pool’s APR, and not a promise.'] },
+            { id: 'service-fee', term: 'Service fee', text: ['Domino’s fee on automation: Auto-compound 2%, Domino-compound 4% of the earned fees used, once.'] },
+            { id: 'assisted-swap-fee', term: 'Assisted swap fee', text: ['0.65% of the part Create position swaps when your wallet holds one of the two tokens.'] },
             { id: 'domino-history', term: 'Domino history', text: ['Domino’s own record of a pool’s last 24 hours, where the deployment provides it. Figures from it are marked Domino history.'] },
-            { id: 'tvl', term: 'TVL', text: ['Total value locked: the value of the tokens in a pool, from Domino history or, where it has none, a market data provider.'] },
+            { id: 'tvl', term: 'TVL', text: ['Total value locked: what the tokens in a pool are worth, from Domino history or, where it has none, a market data provider.'] },
             { id: 'volume-24h', term: '24h volume', text: ['The value swapped through a pool over the last 24 hours, from Domino history or, where it has none, a market data provider.'] },
             {
               id: 'estimated-apr',
@@ -232,15 +254,11 @@ export const GLOSSARY: DocPage = {
           items: [
             { id: 'plain-position', term: 'Plain position', text: ['No automation: earned fees wait in the position until you collect them.'] },
             { id: 'auto-compound', term: 'Auto-compound', text: ['Automation that adds a position’s earned fees back into the same position.'] },
-            {
-              id: 'domino-compounder',
-              term: 'Domino Compounder',
-              text: ['Automation that, near the top of a range, uses earned fees to open or fund the next position one step higher. In the app it is Domino-compound.'],
-            },
+            { id: 'domino-compounder', term: 'Domino Compounder', text: ['Near the top of a range, earned fees open or fund the next position one step higher. In the app it is Domino-compound.'] },
             { id: 'sequence', term: 'Sequence', text: ['The vault contract created for your wallet that holds the positions automation opens and earned fees not yet reinvested. Only your wallet can withdraw from it.'] },
-            { id: 'operator', term: 'Operator', text: ['The address that carries out automation within your limits. It can pause, but cannot withdraw, change limits or resume.'] },
+            { id: 'operator', term: 'Operator', text: ['Domino’s automation service, which acts within your limits. It can pause, but cannot withdraw, change limits or resume.'] },
             { id: 'trigger-distance', term: 'Trigger distance', text: ['How near the top of its range the price must be before a next position is considered. Up to 20%.'] },
-            { id: 'maximum-overlap', term: 'Maximum overlap', text: ['How far below the previous ceiling a next position’s floor may start. Up to 20%.'] },
+            { id: 'maximum-overlap', term: 'Maximum overlap', text: ['How far below the previous top a next position may start. Up to 20%.'] },
             { id: 'upside', term: 'Upside', text: ['How far above the previous ceiling a next position’s ceiling sits, at least. You set it; the app draws it at 50%.'] },
           ],
         },
@@ -253,10 +271,10 @@ export const GLOSSARY: DocPage = {
         {
           kind: 'terms',
           items: [
-            { id: 'sign-in', term: 'Sign-in', text: ['A signature over a message that proves you control an address. It authorizes no transaction and no automation.'] },
+            { id: 'sign-in', term: 'Sign-in', text: ['A signature that proves you control an address. It authorizes no transaction and no automation.'] },
             { id: 'session', term: 'Session', text: ['What signing in starts. It ends after 30 minutes idle, at its end time, or when you sign out.'] },
-            { id: 'setup', term: 'Setup', text: ['Domino V1’s setup contract: it holds a deposit until its position is minted.'] },
-            { id: 'receipt', term: 'Receipt', text: ['A record of a transaction automation submitted and what it did, on Positions once you sign in.'] },
+            { id: 'setup', term: 'Setup', text: ['Domino V1’s setup contract: it holds a deposit until its position is created.'] },
+            { id: 'receipt', term: 'Receipt', text: ['A record of what automation did, on Positions once you sign in.'] },
           ],
         },
       ],

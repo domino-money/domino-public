@@ -83,7 +83,7 @@ export function pathRelay(fixture, id, { busyProbe = false, quietProbe = 1, scri
     if (scripted) return typeof scripted === 'function' ? scripted(request) : scripted;
     switch (request.kind) {
       case 'transfer':
-        return answer({ v: 1, kind: 'transfer', head, units: [{ unit: null, from: request.since ?? 0, to: head, final: false, logs: fixture.positions[id].transfer.filter((log) => log[0] >= (request.since ?? 0)) }], next: null });
+        return answer({ v: 1, kind: 'transfer', head, units: [{ unit: null, from: request.since ?? 0, to: request.until ?? head, final: false, logs: fixture.positions[id].transfer.filter((log) => log[0] >= (request.since ?? 0) && log[0] <= (request.until ?? head)) }], next: null });
       case 'initialize':
         return answer({ v: 1, kind: 'initialize', head, units: [{ unit: null, from: 0, to: head, final: true, logs: [fixture.initialize] }], next: null });
       case 'probe': {
@@ -117,6 +117,15 @@ export function pathRelay(fixture, id, { busyProbe = false, quietProbe = 1, scri
         const before = fixture.logs.filter((log) => log[2] === 3 && log[0] < request.block && log[0] >= (request.since ?? 0));
         if (before.length === 0 && request.block - 1 >= from0) throw new Error(`no Swap recorded before ${request.block}`);
         return answer({ v: 1, kind: 'swapBefore', head, log: before[before.length - 1] ?? null });
+      }
+      // 2026-09-27: the own-settlements scan. The recording holds only the NFTs' own ModifyLiquidity (the pool's other
+      // LPs' were left out), so this answers what the scan would keep: the NFT's own in each span.
+      case 'modifies': {
+        const units = request.spans.map(([from, to]) => {
+          within(from, to);
+          return { unit: null, from, to, final: false, logs: fixture.logs.filter((log) => isOwn(log, request.tokenId) && log[0] >= from && log[0] <= to) };
+        });
+        return answer({ v: 1, kind: 'modifies', head, units, next: null });
       }
       case 'headers': {
         const missing = request.blocks.filter((block) => !(block in fixture.headers));

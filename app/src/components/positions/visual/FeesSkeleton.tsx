@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import { ChartSkeleton } from '../../charts/ChartSkeleton'
+import { useMediaQuery } from '../../../lib/useMediaQuery'
+import { CHART_BOX } from './FeesChart'
 
 /**
  * The fees module on its way (DESIGN-V2 §13.4): the hero, the split bar, its
@@ -9,6 +11,8 @@ import { ChartSkeleton } from '../../charts/ChartSkeleton'
  * bubbles, no digits, no data-position-*.
  */
 export function FeesSkeleton({ unclaimed }: { unclaimed?: ReactNode }) {
+  // The loaded chart's own box (2026-09-27), so nothing moves when it is drawn in the skeleton's place.
+  const phone = useMediaQuery('(max-width: 767px)')
   return (
     <div className="dm-fees-body" aria-busy="true">
       <div className="dm-fees-summary">
@@ -36,7 +40,7 @@ export function FeesSkeleton({ unclaimed }: { unclaimed?: ReactNode }) {
           <span className="dm-skel dm-fees-skel-tirbar" />
         </span>
       </div>
-      <ChartSkeleton height={240} head={false} className="dm-fees-chart-skel" />
+      <ChartSkeleton height={phone ? CHART_BOX.phone : CHART_BOX.desktop} head={false} className="dm-fees-chart-skel" />
     </div>
   )
 }

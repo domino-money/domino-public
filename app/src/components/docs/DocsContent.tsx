@@ -1,13 +1,19 @@
-import { Fragment } from 'react'
+import { Fragment, type CSSProperties } from 'react'
+import { shotSrc } from '../../lib/docs/blocks'
 import { docGroupOf, tocOf } from '../../lib/docs/registry'
+import { SHOTS, type Shot } from '../../lib/docs/shots'
 import type { Block, DocPage, DocSection, Inline } from '../../lib/docs/types'
 import { RoadmapPill } from '../../screens/Automate'
 import { docsHref } from '../explore/routes'
 import { IconInfo } from '../icons'
 import { CopyButton } from '../read/screens/CopyButton'
 import { Display, KeyValue, KeyValueList } from '../ui'
+import { DocsDiagram } from './DocsDiagram'
 import { DocsPager } from './DocsPager'
 import { DocsToc } from './DocsToc'
+
+/** The docs' phone width, where a picture's phone shot is served (docs.css draws the page for a phone below 640 px). */
+const PHONE_MEDIA = '(max-width: 639px)'
 
 /** Inline text: words, bold words, code-like words and links inside this app. */
 function Text({ parts }: { parts: readonly Inline[] }) {
@@ -128,6 +134,38 @@ function BlockView({ block }: { block: Block }) {
             </div>
           ))}
         </div>
+      )
+    case 'shot': {
+      // Sized by its own pixels, so the page keeps its place while the picture loads; lazy, so a page loads only what is read.
+      // Under 640 px the phone picture, shot in a phone's window, so its words keep their size (2026-09-27, review of 260a76a).
+      const { width, height, phone, alt }: Shot = SHOTS[block.shot]
+      // Drawn at twice its size for sharp text, so never wider than half its pixels: a narrow card stays card-sized.
+      const widths = { '--dm-shot-w': `${width / 2}px`, '--dm-shot-phone-w': `${(phone ?? { width }).width / 2}px` } as CSSProperties
+      return (
+        <figure className="dm-docs-figure" data-docs-shot={block.shot}>
+          <div className="dm-docs-shot" style={widths}>
+            <picture>
+              {phone && <source media={PHONE_MEDIA} srcSet={shotSrc(block.shot, true)} width={phone.width} height={phone.height} />}
+              <img src={shotSrc(block.shot)} width={width} height={height} alt={alt} loading="lazy" decoding="async" />
+            </picture>
+          </div>
+          <figcaption>
+            <span>{block.caption}</span>
+            <span className="dm-docs-figure-tag">Made-up figures</span>
+          </figcaption>
+        </figure>
+      )
+    }
+    case 'diagram':
+      return (
+        <figure className="dm-docs-figure" data-docs-diagram={block.name}>
+          <div className="dm-docs-diagram">
+            <DocsDiagram name={block.name} alt={block.alt} />
+          </div>
+          <figcaption>
+            <span>{block.caption}</span>
+          </figcaption>
+        </figure>
       )
     case 'terms':
       return (

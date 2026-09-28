@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { CASES, fixtureRelay, loadCase, stateOfCase } from './support/fees/relay-fixture.mjs';
+import { CASES, fixtureRelay, loadCase, quietProbes, stateOfCase } from './support/fees/relay-fixture.mjs';
 
 const USDG_UFG = ['0x5fc5360d0400a0fd4f2af552add042d716f1d168', '0xefab538cf3c29237a47c6afb145d50ddf204a0a3'];
 
@@ -158,9 +158,11 @@ test('a history over MAX_SWAP_DAYS stops before any swap is asked (too_much_hist
   assert.deepEqual({ ok: result.ok, reason: result.reason, checkpoint: result.checkpoint }, { ok: false, reason: 'too_much_history', checkpoint: null });
   // Changed on purpose (2026-09-25): the mint is looked for in the last epoch, then as far back as a history that can still
   // be replayed; found in neither, the mint is older than that, and nothing else is asked.
+  // Changed on purpose (2026-09-27): in windows, newest first, none read twice: the last two days, the rest of the last
+  // epoch, then back to the oldest day a history may replay.
   const top = run.state.block + 31 * DAY;
   const lastDay = Math.floor(top / DAY);
-  assert.deepEqual(relay.requests.map((r) => [r.kind, r.since]), [['transfer', top - EPOCH + 1], ['transfer', (lastDay - 29) * DAY]]);
+  assert.deepEqual(relay.requests.map((r) => [r.kind, r.since, r.until]), [['transfer', top - 2 * DAY + 1, top], ['transfer', top - EPOCH + 1, top - 2 * DAY], ['transfer', (lastDay - 29) * DAY, top - EPOCH]]);
 });
 
 // 2026-09-25: the replay's cheap bound. Before any of the pool's history, one probe of its last PROBE_SPAN blocks: each
@@ -205,15 +207,18 @@ test('the probe stops a history its budget cannot hold before any of it is read,
   assert.deepEqual(busyOwner.result.history.earned.map(String), loadCase('3136705').expect.earned);
   // Settlements that do not account for the position's liquidity now (here one more of its ModifyLiquidity than it has,
   // as a missed decrease would leave): the path stops before reading any Swap, and the exact replay is the one.
+  // Changed on purpose (2026-09-27): payments that do not account for it are followed by the scan of every
+  // ModifyLiquidity the PositionManager made in the pool over the life (`modifies`); here that does not either.
   const fixture3136705 = loadCase('3136705');
   const extra = async (request) => {
     const all = await fixtureRelay(fixture3136705).logs(request);
     const unit = all.value.units[0];
-    const mint = unit.logs[0];
-    return { ...all, value: { ...all.value, units: [{ ...unit, logs: [mint, [mint[0] + 1000, 0, ...mint.slice(2)]] }] } };
+    const mint = unit.logs.find((log) => log[2] === 1) ?? unit.logs[0];
+    return { ...all, value: { ...all.value, units: [{ ...unit, logs: [mint, [mint[0] + 1000, 0, ...mint.slice(2)]] }, ...all.value.units.slice(1).map((more) => ({ ...more, logs: [] }))] } };
   };
-  const missed = await replayed('3136705', { probeHistory: true, script: { settlements: [extra] } }, { budgetBytes: PAGE });
+  const missed = await replayed('3136705', { probeHistory: true, script: { settlements: [extra], modifies: [extra] } }, { budgetBytes: PAGE });
   assert.equal(missed.result.ok, true, missed.result.reason);
+  assert.ok(missed.relay.requests.some((r) => r.kind === 'modifies'), 'the scan was asked');
   assert.ok(!missed.relay.requests.some((r) => r.kind === 'span'), 'no Swap read on a path that cannot land');
   assert.deepEqual(missed.result.history.earned.map(String), fixture3136705.expect.earned);
   // The owner's 3135288, whose every sample is quiet: its last hour in slices, then a few minutes in each epoch it lived
@@ -257,7 +262,9 @@ test('the budget stops a run with its checkpoint, and a larger budget resumes it
 // limit (src/lib/chain/browser.ts chainLane).
 test('the budget bounds the pool’s epochs too: a busy pool stops the run before any swap is asked, with nothing to keep', async () => {
   const fixture = loadCase('3136705');
-  const relay = fixtureRelay(fixture);
+  // Changed on purpose (2026-09-27): probes that saw no Swap, so the exact replay of the pool's history is the one here (a
+  // young position in a pool whose Swaps the probe sees takes the price path since that day: pipeline.ts P5).
+  const relay = fixtureRelay(fixture, { script: { probe: quietProbes(fixture) } });
   // Each epoch answered at 2 MB, as a busy pool's are.
   const heavy = async (request) => {
     const answer = await relay.logs(request);
@@ -268,7 +275,7 @@ test('the budget bounds the pool’s epochs too: a busy pool stops the run befor
   assert.equal(relay.requests.filter((r) => r.kind === 'pool').length, 2, 'no epoch is asked once the budget is spent');
   assert.ok(!relay.requests.some((r) => r.kind === 'swaps' || r.kind === 'headers' || r.kind === 'swapBefore'), 'nor anything after the epochs');
   // With room for them, the same epochs verify.
-  const roomy = fixtureRelay(fixture);
+  const roomy = fixtureRelay(fixture, { script: { probe: quietProbes(fixture) } });
   const whole = await runPipeline({ logs: async (request) => { const a = await roomy.logs(request); return request.kind === 'pool' && a.ok ? { ...a, bytes: 2 * 1024 * 1024 } : a; }, ...quiet }, runOf(fixture, { budgetBytes: 24 * 1024 * 1024 }));
   assert.equal(whole.ok, true, whole.reason);
 });

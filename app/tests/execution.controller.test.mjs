@@ -175,6 +175,8 @@ test('every intent state has words and a sentence, and none of them is a code',(
  assert.deepEqual(Object.keys(EXECUTION_STATE_TEXT).sort(),[...states].sort());
  assert.deepEqual(Object.keys(EXECUTION_STATE_NOTE).sort(),[...states].sort());
  for(const text of [...Object.values(EXECUTION_STATE_TEXT),...Object.values(EXECUTION_STATE_NOTE)])assert.doesNotMatch(text,/_|not connected|not enabled|coming soon/i);
+ // 2026-09-27 (round 5 review): the sentence a receipt's detail shows is for people new to pools, with no engineer's word.
+ for(const text of Object.values(EXECUTION_STATE_NOTE))assert.doesNotMatch(text,/revert|nonce|canonical|finality|inclusion|broadcast|slot|block|chain/i,text);
 });
 
 // ---- G13: one receipt refreshed in place through status, over status-wire.json ----------------------------

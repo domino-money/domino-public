@@ -385,76 +385,111 @@
   .dm-pos-name { display: flex; align-items: center; gap: 16px; min-width: 0; }
   .dm-pos-pair { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dm-pos-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+  /* The owner's actions (2026-09-27: Domino's own buttons): one primary at most, outlined beside it, Close position the
+     one danger. 40 high on a wide screen; on a phone two to a row, 44 high, the way on (Automate, Pause, Turn on) on a
+     row of its own under them. */
   .dm-pos-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 2px; }
   .dm-pos-actions:empty { display: none; }
   @media (max-width: 767px) {
     .dm-pos-name { gap: 12px; }
-    .dm-pos-actions { width: 100%; padding-top: 0; }
-    .dm-pos-actions > div { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: 100%; }
+    .dm-pos-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: 100%; padding-top: 0; }
+    .dm-pos-actions > div { display: contents !important; }
     .dm-pos-actions .dm-btn { height: 44px; }
+    .dm-pos-actions > .dm-auto-go { order: 1; grid-column: 1 / -1; }
+    .dm-pos-actions > .dm-seq-switch-note { order: 2; grid-column: 1 / -1; }
   }
 
-  /* The value band (§12.1): one card of four cells; USD above the amounts by CSS, after them in the DOM. */
+  /* The key figures (2026-09-27): four tiles, each its label, one figure and what explains it, on three rows shared by
+     the tiles of a row (subgrid), so every figure stands on one line and every tile is balanced. Four across from
+     1024px, two by two from 768px; on a phone the value and the price take a row each, the fees and Your APR share one. */
   .dm-pos-stats { margin-top: 32px; }
   .dm-pos-stats.dm-stats--tiles { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .dm-pos-stats.dm-stats--tiles > [data-cell="principal"], .dm-pos-stats.dm-stats--tiles > [data-cell="fees"] { grid-column: 1 / -1; }
-  @media (min-width: 768px) {
-    .dm-pos-stats.dm-stats--tiles { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
-    .dm-pos-stats.dm-stats--tiles > [data-cell="principal"], .dm-pos-stats.dm-stats--tiles > [data-cell="fees"] { grid-column: auto; }
-  }
-  @media (min-width: 768px) and (max-width: 1023px) {
-    .dm-pos-stats.dm-stats--tiles { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  }
-  .dm-pos-stat { display: flex; flex-direction: column; }
-  .dm-pos-stat > dt { order: -2; }
-  .dm-pos-stat > .dm-stat-sub { order: -1; margin-top: 10px; color: var(--fg); }
-  .dm-pos-stat > .dm-stat-sub:empty { display: none; }
-  .dm-pos-stat > .dm-stat-value { margin-top: 10px; }
-  /* The strip's values are two amounts or a range, not one big figure: they wrap instead of truncating. */
+  .dm-pos-stats.dm-stats--tiles > :is([data-cell="principal"], [data-cell="price"]) { grid-column: 1 / -1; }
+  @media (min-width: 768px) { .dm-pos-stats.dm-stats--tiles > :is([data-cell="principal"], [data-cell="price"]) { grid-column: auto; } }
+  @media (min-width: 1024px) { .dm-pos-stats.dm-stats--tiles { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.3fr); } }
+  .dm-pos-stat { display: grid; align-content: start; row-gap: 0; }
+  /* The rows line up across the tiles only when every figure is one line of USD (a pair with USDG): elsewhere the
+     token amounts stand as the figures, taller than a rate, and each tile stacks its label, figure and explanation in
+     its own flow, so no explanation hangs far below its figure (2026-09-27 review). */
+  .dm-pos-stats[data-valued] .dm-pos-stat { grid-row: span 3; grid-template-rows: subgrid; }
+  .dm-pos-stat > dt { align-self: start; }
+  .dm-pos-stat > dt > [role="img"] { cursor: help; }
+  /* A hover explanation cannot be read by a finger: on a phone the tile says it all without the mark. */
+  @media (max-width: 767px) { .dm-pos-stat > dt > [role="img"] { display: none !important; } }
+  .dm-pos-stat > .dm-stat-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; align-self: start; margin-top: 14px; }
+  .dm-pos-stat > .dm-stat-sub { display: grid; align-content: start; gap: 10px; margin-top: 12px; color: var(--fg-muted); }
+  /* The figures are one size across the tiles; long ones wrap instead of truncating. */
   .dm-pos-stats dd { overflow: visible !important; white-space: normal !important; }
+  .dm-pos-stat .dm-fig-lg { color: var(--fg); overflow-wrap: anywhere; }
+  .dm-pos-stat .dm-fig-lg.dm-fees-in { color: var(--money-in); }
   .dm-pos-amounts { display: grid; gap: 2px; }
-  .dm-pos-amounts .dm-acct-amount, .dm-pos-figure { display: block; font-size: 18px; line-height: 24px; font-weight: 500; letter-spacing: -0.3px; }
-  @media (min-width: 768px) { .dm-pos-amounts .dm-acct-amount, .dm-pos-figure { font-size: 20px; line-height: 26px; } }
-  .dm-pos-unit { font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: -0.16px; color: var(--fg-subtle); white-space: nowrap; }
-  .dm-pos-dash { color: var(--fg-subtle); }
-  /* The range's two runs never break inside themselves: a narrow cell wraps before the dash (see PositionDetail). */
-  .dm-pos-run { white-space: nowrap; }
-  .dm-pos-stats .dm-approx { color: var(--fg-subtle); }
-  .dm-pos-usd { display: grid; gap: 12px; }
+  .dm-pos-amounts .dm-acct-amount { display: block; font-size: 18px; line-height: 24px; font-weight: 500; letter-spacing: -0.3px; }
+  @media (min-width: 768px) { .dm-pos-amounts .dm-acct-amount { font-size: 20px; line-height: 26px; } }
   .dm-pos-split { margin-bottom: 2px; }
   /* Valued: the amounts step back to 14px, each after its token's dot (the split bar's colours). */
-  .dm-pos-stats[data-valued] .dm-pos-amounts { gap: 4px; }
-  .dm-pos-stats[data-valued] .dm-pos-amounts .dm-acct-amount { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; }
+  .dm-pos-stats[data-valued] .dm-stat-sub .dm-pos-amounts { gap: 4px; }
+  .dm-pos-stats[data-valued] .dm-stat-sub .dm-acct-amount { display: flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; }
   /* The dots are the split bar's neutral inks (Tangerine on this page is the fees series alone). */
   .dm-pos-stats[data-valued] [data-stat="principal"] .dm-acct-amount::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--fg-faint); }
   .dm-pos-stats[data-valued] [data-stat="principal"] .dm-acct-amount + .dm-acct-amount::before { background: var(--surface-4); box-shadow: inset 0 0 0 1px var(--border-strong); }
   .dm-pos-stats [data-stat="fees"] .dm-acct-amount[data-amount="units"] { color: var(--money-in); }
   .dm-pos-stats [data-stat="fees"] .dm-acct-amount[data-amount="units"] .dm-acct-amount-symbol { color: inherit; opacity: 0.8; }
+  /* Your APR: the rate, then its window and the last 24 hours in two quiet lines. */
+  .dm-pos-apr { display: inline-flex; align-items: center; gap: 8px; }
+  .dm-pos-apr > .dm-skel { width: 88px; height: 28px; border-radius: 6px; }
+  .dm-pos-lines { display: grid; gap: 2px; }
+  .dm-pos-stat[data-cell="apr"] .dm-stat-sub, .dm-pos-lines { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  /* The price now, "1 USDG = 332.36 UFG": the figure large, the two sides quiet beside it. */
+  .dm-pos-price-side { font-size: 14px; line-height: 20px; font-weight: 400; letter-spacing: -0.2px; color: var(--fg-subtle); white-space: nowrap; }
+  /* The range: one bar from its lower end to its upper end (green while in range, grey out of it), the price now a dot
+     on it, the ends under its ends, and in words whether it earns fees now. */
+  .dm-pos-span { display: grid; gap: 8px; padding-top: 4px; }
+  .dm-pos-span .dm-range-bar { height: 6px; }
+  .dm-pos-span .dm-range-band[data-in="true"] { background: color-mix(in srgb, var(--money-in) 60%, transparent); }
+  .dm-pos-span .dm-range-now { width: 10px; height: 10px; box-shadow: 0 0 0 2px var(--card); }
+  /* The ends stand under the band's ends (the band is inset 5% each side, where a price beyond it shows). */
+  .dm-pos-span-ends { display: flex; padding-inline: 5%; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-pos-span-ends > span { min-width: 0; overflow-wrap: anywhere; }
+  .dm-pos-span-ends > span:last-child { text-align: right; }
+  .dm-pos-span-ends > .dm-pos-span-word { color: var(--fg-subtle); white-space: nowrap; }
+  .dm-pos-span-state { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-pos-span-state::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--money-in); }
+  .dm-pos-span-state[data-in="false"]::before { background: var(--money-out); }
 
-  /* Price range and Details: 7fr 5fr from 1024px, with or without the price-vs-range chart (a lone band never stretches
-     across the page); between 768 and 1023 one column, Details' rows in two. */
+  /* Fees earned, Price range, Activity, then Details: one column of cards. */
   .dm-pos-grid { display: grid; gap: 16px; margin-top: 16px; }
   @media (min-width: 768px) { .dm-pos-grid { gap: 24px; margin-top: 24px; } }
-  @media (min-width: 1024px) { .dm-pos-grid { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); align-items: start; } }
-  @media (min-width: 768px) and (max-width: 1023px) {
+  .dm-pos-card { display: grid; align-content: start; gap: 16px; min-width: 0; padding: 16px; }
+  @media (min-width: 768px) { .dm-pos-card { gap: 20px; padding: 24px; } }
+  .dm-fees-act-bare { display: grid; gap: 8px; margin-top: -8px; }
+
+  /* Details (2026-09-27): everything technical, closed until opened, the last card on the page. */
+  .dm-pos-details-head { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 0 16px; border-radius: var(--radius-card); cursor: pointer; list-style: none; transition: background-color var(--dur-hover) ease; }
+  .dm-pos-details-head::-webkit-details-marker { display: none; }
+  .dm-pos-details-head:hover { background: var(--wash); }
+  .dm-pos-details-hint { flex: 1; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  /* The chevron keeps to the right edge, also on a phone, where the hint that fills the row is hidden (2026-09-27 review). */
+  .dm-pos-details-head > svg { flex-shrink: 0; margin-left: auto; color: var(--fg-subtle); transition: rotate var(--dur-fast) var(--ease-std); }
+  .dm-pos-details[open] > .dm-pos-details-head > svg { rotate: 180deg; }
+  .dm-pos-details > :not(summary) { margin: 0 16px; }
+  .dm-pos-details > .dm-pos-links { margin-block: 12px 16px; }
+  @media (min-width: 768px) {
+    .dm-pos-details-head { min-height: 72px; padding: 0 24px; }
+    .dm-pos-details > :not(summary) { margin-inline: 24px; }
+    .dm-pos-details > .dm-pos-links { margin-bottom: 24px; }
     .dm-pos-facts { grid-template-columns: 1fr 1fr; column-gap: 32px; }
     .dm-pos-facts > div:nth-last-child(2):nth-child(odd) { background: none; }
   }
-  .dm-pos-card { display: grid; align-content: start; gap: 16px; min-width: 0; padding: 16px; }
-  @media (min-width: 768px) { .dm-pos-card { gap: 20px; padding: 24px; } }
+  @media (max-width: 479px) { .dm-pos-details-hint { display: none; } }
   .dm-pos-facts { padding: 0; }
   .dm-pos-facts > div { min-height: 48px; padding: 0; }
   .dm-pos-facts dt, .dm-pos-facts dd { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
   .dm-pos-facts dd .dm-hex { max-width: 100%; }
-  .dm-pos-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
+  .dm-pos-links { display: flex; flex-wrap: wrap; gap: 8px; }
   .dm-pos-links .dm-btn > svg { color: var(--fg-subtle); }
 
   .dm-pos-range { gap: 12px; }
   .dm-pos-range .dm-acct-range-head { min-height: 16px; margin-bottom: -4px; }
-  /* The preview labels only the pool's price (Min and Max are written right under it), so the row its end labels
-     would take is given back. With the price-vs-range chart below, the chart draws the range itself: no preview. */
-  .dm-pos-preview { margin: 0 0 -24px; }
-  .dm-pos-grid[data-has-price-chart] .dm-pos-preview-wrap { display: none; }
   .dm-pos-ends { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 12px; }
   .dm-pos-end { display: grid; gap: 2px; min-width: 0; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
   .dm-pos-end[data-end="Max"] { justify-items: end; text-align: right; }
@@ -462,33 +497,54 @@
   .dm-pos-end-fig { font-size: 18px; line-height: 24px; font-weight: 500; letter-spacing: -0.3px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; overflow-wrap: anywhere; }
   @media (min-width: 768px) { .dm-pos-end-fig { font-size: 20px; line-height: 26px; } }
   .dm-pos-ends .dm-acct-range-unit { padding-bottom: 4px; font-size: 12px; line-height: 16px; color: var(--fg-subtle); }
-  /* Under the band (no price chart): Min starts at the band's lower edge, Max ends at its upper edge, the unit sits
-     between them; the edges are the preview's own geometry (--lo, --hi), set only for a band wide enough to hold them. */
-  @media (min-width: 768px) {
-    .dm-pos-grid:not([data-has-price-chart]) .dm-pos-ends[data-placed] { position: relative; display: block; min-height: 44px; }
-    .dm-pos-grid:not([data-has-price-chart]) .dm-pos-ends[data-placed] > .dm-pos-end { position: absolute; top: 0; max-width: 45%; }
-    .dm-pos-grid:not([data-has-price-chart]) .dm-pos-ends[data-placed] > .dm-pos-end[data-end="Min"] { left: calc(var(--lo) * 100%); }
-    .dm-pos-grid:not([data-has-price-chart]) .dm-pos-ends[data-placed] > .dm-pos-end[data-end="Max"] { right: calc((1 - var(--hi)) * 100%); }
-    .dm-pos-grid:not([data-has-price-chart]) .dm-pos-ends[data-placed] > .dm-acct-range-unit { position: absolute; bottom: 0; left: calc((var(--lo) + var(--hi)) * 50%); max-width: calc((var(--hi) - var(--lo)) * 100% - 200px); translate: -50% 0; }
-  }
   .dm-pos-chart { margin-top: 8px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); }
-  .dm-pvr-unit { font-weight: 400; color: var(--fg-subtle); }
+
+  /* ---- Price range with its chart (2026-09-27, the owner: "péssimo"; for someone who knows nothing of pools) ----- */
+  /* The chart names the range, its ends, the price now and in range or out itself: the head's sentence stays for a
+     screen reader, and no hairline is needed above the chart. */
+  .dm-pos-range[data-charted] > .dm-acct-range-head { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .dm-pos-range[data-charted] .dm-pos-chart { margin-top: 0; padding-top: 0; box-shadow: none; }
+  .dm-pvr-wrap { display: grid; gap: 14px; min-width: 0; }
+  .dm-pvr-says { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0; font-size: 14px; line-height: 20px; letter-spacing: -0.2px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-pvr-says > span:last-child { flex: 1 1 220px; min-width: 0; }
+  /* Your range: a calm band with thin edges; the price line over it, Tangerine inside the range and muted outside. */
+  .dm-pvr-band { fill: var(--primary-line); fill-opacity: 0.08; }
+  .dm-pvr-edge { stroke: var(--primary-line); stroke-opacity: 0.4; stroke-width: 1; vector-effect: non-scaling-stroke; shape-rendering: crispEdges; }
+  /* The price now: green while it earns fees, red while it does not, as the pill above says. */
+  .dm-pvr-now-line { stroke: var(--money-out); stroke-opacity: 0.55; stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+  .dm-pvr-now-line[data-in] { stroke: var(--money-in); }
+  .dm-pvr-now-dot { fill: var(--money-out); stroke: var(--card); stroke-width: 2.5; paint-order: stroke; }
+  .dm-pvr-now-dot[data-in] { fill: var(--money-in); }
+  /* A closed position earns nothing wherever the price is: the price now in a quiet ink, as its Closed pill. */
+  .dm-pvr-now-line[data-closed] { stroke: var(--fg-subtle); }
+  .dm-pvr-now-dot[data-closed] { fill: var(--fg-subtle); }
+  /* The gutter: the range's ends at its edges, and the price now in its chip, all centred on their level. */
+  .dm-pvr-end { position: absolute; right: 8px; translate: 0 -50%; font-size: 11px; line-height: 14px; letter-spacing: -0.1px; color: var(--fg-subtle); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; pointer-events: none; }
+  .dm-pvr-chip { position: absolute; right: 0; display: inline-flex; align-items: center; height: 22px; padding: 0 7px; translate: 0 -50%; border-radius: 6px; background: var(--money-out-bg); color: var(--money-out); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; pointer-events: none; }
+  .dm-pvr-chip[data-in] { background: var(--money-in-bg); color: var(--money-in); }
+  .dm-pvr-chip[data-closed] { background: var(--surface-3); color: var(--fg-muted); }
+  .dm-pvr-chip .dm-approx, .dm-pvr-end .dm-approx { color: inherit; opacity: 0.7; }
+  .dm-pvr-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: -4px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-muted); }
+  .dm-pvr-key { display: inline-flex; align-items: center; gap: 6px; }
+  .dm-pvr-swatch { width: 14px; height: 10px; border-radius: 3px; background: color-mix(in srgb, var(--primary-line) 12%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--primary-line) 45%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--primary-line) 45%, transparent); }
+  .dm-pvr-key[data-key="price"] .dm-pvr-swatch { height: 2px; border-radius: 1px; background: var(--primary-line); box-shadow: none; }
+  .dm-pvr-unit { margin-left: auto; color: var(--fg-subtle); }
+  @media (max-width: 479px) { .dm-pvr-unit { flex: 1 1 100%; margin-left: 0; } }
 
   .dm-pos-empty { margin-top: 24px; }
   .dm-pos-empty .dm-empty--plate, .dm-pos-empty.dm-empty--plate { border-radius: var(--radius-card); }
 
-  /* The page's loading (§12.2): bubbles where the header, the band and the cards will be. */
+  /* The page's loading (§12.2): bubbles where the header, the key figures and the cards will be. */
   .dm-pos-skel-mark { width: 44px; height: 44px; border-radius: var(--radius-pill); }
   .dm-pos-skel-h1 { width: 200px; height: 36px; border-radius: 8px; }
   .dm-pos-skel-chips { width: 240px; max-width: 100%; height: 22px; border-radius: var(--radius-pill); }
-  .dm-pos-skel-cell { gap: 10px; }
+  .dm-pos-skel-cell > .dm-skel + .dm-skel { margin-top: 14px; }
   .dm-pos-skel-label { width: 72px; height: 10px; }
-  .dm-pos-skel-hero { width: 180px; max-width: 100%; height: 36px; border-radius: 6px; }
+  .dm-pos-skel-hero { width: 140px; max-width: 100%; height: 28px; border-radius: 6px; }
   .dm-pos-skel-fig { width: 120px; max-width: 100%; height: 20px; }
   .dm-pos-skel-line { width: 96px; max-width: 80%; height: 12px; }
   .dm-pos-skel-title { width: 120px; height: 20px; }
   .dm-pos-skel-card { min-height: 220px; }
-  .dm-pos-stat > .dm-stat-value > .dm-skel { margin-top: 4px; }
 
   /* ---- Dialogs (§3.12): receipt rows, marks beside the amounts, USD on a line of its own ------------- */
   .dm-receipt-lede { font-size: 14px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
@@ -571,13 +627,30 @@
   .dm-fees-flat { fill: none; stroke: var(--fg-subtle); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
   /* No history to draw (2026-09-25: the card stays): the plot keeps the loaded chart's height and room (dates under it,
      the gutter at the right on a desktop), with one flat line along its foot in the faintest ink. */
-  .dm-fees-quiet { display: flex; align-items: flex-end; height: 200px; padding: 0 8px 44px 0; }
-  @media (min-width: 768px) { .dm-fees-quiet { height: 240px; padding-right: 72px; } }
+  .dm-fees-quiet { display: flex; align-items: flex-end; height: 272px; padding: 0 8px 40px 0; }
+  @media (min-width: 768px) { .dm-fees-quiet { height: 288px; padding-right: 72px; } }
   .dm-fees-quiet-line { display: block; width: 100%; height: 2px; overflow: visible; }
   .dm-fees-quiet-line .dm-fees-flat { stroke: var(--fg-faint); stroke-width: 1; opacity: 0.6; }
-  /* Each bucket's earnings: slim bars that tint the area (the line is drawn again over them). */
-  .dm-fees-chart .dm-chart-series .dm-bar { opacity: 0.35; }
-  .dm-fees-hover-bars .dm-bar:not([data-hovered]) { opacity: 0; }
+  /* 2026-09-27: the split on the chart itself, in the legend's colours: what was collected as the soft Tangerine area,
+     what still waits to be collected as a green band over it, everything earned as the line on top. */
+  .dm-fees-wait-top { stop-color: color-mix(in srgb, var(--money-in) 26%, transparent); }
+  .dm-fees-wait-bottom { stop-color: color-mix(in srgb, var(--money-in) 8%, transparent); }
+  /* Auto-compound's re-adds: a Tangerine disc with a plus, ringed in the card's colour (the impact row's glyph). */
+  .dm-fees-auto > * { transform-box: fill-box; transform-origin: center; animation: dm-pip-in 240ms var(--ease-pop) calc(var(--dur-wipe) + var(--i, 0) * var(--stagger)) backwards; }
+  .dm-chart-series[data-swap] .dm-fees-auto > *, .dm-fees-auto[data-active] > * { animation: none; }
+  .dm-fees-auto-halo { fill: var(--primary-line); opacity: 0.16; }
+  .dm-fees-auto[data-active] .dm-fees-auto-halo { opacity: 0.32; }
+  .dm-fees-auto-dot { fill: var(--primary-line); stroke: var(--card); stroke-width: 2; }
+  .dm-fees-auto-plus { fill: none; stroke: var(--primary-fg); stroke-width: 1.6; stroke-linecap: round; }
+  /* What the automation did (2026-09-27): one or two plain lines under the split, the figures in ink. */
+  .dm-fees-impact { display: flex; align-items: flex-start; gap: 10px; margin-top: 8px; padding-top: 12px; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-fees-auto-glyph { flex-shrink: 0; margin-top: 1px; overflow: visible; }
+  .dm-fees-impact-lines { display: grid; gap: 4px; min-width: 0; margin: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-fees-impact-line { display: block; }
+  .dm-fees-impact-fig { font-weight: 500; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; white-space: nowrap; }
+  .dm-fees-tip-auto { display: grid; gap: 2px; margin-top: 4px; padding-top: 8px; box-shadow: inset 0 1px 0 var(--border); white-space: normal; }
+  .dm-fees-tip-auto-text { font-size: 12px; line-height: 16px; color: var(--fg); text-wrap: pretty; }
+  .dm-fees-tip-auto-fee { font-size: 12px; line-height: 16px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
   /* A phone's y labels sit inside the plot: a halo in the card's colour keeps them clear of the bars and the area. */
   .dm-fees-axis-inside .dm-axis { paint-order: stroke; stroke: var(--card); stroke-width: 3px; stroke-linejoin: round; }
   .dm-fees-tip-pill { display: flex; margin-top: 4px; }
@@ -592,12 +665,16 @@
   .dm-fees-activity { display: grid; gap: 8px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); }
   .dm-fees-act-list { display: grid; margin: 0; padding: 0; list-style: none; }
   .dm-fees-act { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto; align-items: center; column-gap: 16px; min-height: 56px; padding: 8px 0; }
-  /* A mint or an increase settles no fees: no empty amounts column. */
-  .dm-fees-act:not([data-settled]) { grid-template-columns: minmax(120px, 160px) minmax(0, 1fr); }
+  /* A mint or an increase settles no fees: no empty amounts column (the automation's re-add keeps it for what it added). */
+  .dm-fees-act:not([data-settled]):not([data-auto]) { grid-template-columns: minmax(120px, 160px) minmax(0, 1fr); }
   .dm-fees-act + .dm-fees-act { box-shadow: inset 0 1px 0 var(--border); }
   .dm-fees-act-verb { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
   .dm-fees-act-pip { position: relative; display: inline-grid; place-items: center; width: 20px; height: 20px; flex-shrink: 0; border-radius: 6px; background: var(--primary-wash); }
   .dm-fees-act-pip::after { content: ''; width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--primary-line); box-shadow: 0 0 0 2px var(--card); }
+  /* The automation's re-add: the chart's own mark in the tile, and the row in full ink though it settled nothing. */
+  .dm-fees-act-pip[data-auto]::after { content: none; }
+  .dm-fees-act-pip[data-auto] > .dm-fees-auto-glyph { margin: 0; }
+  .dm-fees-act[data-auto] .dm-fees-act-verb { color: var(--fg); }
   .dm-fees-act-id { margin-left: 2px; padding: 1px 6px; border-radius: 6px; background: var(--surface-3); color: var(--fg-muted); }
   .dm-fees-act-when { display: grid; gap: 2px; min-width: 0; }
   .dm-fees-act-date { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
@@ -622,7 +699,7 @@
   .dm-fees-more { display: flex; justify-content: center; }
   @media (max-width: 479px) {
     .dm-fees-act { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "verb amounts" "when amounts"; row-gap: 4px; min-height: 64px; }
-    .dm-fees-act:not([data-settled]) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "verb" "when"; }
+    .dm-fees-act:not([data-settled]):not([data-auto]) { grid-template-columns: minmax(0, 1fr); grid-template-areas: "verb" "when"; }
     .dm-fees-act-tokens { max-width: 180px; }
     .dm-fees-act-verb { grid-area: verb; }
     .dm-fees-act-when { grid-area: when; }
@@ -639,41 +716,77 @@
   .dm-fees-skel-tir > .dm-fees-skel-row { min-height: 20px; }
   .dm-fees-skel-bar { width: 100%; height: 6px; margin-top: 16px; border-radius: var(--radius-pill); }
   .dm-fees-skel-tirbar { width: 100%; height: 4px; border-radius: var(--radius-pill); }
-  .dm-fees-chart-skel .dm-chart-skel-wave { inset: 12px 72px 44px 0; }
-  .dm-fees-chart-skel .dm-chart-skel-x { right: 72px; bottom: 8px; }
-  .dm-fees-chart-skel .dm-chart-skel-y { bottom: 44px; }
-
-  /* ---- Performance, inside Managed positions (automate.md §5.8.1, CSS only) ------------------------------ */
-  .dm-acct-perf { display: grid; gap: 16px; }
-  .dm-acct-perf-item { container: acct-perf / inline-size; display: grid; gap: 8px; padding: 16px; border-radius: var(--radius-lg); }
-  .dm-acct-perf-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
-  .dm-acct-perf-head > .dm-acct-subtitle { font-size: 16px; line-height: 24px; }
-  [data-performance-status="available"] .dm-acct-status { background: var(--money-in-bg); color: var(--money-in); }
-  [data-performance-status="stale"] .dm-acct-status, [data-performance-status="unavailable"] .dm-acct-status { background: var(--surface-4); color: var(--fg-muted); }
-  .dm-acct-perf-item > .dm-acct-hash { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dm-acct-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; margin: 8px 0 4px; }
-  .dm-acct-metrics dt { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-acct-metrics dd { margin: 2px 0 0; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg-muted); overflow-wrap: anywhere; font-variant-numeric: lining-nums tabular-nums; }
-  .dm-acct-metrics :is([data-metric-name="newTradingFeesUsd"], [data-metric-name="reinvestedUsd"], [data-metric-name="netFeeIncomeUsd"]) dd { font-size: 20px; line-height: 26px; letter-spacing: -0.3px; color: var(--fg); }
-  /* The APRs a step up; gross (never below zero) in the in-colour, net in ink, since it can be negative and CSS cannot see the sign. */
-  .dm-acct-metrics :is([data-metric-name="grossFeeAprPercent"], [data-metric-name="netFeeAprPercent"]) dd { font-size: 16px; line-height: 22px; color: var(--fg); }
-  .dm-acct-metrics [data-metric-name="grossFeeAprPercent"][data-metric-state="value"] dd { color: var(--money-in); }
-  .dm-acct-metrics [data-metric-state="unavailable"] dd { color: var(--fg-subtle); }
-  @container acct-perf (min-width: 640px) {
-    .dm-acct-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .dm-acct-metrics :is([data-metric-name="newTradingFeesUsd"], [data-metric-name="reinvestedUsd"], [data-metric-name="netFeeIncomeUsd"]) { grid-column: span 2; }
+  /* The skeleton keeps the drawn chart's box (FeesChart CHART_BOX): the plot, the gutter, the dates under it. */
+  .dm-fees-chart-skel .dm-chart-skel-wave { inset: 16px 72px 40px 0; }
+  .dm-fees-chart-skel .dm-chart-skel-x { right: 72px; bottom: 10px; }
+  .dm-fees-chart-skel .dm-chart-skel-y { top: 16px; bottom: 40px; }
+  @media (max-width: 767px) {
+    .dm-fees-chart-skel .dm-chart-skel-wave { inset: 32px 8px 40px 0; }
+    .dm-fees-chart-skel .dm-chart-skel-x { right: 8px; }
+    .dm-fees-chart-skel .dm-chart-skel-y { display: none; }
   }
+
+  /* ---- Managed positions and Receipts (owner, 2026-09-27, round 5): one short row per item, in a quiet table ---------
+     Each list is one inset block with hairlines between its rows, never a card per item; the detail of a row is one
+     click away (a native <details>), and technical values live only there. No yellow: Done is the in-colour, Failed
+     the out-colour, everything else neutral. */
+  .dm-acct-perf, .dm-acct-exec { display: grid; gap: 12px; }
+  .dm-mp-list, .dm-rcpt-list { display: grid; min-width: 0; margin: 0; padding: 0; overflow: hidden; list-style: none; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  :is(.dm-mp-list, .dm-rcpt-list) > li { min-width: 0; }
+  :is(.dm-mp-list, .dm-rcpt-list) > li + li { border-top: 1px solid var(--border); }
+
+  /* Managed positions: the name and its status, then three figures; All figures holds the rest. */
+  .dm-mp-row { container: dm-mp / inline-size; display: grid; gap: 12px; padding: 14px 16px; }
+  .dm-mp-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; min-width: 0; }
+  .dm-mp-name { min-width: 0; font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-decoration: none; }
+  a.dm-mp-name:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--fg-subtle); }
+  [data-performance-status="available"] .dm-acct-status { background: var(--money-in-bg); color: var(--money-in); }
+  .dm-mp-figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; margin: 0; }
+  .dm-mp-figs dt { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-mp-figs dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: 16px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-mp-figs [data-metric-state="unavailable"] dd { color: var(--fg-subtle); }
+  .dm-mp-more { margin: -4px -12px -8px; }
+  .dm-mp-more > summary { min-height: 32px; font-size: 13px; }
+  .dm-mp-more > div { display: grid; gap: 12px; padding-top: 4px; }
+  .dm-mp-more .dm-mp-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dm-mp-more .dm-mp-figs dd { font-size: 14px; line-height: 20px; color: var(--fg-muted); }
+  @container dm-mp (min-width: 520px) { .dm-mp-more .dm-mp-figs { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   .dm-acct-perf-form { display: grid; gap: 12px; padding: 16px; }
 
-  /* ---- Execution, inside Receipts (automate.md §5.8.2, CSS only) -------------------------------------- */
-  .dm-acct-exec { display: grid; gap: 12px; }
-  .dm-acct-exec-item { --exec-tone: var(--fg-faint); position: relative; display: grid; gap: 8px; padding: 16px 16px 16px 19px; border-radius: var(--radius-lg); }
-  .dm-acct-exec-item::before { content: ''; position: absolute; left: 0; top: 16px; bottom: 16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--exec-tone); }
-  .dm-acct-exec-item > .dm-acct-subtitle { display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 24px; }
-  .dm-acct-exec-item > .dm-acct-subtitle::before { content: ''; width: 8px; height: 8px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--exec-tone); box-shadow: 0 0 0 2px color-mix(in srgb, var(--exec-tone) 28%, transparent); }
-  .dm-acct-exec-item[data-execution-state="reconciled"] { --exec-tone: var(--money-in); }
-  .dm-acct-exec-item:is([data-execution-state="reverted"], [data-execution-state="reorged"], [data-execution-state="attention"]) { --exec-tone: var(--money-out); }
-  .dm-acct-exec-item:is([data-execution-state="submitted"], [data-execution-state="included"], [data-execution-state="signing"], [data-execution-state="signed"], [data-execution-state="reserved"], [data-execution-state="planned"], [data-execution-state="broadcast_unknown"]) { --exec-tone: var(--fg-muted); }
-  .dm-acct-exec-item [data-receipt-field] dd .dm-acct-hash { display: inline-block; max-width: 100%; padding: 2px 8px; border-radius: var(--radius-sm); background: var(--surface-3); }
-  .dm-acct-exec-item [data-receipt-source] .dm-acct-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Receipts: a chip, what happened, what it added, and a chevron; the Receipts card's head links the full page. */
+  .dm-rcpt-all { flex-shrink: 0; margin-right: -10px; padding: 6px 10px; border-radius: var(--radius-pill); font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg-muted); text-decoration: none; transition: color var(--dur-hover) ease, background-color var(--dur-hover) ease; }
+  .dm-rcpt-all:hover { background: var(--wash); color: var(--fg); }
+  .dm-rcpt-title { margin: 12px 0 24px; }
+  .dm-rcpt-row > summary { display: grid; grid-template-columns: 104px minmax(0, 1fr) auto 16px; align-items: center; column-gap: 12px; min-height: 52px; padding: 8px 16px; cursor: pointer; list-style: none; transition: background-color var(--dur-hover) ease; }
+  .dm-rcpt-row > summary::-webkit-details-marker { display: none; }
+  .dm-rcpt-row > summary:hover { background: var(--wash); }
+  .dm-rcpt-row > summary:focus-visible { outline-offset: var(--focus-offset-inset); }
+  .dm-rcpt-chip { justify-self: start; white-space: nowrap; }
+  .dm-rcpt-what { min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  [data-execution-cancelled] .dm-rcpt-what { color: var(--fg-muted); }
+  .dm-rcpt-amount { min-width: 0; text-align: right; font-size: 14px; line-height: 20px; color: var(--fg); }
+  .dm-rcpt-chevron { grid-column: 4; color: var(--fg-subtle); transition: rotate var(--dur-fast) var(--ease-std); }
+  .dm-rcpt-row[open] .dm-rcpt-chevron { rotate: 180deg; }
+  .dm-rcpt-detail { display: grid; gap: 12px; padding: 4px 16px 16px; }
+  .dm-rcpt-note { max-width: 60ch; font-size: 13px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-rcpt-facts, .dm-rcpt-tech { display: grid; gap: 6px; margin: 0; }
+  :is(.dm-rcpt-facts, .dm-rcpt-tech) > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 16px; min-width: 0; }
+  :is(.dm-rcpt-facts, .dm-rcpt-tech) dt { font-size: 13px; line-height: 20px; color: var(--fg-muted); }
+  :is(.dm-rcpt-facts, .dm-rcpt-tech) dd { min-width: 0; margin: 0; text-align: right; font-size: 13px; line-height: 20px; color: var(--fg); }
+  .dm-rcpt-tech dd { display: flex; align-items: center; gap: 4px; }
+  .dm-rcpt-facts > [data-receipt-line="liquidityAddedRaw"] :is(dt, dd) { font-weight: 500; color: var(--fg); }
+  .dm-rcpt-tech { padding-top: 10px; box-shadow: inset 0 1px 0 var(--border); }
+  .dm-rcpt-tech :is(dt, dd) { font-size: 12px; line-height: 20px; color: var(--fg-subtle); }
+  .dm-rcpt-stop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+  .dm-rcpt-ids { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .dm-rcpt-ids > li { padding: 2px 8px; border-radius: var(--radius-sm); background: var(--surface-3); }
+  /* A narrow list (a phone, or the Receipts card beside Managed positions) puts what a row added under what it did. */
+  .dm-rcpt-list { container: dm-rcpt / inline-size; }
+  @container dm-rcpt (max-width: 560px) {
+    .dm-rcpt-row > summary { grid-template-columns: 92px minmax(0, 1fr) 16px; row-gap: 2px; padding: 10px 12px; }
+    .dm-rcpt-amount { grid-column: 2; grid-row: 2; text-align: left; font-size: 13px; color: var(--fg-muted); }
+    .dm-rcpt-chevron { grid-column: 3; grid-row: 1 / span 2; }
+    .dm-rcpt-detail { padding: 4px 12px 14px; }
+  }
+  @media (max-width: 479px) { .dm-mp-row { padding: 14px 12px; } }
 }

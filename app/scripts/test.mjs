@@ -43,6 +43,8 @@ execFileSync(
     'tests/wallet-positions.test.mjs',
     // 2026-09-24: a position's feature (plain, Auto-compound or Domino-compound) from chain, and the three features' words.
     'tests/automation-state.test.mjs',
+    // 2026-09-27: what the automation did for a position (its vault's executions and fees, and the card's figures).
+    'tests/automation-impact.test.mjs',
     'tests/release.test.mjs',
     'tests/session.api.test.mjs',
     'tests/session.siwe.test.mjs',
@@ -66,6 +68,10 @@ execFileSync(
     'tests/deposit-plan.test.mjs',
     'tests/sequence-options.test.mjs',
     'tests/row-apr.test.mjs',
+    // 2026-09-27: Your APR, one position's own fees as a yearly rate (src/lib/positionApr.ts).
+    'tests/position-apr.test.mjs',
+    // 2026-09-27: a position's Activity rows, and the automation's only where its vault's record names it.
+    'tests/position-activity.test.mjs',
     'tests/docs.test.mjs',
     'tests/price-series.test.mjs',
     'tests/pool-history.test.mjs',

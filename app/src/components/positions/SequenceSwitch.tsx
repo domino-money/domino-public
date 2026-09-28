@@ -272,9 +272,10 @@ export function SequenceSwitch({ tokenId, holder, liquid, fallback = null, signI
   }
   return (
     <>
+      {/* Turn on is the primary button on a position's page (2026-09-27: the one that offers sign-in), outlined elsewhere. */}
       <Button
         type="button"
-        variant="outline"
+        variant={signIn && action === 'turn-on' ? 'primary' : 'outline'}
         size={size}
         className="dm-auto-go dm-seq-switch"
         disabled={pressing}

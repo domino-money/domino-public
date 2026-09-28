@@ -144,6 +144,45 @@
   .dm-docs-term dt { font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
   .dm-docs-term dd { max-width: 68ch; margin: 2px 0 0; font-size: 14px; line-height: 21px; color: var(--fg-muted); text-wrap: pretty; }
 
+  /* ---- Pictures and drawings ------------------------------------------------------------------
+     A screen shot from the app's test view sits in a card's frame at the column's width, sized by its own
+     pixels (width and height on the img) so nothing moves when it loads. A drawing is shapes in tokens with
+     its words in HTML beside them. Each has one quiet line under it. */
+  .dm-docs-figure { margin: 20px 0 0; }
+  /* A picture is the screen on its own background, framed alike on every side (scripts/docs-shots.mjs): the card's
+     own lip and hairline draw its edge, over the picture (an inset shadow on the box itself would sit under it). */
+  .dm-docs-shot { position: relative; max-width: var(--dm-shot-w); overflow: hidden; border-radius: var(--radius-lg); background: var(--bg); }
+  .dm-docs-shot::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: var(--elev-card); pointer-events: none; }
+  .dm-docs-shot > picture { display: block; }
+  .dm-docs-shot img { display: block; width: 100%; height: auto; }
+  /* A phone gets the phone shot (the <source> under 640 px), at most half its pixels wide too. */
+  @media (max-width: 639px) { .dm-docs-shot { max-width: var(--dm-shot-phone-w, var(--dm-shot-w)); } }
+  .dm-docs-figure > figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; max-width: 68ch; margin-top: 10px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); text-wrap: pretty; }
+  .dm-docs-figure-tag { padding: 0 8px; border-radius: var(--radius-pill); background: var(--wash-strong); font-size: 12px; line-height: 18px; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-docs-diagram { padding: 20px; border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-docs-dg-svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .dm-docs-dg-band { fill: var(--band-fill); }
+  .dm-docs-dg-edge { stroke: var(--primary-line); stroke-width: 1.5; stroke-dasharray: 4 5; opacity: 0.7; }
+  .dm-docs-dg-out { fill: none; stroke: var(--fg-faint); stroke-width: 2.5; stroke-linecap: round; }
+  .dm-docs-dg-in { fill: none; stroke: var(--primary-line); stroke-width: 3; stroke-linecap: round; }
+  .dm-docs-dg-fee { fill: var(--money-in); }
+  .dm-docs-dg-pos { fill: var(--band-fill); stroke: var(--primary-line); stroke-width: 1.5; }
+  .dm-docs-dg-pos[data-next] { stroke-dasharray: 5 4; }
+  .dm-docs-dg-arrow { fill: none; stroke: var(--fg-muted); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .dm-docs-dg-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 16px 0 0; padding: 0; list-style: none; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+  .dm-docs-dg-legend > li { display: inline-flex; align-items: center; gap: 8px; }
+  .dm-docs-dg-key { flex-shrink: 0; width: 16px; height: 3px; border-radius: 2px; background: var(--primary-line); }
+  .dm-docs-dg-key[data-key="band"] { height: 12px; border-radius: 3px; background: var(--band-fill); box-shadow: inset 0 0 0 1px var(--primary-line); }
+  .dm-docs-dg-key[data-key="out"] { background: var(--fg-faint); }
+  .dm-docs-dg-key[data-key="fee"] { width: 8px; height: 8px; border-radius: 50%; background: var(--money-in); }
+  .dm-docs-dg-ways { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+  .dm-docs-dg-waycard { min-width: 0; padding: 14px 16px 16px; border-radius: var(--radius); background: var(--card); box-shadow: var(--elev-card); }
+  .dm-docs-dg-way { display: block; width: 100%; max-width: 200px; height: auto; margin: 0 auto 10px; }
+  .dm-docs-dg-name { font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-docs-dg-line { margin-top: 2px; font-size: 14px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-docs-dg-fee-line { margin-top: 8px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  @media (min-width: 640px) { .dm-docs-dg-ways { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
   /* ---- Previous and next -------------------------------------------------------------------- */
   .dm-docs-pager { display: grid; gap: 12px; margin-top: 64px; }
   .dm-docs-pager-link { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 16px 20px; color: var(--fg); text-decoration: none; transition: box-shadow var(--dur-hover) ease; }
@@ -192,6 +231,8 @@
     .dm-docs-lead { font-size: 15px; line-height: 22px; }
     .dm-docs-facts { padding: 4px 16px; }
     .dm-docs-step { gap: 12px; padding: 14px 8px; }
+    .dm-docs-diagram { padding: 16px 14px; }
+    .dm-docs-shot { border-radius: var(--radius); }
     .dm-docs-pager { margin-top: 48px; }
     .dm-docs-start { margin-top: 32px; }
     /* A start card becomes a row: the mark beside its title and line. */

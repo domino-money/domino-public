@@ -104,19 +104,21 @@ export function AutomationChip({ tokenId, listed }: { tokenId: string; listed: b
 export function AutomateEntry({ tokenId, open, variant = 'row' }: { tokenId: string; open: boolean; variant?: 'row' | 'action' }) {
   const view = useAutomation(open ? tokenId : null)
   if (!open) return null
-  const size = variant === 'row' ? 'sm' : 'md'
+  const row = variant === 'row'
+  // On a position's page (2026-09-27) the way on is an outlined button like the owner's own actions beside it.
+  const look = row ? 'ghost' : 'outline'
   const docs = switchOn(view)
   const go = offered(view) ? (
-    <LinkButton href={sequenceHref(tokenId)} variant="ghost" size={size} className="dm-auto-go" data-automate-entry={tokenId}>
+    <LinkButton href={sequenceHref(tokenId)} variant={look} size={row ? 'sm' : 'md'} className="dm-auto-go" data-automate-entry={tokenId}>
       <IconAutomate />
       Automate
     </LinkButton>
   ) : docs ? (
-    <LinkButton href={docs} variant="ghost" size={size} className="dm-auto-go" data-automate-docs={tokenId}>
+    <LinkButton href={docs} variant={look} size={row ? 'sm' : 'md'} className="dm-auto-go" data-automate-docs={tokenId}>
       How to switch it on
     </LinkButton>
   ) : null
-  if (variant === 'action') return go
+  if (!row) return go
   // A subscriber that is not Domino's: nothing to say and nothing to offer, so no line at all.
   if (view.phase === 'ready' && view.state.automation === 'other') return null
   const text = stateText(view)

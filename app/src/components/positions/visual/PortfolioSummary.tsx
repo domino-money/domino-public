@@ -2,7 +2,6 @@ import { LiveFigure, UsdText } from '../../figures'
 import { cx } from '../../ui'
 import type { PositionState } from '../../../lib/fees/types'
 import { formatUsd } from '../../../lib/format/usd'
-import { COPY } from '../../../lib/read/screens/copy'
 import type { LiveCard } from '../../../lib/walletCards'
 import { basisOf, positive, unitsText, usdgSide, valueOfRaw } from './value'
 
@@ -64,21 +63,22 @@ export function portfolioOf(open: readonly PortfolioRow[]): Portfolio {
 }
 
 /**
- * The portfolio band over Your positions' rows (§11.1-4): Principal, rolling
- * digits, over Unclaimed fees. Shown only when every open position is valued.
+ * The portfolio band over Your positions' rows (§11.1-4): their total value,
+ * rolling digits, over the fees ready to collect (2026-09-27: plain words, once
+ * Principal and Unclaimed fees). Shown only when every open position is valued.
  */
 export function PortfolioSummary({ principal, unclaimed, block }: { principal: bigint; unclaimed: bigint; block: number }) {
   const title = `Pool price at block ${block}`
   return (
     <div className="dm-portfolio dm-arrive">
       <div className="dm-portfolio-fig">
-        <span className="dm-portfolio-label">{COPY.card.principal}</span>
+        <span className="dm-portfolio-label">Total value</span>
         <span title={title}>
           <LiveFigure value={formatUsd(unitsText(principal))} mode="digits" dimCents className="dm-fig-hero" />
         </span>
       </div>
       <div className="dm-portfolio-fig">
-        <span className="dm-portfolio-label">Unclaimed fees</span>
+        <span className="dm-portfolio-label">Fees ready to collect</span>
         <UsdText value={unitsText(unclaimed)} block={block} className={cx('dm-fig-lg', positive(unclaimed) && 'dm-fees-in')} />
       </div>
     </div>

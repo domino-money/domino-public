@@ -1,27 +1,29 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 import { newPositionHref, poolHref, positionsHref } from '../components/explore/routes'
-import { IconChevronLeft, IconMarkets, IconPlus, IconSearch } from '../components/icons'
-import { Amount, PairName, PositionStatus, blockTitle } from '../components/positions/PositionFigures'
+import { IconChevronDown, IconChevronLeft, IconMarkets, IconPlus, IconSearch } from '../components/icons'
+import { PairName, PositionStatus } from '../components/positions/PositionFigures'
 import { AutomateEntry, AutomationChip, useListedPosition } from '../components/positions/AutomateEntry'
-import { Approx, PositionRange, chainCardPrice, type CardPrice } from '../components/positions/PositionRange'
+import { KeyFigures } from '../components/positions/KeyFigures'
+import { PositionActivity, useAutomaticAdds } from '../components/positions/PositionActivity'
+import { PositionRange, chainCardPrice } from '../components/positions/PositionRange'
 import { FeesCard } from '../components/positions/visual/FeesCard'
 import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
-import { PrincipalUsd, UnclaimedUsd } from '../components/positions/visual/PositionValue'
 import { PriceVsRange, usePriceSeries } from '../components/positions/visual/PriceVsRange'
 import { usdgSide } from '../components/positions/visual/value'
 import { TokenLabel } from '../components/read/TokenLabel'
 import { Address } from '../components/read/screens/Address'
 import { TokenMarkPair } from '../components/TokenIcon'
-import { Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, PageShell, Stat, StatStrip } from '../components/ui'
+import { Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, PageShell } from '../components/ui'
 import { chainState } from '../lib/fees/client'
 import { refreshFeeStates } from '../lib/fees/useFeeHistory'
 import type { StatePositionOk } from '../lib/fees/types'
+import { useAutomation } from '../lib/automationState'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import { NATIVE_CURRENCY } from '../lib/read/screens/identity'
 import { whenVisibleAfter } from '../lib/read/screens/quietRead'
-import { cardPoolUsableForDomino, type RangeEnd } from '../lib/read/screens/positions'
+import { cardPoolUsableForDomino } from '../lib/read/screens/positions'
 import type { TokenDisplay } from '../lib/read/types'
-import { positionOfState, walletCard, walletState, type CurrencyView, type LiveCard } from '../lib/walletCards'
+import { positionOfState, walletCard, walletState, type CurrencyView } from '../lib/walletCards'
 import { useWalletIdentity, walletKey } from '../lib/walletIdentity'
 
 /**
@@ -43,6 +45,8 @@ interface ActionsProps {
   tokens?: readonly [TokenDisplay, TokenDisplay] | null
   /** The page's way on (Automate, or the docs on switching a sequence on), shown first unless Turn on or Pause takes its place (2026-09-25). */
   automate?: ReactNode
+  /** Collect fees is the primary button (2026-09-27: not for one of Domino's sequences). */
+  primary?: boolean
 }
 
 // The owner's Collect fees and Close position, in builds that carry the wallet
@@ -96,9 +100,6 @@ const REFRESH_FAILED_MS = [60_000, 120_000] as const
 /** A token as the actions take it: its address and what the chain said about it. */
 const currency = (token: TokenDisplay): CurrencyView => ({ address: token.address, symbol: token.symbol, decimals: token.decimals })
 
-/** A range end in the stat strip: its price, 0 or ∞ at the pool's limits, or its tick when no price can be written. */
-const endText = (end: RangeEnd, tick: number) => (end.kind === 'tick' ? `Tick ${tick}` : end.text)
-
 /** The way back to the list. */
 function Back() {
   return (
@@ -109,34 +110,12 @@ function Back() {
   )
 }
 
-/** The pool's price, as the stat strip writes it; a dash whose reason is its title otherwise. */
-function CurrentPrice({ price, card }: { price: CardPrice; card: LiveCard }) {
-  const [base, quote] = card.currencies
-  const { state } = price
-  if (state.phase === 'ready' && state.price.state === 'usable') {
-    return (
-      <span data-current-price="usable" title={`Pool price at block ${state.price.block}`}>
-        <Approx text={state.price.text} />{' '}
-        <span className="dm-pos-unit">
-          <TokenLabel token={quote} /> per <TokenLabel token={base} />
-        </span>
-      </span>
-    )
-  }
-  const code = state.phase === 'ready' ? state.price.state : state.phase === 'failed' ? state.code : state.phase
-  return (
-    <span className="text-fg-subtle" title="The pool’s price could not be written with this position’s tokens." data-current-price={code}>
-      —
-    </span>
-  )
-}
-
 /**
- * One position NFT, read from chain: its pair and state, its principal and
- * unclaimed fees, the pool's price against its range, and every fact behind
- * them. The owner, connected on Robinhood Chain, also gets Collect fees and
- * Close position in the title row; anyone else reads the same page with no
- * action on it. Every figure is from one chain read, at its block (the strip's title).
+ * One position NFT, read from chain, for someone who may know nothing of pools (the owner, 2026-09-27): its pair and
+ * state, then its key figures (what it is worth now, the fees ready to collect, Your APR and the price against its
+ * range), Fees earned, Price range, Activity and, closed until opened, the technical Details. The owner, connected on
+ * Robinhood Chain, also gets Collect fees and Close position in the title row; anyone else reads the same page with
+ * no action on it. Every figure but the fees history's is from one chain read, at its block (the figures' title).
  */
 function LiveDetail({ position, block, changes, onChanged }: { position: StatePositionOk; block: number; changes: number; onChanged: () => void }) {
   const wallet = useMemo(() => positionOfState(position), [position])
@@ -146,7 +125,7 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
   const price = chainCardPrice(card, { sqrtPriceX96: wallet.sqrtPriceX96, tick: wallet.tick, block })
   const [base, quote] = card.currencies
   const token = base.address === NATIVE_CURRENCY ? quote.address : base.address
-  const { ends, tickLower, tickUpper } = card.range
+  const { tickLower, tickUpper } = card.range
   // The owner's actions, chunk and all, only for the NFT's owner at the read's block, connected on Robinhood Chain:
   // any other visitor downloads nothing of them. PositionActions checks the owner again on chain before anything is sent.
   const identity = useWalletIdentity()
@@ -159,6 +138,9 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
   const usdgIndex = state ? usdgSide(state.currencies) : null
   const series = usePriceSeries(card.tokenId)
   const phone = useMediaQuery('(max-width: 767px)')
+  const automation = useAutomation(card.tokenId)
+  // What the automation put back, from its vault's own record: the only rows of Activity that name it (2026-09-27).
+  const automatic = useAutomaticAdds(card.tokenId, automation)
   // The way on: Automate, or the docs on switching a sequence on. The owner's actions show it first, unless a
   // sequence's Turn on or Pause takes its place (2026-09-25), and it stands alone while their chunk loads.
   const entry = <AutomateEntry tokenId={card.tokenId} open={automatable} variant="action" />
@@ -172,9 +154,10 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
               <PairName card={card} />
             </Display>
             <div className="dm-pos-chips">
+              {/* "fee" after the pool's fee tier (2026-09-27): beside Your APR, a bare percentage would read as a yield. */}
               <Chip>
                 <span>
-                  Uniswap · <span data-fee="">{card.fee}</span> · #<span translate="no">{card.tokenId}</span>
+                  Uniswap · <span data-fee="">{card.fee}</span> fee · #<span translate="no">{card.tokenId}</span>
                 </span>
               </Chip>
               <PositionStatus card={card} />
@@ -196,46 +179,17 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
                 usd={state && usdgIndex !== null ? { usdgIndex, sqrtPriceX96: state.sqrtPriceX96, block: state.block } : null}
                 tokens={[base, quote]}
                 automate={entry}
+                primary={!(automation.phase === 'ready' && 'paused' in automation.state)}
               />
             </Suspense>
           </div>
         )}
       </div>
 
-      <StatStrip layout="tiles" className="dm-pos-stats" title={blockTitle(block)} data-position-stats="" data-valued={state && usdgIndex !== null ? '' : undefined}>
-        <Stat label="Principal" className="dm-pos-stat" data-cell="principal" sub={<PrincipalUsd card={card} state={state} />}>
-          <span className="dm-pos-amounts" data-stat="principal">
-            <Amount amount={card.principal[0]} />
-            <Amount amount={card.principal[1]} />
-          </span>
-        </Stat>
-        <Stat label="Unclaimed fees" className="dm-pos-stat" data-cell="fees" sub={<UnclaimedUsd card={card} state={state} />}>
-          <span className="dm-pos-amounts" data-stat="fees">
-            <Amount amount={card.unsettledFees[0]} />
-            <Amount amount={card.unsettledFees[1]} />
-          </span>
-        </Stat>
-        <Stat label="Current price" className="dm-pos-stat" data-cell="price">
-          <span className="dm-pos-figure" data-stat="price">
-            <CurrentPrice price={price} card={card} />
-          </span>
-        </Stat>
-        <Stat label="Range" className="dm-pos-stat" data-cell="range">
-          {/* Each end keeps its line, and the dash travels with the upper end: a narrow cell breaks before the dash, never
-              after it. The text is unchanged (`≈350.06 – ≈2,249.83`): the space before the dash stays outside the runs. */}
-          <span className="dm-pos-figure" data-stat="range" data-full-range={card.range.fullRange ? '' : undefined}>
-            <span className="dm-pos-run">
-              <Approx text={endText(ends.lower, tickLower)} />
-            </span>{' '}
-            <span className="dm-pos-run">
-              <span className="dm-pos-dash">– </span>
-              <Approx text={endText(ends.upper, tickUpper)} />
-            </span>
-          </span>
-        </Stat>
-      </StatStrip>
+      <KeyFigures card={card} state={state && usdgIndex !== null ? state : null} price={price} block={block} />
 
-      <FeesCard kind="plain" source={{ tokenId: card.tokenId }} bandPresent quoteIndex={1} tokens={[base, quote]} />
+      {/* The fees card's own settlements move to Activity, after Price range (2026-09-27). */}
+      <FeesCard kind="plain" source={{ tokenId: card.tokenId }} bandPresent quoteIndex={1} tokens={[base, quote]} activity={false} />
 
       <div className="dm-pos-grid" data-has-price-chart={series ? '' : undefined}>
         <section className="dm-card dm-pos-card" aria-labelledby="position-range-title">
@@ -263,10 +217,15 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
           />
         </section>
 
-        <section className="dm-card dm-pos-card dm-pos-details" aria-labelledby="position-facts-title">
-          <h2 id="position-facts-title" className="dm-title">
-            Details
-          </h2>
+        <PositionActivity tokenId={card.tokenId} automatic={automatic} />
+
+        {/* Everything technical, at the end and closed until asked for (the owner, 2026-09-27): the main page stays practical. */}
+        <details className="dm-card dm-pos-details" data-position-details="">
+          <summary className="dm-pos-details-head">
+            <h2 className="dm-title">Details</h2>
+            <span className="dm-pos-details-hint">Contract data for this position</span>
+            <IconChevronDown size={16} />
+          </summary>
           <KeyValueList className="dm-pos-facts">
             <KeyValue label="NFT id">
               <Address value={card.tokenId} />
@@ -311,7 +270,7 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
               </LinkButton>
             )}
           </div>
-        </section>
+        </details>
       </div>
     </div>
   )

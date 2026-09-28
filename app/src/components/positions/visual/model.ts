@@ -71,10 +71,10 @@ export interface FeesPeriodView {
   /** Cumulative earned value at the period's start, and at its end. */
   base: bigint
   last: bigint
-  /** The hourly cumulative line, from (start, base). */
-  points: ReadonlyArray<{ t: number; v: number }>
+  /** The hourly cumulative line, from (start, base): `v` everything earned, `c` the part of it collected by then (2026-09-27). */
+  points: ReadonlyArray<{ t: number; v: number; c: number }>
   buckets: ReadonlyArray<FeesBucket>
-  events: ReadonlyArray<{ t: number; v: number; kind: FeesEvent['kind'] }>
+  events: ReadonlyArray<{ t: number; v: number; kind: FeesEvent['kind']; tx: string }>
   strip: ReadonlyArray<{ t0: number; t1: number; inRange: boolean }>
 }
 
@@ -281,13 +281,16 @@ export function periodView(view: FeesView, period: FeesPeriod): FeesPeriodView {
   }
   if (buckets.length > 0) buckets[0] = { ...buckets[0], start: Math.max(buckets[0].start, start) }
 
-  const points = [{ t: start, v: unitsNumber(base) }, ...inPeriod.map((hour) => ({ t: hour.t, v: unitsNumber(hour.earned) }))]
+  const points = [
+    { t: start, v: unitsNumber(base), c: unitsNumber(baseHour?.collected ?? 0n) },
+    ...inPeriod.map((hour) => ({ t: hour.t, v: unitsNumber(hour.earned), c: unitsNumber(hour.collected) })),
+  ]
   const events = view.events
     .filter((event) => event.timestamp >= start && event.timestamp <= end)
     .map((event) => {
       // On the line where it happened: the cumulative value at the end of the hour that holds it.
       const hour = inPeriod.find((candidate) => candidate.t >= event.timestamp)
-      return { t: event.timestamp, v: unitsNumber(event.kind === 'mint' ? base : (hour?.earned ?? last)), kind: event.kind }
+      return { t: event.timestamp, v: unitsNumber(event.kind === 'mint' ? base : (hour?.earned ?? last)), kind: event.kind, tx: event.tx }
     })
     .reverse()
 

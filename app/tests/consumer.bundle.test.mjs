@@ -113,8 +113,11 @@ function productionClosures() {
   // joined the worker: 20,180 B measured on Windows, both builds alike; it was 15,029 B).
   // 2026-09-25, r4/fees after its review: 20,600 B, the same ceiling as tests/session.bundle.test.mjs (20,523 B measured
   // on Windows, both builds alike; 77 B left for a Linux build, which CI measures).
+  // 2026-09-27, r5/feesfast (the owner: the Fees earned chart took far too long): 21,400 B, the same ceiling as
+  // tests/session.bundle.test.mjs (a young position's price path with its settlements scan: 21,309 B measured on
+  // Windows, both builds alike; it was 20,561 B at main 4f66233).
   const workers = scripts.filter((file) => /^feesReplay\.worker-/.test(file));
-  for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 20_600, `${file} is over its 20,600 B gzip ceiling`);
+  for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 21_400, `${file} is over its 21,400 B gzip ceiling`);
   // 2026-09-25: the chain code the page runs (src/lib/chain/chainCode.ts: the routes' scan and relay reads, the RPC runtime,
   // Keccak), one chunk loaded by dynamic import on a page's first read of the chain, is an admitted root of its own
   // (tests/session.bundle.test.mjs measures it, with its own ceiling).

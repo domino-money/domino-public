@@ -1,4 +1,4 @@
-import { b, doc, list, note, p } from '../blocks'
+import { b, doc, list, note, p, shot } from '../blocks'
 import type { DocPage } from '../types'
 
 /**
@@ -16,15 +16,23 @@ const SERVICE_SCOPE = note(
 export const AUTO_COMPOUND: DocPage = {
   slug: 'auto-compound',
   title: 'Auto-compound',
-  summary: 'Adds a position’s earned fees back into the same position, and nothing else.',
+  summary: 'Adds a position’s earned fees back into the same position, so it grows, and nothing else.',
   status: 'Compound',
   sections: [
     {
       id: 'how-it-works',
       title: 'How it works',
       blocks: [
-        p('Auto-compound adds a position’s earned fees back into the same position. The range stays as it is, and the fees become more liquidity inside it.'),
-        p('It uses proven earned fees only. No wallet asset is pulled and no principal is sold.'),
+        // 2026-09-27: what it never touches is the list under What it cannot do, so it is not said twice.
+        p('Auto-compound collects the fees your position has earned and adds them back into the same position. The range stays as it is; the position holds more, so its share of each trade’s fee grows while in range.'),
+      ],
+    },
+    {
+      // 2026-09-27 (the owner's point 10): what Auto-compound did is on the position's own page, read from the chain.
+      id: 'what-it-did',
+      title: 'See what it did',
+      blocks: [
+        p('A position’s page shows, with no sign-in, how much Auto-compound added back and how many times, and marks each time on its Fees earned chart. See ', doc('A position’s page', 'positions', 'position-details'), '.'),
       ],
     },
     {
@@ -46,13 +54,18 @@ export const AUTO_COMPOUND: DocPage = {
     {
       id: 'service-fee',
       title: 'Service fee',
-      blocks: [p('2% of the earned fees it consumes, taken once. Only the root position is used, with a position cap of one and no successors. Never on principal, and earned fees that wait are not charged. See ', doc('Fees', 'fees', 'service-fee'), '.')],
+      // 2026-09-27 (review of 260a76a): 2 is 2% of the 100 used, not of the 98 put back (FeeAccounting.sol).
+      blocks: [p('2% of the earned fees it uses, taken once: of 100 USDG of fees it uses, 2 go to the service fee and 98 back into your position. It works on that one position only. Never on principal, and earned fees that wait are not charged. See ', doc('Fees', 'fees', 'service-fee'), '.')],
     },
     {
       id: 'where-it-starts',
       title: 'Where it starts',
       blocks: [
+        shot('automate', 'Auto-compound on Automate, with its set-up button.'),
         p('Auto-compound runs on a position NFT you opened with Domino and still hold. Setup takes two wallet transactions: approve that one NFT to its sequence vault, then create the sequence, which starts paused. Activation is a separate wallet transaction when the service is ready for your sequence.'),
+        // 2026-09-27: Automate has offered Set up Auto-compound since the three features joined up (2026-09-24), and a plain
+        // position's row offers Automate; the page now says where it starts.
+        p('On Automate, ', b('Set up Auto-compound'), ' opens the setup: choose the position, then one button asks your wallet for both transactions. ', b('Automate'), ' on a plain position in Positions opens it with that position chosen.'),
         SERVICE_SCOPE,
         p(
           'Custody is the same as for Domino Compounder: the NFT stays in your wallet, and ',
@@ -61,7 +74,7 @@ export const AUTO_COMPOUND: DocPage = {
           doc('pause, revoke and withdraw', 'non-custodial', 'pause-revoke-withdraw'),
           ' with your wallet.',
         ),
-        p('Changes made to that NFT outside Domino can stop it: see ', doc('Risks', 'risks', 'automation-stops'), '.'),
+        p('Changes made to that NFT outside Domino can stop it, and so do Collect fees and Close position on its page: see ', doc('Risks', 'risks', 'automation-stops'), '.'),
       ],
     },
   ],
@@ -78,8 +91,8 @@ export const DOMINO_COMPOUNDER: DocPage = {
       title: 'How it works',
       blocks: [
         p('Domino Compounder puts earned fees to work higher up the price. In the app you choose it as ', b('Domino-compound'), '.'),
-        p('Fees normally return to the position that earned them. Near the top of its range, they can instead open the next position one step higher in the same pool, or fund the one it already opened.'),
-        p('A next position is funded only from earned fees inside your sequence vault, after the service fee. Automation never moves your principal, and when an action is not justified, it waits with a reason.'),
+        p('Fees normally go back into the position that earned them. When the price nears the top of its range, they can instead open the next position one step higher in the same pool, or add to the one it already opened.'),
+        p('A next position is funded only from earned fees inside your sequence vault, after the service fee. Automation never moves your principal; when a step is not justified, it waits.'),
       ],
     },
     {
@@ -89,21 +102,13 @@ export const DOMINO_COMPOUNDER: DocPage = {
         {
           kind: 'facts',
           rows: [
-            {
-              label: 'Trigger distance',
-              value: 'Up to 20%',
-              note: 'How near its range’s ceiling the price must be: a 5% trigger means the price at 95% of the ceiling.',
-            },
-            {
-              label: 'Maximum overlap',
-              value: 'Up to 20%',
-              note: 'How far below the previous ceiling the next position’s floor may start. With a ceiling of 1 and 20% overlap, the floor cannot be below 0.80.',
-            },
-            { label: 'Upside', value: 'You set it; the app draws the next range at 50%', note: 'The next position’s ceiling sits at least this far above the previous ceiling.' },
+            { label: 'Trigger distance', value: 'Up to 20%', note: 'How near the top of its range the price must be: 5% means the price is at 95% of the top.' },
+            { label: 'Maximum overlap', value: 'Up to 20%', note: 'How far below the previous top the next position may start: with a top of 1 and 20%, no lower than 0.80.' },
+            { label: 'Upside', value: 'You set it; the app draws the next range at 50%', note: 'How far above the previous top the next position’s top sits, at least.' },
             { label: 'Positions', value: 'A cap you set', note: 'Counts the position it starts from. At the cap, fees fund an existing position or wait.' },
           ],
         },
-        p('Each position opens at most one next position. A trigger only makes a step eligible to be evaluated; it never orders one.'),
+        p('Each position opens at most one next position. A trigger only lets a step be considered; it never orders one.'),
       ],
     },
     {
@@ -131,7 +136,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
           b('Set up Domino-compound'),
           ' opens the setup, where one button asks your wallet for both transactions. You ',
           doc('pause, revoke and withdraw', 'non-custodial', 'pause-revoke-withdraw'),
-          ' with your wallet on your sequence vault. Changes made outside Domino stop automation too: see ',
+          ' with your wallet on your sequence vault. Collect fees, Close position and changes made outside Domino stop it too: see ',
           doc('Risks', 'risks', 'automation-stops'),
           '.',
         ),
@@ -142,7 +147,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
       id: 'service-fee',
       title: 'Service fee',
       blocks: [
-        p('4% of the earned fees consumed, once, for every Domino recipe, including reinvestment into the source. No extra swap fee for the automation’s own balancing, and no Domino service fee on withdrawals. See ', doc('Fees', 'fees', 'service-fee'), '.'),
+        p('4% of the earned fees it uses, once, for every recipe, including putting fees back into the same position. No extra fee for its own balancing swaps, and none on withdrawals. See ', doc('Fees', 'fees', 'service-fee'), '.'),
       ],
     },
   ],

@@ -432,9 +432,16 @@ export async function paced<T>(rt: FeesRuntime, budget: Budget, ask: () => Promi
 const call = (rt: FeesRuntime, budget: Budget, method: string, params: unknown[], byteLimit?: number) =>
   paced(rt, budget, async () => resultOf(await post(rt, budget, { jsonrpc: '2.0', id: budget.calls + 1, method, params }, method === 'eth_getLogs', byteLimit)))
 
+/**
+ * The head, read at most once a second; 2026-09-27: a request that names the blocks it reads up to (`atLeast` > 0: a
+ * replay's pool epochs, swap days, probes, headers and Swap before its mint, all up to its state block) is served by any
+ * head this context has read at or past them, however old, as feesPath.ts's reads are: the head only grows, and an older
+ * one only says less is final. The replay worker asked one eth_blockNumber before most of its requests (six of 27 in the
+ * owner's USDG/UFG history, a round trip and a turn in its lane each, measured live that day).
+ */
 export async function headBlock(rt: FeesRuntime, budget: Budget, atLeast: number): Promise<number> {
   const now = rt.deps.now()
-  if (lastHead && now >= lastHead.at && now - lastHead.at < 1000 && lastHead.block >= atLeast) return lastHead.block
+  if (lastHead && lastHead.block >= atLeast && (atLeast > 0 || (now >= lastHead.at && now - lastHead.at < 1000))) return lastHead.block
   const block = quantity(await call(rt, budget, 'eth_blockNumber', []))
   lastHead = { block, at: now }
   return block
@@ -529,7 +536,7 @@ export function compact(raw: unknown, filter: LogFilter, from: number, to: numbe
 const byPosition = (a: CompactLog, b: CompactLog) => a[0] - b[0] || a[1] - b[1]
 
 /** The kinds the relay answers: every LogsRequest but the price path's (2026-09-25, feesPath.ts, the replay worker's own). */
-export type RelayRequest = Exclude<LogsRequest, { kind: 'span' | 'settlements' }>
+export type RelayRequest = Exclude<LogsRequest, { kind: 'span' | 'settlements' | 'modifies' }>
 
 /**
  * eth_getLogs over [from, to], validated and compacted, in chain order. A
@@ -614,9 +621,10 @@ export const poolIdOk = (value: unknown): value is string => typeof value === 's
 export function logsRequestOf(body: Record<string, unknown>): RelayRequest | null {
   switch (body.kind) {
     case 'transfer': {
-      if (!keysAre(body, ['kind', 'tokenId'], ['since']) || !tokenIdOk(body.tokenId)) return null
-      if (body.since === undefined) return { kind: 'transfer', tokenId: body.tokenId }
-      return blockNumber(body.since) ? { kind: 'transfer', tokenId: body.tokenId, since: body.since } : null
+      // 2026-09-27: `until` too, a window [since, until] never backwards.
+      const { since, until } = body
+      if (!keysAre(body, ['kind', 'tokenId'], ['since', 'until']) || !tokenIdOk(body.tokenId) || [since, until].some((block) => block !== undefined && !blockNumber(block)) || (until as number) < (since as number)) return null
+      return { kind: 'transfer', tokenId: body.tokenId, ...(since === undefined ? {} : { since: since as number }), ...(until === undefined ? {} : { until: until as number }) }
     }
     case 'initialize':
       return keysAre(body, ['kind', 'poolId']) && poolIdOk(body.poolId) ? { kind: 'initialize', poolId: body.poolId } : null
@@ -1012,7 +1020,9 @@ const toUnit = (unit: number | null, logs: KeptUnit): LogsUnit => ({ unit, from:
 /** The answer to one LogsRequest. */
 async function readLogs(rt: FeesRuntime, budget: Budget, origin: string, asked: RelayRequest): Promise<LogsResponse> {
   const until = 'until' in asked && asked.until !== undefined ? asked.until : null
-  const head = await headBlock(rt, budget, until ?? 0)
+  // The last block the request names (2026-09-27): a head read at or past it serves (headBlock).
+  const named = asked.kind === 'probe' ? asked.to : asked.kind === 'headers' ? Math.max(0, ...asked.blocks) : asked.kind === 'swapBefore' ? asked.block : (until ?? 0)
+  const head = await headBlock(rt, budget, named)
   const behind: LogsResponse = { v: 1, kind: asked.kind, behind: true }
   if (until !== null && head < until) return behind
   const top = until === null ? head : until
@@ -1022,9 +1032,10 @@ async function readLogs(rt: FeesRuntime, budget: Budget, origin: string, asked: 
       // From `since` when asked (2026-09-25: a replay looks for a mint only as far back as one that can still verify; the
       // whole chain was a scan of 72 million blocks, up to 1.2 s measured that day, after which the RPC refuses the
       // visitor's next reads), else from the first Transfer ever.
-      const from = Math.max(FIRST_TRANSFER_BLOCK, asked.since ?? 0)
+      // 2026-09-27: to `until` when asked (`top`), else to the head.
+      const from = Math.min(top, Math.max(FIRST_TRANSFER_BLOCK, asked.since ?? 0))
       const spec = { url: cacheUrl(origin, 'transfer', asked.tokenId, asked.since === undefined ? 0 : from), from, to: Number.MAX_SAFE_INTEGER }
-      const unit = await unitLogs(rt, head, spec, head, () => rangeLogs(rt, budget, filter, from, head))
+      const unit = await unitLogs(rt, head, spec, top, () => rangeLogs(rt, budget, filter, from, top))
       return { v: 1, kind: 'transfer', head, units: [toUnit(null, unit)], next: null }
     }
     case 'initialize': {

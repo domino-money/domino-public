@@ -50,7 +50,8 @@ export async function logsWith(code: ChainCode, cache: FeesCache, request: LogsR
       if (spent()) return TIME_SPENT
       if (lane && (signal?.aborted || lane.resting())) return UNAVAILABLE
       const deps = lane ? lane.deps(signal, options.until) : code.chainDeps(signal)
-      const path = request.kind === 'span' || request.kind === 'settlements' ? request : null
+      // The worker's own kinds (feesPath.ts): span and modifies (both name spans), and settlements.
+      const path = 'spans' in request || request.kind === 'settlements' ? request : null
       if (path && !code.pathLogsOnChain) return UNAVAILABLE
       const raw = path && code.pathLogsOnChain ? await code.pathLogsOnChain({ deps, cache }, path) : await code.logsOnChain({ deps, cache }, KEY_ORIGIN, request)
       const answer = checked(raw, (value): value is LogsResponse => isLogsResponse(value, request.kind))

@@ -30,9 +30,8 @@
 
   /* ---- A position's page: its feature beside its range status --------------------------------------------- */
   .dm-auto-pill[data-automation="plain"] { color: var(--fg-muted); }
-  /* Its Automate stands before the owner's Collect fees and Close position. On a phone those two take the full width and
-     Automate stays the quiet one (review of 2026-09-24): a ghost link on its own line under them, never a third big button. */
-  @media (max-width: 767px) { .dm-pos-actions > .dm-auto-go { order: 1; height: 40px; margin-inline: auto; } }
+  /* Its Automate stands before the owner's Collect fees and Close position. On a phone those two share a row and Automate
+     takes one of its own under them (2026-09-27, Domino's buttons: positions.css, the owner's actions). */
   /* A sequence's Turn on or Pause (2026-09-25) takes that place, and what its press says stands on a line of its own
      after the buttons. The line takes the row's width without widening it (inline-size containment). */
   .dm-seq-switch-note { order: 2; flex-basis: 100%; contain: inline-size; margin: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }

@@ -13,6 +13,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { PATH_CASES, loadPath, pathRelay, pathState } from './support/fees/path-fixture.mjs';
 import { addressTopic, fakeChain, fees, owned, rpcLog, word } from './support/fees/fake-chain.mjs';
+import { fixtureRelay, loadCase, quietProbes, stateOfCase } from './support/fees/relay-fixture.mjs';
 
 const require = createRequire(import.meta.url);
 const { runPipeline } = require('../.test-build/app/src/lib/fees/pipeline.js');
@@ -103,6 +104,65 @@ test('NFT 3203538 (USDG/DELTA): the probe chooses the price path, its life is re
   assert.deepEqual(settle.holders, ['0xf6184f814543b88dd867c34ce6e9f56ab7d18c0a'], 'its owner, from its Transfers');
   assert.equal(settle.from, fixture.positions['3203538'].mintBlock);
   assert.equal(result.checkpoint !== null, true, 'a verified path keeps its place');
+});
+
+// 2026-09-27 (the owner: the Fees earned chart took far too long): his Auto-compound position 3325113, USDG/UFG 4 %, a
+// day old, recorded read-only that day (tests/support/fees/3325113.json.gz, its exact history's every relay unit). Its
+// pool's liquidity looked quiet in every sample, so the exact replay read the pool's whole history first: 866 kB of the
+// RPC's JSON at the paced lane's 96 kB/s, 12.9 s to a verified chart live. Young in a pool whose Swaps the probe saw, it
+// now takes the price path of its own life. Its five settlements paid no owner (a compound collects and adds back inside
+// the PoolManager; the chain answered the settlements read with the mint alone, live), so the path looks for them among
+// the PositionManager's ModifyLiquidity over its life, and lands on the exact replay's figures.
+test('NFT 3325113 (the owner’s Auto-compound, a day old): its own life on the price path, its settlements found among the pool’s ModifyLiquidity though none paid its owner, a seventh of the exact replay’s bytes', async (t) => {
+  const fixture = loadCase('3325113');
+  const position = fixture.state.positions[0];
+  const { state, growth } = stateOfCase(fixture);
+  const run = { id: '3325113', state: { ...state, protocolFee: position.protocolFee }, growth, budgetBytes: PAGE, checkpoint: null };
+  // As the chain answered it live: no payment between the PoolManager and its owner, so the mint alone (its own block).
+  const mintOnly = async (request) => {
+    const all = await fixtureRelay(fixture).logs(request);
+    const unit = all.value.units[0];
+    return { ...all, value: { ...all.value, units: [{ ...unit, logs: unit.logs.filter((log) => log[0] === request.from) }] } };
+  };
+  const counted = (relay) => {
+    const out = { bytes: 0, logs: async (request) => { const answer = await relay.logs(request); if (answer.ok) out.bytes += answer.bytes; return answer; } };
+    return out;
+  };
+  const relay = fixtureRelay(fixture, { script: { settlements: [mintOnly] } });
+  const path = counted(relay);
+  const result = await runPipeline({ logs: path.logs, ...quiet }, run);
+  assert.equal(result?.ok, true, result?.reason);
+  const kinds = relay.requests.map((request) => request.kind);
+  assert.deepEqual(kinds, ['transfer', 'initialize', 'probe', 'probe', 'probe', 'headers', 'settlements', 'modifies', 'swapBefore', 'span', 'span']);
+  assert.ok(relay.requests.filter((request) => request.kind === 'probe').every((probe) => probe.to - probe.from + 1 <= 25_200 && probe.to > state.block - 36_000), 'the pool’s last hour only: it showed Swaps, and a young position’s path needs no more');
+  const { history } = result;
+  // Every settlement the exact replay found, in its block, and what each collected to the path's rounding.
+  assert.deepEqual(history.events.map((event) => [event.kind, event.block]), fixture.expect.events.map(([kind, block]) => [kind, block]));
+  const close = (a, b) => (a > b ? a - b : b - a) * 1_000_000n <= (b > 0n ? b : 1n);
+  history.events.forEach((event, i) => {
+    for (const side of [0, 1]) assert.ok(close(event.fees[side], BigInt(fixture.expect.events[i][3][side])), `${event.kind} at ${event.block}, token ${side}: ${event.fees[side]} against ${fixture.expect.events[i][3][side]}`);
+  });
+  for (const side of [0, 1]) {
+    assert.ok(close(history.collected[side], BigInt(fixture.expect.collected[side])), `collected ${side}`);
+    assert.equal(history.earned[side] - history.collected[side], state.unclaimed[side], 'the chain’s unclaimed fees, exactly, at the end');
+  }
+  assert.equal(history.near, true, 'what each settlement collected is the path’s own figure (“≈” on screen)');
+  monotonic(history, '3325113');
+  // The same history by the exact replay of its pool's history (a probe that saw no Swap): bit for bit, and seven times the bytes.
+  const exactRelay = fixtureRelay(fixture, { script: { probe: quietProbes(fixture) } });
+  const exact = counted(exactRelay);
+  const whole = await runPipeline({ logs: exact.logs, ...quiet }, run);
+  assert.equal(whole?.ok, true, whole?.reason);
+  assert.deepEqual(whole.history.collected.map(String), fixture.expect.collected);
+  assert.deepEqual(whole.history.earned.map(String), fixture.expect.earned);
+  assert.ok(exactRelay.requests.some((request) => request.kind === 'pool'));
+  assert.ok(path.bytes * 5 < exact.bytes, `the path read ${path.bytes} B, the exact replay ${exact.bytes} B`);
+  t.diagnostic(`3325113: the path ${relay.requests.length} requests, ${path.bytes} B; the exact replay ${exactRelay.requests.length} requests, ${exact.bytes} B`);
+  // The next state block's run goes on from the checkpoint, and looks for new settlements where these were found.
+  const later = fixtureRelay(fixture);
+  const next = await runPipeline({ logs: later.logs, ...quiet }, { ...run, state: { ...run.state, block: state.block + 60, timestamp: state.timestamp + 6 }, checkpoint: result.checkpoint });
+  assert.equal(next?.ok, true, next?.reason);
+  assert.ok(later.requests.some((request) => request.kind === 'modifies') && !later.requests.some((request) => request.kind === 'settlements' || request.kind === 'transfer' || request.kind === 'probe'), later.requests.map((request) => request.kind).join(', '));
 });
 
 for (const id of ['3202568', '3204536']) {
@@ -415,9 +475,24 @@ test('path requests are exact: spans sorted, disjoint and at most a day, at most
     { ...settle, to: 100 + feesPath.SETTLE_SPAN },
     { ...settle, tokenId: '01' },
   ]) assert.equal(feesPath.pathRequestOf(body), null, JSON.stringify(body).slice(0, 100));
-  // The relay's routes answer neither kind.
+  // 2026-09-27: modifies, the NFT's own settlements among the PositionManager's ModifyLiquidity: a token id and spans as a
+  // span request's.
+  const scan = { kind: 'modifies', poolId: POOL, tokenId: '3325113', spans: [[10, 20], [30, 40]] };
+  assert.deepEqual(feesPath.pathRequestOf(scan), scan);
+  for (const body of [
+    { ...scan, spans: [] },
+    { ...scan, spans: [[30, 40], [10, 20]] },
+    { ...scan, spans: [[0, feesPath.SPAN_BLOCKS]] },
+    { ...scan, spans: Array.from({ length: 17 }, (_, i) => [i * 10, i * 10 + 1]) },
+    { ...scan, tokenId: '01' },
+    { ...scan, tokenId: 3325113 },
+    { ...scan, holders: [OWNER] },
+    { kind: 'modifies', poolId: POOL, spans: [[10, 20]] },
+  ]) assert.equal(feesPath.pathRequestOf(body), null, JSON.stringify(body).slice(0, 100));
+  // The relay's routes answer none of the three kinds.
   assert.equal(fees.logsRequestOf(ok), null);
   assert.equal(fees.logsRequestOf(settle), null);
+  assert.equal(fees.logsRequestOf(scan), null);
 });
 
 test('span: the pool’s Swaps and Donates in each span, one batch; a reply past SPAN_BYTES is too large', async () => {
@@ -432,6 +507,25 @@ test('span: the pool’s Swaps and Donates in each span, one batch; a reply past
   const big = fakeChain({ head: 1_000_000, logs: Array.from({ length: 900 }, (_, i) => swap(100 + i)) });
   const refused = await feesPath.pathLogsOnChain({ deps: big.deps, cache: null }, { kind: 'span', poolId: POOL, spans: [[100, 1_100]] });
   assert.deepEqual(refused, { ok: false, failure: 'too_large', retryAfterMs: 0 });
+});
+
+// 2026-09-27: the owner's Auto-compound settlements pay no owner (its compounds collect and add back inside the
+// PoolManager): the scan finds them among every ModifyLiquidity the PositionManager made in the pool, one batch of spans.
+test('modifies: the NFT’s own ModifyLiquidity among the PositionManager’s in the pool, each span in one batch; a reply past MODIFIES_BYTES is too large', async () => {
+  const pm = addressTopic(owned.POSITION_MANAGER);
+  const modify = (block, salt, index = 0, sender = pm) => rpcLog({ topics: [fees.TOPIC.ModifyLiquidity, POOL, sender], data: `0x${[-60n, 60n, 5n, BigInt(salt)].map(word).join('')}`, block, index });
+  const logs = [modify(100, 3325113), modify(100, 999, 1), modify(300, 3325113, 2), modify(300, 3325113, 3), modify(700, 999), modify(900, 3325113)];
+  const chain = fakeChain({ head: 1_000_000, logs });
+  const answer = await feesPath.pathLogsOnChain({ deps: chain.deps, cache: null }, { kind: 'modifies', poolId: POOL, tokenId: '3325113', spans: [[100, 500], [600, 800]] });
+  assert.equal(answer.ok, true, JSON.stringify(answer));
+  assert.deepEqual(answer.value.units.map((unit) => [unit.from, unit.to, unit.logs.map((log) => [log[0], log[1]])]), [[100, 500, [[100, 0], [300, 2], [300, 3]]], [600, 800, []]], 'the NFT’s own, in chain order; not the other NFT’s, not past the spans');
+  const asked = chain.log.filter((call) => call.method === 'eth_getLogs').map((call) => call.params[0]);
+  assert.deepEqual(asked.map((filter) => [Number(filter.fromBlock), Number(filter.toBlock), filter.address, filter.topics]), [[100, 500, fees.POOL_MANAGER, [fees.TOPIC.ModifyLiquidity, POOL, pm]], [600, 800, fees.POOL_MANAGER, [fees.TOPIC.ModifyLiquidity, POOL, pm]]]);
+  assert.ok(answer.bytes >= JSON.stringify(answer.value).length, 'what the RPC sent is what it cost');
+  const busy = fakeChain({ head: 1_000_000, logs: Array.from({ length: 400 }, (_, i) => modify(100 + i, 999)) });
+  const refused = await feesPath.pathLogsOnChain({ deps: busy.deps, cache: null }, { kind: 'modifies', poolId: POOL, tokenId: '3325113', spans: [[100, 600]] });
+  assert.deepEqual(refused, { ok: false, failure: 'too_large', retryAfterMs: 0 });
+  assert.ok(feesPath.MODIFIES_BYTES < 400 * 700, 'four hundred logs are past the cap');
 });
 
 test('settlements: the owner’s own ModifyLiquidity in the mint’s block and in each block where the pool’s currencies moved between the PoolManager and an owner', async () => {

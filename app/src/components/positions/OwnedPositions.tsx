@@ -207,8 +207,8 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
         <div className="dm-rows-head dm-acct-nft-band" aria-hidden="true">
           <span>Pool</span>
           <span>Range</span>
-          <span>Principal</span>
-          <span>Unclaimed fees</span>
+          <span>Value</span>
+          <span>Fees ready to collect</span>
           <span />
         </div>
         {shown.map((row) => (

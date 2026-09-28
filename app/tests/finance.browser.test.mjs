@@ -20,6 +20,7 @@ import { SETUP_MINTED_TOPIC, browserChain, busyHistory, opIdOf, routeChain as ro
 // 2026-09-27: a wallet that refunds a held deposit, for the test that holds the list's refresh during a refund.
 import { createPositionChain } from './support/position-chain.mjs';
 import { caseChain } from './support/fees/case-chain.mjs';
+import { automatedChain } from './support/fees/automated-chain.mjs';
 import { pathChain } from './support/fees/path-chain.mjs';
 // 2026-09-25: the fees worker's lane to the RPC, whose pace the busy-history test holds it to.
 import { LANE_PACE } from '../.test-build/app/src/lib/chain/browser.js';
@@ -118,18 +119,22 @@ const noManualReads = async (root) => {
   for (const name of names) assert.doesNotMatch(name, /^(Refresh|Retry|First positions|Read execution receipts|Load deployment.*)$/, `a control named ${name}`);
 };
 
+// Changed on purpose (owner, 2026-09-27, round 5, "Domino is for people who know nothing about pools"): the signed-out
+// sentences are plain, a managed position is one short row with three figures and the rest inside All figures, and a receipt
+// is one short row whose sentence is inside it.
 test('private history and receipts read themselves after login, format exact producer amounts, and disappear on account change', async () => {
   const s = await scenario();
   try {
-    await s.page.getByText('Sign in with your wallet to view private history.', { exact: true }).waitFor();
-    await s.page.getByText('Sign in with your wallet to view private execution receipts.', { exact: true }).waitFor();
+    await s.page.getByText('Sign in with your wallet to see your automated positions.', { exact: true }).waitFor();
+    await s.page.getByText('Sign in with your wallet to see your receipts.', { exact: true }).waitFor();
     assert.deepEqual([s.calls.length, s.executions.length], [0, 0], 'nothing private is read while signed out');
     await login(s.page);
     const history = s.page.locator('section[aria-label="Private performance"]');
+    await history.locator('[data-performance-status] details.dm-mp-more > summary').click();
     await history.getByText('-$0.50', { exact: true }).waitFor();
     for (const text of ['$1,234.57', '-14.78%', '365.00%', '$1.00']) await history.getByText(text, { exact: true }).first().waitFor();
     const other = history.locator('[data-metric-name="otherStrategyCostsUsd"]');
-    assert.deepEqual([await other.locator('dt').innerText(), await other.locator('dd').innerText()], ['Other strategy costs', '$0.00']);
+    assert.deepEqual([await other.locator('dt').innerText(), await other.locator('dd').innerText()], ['Other costs', '$0.00']);
     assert.equal(await history.locator('[data-metric-name="timeWeightedCapitalUsd"] dd').getAttribute('title'), '1234.567890123456789012 USD.', 'the exact decimal stays one hover away');
     assert.equal(await history.locator('[data-metric-name="operatorCostsUsd"] dd').innerText(), '—');
     const card = history.locator('[data-performance-status]');
@@ -141,10 +146,13 @@ test('private history and receipts read themselves after login, format exact pro
     await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"]').waitFor();
     // Changed on purpose (qa:visual, Positions): one plain line under each heading; how a missing or uncertain figure shows is that line's title, never a caption.
     const line = async (section) => { const desc = section.locator('.dm-acct-desc'); return [await desc.innerText(), await desc.getAttribute('title')]; };
-    assert.deepEqual(await line(history), ['Positions under automation, over the last 24 hours.', 'Missing prices and incomplete history show as dashes.']);
-    assert.deepEqual(await line(receipts), ['Transactions automation sent for your sequences.', 'An uncertain or reorganized transaction is never shown as completed.']);
-    assert.equal(await receipts.getByRole('heading', { name: 'Reserved', exact: true }).count(), 1);
-    assert.match(await receipts.innerText(), /A transaction slot is reserved\. Nothing has been sent\./);
+    assert.deepEqual(await line(history), ['How your automated positions did in the last 24 hours.', 'Missing prices and incomplete history show as dashes.']);
+    assert.deepEqual(await line(receipts), ['What automation did for your positions.', 'An uncertain or reorganized transaction is never shown as completed.']);
+    const reserved = receipts.locator('[data-execution-state="reserved"]');
+    // Changed on purpose (2026-09-27, round 5 review): a word joiner keeps "re-adding" whole, and the open receipt's sentence is plain.
+    assert.equal(await reserved.locator('summary').innerText(), 'In progress\nRe-\u2060adding fees');
+    await reserved.locator('summary').click();
+    assert.match(await receipts.innerText(), /Getting ready\. Nothing has been sent\./);
     // Scoped to the two private sections: other cards on this page belong to the read screens.
     assert.doesNotMatch(await history.innerText(), FORBIDDEN); assert.doesNotMatch(await receipts.innerText(), FORBIDDEN);
     await noManualReads(history); await noManualReads(receipts);
@@ -153,7 +161,7 @@ test('private history and receipts read themselves after login, format exact pro
     await s.page.screenshot({ path: join(screenshots, 'p2-private-history.png'), fullPage: true });
     await s.wallet.switchAccount('a', 1);
     await history.getByText('-$0.50', { exact: true }).waitFor({ state: 'hidden' });
-    await receipts.getByRole('heading', { name: 'Reserved', exact: true }).waitFor({ state: 'hidden' });
+    await reserved.waitFor({ state: 'detached' });
     assert.deepEqual([s.calls.length, s.executions.length], [2, 1]);
   } finally { await s.close(); }
 });
@@ -174,7 +182,7 @@ test('switched off, history and receipts are quiet empty cards with their reason
     await login(s.page);
     await s.page.locator('section[data-performance="unavailable"][data-performance-reason="route_not_available"]').waitFor();
     await s.page.locator('section[data-execution="unavailable"][data-execution-reason="route_not_available"]').waitFor();
-    await s.page.getByText('Managed positions for this wallet appear here.', { exact: true }).waitFor();
+    await s.page.getByText('Your automated positions appear here.', { exact: true }).waitFor();
     await s.page.getByText('Receipts for this wallet appear here.', { exact: true }).waitFor();
     for (const section of ['Private performance', 'Execution receipts']) {
       const text = await s.page.locator(`section[aria-label="${section}"]`).innerText();
@@ -190,7 +198,8 @@ test('switched off, history and receipts are quiet empty cards with their reason
     assert.deepEqual([s.calls.length, s.executions.length], asked, 'a route that is not there is not asked again while the tab stays visible');
     await setVisibility(s.page, 'hidden');
     await setVisibility(s.page, 'visible');
-    await s.page.getByText('-$0.50', { exact: true }).waitFor();
+    // Changed on purpose (round 5): the loss is inside All figures now; the row's own Fees earned says the history is in.
+    await s.page.locator('[data-metric-name="newTradingFeesUsd"] dd').getByText('$0.50', { exact: true }).waitFor();
     await s.page.locator('section[data-execution="ready"]').waitFor();
     assert.equal(s.wallet.state.signed.length, 1, 'turning on asked the wallet for nothing');
   } finally { await s.close(); }
@@ -1098,6 +1107,8 @@ test('Create position opens the position from Review through a connected wallet 
     assert.deepEqual(await s.page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)].filter(key => /positions/i.test(key))), [], 'no memory of the new position in the browser');
     assert.match(await detail.locator('h1').innerText(), /^ETH\s*\/\s*TOKEN$/);
     assert.match(await detail.locator('.dm-pos-chips').innerText(), /#4242\s+In range/);
+    // Changed on purpose (2026-09-27, the owner: technical data only in Details, closed until opened, at the page's end).
+    await detail.locator('[data-position-details] > summary').click();
     assert.match(await detail.locator('.dm-pos-facts').innerText(), new RegExp(`Owner\\s+${OWNER}[\\s\\S]*Ticks\\s+-3600 to 4080`));
     await s.page.screenshot({ path: join(shots(), 'create-position-positions.png'), fullPage: true });
 
@@ -2105,7 +2116,11 @@ async function answerTokenReads(context, known) {
   return asked;
 }
 
-test('a finalized receipt shows its transaction hash, block hash and fee recipient whole with copy buttons, amounts in token units, a stoppable intent links to its sequence, and an open one refreshes in place', async () => {
+// Changed on purpose (owner, 2026-09-27, round 5: "Receipts" ran down the page forever, a tall card per receipt with its raw
+// hashes): one short row per receipt, a plain chip (Done, In progress, Cancelled...), what it re-added, and the detail one
+// click away. The hashes are short there, each whole in its title and its copy; the amounts are in token units, summed
+// per token. The receipt still names no link out of the app: its one link is how to pause.
+test('a finalized receipt is one short row: Done, what it re-added, and its detail one click away with amounts per token and copyable ids; a stoppable intent links to how to pause, and an open one refreshes in place', async () => {
   const s = await scenario({ clock: true });
   const TOKEN = '0x' + '11'.repeat(20), UNKNOWN = '0x' + '33'.repeat(20);
   const reserved = statusWire.responses['status.reserved'].item;
@@ -2130,28 +2145,42 @@ test('a finalized receipt shows its transaction hash, block hash and fee recipie
     await login(s.page);
     const receipts = s.page.locator('section[aria-label="Execution receipts"]');
     const done = receipts.locator(`[data-execution-intent="${finalized.intentId}"]`), open = receipts.locator(`[data-execution-intent="${reserved.intentId}"]`);
-    await done.getByRole('heading', { name: 'Finalized', exact: true }).waitFor();
-    for (const [field, label, value] of [['transaction-hash', 'Copy transaction hash', finalized.receipt.transactionHash], ['block-hash', 'Copy block hash', finalized.receipt.blockHash], ['service-fee-recipient', 'Copy service fee recipient', finalized.receipt.serviceFeeRecipient]]) {
-      const row = done.locator(`[data-receipt-field="${field}"]`);
-      assert.match(await row.innerText(), new RegExp(value), `${field} is shown whole`);
-      assert.equal(await row.getByRole('button', { name: label }).count(), 1, `${field} has a copy button`);
-    }
-    await done.getByRole('button', { name: 'Copy transaction hash' }).click();
-    await done.locator('[data-receipt-field="transaction-hash"] [data-copied]').waitFor();
-    assert.equal(await s.page.evaluate(() => navigator.clipboard.readText()), finalized.receipt.transactionHash);
-    // Changed on purpose (2026-09-24): the automation page no longer pauses (the owner removed its controls); the link says how, on the docs.
-    assert.deepEqual(await receipts.locator('a').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['#/docs/non-custodial#pause-revoke-withdraw'], 'no external link: the one link is how to pause');
-
-    const cell = (currency, field) => done.locator(`[data-receipt-currency="${currency}"] [data-source-field="${field}"] dd`);
-    await cell(TOKEN, 'grossOriginalConsumedRaw').getByText('1.5 TOKEN', { exact: true }).waitFor({ timeout: 30_000 });
-    assert.deepEqual([await cell(TOKEN, 'serviceFeeRaw').innerText(), await cell(TOKEN, 'originalAfterRaw').innerText(), await cell(TOKEN, 'grossOriginalConsumedRaw').locator('span').getAttribute('title')], ['0.03 TOKEN', '0.25 TOKEN', "1,500,000 in the token’s smallest units."]);
-    await done.locator(`[data-receipt-currency="${UNKNOWN}"] [data-amount-reason="decimals_unavailable"]`).first().waitFor({ timeout: 30_000 });
-    assert.deepEqual([await cell(UNKNOWN, 'grossOriginalConsumedRaw').innerText(), await cell(UNKNOWN, 'grossOriginalConsumedRaw').locator('span').getAttribute('title')], ['—', "Token decimals unavailable. 42 in the token’s smallest units."]);
+    await done.locator('summary').waitFor();
+    assert.deepEqual(await receipts.locator('[data-execution-intent]').evaluateAll(rows => rows.map(row => row.getAttribute('data-execution-intent'))), [reserved.intentId, finalized.intentId], 'what is under way first');
+    // The row: its chip, what it did and what it added, in token units summed per token; a token with no decimals is a dash.
+    await done.locator('[data-receipt-added]').getByText('1.47 TOKEN', { exact: true }).waitFor({ timeout: 30_000 });
+    await done.locator(`[data-receipt-added] [data-receipt-currency="${UNKNOWN}"] [data-amount-reason="decimals_unavailable"]`).waitFor({ timeout: 30_000 });
+    // Changed on purpose (2026-09-27, round 5 review): a word joiner after the hyphen keeps "re-added" on one line.
+    assert.equal(await done.locator('summary').innerText(), 'Done\nFees re-\u2060added\n1.47 TOKEN + —');
+    assert.equal(await done.locator('.dm-pill').getAttribute('title'), 'Finalized');
+    assert.deepEqual([await open.locator('summary').innerText(), await open.locator('.dm-pill').getAttribute('title')], ['In progress\nRe-\u2060adding fees', 'Reserved']);
+    assert.doesNotMatch(await receipts.innerText(), /0x[0-9a-f]{4}/, 'no hash in sight until a row is opened');
     assert.deepEqual([...asked].sort(), [TOKEN, UNKNOWN], 'one token read per currency, through the read path');
 
+    // Its detail: four plain lines, then the technical part, each id short, whole in its title and in its copy.
+    await done.locator('summary').click();
+    const line = name => done.locator(`[data-receipt-line="${name}"]`);
+    assert.deepEqual(await Promise.all(['grossOriginalConsumedRaw', 'serviceFeeRaw', 'liquidityAddedRaw', 'originalAfterRaw'].map(name => line(name).innerText())),
+      ['Fees used\n1.5 TOKEN + —', 'Service fee (2%)\n0.03 TOKEN + —', 'Added to your position\n1.47 TOKEN + —', 'Kept for next time\n0.25 TOKEN']);
+    assert.equal(await line('grossOriginalConsumedRaw').locator('[data-amount="units"]').getAttribute('title'), '1.5. 1,500,000 in the token’s smallest units.');
+    assert.equal(await line('grossOriginalConsumedRaw').locator('[data-amount="unknown"]').getAttribute('title'), 'Token decimals unavailable. 42 in the token’s smallest units.');
+    for (const [field, label, value] of [['transaction-hash', 'Copy transaction', finalized.receipt.transactionHash], ['service-fee-recipient', 'Copy fee paid to', finalized.receipt.serviceFeeRecipient], ['intent', 'Copy receipt id', finalized.intentId]]) {
+      const row = done.locator(`[data-receipt-field="${field}"]`);
+      assert.equal(await row.locator('dd .dm-mono').innerText(), `${value.slice(0, 6)}…${value.slice(-4)}`, `${field} is short`);
+      assert.equal(await row.locator('dd .dm-mono').getAttribute('title'), value, `${field} is whole in its title`);
+      assert.equal(await row.getByRole('button', { name: label }).count(), 1, `${field} has a copy button`);
+    }
+    await done.getByRole('button', { name: 'Copy transaction' }).click();
+    await done.locator('[data-receipt-field="transaction-hash"] [data-copied]').waitFor();
+    assert.equal(await s.page.evaluate(() => navigator.clipboard.readText()), finalized.receipt.transactionHash);
+
+    // The open one: what it is waiting for, and how to stop it while it can be.
     assert.equal(await open.getAttribute('data-execution-can-cancel'), 'true');
-    assert.match(await open.innerText(), /A transaction slot is reserved\. Nothing has been sent\.\s+It can still be stopped: pause your sequence before it is signed\./);
+    await open.locator('summary').click();
+    // Changed on purpose (2026-09-27, round 5 review): the sentence is plain ("a transaction slot is reserved" was for engineers).
+    assert.match(await open.innerText(), /Getting ready\. Nothing has been sent\.\s+It can still be stopped: pause your automation before it is signed\.\s+How to pause/);
     assert.equal(await open.getByRole('link', { name: 'How to pause', exact: true }).getAttribute('href'), '#/docs/non-custodial#pause-revoke-withdraw');
+    assert.deepEqual(await receipts.locator('a').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['#/docs/non-custodial#pause-revoke-withdraw'], 'no external link: the one link is how to pause');
     assert.deepEqual([await done.getAttribute('data-execution-can-cancel'), await done.getByRole('link').count()], ['false', 0]);
     const text = await receipts.innerText();
     assert.doesNotMatch(text, FORBIDDEN); assert.doesNotMatch(text, /_/, 'no code is printed');
@@ -2166,6 +2195,193 @@ test('a finalized receipt shows its transaction hash, block hash and fee recipie
     assert.deepEqual(await receipts.locator('[data-execution-intent]').evaluateAll(cards => cards.map(card => card.getAttribute('data-execution-intent'))), [reserved.intentId, finalized.intentId], 'replaced where it stands');
     assert.equal(s.wallet.state.signed.length, 1, 'only the login signature');
   } finally { await s.close(); }
+});
+
+// ---- Receipts, many, few and none (owner, 2026-09-27, round 5): the Positions tab's short Recent list, and its own page ---------
+//
+// The situation in the owner's screenshot: a wallet whose automation cancelled most of its attempts before sending them, with a
+// finalized compound among them. The receipts arrive ten to a page, in the service's id order (execution-v1 carries no time).
+
+const USDG_TOKEN = '0x' + '5a'.repeat(20), UFG_TOKEN = '0x' + '6b'.repeat(20);
+const intentOf = n => '0x' + n.toString(16).padStart(64, '0');
+/** A receipt of `state`, numbered `n`; a finalized one at `block`, re-adding `usdg` USDG (6 decimals) and `ufg` UFG (18). */
+function receiptItem(n, state, { block = 0, usdg = '0', ufg = '0' } = {}) {
+  const base = { ...statusWire.responses['status.reserved'].item, intentId: intentOf(n), state, canCancel: state === 'reserved', reason: state === 'cancelled' ? 'price_moved' : '' };
+  if (state !== 'reconciled') return base;
+  const tx = '0x' + (n + 0x40).toString(16).padStart(2, '0').repeat(32);
+  const source = (currency, added, sourceByte) => {
+    const used = (BigInt(added) * 100n) / 98n, fee = used - BigInt(added);
+    return { sourceId: '0x' + sourceByte.repeat(32), currency, grossOriginalConsumedRaw: String(used), chargedConsumedRaw: '0', serviceFeeRaw: String(fee), liquidityAddedRaw: added, originalAfterRaw: '0', chargedAfterRaw: '0' };
+  };
+  return { ...base, canCancel: false, signer: '0x' + '57'.repeat(20), nonceRaw: String(n), attempts: [{ ordinal: 0, transactionHash: tx }],
+    receipt: { transactionHash: tx, blockNumberRaw: String(block), blockHash: '0x' + 'cd'.repeat(32), canonical: true, finalized: true, serviceFeeBps: 200,
+      serviceFeeRecipient: '0x' + '78'.repeat(20), liquidityIncreaseRaw: '230436590688', fullL2CostWei: null,
+      sources: [source(USDG_TOKEN, usdg, '9a'), source(UFG_TOKEN, ufg, '9b')].filter(one => one.liquidityAddedRaw !== '0') } };
+}
+/** The list route answering `pages` in order, each page's cursor the last id of the one before; every call is logged. */
+async function answerReceipts(context, pages) {
+  const asked = [];
+  await context.route(/\/api\/execution\/v1\/(list|status)$/, async route => {
+    const request = route.request(), body = request.postDataJSON(), path = new URL(request.url()).pathname;
+    asked.push({ path, body });
+    const at = body.afterIntentId === null || body.afterIntentId === undefined ? 0 : pages.findIndex(page => page.at(-1)?.intentId === body.afterIntentId) + 1;
+    const items = path.endsWith('/list') ? pages[at] ?? [] : [];
+    const answer = path.endsWith('/list')
+      ? { ...statusWire.responses['list.empty'], owner: OWNER, items, nextAfterIntentId: at + 1 < pages.length ? items.at(-1).intentId : null }
+      : { ...statusWire.responses['status.missing'], owner: OWNER, item: pages.flat().find(item => item.intentId === body.intentId) ?? null };
+    assert.ok(executionRuntime.validateResponse(path.endsWith('/list') ? 'list' : 'status', answer), `${path} answer is valid`);
+    await route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', headers: { 'X-Domino-Execution-Contract': executionRuntime.CONTRACT_VERSION }, body: JSON.stringify(answer) });
+  });
+  await answerTokenReads(context, { [USDG_TOKEN]: { symbol: 'USDG', decimals: 6 }, [UFG_TOKEN]: { symbol: 'UFG', decimals: 18 } });
+  return asked;
+}
+// The receipts' prints go to DOMINO_RECEIPT_SHOTS when it is set, else beside the other prints (integration, 2026-09-27:
+// no machine's own folder in the suite).
+const RECEIPT_SHOTS = process.env.DOMINO_RECEIPT_SHOTS || resolve(import.meta.dirname, '../.test-artifacts');
+/** Until every amount a row shows has its token's details: none still reading. */
+async function unitsRead(section) {
+  await section.locator('[data-receipt-added]').first().waitFor();
+  await section.page().waitForFunction(root => !root.querySelector('[data-receipt-added] [data-amount-reason="reading"]'), await section.elementHandle(), { timeout: 30_000 });
+}
+/** What the rows of a receipts list say, in order: each summary's text, one line per row. */
+const rowTexts = list => list.locator(':scope > li > details > summary').evaluateAll(rows => rows.map(row => row.innerText.replace(/\n+/g, ' | ')));
+/** Desktop 1280x900 and phone 390x844: the Receipts and Managed pair, and the whole page, for the owner. */
+async function shootBoth(page, name, target = null) {
+  mkdirSync(RECEIPT_SHOTS, { recursive: true });
+  for (const [label, size] of [['desktop', { width: 1280, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
+    await page.setViewportSize(size);
+    // Past the chevrons' turn (150 ms) and the layout's settling, so a picture never catches a row half open.
+    await page.waitForTimeout(400);
+    // The sticky header is hidden for the crop only, so it never lies over the top of a card taller than the phone's screen
+    // (through the CSSOM: the page's CSP refuses an injected style sheet).
+    const header = (hidden) => page.evaluate(value => { document.querySelector('.dm-header').style.visibility = value; }, hidden ? 'hidden' : '');
+    if (target) { await target.scrollIntoViewIfNeeded(); await header(true); await target.screenshot({ path: join(RECEIPT_SHOTS, `${name}-${label}.png`) }); await header(false); }
+    // From the top, so the sticky header sits where it belongs in the whole-page picture.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(100);
+    await page.screenshot({ path: join(RECEIPT_SHOTS, `${name}-${label}-page.png`), fullPage: true });
+  }
+  await page.setViewportSize({ width: 1320, height: 1000 });
+}
+
+// Changed on purpose (2026-09-27, round 5 review): the Positions tab and the receipts page share one controller, so See all
+// and the way back read no list of their own (execution-v1 allows one read per 30 s), and a failed receipt's sentence is plain.
+test('many receipts: the Positions tab shows four short rows at most, cancelled ones folded into one, and See all opens their own page with what the tab read, where Show more reads the next page', async () => {
+  const s = await scenario({ clock: true });
+  const first = [receiptItem(1, 'cancelled'), receiptItem(2, 'reconciled', { block: 7346840, usdg: '16490000', ufg: '1086592191816706700000' }), receiptItem(3, 'cancelled'),
+    receiptItem(4, 'reserved'), receiptItem(5, 'cancelled'), receiptItem(6, 'cancelled'), receiptItem(7, 'reconciled', { block: 7351002, usdg: '4200000' }),
+    receiptItem(8, 'cancelled'), receiptItem(9, 'cancelled'), receiptItem(10, 'cancelled')];
+  const second = [receiptItem(11, 'reconciled', { block: 7349977, ufg: '52000000000000000000' }), receiptItem(12, 'cancelled'), receiptItem(13, 'reverted')];
+  const asked = await answerReceipts(s.context, [first, second]);
+  try {
+    await login(s.page);
+    const card = s.page.locator('section[aria-labelledby="receipts-title"]');
+    const receipts = card.locator('section[aria-label="Execution receipts"]');
+    const list = receipts.locator('.dm-rcpt-list');
+    await unitsRead(receipts);
+    // Four rows: the one under way, the two finalized ones by block (latest first), and the seven cancelled ones as one.
+    assert.equal(await receipts.getAttribute('data-execution-rows'), '4');
+    assert.deepEqual(await rowTexts(list), ['In progress | Re-\u2060adding fees', 'Done | Fees re-\u2060added | 4.2 USDG', 'Done | Fees re-\u2060added | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
+    assert.doesNotMatch(await card.innerText(), /0x[0-9a-f]{4}|Sequence|Intent|raw units|canonical/i, 'no hash, code or raw unit in sight');
+    assert.equal(await receipts.getByRole('button', { name: 'Show more' }).count(), 0, 'the preview never grows: its card links the full list instead');
+    const listReads = () => asked.filter(call => call.path.endsWith('/list')).length;
+    assert.equal(listReads(), 1, 'the first page, once');
+    const bounded = await card.boundingBox();
+    assert.ok(bounded.height < 520, `the Receipts card stays short: ${bounded.height}px`);
+    // The cancelled ones, opened: one sentence and their ids, each whole in its title with its reason.
+    const folded = list.locator('[data-execution-cancelled]');
+    assert.equal(await folded.getAttribute('data-execution-cancelled'), '7');
+    await folded.locator('summary').click();
+    assert.match(await folded.innerText(), /Automation stopped these before sending anything, so nothing changed and no fee was charged\./);
+    assert.deepEqual(await folded.locator('[data-execution-intent]').evaluateAll(ids => ids.map(id => id.getAttribute('data-execution-intent'))), [1, 3, 5, 6, 8, 9, 10].map(intentOf));
+    assert.equal(await folded.locator(`[data-execution-intent="${intentOf(1)}"]`).getAttribute('title'), `${intentOf(1)}. price moved`);
+    await folded.locator('summary').click();
+    await list.locator(`[data-execution-intent="${intentOf(2)}"] summary`).click();
+    await shootBoth(s.page, 'many-positions-tab', s.page.locator('.dm-acct-pair'));
+    await list.locator(`[data-execution-intent="${intentOf(2)}"] summary`).click();
+
+    // See all, in the card's head: the full list on its own page, Positions still lit in the header.
+    const all = card.locator('[data-receipts-all]');
+    assert.deepEqual([await all.innerText(), await all.getAttribute('href')], ['See all', '#/positions/receipts']);
+    await all.click();
+    await s.page.waitForFunction(() => location.hash === '#/positions/receipts');
+    assert.equal(await s.page.getByRole('heading', { level: 1 }).innerText(), 'Receipts');
+    assert.equal(await s.page.locator('header nav[aria-label="Main"] a[aria-current="page"]').innerText(), 'Positions');
+    assert.equal(await s.page.locator('main a.dm-pos-back').getAttribute('href'), '#/positions');
+    const full = s.page.locator('section[aria-label="Execution receipts"]');
+    await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"]').waitFor();
+    await unitsRead(full);
+    assert.deepEqual(await rowTexts(full.locator('.dm-rcpt-list')), ['In progress | Re-\u2060adding fees', 'Done | Fees re-\u2060added | 4.2 USDG', 'Done | Fees re-\u2060added | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
+    assert.equal(listReads(), 1, 'the page shows what the Positions tab read: no list read of its own');
+    assert.equal(await s.page.locator('[data-receipts-all]').count(), 0, 'the page does not link itself');
+    await shootBoth(s.page, 'many-receipts-page');
+    // Back to Positions and See all again: the same rows at once, and still that one read.
+    await s.page.locator('main a.dm-pos-back').click();
+    await s.page.waitForFunction(() => location.hash === '#/positions');
+    await list.waitFor();
+    await unitsRead(receipts);
+    assert.deepEqual(await rowTexts(list), ['In progress | Re-\u2060adding fees', 'Done | Fees re-\u2060added | 4.2 USDG', 'Done | Fees re-\u2060added | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
+    await all.click();
+    await s.page.waitForFunction(() => location.hash === '#/positions/receipts');
+    await full.locator('.dm-rcpt-list').waitFor();
+    assert.equal(listReads(), 1, 'nor does the way back, nor See all again');
+    // Show more reads the next page at the contract's pace (one read per 30 s), and the rows take it in where they belong.
+    const reads = asked.filter(call => call.path.endsWith('/list')).length;
+    await full.getByRole('button', { name: 'Show more' }).click();
+    await jump(s.page, '00:31', { pending: true });
+    await full.getByRole('button', { name: 'Show more' }).waitFor({ state: 'detached' });
+    await full.locator(`[data-execution-intent="${intentOf(11)}"]`).waitFor();
+    await unitsRead(full);
+    assert.deepEqual(asked.filter(call => call.path.endsWith('/list')).slice(reads).map(call => call.body), [{ afterIntentId: intentOf(10), limit: 10 }]);
+    assert.deepEqual(await rowTexts(full.locator('.dm-rcpt-list')), ['In progress | Re-\u2060adding fees', 'Done | Fees re-\u2060added | 4.2 USDG', 'Done | Fees re-\u2060added | 52 UFG', 'Done | Fees re-\u2060added | 16.49 USDG + 1,086.59 UFG', 'Failed | Fees not re-\u2060added', 'Cancelled | 8 cancelled before sending']);
+    // The failed one, opened: what happened, in plain words.
+    const failed = full.locator(`[data-execution-intent="${intentOf(13)}"]`);
+    await failed.locator('summary').click();
+    assert.match(await failed.innerText(), /The network turned it down: nothing changed and no fee was taken\./);
+    const text = await full.innerText();
+    assert.doesNotMatch(text, FORBIDDEN); assert.doesNotMatch(text, /_/, 'no code is printed');
+    assert.doesNotMatch(text, /revert|nonce|canonical|finality|inclusion|broadcast|transaction slot/i, 'no word for engineers');
+    await failed.locator('summary').click();
+    await noManualReads(full);
+    await full.locator('[data-execution-cancelled] summary').click();
+    await shootBoth(s.page, 'many-receipts-page-more');
+    assert.equal(s.wallet.state.signed.length, 1, 'only the login signature');
+  } finally { await s.close(); }
+});
+
+test('few receipts and none: a short list with nothing to fold, and a friendly empty plate; Managed positions shows one short row per position with its figures one click away', async () => {
+  for (const [name, pages] of [['few', [[receiptItem(1, 'cancelled'), receiptItem(2, 'reconciled', { block: 7346840, usdg: '16490000', ufg: '1086592191816706700000' })]]], ['none', [[]]]]) {
+    const s = await scenario();
+    await answerReceipts(s.context, pages);
+    try {
+      await login(s.page);
+      const receipts = s.page.locator('section[aria-label="Execution receipts"]');
+      await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"]').waitFor();
+      const history = s.page.locator('section[aria-label="Private performance"]');
+      const row = history.locator('.dm-mp-row[data-performance-status]');
+      await row.waitFor();
+      if (name === 'few') {
+        await unitsRead(receipts);
+        assert.deepEqual(await rowTexts(receipts.locator('.dm-rcpt-list')), ['Done | Fees re-\u2060added | 16.49 USDG + 1,086.59 UFG', 'Cancelled | Cancelled before sending']);
+      } else {
+        const quiet = receipts.locator('.dm-acct-quiet');
+        assert.equal(await quiet.innerText(), 'Nothing yet. Each time automation re-\u2060adds your fees, its receipt shows here.');
+        assert.equal(await receipts.locator('.dm-rcpt-list').count(), 0);
+        // 2026-09-27, round 5 review: the sentence broke at the hyphen ("re-" / "adds") on desktop and phone.
+        for (const width of [1280, 390]) {
+          await s.page.setViewportSize({ width, height: 844 });
+          assert.equal(await quiet.evaluate(p => { const node = p.firstChild, at = node.data.indexOf('re-'), range = document.createRange(); range.setStart(node, at); range.setEnd(node, at + 8); return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size; }), 1, `"re-adds" on one line at ${width}px`);
+        }
+        await s.page.setViewportSize({ width: 1320, height: 1000 });
+      }
+      // Managed positions: the position's name opens its page; three figures at a glance, the rest inside All figures.
+      assert.equal(await row.locator('.dm-mp-name').getAttribute('href'), '#/positions/1');
+      assert.deepEqual(await row.locator(':scope > .dm-mp-figs > div').evaluateAll(cells => cells.map(cell => [cell.querySelector('dt').textContent, cell.querySelector('dd').textContent])),
+        [['Fees earned', '$0.50'], ['Re-\u2060added', '$50.00'], ['APR after fees', '-14.78%']]);
+      assert.equal(await history.getByText('Vault', { exact: false }).count(), 0, 'no vault in sight');
+      await shootBoth(s.page, `${name}-positions-tab`, s.page.locator('.dm-acct-pair'));
+    } finally { await s.close(); }
+  }
 });
 
 const chainAbi = parseAbi([
@@ -2463,14 +2679,19 @@ test('Start tracking is offered for the sequences the wallet lists, reads each o
     await track.waitFor();
     const rows = track.locator('[data-trackable-sequence]');
     assert.deepEqual(await rows.evaluateAll(items => items.map(item => item.getAttribute('data-trackable-sequence'))), [chain.vaults[1], chain.vaults[0]], 'newest first');
-    assert.match(await rows.nth(0).innerText(), /^Position #200\s+Sequence 0x[0-9a-f]{4}…[0-9a-f]{4}\s+Start tracking$/);
+    // Changed on purpose (owner, 2026-09-27, round 5; then its review: no address on the main screen): the row names its
+    // position, and the automation's address is only the row's title.
+    assert.match(await rows.nth(0).innerText(), /^Position #200\s+Start tracking$/);
+    assert.equal(await rows.nth(0).getAttribute('title'), chain.vaults[1]);
+    assert.doesNotMatch(await history.innerText(), /0x[0-9a-f]{4}/, 'no address in sight');
     assert.equal(await history.locator('input').count(), 0, 'every sequence is listed, so nothing is typed');
     assert.doesNotMatch(await history.innerText(), FORBIDDEN);
     await noManualReads(history);
 
     const row = track.locator(`[data-trackable-sequence="${chain.vaults[0]}"]`);
     await row.getByRole('button', { name: 'Start tracking', exact: true }).click();
-    await row.locator('[data-enrollment-outcome="sent"]').getByText('Tracking requested. The first observation appears after collection.', { exact: true }).waitFor();
+    // Changed on purpose (2026-09-27, round 5 review): the outcome in plain words ("observation" and "collection" were for engineers).
+    await row.locator('[data-enrollment-outcome="sent"]').getByText('Tracking requested. Its figures show here once they are first read.', { exact: true }).waitFor();
     assert.deepEqual(enrolls, [{ body: { vault: chain.vaults[0], tokenIds: ['100', '11'] }, csrf: enrolls[0]?.csrf, method: 'POST' }], 'the vault and its complete active set: the root and the successor it still holds');
     assert.ok(enrolls[0].csrf, 'sent with the session CSRF');
     assert.equal(await row.getByRole('button', { name: 'Start tracking' }).count(), 0, 'sent: not offered again');
@@ -2478,6 +2699,67 @@ test('Start tracking is offered for the sequences the wallet lists, reads each o
     assert.deepEqual([...new Set(chain.log)].sort(), ['eth_call', 'eth_getBlockByNumber', 'eth_getCode'], 'the chain was only read');
     assert.deepEqual([...new Set(s.wallet.state.log.map(entry => entry.method))].filter(method => !['eth_accounts', 'eth_chainId', 'eth_requestAccounts', 'personal_sign', 'wallet_requestPermissions', 'wallet_switchEthereumChain'].includes(method)), []);
     assert.equal(s.wallet.state.signed.length, 1, 'only the login signature: Start tracking is not a wallet transaction');
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-27 (round 5 review): the owner's own case, a wallet whose position already runs Auto-compound and that nothing
+// tracks yet. Managed positions must not tell him to turn Auto-compound on right above the Start tracking that offers his
+// automation; and once tracking is asked for, the row that waits for its first figures is named by its position, never by
+// the automation's address, and the position is not named a second time under Track your automations.
+test('with an automation the wallet owns and nothing tracked, Managed positions points at Start tracking; a position waiting for its first figures is named by its position, once, with no address in sight', async () => {
+  const s = await scenario();
+  const chain = fakeSequenceChain(OWNER, { roots: [3325113n] });
+  await s.context.exposeFunction('__dominoChainRead', (method, params) => chain.request(method, params));
+  await s.context.addInitScript(() => {
+    // Whichever runs first, this script or the wallet binding, the binding is kept for everything but the three chain reads.
+    let wallet = window.__dominoWalletRequest;
+    const request = (id, method, params) => ['eth_call', 'eth_getCode', 'eth_getBlockByNumber'].includes(method) ? window.__dominoChainRead(method, params) : wallet(id, method, params);
+    Object.defineProperty(window, '__dominoWalletRequest', { configurable: true, get: () => request, set: value => { wallet = value; } });
+  });
+  // The history service tracks nothing for this wallet at first; then it lists one position waiting for its first figures.
+  let enrollments = [];
+  await s.context.route(/\/api\/performance\/v2\/epochs$/, async route => {
+    const answer = { ...fixture('responses/epochs'), owner: OWNER, enrollments };
+    assert.ok(runtime.validateResponse('epochs', answer), 'the epochs answer is valid');
+    await route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', headers: { 'X-Domino-Performance-Contract': runtime.CONTRACT_VERSION }, body: JSON.stringify(answer) });
+  });
+  try {
+    await login(s.page);
+    s.set({ sequenceRelease: { status: 200, body: chain.release } });
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    const history = s.page.locator('section[aria-label="Private performance"]');
+    const track = history.locator('[data-track-sequences]');
+    await track.waitFor();
+    assert.equal(await history.locator('.dm-acct-plot').innerText(), 'Nothing tracked yet: press Start tracking below.');
+    assert.doesNotMatch(await history.innerText(), /Turn on Auto-compound/, 'never told to turn on what is already on');
+    const offered = track.locator('[data-trackable-sequence]');
+    assert.equal(await offered.count(), 1);
+    assert.match(await offered.innerText(), /^Position #3325113\s+Start tracking$/);
+    assert.equal(await offered.getAttribute('title'), chain.vaults[0], 'the automation’s address is only the row’s title');
+    assert.doesNotMatch(await history.innerText(), /0x[0-9a-f]{4}|Automation 0x|vault|sequence/i, 'no address or engineer’s word in sight');
+    await shootBoth(s.page, 'managed-track', s.page.locator('.dm-acct-pair'));
+
+    // Tracking asked for: the service lists the position, waiting for its first figures.
+    enrollments = [{ enrollmentId: '0x' + '12'.repeat(32), vault: chain.vaults[0], tokenIds: ['3325113'], epochId: null, status: 'queued', reason: 'awaiting_baseline', updatedAt: 87410 }];
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    const waiting = history.locator('[data-enrollment-status="queued"]');
+    await waiting.waitFor();
+    assert.equal(await waiting.locator('.dm-mp-name').innerText(), 'Position #3325113');
+    assert.equal(await waiting.locator('.dm-mp-name').getAttribute('href'), '#/positions/3325113', 'it opens its position, as a tracked row does');
+    assert.equal(await waiting.getAttribute('title'), chain.vaults[0], 'the automation’s address is only the row’s title');
+    assert.deepEqual([await waiting.locator('.dm-acct-status').innerText(), await waiting.locator('.dm-acct-note').innerText()], ['Tracking requested', 'Waiting for its first figures.']);
+    // Its only automation is tracked now: the row above says so, and Track your automations is left out rather than naming it twice.
+    await s.page.locator('section[aria-label="Private performance"][data-sequences="ready"]').waitFor();
+    assert.equal(await track.count(), 0, 'the position is not named twice');
+    assert.equal(await history.locator('.dm-acct-plot').count(), 0, 'no empty sentence beside the waiting position');
+    const text = await history.innerText();
+    assert.doesNotMatch(text, /0x[0-9a-f]{4}|vault|sequence|observation|canonical|collection/i, 'no address or engineer’s word in sight');
+    assert.doesNotMatch(text, FORBIDDEN);
+    await noManualReads(history);
+    await shootBoth(s.page, 'managed-waiting', s.page.locator('.dm-acct-pair'));
+    assert.equal(s.wallet.state.signed.length, 1, 'only the login signature');
   } finally { await s.close(); }
 });
 
@@ -3221,12 +3503,32 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     await detail.waitFor();
     await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
     assert.match(await detail.locator('h1').innerText(), /^ETH\s*\/\s*TOKEN$/);
-    assert.match(await detail.locator('.dm-pos-chips').innerText(), /Uniswap · 0\.30% · #3135288\s+In range/);
+    // Changed on purpose (2026-09-27, the owner: plain words for someone who knows nothing of pools): the fee tier says
+    // "fee" beside Your APR; the key figures are Position value, Fees ready to collect, Your APR and Current price, the
+    // price written "1 ETH = …" and the range under it as a bar with its two ends, without "≈"; the facts are in Details,
+    // closed until opened.
+    assert.match(await detail.locator('.dm-pos-chips').innerText(), /Uniswap · 0\.30% fee · #3135288\s+In range/);
     const stats = await detail.locator('[data-position-stats]').innerText();
-    assert.match(stats, /CURRENT PRICE\s+≈1,000,000,000,000 TOKEN per ETH/, 'the pool’s price from the same read, with no button to ask for it');
-    assert.match(stats, /RANGE\s+≈994,018,000,000 – ≈1,006,020,000,000/);
-    assert.match(stats, /UNCLAIMED FEES\s+[\d.,]+ ETH\s+0 TOKEN/);
+    assert.match(stats, /CURRENT PRICE\s+1 ETH = 1,000,000,000,000 TOKEN\s+994,018,000,000\s+Your range\s+1,006,020,000,000\s+In range: earning fees/, 'the pool’s price from the same read, with no button to ask for it');
+    assert.match(stats, /FEES READY TO COLLECT\s+[\d.,]+ ETH\s+0 TOKEN/);
+    assert.match(stats, /POSITION VALUE\s+[\d.,]+ ETH/);
+    // Your APR waits for the fees history (a skeleton meanwhile); this chain has none to give it, so a dash and why.
+    const apr = detail.locator('[data-cell="apr"]:not([data-apr="loading"]):not([data-apr="idle"])');
+    await apr.waitFor({ timeout: 15_000 });
+    assert.match(await apr.innerText(), /^YOUR APR\s+—\s+Not measured yet$/, 'no fees history on this chain: a dash and why, never a guess');
+    // 2026-09-27 (review): a pair without USDG stacks each tile in its own flow (the rows line up across the tiles only
+    // for one-line USD figures), so the reason stands right under its dash, not at the foot of the tallest tile.
+    const under = await apr.evaluate((tile) => tile.querySelector('.dm-stat-sub').getBoundingClientRect().top - tile.querySelector('.dm-stat-value').getBoundingClientRect().bottom);
+    assert.ok(under >= 0 && under <= 16, `the reason ${under}px under its dash`);
+    assert.doesNotMatch(stats, /≈|Principal|Unclaimed/i);
     assert.equal(await detail.getByRole('button', { name: 'Show current price' }).count(), 0);
+    assert.equal(await detail.locator('[data-position-details]').getAttribute('open'), null, 'Details closed');
+    // And on a phone, where the hint beside it is hidden, the Details chevron keeps to the right edge (the same review).
+    await s.page.setViewportSize({ width: 390, height: 844 });
+    const edge = await detail.locator('[data-position-details] > summary').evaluate((head) => head.getBoundingClientRect().right - head.querySelector('svg').getBoundingClientRect().right);
+    assert.ok(edge >= 0 && edge <= 24, `the chevron ${edge}px from the right edge`);
+    await s.page.setViewportSize({ width: 1320, height: 1000 });
+    await detail.locator('[data-position-details] > summary').click();
     const facts = await detail.locator('.dm-pos-facts').innerText();
     assert.match(facts, /NFT id\s+3135288/);
     assert.match(facts, new RegExp(`Owner\\s+${OWNER}`));
@@ -3247,6 +3549,14 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     assert.ok(!read.requests.some((r) => r.path.endsWith('/pool-market')), 'nor the pool’s price: it came with the read');
     // The owner's actions have their mount: the chunk is opened on the page, behind the wallet flag.
     await s.page.waitForFunction(() => performance.getEntriesByType('resource').some((entry) => /\/PositionActions-[\w-]+\.js$/.test(entry.name)));
+    // 2026-09-27 (the owner: Domino's own buttons): one primary, a plain position's Collect fees; Automate outlined;
+    // Close position the one danger.
+    await detail.locator('[data-position-action="collect"]').waitFor();
+    assert.deepEqual(await detail.locator('[data-position-actions] :is(a, button)').evaluateAll((all) => all.map((one) => [one.textContent, one.className.match(/\bdm-btn--(\w+)/)?.[1]])), [
+      ['Automate', 'outline'],
+      ['Collect fees', 'primary'],
+      ['Close position', 'danger'],
+    ]);
     assert.doesNotMatch(await detail.innerText(), FORBIDDEN);
     await s.page.screenshot({ path: join(shots(), 'position-detail.png'), fullPage: true });
 
@@ -3984,6 +4294,8 @@ test('a paused sequence’s page offers Turn on once the service says it is read
     assert.deepEqual(service.asked, [{ vault: VAULT }]);
     assert.equal(await detail.locator('a[data-automate-docs], a[data-automate-entry]').count(), 0, 'Turn on stands where the docs link stood');
     assert.deepEqual(await detail.locator('[data-position-actions] button').allInnerTexts(), ['Turn on', 'Collect fees', 'Close position']);
+    // 2026-09-27 (Domino's buttons): the sequence's Turn on is the one primary; Collect fees outlined; Close the danger.
+    assert.deepEqual(await detail.locator('[data-position-actions] button').evaluateAll((all) => all.map((one) => one.className.match(/\bdm-btn--(\w+)/)?.[1])), ['primary', 'outline', 'danger']);
     await s.page.screenshot({ path: join(shots(), 'p2-sequence-turn-on.png'), fullPage: true });
 
     // The page also asks again just before each answer lapses (about every 8 seconds), so the questions are counted
@@ -4144,10 +4456,208 @@ test('a position’s fees history is read from the chain by the page and its wor
     const logs = chain.log.filter((call) => call.method === 'eth_getLogs');
     assert.ok(logs.some((call) => call.params[0].topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'), 'the NFT’s Transfer logs, read by the worker');
     assert.ok(logs.some((call) => Array.isArray(call.params[0].topics[0])), 'and the pool’s logs');
+    // 2026-09-27 (the owner): Your APR, from the history the card draws (lib/positionApr.ts, no read of its own), since
+    // the position opened and over the last 24 hours; and its Activity in a card of its own after Price range.
+    const apr = s.page.locator('[data-cell="apr"][data-apr="ready"]');
+    await apr.waitFor({ timeout: 5_000 });
+    assert.match(await apr.innerText(), /^YOUR APR\s+[\d,]+(\.\d)?%\s+Since opened \(38 hours\)\s+Last 24 hours: [\d,]+(\.\d)?%$/);
+    assert.equal(await card.first().locator('.dm-fees-act').count(), 0, 'the fees card lists no activity');
+    assert.match(await s.page.locator('[data-position-activity]').innerText(), /^Activity\s+Opened\s+09-23 01:39 UTC$/);
     assert.deepEqual(chain.refused, [], 'nothing but the reads');
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
     await s.page.screenshot({ path: join(shots(), 'position-fees-chain.png'), fullPage: true });
   } finally { await s.close(); }
+});
+
+// 2026-09-27 (the owner: the Fees earned chart took far too long): his Auto-compound position 3325113, USDG/UFG 4 %, a day
+// old, recorded read-only that day (tests/support/fees/3325113.json.gz). Its pool's liquidity history (866 kB of the RPC's
+// JSON live) was read whole before any Swap, at the worker's paced 96 kB/s: 12.9 s to a verified chart live, 12.7 s in
+// this harness with a 160 ms round trip (C:/dwt/round5/feesfast/measure.txt). A young position in a pool whose Swaps the
+// probe sees now takes the price path of its own life, and finds its settlements (compounds, which pay its owner nothing)
+// among the pool's PositionManager ModifyLiquidity; back on its page later in the visit, the chart is there at once.
+test('the owner’s Auto-compound position draws its fees from its own life: settlements found though none paid him, none of the pool’s history, then at once on a return', async () => {
+  const chain = caseChain('3325113');
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  const PM_WORD = `0x${'58daec3116aae6d93017baaea7749052e8a04fa7'.padStart(64, '0')}`;
+  const MODIFY = '0xf208f4912782fd25c7f114ca3723a2d5dd6f3bcc3ac8db5af63baa85f711d5ec';
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    const started = Date.now();
+    await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
+    await s.page.locator('[data-position-detail][data-position-id="3325113"]').waitFor({ timeout: 15_000 });
+    const verified = s.page.locator('[data-fees-card][data-fees-state="verified"]');
+    await verified.first().waitFor({ timeout: 30_000 });
+    const drawn = Date.now() - started;
+    const logs = chain.log.filter((call) => call.method === 'eth_getLogs');
+    const filters = logs.map((call) => call.params[0]);
+    assert.ok(!filters.some((filter) => Array.isArray(filter.topics[0]) && filter.topics[0].length === 3), 'no epoch of the pool’s history');
+    assert.ok(filters.some((filter) => filter.topics[0] === MODIFY && filter.topics[2] === PM_WORD && Number(filter.toBlock) > Number(filter.fromBlock)), 'its settlements, among the PositionManager’s ModifyLiquidity over its life');
+    const read = logs.reduce((sum, call) => sum + call.bytes, 0);
+    assert.ok(read < 256 * 1024, `${read} B of logs, where its pool’s history alone was 866 kB`);
+    assert.match(await verified.first().innerText(), /collected/i);
+    // Away and back in the same visit: the history is the store's, drawn with the page, and nothing is read again for it.
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await s.page.locator('[data-position-detail]').waitFor({ state: 'detached', timeout: 10_000 });
+    const asked = chain.log.filter((call) => call.method === 'eth_getLogs').length;
+    const back = Date.now();
+    await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
+    await verified.first().waitFor({ timeout: 10_000 });
+    const again = Date.now() - back;
+    assert.equal(chain.log.filter((call) => call.method === 'eth_getLogs').length, asked, 'no log read again');
+    assert.deepEqual(chain.refused, [], 'nothing but the reads');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    console.log(`# verified ${drawn} ms after the page was opened (${Math.round(read / 1024)} kB of logs), ${again} ms on a return`);
+  } finally { await s.close(); }
+});
+
+// 2026-09-27 (the owner: the Fees earned chart took far too long; traced live on his 3325113 at the integration of round 5):
+// the public RPC refused the replay's batch of block headers (its 429 reaches a browser as a CORS failure, the allow-origin
+// `*,*`), the run stopped, the worker's lane rested 30 s (LANE_PACE.restMs), and the card was asked again only by the next
+// minute's /state read at a newer block: about 67 s to the chart live, and never here, where the head does not move. The
+// store now asks the run again as soon as the lane's rest is over (src/lib/fees/store.ts RETRY_MS): the chart is drawn
+// within about the rest and one run's time, after that one refusal, and the worker asks nothing while it rests.
+// 2026-09-27 (review of the retry): the store is sent exactly two runs, the second only once the rest is over. A worker
+// whose `done` lost its lane's wait (feesReplay.worker.ts) had the store ask again 2 s after the refusal, a run the resting
+// lane ended at once without a read, and the chart came at the 30 s attempt: the reads alone never showed it.
+test('the RPC refuses the replay’s header batch once: the chart is drawn right after the lane’s rest, not a minute later, and nothing is asked meanwhile', async () => {
+  const chain = caseChain('3325113');
+  const answer = chain.fetch;
+  const refusals = [];
+  chain.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    if (refusals.length === 0 && Array.isArray(body) && body.length > 1 && body.every((call) => call.method === 'eth_getBlockByNumber')) {
+      refusals.push({ at: Date.now(), headers: body.length });
+      return new Response('Too Many Requests', { status: 429, headers: { 'access-control-allow-origin': '*,*', 'content-type': 'text/plain' } });
+    }
+    return answer(url, init);
+  };
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  const workerReads = (after) => chain.log.filter((call) => (call.method === 'eth_getLogs' || call.method === 'eth_getBlockByNumber') && call.at > after);
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    // Every run the store sends its worker, and when (the page's clock: this machine's, as the fake RPC's).
+    await s.page.evaluate(() => {
+      const send = Worker.prototype.postMessage;
+      window.__feesRuns = [];
+      Worker.prototype.postMessage = function (message, ...rest) {
+        if (message?.type === 'run') window.__feesRuns.push({ id: message.id, at: Date.now() });
+        return send.call(this, message, ...rest);
+      };
+    });
+    const started = Date.now();
+    await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
+    await s.page.locator('[data-position-detail][data-position-id="3325113"]').waitFor({ timeout: 15_000 });
+    // Refused: the card keeps the chain's unclaimed figure while the lane rests.
+    await s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"]').waitFor({ timeout: 20_000 });
+    assert.equal(refusals.length, 1, 'the header batch was refused');
+    const refusedAt = refusals[0].at;
+    const verified = s.page.locator('[data-fees-card][data-fees-state="verified"]');
+    await verified.first().waitFor({ timeout: LANE_PACE.restMs + 20_000 });
+    const drawn = Date.now() - refusedAt;
+    const next = workerReads(refusedAt)[0];
+    assert.ok(next && next.at - refusedAt >= LANE_PACE.restMs - 250, `nothing asked while the lane rested: the next read ${next ? next.at - refusedAt : '-'} ms after the refusal`);
+    assert.ok(drawn >= LANE_PACE.restMs && drawn < LANE_PACE.restMs + 5_000, `the chart ${drawn} ms after the refusal: the rest (${LANE_PACE.restMs} ms) and one run`);
+    const runs = (await s.page.evaluate(() => window.__feesRuns)).filter((run) => run.id === '3325113').map((run) => run.at - refusedAt);
+    assert.equal(runs.length, 2, `two runs sent to the worker, the first and one after the rest: ${runs.join(', ')} ms from the refusal`);
+    assert.ok(runs[0] <= 0, 'the first, refused');
+    assert.ok(runs[1] >= LANE_PACE.restMs && runs[1] < LANE_PACE.restMs + 3_000, `the second ${runs[1]} ms after the refusal: once the lane's rest (${LANE_PACE.restMs} ms) is over, not during it`);
+    assert.ok(Date.now() - started < 60_000, 'before the minute’s /state read would have asked again');
+    assert.ok(workerReads(refusedAt).some((call) => call.method === 'eth_getBlockByNumber'), 'the headers, read on the new attempt');
+    assert.equal(refusals.length, 1, 'one refusal, nothing else refused');
+    assert.match(await verified.first().innerText(), /collected/i);
+    assert.deepEqual(chain.refused, [], 'nothing but the reads');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    console.log(`# refused ${refusedAt - started} ms after the page was opened (${refusals[0].headers} headers), run again ${runs[1]} ms and verified ${drawn} ms after the refusal`);
+  } finally { await s.close(); }
+});
+
+// 2026-09-27 (the owner: show when Domino's automation put the fees back; the review of r5/position: never from the
+// collect-and-increase pattern alone). NFT 2310187's recording (USDG/UFG 4 %, fourteen days, five collect-and-increase
+// transactions of its own owner, all before Domino's vaults existed), held by Test Wallet A: as a plain position, and
+// held by a fake Auto-compound vault whose ExecutionCompleted logs name four of those five transactions
+// (tests/support/fees/automated-chain.mjs). Activity lists every row, newest first, in plain words; only the four the
+// vault's record names are "Fees added back", with the chart's own mark and what the automation put back (their sum is
+// the card's "added $X back"); the fifth stays the owner's "Fees collected" and "Added to position".
+const ACTIVITY_VAULT = '0x7a17c0de00000000000000000000000000c0de01';
+const ACTIVITY_PAIRS = ['0x3648206ec3', '0x85e4b56105', '0xd2ee9c0a97', '0xd47d72a202', '0x5701d9285a'];
+/** Every row of a position's Activity: its kind, whether it is the automation's, verb, date, figure, and the quiet line under the figure. */
+async function activityRowsOf(page) {
+  const activity = page.locator('[data-position-activity]');
+  await activity.waitFor({ timeout: 60_000 });
+  const more = activity.getByRole('button', { name: /^Show \d+ more$/ });
+  if (await more.count()) await more.click();
+  return activity.locator('.dm-fees-act').evaluateAll((rows) => rows.map((row) => {
+    const text = (selector) => row.querySelector(selector)?.innerText.replace(/\s+/g, ' ').trim() ?? null;
+    return [row.dataset.kind, row.hasAttribute('data-auto'), text('.dm-fees-act-verb'), text('.dm-fees-act-date'), text('.dm-fees-act-value'), text('.dm-fees-act-tokens')];
+  }));
+}
+
+test('a position’s Activity names Domino’s automation only where its vault’s own record does, with what it put back, and never from a collect and an increase alone', async () => {
+  const txOf = (chain, prefix) => chain.fixture.expect.events.find((event) => event[2].startsWith(prefix))[2];
+  const base = automatedChain('2310187', { owner: ACCOUNTS[0].address });
+  const executions = ACTIVITY_PAIRS.filter((_, i) => i !== 1).map((prefix) => ({ tx: txOf(base, prefix), action: 0 }));
+  const rows = {};
+  for (const [name, chain] of [['plain', base], ['automated', automatedChain('2310187', { vault: ACTIVITY_VAULT, owner: ACCOUNTS[0].address, executions })]]) {
+    const site = siteRoutes();
+    const s = await scenario({ chain, routes: [site.route] });
+    try {
+      await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+      await s.page.locator('[data-empty="owned-connect"]').waitFor();
+      await s.page.evaluate(() => { location.hash = '#/positions/2310187'; });
+      await s.page.locator('[data-position-detail][data-position-id="2310187"]').waitFor({ timeout: 15_000 });
+      const card = s.page.locator('[data-fees-card][data-fees-state="verified"]');
+      await card.waitFor({ timeout: 90_000 });
+      if (name === 'automated') await s.page.locator('[data-position-activity] .dm-fees-act[data-auto]').first().waitFor({ timeout: 20_000 });
+      rows[name] = await activityRowsOf(s.page);
+      if (name === 'automated') {
+        // What the rows say the automation put back is what the card says it did, to the rounding of each row.
+        const added = await card.locator('[data-automation-impact] [data-impact="added"]').innerText();
+        const total = Number(/added \$([\d,.]+) back/.exec(added)[1].replace(/,/g, ''));
+        const sum = rows[name].filter((row) => row[1]).reduce((all, row) => all + Number(row[4].replace(/[$,]/g, '')), 0);
+        assert.ok(Math.abs(sum - total) <= 0.005 * 4, `the rows' $${sum.toFixed(2)} against the card's ${added}`);
+        assert.equal(await s.page.locator('[data-position-activity] .dm-fees-act[data-auto] .dm-fees-auto-glyph').count(), 4, 'the chart’s own mark on each');
+        assert.equal(await s.page.locator('[data-position-activity] .dm-fees-act[data-auto] .dm-fees-act-verb').first().getAttribute('title'), 'Auto-compound added these fees back into your position');
+        await s.page.locator('[data-position-activity]').screenshot({ path: join(shots(), 'position-activity-automated.png') });
+      } else {
+        assert.equal(await s.page.locator('.dm-fees-auto-glyph, [data-automation-impact]').count(), 0, 'nothing of an automation, anywhere on the page');
+      }
+      assert.doesNotMatch(await s.page.locator('[data-position-activity]').innerText(), /0x[0-9a-f]{6}/i, 'no transaction hash on the page');
+      assert.deepEqual(chain.refused, [], 'nothing but the reads');
+      assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    } finally { await s.close(); }
+  }
+  const collected = (date, value, tokens) => ['collect', false, 'Fees collected', date, value, tokens];
+  const ownAdd = (date) => ['increase', false, 'Added to position', date, null, null];
+  const opened = ['mint', false, 'Opened', '09-10 07:06 UTC', null, null];
+  // Plain: the owner's own five collect-and-increase transactions, each its collect with the fees it took and the
+  // increase under it, in neutral words; no row is the automation's.
+  assert.deepEqual(rows.plain, [
+    collected('09-24 03:21 UTC', '$623.91', '339.951 USDG 112,679 UFG'),
+    collected('09-23 12:08 UTC', '$120.14', '47.6386 USDG 28,769.6 UFG'), ownAdd('09-23 12:08 UTC'),
+    collected('09-19 21:13 UTC', '$104.14', '44.3483 USDG 23,725.7 UFG'), ownAdd('09-19 21:13 UTC'),
+    collected('09-17 04:34 UTC', '$102.53', '34.5572 USDG 26,971.2 UFG'), ownAdd('09-17 04:34 UTC'),
+    collected('09-15 04:29 UTC', '$106.73', '44.0511 USDG 24,873.9 UFG'), ownAdd('09-15 04:29 UTC'),
+    collected('09-13 05:14 UTC', '$226.19', '116.55 USDG 43,505.5 UFG'), ownAdd('09-13 05:14 UTC'),
+    collected('09-11 01:46 UTC', '$175.02', '110.494 USDG 25,604.5 UFG'),
+    opened,
+  ]);
+  // Automated: the four the vault's record names are one row each, with what Auto-compound put back (less its service
+  // fee and what did not fit the range) and by whom; the owner's own of 09-15 is unchanged.
+  const addedBack = (date, value) => ['auto', true, 'Fees added back', date, value, 'by Auto-compound'];
+  assert.deepEqual(rows.automated, [
+    collected('09-24 03:21 UTC', '$623.91', '339.951 USDG 112,679 UFG'),
+    addedBack('09-23 12:08 UTC', '$66.92'),
+    addedBack('09-19 21:13 UTC', '$56.30'),
+    addedBack('09-17 04:34 UTC', '$63.12'),
+    collected('09-15 04:29 UTC', '$106.73', '44.0511 USDG 24,873.9 UFG'), ownAdd('09-15 04:29 UTC'),
+    addedBack('09-13 05:14 UTC', '$181.89'),
+    collected('09-11 01:46 UTC', '$175.02', '110.494 USDG 25,604.5 UFG'),
+    opened,
+  ]);
 });
 
 // 2026-09-25 (r4/fees, the owner: the card loaded, then vanished, on his busy-pool positions): the price path in the
@@ -4219,7 +4729,7 @@ test('two tabs reading a busy pool’s history at once share one pace: no call i
     console.log(`# two tabs: exact after ${drawn.join(' and ')} ms, ${Math.round(read / 1024)} kB of logs, ${chain.refusals.length} refused`);
     assert.ok(read > 2 * 400 * 1024, `both tabs read the life (${read} B)`);
     assert.deepEqual(chain.refusals, [], 'no call of either tab was refused, the page’s own reads among them');
-    for (const page of [s.page, second]) assert.match(await page.locator('[data-position-stats]').innerText(), /UNCLAIMED FEES/);
+    for (const page of [s.page, second]) assert.match(await page.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT/);
     assert.deepEqual(chain.refused, [], 'nothing but the reads');
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
   } finally {
@@ -4297,13 +4807,14 @@ test('while a busy history is replayed the list and the position’s page come b
     await new Promise((done) => setTimeout(done, 3_000));
     const refused = chain.refusals.slice(refusedBefore);
     assert.equal(refused.length, 1, `one refused request, and nothing asked again: ${refused.map((r) => r.method).join(', ')}`);
-    assert.match(await s.page.locator('[data-position-stats]').innerText(), /UNCLAIMED FEES\s+[\d.,]+ ETH/);
+    assert.match(await s.page.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
     // Changed on purpose (2026-09-25, the owner: the card loaded, then vanished): the card stays, with the chain's
     // unclaimed figure and a flat, quiet plot where no history can be drawn.
     const quietCard = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"]');
     assert.equal(await quietCard.count(), 1, 'the card stays');
     assert.equal(await quietCard.locator('[data-fees-quiet]').count(), 1, 'its plot flat and quiet');
-    assert.match(await quietCard.innerText(), /fees earned[\s\S]*unclaimed/i);
+    // Changed on purpose at the integration (2026-09-27): the card's row says "Ready to collect", the key figures' words.
+    assert.match(await quietCard.innerText(), /fees earned[\s\S]*ready to collect/i);
 
     // The RPC lets this address in again: the list is read at once.
     chain.limit = null;
@@ -4374,7 +4885,7 @@ test('a history the probe says cannot verify is never read: no pool epoch, no ca
     await new Promise((done) => setTimeout(done, 2_000));
     assert.equal(asked(3), 0, 'no epoch of the pool’s history is read');
     assert.equal(asked(2), 0, 'nor any swap day');
-    assert.match(await s.page.locator('[data-position-stats]').innerText(), /UNCLAIMED FEES\s+[\d.,]+ ETH/);
+    assert.match(await s.page.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
     // Changed on purpose (2026-09-25): past the probe, the price path asks the NFT's own settlements (none here: this
     // recording has no ModifyLiquidity of its own), and the card stays, with its unclaimed figure and a quiet plot.
     const quietCard = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"]');

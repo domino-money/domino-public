@@ -11,7 +11,6 @@ import { PositionRange } from '../PositionRange'
 import { AutomationFrame } from './AutomationFrame'
 import { FeesCard } from './FeesCard'
 import { PortfolioSummary, RowUsd } from './PortfolioSummary'
-import { PrincipalUsd, UnclaimedUsd } from './PositionValue'
 import { PriceVsRange } from './PriceVsRange'
 import { QuietMarkPair } from './QuietMarks'
 
@@ -23,7 +22,5 @@ export const POSITION_KIT = {
   PositionRange,
   PositionFigures: { Amount, PairName, PositionStatus },
   RowUsd,
-  PrincipalUsd,
-  UnclaimedUsd,
   QuietMarkPair,
 } as const

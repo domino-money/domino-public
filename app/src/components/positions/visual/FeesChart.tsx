@@ -1,15 +1,16 @@
 import { useCallback, useMemo } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { YAxis, XAxis } from '../../charts/Axis'
 import { ChartFrame, type Plot } from '../../charts/ChartFrame'
 import { ChartTooltip, ChartTooltipRow } from '../../charts/ChartTooltip'
-import { AreaSeries, Baseline, BarSeries, Crosshair, EndDot, EventPips, HoverDot, InRangeStrip, LastValue, LastValueChip } from '../../charts/series'
+import { Baseline, Crosshair, EndDot, EventPips, HoverDot, InRangeStrip, LastValue, LastValueChip, useSvgId } from '../../charts/series'
 import { Pill } from '../../ui'
 import { linearScale, niceTicks } from '../../../lib/chart/scale'
-import { linePath } from '../../../lib/chart/paths'
+import { areaPath, linePath, type Point } from '../../../lib/chart/paths'
 import { group } from '../../../lib/format/decimal'
 import { bucketLabel, shortDate, shortTime } from '../../../lib/format/time'
 import { formatUsd } from '../../../lib/format/usd'
+import type { AutoAdd } from '../../../lib/automationImpact'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { TokenFigure } from './FeesActivity'
 import type { FeesPeriodView, FeesView } from './model'
@@ -22,8 +23,12 @@ import { positive, unitsNumber, valueFigure } from './value'
  * gutter (§13.2, padding right 8): the y labels sit inside the plot and the
  * chip rides above the end dot, in the room left at the top.
  */
-const PAD = { top: 16, right: 72, bottom: 44, left: 0 }
-const PAD_PHONE = { top: 32, right: 8, bottom: 44, left: 0 }
+const PAD = { top: 16, right: 72, bottom: 40, left: 0 }
+const PAD_PHONE = { top: 32, right: 8, bottom: 40, left: 0 }
+const HEIGHT = 232
+const HEIGHT_PHONE = 200
+/** The drawn chart's whole box, which its skeleton and its quiet plot keep (2026-09-27: nothing moves when it arrives). */
+export const CHART_BOX = { desktop: PAD.top + HEIGHT + PAD.bottom, phone: PAD_PHONE.top + HEIGHT_PHONE + PAD_PHONE.bottom } as const
 /**
  * Nothing earned yet: a timeline waiting for its first fee. The flat line along the foot of a short plot (the room
  * above it is the inspection's), the mint pip at its start, the end dot at now, the first and last dates just under
@@ -34,12 +39,6 @@ const PAD_ZERO = { top: 16, right: 16, bottom: 28, left: 0 }
 const PAD_ZERO_PHONE = { top: 8, right: 16, bottom: 28, left: 0 }
 const HEIGHT_ZERO = 48
 const HEIGHT_ZERO_PHONE = 32
-/** Bars stand in the bottom 28 % of the plot on their own scale (§13.2). */
-const BAR_SHARE = 0.28
-/** A bar takes 55 % of its bucket, centred, 2 to 12 px wide. */
-const BAR_FILL = 0.55
-const BAR_MAX = 12
-const BAR_MIN = 2
 /** A y label closer than this to the baseline's label, or to the chip, is dropped. */
 const BASE_GAP = 20
 const CHIP_GAP = 14
@@ -78,33 +77,126 @@ function stripSegments(strip: FeesPeriodView['strip'], x: (t: number) => number)
   return out
 }
 
+const NONE: readonly AutoAdd[] = []
+
 /** A share in percent, two decimals. */
 export const percentText = (share: number) => `${(Math.min(1, Math.max(0, share)) * 100).toFixed(2)}%`
 
-/** How many date labels a plot this wide carries: at least three, about one per 100px. */
-const dateCount = (plot: Plot) => Math.max(3, Math.floor((plot.right - plot.left) / 100))
+/** How many date labels a plot this wide carries: at least three, about one per 110px. */
+const dateCount = (plot: Plot) => Math.max(3, Math.floor((plot.right - plot.left) / 110))
 
 /** The zero timeline's two ends, in the activity rows' caption style: `09-23 01:09 UTC`. */
 const edgeLabel = (t: number) => `${shortDate(t)} ${shortTime(t)}`
 
+/** The earned value on the drawn line at `t` (linear between hourly points), where an event's pip or mark sits. */
+function lineAt(points: FeesPeriodView['points'], t: number): number {
+  const next = points.findIndex((point) => point.t >= t)
+  if (next <= 0) return points[next === 0 ? 0 : points.length - 1].v
+  const a = points[next - 1]
+  const b = points[next]
+  return b.t > a.t ? a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t) : b.v
+}
+
 /**
- * The fees chart (DESIGN-V2 §13.2): the cumulative fees earned in the period
- * as a Tangerine area (linear between hourly points: earned only grows), the
- * earned value of each bucket as slim bars in the bottom 28 % on their own
- * scale, the settlements as pips, time in range as a strip under the plot,
- * the end dot and the current total in a chip. The y axis always names its
- * floor, the period-start value, so the area reads as growth from there.
- * Inspection snaps to bucket ends; the series layer never sees the inspected
- * bucket. With nothing earned yet (`zero`) it is a timeline waiting for its
- * first fee: the real flat line in a quiet ink from the mint pip to the end
- * dot at now, and the two dates it spans.
+ * The collected line as steps: flat between settlements, rising at the settlement itself (the first one inside the
+ * hour that holds the rise, else the hour's end), never above the earned line; the green band then closes where a
+ * collect's pip or Auto-compound's mark sits, as the fees it collected stop waiting.
+ */
+function collectedSteps(points: FeesPeriodView['points'], settled: readonly number[]): { t: number; c: number }[] {
+  const out = [{ t: points[0].t, c: Math.min(points[0].c, points[0].v) }]
+  for (let i = 1; i < points.length; i++) {
+    const before = points[i - 1]
+    const point = points[i]
+    if (point.c > before.c) {
+      const at = settled.find((t) => t > before.t && t <= point.t) ?? point.t
+      out.push({ t: at, c: Math.min(before.c, before.v) }, { t: at, c: Math.min(point.c, lineAt(points, at)) })
+    }
+    out.push({ t: point.t, c: Math.min(point.c, point.v) })
+  }
+  return out
+}
+
+/**
+ * Auto-compound's mark (2026-09-27): a Tangerine disc with a plus, ringed in the card's colour, where it put fees back
+ * into the position; the legend row under the card's split names it with the same disc.
+ */
+export function AutoMark({ x, y, index = 0, active = false }: { x: number; y: number; index?: number; active?: boolean }) {
+  return (
+    <g className="dm-fees-auto" transform={`translate(${Math.round(x * 100) / 100} ${Math.round(y * 100) / 100})`} data-active={active ? '' : undefined} style={{ '--i': index } as CSSProperties}>
+      <circle r={10} className="dm-fees-auto-halo" />
+      <circle r={6.5} className="dm-fees-auto-dot" />
+      <path d="M-2.75 0H2.75M0 -2.75V2.75" className="dm-fees-auto-plus" />
+    </g>
+  )
+}
+
+/**
+ * Fees earned, collected and waiting (2026-09-27): the part already collected as a Tangerine area, what is still
+ * waiting to be collected as a green band over it (the legend's two colours), and everything earned as the line on top.
+ */
+function Split({ earned, collected, baseline }: { earned: readonly Point[]; collected: readonly Point[]; baseline: number }) {
+  const id = useSvgId('dm-fees-area-')
+  if (earned.length < 2) return null
+  const band = `${linePath(earned, 'linear')} ${linePath([...collected].reverse(), 'linear').replace(/^M/, 'L')} Z`
+  return (
+    <g>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" className="dm-stop-top" />
+          <stop offset="0.55" className="dm-stop-mid" />
+          <stop offset="1" className="dm-stop-bottom" />
+        </linearGradient>
+        <linearGradient id={`${id}w`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" className="dm-fees-wait-top" />
+          <stop offset="1" className="dm-fees-wait-bottom" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath(collected, 'linear', baseline)} fill={`url(#${id})`} className="dm-fees-collected" />
+      <path d={band} fill={`url(#${id}w)`} className="dm-fees-waiting" />
+      <path d={linePath(earned, 'linear')} className="dm-series-glow" />
+      <path d={linePath(earned, 'linear')} className="dm-series-line" />
+    </g>
+  )
+}
+
+/**
+ * The fees chart (DESIGN-V2 §13.2): everything earned in the period as a
+ * Tangerine line (linear between hourly points: earned only grows), the part
+ * of it already collected as a soft Tangerine area and the part still waiting
+ * as a green band (2026-09-27: the legend's colours, so the split reads on the
+ * chart itself), the settlements as pips, Auto-compound's re-adds as their
+ * own marks, time in range as a strip under the plot, the end dot and the
+ * current total in a chip. The y axis always names its floor, the
+ * period-start value, so the line reads as growth from there. Inspection
+ * snaps to bucket ends; the series layer never sees the inspected bucket.
+ * With nothing earned yet (`zero`) it is a timeline waiting for its first
+ * fee: the real flat line in a quiet ink from the mint pip to the end dot at
+ * now, and the two dates it spans.
  *
  * 2026-09-25 (review of r4/fees): an estimated history's (`estimated`) bucket values are sampled: each one's figure
  * carries "est." in its tooltip and its label, and its sampled time in range is left out, as the card leaves it out.
+ * 2026-09-27: the per-bucket bars are gone (the line's slope says when fees came in, and the tooltip says how much):
+ * one quiet picture a newcomer reads at a glance.
  */
-export function FeesChart({ view, pv, onInspect, zero, estimated = false }: { view: FeesView; pv: FeesPeriodView; onInspect: (index: number | null) => void; zero: boolean; estimated?: boolean }) {
+export function FeesChart({
+  view,
+  pv,
+  onInspect,
+  zero,
+  estimated = false,
+  automation,
+}: {
+  view: FeesView
+  pv: FeesPeriodView
+  onInspect: (index: number | null) => void
+  zero: boolean
+  estimated?: boolean
+  /** The automation's re-adds (lib/automationImpact.ts), marked where they happened, its name for the tooltip and whether its fees are the ones paid. */
+  automation?: { adds: readonly AutoAdd[]; by: string; exactFees: boolean }
+}) {
+  const adds = automation?.adds ?? NONE
   const phone = useMediaQuery('(max-width: 767px)')
-  const height = zero ? (phone ? HEIGHT_ZERO_PHONE : HEIGHT_ZERO) : phone ? 200 : 240
+  const height = zero ? (phone ? HEIGHT_ZERO_PHONE : HEIGHT_ZERO) : phone ? HEIGHT_PHONE : HEIGHT
   const pad = zero ? (phone ? PAD_ZERO_PHONE : PAD_ZERO) : phone ? PAD_PHONE : PAD
   const { start, end, buckets } = pv
   const baseN = unitsNumber(pv.base)
@@ -116,6 +208,9 @@ export function FeesChart({ view, pv, onInspect, zero, estimated = false }: { vi
   const bottomN = baseN
   const single = view.sources.length === 1 || view.sameTokens
   const currencies = view.sources[0].state.currencies
+  // Auto-compound's re-adds inside the period, and the manual settlements' pips (a re-add's own collect is its mark).
+  const marks = useMemo(() => adds.filter((add) => add.timestamp >= start && add.timestamp <= end), [adds, start, end])
+  const automatic = useMemo(() => new Set(adds.map((add) => add.tx)), [adds])
 
   const scales = useCallback(
     (plot: Plot) => ({
@@ -125,25 +220,21 @@ export function FeesChart({ view, pv, onInspect, zero, estimated = false }: { vi
     [start, end, bottomN, topN],
   )
 
-  const bars = useCallback(
-    (plot: Plot) => {
-      const { x } = scales(plot)
-      return buckets.map((bucket) => {
-        const x0 = x(bucket.start)
-        const x1 = x(bucket.end)
-        const width = Math.min(BAR_MAX, Math.max(BAR_MIN, (x1 - x0) * BAR_FILL))
-        return { x: (x0 + x1) / 2 - width / 2, width, value: unitsNumber(bucket.earnedIn) }
-      })
-    },
-    [scales, buckets],
-  )
-
   const series = useCallback(
     (plot: Plot) => {
       const { x, y } = scales(plot)
       const line = pv.points.map((point) => ({ x: x(point.t), y: y(point.v) }))
+      // The collected part never reads below the period's floor: what was collected before it is under the floor too.
+      const settled = pv.events.filter((event) => event.kind !== 'mint').map((event) => event.t).sort((a, b) => a - b)
+      const collected = collectedSteps(pv.points, settled).map((point) => ({ x: x(point.t), y: y(Math.max(bottomN, point.c)) }))
       const endPoint = line[line.length - 1]
-      const pips = <EventPips events={pv.events.map((event) => ({ x: x(event.t), y: y(event.v), kind: event.kind }))} />
+      const pips = (
+        <EventPips
+          events={pv.events
+            .filter((event) => event.kind === 'mint' || !automatic.has(event.tx))
+            .map((event) => ({ x: x(event.t), y: y(event.kind === 'mint' ? event.v : lineAt(pv.points, event.t)), kind: event.kind }))}
+        />
+      )
       if (zero) {
         // The real flat line, in a quiet ink (nothing earned is not a series to accent), under the pips; Tangerine only at now.
         return (
@@ -157,17 +248,17 @@ export function FeesChart({ view, pv, onInspect, zero, estimated = false }: { vi
       return (
         <>
           <Baseline y={plot.bottom} left={plot.left} right={plot.right} />
-          <AreaSeries segments={[line]} curve="linear" baseline={plot.bottom} />
-          {/* The bars tint the area rather than show through it, and the line is drawn again over them. */}
-          <BarSeries bars={bars(plot)} baseline={plot.bottom} maxHeight={(plot.bottom - plot.top) * BAR_SHARE} />
-          {line.length > 1 && <path d={linePath(line, 'linear')} className="dm-series-line" />}
+          <Split earned={line} collected={collected} baseline={plot.bottom} />
           {pips}
-          <InRangeStrip segments={stripSegments(pv.strip, x)} y={plot.bottom + 8} />
+          {marks.map((add, index) => (
+            <AutoMark key={add.tx} x={x(add.timestamp)} y={y(lineAt(pv.points, add.timestamp))} index={index} />
+          ))}
+          <InRangeStrip segments={stripSegments(pv.strip, x)} y={plot.bottom + 8} height={4} />
           {endPoint && <EndDot x={endPoint.x} y={endPoint.y} />}
         </>
       )
     },
-    [scales, bars, pv, zero],
+    [scales, pv, zero, bottomN, marks, automatic],
   )
 
   const lastText = valueFigure(view.basis, pv.last)
@@ -196,7 +287,7 @@ export function FeesChart({ view, pv, onInspect, zero, estimated = false }: { vi
       }
       const { x } = scales(plot)
       const dates = dateTicks(start, end, dateCount(plot)).map((tick) => ({ x: x(tick.t), label: tick.label }))
-      const xAxis = <XAxis ticks={dates} anchor={plot.bottom + 36} left={plot.left} right={plot.right} />
+      const xAxis = <XAxis ticks={dates} anchor={plot.bottom + 32} left={plot.left} right={plot.right} />
       // A phone draws its y labels over the series (inspect layer); a desktop in the gutter.
       if (phone) return xAxis
       const { floor, levels } = yLabels(plot)
@@ -224,22 +315,29 @@ export function FeesChart({ view, pv, onInspect, zero, estimated = false }: { vi
     )
   }
 
+  /** The re-adds inside a bucket (the last bucket holds its end). */
+  const addsIn = (index: number) => {
+    const bucket = buckets[index]
+    if (!bucket) return []
+    const last = index === buckets.length - 1
+    return marks.filter((add) => add.timestamp >= bucket.start && (add.timestamp < bucket.end || (last && add.timestamp <= bucket.end)))
+  }
+
   const inspect = (plot: Plot, index: number | null) => {
     const { x, y } = scales(plot)
     const endX = x(end)
     const endY = y(lastN)
     const bucket = index === null ? null : buckets[index]
+    const here = index === null ? [] : addsIn(index)
     return (
       <>
         {!zero && !phone && <LastValue x0={endX} x1={plot.width - 8} y={endY} />}
         {bucket && (
           <>
-            {!zero && (
-              <g className="dm-fees-hover-bars">
-                <BarSeries bars={bars(plot)} baseline={plot.bottom} maxHeight={(plot.bottom - plot.top) * BAR_SHARE} hovered={index} />
-              </g>
-            )}
             <Crosshair x={x(bucket.end)} y={y(unitsNumber(bucket.earned))} top={plot.top} bottom={plot.bottom} left={plot.left} right={plot.right} />
+            {here.map((add) => (
+              <AutoMark key={add.tx} x={x(add.timestamp)} y={y(lineAt(pv.points, add.timestamp))} active />
+            ))}
             <HoverDot x={x(bucket.end)} y={y(unitsNumber(bucket.earned))} />
           </>
         )}
@@ -259,6 +357,29 @@ export function FeesChart({ view, pv, onInspect, zero, estimated = false }: { vi
         )
       : null
 
+  /** Auto-compound's words for a bucket's re-adds: what it put back, and its fee on them. */
+  const autoNote = (here: readonly AutoAdd[]) => {
+    if (here.length === 0) return null
+    const value = here.reduce((sum, add) => sum + add.value, 0n)
+    const fee = here.reduce((sum, add) => sum + add.fee, 0n)
+    const quote = view.basis.kind === 'quote' ? ` ${symbolOf(currencies[view.basis.into])}` : ''
+    return (
+      <div className="dm-fees-tip-auto" data-fees-auto-tip="">
+        <span className="dm-fees-tip-auto-text">
+          {automation?.by} added {valueFigure(view.basis, value)}
+          {quote} back into your position{here.length > 1 ? ` (${here.length} times)` : ''}.
+        </span>
+        {positive(fee) && (
+          <span className="dm-fees-tip-auto-fee">
+            Service fee {automation?.exactFees ? '' : '≈'}
+            {valueFigure(view.basis, fee)}
+            {quote}
+          </span>
+        )}
+      </div>
+    )
+  }
+
   const overlay = (plot: Plot, index: number | null) => {
     const { x, y } = scales(plot)
     const bucket = index === null ? null : buckets[index]
@@ -268,7 +389,7 @@ export function FeesChart({ view, pv, onInspect, zero, estimated = false }: { vi
     return (
       <>
         {!zero && <LastValueChip yPct={(chipY / plot.height) * 100}>{lastText}</LastValueChip>}
-        {bucket && (
+        {bucket && index !== null && (
           <ChartTooltip x={x(bucket.end)} plot={plot} head={bucketLabel(bucket.start, bucket.end)}>
             <ChartTooltipRow label="Fees earned">{`${valueFigure(view.basis, bucket.earnedIn)}${estimated ? ' est.' : ''}`}</ChartTooltipRow>
             {tokenRows(bucket.tokensIn)}
@@ -281,6 +402,7 @@ export function FeesChart({ view, pv, onInspect, zero, estimated = false }: { vi
                 </Pill>
               </span>
             )}
+            {autoNote(addsIn(index))}
           </ChartTooltip>
         )}
       </>

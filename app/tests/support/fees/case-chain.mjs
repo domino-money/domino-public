@@ -130,8 +130,10 @@ export function caseChain(id, { edit = (position) => position, quietProbe = fals
     if (url !== owned.RPC_URL) throw new Error(`not the RPC: ${url}`);
     const body = JSON.parse(init.body);
     const one = (call) => {
-      chain.log.push({ method: call.method, params: call.params });
-      return { jsonrpc: '2.0', id: call.id, ...answer(call.method, call.params) };
+      const reply = { jsonrpc: '2.0', id: call.id, ...answer(call.method, call.params) };
+      // 2026-09-27: each call's reply size as the RPC's JSON, and when it came, for the tests that count what a page read.
+      chain.log.push({ method: call.method, params: call.params, bytes: JSON.stringify(reply).length, at: Date.now() });
+      return reply;
     };
     return new Response(JSON.stringify(Array.isArray(body) ? body.map(one) : one(body)), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };

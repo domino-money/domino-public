@@ -493,6 +493,77 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // and the list's guards hold only with the refresh on. Measured the same way against f9dca1d: dist financial 176,442
   // -> 176,456 B, all lazy 193,305 -> 193,354 B; .wallet-test-dist financial 178,158 -> 178,149 B, all lazy 195,250 ->
   // 195,282 B. Within the ceilings (51 B and 18 B to spare in the larger build), which are unchanged.
+  // 2026-09-27, r5/feesfast (the owner: the Fees earned chart took far too long to appear): a young position in a pool
+  // whose Swaps the probe sees takes the price path of its own life (src/lib/fees/pipeline.ts P5), its settlements also
+  // looked for among the pool's PositionManager ModifyLiquidity (functions/_lib/feesPath.ts `modifies`), its probe
+  // stopped after the pool's last hour, its mint looked for in windows newest first (a transfer read names `until`), and
+  // a read that names its blocks takes a head already read (functions/_lib/fees.ts headBlock, which the chain code and
+  // the fees worker both carry). The owner's 3325113: 12.9 s to a verified chart live, 3.7 to 4.7 s after. Made smaller
+  // first (the relay's transfer check; the page's client names the worker's kinds in fewer bytes). Measured on Windows,
+  // gzip level 9, both builds from each tree, against main 4f66233: fees worker 20,561 -> 21,309 B and chain code
+  // 13,874 -> 13,976 B in both builds; dist financial 176,446 -> 176,456 B, all lazy 193,349 -> 193,359 B;
+  // .wallet-test-dist financial 178,158 -> 178,128 B, all lazy 195,284 -> 195,245 B. The fees worker and chain code
+  // ceilings move by the minimum at 0.1 kB: 21.4 kB (91 B over both builds) and 14.0 kB (24 B); the financial,
+  // all-lazy and 90 kB session/read ceilings are unchanged.
+  // 2026-09-27, round 5 (r5/position, the owner: a position's page for someone who knows nothing of pools): its key
+  // figures (components/positions/KeyFigures.tsx: Position value, Fees ready to collect, Your APR and the price against
+  // the range), Your APR's arithmetic (lib/positionApr.ts), the page's own Activity card (PositionActivity.tsx) and its
+  // Details disclosure, all in the position page's lazy chunk, where only that page loads them (the positions kit, which
+  // would have put them in the entry every page loads, was measured and left: +1,876 B gzip there). Made smaller first:
+  // PositionValue.tsx is gone (its two figures are the key figures'), the page's own price and range cells are gone, and
+  // the owner's actions take `primary` from the page rather than reading the automation state themselves. Measured on
+  // Windows, gzip level 9, both builds from this tree against 4f66233: dist financial 176,446 -> 176,476 B, all lazy
+  // 193,349 -> 195,452 B; .wallet-test-dist financial 178,158 -> 178,177 B (23 B to spare), all lazy 195,284 ->
+  // 197,390 B. The all-lazy ceiling moves by the minimum at 0.1 kB, to 197.4 kB (10 B over the larger build); the
+  // financial, fees worker, chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-27, its review, with r5/charts (2504e7b) merged in: Activity marks only the re-adds the vault's own record
+  // names (visual/activityRows.ts, PositionActivity.tsx useAutomaticAdds on lib/automationImpact.ts). Measured on
+  // Windows, gzip level 9, both builds from this tree: dist financial 175,676 B, all lazy 194,895 B; .wallet-test-dist
+  // financial 176,971 B, all lazy 196,369 B. Within the ceilings (1,229 B and 1,031 B to spare in the larger build),
+  // which are unchanged.
+  // 2026-09-27, round 5, receipts (the owner: "Managed positions" and "Receipts" looked terrible, the receipts running down
+  // the Positions tab forever as tall cards of raw hashes): Receipts is one short row per receipt with a plain chip, what
+  // it re-added in token units summed per token, the cancelled ones folded into one row, and the detail (amounts, then a
+  // short copyable transaction, fee recipient and receipt id) one click away; the Positions tab shows four rows and links
+  // the full list on its own page (#/positions/receipts, in the entry); Managed positions is one short row per position
+  // with three figures and the rest inside All figures (screens/Execution.tsx, screens/Performance.tsx). The block and
+  // sequence hashes and the raw liquidity units are no longer shown, and to make it smaller first the detail's block
+  // line went too (45 B in .wallet-test-dist financial). Measured on
+  // Windows, gzip level 9, both builds from each tree, against main 4f66233: dist financial 176,446 -> 177,089 B, all lazy
+  // 193,349 -> 193,988 B; .wallet-test-dist financial 178,158 -> 178,775 B, all lazy 195,284 -> 195,897 B. Each moves by
+  // the minimum at 0.1 kB: financial 178.8 kB (25 B over the larger build), all lazy 195.9 kB (3 B); the fees worker,
+  // chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-27, round 5, receipts, its review: the Positions tab and the receipts page share one execution controller, so
+  // See all and the way back read no list of their own (execution-v1's one read per 30 s), and the token details read once
+  // are kept; a receipt's open sentence and the line under a position waiting for its first figures are in plain words;
+  // Managed positions points at Start tracking when the wallet owns an automation nothing tracks, names a waiting row by its
+  // position (with its link), shows no automation address outside All figures and leaves Track your automations out once
+  // every listed automation is tracked; "re-add" keeps its hyphen whole (a word joiner). Made smaller first: the new
+  // sentences were shortened and the receipts' visibility listener is added once, not per view (52 B in .wallet-test-dist
+  // financial). Measured on Windows, gzip level 9, both builds from each tree, against 3ab5e9f (the numbers above): dist
+  // financial 177,089 -> 177,246 B, all lazy 193,988 -> 194,140 B; .wallet-test-dist financial 178,775 -> 178,998 B, all
+  // lazy 195,897 -> 196,132 B. Each moves by the minimum at 0.1 kB: financial 179.0 kB (2 B over the larger build), all
+  // lazy 196.2 kB (68 B); the fees worker, chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-27, round 5 integrated (r5/integrate: r5/feesfast, r5/position with r5/charts, r5/receipts and r5/docs; the
+  // page's Activity waits for the vault's first read as the Fees earned card does; the Price range writes the key figures'
+  // plain figures; the card's unclaimed row says "Ready to collect"). Measured on Windows, gzip level 9, both builds from
+  // this tree and from a clean checkout of main 4f66233: dist financial 176,446 -> 176,473 B, all lazy 193,349 ->
+  // 195,723 B; .wallet-test-dist financial 178,158 -> 177,759 B, all lazy 195,284 -> 197,199 B; fees worker 20,561 ->
+  // 21,309 B and chain code 13,874 -> 13,983 B in both builds. The financial ceiling stays main's 178.2 kB (r5/receipts'
+  // 179.0 kB is not needed once r5/position's smaller page is in: 441 B to spare); all lazy moves by the minimum at
+  // 0.1 kB, to 197.2 kB (1 B over the larger build); the fees worker (21.4 kB) and chain code (14.0 kB) keep
+  // r5/feesfast's raise, which the integrated build still needs; 90 kB session/read is unchanged.
+  // 2026-09-27, round 5 integrated, the Fees earned card's new attempt (the owner: the chart took far too long; a refused
+  // run was asked again only by the next minute's /state read, about 67 s to the chart live): the fees worker's `done`
+  // carries its lane's wait (lib/chain/browser.ts chainLane wait, feesReplay.worker.ts) and the store asks a refused run
+  // again once it is over, then after 30, 60 and 120 s (lib/fees/store.ts RETRY_MS). The store is in the entry, and no
+  // lazy chunk's code changed: each one's raw bytes are the same, but every one imports the entry by its hashed file name,
+  // and the new name alone costs .wallet-test-dist's all lazy 46 B gzip (compared chunk by chunk). Made smaller first:
+  // the worker's failure answer is one `post`, not two. Measured on Windows, gzip level 9, both builds from this tree
+  // against 161d247: dist financial 176,473 -> 176,479 B, all lazy 195,723 -> 195,727 B; .wallet-test-dist financial
+  // 177,759 -> 177,794 B, all lazy 197,199 -> 197,245 B; fees worker 21,309 -> 21,331 B and chain code 13,983 B
+  // (unchanged: the lane is the worker's alone) in both builds. All lazy moves by the minimum at 0.1 kB, to 197.3 kB
+  // (55 B over the larger build); the financial, fees worker, chain code and 90 kB session/read ceilings are unchanged.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -539,7 +610,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 178_200], ['all lazy', allLazy, 195_300], ['fees worker', worker, 20_600], ['chain code', chain, 13_900]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 178_200], ['all lazy', allLazy, 197_300], ['fees worker', worker, 21_400], ['chain code', chain, 14_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

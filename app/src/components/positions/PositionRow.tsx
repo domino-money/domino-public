@@ -73,7 +73,7 @@ export function PositionRow({ card, block, state = null, tick }: { card: LiveCar
         <RowUsd card={card} state={state} which="principal" />
       </Amounts>
 
-      <Amounts label="Unclaimed fees" cell="fees">
+      <Amounts label="Fees ready to collect" cell="fees">
         <Amount amount={card.unsettledFees[0]} />
         <Amount amount={card.unsettledFees[1]} />
         <RowUsd card={card} state={state} which="unsettledFees" />
@@ -116,7 +116,7 @@ export function PendingRow({ tokenId }: { tokenId: string }) {
 }
 
 /**
- * Where the portfolio band's two figures will stand (Principal over its hero, Unclaimed fees over its figure), while
+ * Where the portfolio band's two figures will stand (Total value over its hero, Fees ready to collect over its figure), while
  * the list or its values are on their way: the band's own grid, so the rows under it never move when it fills in.
  */
 export function PendingSummary() {
@@ -146,8 +146,8 @@ export function PendingRows({ loading = false }: { loading?: boolean }) {
       <div className="dm-rows-head dm-acct-nft-band">
         <span>Pool</span>
         <span>Range</span>
-        <span>Principal</span>
-        <span>Unclaimed fees</span>
+        <span>Value</span>
+        <span>Fees ready to collect</span>
         <span />
       </div>
       <PendingRow tokenId="" />

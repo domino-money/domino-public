@@ -6,7 +6,8 @@
  * the `logs` function it is handed.
  *
  *   1. `transfer`: the mint block (the NFT's first Transfer from the zero address),
- *      looked for in the last epoch first, then (2026-09-25) only as far back
+ *      looked for in the last two days, then the rest of the last epoch
+ *      (2026-09-27: windows, none read twice), then (2026-09-25) only as far back
  *      as a mint whose swap days can still be replayed (MAX_SWAP_DAYS): an
  *      older one stops the run as too_much_history without a scan of the whole
  *      chain.
@@ -76,8 +77,23 @@
  *       P1 or P2 follows from it. No span is sized from a rate of 0: the first
  *       then reads SAMPLE_MIN_BLOCKS and the next grow by half, and a later
  *       run starts from the rate its checkpoint kept.
+ *   P5. (2026-09-27, the owner: the Fees earned chart took far too long) A
+ *       young position (a life under 1 / PATH_LIFE_SHARE of its pool's) in a
+ *       pool whose Swaps the probe saw takes the price path even when every
+ *       sample looked quiet: a pool's liquidity comes in bursts the samples
+ *       miss, and the exact replay read the whole of it first. The owner's
+ *       USDG/UFG 4 % position 3325113, a day old: its pool's history was
+ *       866 kB, 9 s of the paced lane before any Swap, where its own life
+ *       held 44 kB of ModifyLiquidity and 84 kB of Swaps (measured live that
+ *       day; 12.9 s to a verified chart, now about 3). Its probe stops after
+ *       the pool's last hour once that hour showed Swaps; the older epochs'
+ *       samples are taken only should the path not land and the exact
+ *       replay be the one. The NFT's own settlements are looked for among
+ *       every ModifyLiquidity the PositionManager made in the pool over the
+ *       life (`modifies`), as well as in its owners' payments: an
+ *       Auto-compound pays no owner and is paid by none.
  */
-import { BEHIND_RETRY_MS, BUDGET_MS, CLIENT_CONCURRENCY, DAY_SPAN, EPOCH_SPAN, HOUR_SPAN, MAX_DAYS_PER_REQUEST, MAX_HEADERS_PER_REQUEST, MAX_HOLDERS, MAX_SLOTS, MAX_SWAP_DAYS, PATH_BURST, PATH_LIFE_SHARE, PATH_NOW_BYTES, PATH_REFINE_BYTES, PATH_REFINE_MS, POSITION_MANAGER, SAMPLE_BATCH_BYTES, SAMPLE_BYTES, SAMPLE_MIN_BLOCKS, SAMPLE_SPANS_PER_REQUEST, SPAN_BLOCKS_MAX, SPAN_CAP_BYTES, SPAN_MIN_BLOCKS, SPAN_TARGET_BYTES } from './constants'
+import { BEHIND_RETRY_MS, BUDGET_MS, CLIENT_CONCURRENCY, DAY_SPAN, EPOCH_SPAN, HOUR_SPAN, MAX_DAYS_PER_REQUEST, MAX_HEADERS_PER_REQUEST, MAX_HOLDERS, MAX_SLOTS, MAX_SPANS_PER_REQUEST, MAX_SWAP_DAYS, PATH_BURST, PATH_LIFE_SHARE, PATH_NOW_BYTES, PATH_REFINE_BYTES, PATH_REFINE_MS, POSITION_MANAGER, SAMPLE_BATCH_BYTES, SAMPLE_BYTES, SAMPLE_MIN_BLOCKS, SAMPLE_SPANS_PER_REQUEST, SPAN_BLOCKS_MAX, SPAN_CAP_BYTES, SPAN_MIN_BLOCKS, SPAN_TARGET_BYTES, TRANSFER_RECENT } from './constants'
 import { estimateHistory, type EstimateSlot } from './estimate'
 import { FeeReplay, ReplayError, Timeline, type ReplayData } from './replay'
 import type { Checkpoint, CompactLog, FeeHistory, FeesReason, HourlyPrices, LogsRequest, LogsResponse, PositionState, RelayAnswer, WorkerResult } from './types'
@@ -105,6 +121,12 @@ export interface PipelineRun {
   checkpoint: Checkpoint | null
 }
 
+/**
+ * 2026-09-27: where a price path found the NFT's own settlements: its owners' payments (`settlements`), or every
+ * ModifyLiquidity the PositionManager made in the pool (`modifies`). A later run looks where the last one found them.
+ */
+type OwnSource = 'paid' | 'scan'
+
 /** What a checkpoint holds (opaque to the main thread). */
 interface PipelineCheckpoint {
   v: 1
@@ -112,7 +134,7 @@ interface PipelineCheckpoint {
    * 2026-09-25: a price path's (its later runs read only settlements and Swaps); absent for the exact replay. `rate`: the
    * Swaps' rate its next span was sized by (compact bytes a block), which sizes a later run's first span (P4).
    */
-  path?: { holders: string[]; rate: number }
+  path?: { holders: string[]; rate: number; own?: OwnSource }
   tokenId: string
   poolId: string
   tickLower: number
@@ -124,6 +146,28 @@ interface PipelineCheckpoint {
   points: Array<[number, number]>
   replay: ReplayData
   bytes: number
+}
+
+/**
+ * What the probe says (step 3): whether the whole history fits the budget, whether the pool's alone does, whether its
+ * epochs are asked in capped parts, and the Swaps' rate (compact bytes a block); 2026-09-27: `complete` false when it
+ * stopped before its older epochs' samples (a young position's, see probe).
+ */
+interface Plan {
+  fits: boolean
+  historyFits: boolean
+  inParts: boolean
+  swapRate: number
+  complete: boolean
+}
+
+/** The probe's windows, the next one to read, and what those read held. */
+interface Probing {
+  windows: Array<{ from: number; to: number; recent: boolean }>
+  next: number
+  pool: { count: number; bytes: number; blocks: number }
+  swaps: { count: number; bytes: number; blocks: number }
+  seen: { bytes: number; blocks: number }
 }
 
 class Stop extends Error {
@@ -214,6 +258,10 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
   let onPath = checkpoint?.path !== undefined
   /** The Swaps' rate the price path's spans are sized by (compact bytes a block; 0: not known). */
   let rate = checkpoint?.path?.rate ?? 0
+  /** Where the price path found the NFT's settlements (2026-09-27), once it has. */
+  let ownSource: OwnSource | undefined = checkpoint?.path?.own
+  /** The probe's samples so far (step 3). */
+  let probing: Probing | null = null
   /**
    * Where the run is. `spentBytes`: what a later run counts from, the bytes so far for a budget stop (a larger budget goes
    * on from them), none for a verified run (2026-09-25, review: each later run reads only the new logs, under a budget of
@@ -222,7 +270,7 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
   const keep = (spentBytes = bytes): Checkpoint | null =>
     replay === null
       ? null
-      : ({ v: 1, ...(onPath ? { path: { holders, rate } } : {}), tokenId: run.id, poolId: state.poolId, tickLower: state.tickLower, tickUpper: state.tickUpper, mintBlock, through, points, replay: replay.save(), bytes: spentBytes } satisfies PipelineCheckpoint as unknown as Checkpoint)
+      : ({ v: 1, ...(onPath ? { path: { holders, rate, ...(ownSource ? { own: ownSource } : {}) } } : {}), tokenId: run.id, poolId: state.poolId, tickLower: state.tickLower, tickUpper: state.tickUpper, mintBlock, through, points, replay: replay.save(), bytes: spentBytes } satisfies PipelineCheckpoint as unknown as Checkpoint)
 
   /** One relay request: rate limits waited out, a lagging relay asked once more, any other failure stops the run. */
   async function ask(request: LogsRequest): Promise<Answer> {
@@ -281,8 +329,58 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
    * (measured live that day), where its first six minutes, 28 kB, already stop the run. A pool quiet this hour can have
    * been busy for weeks (USDG/DELTA's last epochs were 1 and 1.7 MB): hence the samples in its older epochs.
    */
-  async function probe(initBlock: number): Promise<{ fits: boolean; historyFits: boolean; inParts: boolean; swapRate: number }> {
-    const windows: Array<{ from: number; to: number; recent: boolean }> = []
+  async function probe(initBlock: number, young = false): Promise<Plan> {
+    const sample = (probing ??= probeWindows(initBlock))
+    const { windows, pool, swaps, seen } = sample
+    const size = (logs: readonly CompactLog[]) => logs.reduce((sum, log) => sum + JSON.stringify(log).length, 0)
+    const rate = (count: number, total: number, blocks: number) => (count > PROBE_SLACK ? ((count - PROBE_SLACK) * (total / count)) / blocks : 0)
+    const swapRate = () => Math.max(swaps.blocks > 0 ? swaps.bytes / swaps.blocks : 0, seen.blocks > 0 ? seen.bytes / seen.blocks : 0)
+    const plan = (fits: boolean, historyFits: boolean, inParts: boolean, swapRate: number, complete = true): Plan => ({ fits, historyFits, inParts, swapRate, complete })
+    for (; sample.next < windows.length; sample.next += 1) {
+      const { from, to, recent } = windows[sample.next]
+      // 2026-09-27: a young position (PATH_LIFE_SHARE) in a pool whose Swaps its last hour showed takes the price path
+      // (see the header), and the older epochs' samples only say whether the pool's whole history would fit: they are
+      // taken later, should the path not land and the exact replay of that history be the one.
+      if (young && !recent && seen.bytes > 0) return plan(true, true, pool.count > 0, swapRate(), false)
+      within()
+      let logs: CompactLog[]
+      try {
+        logs = rangeLogs(await ask({ kind: 'probe', poolId: state.poolId, from, to }))
+      } catch (error) {
+        // A sample past the probe's own cap (a reply of 64 kB) is a history no budget reaches: the price path's, then.
+        if (error instanceof Stop && error.reason === 'too_much_history' && !spent()) return plan(false, false, true, Math.max(swapRate(), PROBE_CAP_BYTES / (to - from + 1)))
+        throw error
+      }
+      const swapped = logs.filter((log) => log[2] === 3 || log[2] === 4)
+      seen.bytes += size(swapped)
+      seen.blocks += to - from + 1
+      const history = logs.filter((log) => log[2] <= 2)
+      pool.count += history.length
+      pool.bytes += size(history)
+      pool.blocks += to - from + 1
+      if (recent) {
+        swaps.count += swapped.length
+        swaps.bytes += size(swapped)
+        swaps.blocks += to - from + 1
+      }
+      const projected = rate(pool.count, pool.bytes, pool.blocks) * (top - initBlock + 1) + rate(swaps.count, swaps.bytes, swaps.blocks) * (top - mintBlock + 1)
+      if (bytes + projected > run.budgetBytes) return plan(false, false, pool.count > 0, swapRate())
+      // 2026-09-25: any liquidity history in a sample and the price path is the one (its reads are the position's own
+      // life, never the pool's history): liquidity comes in bursts the samples do not see, and a projection that fitted
+      // read USDG/DELTA's epochs in parts for 20 s and stopped (measured live that day). The exact replay of the pool's
+      // history stays for a pool whose every sample was quiet (the owner's USDG/UFG 79 %, 5 kB).
+      if (pool.count > 0) return plan(false, true, true, swapRate())
+    }
+    // Any liquidity history in the samples: the pool's epochs are asked in capped parts. Liquidity comes in bursts the
+    // samples do not see: USDG/DELTA showed 5 liquidity logs in 64,800 sampled blocks (measured live on 2026-09-25) and
+    // its last epochs, asked whole, were replies of 1 and 1.7 MB. A pool with none in its samples is asked whole, one
+    // reply an epoch, as quiet pools are (the owner's USDG/UFG 79 %).
+    return plan(true, true, pool.count > 0, swapRate())
+  }
+
+  /** The probe's samples (step 3), newest first, and what they held so far: a probe stopped early goes on from them. */
+  function probeWindows(initBlock: number): Probing {
+    const windows: Probing['windows'] = []
     let end = top
     for (const span of PROBE_SLICES) {
       const from = Math.max(initBlock, end - span + 1)
@@ -299,50 +397,9 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
       const to = Math.min(top, from + PROBE_EPOCH_SAMPLE - 1)
       if (from <= to && to < recentFrom) windows.push({ from, to, recent: false })
     }
-    const size = (logs: readonly CompactLog[]) => logs.reduce((sum, log) => sum + JSON.stringify(log).length, 0)
-    const rate = (count: number, total: number, blocks: number) => (count > PROBE_SLACK ? ((count - PROBE_SLACK) * (total / count)) / blocks : 0)
-    const pool = { count: 0, bytes: 0, blocks: 0 }
-    const swaps = { count: 0, bytes: 0, blocks: 0 }
-    // 2026-09-25: the Swaps' own rate over every sample (no slack), for the price path's plan (step P); 0 when no sample
-    // held a Swap, which the plan takes as a rate not known (P4), never as a quiet pool.
-    const seen = { bytes: 0, blocks: 0 }
-    const swapRate = () => Math.max(swaps.blocks > 0 ? swaps.bytes / swaps.blocks : 0, seen.blocks > 0 ? seen.bytes / seen.blocks : 0)
-    for (const { from, to, recent } of windows) {
-      within()
-      let sample: CompactLog[]
-      try {
-        sample = rangeLogs(await ask({ kind: 'probe', poolId: state.poolId, from, to }))
-      } catch (error) {
-        // A sample past the probe's own cap (a reply of 64 kB) is a history no budget reaches: the price path's, then.
-        if (error instanceof Stop && error.reason === 'too_much_history' && !spent()) return { fits: false, historyFits: false, inParts: true, swapRate: Math.max(swapRate(), PROBE_CAP_BYTES / (to - from + 1)) }
-        throw error
-      }
-      const swapped = sample.filter((log) => log[2] === 3 || log[2] === 4)
-      seen.bytes += size(swapped)
-      seen.blocks += to - from + 1
-      const history = sample.filter((log) => log[2] <= 2)
-      pool.count += history.length
-      pool.bytes += size(history)
-      pool.blocks += to - from + 1
-      if (recent) {
-        const swapLogs = sample.filter((log) => log[2] === 3 || log[2] === 4)
-        swaps.count += swapLogs.length
-        swaps.bytes += size(swapLogs)
-        swaps.blocks += to - from + 1
-      }
-      const projected = rate(pool.count, pool.bytes, pool.blocks) * (top - initBlock + 1) + rate(swaps.count, swaps.bytes, swaps.blocks) * (top - mintBlock + 1)
-      if (bytes + projected > run.budgetBytes) return { fits: false, historyFits: false, inParts: pool.count > 0, swapRate: swapRate() }
-      // 2026-09-25: any liquidity history in a sample and the price path is the one (its reads are the position's own
-      // life, never the pool's history): liquidity comes in bursts the samples do not see, and a projection that fitted
-      // read USDG/DELTA's epochs in parts for 20 s and stopped (measured live that day). The exact replay of the pool's
-      // history stays for a pool whose every sample was quiet (the owner's USDG/UFG 79 %, 5 kB).
-      if (pool.count > 0) return { fits: false, historyFits: true, inParts: true, swapRate: swapRate() }
-    }
-    // Any liquidity history in the samples: the pool's epochs are asked in capped parts. Liquidity comes in bursts the
-    // samples do not see: USDG/DELTA showed 5 liquidity logs in 64,800 sampled blocks (measured live on 2026-09-25) and
-    // its last epochs, asked whole, were replies of 1 and 1.7 MB. A pool with none in its samples is asked whole, one
-    // reply an epoch, as quiet pools are (the owner's USDG/UFG 79 %).
-    return { fits: true, historyFits: true, inParts: pool.count > 0, swapRate: swapRate() }
+    // 2026-09-25: `seen`, the Swaps' own rate over every sample (no slack), for the price path's plan (step P); 0 when no
+    // sample held a Swap, which the plan takes as a rate not known (P4), never as a quiet pool.
+    return { windows, next: 0, pool: { count: 0, bytes: 0, blocks: 0 }, swaps: { count: 0, bytes: 0, blocks: 0 }, seen: { bytes: 0, blocks: 0 } }
   }
 
   /** Block times from the hour of `from` to the state block's, at most MAX_HEADERS_PER_REQUEST × 2 of them (a long life's every few hours). */
@@ -367,6 +424,47 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
   }
 
   /**
+   * The NFT's own ModifyLiquidity events in [from, top] (2026-09-27): found by its owners' payments (`settlements`: the
+   * blocks where the pool's currencies moved between the PoolManager and an owner, as before), and when those do not
+   * account for the position's liquidity now, among every ModifyLiquidity the PositionManager made in the pool over those
+   * blocks (`modifies`), which also finds a settlement no owner paid or was paid for: an Auto-compound collects the fees
+   * and adds them back inside the PoolManager (the owner's 3325113: five settlements, none of them an owner's payment,
+   * so the path could not land and the card waited for the exact replay of the pool's whole history, 866 kB at the
+   * lane's pace). A later run looks where the last one found them (a checkpoint's `own`). The payments go first: the
+   * scan reads the pool's other LPs' logs too, a reply as large as its cap in a pool whose LPs are busy. `base` is the
+   * position's liquidity before `from`.
+   */
+  async function ownEvents(from: number, base: bigint): Promise<CompactLog[]> {
+    if (ownSource !== 'scan' && holders.length > 0) {
+      const currencies: [string, string] = [state.currencies[0].address, state.currencies[1].address]
+      const paid = rangeLogs(await ask({ kind: 'settlements', poolId: state.poolId, tokenId: run.id, holders, currencies, from, to: top })).filter((log) => log[0] >= from && log[0] <= top && ownModify(log, tokenId))
+      if (paid.reduce((sum, log) => sum + BigInt.asIntN(256, word(log[5], 2)), base) === state.liquidity) {
+        ownSource = 'paid'
+        return paid
+      }
+    }
+    const scanned = await modifiesIn(from)
+    ownSource = 'scan'
+    return scanned
+  }
+
+  /** Every ModifyLiquidity of the PositionManager in the pool over [from, top], in day spans, the NFT's own kept. */
+  async function modifiesIn(from: number): Promise<CompactLog[]> {
+    const spans: Array<[number, number]> = []
+    for (let at = from; at <= top; at += SPAN_BLOCKS_MAX) spans.push([at, Math.min(top, at + SPAN_BLOCKS_MAX - 1)])
+    const found: CompactLog[] = []
+    for (let i = 0; i < spans.length; i += MAX_SPANS_PER_REQUEST) {
+      within()
+      const batch = spans.slice(i, i + MAX_SPANS_PER_REQUEST)
+      const answer = await ask({ kind: 'modifies', poolId: state.poolId, tokenId: run.id, spans: batch })
+      const units = 'units' in answer ? answer.units : []
+      if (units.length !== batch.length || units.some((unit, j) => unit.from !== batch[j][0] || unit.to !== batch[j][1])) throw new Stop('rpc_unavailable')
+      for (const unit of units) found.push(...unit.logs.filter((log) => log[0] >= unit.from && log[0] <= unit.to && ownModify(log, tokenId)))
+    }
+    return found.sort(byPosition)
+  }
+
+  /**
    * The price path (2026-09-25; the header's P1 and P2): the NFT's own settlements, the Swaps of its life, the check.
    * `start` is the pool's, for a first run; a path checkpoint's run goes on from where it stopped.
    */
@@ -380,15 +478,12 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     replay = path
     const from = resumed ? through + 1 : mintBlock
     const timeline = await timelineFrom(from)
-    const currencies: [string, string] = [state.currencies[0].address, state.currencies[1].address]
-    // (a) The NFT's own ModifyLiquidity events: its mint (in its block) and every settlement its owners made since.
-    const own =
-      from <= top && holders.length > 0
-        ? rangeLogs(await ask({ kind: 'settlements', poolId: state.poolId, tokenId: run.id, holders, currencies, from, to: top })).filter((log) => log[0] >= from && log[0] <= top && ownModify(log, tokenId))
-        : []
-    // The settlements found must account for the position's liquidity now: one missed (an increase, or a decrease paid
-    // to someone who was never an owner) and the path cannot land on the chain's figures, so it stops before reading.
-    const liquidity = own.reduce((sum, log) => sum + BigInt.asIntN(256, word(log[5], 2)), resumed ? path.positionLiquidity() : 0n)
+    // (a) The NFT's own ModifyLiquidity events: its mint (in its block) and every settlement since. They must account for
+    // the position's liquidity now: one missed (an increase, or a decrease paid to someone who was never an owner) and the
+    // path cannot land on the chain's figures, so it stops before reading.
+    const base = resumed ? path.positionLiquidity() : 0n
+    const own = from <= top ? await ownEvents(from, base) : []
+    const liquidity = own.reduce((sum, log) => sum + BigInt.asIntN(256, word(log[5], 2)), base)
     if (liquidity !== state.liquidity) throw new Stop('replay_mismatch')
     if (!resumed) {
       if (own.length === 0 || own[0][0] !== mintBlock) throw new Stop('rpc_unavailable')
@@ -603,12 +698,21 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     // 1–2. The mint and the size of the history.
     const lastDay = Math.floor(top / DAY_SPAN)
     if (!checkpoint) {
-      const transfersSince = async (since: number) => rangeLogs(await ask({ kind: 'transfer', tokenId: run.id, since })).filter((log) => log[0] <= top && log[2] === 5)
       const isMint = (log: CompactLog) => log[4][0] === ZERO_TOPIC
       const earliest = Math.max(0, (lastDay - MAX_SWAP_DAYS + 1) * DAY_SPAN)
-      const recent = Math.max(earliest, top - EPOCH_SPAN + 1)
-      let transfers = await transfersSince(recent)
-      if (!transfers.some(isMint) && earliest < recent) transfers = await transfersSince(earliest)
+      // 2026-09-27: in windows, newest first and none read twice: the last TRANSFER_RECENT blocks, then the rest of the
+      // last epoch, then as far back as a history can still be replayed. The last epoch was one scan of 3.6 million
+      // blocks, which the node took 2.2 s over once (live, that day: "log query timed out"), and the lane then rested
+      // four times as long before the next read; the older ones asked it again from `earliest`, with the last epoch in it.
+      let transfers: CompactLog[] = []
+      let upper = top
+      for (const lower of [top - TRANSFER_RECENT + 1, top - EPOCH_SPAN + 1, earliest]) {
+        const since = Math.max(earliest, lower)
+        if (since > upper) continue
+        transfers = [...rangeLogs(await ask({ kind: 'transfer', tokenId: run.id, since, until: upper })).filter((log) => log[0] >= since && log[0] <= upper && log[2] === 5), ...transfers]
+        upper = since - 1
+        if (transfers.some(isMint)) break
+      }
       const minted = transfers.find(isMint)
       // /state found the NFT, so its mint is older than any history that could be replayed.
       if (!minted) throw new Stop('too_much_history')
@@ -639,14 +743,16 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
       replay = FeeReplay.start({ tokenId, tickLower: state.tickLower, tickUpper: state.tickUpper, tickSpacing, fee }, 0n, 0)
       firstEpoch = Math.floor(initialized[0] / EPOCH_SPAN)
       initBlock = initialized[0]
-      const plan = await probe(initBlock)
-      // 2026-09-25: a pool's whole history past the budget, or any liquidity history in the samples: the price path (see
-      // the header), no longer a stop.
       // A position that has lived through most of a pool whose history fits (2310187: twelve million of its pool's
       // thirteen) reads about as much either way, and the exact replay of that history needs no owner's payments looked
       // for over its whole life (a query the node gave up on once, live, and the lane then rested for): it stays exact.
-      const oldHand = plan.historyFits && (top - mintBlock) * PATH_LIFE_SHARE > top - initBlock
-      if (!plan.fits && !oldHand) {
+      const young = (top - mintBlock) * PATH_LIFE_SHARE <= top - initBlock
+      let plan = await probe(initBlock, young)
+      const oldHand = plan.historyFits && !young
+      // 2026-09-25: a pool's whole history past the budget, or any liquidity history in the samples: the price path (see
+      // the header), no longer a stop. 2026-09-27: and a young position in a pool whose Swaps the samples saw, however
+      // quiet its liquidity looked in them (the header's P5).
+      if ((!plan.fits || (young && plan.swapRate > 0)) && !oldHand) {
         const initPrice = word(initialized[5], 3)
         const initTick = Number(BigInt.asIntN(24, word(initialized[5], 4)))
         const start = { lpFee: fee, tickSpacing, initBlock, initPrice, initTick, swapRate: plan.swapRate }
@@ -654,11 +760,22 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
         // The pool's history fits by its samples: should the path not settle the position (an owner who traded too
         // often for its settlements to be looked for, as 2310187's did in the fee scenes, or a replay that disagrees),
         // the exact replay of that history is the one, as before.
+        let failed: WorkerResult | Stop
         try {
           const result = await pricePath(start)
           if (result.ok || result.reason !== 'replay_mismatch') return result
+          failed = result
         } catch (error) {
           if (!(error instanceof Stop && (error.reason === 'replay_mismatch' || (error.reason === 'too_much_history' && bytes < run.budgetBytes)))) throw error
+          failed = error
+        }
+        // 2026-09-27: a young position's probe left its older epochs' samples for now: they say whether that history fits.
+        if (!plan.complete) {
+          plan = await probe(initBlock)
+          if (!plan.historyFits) {
+            if (failed instanceof Stop) throw failed
+            return failed
+          }
         }
         // The page's time again for the pool's history (the card shows its figures and loads meanwhile).
         deps.extend?.(BUDGET_MS.page)

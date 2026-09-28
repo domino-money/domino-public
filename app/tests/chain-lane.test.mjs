@@ -136,6 +136,30 @@ test('the first refusal stops the run and rests the lane; an unreadable reply is
   } finally { lane.close(); }
 });
 
+// 2026-09-27 (the owner: the Fees earned chart took far too long): the fees worker hands the store how long its lane waits
+// before it asks the RPC anything again, and the store asks a refused run again then (store.ts RETRY_MS), not a minute later.
+test('the lane says how long before it asks anything again: its rest after a refusal, or the work its last reply cost; 0 when it may ask at once', async () => {
+  let at = 1_000;
+  const lane = chainLane({ ...PACE, restMs: 30_000, workFactor: 4 }, () => at);
+  try {
+    assert.equal(lane.wait(), 0, 'a new lane asks at once');
+    const deps = lane.deps();
+    await withFetch(() => new Response('Too Many Requests', { status: 429 }), () => deps.fetch(RPC, { method: 'POST', body: '{}' }));
+    assert.equal(lane.wait(), 30_000, 'refused: the whole rest');
+    at += 29_000;
+    assert.equal(lane.wait(), 1_000);
+    at += 1_000;
+    assert.equal(lane.wait(), 0, 'the rest is over');
+    // A slow reply: the work it cost the RPC, workFactor times its time above a usual round trip, is waited out as well.
+    const slow = lane.deps();
+    await withFetch(() => {
+      at += 2_200;
+      return new Response('{}');
+    }, () => call(slow));
+    assert.equal(lane.wait(), 4 * (2_200 - 200));
+  } finally { lane.close(); }
+});
+
 // 2026-09-25 (review of r4/fees): each tab has its own fees worker and lane, and the RPC limits the visitor's address,
 // not a tab: two busy-pool pages each paced alone read at twice the pace. Two lanes in one process hear each other on the
 // channel as two tabs' workers do.

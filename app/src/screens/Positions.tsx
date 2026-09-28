@@ -20,10 +20,11 @@ type Connected = Extract<WalletIdentityView, { kind: 'connected' }>
 // wallet session: performance history and execution receipts. Each is its own
 // chunk, loaded only when this page is open in such a build; elsewhere the
 // constant is null and nothing is imported. The stand-in takes any props, so
-// it can stand in for a chunk whose component takes some (HeldDeposits).
+// it can stand in for a chunk whose component takes some (HeldDeposits, and
+// Execution's preview limit).
 const couldNotLoad = () => ({ default: (_props: object) => <p role="alert" className="dm-acct-quiet">This section couldn’t load. Reload to try again.</p> })
 const Performance = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./Performance').catch(couldNotLoad)) : null
-const Execution = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./Execution').catch(couldNotLoad)) : null
+const Execution = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ limit?: number }>>(() => import('./Execution').catch(couldNotLoad)) : null
 // The deposits the wallet has not turned into a position, each with its refund: its own chunk, in wallet builds only.
 // Typed from the slot's own props, so this screen names nothing of that chunk but its lazy import.
 const HeldDeposits = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<Parameters<DepositsSlot>[0]>>(() => import('../components/positions/HeldDeposits').catch(couldNotLoad)) : null
@@ -74,7 +75,8 @@ function Plot({ children, status = false }: { children: ReactNode; status?: bool
  * so the card carries that window as a fixed chip, never tabs, and never a
  * line. The history itself is rugged97's Performance screen, mounted inside
  * the automation frame (DESIGN-V2 §13.6): signed out, its sentence sits on a
- * dotted plate under the Domino-compound machine.
+ * dotted plate under the Domino-compound machine. Changed on purpose (owner,
+ * 2026-09-27, round 5): the chip says the window in plain words.
  */
 function ManagedCard() {
   return (
@@ -82,7 +84,7 @@ function ManagedCard() {
       title="Managed positions"
       titleId="managed-title"
       art="domino"
-      aside={<Chip>Rolling 24-hour window</Chip>}
+      aside={<Chip>Last 24 hours</Chip>}
       className="dm-acct-card animate-rise"
       style={rise(2)}
       data-managed-positions={Performance ? '' : undefined}
@@ -98,10 +100,34 @@ function ManagedCard() {
   )
 }
 
-/** Receipts of what automation did, read with the wallet session: rugged97's Execution screen, mounted inside the automation frame. */
-function ReceiptsCard() {
+/** The full list of receipts: its own page under Positions (`#/positions/receipts`), which the Receipts card links. */
+const receiptsHref = '#/positions/receipts'
+/** How many rows the Receipts card shows before See all: the cancelled ones count as one. */
+const RECENT = 4
+
+/**
+ * Receipts of what automation did, read with the wallet session: rugged97's
+ * Execution screen, mounted inside the automation frame. Changed on purpose
+ * (owner, 2026-09-27, round 5: the receipts ran down the page forever): the
+ * card is a short Recent list, one row per receipt, and its See all opens the
+ * full list on a page of its own.
+ */
+function ReceiptsCard({ limit, title = 'Receipts' }: { limit?: number; title?: string }) {
   return (
-    <AutomationFrame title="Receipts" titleId="receipts-title" art="receipt" className="dm-acct-card">
+    <AutomationFrame
+      title={title}
+      titleId="receipts-title"
+      art="receipt"
+      className="dm-acct-card"
+      aside={
+        limit !== undefined &&
+        Execution && (
+          <a href={receiptsHref} className="dm-rcpt-all" aria-label="See all receipts" data-receipts-all="">
+            See all
+          </a>
+        )
+      }
+    >
       {Execution ? (
         <Suspense
           fallback={
@@ -110,12 +136,28 @@ function ReceiptsCard() {
             </p>
           }
         >
-          <Execution />
+          <Execution limit={limit} />
         </Suspense>
       ) : (
         <p className="dm-acct-quiet">Wallet sign-in isn’t available here, so automation receipts can’t be read.</p>
       )}
     </AutomationFrame>
+  )
+}
+
+/** `#/positions/receipts`: every receipt read so far, newest first, with Show more for the next page. Positions stays lit in the header. */
+function ReceiptsPage() {
+  return (
+    <PageShell>
+      <a href="#/positions" className="dm-pos-back">
+        <IconChevronLeft size={16} />
+        Positions
+      </a>
+      <Display as="h1" className="dm-display-h1 dm-rcpt-title">
+        Receipts
+      </Display>
+      <ReceiptsCard title="All receipts" />
+    </PageShell>
   )
 }
 
@@ -222,7 +264,7 @@ function PositionsList() {
           {/* Side by side from 1024px; stacked, after the rail's cards, below. */}
           <div className="dm-acct-pair">
             <ManagedCard />
-            <ReceiptsCard />
+            <ReceiptsCard limit={RECENT} />
           </div>
         </div>
 
@@ -239,10 +281,12 @@ function PositionsList() {
 
 /**
  * `#/positions`: the list. `#/positions/<id>`, one canonical decimal NFT id,
- * is that position's own page; anything else after `#/positions/` (a list of
- * ids included: there is no lookup any more) is the list.
+ * is that position's own page; `#/positions/receipts` is the full list of
+ * automation receipts; anything else after `#/positions/` (a list of ids
+ * included: there is no lookup any more) is the list.
  */
 export function Positions({ param = '' }: { param?: string }) {
+  if (param === 'receipts') return <ReceiptsPage />
   const detail = positionDetailId(param)
   if (!detail) return <PositionsList />
   return (

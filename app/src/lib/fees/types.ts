@@ -205,8 +205,11 @@ export type CompactEvent = 0 | 1 | 2 | 3 | 4 | 5
 
 /** POST /api/fees/v1/logs. The caller chooses the kind and a pool id or token id; every contract, topic and method is fixed by the relay. */
 export type LogsRequest =
-  /** PositionManager Transfer, topic3 = tokenId, from the first Transfer ever (or from `since`) to the head, one call. */
-  | { kind: 'transfer'; tokenId: string; since?: number }
+  /**
+   * PositionManager Transfer, topic3 = tokenId, from the first Transfer ever (or from `since`) to the head, one call;
+   * 2026-09-27: to `until` when asked (a window of blocks, the replay's newest first).
+   */
+  | { kind: 'transfer'; tokenId: string; since?: number; until?: number }
   /** PoolManager Initialize, topic1 = poolId, whole chain, one call; final once found. */
   | { kind: 'initialize'; poolId: Hex32 }
   /**
@@ -236,6 +239,12 @@ export type LogsRequest =
    * between the PoolManager and one of `holders` (the NFT's owners): its mint and every settlement an owner made.
    */
   | { kind: 'settlements'; poolId: Hex32; tokenId: string; holders: Hex20[]; currencies: [Hex20, Hex20]; from: number; to: number }
+  /**
+   * 2026-09-27, the replay worker only: the NFT's own ModifyLiquidity logs in 1..16 spans of blocks (each at most a day),
+   * found among every ModifyLiquidity the PositionManager made in the pool there, one batch, the reply capped: a
+   * settlement no owner paid or was paid for (an automation's compound collects and adds back inside the PoolManager).
+   */
+  | { kind: 'modifies'; poolId: Hex32; tokenId: string; spans: Array<[from: number, to: number]> }
 
 export type LogsKind = LogsRequest['kind']
 
@@ -250,7 +259,7 @@ export interface LogsUnit {
 }
 
 export type LogsResponse =
-  | { v: 1; kind: 'transfer' | 'initialize' | 'pool' | 'swaps' | 'probe' | 'span' | 'settlements'; head: number; units: LogsUnit[]; next: number | null }
+  | { v: 1; kind: 'transfer' | 'initialize' | 'pool' | 'swaps' | 'probe' | 'span' | 'settlements' | 'modifies'; head: number; units: LogsUnit[]; next: number | null }
   | { v: 1; kind: 'swapBefore'; head: number; log: CompactLog | null }
   | { v: 1; kind: 'headers'; head: number; headers: Array<[block: number, timestamp: number]> }
   | { v: 1; kind: LogsKind; behind: true }
@@ -300,7 +309,11 @@ export type FromWorker =
   | { type: 'progress'; id: string; bytes: number; daysDone: number; daysTotal: number }
   /** 2026-09-25: an estimated history, while the run goes on to the exact one (a busy pool's: pipeline.ts, path mode). */
   | { type: 'estimate'; id: string; history: FeeHistory; prices: HourlyPrices }
-  | { type: 'done'; id: string; result: WorkerResult }
+  /**
+   * `wait` (2026-09-27): how long before the worker's lane asks the RPC anything again (its rest after a refusal); a run
+   * that could not reach the chain is asked again no sooner (store.ts).
+   */
+  | { type: 'done'; id: string; result: WorkerResult; wait?: number }
 
 /** How much the history of one subscriber may download: the position page, or the Positions list's aggregate. */
 export type FeesScope = 'page' | 'list'

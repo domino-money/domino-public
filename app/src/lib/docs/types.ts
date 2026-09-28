@@ -6,6 +6,8 @@
  * Pure data: no React, no build flags, no markup. Links stay inside this app.
  */
 
+import type { ShotId } from './shots'
+
 /** Inline text. A link's `to` is a route of this app and starts with `#/`. */
 export type Inline = string | { b: string } | { mono: string } | { to: string; text: string }
 
@@ -18,6 +20,13 @@ export type Block =
   | { kind: 'addresses'; rows: readonly { label: string; role: string; address: string }[] }
   | { kind: 'split'; columns: readonly { title: string; items: readonly (readonly Inline[])[] }[] }
   | { kind: 'terms'; items: readonly { id: string; term: string; text: readonly Inline[] }[] }
+  /** A picture of a screen, from the app's test view with made-up figures (public/docs/<shot>.webp; size and alt in shots.ts). */
+  | { kind: 'shot'; shot: ShotId; caption: string }
+  /** A drawing of an idea rather than a screen (components/docs/DocsDiagram.tsx), with its plain description. */
+  | { kind: 'diagram'; name: DiagramName; caption: string; alt: string }
+
+/** The docs' drawings: how a position earns fees, and the three ways its fees can be used. */
+export type DiagramName = 'earning' | 'three-ways'
 
 export interface DocSubsection {
   id: string

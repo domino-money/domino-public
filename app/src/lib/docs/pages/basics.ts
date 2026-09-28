@@ -5,15 +5,16 @@ import type { DocPage } from '../types'
 export const POOLS: DocPage = {
   slug: 'pools',
   title: 'Pools and fee tiers',
-  summary: 'A pool trades two tokens, and every swap through it pays the pool’s fee tier.',
+  summary: 'A pool trades two tokens, and every swap through it pays the pool’s fee.',
   sections: [
     {
       id: 'two-tokens',
       title: 'Two tokens, one pool',
       blocks: [
+        p('A pool holds two tokens and lets people swap one for the other. Its price is how many of one token buy one of the other.'),
         // Written here, not imported: outside its range a position holds only one of its tokens (see RANGES).
         p('Liquidity is always a pair: the pool trades one asset against the other, and a position in range holds some of each.'),
-        p('Swappers trade through the pool. Liquidity providers supply the two tokens those swaps draw on, and earn the pool’s trading fee in return.'),
+        p('People who swap are traders. People who supply the two tokens are liquidity providers, and they earn the pool’s fee in return.'),
         note([CREATE.token.nativeNote]),
       ],
     },
@@ -21,25 +22,25 @@ export const POOLS: DocPage = {
       id: 'fee-tiers',
       title: 'Fee tiers',
       blocks: [
-        p('A pool’s fee tier is the share of every swap it charges. Swappers pay it to the pool’s liquidity providers, on each trade. It is not a charge on your deposit.'),
+        p('A pool’s fee tier is the share of every swap it charges, such as 0.30%. Traders pay it on each trade, and it goes to the pool’s liquidity providers. It is never taken from your deposit.'),
         p('A pool can also carry Uniswap’s protocol fee, taken from what a swap sells into the pool before the fee tier. It does not go to liquidity providers. A pool’s page shows it.'),
-        p('Pools of the same two tokens can charge different fee tiers. Each pool’s page shows its own.'),
+        // 2026-09-27 (review of 260a76a): pools of one pair and one fee can differ by their other settings.
+        p('The same two tokens can have several pools, for example one per fee tier.'),
       ],
     },
     {
       id: 'dynamic-fees',
-      title: 'Fixed and dynamic fees',
+      title: 'Fixed fees and hooks',
       blocks: [
-        p('A fixed fee is the same for every swap. In a pool with a dynamic fee, a hook contract attached to the pool sets the fee instead.'),
-        p('Deposits and automation in Domino work with hookless pools that have a fixed fee.'),
+        p('Most pools charge a fixed fee. Some attach a small contract, called a hook, that can change the fee or add rules of its own.'),
+        p('Domino works only with pools that have no hook and a fixed fee.'),
       ],
     },
     {
       id: 'pool-identity',
       title: 'A pool is its id',
       blocks: [
-        p('A pool is defined by its two tokens, its fee, its tick spacing and its hooks. Together they give the pool its id.'),
-        p('Domino identifies a pool by that id, and a token by its contract address on Robinhood Chain. Never by a symbol.'),
+        p('Anyone can make a token with any name, so a name proves nothing. Domino tells tokens apart by their contract address on Robinhood Chain, and pools by their id, which comes from the two tokens, the fee and the pool’s other settings.'),
       ],
     },
   ],
@@ -54,8 +55,8 @@ export const RANGES: DocPage = {
       id: 'price-band',
       title: 'A band of prices',
       blocks: [
-        p('A position provides liquidity between a lower and an upper price: its range. You choose it when you plan and open the position.'),
-        p('A price here is the pool’s own ratio between its two tokens, not a dollar price.'),
+        p('A position provides liquidity between a lowest and a highest price: its range. You choose it when you open the position.'),
+        p('A price here is the pool’s own price between its two tokens, such as 2,500 USDG per ETH, not a dollar price.'),
       ],
     },
     {
@@ -71,11 +72,18 @@ export const RANGES: DocPage = {
       ],
     },
     {
+      id: 'narrow-or-wide',
+      title: 'Narrow or wide',
+      blocks: [
+        p('A narrow range puts all of your tokens to work close to the price, so it earns more from each trade while the price stays inside it. The price also leaves it sooner.'),
+        p('A wide range earns less from each trade, and the price stays inside it longer. New position offers ', b('Closer'), ' and ', b('Wider'), ' ranges around the price, or ', b('Custom'), ' for your own.'),
+      ],
+    },
+    {
       id: 'ticks',
       title: 'Ticks',
       blocks: [
-        p('Uniswap measures prices in ticks, and each tick is a 0.01% step. A range starts and ends on a tick.'),
-        p('Every pool has a tick spacing, and range bounds must be multiples of it. A pool’s page shows its tick spacing, and each step of a range drawn there is one tick spacing.'),
+        p('Uniswap counts prices in small steps called ticks, each 0.01%. A range starts and ends on a step the pool allows, its tick spacing, so New position may move your prices slightly outward to the nearest one.'),
       ],
     },
     {
@@ -101,9 +109,11 @@ export const EARNED_FEES: DocPage = {
     },
     {
       id: 'unsettled-fees',
-      title: 'Unsettled fees',
+      // 2026-09-27: the product's words (Fees ready to collect beside Position value); the id stays, so links still land.
+      title: 'Fees ready to collect',
       blocks: [
-        p('Fees a position has earned but not yet collected are its unsettled fees. ', doc('Positions', 'positions', 'position-details'), ' shows them as unclaimed fees for each of your positions, beside its principal: the liquidity deposited in it.'),
+        p('Fees a position has earned and you have not collected yet are ready to collect. ', doc('Positions', 'positions', 'position-details'), ' shows them for each of your positions, beside its value: what the position holds.'),
+        p(b('Collect fees'), ', on the position’s page, sends them to your wallet. The position stays open and keeps earning.'),
       ],
     },
     {
@@ -123,7 +133,7 @@ export const EARNED_FEES: DocPage = {
           [doc('Auto-compound', 'auto-compound'), ': fees go back into the same position.'],
           [doc('Domino-compound', 'domino-compounder'), ': near the top of the range, fees open the next position one step higher.'],
         ),
-        p('You make the choice once the position exists, when Create position finishes or later from Automate; automation starts only with its own wallet transactions.'),
+        p('You choose once the position exists, when Create position finishes or later from Automate; automation starts only with its own wallet transactions. Collecting a position’s fees or closing it stops its automation.'),
       ],
     },
   ],

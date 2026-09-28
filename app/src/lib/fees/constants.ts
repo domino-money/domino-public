@@ -71,6 +71,11 @@ export const EPOCH_SPAN = 3_600_000
 export const SAFE_DEPTH = 18_000
 /** The most swap days one history replays: an older position shows its on-chain unclaimed figure only. */
 export const MAX_SWAP_DAYS = 30
+/**
+ * 2026-09-27: the first window of blocks a replay looks for its NFT's mint in (two days, the newest; pipeline.ts step 1):
+ * a position opened on its page is most often a new one, and a narrower scan is a quicker one for the node.
+ */
+export const TRANSFER_RECENT = 2 * DAY_SPAN
 /** Most days one `swaps` request asks for. */
 export const MAX_DAYS_PER_REQUEST = 7
 /** Most blocks one `headers` request asks for. */

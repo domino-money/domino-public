@@ -18,7 +18,7 @@ import { test } from 'node:test';
 import { fixtureRelay, loadCase, stateOfCase } from './support/fees/relay-fixture.mjs';
 
 const require = createRequire(import.meta.url);
-const { createFeesStore, RELEASE_MS } = require('../.test-build/app/src/lib/fees/store.js');
+const { createFeesStore, RELEASE_MS, RETRY_MS } = require('../.test-build/app/src/lib/fees/store.js');
 const { runPipeline } = require('../.test-build/app/src/lib/fees/pipeline.js');
 const { BUDGET_BYTES, STATE_REFRESH_MS } = require('../.test-build/app/src/lib/fees/constants.js');
 
@@ -272,25 +272,196 @@ test('the list budget stops a busy history with its place kept; a position page 
 
 // 2026-09-25: a run that could not reach the chain is not started again at once. Each visitor now reads the chain from
 // their own address, under the RPC's limit: a run asked again straight after a refusal is refused too, and the page's own
-// reads with it. The next /state read with a newer block (a minute later) asks again, up to three failures a visit.
-test('a run that could not reach the chain waits for the next newer block before it is asked again', async () => {
+// reads with it. Changed on purpose (2026-09-27, the owner: the Fees earned chart took far too long): it is no longer
+// asked again by the next /state read with a newer block (a minute later), but once the worker's lane may ask the RPC
+// again (the `wait` of its `done`, the lane's rest after a refusal; this loopback has none: RETRY_MS[0]), and a newer
+// block meanwhile starts nothing. On the page's clock, below.
+test('a run that could not reach the chain is asked again once the lane’s wait is over: not at once, and not by a newer block', async () => {
   const fixture = loadCase('3136705');
   const relay = fixtureRelay(fixture, { script: { transfer: [{ ok: false, failure: 'unavailable', retryAfterMs: 0 }] } });
   const service = stateService();
   const { store, workers, time } = storeWith({ relays: { 3136705: relay }, service });
+  const runs = () => workers[0].posted.filter((m) => m.type === 'run').length;
   const stop = store.subscribeHistory(['3136705'], 'page', () => {});
   await until(() => store.view('3136705').phase === 'unclaimed-only', 'unclaimed-only');
   for (let i = 0; i < 20; i++) await settle();
-  assert.equal(workers[0].posted.filter((m) => m.type === 'run').length, 1, 'not started again at once');
+  assert.equal(runs(), 1, 'not started again at once');
   assert.equal(store.view('3136705').reason, 'rpc_unavailable');
-  // A minute later /state is read again; the same block starts nothing, a newer one does.
-  assert.equal(time.fire('later'), 1);
-  for (let i = 0; i < 20; i++) await settle();
-  assert.equal(workers[0].posted.filter((m) => m.type === 'run').length, 1, 'the same block: still nothing');
+  const waiting = time.pending.filter((t) => t.kind === 'later' && !t.cancelled).map((t) => t.ms);
+  assert.deepEqual(waiting.sort((a, b) => a - b), [RETRY_MS[0], STATE_REFRESH_MS], 'one new attempt waiting, and the minute’s /state read');
+  // The minute's /state read with a newer block, while the attempt waits: it starts nothing.
   service.bump = 10;
-  assert.equal(time.fire('later'), 1);
-  await until(() => store.view('3136705').phase === 'verified', 'verified on the newer block');
-  assert.equal(workers[0].posted.filter((m) => m.type === 'run').length, 2);
+  assert.equal(time.fire('later', STATE_REFRESH_MS), 1);
+  for (let i = 0; i < 20; i++) await settle();
+  assert.equal(runs(), 1, 'a newer block: still nothing');
+  assert.equal(time.fire('later', RETRY_MS[0]), 1);
+  await until(() => store.view('3136705').phase === 'verified', 'verified on the new attempt');
+  assert.equal(runs(), 2);
+  assert.equal(store.view('3136705').state.block, fixture.state.block + 10, 'at the newest block read');
+  stop();
+});
+
+// ---------------------------------------------------------------------------
+// 2026-09-27 (the owner: the Fees earned chart took far too long; traced live on his 3325113 at the integration of round
+// 5): the public RPC refused the replay's 28-header batch (a 429 behind a CORS error), the run stopped, the worker's lane
+// rested 30 s, and the card was asked again only by the next minute's /state read: the chart came after about 67 s. On
+// fake timers here: the page's clock and visibility (whenVisibleAfter), a worker whose runs take RUN_MS and whose lane
+// rests REST_MS after each refusal, and a chain ten blocks newer each second.
+// ---------------------------------------------------------------------------
+
+/** The lane's rest after a refusal (lib/chain/browser.ts LANE_PACE.restMs), and a run's reads up to its answer. */
+const REST_MS = 30_000;
+const RUN_MS = 3_000;
+const REFUSED = { type: 'done', result: { ok: false, reason: 'rpc_unavailable', prices: null, checkpoint: null, bytes: 0 } };
+
+/** A store on fake timers; `answer(n)` is the worker's `done` for its n-th run (1 for the first), RUN_MS after it. */
+function onTheClock(t, answer) {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+  const fixture = loadCase('3136705');
+  const tab = { hidden: false, waiting: [] };
+  const runs = [];
+  let reads = 0;
+  const worker = {
+    onmessage: null,
+    onerror: null,
+    onmessageerror: null,
+    postMessage(message) {
+      if (message.type !== 'run') return;
+      runs.push({ at: Date.now(), block: message.state.block });
+      const done = { id: message.id, ...answer(runs.length) };
+      setTimeout(() => worker.onmessage?.({ data: structuredClone(done) }), RUN_MS);
+    },
+    terminate() {},
+  };
+  const store = createFeesStore({
+    spawn: () => worker,
+    async postState() {
+      reads += 1;
+      const seconds = Math.floor(Date.now() / 1000);
+      return { ok: true, value: { v: 1, block: fixture.state.block + 10 * seconds, timestamp: fixture.state.timestamp + seconds, positions: [fixture.state.positions[0]] }, bytes: 100 };
+    },
+    // As spawn.ts's whenVisibleAfter: `run` once `ms` have passed and the tab is visible.
+    later(ms, run) {
+      let off = false;
+      const id = setTimeout(() => (tab.hidden ? tab.waiting.push(() => off || run()) : run()), ms);
+      return () => {
+        off = true;
+        clearTimeout(id);
+      };
+    },
+    timer(ms, run) {
+      const id = setTimeout(run, ms);
+      return () => clearTimeout(id);
+    },
+  });
+  // setImmediate is not faked: the store's promises settle between the clock's steps.
+  const flush = async () => {
+    for (let i = 0; i < 10; i++) await new Promise((done) => setImmediate(done));
+  };
+  return {
+    store,
+    runs,
+    tab,
+    reads: () => reads,
+    flush,
+    /** The clock moved on to `ms`, a quarter of a second at a time. */
+    async to(ms) {
+      while (Date.now() < ms) {
+        t.mock.timers.tick(Math.min(250, ms - Date.now()));
+        await flush();
+      }
+    },
+    async show() {
+      tab.hidden = false;
+      for (const run of tab.waiting.splice(0)) run();
+      await flush();
+    },
+  };
+}
+
+test('fake timers: a run the RPC refused starts again right after the lane’s rest, not at the minute’s /state read, and the chart is drawn then; the card keeps its figure meanwhile', async (t) => {
+  const verified = await verifiedResult();
+  const { store, runs, to, flush } = onTheClock(t, (n) => (n === 1 ? { ...REFUSED, wait: REST_MS } : { type: 'done', result: verified }));
+  const phases = [];
+  const stop = store.subscribeHistory(['3136705'], 'page', () => phases.push(store.view('3136705').phase));
+  await flush();
+  assert.deepEqual(runs.map((run) => run.at), [0], 'the first run at once');
+  await to(RUN_MS);
+  assert.deepEqual([store.view('3136705').phase, store.view('3136705').reason], ['unclaimed-only', 'rpc_unavailable'], 'refused: the chain’s unclaimed figure');
+  await to(RUN_MS + REST_MS);
+  assert.equal(runs.length, 1, 'nothing while the lane rests');
+  await to(RUN_MS + REST_MS + 250);
+  assert.deepEqual(runs.map((run) => run.at), [0, RUN_MS + REST_MS + 250], 'started again right after the rest');
+  assert.equal(runs[1].block, runs[0].block, 'on the state already read: no newer block needed');
+  assert.equal(store.view('3136705').phase, 'unclaimed-only', 'what the card shows stays while it runs');
+  await to(RUN_MS + REST_MS + 250 + RUN_MS);
+  assert.equal(store.view('3136705').phase, 'verified');
+  assert.ok(Date.now() < STATE_REFRESH_MS, `the chart at ${Date.now()} ms, before the minute’s /state read at ${STATE_REFRESH_MS} ms`);
+  assert.deepEqual([...new Set(phases)], ['loading', 'unclaimed-only', 'verified']);
+  stop();
+});
+
+test('fake timers: under repeated 429s, one run right after each rest, then 30, 60 and 120 s (never before the lane’s wait), then none this visit, newer blocks or not', async (t) => {
+  // The second refusal's rest runs longer: another tab's lane was refused meanwhile (lib/chain/browser.ts `rest`).
+  const waits = [REST_MS, 45_000, REST_MS, REST_MS, REST_MS];
+  const { store, runs, to, flush, reads } = onTheClock(t, (n) => ({ ...REFUSED, wait: waits[n - 1] }));
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await flush();
+  await to(15 * 60_000);
+  const starts = runs.map((run) => run.at);
+  assert.deepEqual(starts, [0, 33_250, 81_500, 144_500, 267_500], 'five runs in fifteen minutes');
+  const gaps = starts.slice(1).map((at, i) => at - (starts[i] + RUN_MS));
+  assert.deepEqual(gaps, [REST_MS + 250, 45_000 + 250, RETRY_MS[2], RETRY_MS[3]], 'each after its refusal: the rest, the longer rest, 60 s, 120 s');
+  assert.deepEqual([...RETRY_MS], [2_000, 30_000, 60_000, 120_000]);
+  assert.ok(reads() >= 15, `the chain was read every minute meanwhile, a newer block each time (${reads()} reads), and started no run of its own`);
+  assert.deepEqual([store.view('3136705').phase, store.view('3136705').reason], ['unclaimed-only', 'rpc_unavailable'], 'the card keeps the chain’s unclaimed figure');
+  // Leaving and coming back in the same visit asks nothing more either.
+  stop();
+  await to(15 * 60_000 + 10_000);
+  const again = store.subscribeHistory(['3136705'], 'page', () => {});
+  await to(20 * 60_000);
+  assert.equal(runs.length, 5, 'no sixth run');
+  again();
+});
+
+test('fake timers: the new attempt waits for the tab to be visible, and starts as soon as it is', async (t) => {
+  const verified = await verifiedResult();
+  const { store, runs, tab, to, show, flush } = onTheClock(t, (n) => (n === 1 ? { ...REFUSED, wait: REST_MS } : { type: 'done', result: verified }));
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await flush();
+  await to(10_000);
+  tab.hidden = true;
+  await to(50_000);
+  assert.equal(runs.length, 1, 'hidden: nothing, though the rest is over');
+  await show();
+  assert.deepEqual(runs.map((run) => run.at), [0, 50_000], 'visible again: at once');
+  await to(50_000 + RUN_MS);
+  assert.equal(store.view('3136705').phase, 'verified');
+  stop();
+});
+
+// 2026-09-27 (review of the retry): a verified run starts the count of refused runs over. Without that, a refusal after
+// the chart was drawn would wait 60 s instead of the lane's rest, and a long visit's refusals, however far apart, would
+// end its chart's updates for good after the fifth.
+test('fake timers: a verified run starts the count over: a later refusal is asked again right after the lane’s rest, with all four attempts', async (t) => {
+  const verified = await verifiedResult();
+  // Two refusals, the chart, then every later run refused.
+  const { store, runs, to, flush } = onTheClock(t, (n) => (n === 3 ? { type: 'done', result: verified } : { ...REFUSED, wait: REST_MS }));
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await flush();
+  await to(3 * 60_000);
+  assert.deepEqual(runs.slice(0, 3).map((run) => run.at), [0, 33_250, 66_500], 'two refusals, each asked again right after its rest');
+  assert.equal(store.view('3136705').phase, 'verified', 'the third run drew the chart');
+  // The minute's /state read at 120 s brings a newer block: the verified history's later run, refused.
+  assert.equal(runs[3].at, 2 * STATE_REFRESH_MS, 'the later run, at the newer block');
+  assert.ok(runs[3].block > runs[2].block, 'on a newer block than the chart’s');
+  assert.equal(runs[4]?.at, runs[3].at + RUN_MS + REST_MS + 250, 'asked again right after the lane’s rest (RETRY_MS[0]), not 60 s later (RETRY_MS[2])');
+  await to(15 * 60_000);
+  const later = runs.slice(3).map((run) => run.at);
+  const gaps = later.slice(1).map((at, i) => at - (later[i] + RUN_MS));
+  assert.deepEqual(gaps, [REST_MS + 250, REST_MS + 250, RETRY_MS[2], RETRY_MS[3]], 'all four attempts again: the rest, 30 s (no sooner than the rest), 60 s, 120 s');
+  assert.equal(runs.length, 8, 'then none');
+  assert.equal(store.view('3136705').phase, 'verified', 'the chart stays through every refusal');
   stop();
 });
 
@@ -408,7 +579,8 @@ test('client.ts: no request in a build without the chain; the relay’s own read
 
 // 2026-09-25: the fees history through the page's own chain reads, end to end: the relay's reads run by client.ts
 // against a chain rebuilt from each recording, the worker's pipeline on them. The chart is drawn only when the replay
-// equals the chain's unclaimed fees; a chain that owes one unit more is a mismatch, and nothing is drawn.
+// equals the chain's unclaimed fees; a chain that owes one unit more is a mismatch, and nothing is drawn (2026-09-27: on
+// the exact replay's positions; the price path's gate allows its own rounding, and a chain off by more is its mismatch).
 test('the page’s own chain reads rebuild each recorded history exactly, and a chain that disagrees with the replay is a mismatch', async () => {
   const client = require('../.test-build/app/src/lib/fees/client.js');
   const { caseChain } = await import('./support/fees/case-chain.mjs');
@@ -421,6 +593,8 @@ test('the page’s own chain reads rebuild each recorded history exactly, and a 
   const { chainDeps, memoryCache } = require('../.test-build/app/src/lib/chain/browser.js');
   const { pathLogsOnChain } = require('../.test-build/app/functions/_lib/feesPath.js');
   const code = { chainDeps, logsOnChain: relay.logsOnChain, pathLogsOnChain };
+  /** What the page read of each chain last: its unclaimed fees and fee growth, the figures the gate compares. */
+  const seen = {};
   const through = async (chain) => {
     // One chain per recording, each at its own head: nothing read for another may be reused.
     relay.resetRelayMemory();
@@ -429,6 +603,7 @@ test('the page’s own chain reads rebuild each recorded history exactly, and a 
     const answer = await client.chainState([chain.id]);
     assert.equal(answer.ok, true);
     const { state, growth } = stateOf(answer.value.positions[0], answer.value.block, answer.value.timestamp);
+    seen[chain.id] = { unclaimed: state.unclaimed.map(String), growth: growth.map(String) };
     const cache = memoryCache();
     return runPipeline({ logs: (request) => logsWith(code, cache, request), sleep: async () => {} }, { id: chain.id, state, growth, budgetBytes: 64 * 1024 * 1024, checkpoint: null });
   };
@@ -451,8 +626,26 @@ test('the page’s own chain reads rebuild each recorded history exactly, and a 
       assert.deepEqual(result.history.collected.map(String), fixture.expect.collected, id);
       assert.equal(result.history.checks.swaps, fixture.expect.checks.swaps, id);
     }
-    const off = await through(caseChain('3136705', { quietProbe: true, edit: (p) => ({ ...p, feeGrowthInside0X128: String(BigInt(p.feeGrowthInside0X128) + (1n << 128n) / BigInt(p.liquidity) + 1n) }) }));
+    // Changed on purpose (2026-09-27): 3136705 is a young position in a pool whose Swaps the probe sees, so its history is
+    // the price path's (pipeline.ts P5), whose check allows the path's rounding, a unit or two a step (1,220 of USDG's
+    // smallest units here): a chain off by one unit passes it, one off by far more than that (0.12 USDG) is a mismatch.
+    // 2310187 (an old hand) and 3135288 (no Swap in its samples) above are the exact replay's, bit for bit.
+    const off = await through(caseChain('3136705', { quietProbe: true, edit: (p) => ({ ...p, feeGrowthInside0X128: String(BigInt(p.feeGrowthInside0X128) + (120_000n << 128n) / BigInt(p.liquidity) + 1n) }) }));
     assert.deepEqual([off.ok, off.reason], [false, 'replay_mismatch']);
+    // 2026-09-27 (review): the exact replay's own gate, on the two positions that stay on it. A chain that owes one unit
+    // more is a mismatch (the replay's fees equal the chain's to the unit), and so is one whose fee growth alone moved by
+    // the least it can, too little to change what is owed (the replay's accrued growth equals the chain's).
+    const U256 = (1n << 256n) - 1n;
+    for (const id of ['2310187', '3135288']) {
+      const recorded = loadCase(id).state.positions[0];
+      const unit = await through(caseChain(id, { quietProbe: true, edit: (p) => ({ ...p, feeGrowthInside0X128: String(BigInt(p.feeGrowthInside0X128) + (1n << 128n) / BigInt(p.liquidity) + 1n) }) }));
+      assert.deepEqual(seen[id].unclaimed, [String(BigInt(recorded.unclaimed0) + 1n), recorded.unclaimed1], `${id}: the chain owes one unit more`);
+      assert.deepEqual([unit.ok, unit.reason], [false, 'replay_mismatch'], `${id}: one unit more`);
+      const growth = await through(caseChain(id, { quietProbe: true, edit: (p) => ({ ...p, feeGrowthInside1X128: String(BigInt(p.feeGrowthInside1X128) + 1n) }) }));
+      assert.deepEqual(seen[id].unclaimed, [recorded.unclaimed0, recorded.unclaimed1], `${id}: the same fees owed`);
+      assert.equal(seen[id].growth[1], String(((BigInt(recorded.feeGrowthInside1X128) - BigInt(recorded.feeGrowthInside1LastX128) + 1n) & U256)), `${id}: one more of growth`);
+      assert.deepEqual([growth.ok, growth.reason], [false, 'replay_mismatch'], `${id}: fee growth alone`);
+    }
   } finally {
     globalThis.fetch = original;
     delete globalThis.__DOMINO_DEPLOYABLE__;

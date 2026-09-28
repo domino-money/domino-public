@@ -1,11 +1,10 @@
-import type { CSSProperties, ReactNode } from 'react'
-import { rangeGeometry } from '../../lib/chart/range'
+import type { ReactNode } from 'react'
 import { COPY } from '../../lib/read/screens/copy'
 import { chainPoolPrice, rangeBarScale, rangePricesProblem, type CardPoolPrice, type CardPoolPriceProblem, type RangeBarScale, type RangeEnd } from '../../lib/read/screens/positions'
 import type { LiveCard } from '../../lib/walletCards'
-import { RangePreview } from '../charts/RangePreview'
 import { TokenLabel } from '../read/TokenLabel'
 import { Button, RangeBar, cx } from '../ui'
+import { PriceVsRange, RangeFactsContext, rangeFacts } from './visual/PriceVsRange'
 
 type PriceState =
   | { phase: 'idle' }
@@ -66,6 +65,11 @@ export function rangeWords(card: LiveCard, price: CardPrice) {
  * decimals are known and it can be written as a plain number, otherwise its
  * tick. A price the read could not give leaves the bar with no marker, and
  * says why in its title.
+ *
+ * 2026-09-27: on a position's page the price chart (PriceVsRange) names the range, its ends, the price now and in
+ * range or out itself, from this card's own read (RangeFactsContext), at once and in its final box: `chart`, the
+ * chart with the pool's hourly line, takes the same place when the history arrives. The head's sentence stays for a
+ * screen reader. Without a usable price or a decimal the bar and its ends stand in, as on the list.
  */
 export function PositionRange({ card, price, variant = 'bar', chart }: { card: LiveCard; price: CardPrice; variant?: 'bar' | 'page'; chart?: ReactNode }) {
   const { state, scale } = price
@@ -76,8 +80,8 @@ export function PositionRange({ card, price, variant = 'bar', chart }: { card: L
   const problem = rangePricesProblem(card.range)
   const asking = state.phase === 'idle' || state.phase === 'loading'
   const page = variant === 'page'
-  const geometry = page ? previewGeometry(card, state) : null
-  const placed = geometry ? endsPlacement(geometry) : null
+  const facts = page ? rangeFacts(card, state.phase === 'ready' ? state.price : null) : null
+  const charted = facts !== null
   const unit = writesPrice && (
     <>
       <TokenLabel token={quote} /> per <TokenLabel token={base} />
@@ -85,62 +89,58 @@ export function PositionRange({ card, price, variant = 'bar', chart }: { card: L
   )
 
   return (
-    <div className={cx('dm-acct-range', page && 'dm-pos-range')} data-range="">
-      <div className="dm-acct-range-head">
-        <span className="dm-acct-caps-label">{COPY.card.range}</span>
-        {/* On a position's page the sentence is for a screen reader and the title: the preview and the status pill show it (§0.3). */}
-        <span className={cx('dm-acct-range-now', page && 'dm-provenance')} data-current-price={currentState(state)}>
-          <CurrentPrice state={state} card={card} beyond={scale.currentBeyond} />
-          {asking && !price.auto && (
-            <Button type="button" variant="ghost" size="sm" aria-disabled={state.phase === 'loading' ? true : undefined} onClick={price.read} disabled={!price.canRead}>
-              {state.phase === 'loading' ? COPY.range.rereading : 'Show current price'}
-            </Button>
-          )}
-        </span>
-      </div>
-      {geometry ? (
-        // The ends are written once, as Min and Max right under it: the preview labels only the pool's price.
-        <div className="dm-pos-preview-wrap" title={title}>
-          <RangePreview
-            className="dm-pos-preview"
-            lower={geometry.lower}
-            upper={geometry.upper}
-            current={geometry.current}
-            inRange={card.hasLiquidity ? card.inRange : false}
-            labels={{ current: geometry.currentText && <Approx text={geometry.currentText} /> }}
-          />
+    <RangeFactsContext value={facts}>
+      <div className={cx('dm-acct-range', page && 'dm-pos-range')} data-range="" data-charted={charted ? '' : undefined}>
+        <div className="dm-acct-range-head">
+          <span className="dm-acct-caps-label">{COPY.card.range}</span>
+          {/* On a position's page the sentence is for a screen reader and the title: the chart and the status pill show it (§0.3). */}
+          <span className={cx('dm-acct-range-now', page && 'dm-provenance')} data-current-price={currentState(state)}>
+            <CurrentPrice state={state} card={card} beyond={scale.currentBeyond} />
+            {asking && !price.auto && (
+              <Button type="button" variant="ghost" size="sm" aria-disabled={state.phase === 'loading' ? true : undefined} onClick={price.read} disabled={!price.canRead}>
+                {state.phase === 'loading' ? COPY.range.rereading : 'Show current price'}
+              </Button>
+            )}
+          </span>
         </div>
-      ) : (
-        <div className={cx('dm-acct-range-bar', !card.hasLiquidity && 'opacity-60')} title={title}>
-          <RangeBar lower={scale.lower} upper={scale.upper} current={scale.current} inRange={card.hasLiquidity ? card.inRange : null} label={title} />
-        </div>
-      )}
-      <div
-        className={cx('dm-acct-range-ends', page && 'dm-pos-ends')}
-        // On a position's page Min and Max stand under the band's own edges (CSS, from 768px), the unit between them.
-        style={placed ? ({ '--lo': placed.lower, '--hi': placed.upper } as CSSProperties) : undefined}
-        data-placed={placed ? '' : undefined}
-        data-prices={card.range.prices ? '' : undefined}
-        data-full-range={card.range.fullRange ? '' : undefined}
-        data-range-problem={problem ?? undefined}
-        title={problem === 'beyond_display' ? COPY.card.pricesBeyondDisplay : problem === 'decimals_unknown' ? COPY.card.pricesUnavailable : undefined}
-      >
-        {page ? (
-          <>
-            <EndText end={ends.lower} tick={card.range.tickLower} word="Min" />
-            <span className="dm-acct-range-unit">{unit}</span>
-            <EndText end={ends.upper} tick={card.range.tickUpper} word="Max" />
-          </>
-        ) : (
-          <>
-            <span className="tnum">{ends.lower.kind === 'tick' ? `Tick ${card.range.tickLower}` : `Min ${ends.lower.text}`}</span>
-            <span className="dm-acct-range-unit">{unit}</span>
-            <span className="tnum text-right">{ends.upper.kind === 'tick' ? `Tick ${card.range.tickUpper}` : `Max ${ends.upper.text}`}</span>
-          </>
+        {!charted && (
+          <div className={cx('dm-acct-range-bar', !card.hasLiquidity && 'opacity-60')} title={title}>
+            <RangeBar lower={scale.lower} upper={scale.upper} current={scale.current} inRange={card.hasLiquidity ? card.inRange : null} label={title} />
+          </div>
         )}
+        {!charted && (
+          <div
+            className={cx('dm-acct-range-ends', page && 'dm-pos-ends')}
+            data-prices={card.range.prices ? '' : undefined}
+            data-full-range={card.range.fullRange ? '' : undefined}
+            data-range-problem={problem ?? undefined}
+            title={problem === 'beyond_display' ? COPY.card.pricesBeyondDisplay : problem === 'decimals_unknown' ? COPY.card.pricesUnavailable : undefined}
+          >
+            {page ? (
+              <>
+                <EndText end={ends.lower} tick={card.range.tickLower} word="Min" />
+                <span className="dm-acct-range-unit">{unit}</span>
+                <EndText end={ends.upper} tick={card.range.tickUpper} word="Max" />
+              </>
+            ) : (
+              <>
+                <span className="tnum">{ends.lower.kind === 'tick' ? `Tick ${card.range.tickLower}` : `Min ${ends.lower.text}`}</span>
+                <span className="dm-acct-range-unit">{unit}</span>
+                <span className="tnum text-right">{ends.upper.kind === 'tick' ? `Tick ${card.range.tickUpper}` : `Max ${ends.upper.text}`}</span>
+              </>
+            )}
+          </div>
+        )}
+        {/* One place for the chart, with or without its line, so the line fills in where the chart already stands. */}
+        {charted
+          ? chart || (
+              <div className="dm-pos-chart">
+                <PriceVsRange series={null} />
+              </div>
+            )
+          : null}
       </div>
-      {chart}
-    </div>
+    </RangeFactsContext>
   )
 }
 
@@ -166,38 +166,6 @@ function EndText({ end, tick, word }: { end: RangeEnd; tick: number; word: 'Min'
       </span>
     </span>
   )
-}
-
-/**
- * The preview's numbers from the card's ticks and decimals (plain numbers, for
- * geometry only): an end at the pool's limit is 0 or ∞, the current price is
- * the pool's tick when read. Null when an end has no price (decimals unknown,
- * beyond display): the bar is drawn instead.
- */
-function previewGeometry(card: LiveCard, state: PriceState): { lower: number; upper: number; current: number | null; currentText: string | null } | null {
-  const [base, quote] = card.currencies
-  const { ends } = card.range
-  if (base.decimals === null || quote.decimals === null || ends.lower.kind === 'tick' || ends.upper.kind === 'tick') return null
-  const shift = Math.pow(10, base.decimals - quote.decimals)
-  const at = (tick: number) => Math.pow(1.0001, tick) * shift
-  const usable = state.phase === 'ready' && state.price.state === 'usable' ? state.price : null
-  return {
-    lower: ends.lower.kind === 'limit' ? 0 : at(card.range.tickLower),
-    upper: ends.upper.kind === 'limit' ? Infinity : at(card.range.tickUpper),
-    current: usable ? at(usable.tick) : null,
-    currentText: usable ? usable.text : null,
-  }
-}
-
-/**
- * Where the preview draws the band's two edges, as shares of its width (the preview's own geometry, so the labels
- * under it always meet its edges). Null for a band too narrow for Min and Max to stand inside its edges: the three
- * columns under the preview are kept then.
- */
-function endsPlacement(geometry: { lower: number; upper: number; current: number | null }): { lower: number; upper: number } | null {
-  const at = rangeGeometry(geometry.lower, geometry.upper, geometry.current, 1)
-  if (!(at.upper - at.lower >= 0.45)) return null
-  return { lower: Math.round(at.lower * 10_000) / 10_000, upper: Math.round(at.upper * 10_000) / 10_000 }
 }
 
 function currentState(state: PriceState) {

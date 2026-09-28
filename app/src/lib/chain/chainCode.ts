@@ -12,8 +12,10 @@
  * (functions/_lib/automation.ts), read here for lib/automationState.ts.
  * 2026-09-25, EIP-5792: the batch simulation Create position falls back to
  * when the wallet does not carry eth_simulateV1 (browser.ts simulateOnChain).
+ * 2026-09-27: the owned scan's paced call, for a position's automation vault's ExecutionCompleted logs
+ * (lib/automationImpact.ts): one eth_getLogs, no new code.
  */
-export { ChainError } from '../../../functions/_lib/owned'
+export { ChainError, paced } from '../../../functions/_lib/owned'
 export { scanWallet } from '../../../functions/_lib/walletPositions'
 export { logsOnChain, stateOnChain } from '../../../functions/_lib/fees'
 export { scanAutomation } from '../../../functions/_lib/automation'

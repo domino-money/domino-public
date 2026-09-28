@@ -34,6 +34,8 @@ const TYPES = {
   '.json': 'application/json',
   '.ico': 'image/x-icon',
   '.png': 'image/png',
+  // 2026-09-27: the docs' pictures (public/docs/*.webp), as Pages serves them.
+  '.webp': 'image/webp',
 };
 
 if (!existsSync(join(DIST, 'index.html'))) {
@@ -879,12 +881,16 @@ test('the positions screen is an honest empty state: no cards, totals or private
   assert.doesNotMatch(text, /Look up|Position NFTs|Enter its ID|NFT ids?\b/i, 'no typed ids asked for, anywhere');
   assert.equal(await page.locator('details[data-lookup-disclosure], #nft-ids, #chain-lookup').count(), 0, 'no lookup by NFT id at all');
   // The managed side asks for a wallet session and shows nothing private without one.
-  assert.match(text, /Sign in with your wallet to view private history/);
-  assert.match(text, /Sign in with your wallet to view private execution receipts/);
+  // Changed on purpose (owner, 2026-09-27, round 5: plain words for people new to pools): the two sign-in sentences and the
+  // two lines under the titles say what is there, with no "private", "execution" or "sequences".
+  assert.match(text, /Sign in with your wallet to see your automated positions\./);
+  assert.match(text, /Sign in with your wallet to see your receipts\./);
   // Changed on purpose (qa:visual, Positions): one plain line under Managed positions and Receipts, and no hint under the Wallet field.
   // The state rules those captions printed are titles now.
-  assert.match(text, /Managed positions[\s\S]*Positions under automation, over the last 24 hours\./);
-  assert.match(text, /Receipts[\s\S]*Transactions automation sent for your sequences\./);
+  assert.match(text, /Managed positions[\s\S]*Last 24 hours[\s\S]*How your automated positions did in the last 24 hours\./);
+  assert.match(text, /Receipts[\s\S]*See all[\s\S]*What automation did for your positions\./);
+  // 2026-09-27 (round 5): the Receipts card is a short Recent list; its See all opens every receipt on a page of its own.
+  assert.equal(await page.locator('[data-receipts-all]').getAttribute('href'), '#/positions/receipts');
   assert.doesNotMatch(text, /Canonical receipts|unavailable values|never shown as completed|Sent exactly as typed|checksum|proves nothing/i, 'no caption about data states');
   assert.equal(await page.locator('#portfolio-address-input').getAttribute('title'), 'Sent exactly as typed; a checksum is not required. Viewing an address proves nothing about who controls it.');
   assert.doesNotMatch(text, /practice|reinvested|awaiting|\$\s?\d|[0-9]+%/i);
@@ -900,6 +906,27 @@ test('the positions screen is an honest empty state: no cards, totals or private
   await page.keyboard.press('Escape');
   assert.deepEqual(apiOf(page), [[]], 'and connects nothing by itself');
   clean(page, 'positions');
+  await close(page);
+});
+
+// Added 2026-09-27 (owner, round 5: the receipts ran down the Positions tab forever): every receipt on a page of its own under
+// Positions, which the Receipts card's See all opens. Signed out it says how to see them, reads nothing, and keeps
+// Positions lit in the header; its one way back is Positions.
+test('the receipts page opens from the Receipts card, keeps Positions lit, and signed out asks for a sign-in and reads nothing', async () => {
+  const page = await open('/positions');
+  await page.locator('[data-receipts-all]').click();
+  await page.waitForFunction(() => location.hash === '#/positions/receipts');
+  await page.getByText('Sign in with your wallet to see your receipts.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Receipts');
+  assert.equal(await page.getByRole('heading', { level: 2, name: 'All receipts' }).count(), 1);
+  const nav = await page.locator('header nav[aria-label="Main"] a').evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('aria-current')]));
+  assert.deepEqual(nav, [['Markets', null], ['Positions', 'page'], ['Automate', null]]);
+  assert.deepEqual(await page.locator('main a').evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('href')])), [['Positions', '#/positions']], 'one way back, and the page does not link itself');
+  const text = await page.locator('main').innerText();
+  assert.doesNotMatch(text, /Managed positions|Your positions|\$\s?\d|0x[0-9a-fA-F]{4}/, 'the receipts alone (no other card), and no figure or hash signed out');
+  assert.equal(await page.getByRole('button', { name: 'Connect wallet' }).count(), 1, 'the header keeps the one wallet control');
+  assert.deepEqual(apiOf(page), [[]], 'the receipts page reads nothing by itself');
+  clean(page, 'receipts page');
   await close(page);
 });
 
@@ -1018,6 +1045,78 @@ test('the docs: every page opens from the sidebar with its title and its link ma
   await close(page);
 });
 
+// 2026-09-27, the owner's point 8: the docs show the app's screens (public/docs/<id>.webp, taken from the test view by
+// scripts/docs-shots.mjs) and two drawings. tests/docs.test.mjs checks the files and their words; this, what a reader gets.
+test('the docs pictures load from this site at their own size, lazily, with words for a reader who cannot see them, and the drawings draw', async () => {
+  const page = await open('/docs/markets');
+  const seen = [];
+  for (const route of ['/docs/markets', '/docs/new-position', '/docs/positions', '/docs/auto-compound']) {
+    if (route !== '/docs/markets') await go(page, route);
+    const figures = page.locator('main figure[data-docs-shot]');
+    assert.ok((await figures.count()) >= 1, `${route} shows a picture`);
+    for (const figure of await figures.all()) {
+      const image = figure.locator('img');
+      const [src, alt, width, height, loading] = await image.evaluate((element) => [element.getAttribute('src'), element.alt, element.getAttribute('width'), element.getAttribute('height'), element.loading]);
+      assert.match(src, /^\/docs\/[a-z0-9-]+\.webp$/, `${route}: ${src} is this site's own file`);
+      assert.ok(alt.length >= 30, `${route}: ${src} says what it shows`);
+      assert.equal(loading, 'lazy', `${route}: ${src} loads only when it is near`);
+      // Its box has the picture's shape before a byte of it arrives, so nothing under it moves.
+      const box = await image.boundingBox();
+      assert.ok(Math.abs(box.height - (box.width * Number(height)) / Number(width)) <= 1.5, `${route}: ${src} keeps its place (${box.width}×${box.height})`);
+      await figure.scrollIntoViewIfNeeded();
+      await page.waitForFunction((element) => element.complete && element.naturalWidth > 0, await image.elementHandle(), { timeout: 15_000 });
+      assert.deepEqual(await image.evaluate((element) => [element.naturalWidth, element.naturalHeight]), [Number(width), Number(height)], `${route}: ${src} is the size its page says`);
+      assert.match(await figure.locator('figcaption').innerText(), /Made-up figures/, `${route}: ${src} says its figures are made up`);
+      seen.push(src);
+    }
+  }
+  assert.equal(new Set(seen).size, seen.length, 'no picture twice');
+  await go(page, '/docs/what-is-domino');
+  const drawings = page.locator('main figure[data-docs-diagram]');
+  assert.deepEqual(await drawings.evaluateAll((figures) => figures.map((figure) => figure.getAttribute('data-docs-diagram'))), ['earning', 'three-ways']);
+  assert.ok((await page.locator('main figure[data-docs-diagram="earning"] svg[role="img"]').getAttribute('aria-label')).length >= 30, 'the earning drawing is described');
+  assert.deepEqual(await page.locator('main [data-docs-diagram="three-ways"] li').evaluateAll((items) => items.map((item) => item.querySelector('p')?.textContent)), ['Plain position', 'Auto-compound', 'Domino-compound']);
+  assert.deepEqual(await duplicateIds(page), [], 'every id is unique');
+  assert.deepEqual(apiOf(page), [[]], 'the docs read nothing');
+  clean(page, 'docs pictures');
+  await close(page);
+});
+
+// 2026-09-27 (review of 260a76a): a desktop crop shrunk into a phone's column drew its words about 4 px high, so each
+// picture has a phone shot, served under 640 px by a <source> that carries its own size.
+test('the docs pictures on a phone are their phone shots, sized by their own pixels before they load, and drawn near the size they were shot at', async () => {
+  const page = await openPage(browser, { origin, route: '/docs/markets', viewport: { width: 375, height: 812 } });
+  const seen = [];
+  for (const route of ['/docs/markets', '/docs/new-position', '/docs/positions', '/docs/auto-compound']) {
+    if (route !== '/docs/markets') await go(page, route);
+    const figures = page.locator('main figure[data-docs-shot]');
+    assert.ok((await figures.count()) >= 1, `${route} shows a picture`);
+    for (const figure of await figures.all()) {
+      const [srcset, media, width, height] = await figure.locator('picture > source').evaluate((element) => [element.getAttribute('srcset'), element.getAttribute('media'), Number(element.getAttribute('width')), Number(element.getAttribute('height'))]);
+      assert.match(srcset, /^\/docs\/[a-z0-9-]+-phone\.webp$/, `${route}: ${srcset} is this site's own phone picture`);
+      assert.equal(media, '(max-width: 639px)', `${route}: ${srcset} serves a phone`);
+      const image = figure.locator('img');
+      // The phone shot's shape before a byte of it arrives, from the source's own width and height.
+      const box = await image.boundingBox();
+      assert.ok(Math.abs(box.height - (box.width * height) / width) <= 1.5, `${route}: ${srcset} keeps its place (${box.width}×${box.height})`);
+      await figure.scrollIntoViewIfNeeded();
+      await page.waitForFunction((element) => element.complete && element.naturalWidth > 0, await image.elementHandle(), { timeout: 15_000 });
+      const [current, natural] = await image.evaluate((element) => [new URL(element.currentSrc).pathname, [element.naturalWidth, element.naturalHeight]]);
+      assert.equal(current, srcset, `${route}: the phone picture is the one drawn`);
+      assert.deepEqual(natural, [width, height], `${route}: ${srcset} is the size its page says`);
+      // Shot in a 390 px window at twice its size: in a 343 px column its words keep most of their size.
+      assert.ok(box.width >= (width / 2) * 0.85, `${route}: ${srcset} is drawn ${box.width} px wide, shot at ${width / 2}`);
+      seen.push(srcset);
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    assert.ok(overflow <= 1, `${route} scrolls ${overflow}px sideways at 375px`);
+  }
+  assert.equal(new Set(seen).size, seen.length, 'no picture twice');
+  assert.deepEqual(apiOf(page), [[]], 'the docs read nothing');
+  clean(page, 'docs phone pictures');
+  await close(page);
+});
+
 test('a docs section lands just under the header: opened directly, from On this page, and clicked again with the hash unchanged', async () => {
   const page = await open('/docs/non-custodial#pause-revoke-withdraw');
   const header = await page.evaluate(() => document.querySelector('header')?.getBoundingClientRect().height ?? 0);
@@ -1071,7 +1170,8 @@ test('the Non-custodial card on Home opens the custody page of the docs', async 
 
 test('the docs on a phone: nothing spills sideways, nothing sticks, the docs menu opens the pages and starts closed on the next one, and On this page opens', async () => {
   const page = await openPage(browser, { origin, route: '/docs', viewport: { width: 375, height: 812 } });
-  for (const route of ['/docs', '/docs/contracts', '/docs/non-custodial', '/docs/glossary']) {
+  // 2026-09-27: and the pages with pictures and drawings, which must fit the column too.
+  for (const route of ['/docs', '/docs/contracts', '/docs/non-custodial', '/docs/glossary', '/docs/what-is-domino', '/docs/new-position']) {
     if (route !== '/docs') await go(page, route);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     assert.ok(overflow <= 1, `${route} scrolls ${overflow}px sideways at 375px`);

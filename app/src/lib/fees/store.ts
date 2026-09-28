@@ -20,6 +20,15 @@
  *   block goes on from it; a verified history's later run that gets no further
  *   waits for a newer block too, three times at most. No run starts again at
  *   once after a stop.
+ * - 2026-09-27 (the owner: the Fees earned chart took far too long): a run
+ *   that could not reach the chain (the RPC refused a read, or answered too
+ *   slowly) is asked again as soon as the worker's lane may ask the RPC again
+ *   (the `wait` its `done` carries: the lane's 30 s rest after a refusal), no
+ *   longer at the next minute's newer block (about 67 s to the chart, seen
+ *   live on the owner's 3325113); then after 30, 60 and 120 s, each no sooner
+ *   than the lane's wait (RETRY_MS), only while the page is visible, and not
+ *   again this visit after that. Nothing else starts it meanwhile, and what
+ *   the card shows stays.
  * - The worker is created on the first run and terminated once nothing has
  *   been shown for a moment. If it fails (onerror, messageerror: a stale
  *   worker file after a deploy answers with the page), every history shows its
@@ -77,8 +86,15 @@ const IDLE: FeeHistoryView = { phase: 'idle' }
 const U256 = (1n << 256n) - 1n
 /** How long an id is kept running after its last screen leaves (a remount, or StrictMode's second mount, picks it up again). */
 export const RELEASE_MS = 3_000
-/** Runs that failed to reach the relay, per id and visit, before the store stops asking. */
+/** Later runs of a verified history that got no further, per id and visit, before the store stops asking. */
 const RUN_ATTEMPTS = 3
+/**
+ * 2026-09-27: after each run in a row that could not reach the chain, the wait before the next (never less than the
+ * worker's lane's own wait, its rest after a refusal, and REST_MARGIN_MS); none after the last.
+ */
+export const RETRY_MS = [2_000, 30_000, 60_000, 120_000] as const
+/** Past the lane's wait, for the message on its way from the worker: a run started while the lane still rests fails at once. */
+const REST_MARGIN_MS = 250
 /** After an action, the second /state read: past the few blocks head − 2 may still lack (as the position page reads again). */
 export const AFTER_ACTION_MS = 11_000
 /**
@@ -111,13 +127,18 @@ interface Entry {
   /** A reason no further run changes (replay_mismatch; too_much_history at `settledBudget`). */
   settled: FeesReason | null
   settledBudget: number
+  /** A verified history's later runs that got no further (RUN_ATTEMPTS). */
   failures: number
+  /** Runs in a row that could not reach the chain (RETRY_MS), and the cancel of the next one's wait while it waits. */
+  refused: number
+  retry: (() => void) | null
   /** Price-path runs that went on from a place kept (MAX_RESUMES), since the last verified one. */
   resumes: number
   /**
-   * The state block of the last run that could not reach the chain: the next run waits for a newer block (the next
-   * /state read, a minute later), never starting again at once (2026-09-25: the RPC limits each visitor's address, and
-   * a run asked again straight after a refusal is refused too, and the page's own reads with it).
+   * The state block of the last run that stopped at its budget with a later one to come (a price path's place kept, a
+   * verified history's later run): the next run waits for a newer block (the next /state read, a minute later), never
+   * starting again at once (2026-09-25: the RPC limits each visitor's address). Until 2026-09-27, a run that could not
+   * reach the chain waited here too; it now waits for the lane's rest (`retry`).
    */
   failedAt: number | null
   release: (() => void) | null
@@ -219,7 +240,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const entry = (id: string): Entry => {
     let found = entries.get(id)
     if (!found) {
-      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, state: null, growth: null, stateReason: null, answered: false, view: IDLE, running: null, checkpoint: null, settled: null, settledBudget: 0, failures: 0, resumes: 0, failedAt: null, release: null }
+      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, state: null, growth: null, stateReason: null, answered: false, view: IDLE, running: null, checkpoint: null, settled: null, settledBudget: 0, failures: 0, refused: 0, retry: null, resumes: 0, failedAt: null, release: null }
       entries.set(id, found)
     }
     return found
@@ -279,7 +300,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     if (!e || !e.running) return
     const run = e.running
     e.running = null
-    finished(e, run, message.result)
+    finished(e, run, message.result, Number(message.wait) || 0)
     next(e)
   }
 
@@ -293,10 +314,12 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     setView(e, carried ?? { phase: 'unclaimed-only', state: e.state ?? view.state, reason: 'too_much_history', prices: null })
   }
 
-  function finished(e: Entry, run: Run, result: WorkerResult): void {
+  /** `wait`: how long before the worker's lane asks the RPC again (its rest after a refusal). */
+  function finished(e: Entry, run: Run, result: WorkerResult, wait: number): void {
     if (result.ok) {
       e.checkpoint = result.checkpoint
       e.failures = 0
+      e.refused = 0
       e.resumes = 0
       e.failedAt = null
       e.settled = null
@@ -309,8 +332,13 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       return
     }
     if (result.reason === 'rpc_unavailable' || result.reason === 'worker_failed') {
-      e.failures += 1
-      e.failedAt = run.state.block
+      // 2026-09-27: asked again once the lane's rest is over, then after 30, 60 and 120 s (RETRY_MS), the page visible.
+      const after = RETRY_MS[e.refused++]
+      if (after !== undefined)
+        e.retry = deps.later(Math.max(after, wait + REST_MARGIN_MS), () => {
+          e.retry = null
+          next(e)
+        })
     } else if (result.reason === 'too_much_history' && result.later && result.checkpoint !== null && e.resumes < MAX_RESUMES) {
       // 2026-09-25 (review): a price path's read that ran out of its run's budget or time kept its place, and the next
       // newer state block goes on from it, never at once (the RPC limits the visitor's address).
@@ -347,6 +375,8 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     // or starts over when the stop came before the swap days (2026-09-25: the budget now bounds those steps too).
     if (e.settled === 'too_much_history' && budgetOf(e) <= e.settledBudget) return
     if (e.failures >= RUN_ATTEMPTS) return
+    // A run that could not reach the chain: its next waits for its time (`retry`), newer blocks or not; none after the last.
+    if (e.retry || e.refused > RETRY_MS.length) return
     if (e.failedAt !== null && state.block <= e.failedAt) return
     const target = theWorker()
     if (!target) {

@@ -32,7 +32,8 @@ export const COPY = {
     fullRange: 'Full range',
     /** A title only: the ends already say "Tick N". */
     pricesBeyondDisplay: 'A range price is too large or too small to write as a plain number; its tick is shown.',
-    principal: 'Principal',
+    /** 2026-09-27 (plain words, the owner): what a position is worth now, once "Principal". */
+    principal: 'Value',
     unsettled: 'Unsettled fees',
     /** A title only, on the unsettled fees: what public data cannot say about them. */
     noHistory: 'Totals from earlier collections aren’t available from public data.',

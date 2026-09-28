@@ -74,6 +74,10 @@ test('requests are exact: POST, same origin, JSON, small, known keys, safe numbe
     { kind: 'probe', poolId: POOL, from: 0 },
     { kind: 'pool', poolId: POOL, epoch: 19, parts: false },
     { kind: 'transfer', tokenId: '1', since: -1 },
+    // 2026-09-27: a transfer window backwards, or to a block that is not one.
+    { kind: 'transfer', tokenId: '1', since: 10, until: 9 },
+    { kind: 'transfer', tokenId: '1', until: '9' },
+    { kind: 'transfer', tokenId: '1', until: -1 },
     { kind: 'headers', blocks: [] },
     { kind: 'headers', blocks: Array.from({ length: 51 }, (_, i) => i * HOUR) },
     { kind: 'headers', blocks: [HOUR, HOUR] },
@@ -244,6 +248,65 @@ test('transfer, initialize and pool epochs: fixed filters, compact logs, the hea
   assert.deepEqual(lagging, { v: 1, kind: 'pool', behind: true });
 });
 
+// 2026-09-27 (review): headBlock's two rules, shared by the relay's routes and the replay worker. A request that names
+// the blocks it reads up to (a probe, a pool epoch or swap days `until`, a transfer `until`, a Swap before a block,
+// headers) is served by any head read at or past them, however long ago; one that names none (a pool's Initialize, a
+// transfer to the head, /state) reads the head again once a second has passed, or a new pool or mint would be missed.
+test('the head: a request that names its blocks reuses a head read at or past them, however old; one that names none reads it again after a second', async () => {
+  const fixture = loadCase('3136705');
+  const [position] = fixture.state.positions;
+  const head = fixture.state.block + 2;
+  const state = fixture.state.block;
+  const hour = Math.floor(state / HOUR) * HOUR;
+  const chain = stateChain(position, { head, timestamp: fixture.state.timestamp });
+  Object.assign(chain.headers, { [hour]: fixture.state.timestamp - 3_600, [state]: fixture.state.timestamp });
+  const heads = () => chain.log.filter((call) => call.method === 'eth_blockNumber').length;
+  /** What one request cost in eth_blockNumber calls, and the head its answer names. */
+  const ask = async (body) => {
+    const before = heads();
+    const response = await askLogs(chain, body);
+    assert.equal(response.status, 200, JSON.stringify(body));
+    const answer = await response.json();
+    assert.equal(answer.behind, undefined, JSON.stringify(body));
+    return { calls: heads() - before, head: answer.head };
+  };
+  assert.deepEqual(await ask({ kind: 'initialize', poolId: POOL }), { calls: 1, head });
+  // Within the second, one that names no block is served by that head.
+  chain.deps.time += 500;
+  assert.deepEqual(await ask({ kind: 'transfer', tokenId: TOKEN, since: state - 5_000 }), { calls: 0, head });
+
+  // A minute later the chain has moved on; every request that names blocks at or below the head read is served by it.
+  chain.deps.time += 60_000;
+  chain.head = head + 5_000;
+  for (const body of [
+    { kind: 'probe', poolId: POOL, from: state - 1_000, to: state },
+    { kind: 'pool', poolId: POOL, epoch: Math.floor(state / fees.EPOCH_SPAN), until: state },
+    { kind: 'swaps', poolId: POOL, day: Math.floor(state / DAY), count: 1, until: state },
+    { kind: 'transfer', tokenId: TOKEN, since: state - 5_000, until: state },
+    { kind: 'transfer', tokenId: TOKEN, since: state - 5_000, until: head },
+    { kind: 'swapBefore', poolId: POOL, block: state, since: state - 10_000 },
+    { kind: 'headers', blocks: [hour, state] },
+  ]) {
+    assert.deepEqual(await ask(body), { calls: 0, head }, `${body.kind} ${JSON.stringify(body).slice(-40)}`);
+  }
+  // One that names no block reads the head again: an Initialize, a transfer to the head, /state.
+  assert.deepEqual(await ask({ kind: 'initialize', poolId: POOL }), { calls: 1, head: head + 5_000 });
+  chain.deps.time += 1_001;
+  chain.head = head + 6_000;
+  assert.deepEqual(await ask({ kind: 'transfer', tokenId: TOKEN, since: state - 5_000 }), { calls: 1, head: head + 6_000 });
+  chain.deps.time += 1_001;
+  chain.head = head + 7_000;
+  const before = heads();
+  const read = await (await askState(chain, { tokenIds: [position.tokenId] })).json();
+  assert.deepEqual([heads() - before, read.block], [1, head + 7_000 - 2], '/state at the new head − 2');
+  // A named block past the head read reads it again at once, however fresh that head is.
+  chain.head = head + 9_000;
+  assert.deepEqual(await ask({ kind: 'probe', poolId: POOL, from: head + 7_000, to: head + 8_000 }), { calls: 1, head: head + 9_000 });
+  assert.deepEqual(await ask({ kind: 'transfer', tokenId: TOKEN, since: head + 7_000, until: head + 9_000 }), { calls: 0, head: head + 9_000 });
+  chain.head = head + 10_000;
+  assert.deepEqual(await ask({ kind: 'pool', poolId: POOL, epoch: Math.floor(state / fees.EPOCH_SPAN), until: head + 9_500 }), { calls: 1, head: head + 10_000 });
+});
+
 test('every log is validated before it is used or kept: a foreign topic, a removed log or a block out of range fails the answer and nothing is kept', async () => {
   const other = '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6';
   const cases = [
@@ -411,6 +474,11 @@ test('probe: every log of the pool in at most PROBE_SPAN blocks, too large past 
   const nft = fakeChain({ head });
   assert.equal((await askLogs(nft, { kind: 'transfer', tokenId: '7', since: 70_000_000 }, memoryCache().cache)).status, 200);
   assert.deepEqual(nft.log.filter((c) => c.method === 'eth_getLogs').map((c) => Number(c.params[0].fromBlock)), [70_000_000]);
+  // 2026-09-27: a transfer window: from `since` to `until`, not to the head (a replay looks for its mint newest first).
+  const windowed = fakeChain({ head });
+  const answer = await (await askLogs(windowed, { kind: 'transfer', tokenId: '7', since: 70_000_000, until: 70_500_000 }, memoryCache().cache)).json();
+  assert.deepEqual([answer.units[0].from, answer.units[0].to], [70_000_000, 70_500_000]);
+  assert.deepEqual(windowed.log.filter((c) => c.method === 'eth_getLogs').map((c) => [Number(c.params[0].fromBlock), Number(c.params[0].toBlock)]), [[70_000_000, 70_500_000]]);
 });
 
 // 2026-09-25: a pool epoch asked `parts: true` (the replay in a browser, for a pool its probe saw liquidity history in) is
