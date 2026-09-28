@@ -25,6 +25,8 @@ const parts = Object.fromEntries([
   'PoolPicker', 'PoolSelectionDialog', 'PoolWorkspace', 'TokenPicker', 'TokenLookup', 'CatalogueCandidates', 'WalletCandidates', 'PoolPriceChart', 'PoolHistoryChart', 'PoolRangeControls',
   'PoolAprEstimate', 'IconChevronLeft', 'PoolCatalogueIdentity', 'PoolTokenLabel', 'TokenMark', 'TokenMarkPair', 'SymbolText', 'Address', 'MetricCell', 'TurnoverCell', 'Tabs', 'Skeleton',
   'CopyButton', 'ProviderFigure', 'EmptyState', 'LinkButton', 'SelectedPoolsTable', 'MarketsTable', 'TokensTable', 'SearchField', 'PageHeader', 'PoolActivityCard', 'PoolPositionsCard',
+  // 2026-09-27 (round 6, the pool page for beginners): its new cards (src/components/pool/), each checked for real below.
+  'PoolEarnings', 'PoolRangeGuide', 'PoolAutomation', 'PoolActivitySummary',
 ].map((name) => [name, stub(name)]))
 
 // Deterministic effect harness around the actual component source. It models
@@ -77,7 +79,12 @@ function load(name, dependencies, expose = '') {
     failureText: () => ({ code: 'offline', title: 'Unavailable', detail: 'No response', retry: true }),
     addressKey: (value) => value, poolIdKey: (value) => value, shortAddress: (value) => `${value.slice(0, 6)}…${value.slice(-4)}`, NATIVE_CURRENCY: addr('0'),
     parseAddressInput: (raw) => (/^0x[0-9a-fA-F]{40}$/.test(raw) ? { ok: true, wire: raw, key: raw.toLowerCase() } : { ok: false, reason: 'length' }),
-    poolPrice: () => ({ state: 'usable', tick: 0, tickSpacing: 60, text: '≈1', base: token('1'), quote: token('2'), block: 700, stale: false, partial: false }), presetRange: () => ({ lower: -60, upper: 60 }),
+    poolPrice: () => ({ state: 'usable', tick: 0, tickSpacing: 60, text: '≈1', base: token('1'), quote: token('2'), decimals: [18, 18], block: 700, stale: false, partial: false }), presetRange: () => ({ lower: -60, upper: 60 }),
+    // 2026-09-27 (round 6): the pool page's plain words are the real module (src/components/pool/plain.ts), its estimate
+    // is the observation's own figure, and New position's test is the one poolsList.ts states.
+    ...real('src/components/pool/plain.ts'),
+    presentAprEstimate: (observation) => (observation?.data?.feeAprEstimate24hPercent ? { state: 'available', text: observation.data.feeAprEstimate24hPercent, reasons: [], ageSeconds: 0 } : { state: 'unavailable', text: null, reasons: ['estimate_not_enabled'], ageSeconds: null }),
+    optionUsableForDomino: (option) => option.integration === 'hookless_fixed_fee' && option.hooks === addr('0') && option.feePips !== 8388608,
     selectable: (candidate) => candidate.why === null, whyText: () => null, reasonText: (code) => String(code), activityFacts: (data) => data,
     COPY: { range: { problems: { decimals_unknown: 'Decimals unknown', tick_mismatch: 'Tick mismatch', not_initialized: 'Not initialised', beyond_display: 'Beyond display' } }, picker: { hookless: 'No hooks, fixed fee', needsAdapter: 'Needs a separate adapter', partialMetadata: '', providerConflict: '', checking: 'Checking…' }, figures: { activityLoading: '' }, selection: { decimalsUnavailable: 'decimals unavailable' } },
     // An entry with no addresses keeps its order (read.test.mjs checks inPoolOrder itself).
@@ -106,7 +113,9 @@ function workspace({ listed, dependencies = {}, option: chosen = option('a') } =
     askAgainLater(outcome, attempt, signal) { const pending = deferred(); asks.push({ outcome, attempt, signal, ...pending }); return pending.promise },
     ...dependencies,
   })
-  const props = { source, option: chosen, range: null, onOption() {}, onRange() {} }
+  // Changed on purpose (2026-09-28, round 6 review): the workspace works out its typical range on the price now, so the
+  // page hands it none (it used to hand the range planned when the pool was checked).
+  const props = { source, option: chosen, onOption() {} }
   return { ...module, reads, asks, checks, props }
 }
 const visibleText = (host) => renderToStaticMarkup(host.tree).replace(/<[^>]+>/g, '')
@@ -347,7 +356,10 @@ test('with no optional route listed the page reads its market figures only: no a
   assert.equal(fixture.reads.length, 1, 'and nothing after it')
   assert.equal(part(host, 'PoolActivityCard'), undefined)
   assert.equal(part(host, 'PoolPositionsCard'), undefined)
-  assert.ok(part(host, 'PoolRangeControls'), 'the range planner is on the page, with no view to switch to')
+  // Changed on purpose (2026-09-27, round 6): the page shows a typical range to read, not a planner to drag.
+  assert.ok(part(host, 'PoolRangeGuide'), 'the typical range is on the page, with no view to switch to')
+  assert.equal(part(host, 'PoolRangeGuide').props.guide.low, '0.994018', 'drawn on the price now, in the page’s direction')
+  assert.equal(part(host, 'PoolRangeControls'), undefined, 'and no range planner')
   const visible = visibleText(host)
   assert.doesNotMatch(visible, /24h fees/)
   assert.doesNotMatch(visible, /Read activity|Read market data again|Retry|Verify again|Refresh/)
@@ -410,7 +422,8 @@ test('G10: until the pool’s own read lands, stored provider figures carry an u
   assert.deepEqual(cells(host.tree), [['stale', 'retrieval time unknown'], ['stale', 'retrieval time unknown']], 'TVL and 24h volume: stale, age unknown')
   const shown = visibleText(host)
   assert.doesNotMatch(shown, /retrieved 0 s ago/)
-  assert.match(shown, /Market data provider\s*retrieval time unknown/)
+  // Changed on purpose (2026-09-27, round 6): who reported the figures is a row of Details, "Market data provider, <age>".
+  assert.match(shown, /Market data provider, retrieval time unknown/)
   // The provider line is a stat's `sub`, so it is read from the markup.
   const provenance = (tree) => /data-market-provenance="" title="([^"]*)"/.exec(renderToStaticMarkup(tree))?.[1]
   assert.match(provenance(host.tree), /^Provider market observation, as the read service stored it: stale, retrieval time unknown;/)
@@ -468,15 +481,17 @@ test('G1: with pool-metrics listed, a 24h fees stat from Domino’s history, and
   fixture.reads[0].resolve(ok()); await flush(); host.render()
   assert.deepEqual(fixture.reads.map(({ route }) => route), ['pool-market', 'pool-metrics'])
   assert.ok(elements(host.tree, (node) => node.type === parts.Skeleton).length > 0, '24h fees and Domino’s APR rest while their read runs')
-  assert.match(visibleText(host), /Est\. APR/, 'the estimate stands until then')
+  // Changed on purpose (2026-09-27, round 6): the stat is labelled APR either way; which figure it holds is the check.
+  const estimates = (tree) => elements(tree, (node) => node.type === parts.PoolAprEstimate && node.props.compact === true).length
+  assert.equal(estimates(host.tree), 1, 'the estimate stands until then')
   fixture.reads[1].resolve({ state: 'ok', data: { poolId: id('a') } }); await flush(); host.render()
   const visible = visibleText(host)
   assert.match(visible, /24h fees/)
   assert.match(visible, /APR/)
-  assert.doesNotMatch(visible, /Est\. APR/, 'a qualified APR takes the estimate’s place, as it does in the table')
+  assert.equal(estimates(host.tree), 0, 'a qualified APR takes the estimate’s place, as it does in the table')
   assert.match(visible, /Domino history/)
   const metricCells = elements(host.tree, (node) => node.type === parts.MetricCell).map((node) => [node.props.metric.state, node.props.percent === true])
-  assert.deepEqual(metricCells.filter(([state]) => state === 'qualified'), [['qualified', false], ['qualified', true]], 'the 24h fees and the APR, both Domino’s')
+  assert.deepEqual(metricCells.filter(([state]) => state === 'qualified'), [['qualified', true], ['qualified', false]], 'the APR first, then the 24h fees, both Domino’s')
   assert.match(visible, /Pool APR, Domino history158\.06%/, 'the history APR row has the figure instead of a fixed “unavailable”')
   host.unmount()
 
@@ -486,7 +501,7 @@ test('G1: with pool-metrics listed, a 24h fees stat from Domino’s history, and
   failing.reads[0].resolve(ok()); await flush(); page.render()
   failing.reads[1].resolve(unavailable); await flush(); page.render()
   assert.deepEqual(dashes(page), ['Unavailable. No response', 'Unavailable. No response'], 'the 24h fees and the history APR say why')
-  assert.match(visibleText(page), /Est\. APR/)
+  assert.equal(estimates(page.tree), 1)
   page.unmount()
 })
 
@@ -515,7 +530,8 @@ test('provider attribution is visible text rather than a hover-only title, and t
   assert.doesNotMatch(visible, /GeckoTerminal|DexScreener/)
   assert.match(visible, /retrieved 12 s ago/)
   assert.match(visible, /Verified at block 700/)
-  assert.ok(visible.includes(id('a')), 'the full pool id is in the page')
+  // Changed on purpose (2026-09-27, round 6): the full pool id is a row of Details, drawn by Address (a stub here).
+  assert.ok(elements(host.tree, (node) => node.type === parts.Address && node.props.value === id('a') && !node.props.short).length === 1, 'the full pool id is in the page')
   assert.equal(part(host, 'CopyButton').props.value, id('a'))
   assert.doesNotMatch(visible, /Deposits are not/, 'no page-wide deposit banner: the way onward is the caller’s action')
   host.unmount()
@@ -557,7 +573,8 @@ test('one of the six is verified against the token they all hold, then gets its 
     verifications[0].resolve({ failure: null, option: option('a'), restarted: false }); await flush(); host.render()
     const workspace = part(host, 'PoolWorkspace')
     assert.equal(workspace.props.option.key, id('a'))
-    assert.deepEqual(workspace.props.range, { lower: -60, upper: 60 }, 'a usable price starts on the closer preset')
+    // Changed on purpose (2026-09-28, round 6 review): no range is handed over; the workspace draws it on the price now.
+    assert.equal('range' in workspace.props, false, 'the typical range is the workspace’s own, on the price now')
     // The way onward is handed to the workspace as its `actions`: a route into the new-position flow for this pool, and nothing that deposits.
     const onward = elements(workspace.props.actions, (node) => node.type === parts.LinkButton)
     assert.deepEqual(onward.map((node) => node.props.href), [`#/new/${id('a')}`])
@@ -629,7 +646,8 @@ test('a verification with no answer leaves the page’s dashes, the reason in th
     assert.doesNotMatch(markup.replace(/<span role="status" class="sr-only">.*?<\/span>/g, '').replace(/<[^>]+>/g, ''), /Unavailable|No response|\bagain\b/)
     // Changed on purpose (qa:visual): no caption under the chart heading; who reports the candles is the plot's title and data, and the dash keeps the reason.
     assert.doesNotMatch(markup.replace(/<[^>]+>/g, ''), /Hourly candles|GeckoTerminal|market data provider/i, 'no caption under the chart heading')
-    assert.match(markup, /<div class="dm-pool-plot dm-dots-chart mt-4" title="Pool ratios from verified Robinhood Chain Swap events\."><div class="dm-pool-plot-empty"><span class="text-fg-subtle" title="Unavailable\. No response">—<\/span>/)
+    // Changed on purpose (2026-09-27, round 6): the resting chart's title says where its prices come from in plain words.
+    assert.match(markup, /<div class="dm-pool-plot dm-dots-chart mt-4" title="Prices from swaps on Robinhood Chain\."><div class="dm-pool-plot-empty"><span class="text-fg-subtle" title="Unavailable\. No response">—<\/span>/)
     assert.deepEqual(asks.map(({ outcome, attempt }) => [outcome.state, attempt]), [['busy', 0]])
     assert.equal(verifications.length, 1)
     asks[0].resolve(true); await flush(); host.render()
@@ -1406,6 +1424,12 @@ test('hash routes: a token or a pool id is taken only in its exact shape, and ol
   assert.equal(routes.exploreHref(upper), `#/markets/${upper}`)
   assert.equal(routes.newPositionHref(), '#/new')
   assert.equal(routes.newPositionHref(id('a')), `#/new/${id('a')}`)
+  // Added 2026-09-27 (round 6): New position's link can name the token to verify the pool with, as the pool page's does.
+  assert.equal(routes.newPositionHref(id('a'), upper), `#/new/${id('a')}/${upper}`)
+  assert.deepEqual(routes.parseNewHash(`#/new/${id('a')}/${upper}`), { poolId: id('a'), token: upper })
+  assert.deepEqual(routes.parseNewHash(`#/new/${id('a')}`), { poolId: id('a'), token: null })
+  assert.deepEqual(routes.parseNewHash(`#/new/${id('a')}/nope`), { poolId: id('a'), token: null })
+  assert.deepEqual(routes.parseNewHash(`#/pool/${id('a')}/${upper}`), { poolId: null, token: null })
   // The docs: a section link always carries its route, since a bare #<id> would open Home.
   assert.equal(routes.docsHref(), '#/docs')
   assert.equal(routes.docsHref('non-custodial'), '#/docs/non-custodial')
@@ -1456,7 +1480,8 @@ test('a refused acquisition is said, and asked about less often, not more', asyn
 // (backend/public_history.py), so appending those would say it twice.
 test('the history card gives the cause when there is one, and does not restate the status', () => {
   const chart = readFileSync(resolve(root, 'src/components/read/screens/PoolHistoryChart.tsx'), 'utf8');
-  assert.match(chart, /const RESTATED = \['history_refresh_pending', 'history_acquisition_pending'\]/);
+  // Changed on purpose (2026-09-27, round 6): history_partial restates the missing hours the card names in plain words.
+  assert.match(chart, /const RESTATED = \['history_refresh_pending', 'history_acquisition_pending', 'history_partial'\]/);
   assert.match(chart, /data\?\.reason && !RESTATED\.includes\(data\.reason\)/, 'a default reason is not appended');
   assert.match(chart, /data-history-reason=\{data\?\.reason \?\? undefined\}/, 'the raw closed code stays an attribute');
   assert.match(chart, /reasonText\(code\)/, 'the code reaches the page as words, never raw');
@@ -1464,3 +1489,249 @@ test('the history card gives the cause when there is one, and does not restate t
   assert.doesNotMatch(chart, /GeckoTerminal\.|USD · GeckoTerminal/, 'no provider name in text a person reads');
   assert.match(chart, /title=\{CANDLES_TITLE\}/, 'one copy of that sentence, shared with the v1 chart');
 });
+
+// --- round 6 (2026-09-27): the pool page for someone who knows nothing about liquidity pools -------------------------
+// The owner: "Many things there look inactive or unconfigured. Rework the whole page for beginners, keep only what
+// matters, and add useful functions." What the page now says in plain words, what it estimates, and how often it asks.
+
+test('round 6: plain words: prices in USDG where the pool holds it, a yearly rate as a person says it, an amount’s earnings', () => {
+  const plain = real('src/components/pool/plain.ts')
+  const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168'
+  assert.equal(plain.quoteSide([{ address: addr('3') }, { address: USDG }]), 1, 'PONS/USDG: USDG for 1 PONS')
+  assert.equal(plain.quoteSide([{ address: USDG }, { address: addr('9') }]), 0, 'USDG/MARLIN: USDG for 1 MARLIN, not the other way round')
+  assert.equal(plain.quoteSide([{ address: addr('3') }, { address: addr('9') }]), 1, 'no USDG: the pool’s own order')
+  assert.deepEqual([100.35, 32.13, 2.16, 0.05, 1234.5, 0].map(plain.aboutPercent), ['100%', '32%', '2.2%', 'less than 0.1%', '1,235%', '0%'])
+  assert.deepEqual(['1,000', '$250.5', ' 10 000 ', '0', '-5', 'abc', '1e3', '10000000000'].map(plain.parseAmount), [1000, 250.5, 10000, null, null, null, null, null])
+  const month = plain.earnings(1000, 100.35)
+  assert.equal(plain.usdText(month.month), '$83.63')
+  assert.equal(plain.usdText(month.year), '$1,004', 'whole dollars from $1,000')
+  assert.equal(plain.usdText(month.day), '$2.75')
+  assert.equal(plain.usdText(0.004), 'less than $0.01')
+  // Added 2026-09-28 (round 6 review): money added shares the pool's fees with the money already in it. USDG/MARLIN in
+  // the harness: TVL $13.4K at 181.25% a year. $10,000 holds 10/23.4 of the pool then, so about $10.4K a year, $865 a
+  // month, where the pool's whole rate on the amount alone said $18,125 and $1,510.
+  const marlin = plain.earnings(10_000, 181.25, 13_400)
+  assert.deepEqual([plain.usdText(marlin.month), plain.usdText(marlin.year)], ['$864.94', '$10,379'])
+  assert.ok(Math.abs(marlin.year - (1.8125 * 13_400 * 10_000) / 23_400) < 1e-9)
+  assert.equal(plain.usdText(plain.earnings(10_000, 181.25).month), '$1,510', 'with no TVL, the pool’s rate alone')
+  assert.equal(plain.usdText(plain.earnings(10_000, 181.25, 0).month), '$1,510', 'a TVL of nothing is no TVL')
+  const crumb = plain.earnings(100, 181.25, 13_400).year
+  assert.ok(crumb < 181.25 && crumb > 179.9, 'a small amount barely dilutes it: $179.91 a year where the plain rate says $181.25')
+  assert.deepEqual([[0.62, 0.67], [0.67, 0.62], [1, 1.0004]].map(([a, b]) => plain.moveWords(a, b)), ['rose 8.1%', 'fell 7.5%', 'barely moved'])
+})
+
+test('round 6: a typical range reads low to high in the page’s direction, with how far each end is from the price now', () => {
+  const plain = real('src/components/pool/plain.ts')
+  // PONS/USDG (18 and 6 decimals, USDG second): the pool's own order.
+  const forward = plain.rangeGuide({ lower: -3600, upper: 4080 }, 0, [6, 6], 1)
+  assert.deepEqual([forward.low, forward.high, forward.below, forward.above], ['0.697689', '1.50378', '−30%', '+50%'])
+  // USDG first in the pool: the same ticks read the other way round, the pool's upper tick the low end.
+  const flipped = plain.rangeGuide({ lower: -4080, upper: 3600 }, 0, [6, 6], 0)
+  assert.deepEqual([flipped.low, flipped.high, flipped.below, flipped.above], ['0.697689', '1.50378', '−30%', '+50%'])
+  assert.ok(flipped.values.low < flipped.values.now && flipped.values.now < flipped.values.high)
+  assert.equal(plain.rangeGuide({ lower: -60, upper: 60 }, 0, [0, 40], 1), null, 'a price that cannot be written draws no range')
+  const day = plain.daySpan({ candles: [{ startTimestamp: 0, high: '2', low: '1', close: '1.5' }, { startTimestamp: 3600, high: '3', low: '1.2', close: '2.5' }], requestedWindow: { startTimestamp: 0 }, resolutionSeconds: 3600 }, addr('1'))
+  assert.deepEqual(day, { base: addr('1'), low: '1', high: '3', first: '1.5', last: '2.5', whole: true })
+})
+
+test('round 6: the earnings estimate says a month, a year and a day at the pool’s rate, and one calm line without one', () => {
+  const { PoolEarnings } = real('src/components/pool/PoolEarnings.tsx')
+  const text = (props) => renderToStaticMarkup(React.createElement(PoolEarnings, props)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+  const ready = text({ apr: 100.35, tvl: null, loading: false })
+  assert.match(ready, /If you put in/)
+  assert.match(ready, /You could earn about \$83\.63 a month \$1,004 a year · \$2\.75 a day/)
+  assert.match(ready, /An estimate at the pool’s recent rate, about 100% a year\./)
+  assert.match(ready, /a position earns only while the price is inside its range/)
+  assert.match(renderToStaticMarkup(React.createElement(PoolEarnings, { apr: 100.35, tvl: null, loading: false })), /data-pool-earnings="ready"/)
+  // Added 2026-09-28 (round 6 review): with the pool's TVL the amount shares its fees, and the note says with how much.
+  const shared = text({ apr: 181.25, tvl: 13_400, loading: false })
+  assert.match(shared, /You could earn about \$140\.55 a month \$1,687 a year/, '$1,000 in a $13.4K pool: 1.8125 × 13,400 × 1,000 / 14,400')
+  assert.match(shared, /An estimate at the pool’s recent rate, about 181% a year, shared with the \$13\.4K already in the pool\./)
+  // Changed on purpose (2026-09-28, round 6 review): with no rate there is nothing to type, and no "yet": a rate refused
+  // for a lasting reason (a protocol fee, say) never comes.
+  const none = renderToStaticMarkup(React.createElement(PoolEarnings, { apr: null, tvl: 13_400, loading: false }))
+  assert.match(none, /data-pool-earnings="none"/)
+  assert.match(none.replace(/<[^>]+>/g, ''), /There’s no recent fee rate for this pool to estimate from\./)
+  assert.doesNotMatch(none, /<input|<button|yet/, 'no amount to type and no presets without a rate')
+  assert.doesNotMatch(text({ apr: null, tvl: null, loading: false }), /You could earn|a month|If you put in/, 'no figure without a rate')
+  const resting = renderToStaticMarkup(React.createElement(PoolEarnings, { apr: null, tvl: null, loading: true }))
+  assert.match(resting, /data-pool-earnings="loading"/)
+  assert.match(resting, /dm-skel/)
+  assert.doesNotMatch(text({ apr: 5, tvl: null, loading: false }), /Retry|again|Refresh/i)
+})
+
+test('round 6: a typical range draws the band, the price now and the last day, and says whether the day stayed inside', () => {
+  const { PoolRangeGuide } = real('src/components/pool/PoolRangeGuide.tsx')
+  const plain = real('src/components/pool/plain.ts')
+  const guide = plain.rangeGuide({ lower: -3600, upper: 4080 }, 0, [6, 6], 1)
+  const draw = (day) => renderToStaticMarkup(React.createElement(PoolRangeGuide, { guide, day, unit: 'USDG for 1 PONS' }))
+  const inside = draw({ base: addr('1'), low: '0.9', high: '1.1', first: '1', last: '1.05', whole: true })
+  assert.match(inside, /data-pool-range-guide="ready"/)
+  assert.match(inside.replace(/<[^>]+>/g, ''), /From 0\.697689 to 1\.50378: 30% below today’s price to 50% above it\. Over the last day the price stayed inside it\./)
+  assert.match(inside, /class="dm-pool-guide-day"/)
+  const outside = draw({ base: addr('1'), low: '0.5', high: '1.1', first: '1', last: '1.05', whole: true })
+  assert.match(outside.replace(/<[^>]+>/g, ''), /Over the last day the price went past it at times\./)
+  const noDay = draw(null)
+  assert.doesNotMatch(noDay, /dm-pool-guide-day|last day/i, 'no day, no claim about it')
+  const none = renderToStaticMarkup(React.createElement(PoolRangeGuide, { guide: null, day: null, unit: '' }))
+  assert.match(none, /data-pool-range-guide="none"/)
+  assert.match(none, /This pool’s price can’t be drawn as a range here\./)
+})
+
+test('round 6: what Domino can do in a pool: the three features with their fees where a position can be opened, one line where not', () => {
+  const { PoolAutomation } = real('src/components/pool/PoolAutomation.tsx')
+  const yes = renderToStaticMarkup(React.createElement(PoolAutomation, { usable: true, why: '' }))
+  const text = yes.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+  assert.match(yes, /data-pool-automation="available"/)
+  assert.match(text, /Plain position No service fee Fees wait in the position until you collect them\./)
+  assert.match(text, /Auto-compound 2% of fees Fees go back into the same position\./)
+  assert.match(text, /Domino-compound 4% of fees Fees can fund the next range one step higher\./)
+  assert.deepEqual([...yes.matchAll(/href="([^"]+)"/g)].map(([, href]) => href), ['#/docs/earned-fees', '#/docs/auto-compound', '#/docs/domino-compounder'])
+  const no = renderToStaticMarkup(React.createElement(PoolAutomation, { usable: false, why: 'it runs extra code on every swap (hooks)' }))
+  assert.match(no, /data-pool-automation="unavailable"/)
+  assert.match(no.replace(/<[^>]+>/g, ''), /Domino can’t open positions in this pool: it runs extra code on every swap \(hooks\)\./)
+  assert.doesNotMatch(no, /Auto-compound|href=/)
+})
+
+test('round 6: recent activity is the last day in words, from the chain where it can, from the 24h volume where it cannot', () => {
+  const { PoolActivitySummary } = real('src/components/pool/PoolActivitySummary.tsx')
+  const draw = (props) => renderToStaticMarkup(React.createElement(PoolActivitySummary, { option: fixturePool(), now: { wall: 0 }, day: null, usd: null, volume: '$6.2M', loading: false, listed: true, ...props }))
+  const words = (html) => markupText(html)
+  const chain = draw({ read: okRead('pool-activity', 'pool-activity.success') })
+  assert.match(chain, /data-pool-activity-summary="ready"/)
+  assert.match(words(chain), /4 swaps in the last 24 hours, worth about \$6\.2M ?\./)
+  assert.match(words(chain), /People who provide the pool’s money earned 0\.0000000864129 ETH and 300 TOKEN in fees\./, 'in each token without USDG')
+  // With USDG in the pool, its fees in dollars at the pool's own price: 300 TOKEN at $1 plus the ETH side at 2,000.
+  assert.match(words(draw({ read: okRead('pool-activity', 'pool-activity.success'), usd: { usdgIndex: 1, price: 2000 } })), /earned about \$300\.00 in fees\./)
+  const day = { base: NATIVE, low: '1', high: '2', first: '1.6', last: '1.2', whole: true }
+  assert.match(words(draw({ read: okRead('pool-activity', 'pool-activity.success'), day })), /The price fell 25% over the last day\./)
+  // Added 2026-09-28 (round 6 review follow-up): swaps that paid the providers nothing say so, never "earned about $0.00".
+  const unpaid = okRead('pool-activity', 'pool-activity.success', (body) => ({ ...body, window24h: { ...body.window24h, lpFeesRaw: ['0', '0'] }, fees: { ...body.fees, accounting: { ...body.fees.accounting, lpFeesRaw: ['0', '0'] } } }))
+  for (const usd of [null, { usdgIndex: 1, price: 2000 }]) {
+    const said = words(draw({ read: unpaid, usd }))
+    assert.match(said, /These swaps paid no fees to the people who provide the pool’s money\./)
+    assert.doesNotMatch(said, /earned|\$0\.00/)
+  }
+  // No chain activity for this pool: the volume still speaks, and nothing says why on the page.
+  const refused = { state: 'unavailable', cause: { kind: 'producer', code: 'activity_pool_not_registered', status: 503 }, retryable: false }
+  const market = draw({ read: refused })
+  assert.match(words(market), /People swapped about \$6\.2M here in the last 24 hours\./)
+  assert.doesNotMatch(words(market), /not registered|indexed|Unavailable/i)
+  assert.match(draw({ read: null }), /data-pool-activity-summary="loading"/, 'rests while the chain read is out, so no sentence is swapped for another')
+  const nothing = draw({ read: refused, volume: null })
+  assert.match(nothing, /data-pool-activity-summary="none"/)
+  assert.match(words(nothing), /Recent activity for this pool isn’t available right now\./)
+})
+
+test('round 6: the page asks the stored overview again every 5 s only while the pool is collected, else once a minute', async () => {
+  for (const [acquisition, accepted, expected] of [['pending', true, 5_000], ['pending', false, 30_000], ['ready', true, 60_000]]) {
+    const reads = []; const waits = []
+    const source = { transport: 'bridge', supportsStoredReads: true, routeEnabled: async (route) => ({ state: route === 'overview' ? 'enabled' : 'not_enabled' }) }
+    const { PoolWorkspace, OVERVIEW_EVERY } = load('PoolWorkspace', {
+      readWithin(_s, route, request, options) { const p = deferred(); reads.push({ route, request, options, ...p }); return p.promise },
+      whenVisibleAfter(ms, run) { const wait = { ms, run }; waits.push(wait); return () => {} },
+      storedPoolRead: () => ({ state: 'ok', data: { poolId: id('a') } }), overviewPoolOption: () => null,
+    })
+    assert.deepEqual(OVERVIEW_EVERY, { collecting: 5_000, refused: 30_000, settled: 60_000 })
+    const host = mount(PoolWorkspace, { source, option: option('a'), onOption() {} })
+    await flush(); host.render()
+    assert.deepEqual(reads.map(({ route, request }) => [route, request]), [['overview', { poolIds: [id('a')] }]])
+    reads[0].resolve({ state: 'ok', data: { acquisitionAccepted: accepted, pools: [{ poolId: id('a'), acquisition: { status: acquisition } }], generatedAt: 1 }, provenance: {} })
+    await flush(); host.render()
+    assert.deepEqual(waits.map(({ ms }) => ms), [expected], `${acquisition}, accepted ${accepted}`)
+    host.unmount()
+  }
+})
+
+test('round 6: the page opens with what the pool is and what it earns, and gives the estimate the pool’s own rate', async () => {
+  const projectMarketRow = ({ market }) => ({ ...row(market.data.poolId), feeAprEstimate: { data: { feeAprEstimate24hPercent: '100.349999941681629604' }, receivedAt: 0 } })
+  const fixture = workspace({ dependencies: { projectMarketRow } }); const host = mount(fixture.PoolWorkspace, fixture.props)
+  assert.equal(part(host, 'PoolEarnings').props.apr, null)
+  assert.equal(part(host, 'PoolEarnings').props.loading, true, 'resting while the figures are read')
+  fixture.reads[0].resolve(ok()); await flush(); host.render()
+  const intro = elements(host.tree, (node) => node.props?.['data-pool-intro'] === '')[0]
+  assert.match(renderToStaticMarkup(intro).replace(/<[^>]+>/g, ''), /^People swap {2}and {2}in this pool\. Everyone who adds money to it shares the 0\.3% fee on each swap: about 100% a year at recent activity\.$/, 'symbols are stubbed out here')
+  assert.equal(part(host, 'PoolEarnings').props.apr, 100.349999941681629604)
+  assert.equal(part(host, 'PoolAutomation').props.usable, true)
+  assert.equal(part(host, 'PoolHistoryChart').props.quote, 1, 'the chart opens on the page’s direction')
+  assert.equal(typeof part(host, 'PoolHistoryChart').props.onDay, 'function')
+  const details = elements(host.tree, (node) => node.props?.['data-pool-details'] === '')[0]
+  assert.equal(details.type, 'details', 'everything technical is in one closed Details')
+  assert.equal(details.props.open, undefined)
+  host.unmount()
+
+  // A pool Domino cannot open a position in says why, with no New position anywhere on its cards.
+  // Changed on purpose (2026-09-28, round 6 review): and it has no earnings estimate or typical range, which could only
+  // say it has no rate or talk of creating a position there; what Domino can do here carries the row beside the chart.
+  const refusals = [
+    [{ hooks: addr('a'), integration: 'requires_separate_adapter' }, 'it runs extra code on every swap (hooks)'],
+    [{ feePips: 8388608, fee: 'Dynamic', integration: 'requires_separate_adapter' }, 'its fee changes over time'],
+  ]
+  for (const [refused, why] of refusals) {
+    // As the read service answers for such a pool: its figures, and no estimate (hooked_pool_unsupported and the like).
+    const hooked = workspace({ option: { ...option('a'), ...refused } }); const page = mount(hooked.PoolWorkspace, hooked.props)
+    hooked.reads[0].resolve(ok()); await flush(); page.render()
+    assert.match(visibleText(page), /APR +Not estimated for this pool/, 'under its APR dash (the estimate, stubbed here), words that say it never comes')
+    assert.deepEqual(part(page, 'PoolAutomation').props, { usable: false, why })
+    assert.equal(part(page, 'PoolEarnings'), undefined, 'no estimate that can never answer')
+    assert.equal(part(page, 'PoolRangeGuide'), undefined, 'no typical range beside “Domino can’t open positions”')
+    assert.match(page.tree.props.className, /dm-pool-layout--follow/, 'the grid without those two cards')
+    assert.doesNotMatch(renderToStaticMarkup(page.tree), /create a position|Estimate your earnings|A typical range/i)
+    page.unmount()
+  }
+  // A pool Domino can open positions in keeps both, on the plain grid, and the estimate gets the pool's TVL.
+  const open = workspace({ dependencies: { projectMarketRow } }); const usable = mount(open.PoolWorkspace, open.props)
+  open.reads[0].resolve(ok()); await flush(); usable.render()
+  assert.ok(part(usable, 'PoolEarnings') && part(usable, 'PoolRangeGuide'))
+  assert.equal(part(usable, 'PoolEarnings').props.tvl, 42, 'the TVL figure the page shows, as a number')
+  assert.equal(usable.tree.props.className, 'dm-pool-layout')
+  assert.doesNotMatch(visibleText(usable), /Not estimated/)
+  usable.unmount()
+})
+
+test('round 6: the pool page’s button is “Create a position”, into the same New position flow with the pool chosen', async () => {
+  const previous = globalThis.window
+  const { PoolDetail, verifications } = poolPage(`#/pool/${id('a')}`)
+  const host = mount(PoolDetail, { poolId: id('a') })
+  try {
+    verifications[0].resolve({ failure: null, option: option('a'), restarted: false }); await flush(); host.render()
+    const [button] = elements(part(host, 'PoolWorkspace').props.actions, (node) => node.type === parts.LinkButton)
+    assert.deepEqual([button.props.children, button.props.href], ['Create a position', `#/new/${id('a')}`])
+  } finally { host.unmount(); globalThis.window = previous }
+})
+
+// Added 2026-09-28 (round 6 review): the typical range used to be worked out once, when the pool was checked, while the
+// price moved on with every read; past one of its ends the sentence read "−9% above it". It is now drawn on the price now.
+test('round 6: the typical range is worked out on the price now, so a price that moved past an end still reads −30% to +50%', async () => {
+  const { presetRange } = real('src/lib/read/screens/poolRange.ts')
+  const usablePrice = (chosen) => ({ state: 'usable', tick: chosen.tick, tickSpacing: chosen.tickSpacing, text: '≈1', base: token('1'), quote: token('2'), decimals: [6, 6], block: 700, stale: false, partial: false })
+  const fixture = workspace({ dependencies: { presetRange, poolPrice: usablePrice } })
+  const host = mount(fixture.PoolWorkspace, fixture.props)
+  fixture.reads[0].resolve(ok()); await flush(); host.render()
+  const at = () => { const { guide } = part(host, 'PoolRangeGuide').props; return [guide.below, guide.above, guide.values.low < guide.values.now && guide.values.now < guide.values.high] }
+  assert.deepEqual(at(), ['−30%', '+50%', true])
+  // The price rises 65% (tick 5000), past the upper end of the range it opened on (tick 4080).
+  host.props = { ...host.props, option: { ...option('a'), tick: 5000 } }; host.render()
+  assert.deepEqual(at(), ['−30%', '+50%', true], 'measured from the price now, never "−9% above it"')
+  // And falls 40% (tick −5100), past the lower end it opened on (tick −3600).
+  host.props = { ...host.props, option: { ...option('a'), tick: -5100 } }; host.render()
+  assert.deepEqual(at(), ['−30%', '+50%', true], 'never "+5% below it"')
+  assert.match(renderToStaticMarkup(React.createElement(real('src/components/pool/PoolRangeGuide.tsx').PoolRangeGuide, { ...part(host, 'PoolRangeGuide').props, unit: 'USDG for 1 PONS' })).replace(/<[^>]+>/g, ''), /: 30% below today’s price to 50% above it\./)
+  host.unmount()
+})
+
+// 2026-09-27 (round 6, finishing the pool page): the range guide and the recent activity keep the last day in the page's
+// direction. A day the chart hears while a person has flipped it the other way round is not that, and must not wipe it.
+test('round 6: the last day heard with the chart flipped the other way round leaves the page’s own last day in place', async () => {
+  const fixture = workspace(); const host = mount(fixture.PoolWorkspace, fixture.props)
+  fixture.reads[0].resolve(ok()); await flush(); host.render()
+  const hear = part(host, 'PoolHistoryChart').props.onDay
+  const own = { base: addr('1'), low: '0.9', high: '1.1', first: '1', last: '1.05', whole: true }
+  hear(own); host.render()
+  assert.deepEqual(part(host, 'PoolRangeGuide').props.day, own, 'the page’s direction: token 1 priced in token 2')
+  assert.deepEqual(part(host, 'PoolActivitySummary').props.day, own)
+  hear({ base: addr('2'), low: '0.91', high: '1.11', first: '1', last: '0.95', whole: true }); host.render()
+  assert.deepEqual(part(host, 'PoolRangeGuide').props.day, own, 'the flipped day is not kept over it')
+  assert.deepEqual(part(host, 'PoolActivitySummary').props.day, own)
+  host.unmount()
+})

@@ -17,7 +17,7 @@
  * whose provider rows repeat an hour), and a few times with a doubling wait
  * for capacity refusals.
  *
- * A card coming back to the page draws what the tab kept for it at once and
+ * A card coming back to the page draws what the browser kept for it at once and
  * keeps that answer's rhythm (cardSeries.ts keptWaitMs): going back and forth
  * between pages never costs a read per visit. A failed read, final ones too,
  * is asked again by a later visit once its wait is over, a minute at the
@@ -115,7 +115,7 @@ function answerOf(ask: CardAsk, outcome: Answered<'history'> | Answered<'pool-ma
 }
 
 /**
- * One card's reads until `signal` ends: what this tab kept for it first (a
+ * One card's reads until `signal` ends: what this browser kept for it first (a
  * microtask after the call, so it lands as an update, never inside the
  * caller's own effect), then its own reads. Every answer goes to `emit`.
  */

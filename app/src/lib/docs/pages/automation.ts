@@ -40,7 +40,7 @@ export const AUTO_COMPOUND: DocPage = {
       title: 'What it cannot do',
       blocks: [
         list(['Reduce your position’s liquidity.'], ['Pull tokens from your wallet.'], ['Sell your principal.']),
-        p('The contract does not let automation reduce a position’s liquidity.'),
+        p('The contract does not let automation reduce liquidity.'),
       ],
     },
     {
@@ -70,7 +70,7 @@ export const AUTO_COMPOUND: DocPage = {
         p(
           'Custody is the same as for Domino Compounder: the NFT stays in your wallet, and ',
           doc('your sequence vault', 'non-custodial', 'sequence-vault'),
-          ' holds earned fees not yet reinvested until you withdraw them. You ',
+          ' holds earned fees not yet added back until you withdraw them. You ',
           doc('pause, revoke and withdraw', 'non-custodial', 'pause-revoke-withdraw'),
           ' with your wallet.',
         ),
@@ -116,7 +116,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
       title: 'Where its positions live',
       blocks: [
         p('The position you start from stays in your wallet. Only that NFT is approved to your sequence vault, a contract created for your wallet.'),
-        p('Positions it opens, and earned fees not yet reinvested, are held by your sequence vault until you withdraw them. See ', doc('who controls the vault', 'non-custodial', 'sequence-vault'), '.'),
+        p('Positions it opens, and earned fees not yet added back, are held by your sequence vault until you withdraw them. See ', doc('who controls the vault', 'non-custodial', 'sequence-vault'), '.'),
       ],
     },
     {

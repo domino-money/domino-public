@@ -10,7 +10,7 @@ import { createFakeOnboarding } from './support/fake-onboarding.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { createWalletServer } from './support/wallet-server.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
-import { ARTWORK, footerButton, walkToReview } from './support/new-position.mjs';
+import { ARTWORK, choosePool, footerButton, walkToReview } from './support/new-position.mjs';
 import { FIXTURE_TOKEN, createReadStub } from './support/read-stub.mjs';
 // The mint's own sizing, from the unit build (npm test compiles it first, as check:app runs it first).
 import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/create/mintPlan.js';
@@ -22,6 +22,7 @@ import { createPositionChain } from './support/position-chain.mjs';
 import { caseChain } from './support/fees/case-chain.mjs';
 import { automatedChain } from './support/fees/automated-chain.mjs';
 import { pathChain } from './support/fees/path-chain.mjs';
+import { listChain } from './support/fees/list-chain.mjs';
 // 2026-09-25: the fees worker's lane to the RPC, whose pace the busy-history test holds it to.
 import { LANE_PACE } from '../.test-build/app/src/lib/chain/browser.js';
 // 2026-09-27: how far back a later scan of the same wallet reads its logs, for the refresh tests.
@@ -52,7 +53,7 @@ const RELEASE_OFF = { status: 200, body: { contractVersion: '1.0.0-rc.1', chainI
  * (no position, no deposit, every NFT unknown), as the site's routes answered before 2026-09-25. `refresh` (2026-09-27):
  * Your positions and a position's page read themselves again on their own, as they do outside test builds.
  */
-async function scenario({ clock = false, routes = [], chain = browserChain(), refresh = false } = {}) {
+async function scenario({ clock = false, routes = [], chain = browserChain(), refresh = false, listApr = false } = {}) {
   const fake = createFakeSession();
   const calls = [], executions = [], releases = [], deposits = [], errors = [];
   const state = { performance: 'available', execution: 'on', setupRelease: RELEASE_OFF, sequenceRelease: RELEASE_OFF, deposit: null };
@@ -95,6 +96,8 @@ async function scenario({ clock = false, routes = [], chain = browserChain(), re
   const context = await browser.newContext({ viewport: { width: 1320, height: 1000 } });
   if (clock) await context.clock.install({ time: Date.now() });
   if (refresh) await context.addInitScript(() => { window.__dominoRefresh = true; });
+  // 2026-09-27, round 6: Your APR measured on the Your positions table (OwnedPositions.tsx), which test builds do only when asked.
+  if (listApr) await context.addInitScript(() => { window.__dominoListApr = true; });
   await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   const rpc = await routeRpc(context, chain);
   const wallet = await installWallets(context);
@@ -149,8 +152,8 @@ test('private history and receipts read themselves after login, format exact pro
     assert.deepEqual(await line(history), ['How your automated positions did in the last 24 hours.', 'Missing prices and incomplete history show as dashes.']);
     assert.deepEqual(await line(receipts), ['What automation did for your positions.', 'An uncertain or reorganized transaction is never shown as completed.']);
     const reserved = receipts.locator('[data-execution-state="reserved"]');
-    // Changed on purpose (2026-09-27, round 5 review): a word joiner keeps "re-adding" whole, and the open receipt's sentence is plain.
-    assert.equal(await reserved.locator('summary').innerText(), 'In progress\nRe-\u2060adding fees');
+    // Changed on purpose (the owner, 2026-09-27, round 6): one plain phrase everywhere, the position page's "Fees added back".
+    assert.equal(await reserved.locator('summary').innerText(), 'In progress\nAdding fees back');
     await reserved.locator('summary').click();
     assert.match(await receipts.innerText(), /Getting ready\. Nothing has been sent\./);
     // Scoped to the two private sections: other cards on this page belong to the read screens.
@@ -1068,14 +1071,17 @@ test('Create position opens the position from Review through a connected wallet 
   try {
     const button = s.page.locator('[data-create-position]');
     assert.equal(await button.innerText(), 'Create position');
-    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet asks you to sign each step in the list above, in order.');
+    // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): each reason is one short sentence.
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet will ask you to confirm each step.');
     assert.equal(await s.page.getByRole('link', { name: 'Continue in Setup' }).count(), 0, 'no hand-off to Setup');
     assert.deepEqual(chain.sends, [], 'nothing is sent by arriving');
     // The wallet holds both tokens: Review plans both, and nothing is swapped.
     assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'both');
     assert.equal(await s.page.locator('[data-review-swap], [data-review-swap-note], [data-review-short]').count(), 0);
     // What Review says the position holds: the ETH the range pairs with the typed 1 TOKEN.
-    const [, eth, token] = (await s.page.locator('[data-review-amounts]').innerText()).match(/^([\d.,]+) ETH \+ ([\d.,]+) TOKEN$/) ?? [];
+    // Changed on purpose (round 6, 2026-09-27): the headline is short for reading; each side's exact figure is its data-exact.
+    assert.match(await s.page.locator('[data-review-amounts]').innerText(), /^[\d.,]+ ETH \+ 1 TOKEN$/);
+    const [eth, token] = await s.page.locator('[data-review-amounts] [data-exact]').evaluateAll(sides => sides.map(side => side.getAttribute('data-exact')));
     assert.equal(token, '1');
     // Before the press the list is the plan: each step by its key, none of them running.
     const list = s.page.locator('[data-wallet-steps]');
@@ -1090,7 +1096,8 @@ test('Create position opens the position from Review through a connected wallet 
     // Mid-flow: the approval included, the deposit on its way into a block.
     await s.page.locator('[data-wallet-step="fund"][data-step-state="chain"]').waitFor({ timeout: 60_000 });
     assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'chain'], ['mint', 'waiting']]);
-    assert.match(await list.innerText(), /Approve the exact amount\s+TOKEN[\s\S]*Done[\s\S]*Deposit the tokens\s+Waiting for the network[\s\S]*Create the position\s+Next/);
+    // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): short titles, the token by its symbol.
+    assert.match(await list.innerText(), /Approve TOKEN\s+Done[\s\S]*Deposit both tokens\s+Waiting for the network[\s\S]*Create the position\s+Next/);
     // The window as the person sees it, scrolled to the steps (a full-page capture draws the sticky header mid-page).
     await list.evaluate(element => element.scrollIntoView({ block: 'end' }));
     await s.page.screenshot({ path: join(shots(), 'create-position-steps.png') });
@@ -1233,7 +1240,7 @@ test('a wallet that can batch once it turns on its smart account is offered one 
     await offer.waitFor({ timeout: 30_000 });
     assert.equal(await offer.innerText(), 'Sign all steps at once');
     assert.equal(await s.page.locator('#create-batch-note').innerText(), 'Your wallet will first ask to turn on its smart account (EIP-7702). Your address stays the same, and your key stays in control.');
-    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet asks you to sign each step in the list above, in order.', 'the steps stay the main way');
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet will ask you to confirm each step.', 'the steps stay the main way');
     await s.page.screenshot({ path: join(shots(), 'create-position-batch-offer.png'), fullPage: true });
     await offer.click();
     const notice = s.page.locator('[data-create-notice="batch_upgrade_declined"]');
@@ -1352,7 +1359,8 @@ test('a mint declined in the wallet leaves the deposit held: Create position say
     assert.equal(await held.innerText(), 'Create position', 'pressed again, it mints the held deposit');
     assert.deepEqual(chain.declined, ['mint']);
     await s.page.getByRole('status').filter({ hasText: 'You declined in your wallet. Your deposit is held: press Create position to continue, or refund it.' }).waitFor();
-    assert.equal(await s.page.locator('#create-reason').innerText(), 'A deposit is held for this pool. Press Create position to create the position from it, or refund it.');
+    // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): one short sentence.
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'You have a deposit waiting in this pool. Press Create position to finish from it, or refund it.');
     assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'done'], ['mint', 'failed']]);
     assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open'], 'the mint was never sent');
     assert.ok((await s.page.evaluate(() => location.hash)).startsWith('#/new'), 'still on New position');
@@ -1434,25 +1442,28 @@ test('with TOKEN and only gas in ETH, Review plans the swap; Create position app
     // Review: the plan is the swap from TOKEN, in the headline and the line under it, with the note that says why.
     const amounts = s.page.locator('[data-review-amounts]');
     assert.equal(await amounts.getAttribute('data-review-plan'), 'swap');
-    assert.match(await amounts.innerText(), /^≈[\d.,]+ TOKEN \+ ≈[\d.,]+ ETH$/, 'what the position holds after the swap');
+    // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): "About" once before the estimates, no
+    // "≈"; the amounts are short, each side's exact figure its data-exact; the swap line and its note are one short sentence each.
+    assert.match(await amounts.innerText(), /^About [\d.,]+ TOKEN \+ [\d.,]+ ETH$/, 'what the position holds after the swap');
+    const bought = await amounts.locator('[data-review-side="0"]').getAttribute('data-exact');
     const swapLine = s.page.locator('[data-review-swap]');
     assert.equal(await swapLine.getAttribute('data-review-swap'), '1', 'from TOKEN, currency 1');
-    const [, from, part, bought] = (await swapLine.innerText()).match(/^From your wallet: ([\d.,]+) TOKEN\. About ([\d.,]+) TOKEN of it is swapped for ≈([\d.,]+) ETH\.$/) ?? [];
+    const [, from, part] = (await swapLine.innerText()).match(/^You put in ([\d.,]+) TOKEN\. About ([\d.,]+) TOKEN of it is swapped for ETH\.$/) ?? [];
     assert.equal(from, '10,000,000,000', 'the typed amount is the budget');
     const partRaw = parseUnits(part.replaceAll(',', ''), 6);
     assert.ok(partRaw > typed / 3n && partRaw < (typed * 2n) / 3n, `about half of it at this range: ${part}`);
     assert.ok(parseUnits(bought.replaceAll(',', ''), 18) > 0n);
     assert.equal(await s.page.locator('[data-review-swap-note]').innerText(),
-      'Your wallet does not hold enough ETH, so part of your TOKEN is swapped for it inside this pool before the position is created. The amounts are estimates before the pool’s price impact. The swap returns at least what your slippage limit allows; the pool’s fee and Domino’s assisted-swap fee (0.65%) apply to the swapped part.');
+      'You don’t have enough ETH, so part of your TOKEN is swapped for it in this pool first. The swapped part pays the pool’s fee and Domino’s 0.65% fee.');
     assert.equal(await s.page.locator('[data-review-short]').count(), 0);
-    // Review keeps Your choices and Wallet steps: no deposit amounts per token, and nothing that asks for a sign-in.
-    assert.deepEqual(await s.page.locator('[data-stage="review"] h3').allInnerTexts(), ['Your choices', 'Wallet steps']);
+    // Review keeps its two sections: no deposit amounts per token, and nothing that asks for a sign-in.
+    assert.deepEqual(await s.page.locator('[data-stage="review"] h3').allInnerTexts(), ['Your position', 'In your wallet']);
     assert.doesNotMatch(await s.page.locator('main').innerText(), /Deposit amounts per token|Sign in with your wallet to see these amounts\./);
     assert.equal(await s.page.locator('section[data-stage="balance"]').count(), 0);
     // The wallet steps, in order: approve TOKEN, deposit it, swap, create. None running before the press.
     assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, null], ['fund', null], ['swap', null], ['mint', null]]);
     const list = s.page.locator('[data-wallet-steps]');
-    assert.match(await list.innerText(), /Approve the exact amount\s+TOKEN[\s\S]*Deposit the token\s+TOKEN[\s\S]*Swap for the other token\s+One swap inside this pool[\s\S]*Domino’s assisted-swap fee \(0\.65%\)[\s\S]*Create the position/);
+    assert.match(await list.innerText(), /Approve TOKEN[\s\S]*Deposit TOKEN[\s\S]*Swap part of your deposit\s+Swaps part of it for the other token in this pool\. Fee: 0\.65% of the swapped part\.[\s\S]*Create the position/);
     assert.doesNotMatch(await s.page.locator('[data-wallet-step="fund"]').innerText(), /Native ETH/, 'the TOKEN deposit sends no ETH, and says none');
     assert.deepEqual((await markers(s.page)).map(([text]) => text), ['1', '2', '3', '4']);
     await s.page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'swap-review.png') });
@@ -1542,14 +1553,16 @@ test('with ETH only and TOKEN typed, the ETH pays for the whole position: deposi
     assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'swap');
     const swapLine = s.page.locator('[data-review-swap]');
     assert.equal(await swapLine.getAttribute('data-review-swap'), '0', 'from ETH, currency 0');
-    const [, from, part, bought] = (await swapLine.innerText()).match(/^From your wallet: ([\d.,]+) ETH\. About ([\d.,]+) ETH of it is swapped for ≈([\d.,]+) TOKEN\.$/) ?? [];
+    // Changed on purpose (round 6, 2026-09-27): the line says what goes in and how much is swapped; what it buys is the headline's.
+    const [, from, part] = (await swapLine.innerText()).match(/^You put in ([\d.,]+) ETH\. About ([\d.,]+) ETH of it is swapped for TOKEN\.$/) ?? [];
+    const bought = await s.page.locator('[data-review-amounts] [data-review-side="1"]').getAttribute('data-exact');
     const reviewed = parseUnits(from.replaceAll(',', ''), 18);
     assert.ok(parseUnits(part.replaceAll(',', ''), 18) < reviewed);
     assert.ok(parseUnits(bought.replaceAll(',', ''), 6) >= 1_000_000n, `the typed 1 TOKEN, at least: ${bought}`);
     await s.page.locator('[data-review-swap-note]').waitFor();
     // ETH needs no approval: it travels with the deposit.
     assert.deepEqual(await walletStepStates(s.page), [['fund', null], ['swap', null], ['mint', null]]);
-    assert.match(await s.page.locator('[data-wallet-steps]').innerText(), /Deposit the token\s+ETH[\s\S]*Native ETH travels with it[\s\S]*Swap for the other token[\s\S]*Create the position/);
+    assert.match(await s.page.locator('[data-wallet-steps]').innerText(), /Deposit ETH[\s\S]*Swap part of your deposit[\s\S]*Create the position/);
 
     await recordWalletSteps(s.page);
     await s.page.locator('[data-create-position="idle"]').click();
@@ -1577,6 +1590,56 @@ test('with ETH only and TOKEN typed, the ETH pays for the whole position: deposi
   } finally { await s.close(); }
 });
 
+// Added 2026-09-28 (round 6 review): the amount typed in the token the wallet does not hold. The swap then buys the typed
+// token, and the wallet's other token pays for the whole position. The typed panel stays as typed, never quieted like a
+// panel the swap fills. The line under the panels says, from the wallet's side, what comes out of it and how much of that
+// is swapped: the deposit Review names. Above 1%, Review's warning names the tolerance and where it is changed, because
+// the tolerance itself is inside Review's closed Details.
+test('typed in the token the wallet lacks, the typed panel stays whole and the line says what comes from the wallet; Review names a tolerance above 1% and where to change it', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 18n });
+  const s = await atReview(chain);
+  try {
+    const [, put] = (await s.page.locator('[data-review-swap]').innerText()).match(/^You put in ([\d.,]+) ETH\./) ?? [];
+    assert.ok(put, 'Review names the ETH deposit');
+    assert.equal(await s.page.locator('[data-review-slippage-warning]').count(), 0, 'nothing to warn about at 0.5%');
+    await footerButton(s.page, 'Back').click();
+    const amount = s.page.locator('[data-stage-card="amount"] [data-stage="amount"]');
+    await amount.waitFor();
+    const typed = amount.locator('[data-pair-side="1"]');
+    assert.equal(await typed.getAttribute('data-pair-role'), 'typed');
+    assert.equal(await typed.locator('input').inputValue(), '1');
+    assert.equal(await amount.locator('[data-plan-side]').count(), 0, 'no panel is quieted: the typed one is the amount asked for, and the other is paid in full');
+    const [ink, full] = await typed.locator('input').evaluate(node => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--fg)';
+      document.body.append(probe);
+      const fg = getComputedStyle(probe).color;
+      probe.remove();
+      return [getComputedStyle(node).color, fg];
+    });
+    assert.equal(ink, full, 'the typed amount keeps its full ink');
+    const line = amount.locator('[data-amount-swap="0"]');
+    assert.equal(await line.getAttribute('data-amount-swap-typed'), '');
+    const [, from, part] = (await line.innerText()).match(/^You don’t have enough TOKEN, so ([\d.,]+) ETH will come from your wallet\. About ([\d.,]+) ETH of it will be swapped for TOKEN when you create the position\.$/) ?? [];
+    assert.equal(from, put, 'the deposit Review names, shown here too');
+    const partRaw = parseUnits(part.replaceAll(',', ''), 18);
+    assert.ok(partRaw > 0n && partRaw < parseUnits(from.replaceAll(',', ''), 18), `part of it: ${part} of ${from}`);
+    assert.equal(await amount.locator('[data-amount-short]').count(), 0);
+
+    // 3%, typed under Advanced: the step says what it allows beside its slider, and Review says what the 3% is and where it is changed.
+    await amount.locator('[data-flow-advanced] > summary').click();
+    await amount.locator('#create-slippage-exact').fill('3');
+    await amount.locator('[data-slippage-warning]').waitFor();
+    assert.match(await amount.locator('[data-slippage-warning]').innerText(), /^3% is more than the usual 1%\./);
+    await footerButton(s.page, 'Continue').click();
+    await s.page.locator('[data-stage-card="review"] [data-review-slippage-warning]').waitFor();
+    assert.equal(await s.page.locator('[data-review-slippage-warning]').innerText(),
+      'You let prices move up to 3% (Amount › Advanced), more than the usual 1%. The deposit can take up to 3% more of each token, and a swap can return 3% less.');
+    assert.equal(await s.page.locator('[data-review-details]').evaluate(node => node.open), false, 'the tolerance itself stays inside the closed Details');
+    assert.deepEqual(chain.sends, [], 'nothing is sent by going back and forth');
+  } finally { await s.close(); }
+});
+
 // ---- Before a one-token deposit (2026-09-24): the owner deposited 0.1 USDG alone into USDG/NET 8%, a pool with nothing
 // in range; every swap reverted and the deposit was held. A one-token deposit is now made only into a pool that can
 // swap part of it, and a pool that cannot is said before the wallet is asked for anything. ----
@@ -1596,7 +1659,8 @@ test('a one-token deposit into a pool with nothing in range is refused before an
     assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'swap');
     // Review, from the figure it already has and no wallet read: one neutral line under the swap note.
     const warning = s.page.locator('[data-review-liquidity="none"]');
-    assert.equal(await warning.innerText(), 'This pool reports no liquidity, so part of a one-token deposit cannot be swapped in it. Deposit both tokens, or choose another pool.');
+    // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): plain words.
+    assert.equal(await warning.innerText(), 'This pool is empty, so part of your deposit can’t be swapped in it. Add both tokens, or choose another pool.');
     assert.equal(await warning.getAttribute('data-tone'), 'neutral');
     assert.deepEqual(chain.viewed, [], 'Review read nothing through the wallet');
     await recordWalletSteps(s.page);
@@ -1678,7 +1742,8 @@ test('a held one-token deposit in a pool with nothing in range: Create position 
     assert.equal(await refund.innerText(), 'Refund the deposit instead');
     assert.match(await refund.getAttribute('class'), /\bdm-btn--primary\b/);
     assert.match(await again.getAttribute('class'), /\bdm-btn--outline\b/);
-    assert.equal(await s.page.locator('#create-reason').innerText(), 'A deposit is held for this pool. Refund it to your wallet.');
+    // Changed on purpose (round 6, 2026-09-27/28, the owner: plain words): one short sentence, "refund" as the button says it.
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'You have a deposit waiting in this pool. Refund it to your wallet.');
     await refund.click();
     await s.page.getByRole('status').filter({ hasText: 'The deposit was refunded to your wallet.' }).waitFor({ timeout: 60_000 });
     const [cancel] = chain.decoded();
@@ -1812,7 +1877,7 @@ test('a pool with hooks is never listed at the pool step: the muted empty line, 
   try {
     await s.page.goto(`${s.origin}/#/new`);
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
-    await s.page.getByRole('combobox', { name: 'Token in the pool' }).fill(FIXTURE_TOKEN);
+    await s.page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
     await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
     const picker = s.page.locator('[data-picker="pool"][data-pools-state="ok"]');
     await picker.waitFor({ timeout: 30_000 });
@@ -1866,13 +1931,161 @@ test('a link to a pool with hooks preselects nothing: the search is offered, and
     assert.equal(await stage.getAttribute('data-preselect-reason'), 'hooks');
     assert.equal(await s.page.locator('[data-chosen-pool]').count(), 0, 'nothing is preselected');
     assert.equal(await s.page.locator('[data-deposit-choice]').count(), 0);
-    await s.page.getByRole('combobox', { name: 'Token in the pool' }).waitFor();
+    await s.page.getByRole('combobox', { name: 'Search a token' }).waitFor();
     assert.equal(await stage.locator('p[role="status"].sr-only').first().textContent(), 'Pool from the link: This pool has hooks, and positions can only be created here in pools without hooks. Choose another pool.');
     // Changed on purpose (owner, 2026-09-24): until a token is chosen step 1 shows no Back and no Continue (they
     // arrive with the token); the reason stays in the footer's live region, out of sight.
     assert.equal(await s.page.locator('[data-journey-footer] button').count(), 0, 'no buttons before a token is chosen');
     assert.equal(await s.page.locator('#continue-reason').textContent(), 'Choose a token to continue.');
     assert.deepEqual(asked, [{ token: USDG, maxPools: 1, poolIds: [LINKED] }], 'the link is verified against USDG, by its id alone, once');
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-27 (round 6, the owner: New position from a pool page looked different from New position from
+// Positions). A pool page's link names the token the page verified the pool with (#/new/<id>/<token>), so a pool of
+// neither list is verified with it rather than with USDG, which it may not hold; and the pool arrives exactly as a
+// pool chosen from the list does: the chosen pool and Continue, with no question about which token is deposited.
+test('a link from a pool page verifies the pool with the token it names, and step 1 is the chosen pool and Continue, as from the list', async () => {
+  const LINKED = `0x${'f'.repeat(64)}`;
+  const asked = [];
+  const byId = (route, body) => {
+    if (route !== 'pools') return undefined;
+    asked.push(body);
+    const base = readGateway('pools.success'), [pool] = base.pools;
+    return JSON.stringify({ ...base, pools: [{ ...pool, poolId: LINKED, requestedById: true }] });
+  };
+  const read = createReadStub({ answer: byId });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  try {
+    await s.page.goto(`${s.origin}/#/new/${LINKED}/${FIXTURE_TOKEN}`);
+    const stage = s.page.locator('[data-stage="token"][data-preselect="verified"]');
+    await stage.waitFor({ timeout: 30_000 });
+    assert.deepEqual(asked, [{ token: FIXTURE_TOKEN, maxPools: 1, poolIds: [LINKED] }], 'verified once, with the token the link names');
+    assert.equal(await s.page.locator('[data-chosen-pool]').getAttribute('data-chosen-pool'), LINKED);
+    assert.equal(await s.page.locator('[data-chosen-pool] .dm-chip').innerText(), '0.30% fee');
+    assert.equal(await s.page.locator('[data-deposit-choice], [data-deposit-token]').count(), 0, 'no question about which token is deposited');
+    assert.equal(await s.page.getByRole('combobox', { name: 'Search a token' }).count(), 0, 'the pool is chosen: no search until Change pool');
+    const next = footerButton(s.page, 'Continue');
+    assert.equal(await next.isDisabled(), false, 'Continue at once, as when the pool is chosen from the list');
+    await next.click();
+    await s.page.locator('[data-stage="range"]').waitFor();
+    assert.equal(await s.page.locator('li[data-step="pool"] .dm-flow-row-summary').innerText(), 'ETH / TOKEN · 0.30%', 'no "deposit TOKEN" on the row');
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-28 (round 6 review): New position's own Range step (components/create/RangeStep.tsx), which replaced
+// the Markets dialog's range controls inside the flow, driven the way a person does: the three widths and their words, the
+// keyboard on the width switch, a price typed the way the page writes one, a refused price whose error leaves with Custom,
+// the line for a range that does not hold today's price, and the price read again once it is 5 minutes old, once. The
+// fixture pool is ETH/TOKEN at tick 0 with a tick spacing of 60: 1 ETH = 1,000,000,000,000 TOKEN.
+test('New position’s Range step: Closer, Wider and Custom in words, the arrow keys, a grouped price moved outward, a refused price cleared by a preset, the out-of-range line, and a stale price read again once', async () => {
+  const read = createReadStub();
+  const s = await scenario({ clock: true, routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await choosePool(s.page);
+    await footerButton(s.page, 'Continue').click();
+    const step = s.page.locator('li[data-step="range"] [data-picker="range"]');
+    await step.waitFor();
+    const ticks = () => step.locator('[data-bound-tick]').allTextContents();
+    const checked = () => step.locator('[role="radio"][aria-checked="true"]').allInnerTexts();
+    const away = () => step.locator('.dm-flow-bound-away').allInnerTexts();
+    const alerts = step.locator('[role="alert"]');
+    const lowerPrice = step.locator('#range-lower-price'), upperPrice = step.locator('#range-upper-price');
+    const focused = () => s.page.evaluate(() => document.activeElement?.getAttribute('data-width'));
+
+    // Closer by default: today's price and both ends as "1 ETH = …", how far each is from today, and no field to type in.
+    assert.equal(await step.locator('[data-pool-price-text]').innerText(), '1 ETH = 1,000,000,000,000 TOKEN');
+    assert.deepEqual(await checked(), ['Closer']);
+    assert.deepEqual(await ticks(), ['-3600', '4080']);
+    assert.deepEqual(await away(), ['30% below today', '50% above today']);
+    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'Earns more while the price stays near today’s.');
+    assert.match(await step.locator('[data-range-bound="lower"] [data-bound-price]').innerText(), /^1 ETH = [\d,.]+ TOKEN$/);
+    assert.equal(await step.locator('input').count(), 0, 'no field, step or slider until Custom');
+    assert.doesNotMatch(await step.innerText(), /≈|\bper\b|\btick/i, 'no "≈", no "per", no ticks on screen');
+
+    await step.getByRole('radio', { name: 'Wider' }).click();
+    assert.deepEqual(await checked(), ['Wider']);
+    assert.deepEqual(await ticks(), ['-6960', '6960']);
+    assert.deepEqual(await away(), ['50% below today', '101% above today']);
+    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'Earns less, but keeps earning through bigger moves.');
+
+    // The arrow keys move the width switch, and the focus with it; Home and End go to either end.
+    await step.getByRole('radio', { name: 'Wider' }).focus();
+    await s.page.keyboard.press('ArrowLeft');
+    assert.deepEqual([await checked(), await ticks(), await focused()], [['Closer'], ['-3600', '4080'], 'standard']);
+    await s.page.keyboard.press('End');
+    assert.deepEqual([await checked(), await ticks()], [['Custom'], ['-3600', '4080']], 'Custom keeps the range it opens on');
+    assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'Set your own lowest and highest price.');
+    await s.page.keyboard.press('Home');
+    assert.deepEqual(await checked(), ['Closer']);
+    await s.page.keyboard.press('ArrowRight');
+    assert.deepEqual([await checked(), await ticks()], [['Wider'], ['-6960', '6960']]);
+    await s.page.keyboard.press('ArrowLeft');
+    await s.page.keyboard.press('ArrowLeft');
+    assert.deepEqual([await checked(), await ticks(), await focused()], [['Custom'], ['-3600', '4080'], 'custom'], 'from Closer, left wraps round to Custom');
+    assert.equal(await lowerPrice.count(), 1, 'Custom opens the fields');
+
+    // A price typed the way the page writes one is read without its separators, and moves outward to the pool's step.
+    await upperPrice.fill('2,000,000,000,000.5');
+    await upperPrice.press('Enter');
+    assert.deepEqual(await ticks(), ['-3600', '6960']);
+    assert.deepEqual(await away(), ['30% below today', '101% above today']);
+    assert.equal(await alerts.count(), 0);
+
+    // A refused price is said in plain words under its field, until a preset replaces the range; it does not come back.
+    await lowerPrice.fill('lots');
+    await lowerPrice.press('Enter');
+    assert.equal(await alerts.innerText(), 'Enter a price as a number, like 2000 or 0.5.');
+    await lowerPrice.fill('9,000,000,000,000');
+    await lowerPrice.press('Enter');
+    assert.equal(await alerts.innerText(), 'The lowest price must stay below the highest price.');
+    assert.equal(await lowerPrice.getAttribute('aria-invalid'), 'true');
+    assert.deepEqual(await ticks(), ['-3600', '6960'], 'the range is untouched');
+    await step.getByRole('radio', { name: 'Closer' }).click();
+    assert.deepEqual([await checked(), await ticks()], [['Closer'], ['-3600', '4080']]);
+    assert.equal(await alerts.count(), 0, 'the error leaves with Custom');
+    await footerButton(s.page, 'Continue').click();
+    await s.page.locator('li[data-step="amount"][aria-current="step"]').waitFor();
+    await footerButton(s.page, 'Back').click();
+    await s.page.locator('li[data-step="range"][aria-current="step"]').waitFor();
+    assert.equal(await alerts.count(), 0, 'and is not there after Amount and Back');
+    await step.getByRole('radio', { name: 'Custom' }).click();
+    assert.equal(await alerts.count(), 0, 'nor when Custom opens again');
+    assert.doesNotMatch(await lowerPrice.inputValue(), /^9/, 'the field shows the range’s own price, not the refused one');
+    assert.equal(await lowerPrice.getAttribute('aria-invalid'), null);
+
+    // A lowest price above today's: the range does not hold today's price, and one line says what that means.
+    assert.equal(await step.locator('p[data-range-position]').count(), 0, 'nothing to warn about while the range holds the price');
+    await lowerPrice.fill('1,100,000,000,000');
+    await lowerPrice.press('Enter');
+    assert.deepEqual(await ticks(), ['900', '4080'], 'moved outward, down to the pool’s step');
+    assert.deepEqual(await away(), ['9.4% above today', '50% above today']);
+    assert.equal(await step.locator('p[data-range-position="below"]').innerText(),
+      'Today’s price is below this range: the position starts with one token only and earns no fees until the price rises into it.');
+    await step.getByRole('radio', { name: 'Closer' }).click();
+    assert.equal(await step.locator('p[data-range-position]').count(), 0);
+
+    // Five minutes on the page: the price is stale, which is said in its title only, and nothing is read by itself. The
+    // next change to the range reads it again, once; the price is fresh after that, so the changes after it read nothing.
+    const priceReads = () => read.requests.filter(r => r.path === '/api/read/v1/pools' && JSON.parse(r.body).maxPools === 1 && JSON.parse(r.body).poolIds?.length === 1).length;
+    const before = priceReads();
+    await jump(s.page, '05:01');
+    await s.page.waitForFunction(() => document.querySelector('li[data-step="range"] [data-picker="range"]')?.getAttribute('data-price-state') === 'stale');
+    assert.equal(await step.locator('[data-pool-price-text]').getAttribute('title'), 'The pool price was read more than 5 minutes ago on this page.');
+    assert.equal(priceReads(), before, 'nothing is read by itself');
+    await step.getByRole('radio', { name: 'Wider' }).click();
+    assert.deepEqual(await ticks(), ['-6960', '6960'], 'the width is drawn at once');
+    await s.page.waitForFunction(() => document.querySelector('li[data-step="range"] [data-picker="range"]')?.getAttribute('data-price-read') === 'ok');
+    assert.equal(priceReads(), before + 1, 'read again, once');
+    assert.equal(await step.getAttribute('data-price-state'), 'usable');
+    await step.getByRole('radio', { name: 'Closer' }).click();
+    await step.getByRole('radio', { name: 'Custom' }).click();
+    await s.page.waitForTimeout(500);
+    assert.equal(priceReads(), before + 1, 'a fresh price is not read again');
+    assert.deepEqual(await ticks(), ['-3600', '4080']);
   } finally { await s.close(); }
 });
 
@@ -1905,7 +2118,7 @@ test('New position’s preview shows under the steps on a phone, aria-hidden, re
     assert.deepEqual(await aside.locator('.dm-flow-pv-legend li').allInnerTexts(), ['In range', 'Out of range', 'Price range', 'Fees earned']);
     assert.equal(await s.page.locator('[data-journey-footer] button').count(), 0, 'no buttons before a token is chosen');
 
-    await s.page.getByRole('combobox', { name: 'Token in the pool' }).fill(FIXTURE_TOKEN);
+    await s.page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
     await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
     const next = footerButton(s.page, 'Continue');
     await next.waitFor();
@@ -1983,7 +2196,7 @@ test('New position names the provider’s most liquid pools in its one pools rea
   try {
     await s.page.goto(`${s.origin}/#/new`);
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
-    await s.page.getByRole('combobox', { name: 'Token in the pool' }).fill(FIXTURE_TOKEN);
+    await s.page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
     await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
     const picker = s.page.locator('[data-picker="pool"][data-pools-state="ok"]');
     await picker.waitFor({ timeout: 30_000 });
@@ -1992,7 +2205,8 @@ test('New position names the provider’s most liquid pools in its one pools rea
     const rows = picker.locator('[data-pool-option]');
     assert.equal(await rows.count(), 2, 'the hooked pool is not a row, however liquid');
     assert.equal(await picker.getAttribute('data-pools-hidden'), '1');
-    assert.deepEqual(await rows.evaluateAll((els, ids) => els.map(el => ids.find(poolId => el.textContent.includes(poolId))), [X, Y, Z]), [Z, Y], 'the read service’s TVL decides the order: $900 before $50');
+    // Changed on purpose (round 6, 2026-09-27): New position's rows no longer print their pool id; it is data-pool-key.
+    assert.deepEqual(await rows.evaluateAll(els => els.map(el => el.getAttribute('data-pool-key'))), [Z, Y], 'the read service’s TVL decides the order: $900 before $50');
     const figures = await rows.evaluateAll(els => els.map(el => [...el.querySelectorAll('[data-provider-figure], [data-row-apr]')].map(cell => cell.innerText.replace(/\s+/g, ' ').trim())));
     assert.deepEqual(figures, [
       ['TVL $900.00', '24h volume $100.00', 'APR 12.17% est.'],
@@ -2059,7 +2273,7 @@ test('for USDG the pools read names the featured pools first, then the provider�
   try {
     await s.page.goto(`${s.origin}/#/new`);
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
-    await s.page.getByRole('combobox', { name: 'Token in the pool' }).fill(USDG);
+    await s.page.getByRole('combobox', { name: 'Search a token' }).fill(USDG);
     await s.page.locator(`[data-token-option="${USDG}"]`).click();
     const picker = s.page.locator('[data-picker="pool"][data-pools-state="ok"]');
     await picker.waitFor({ timeout: 30_000 });
@@ -2069,7 +2283,8 @@ test('for USDG the pools read names the featured pools first, then the provider�
       'the six featured pools in catalogue order, then the provider’s own, PONS/USDG not twice',
     );
     assert.equal(await picker.locator('[data-pool-option]').count(), 1);
-    assert.ok((await picker.locator('[data-pool-option]').first().textContent()).includes(ETH_USDG), 'the row is the read service’s own');
+    // Changed on purpose (round 6, 2026-09-27): New position's rows no longer print their pool id; it is data-pool-key.
+    assert.equal(await picker.locator('[data-pool-option]').first().getAttribute('data-pool-key'), ETH_USDG.toLowerCase(), 'the row is the read service’s own');
   } finally { await s.close(); }
 });
 
@@ -2084,7 +2299,8 @@ test('with no wallet connected Review’s last control is Connect wallet, says w
     const connect = s.page.locator('[data-create-position="connect"]');
     await connect.waitFor({ timeout: 30_000 });
     assert.equal(await connect.innerText(), 'Connect wallet');
-    assert.equal(await s.page.locator('#create-reason').innerText(), 'Connect your wallet to create the position. Each transaction appears in your wallet to sign.');
+    // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): one short sentence.
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Connect a wallet to create this position.');
     assert.equal(await s.page.getByRole('button', { name: 'Create position', exact: true }).count(), 0);
     assert.equal(await s.page.getByRole('link', { name: 'Continue in Setup' }).count(), 0, 'no hand-off to Setup');
     await connect.click();
@@ -2120,7 +2336,7 @@ async function answerTokenReads(context, known) {
 // hashes): one short row per receipt, a plain chip (Done, In progress, Cancelled...), what it re-added, and the detail one
 // click away. The hashes are short there, each whole in its title and its copy; the amounts are in token units, summed
 // per token. The receipt still names no link out of the app: its one link is how to pause.
-test('a finalized receipt is one short row: Done, what it re-added, and its detail one click away with amounts per token and copyable ids; a stoppable intent links to how to pause, and an open one refreshes in place', async () => {
+test('a finalized receipt is one short row: Done, what it added back, and its detail one click away with amounts per token and copyable ids; a stoppable intent links to how to pause, and an open one refreshes in place', async () => {
   const s = await scenario({ clock: true });
   const TOKEN = '0x' + '11'.repeat(20), UNKNOWN = '0x' + '33'.repeat(20);
   const reserved = statusWire.responses['status.reserved'].item;
@@ -2150,10 +2366,10 @@ test('a finalized receipt is one short row: Done, what it re-added, and its deta
     // The row: its chip, what it did and what it added, in token units summed per token; a token with no decimals is a dash.
     await done.locator('[data-receipt-added]').getByText('1.47 TOKEN', { exact: true }).waitFor({ timeout: 30_000 });
     await done.locator(`[data-receipt-added] [data-receipt-currency="${UNKNOWN}"] [data-amount-reason="decimals_unavailable"]`).waitFor({ timeout: 30_000 });
-    // Changed on purpose (2026-09-27, round 5 review): a word joiner after the hyphen keeps "re-added" on one line.
-    assert.equal(await done.locator('summary').innerText(), 'Done\nFees re-\u2060added\n1.47 TOKEN + —');
+    // Changed on purpose (the owner, 2026-09-27, round 6): "Fees added back", the position page's phrase (was "Fees re-added").
+    assert.equal(await done.locator('summary').innerText(), 'Done\nFees added back\n1.47 TOKEN + —');
     assert.equal(await done.locator('.dm-pill').getAttribute('title'), 'Finalized');
-    assert.deepEqual([await open.locator('summary').innerText(), await open.locator('.dm-pill').getAttribute('title')], ['In progress\nRe-\u2060adding fees', 'Reserved']);
+    assert.deepEqual([await open.locator('summary').innerText(), await open.locator('.dm-pill').getAttribute('title')], ['In progress\nAdding fees back', 'Reserved']);
     assert.doesNotMatch(await receipts.innerText(), /0x[0-9a-f]{4}/, 'no hash in sight until a row is opened');
     assert.deepEqual([...asked].sort(), [TOKEN, UNKNOWN], 'one token read per currency, through the read path');
 
@@ -2190,7 +2406,7 @@ test('a finalized receipt is one short row: Done, what it re-added, and its deta
     assert.deepEqual(sent.map(call => call.path), ['/api/execution/v1/list'], 'only the page so far');
     await jump(s.page, '00:31');
     await receipts.locator(`[data-execution-intent="${reserved.intentId}"][data-execution-state="signing"]`).waitFor();
-    assert.deepEqual(sent.map(call => [call.path, call.body, Boolean(call.csrf)]), [['/api/execution/v1/list', { afterIntentId: null, limit: 10 }, true], ['/api/execution/v1/status', { intentId: reserved.intentId }, true]]);
+    assert.deepEqual(sent.map(call => [call.path, call.body, Boolean(call.csrf)]), [['/api/execution/v1/list', { afterIntentId: null, limit: 20 }, true], ['/api/execution/v1/status', { intentId: reserved.intentId }, true]]);
     assert.equal(await open.getByRole('link', { name: 'How to pause' }).count(), 0, 'signed: no longer offered as stoppable');
     assert.deepEqual(await receipts.locator('[data-execution-intent]').evaluateAll(cards => cards.map(card => card.getAttribute('data-execution-intent'))), [reserved.intentId, finalized.intentId], 'replaced where it stands');
     assert.equal(s.wallet.state.signed.length, 1, 'only the login signature');
@@ -2266,7 +2482,7 @@ async function shootBoth(page, name, target = null) {
 
 // Changed on purpose (2026-09-27, round 5 review): the Positions tab and the receipts page share one controller, so See all
 // and the way back read no list of their own (execution-v1 allows one read per 30 s), and a failed receipt's sentence is plain.
-test('many receipts: the Positions tab shows four short rows at most, cancelled ones folded into one, and See all opens their own page with what the tab read, where Show more reads the next page', async () => {
+test('many receipts: the Positions tab shows four short rows at most, cancelled ones folded into one, and See all opens their own page with what the tab read, where the next page arrives by itself', async () => {
   const s = await scenario({ clock: true });
   const first = [receiptItem(1, 'cancelled'), receiptItem(2, 'reconciled', { block: 7346840, usdg: '16490000', ufg: '1086592191816706700000' }), receiptItem(3, 'cancelled'),
     receiptItem(4, 'reserved'), receiptItem(5, 'cancelled'), receiptItem(6, 'cancelled'), receiptItem(7, 'reconciled', { block: 7351002, usdg: '4200000' }),
@@ -2281,7 +2497,7 @@ test('many receipts: the Positions tab shows four short rows at most, cancelled 
     await unitsRead(receipts);
     // Four rows: the one under way, the two finalized ones by block (latest first), and the seven cancelled ones as one.
     assert.equal(await receipts.getAttribute('data-execution-rows'), '4');
-    assert.deepEqual(await rowTexts(list), ['In progress | Re-\u2060adding fees', 'Done | Fees re-\u2060added | 4.2 USDG', 'Done | Fees re-\u2060added | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
+    assert.deepEqual(await rowTexts(list), ['In progress | Adding fees back', 'Done | Fees added back | 4.2 USDG', 'Done | Fees added back | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
     assert.doesNotMatch(await card.innerText(), /0x[0-9a-f]{4}|Sequence|Intent|raw units|canonical/i, 'no hash, code or raw unit in sight');
     assert.equal(await receipts.getByRole('button', { name: 'Show more' }).count(), 0, 'the preview never grows: its card links the full list instead');
     const listReads = () => asked.filter(call => call.path.endsWith('/list')).length;
@@ -2305,13 +2521,15 @@ test('many receipts: the Positions tab shows four short rows at most, cancelled 
     assert.deepEqual([await all.innerText(), await all.getAttribute('href')], ['See all', '#/positions/receipts']);
     await all.click();
     await s.page.waitForFunction(() => location.hash === '#/positions/receipts');
+    // The hash changes before the page's own chunk renders; wait for its heading (CI read "Positions" first, 2026-09-28).
+    await s.page.getByRole('heading', { level: 1, name: 'Receipts' }).waitFor();
     assert.equal(await s.page.getByRole('heading', { level: 1 }).innerText(), 'Receipts');
     assert.equal(await s.page.locator('header nav[aria-label="Main"] a[aria-current="page"]').innerText(), 'Positions');
     assert.equal(await s.page.locator('main a.dm-pos-back').getAttribute('href'), '#/positions');
     const full = s.page.locator('section[aria-label="Execution receipts"]');
     await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"]').waitFor();
     await unitsRead(full);
-    assert.deepEqual(await rowTexts(full.locator('.dm-rcpt-list')), ['In progress | Re-\u2060adding fees', 'Done | Fees re-\u2060added | 4.2 USDG', 'Done | Fees re-\u2060added | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
+    assert.deepEqual(await rowTexts(full.locator('.dm-rcpt-list')), ['In progress | Adding fees back', 'Done | Fees added back | 4.2 USDG', 'Done | Fees added back | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
     assert.equal(listReads(), 1, 'the page shows what the Positions tab read: no list read of its own');
     assert.equal(await s.page.locator('[data-receipts-all]').count(), 0, 'the page does not link itself');
     await shootBoth(s.page, 'many-receipts-page');
@@ -2320,20 +2538,23 @@ test('many receipts: the Positions tab shows four short rows at most, cancelled 
     await s.page.waitForFunction(() => location.hash === '#/positions');
     await list.waitFor();
     await unitsRead(receipts);
-    assert.deepEqual(await rowTexts(list), ['In progress | Re-\u2060adding fees', 'Done | Fees re-\u2060added | 4.2 USDG', 'Done | Fees re-\u2060added | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
+    assert.deepEqual(await rowTexts(list), ['In progress | Adding fees back', 'Done | Fees added back | 4.2 USDG', 'Done | Fees added back | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
     await all.click();
     await s.page.waitForFunction(() => location.hash === '#/positions/receipts');
     await full.locator('.dm-rcpt-list').waitFor();
     assert.equal(listReads(), 1, 'nor does the way back, nor See all again');
-    // Show more reads the next page at the contract's pace (one read per 30 s), and the rows take it in where they belong.
+    // Changed on purpose (the owner, 2026-09-27, round 6: Show more vanished and the rest never came): the next page is read by
+    // itself at the contract's pace (one read per 30 s), with no press, and the rows take it in where they belong.
+    // Changed on purpose (2026-09-28, round 6 review): while it is on its way Show more is offered (it was left out until the whole
+    // read ended, so it went away while the rest was coming); the rest still comes with nothing pressed, and then it goes.
     const reads = asked.filter(call => call.path.endsWith('/list')).length;
-    await full.getByRole('button', { name: 'Show more' }).click();
-    await jump(s.page, '00:31', { pending: true });
-    await full.getByRole('button', { name: 'Show more' }).waitFor({ state: 'detached' });
+    assert.equal(await full.getByRole('button', { name: 'Show more' }).count(), 1, 'more on its way: Show more is offered');
+    await jump(s.page, '00:31');
     await full.locator(`[data-execution-intent="${intentOf(11)}"]`).waitFor();
+    assert.equal(await full.getByRole('button', { name: 'Show more' }).count(), 0, 'nothing pressed, the rest came by itself; the end, nothing more');
     await unitsRead(full);
-    assert.deepEqual(asked.filter(call => call.path.endsWith('/list')).slice(reads).map(call => call.body), [{ afterIntentId: intentOf(10), limit: 10 }]);
-    assert.deepEqual(await rowTexts(full.locator('.dm-rcpt-list')), ['In progress | Re-\u2060adding fees', 'Done | Fees re-\u2060added | 4.2 USDG', 'Done | Fees re-\u2060added | 52 UFG', 'Done | Fees re-\u2060added | 16.49 USDG + 1,086.59 UFG', 'Failed | Fees not re-\u2060added', 'Cancelled | 8 cancelled before sending']);
+    assert.deepEqual(asked.filter(call => call.path.endsWith('/list')).slice(reads).map(call => call.body), [{ afterIntentId: intentOf(10), limit: 20 }]);
+    assert.deepEqual(await rowTexts(full.locator('.dm-rcpt-list')), ['In progress | Adding fees back', 'Done | Fees added back | 4.2 USDG', 'Done | Fees added back | 52 UFG', 'Done | Fees added back | 16.49 USDG + 1,086.59 UFG', 'Failed | Fees not added back', 'Cancelled | 8 cancelled before sending']);
     // The failed one, opened: what happened, in plain words.
     const failed = full.locator(`[data-execution-intent="${intentOf(13)}"]`);
     await failed.locator('summary').click();
@@ -2362,22 +2583,24 @@ test('few receipts and none: a short list with nothing to fold, and a friendly e
       await row.waitFor();
       if (name === 'few') {
         await unitsRead(receipts);
-        assert.deepEqual(await rowTexts(receipts.locator('.dm-rcpt-list')), ['Done | Fees re-\u2060added | 16.49 USDG + 1,086.59 UFG', 'Cancelled | Cancelled before sending']);
+        assert.deepEqual(await rowTexts(receipts.locator('.dm-rcpt-list')), ['Done | Fees added back | 16.49 USDG + 1,086.59 UFG', 'Cancelled | Cancelled before sending']);
       } else {
         const quiet = receipts.locator('.dm-acct-quiet');
-        assert.equal(await quiet.innerText(), 'Nothing yet. Each time automation re-\u2060adds your fees, its receipt shows here.');
+        // Changed on purpose (the owner, 2026-09-27, round 6): "adds your fees back", with no hyphen to break (was "re-adds").
+        assert.equal(await quiet.innerText(), 'Nothing yet. Each time automation adds your fees back, its receipt shows here.');
         assert.equal(await receipts.locator('.dm-rcpt-list').count(), 0);
-        // 2026-09-27, round 5 review: the sentence broke at the hyphen ("re-" / "adds") on desktop and phone.
-        for (const width of [1280, 390]) {
-          await s.page.setViewportSize({ width, height: 844 });
-          assert.equal(await quiet.evaluate(p => { const node = p.firstChild, at = node.data.indexOf('re-'), range = document.createRange(); range.setStart(node, at); range.setEnd(node, at + 8); return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size; }), 1, `"re-adds" on one line at ${width}px`);
-        }
-        await s.page.setViewportSize({ width: 1320, height: 1000 });
       }
       // Managed positions: the position's name opens its page; three figures at a glance, the rest inside All figures.
+      // Changed on purpose (the owner, 2026-09-27, round 6): "Fees added back", the one phrase every screen uses (was "Re-added").
       assert.equal(await row.locator('.dm-mp-name').getAttribute('href'), '#/positions/1');
       assert.deepEqual(await row.locator(':scope > .dm-mp-figs > div').evaluateAll(cells => cells.map(cell => [cell.querySelector('dt').textContent, cell.querySelector('dd').textContent])),
-        [['Fees earned', '$0.50'], ['Re-\u2060added', '$50.00'], ['APR after fees', '-14.78%']]);
+        [['Fees earned', '$0.50'], ['Fees added back', '$50.00'], ['APR after fees', '-14.78%']]);
+      // Each label on one line, on desktop and phone.
+      for (const width of [1280, 390]) {
+        await s.page.setViewportSize({ width, height: 844 });
+        assert.deepEqual(await row.locator(':scope > .dm-mp-figs dt').evaluateAll(labels => labels.map(dt => Math.round(dt.getBoundingClientRect().height))), [16, 16, 16], `one line each at ${width}px`);
+      }
+      await s.page.setViewportSize({ width: 1320, height: 1000 });
       assert.equal(await history.getByText('Vault', { exact: false }).count(), 0, 'no vault in sight');
       await shootBoth(s.page, `${name}-positions-tab`, s.page.locator('.dm-acct-pair'));
     } finally { await s.close(); }
@@ -3464,14 +3687,20 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     await row.waitFor();
     assert.equal(await row.getAttribute('href'), `#/positions/${OWNED_OPEN}`);
     const rowText = await row.innerText();
-    assert.match(rowText, /ETH\s*\/\s*TOKEN[\s\S]*0\.30%\s*·\s*#3135288[\s\S]*In range/);
+    // Changed on purpose (the owner, round 6, 2026-09-27: one tidy row a position, plain words): the pair and "0.30% fee"
+    // over In range; the NFT id is for a screen reader only ("Position #3135288"), no longer a chip.
+    assert.match(rowText, /ETH\s*\/\s*TOKEN\s+0\.30% fee\s+Position #3135288\s+In range/);
     assert.match(rowText, /633,825,300,114 ETH|0\.000000633825 ETH/);
     assert.equal(await s.page.locator('[data-position-row]').count(), 1);
-    // 2026-09-24 (the three features joined up): under the open row, its feature from chain and the way to automate it.
-    const feature = s.page.locator(`[data-position-automation="${OWNED_OPEN}"]`);
+    // 2026-09-24 (the three features joined up): its feature from chain and the way to automate it. Changed on purpose
+    // (round 6, 2026-09-27): in the row's Automation column, over the row as its sibling, no longer a line under it with
+    // "Plain position" and a picture: a plain position shows Automate alone. Changed on purpose (2026-09-28, review: a
+    // click on a badge is the row's, so the cell has no tooltip): its state is the cell's data attribute only.
+    const feature = s.page.locator(`[data-position-item="${OWNED_OPEN}"] > [data-position-automation="${OWNED_OPEN}"]`);
     await feature.locator('a[data-automate-entry]').waitFor();
     assert.equal(await feature.getAttribute('data-automation'), 'plain');
-    assert.match(await feature.innerText(), /^Plain position\s+Automate$/);
+    assert.equal(await feature.getAttribute('title'), null);
+    assert.match(await feature.innerText(), /^Automate$/);
     assert.equal(await feature.locator('a').getAttribute('href'), `#/sequence/${OWNED_OPEN}`);
     assert.equal(await s.page.locator('[data-position-row] a, [data-position-row] button').count(), 0, 'the row stays one link, with nothing inside it');
     assert.deepEqual(nftReads(read), [], 'no nft-positions read: the rows are the chain read');
@@ -3539,7 +3768,9 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // chosen and the mode still to choose; the position's feature is a pill beside its range status.
     assert.deepEqual(await detail.locator('.dm-pos-links a').evaluateAll((links) => links.map((a) => [a.textContent, a.getAttribute('href')])), [
       ['Pool', `#/pool/${STUB_POOL_ID}/${FIXTURE_TOKEN.toLowerCase()}`],
-      ['Add to this pool', `#/new/${STUB_POOL_ID}`],
+      // Changed on purpose (round 6, 2026-09-27): the link names the pool's token after its id, as the Pool link does, so
+      // New position verifies an unlisted pool with it instead of USDG.
+      ['Add to this pool', `#/new/${STUB_POOL_ID}/${FIXTURE_TOKEN}`],
     ]);
     await detail.locator('[data-position-actions] a[data-automate-entry]').waitFor();
     assert.deepEqual(await detail.locator('[data-position-actions] a[data-automate-entry]').evaluate((a) => [a.textContent, a.getAttribute('href')]), ['Automate', `#/sequence/${OWNED_OPEN}`]);
@@ -4179,9 +4410,12 @@ test('a paused Auto-compound says so on its row and its page, offers how to swit
     const paused = s.page.locator(`[data-position-automation="${OWNED_OPEN}"][data-automation="compound"]`);
     await paused.waitFor();
     assert.equal(await paused.getAttribute('data-automation-state'), 'paused');
-    assert.match(await paused.innerText(), /^Auto-compound · Paused\s+How to switch it on$/);
-    assert.equal(await paused.getByRole('link').getAttribute('href'), '#/docs/auto-compound#where-it-starts');
-    assert.equal(await paused.locator('a[data-automate-entry]').count(), 0, 'no second sequence on it');
+    // Changed on purpose (the owner, round 6, 2026-09-27: one tidy row, a small badge): the row says Auto-compound and,
+    // under it, Paused; how to switch it on is its page's (below), no longer a link on the row.
+    assert.match(await paused.innerText(), /^Auto-compound\s+Paused$/);
+    // Changed on purpose (2026-09-28, review: a click on the badge is the row's): no tooltip on the cell; Paused is written.
+    assert.equal(await paused.getAttribute('title'), null);
+    assert.equal(await paused.locator('a').count(), 0, 'no second sequence on it, and no link on the row');
     const plain = s.page.locator(`[data-position-automation="${PLAIN}"][data-automation="plain"]`);
     await plain.locator('a[data-automate-entry]').waitFor();
     assert.equal(await plain.locator('a[data-automate-entry]').getAttribute('href'), `#/sequence/${PLAIN}`);
@@ -4509,6 +4743,113 @@ test('the owner’s Auto-compound position draws its fees from its own life: set
     assert.deepEqual(chain.refused, [], 'nothing but the reads');
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
     console.log(`# verified ${drawn} ms after the page was opened (${Math.round(read / 1024)} kB of logs), ${again} ms on a return`);
+  } finally { await s.close(); }
+});
+
+// 2026-09-27, round 6 (the owner: add each position's APR to Your positions, and keep the table clean): the owner's own
+// Auto-compound 3325113 (recorded, tests/support/fees/3325113.json.gz, held by a vault Domino's factory made) beside a
+// plain position whose history the chain cannot give. The list measures Your APR itself, lazily: one position at a time,
+// in the list's order, through the fees store as the position's page would, and shows the page's own figure; the one it
+// cannot measure shows a calm dash. The page then finds the history done (nothing is replayed again), and so does the
+// list on the way back. Nothing is kept in the browser.
+test('Your positions shows each position’s APR, the page’s own figure, measured one position at a time; the page and the way back read nothing again', async () => {
+  const VAULT = `0x${'5a'.repeat(20)}`;
+  const recorded = automatedChain('3325113', { vault: VAULT, owner: ACCOUNTS[0].address, executions: [] });
+  const position = recorded.fixture.state.positions[0];
+  const base = browserChain({
+    head: recorded.head,
+    timestamp: recorded.fixture.state.timestamp,
+    // The recorded NFT's SetupMinted log only: every read of it goes to the recording.
+    positions: [{ tokenId: '3325113', holder: OWNER, key: position.poolKey, tickLower: position.tickLower, tickUpper: position.tickUpper, liquidity: 1n, unclaimed: [0n, 0n] }, onChain(OWNED_OPEN)],
+    tokens: TOKENS,
+  });
+  const chain = listChain({ recorded, base, vault: VAULT });
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route], listApr: true });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    // Every run the fees store sends its worker and every cancel, and each run's end the worker sends back, in order.
+    await s.page.evaluate(() => {
+      const Base = window.Worker;
+      const send = Base.prototype.postMessage;
+      window.__feesRuns = [];
+      Base.prototype.postMessage = function (message, ...rest) {
+        if (message?.type === 'run' || message?.type === 'cancel') window.__feesRuns.push(`${message.type} ${message.id}`);
+        return send.call(this, message, ...rest);
+      };
+      window.Worker = class extends Base {
+        constructor(...args) {
+          super(...args);
+          this.addEventListener('message', (event) => {
+            if (event.data?.type === 'done') window.__feesRuns.push(`done ${event.data.id}`);
+          });
+        }
+      };
+    });
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    // 2026-09-28 (review: every figure moved left when the badges, then an APR, arrived): where each row's figures stand
+    // the moment the list is drawn, before the automation's own read and any APR.
+    await s.page.evaluate(() => {
+      window.__rowEdges = () => [...document.querySelectorAll('a[data-position-row]')].map((row) => ['principal', 'fees', 'apr'].map((cell) => Math.round(row.querySelector(`[data-cell="${cell}"]`).getBoundingClientRect().right)));
+      new MutationObserver((_, observer) => {
+        if (!document.querySelector('[data-owned="ready"] a[data-position-row]')) return;
+        observer.disconnect();
+        window.__drawn = { edges: window.__rowEdges(), late: document.querySelectorAll('.dm-own-badge, .dm-own-auto a, [data-apr="ready"]').length };
+      }).observe(document.body, { subtree: true, childList: true, attributes: true });
+    });
+    await connectWallet(s.page);
+    await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 20_000 });
+    const order = await s.page.locator('a[data-position-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-position-row')));
+    assert.deepEqual([...order].sort(), ['3135288', '3325113']);
+
+    // The recorded position's APR, as its page works it out; the other a calm dash once the chain said it has no history.
+    const apr = s.page.locator('[data-position-row="3325113"] [data-cell="apr"][data-apr="ready"]');
+    await apr.waitFor({ timeout: 45_000 });
+    const figure = (await apr.locator('.dm-own-fig').innerText()).trim();
+    assert.match(figure, /^[\d,]+(\.\d)?%$/);
+    assert.equal(await apr.getAttribute('title'), 'Since the position opened');
+    const dash = s.page.locator(`[data-position-row="${OWNED_OPEN}"] [data-cell="apr"][data-apr="none"]`);
+    await dash.waitFor({ timeout: 45_000 });
+    assert.equal((await dash.innerText()).replace(/\s+/g, ' ').trim(), 'Your APR —');
+    // One position at a time, in the list's order: each run is sent once, and the next only after the one before is over.
+    const runs = await s.page.evaluate(() => window.__feesRuns);
+    assert.deepEqual(runs.filter((entry) => !entry.startsWith('cancel')), order.flatMap((id) => [`run ${id}`, `done ${id}`]), 'each position once, in the list’s order, one at a time');
+    // The automation beside it: a small badge that runs, in the row's Automation column.
+    const badge = s.page.locator('[data-position-item="3325113"] > [data-position-automation="3325113"][data-automation="compound"]');
+    await badge.waitFor();
+    assert.equal((await badge.innerText()).trim(), 'Auto-compound');
+    // Changed on purpose (2026-09-28, review): no tooltip on the cell, a click on the badge being the row's (below).
+    assert.equal(await badge.getAttribute('title'), null);
+    await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor();
+    // Nothing moved: the figures stand where they were drawn, now that the badges and the APR are in (their columns
+    // kept their room from the first paint).
+    const drawn = await s.page.evaluate(() => window.__drawn);
+    assert.equal(drawn.late, 0, 'measured before the badges and the APR came');
+    assert.deepEqual(await s.page.evaluate(() => window.__rowEdges()), drawn.edges, 'every figure where it was first drawn');
+
+    // Its page, opened by a click on the badge (2026-09-28, review: the badge was a dead spot in the row): the same
+    // figure, from the history the list read, and no replay again.
+    const before = (await s.page.evaluate(() => window.__feesRuns)).length;
+    const onBadge = await badge.locator('.dm-own-badge').boundingBox();
+    await s.page.mouse.click(onBadge.x + onBadge.width / 2, onBadge.y + onBadge.height / 2);
+    const detail = s.page.locator('[data-position-detail][data-position-id="3325113"]');
+    await detail.waitFor({ timeout: 15_000 });
+    assert.equal(await s.page.evaluate(() => location.hash), '#/positions/3325113');
+    const pageApr = detail.locator('[data-cell="apr"][data-apr="ready"]');
+    await pageApr.waitFor({ timeout: 10_000 });
+    const pageText = (await pageApr.innerText()).replace(/\s+/g, ' ');
+    assert.ok(pageText.startsWith(`YOUR APR ${figure} Since opened`), pageText);
+    await s.page.locator('[data-fees-card][data-fees-state="verified"]').first().waitFor({ timeout: 10_000 });
+    // Back: the figure at once.
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await s.page.locator('[data-position-row="3325113"] [data-apr="ready"]').waitFor({ timeout: 5_000 });
+    assert.equal((await s.page.locator('[data-position-row="3325113"] [data-apr="ready"] .dm-own-fig').innerText()).trim(), figure);
+    await s.page.waitForTimeout(1_500);
+    assert.deepEqual((await s.page.evaluate(() => window.__feesRuns)).slice(before).filter((entry) => entry.startsWith('run')), [], 'no history replayed again');
+    assert.deepEqual(await kept(s.page), [], 'nothing about positions is kept in the browser');
+    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    assert.deepEqual(chain.refused, [], 'nothing but the reads');
+    await s.page.locator('[data-owned]').screenshot({ path: join(shots(), 'positions-apr.png') });
   } finally { await s.close(); }
 });
 
@@ -4929,5 +5270,275 @@ test('the automation page lists the wallet’s open positions from the page’s 
     assert.equal(await s.page.locator('[data-sequence-positions="empty"]').count(), 0);
     assert.deepEqual(sequence.sends, [], 'nothing is sent');
     assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
+  } finally { await s.close(); }
+});
+
+// ---- Receipts never blank (the owner, 2026-09-27, round 6) ------------------------------------------------------------------
+//
+// The receipts page painted from nothing on every read, blanked whenever the tab was hidden (a window covering the browser counts)
+// and lost Show more's rows to the next refresh. Now what is shown stays through every read, a hidden tab and a failure; Show
+// more and an opened row keep their state; and a reload paints from this browser's copy before any read answers.
+
+/** Records, in the page, every moment the receipts section shows no list, or an empty or loading line in its place. */
+const watchBlank = (page) => page.evaluate(() => {
+  window.__receiptsBlank = [];
+  const check = () => {
+    const section = document.querySelector('section[aria-label="Execution receipts"]');
+    if (section && (!section.querySelector('.dm-rcpt-list') || section.querySelector('.dm-acct-quiet'))) window.__receiptsBlank.push(section.innerText.slice(0, 80));
+  };
+  new MutationObserver(check).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+});
+
+test('the receipts page never blanks: reads merge in place, a hidden tab and a failed read keep every row, Show more and an opened row keep their state; reloaded, it paints from this browser’s copy before any read answers', async () => {
+  const s = await scenario({ clock: true });
+  // Twenty-four compounds and one cancelled attempt: two of the service's pages of twenty, in its id order.
+  const items = [...Array.from({ length: 24 }, (_, n) => receiptItem(n + 1, 'reconciled', { block: 7_340_000 + n * 97, usdg: String((n + 1) * 1_000_000) })), receiptItem(25, 'cancelled')];
+  const pages = [items.slice(0, 20), items.slice(20)];
+  const asked = await answerReceipts(s.context, pages);
+  const listReads = () => asked.filter(call => call.path.endsWith('/list')).length;
+  const LIST = /\/api\/execution\/v1\/list$/;
+  try {
+    await login(s.page);
+    await s.page.evaluate(() => { location.hash = '#/positions/receipts'; });
+    const full = s.page.locator('section[aria-label="Execution receipts"]');
+    const list = full.locator('.dm-rcpt-list');
+    await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"]').waitFor();
+    await unitsRead(full);
+    // The second page by itself, at the contract's pace: the rows take it in, newest first.
+    await jump(s.page, '00:31');
+    await full.locator(`[data-execution-intent="${intentOf(24)}"]`).waitFor();
+    assert.equal(listReads(), 2);
+    await unitsRead(full);
+    assert.equal(await full.getAttribute('data-execution-rows'), '10', 'ten rows at first');
+    assert.deepEqual((await rowTexts(list)).slice(0, 2), ['Done | Fees added back | 24 USDG', 'Done | Fees added back | 23 USDG']);
+    // Show more: ten more rows at once, from what was read; and one row opened.
+    await full.getByRole('button', { name: 'Show more', exact: true }).click();
+    assert.equal(await full.getAttribute('data-execution-rows'), '20');
+    const opened = list.locator(`[data-execution-intent="${intentOf(20)}"] > details`);
+    await opened.locator('summary').click();
+    assert.equal(await opened.evaluate(details => details.open), true);
+    await watchBlank(s.page);
+
+    // A hidden tab (a window covering the browser counts) keeps every row, and reads nothing.
+    await setVisibility(s.page, 'hidden');
+    await jump(s.page, '10:00');
+    assert.equal(listReads(), 2, 'hidden: nothing is read');
+    assert.equal(await full.getAttribute('data-execution-rows'), '20');
+    // Shown again after longer than five minutes: the list is read again, quietly.
+    await setVisibility(s.page, 'visible');
+    await until(() => listReads() === 3, 'the list read again');
+
+    // The service fails: what is shown stays, and the failure is only the section's data.
+    const refuse = route => route.fulfill({ status: 503, contentType: 'application/json; charset=utf-8', headers: { 'X-Domino-Execution-Contract': executionRuntime.CONTRACT_VERSION }, body: JSON.stringify({ error: 'execution_store_unavailable' }) });
+    await s.context.route(LIST, refuse);
+    await jump(s.page, '00:31');
+    await s.page.locator('section[aria-label="Execution receipts"][data-execution="unavailable"][data-execution-reason="execution_store_unavailable"]').waitFor();
+    assert.equal(await full.getAttribute('data-execution-rows'), '20', 'a failed read keeps every row');
+    // Back, with a new compound: the next ask, a minute on, finds it; it joins at the top, every other row where it was.
+    await s.context.unroute(LIST, refuse);
+    pages[1].push(receiptItem(26, 'reconciled', { block: 7_400_000, usdg: '99000000' }));
+    await jump(s.page, '01:01');
+    await full.locator(`[data-execution-intent="${intentOf(26)}"]`).waitFor();
+    await unitsRead(full);
+    assert.equal(await full.getAttribute('data-execution'), 'ready');
+    assert.deepEqual((await rowTexts(list)).slice(0, 3), ['Done | Fees added back | 99 USDG', 'Done | Fees added back | 24 USDG', 'Done | Fees added back | 23 USDG']);
+    assert.equal(await full.getAttribute('data-execution-rows'), '20', 'Show more kept its rows through every read');
+    assert.equal(await opened.evaluate(details => details.open), true, 'the opened row is still open');
+    assert.deepEqual(await s.page.evaluate(() => window.__receiptsBlank), [], 'the list never blanked, and no empty or loading line took its place');
+    assert.doesNotMatch(await full.innerText(), /Reading receipts|Loading|re-add/i);
+    await opened.locator('summary').click();
+    await shootBoth(s.page, 'r6-receipts-page-after-refreshes');
+    const kept = await s.page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.kept.v1.')).sort());
+    // Managed positions keep theirs too once their first read answered on Positions (#/app, where the login lands).
+    assert.deepEqual(kept.filter(key => !key.startsWith('domino.kept.v1.managed.4663.' + OWNER)), ['domino.kept.v1.receipts.4663.' + OWNER, 'domino.kept.v1.tokens'], 'one versioned copy per kind and wallet, and the public token details');
+
+    // Reloaded with the list route held: while the session is checked and after, this browser's copy paints the rows, amounts
+    // in token units, before any read answers.
+    const held = [];
+    await s.context.route(LIST, route => { held.push(route); });
+    await s.page.reload();
+    // The wallet reconnects by itself and its session is found again: the rows are this browser's copy, the list read held.
+    await full.locator(`[data-execution-intent="${intentOf(26)}"]`).waitFor();
+    assert.ok(['checking', 'loading'].includes(await full.getAttribute('data-execution')), 'no read has answered');
+    assert.equal(await full.locator(`[data-execution-intent="${intentOf(26)}"] [data-receipt-added]`).innerText(), '99 USDG', 'token details kept too');
+    assert.equal(await full.getAttribute('data-execution-rows'), '10');
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await until(() => held.length === 1, 'the list asked, and held');
+    assert.equal(await full.getAttribute('data-execution'), 'loading');
+    assert.equal(await full.getAttribute('data-execution-rows'), '10', 'signed in, the same rows');
+    await shootBoth(s.page, 'r6-receipts-page-from-copy');
+    for (const route of held) await route.abort().catch(() => {});
+  } finally { await s.close(); }
+});
+
+test('a copy this browser kept for another wallet, or one the contract refuses, is never shown', async () => {
+  const s = await scenario({ clock: true });
+  const other = '0x' + 'ee'.repeat(20);
+  const good = receiptItem(1, 'reconciled', { block: 7_340_000, usdg: '5000000' });
+  const held = [];
+  await s.context.route(/\/api\/execution\/v1\/list$/, route => { held.push(route); });
+  try {
+    await login(s.page);
+    // Planted while signed in, so the reload finds the session again (a check that finds none forgets the copy instead):
+    // another wallet's copy, and this wallet's with a finalized receipt missing its receipt.
+    await s.page.evaluate(({ owner, other, good }) => {
+      const at = Date.now();
+      localStorage.setItem(`domino.kept.v1.receipts.4663.${other}`, JSON.stringify({ at, data: [good] }));
+      localStorage.setItem(`domino.kept.v1.receipts.4663.${owner}`, JSON.stringify({ at, data: [{ ...good, receipt: null }] }));
+    }, { owner: OWNER, other, good });
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    const receipts = s.page.locator('section[aria-label="Execution receipts"]');
+    await s.page.locator('section[aria-label="Execution receipts"][data-execution="loading"]').waitFor();
+    assert.equal(await receipts.locator('[data-execution-intent]').count(), 0, 'nothing from another wallet, nothing the contract refuses');
+    assert.equal(await receipts.locator('.dm-acct-quiet').innerText(), 'Receipts for this wallet appear here.');
+    assert.equal(await s.page.evaluate(owner => localStorage.getItem(`domino.kept.v1.receipts.4663.${owner}`), OWNER), null, 'the refused copy is dropped');
+    assert.notEqual(await s.page.evaluate(other => localStorage.getItem(`domino.kept.v1.receipts.4663.${other}`), other), null, 'another wallet’s is left alone');
+    for (const route of held) await route.abort().catch(() => {});
+  } finally { await s.close(); }
+});
+
+// Managed positions never flash empty either (the owner, 2026-09-27, round 6), and a sign-out forgets what this browser kept.
+test('Managed positions never flash empty: a hidden tab, a failed read and the way back keep the cards; reloaded, they paint from this browser’s copy; signing out forgets every private copy', async () => {
+  const s = await scenario({ clock: true });
+  await answerReceipts(s.context, [[receiptItem(2, 'reconciled', { block: 7346840, usdg: '16490000' })]]);
+  const PERFORMANCE = /\/api\/performance\/v2\//, LIST = /\/api\/execution\/v1\/list$/;
+  try {
+    await login(s.page);
+    const history = s.page.locator('section[aria-label="Private performance"]');
+    const row = history.locator('.dm-mp-row[data-performance-status]');
+    await row.waitFor();
+    await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"]').waitFor();
+    // Every moment either card shows no rows, from here on.
+    await s.page.evaluate(() => {
+      window.__cardsBlank = [];
+      const check = () => {
+        const managed = document.querySelector('section[aria-label="Private performance"]'), receipts = document.querySelector('section[aria-label="Execution receipts"]');
+        if (location.hash !== '#/positions/receipts' && !managed?.querySelector('.dm-mp-row')) window.__cardsBlank.push(`managed: ${managed?.innerText.slice(0, 60) ?? 'gone'}`);
+        if (!receipts?.querySelector('.dm-rcpt-list')) window.__cardsBlank.push(`receipts: ${receipts?.innerText.slice(0, 60) ?? 'gone'}`);
+      };
+      new MutationObserver(check).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+    });
+    // Hidden: nothing is read and the cards stay; shown again, they are read again in place.
+    const reads = s.calls.length;
+    await setVisibility(s.page, 'hidden');
+    await jump(s.page, '10:00');
+    assert.equal(s.calls.length, reads, 'hidden: nothing is read');
+    await setVisibility(s.page, 'visible');
+    await until(() => s.calls.length >= reads + 2, 'read again once shown');
+    // The service fails: the cards stay, the failure is only the section's data.
+    const refuse = route => route.fulfill({ status: 503, contentType: 'application/json; charset=utf-8', headers: { 'X-Domino-Performance-Contract': runtime.CONTRACT_VERSION }, body: JSON.stringify({ error: 'performance_store_unavailable' }) });
+    await s.context.route(PERFORMANCE, refuse);
+    await jump(s.page, '01:01');
+    await s.page.locator('section[aria-label="Private performance"][data-performance="unavailable"]').waitFor();
+    assert.equal(await row.count(), 1, 'a failed read keeps the card');
+    await s.context.unroute(PERFORMANCE, refuse);
+    // Away to the receipts page and back: the card is there at once, with no read of its own.
+    await s.page.evaluate(() => { location.hash = '#/positions/receipts'; });
+    await s.page.locator('.dm-rcpt-list').waitFor();
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await row.waitFor({ timeout: 2_000 });
+    assert.deepEqual(await s.page.evaluate(() => window.__cardsBlank), [], 'neither card ever showed no rows');
+    assert.deepEqual(await s.page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.kept.v1.')).sort()),
+      [`domino.kept.v1.managed.4663.${OWNER}`, `domino.kept.v1.receipts.4663.${OWNER}`, 'domino.kept.v1.tokens']);
+
+    // Reloaded with every private read held: this browser's copies paint both cards before any answer, and from the first
+    // frame neither card says to sign in, that its rows will appear, or that it is loading.
+    const held = [];
+    await s.context.route(PERFORMANCE, route => { held.push(route); });
+    await s.context.route(LIST, route => { held.push(route); });
+    await s.context.addInitScript(() => {
+      window.__cardsSaid = [];
+      const check = () => {
+        for (const section of document.querySelectorAll('section[aria-label="Private performance"], section[aria-label="Execution receipts"]')) {
+          const text = section.innerText;
+          if (/Sign in with|appear here|Loading|Reading/.test(text)) window.__cardsSaid.push(text.slice(0, 80));
+        }
+      };
+      new MutationObserver(check).observe(document, { subtree: true, childList: true, characterData: true });
+    });
+    await s.page.reload();
+    await row.waitFor();
+    await s.page.locator('section[aria-label="Execution receipts"] .dm-rcpt-list').waitFor();
+    assert.ok(['checking', 'loading'].includes(await history.getAttribute('data-performance')), 'no read has answered');
+    assert.deepEqual(await row.locator(':scope > .dm-mp-figs dd').allInnerTexts(), ['$0.50', '$50.00', '-14.78%'], 'the figures kept');
+    await shootBoth(s.page, 'r6-positions-from-copy', s.page.locator('.dm-acct-pair'));
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    assert.deepEqual(await s.page.evaluate(() => window.__cardsSaid), [], 'no sign-in, empty or loading line on the way');
+    await s.context.unroute(PERFORMANCE);
+    await s.context.unroute(LIST);
+    for (const route of held.splice(0)) await route.abort().catch(() => {});
+
+    // Signed out: both cards say so, and this browser forgets the wallet's private copies (the public token details stay).
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Sign out', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await s.page.keyboard.press('Escape');
+    await s.page.getByText('Sign in with your wallet to see your automated positions.', { exact: true }).waitFor();
+    await s.page.getByText('Sign in with your wallet to see your receipts.', { exact: true }).waitFor();
+    assert.deepEqual(await s.page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.kept.v1.'))), ['domino.kept.v1.tokens']);
+  } finally { await s.close(); }
+});
+
+// 2026-09-28, round 6 review: the copies were forgotten only by the cards' own controllers, which stop once no Positions view is
+// shown, so a sign-out on any other page left them in this browser (up to 30 days), and the next visit painted the signed-out
+// wallet's receipts while its session was checked. The wallet island, on every page, forgets every private copy instead.
+test('signing out or letting the wallet go on any page forgets every private copy, and the next visit paints none of them', async () => {
+  const s = await scenario();
+  await answerReceipts(s.context, [[receiptItem(1, 'reconciled', { block: 7_340_000, usdg: '5000000' }), receiptItem(2, 'reconciled', { block: 7_340_100, usdg: '7000000' })]]);
+  const kept = () => s.page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.kept.v1.')).sort());
+  const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+  const both = [`domino.kept.v1.managed.4663.${OWNER}`, `domino.kept.v1.receipts.4663.${OWNER}`, 'domino.kept.v1.tokens'];
+  /** Until this browser keeps exactly `want`; else fails with what it keeps. */
+  const keptIs = (want, label) => s.page.waitForFunction(names => JSON.stringify(Object.keys(localStorage).filter(key => key.startsWith('domino.kept.v1.')).sort()) === JSON.stringify(names), want, { timeout: 10_000 })
+    .catch(async () => assert.deepEqual(await kept(), want, label));
+  /** Positions, until both cards kept their copy; then Markets, where no card is shown. */
+  const keepThenLeave = async () => {
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"] [data-execution-intent]').first().waitFor();
+    await s.page.locator('section[aria-label="Private performance"] .dm-mp-row').first().waitFor();
+    await keptIs(both, 'both copies kept');
+    await s.page.evaluate(() => { location.hash = '#/markets'; });
+    await s.page.waitForFunction(() => !document.querySelector('section[aria-label="Execution receipts"], section[aria-label="Private performance"]'));
+  };
+  try {
+    await login(s.page);
+    await keepThenLeave();
+    // Sign out from the header's wallet dialog, on Markets.
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await dialog.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await s.page.keyboard.press('Escape');
+    await keptIs(['domino.kept.v1.tokens'], 'signed out on Markets: only the public token details stay');
+
+    // The next visit, on Positions: while the wallet's session is checked, no private row paints.
+    await s.context.addInitScript(() => {
+      window.__painted = [];
+      new MutationObserver(() => {
+        const rows = document.querySelectorAll('section[aria-label="Execution receipts"] [data-execution-intent], section[aria-label="Private performance"] .dm-mp-row').length;
+        if (rows) window.__painted.push(rows);
+      }).observe(document, { subtree: true, childList: true });
+    });
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out', null, { timeout: 30_000 });
+    await s.page.getByText('Sign in with your wallet to see your receipts.', { exact: true }).waitFor();
+    assert.deepEqual(await s.page.evaluate(() => window.__painted), [], 'a signed-out wallet’s receipts and positions never paint');
+
+    // Signed in again, then another account picked in the wallet, on Markets: that session ends, and the same.
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await dialog.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await s.page.keyboard.press('Escape');
+    await keepThenLeave();
+    await s.wallet.switchAccount('a', 1);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await keptIs(['domino.kept.v1.tokens'], 'another account on Markets: only the public token details stay');
+    // And a wallet let go: signed out, then disconnected, keeps none either.
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await dialog.getByRole('button', { name: 'Disconnect wallet', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.keyboard.press('Escape');
+    await keptIs(['domino.kept.v1.tokens'], 'let go: only the public token details stay');
   } finally { await s.close(); }
 });

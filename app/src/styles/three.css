@@ -1,5 +1,5 @@
 /* three (2026-09-24): Domino's three features joined up, a plain position, Auto-compound and Domino-compound:
-   the state and the way to Automate on Positions' rows and a position's page, New position's success, the
+   the state and the way to Automate on a position's page (Positions' rows: positions.css), New position's success, the
    Automate page's plain position, and the automation page's picker. Its own file, so the screens' own sheets are
    left as they are. Motion comes from the shared rules (stilled under prefers-reduced-motion and Pause motion). */
 
@@ -10,23 +10,6 @@
   .dm-mode-art[data-mode="plain"] .tile-solid .t-body { fill: var(--fg-subtle); }
   .dm-mode-art[data-mode="plain"] .tile-solid .t-pip { fill: var(--card); }
   .dm-mode-art[data-mode="plain"] .tile-solid .t-div { stroke: var(--card); stroke-opacity: 0.5; }
-
-  /* ---- Positions: the line under an open row -----------------------------------------------------------
-     The row is a link, so its feature and Automate sit on their own line after it, joined to it: the row loses its
-     lower corners and the pair shares one hover. Its picture stands under the token marks (54px wide at 32px) and
-     its words start under the pair's name, as the row's own do. */
-  .dm-acct-nft-rows > .dm-own-auto { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; margin-top: -2px; padding: 0 8px 8px 16px; border-radius: 0 0 var(--radius) var(--radius); transition: background-color 100ms ease-in-out; }
-  .dm-acct-nft-rows > .dm-own-row:has(+ .dm-own-auto) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-  .dm-acct-nft-rows > .dm-own-row:hover + .dm-own-auto,
-  .dm-acct-nft-rows > .dm-own-row:has(+ .dm-own-auto:hover),
-  .dm-acct-nft-rows > .dm-own-auto:hover { background: var(--row-hover); }
-  .dm-own-auto-state { display: inline-flex; align-items: center; gap: 12px; min-width: 0; min-height: 20px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-own-auto:is([data-automation="compound"], [data-automation="domino"]) .dm-own-auto-state { color: var(--fg-muted); }
-  .dm-own-auto .dm-auto-art { width: 54px; height: 20px; }
-  .dm-own-auto > .dm-auto-go { margin-left: auto; }
-  @container acct-nft (max-width: 699px) {
-    .dm-own-card .dm-acct-nft-rows > .dm-own-auto { padding: 0 4px 10px 8px; }
-  }
 
   /* ---- A position's page: its feature beside its range status --------------------------------------------- */
   .dm-auto-pill[data-automation="plain"] { color: var(--fg-muted); }

@@ -111,10 +111,14 @@ test('permanent refusals do not poll and Retry-After bounds transient retries', 
   controller.abort(); await pending
 })
 
+// Changed on purpose (2026-09-27, round 6, the pool page for beginners): the chart has no source switch any more (the
+// provider's USD chart stands in only where history is not listed), so its useState order is side, window, answer,
+// inspection; the unit reads "QUOTE for 1 BASE"; missing hours are said in plain words; and the exact candles are each
+// point's accessible text, with no list of them on the page.
 test('rendered ratio chart names its denomination, real coverage and exact values', () => {
   const React = require('react'), { renderToStaticMarkup } = require('react-dom/server'), ts = require('typescript')
   const data = history(), key = `${poolId}:${currency}:day`
-  const values = ['chain', 'zero', 'day', { key, state: 'answer', data, failed: false }, null]
+  const values = ['zero', 'day', { key, state: 'answer', data, failed: false }, null]
   let index = 0
   const hooks = { useState: () => [values[index++], () => {}], useEffect() {}, useId: () => 'test' }
   const code = ts.transpileModule(readFileSync(new URL('../src/components/read/screens/PoolHistoryChart.tsx', import.meta.url), 'utf8'),
@@ -127,15 +131,46 @@ test('rendered ratio chart names its denomination, real coverage and exact value
   // axisLabel (lib/format/time.ts); numbers only, and the hook set and the 5-useState order are unchanged.
   const { timeTicks } = require('../.test-build/app/src/lib/chart/scale.js'), { axisLabel } = require('../.test-build/app/src/lib/format/time.js')
   const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, useNow: () => ({ wall: 86400000 }),
-    Segmented: () => null, Skeleton: () => null, PoolPriceChart: () => null,
+    Segmented: () => null, Skeleton: () => null, PoolPriceChart: () => null, daySpan: () => null,
     PoolTokenLabel: ({ token }) => React.createElement('span', null, token.symbol), Address: ({ value }) => React.createElement('span', null, value) }
   new Function('require', 'module', 'exports', code)(name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : dependencies, mod, mod.exports)
   const tree = mod.exports.PoolHistoryChart({ source: {}, option: { key: poolId, currencies: [{ address: currency, symbol: 'BASE' }, { address: quote, symbol: 'QUOTE' }] }, market: null, loading: false })
   const markup = renderToStaticMarkup(tree)
   assert.match(markup, /quote_per_base/)
-  assert.match(markup, /QUOTE<\/span> per <span>BASE/)
-  assert.match(markup, /Partial coverage/)
-  assert.match(markup, /prices are never filled forward/)
+  assert.match(markup, /QUOTE<\/span> for 1 <span>BASE/)
+  assert.match(markup, /Some hours are missing: they are shaded\./)
+  assert.match(markup, /Prices from swaps on Robinhood Chain\./)
   assert.match(markup, /role="slider"/)
   assert.match(markup, /close 3/)
+})
+
+// 2026-09-27 (round 6, finishing the pool page): nothing half-configured under an empty chart. With nothing drawn in the
+// page's own direction there is nothing to flip, so the "Price of" switch is not shown; while the chart is read it holds
+// its place, and once a person has flipped it, it stays, so the way back is always there.
+test('the price switch shows only while the chart is read, once a line is drawn, or once the chart was flipped', () => {
+  const React = require('react'), { renderToStaticMarkup } = require('react-dom/server'), ts = require('typescript')
+  const { areaUnder, curveFor, linePath } = require('../.test-build/app/src/lib/chart/paths.js'), { percentChange } = require('../.test-build/app/src/lib/format/change.js')
+  const { timeTicks } = require('../.test-build/app/src/lib/chart/scale.js'), { axisLabel } = require('../.test-build/app/src/lib/format/time.js')
+  const code = ts.transpileModule(readFileSync(new URL('../src/components/read/screens/PoolHistoryChart.tsx', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
+  const option = { key: poolId, currencies: [{ address: currency, symbol: 'BASE' }, { address: quote, symbol: 'QUOTE' }] }
+  const draw = (side, answer) => {
+    const values = [side, 'day', answer, null]
+    let index = 0
+    const hooks = { useState: () => [values[index++], () => {}], useEffect() {}, useId: () => 'test' }
+    const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, useNow: () => ({ wall: 86400000 }),
+      Segmented: ({ label }) => React.createElement('span', { 'data-switch': label }), Skeleton: () => null, PoolPriceChart: () => null, daySpan: () => null,
+      PoolTokenLabel: ({ token }) => React.createElement('span', null, token.symbol) }
+    new Function('require', 'module', 'exports', code)(name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : dependencies, mod, mod.exports)
+    return renderToStaticMarkup(mod.exports.PoolHistoryChart({ source: {}, option, market: null, loading: false }))
+  }
+  const keyOf = (side) => `${poolId}:${side === 'zero' ? currency : quote}:day`
+  const failed = (side) => ({ key: keyOf(side), state: 'answer', data: null, failed: true })
+  const empty = draw('zero', failed('zero'))
+  assert.match(empty, /Price history is temporarily unavailable\./)
+  assert.doesNotMatch(empty, /data-switch="Price of"/, 'no switch under an empty chart')
+  assert.match(empty, /data-switch="History window"/, 'the window switch stays: another window may have prices')
+  assert.match(draw('one', failed('one')), /data-switch="Price of"/, 'flipped, the way back stays')
+  assert.match(draw('zero', null), /data-switch="Price of"/, 'while read, it holds its place')
+  assert.match(draw('zero', { key: keyOf('zero'), state: 'answer', data: history(), failed: false }), /data-switch="Price of"/, 'with a line drawn')
 })

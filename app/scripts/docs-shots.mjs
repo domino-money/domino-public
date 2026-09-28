@@ -175,8 +175,8 @@ async function launch() {
 const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers } });
 
 /**
- * The Receipts card's rows, newest first: what Auto-compound re-added each time, after its 2% service fee. The gross
- * amounts are chosen so that what was re-added is short (30.87 USDG, 0.0049 ETH + 10.29 USDG).
+ * The Receipts card's rows, newest first: the fees Auto-compound added back each time, after its 2% service fee. The gross
+ * amounts are chosen so that what was added back is short (30.87 USDG, 0.0049 ETH + 10.29 USDG).
  */
 const RECEIPTS = [
   { usdg: '31.50' },
@@ -194,7 +194,7 @@ function privateRoutes() {
   const hex = (n, bytes) => `0x${n.toString(16).padStart(2, '0').repeat(bytes)}`;
   const items = RECEIPTS.map((gross, n) => {
     const transactionHash = hex(0xab + n, 32);
-    // Each token's gross fees, 2% of them to the service, the rest re-added.
+    // Each token's gross fees, 2% of them to the service, the rest added back.
     const sources = [
       ...(gross.eth ? [[zeroAddress, rawOf(gross.eth, 18)]] : []),
       ...(gross.usdg ? [[USDG, rawOf(gross.usdg, TOKENS[USDG].decimals)]] : []),
@@ -276,6 +276,9 @@ async function openScene(browser, scene, phone) {
   });
   await routeChain(context, world());
   await installWallets(context);
+  // Round 6 (2026-09-27): Your positions measures each row's Your APR itself (components/positions/listApr.ts), which a
+  // test build does only when asked before the page loads, as the site always does.
+  if (scene.listApr) await context.addInitScript(() => { window.__dominoListApr = true; });
   // The script's stylesheet, linked from this server, as soon as each document has a head (the page's CSP allows 'self').
   await context.addInitScript((href) => {
     const link = () => {
@@ -395,22 +398,18 @@ const SCENES = [
   },
   {
     id: 'pool',
-    alt: 'A pool’s page: the pair, its fee and the New position button at the top, the hourly chart of its USD price and volume, then its price, TVL, 24-hour volume, estimated APR and fee tier.',
+    alt: 'A pool’s page: the pair, its fee and the Create a position button at the top, one sentence on what the pool earns, then its APR, 24-hour volume, TVL and price.',
     build: 'site',
     async run({ page, go }) {
       await go(`#/pool/${MAIN_POOL.poolId}`);
       const workspace = page.locator('[data-pool-workspace]').first();
       await workspace.locator('h1').first().waitFor({ timeout: 30_000 });
       await page.waitForFunction(() => /\d% est\./.test(document.querySelector('[data-pool-workspace]')?.textContent ?? ''), null, { timeout: 60_000 });
-      // The chart draws the hourly candles on request, as a person asks for them.
-      await workspace.getByRole('button', { name: 'Show hourly candles' }).first().click();
-      await page.waitForFunction(() => !document.querySelector('[data-pool-workspace]')?.textContent?.includes('Show hourly candles'), null, { timeout: 30_000 });
       await settle(page, 2000);
-      // The pair's row with its New position button, the chart and the figures card under it (the site's layout below
-      // 1024 px, whose figures card reads one figure a row).
-      const head = (p) => around(p, ['ETH / USDG', 'New position'], '[data-pool-workspace]');
-      const chart = container(page.getByRole('heading', { name: 'USD price and volume' }).first());
-      return { keep: [head, chart, workspace.locator('[data-pool-figures]')] };
+      // Round 6 (2026-09-27): the top of the page a beginner reads first: the pair's row with its Create a position
+      // button, the sentence on what the pool is and earns, and the key figures under it.
+      const head = (p) => around(p, ['ETH / USDG', 'Create a position'], '[data-pool-workspace]');
+      return { keep: [head, workspace.locator('[data-pool-intro]'), workspace.locator('[data-pool-figures]')] };
     },
   },
   {
@@ -424,7 +423,7 @@ const SCENES = [
   },
   {
     id: 'new-range',
-    alt: 'New position, step 2: the price range, drawn as a band around the pool’s current price, with its lowest and highest price.',
+    alt: 'New position, step 2: today’s price, the choice of how wide the range is, and its lowest and highest price.',
     build: 'site',
     async run(scene) {
       await toStage(scene, 'range', this.build);
@@ -433,7 +432,7 @@ const SCENES = [
   },
   {
     id: 'new-amount',
-    alt: 'New position, step 3: how much of each token goes in, beside the wallet’s balance of each, and the slippage tolerance.',
+    alt: 'New position, step 3: how much of each token goes in, beside the wallet’s balance of each, with the slippage tolerance under Advanced.',
     build: 'wallet',
     async run(scene) {
       await toStage(scene, 'amount', this.build);
@@ -451,12 +450,17 @@ const SCENES = [
   },
   {
     id: 'positions',
-    alt: 'Positions: your positions, each with its pair, whether the price is in range, its value and its fees ready to collect, and how its fees are used.',
+    alt: 'Positions: your positions, one row each, with its pair, whether the price is in range, its value, its fees ready to collect, its own APR and how its fees are used.',
     build: 'wallet',
+    listApr: true,
     async run({ page, go }) {
       await go('#/positions');
       await connect(page);
       await page.locator(`[data-position-automation="${IDS.compound}"]`).waitFor({ timeout: 30_000 });
+      // Round 6 (2026-09-27): the Auto-compound row's Your APR, from its fees history (the world's), and no row still
+      // waiting its turn.
+      await page.locator(`[data-position-row="${IDS.compound}"] [data-apr="ready"]`).waitFor({ timeout: 120_000 });
+      await page.waitForFunction(() => !document.querySelector('[data-position-row] [data-apr="waiting"]'), null, { timeout: 120_000, polling: 250 });
       await settle(page, 1500);
       return { keep: [container(page.getByRole('heading', { name: 'Your positions', exact: true }))] };
     },
@@ -505,7 +509,7 @@ const SCENES = [
   },
   {
     id: 'receipts',
-    alt: 'The Receipts card on Positions, once you sign in: a short row for each time automation re-added a position’s fees, with what it re-added.',
+    alt: 'The Receipts card on Positions, once you sign in: a short row for each time automation added a position’s fees back, with what it added back.',
     build: 'wallet',
     async run({ page, go }) {
       await go('#/positions');
@@ -539,7 +543,7 @@ const SCENES = [
 async function toStage({ page, go }, stage, build) {
   await go('#/new');
   if (build === 'wallet') await connect(page);
-  await page.getByRole('combobox', { name: 'Token in the pool' }).fill('USDG');
+  await page.getByRole('combobox', { name: 'Search a token' }).fill('USDG');
   await page.locator(`[data-token-option="${USDG}"]`).first().click();
   // Every pool that trades it is listed, each with its figures.
   const rows = page.locator('[data-picker="pool"] li[data-pool-option]');
@@ -558,7 +562,7 @@ async function toStage({ page, go }, stage, build) {
   if (stage === 'pool') {
     // Chosen, the list folds into the one pool. Opened again, it lists every pool with the chosen one marked, and
     // Continue stays open: the choice the step asks for, made, with the pools it was made from.
-    await page.locator('[data-chosen-pool]').getByRole('button', { name: 'Choose a different pool' }).click();
+    await page.locator('[data-chosen-pool]').getByRole('button', { name: 'Change pool' }).click();
     await page.waitForFunction(
       (count) => {
         const listed = [...document.querySelectorAll('[data-picker="pool"] li[data-pool-option]')];

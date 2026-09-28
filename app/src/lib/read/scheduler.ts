@@ -53,6 +53,16 @@
  * already waiting for its turn on the wire: the table's overview no longer
  * waits behind six card histories (it did for eleven seconds on production,
  * 2026-09-25 13:07 UTC).
+ *
+ * Two stored reads at once (added 2026-09-27, r6/marketsdata): with
+ * `storedWidth`, stored-lane reads go out beside each other, up to that many
+ * of the gateway's four stored slots, instead of each waiting for the one
+ * before it to answer. Measured with production's latency in the harness
+ * (tests/support/markets-latency.mjs), Markets' six card histories took 4.2 s
+ * end to end, one after another. A read takes its budget when it starts, not
+ * when its first attempt leaves (a read may wait for the capabilities first),
+ * so two reads starting together never count on the same token; a read that
+ * never sent anything gives it back.
  */
 import { BRIDGE_RETRY, realClock, settleBy, type Clock } from './pipeline'
 import type { Provenance, ReadOptions, ReadOutcome, ReadRequests, ReadRoute, ReadSource, RouteCheck } from './types'
@@ -98,6 +108,8 @@ export interface SchedulerOptions {
    * budget and a busy hold. Absent or false: every read is spaced, as the development reader (local-live) needs.
    */
   unspacedStored?: boolean
+  /** With `unspacedStored`: how many stored-lane reads may be on the wire at once. 1 (the default): one read at a time. */
+  storedWidth?: number
 }
 
 interface Job {
@@ -113,13 +125,17 @@ interface Job {
   first: boolean
   /** Counted in the tab's budget: every route but one answered at the edge (EDGE_ANSWERED). */
   budgeted: boolean
+  /** The budget it took at its start, not yet used by an attempt. */
+  held?: boolean
 }
 
 export function createScheduledSource(
   source: ReadSource,
-  { minIntervalMs = 1100, maxPending = 12, totalMs = BRIDGE_RETRY.totalMs, clock = realClock, budget = GATEWAY_BUDGET, unspacedStored = false }: SchedulerOptions = {},
+  { minIntervalMs = 1100, maxPending = 12, totalMs = BRIDGE_RETRY.totalMs, clock = realClock, budget = GATEWAY_BUDGET, unspacedStored = false, storedWidth = 1 }: SchedulerOptions = {},
 ): ReadSource {
   const queue: Job[] = []
+  /** Stored reads on the wire beside the queue (`storedWidth`), each until it settles. */
+  const flights = new Set<Promise<void>>()
   const byKey = new Map<string, Job>()
   let running = false
   /** The last start of a spaced read. */
@@ -162,17 +178,51 @@ export function createScheduledSource(
     // A thousandth of a millisecond forgiven, so the float sums of refilling never add a whole millisecond.
     return tokens >= wanted - 1e-9 ? 0 : Math.ceil((wanted - tokens) / perMs - 1e-3)
   }
-  const spend = () => {
+  const spend = (by = 1) => {
     if (!budget) return
     refill()
-    tokens -= 1
+    tokens = Math.min(budget.burst, tokens - by)
+  }
+
+  /** One read on the wire until it settles: its budget, its registration, the hold a busy answer asks for, its answer. */
+  async function fly(job: Job) {
+    const { signal } = job.controller
+    if (job.spaced) lastStart = clock.monotonic()
+    if (job.budgeted) {
+      spend()
+      job.held = true
+    }
+    // Registered until it settles, so an identical read joins it in flight. Let go
+    // of as soon as nobody waits: a source that ignores the abort cannot hold the queue.
+    const settled = await settleBy(clock, job.run(signal), Infinity, signal)
+    // Nothing went out: the budget it took goes back, and an attempt still to come (a reader left, the read goes on)
+    // spends its own.
+    if (job.held) {
+      job.held = false
+      spend(-1)
+    }
+    if (byKey.get(job.key) === job) byKey.delete(job.key)
+    if (settled.kind !== 'done') return
+    // Busy after R-1, or with a wait its read could not afford: the whole queue waits what the service asked.
+    const outcome = settled.value
+    if (outcome.state === 'busy') {
+      holdUntil = Math.max(holdUntil, clock.monotonic() + outcome.retryAfterSeconds * 1000 + Math.floor(clock.random() * BRIDGE_RETRY.jitterMs))
+    }
+    job.resolve(outcome)
   }
 
   async function drain() {
     if (running) return
     running = true
     try {
-      for (let job = queue.shift(); job; job = queue.shift()) {
+      for (;;) {
+        // A stored read waits for a stored slot, and the queue with it, in its order.
+        if (queue[0] && !queue[0].spaced && flights.size > 0 && flights.size >= storedWidth) {
+          await Promise.race(flights)
+          continue
+        }
+        const job = queue.shift()
+        if (!job) break
         const { signal } = job.controller
         if (signal.aborted) continue
         const now = clock.monotonic()
@@ -201,18 +251,12 @@ export function createScheduledSource(
             continue
           }
         }
-        if (job.spaced) lastStart = clock.monotonic()
-        // Registered until it settles, so an identical read joins it in flight. Let go
-        // of as soon as nobody waits: a source that ignores the abort cannot hold the queue.
-        const settled = await settleBy(clock, job.run(signal), Infinity, signal)
-        if (byKey.get(job.key) === job) byKey.delete(job.key)
-        if (settled.kind !== 'done') continue
-        // Busy after R-1, or with a wait its read could not afford: the whole queue waits what the service asked.
-        const outcome = settled.value
-        if (outcome.state === 'busy') {
-          holdUntil = Math.max(holdUntil, clock.monotonic() + outcome.retryAfterSeconds * 1000 + Math.floor(clock.random() * BRIDGE_RETRY.jitterMs))
+        if (job.spaced || storedWidth < 2) await fly(job)
+        else {
+          // Beside the queue: the next read does not wait for this one's answer.
+          const flight: Promise<void> = fly(job).catch(() => undefined).then(() => void flights.delete(flight))
+          flights.add(flight)
         }
-        job.resolve(outcome)
       }
     } finally {
       running = false
@@ -258,15 +302,15 @@ export function createScheduledSource(
         })
         const spaced = !(unspacedStored && STORED_LANE.has(route))
         const budgeted = !EDGE_ANSWERED.has(route)
-        // Every attempt of the job, an automatic retry included, spends the budget (a route the gateway counts), and a
-        // spaced one moves the pace on.
-        const onAttempt = () => {
+        // Every attempt of the job, an automatic retry included, spends the budget (a route the gateway counts), the
+        // first one what the job took at its start, and a spaced one moves the pace on.
+        const made: Job = { key, run: (signal) => source.read(route, request, { signal, deadlineAt, onAttempt: () => {
           if (spaced) lastStart = clock.monotonic()
-          if (budgeted) spend()
-        }
-        job = { key, run: (signal) => source.read(route, request, { signal, deadlineAt, onAttempt }), controller: new AbortController(), waiters: 0, promise, resolve, spaced, first, budgeted }
-        byKey.set(key, job)
-        enqueue(job)
+          if (made.held) made.held = false
+          else if (budgeted) spend()
+        } }), controller: new AbortController(), waiters: 0, promise, resolve, spaced, first, budgeted }
+        byKey.set(key, (job = made))
+        enqueue(made)
       } else if (first && !job.first) {
         // Joined by a reader asked first while it is still in line: it moves up with that reader. Already waiting for
         // its turn on the wire (out of the queue), it keeps that turn: no later read asked first takes it (fixed

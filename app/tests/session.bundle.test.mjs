@@ -564,6 +564,64 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // 177,759 -> 177,794 B, all lazy 197,199 -> 197,245 B; fees worker 21,309 -> 21,331 B and chain code 13,983 B
   // (unchanged: the lane is the worker's alone) in both builds. All lazy moves by the minimum at 0.1 kB, to 197.3 kB
   // (55 B over the larger build); the financial, fees worker, chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-27, round 6, point 3b (the owner: add each position's APR to Your positions, and clean the table): the list
+  // shows Your APR, the position page's own figure, from the fees store's history of the visit, and measures the others
+  // itself, one position at a time while on the screen (components/positions/listApr.ts: the queue, and the rows'
+  // figures; OwnedPositions.tsx: the fees store's views and a row observer). lib/positionApr.ts leaves the position
+  // page's chunk for a chunk the page and the list share (with AutomateEntry.tsx), and the rows' automation line under
+  // each row is gone (its pictures with it). Made smaller first: the row's USD line (RowUsd), the old row's range bar
+  // and its block tooltips are gone, the automation cell draws no picture. Measured on Windows, gzip level 9, both
+  // builds from this tree and from a clean checkout of main 4e47edc: dist financial 176,497 -> 176,489 B, all lazy
+  // 195,747 -> 197,369 B; .wallet-test-dist financial 177,778 -> 177,791 B, all lazy 197,228 -> 198,878 B; fees worker
+  // and chain code unchanged. All lazy moves by the minimum at 0.1 kB, to 198.9 kB (22 B over the larger build); the
+  // financial, fees worker, chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-28, point 3b's review (listApr.ts: the cap on the page's time, a second try after a cap, a refused /state
+  // read asked again, never two runs at once, the queue handed the fees store itself; AutomateEntry.tsx: no tooltip on
+  // the row's badge; the Positions docs pictures re-shot): measured the same way on a clean build of this tree, dist all
+  // lazy 197,383 B and .wallet-test-dist all lazy 198,852 B (48 B under 198.9 kB; it moves by some 60 B between builds of
+  // the same code, with the CSS file name the chunks import). No ceiling changes.
+  // 2026-09-27, round 6, r6/receipts (the owner: the Receipts card and page blanked on every refresh, Show more vanished,
+  // Managed positions flashed empty; "Fees added back" everywhere): the execution controller keeps what it shows through
+  // every read, a hidden tab, a failure and a new session of the same wallet, reads the list's pages by itself (twenty to a
+  // page, up to five) and again every five minutes, merging each page in place (finance/execution.ts); Managed positions
+  // share one controller that keeps its cards the same way (finance/performance.ts, screens/Performance.tsx); both paint at
+  // once from a checked, versioned, size-bounded copy in this browser, per wallet and chain, while the session is checked
+  // and after, and forget it once the wallet signs out (finance/privateCache.ts, a chunk the two share, which now also
+  // carries finance/reask.ts); the receipts page's Show more reveals ten rows at a time and keeps them. Made smaller first:
+  // one hook paints the copy for both cards, one function forgets it for both controllers, the shared start also listens to
+  // the tab's visibility, the token copy is plain triples, and Infinity replaces Number.*_INFINITY. Measured on Windows,
+  // gzip level 9, both builds from this tree against main 4e47edc (chunk by chunk in .wallet-test-dist: Execution +681 B,
+  // Performance +202 B, the shared chunk +641 B net of reask's 224 B, the entry +23 B): dist financial 176,479 -> 178,007 B,
+  // all lazy 195,727 -> 197,253 B; .wallet-test-dist financial 177,794 -> 179,306 B, all lazy 197,245 -> 198,747 B. Each
+  // moves by the minimum at 0.1 kB: financial 179.4 kB (94 B over the larger build), all lazy 198.8 kB (53 B); the fees
+  // worker, chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-28, r6/receipts after its review: the wallet island forgets every wallet's private copies once a session ends,
+  // a wallet is let go or an account is refused, on any page (components/wallet/WalletSessionIsland.tsx calls
+  // finance/privateCards.ts forgetPrivate; the cards' controllers stop once no Positions view is shown, so a sign-out elsewhere
+  // never reached their forgetting, which is gone); a Start tracking listing a stop cut off is asked again
+  // (finance/performance.ts); Show more reads its page next, ahead of a read under way, a read from the first page covers every
+  // receipt a read listed, and an emptied list is kept empty (finance/execution.ts). finance/privateCache.ts and
+  // finance/reask.ts are one module now, finance/privateCards.ts: the island's import alone had split their shared chunk in
+  // two. Made smaller first: the two modules joined (the shared chunk 865 -> 834 B), a check of each page's cursor left for a
+  // bound of a hundred pages, and one loop over each page's receipts. Measured on Windows, gzip level 9, both builds from this
+  // tree and from a clean checkout of e1759f0: dist financial 178,057 -> 178,013 B, all lazy 197,304 -> 197,324 B,
+  // session/public reads 61,166 -> 62,064 B; .wallet-test-dist financial 179,318 -> 179,318 B, all lazy 198,763 -> 198,824 B
+  // (chunk by chunk: WalletSessionIsland +61 B, Execution +21 B, Performance -7 B, the shared chunk -31 B), session/public
+  // reads 61,729 -> 62,624 B. All lazy moves by the minimum at 0.1 kB, to 198.9 kB (76 B over the larger build); the
+  // financial (82 B to spare), fees worker, chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-28, round 6 integrated (r6/integrate: r6/marketsdata, r6/poolpage, r6/newposition, r6/postable, r6/wallet,
+  // r6/receipts, r6/simulator and r6/settingsdocs merged on main 4e47edc, then one markets price and the docs' pictures).
+  // r6/postable and r6/receipts each raised all lazy from 197.3 to 198.9 kB on its own, so together they are over it: Your
+  // APR on the list (the shared positionApr chunk +2,583 B, less PositionDetail -743 B and AutomateEntry -1,797 B, which
+  // it came out of; OwnedPositions +1,606 B with listApr.ts) and the receipts that never blank (privateCards +836 B less
+  // reask's 224 B, Execution +718 B, Performance +202 B, WalletSessionIsland +64 B); DepositAmounts -99 B
+  // (r6/newposition). Nothing is duplicated between them to take out: each branch was made smaller first. Measured on
+  // Windows, gzip level 9, clean builds of this tree and of a clean checkout of main 4e47edc: dist financial 176,497 ->
+  // 177,928 B, all lazy 195,747 -> 198,886 B, session/public reads 61,172 -> 63,713 B; .wallet-test-dist financial
+  // 177,778 -> 179,234 B, all lazy 197,228 -> 200,393 B, session/public reads 61,739 -> 64,283 B; fees worker 21,331 B and
+  // chain code 13,983 B unchanged. All lazy moves by the minimum at 0.1 kB, to 200.4 kB (7 B over the larger build; a
+  // change to any chunk or to the stylesheet's hashed name moves it by tens of bytes, so measure again after one); the
+  // financial (166 B to spare), fees worker, chain code and 90 kB session/read ceilings are unchanged.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -610,7 +668,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 178_200], ['all lazy', allLazy, 197_300], ['fees worker', worker, 21_400], ['chain code', chain, 14_000]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 179_400], ['all lazy', allLazy, 200_400], ['fees worker', worker, 21_400], ['chain code', chain, 14_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

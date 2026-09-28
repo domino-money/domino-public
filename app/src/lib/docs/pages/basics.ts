@@ -23,7 +23,7 @@ export const POOLS: DocPage = {
       title: 'Fee tiers',
       blocks: [
         p('A pool’s fee tier is the share of every swap it charges, such as 0.30%. Traders pay it on each trade, and it goes to the pool’s liquidity providers. It is never taken from your deposit.'),
-        p('A pool can also carry Uniswap’s protocol fee, taken from what a swap sells into the pool before the fee tier. It does not go to liquidity providers. A pool’s page shows it.'),
+        p('A pool can also carry Uniswap’s protocol fee, taken from what a swap sells into the pool before the fee tier. It does not go to liquidity providers. A pool’s page shows it in Details.'),
         // 2026-09-27 (review of 260a76a): pools of one pair and one fee can differ by their other settings.
         p('The same two tokens can have several pools, for example one per fee tier.'),
       ],
@@ -90,8 +90,10 @@ export const RANGES: DocPage = {
       id: 'try-a-range',
       title: 'Try a range',
       blocks: [
-        p('The ', screen('range simulator on Home', '#/#ranges'), ' lets you move the price across a range and see what a position would hold.'),
-        p('On a pool’s page, ', b('Plan a range'), ' draws a band against that pool’s price. Nothing is saved or sent.'),
+        // 2026-09-27 (the owner's round 6, points 3 and 7): the simulator on Home, redone in plain words for beginners, and
+        // the pool page's typical range in place of Plan a range.
+        p('The ', screen('range simulator on Home', '#/#ranges'), ' lets you move the price and see, in plain words, whether a position earns fees and what it holds.'),
+        p('On a pool’s page, ', b('A typical range'), ' draws the band New position starts on against that pool’s price. Nothing is saved or sent.'),
       ],
     },
   ],

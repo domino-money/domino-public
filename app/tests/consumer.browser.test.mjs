@@ -404,9 +404,11 @@ test('New position’s Review keeps Your choices and Wallet steps, asks the onbo
   const connect = page.locator('[data-create-position="connect"]');
   await connect.waitFor({ timeout: 30_000 });
   assert.equal(await connect.innerText(), 'Connect wallet');
-  assert.equal(await page.locator('#create-reason').innerText(), 'Connect your wallet to create the position. Each transaction appears in your wallet to sign.');
+  // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): one short sentence each,
+  // and Review's two sections named for a beginner: the position, then what the wallet asks.
+  assert.equal(await page.locator('#create-reason').innerText(), 'Connect a wallet to create this position.');
   const review = page.locator('[data-stage="review"]');
-  assert.deepEqual(await review.locator('h3').allInnerTexts(), ['Your choices', 'Wallet steps'], 'the two sections Review keeps');
+  assert.deepEqual(await review.locator('h3').allInnerTexts(), ['Your position', 'In your wallet'], 'the two sections Review keeps');
   assert.equal(await page.locator('section[data-stage="balance"], [data-balance-row], [data-amount-cell]').count(), 0, 'no deposit amounts section');
   const signedOut = await page.locator('main').innerText();
   assert.doesNotMatch(signedOut, /Deposit amounts per token|Sign in with your wallet to see these amounts\.|Exact amounts are calculated/);
@@ -416,8 +418,8 @@ test('New position’s Review keeps Your choices and Wallet steps, asks the onbo
   await signInHere(s, page);
   await page.locator('[data-create-position="idle"]').waitFor({ timeout: 30_000 });
   assert.equal(await page.locator('[data-create-position="idle"]').innerText(), 'Create position');
-  assert.equal(await page.locator('#create-reason').innerText(), 'Your wallet asks you to sign each step in the list above, in order.');
-  assert.deepEqual(await review.locator('h3').allInnerTexts(), ['Your choices', 'Wallet steps']);
+  assert.equal(await page.locator('#create-reason').innerText(), 'Your wallet will ask you to confirm each step.');
+  assert.deepEqual(await review.locator('h3').allInnerTexts(), ['Your position', 'In your wallet']);
   const text = await page.locator('main').innerText();
   assert.doesNotMatch(text, REVIEW_FORBIDDEN);
   assert.doesNotMatch(text, /Deposit amounts per token|Sign in with your wallet to see these amounts\.|Exact amounts are calculated/);

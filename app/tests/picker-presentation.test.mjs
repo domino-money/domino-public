@@ -241,6 +241,10 @@ test('New position’s pool row: TVL, 24h volume and APR on every row, a dash fo
   assert.match(full, />\$10\.00</)
   assert.match(full, />[\d.]+% est\.</)
   assert.match(full, /data-token-metadata="available"/)
+  // Changed on purpose (round 6, 2026-09-27, New position for beginners): the row names its pair and fee only; the
+  // "Uniswap · <pool id>" line is gone from New position's rows, and the id is the row's data-pool-key.
+  assert.doesNotMatch(full, /Uniswap ·/)
+  assert.match(full, new RegExp(`data-pool-key="${option.key}"`))
   assert.doesNotMatch(full, /\btitle="[^"]*"[^>]*data-pool-option|data-pool-option="discovery"[^>]*title=/, 'no title on a row with nothing to say')
 })
 

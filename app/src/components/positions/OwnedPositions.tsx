@@ -1,4 +1,6 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { feesStore } from '../../lib/fees/spawn'
+import type { FeeHistoryView } from '../../lib/fees/types'
 import { CHAIN_ID } from '../../lib/read/screens/identity'
 import { walletCard, walletState } from '../../lib/walletCards'
 import { REFRESH_MS, useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
@@ -8,7 +10,8 @@ import { IconSearch, IconWallet } from '../icons'
 import { Button, EmptyState, LinkButton, Skeleton, Tabs } from '../ui'
 import { AutomateEntry } from './AutomateEntry'
 import { automatable } from '../../lib/automate/picker'
-import { PendingRow, PendingRows, PendingSummary, PositionRow } from './PositionRow'
+import { createAprQueue, rowAprs, type AprQueue, type AprRow, type RowApr } from './listApr'
+import { PendingRow, PendingRows, PendingSummary, PositionRow, RowsHead } from './PositionRow'
 import { PortfolioSummary, portfolioOf } from './visual/PortfolioSummary'
 
 /**
@@ -28,6 +31,41 @@ const PAGE_SIZE = 10
 const REFRESH = __DOMINO_TEST_HOOKS__ && !(window as { __dominoRefresh?: boolean }).__dominoRefresh ? null : REFRESH_MS
 
 type Status = 'open' | 'closed'
+
+/**
+ * Your APR on the rows (round 6, listApr.ts): every position whose history this visit already read shows it at once;
+ * the others are measured one at a time while on the screen. Test builds measure only when a test asks for it before
+ * the page loads (window.__dominoListApr), so every other suite counts its reads as before.
+ */
+const QUEUE: AprQueue | null =
+  __DOMINO_TEST_HOOKS__ && !(window as { __dominoListApr?: boolean }).__dominoListApr
+    ? null
+    : createAprQueue({
+        store: feesStore,
+        timer: (ms, run) => {
+          const timer = setTimeout(run, ms)
+          return () => clearTimeout(timer)
+        },
+        visible: () => document.visibilityState === 'visible',
+        now: Date.now,
+      })
+
+function quiet() {}
+const noViews: ReadonlyMap<string, FeeHistoryView> = new Map()
+const idleSubscribe = () => quiet
+const zero = () => 0
+
+/** The APR cell of each of `rows` (the list's open positions shown), from the fees store's views and the queue. */
+function useRowAprs(rows: readonly AprRow[]): ReadonlyMap<string, RowApr> {
+  const key = rows.map((row) => row.id).join(',')
+  const watch = useCallback((listener: () => void) => (key === '' ? quiet : feesStore.watch(key.split(','), listener)), [key])
+  const snapshot = useCallback(() => (key === '' ? noViews : feesStore.views(key.split(','))), [key])
+  const views = useSyncExternalStore(watch, snapshot, () => noViews)
+  const version = useSyncExternalStore(QUEUE ? QUEUE.subscribe : idleSubscribe, QUEUE ? QUEUE.version : zero, zero)
+  // `version`: the queue's own changes (what it will measure), which the views do not show.
+  return useMemo(() => (version >= 0 ? rowAprs(rows, views, QUEUE) : noAprs), [rows, views, version])
+}
+const noAprs: ReadonlyMap<string, RowApr> = new Map()
 
 /** Opens the header's wallet dialog, where a wallet is connected or switched to Robinhood Chain. */
 const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria-haspopup="dialog"]')?.click()
@@ -80,7 +118,7 @@ export default function OwnedPositions({ identity, deposits, onEmptyAction }: Ow
   if (identity.kind === 'unknown') {
     return (
       <Frame data={{ 'data-owned': 'waiting' }}>
-        <div className="dm-rows dm-acct-nft-rows" aria-hidden="true">
+        <div className="dm-own-list" aria-hidden="true">
           <PendingRow tokenId="" />
         </div>
       </Frame>
@@ -154,6 +192,38 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
 
   const shown = tabs ? tabs[tab].slice(0, pages[tab] * PAGE_SIZE) : []
   const more = tabs ? tabs[tab].length - shown.length : 0
+  // The open positions on the list's open page, whose APR the rows show (and the queue measures while on screen).
+  const measured = useMemo(() => (tabs ? tabs.open.slice(0, pages.open * PAGE_SIZE).filter((row) => row.card.hasLiquidity).map((row) => ({ id: row.card.tokenId, pool: row.card.poolId })) : []), [tabs, pages.open])
+  const aprs = useRowAprs(measured)
+  const measuredKey = measured.map((row) => `${row.id}:${row.pool}`).join(',')
+  const listRef = useRef<HTMLDivElement>(null)
+  // The rows on the screen, in the list's order, for the queue: only while the Open tab shows them and the tab is visible.
+  useEffect(() => {
+    const list = listRef.current
+    if (!QUEUE || !list || tab !== 'open' || measuredKey === '' || typeof IntersectionObserver === 'undefined') return
+    const queue = QUEUE
+    const rows = measuredKey.split(',').map((entry) => {
+      const [id, pool] = entry.split(':')
+      return { id, pool }
+    })
+    const seen = new Set<string>()
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.positionRow
+        if (id && entry.isIntersecting) seen.add(id)
+        else if (id) seen.delete(id)
+      }
+      queue.want(rows.filter((row) => seen.has(row.id)))
+    })
+    for (const row of list.querySelectorAll<HTMLElement>('a[data-position-row]')) observer.observe(row)
+    const wake = () => queue.wake()
+    document.addEventListener('visibilitychange', wake)
+    return () => {
+      observer.disconnect()
+      document.removeEventListener('visibilitychange', wake)
+      queue.want([])
+    }
+  }, [measuredKey, tab])
   const total = tabs ? tabs.open.length + tabs.closed.length : 0
   const phase = ready ? 'ready' : unread ? 'unlisted' : answer.phase === 'retrying' ? 'retrying' : 'loading'
   // `No positions yet` carries its own New position: the page's title row steps its own back (before paint, no flash).
@@ -202,20 +272,18 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
     body = <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />
   } else {
     body = (
-      <div className="dm-rows dm-acct-nft-rows" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
+      <div ref={listRef} className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
         {/* The column names for the eye; each row's own cells carry their names for a screen reader. */}
-        <div className="dm-rows-head dm-acct-nft-band" aria-hidden="true">
-          <span>Pool</span>
-          <span>Range</span>
-          <span>Value</span>
-          <span>Fees ready to collect</span>
-          <span />
-        </div>
+        <RowsHead closed={tab === 'closed'} />
         {shown.map((row) => (
-          <Fragment key={row.card.tokenId}>
-            <PositionRow card={row.card} block={ready?.block ?? 0} state={row.state} tick={row.position.tick} />
-            <AutomateEntry tokenId={row.card.tokenId} open={automatable(row.position)} />
-          </Fragment>
+          <PositionRow
+            key={row.card.tokenId}
+            card={row.card}
+            block={ready?.block ?? 0}
+            state={row.state}
+            apr={aprs.get(row.card.tokenId) ?? null}
+            automation={<AutomateEntry tokenId={row.card.tokenId} open={automatable(row.position)} />}
+          />
         ))}
       </div>
     )

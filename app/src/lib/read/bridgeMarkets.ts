@@ -3,8 +3,11 @@
  * build, and of the bridge-test build.
  *
  * The deployable build's pools are the featured pools list (featuredList.ts,
- * featured pools v1 §11.1): the list is read first, through the app's one
- * source, and then the markets of the pools it names. Until it answers, and
+ * featured pools v1 §11.1), read through the app's one source; the markets
+ * of the pools it names follow it (since 2026-09-27 the first load goes out
+ * beside the list's first read, for the pools this browser last read or the
+ * embedded list, and starts over at once for a list with other pools,
+ * marketsProvider.ts). Until it answers, and
  * whenever it cannot, the pools are the embedded list, a reviewed list of pool
  * ids in src/config/selectedPools.ts, so the page is never empty. A row whose
  * read does not bind to its list entry (another pool key, currencies or
@@ -15,11 +18,17 @@
  * anything is read is the server's call: the source asks the bridge's
  * capabilities first and sends only what they list. R-1's pacing and bounded
  * busy retry are the scheduler's and the pipeline's, unchanged.
+ *
+ * The deployable build keeps a copy of the last stored overview in this
+ * browser (marketsPaint.ts, added 2026-09-27), which paints the rows at once
+ * on the next visit while the live read is on its way.
  */
+import * as publicRuntime from 'api-contracts/read-v3/runtime.mjs'
 import { BRIDGE_TEST_POOLS } from './bridgeTestPools'
 import { poolListOf } from './featuredList'
 import { featuredStore } from './featuredSource'
 import { createReadMarketsProvider } from './marketsProvider'
+import { createPaintMemory } from './marketsPaint'
 import { appBridgeSource } from './screens/appSourceBridge'
 
 export function bridgeMarkets() {
@@ -30,5 +39,6 @@ export function bridgeMarkets() {
   const source = appBridgeSource()
   if (__DOMINO_POOL_SET__ !== 'selected') return createReadMarketsProvider({ source, poolIds: BRIDGE_TEST_POOLS, kind: 'bridge', refreshMs: 60_000 })
   const pools = poolListOf(featuredStore())
-  return createReadMarketsProvider({ source, poolIds: pools.ids(), pools, kind: 'bridge', refreshMs: 60_000 })
+  const paint = createPaintMemory(() => localStorage, publicRuntime)
+  return createReadMarketsProvider({ source, poolIds: pools.ids(), pools, kind: 'bridge', refreshMs: 60_000, paint })
 }

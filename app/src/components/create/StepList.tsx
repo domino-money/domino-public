@@ -3,9 +3,11 @@ import { CREATE } from '../../lib/create/copy'
 import type { JourneyState, Stage, TickRange } from '../../lib/create/journey'
 import { boundPrice, type PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
-import { slippageBpsFrom, slippageWritten } from '../../lib/create/slippage'
+import { plainFigure } from '../../lib/create/plain'
+import { AmountText } from '../figures'
 import { SymbolText } from '../read/screens/SymbolText'
 import { StepMarker } from '../ui'
+import type { Held } from './valuation'
 // Whether motion is stilled (reduced motion, or the footer's Pause motion): moved to lib/motion in V2 (DESIGN-V2 §5.4).
 import { stilled } from '../../lib/motion/stilled'
 
@@ -41,46 +43,44 @@ export function PoolPair({ option }: { option: PoolOption }) {
   )
 }
 
-/** "WETH / USDG · 0.02% · deposit WETH". */
+/**
+ * "WETH / USDG · 0.02%". Changed on purpose (round 6, 2026-09-27): no "deposit WETH" after it. A position holds both
+ * tokens and the amount step takes an amount in either, so which one step 1 started from is not a choice to show.
+ */
 export function PoolSummary({ state }: { state: JourneyState }) {
   if (!state.pool || !state.token) return null
-  return (
-    <>
-      <PoolPair option={state.pool} /> · deposit <SymbolText token={state.token.token} />
-    </>
-  )
+  return <PoolPair option={state.pool} />
 }
 
-/** A figure the page writes from a string that begins with `≈`: the sign dimmed, the text unchanged (DESIGN-V2 §6.3). */
-export function Approx({ text }: { text: string }) {
-  return text.startsWith('≈') ? (
-    <>
-      <span className="dm-approx">≈</span>
-      {text.slice(1)}
-    </>
-  ) : (
-    <>{text}</>
-  )
-}
-
-/** "≈2,241.12 to ≈3,738.54 USDG per WETH": the pool's own orientation, currency1 per currency0. */
+/** "1 WETH = 2,241.12 to 3,738.54 USDG": the pool's own orientation, in plain words (round 6: no "≈", no "per"). */
 export function RangeSummary({ range, price }: { range: TickRange; price: Usable }) {
-  const words = (tick: number) => boundPrice(tick, price) ?? CREATE.review.summary.beyondDisplay
+  const words = (tick: number) => plainFigure(boundPrice(tick, price) ?? CREATE.review.summary.beyondDisplay)
   return (
     <>
-      <Approx text={words(range.lower)} /> to <Approx text={words(range.upper)} /> <SymbolText token={price.quote} /> per <SymbolText token={price.base} />
+      1 <SymbolText token={price.base} /> = {words(range.lower)} to {words(range.upper)} <SymbolText token={price.quote} />
     </>
   )
 }
 
-/** "0.25 WETH · slippage 0.5%". */
-export function AmountSummary({ state }: { state: JourneyState }) {
-  if (!state.token) return null
-  const slippage = slippageBpsFrom(state.slippageBps)
+/**
+ * "0.4522 ETH + 1,000 USDG": what the position holds, short (the exact amounts are Review's), "About" before a
+ * one-token plan's amounts after its swap; the typed amount alone until both are known. Changed on purpose (round 6,
+ * 2026-09-27): the slippage tolerance is under Advanced now, and no longer on this row.
+ */
+export function AmountSummary({ state, held }: { state: JourneyState; held: Held | null }) {
+  const pool = state.pool
+  if (!state.token || !pool) return null
+  if (!held) {
+    return (
+      <>
+        {state.budget} <SymbolText token={state.token.token} />
+      </>
+    )
+  }
   return (
     <>
-      {state.budget} <SymbolText token={state.token.token} />
-      {slippage !== null && <> · {CREATE.review.summary.slippage(slippageWritten(slippage))}</>}
+      {held.estimate && `${CREATE.review.about} `}
+      <AmountText text={held.sides[0].text} /> <SymbolText token={pool.currencies[0]} /> + <AmountText text={held.sides[1].text} /> <SymbolText token={pool.currencies[1]} />
     </>
   )
 }

@@ -57,6 +57,18 @@ export function parsePoolHash(hash: string): PoolLocation {
   return { poolId: POOL_ID.test(id) ? id.toLowerCase() : null, token: ADDRESS.test(third) ? third : null }
 }
 
+/**
+ * New position's link to a pool, `#/new/<id>/<token>` (round 6, 2026-09-27): the token is what the pool page verified
+ * an unlisted pool with, so New position verifies it the same way instead of against USDG, which such a pool may not
+ * hold. The same shapes as the pool page's own link, and as untrusted.
+ */
+export function parseNewHash(hash: string): PoolLocation {
+  const { segments } = hashParts(hash)
+  const [page = '', id = '', third = ''] = segments
+  if (page !== 'new') return { poolId: null, token: null }
+  return { poolId: POOL_ID.test(id) ? id.toLowerCase() : null, token: ADDRESS.test(third) ? third : null }
+}
+
 /** Markets, or a token's view on it. */
 export const exploreHref = (token: string | null = null) => (token ? `#/markets/${token}` : '#/markets')
 
@@ -65,7 +77,8 @@ export const marketsHref: typeof exploreHref = exploreHref
 
 export const poolHref = (poolId: string, token: string | null = null) => (token ? `#/pool/${poolId}/${token}` : `#/pool/${poolId}`)
 
-export const newPositionHref = (poolId: string | null = null) => (poolId ? `#/new/${poolId}` : '#/new')
+/** New position, or New position with a pool chosen; `token` is one of the pool's tokens to verify it with (parseNewHash). */
+export const newPositionHref = (poolId: string | null = null, token: string | null = null) => (poolId ? (token ? `#/new/${poolId}/${token}` : `#/new/${poolId}`) : '#/new')
 
 export const positionsHref = '#/positions' as const
 
@@ -82,8 +95,6 @@ export const compoundHref = (tokenId: string) => `#/sequence/compound/${tokenId}
 export const sequenceHref = (tokenId: string, mode: 'compound' | 'domino' | null = null) => (mode ? `#/sequence/${mode}/${tokenId}` : `#/sequence/${tokenId}`)
 
 export const automateHref = '#/automate' as const
-
-export const settingsHref = '#/settings' as const
 
 /**
  * The docs, one of their pages, or a section of that page. A section link

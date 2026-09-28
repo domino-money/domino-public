@@ -1027,7 +1027,7 @@ test('signing in grants no wallet transaction or automated signing authority', a
   await connect(page);
   await signIn(s, page);
   // The owner removed the permanent explanatory paragraphs from this modal.
-  // Permissions remain unchanged and the existing Settings explanation stays.
+  // Permissions remain unchanged, and the docs explain it (Settings did until the owner removed it, 2026-09-27).
   assert.doesNotMatch(await dialog(page).innerText(), /Signing in is not a permission|contract wallet/);
   await dialog(page).getByRole('button', { name: 'Close' }).click();
   // Signed in is all the header claims: no mode label, and nothing about what
@@ -1036,17 +1036,15 @@ test('signing in grants no wallet transaction or automated signing authority', a
   assert.match(header, /Signed in/);
   assert.doesNotMatch(header, /practice/i);
 
-  await page.evaluate(() => (window.location.hash = '#/settings'));
-  // The stat label is set in capitals by the stylesheet, and innerText follows that.
-  await until(page, () => /AUTOMATED SIGNING/.test(document.body.innerText), null, 'settings');
-  const settings = await page.locator('main').innerText();
+  // Changed on purpose (2026-09-27, the owner's round 6, point 6): the Settings page is gone. What it said of sign-in, the
+  // docs say, and signed in or not, they say the same: the signature allows nothing.
+  await page.evaluate(() => (window.location.hash = '#/docs/wallet'));
+  await until(page, () => /What signing in proves/.test(document.body.innerText), null, 'docs');
+  const docs = await page.locator('main').innerText();
   // Session authority stays separate from the optional wallet transaction UI.
-  assert.match(settings, /AUTOMATED SIGNING\s+External; checked per sequence/);
-  assert.match(settings, /WALLET TRANSACTIONS\s+Built in; each step reviewed in wallet/);
-  assert.match(settings, /Sign-in proves your address/);
-  // Settings' footnote is gone on purpose (review:wallet): its "Nothing in this build signs a transaction" was false in the wallet build.
-  assert.doesNotMatch(settings, /Nothing in this build signs a transaction/);
-  assert.doesNotMatch(settings, /practice/i);
+  assert.match(docs, /The signature proves you control the address\. It approves no token, deposits nothing, swaps nothing, withdraws nothing and starts no automation\./);
+  assert.doesNotMatch(docs, /Nothing in this build signs a transaction/);
+  assert.doesNotMatch(docs, /practice/i);
   assert.equal(s.wallet.calls('eth_sendTransaction').length, 0, 'SIWE never submits a wallet transaction');
   assert.equal(s.wallet.calls('eth_signTypedData_v4').length, 0, 'SIWE never signs a financial intent');
   // Moving between routes keeps the session without reading it again.

@@ -137,12 +137,3 @@ export function heldAmounts(state: JourneyState, balances: PairBalancesState): H
   return { sides: [side(0), side(1)], total: usdOf(pool, amounts), estimate, wallet }
 }
 
-/**
- * The side the one-token plan swaps into, the token the wallet does not fund (in pool order), or null for any other
- * plan: the amount step's panel for that side is the pair's other half, not a deposit, so it carries no USD of its own.
- */
-export function swappedSide(state: JourneyState, balances: PairBalancesState): 0 | 1 | null {
-  if (!state.pool) return null
-  const plan = reviewPlan(state, rawBalances(balances))?.plan
-  return plan && plan.kind === 'swap' ? (plan.from === 0 ? 1 : 0) : null
-}

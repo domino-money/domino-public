@@ -6,7 +6,7 @@ import { agedMarket, feeLabel, presentMetric, retrievedAgeSeconds, retrievedText
 import type { CardSeries } from '../../lib/read/cardSeries'
 import { formatUsdCompact } from '../../lib/read/decimal'
 import { unreadToken } from '../../lib/read/project'
-import { groupedRatioText, ratioText } from '../../lib/read/ratioSeries'
+import { plainClose } from '../../lib/read/marketPrice'
 import { percentChange } from '../../lib/format/change'
 import { shortTime } from '../../lib/format/time'
 import { PriceLineSvg } from '../charts/PriceLine'
@@ -106,7 +106,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   if (line && shownPoint) {
     caption = (
       <span className="tnum">
-        {shortTime(shownPoint.startTimestamp)} · {ratioText(shownPoint.close)} <PoolTokenLabel token={line.quote} /> per <PoolTokenLabel token={line.base} /> · {shownPoint.swapCount}{' '}
+        {shortTime(shownPoint.startTimestamp)} · 1 <PoolTokenLabel token={line.base} /> = {plainClose(shownPoint.close)} <PoolTokenLabel token={line.quote} /> · {shownPoint.swapCount}{' '}
         {shownPoint.swapCount === 1 ? 'swap' : 'swaps'}
         {!shownPoint.complete && ' · open hour'}
       </span>
@@ -167,7 +167,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
   if (line) {
     price = (
       <div className="dm-mkt-card-price">
-        <span className="dm-mkt-card-close dm-fig-lg">{groupedRatioText(shown.close)}</span>
+        <span className="dm-mkt-card-close dm-fig-lg">{plainClose(shown.close)}</span>
         {change && (
           <span className="dm-delta dm-mkt-card-delta" data-sign={change.sign} data-variant="pill">
             <span className="dm-delta-arrow" aria-hidden="true" />
@@ -176,7 +176,7 @@ export function MarketCard({ listing, index, now, series }: { listing: PoolListi
           </span>
         )}
         <span className="dm-mkt-card-unit">
-          <PoolTokenLabel token={line.quote} /> per <PoolTokenLabel token={line.base} />
+          <PoolTokenLabel token={line.quote} /> for 1 <PoolTokenLabel token={line.base} />
         </span>
       </div>
     )

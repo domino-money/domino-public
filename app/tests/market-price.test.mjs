@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 const require = createRequire(import.meta.url);
-const { marketPoolPrice } = require('../.test-build/app/src/lib/read/marketPrice.js');
+const { marketPoolPrice, plainAmount, plainBase } = require('../.test-build/app/src/lib/read/marketPrice.js');
 const { PRICE_STALE_MS, sqrtPriceAtTick } = require('../.test-build/app/src/lib/read/screens/poolRange.js');
 const { retainAsStale } = require('../.test-build/app/src/lib/read/marketsProvider.js');
 const { projectMarketRow } = require('../.test-build/app/src/lib/read/project.js');
@@ -42,20 +42,59 @@ function row({ tick = TICK, sqrtPriceX96 = sqrtPriceAtTick(tick).toString(), bas
   };
 }
 
-test('a usable price is the pool’s own ratio, currency1 per currency0, from the tick maths with its ≈', () => {
+// Changed on purpose 2026-09-27 (r6/marketsdata, the owner: "0.000011853 cbBTC per USDG" meant nothing to a beginner):
+// a price is one of a token and so much of the other, "1 WETH = 2,492.18 USDG", from the square-root price, with no ≈.
+// Changed on purpose 2026-09-28 (round 6 integration): the price is the one at the pool's tick, as the pool page and New
+// position write it, so one pool reads one price everywhere (the square-root price read 2,500.09 where they read 2,499.91).
+test('a usable price is one of a token and so much of the other, at the pool’s tick', () => {
   const price = marketPoolPrice(row(), at(0));
   assert.deepEqual(
     { state: price.state, text: price.text, base: price.base.symbol, quote: price.quote.symbol, block: price.block, stale: price.stale, partial: price.partial },
-    { state: 'usable', text: '≈2,492.18', base: 'WETH', quote: 'USDG', block: BLOCK, stale: false, partial: false },
+    { state: 'usable', text: '2,492.18', base: 'WETH', quote: 'USDG', block: BLOCK, stale: false, partial: false },
   );
-  assert.equal(`${price.text} ${price.quote.symbol} per ${price.base.symbol}`, '≈2,492.18 USDG per WETH');
-  assert.doesNotMatch(price.text, /\$/, 'a ratio between two tokens, never dollars');
+  assert.equal(`1 ${price.base.symbol} = ${price.text} ${price.quote.symbol}`, '1 WETH = 2,492.18 USDG');
+  assert.doesNotMatch(price.text, /\$|≈/, 'a price between two tokens, never dollars, never approximate');
   // The row's token slots do not decide the orientation: the pool's currencies do, matched by address.
   const swapped = marketPoolPrice(row({ base: token(USDG, 'USDG', 6), quote: token(WETH, 'WETH', 18) }), at(0));
-  assert.deepEqual([swapped.text, swapped.quote.symbol, swapped.base.symbol], ['≈2,492.18', 'USDG', 'WETH']);
+  assert.deepEqual([swapped.text, swapped.quote.symbol, swapped.base.symbol], ['2,492.18', 'USDG', 'WETH']);
 });
 
-test('the projection carries the verified pool’s state, and the package fixture reads TOKEN per ETH', () => {
+// Added 2026-09-27 (r6/marketsdata): which token is the one. In USDG, the app's dollar, wherever the pool holds it and
+// that reads as 0.01 or more; otherwise the way round that reads as 1 or more. The main pools, at ticks near their
+// prices of 2026-09-27.
+test('the price reads the way a person reads one: in USDG when the pool holds it, otherwise the way round that reads as 1 or more', () => {
+  const CBBTC = '0xcec185eb182c47d1ba1efc84e6959e18cd620be4';
+  const MARLIN = '0xab35d04e1ee39c789c4a65d522417b3c7f2e4723';
+  const PONS = '0x39dbed3a2bd333467115de45665cc57f813c4571';
+  const U = '0xce24439f2d9c6a2289f741120fe202248b666666';
+  const [A, B] = ['0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222'];
+  const said = (tick, [c0, s0, d0], [c1, s1, d1]) => {
+    const market = row({ tick, base: token(c0, s0, d0), quote: token(c1, s1, d1), pool: { currency0: c0, currency1: c1 } });
+    const price = marketPoolPrice(market, at(0));
+    assert.equal(plainBase(market), price.base.address, 'the card asks for the same way round');
+    return `1 ${price.base.symbol} = ${price.text} ${price.quote.symbol}`;
+  };
+  // USDG is currency0 of cbBTC's pool: the chain's ratio is 0.0000118530 cbBTC per USDG.
+  assert.equal(said(-67381, [USDG, 'USDG', 6], [CBBTC, 'cbBTC', 8]), '1 cbBTC = 84,367 USDG');
+  assert.equal(said(-281877, [PONS, 'PONS', 18], [USDG, 'USDG', 6]), '1 PONS = 0.5739 USDG');
+  assert.equal(said(4, [USDG, 'USDG', 6], [U, 'U', 6]), '1 U = 0.9996 USDG');
+  // In USDG it would read 0.000129: the other way round.
+  assert.equal(said(365880, [USDG, 'USDG', 6], [MARLIN, 'MARLIN', 18]), '1 USDG = 7,747.69 MARLIN');
+  // No USDG: the way round that reads as 1 or more.
+  assert.equal(said(-13864, [A, 'AAA', 18], [B, 'BBB', 18]), '1 BBB = 4.00015 AAA');
+  assert.equal(said(13864, [A, 'AAA', 18], [B, 'BBB', 18]), '1 AAA = 4.00015 BBB');
+  assert.equal(plainBase({ ...row(), poolState: undefined }), null, 'no price, no side');
+});
+
+test('an amount is whole from 10,000, six significant digits from 1 and four below; past a plain number it is not written', () => {
+  assert.deepEqual([84367.14, 10_000, 9_999.994, 2492.184, 1.0004, 1, 0.573917, 0.0123456].map(plainAmount), ['84,367', '10,000', '9,999.99', '2,492.18', '1.0004', '1', '0.5739', '0.01235']);
+  assert.equal(plainAmount(999_999_999_999_999), '999,999,999,999,999');
+  assert.equal(plainAmount(1e15), null);
+  assert.equal(plainAmount(0), null);
+  assert.equal(plainAmount(Number.NaN), null);
+});
+
+test('the projection carries the verified pool’s state, and the package fixture reads 1 ETH = 1,000,000,000,000 TOKEN', () => {
   const fixture = (name) => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v1/fixtures/gateway/${name}.json`, import.meta.url), 'utf8'));
   const data = fixture('pool-market.success');
   const ok = (route, body) => ({ route, state: 'ok', data: body, provenance: { transport: 'fixture', contract: null, receivedAt: RECEIVED.wall, receivedMonotonic: RECEIVED.monotonic, attempts: 1 } });
@@ -73,7 +112,7 @@ test('the projection carries the verified pool’s state, and the package fixtur
     currency1: data.pool.poolKey.currency1.toLowerCase(),
   });
   const price = marketPoolPrice(market, at(1000));
-  assert.deepEqual([price.state, price.text, price.quote.symbol, price.base.symbol, price.block], ['usable', '≈1,000,000,000,000', 'TOKEN', 'ETH', 700]);
+  assert.deepEqual([price.state, price.text, price.quote.symbol, price.base.symbol, price.block], ['usable', '1,000,000,000,000', 'TOKEN', 'ETH', 700]);
 });
 
 test('decimals that were not read make the price unavailable, never guessed', () => {
@@ -126,7 +165,7 @@ test('a row retained after a failed refresh keeps the age of its own read', () =
   const retained = retainAsStale({ source: 'live', chainId: 4663, network: 'Robinhood Chain', markets: [row()] }, RECEIVED.wall).markets[0];
   assert.equal(retained.tvlUsd.state, 'stale', 'its provider figures are marked stale');
   const minute = marketPoolPrice(retained, at(60_000));
-  assert.deepEqual([minute.state, minute.text, minute.stale], ['usable', '≈2,492.18', false], 'kept, not aged by being kept');
+  assert.deepEqual([minute.state, minute.text, minute.stale], ['usable', '2,492.18', false], 'kept, not aged by being kept');
   assert.equal(marketPoolPrice(retained, at(PRICE_STALE_MS + 1000)).stale, true, 'and stale once its own read is five minutes old');
 });
 
@@ -189,4 +228,14 @@ test('formatUsdPrice is null for anything but a non-negative decimal string', ()
   for (const bad of ['', '-1', '-0.5', '1e6', '.5', '5.', ' 1', '1 ', '1,000.00', '$1', 'NaN', 'Infinity', '0x10', '+1']) {
     assert.equal(formatUsdPrice(bad), null, JSON.stringify(bad));
   }
+});
+
+// Added 2026-09-28 (round 6 integration): a square-root price inside the tick (the chain's usual case) reads the tick's
+// price, the pool page's and New position's figure (tickPriceText), never a figure of its own.
+test('a price between two ticks reads as the pool page and New position read it', () => {
+  const { tickPriceText } = require('../.test-build/app/src/lib/read/screens/positions.js');
+  const inside = (sqrtPriceAtTick(TICK) + sqrtPriceAtTick(TICK + 1)) / 2n;
+  const price = marketPoolPrice(row({ sqrtPriceX96: inside.toString() }), at(0));
+  assert.equal(price.state, 'usable');
+  assert.equal(price.text, tickPriceText(TICK, 18, 6).replace(/^≈/, ''));
 });

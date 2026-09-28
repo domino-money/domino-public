@@ -290,16 +290,17 @@ test('the bridge build reads through the same-origin bridge, adds no credential 
   await closeContext(context);
 });
 
-// Settings' footnote (live reads built in, nothing signs) is gone on purpose (review:wallet): a caption about data sources, false in wallet builds.
-test('Settings in the bridge-test build says that automation is checked per sequence, and has no caption about data sources', async () => {
+// Changed on purpose (2026-09-27, the owner's round 6, point 6): the Settings page is gone, and with it the build card this
+// test read. An old link to it opens the docs, which read nothing, in this build too.
+test('an old Settings link in the bridge-test build opens the docs and reads nothing', async () => {
   const { context, page } = await visit();
+  const before = edge.length;
   await page.evaluate(() => { location.hash = '#/settings'; });
+  await page.getByRole('heading', { level: 1, name: 'Docs', exact: true }).waitFor();
   await page.waitForTimeout(150);
   const text = await page.locator('#root').innerText();
-  // The stat label is set in capitals by the stylesheet, and innerText follows that.
-  assert.match(text, /AUTOMATED SIGNING\s+External; checked per sequence/, 'the read bridge never enables the executor');
-  assert.match(text, /WALLET TRANSACTIONS\s+Off/, 'this read-only build carries no wallet transaction handoff');
-  assert.doesNotMatch(text, /Live reads are built in|Nothing in this build signs a transaction/);
+  assert.doesNotMatch(text, /AUTOMATED SIGNING|WALLET TRANSACTIONS|Live reads are built in|Nothing in this build signs a transaction/);
+  assert.deepEqual(edge.slice(before), [], 'the docs ask the gateway nothing');
   await closeContext(context);
 });
 

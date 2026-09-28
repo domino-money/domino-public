@@ -248,7 +248,7 @@ test('a settled stored overview is asked again after a minute, not every five se
 // later. support/stale-store.mjs builds that store answer.
 // ---------------------------------------------------------------------------
 const { STORED_LANE } = built('scheduler');
-const { CATCH_UP_BACKOFF, CATCH_UP_FLOOR_MS, CATCH_UP_MARGIN_MS, CATCH_UP_WINDOW_MS, retainRowAsStale } = built('marketsProvider');
+const { CATCH_UP_BACKOFF, CATCH_UP_FLOOR_MS, CATCH_UP_MARGIN_MS, CATCH_UP_SHOWN_MS, CATCH_UP_WINDOW_MS, retainRowAsStale } = built('marketsProvider');
 const { withStalePools } = await import('./support/stale-store.mjs');
 
 /** Monotonic ms that only a sleep moves: every sleep ends at once, as in read.test.mjs's fakeClock. */
@@ -450,13 +450,15 @@ test('a pool whose figures aged out waits for them and is asked again just after
   assert.deepEqual(leased.seen, [waits(0, CATCH_UP_FLOOR_MS), figures(CATCH_UP_FLOOR_MS)]);
 
   // A slow collector (four pools a tick, up to 12 s each): the collection is due, then running, then published.
-  // Each ask in a row waits 1.4 times as long as the last: 6.5 s, then 3.5 s, then 4.9 s.
+  // Each ask in a row waits 1.4 times as long as the last: 6.5 s, then 3.5 s, then 4.9 s. Changed on purpose 2026-09-27
+  // (r6/marketsdata, the owner: USDG/U sat on loading bars on Home): the placeholder stands only while the next ask
+  // falls within CATCH_UP_SHOWN_MS (8 s) of the first; past it the row says what it has while the asks go on.
   const slow = await catchUpTrace([behind(), behind({ inSeconds: 0 }), behind({ refreshing: true }), caughtUp]);
   assert.equal(CATCH_UP_BACKOFF, 1.4);
-  assert.deepEqual(slow.seen, [waits(0, 6_500), waits(6_500, 3_500), waits(10_000, 4_900), figures(14_900)]);
+  assert.deepEqual(slow.seen, [waits(0, 6_500), says(6_500, 3_500), says(10_000, 4_900), figures(14_900)]);
   // Still running at the fourth: asked at 21.76 s, within the window; published by then.
   const later = await catchUpTrace([behind(), behind({ inSeconds: 0 }), behind({ refreshing: true }), behind({ refreshing: true }), caughtUp]);
-  assert.deepEqual(later.seen, [waits(0, 6_500), waits(6_500, 3_500), waits(10_000, 4_900), waits(14_900, 6_860), figures(21_760)]);
+  assert.deepEqual(later.seen, [waits(0, 6_500), says(6_500, 3_500), says(10_000, 4_900), says(14_900, 6_860), figures(21_760)]);
 
   // A row kept after a failed refresh is asked again by nobody: it does not keep waiting.
   assert.equal(retainRowAsStale({ ...plain.row(), figuresPending: true }, 1_000).figuresPending, undefined);
@@ -489,13 +491,365 @@ test('a pool stops waiting when a collection since brought no figures, or when i
   assert.deepEqual(empty.seen, [waits(0, 6_500), says(6_500, 60_000), says(66_500, 60_000)]);
 
   // A store that keeps saying "in 5 s" and never publishes: asks at 6.5, 13 and 19.5 s, the next would fall past
-  // CATCH_UP_WINDOW_MS (19.5 + 6.86 > 25 s), so the row says Unavailable at 19.5 s and the page is back to its minute.
+  // CATCH_UP_WINDOW_MS (19.5 + 6.86 > 25 s), so the page is back to its minute at 19.5 s. Changed on purpose
+  // 2026-09-27 (r6/marketsdata): the row says Unavailable from 6.5 s (the ask after it falls past CATCH_UP_SHOWN_MS),
+  // not 19.5 s, while the asks go on.
   assert.equal(CATCH_UP_WINDOW_MS, 25_000);
   const stuck = await catchUpTrace([behind(), behind(), behind(), behind(), behind()], { loads: 6 });
-  assert.deepEqual(stuck.seen, [waits(0, 6_500), waits(6_500, 6_500), waits(13_000, 6_500), says(19_500, 60_000), says(79_500, 60_000), figures(139_500)]);
+  assert.deepEqual(stuck.seen, [waits(0, 6_500), says(6_500, 6_500), says(13_000, 6_500), says(19_500, 60_000), says(79_500, 60_000), figures(139_500)]);
   assert.equal(stuck.overviews, 6);
 
-  // Caught up, then behind again later: a new wait.
+  // Caught up, then behind again later: a new wait. Changed on purpose 2026-09-27 (r6/marketsdata, the owner: USDG/U sat
+  // on loading bars): while it waits, the row shows the figures this page last had for the pool, stale and dated
+  // (keepFigures), not a placeholder; its estimate is the retained one.
   const again = await catchUpTrace([behind(), behind({ observedAt: generatedAt + 6 }), caughtUp, behind()], { loads: 5 });
-  assert.deepEqual(again.seen, [waits(0, 6_500), says(6_500, 60_000), figures(66_500), waits(126_500, 6_500), figures(133_000)]);
+  assert.deepEqual(again.seen, [waits(0, 6_500), says(6_500, 60_000), figures(66_500), { at: 126_500, next: 6_500, pending: true, tvl: 'stale', apr: 'available' }, figures(133_000)]);
+  assert.equal(again.row().tvlUsd.state, 'provider', 'the collection’s own figures replace the kept ones');
+});
+
+// ---------------------------------------------------------------------------
+// Added 2026-09-27 (r6/marketsdata). The owner, on production: TVL, 24h volume and APR on Home, the ticker and Markets
+// sometimes took very long to appear, and USDG/U sat on loading bars. Measured in the harness with production's
+// latency (support/markets-latency.mjs): the first figures waited for the featured list, then the capabilities, then
+// the overview, one after the other; stored reads went out one at a time; every visit started from nothing; a first
+// load that failed was never asked again.
+// ---------------------------------------------------------------------------
+const { createPaintMemory, PAINT_KEY, PAINT_MAX_AGE_MS } = built('marketsPaint');
+const { keepFigures, FAILED_RETRY_MS } = built('marketsProvider');
+const { overviewFor } = await import('./markets-cards.fixtures.mjs');
+
+test('two stored reads at once: the list and the table’s overview travel together, the next stored read waits for a slot, and each takes its budget as it starts', async () => {
+  const clock = steppedClock();
+  const gates = new Map();
+  const starts = [];
+  // Each read waits for its gate (the capabilities, say) before its one attempt goes out.
+  const source = { transport: 'bridge', read: async (route, request, opts = {}) => {
+    starts.push([route, clock.monotonic()]);
+    await new Promise((open) => gates.set(`${route}:${request.poolId ?? ''}`, open));
+    opts.onAttempt?.();
+    return { route, state: 'ok', data: {}, provenance: {} };
+  } };
+  const open = async (route, i) => { gates.get(`${route}:${i === undefined ? '' : historyOf(i).poolId}`)(); await turn(); await turn(); };
+  const queue = createScheduledSource(source, { clock, unspacedStored: true, storedWidth: 2, budget: { burst: 3, perMinute: 30 } });
+  const reads = [queue.read('featured-pools', {}, { priority: 'first' }), queue.read('overview', { poolIds: [pool] }, { priority: 'first' }), ...[0, 1, 2].map((i) => queue.read('history', historyOf(i)))];
+  await turn();
+  assert.deepEqual(starts, [['featured-pools', 0], ['overview', 0]], 'the list and the overview at once; the cards wait for a slot');
+  await open('featured-pools');
+  assert.deepEqual(starts.at(-1), ['history', 0], 'a slot frees: the first card');
+  // A burst of three: the overview took one as it started and the first card another, though neither has sent
+  // anything yet. The second card needs a read and a quarter, and one is left: it waits half a second.
+  await open('overview');
+  assert.equal(starts.length, 3);
+  clock.advance(500);
+  await turn();
+  assert.deepEqual(starts.at(-1), ['history', 500]);
+  await open('history', 0);
+  assert.equal(starts.length, 4, 'the third card waits for the budget’s own pace');
+  clock.advance(2000);
+  await turn();
+  assert.deepEqual(starts.at(-1), ['history', 2500]);
+  await open('history', 1);
+  await open('history', 2);
+  assert.deepEqual((await Promise.all(reads)).map((outcome) => outcome.state), ['ok', 'ok', 'ok', 'ok', 'ok']);
+
+  // A read that never sent anything (a route not listed) gives its budget back: four in a burst of two, no wait.
+  const instant = instantClock();
+  const silent = createScheduledSource({ transport: 'bridge', read: async (route) => ({ route, state: 'disabled', reason: 'route_not_enabled', provenance: {} }) },
+    { clock: instant, unspacedStored: true, storedWidth: 2, budget: { burst: 2, perMinute: 30 } });
+  for (let i = 0; i < 4; i++) await silent.read('history', historyOf(i));
+  assert.equal(instant.monotonic(), 0);
+
+  // Without a width, one at a time, as before.
+  const serial = steppedClock();
+  const one = startsOn(serial, () => new Promise((resolve) => setTimeout(resolve, 5)));
+  const serialQueue = createScheduledSource(one.source, { clock: serial, unspacedStored: true, budget: null });
+  const both = [serialQueue.read('featured-pools', {}), serialQueue.read('overview', { poolIds: [pool] })];
+  await turn();
+  assert.deepEqual(one.starts.map(([route]) => route), ['featured-pools']);
+  await Promise.all(both);
+  assert.deepEqual(one.starts.map(([route]) => route), ['featured-pools', 'overview']);
+});
+
+test('a read whose reader left before its attempt gives its budget back once, and an attempt that still goes out spends its own', async () => {
+  // A source that does not stop at the abort: its attempt goes out after the reader has left.
+  const clock = steppedClock();
+  const late = [];
+  const source = { transport: 'bridge', read: async (route, request, opts = {}) => {
+    await new Promise((go) => late.push(() => { opts.onAttempt?.(); go(); }));
+    return { route, state: 'ok', data: {}, provenance: {} };
+  } };
+  const queue = createScheduledSource(source, { clock, unspacedStored: true, storedWidth: 2, budget: { burst: 2, perMinute: 30 } });
+  const leaving = new AbortController();
+  const gone = queue.read('history', historyOf(0), { signal: leaving.signal });
+  await turn();
+  leaving.abort();
+  assert.equal((await gone).state, 'aborted');
+  late.shift()();
+  await turn();
+  // Two in a burst of two: one spent by the attempt that went out, one left; the next read wants a read and a quarter.
+  const next = queue.read('history', historyOf(1));
+  await turn();
+  assert.equal(late.length, 0, 'it waits for the budget');
+  clock.advance(500);
+  await turn();
+  assert.equal(late.length, 1, 'half a second later');
+  late.shift()();
+  assert.equal((await next).state, 'ok');
+});
+
+/** A list the test answers (marketsProvider.ts PoolList): `answer` puts its pools on screen and says so. */
+function heldList(ids) {
+  const listeners = new Set();
+  let answered;
+  const first = new Promise((resolve) => { answered = resolve; });
+  const list = {
+    now: ids, keys: new Map(), unbound: [],
+    ids: () => list.now,
+    update: () => first,
+    // A pool the answer named with a fee its read does not have does not bind.
+    binds: (poolId, read) => !list.keys.has(poolId) || list.keys.get(poolId) === read.poolKey.fee_pips,
+    unbind: (gone) => { list.unbound.push(...gone); list.now = list.now.filter((id) => !gone.includes(id)); for (const listener of listeners) listener(); },
+    subscribe: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
+    answer: (next, keys = new Map()) => { list.now = next; list.keys = keys; answered(); for (const listener of listeners) listener(); },
+  };
+  return list;
+}
+
+/** The composed stored source over a store that answers any pools asked (markets-cards.fixtures.mjs), holding the reads `held` names until their signal ends. */
+function anyPools({ held = () => false } = {}) {
+  const calls = [];
+  const fetch = async (path, init) => {
+    const body = init.body ? JSON.parse(init.body) : null;
+    calls.push({ path, body });
+    if (path === '/api/read/v3/capabilities') return new Response(JSON.stringify(fixture('capabilities')), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
+    if (held(body)) await new Promise((_, reject) => init.signal?.addEventListener('abort', () => reject(init.signal.reason), { once: true }));
+    return new Response(JSON.stringify(overviewFor(body)), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
+  };
+  const options = { enabled: true, validators: v1, fetch };
+  const source = createPublicMetadataCache(createScheduledSource(createPublicSource(createEstimateSource(options, v2), options, v3), { minIntervalMs: 0, budget: null, unspacedStored: true, storedWidth: 2 }));
+  return { source, calls, overviews: () => calls.filter((call) => call.path === '/api/read/v3/overview').map((call) => call.body.poolIds) };
+}
+const poolIdOf = (hex) => `0x${hex.padStart(64, '0')}`;
+const settled = (provider) => new Promise((resolve) => {
+  const check = () => { if (provider.getSnapshot().phase === 'ready') { stop(); resolve(provider.getSnapshot()); } };
+  const stop = provider.subscribe(check);
+  check();
+});
+
+/** This browser's copy of an overview of `ids` (marketsPaint.ts), read a moment ago. */
+function copyOf(ids) {
+  const storage = memoryStorage();
+  const paint = createPaintMemory(() => storage, v3);
+  paint.save({ data: overviewFor({ poolIds: ids }), provenance: { transport: 'bridge', contract: v3.CONTRACT_VERSION, receivedAt: Date.now() - 1_000, attempts: 0 } });
+  return paint;
+}
+
+test('without a copy the first load waits for the list, the capabilities asked meanwhile; with one it reads the copy’s pools at once, and a list with other pools starts it over', async () => {
+  const [A, B] = [poolIdOf('a1'), poolIdOf('b2')];
+  // No copy: nothing of the embedded list is read before the list answers, which may name other pools.
+  const waiting = heldList([A]);
+  const bare = anyPools();
+  const first = createReadMarketsProvider({ source: bare.source, poolIds: [], pools: waiting, kind: 'bridge', refreshMs: 60_000 });
+  first.ensure();
+  for (let i = 0; i < 50 && !bare.calls.some((call) => call.path === '/api/read/v3/capabilities'); i++) await turn();
+  assert.deepEqual(bare.calls.map((call) => call.path), ['/api/read/v3/capabilities'], 'the capabilities, and no overview yet');
+  waiting.answer([B]);
+  assert.deepEqual((await settled(first)).result.markets.map((row) => row.poolId), [B]);
+  assert.deepEqual(bare.overviews(), [[B]], 'one overview, of the list’s pools');
+  assert.equal(bare.calls.filter((call) => call.path === '/api/read/v3/capabilities').length, 1, 'the capabilities asked once');
+
+  // The capabilities refused while the list is asked: the load uses that very answer, and asks them no second time.
+  const refusing = heldList([A]);
+  const gets = [];
+  const options = { enabled: true, validators: v1, fetch: async (path) => {
+    gets.push(path);
+    return new Response(JSON.stringify({ error: 'upstream_unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
+  } };
+  const down = createPublicMetadataCache(createScheduledSource(createPublicSource(createEstimateSource(options, v2), options, v3), { minIntervalMs: 0, budget: null, unspacedStored: true, storedWidth: 2 }));
+  const refused = createReadMarketsProvider({ source: down, poolIds: [], pools: refusing, kind: 'bridge', refreshMs: 60_000 });
+  refused.ensure();
+  for (let i = 0; i < 50 && gets.length === 0; i++) await turn();
+  for (let i = 0; i < 20; i++) await turn();
+  refusing.answer([B]);
+  await new Promise((resolve) => { const stop = refused.subscribe(() => { if (refused.getSnapshot().phase !== 'loading') { stop(); resolve(); } }); });
+  assert.deepEqual(gets.filter((path) => path === '/api/read/v3/capabilities').length, 1, `one capabilities GET: ${gets.join(', ')}`);
+
+  // The copy names A: its overview goes out before the list answers; the list names B, so the load starts over at once.
+  const list = heldList([A]);
+  const store = anyPools({ held: (body) => body?.poolIds?.includes(A) });
+  const provider = createReadMarketsProvider({ source: store.source, poolIds: [], pools: list, kind: 'bridge', refreshMs: 60_000, paint: copyOf([A]) });
+  assert.deepEqual(provider.getSnapshot().previous.markets.map((row) => row.poolId), [A], 'the copy’s row, painted');
+  provider.ensure();
+  for (let i = 0; i < 50 && store.overviews().length === 0; i++) await turn();
+  assert.deepEqual(store.overviews(), [[A]], 'the overview went out before the list answered');
+  list.answer([B]);
+  const ready = await settled(provider);
+  assert.deepEqual(store.overviews(), [[A], [B]], 'the list’s own pools, at once, without waiting for the first read');
+  assert.deepEqual(ready.result.markets.map((row) => row.poolId), [B]);
+});
+
+test('a row read before the list answered that the list names as another pool leaves the list', async () => {
+  const A = poolIdOf('a1');
+  const list = heldList([A]);
+  const store = anyPools();
+  const provider = createReadMarketsProvider({ source: store.source, poolIds: [], pools: list, kind: 'bridge', refreshMs: 60_000, paint: copyOf([A]) });
+  provider.ensure();
+  const first = await settled(provider);
+  assert.deepEqual(first.result.markets.map((row) => row.poolId), [A], 'bound to the list shown when it was read');
+  // The answer names A with a 0.05% fee; its read is the fixture's 0.30% pool.
+  list.answer([A], new Map([[A, 500]]));
+  assert.deepEqual(list.unbound, [A]);
+  assert.deepEqual(provider.getSnapshot().result.markets, [], 'its row leaves with it');
+});
+
+function memoryStorage() {
+  const map = new Map();
+  return { map, getItem: (key) => map.get(key) ?? null, setItem: (key, value) => { map.set(key, String(value)); }, removeItem: (key) => { map.delete(key); } };
+}
+const overviewOk = (receivedAt, data = fixture('overview')) => ({ data, provenance: { transport: 'bridge', contract: v3.CONTRACT_VERSION, receivedAt, attempts: 0 } });
+
+test('this browser’s copy of the last overview: kept 15 minutes, only while read-v3’s runtime accepts it, never past a storage that refuses', () => {
+  assert.equal(PAINT_KEY, 'domino-markets:v1');
+  assert.equal(PAINT_MAX_AGE_MS, 15 * 60_000);
+  let wall = 5_000_000;
+  const storage = memoryStorage();
+  const paint = createPaintMemory(() => storage, v3, () => wall);
+  assert.equal(paint.load(), null, 'nothing kept yet');
+  paint.save(overviewOk(wall - 1_000));
+  const kept = paint.load();
+  assert.deepEqual(kept.data, fixture('overview'));
+  assert.deepEqual(kept.provenance, { transport: 'bridge', contract: v3.CONTRACT_VERSION, receivedAt: wall - 1_000, attempts: 0 }, 'dated by its arrival; no monotonic time from another document');
+  wall += PAINT_MAX_AGE_MS;
+  assert.equal(paint.load(), null, 'too old');
+  wall -= 2 * PAINT_MAX_AGE_MS;
+  assert.equal(paint.load(), null, 'from this clock’s future');
+  wall += PAINT_MAX_AGE_MS;
+  assert.ok(paint.load(), 'the same copy stands again at its own age');
+  const stored = JSON.parse(storage.map.get(PAINT_KEY));
+  for (const [label, value] of [
+    ['another contract', { ...stored, contract: '3.0.0-rc.0' }],
+    ['another shape', { ...stored, v: 2 }],
+    ['a payload the runtime refuses', { ...stored, data: { ...stored.data, pools: 'nope' } }],
+    ['not JSON', '{'],
+  ]) {
+    storage.map.set(PAINT_KEY, typeof value === 'string' ? value : JSON.stringify(value));
+    assert.equal(paint.load(), null, label);
+  }
+  const blocked = createPaintMemory(() => { throw new Error('blocked'); }, v3, () => wall);
+  assert.equal(blocked.load(), null);
+  assert.doesNotThrow(() => blocked.save(overviewOk(wall)));
+  const full = createPaintMemory(() => ({ getItem: () => null, setItem: () => { throw new Error('QuotaExceededError'); }, removeItem: () => {} }), v3, () => wall);
+  assert.doesNotThrow(() => full.save(overviewOk(wall)));
+});
+
+/** A provider whose overview answers are `answers` in turn (a function each), its timers fired by the test, at wall `wall`. */
+function traced(answers, { paint, wall = 5_000_000 } = {}) {
+  let steady = 0;
+  const timers = [];
+  const reads = { now: () => wall + steady, monotonic: () => steady, random: () => 0, timer: () => () => {},
+    sleep: (_ms, signal) => new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })) };
+  const clock = { ...reads, timer: (ms, fire) => { timers.push({ ms, fire: () => { steady += ms; fire(); } }); return () => {}; } };
+  const queued = [...answers];
+  const { source, calls } = setup({ clock: reads, answer: () => queued.shift()() });
+  const provider = createReadMarketsProvider({ source, poolIds: [pool], kind: 'bridge', clock, refreshMs: 60_000, paint, visibility: { hidden: () => false, onChange: () => () => {} } });
+  const next = async () => {
+    const before = timers.length;
+    timers.at(-1).fire();
+    for (let j = 0; j < 200 && timers.length === before; j++) await turn();
+  };
+  const settle = () => new Promise((resolve) => {
+    const check = () => { if (provider.getSnapshot().phase !== 'loading') { stop(); resolve(provider.getSnapshot()); } };
+    const stop = provider.subscribe(check);
+    check();
+  });
+  return { provider, timers, next, settle, overviews: () => calls.filter((call) => call.path === '/api/read/v3/overview').length };
+}
+const down = () => new Response(JSON.stringify({ error: 'upstream_unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
+
+test('the copy paints the rows before the first read, as old as they are and waiting where they have no figure; the answer replaces them and is kept', async () => {
+  const wall = 5_000_000;
+  const storage = memoryStorage();
+  const paint = createPaintMemory(() => storage, v3, () => wall);
+  const data = fixture('overview');
+  paint.save(overviewOk(wall - 30_000, data));
+  const { provider, settle } = traced([() => fixture('overview')], { paint, wall });
+  const painted = provider.getSnapshot();
+  assert.equal(painted.phase, 'loading');
+  const [row] = painted.previous.markets;
+  assert.equal(row.poolId, pool);
+  assert.equal(row.figuresPending, true, 'what it has no figure for waits for the answer');
+  assert.equal(row.tvlUsd.value, overviewRows(overviewOk(wall - 30_000, data))[0].tvlUsd.value, 'the copy’s own figure');
+  assert.equal(row.provenance.market.receivedAt, wall - 30_000 - (data.generatedAt - data.pools[0].observedAt) * 1000, 'dated from the copy’s arrival, less the store’s own age');
+  assert.equal(row.provenance.market.receivedMonotonic, undefined);
+  const release = provider.recoverQuietly();
+  provider.ensure();
+  const ready = await settle();
+  assert.equal(ready.phase, 'ready');
+  assert.equal(ready.result.markets[0].figuresPending, undefined);
+  assert.ok(JSON.parse(storage.map.get(PAINT_KEY)).receivedAt >= wall, 'the answer is the next visit’s copy');
+  release();
+});
+
+test('a load that read nothing is asked again after 5 s, then 15 s and 45 s; rows the copy painted stay, stale and dated', async () => {
+  assert.equal(FAILED_RETRY_MS, 5_000);
+  const wall = 5_000_000;
+  const storage = memoryStorage();
+  const paint = createPaintMemory(() => storage, v3, () => wall);
+  paint.save(overviewOk(wall - 30_000));
+  const { provider, timers, next, settle, overviews } = traced([down, down, down, () => fixture('overview')], { paint, wall });
+  const release = provider.recoverQuietly();
+  provider.ensure();
+  const failed = await settle();
+  assert.equal(failed.phase, 'failed');
+  assert.deepEqual(failed.retained.result.markets.map((row) => [row.poolId, row.tvlUsd.state, row.figuresPending]), [[pool, 'stale', undefined]], 'the painted row, kept as it was, never blank');
+  assert.equal(timers.at(-1).ms, 5_000);
+  await next();
+  assert.equal(timers.at(-1).ms, 15_000);
+  await next();
+  assert.equal(timers.at(-1).ms, 45_000);
+  await next();
+  assert.equal(provider.getSnapshot().phase, 'ready');
+  assert.equal(timers.at(-1).ms, 60_000, 'back to the minute');
+  assert.equal(overviews(), 4);
+  release();
+
+  // With nothing painted, the same: the first load used to wait for a reload.
+  const bare = traced([down, () => fixture('overview')]);
+  const hold = bare.provider.recoverQuietly();
+  bare.provider.ensure();
+  assert.equal((await bare.settle()).phase, 'failed');
+  assert.equal(bare.timers.at(-1).ms, 5_000);
+  await bare.next();
+  assert.equal(bare.provider.getSnapshot().phase, 'ready');
+  hold();
+});
+
+test('a placeholder stands 8 s at the most; past it a row whose figures are coming shows the ones kept for it while the asks go on', async () => {
+  assert.equal(CATCH_UP_SHOWN_MS, 8_000);
+  // Figures, then behind at the minute: the kept ones, stale, with a placeholder where none is kept (none here); the
+  // next ask falls past 8 s, so the row no longer waits on screen, and still shows the kept figures, never a gap.
+  const kept = await catchUpTrace([caughtUp, behind(), behind(), caughtUp], { loads: 4 });
+  const stale = (at, next, pending) => ({ at, next, pending, tvl: 'stale', apr: 'available' });
+  assert.deepEqual(kept.seen, [figures(0), stale(60_000, 6_500, true), stale(66_500, 6_500, false), figures(73_000)]);
+  assert.equal(kept.overviews, 4);
+});
+
+test('a pool waits afresh only once it caught up: one answer that is not behind does not bring the placeholder back each minute', async () => {
+  // Behind, then its next collection two minutes off (not behind, no figures), then behind again at the minute: it
+  // waited once and has not caught up since, so the row says what it has, and no placeholder comes back.
+  const flapping = await catchUpTrace([behind(), behind({ inSeconds: 120 }), behind()], { loads: 3 });
+  assert.deepEqual(flapping.seen, [waits(0, 6_500), says(6_500, 60_000), says(66_500, 60_000)]);
+});
+
+test('keepFigures: a row whose figures are coming shows the ones kept for it, stale and dated, and keeps its own where it has them', () => {
+  const read = (data) => overviewRows(overviewOk(1_000_000, data))[0];
+  const good = read(fixture('overview'));
+  const coming = { ...read(withStalePools(fixture('overview'), [pool])), figuresPending: true };
+  assert.equal(coming.tvlUsd.state, 'unavailable');
+  const shown = keepFigures(coming, good, 1_000_000);
+  assert.deepEqual([shown.tvlUsd.state, shown.tvlUsd.value, shown.volume24hUsd.state], ['stale', good.tvlUsd.value, 'stale']);
+  assert.equal(shown.feeAprEstimate.retained, true, 'the kept estimate, marked as kept');
+  assert.equal(shown.figuresPending, true);
+  assert.equal(shown.poolState, coming.poolState, 'its own price');
+  assert.deepEqual(keepFigures(good, coming, 1_000_000).tvlUsd, good.tvlUsd, 'a figure it has is never replaced');
 });

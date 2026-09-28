@@ -84,14 +84,3 @@ export function PortfolioSummary({ principal, unclaimed, block }: { principal: b
     </div>
   )
 }
-
-/** A row's USD line (§11.1-5): after both amounts in the DOM, drawn first by CSS. Nothing without a valued state. */
-export function RowUsd({ card, state, which }: { card: LiveCard; state: PositionState | null | undefined; which: 'principal' | 'unsettledFees' }) {
-  const value = cardUsd(card, state, which)
-  if (!value) return null
-  return (
-    <span className={cx('dm-row-usd dm-arrive', which === 'unsettledFees' && positive(value.units) && 'dm-fees-in')} title={`Pool price at block ${value.block}`}>
-      {formatUsd(unitsText(value.units))}
-    </span>
-  )
-}

@@ -15,6 +15,7 @@ import type { Candle, PoolMarketResponse } from 'api-contracts/read-v1/types'
 import type { HistoryResponse } from 'api-contracts/read-v3/types'
 import { retrievedText, type CarriedHistory, type Instant, type Market, type Metric } from '../markets'
 import { chartMatches } from './chart'
+import { plainBase } from './marketPrice'
 import { reasonText } from './describe'
 import { volumeGeometry } from './priceSeries'
 import { ratioGeometry, type RatioPad } from './ratioSeries'
@@ -101,10 +102,12 @@ export function cardAsk(market: Market, source: CardSource): CardAsk | null {
   const poolId = market.poolId.toLowerCase()
   let currency: string
   if (source === 'chain') {
-    // The same base the provider chart would use, which is the pool's first currency whenever it is one of the pair.
+    // The token the row's price is of, so the card's line and its figure read as the table's price does ("1 cbBTC =
+    // 84,367 USDG", marketPrice.ts, 2026-09-27); without one, the same base the provider chart would use, which is the
+    // pool's first currency whenever it is one of the pair.
     const pool = currencies(market)
     const chart = market.chartTokens?.[side]?.toLowerCase()
-    currency = chart !== undefined && pool.includes(chart) ? chart : pool[0]
+    currency = plainBase(market) ?? (chart !== undefined && pool.includes(chart) ? chart : pool[0])
   } else {
     if (!market.chartTokens) return null
     currency = market.chartTokens[side]
@@ -263,7 +266,7 @@ const PROVIDER_PASSING = new Set(['provider_capacity_busy', 'provider_rate_limit
 
 /**
  * How long a card coming back to the page waits before its first read, from
- * what the tab kept for it; null when that answer stands for this visit. A
+ * what the browser kept for it; null when that answer stands for this visit. A
  * chain series keeps its one-minute rhythm; provider candles still drawn wait
  * for the read service's limit; a provider refusal that can pass waits a
  * minute from when it came; any other provider answer is final. A failed
@@ -310,19 +313,22 @@ export function providerAgain(outcome: TransientCandidate & { data?: PoolMarketR
 }
 
 // ---------------------------------------------------------------------------
-// This tab's memory of the answers
+// This browser's memory of the answers
 // ---------------------------------------------------------------------------
 
 export interface StorageLike {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
   removeItem(key: string): void
+  /** Where the storage can list its keys (the browser's always can), so old series can be let go. */
+  readonly length?: number
+  key?(index: number): string | null
 }
 
 export interface CardCache {
   /** The answer kept for `key` that still stands now, or null. */
   get(key: string, now: Instant): CardAnswer | null
-  /** Keeps an answer over the last one as mergeAnswer does; only good chain series reach sessionStorage. */
+  /** Keeps an answer over the last one as mergeAnswer does; only good chain series reach the browser's storage. */
   put(answer: CardAnswer): void
 }
 
@@ -362,16 +368,21 @@ function keepable(answer: CardAnswer, now: Instant): boolean {
 
 /**
  * Answers by key, in memory for the document and, for good chain series, in
- * this tab's sessionStorage too, so a reload draws the last series at once
- * and replaces it when the next answer lands. Only wall time is kept there
- * (another document's monotonic clock means nothing), and every read of it
- * applies the same limits as a fresh answer, so nothing old is shown as
- * current. Provider answers and failures stay in memory only: candles expire
- * within five minutes, and a failure says nothing to another document. Every
- * storage access may throw (a private window, blocked site data), and none
- * is needed: the memory copy carries on without it.
+ * the browser's storage too, so a reload, or another tab, draws the last
+ * series at once and replaces it when the next answer lands, and keeps its
+ * one-minute rhythm instead of asking again at once (changed 2026-09-27,
+ * r6/marketsdata, from this tab's sessionStorage to localStorage: a new tab
+ * waited about 4 s for its six cards behind the tab's read budget). Only
+ * wall time is kept there (another document's monotonic clock means
+ * nothing), and every read of it applies the same limits as a fresh answer,
+ * so nothing old is shown as current; the first series kept in a document
+ * lets go of every kept series past CHAIN_KEEP_MS, so pools a list no longer
+ * names do not pile up. Provider answers and failures stay in memory only:
+ * candles expire within five minutes, and a failure says nothing to another
+ * document. Every storage access may throw (a private window, blocked site
+ * data), and none is needed: the memory copy carries on without it.
  */
-export function createCardCache(storage: () => StorageLike | null): CardCache {
+export function createCardCache(storage: () => StorageLike | null, wall: () => number = Date.now): CardCache {
   const memory = new Map<string, CardAnswer>()
   const store = (): StorageLike | null => {
     try {
@@ -386,6 +397,25 @@ export function createCardCache(storage: () => StorageLike | null): CardCache {
       store()?.removeItem(STORED + key)
     } catch {
       // Nothing to do: the memory copy is gone either way.
+    }
+  }
+  let swept = false
+  /** Once a document: every kept series past CHAIN_KEEP_MS, or not in this page's shape, goes. */
+  const sweep = (kept: StorageLike) => {
+    swept = true
+    const names: string[] = []
+    for (let index = 0; index < (kept.length ?? 0); index++) {
+      const name = kept.key?.(index)
+      if (name?.startsWith(STORED)) names.push(name)
+    }
+    for (const name of names) {
+      let at = Number.NaN
+      try {
+        at = JSON.parse(kept.getItem(name) ?? 'null')?.receivedAt
+      } catch {
+        // Not this page's: let go below.
+      }
+      if (!(wall() - at <= CHAIN_KEEP_MS)) kept.removeItem(name)
     }
   }
   return {
@@ -412,7 +442,9 @@ export function createCardCache(storage: () => StorageLike | null): CardCache {
       memory.set(answer.key, mergeAnswer(memory.get(answer.key), answer))
       if (answer.source !== 'chain' || answer.data === null || answer.failure !== null) return
       try {
-        store()?.setItem(STORED + answer.key, JSON.stringify({ v: 1, source: 'chain', key: answer.key, receivedAt: answer.receivedAt, data: answer.data }))
+        const kept = store()
+        if (kept && !swept) sweep(kept)
+        kept?.setItem(STORED + answer.key, JSON.stringify({ v: 1, source: 'chain', key: answer.key, receivedAt: answer.receivedAt, data: answer.data }))
       } catch {
         // Full or blocked: the memory copy is enough for this document.
       }
@@ -420,5 +452,5 @@ export function createCardCache(storage: () => StorageLike | null): CardCache {
   }
 }
 
-/** This tab's one card memory. */
-export const CARD_CACHE = createCardCache(() => (typeof sessionStorage === 'undefined' ? null : sessionStorage))
+/** This page's one card memory, kept in the browser for the next tab (see createCardCache). */
+export const CARD_CACHE = createCardCache(() => (typeof localStorage === 'undefined' ? null : localStorage))

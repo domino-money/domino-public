@@ -1,116 +1,161 @@
 import type { ReactNode } from 'react'
 import type { PositionState } from '../../lib/fees/types'
-import { COPY } from '../../lib/read/screens/copy'
-import { rangeBarScale } from '../../lib/read/screens/positions'
+import { formatUsd } from '../../lib/format/usd'
 import type { LiveCard } from '../../lib/walletCards'
 import { positionHref } from '../explore/routes'
 import { TokenMarkPair } from '../TokenIcon'
 import { IconChevronRight } from '../icons'
-import { Chip, RangeBar, Skeleton } from '../ui'
-import { Amount, PairName, PositionStatus, blockTitle } from './PositionFigures'
-import { RowUsd } from './visual/PortfolioSummary'
+import { Skeleton, cx } from '../ui'
+import type { RowApr } from './listApr'
+import { Amount, PairName, PositionStatus } from './PositionFigures'
+import { cardUsd } from './visual/PortfolioSummary'
+import { positive, unitsText } from './visual/value'
 
-/** The row's last cell: a chevron that nudges on hover. The word is for a screen reader. */
-function Chevron() {
+/*
+ * Your positions as one tidy row each (the owner, round 6, 2026-09-27: "Domino is for people who know nothing about
+ * liquidity pools"; clean the table, add each position's APR): the pair and its fee over whether the price is in its
+ * range, then Value, Fees ready to collect and Your APR, each one figure, then how its fees are used (a small badge, or
+ * Automate for a plain position, beside the row: OwnedPositions.tsx) and the chevron. The two token amounts under Value
+ * and Fees are one hover away (a pointer's; a screen reader reads them with the figure), and on a position's page. For
+ * a pair without USDG there is no USD: its two amounts are the figure. The whole row is the link to the position's page.
+ */
+
+/** The columns' names, for the eye (each cell names itself for a screen reader and, on a phone, for the eye). */
+export function RowsHead({ closed = false }: { closed?: boolean }) {
   return (
-    <span className="dm-acct-nft-chev">
-      <IconChevronRight size={16} />
-      <span className="sr-only">Details</span>
+    <div className="dm-own-band" aria-hidden="true">
+      <span>Pool</span>
+      <span>Value</span>
+      <span>Fees ready to collect</span>
+      <span>{closed ? '' : 'Your APR'}</span>
+      <span>{closed ? '' : 'Automation'}</span>
+      <span />
+    </div>
+  )
+}
+
+/**
+ * Value or Fees ready to collect: the USD figure (the list's own read, one block for amounts and price), its two
+ * token amounts one hover away; without a USD figure, the two amounts themselves.
+ */
+function Money({ card, state, which, label }: { card: LiveCard; state: PositionState | null; which: 'principal' | 'unsettledFees'; label: string }) {
+  const usd = cardUsd(card, state, which)
+  const amounts = (
+    <>
+      <Amount amount={card[which][0]} />
+      <Amount amount={card[which][1]} />
+    </>
+  )
+  return (
+    <span className="dm-own-cell" data-cell={which === 'principal' ? 'principal' : 'fees'}>
+      <span className="dm-own-label">{label}</span>
+      {usd ? (
+        <>
+          <span className={cx('dm-own-fig dm-arrive', which === 'unsettledFees' && positive(usd.units) && 'dm-fees-in')}>
+            {formatUsd(unitsText(usd.units))}
+          </span>
+          <span className="dm-own-split">{amounts}</span>
+        </>
+      ) : (
+        <span className="dm-own-amounts">{amounts}</span>
+      )}
     </span>
   )
 }
 
-/** Two stacked amounts under a column's name, which a screen reader hears and a phone shows. */
-function Amounts({ label, children, title, cell }: { label: string; children: ReactNode; title?: string; cell?: 'principal' | 'fees' }) {
+/** Your APR (listApr.ts): the page's own figure, a calm bubble while it is measured, a dash when the list has none. */
+function Apr({ apr }: { apr: RowApr | null }) {
+  let figure: ReactNode = <span className="dm-own-dash">—</span>
+  let title: string | undefined = 'Shown on the position’s page'
+  if (apr?.kind === 'rate') {
+    title = apr.estimated ? 'An estimate for now: the position’s page reads it in full' : 'Since the position opened'
+    figure = (
+      <>
+        <span className="dm-own-fig">{apr.text}</span>
+        {apr.estimated && <span className="dm-own-est">est.</span>}
+      </>
+    )
+  } else if (apr?.kind === 'missing') title = apr.words
+  else if (apr?.kind === 'waiting') {
+    title = undefined
+    figure = <Skeleton className="dm-own-skel-apr" />
+  }
   return (
-    <span className="dm-acct-nft-cell" title={title} data-cell={cell}>
-      <span className="dm-acct-nft-label">{label}</span>
-      <span className="dm-acct-nft-amounts">{children}</span>
+    <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : (apr?.kind ?? 'none')} title={title}>
+      <span className="dm-own-label">Your APR</span>
+      <span className="dm-own-aprs">{figure}</span>
     </span>
   )
 }
 
 /**
- * One of the wallet's positions as a row of Your positions: the pair with its
- * fee and NFT id, where its range sits against the pool's price and whether
- * the price is inside it, its principal and its unclaimed fees. The whole row
- * is the link to the position's own page. Every figure is from the wallet's
- * one chain read (POST /api/owned/v2/positions), whose block is the row's
- * title and data attribute; for a pair with USDG, `state` (the same read)
- * adds each column's USD, after the amounts in the DOM and drawn first.
+ * One of the wallet's positions as a row of Your positions. Every figure is from the wallet's one chain read, whose
+ * block is the row's data attribute (no tooltip: a block number is no beginner's word, and the figures' own hover
+ * shows their token amounts); `state` (the same read) values a pair with USDG. `automation`: its badge or
+ * Automate, drawn over the row's Automation column as the row's sibling (a link holds no link).
  */
-export function PositionRow({ card, block, state = null, tick }: { card: LiveCard; block: number; state?: PositionState | null; tick: number | null }) {
-  const scale = rangeBarScale(card.range.tickLower, card.range.tickUpper, tick)
+export function PositionRow({ card, block, state = null, apr = null, automation }: { card: LiveCard; block: number; state?: PositionState | null; apr?: RowApr | null; automation?: ReactNode }) {
   const [base, quote] = card.currencies
   return (
-    <a href={positionHref(card.tokenId)} className="dm-rows-item dm-own-row" data-position-row={card.tokenId} data-snapshot={block} title={blockTitle(block)}>
-      <span className="dm-acct-nft-pool">
-        <TokenMarkPair base={base} quote={quote} size={32} ring="var(--card)" />
-        <span className="dm-acct-nft-name">
-          <span className="dm-acct-nft-pair">
-            <PairName card={card} />
-          </span>
-          <Chip className="dm-acct-nft-chip">
-            <span className="dm-acct-nft-chip-text">
-              <span data-fee="">{card.fee}</span> · #<span translate="no">{card.tokenId}</span>
+    <div className="dm-own-item" data-position-item={card.tokenId}>
+      <a href={positionHref(card.tokenId)} className="dm-own-row" data-position-row={card.tokenId} data-snapshot={block}>
+        <span className="dm-own-pool">
+          <TokenMarkPair base={base} quote={quote} size={32} ring="var(--card)" />
+          <span className="dm-own-name">
+            <span className="dm-own-title">
+              <span className="dm-own-pair">
+                <PairName card={card} />
+              </span>
+              <span className="dm-own-fee">
+                <span data-fee="">{card.fee}</span> fee
+              </span>
+              <span className="sr-only">Position #{card.tokenId}</span>
             </span>
-          </Chip>
-        </span>
-      </span>
-
-      <span className="dm-acct-nft-range">
-        <span className="dm-acct-nft-bar">
-          <span aria-hidden="true" className="dm-acct-nft-minibar">
-            <RangeBar lower={scale.lower} upper={scale.upper} current={scale.current} inRange={card.hasLiquidity ? card.inRange : null} />
+            <span className="dm-own-state">
+              <PositionStatus card={card} />
+            </span>
           </span>
-          <PositionStatus card={card} />
         </span>
-      </span>
-
-      <Amounts label={COPY.card.principal} cell="principal">
-        <Amount amount={card.principal[0]} />
-        <Amount amount={card.principal[1]} />
-        <RowUsd card={card} state={state} which="principal" />
-      </Amounts>
-
-      <Amounts label="Fees ready to collect" cell="fees">
-        <Amount amount={card.unsettledFees[0]} />
-        <Amount amount={card.unsettledFees[1]} />
-        <RowUsd card={card} state={state} which="unsettledFees" />
-      </Amounts>
-
-      <Chevron />
-    </a>
+        <span className="dm-own-figs">
+          <Money card={card} state={state} which="principal" label="Value" />
+          <Money card={card} state={state} which="unsettledFees" label="Fees ready to collect" />
+          {card.hasLiquidity && <Apr apr={apr} />}
+        </span>
+        <span className="dm-own-chev">
+          <IconChevronRight size={16} />
+          <span className="sr-only">Details</span>
+        </span>
+      </a>
+      {automation}
+    </div>
   )
 }
 
 /** A row whose figures are on their way: the size of a row, bubbles where its figures will be, nothing to read yet. */
 export function PendingRow({ tokenId }: { tokenId: string }) {
   return (
-    <div className="dm-rows-item dm-own-row dm-own-row--wait" aria-hidden="true" data-position-pending={tokenId}>
-      <span className="dm-acct-nft-pool">
-        <Skeleton className="dm-own-skel-mark" />
-        <span className="dm-own-skel-name">
-          <Skeleton className="dm-own-skel-pair" />
-          <Skeleton className="dm-own-skel-chip" />
+    <div className="dm-own-item dm-own-item--wait" aria-hidden="true" data-position-pending={tokenId}>
+      <div className="dm-own-row">
+        <span className="dm-own-pool">
+          <Skeleton className="dm-own-skel-mark" />
+          <span className="dm-own-skel-name">
+            <Skeleton className="dm-own-skel-pair" />
+            <Skeleton className="dm-own-skel-chip" />
+          </span>
         </span>
-      </span>
-      <span className="dm-acct-nft-range">
-        <Skeleton className="dm-own-skel-bar" />
-      </span>
-      <span className="dm-acct-nft-cell" data-cell="principal">
-        <span className="dm-own-skel-figs">
-          <Skeleton className="dm-own-skel-fig" />
-          <Skeleton className="dm-own-skel-fig dm-own-skel-fig--short" />
+        <span className="dm-own-figs">
+          <span className="dm-own-cell" data-cell="principal">
+            <Skeleton className="dm-own-skel-fig" />
+          </span>
+          <span className="dm-own-cell" data-cell="fees">
+            <Skeleton className="dm-own-skel-fig dm-own-skel-fig--short" />
+          </span>
+          <span className="dm-own-cell" data-cell="apr">
+            <Skeleton className="dm-own-skel-apr" />
+          </span>
         </span>
-      </span>
-      <span className="dm-acct-nft-cell" data-cell="fees">
-        <span className="dm-own-skel-figs">
-          <Skeleton className="dm-own-skel-fig" />
-          <Skeleton className="dm-own-skel-fig dm-own-skel-fig--short" />
-        </span>
-      </span>
-      <span className="dm-acct-nft-chev" />
+        <span className="dm-own-chev" />
+      </div>
     </div>
   )
 }
@@ -141,15 +186,8 @@ export function PendingSummary() {
  */
 export function PendingRows({ loading = false }: { loading?: boolean }) {
   return (
-    <div className="dm-rows dm-acct-nft-rows" aria-hidden="true" data-owned-loading={loading ? '' : undefined}>
-      {/* The column names, as the loaded rows have them (for the eye only): the table keeps its frame while it fills. */}
-      <div className="dm-rows-head dm-acct-nft-band">
-        <span>Pool</span>
-        <span>Range</span>
-        <span>Value</span>
-        <span>Fees ready to collect</span>
-        <span />
-      </div>
+    <div className="dm-own-list" aria-hidden="true" data-owned-loading={loading ? '' : undefined}>
+      <RowsHead />
       <PendingRow tokenId="" />
     </div>
   )

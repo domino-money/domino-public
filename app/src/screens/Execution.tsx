@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import * as runtime from 'api-contracts/execution-v1/runtime.mjs'
 import { createExecutionController, EXECUTION_SETTLED, EXECUTION_STATE_NOTE, EXECUTION_STATE_TEXT, type ExecutionItem } from '../finance/execution'
 import { financialFetch } from '../finance/http'
+import { keep, keepFirst, readKept, sharedStart, useKeptWhileChecking, walletName } from '../finance/privateCards'
 import { livePort } from '../session/livePort'
 import { realClock } from '../lib/clock'
 import { shortAmount } from '../lib/format/amount'
@@ -30,8 +31,19 @@ type TokenDetail =
   | { state: 'failed'; reason: string }
 
 const TOKEN_TRIES = 3
-/** Token details read so far, for the page's life: a token's symbol and decimals never change, so the receipts page and the Positions preview show them at once. */
-const known = new Map<string, TokenDetail>()
+/** How long this browser's copies stay shown: token details never change, and receipts are history (an open one is read again on sight). */
+const KEPT_MS = 30 * 86_400_000
+const ADDRESS = /^0x[0-9a-f]{40}$/
+/** Kept token details, each an address with its symbol and decimals as the read path gave them; null when any is not. */
+const keptTokens = (data: unknown): Array<[string, TokenDetail]> | null => Array.isArray(data) && data.length <= 64
+  && data.every(([address, symbol, decimals]) => ADDRESS.test(address) && (symbol === null || (typeof symbol === 'string' && symbol.length <= 64)) && (decimals === null || (Number.isInteger(decimals) && decimals >= 0 && decimals <= 255)))
+  ? data.map(([address, symbol, decimals]) => [address, { state: 'read', symbol, decimals }]) : null
+/**
+ * Token details read so far: a token's symbol and decimals never change, so
+ * the receipts page and the Positions preview show them at once, and this
+ * browser keeps them (public data) for the next visit (finance/privateCards.ts).
+ */
+const known = new Map<string, TokenDetail>(readKept('tokens', KEPT_MS, keptTokens))
 
 /**
  * Token details for the currencies the shown receipts name: one address at a
@@ -62,6 +74,7 @@ function useTokenDetails(addresses: readonly string[]): ReadonlyMap<string, Toke
       if (outcome.state === 'ok') {
         const asset = outcome.data.asset
         known.set(next, detail = { state: 'read', symbol: asset.symbol, decimals: asset.displayUnitsAvailable ? asset.decimals : null })
+        keep('tokens', [...known].flatMap(([address, kept]) => kept.state === 'read' ? [[address, kept.symbol, kept.decimals]] : []).slice(-64))
       } else {
         const reason = outcome.state === 'unavailable' ? (outcome.cause.kind === 'producer' ? outcome.cause.code : outcome.cause.kind) : outcome.state === 'local' ? outcome.code : outcome.state
         const transient = outcome.state === 'busy' || outcome.state === 'local' || (outcome.state === 'unavailable' && outcome.retryable)
@@ -148,8 +161,8 @@ function Summary({ state, what, children }: { state: ExecutionItem['state']; wha
   </summary>
 }
 
-// "re-\u2060add": a word joiner after the hyphen keeps "re-adds" on one line (2026-09-27, round 5 review: it broke at the
-// hyphen on desktop and phone). Geist has no non-breaking hyphen, so U+2011 would be drawn in a fallback font.
+// Changed on purpose (the owner, 2026-09-27, round 6): one plain phrase everywhere, the position page's "Fees added back"
+// (it was "Fees re-added" here and "Re-added" on Managed positions).
 function ReceiptRow({ item, refreshFailed, tokens }: { item: ExecutionItem; refreshFailed: string | undefined; tokens: ReadonlyMap<string, TokenDetail> }) {
   const receipt = item.receipt
   const title = [item.reason ? words(item.reason) : null, refreshFailed ? `Last refresh failed: ${words(refreshFailed)}` : null].filter(Boolean).join('. ')
@@ -157,7 +170,7 @@ function ReceiptRow({ item, refreshFailed, tokens }: { item: ExecutionItem; refr
   return <li title={title || undefined} data-execution-intent={item.intentId} data-execution-state={item.state}
     data-execution-reason={item.reason || undefined} data-execution-can-cancel={item.canCancel ? 'true' : 'false'} data-execution-refresh-reason={refreshFailed}>
     <details className="dm-rcpt-row">
-      <Summary state={item.state} what={item.state === 'reconciled' ? 'Fees re-\u2060added' : item.state === 'reverted' ? 'Fees not re-\u2060added' : 'Re-\u2060adding fees'}>
+      <Summary state={item.state} what={item.state === 'reconciled' ? 'Fees added back' : item.state === 'reverted' ? 'Fees not added back' : 'Adding fees back'}>
         {receipt && <span className="dm-rcpt-amount tnum" data-receipt-added=""><Amounts pairs={sums(receipt, ['liquidityAddedRaw'])} tokens={tokens} /></span>}
       </Summary>
       <div className="dm-rcpt-detail">
@@ -210,6 +223,18 @@ function rowsOf(items: readonly ExecutionItem[]): ExecutionItem[][] {
   return [...rest.map(item => [item]), ...(cancelled.length ? [cancelled] : [])]
 }
 
+/** Receipts this browser keeps per wallet, the first rows first. */
+const KEEP = 60
+/**
+ * The receipts this browser kept for `owner` (on Robinhood Chain), each one
+ * checked as the contract's own status answer; null when there are none, or
+ * any is not one.
+ */
+function keptReceipts(owner: string): ExecutionItem[] | null {
+  return readKept(walletName('receipts', owner), KEPT_MS, data => Array.isArray(data) && data.length <= KEEP && new Set(data.map(item => item?.intentId)).size === data.length
+    && data.every(item => runtime.validateResponse('status', { contractVersion: runtime.CONTRACT_VERSION, chainId: 4663, owner, item, executionAvailable: false })) ? data as ExecutionItem[] : null)
+}
+
 /**
  * One controller for the Positions tab's preview and the receipts page, so See
  * all and the way back show what was already read and share execution-v1's one
@@ -218,42 +243,51 @@ function rowsOf(items: readonly ExecutionItem[]): ExecutionItem[][] {
  * starts it; it stops once no view has shown it for a moment, since a route
  * change unmounts one view just before it mounts the next.
  */
-const controller = createExecutionController({ session: livePort, fetch: financialFetch, runtime, clock: realClock, visible: () => !document.hidden })
-// Told of every change of the tab's visibility; stopped, it reads nothing (and its start clears what it held).
-document.addEventListener('visibilitychange', () => controller.visibilityChanged())
-let views = 0, stop: (() => void) | undefined, parting: ReturnType<typeof setTimeout> | undefined
-function watch() {
-  clearTimeout(parting); views++
-  stop ??= controller.start()
-  return () => { if (!--views) parting = setTimeout(() => { stop?.(); stop = undefined }) }
-}
+const controller = createExecutionController({ session: livePort, fetch: financialFetch, runtime, clock: realClock, visible: () => !document.hidden,
+  cache: { load: keptReceipts, save: (owner, items) => keepFirst(walletName('receipts', owner), rowsOf(items).flat().slice(0, KEEP)) } })
+// Hidden or stopped, it reads nothing and keeps what it shows.
+const watch = sharedStart(controller)
+
+/** Rows the receipts page shows at first, and adds on each Show more. */
+const PAGE_ROWS = 10
 
 /**
- * Receipts read themselves: signed in and visible, the first page arrives
- * with no control to press, and each receipt that can still change is
- * refreshed where it stands. While the service is off, busy or failing, the
- * card stays a neutral empty line; why is in its title and data attributes.
- * One short row per receipt, its detail one click away. `limit`: Positions'
- * short preview, at most that many rows (its card links the full page); the
- * full page shows every row read and reads the next page on Show more.
+ * Receipts read themselves: signed in and visible, what this browser kept
+ * shows at once and the list arrives with no control to press, merged into
+ * the rows; each receipt that can still change is refreshed where it stands.
+ * Nothing shown blanks for a refresh (the owner, 2026-09-27, round 6), and a
+ * row opened, or rows shown with Show more, stay so. While the wallet's
+ * session is checked, its kept receipts show. With nothing kept and the
+ * service off, busy or failing, the card is a neutral empty line; why is in
+ * its title and data attributes. One short row per receipt, its detail one
+ * click away. `limit`: Positions' short preview, at most that many rows (its
+ * card links the full page); the full page shows ten rows, and ten more on
+ * each Show more, reading on past the receipts read when it runs out.
  */
 export default function Execution({ limit }: { limit?: number }) {
   const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
   useEffect(watch, [])
-  const rows = rowsOf(view.items).slice(0, limit)
+  const early = useKeptWhileChecking(view.state === 'checking', keptReceipts)
+  const items = view.state === 'checking' ? early ?? [] : view.items
+  const [shown, setShown] = useState(PAGE_ROWS)
+  const all = rowsOf(items)
+  const rows = all.slice(0, limit ?? shown)
+  const hidden = all.length > rows.length
   const tokens = useTokenDetails(rows.flatMap(row => row[0].receipt?.sources.map(source => source.currency) ?? []))
-  return <section className="dm-acct-exec" aria-label="Execution receipts" aria-busy={view.busy || undefined} data-execution={view.state} data-execution-reason={view.reason ?? undefined}
+  return <section className="dm-acct-exec" aria-label="Execution receipts" aria-busy={view.busy || view.reading || undefined} data-execution={view.state} data-execution-reason={view.reason ?? undefined}
     data-execution-rows={rows.length}>
     <h2 className="sr-only">Execution receipts</h2>
     {/* One plain line; the rule for uncertain transactions is its title, and each receipt's chip says where it stands. */}
     <p className="dm-acct-desc" title="An uncertain or reorganized transaction is never shown as completed.">What automation did for your positions.</p>
+    {/* While the session is checked with nothing kept, the plate says nothing yet: the check is a moment, and its outcome decides the line. */}
     {view.state === 'signed_out' ? <p className="dm-acct-quiet">Sign in with your wallet to see your receipts.</p>
-      : view.items.length === 0 ? <p className="dm-acct-quiet" title={view.reason ? `Receipts could not be read: ${words(view.reason)}` : undefined}>{view.state === 'ready' ? 'Nothing yet. Each time automation re-\u2060adds your fees, its receipt shows here.' : 'Receipts for this wallet appear here.'}</p>
+      : items.length === 0 ? <p className="dm-acct-quiet" title={view.reason ? `Receipts could not be read: ${words(view.reason)}` : undefined}>{view.state === 'ready' ? 'Nothing yet. Each time automation adds your fees back, its receipt shows here.' : view.state !== 'checking' && 'Receipts for this wallet appear here.'}</p>
       : <>
         <ol className="dm-rcpt-list">{rows.map(row => row[0].state === 'cancelled'
           ? <CancelledRow key="cancelled" items={row} />
           : <ReceiptRow key={row[0].intentId} item={row[0]} refreshFailed={view.refreshFailed[row[0].intentId]} tokens={tokens} />)}</ol>
-        {limit === undefined && view.more && <Button className="justify-self-center" variant="ghost" size="sm" disabled={view.busy} onClick={() => controller.nextPage()}>{view.busy ? 'Reading receipts…' : 'Show more'}</Button>}
+        {limit === undefined && (hidden || view.more) && <Button className="justify-self-center" variant="ghost" size="sm" disabled={view.busy && !hidden}
+          onClick={() => { setShown(shown + PAGE_ROWS); if (all.length <= shown + PAGE_ROWS) controller.nextPage() }}>{view.busy && !hidden ? 'Loading more…' : 'Show more'}</Button>}
       </>}
   </section>
 }

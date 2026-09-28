@@ -101,16 +101,55 @@
  *     after review: the first cut also waited for a pool whose collection had
  *     failed (three minutes of placeholder) and for one the provider never
  *     covered (twenty seconds on every visit).
+ *
+ * Added 2026-09-27 (r6/marketsdata), from the owner's Home on production,
+ * where the figures sometimes took very long and USDG/U sat on loading bars.
+ * Measured with production's latency in the harness
+ * (tests/support/markets-latency.mjs), the first figures waited for the
+ * featured list's answer, then the capabilities, then the overview, one
+ * after the other (1.7 s typical, 2.9 s when the list is slow), every visit
+ * started from nothing, and a first load that failed was never asked again:
+ *
+ *   - with this browser's copy of the last overview (marketsPaint.ts), the
+ *     first load does not wait for the list: it reads the pools the copy
+ *     names beside the list's first read and follows the list once it
+ *     answers: a list with other pools starts the load over for them at
+ *     once, and a row read before the list answered that does not bind to
+ *     its entry leaves the list. Without a copy it waits for the list, as
+ *     before, with the capabilities asked meanwhile (reading the embedded
+ *     list's pools first cost a read, and a flash of other pools, whenever
+ *     the list names others, as the served list will);
+ *   - this browser's copy of the last overview paints the rows before the
+ *     first answer, each figure as old as it is, marked as coming
+ *     (`figuresPending`) where it has none, and the answer replaces them;
+ *   - a row whose figures are coming shows the ones this page last had for
+ *     its pool, dated and marked stale, rather than a loading bar;
+ *   - a row with none to show shows a placeholder for CATCH_UP_SHOWN_MS at
+ *     the most, then says what it has while the page keeps asking to the end
+ *     of CATCH_UP_WINDOW_MS (a placeholder used to stand for up to 25 s),
+ *     and waits afresh only once it has caught up (an answer that merely
+ *     found it not behind brought the placeholder back at every minute);
+ *   - a stored load that read nothing is asked again after 5 s, then 15 s,
+ *     45 s, and less often up to eight minutes, while the page can be seen (the
+ *     first overview met a gateway down for a moment: no figures until a
+ *     reload, measured).
+ *
+ * Measured after, the same way (median of three): Home's first figures at
+ * 1.6 s on a first visit (1.7 s before; the rest is the list's and the
+ * store's own time), 0.2 s on a later visit (1.6 s before, 2.7 s and 3.5 s
+ * when the list or the store was slow), 7.4 s after a first overview that
+ * failed (never before).
  */
 import type { PoolMarketResponse, SnapshotPoolEntry, VerifiedPool } from 'api-contracts/read-v1/types'
 import type { StoredPool } from 'api-contracts/read-v3/types'
 import type { Market, MarketsResult, Metric } from '../markets'
+import type { PaintedOverview, PaintMemory } from './marketsPaint'
 import { createSnapshotMemo, planSnapshot, SNAPSHOT_MAX_POOLS, type SnapshotMemo } from './marketsSnapshot'
 import { realClock, type Clock } from './pipeline'
 import { TOKEN_METADATA_CACHE_MS } from './publicMetadataCache'
-import { storedPoolRead, storedTokenRead } from './publicOverview'
+import { overviewRows, storedPoolRead, storedTokenRead } from './publicOverview'
 import { projectMarketRow, projectSnapshotRow } from './project'
-import { reroute, type FailedOutcome, type ReadOutcome, type ReadRequests, type ReadSource } from './types'
+import { reroute, type FailedOutcome, type ReadOutcome, type ReadRequests, type ReadSource, type RouteCheck } from './types'
 
 export interface MarketProblem {
   poolId: string
@@ -209,6 +248,12 @@ export const CATCH_UP_BACKOFF = 1.4
  * first four.
  */
 export const CATCH_UP_WINDOW_MS = 25_000
+/**
+ * How long a row whose figures are coming shows a placeholder where they will land, from the answer it began waiting
+ * with: only while the next ask falls within it. Past it the row says what it has, while the page keeps asking to the
+ * end of CATCH_UP_WINDOW_MS. Added 2026-09-27 (r6/marketsdata, the owner: USDG/U sat on loading bars on Home).
+ */
+export const CATCH_UP_SHOWN_MS = 8_000
 
 /**
  * How far off a stored pool's figures are, when they are coming: in MILLISECONDS of server time from the answer
@@ -284,6 +329,18 @@ export function retainAsStale(result: MarketsResult, receivedAtMs: number): Mark
   return { ...result, markets: result.markets.map((row) => retainRowAsStale(row, receivedAtMs)) }
 }
 
+/**
+ * A row whose figures are coming, with the ones `earlier` had where it has none: stale and dated to their own
+ * observation (retainRowAsStale), its APR estimate kept as retained. Added 2026-09-27 (r6/marketsdata): a loading bar
+ * stood where this page already knew the figure.
+ */
+export function keepFigures(row: Market, earlier: Market, receivedAtMs: number): Market {
+  const old = retainRowAsStale(earlier, receivedAtMs)
+  const pick = (now: Metric, then: Metric) => (now.state === 'unavailable' && then.state === 'stale' ? then : now)
+  const estimate = row.feeAprEstimate?.data?.feeAprEstimate24hPercent == null && old.feeAprEstimate?.data ? { feeAprEstimate: old.feeAprEstimate } : {}
+  return { ...row, tvlUsd: pick(row.tvlUsd, old.tvlUsd), volume24hUsd: pick(row.volume24hUsd, old.volume24hUsd), ...estimate }
+}
+
 export interface LoadedMarkets {
   rows: Market[]
   problems: MarketProblem[]
@@ -311,16 +368,22 @@ export interface LoadOptions {
   /** The additive stored bundle, preferred when its namespace advertises it. */
   overview?: boolean
   /**
-   * Whether the row of a stored pool whose figures are coming (`catchUpInMs`, given here) waits for them: the
-   * provider says yes only where it will ask the overview again in time, and such rows say `figuresPending`.
-   * Absent: those rows say what they have, Unavailable.
+   * Whether the provider asks the overview again in time for a stored pool whose figures are coming (`catchUpInMs`,
+   * given here), and whether its row shows a placeholder meanwhile (`'shown'`, the row says `figuresPending`) or what
+   * it has (`'asked'`). False or absent: the row says what it has, Unavailable.
    */
-  catchUp?: (entry: StoredPool, inMs: number) => boolean
+  catchUp?: (entry: StoredPool, inMs: number) => 'shown' | 'asked' | false
+  /** Filled by each overview read: the pools the provider asks again for (catchUp), lowercase. */
+  coming?: Set<string>
+  /** The overview's capabilities check already asked for this load (the first one's, beside the list): used once. */
+  overviewCheck?: Promise<RouteCheck>
   /**
    * Whether a pool's own read matches the list's entry for it (featured pools v1 §11.3): a row whose read does not
    * is left out of the rows, and named in `unbound`. Absent: every read row stands.
    */
   binds?: (poolId: string, pool: VerifiedPool) => boolean
+  /** Every pool a read named, as read, by lowercase id: what a list that answers later is bound again against. */
+  seen?: Map<string, VerifiedPool>
 }
 
 /** A row's own read: the pool's market read, or its entry in the stored snapshot. */
@@ -370,6 +433,8 @@ interface Load extends LoadedMarkets {
   behind?: string[]
   /** Pools whose read did not bind to their entry (LoadOptions.binds), lowercase: they have no row. */
   unbound: string[]
+  /** The stored overview this load read, as it came: what this browser keeps a copy of (marketsPaint.ts). */
+  overview?: PaintedOverview
 }
 
 /** One problem per read: a pool's market read, a pool's pool-metrics read, or a token. */
@@ -401,6 +466,7 @@ async function readMarkets(
   const unbound: string[] = []
   /** Whether a read row may stand: it binds to its entry, or nothing asks. A row that does not is dropped here, before it is ever shown. */
   const bound = (poolId: string, pool: VerifiedPool) => {
+    options.seen?.set(key(poolId), pool)
     if (!options.binds || options.binds(poolId, pool)) return true
     if (!unbound.includes(key(poolId))) unbound.push(key(poolId))
     return false
@@ -484,7 +550,9 @@ async function readMarkets(
   // response. Once advertised, a data failure is its own answer, never an
   // excuse to fan out provider reads. Older deployments keep the V1/V2 path.
   if (!again && options.overview && source.supportsStoredReads && source.routeEnabled && poolIds.length <= 24) {
-    const check = await source.routeEnabled('overview', { signal })
+    const early = options.overviewCheck
+    options.overviewCheck = undefined
+    const check = await (early ?? source.routeEnabled('overview', { signal }))
     if (check.state === 'failed') {
       if (check.outcome.state === 'aborted') return finish(null, true)
       if (stopsTable(check.outcome)) return finish(check.outcome)
@@ -515,12 +583,15 @@ async function readMarkets(
       // in time; the others say what they have.
       const behind: string[] = []
       let soonest: number | null = null
+      options.coming?.clear()
       for (const entry of overview.data.pools) {
         const inMs = catchUpInMs(entry, overview.data.generatedAt)
         if (inMs === null || unbound.includes(key(entry.poolId))) continue
         behind.push(key(entry.poolId))
-        if (!options.catchUp?.(entry, inMs)) continue
-        figuresBehind.add(key(entry.poolId))
+        const wait = options.catchUp?.(entry, inMs)
+        if (!wait) continue
+        options.coming?.add(key(entry.poolId))
+        if (wait === 'shown') figuresBehind.add(key(entry.poolId))
         soonest = soonest === null ? inMs : Math.min(soonest, inMs)
       }
       emit()
@@ -528,7 +599,7 @@ async function readMarkets(
       // The soonest any pending entry will be tried, so one slow row never holds the others.
       const due = waiting.map((entry) => entry.acquisition.nextAttemptAt).filter((at): at is number => typeof at === 'number')
       return {
-        ...finish(null), stored: true,
+        ...finish(null), stored: true, overview,
         acquiring: waiting.length > 0,
         acquisitionRunning: waiting.some((entry) => entry.acquisition.refreshing),
         acquisitionInMs: due.length ? Math.max(0, Math.min(...due) - overview.data.generatedAt) * 1000 : null,
@@ -711,9 +782,14 @@ export interface ReadMarketsOptions {
   /** Successful visible data is revalidated at this interval; zero keeps a
    * diagnostic/fixture provider manually driven. Failures back off to 8x. */
   refreshMs?: number
+  /** This browser's copy of the last overview (marketsPaint.ts): the deployable build's table only. */
+  paint?: PaintMemory
 }
 
-export function createReadMarketsProvider({ source, poolIds: initialIds, pools, kind, notice, now, monotonic, clock = realClock, visibility = documentVisibility, refreshMs = 0 }: ReadMarketsOptions): MarketsProvider {
+/** A stored load that read nothing is asked again this long after, then three times longer each time, up to eight refreshes. */
+export const FAILED_RETRY_MS = 5_000
+
+export function createReadMarketsProvider({ source, poolIds: initialIds, pools, kind, notice, now, monotonic, clock = realClock, visibility = documentVisibility, refreshMs = 0, paint }: ReadMarketsOptions): MarketsProvider {
   /** The pools read now, in row order: `initialIds`, or the list's (`pools`) as it changes. */
   let poolIds: readonly string[] = pools ? pools.ids() : initialIds
   /**
@@ -743,8 +819,21 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
   const listeners = new Set<() => void>()
   // Kept for the provider's life, which is the page's: token metadata that read as available, and
   // when the snapshot last failed. Both in memory only. Optional routes are used where they are listed.
-  const memory: LoadOptions = { tokens: new Map(), snapshot: createSnapshotMemo(steady), metrics: true, overview: true }
+  const memory: LoadOptions = { tokens: new Map(), snapshot: createSnapshotMemo(steady), metrics: true, overview: true, seen: new Map(), coming: new Set() }
   let cancelGrace: (() => void) | null = null
+  // This browser's copy of the last overview (marketsPaint.ts): its rows stand until the first answer, as old as they
+  // are and waiting where they have no figure, and its pools are the first ones asked.
+  const copy = paint?.load() ?? null
+  /** The copy's rows are on screen, and a load keeps them as they are until it settles. */
+  let painting = copy !== null
+  if (copy) {
+    const rows = overviewRows(copy, (poolId, pool) => (memory.seen!.set(key(poolId), pool), !pools || pools.binds(poolId, pool)))
+    for (const row of rows) kept.set(key(row.poolId), { row, receivedAt: copy.provenance.receivedAt })
+    if (pools) poolIds = copy.data.requestedPoolIds
+    state = { phase: 'loading', previous: resultOf(rows.map((row) => ({ ...row, figuresPending: true as const }))), retrying: null }
+  }
+  /** Loads in a row that read nothing, for the wait before the next (FAILED_RETRY_MS). */
+  let emptyLoads = 0
 
   // The quiet re-asks: how many this visit, and when the next is due, on the monotonic clock their timers run on.
   let holders = 0
@@ -778,9 +867,9 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
    * Whether a behind pool's row waits for its figures (LoadOptions.catchUp), asked as its answer arrives: not once
    * a collection published since it began waiting brought none, nor when the ask that would bring them falls past
    * CATCH_UP_WINDOW_MS from the answer it began waiting with, or at the ordinary refresh, nor while no screen holds
-   * the quiet re-asks.
+   * the quiet re-asks. It shows a placeholder only while that ask falls within CATCH_UP_SHOWN_MS.
    */
-  const catchUpWaits = (entry: StoredPool, inMs: number) => {
+  const catchUpWaits = (entry: StoredPool, inMs: number): 'shown' | 'asked' | false => {
     // Only a screen holding the quiet re-asks (the table) has this provider ask again on its own.
     if (holders === 0) return false
     const id = key(entry.poolId)
@@ -792,7 +881,7 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     const interval = catchUpIntervalMs(inMs)
     const over = collected || interval >= activeRefreshMs || at - since + interval > CATCH_UP_WINDOW_MS
     behindSince.set(id, { since, observedAt: seen ? seen.observedAt : entry.observedAt, over })
-    return !over
+    return over ? false : at - since + interval <= CATCH_UP_SHOWN_MS ? 'shown' : 'asked'
   }
 
   const nextRefresh = (failed: boolean, hasData: boolean, acquiring = false, schedule?: { inMs: number | null; running: boolean }, catchUp: number | null = null) => {
@@ -813,8 +902,15 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
 
   const set = (next: MarketsState) => {
     state = next
+    if (next.phase !== 'loading') painting = false
     for (const listener of listeners) listener()
     if (next.phase !== 'loading') plan()
+  }
+
+  /** A row whose figures are coming, with the ones this page last had for its pool where it has none (keepFigures). */
+  const withKept = (row: Market) => {
+    const good = (row.figuresPending || memory.coming!.has(key(row.poolId))) && kept.get(key(row.poolId))
+    return good ? keepFigures(row, good.row, good.receivedAt) : row
   }
 
   /** Every pool's kept row, stale and dated, in table order; null when none was ever read. */
@@ -838,7 +934,7 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
   function rowsWhileLoading(): MarketsResult | null {
     if (state.phase === 'ready') return state.result
     if (state.phase === 'failed') return state.retained?.result ?? null
-    if (controller) return state.previous
+    if (controller || painting) return state.previous
     return retained()?.result ?? null
   }
 
@@ -865,20 +961,30 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     if (!inPlace) set({ phase: 'loading', previous, retrying })
     // Rows whose figures are coming wait for them only where this provider asks again on its own.
     memory.catchUp = refreshMs > 0 ? catchUpWaits : undefined
+    // A check asked for a load that never read (cancelled while it waited for the list) is never another load's.
+    memory.overviewCheck = undefined
     if (pools) {
-      // The list first (featured pools v1 §11.1): its first answer, or a refresh's, then the markets of its pools.
+      // The list (featured pools v1 §11.1): its answer, then the markets of its pools. With this browser's copy of the
+      // last overview, the page's first load does not wait: it reads the pools the copy names (the list this browser
+      // last saw) beside the list's first read, and follows the list once it answers (followList). Without one it waits
+      // for the list, never reading pools the list may not name, with the capabilities asked meanwhile.
       const first = listedAt === null
+      const beside = first && copy !== null
       if (!quiet && (first || clock.monotonic() - (listedAt ?? 0) >= listEveryMs)) {
         listedAt = clock.monotonic()
-        updating = true
-        try {
-          await pools.update(first, mine.signal)
-        } finally {
-          updating = false
+        const update = pools.update(first, mine.signal)
+        if (!beside) {
+          if (first && memory.overview && source.supportsStoredReads && source.routeEnabled) memory.overviewCheck = source.routeEnabled('overview', { signal: mine.signal })
+          updating = true
+          try {
+            await update
+          } finally {
+            updating = false
+          }
+          if (mine.signal.aborted || controller !== mine) return
         }
-        if (mine.signal.aborted || controller !== mine) return
       }
-      poolIds = pools.ids()
+      if (!beside) poolIds = pools.ids()
       memory.binds = (poolId, pool) => pools.binds(poolId, pool)
     }
     const loaded = await readMarkets(
@@ -889,7 +995,8 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
         if (mine.signal.aborted || controller !== mine) return
         const updated = new Map(rows.map((row) => [key(row.poolId), row]))
         const markets = poolIds.flatMap((poolId) => {
-          const row = updated.get(key(poolId)) ?? previous?.markets.find((m) => key(m.poolId) === key(poolId))
+          const read = updated.get(key(poolId))
+          const row = read ? withKept(read) : previous?.markets.find((m) => key(m.poolId) === key(poolId))
           return row ? [row] : []
         })
         set(inPlace ? { phase: 'ready', result: resultOf(markets), problems: problemsBefore } : { phase: 'loading', retrying, previous: resultOf(markets) })
@@ -911,26 +1018,41 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     }
     ledger = loaded.ledger
     const at = wall()
-    for (const row of loaded.rows) {
+    const rows = loaded.rows.map(withKept)
+    for (const row of rows) {
       const id = key(row.poolId)
       kept.set(id, { row, receivedAt: loaded.read.has(id) ? at : (kept.get(id)?.receivedAt ?? at) })
     }
-    const failure = loaded.rows.length === 0 && loaded.problems.length > 0 ? loaded.problems[0].outcome : null
+    const failure = rows.length === 0 && loaded.problems.length > 0 ? loaded.problems[0].outcome : null
     if (failure) {
-      if (!quiet) nextRefresh(true, kept.size > 0)
+      // Nothing read from the stored overview (one read for every row): asked again soon, then less and less often
+      // (FAILED_RETRY_MS), while the page can be seen. A lean load is a read per pool on the provider's lane, and its
+      // failures keep their rule: a reload asks again.
+      if (!quiet && failure.route === 'overview') refreshDueAt = refreshMs > 0 ? clock.monotonic() + Math.min(FAILED_RETRY_MS * 3 ** emptyLoads++, refreshMs * 8) : null
+      else if (!quiet) nextRefresh(true, kept.size > 0)
       set({ phase: 'failed', failure, retained: retained() })
       settledLoad(loaded.unbound)
       return
     }
+    emptyLoads = 0
+    if (!quiet && loaded.overview) paint?.save(loaded.overview)
     // A pool with no row from these reads keeps its last good one, stale and dated, in its place.
     const markets = poolIds.flatMap((poolId) => {
-      const row = loaded.rows.find((m) => key(m.poolId) === key(poolId))
+      const row = rows.find((m) => key(m.poolId) === key(poolId))
       if (row) return [row]
       const good = kept.get(key(poolId))
       return good ? [retainRowAsStale(good.row, good.receivedAt)] : []
     })
-    // A pool no longer behind waits afresh the next time it is; a catch-up is asked while rows wait.
-    if (loaded.behind) for (const id of behindSince.keys()) if (!loaded.behind.includes(id)) behindSince.delete(id)
+    // A pool waits afresh the next time it is behind only once it has caught up (its own figures came back); a
+    // catch-up is asked while rows wait. Changed 2026-09-27 (r6/marketsdata): a pool merely not behind in one answer
+    // (its next collection a little further off) used to wait afresh at every minute, a placeholder coming back each time.
+    if (loaded.behind) {
+      for (const id of behindSince.keys()) {
+        const row = rows.find((m) => key(m.poolId) === id)
+        const caughtUp = row !== undefined && !loaded.behind.includes(id) && (row.tvlUsd.state !== 'unavailable' || row.volume24hUsd.state !== 'unavailable')
+        if (caughtUp) behindSince.delete(id)
+      }
+    }
     const catchUp = !quiet && loaded.catchUpInMs != null ? catchUpIntervalMs(loaded.catchUpInMs) : null
     if (!quiet) catchUpAsks = catchUp === null ? 0 : catchUpAsks + 1
     if (!quiet) nextRefresh(loaded.problems.length > 0, markets.length > 0, loaded.acquiring, { inMs: loaded.acquisitionInMs ?? null, running: loaded.acquisitionRunning === true }, catchUp)
@@ -946,9 +1068,19 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     void run(undefined, state.phase === 'ready')
   }
 
-  /** The list changed between loads: pools that left it leave the rows now; a list with new pools is read. */
+  /**
+   * The list changed: pools that left it leave the rows now; a list with new pools is read, at once when the first
+   * load is still out for other pools. A pool read before the list answered that the list now names as another pool
+   * leaves the list.
+   */
   function followList() {
     if (!pools || updating) return
+    const stray = [...memory.seen!].flatMap(([id, pool]) => (pools.binds(id, pool) ? [] : [id]))
+    if (stray.length > 0) {
+      // Let go before the list is told: its change calls this again.
+      for (const id of stray) memory.seen!.delete(id)
+      pools.unbind(stray)
+    }
     const next = pools.ids()
     if (next.map(key).join() === poolIds.map(key).join()) return
     const was = new Set(poolIds.map(key))
@@ -956,7 +1088,8 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     poolIds = next
     if (controller) {
       // A load running for the old pools maps its rows through `poolIds` as they land; new pools need a load of their own.
-      if (!removals) reloadAfter = true
+      if (!removals && running?.kind === 'load') void run()
+      else if (!removals) reloadAfter = true
       return
     }
     if (!started) return

@@ -326,10 +326,16 @@ test('the thumb settles on a mark only when it is let go beside one', () => {
   assert.equal(v(300), null);
 });
 
-test('the amount step chooses slippage by a preset, by dragging or by an exact percent, not in a disclosure, and the choice is shown again in Review', () => {
+// Changed on purpose (round 6, 2026-09-27, the owner: the technical parts of New position go in a collapsed Advanced):
+// the slider, its presets and its exact box are under the amount step's Advanced, closed, with the tolerance in its
+// summary (it opens by itself only when the tolerance is already above 1%); Review says the tolerance under its closed
+// Details, and the done Amount row says the amounts instead.
+test('the amount step chooses slippage by a preset, by dragging or by an exact percent, under a closed Advanced, and the choice is shown again in Review', () => {
   const stage = readFileSync(new URL('../src/components/create/StageAmount.tsx', import.meta.url), 'utf8');
   const slider = readFileSync(new URL('../src/components/create/SlippageSlider.tsx', import.meta.url), 'utf8');
-  assert.doesNotMatch(stage, /<details|dm-flow-disclosure/, 'the slider is on the step, not behind a disclosure');
+  assert.match(stage, /<details className="dm-details dm-flow-advanced" data-flow-advanced="" open=\{opened \|\| undefined\}>/, 'the slider is behind Advanced');
+  assert.match(stage, /const \[opened\] = useState\(\(\) => slippageWarns\(value\)\)/, 'open by itself only above 1%, read once');
+  assert.match(stage, /\{CREATE\.amount\.slippageLabel\} \{slippageWritten\(value\)\}/, 'the summary says the tolerance');
   assert.match(stage, /<SlippageSlider/);
   assert.match(slider, /type="range"/, 'a real range input: the keyboard, touch and assistive technology all work');
   assert.match(slider, /aria-valuetext/, 'the position says nothing out loud, so the percentage does');
@@ -338,10 +344,16 @@ test('the amount step chooses slippage by a preset, by dragging or by an exact p
   const presets = readFileSync(new URL('../src/components/create/SlippagePresets.tsx', import.meta.url), 'utf8');
   assert.match(presets, /aria-pressed=\{preset === value\}/, 'toggle buttons: a value between the presets leaves none pressed');
   const review = readFileSync(new URL('../src/components/create/StageReview.tsx', import.meta.url), 'utf8');
-  assert.match(review, /data-review-slippage=/, 'Review shows the tolerance before Setup asks the wallet for anything');
-  assert.match(review, /data-review-slippage-warning/, 'and says what more than 1% allows');
+  assert.match(review, /<details className="dm-details dm-flow-advanced" data-review-details="">[\s\S]*data-review-slippage=/, 'Review shows the tolerance under its Details before the wallet is asked for anything');
+  assert.match(review, /data-review-slippage-warning/, 'and says, in view, what more than 1% allows');
+  // Changed on purpose (2026-09-28, round 6 review): with the tolerance inside Review's closed Details, Review's warning
+  // names what the figure is and where it is changed; the amount step keeps its own wording beside its slider.
+  assert.match(review, /CREATE\.review\.slippageWarning\(slippageWritten\(slippage\.bps\)\)/);
+  assert.doesNotMatch(review, /CREATE\.amount\.slippageWarning/);
+  assert.equal(CREATE.review.slippageWarning('3%'),
+    'You let prices move up to 3% (Amount › Advanced), more than the usual 1%. The deposit can take up to 3% more of each token, and a swap can return 3% less.');
   const rail = readFileSync(new URL('../src/components/create/StepList.tsx', import.meta.url), 'utf8');
-  assert.match(rail, /summary\.slippage\(/, 'the done Amount row says the tolerance');
+  assert.doesNotMatch(rail, /summary\.slippage\(/, 'the done Amount row says the amounts, not the tolerance');
   assert.equal(CREATE.review.slippage('0.5%'), 'Slippage tolerance 0.5%');
   assert.equal(CREATE.review.summary.slippage('0.5%'), 'slippage 0.5%');
   // Setup's draft and its balancing swap take the choice through the same control, and every path applies the one bound: no 9999 and no 1000 left.
@@ -357,9 +369,9 @@ test('the amount step chooses slippage by a preset, by dragging or by an exact p
   for (const [name, text] of [['Setup.tsx', setup], ['AdvancedSetup.tsx', advanced], ['finance/setup.ts', finance], ['onboarding/inputs.ts', readFileSync(new URL('../src/onboarding/inputs.ts', import.meta.url), 'utf8')], ['onboarding/swap.ts', readFileSync(new URL('../src/onboarding/swap.ts', import.meta.url), 'utf8')]]) {
     assert.doesNotMatch(text, /9999|slippageBps > 1000|\b1000 basis/, `${name} applies the product’s bound, not the provider’s`);
   }
-  assert.match(CREATE.amount.slippageWarning('2%'), /^2% is more than the usual 1%\. The deposit may take up to 2% more of each token/);
-  // The strings the disclosure and the basis-point field used are gone with them.
-  assert.equal(CREATE.amount.advanced, undefined);
+  assert.match(CREATE.amount.slippageWarning('2%'), /^2% is more than the usual 1%\. The deposit can take up to 2% more of each token/);
+  assert.equal(CREATE.amount.advanced, 'Advanced');
+  // The basis-point field's string is gone with it.
   assert.equal(CREATE.amount.slippageValue, undefined);
   assert.equal(CREATE.amount.slippageLabel, 'Slippage tolerance');
   assert.match(CREATE.amount.slippageExactInvalid, /^Enter a percentage from 0.1 to 5/);
@@ -543,7 +555,8 @@ test('Review ends on Create position, made in place: no hand-off to Setup, and t
   // the journey, anew once a position was created), and a done step still reopens: the steps are locked only while
   // Create position is asking the wallet.
   const newPosition = readFileSync(new URL('../src/screens/NewPosition.tsx', import.meta.url), 'utf8');
-  assert.equal([...newPosition.matchAll(/<Journey key=\{flow\} poolId=\{poolId\} \/>/g)].length, 2, 'both ways the page draws the journey are keyed');
+  // Changed on purpose (round 6, 2026-09-27): the journey also takes the token a pool page's link names (#/new/<id>/<token>).
+  assert.equal([...newPosition.matchAll(/<Journey key=\{flow\} poolId=\{poolId\} linkToken=\{linkToken\} \/>/g)].length, 2, 'both ways the page draws the journey are keyed');
   const journeyCode = readFileSync(new URL('../src/components/create/Journey.tsx', import.meta.url), 'utf8');
   assert.match(journeyCode, /<StepList steps=\{steps\} onOpen=\{reopen\} locked=\{creating\} \/>/);
   assert.match(journeyCode, /if \(creating \|\| !canOpen\(target, state, now\)\) return/);
@@ -575,8 +588,10 @@ test('the Review says the fee once, and keeps only Your choices and Wallet steps
   // Two sections, in this order: the choices, then the wallet steps.
   assert.deepEqual([...review.matchAll(/aria-labelledby="(create-[a-z]+-heading)"/g)].map((match) => match[1]), ['create-choices-heading', 'create-steps-heading']);
   assert.match(review, /\{CREATE\.review\.choices\}[\s\S]*\{CREATE\.review\.steps\}/);
-  assert.equal(CREATE.review.choices, 'Your choices');
-  assert.equal(CREATE.review.steps, 'Wallet steps');
+  // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): the two sections are
+  // named for a beginner: the position, then what the wallet asks.
+  assert.equal(CREATE.review.choices, 'Your position');
+  assert.equal(CREATE.review.steps, 'In your wallet');
 });
 
 test('Review’s wallet steps are the live ones once Create position runs: each marked by its key and state, and a done step is drawn green with a check', () => {
@@ -623,7 +638,8 @@ test('the automated-signing gate stays off: Domino signs nothing on its own, and
   const gate = journey.createGate();
   assert.equal(gate.enabled, false);
   assert.equal(gate.reason, CREATE.review.final);
-  assert.equal(gate.reason, 'Press Create position: your wallet asks you to sign each step.');
+  // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): one plain sentence.
+  assert.equal(gate.reason, 'Press Create position, then confirm each step in your wallet.');
   assert.equal(gate.detail, CREATE.review.stepsNote);
 });
 
@@ -646,21 +662,21 @@ test('the successor geometry follows the agreed rule on the pool’s spacing, or
 
 test('the wallet steps are the ones Create position asks for, in order: an exact approval per ERC-20, the deposit, the position; native ETH needs no approval; nothing about automation', () => {
   const erc20 = journey.walletSteps(ready());
-  assert.deepEqual(erc20.map((step) => step.title), ['Approve the exact amount', 'Approve the exact amount', 'Deposit the tokens', 'Create the position']);
+  // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools): short titles; a step about one
+  // token is drawn with its symbol after the title ("Approve USDG"), and each detail is one short line.
+  assert.deepEqual(erc20.map((step) => step.title), ['Approve', 'Approve', 'Deposit both tokens', 'Create the position']);
   // One approval per ERC-20, in pool order, whichever token was typed; the deposit and the mint name no token.
   assert.deepEqual(erc20.map((step) => step.token?.address), [addr('1'), addr('2'), undefined, undefined]);
   assert.deepEqual(journey.walletSteps(journey.withToken(ready(), TWO)).map((step) => step.token?.address), [addr('1'), addr('2'), undefined, undefined]);
-  assert.match(erc20[0].detail, /never unlimited/);
-  assert.match(erc20[0].detail, /only when this token’s allowance is short/);
-  assert.match(erc20[2].detail, /setup contract/);
-  assert.match(erc20[3].detail, /minted to your wallet/);
+  assert.match(erc20[0].detail, /exact amount, never more/);
+  assert.match(erc20[2].detail, /Domino’s contract\. You can get them back until the position is created\./);
+  assert.match(erc20[3].detail, /arrives in your wallet/);
   // Native ETH needs no approval: it travels with the deposit.
   const ethPool = pool({ currencies: [token(ZERO, 18, 'ETH'), token(addr('2'), 6, 'USDG')] });
   for (const typed of [candidate(ZERO, 18), TWO]) {
     const steps = journey.walletSteps(journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), typed));
-    assert.deepEqual(steps.map((step) => step.title), ['Approve the exact amount', 'Deposit the tokens', 'Create the position']);
+    assert.deepEqual(steps.map((step) => step.title), ['Approve', 'Deposit both tokens', 'Create the position']);
     assert.equal(steps[0].token.address, addr('2'));
-    assert.match(steps[1].detail, /Native ETH travels with it/);
   }
   for (const mode of ['compound', 'domino']) assert.deepEqual(journey.walletSteps(journey.withAutomation(ready(), mode)), erc20, mode);
   for (const step of erc20) assert.doesNotMatch(`${step.title} ${step.detail}`, /sequence|compound|automation|service fee|Permit2|Setup opens/i, step.title);
@@ -676,22 +692,21 @@ test('with one of the two tokens in the wallet, the steps approve and deposit th
     const steps = journey.walletSteps(ready(), from);
     const held = [addr('1'), addr('2')][from];
     assert.deepEqual(steps.map((step) => step.key), [`approve:${held}`, 'fund', 'swap', 'mint'], `from token ${from}`);
-    assert.deepEqual(steps.map((step) => step.title), ['Approve the exact amount', 'Deposit the token', 'Swap for the other token', 'Create the position']);
+    // Changed on purpose (round 6, 2026-09-27, the owner: New position for people who know nothing about pools):
+    assert.deepEqual(steps.map((step) => step.title), ['Approve', 'Deposit', 'Swap part of your deposit', 'Create the position']);
     assert.deepEqual(steps.map((step) => step.token?.address), [held, held, undefined, undefined], 'the approval and the deposit name the token deposited');
-    assert.match(steps[1].detail, /The token stays yours until the mint, and can be refunded\./);
-    // An ERC-20 deposited alone sends no ETH, so the step does not say it does.
+    assert.match(steps[1].detail, /You can get it back until the position is created\./);
     assert.doesNotMatch(steps[1].detail, /Native ETH/);
-    assert.match(steps[2].detail, /One swap inside this pool, of part of your deposit/);
-    assert.match(steps[2].detail, /Domino’s assisted-swap fee \(0\.65%\)/, 'the fee as written by default');
+    assert.match(steps[2].detail, /Swaps part of it for the other token in this pool/);
+    assert.match(steps[2].detail, /Fee: 0\.65% of the swapped part/, 'the fee as written by default');
   }
   // The fee named is the one handed in: the deployment's own, as Review writes it.
-  assert.match(journey.walletSteps(ready(), 0, '0.3%')[2].detail, /assisted-swap fee \(0\.3%\)/);
+  assert.match(journey.walletSteps(ready(), 0, '0.3%')[2].detail, /Fee: 0\.3% of the swapped part/);
   // Native ETH: no approval, whichever side is swapped from; an ERC-20 deposited alone is still approved exactly.
   const ethPool = pool({ currencies: [token(ZERO, 18, 'ETH'), token(addr('2'), 6, 'USDG')] });
   const eth = journey.withBudget(journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), TWO), '1');
   assert.deepEqual(journey.walletSteps(eth, 0).map((step) => step.key), ['fund', 'swap', 'mint'], 'ETH alone travels with the deposit');
   assert.equal(journey.walletSteps(eth, 0)[0].token.address, ZERO);
-  assert.match(journey.walletSteps(eth, 0)[0].detail, /Native ETH travels with it/);
   assert.deepEqual(journey.walletSteps(eth, 1).map((step) => step.key), [`approve:${addr('2')}`, 'fund', 'swap', 'mint']);
   // No token held: the steps as for both tokens; a pool that does not hold the token: none.
   assert.deepEqual(journey.walletSteps(ready(), null), journey.walletSteps(ready()));
@@ -733,16 +748,17 @@ test('the summary says — for what is not chosen and serialises every decision,
   // The request is sent for the deposit amounts in wallet builds, never printed: no JSON dump in the summary (G8).
   assert.ok(!text.some((line) => line.startsWith('Request:') || line.includes('"chainId"')), 'no request JSON in the summary');
   assert.ok(!text.some((line) => line.startsWith('Deposit amounts')), 'no deposit amounts block: Review is the choices and the wallet steps');
-  assert.ok(text.includes('Wallet step 1: Approve the exact amount'));
-  assert.ok(text.includes('Wallet step 3: Deposit the tokens'));
+  // Changed on purpose (round 6, 2026-09-27): a step about one token names it after its short title.
+  assert.ok(text.includes('Wallet step 1: Approve ONE'));
+  assert.ok(text.includes('Wallet step 3: Deposit both tokens'));
   assert.ok(text.includes('Wallet step 4: Create the position'));
   assert.equal(text.filter((line) => line.startsWith('Wallet step')).length, 4, 'two approvals, the deposit and the position, and no more');
   assert.ok(text.includes('Pool trading fee: 0.30%'));
   assert.ok(!text.some((line) => line.startsWith('Domino service fee')), 'no service fee row: a direct deposit carries none');
-  assert.equal(text.at(-1), 'Create position: Press Create position: your wallet asks you to sign each step.');
+  assert.equal(text.at(-1), 'Create position: Press Create position, then confirm each step in your wallet.');
   // A one-token deposit in ONE: its approval, its deposit, the swap, the position.
   const swapping = journey.serialiseSummary(s, NOW, 0).filter((line) => line.startsWith('Wallet step'));
-  assert.deepEqual(swapping, ['Wallet step 1: Approve the exact amount', 'Wallet step 2: Deposit the token', 'Wallet step 3: Swap for the other token', 'Wallet step 4: Create the position']);
+  assert.deepEqual(swapping, ['Wallet step 1: Approve ONE', 'Wallet step 2: Deposit ONE', 'Wallet step 3: Swap part of your deposit', 'Wallet step 4: Create the position']);
 });
 
 test('a verified pool’s two currencies become candidates, by address, with the read’s decimals and status', () => {
@@ -823,7 +839,8 @@ test('Review warns that a pool reports no liquidity only when its figure is attr
   assert.equal(swapsInEmptyPool(empty, { kind: 'both', amount0: 1n, amount1: 1n }), false, 'both tokens deposited: nothing is swapped');
   assert.equal(swapsInEmptyPool(empty, { ...swap, swap: 0n }), false, 'the range takes only the token held: nothing is swapped');
   assert.equal(swapsInEmptyPool(empty, null), false, 'balances unknown');
-  assert.equal(CREATE.review.emptyPool, 'This pool reports no liquidity, so part of a one-token deposit cannot be swapped in it. Deposit both tokens, or choose another pool.');
+  // Changed on purpose (round 6, 2026-09-27, the owner: plain words): "empty", not "reports no liquidity".
+  assert.equal(CREATE.review.emptyPool, 'This pool is empty, so part of your deposit can’t be swapped in it. Add both tokens, or choose another pool.');
 
   // Review's own reading: 0.5 ONE typed, the wallet holds ONE and no TWO, in a range around the price.
   let s = journey.withToken(journey.initialState(), ONE);
@@ -835,4 +852,110 @@ test('Review warns that a pool reports no liquidity only when its figure is attr
   assert.equal(reviewPlan({ ...s, pool: pool() }, held).noLiquidity, false, 'no figure: nothing is said');
   assert.equal(reviewPlan(s, [String(10n ** 18n), String(10n ** 24n)]).noLiquidity, false, 'both tokens at hand');
   assert.equal(reviewPlan(s, null).noLiquidity, false);
+});
+
+// Added 2026-09-27 (round 6, the owner: New position opened from a pool page looked different from New position opened
+// from Positions). A pool from a link now arrives exactly as a pool chosen from the list does: chosen, with a token an
+// amount starts in, and nothing asks which of its tokens is deposited (the amount step takes either).
+test('a pool from a link starts from the token it was verified against, else the first readable one, else none', () => {
+  const two = pool({ currencies: [token(addr('1'), 18, 'ONE'), token(addr('2'), 6, 'USDG')] });
+  assert.equal(journey.linkedDepositToken(two, addr('2')).key, addr('2'), 'the token the link was verified against');
+  assert.equal(journey.linkedDepositToken(two, addr('9')).key, addr('1'), 'else the first');
+  const partial = pool({ currencies: [token(addr('1'), null, null), token(addr('2'), 6, 'USDG')] });
+  assert.equal(journey.linkedDepositToken(partial, addr('1')).key, addr('2'), 'never one whose decimals were not read');
+  const gone = pool({ currencies: [{ ...token(addr('1')), readStatus: 'no_contract' }, { ...token(addr('2')), readStatus: 'unavailable' }] });
+  assert.equal(journey.linkedDepositToken(gone, addr('1')), null, 'none: the step asks for a token, as before');
+  // What Journey does with it: the same state choosing the pool from the list leaves, so step 1 continues at once.
+  const start = journey.linkedDepositToken(two, addr('2'));
+  const linked = journey.withPool(journey.withToken(journey.initialState(), start), two, NOW);
+  assert.deepEqual(journey.canContinue('token', linked, NOW), { ok: true });
+  assert.deepEqual(journey.canContinue('pool', linked, NOW), { ok: true });
+  const stage = readFileSync(new URL('../src/components/create/StageToken.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(stage, /data-deposit-choice|depositWhich|create-deposit-token/, 'no deposit-token question on step 1');
+  const flow = readFileSync(new URL('../src/components/create/Journey.tsx', import.meta.url), 'utf8');
+  assert.match(flow, /const against = !linked\.catalogue && linkToken \? addressKey\(linkToken\) : verificationToken\(linked\)/, 'a pool of neither list is verified with the token its link names');
+  assert.match(flow, /const start = linkedDepositToken\(option, poolHolds\(option, USDG\) \? USDG : against\)/, 'USDG first where the pool holds it');
+  assert.equal(CREATE.token.depositWhich, undefined);
+  assert.equal(CREATE.token.depositWhichNote, undefined);
+});
+
+// Added 2026-09-27 (round 6, the owner: plain words, fewer numbers): New position writes prices as "1 ETH = 2,500 USDG",
+// with no "≈", and how far a bound is from today's price as a side and a rounded percentage.
+test('plain figures: no ≈ on the steps, and a bound as "30% below today" or "51% above today"', () => {
+  const plain = require('../.test-build/app/src/lib/create/plain.js');
+  assert.equal(plain.plainFigure('≈1,747.65'), '1,747.65');
+  assert.equal(plain.plainFigure('2,499.91'), '2,499.91');
+  assert.deepEqual(plain.awayFrom(-3600, 0), { side: 'below', percent: '30%' });
+  assert.deepEqual(plain.awayFrom(4080, 0), { side: 'above', percent: '50%' });
+  assert.deepEqual(plain.awayFrom(50, 0), { side: 'above', percent: '0.5%' });
+  assert.deepEqual(plain.awayFrom(0, 0), { side: 'at', percent: '0%' });
+  assert.deepEqual(plain.awayFrom(30_000, 0), { side: 'above', percent: '1,908%' });
+  assert.equal(CREATE.amount.below('30%'), '30% below today');
+  assert.equal(CREATE.amount.above('51%'), '51% above today');
+  // Nothing a person reads on the four steps says "per" or starts with "≈".
+  for (const key of ['step', 'token', 'pool', 'amount', 'review']) {
+    const walk = (value) => (typeof value === 'string' ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(walk) : []);
+    for (const text of walk(CREATE[key])) assert.doesNotMatch(text, /^≈| per [A-Z]/, `${key}: ${text}`);
+  }
+  const rail = readFileSync(new URL('../src/components/create/StepList.tsx', import.meta.url), 'utf8');
+  assert.match(rail, /1 <SymbolText token=\{price\.base\} \/> = \{words\(range\.lower\)\} to \{words\(range\.upper\)\} <SymbolText token=\{price\.quote\} \/>/, 'the done Range row: "1 ETH = 1,747.65 to 3,766.84 USDG"');
+  // Added 2026-09-28: the slider's chip and the preview's picture round the distance as the words beside them do, so
+  // the page never says "30% below today" beside "−30.1%".
+  assert.equal(plain.awayShort(-3600, 0), '−30%');
+  assert.equal(plain.awayShort(4080, 0), '+50%');
+  assert.equal(plain.awayShort(50, 0), '+0.5%');
+  assert.equal(plain.awayShort(0, 0), '0%');
+  const preview = readFileSync(new URL('../src/components/create/PositionPreview.tsx', import.meta.url), 'utf8');
+  assert.match(preview, /\{awayShort\(lowerTick, poolTick\)\}/);
+  assert.doesNotMatch(preview, /fromPoolPrice/);
+});
+
+// Added 2026-09-28 (round 6): a Custom price the shared range control refuses is said in the step's words, and a price
+// typed the way the page writes one ("1,747.65") is read without its thousands separators.
+test('the range step says a refused price in plain words, and reads a grouped price', () => {
+  const errors = CREATE.amount.priceErrors;
+  assert.equal(errors['Enter a positive decimal price without commas or exponents.'], 'Enter a price as a number, like 2000 or 0.5.');
+  assert.equal(errors['Min price must stay below max price.'], CREATE.amount.rangeOrder);
+  assert.equal(errors['Max price must stay above min price.'], 'The highest price must stay above the lowest price.');
+  for (const text of Object.values(errors)) assert.doesNotMatch(text, /\b(min|max|decimal|exponent)/i, text);
+  const step = readFileSync(new URL('../src/components/create/RangeStep.tsx', import.meta.url), 'utf8');
+  // Changed on purpose (2026-09-28, round 6 review): the refused price is kept with the tick it was typed for, and said
+  // only while Custom is open (finance.browser drives it: it clears on Closer or Wider).
+  assert.match(step, /setRefused\(\{ tick, text: CREATE\.amount\.priceErrors\[parsed\.message\] \?\? parsed\.message \}\)/);
+  assert.ok(step.includes(String.raw`/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/`), 'only a grouped number loses its commas: "0,5" is still refused');
+});
+
+// Added 2026-09-28 (round 6 review): the amount step with no wallet said "Connect a wallet to see your balance." in both
+// panels; it is one line under them now. And a one-token plan's other panel keeps what the range pairs with the typed
+// amount (what the wallet lacks), not what the swap brings: beside a 2,500 USDG balance, "1,550.92 USDG" read as enough.
+test('the amount step asks for a wallet once, and the swapped panel keeps the paired amount', () => {
+  const amounts = readFileSync(new URL('../src/components/create/PairedAmounts.tsx', import.meta.url), 'utf8');
+  assert.equal(amounts.match(/CREATE\.amount\.connectForBalance/g)?.length, 1);
+  const map = amounts.slice(amounts.indexOf('pool.currencies.map('), amounts.indexOf('{disconnected && ('));
+  assert.doesNotMatch(map, /connectForBalance/, 'not inside each panel');
+  assert.match(amounts, /footer=\{\s*disconnected \? null :/);
+  assert.doesNotMatch(amounts, /swap\.receive/, 'the other panel never shows what the swap brings');
+  // Added 2026-09-28 (round 6 review): only a derived panel is quieted; the typed one never is (finance.browser drives it).
+  assert.match(amounts, /const quiet = swapped !== null && swapped !== independent \? swapped : null/);
+  assert.match(amounts, /data-plan-side=\{side === quiet \? 'swapped' : undefined\}/);
+});
+
+// Added 2026-09-27 (round 6): Max on native ETH took every wei, and Review, which keeps a gas allowance back, then said
+// the wallet was short of the very amount Max had typed. Max now leaves that allowance.
+test('Max leaves Review’s gas allowance in the wallet for native ETH, and takes the whole balance of any other token', () => {
+  const { maxSpend, REVIEW_GAS_RESERVE_WEI } = require('../.test-build/app/src/lib/create/reviewPlan.js');
+  assert.equal(maxSpend(1_250_000_000_000_000_000n, true), 1_250_000_000_000_000_000n - REVIEW_GAS_RESERVE_WEI);
+  assert.equal(maxSpend(REVIEW_GAS_RESERVE_WEI, true), 0n, 'nothing to put in once gas is kept');
+  assert.equal(maxSpend(2_500_000_000n, false), 2_500_000_000n);
+  const { reviewPlan } = require('../.test-build/app/src/lib/create/reviewPlan.js');
+  // ETH typed at Max, with USDG to spare: the plan is both tokens, never short.
+  const ethPool = pool({ currencies: [token(ZERO, 18, 'ETH'), token(addr('2'), 6, 'USDG')] });
+  const balance = 10n ** 18n;
+  const typed = maxSpend(balance, true);
+  let s = journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), candidate(ZERO, 18));
+  s = journey.withRange(journey.withBudget(s, (Number(typed) / 1e18).toString()), { lower: -600, upper: 600 });
+  const plan = reviewPlan(s, [String(balance), String(10n ** 30n)]);
+  assert.equal(plan.plan.kind, 'both');
+  const components = readFileSync(new URL('../src/components/create/PairedAmounts.tsx', import.meta.url), 'utf8');
+  assert.match(components, /maxSpend\(BigInt\(balance\.raw\), currency\.address === NATIVE_CURRENCY\)/);
 });

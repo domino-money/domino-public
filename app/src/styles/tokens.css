@@ -9,7 +9,7 @@
 @import './account.css';  /* foundation: pieces shared by the account screens */
 @import './positions.css';        /* positions: list, position page, Performance, Execution */
 @import './automate.css';         /* automate: Automate and the sequence pages */
-@import './account-screens.css';  /* foundation: Settings and rugged97's screens */
+@import './account-screens.css';  /* foundation: rugged97's screens */
 @import './docs.css';     /* docs: #/docs layout, sidebar, prose, on-this-page */
 @import './three.css';    /* the three features joined up: rows, a position's page, New position's success, Automate */
 

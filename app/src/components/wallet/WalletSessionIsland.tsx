@@ -2,6 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { useEffect, useState, type CSSProperties } from 'react'
 import { WagmiProvider } from 'wagmi'
 import { publishWalletIdentity } from '../../lib/walletIdentity'
+import { forgetPrivate } from '../../finance/privateCards'
 import { privateQueryClient } from '../../session/privateQuery'
 import { walletConfig } from '../../wallet/config'
 import { useSession } from '../../wallet/session'
@@ -15,7 +16,7 @@ import { WalletSessionDialog } from './WalletSessionDialog'
 /**
  * The wallet session feature, loaded as its own chunk and only in builds that
  * enable it. It owns its providers, so nothing outside the header changes:
- * the pools table, the positions screen and settings render exactly as before.
+ * the pools table, the positions screen and the docs render exactly as before.
  */
 export default function WalletSessionIsland() {
   return (
@@ -43,6 +44,14 @@ function WalletControl() {
         : { kind: identity.kind },
     )
   }, [identity])
+
+  // A session that ended, a wallet let go or an account refused leaves no private copy in this browser, on whichever page it
+  // happens (2026-09-28, round 6 review): the Receipts and Managed positions cards paint from one only while signed in. The
+  // copies are finance/privateCards.ts's; nothing here reads or keeps browser storage.
+  const ended = view.status === 'signed_out' || view.status === 'no_wallet' || (view.status === 'blocked' && view.failure === 'account_unsupported')
+  useEffect(() => {
+    if (ended) forgetPrivate()
+  }, [ended])
 
   let label = <>Connect wallet</>
   if (identity.kind === 'connected') {

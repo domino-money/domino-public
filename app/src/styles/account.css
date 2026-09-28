@@ -1,6 +1,6 @@
 /* foundation (DESIGN-V2 §17.1 F0): the pieces shared by the account screens. The screens' own rules
    moved verbatim into positions.css (Positions, the position page, Performance, Execution), automate.css
-   (Automate) and account-screens.css (Settings and rugged97's screens), imported in that order after this
+   (Automate) and account-screens.css (rugged97's screens), imported in that order after this
    file. Classes are prefixed dm-acct-. Everything sits in the components layer, so a Tailwind utility on
    the same element still wins. */
 

@@ -3,7 +3,6 @@ import { Header } from './components/Header'
 import { Footer } from './components/Footer'
 import { Ticker } from './components/Ticker'
 import { Landing } from './screens/Landing'
-import { Settings } from './screens/Settings'
 import { Explore } from './screens/Explore'
 import { PoolDetail } from './screens/PoolDetail'
 import { Positions } from './screens/Positions'
@@ -36,13 +35,14 @@ const PositionLab = __DOMINO_TEST_HOOKS__ ? lazy(() => import('./screens/Positio
 /**
  * The pages, by the first segment of the hash route. Older links keep
  * working: `#/explore` and `#/pools` are Markets; `#/app` and `#/portfolio`
- * are Positions. The docs are `#/docs`, a page of them `#/docs/<slug>`. The
- * two consumer screens have a route only in the build that carries them:
- * everywhere else their route names never reach the bundle (the deployable
- * build is scanned for them), and the route falls through to Home like any
- * unknown route.
+ * are Positions; `#/settings` opens the docs, which say what the Settings page
+ * said (the owner removed that page, 2026-09-27). The docs are `#/docs`, a
+ * page of them `#/docs/<slug>`. The two consumer screens have a route only in
+ * the build that carries them: everywhere else their route names never reach
+ * the bundle (the deployable build is scanned for them), and the route falls
+ * through to Home like any unknown route.
  */
-export type Page = 'overview' | 'markets' | 'pool' | 'positions' | 'new' | 'automate' | 'settings' | 'docs' | 'sequence' | 'setup' | 'live-preview' | 'deposits' | 'position-lab' | 'sequence-lab'
+export type Page = 'overview' | 'markets' | 'pool' | 'positions' | 'new' | 'automate' | 'docs' | 'sequence' | 'setup' | 'live-preview' | 'deposits' | 'position-lab' | 'sequence-lab'
 
 const PAGES: Readonly<Record<string, Page>> = {
   '': 'overview',
@@ -55,7 +55,7 @@ const PAGES: Readonly<Record<string, Page>> = {
   portfolio: 'positions',
   new: 'new',
   automate: 'automate',
-  settings: 'settings',
+  settings: 'docs',
   docs: 'docs',
   sequence: 'sequence',
   setup: 'setup',
@@ -132,8 +132,6 @@ function Screen({ page, param }: { page: Page; param: string }) {
       return <NewPosition poolId={param} />
     case 'automate':
       return <Automate />
-    case 'settings':
-      return <Settings />
     case 'docs':
       return <Docs slug={param} />
     case 'sequence':

@@ -33,12 +33,13 @@ test('real Vite HMR connects through the admission gate; UI is read-only and rel
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     const connected = new Promise((done) => shell.vite.ws.on('connection', done))
-    // Settings, not Markets or Positions: Markets shows the selected pools and
+    // The docs, not Markets or Positions: Markets shows the selected pools and
     // asks for them on mount, and Positions reads a connected wallet's public
-    // token balances by design (DESIGN.md E.5), while Settings reads nothing, so
+    // token balances by design (DESIGN.md E.5), while the docs read nothing, so
     // every request counted below is the wallet flow's own, or the two probes.
-    await page.goto(`${shell.origin}/#/settings`)
-    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor()
+    // (Changed on purpose, 2026-09-27: this was Settings, which the owner removed.)
+    await page.goto(`${shell.origin}/#/docs`)
+    await page.getByRole('heading', { name: 'Docs', exact: true }).waitFor()
     await page.getByText('Local real-data development', { exact: true }).waitFor()
     await connected
     const connect = page.getByRole('button', { name: 'Connect wallet', exact: true })
@@ -74,7 +75,7 @@ test('real Vite HMR connects through the admission gate; UI is read-only and rel
     assert.equal(wallets.calls('personal_sign').length, 0)
     assert.equal(wallets.calls('wallet_switchEthereumChain').length, 0)
     assert.deepEqual(wallets.state.refused, [])
-    assert.equal(admitted, 0, 'opening Settings and the wallet dialog does not issue reads')
+    assert.equal(admitted, 0, 'opening the docs and the wallet dialog does not issue reads')
     assert.deepEqual(apiPaths, [], 'wallet discovery, connection, account/network events and disconnection make no session or other API request')
     const status = await page.evaluate(async () => (await fetch('/api/read/v1/capabilities')).status)
     assert.equal(status, 503)

@@ -1,9 +1,9 @@
-import type { PerformanceRequests, PerformanceResponses, PerformanceRoute, CardsResponse, Enrollment, TrackedCard } from 'api-contracts/performance-v2/types'
+import type { PerformanceRequests, PerformanceResponses, PerformanceRoute, CardsResponse, Enrollment, EpochsResponse, TrackedCard } from 'api-contracts/performance-v2/types'
 import type { Clock } from '../lib/clock'
 import { fetchRaw, jsonBody, classifyHeaderless, type FetchLike } from '../lib/http/rawReply'
 import { parseDecimal, toFixed } from '../lib/read/decimal'
 import { sessionKey, SESSION_GONE, type SessionPort } from '../session/port'
-import { reaskWait } from './reask'
+import { reaskWait, sameWallet } from './privateCards'
 import type { OwnedSequence } from './sequence'
 
 export interface Validators {
@@ -41,7 +41,13 @@ export type SequencesView = {
 
 export type PerformanceView = {
   scope: string | null
-  state: 'signed_out' | 'loading' | 'ready' | 'unavailable'
+  /**
+   * checking: the wallet's session is being checked; loading: signed in, and no
+   * history read has answered in this visit yet; unavailable: the last read
+   * failed (`reason`). None of them clears what is shown.
+   */
+  state: 'signed_out' | 'checking' | 'loading' | 'ready' | 'unavailable'
+  /** What is shown: this browser's copy until the first read answers, then the last good read, kept through each refresh, failure and hidden tab. */
   enrollments: Enrollment[]
   cards: CardsResponse['cards']
   /** Why the last read failed, as a closed code. For titles and data attributes only, never shown as text. */
@@ -65,7 +71,7 @@ export const SEQUENCE_LIST_TRIES = 3
  * performance-v2 asks a visible page to refresh every 30 to 60 seconds, as
  * each good answer says. A failed read is asked again this long later while
  * the tab is visible, then twice as long each time, at most REASK_TRIES times
- * (finance/reask.ts); a failure asking again cannot fix is not asked again.
+ * (finance/privateCards.ts); a failure asking again cannot fix is not asked again.
  */
 export const PERFORMANCE_RETRY_MS = 60_000
 /** The least time between two history reads the page starts on its own, whatever brought it back. */
@@ -75,7 +81,25 @@ const FINAL_LISTING = new Set(['deployment_code_changed', 'deployment_identity_c
 const NO_SEQUENCES: SequencesView = { state: 'idle', rows: [], older: false, reason: null }
 const codeOf = (error: unknown) => error instanceof Error && /^[a-z0-9_]{1,64}$/.test(error.message) ? error.message : 'wallet_read_failed'
 
-export function createPerformanceController(deps: { session: SessionPort; fetch: FetchLike; runtime: Validators; clock: Clock; visible(): boolean; sequences?: SequenceReads }) {
+/**
+ * This browser's copy of what Managed positions last showed, per wallet
+ * (finance/privateCards.ts): read back checked, display only. The wallet
+ * island forgets it once the session ends, on any page.
+ */
+export interface PerformanceCache {
+  load(owner: string): { enrollments: Enrollment[]; cards: CardsResponse['cards'] } | null
+  save(owner: string, epochs: EpochsResponse, cards: CardsResponse | null): void
+}
+
+/**
+ * Managed positions read themselves while the tab is visible, as often as
+ * the service asks (every 30 to 60 seconds). Nothing shown is cleared for a
+ * refresh, a failure, a hidden tab, a view shown again or a new session of
+ * the same wallet (the owner, 2026-09-27, round 6: never flash empty); only
+ * another wallet starts over, from this browser's copy when it has one, and a
+ * sign-out from nothing.
+ */
+export function createPerformanceController(deps: { session: SessionPort; fetch: FetchLike; runtime: Validators; clock: Clock; visible(): boolean; sequences?: SequenceReads; cache?: PerformanceCache }) {
   const { session, runtime, clock } = deps
   let view: PerformanceView = { scope: null, state: 'signed_out', enrollments: [], cards: [], reason: null, busy: false, more: false, paging: false, receivedAt: null,
     sequences: NO_SEQUENCES, starting: null, enrollment: null }
@@ -86,7 +110,7 @@ export function createPerformanceController(deps: { session: SessionPort; fetch:
   let stopTimer: (() => void) | null = null
   let nextAt = 0
   /** When the last epochs/cards cycle started, on the monotonic clock. */
-  let lastCycleAt = Number.NEGATIVE_INFINITY
+  let lastCycleAt = -Infinity
   /** Automatic asks that followed a failed history read since the last good answer, sign-in or return to the tab. */
   let historyTries = 0
   let after: string | null = null
@@ -98,7 +122,13 @@ export function createPerformanceController(deps: { session: SessionPort; fetch:
   const publish = (patch: Partial<PerformanceView>) => { view = { ...view, ...patch }; for (const fn of listeners) fn() }
   const stopWork = () => { generation++; abort?.abort(); abort = null; stopTimer?.(); stopTimer = null }
   const stopTracking = () => { trackGeneration++; pendingEnroll = null }
-  const stopListing = () => { listGeneration++; listTimer?.(); listTimer = null; listDueAt = null }
+  /**
+   * Drops a listing on its way and its timer. A failed listing's next ask stays
+   * due, and one cut off goes back to not asked: the one controller outlives
+   * its views, so a listing a stop cut off is asked again, never left reading
+   * until a reload (2026-09-28, round 6 review).
+   */
+  const stopListing = () => { listGeneration++; listTimer?.(); listTimer = null; if (view.sequences.state === 'reading') publish({ sequences: NO_SEQUENCES }) }
   /** The next read, `ms` from now, and its timer while the page runs and is visible. */
   function schedule(ms: number) {
     nextAt = clock.monoMs() + ms
@@ -160,9 +190,10 @@ export function createPerformanceController(deps: { session: SessionPort; fetch:
         if (g !== generation) return
         historyTries = 0
         nextAfter = epochs.nextAfter
-        // Paging walks forward and, after the last page, back to the first.
+        // Paging walks forward and, after the last page, back to the first. The first page is kept in this browser.
         publish({ state: 'ready', enrollments: epochs.enrollments, cards: cards?.cards ?? [], reason: null, paging: false,
           receivedAt: clock.wallMs(), more: epochs.nextAfter !== null || after !== null })
+        if (!after) deps.cache?.save(epochs.owner, epochs, cards)
         // A visible batch is refreshed as often as the service asks: every 30 or 60 seconds.
         schedule(Math.max(epochs.refreshAfterSeconds, cards?.refreshAfterSeconds ?? 30) * 1000)
         listWhenDue()
@@ -173,8 +204,8 @@ export function createPerformanceController(deps: { session: SessionPort; fetch:
         // A refused enrollment changes nothing already shown.
         if (enrollment) publish({ starting: null, enrollment: { vault: enrollment.vault, ok: false, reason } })
         else {
-          // An older response is never presented as current after a failure.
-          publish({ state: 'unavailable', enrollments: [], cards: [], receivedAt: null, more: false, paging: false, reason })
+          // What is shown stays (the owner, 2026-09-27, round 6); the failure is in the section's data attributes.
+          publish({ state: 'unavailable', paging: false, reason })
           // Asked again a few times, further apart each time; never for a failure asking again cannot fix.
           const wait = reaskWait(reason, historyTries, PERFORMANCE_RETRY_MS)
           if (wait === null) hold()
@@ -253,33 +284,55 @@ export function createPerformanceController(deps: { session: SessionPort; fetch:
     await sendPendingEnroll()
   }
 
-  function changed(force = false) {
-    const scope = sessionKey(session.getSnapshot())
-    if (!force && scope === view.scope) return
-    stopWork(); stopTracking(); stopListing(); nextAt = 0; lastCycleAt = Number.NEGATIVE_INFINITY; historyTries = 0; after = null; nextAfter = null; listTries = 0
-    publish({ scope, state: scope ? 'loading' : 'signed_out', enrollments: [], cards: [], reason: null, busy: false, more: false, paging: false, receivedAt: null,
+  /**
+   * The same session keeps what it shows, and so does a new one for the same
+   * wallet and connector; another wallet starts from this browser's copy of
+   * it, and a sign-out from nothing.
+   */
+  function changed() {
+    const snapshot = session.getSnapshot(), scope = sessionKey(snapshot), before = view.scope
+    const state = scope ? 'loading' : snapshot.kind === 'pending' ? 'checking' : 'signed_out'
+    if (scope === before && (scope !== null || state === view.state)) return
+    stopWork(); stopTracking(); stopListing(); nextAt = 0; lastCycleAt = -Infinity; historyTries = 0; after = null; nextAfter = null; listTries = 0; listDueAt = null
+    const kept = snapshot.kind !== 'signed_in' ? null : before && scope && sameWallet(before, scope) ? view : deps.cache?.load(snapshot.owner)
+    publish({ scope, state, enrollments: kept?.enrollments ?? [], cards: kept?.cards ?? [], reason: null, busy: false, more: false, paging: false, receivedAt: null,
       sequences: NO_SEQUENCES, starting: null, enrollment: null })
     if (scope) void refresh()
   }
+  /** The next read at its time: at once when it is due, else on a timer for it. */
+  function resume() {
+    if (clock.monoMs() >= nextAt) void refresh()
+    else { stopTimer?.(); stopTimer = clock.setTimer(() => { stopTimer = null; void refresh() }, nextAt - clock.monoMs()) }
+  }
+  // The first view paints where the session already stands, from this browser's copy when signed in: never a signed-out
+  // line for a frame before its start. Nothing is read before it.
+  changed()
   return {
     getSnapshot: () => view,
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
-    // Forced: a controller started again (React's development double mount) reads again instead of keeping a dropped read.
-    start() { running = true; const off = session.subscribe(() => changed()); changed(true); return () => { running = false; off(); stopWork(); stopTracking(); stopListing(); publish({ busy: false, starting: null }) } },
+    // Started again (a view shown again, or React's development double mount), the same session keeps what it showed and
+    // reads at its time (a read the last stop cut off was already due, so it goes at once); a listing the stop cut off goes
+    // again at once when the cards are current.
+    start() {
+      running = true; const off = session.subscribe(changed)
+      changed(); if (view.scope && !view.busy) resume()
+      listWhenDue()
+      return () => { running = false; off(); stopWork(); stopTracking(); stopListing(); publish({ busy: false, paging: false, starting: null }) }
+    },
     refresh,
     enroll: (body: PerformanceRequests['enroll']) => cycle(body),
     track,
     visibilityChanged() {
       if (!deps.visible()) {
+        // Hidden: nothing is read, and what is shown stays.
         stopWork(); stopTracking()
-        publish({ busy: false, paging: false, cards: [], receivedAt: null, starting: null, state: !view.scope ? 'signed_out' : view.state === 'unavailable' ? 'unavailable' : 'loading' })
+        publish({ busy: false, paging: false, starting: null })
         return
       }
       if (view.scope) listWhenDue()
       // The owner came back: failed history is asked once more as soon as the floor allows, and counted afresh.
       if (view.state === 'unavailable') { historyTries = 0; nextAt = Math.min(nextAt, lastCycleAt + HISTORY_FLOOR_MS) }
-      if (clock.monoMs() >= nextAt) void refresh()
-      else { stopTimer?.(); stopTimer = clock.setTimer(() => { stopTimer = null; void refresh() }, nextAt - clock.monoMs()) }
+      resume()
     },
     /** The next page of positions, or the first after the last. Inside the refresh floor it waits for the scheduled read. */
     nextPage() {

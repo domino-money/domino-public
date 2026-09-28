@@ -87,7 +87,8 @@ test('a token outside the selected list opens from one stored overview and pool 
   assert.ok(releaseHistory, 'the independent history request started')
   releaseHistory()
   await page.locator('[data-ratio-status="partial"]').waitFor()
-  assert.match(await page.locator('[data-pool-ratio-chart]').innerText(), /Partial coverage/)
+  // Changed on purpose (2026-09-27, round 6, the pool page for beginners): missing hours are said in plain words.
+  assert.match(await page.locator('[data-pool-ratio-chart]').innerText(), /Some hours are missing: they are shaded\./)
   assert.equal(calls.some(call => ['token', 'pools', 'pool-market'].includes(call.route)), false)
   assert.deepEqual(errors, [])
   await context.close()
@@ -160,11 +161,12 @@ test('Markets on the deployable build: all six cards draw a real chart within se
     assert.equal(await figure.innerText(), '$1.0K', 'the row’s own 24h volume, drawn in the plot')
     const captions = await page.locator('#market-rail .dm-mkt-card-caption').allInnerTexts()
     assert.deepEqual(captions, SELECTED.map(poolId => poolId === notBuilt ? '24h volume' : 'Price · 24h'))
-    // Pointing along a line names one hour: its close in the quote token, and its swaps.
+    // Pointing along a line names one hour: its close in the quote token, and its swaps. Changed on purpose 2026-09-27
+    // (r6/marketsdata, the owner's plain-price rule): written as the table writes a price, one of a token first.
     const line = page.locator(`[data-market-card="${SELECTED[0]}"] [data-price-line]`)
     const box = await line.boundingBox()
     await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2)
-    assert.match(await page.locator(`[data-market-card="${SELECTED[0]}"] .dm-mkt-card-caption`).innerText(), /^\d\d:00 UTC · 123\.5 TOKEN per ETH · 4 swaps$/)
+    assert.match(await page.locator(`[data-market-card="${SELECTED[0]}"] .dm-mkt-card-caption`).innerText(), /^\d\d:00 UTC · 1 ETH = 123\.5 TOKEN · 4 swaps$/)
 
     const posts = edge.filter(read => read.method === 'POST')
     assert.equal(posts.filter(read => read.path.startsWith('/api/read/v1/')).length, 0, 'no provider read: no read-v1 pool-market, nothing else of read-v1')
@@ -335,6 +337,9 @@ test('Home, its ticker, Markets and its cards show one set of figures for the si
     await page.goto(`${at}/#/`)
     await page.reload()
     await page.waitForFunction(() => document.querySelectorAll('#pools tbody tr.dm-mkt-row:not([data-pool-catalogue])').length === 6, null, { timeout: 15000 })
+    // Changed on purpose 2026-09-27 (r6/marketsdata): the reload paints this browser's copy of the last overview at
+    // once (marketsPaint.ts), the two pools' figures included; the live answer then says what it has.
+    await page.waitForFunction(ids => ids.every(id => document.querySelector(`#pools tr.dm-mkt-row:has(a.dm-mkt-name[href^="#/pool/${id}"]) td:nth-child(3)`)?.innerText.trim() === 'Unavailable'), behind, { timeout: 15000 })
     const failed = await rowsIn('#pools')
     for (const poolId of behind) assert.deepEqual(failed[poolId], { tvl: 'Unavailable', volume: 'Unavailable', apr: '—', waiting: false }, `the failed pool ${poolId}`)
     for (const poolId of SELECTED.slice(0, 4)) assert.deepEqual(failed[poolId], home[poolId], `the other pools for ${poolId}`)
@@ -347,5 +352,60 @@ test('Home, its ticker, Markets and its cards show one set of figures for the si
   } finally {
     await context.close()
     await new Promise(resolve => { site.close(resolve); site.closeAllConnections() })
+  }
+})
+
+// Added 2026-09-27 (r6/marketsdata). The owner, on production: the pool figures on Home, the ticker and Markets
+// sometimes took very long to appear. Measured with production's latency (support/markets-latency.mjs): a first
+// overview that met a gateway down for a moment left Home without figures until a reload, and every visit started from
+// nothing. Now a load that read nothing is asked again after 5 s, and a later visit paints this browser's copy of the
+// last overview at once, before its own read has answered, and keeps it through a failed one.
+test('Home asks again soon after a first overview that failed, and a later visit paints the last figures at once and keeps them', { timeout: 60000 }, async () => {
+  if (!existsSync(join(DIST, 'index.html'))) throw new Error('dist/index.html is missing. Run `npm run build` before this test.')
+  const { startLatencySite, signIn } = await import('./support/markets-latency.mjs')
+  const refuse = () => new Response(JSON.stringify({ error: 'upstream_unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': '3.0.0-rc.1' } })
+  // The first overview of each visit meets the gateway down for a moment.
+  const site = await startLatencySite({ latency: { edge: 20, featured: 60, overview: 150, history: 100, asset: 0 }, store: (body, n) => (n === 1 || n === 3 ? refuse() : body) })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  /** Home's rows that show a dollar figure. */
+  const figured = () => [...document.querySelectorAll('#pools tbody tr.dm-mkt-row')].filter(row => /\$/.test(row.querySelectorAll('td')[2]?.innerText ?? '')).length
+  const settled = async n => { for (let i = 0; i < 300 && !(site.counts.overview >= n && site.edge.filter(read => read.path.endsWith('/overview')).every(read => read.done !== null)); i++) await new Promise(resolve => setTimeout(resolve, 50)) }
+  const errors = []
+  try {
+    await context.route('**/*', route => route.request().url().startsWith(site.origin) ? route.continue() : route.abort())
+    await signIn(context, site.origin)
+    const page = await context.newPage()
+    page.on('pageerror', error => errors.push(error.message))
+    await page.goto(`${site.origin}/#/`)
+    await settled(1)
+    assert.equal(await page.evaluate(figured), 0, 'the first overview failed: nothing to show yet')
+    await page.waitForFunction(() => [...document.querySelectorAll('#pools tbody tr.dm-mkt-row')].filter(row => /\$/.test(row.querySelectorAll('td')[2]?.innerText ?? '')).length === 6, null, { timeout: 15000 })
+    assert.equal(site.counts.overview, 2, 'the failed overview, then one more')
+    const asked = site.edge.filter(read => read.path.endsWith('/overview')).map(read => read.at)
+    assert.ok(asked[1] - asked[0] >= 4500 && asked[1] - asked[0] < 9000, `asked again ${asked[1] - asked[0]} ms later`)
+
+    // A later visit: its own first overview fails too, and the figures stand from the start and never leave.
+    const again = await context.newPage()
+    again.on('pageerror', error => errors.push(error.message))
+    await again.addInitScript(() => {
+      window.__lost = 0
+      let shown = 0
+      setInterval(() => {
+        const now = [...document.querySelectorAll('#pools tbody tr.dm-mkt-row')].filter(row => /\$/.test(row.querySelectorAll('td')[2]?.innerText ?? '')).length
+        if (now < shown) window.__lost += 1
+        shown = now
+      }, 10)
+    })
+    await again.goto(`${site.origin}/#/`)
+    await again.waitForFunction(() => [...document.querySelectorAll('#pools tbody tr.dm-mkt-row')].filter(row => /\$/.test(row.querySelectorAll('td')[2]?.innerText ?? '')).length === 6, null, { timeout: 5000 })
+    assert.ok(site.counts.overview <= 3, 'the figures came before any answer of this visit')
+    await settled(4)
+    assert.equal(site.counts.overview, 4, 'its failed overview was asked again')
+    assert.equal(await again.evaluate(figured), 6)
+    assert.equal(await again.evaluate(() => window.__lost), 0, 'no figure left the table meanwhile')
+    assert.deepEqual(errors, [])
+  } finally {
+    await context.close()
+    await site.close()
   }
 })

@@ -202,6 +202,7 @@ function ownRequestsOnly(requests, { walletAddress = null } = {}) {
 
 // 2026-09-25: the same rule on the view where the Wallet card makes its one price GET: an address's Positions page reads
 // the address's whole list (both fixture pages, on its own), then asks the provider once, by token addresses only.
+// Round 6 (2026-09-27): prices are asked as each page names new tokens, 30 addresses per GET at most (WALLET_PRICES).
 test('an address’s Wallet card: its pages are read on their own, then ONE price GET by token addresses leaves the origin, and nothing else', async () => {
   const { page, errors, requests } = await tracked();
   const asked = [];
@@ -219,7 +220,16 @@ test('an address’s Wallet card: its pages are read on their own, then ONE pric
   const prices = asked.filter((url) => new URL(url).pathname.startsWith('/tokens/'));
   assert.deepEqual(prices, [`https://api.dexscreener.com/tokens/v1/robinhood/${TOKEN}`], 'one price GET, for the one token held; native ETH at zero needs none');
   ownRequestsOnly(requests, { walletAddress: OWNER });
-  assert.deepEqual(await keptKeys(page), [], 'nothing is kept: the prices live in memory only');
+  // Changed on purpose (round 6, 2026-09-27; the owner: the Wallet card's tokens took far too long to appear): the card
+  // keeps its last list per address in the browser, under one key (src/lib/walletMemory.ts), and draws it at once on the
+  // next visit. Public chain and market data only: never the continuation handle.
+  assert.deepEqual(await keptKeys(page), ['domino-wallet-v1'], 'the card’s one key, and nothing else');
+  const kept = await page.evaluate(() => localStorage.getItem('domino-wallet-v1'));
+  assert.ok(kept.includes(OWNER.toLowerCase()) && kept.includes(TOKEN.toLowerCase()), 'the address and the token it holds');
+  assert.doesNotMatch(kept, /cursor|c0ffee/i, 'no continuation handle');
+  // The tests after this one share its browser context and check that their own pages keep nothing: the card's list
+  // is let go here, so what they find is theirs.
+  await page.evaluate(() => localStorage.removeItem('domino-wallet-v1'));
   await quiet(page, errors);
   await page.close();
 });
@@ -1132,6 +1142,9 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
   await page.goto(`${origin}/#/pool/${POOL}/${TOKEN}`, { waitUntil: 'networkidle' });
   const workspace = page.locator(`[data-pool-workspace="${POOL}"]`);
   await workspace.waitFor({ timeout: 20_000 });
+  // Changed on purpose (2026-09-27, round 6, the pool page for beginners): the activity figures, the pool's details and
+  // the APR's method are parts of one closed Details card at the end of the page.
+  await workspace.locator('[data-pool-details] > summary').click();
   await page.locator('[data-pool-activity="ok"]').waitFor({ timeout: 20_000 });
   await page.waitForFunction(() => document.querySelector('[data-pool-figures] [data-metric="qualified"]'));
   const routes = await page.evaluate(() => (window.__DOMINO_FIXTURE_READS__ ?? []).map((r) => [r.route, r.request]));
@@ -1145,8 +1158,10 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
 
   const figures = workspace.locator('[data-pool-figures]');
   const stats = await figures.locator('dl > div').evaluateAll((divs) => divs.map((div) => [div.querySelector('dt').innerText.trim(), div.querySelector('dd').innerText.trim()]));
-  assert.deepEqual(stats.map(([label]) => label), ['PRICE', 'TVL', '24H VOLUME', '24H FEES', 'APR', 'FEE TIER'], 'Domino’s 24h fees beside the figures, and its APR where the estimate would be');
-  assert.deepEqual(stats.slice(1, 5).map(([, value]) => value), ['$0.000020', '$0.000029', '<$0.000001', '158.06%'], 'the qualified figures take precedence over the provider’s');
+  // Changed on purpose (2026-09-27, round 6): what the pool earns first, then how busy and how big it is, then its
+  // price; the fee is in the chip and the sentence under the name.
+  assert.deepEqual(stats.map(([label]) => label), ['APR', '24H VOLUME', 'TVL', '24H FEES', 'PRICE'], 'Domino’s 24h fees beside the figures, and its APR where the estimate would be');
+  assert.deepEqual(stats.slice(0, 4).map(([, value]) => value), ['158.06%', '$0.000029', '$0.000020', '<$0.000001'], 'the qualified figures take precedence over the provider’s');
   assert.match(await figures.innerText(), /Domino history/);
   assert.equal(await workspace.locator('[data-pool-positions]').count(), 0, 'no positions section where pool-positions is not listed');
 
@@ -1156,9 +1171,8 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
   assert.doesNotMatch(await page.locator('[data-pool-activity]').innerText(), /\$|APR/);
 
   // G14: the protocol fee per direction, and Domino's APR where the fixed "unavailable" line was.
-  const details = workspace.locator('.dm-card', { hasText: 'Pool details' });
+  const details = workspace.locator('[data-pool-details]');
   assert.match(await details.locator('[data-protocol-fee]').innerText(), /Protocol fee\s+None/);
-  await details.getByText('About the APR').click();
   assert.match(await details.locator('[data-history-apr]').innerText(), /Pool APR, Domino history\s+158\.06%/);
   assert.equal(await details.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable');
   assert.equal(await details.locator('[data-apr-estimate] [data-apr-figure]').innerText(), '—', 'no estimate here: a neutral dash');
@@ -1176,7 +1190,7 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
   for (const name of await page.locator('main button').allInnerTexts()) assert.doesNotMatch(name, /again|retry|refresh/i, name);
   assert.equal(await page.locator('main .dm-inset[role="status"]').count(), 0, 'no status panel');
   // The range slider's own handle ring is a design accent of the shared PriceSlider, not a state; everything the page reads is checked.
-  for (const part of ['[data-pool-figures]', '[data-pool-activity]', '[data-pool-price]', '.dm-card:has([data-protocol-fee])']) assert.doesNotMatch(await page.locator(part).innerHTML(), /money-wait/, `no yellow in ${part}`);
+  for (const part of ['[data-pool-figures]', '[data-pool-activity]', '[data-pool-price-now]', '.dm-card:has([data-protocol-fee])']) assert.doesNotMatch(await page.locator(part).innerHTML(), /money-wait/, `no yellow in ${part}`);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 0, `the pool page scrolls sideways by ${overflow}px`);
   await quiet(page, errors);

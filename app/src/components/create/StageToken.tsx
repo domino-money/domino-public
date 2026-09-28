@@ -7,10 +7,8 @@ import { shortAddress } from '../../lib/read/screens/identity'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { StatusLine } from '../../lib/read/screens/statusLine'
 import { knownTokens } from '../../lib/read/screens/tokenSearch'
-import { candidateFromPoolCurrency, mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
+import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tokens'
 import type { ReadSource } from '../../lib/read/types'
-import { Address } from '../read/screens/Address'
-import { SymbolText } from '../read/screens/SymbolText'
 import { TokenSearch } from '../read/screens/TokenSearch'
 import { Button, Skeleton } from '../ui'
 import { ChosenPool, PoolList } from './StagePool'
@@ -61,20 +59,26 @@ const searchName = (candidate: TokenCandidate) => {
 }
 
 /**
- * Step 1, Pool: the token to deposit and the pool it goes into.
+ * Step 1, Pool: the pool the position goes into.
  *
- * With a pool chosen (from the link, once verified, or from the list) the
- * step shows that pool and its two currencies as the deposit choice. Without
- * one: one search field that takes a name or a contract address, then the
- * existing pools for the chosen token. Nothing else: the field is the whole
- * way in. Nothing is read until a person asks — the search reads a token only
- * when one is chosen, and the pool list reads once it mounts for a chosen
- * token.
+ * With a pool chosen (from the link, once verified, or from the list) the step
+ * shows that pool, and Continue. Without one: one search field that takes a
+ * name or a contract address, then the existing pools for the chosen token.
+ * Nothing else: the field is the whole way in. Nothing is read until a person
+ * asks — the search reads a token only when one is chosen, and the pool list
+ * reads once it mounts for a chosen token.
+ *
+ * Changed on purpose (round 6, 2026-09-27, the owner: New position from a pool
+ * page looked different from New position from Positions): a pool from a link
+ * arrives exactly as a pool chosen from the list does, the chosen pool and
+ * Continue. It no longer asks which of the pool's tokens is deposited, with
+ * their contract addresses: the amount step takes an amount in either, and the
+ * Journey starts from the token the link was verified against.
  *
  * How the link's verification went is never a panel: while it runs the step
- * holds its place, and whatever it came to is on the step's data attributes
- * and in its live region. A failure that asking again could fix is asked
- * again by the journey on its own; anything else leaves the search.
+ * holds the chosen pool's place, and whatever it came to is on the step's data
+ * attributes and in its live region. A failure that asking again could fix is
+ * asked again by the journey on its own; anything else leaves the search.
  */
 export function StageToken({
   source,
@@ -134,53 +138,21 @@ export function StageToken({
         </p>
       )}
       {checking ? (
-        // The shape of what a verified link brings: the chosen-pool panel, then the deposit
-        // choice, because a link carries a pool and no token. Both are direct children of
-        // .dm-flow-stack, so they rest at the gap and the height the answer will occupy.
-        <>
-          <div className="dm-flow-panel" aria-hidden="true">
-            <div className="dm-flow-pool-head">
-              <span className="inline-flex shrink-0 items-center">
-                <Skeleton className="size-7 rounded-full border-2 border-[var(--surface-2)]" />
-                <Skeleton className="-ml-2 size-7 rounded-full border-2 border-[var(--surface-2)]" />
-              </span>
-              <div className="dm-flow-pool-name">
-                <Skeleton className="h-5 w-40" />
-                <Skeleton className="h-5 w-28 rounded-[var(--radius-pill)]" />
-              </div>
-              <Skeleton className="ml-auto h-8 w-40" />
+        // The shape of what a verified link brings: the chosen pool's panel, at the height the answer will occupy.
+        <div className="dm-flow-panel" aria-hidden="true">
+          <div className="dm-flow-pool-head">
+            <span className="inline-flex shrink-0 items-center">
+              <Skeleton className="size-7 rounded-full border-2 border-[var(--surface-2)]" />
+              <Skeleton className="-ml-2 size-7 rounded-full border-2 border-[var(--surface-2)]" />
+            </span>
+            <div className="dm-flow-pool-name">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-5 w-20 rounded-[var(--radius-pill)]" />
             </div>
           </div>
-          <Skeleton className="h-[196px] w-full" />
-        </>
+        </div>
       ) : chosen ? (
-        <>
-          <ChosenPool option={chosen} onChange={() => setChanging(true)} />
-          {/* A pool can arrive already chosen, from a pool page's "New position"
-              link. That gives the pool and no deposit token, and the step
-              refuses to continue for want of one — so the pool's own two
-              currencies are offered here rather than leaving a dead end. */}
-          {!state.token && (
-            <fieldset className="dm-flow-stack" data-deposit-choice="">
-              <legend className="dm-flow-subtitle">{CREATE.token.depositWhich}</legend>
-              <p className="text-caption text-fg-muted">{CREATE.token.depositWhichNote}</p>
-              <div className="dm-flow-options">
-                {chosen.currencies.map((currency) => {
-                  const candidate = candidateFromPoolCurrency(currency, chosen.block)
-                  return (
-                    <label key={candidate.key} className="dm-flow-option" data-deposit-token={candidate.key}>
-                      <span className="dm-flow-option-top">
-                        <input type="radio" name="create-deposit-token" checked={false} disabled={candidate.why !== null} onChange={() => fromSearch(candidate)} />
-                        <span className="dm-flow-option-title"><SymbolText token={currency} /></span>
-                      </span>
-                      <span className="dm-flow-option-line"><Address value={candidate.key} /></span>
-                    </label>
-                  )
-                })}
-              </div>
-            </fieldset>
-          )}
-        </>
+        <ChosenPool option={chosen} onChange={() => setChanging(true)} />
       ) : (
         <>
           {state.pool && (

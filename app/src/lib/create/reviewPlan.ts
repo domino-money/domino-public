@@ -36,6 +36,13 @@ export interface ReviewPlan {
   noLiquidity: boolean
 }
 
+/**
+ * What Max puts in of a token: the whole balance, less Review's gas allowance when it is native ETH. Before round 6
+ * (2026-09-27) Max on ETH took every wei, so Review, which keeps the allowance back, found the wallet short of the very
+ * amount Max had just typed.
+ */
+export const maxSpend = (raw: bigint, native: boolean): bigint => (!native ? raw : raw > REVIEW_GAS_RESERVE_WEI ? raw - REVIEW_GAS_RESERVE_WEI : 0n)
+
 /** Whether this pool reports no liquidity (its TVL figure, attributed and zero) while `plan` swaps part of a one-token deposit in it. */
 export const swapsInEmptyPool = (pool: PoolOption, plan: DepositPlan | null): boolean =>
   plan !== null && plan.kind === 'swap' && plan.swap > 0n && pool.liquidity.state === 'attributed' && pool.liquidity.zero

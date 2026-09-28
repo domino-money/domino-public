@@ -111,6 +111,14 @@
   .dm-acct-token-twin { font-family: var(--font-mono); font-size: 11px; line-height: 18px; letter-spacing: 0; color: var(--fg-subtle); white-space: nowrap; }
   .dm-acct-token-usd { min-width: 0; margin-left: auto; font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); text-align: right; overflow-wrap: anywhere; font-variant-numeric: lining-nums tabular-nums; }
   .dm-acct-token-skel { gap: 6px; }
+  /* Round 6 (2026-09-27): every token the wallet holds. One without a market price shows a quiet dash for its value,
+     and in the whole list the priceless ones follow a small caption. The whole list scrolls inside the card on a wide
+     screen, so the rail stays short; a phone scrolls the page. */
+  .dm-acct-token-none { color: var(--fg-subtle); font-weight: 400; }
+  .dm-acct-token-group { padding: 12px 16px 4px; font-size: 12px; line-height: 16px; letter-spacing: -0.1px; color: var(--fg-subtle); }
+  @media (min-width: 768px) {
+    .dm-acct-token-list[data-expanded] { max-height: 464px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--surface-4) transparent; }
+  }
   .dm-acct-tokens-actions { display: flex; flex-wrap: wrap; gap: 4px; padding-left: 4px; }
   .dm-acct-tokens-more { margin: 0; }
   .dm-acct-tokens-more > summary { min-height: 36px; font-size: 13px; letter-spacing: -0.16px; }
@@ -124,71 +132,17 @@
   .dm-acct-auto-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 22px; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
   .dm-acct-auto-text { margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
 
-  /* ---- Position NFTs: the lookup card; its rows are the summaries of their own details ---------------- */
+  /* ---- Your positions' card, a container whose width lays out its rows; a token amount, as the screens write it -- */
   .dm-acct-nft-card { container: acct-nft / inline-size; padding: 8px; }
-  .dm-acct-nft-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; padding: 12px 16px; }
-  .dm-acct-nft-head > h2 { padding-top: 6px; }
-  .dm-acct-nft-form { display: flex; flex: 1 1 420px; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 8px; max-width: 600px; }
-  .dm-acct-nft-field { flex: 1 1 240px; min-width: 0; }
-  .dm-acct-nft-field .dm-hint { text-wrap: pretty; }
-  /* Room kept for Cancel and Clear, so Look up positions never moves when they appear. */
-  .dm-acct-nft-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 250px; min-height: 40px; }
-
-  .dm-acct-nft-rows { grid-template-columns: minmax(0, 1fr); --cols: minmax(210px, 1.4fr) minmax(170px, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) 32px; }
-  .dm-acct-nft-band > :nth-child(3), .dm-acct-nft-band > :nth-child(4) { text-align: right; }
-  .dm-acct-nft-rows > .dm-acct-nft > details > summary { row-gap: 8px; padding-top: 12px; padding-bottom: 12px; }
-  .dm-acct-nft-pool { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .dm-acct-nft-name { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: start; gap: 4px; min-width: 0; }
-  .dm-acct-nft-pair { max-width: 100%; margin: 0; overflow: hidden; font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); white-space: nowrap; text-overflow: ellipsis; }
-  .dm-acct-nft-chip { max-width: 100%; min-width: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); }
-  .dm-acct-nft-chip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dm-acct-nft-nopair { display: inline-flex; flex-shrink: 0; }
-  .dm-acct-nft-nomark { width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius-pill); box-shadow: inset 0 0 0 1px var(--border-strong); background: var(--card) repeating-linear-gradient(135deg, transparent 0 3px, var(--wash-strong) 3px 6px); }
-  .dm-acct-nft-nomark + .dm-acct-nft-nomark { margin-left: -9.6px; }
-  .dm-acct-nft-range { display: grid; justify-items: start; gap: 6px; min-width: 0; }
-  .dm-acct-nft-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-width: 0; }
-  .dm-acct-nft-minibar { display: block; width: 88px; flex-shrink: 0; }
-  .dm-acct-nft-ticks { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-acct-nft-cell { position: relative; display: grid; min-width: 0; }
-  /* The column's name, for a screen reader beside the band; shown as a label when the row stacks. */
-  .dm-acct-nft-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; text-transform: uppercase; }
-  .dm-acct-nft-amounts { display: grid; justify-items: end; gap: 2px; min-width: 0; text-align: right; }
   .dm-acct-amount { display: block; max-width: 100%; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); overflow-wrap: anywhere; text-wrap: pretty; font-variant-numeric: lining-nums tabular-nums; }
   .dm-acct-amount-symbol { font-weight: 400; color: var(--fg-subtle); }
-  .dm-acct-nft-empty { grid-column: 2 / 5; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  .dm-acct-nft-chev { display: grid; place-items: center; justify-self: end; width: 24px; height: 32px; border-radius: var(--radius-sm); color: var(--fg-subtle); transition: color var(--dur-hover) ease; }
-  .dm-acct-nft-chev > svg { transition: rotate var(--dur-fast) var(--ease-std), translate var(--dur-fast) var(--ease-std); }
-  .dm-acct-nft summary:hover .dm-acct-nft-chev { color: var(--fg); }
-  .dm-acct-nft details:not([open]) > summary:hover .dm-acct-nft-chev > svg { translate: 2px 0; }
-  .dm-acct-nft details[open] > summary .dm-acct-nft-chev > svg { rotate: 90deg; }
-  /* Under the row, aligned with the pair name (two 32px marks overlapping by 30%, then 12px). */
-  .dm-acct-nft-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-left: 66px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-acct-nft-meta > [data-no-liquidity] { color: var(--fg-muted); }
-
-  .dm-acct-nft-body { display: grid; gap: 16px; padding: 16px; animation: dm-fade var(--dur-fade) var(--ease-std) backwards; }
-  .dm-acct-nft-facts { padding: 0; }
-
-  @container acct-nft (max-width: 699px) {
-    .dm-acct-nft-form { flex-basis: 100%; max-width: none; justify-content: flex-start; }
-    .dm-acct-nft-actions { min-width: 0; }
-    .dm-acct-nft-rows > .dm-acct-nft-band { display: none; }
-    .dm-acct-nft-rows > .dm-acct-nft > details > summary { grid-template-columns: minmax(0, 1fr) 32px; row-gap: 10px; padding-left: 8px; padding-right: 8px; }
-    .dm-acct-nft-pool { grid-column: 1; grid-row: 1; }
-    .dm-acct-nft-chev { grid-column: 2; grid-row: 1; }
-    .dm-acct-nft-range, .dm-acct-nft-cell, .dm-acct-nft-empty, .dm-acct-nft-meta { grid-column: 1 / -1; }
-    .dm-acct-nft-range { grid-auto-flow: column; justify-content: start; align-items: center; column-gap: 12px; }
-    .dm-acct-nft-cell { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); align-items: start; column-gap: 12px; }
-    .dm-acct-nft-label { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; white-space: normal; font-size: 11px; line-height: 18px; font-weight: 500; letter-spacing: 0.6px; color: var(--fg-subtle); }
-    .dm-acct-nft-meta { padding-left: 0; }
-  }
   @container acct-nft (max-width: 419px) {
-    .dm-acct-nft-range { grid-auto-flow: row; }
     .dm-acct-range-ends { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
     .dm-acct-range-unit { grid-column: 1 / -1; grid-row: 2; text-align: left; white-space: normal; }
     .dm-acct-range-unit:empty { display: none; }
   }
 
-  /* The range against the pool's price, inside an opened lookup row. */
+  /* The range against the pool's price (PositionRange.tsx). */
   .dm-acct-range { display: grid; gap: 8px; }
   .dm-acct-range-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; }
   .dm-acct-range-now { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 8px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-muted); }
@@ -226,50 +180,94 @@
   }
   .dm-fees-in, .dm-portfolio .dm-fees-in { color: var(--money-in); }
 
-  /* Rows: 72px, USD first, the range as a mini bar under its status. */
-  .dm-own-card .dm-acct-nft-rows { --cols: minmax(0, 2fr) minmax(0, 1.35fr) minmax(0, 1.3fr) minmax(0, 1.3fr) 24px; }
-  /* The Closed tab's range column holds only the pill: the pool takes the room, so each pair and its id share one line. */
-  .dm-own-card .dm-acct-nft-rows[data-owned-rows="closed"] { --cols: minmax(0, 2.6fr) minmax(0, 0.9fr) minmax(0, 1.35fr) minmax(0, 1.35fr) 24px; }
-  .dm-acct-nft-rows > .dm-own-row { position: relative; min-height: 72px; padding-top: 12px; padding-bottom: 12px; color: inherit; text-decoration: none; }
-  .dm-acct-nft-rows > .dm-own-row:focus-visible { outline-offset: var(--focus-offset-inset); }
-  .dm-own-row .dm-acct-nft-bar { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 8px; }
-  .dm-own-row .dm-acct-nft-minibar { order: 1; width: min(120px, 100%); }
-  .dm-own-row .dm-acct-nft-chip-text { font-size: 12px; }
-  .dm-own-row .dm-acct-nft-amounts { gap: 0; }
-  .dm-own-row .dm-acct-nft-amounts:has(.dm-row-usd) .dm-acct-amount { font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-row-usd { order: -1; font-size: 16px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
-  .dm-row-usd.dm-fees-in { color: var(--money-in); }
-  /* Unclaimed fees without USD: in the in-colour while there are any, muted at zero. */
-  .dm-own-row [data-cell="fees"] .dm-acct-nft-amounts:not(:has(.dm-row-usd)) .dm-acct-amount[data-amount="units"] { color: var(--money-in); }
-  .dm-own-row [data-cell="fees"] .dm-acct-nft-amounts:not(:has(.dm-row-usd)) .dm-acct-amount[data-amount="zero"] { color: var(--fg-muted); }
-  .dm-own-row [data-cell="fees"] .dm-acct-amount[data-amount="units"] .dm-acct-amount-symbol { color: inherit; opacity: 0.8; }
-  .dm-own-row:hover .dm-acct-nft-chev { color: var(--fg); }
-  .dm-own-row:hover .dm-acct-nft-chev > svg { translate: 2px 0; }
-  /* A closed position: one quiet line; nothing leaves the DOM. */
-  .dm-acct-nft-rows > .dm-own-row:has([data-position-status="closed"]) { min-height: 52px; padding-top: 8px; padding-bottom: 8px; }
-  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-pool > span:first-child { opacity: 0.6; }
-  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-minibar { visibility: hidden; height: 0; }
-  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-bar { gap: 0; }
-  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-pair { color: var(--fg-muted); }
-  .dm-own-row:has([data-position-status="closed"]) .dm-acct-amount { font-size: 13px; line-height: 18px; font-weight: 400; color: var(--fg-subtle); }
-  /* One line: smaller faded marks, the pair and its id side by side (the chip without its plate), the zero amounts in a
-     row. Flex items stay blocks, so every figure keeps its own line in innerText. */
-  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-pool > :first-child { scale: 0.75; transform-origin: left center; margin-right: -14px; }
-  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-name { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; }
-  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-pair { font-size: 14px; line-height: 20px; }
-  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-chip { min-height: 20px; padding: 0; background: none; color: var(--fg-subtle); }
-  .dm-own-row:has([data-position-status="closed"]) .dm-acct-nft-amounts { display: flex; flex-wrap: wrap; justify-content: flex-end; column-gap: 12px; }
+  /* Rows (round 6, 2026-09-27, the owner: one tidy row per position, with its APR; nothing under it). The list is one
+     grid, and its band and every row share its columns (subgrid), so each figure lines up down the table: the pool
+     takes the room left, each figure column its widest figure. The row is the link; its automation (a badge, or
+     Automate) is its sibling, laid over the Automation column. */
+  .dm-own-list { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(152px) fit-content(152px) fit-content(128px) fit-content(152px) 16px; column-gap: 16px; row-gap: 2px; }
+  .dm-own-band { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; min-height: 40px; padding: 0 16px; border-radius: var(--radius); background: var(--band); color: var(--fg-subtle); font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; white-space: nowrap; }
+  .dm-own-band > :nth-child(n + 2):nth-child(-n + 4) { text-align: right; }
+  /* 2026-09-28 (review: every figure moved left when the badges, then an estimated APR, arrived): the two columns filled
+     after the list (Your APR, measured one position at a time; Automation, its own chain read) keep the width of their
+     widest content from the first paint, "1,422% est." and the Domino-compound badge. Named on the Open tab only: the
+     Closed tab has neither, and its figures take the room. The columns stand 16px apart, so the pair keeps its room. */
+  .dm-own-band > :nth-child(4):not(:empty) { min-width: 84px; }
+  .dm-own-band > :nth-child(5):not(:empty) { min-width: 144px; }
+  .dm-own-item { position: relative; grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; min-width: 0; }
+  .dm-own-row { grid-column: 1 / -1; grid-row: 1; display: grid; grid-template-columns: subgrid; align-items: center; min-width: 0; min-height: 68px; padding: 12px 16px; border-radius: var(--radius); color: inherit; text-decoration: none; transition: background-color 100ms ease-in-out; }
+  a.dm-own-row:focus-visible { outline-offset: var(--focus-offset-inset); }
+  @media (hover: hover) {
+    .dm-own-item:not(.dm-own-item--wait):hover > .dm-own-row { background: var(--row-hover); }
+    .dm-own-item:hover .dm-own-chev { color: var(--fg); }
+    .dm-own-item:hover .dm-own-chev > svg { translate: 2px 0; }
+  }
+
+  /* The pool: the marks, the pair and its fee, and under them whether the price is in the range. */
+  .dm-own-pool { grid-column: 1; display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .dm-own-name { display: grid; justify-items: start; gap: 4px; min-width: 0; }
+  /* The pair comes first: short of room, its fee goes under it rather than cut the pair. */
+  .dm-own-title { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-width: 0; max-width: 100%; }
+  .dm-own-pair { min-width: 0; overflow-wrap: anywhere; font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
+  .dm-own-fee { flex-shrink: 0; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-own-state { display: flex; min-width: 0; }
+  .dm-own-state > .dm-pill { min-height: 20px; padding: 2px 8px; gap: 6px; }
+  .dm-own-state .dm-pill-dot { width: 6px; height: 6px; }
+
+  /* The figures: one each, right-aligned. Their names are for a screen reader (and shown on a phone). */
+  .dm-own-figs { display: contents; }
+  .dm-own-cell { position: relative; display: grid; justify-items: end; align-content: center; min-width: 0; text-align: right; }
+  .dm-own-cell[data-cell="principal"] { grid-column: 2; }
+  .dm-own-cell[data-cell="fees"] { grid-column: 3; }
+  .dm-own-cell[data-cell="apr"] { grid-column: 4; }
+  .dm-own-label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .dm-own-fig { font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+  .dm-own-fig.dm-fees-in { color: var(--money-in); }
+  .dm-own-amounts { display: grid; justify-items: end; min-width: 0; }
+  .dm-own-amounts .dm-acct-amount { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-own-cell[data-cell="fees"] .dm-own-amounts .dm-acct-amount[data-amount="units"] { color: var(--money-in); }
+  .dm-own-cell[data-cell="fees"] .dm-own-amounts .dm-acct-amount[data-amount="zero"] { color: var(--fg-muted); }
+  .dm-own-aprs { display: inline-flex; align-items: baseline; gap: 6px; }
+  .dm-own-est { font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: 0; color: var(--fg-subtle); }
+  .dm-own-dash { font-size: 15px; line-height: 22px; color: var(--fg-subtle); }
+  /* The two token amounts of Value and of Fees: read out with the figure, and shown when a pointer rests on it. */
+  .dm-own-split { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  @media (hover: hover) {
+    .dm-own-cell:hover > .dm-own-split { top: calc(100% + 6px); right: -12px; z-index: 5; display: grid; justify-items: end; gap: 2px; width: max-content; height: auto; margin: 0; padding: 8px 12px; overflow: visible; clip: auto; border-radius: var(--radius); background: var(--surface-3); box-shadow: 0 0 0 1px var(--border-strong), 0 12px 32px rgb(0 0 0 / 0.4); pointer-events: none; animation: dm-fade var(--dur-fade) var(--ease-std) backwards; }
+    .dm-own-split .dm-acct-amount { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); white-space: nowrap; }
+  }
+
+  .dm-own-chev { grid-column: 6; display: grid; place-items: center; justify-self: end; width: 16px; color: var(--fg-subtle); transition: color var(--dur-hover) ease; }
+  .dm-own-chev > svg { transition: translate var(--dur-fast) var(--ease-std); }
+
+  /* Automation: a small badge (Tangerine while it runs; Paused or Stopped under it when not), or Automate for a plain
+     position, whose words line up with the badges. */
+  /* A click on a badge is the row's (2026-09-28, review: the badge was a dead spot in the middle of the row): only
+     Automate takes its own. */
+  .dm-own-auto { position: relative; z-index: 1; grid-column: 5; grid-row: 1; align-self: center; justify-self: start; display: grid; justify-items: start; gap: 2px; min-width: 0; pointer-events: none; }
+  .dm-own-badge { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 3px 9px 3px 8px; border-radius: var(--radius-pill); background: var(--wash-strong); color: var(--fg-muted); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; white-space: nowrap; }
+  .dm-own-badge::before { content: ''; width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: currentColor; }
+  .dm-own-badge[data-running] { background: var(--primary-wash); color: var(--primary-line); }
+  .dm-own-badge-word { padding-left: 9px; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  .dm-own-auto > .dm-auto-go { margin-left: -10px; color: var(--fg-muted); pointer-events: auto; }
+  .dm-own-auto > .dm-auto-go:hover { color: var(--fg); }
+
+  /* A closed position: one quiet row, its figures small. */
+  .dm-own-item:has([data-position-status="closed"]) > .dm-own-row { min-height: 60px; padding-top: 10px; padding-bottom: 10px; }
+  .dm-own-row:has([data-position-status="closed"]) .dm-own-pool > :first-child { opacity: 0.6; }
+  .dm-own-row:has([data-position-status="closed"]) .dm-own-pair { color: var(--fg-muted); }
+  .dm-own-row:has([data-position-status="closed"]) :is(.dm-own-fig, .dm-acct-amount) { font-size: 13px; line-height: 18px; font-weight: 400; color: var(--fg-subtle); }
 
   /* A row on its way: bubbles at the size of what they stand for, never wider than their cell. */
-  .dm-acct-nft-rows > .dm-own-row--wait:hover { background: none; }
-  .dm-own-skel-mark { width: 32px; height: 32px; flex-shrink: 0; border-radius: var(--radius-pill); }
+  .dm-own-skel-mark { width: 54px; height: 32px; flex-shrink: 0; border-radius: var(--radius-pill); }
   .dm-own-skel-name { display: grid; gap: 8px; min-width: 0; flex: 1 1 auto; }
   .dm-own-skel-pair { width: min(96px, 100%); height: 12px; }
-  .dm-own-skel-chip { width: min(120px, 100%); height: 12px; border-radius: var(--radius-pill); }
-  .dm-own-skel-bar { width: min(120px, 100%); height: 8px; border-radius: var(--radius-pill); }
-  .dm-own-skel-figs { display: grid; justify-items: end; gap: 8px; }
-  .dm-own-skel-fig { width: min(72px, 100%); height: 12px; }
-  .dm-own-skel-fig--short { width: min(52px, 80%); }
+  .dm-own-skel-chip { width: min(72px, 100%); height: 12px; border-radius: var(--radius-pill); }
+  .dm-own-skel-fig { width: min(64px, 100%); height: 12px; margin: 5px 0; }
+  .dm-own-skel-fig--short { width: min(48px, 80%); }
+  .dm-own-skel-apr { width: 40px; height: 12px; margin: 5px 0; border-radius: var(--radius-xs); }
+  /* A row's Your APR waiting its turn (listApr.ts measures one position at a time, so a lower row may wait a minute):
+     a soft pulse, not a loading bar's shimmer. */
+  [data-apr="waiting"] .dm-own-skel-apr { background-image: none; animation: var(--animate-pulse-soft); animation-duration: 2.4s; }
   .dm-own-skel-tabs { width: 176px; height: 36px; border-radius: var(--radius-pill); }
   /* The portfolio band on its way: bubbles at the size of its label and figures, on the band's own grid. */
   .dm-own-skel-label { width: 56px; height: 12px; margin: 3px 0; }
@@ -280,56 +278,36 @@
   @media (max-width: 767px) { .dm-own-skel-hero { width: 96px; height: 28px; } .dm-own-skel-lg { width: 64px; height: 20px; } }
 
   .dm-own-more { display: flex; justify-content: center; padding: 8px 0 4px; }
-  /* A quiet 40px summary led by a search glyph (a data-URL mask in the text's colour), not the disclosure chevron. */
-  .dm-own-lookup > summary { width: fit-content; min-height: 40px; color: var(--fg-muted); }
-  .dm-details.dm-own-lookup > summary::before { width: 14px; height: 14px; border: 0; rotate: none; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='m10.5 10.5 3 3'/%3E%3C/svg%3E") center / 14px 14px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.5'/%3E%3Cpath d='m10.5 10.5 3 3'/%3E%3C/svg%3E") center / 14px 14px no-repeat; }
-  .dm-details.dm-own-lookup[open] > summary::before { rotate: none; }
-  .dm-details.dm-own-lookup > .dm-own-lookup-body { padding: 8px 0 0; }
 
-  /* A narrow card (a phone): the marks beside the pair, which may wrap but is never cut; the chip and the status on one
-     line under it; the two figures under both. The pool and name wrappers lend their children to the row's grid, so
-     the DOM (and its text order) stays as it is. */
+  /* A narrow card (a phone): the marks beside the pair and its fee, then whether it is in range with its automation at
+     the right, then Value, Fees ready to collect and Your APR side by side, each under its name. The pool and name
+     wrappers lend their children to the row's grid, so the DOM (and its text order) stays as it is. */
   @container acct-nft (max-width: 699px) {
-    .dm-own-card .dm-acct-nft-rows > .dm-own-row {
-      grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto 20px;
-      grid-template-areas: "marks pair pair pair chev" "marks chip chip range chev" "principal principal fees fees chev";
-      grid-template-rows: auto auto auto;
-      align-items: center; row-gap: 4px; column-gap: 12px; min-height: 84px; padding: 14px 8px;
-    }
-    .dm-own-card .dm-own-row > .dm-acct-nft-pool, .dm-own-card .dm-own-row .dm-acct-nft-name { display: contents; }
-    .dm-own-card .dm-own-row > .dm-acct-nft-pool > :first-child { grid-area: marks; align-self: center; }
-    .dm-own-card .dm-own-row .dm-acct-nft-pair { grid-area: pair; align-self: end; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
-    .dm-own-card .dm-own-row .dm-acct-nft-chip { grid-area: chip; justify-self: start; align-self: start; max-width: none; }
-    .dm-own-card .dm-own-row .dm-acct-nft-chip-text { overflow: visible; text-overflow: clip; }
-    .dm-own-card .dm-own-row > .dm-acct-nft-range { grid-area: range; justify-self: end; align-self: start; }
-    .dm-own-card .dm-own-row .dm-acct-nft-bar { flex-direction: row; align-items: center; gap: 10px; }
-    .dm-own-card .dm-own-row .dm-acct-nft-minibar { width: 72px; }
-    .dm-own-card .dm-own-row > [data-cell="principal"] { grid-area: principal; margin-top: 10px; }
-    .dm-own-card .dm-own-row > [data-cell="fees"] { grid-area: fees; margin-top: 10px; }
-    .dm-own-card .dm-own-row > .dm-acct-nft-chev { grid-area: chev; align-self: center; }
-    .dm-own-card .dm-own-row > .dm-acct-nft-range.text-fg-subtle { justify-items: end; }
-    .dm-own-card .dm-own-row .dm-acct-nft-cell { grid-template-columns: minmax(0, 1fr); row-gap: 2px; }
-    .dm-own-card .dm-own-row [data-cell="principal"] :is(.dm-acct-nft-amounts, .dm-own-skel-figs) { justify-items: start; text-align: left; }
-    .dm-own-card .dm-own-row [data-cell="fees"] .dm-acct-nft-label { text-align: right; }
+    .dm-own-list { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
+    .dm-own-band { display: none; }
+    /* The in-range chip's row keeps the badge's height from the first paint: nothing under it moves when the badge comes. */
+    .dm-own-item { grid-column: 1; grid-template-columns: auto minmax(0, 1fr) auto 16px; grid-template-rows: auto minmax(22px, auto) auto; column-gap: 12px; row-gap: 4px; }
+    .dm-own-row { grid-row: 1 / -1; grid-template-rows: subgrid; min-height: 0; padding: 14px 8px; }
+    .dm-own-pool, .dm-own-name { display: contents; }
+    .dm-own-pool > :first-child { grid-column: 1; grid-row: 1 / 3; align-self: center; }
+    .dm-own-title { grid-column: 2 / 4; grid-row: 1; align-self: end; }
+    .dm-own-state { grid-column: 2; grid-row: 2; align-self: center; }
+    .dm-own-figs { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 0.8fr); column-gap: 12px; margin-top: 10px; }
+    .dm-own-cell, .dm-own-cell[data-cell] { grid-column: auto; justify-items: start; align-content: start; text-align: left; }
+    .dm-own-cell[data-cell="apr"] { justify-items: end; text-align: right; }
+    .dm-own-label { position: static; width: auto; height: auto; margin: 0 0 2px; overflow: visible; clip: auto; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+    .dm-own-amounts { justify-items: start; }
+    .dm-own-cell[data-cell="apr"] .dm-own-amounts { justify-items: end; }
+    .dm-own-chev { grid-column: 4; grid-row: 1 / 3; align-self: center; }
+    .dm-own-auto { grid-column: 3; grid-row: 2; justify-self: end; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; column-gap: 8px; }
+    .dm-own-badge-word { padding-left: 0; }
+    .dm-own-auto > .dm-auto-go { margin: -6px -8px -6px 0; }
     /* A row still on its way keeps its own two blocks (bubbles have no pair or chip to lend). */
-    .dm-own-card .dm-own-row--wait > .dm-acct-nft-pool { display: flex; grid-area: 1 / 1 / 3 / 4; align-self: center; }
-    .dm-own-card .dm-own-row--wait > .dm-acct-nft-range { grid-area: 1 / 4 / 3 / 5; align-self: center; }
-    /* An unread row (no pair, a dash per figure): the id beside the empty marks. */
-    .dm-own-card .dm-own-row[data-row-reason] > .dm-acct-nft-pool { display: flex; grid-area: 1 / 1 / 3 / 4; }
-
-    /* A closed position folds to one quiet line: small faded marks, the pair and its chip, the Closed pill, the chevron.
-       Its zero figures stay in the DOM and in innerText (clipped, not display: none). */
-    .dm-own-card .dm-acct-nft-rows > .dm-own-row:has([data-position-status="closed"]) {
-      grid-template-columns: auto minmax(0, 1fr) auto 20px;
-      grid-template-areas: "marks pair range chev" "marks chip range chev";
-      min-height: 56px; row-gap: 2px; padding-top: 8px; padding-bottom: 8px;
-    }
-    .dm-own-card .dm-own-row:has([data-position-status="closed"]) > .dm-acct-nft-range { align-self: center; }
-    .dm-own-card .dm-own-row:has([data-position-status="closed"]) > :is([data-cell="principal"], [data-cell="fees"]) { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-  }
-  @container acct-nft (max-width: 479px) {
-    .dm-own-card .dm-own-row .dm-acct-nft-minibar { display: none; }
-    .dm-own-card .dm-own-row .dm-own-skel-bar { width: 80px; height: 22px; border-radius: var(--radius-pill); }
+    .dm-own-item--wait .dm-own-pool > .dm-own-skel-name { grid-column: 2 / 4; grid-row: 1 / 3; align-self: center; }
+    /* A closed position folds to one quiet row: the marks, the pair and its fee over Closed, the chevron. Its figures
+       stay in the DOM and in innerText (clipped, not display: none). */
+    .dm-own-item:has([data-position-status="closed"]) > .dm-own-row { padding-top: 10px; padding-bottom: 10px; }
+    .dm-own-row:has([data-position-status="closed"]) > .dm-own-figs { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   }
 
   /* ---- One inset per width: every card's text starts 24px inside a card on a wide screen, 16px inside it on a phone
@@ -348,6 +326,7 @@
     .dm-acct-wallet > .dm-acct-rail-head { padding: 12px 8px 8px; }
     .dm-acct-wallet > .dm-acct-rail-empty { padding: 0 8px 16px; }
     .dm-acct-token { padding: 0 8px; }
+    .dm-acct-token-group { padding: 12px 8px 4px; }
     .dm-acct-total { padding: 0 8px 12px; min-height: 32px; }
     .dm-acct-total-skel { height: 28px; }
     /* A ghost button's words line up with the text above them (its plate reaches 4px past the inset). */
@@ -743,6 +722,10 @@
   [data-performance-status="available"] .dm-acct-status { background: var(--money-in-bg); color: var(--money-in); }
   .dm-mp-figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; margin: 0; }
   .dm-mp-figs dt { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
+  /* The three figures at a glance: each column as wide as its label, spread across the row, so "Fees added back"
+     stays on one line whatever the platform's font (it wrapped on Linux at 1280 px in equal thirds). */
+  .dm-mp-row > .dm-mp-figs { grid-template-columns: repeat(3, max-content); justify-content: space-between; }
+  .dm-mp-row > .dm-mp-figs dt { white-space: nowrap; }
   .dm-mp-figs dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: 16px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); font-variant-numeric: lining-nums tabular-nums; }
   .dm-mp-figs [data-metric-state="unavailable"] dd { color: var(--fg-subtle); }
   .dm-mp-more { margin: -4px -12px -8px; }

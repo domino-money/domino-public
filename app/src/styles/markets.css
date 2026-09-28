@@ -227,16 +227,18 @@
   /* The end cell holds the info button and the chevron (28 + 6 + 14): an 8px lead keeps them inside its 72px, so the
      chevron sits at one x in a read row and in a catalogue row. */
   .dm-mkt-table .dm-table :is(th, td).dm-mkt-end { padding-left: 8px; }
-  /* A tablet keeps all six columns, narrower, so the pool's name keeps its room. */
+  /* A tablet keeps all six columns, narrower, so the pool's name keeps its room. The price column holds a plain price
+     with its symbol on one line ("2,500.09 USDG", about 114px at 16px, inside its 16px paddings; round 6 integration,
+     2026-09-28: at 140px it ran 3px past the column's right edge in an 820px window). */
   @media (min-width: 768px) and (max-width: 1023px) {
-    .dm-mkt-col-price { width: 140px; }
+    .dm-mkt-col-price { width: 160px; }
     .dm-mkt-col-tvl { width: 96px; }
     .dm-mkt-col-volume { width: 104px; }
     .dm-mkt-col-apr { width: 124px; }
   }
   .dm-mkt-num { font-size: 16px; line-height: 22px; letter-spacing: -0.2px; }
   .dm-mkt-price { display: inline-grid; justify-items: end; }
-  .dm-mkt-price-unit { margin-top: 2px; font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; }
+  .dm-mkt-price-unit { margin-bottom: 2px; font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; }
   .dm-mkt-end .dm-icon-btn { width: 28px; height: 28px; }
   /* The first read still out: bubbles at each figure's text-line size (§3.11), right-aligned like the figures. */
   .dm-mkt-bubbles { display: inline-grid; justify-items: end; gap: 6px; vertical-align: middle; }

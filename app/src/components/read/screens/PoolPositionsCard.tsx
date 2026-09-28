@@ -67,7 +67,7 @@ function Rows({ rows, block }: { rows: PoolPositionRow[]; block: number }) {
  * pool-positions is listed; without an answer its figures are dashes, with
  * the reason in the section's title.
  */
-export function PoolPositionsCard({ read, option }: { read: ScreenOutcome<'pool-positions'> | null; option: PoolOption }) {
+export function PoolPositionsCard({ read, option, embedded = false }: { read: ScreenOutcome<'pool-positions'> | null; option: PoolOption; embedded?: boolean }) {
   const view = read?.state === 'ok' ? poolPositionsView(read.data, option.currencies) : null
   const failure = read && read.state !== 'ok' && read.state !== 'aborted' ? read : null
   const reason = failure
@@ -100,11 +100,13 @@ export function PoolPositionsCard({ read, option }: { read: ScreenOutcome<'pool-
       </table>
     </div>
   )
+  const Heading = embedded ? 'h3' : 'h2'
   return (
-    <section className="dm-card dm-pool-card dm-pool-a-positions animate-rise [--delay:120ms]" aria-labelledby="pool-positions-title" data-pool-positions={state} data-positions-reason={view?.state === 'unavailable' ? view.reason : failure?.state} title={reason}>
-      <h2 id="pool-positions-title" className="dm-title" title="Every position on this pool at one block. Owners are public data at that block.">
+    <section className={embedded ? 'dm-pool-embedded' : 'dm-card dm-pool-card dm-pool-a-positions animate-rise [--delay:120ms]'} aria-labelledby="pool-positions-title" data-pool-positions={state} data-positions-reason={view?.state === 'unavailable' ? view.reason : failure?.state} title={reason}>
+      {/* Inside the pool page's Details (round 6), under its own smaller heading. */}
+      <Heading id="pool-positions-title" className={embedded ? 'dm-pool-embedded-title' : 'dm-title'} title="Every position on this pool at one block. Owners are public data at that block.">
         Positions in this pool
-      </h2>
+      </Heading>
       <p role="status" className="sr-only">{state === 'loading' ? 'Reading positions…' : state === 'unavailable' ? reason : ''}</p>
       <dl className="dm-pool-facts">
         <div><dt>Positions</dt><dd>{fact(counted?.count.toLocaleString('en-US'))}</dd></div>

@@ -294,17 +294,6 @@ export function IconPlay({ size, className }: IconProps) {
   )
 }
 
-/** Two sliders. */
-export function IconSettings({ size, className }: IconProps) {
-  return (
-    <Svg size={size} className={className}>
-      <path d="M2 5h6.25M11.75 5H14M2 11h2.25M7.75 11H14" stroke={TWO} opacity=".55" />
-      <circle cx="10" cy="5" r="1.75" />
-      <circle cx="6" cy="11" r="1.75" />
-    </Svg>
-  )
-}
-
 /** An open book. */
 export function IconBook({ size, className }: IconProps) {
   return (

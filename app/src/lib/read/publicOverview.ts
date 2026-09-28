@@ -1,6 +1,7 @@
 /** Project stored observations through the existing V1/V2 presentation. The
  * envelope arrival is not a fresh observation: server-reported storage age is
  * carried onto the page's clocks, preserving both provider and snapshot age. */
+import type { VerifiedPool } from 'api-contracts/read-v1/types'
 import type { StoredPool, StoredToken } from 'api-contracts/read-v3/types'
 import { observe } from './interpret'
 import { projectMarketRow, tokenDisplay, unreadToken } from './project'
@@ -30,7 +31,8 @@ export function storedPoolRead(entry: StoredPool, generatedAt: number, provenanc
     observation: observe('pool-market', entry.value.market), provenance: storedProvenance(provenance, generatedAt, entry.observedAt) }
 }
 
-export function overviewRows(outcome: Extract<ReadOutcome<'overview'>, { state: 'ok' }>) {
+/** The overview's rows; with `keep`, only the pools it keeps (a list's binding, marketsProvider.ts). */
+export function overviewRows(outcome: Pick<Extract<ReadOutcome<'overview'>, { state: 'ok' }>, 'data' | 'provenance'>, keep?: (poolId: string, pool: VerifiedPool) => boolean) {
   const tokens = new Map<string, ReadOutcome<'token'>>()
   for (const entry of outcome.data.tokens) {
     const read = storedTokenRead(entry, outcome.data.generatedAt, outcome.provenance)
@@ -38,7 +40,7 @@ export function overviewRows(outcome: Extract<ReadOutcome<'overview'>, { state: 
   }
   return outcome.data.pools.flatMap((entry) => {
     const market = storedPoolRead(entry, outcome.data.generatedAt, outcome.provenance)
-    if (!market) return []
+    if (!market || (keep && !keep(entry.poolId, market.data.pool))) return []
     const row = projectMarketRow({ market, tokens, metrics: null })
     const pending = market.data.pool.currencies.some((address) => outcome.data.tokens.some((entry) => entry.address === address && entry.value === null && entry.acquisition.status === 'pending'))
     return [{ ...row, ...(pending ? { tokensPending: true as const } : {}) }]

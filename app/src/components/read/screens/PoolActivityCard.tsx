@@ -76,9 +76,9 @@ const sentence = (text: { title: string; detail: string }) => [text.title, text.
  * title. Activity a little behind the chain reads the same, stale in its
  * title; activity more than 15 minutes behind (figures.ts) is not the last
  * 24 hours, so it is dashes too, with how far behind in the title. Its age
- * counts on while the page is open (`now`).
+ * counts on while the page is open (`now`). `embedded`: drawn inside the pool page's Details, without a card of its own.
  */
-export function PoolActivityCard({ read, option, now }: { read: ScreenOutcome<'pool-activity'> | null; option: PoolOption; now?: Instant }) {
+export function PoolActivityCard({ read, option, now, embedded = false }: { read: ScreenOutcome<'pool-activity'> | null; option: PoolOption; now?: Instant; embedded?: boolean }) {
   const answer = read?.state === 'ok' ? read : null
   const age = answer ? activityAge(answer.data.freshness, now ? heldSeconds(answer.provenance, now) : 0) : null
   const tooOld = age?.state === 'too_old'
@@ -100,6 +100,7 @@ export function PoolActivityCard({ read, option, now }: { read: ScreenOutcome<'p
   const windowSeconds = view?.windowSeconds ?? DAY_SECONDS
   const span = windowSeconds === DAY_SECONDS ? '24h' : duration(windowSeconds)
   const spanText = span === '24h' ? '24 h' : span
+  const Heading = embedded ? 'h3' : 'h2'
   const blank = (
     <>
       <td>{cell(null)}</td>
@@ -107,8 +108,9 @@ export function PoolActivityCard({ read, option, now }: { read: ScreenOutcome<'p
     </>
   )
   return (
-    <section className="dm-card dm-pool-card dm-pool-a-activity animate-rise [--delay:80ms]" aria-labelledby="pool-activity-title" data-pool-activity={state} data-activity-reason={code} title={reason}>
-      <h2 id="pool-activity-title" className="dm-title" title={COPY.figures.activityScope}>On-chain activity</h2>
+    <section className={embedded ? 'dm-pool-embedded' : 'dm-card dm-pool-card dm-pool-a-activity animate-rise [--delay:80ms]'} aria-labelledby="pool-activity-title" data-pool-activity={state} data-activity-reason={code} title={reason}>
+      {/* Inside the pool page's Details (round 6) it is a part of that card, under its own smaller heading. */}
+      <Heading id="pool-activity-title" className={embedded ? 'dm-pool-embedded-title' : 'dm-title'} title={COPY.figures.activityScope}>On-chain activity</Heading>
       <p role="status" className="sr-only">{state === 'loading' ? 'Reading pool activity…' : blocked ? reason : ''}</p>
       {/* The four facts as tiles (pool.css); the dt/dd order is the reading order. */}
       <dl className="dm-pool-facts">

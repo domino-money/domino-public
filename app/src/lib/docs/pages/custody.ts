@@ -12,7 +12,7 @@ export const NON_CUSTODIAL: DocPage = {
       id: 'your-wallet',
       title: 'The position you open stays in your wallet',
       blocks: [
-        p('A position you create is a standard Uniswap position NFT, minted to the wallet that signs the mint.'),
+        p('A position you create is a standard Uniswap position NFT, minted to the wallet that signs.'),
         p('When you start Auto-compound or Domino-compound from it, that NFT stays in your wallet. You approve that one NFT to your sequence vault, never all of your NFTs.'),
         // 2026-09-27: Create position deposits through Domino's Setup contract itself (since 2026-09-23), and Setup's own
         // screen is linked from nowhere, so the sentence says where a reader meets a setup operation.
@@ -23,7 +23,7 @@ export const NON_CUSTODIAL: DocPage = {
       id: 'sequence-vault',
       title: 'What your sequence vault holds',
       blocks: [
-        p('Positions the automation opens, and earned fees not yet reinvested, are held by your own sequence vault until you withdraw them. Positions it opens are standard Uniswap position NFTs too.'),
+        p('Positions the automation opens, and earned fees not yet added back, are held by your own sequence vault until you withdraw them. Positions it opens are standard Uniswap position NFTs too.'),
         p('Your permission covers earned fees only, including fees still uncollected on your starting position when you create the sequence. Principal is never used.'),
         p('The vault is created for your wallet alone, and no function can change its owner. Only your wallet controls the vault: its withdrawals, its limits and its operator. Every withdrawal goes to your wallet.'),
       ],

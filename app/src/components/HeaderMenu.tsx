@@ -1,14 +1,14 @@
 import type { ComponentType } from 'react'
 import type { Page } from '../App'
 import { Menu, type MenuEntry } from './ui'
-import { IconAutomate, IconBook, IconClose, IconInfo, IconMarkets, IconMenu, IconMore, IconPlus, IconPositions, IconRange, IconSettings, type IconProps } from './icons'
-import { automateHref, marketsHref, newPositionHref, positionsHref, settingsHref } from './explore/routes'
+import { IconAutomate, IconBook, IconClose, IconInfo, IconMarkets, IconMenu, IconMore, IconPlus, IconPositions, IconRange, IconShield, type IconProps } from './icons'
+import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref } from './explore/routes'
 
 /**
  * The product's three places, in the header's nav pill and at the top of the
  * phone menu. A pool page belongs to Markets, the new-position flow to
  * Positions, and the wallet flows to Automate, so those stay lit inside them.
- * Home and Settings light nothing.
+ * Home and the docs light nothing.
  */
 export const PRIMARY_NAV: ReadonlyArray<{ label: string; href: string; icon: ComponentType<IconProps>; pages: readonly Page[] }> = [
   { label: 'Markets', href: marketsHref(), icon: IconMarkets, pages: ['markets', 'pool'] },
@@ -21,6 +21,12 @@ export const PRIMARY_NAV: ReadonlyArray<{ label: string; href: string; icon: Com
  * No wallet control, no motion toggle and no external link live here: the
  * wallet control stays the header's only dialog trigger, and the motion toggle
  * stays in the footer's flow.
+ *
+ * 2026-09-27 (the owner's round 6, point 6): Settings is gone. Docs takes its
+ * place beside New position, since the docs say what Settings said, and an old
+ * `#/settings` link opens them. The book is the docs' mark now, so How it
+ * works wears the info mark and What Domino does not do the shield Home's own
+ * limits card wears.
  */
 export function HeaderMenu({ page }: { page: Page }) {
   const items: MenuEntry[] = [
@@ -34,12 +40,12 @@ export function HeaderMenu({ page }: { page: Page }) {
     })),
     { kind: 'separator', mobileOnly: true },
     { kind: 'link', href: newPositionHref(), label: 'New position', icon: <IconPlus />, current: page === 'new' },
-    { kind: 'link', href: settingsHref, label: 'Settings', icon: <IconSettings />, current: page === 'settings' },
+    { kind: 'link', href: docsHref(), label: 'Docs', icon: <IconBook />, current: page === 'docs' },
     { kind: 'separator' },
     { kind: 'heading', label: 'Guides' },
-    { kind: 'link', href: '#/#learn', label: 'How it works', icon: <IconBook /> },
+    { kind: 'link', href: '#/#learn', label: 'How it works', icon: <IconInfo /> },
     { kind: 'link', href: '#/#ranges', label: 'Ranges explained', icon: <IconRange /> },
-    { kind: 'link', href: '#/#limits', label: 'What Domino does not do', icon: <IconInfo /> },
+    { kind: 'link', href: '#/#limits', label: 'What Domino does not do', icon: <IconShield /> },
   ]
   // Two resting glyphs, both rendered and switched by CSS: three dots from 768px (the nav pill carries the places),
   // the hamburger below. Both are aria-hidden; the button's name is Menu.

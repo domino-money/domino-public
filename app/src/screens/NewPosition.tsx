@@ -4,6 +4,8 @@ import { useCreated } from '../lib/create/createProgress'
 import { SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 import { PageHeader, PageShell } from '../components/ui'
 import { Journey } from '../components/create/Journey'
+import { parseNewHash } from '../components/explore/routes'
+import { useHash } from '../components/explore/useHash'
 
 /**
  * Which flow New position shows: a new one each time a link to New position is followed after a position was created
@@ -38,13 +40,15 @@ function useFlowKey(): number {
 
 /**
  * New position: the four-step flow. `poolId`, when present, preselects the
- * pool once the chain verifies it. The flow is part of the page's own code
- * (no chunk of its own), inside a boundary so a failure in it leaves the
- * rest of the page working and says so.
+ * pool once the chain verifies it, with the token the link names after it
+ * (`#/new/<id>/<token>`, parseNewHash) when there is one. The flow is part of
+ * the page's own code (no chunk of its own), inside a boundary so a failure in
+ * it leaves the rest of the page working and says so.
  */
 export function NewPosition({ poolId }: { poolId: string }) {
   const flow = useFlowKey()
-  if (!SlotBoundary || !SlotFailed) return <Journey key={flow} poolId={poolId} />
+  const linkToken = parseNewHash(useHash()).token
+  if (!SlotBoundary || !SlotFailed) return <Journey key={flow} poolId={poolId} linkToken={linkToken} />
   return (
     <SlotBoundary
       fallback={
@@ -56,7 +60,7 @@ export function NewPosition({ poolId }: { poolId: string }) {
         </PageShell>
       }
     >
-      <Journey key={flow} poolId={poolId} />
+      <Journey key={flow} poolId={poolId} linkToken={linkToken} />
     </SlotBoundary>
   )
 }

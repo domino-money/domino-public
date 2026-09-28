@@ -226,6 +226,27 @@ test('the tab keeps chain series across a reload, only as wall time, and never s
   }
 })
 
+// Added 2026-09-27 (r6/marketsdata): the cards' memory is the browser's localStorage, so a new tab draws the six cards at
+// once instead of waiting about 4 s behind the tab's read budget; a document's first kept series lets go of the old ones.
+test('the cards’ memory is the browser’s, shared by its tabs, and old series are let go of so nothing piles up', () => {
+  const source = readFileSync(new URL('../src/lib/read/cardSeries.ts', import.meta.url), 'utf8')
+  assert.match(source, /export const CARD_CACHE = createCardCache\(\(\) => \(typeof localStorage === 'undefined' \? null : localStorage\)\)/)
+  const items = new Map([
+    ['domino-card:chain:old', JSON.stringify({ v: 1, receivedAt: NOW.wall - CHAIN_KEEP_MS - 1 })],
+    ['domino-card:chain:recent', JSON.stringify({ v: 1, receivedAt: NOW.wall - 60_000 })],
+    ['domino-card:chain:garbled', '{'],
+    ['domino-markets:v1', '{'],
+  ])
+  const listed = { ...memoryStorage(), get length() { return items.size }, key: (index) => [...items.keys()][index] ?? null }
+  Object.assign(listed, { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => { items.set(key, String(value)) }, removeItem: (key) => { items.delete(key) } })
+  const cache = createCardCache(() => listed, () => NOW.wall)
+  cache.put(chain())
+  assert.deepEqual([...items.keys()].sort(), ['domino-card:chain:recent', `domino-card:${KEY}`, 'domino-markets:v1'].sort(), 'past an hour, or not this page’s, is let go; other keys are not touched')
+  items.set('domino-card:chain:old', JSON.stringify({ v: 1, receivedAt: 0 }))
+  cache.put(chain())
+  assert.ok(items.has('domino-card:chain:old'), 'once a document')
+})
+
 test('storage that throws on every access, or is missing, costs nothing but the reload copy', () => {
   const boom = () => { throw new Error('SecurityError') }
   const caches = [
@@ -546,6 +567,8 @@ function cardModule() {
     ...require('../.test-build/app/src/lib/format/change.js'),
     // 2026-09-25 (r3 charts): the caption's hour is lib/format/time.ts shortTime, as the tooltip's.
     ...require('../.test-build/app/src/lib/format/time.js'),
+    // 2026-09-27 (r6/marketsdata): the card writes its closes as the table writes a price (marketPrice.ts plainClose).
+    ...require('../.test-build/app/src/lib/read/marketPrice.js'),
     unreadToken: (address) => ({ address }), poolHref: (id) => `#/pool/${id}`,
     // 2026-09-25 (r3 charts): the stub also shows the tone the card gives its line, and whether it draws the level.
     PriceLineSvg: (props) => React.createElement('svg', { 'data-price-line': '', 'data-tone': props.tone, 'data-level': props.level ? '' : undefined, title: props.title }),
@@ -601,4 +624,16 @@ test('the line takes the direction of the change the card shows at rest, and no 
   const partial = draw([ratioCandle(3, '2689.5'), ratioCandle(2, '2701.25'), ratioCandle(1, '2695', false)])
   assert.doesNotMatch(partial, /data-tone=|dm-mkt-card-delta/)
   assert.doesNotMatch(partial, /data-level/, 'no level for a change the card does not show')
+})
+
+// Added 2026-09-27 (r6/marketsdata, the owner: prices plain for beginners wherever pools are listed): the card's price
+// row writes its close as the table writes a price, whole units from 10,000 ("84,367", not "84,367.4").
+test('the card writes its latest close as the table writes a price', () => {
+  const { renderToStaticMarkup } = require('react-dom/server')
+  const MarketCard = cardModule()
+  const draw = (candles) => renderToStaticMarkup(MarketCard({ listing: { poolId: POOL, market: market() }, index: 0, now: NOW,
+    series: pickSeries({ market: market(), settled: true, answer: chain(history({ candles })), expecting: false, now: NOW }) }))
+  assert.match(draw([ratioCandle(24, '84100.9'), ratioCandle(1, '84367.4', false)]), /class="dm-mkt-card-close dm-fig-lg">84,367<\/span>/)
+  assert.match(draw([ratioCandle(24, '2689.5'), ratioCandle(1, '2701.25', false)]), /class="dm-mkt-card-close dm-fig-lg">2,701.25<\/span>/)
+  assert.match(draw([ratioCandle(24, '0.57'), ratioCandle(1, '0.573917', false)]), /class="dm-mkt-card-close dm-fig-lg">0.5739<\/span>/)
 })

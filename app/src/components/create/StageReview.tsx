@@ -12,30 +12,14 @@ import { ASSISTED_SWAP_FEE_BPS, type DepositPlan } from '../../lib/create/deposi
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
 import { useCreateProgress, useCreated, type LiveState } from '../../lib/create/createProgress'
-import { Approx, PoolPair, RangeSummary } from './StepList'
+import { PoolPair, RangeSummary } from './StepList'
 import { CreatedNext } from './CreatedNext'
-import { RangePreview } from '../charts/RangePreview'
 import { AmountText, UsdText } from '../figures'
 import { TokenMarkPair } from '../TokenIcon'
-import { heldAmounts, rangeView, rawBalances } from './valuation'
+import { heldAmounts, rawBalances } from './valuation'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 
-/**
- * The position in one line: how much of each token it holds, at the pool's
- * price. Both figures are the ones the amount step showed — the typed one and
- * the one the range and the price make of it (create/pairAmount.ts) — so
- * Review opens with what is being created rather than with a list of settings.
- *
- * Null when a choice is missing or the price cannot be used. When the wallet
- * holds only one of the two tokens, the line is what the position holds after
- * part of that token is swapped for the other (lib/create/depositPlan.ts).
- *
- * Returned as two sides rather than one sentence so each symbol can be drawn
- * through SymbolText. A symbol is whatever the token contract returned: it can
- * carry a right-to-left override that reorders the figures around it, or run
- * long enough to push the line off the panel. Every read screen already
- * isolates symbols that way; this is the same treatment for Review.
- */
+/** One side of the position: an amount of one of the pool's tokens, in whole tokens, grouped as the read writes it. */
 interface HeldSide {
   amount: string
   token: PoolOption['currencies'][number]
@@ -45,6 +29,20 @@ const sideOf = (pool: PoolOption, index: 0 | 1, raw: bigint | string): HeldSide 
   const currency = pool.currencies[index]
   const units = formatUnits(String(raw), currency.decimals)
   return { amount: units && units.kind === 'units' ? units.text : String(raw), token: currency }
+}
+
+/**
+ * One amount in the headline: short for reading (six significant digits, lib/format/amount.ts), the exact figure in
+ * its title and on `data-exact` (Create position works from the exact amounts, never from this text). The symbol is
+ * untrusted text, isolated by SymbolText.
+ */
+function Side({ side, index, lead }: { side: HeldSide; index: 0 | 1; lead?: string }) {
+  return (
+    <span className="dm-flow-headline-side" data-review-side={index} data-exact={side.amount}>
+      {lead}
+      <AmountText text={side.amount} /> <SymbolText token={side.token} />
+    </span>
+  )
 }
 
 /** How the wallet funds these choices, from the balances the read service reported: what Review shows, and what the final control's line says. */
@@ -61,12 +59,18 @@ const LIVE_CAPTION: Record<LiveState, string> = {
 }
 
 /**
- * Step 4, Review: the choices at the top, then the wallet steps in order,
- * each turning green as Create position completes it. No Domino fee on the
- * deposit: automation, with its fee on earned fees, is applied later from
- * Automate. When the wallet holds only one of the two tokens, the headline is
- * what the position holds after part of it is swapped, and the steps include
- * that swap with its fee.
+ * Step 4, Review: the position at the top, then the wallet steps in order,
+ * each turning green as Create position completes it, then the technical facts
+ * under a closed Details. No Domino fee on the deposit: automation, with its
+ * fee on earned fees, is applied later from Automate. When the wallet holds
+ * only one of the two tokens, the headline is what the position holds after
+ * part of it is swapped, and the steps include that swap with its fee.
+ *
+ * Changed on purpose (round 6, 2026-09-27, the owner: plain words, fewer
+ * numbers, the technical parts closed): the amounts are short, the range reads
+ * "1 ETH = 1,747.65 to 3,766.84 USDG", each wallet step is one short line and
+ * names its token by symbol only, and the slippage tolerance, the ticks, the
+ * pool id and the token contracts are under Details.
  */
 export function StageReview({ state, now, balances }: { state: JourneyState; now: number; balances: PairBalancesState }) {
   const pool = state.pool
@@ -76,7 +80,8 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
   const planned = reviewPlan(state, rawBalances(balances))
   const plan = planned?.plan ?? null
   const swap = plan && plan.kind === 'swap' ? plan : null
-  const steps = walletSteps(state, swap ? swap.from : null, `${ASSISTED_SWAP_FEE_BPS / 100}%`)
+  const fee = `${ASSISTED_SWAP_FEE_BPS / 100}%`
+  const steps = walletSteps(state, swap ? swap.from : null, fee)
   // Once Create position runs, its own steps, as they happen: the tokens it found in the wallet decide them.
   const progress = useCreateProgress()
   const live = progress && progress.length > 0 ? progress : null
@@ -87,9 +92,9 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
     : steps.map((step) => ({ ...step, state: null as LiveState | null, caption: step.detail }))
   const held = pool && planned ? ([sideOf(pool, 0, planned.need[0]), sideOf(pool, 1, planned.need[1])] as const) : null
   const slippage = validateSlippage(state.slippageBps)
-  // The headline's value in USD (USDG pairs only), and the range drawn small under its lines.
+  // The headline's value in USD (USDG pairs only).
   const total = planned ? (heldAmounts(state, balances)?.total ?? null) : null
-  const view = pool && usable && state.range ? rangeView(state.range, usable, pool) : null
+  const other = swap ? (swap.from === 0 ? 1 : 0) : 0
   return (
     <div className="dm-flow-stack" data-stage="review">
       <section aria-labelledby="create-choices-heading" className="dm-flow-section">
@@ -111,28 +116,16 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
             )}
           </p>
           <p className="dm-flow-headline-amounts tnum" data-review-amounts="" data-review-plan={plan?.kind}>
-            {/* Every digit stays (the amount is compared at full precision); the digits past the sixth are dimmed. */}
             {/* Each side is one phrase that keeps its line, and the + leads the second, so a narrow line breaks only before the +. */}
             {swap && pool ? (
               // What the position holds once part of the one token is swapped: estimates, before the pool's own price impact.
               <>
-                <span className="dm-flow-headline-side">
-                  <span className="dm-approx">≈</span>
-                  <AmountText text={sideOf(pool, swap.from, swap.deposit - swap.swap).amount} mode="dim-tail" /> <SymbolText token={pool.currencies[swap.from]} />
-                </span>{' '}
-                <span className="dm-flow-headline-side">
-                  + <span className="dm-approx">≈</span>
-                  <AmountText text={sideOf(pool, swap.from === 0 ? 1 : 0, swap.receive).amount} mode="dim-tail" /> <SymbolText token={pool.currencies[swap.from === 0 ? 1 : 0]} />
-                </span>
+                <Side side={sideOf(pool, swap.from, swap.deposit - swap.swap)} index={swap.from} lead={`${CREATE.review.about} `} />{' '}
+                <Side side={sideOf(pool, other, swap.receive)} index={other} lead="+ " />
               </>
             ) : held ? (
               <>
-                <span className="dm-flow-headline-side">
-                  <AmountText text={held[0].amount} mode="dim-tail" /> <SymbolText token={held[0].token} />
-                </span>{' '}
-                <span className="dm-flow-headline-side">
-                  + <AmountText text={held[1].amount} mode="dim-tail" /> <SymbolText token={held[1].token} />
-                </span>
+                <Side side={held[0]} index={0} /> <Side side={held[1]} index={1} lead="+ " />
               </>
             ) : (
               CREATE.page.notChosen
@@ -140,20 +133,20 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           </p>
           {total !== null && (
             <p className="dm-usd-line dm-flow-headline-usd">
-              <UsdText value={total} approx={swap !== null} />
+              <UsdText value={total} />
             </p>
           )}
           {swap && pool && (
             <p className="dm-flow-headline-line tnum" data-review-swap={swap.from}>
-              From your wallet: {sideOf(pool, swap.from, swap.deposit).amount} <SymbolText token={pool.currencies[swap.from]} />. About {sideOf(pool, swap.from, swap.swap).amount}{' '}
-              <SymbolText token={pool.currencies[swap.from]} /> of it is swapped for ≈<AmountText text={sideOf(pool, swap.from === 0 ? 1 : 0, swap.receive).amount} mode="dim-tail" />{' '}
-              <SymbolText token={pool.currencies[swap.from === 0 ? 1 : 0]} />.
+              You put in <AmountText text={sideOf(pool, swap.from, swap.deposit).amount} /> <SymbolText token={pool.currencies[swap.from]} />. About{' '}
+              <AmountText text={sideOf(pool, swap.from, swap.swap).amount} /> <SymbolText token={pool.currencies[swap.from]} /> of it is swapped for{' '}
+              <SymbolText token={pool.currencies[other]} />.
             </p>
           )}
           <p className="dm-flow-headline-line tnum" data-review-range="">
-            {state.range && price && price.state === 'usable' ? (
+            {state.range && usable ? (
               <>
-                {CREATE.review.rangeBetween} <RangeSummary range={state.range} price={price} />
+                {CREATE.amount.rangeHeading}: <RangeSummary range={state.range} price={usable} />
               </>
             ) : state.range ? (
               CREATE.review.summary.rangeTicks(state.range.lower, state.range.upper)
@@ -161,26 +154,10 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
               CREATE.page.notChosen
             )}
           </p>
-          {/* The person's own tolerance, in view here and again on Setup's draft before any wallet step. */}
-          <p className="dm-flow-headline-line tnum" data-review-slippage={slippage.ok ? slippage.bps : undefined}>
-            {slippage.ok ? CREATE.review.slippage(slippageWritten(slippage.bps)) : CREATE.page.notChosen}
-          </p>
-          {/* The range drawn small, with the bounds the line above says under its ends. New position's preview draws it large at every width (2026-09-24), so flow.css hides this one there. */}
-          {view && (
-            <RangePreview
-              lower={view.lower}
-              upper={view.upper}
-              current={view.current}
-              inRange={view.inRange}
-              height={56}
-              labels={{ lower: <Approx text={view.lowerText ?? CREATE.review.summary.beyondDisplay} />, upper: <Approx text={view.upperText ?? CREATE.review.summary.beyondDisplay} /> }}
-              className="dm-flow-headline-range"
-            />
-          )}
         </div>
         {slippage.ok && slippageWarns(slippage.bps) && (
           <p role="status" className="dm-flow-position" data-tone="neutral" data-review-slippage-warning="">
-            {CREATE.amount.slippageWarning(slippageWritten(slippage.bps))}
+            {CREATE.review.slippageWarning(slippageWritten(slippage.bps))}
           </p>
         )}
         {/* Only when there is something to warn about, as the range step does:
@@ -197,8 +174,8 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           // One span: the line is a flex row (its dot, then the sentence), and the symbols must stay inside the sentence.
           <p role="status" className="dm-flow-position" data-tone="neutral" data-review-swap-note="">
             <span>
-              Your wallet does not hold enough <SymbolText token={pool.currencies[swap.from === 0 ? 1 : 0]} />, so part of your <SymbolText token={pool.currencies[swap.from]} /> is swapped for it
-              inside this pool before the position is created. {CREATE.review.swapNote(`${ASSISTED_SWAP_FEE_BPS / 100}%`)}
+              You don’t have enough <SymbolText token={pool.currencies[other]} />, so part of your <SymbolText token={pool.currencies[swap.from]} /> is swapped for it in this pool
+              first. {CREATE.review.swapNote(fee)}
             </span>
           </p>
         )}
@@ -211,9 +188,9 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
         {plan && plan.kind === 'short' && pool && (
           <p role="status" className="dm-flow-position" data-tone="neutral" data-review-short={plan.token}>
             <span>
-              Your wallet holds {sideOf(pool, plan.token, plan.have).amount} <SymbolText token={pool.currencies[plan.token]} />
-              {pool.currencies[plan.token].address === NATIVE_CURRENCY ? ' after network gas' : ''}; this position needs {sideOf(pool, plan.token, plan.need).amount}. Lower the amount, or add{' '}
-              <SymbolText token={pool.currencies[plan.token]} /> to your wallet.
+              Your wallet has <AmountText text={sideOf(pool, plan.token, plan.have).amount} /> <SymbolText token={pool.currencies[plan.token]} />
+              {pool.currencies[plan.token].address === NATIVE_CURRENCY ? ' after network fees' : ''}; this position needs{' '}
+              <AmountText text={sideOf(pool, plan.token, plan.need).amount} />. Lower the amount, or add <SymbolText token={pool.currencies[plan.token]} /> to your wallet.
             </span>
           </p>
         )}
@@ -223,7 +200,7 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
         <h3 id="create-steps-heading" className="dm-flow-subtitle">
           {CREATE.review.steps}
         </h3>
-        <p className="text-caption text-fg-muted">{CREATE.review.stepsNote}</p>
+        {/* What the steps are is said once, under Create position (its reason line), not again here. */}
         <ol className="dm-flow-wsteps" data-wallet-steps="" data-live={live ? '' : undefined} aria-live="polite">
           {shown.map((step, index) => (
             <li key={step.key} data-wallet-step={step.key} data-step-state={step.state ?? undefined}>
@@ -236,12 +213,16 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
               </span>
               <span className="dm-flow-wstep-body">
                 <span className="dm-flow-wstep-title">
-                  {step.title}
-                  {step.token && (
-                    <span className="dm-flow-wstep-token">
-                      <SymbolText token={step.token} /> <Address value={step.token.address} short />
-                    </span>
-                  )}
+                  {/* "Approve USDG": the token by its symbol; its contract is under Details. */}
+                  <span>
+                    {step.title}
+                    {step.token && (
+                      <>
+                        {' '}
+                        <SymbolText token={step.token} />
+                      </>
+                    )}
+                  </span>
                 </span>
                 {step.caption && <span className="dm-flow-wstep-note">{step.caption}</span>}
               </span>
@@ -249,6 +230,54 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           ))}
         </ol>
       </section>
+
+      {/* The technical facts behind the position, closed until opened: for whoever wants them, never in the way. */}
+      {pool && (
+        <details className="dm-details dm-flow-advanced" data-review-details="">
+          <summary>
+            <span>{CREATE.review.details}</span>
+          </summary>
+          <dl className="dm-flow-facts">
+            <div data-review-slippage={slippage.ok ? slippage.bps : undefined}>
+              <dt>{CREATE.amount.slippageLabel}</dt>
+              <dd className="tnum">{slippage.ok ? slippageWritten(slippage.bps) : CREATE.page.notChosen}</dd>
+            </div>
+            {state.range && (
+              <div>
+                <dt>{CREATE.review.detailRows.ticks}</dt>
+                <dd className="tnum">{CREATE.review.summary.rangeTicks(state.range.lower, state.range.upper).replace(/^ticks /, '')}</dd>
+              </div>
+            )}
+            <div>
+              <dt>{CREATE.review.feeLabels.pool}</dt>
+              <dd className="tnum">{pool.fee}</dd>
+            </div>
+            {swap && (
+              <div>
+                <dt>{CREATE.review.feeLabels.swap}</dt>
+                <dd>{CREATE.review.feeValues.swap}</dd>
+              </div>
+            )}
+            <div>
+              <dt>{CREATE.review.detailRows.contracts}</dt>
+              <dd className="dm-flow-facts-tokens">
+                {pool.currencies.map((currency) => (
+                  <span key={currency.address}>
+                    <SymbolText token={currency} />{' '}
+                    {currency.address === NATIVE_CURRENCY ? <span className="text-fg-subtle">{CREATE.review.detailRows.native}</span> : <Address value={currency.address} short />}
+                  </span>
+                ))}
+              </dd>
+            </div>
+            <div>
+              <dt>{CREATE.review.detailRows.pool}</dt>
+              <dd>
+                <Address value={pool.key} short />
+              </dd>
+            </div>
+          </dl>
+        </details>
+      )}
     </div>
   )
 }

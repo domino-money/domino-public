@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import * as runtime from 'api-contracts/performance-v2/runtime.mjs'
-import type { CardsResponse, Metrics } from 'api-contracts/performance-v2/types'
+import type { CardsResponse, EpochsResponse, Metrics } from 'api-contracts/performance-v2/types'
 import type { Address } from 'viem'
 import { sessionKey } from '../session/port'
 import { livePort } from '../session/livePort'
@@ -11,6 +11,7 @@ import {
   type PerformanceView, type SequenceReads, type TrackableSequence,
 } from '../finance/performance'
 import { financialFetch } from '../finance/http'
+import { keep, readKept, sharedStart, useKeptWhileChecking, walletName } from '../finance/privateCards'
 import { readRelease } from '../finance/release'
 import { setupWallet } from '../finance/wallet'
 import { createSequenceClient, sequenceDeploymentFrom, type SequenceDeployment } from '../finance/sequence'
@@ -23,8 +24,8 @@ type Field = { name: Exclude<keyof Metrics, 'projectedApyPercent'>; label: strin
 /** The three figures a managed position shows at a glance; the rest are one click away (MORE). */
 const MAIN: readonly Field[] = [
   { name: 'newTradingFeesUsd', label: 'Fees earned', unit: 'usd' },
-  // A word joiner after the hyphen: "Re-added" never breaks at it in a narrow column (2026-09-27, round 5 review).
-  { name: 'reinvestedUsd', label: 'Re-\u2060added', unit: 'usd' },
+  // Changed on purpose (the owner, 2026-09-27, round 6): the position page's one plain phrase, not "Re-added".
+  { name: 'reinvestedUsd', label: 'Fees added back', unit: 'usd' },
   { name: 'netFeeAprPercent', label: 'APR after fees', unit: 'percent' },
 ]
 const MORE: readonly Field[] = [
@@ -206,6 +207,8 @@ const untracked = (view: PerformanceView) => view.sequences.older || view.sequen
  * has none. Never both at once.
  */
 function emptyText(view: PerformanceView): string {
+  // While the session is checked with nothing kept: no line yet (2026-09-27, round 6), the check decides it in a moment.
+  if (view.state === 'checking') return ''
   if (view.state !== 'ready' || view.sequences.state === 'idle' || view.sequences.state === 'reading') return 'Your automated positions appear here.'
   if (!trackable(view)) return 'Nothing here yet. Turn on Auto-compound for a position and how it does shows here.'
   return untracked(view) ? 'Nothing tracked yet: press Start tracking below.' : 'Your automated positions appear here.'
@@ -245,12 +248,34 @@ function TrackSequences({ view, onTrack }: { view: PerformanceView; onTrack(vaul
   </div>
 }
 
+/**
+ * What this browser kept of `owner`'s Managed positions (the first page, at
+ * most six hours old: the figures are the last 24 hours'), each answer
+ * checked against the contract again; null when there is none, or it is not.
+ */
+function keptManaged(owner: string): { enrollments: EpochsResponse['enrollments']; cards: CardsResponse['cards'] } | null {
+  return readKept(walletName('managed', owner), 21_600_000, data => {
+    const { epochs, cards } = (data ?? {}) as { epochs?: EpochsResponse; cards?: CardsResponse | null }
+    return runtime.validateResponse('epochs', epochs) && epochs?.owner === owner && (cards === null || (runtime.validateResponse('cards', cards) && cards?.owner === owner))
+      ? { enrollments: epochs.enrollments, cards: cards?.cards ?? [] } : null
+  })
+}
+
+/**
+ * One controller for every view of Managed positions, so the way back to
+ * Positions shows at once what was read and reads at the service's own pace
+ * (the owner, 2026-09-27, round 6: each view had its own, and started empty).
+ */
+const controller = createPerformanceController({ session: livePort, fetch: financialFetch, runtime, clock: realClock, visible: () => !document.hidden,
+  sequences: walletSequenceReads(), cache: { load: keptManaged, save: (owner, epochs, cards) => keep(walletName('managed', owner), { epochs, cards }) } })
+const watch = sharedStart(controller)
+
 export default function Performance() {
-  const controller = useMemo(() => createPerformanceController({ session: livePort, fetch: financialFetch, runtime,
-    clock: realClock, visible: () => !document.hidden, sequences: walletSequenceReads() }), [])
-  const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
-  useEffect(() => { const stop = controller.start(); const changed = () => controller.visibilityChanged(); document.addEventListener('visibilitychange', changed)
-    return () => { stop(); document.removeEventListener('visibilitychange', changed) } }, [controller])
+  const live = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
+  useEffect(watch, [])
+  // While the wallet's session is checked, what this browser kept for it (the controller shows the same once signed in).
+  const early = useKeptWhileChecking(live.state === 'checking', keptManaged)
+  const view = early ? { ...live, ...early } : live
   const waiting = view.enrollments.filter(item => item.epochId === null)
   const empty = view.cards.length === 0 && waiting.length === 0
   return <section aria-label="Private performance" className="dm-acct-perf" aria-busy={view.busy || undefined} data-performance={view.state} data-performance-reason={view.reason ?? undefined}

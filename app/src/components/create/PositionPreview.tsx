@@ -2,10 +2,9 @@ import { useState, type CSSProperties, type ReactNode } from 'react'
 import { rangeGeometry } from '../../lib/chart/range'
 import { CREATE } from '../../lib/create/copy'
 import type { JourneyState } from '../../lib/create/journey'
-import { slippageBpsFrom, slippageWritten } from '../../lib/create/slippage'
+import { awayShort, plainFigure } from '../../lib/create/plain'
 import { formatUsd } from '../../lib/format/usd'
-import { COPY } from '../../lib/read/screens/copy'
-import { fromPoolPrice, type PoolPrice } from '../../lib/read/screens/poolRange'
+import type { PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { rowApr } from '../../lib/read/screens/rowApr'
 import { AmountText, LiveFigure, UsdText } from '../figures'
@@ -14,7 +13,7 @@ import { TokenMark, TokenMarkPair } from '../TokenIcon'
 import { Badge } from '../ui'
 import { PreviewArt } from './PreviewArt'
 import type { PairBalancesState } from './usePairBalances'
-import { Approx, type VisualStep } from './StepList'
+import type { VisualStep } from './StepList'
 import { heldAmounts, rangeView, type RangeView } from './valuation'
 
 type Usable = Extract<PoolPrice, { state: 'usable' }>
@@ -26,10 +25,8 @@ function poolFigures(pool: PoolOption): { tvl: string | null; apr: string | null
   return { tvl, apr: apr.kind === 'estimate' ? `${apr.text}% est.` : null }
 }
 
-/** The range step's own words for the pool's price (PoolRangeControls' interval label). */
-const POOL_PRICE = 'Pool price'
 /** Review's own words for what a one-token plan takes from the wallet (StageReview's swap line). */
-const FROM_WALLET = 'From your wallet'
+const FROM_WALLET = 'You put in'
 
 const at = (percent: number): CSSProperties => ({ translate: `${percent}% 0` })
 
@@ -45,8 +42,9 @@ function side(x: number, other: number, which: 'lower' | 'upper'): 'start' | 'ce
  * The range on the pool's price (the owner's "beautiful range visual"): a log price axis across the card, the band
  * from the lower to the upper price with its Tangerine edges and grips, a warm light under it, and the pool's price
  * as a dotted line down to a dot on the axis that pings when the price changes. Under each edge, how far it sits from
- * the pool's price (the range step's own figures). Everything moves by translate and clip (M14), 250 ms, and stands
- * still when motion is stilled. Positions are percentages of the picture's own width, so it needs no measuring.
+ * the pool's price, rounded as the range step writes it (lib/create/plain.ts). Everything moves by translate and clip
+ * (M14), 250 ms, and stands still when motion is stilled. Positions are percentages of the picture's own width, so it
+ * needs no measuring.
  */
 function RangeStage({ view, poolTick, lowerTick, upperTick, priceText }: { view: RangeView; poolTick: number; lowerTick: number; upperTick: number; priceText: string }) {
   const geo = rangeGeometry(view.lower, view.upper, view.current, 100)
@@ -73,12 +71,12 @@ function RangeStage({ view, poolTick, lowerTick, upperTick, priceText }: { view:
       )}
       {lowerAt !== null && (
         <span className="dm-flow-pv-range-mark" style={at(lowerAt)}>
-          <span data-side={side(lowerAt, geo.upper, 'lower')}>{fromPoolPrice(lowerTick, poolTick)}</span>
+          <span data-side={side(lowerAt, geo.upper, 'lower')}>{awayShort(lowerTick, poolTick)}</span>
         </span>
       )}
       {upperAt !== null && (
         <span className="dm-flow-pv-range-mark" style={at(upperAt)}>
-          <span data-side={side(upperAt, geo.lower, 'upper')}>{fromPoolPrice(upperTick, poolTick)}</span>
+          <span data-side={side(upperAt, geo.lower, 'upper')}>{awayShort(upperTick, poolTick)}</span>
         </span>
       )}
     </div>
@@ -121,15 +119,17 @@ function ArtLegend() {
  * legend. With a pool, its pair, fee, TVL and APR head the card;
  * with the pool's price and a range, the price large and the range drawn on
  * it, moving with the range step; the amounts and their USD value join at the
- * amount step, the total under them, and the tolerance once that step is
- * done. Every figure is one the steps already show; none is made up.
+ * amount step, the total under them. Every figure is one the steps already
+ * show; none is made up. Changed on purpose (round 6, 2026-09-27, the owner:
+ * plain words, fewer numbers): prices read "2,499.91 USDG for 1 ETH" with no
+ * "≈", an estimate's total says "About", and the slippage tolerance, which
+ * sits under the amount step's Advanced now, is no longer drawn here.
  */
 export function PositionPreview({
   state,
   preview,
   price,
   balances,
-  slippageDone,
   step,
   className,
   style,
@@ -140,8 +140,6 @@ export function PositionPreview({
   /** The chosen pool's price, when it can be used. */
   price: Usable | null
   balances: PairBalancesState
-  /** The amount step is done: its tolerance joins the preview. */
-  slippageDone: boolean
   /** The open step: the part of the card it fills is marked. */
   step: VisualStep
   className?: string
@@ -158,9 +156,8 @@ export function PositionPreview({
   const figures = head ? poolFigures(head) : null
   const view = chosen && price && state.range ? rangeView(state.range, price, chosen) : null
   const held = chosen ? heldAmounts(state, balances) : null
-  const slippage = slippageDone ? slippageBpsFrom(state.slippageBps) : null
   const valued = held !== null && held.sides.every((side) => side.usd !== null) ? held.total : null
-  const words = (text: string | null): ReactNode => <Approx text={text ?? CREATE.review.summary.beyondDisplay} />
+  const words = (text: string | null): ReactNode => plainFigure(text ?? CREATE.review.summary.beyondDisplay)
   const phase = chosen ? 'chosen' : pool ? 'pointed' : 'empty'
 
   return (
@@ -212,24 +209,25 @@ export function PositionPreview({
         <div key="range" className="dm-flow-pv-live dm-arrive" data-part="range">
           <div className="dm-flow-pv-price">
             <div className="dm-flow-pv-price-head">
-              <span className="dm-flow-pv-label">{POOL_PRICE}</span>
+              <span className="dm-flow-pv-label">{CREATE.amount.now}</span>
               <Badge kind={view.inRange ? 'in-range' : 'out-of-range'} />
             </div>
             <p className="dm-flow-pv-price-line">
               <span className="dm-fig-lg">
                 <LiveFigure value={price.text} direction="auto">
-                  <Approx text={price.text} />
+                  {plainFigure(price.text)}
                 </LiveFigure>
               </span>
+              {/* Changed on purpose (round 6, 2026-09-27): "USDG for 1 ETH", not "USDG per ETH". */}
               <span className="dm-flow-pv-unit">
-                <SymbolText token={price.quote} /> per <SymbolText token={price.base} />
+                <SymbolText token={price.quote} /> for 1 <SymbolText token={price.base} />
               </span>
             </p>
           </div>
           <RangeStage view={view} poolTick={price.tick} lowerTick={state.range.lower} upperTick={state.range.upper} priceText={price.text} />
           <dl className="dm-flow-pv-bounds">
             <div>
-              <dt>{COPY.range.minPrice}</dt>
+              <dt>{CREATE.amount.lowest}</dt>
               <dd className="dm-fig-sm">
                 <LiveFigure value={view.lowerText ?? ''} direction="none">
                   {words(view.lowerText)}
@@ -237,7 +235,7 @@ export function PositionPreview({
               </dd>
             </div>
             <div>
-              <dt>{COPY.range.maxPrice}</dt>
+              <dt>{CREATE.amount.highest}</dt>
               <dd className="dm-fig-sm">
                 <LiveFigure value={view.upperText ?? ''} direction="none">
                   {words(view.upperText)}
@@ -274,7 +272,6 @@ export function PositionPreview({
               <div key={currency.address} className="dm-flow-pv-row">
                 <TokenMark token={currency} size={28} />
                 <span className="dm-flow-pv-amount dm-fig-xs">
-                  {held.estimate && <span className="dm-approx">≈</span>}
                   <LiveFigure value={part.text} direction="none">
                     <AmountText text={part.text} />
                   </LiveFigure>{' '}
@@ -285,7 +282,7 @@ export function PositionPreview({
                 {part.usd && (
                   <span className="dm-flow-pv-usd">
                     <LiveFigure value={formatUsd(part.usd)} direction="none">
-                      <UsdText value={part.usd} approx={held.estimate} />
+                      <UsdText value={part.usd} />
                     </LiveFigure>
                   </span>
                 )}
@@ -297,8 +294,9 @@ export function PositionPreview({
             <div className="dm-flow-pv-total">
               <TokenMarkPair base={chosen.currencies[0]} quote={chosen.currencies[1]} size={24} />
               <span className="dm-fig-lg dm-arrive">
+                {held.estimate && <span className="dm-flow-pv-about">{CREATE.review.about} </span>}
                 <LiveFigure value={formatUsd(valued)} direction="auto">
-                  <UsdText value={valued} approx={held.estimate} />
+                  <UsdText value={valued} />
                 </LiveFigure>
               </span>
             </div>
@@ -306,12 +304,6 @@ export function PositionPreview({
         </div>
       )}
 
-      {slippage !== null && (
-        <div className="dm-flow-pv-slip dm-arrive" data-part="review">
-          <span>{CREATE.amount.slippageLabel}</span>
-          <span className="dm-fig-xs">{slippageWritten(slippage)}</span>
-        </div>
-      )}
     </aside>
   )
 }

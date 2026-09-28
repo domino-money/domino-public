@@ -40,7 +40,9 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
       <TokenMarkPair base={option.currencies[0]} quote={option.currencies[1]} size={plain || !compact ? 32 : 28} ring={plain ? 'var(--card)' : 'var(--surface-1)'} />
       <span className={plain ? 'dm-flow-pool-id' : 'grid min-w-0 flex-1 gap-0.5 text-left'}>
         <span className={plain ? 'dm-flow-pool-pair' : 'text-body font-medium text-fg'}><SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} /></span>
-        <span className={plain ? 'dm-flow-pool-where' : 'text-caption text-fg-subtle'}>Uniswap · <Address value={option.key} short /></span>
+        {/* Changed on purpose (round 6, 2026-09-27, New position for beginners): a plain row names its pair and fee only;
+            the pool id is on the row's data-pool-key. */}
+        {!plain && <span className="text-caption text-fg-subtle">Uniswap · <Address value={option.key} short /></span>}
       </span>
       <span className="dm-chip shrink-0" data-fee="">{option.fee}</span>
     </>
@@ -61,6 +63,7 @@ function PoolRow({ option, checked, onPick, name, compact = false, open = false,
       <li
         className={cx('dm-mkt-option', checked && 'dm-mkt-option--checked')}
         data-pool-option={option.kind}
+        data-pool-key={option.key}
         data-token-metadata={option.tokenMetadata}
         data-provider-conflict={option.providerConflict ? '' : undefined}
         title={plainNotes(option)}

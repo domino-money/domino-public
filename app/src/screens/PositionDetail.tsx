@@ -264,7 +264,7 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
             </LinkButton>
             {/* Only into a pool Domino can open a position in: no hooks, a fixed fee (New position refuses any other). */}
             {cardPoolUsableForDomino(card) && (
-              <LinkButton href={newPositionHref(card.poolId)} variant="outline" size="sm">
+              <LinkButton href={newPositionHref(card.poolId, token)} variant="outline" size="sm">
                 <IconPlus />
                 Add to this pool
               </LinkButton>

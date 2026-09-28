@@ -56,6 +56,7 @@
     "src/lib/read/project.ts",
     "src/lib/read/pagers.ts",
     "src/lib/read/marketsProvider.ts",
+    "src/lib/read/marketsPaint.ts",
     "src/lib/read/deferredMarkets.ts",
     "src/config/selectedPools.ts",
     "src/config/selectedPoolCatalogue.ts",
@@ -95,8 +96,10 @@
     "src/lib/create/reviewPlan.ts",
     "src/lib/create/sequenceDefaults.ts",
     "src/finance/automationAvailability.ts",
+    "src/finance/privateCards.ts",
     "src/lib/automate/switchGate.ts",
     "src/lib/create/slippage.ts",
+    "src/lib/create/plain.ts",
     "src/lib/read/screens/rowApr.ts",
     "src/lib/docs/registry.ts",
     "src/components/positions/walletSteps.ts",
@@ -124,6 +127,7 @@
     "functions/_lib/feesPath.ts",
     "src/lib/fees/estimate.ts",
     "src/lib/positionApr.ts",
+    "src/components/positions/listApr.ts",
     "src/components/positions/visual/activityRows.ts",
     "functions/api/fees/v1/logs.ts",
     "functions/api/fees/v1/state.ts",
@@ -132,6 +136,7 @@
     "src/lib/automate/picker.ts",
     "src/components/automate/feeMeter.ts",
     "src/lib/walletPrices.ts",
-    "src/lib/walletHoldings.ts"
+    "src/lib/walletHoldings.ts",
+    "src/lib/walletMemory.ts"
   ]
 }

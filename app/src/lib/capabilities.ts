@@ -1,4 +1,4 @@
-/** Build capabilities and connection status for Settings.
+/** Build capabilities, and where each automation stands (the pill Automate, Home, Positions and the docs show).
  * Wallet transactions are prepared locally and require a separate wallet
  * review. Runtime activation comes from the verified deployment/services;
  * these constants never authorize a transaction or establish a session.
@@ -39,33 +39,22 @@ export type Availability = 'planned' | 'not-connected' | 'owner-scoped' | 'conne
 
 /**
  * The pill a status wears, where it wears one. A connected or planned entry
- * wears none: its note states its terms as they stand (the service fee is
- * stated as fact on Home and Automate), a "Planned" pill would call the
- * product unfinished and a "Connected" pill would be a claim. The words say
- * where it stands, never a colour.
+ * wears none: a "Planned" pill would call the product unfinished and a
+ * "Connected" pill would be a claim. The words say where it stands, never a
+ * colour.
  */
 export const ROADMAP_PILL: Partial<Record<Availability, string>> = {
   'not-connected': 'Not connected',
   'owner-scoped': 'Per sequence',
 }
 
-/** What Settings lists, and where each stands today. */
-export const ROADMAP: Array<{ name: string; status: Availability; note: string }> = [
-  // Changed on purpose (2026-09-25, audit of 754014c): no screen of this site activates, pauses or withdraws any more.
-  // Changed on purpose again (owner, 2026-09-25): a position's page offers Turn on once the service is ready, and Pause.
-  { name: 'Compound', status: 'owner-scoped', note: 'Earned fees go back into the same position. A new sequence starts paused; once the service confirms readiness, your position’s page offers Turn on, and your wallet activates it on your sequence vault.' },
-  { name: 'Fee-balancing swaps', status: 'owner-scoped', note: 'Bounded swaps can balance uneven earned fees during an admitted sequence’s automatic cycle. Its service fee covers them; an unavailable service sends none.' },
-  { name: 'Domino', status: 'owner-scoped', note: 'Fees from one position can open the next one higher up. A new sequence starts paused; activation requires a live owner-specific service check.' },
-  // Changed on purpose (review of 2026-09-25): Turn on and Pause have no review wall (the owner's rule), so only creating a
-  // sequence shows its amounts and limits first; the two go straight to the wallet.
-  {
-    name: 'Wallet permissions',
-    status: 'connected',
-    note: 'Sign-in proves your address. Your wallet approves one position NFT to its own sequence vault and creates the sequence here. Turning on and pausing are transactions it signs on that vault, from your position’s page; authorising or revoking the operator and withdrawing have no Domino screen today. Creating a sequence shows its amounts and limits before your wallet requests approval; Turn on and Pause go straight to your wallet, which shows the transaction.',
-  },
-  {
-    name: 'Service pricing',
-    status: 'planned',
-    note: 'Auto-compound uses 2% and Domino-compound 4% of consumed earned fees, once. No additional fee is charged for automation balancing swaps. Direct deposits have no Domino percentage fee. The assisted swap Create position makes when a wallet holds one of the two tokens charges 0.65% of the amount swapped, shown before signing.',
-  },
+/**
+ * Where each automation stands today, by the name its pill is asked for (RoadmapPill in screens/Automate.tsx).
+ * Changed on purpose (2026-09-27, the owner's round 6, point 6): the Settings page that listed these with a note each is
+ * gone, and the notes with it, along with the three rows only it showed (Fee-balancing swaps, Wallet permissions and
+ * Service pricing). What they said is in the docs: What Domino is, Auto-compound, Domino Compounder, Non-custodial and Fees.
+ */
+export const ROADMAP: ReadonlyArray<{ name: string; status: Availability }> = [
+  { name: 'Compound', status: 'owner-scoped' },
+  { name: 'Domino', status: 'owner-scoped' },
 ]

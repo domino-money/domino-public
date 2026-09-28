@@ -255,7 +255,7 @@ export const GLOSSARY: DocPage = {
             { id: 'plain-position', term: 'Plain position', text: ['No automation: earned fees wait in the position until you collect them.'] },
             { id: 'auto-compound', term: 'Auto-compound', text: ['Automation that adds a position’s earned fees back into the same position.'] },
             { id: 'domino-compounder', term: 'Domino Compounder', text: ['Near the top of a range, earned fees open or fund the next position one step higher. In the app it is Domino-compound.'] },
-            { id: 'sequence', term: 'Sequence', text: ['The vault contract created for your wallet that holds the positions automation opens and earned fees not yet reinvested. Only your wallet can withdraw from it.'] },
+            { id: 'sequence', term: 'Sequence', text: ['The vault contract created for your wallet that holds the positions automation opens and earned fees not yet added back. Only your wallet can withdraw from it.'] },
             { id: 'operator', term: 'Operator', text: ['Domino’s automation service, which acts within your limits. It can pause, but cannot withdraw, change limits or resume.'] },
             { id: 'trigger-distance', term: 'Trigger distance', text: ['How near the top of its range the price must be before a next position is considered. Up to 20%.'] },
             { id: 'maximum-overlap', term: 'Maximum overlap', text: ['How far below the previous top a next position may start. Up to 20%.'] },

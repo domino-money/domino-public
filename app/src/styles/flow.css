@@ -134,7 +134,7 @@
   .dm-flow-chosen-check > svg { stroke-width: 2.25; }
   .dm-flow-chosen-check path { stroke-dasharray: 1; animation: dm-check 300ms var(--ease-enter) 80ms backwards; }
   .dm-flow-pool-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
-  .dm-flow-pool-name { display: grid; flex: 1 1 180px; gap: 4px; min-width: 0; }
+  .dm-flow-pool-name { display: grid; flex: 1 1 120px; gap: 4px; min-width: 0; }
   .dm-flow-pool-head > .dm-btn { margin-left: auto; }
   .dm-flow-panel[data-chosen-pool] .dm-chip { border-radius: var(--radius-sm); }
 
@@ -158,10 +158,9 @@
   [data-picker-variant="create"] .dm-mkt-option-head:hover { background: none; }
   .dm-flow-pool-id { display: grid; flex: 0 1 auto; gap: 2px; min-width: 0; text-align: left; }
   .dm-flow-pool-pair { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  .dm-flow-pool-where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); }
-  .dm-flow-pool-where .font-mono { font-size: 12px; }
   /* The fee is a fee-tier chip, as in every table and list (§3.4): radius 8 on surface-3. */
-  [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip { align-self: flex-start; margin-top: 14px; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); }
+  /* Changed on purpose (round 6, 2026-09-27): the row names its pair and fee only, one line, so the chip centres on it. */
+  [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip { align-self: center; margin-top: 0; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); }
   .dm-mkt-option-figures.dm-flow-pool-figures { display: grid; grid-template-columns: 88px 96px 96px; gap: 0; padding: 0; }
   .dm-flow-pool-figures > * { min-width: 0; text-align: right; }
   .dm-flow-pool-figures > [data-provider-figure] { gap: 0 !important; }
@@ -177,8 +176,7 @@
   @media (max-width: 767px) {
     [data-picker-variant="create"] .dm-mkt-option { position: relative; grid-template-columns: minmax(0, 1fr); row-gap: 0; min-height: 0; padding: 0 12px 10px 0; }
     [data-picker-variant="create"] .dm-mkt-option-head { min-height: 48px; padding-left: 12px; }
-    /* The fee chip leaves the id's line: it sits in the row's corner, and only the pair's name makes room for
-       it, so the id (already shortened in its middle) runs the full width with no second ellipsis. */
+    /* The fee chip sits in the row's corner, and the pair's name makes room for it. */
     [data-picker-variant="create"] .dm-mkt-option-head > .dm-chip { position: absolute; top: 10px; right: 12px; margin: 0; }
     [data-picker-variant="create"] .dm-flow-pool-id { flex: 1 1 auto; }
     [data-picker-variant="create"] .dm-flow-pool-pair { padding-right: 76px; }
@@ -188,19 +186,8 @@
     .dm-flow-pool-figures > .dm-mkt-option-apr { align-items: flex-start !important; }
   }
 
-  /* ---- Choice cards: which of a linked pool's two tokens is deposited ----------------------------------- */
-  .dm-flow-options { display: grid; gap: 8px; min-width: 0; }
-  .dm-flow-option { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; padding: 12px 16px; border-radius: var(--radius); background: transparent; box-shadow: inset 0 0 0 1px var(--border-lip); cursor: pointer; transition: background-color 100ms ease-in-out, box-shadow var(--dur-hover) ease; }
-  .dm-flow-option:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1px var(--border-strong); }
-  .dm-flow-option:has(input:checked) { background: var(--primary-wash); box-shadow: inset 0 0 0 2px var(--primary-line); }
-  .dm-flow-option:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
-  .dm-flow-option-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .dm-flow-option-top > input { flex-shrink: 0; margin: 0; }
-  .dm-flow-option-title { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  .dm-flow-option-line { max-width: 100%; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-  @media (min-width: 640px) {
-    .dm-flow-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  }
+  /* Round 6 (2026-09-27): the choice cards that asked which of a linked pool's two tokens is deposited are gone
+     with the question (StageToken.tsx). */
 
   /* ---- Fields --------------------------------------------------------------------------------------------- */
   .dm-flow-input { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: var(--radius); background: var(--surface-1); box-shadow: var(--elev-field); transition: box-shadow var(--dur-hover) ease, background-color var(--dur-hover) ease; }
@@ -222,12 +209,12 @@
   .dm-np { --flow-well: var(--surface-2); --flow-well-ring: var(--border); }
   .dm-flow-pair { display: grid; gap: 0; min-width: 0; }
   .dm-flow-pair-row { position: relative; min-width: 0; }
-  /* The label is the panel's caption (CSS placement only, and still the input's clickable label). */
+  /* Changed on purpose (round 6, 2026-09-27): the token pill names each panel, so its label is for assistive
+     technology only (PairedAmounts.tsx labelHidden). A visible label, where one is drawn, is the panel's caption. */
   .dm-flow-pair-row .dm-label { position: absolute; top: 14px; left: 16px; z-index: 1; max-width: calc(100% - 32px); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-subtle); }
   /* The USD figure keeps its own width and the balance line takes the rest, wrapping there: with the balance line's
      width first, a phone squeezed the USD figure under it (seen 2026-09-27 on the docs' phone pictures). */
   .dm-flow-amount { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "row row" "usd foot"; align-items: center; gap: 6px 12px; min-width: 0; padding: 16px 16px 12px; border-radius: var(--radius-lg); background: var(--flow-well, var(--surface-1)); box-shadow: inset 0 0 0 1px var(--flow-well-ring, transparent); transition: background-color var(--dur-fast) var(--ease-std), box-shadow var(--dur-fast) var(--ease-std); }
-  .dm-flow-pair-row .dm-flow-amount { padding-top: 38px; }
   /* Only where a pointer hovers: a finger's last tap would otherwise leave a panel ringed as if it were chosen. */
   @media (hover: hover) {
     .dm-flow-amount:hover { box-shadow: inset 0 0 0 1px var(--border-strong); }
@@ -342,8 +329,6 @@
   .dm-flow-wsteps .dm-step-marker[data-state="current"]::after { content: ''; position: absolute; inset: -4px; border-radius: 11px; padding: 2px; background: conic-gradient(from var(--dm-spin), var(--primary-line) 0 25%, transparent 0); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: dm-spin 1s linear infinite; pointer-events: none; }
   .dm-flow-wstep-body { display: grid; gap: 2px; min-width: 0; padding-top: 4px; }
   .dm-flow-wstep-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); }
-  .dm-flow-wstep-token { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 22px; padding: 0 8px; border-radius: var(--radius-pill); background: var(--wash-strong); font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: -0.12px; color: var(--fg-muted); white-space: nowrap; }
-  .dm-flow-wstep-token .font-mono { font-size: 11px; color: var(--fg-subtle); }
   .dm-flow-wstep-note { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
 
   /* ---- The preview (§10.1, redrawn 2026-09-24 at the owner's request): the position being made, as a card -- */
@@ -441,8 +426,6 @@
   .dm-flow-pv-symbol { color: var(--fg-muted); font-weight: 400; }
   .dm-flow-pv-usd { flex-shrink: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
   .dm-flow-pv-total { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; margin-top: 8px; padding-top: 16px; box-shadow: inset 0 1px 0 var(--border); color: var(--fg); }
-  .dm-flow-pv-slip { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px 18px; box-shadow: inset 0 1px 0 var(--border); font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
-  .dm-flow-pv-slip > .dm-fig-xs { color: var(--fg); }
 
   /* The picture (PreviewArt): every colour a token. At rest (and stilled: tokens.css puts
      `animation: none` on every .dm-art part) it is the whole composition, fee pips included; the loop runs only
@@ -548,6 +531,45 @@
   .dm-flow-dialog-body { min-width: 0; min-height: 0; padding: 4px 24px 20px; overflow-y: auto; overscroll-behavior: contain; }
   .dm-flow-dialog-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 24px 24px; box-shadow: inset 0 1px 0 var(--border); }
 
+  /* ---- Round 6 (2026-09-27, the owner: the flow is for people who know nothing about liquidity pools) ----- */
+  /* Step 2, Range (RangeStep.tsx): today's price as one line, the width as a three-way switch with one line under
+     it saying what it means, and the lowest and highest price as two quiet panels. Only Custom opens their fields. */
+  .dm-flow-now { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; min-width: 0; padding: 14px 16px; border-radius: var(--radius-lg); background: var(--flow-well, var(--surface-1)); box-shadow: inset 0 0 0 1px var(--flow-well-ring, transparent); }
+  .dm-flow-now-label { font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-flow-now-price { min-width: 0; font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-flow-fig { font-variant-numeric: lining-nums tabular-nums; }
+  .dm-flow-widths { display: flex; width: 100%; }
+  .dm-flow-widths > .dm-seg-item { flex: 1 1 0; min-width: 0; }
+  .dm-flow-widths > .dm-seg-item[aria-checked="true"] { background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--border-strong); }
+  .dm-flow-width-line { margin: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); text-wrap: pretty; }
+  .dm-flow-bounds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+  .dm-flow-bound { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 14px 16px; border-radius: var(--radius-lg); background: var(--flow-well, var(--surface-1)); box-shadow: inset 0 0 0 1px var(--flow-well-ring, transparent); }
+  .dm-flow-bound-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 8px; min-width: 0; }
+  .dm-flow-bound-label { font-size: 13px; line-height: 18px; font-weight: 500; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-flow-bound-away { font-size: 12px; line-height: 16px; letter-spacing: -0.12px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-flow-bound-price { margin: 0; min-width: 0; font-size: 15px; line-height: 22px; font-weight: 500; letter-spacing: -0.2px; color: var(--fg); overflow-wrap: anywhere; }
+  .dm-flow-bound-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+  .dm-flow-bound-unit { flex-shrink: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 18px; color: var(--fg-muted); }
+  .dm-flow-bound-input { flex: 1 1 72px; min-width: 0; height: 36px; padding: 0 10px; border-radius: var(--radius); background: var(--card); box-shadow: inset 0 0 0 1px var(--border); color: var(--fg); font-family: var(--font-sans); font-size: 15px; line-height: 20px; font-weight: 500; }
+  .dm-flow-bound-input:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--primary-line), 0 0 0 3px var(--primary-wash); }
+  .dm-flow-bound-input[aria-invalid] { box-shadow: inset 0 0 0 1px var(--money-out); }
+  .dm-flow-bound-steps { display: inline-flex; flex-shrink: 0; gap: 4px; margin-left: auto; }
+  .dm-flow-bound > .dm-error { margin-top: 0; }
+
+  /* Advanced (the amount step) and Details (Review): a quiet disclosure row (.dm-details), closed by default, its
+     summary carrying what is inside it on the right. */
+  .dm-flow-advanced { min-width: 0; border-radius: var(--radius-lg); box-shadow: inset 0 0 0 1px var(--border); }
+  .dm-flow-advanced > summary { min-height: 48px; padding: 0 16px; border-radius: var(--radius-lg); }
+  .dm-flow-advanced-value { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 18px; font-weight: 400; letter-spacing: -0.16px; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-details.dm-flow-advanced > :not(summary) { padding: 4px 16px 16px; }
+  .dm-flow-facts { display: grid; margin: 0; }
+  .dm-flow-facts > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 16px; min-width: 0; padding: 8px 0; box-shadow: inset 0 -1px 0 var(--border-lip); }
+  .dm-flow-facts > div:last-child { box-shadow: none; }
+  .dm-flow-facts dt { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-subtle); }
+  .dm-flow-facts dd { margin: 0; min-width: 0; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg); text-align: right; overflow-wrap: anywhere; }
+  .dm-flow-facts-tokens { display: grid; gap: 2px; justify-items: end; }
+  .dm-flow-pv-about { font-size: 0.6em; font-weight: 500; letter-spacing: 0; color: var(--fg-subtle); }
+
   /* ---- Phone (§10.3) -------------------------------------------------------------------------------------- */
   @media (max-width: 767px) {
     .dm-flow-card { padding: 4px; }
@@ -566,7 +588,6 @@
     .dm-flow-foot { grid-template-columns: 96px minmax(0, 1fr); margin-top: 24px; }
     .dm-flow-foot > .dm-btn:first-child { min-width: 0; padding-inline: 12px; }
     .dm-flow-amount { padding: 14px 14px 10px; }
-    .dm-flow-pair-row .dm-flow-amount { padding-top: 36px; }
     .dm-flow-pair-row .dm-label { top: 12px; left: 14px; max-width: calc(100% - 28px); }
     .dm-flow-amount-input { height: 40px; font-size: 30px; line-height: 40px; letter-spacing: -0.8px; }
     .dm-flow-amount-input[data-len="m"] { font-size: 26px; letter-spacing: -0.6px; }
@@ -576,8 +597,11 @@
     .dm-flow-headline-amounts { font-size: 18px; line-height: 24px; letter-spacing: -0.3px; }
     .dm-flow-wsteps > li { gap: 12px; padding: 12px; }
     .dm-flow-wsteps > li:not(:last-child)::before { left: 25px; }
+    .dm-flow-now { padding: 12px 14px; }
+    .dm-flow-bound { padding: 12px 14px; }
   }
   @media (max-width: 639px) {
+    .dm-flow-bounds { grid-template-columns: minmax(0, 1fr); }
     .dm-flow-dialog-head { padding: 28px 52px 12px 16px; }
     .dm-flow-dialog-body { padding: 4px 16px 16px; }
     .dm-flow-dialog-foot { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }

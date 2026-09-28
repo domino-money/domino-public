@@ -4,7 +4,7 @@
  * gateway's provider lane, the gateway's per-client budget (five at once, then
  * 30 a minute) and a hold for the Retry-After of any busy answer; read-v3's
  * stored reads skip the spacing, which the gateway's stored lane does not
- * have (scheduler.ts, 2026-09-25). local-live uses 10.1 s for every read to
+ * have (scheduler.ts, 2026-09-25), two of them at once (2026-09-27). local-live uses 10.1 s for every read to
  * fit the development reader's six starts/minute and two-second minimum,
  * without increasing any remote limit. The landing table, position lookup,
  * pickers and figures dialog share one source, so one budget.
@@ -29,7 +29,7 @@ export function createAppBridgeSource(): ReadSource {
   const options = { enabled: CAPABILITIES.liveReadsBuilt, validators: READ_RUNTIME }
   // read-v5's featured pools list rides the same queue and budget as every other read (featuredList.ts).
   const source = createFeaturedReadSource(createPublicSource(createEstimateSource(options, estimateRuntime), options, publicRuntime), options, featuredRuntime)
-  return createPublicMetadataCache(createScheduledSource(source, { minIntervalMs: BRIDGE_SPACING_MS, unspacedStored: !__DOMINO_LOCAL_LIVE__ }))
+  return createPublicMetadataCache(createScheduledSource(source, { minIntervalMs: BRIDGE_SPACING_MS, unspacedStored: !__DOMINO_LOCAL_LIVE__, storedWidth: 2 }))
 }
 
 let shared: ReadSource | null = null

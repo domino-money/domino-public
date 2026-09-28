@@ -14,7 +14,7 @@ export const footerButton = (page, name) => page.locator('[data-journey-footer]'
 
 /** To the pool step's choice: type TOKEN's address, pick it, pick the first pool the read lists for it. */
 export async function choosePool(page) {
-  await page.getByRole('combobox', { name: 'Token in the pool' }).fill(FIXTURE_TOKEN);
+  await page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
   await page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
   // Choosing a pool replaces the list with the chosen pool, so the radio is clicked, not checked and read back.
   await page.locator('[data-picker="pool"] input[name="pool-option"]').first().click({ timeout: 30_000 });

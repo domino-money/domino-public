@@ -10,26 +10,39 @@
  * address; and the ratio must be writable as a plain number. Anything short
  * of that is unavailable, with the reason.
  *
- * Orientation is the pool's: currency1 per currency0, written by
- * tickPriceText with its `≈` and six significant digits ("≈2,492.36" USDG
- * per WETH). A usable price read longer ago than PRICE_STALE_MS is stale: time
- * on this page, plus the time a stored snapshot had already held the state
- * when it served it. A row retained after a failed refresh keeps the age of
- * the read it came from, so it is never made younger by being kept.
+ * Written the way a person reads a price (changed on purpose 2026-09-27,
+ * r6/marketsdata, the owner: "0.000011853 cbBTC per USDG" meant nothing to a
+ * beginner): one of a token, so much of the other, "1 cbBTC = 84,367 USDG".
+ * Which token is the one: priced in USDG, the dollar of the app, wherever the
+ * pool holds it and that reads as 0.01 or more ("1 PONS = 0.5739 USDG");
+ * otherwise the way round that reads as 1 or more ("1 USDG = 7,748.46
+ * MARLIN"). The amount is the price at the pool's tick, which must agree
+ * with its square-root price, written whole from 10,000, six significant
+ * digits from 1, four below. Changed on purpose 2026-09-28 (round 6
+ * integration): the square-root price put "1 ETH = 2,500.09 USDG" on Markets
+ * beside "2,499.91 USDG for 1 ETH" on the same pool's page and in New
+ * position, which price a pool at its tick (screens/poolRange.ts poolPrice),
+ * as the position pages do. One pool reads one price everywhere; the two
+ * differ by less than a tick (0.01%). A usable price read longer ago
+ * than PRICE_STALE_MS is stale: time on this page, plus the time a stored
+ * snapshot had already held the state when it served it. A row retained after
+ * a failed refresh keeps the age of the read it came from, so it is never made
+ * younger by being kept.
  */
+import { USDG } from '../../config/mainTokens'
 import type { Instant, Market } from '../markets'
 import type { TokenDisplay } from './types'
+import { groupedRatioText } from './ratioSeries'
 import { PRICE_STALE_MS, tickAgrees, type PriceProblem } from './screens/poolRange'
-import { tickPriceText } from './screens/positions'
 
 export type MarketPrice =
   | {
       state: 'usable'
-      /** currency1 per currency0, from tickPriceText: "≈" and six significant digits, never an exponent. */
+      /** How much `quote` one `base` is worth, grouped, never an exponent: "84,367" in "1 cbBTC = 84,367 USDG". */
       text: string
-      /** The pool's currency0: the unit the price is per. */
+      /** The token one of which is priced. */
       base: TokenDisplay
-      /** The pool's currency1: the unit the price is in. */
+      /** The token it is priced in. */
       quote: TokenDisplay
       block: number
       /** Read PRICE_STALE_MS or longer ago: served age plus time on screen since the row's reply arrived. */
@@ -57,6 +70,31 @@ function stateAgeMs(market: Market, now: Instant): number | null {
   return Math.max(0, ms) + (market.poolState?.servedAgeSeconds ?? 0) * 1000
 }
 
+/** An amount as the price writes it; null past what reads as a plain number. */
+export function plainAmount(value: number): string | null {
+  if (!(value > 0 && value < 1e15)) return null
+  return new Intl.NumberFormat('en-US', value >= 10_000 ? { maximumFractionDigits: 0 } : { maximumSignificantDigits: value >= 1 ? 6 : 4 }).format(value)
+}
+
+/**
+ * A close of a card's line (a decimal string) written as the table writes a price, so the card and the row read the
+ * same figure ("84,367"); ratioText's form where it is past a plain number.
+ */
+export const plainClose = (close: string) => plainAmount(Number(close)) ?? groupedRatioText(close)
+
+/**
+ * The price the plain way round (see the header), from currency0's price in currency1: which currency is the one
+ * priced, 0 or 1, and how much of the other it is worth.
+ */
+export function plainSide(price: number, currency0: string, currency1: string): { side: 0 | 1; value: number } {
+  if (currency1 === USDG && price >= 0.01) return { side: 0, value: price }
+  if (currency0 === USDG && 1 / price >= 0.01) return { side: 1, value: 1 / price }
+  return price >= 1 ? { side: 0, value: price } : { side: 1, value: 1 / price }
+}
+
+/** currency0's price in currency1, in display units, at `tick` (tickPriceText's value, without its rounding). */
+const spot = (tick: number, decimals0: number, decimals1: number) => Math.pow(1.0001, tick) * 10 ** (decimals0 - decimals1)
+
 /** The row's token read for one of the pool's currencies, by address. */
 function tokenFor(market: Market, address: string): TokenDisplay | null {
   const key = address.toLowerCase()
@@ -75,12 +113,20 @@ export function marketPoolPrice(market: Market, now: Instant): MarketPrice {
   }
   if (sqrt === 0n) return { state: 'unavailable', problem: 'not_initialized', block }
   if (!tickAgrees(pool.tick, sqrt)) return { state: 'unavailable', problem: 'tick_mismatch', block }
-  const base = tokenFor(market, pool.currency0)
-  const quote = tokenFor(market, pool.currency1)
-  if (!base || !quote || base.decimals === null || quote.decimals === null) return { state: 'unavailable', problem: 'decimals_unknown', block }
-  const text = tickPriceText(pool.tick, base.decimals, quote.decimals)
+  const token0 = tokenFor(market, pool.currency0)
+  const token1 = tokenFor(market, pool.currency1)
+  if (!token0 || !token1 || token0.decimals === null || token1.decimals === null) return { state: 'unavailable', problem: 'decimals_unknown', block }
+  const { side, value } = plainSide(spot(pool.tick, token0.decimals, token1.decimals), pool.currency0, pool.currency1)
+  const text = plainAmount(value)
   if (text === null) return { state: 'unavailable', problem: 'beyond_display', block }
+  const [base, quote] = side === 0 ? [token0, token1] : [token1, token0]
   const partial = [base, quote].some((token) => token.symbol === null || token.readStatus === 'partial')
   const age = stateAgeMs(market, now)
   return { state: 'usable', text, base, quote, block, stale: age !== null && age >= PRICE_STALE_MS, partial }
+}
+
+/** The token a row's price is of (the "1 cbBTC" of it), lowercase; null when the row cannot price its pool. */
+export function plainBase(market: Market): string | null {
+  const price = marketPoolPrice(market, { wall: 0 })
+  return price.state === 'usable' ? price.base.address.toLowerCase() : null
 }

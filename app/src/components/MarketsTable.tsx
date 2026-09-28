@@ -100,8 +100,9 @@ export function matchesFilter(listing: PoolListing, filter: MarketsFilter) {
 }
 
 /**
- * The pool's price as the chain holds it: a ratio in its quote token, never
- * dollars. Unavailable says why in its title. Until the row's token reads
+ * The pool's price as the chain holds it, the way a person reads a price:
+ * "1 cbBTC =" over "84,367 USDG" (lib/read/marketPrice.ts chooses which token
+ * is the one). Unavailable says why in its title. Until the row's token reads
  * have settled there are no decimals to write it with yet, which is no reason
  * to call it unavailable: the cell waits quietly instead.
  */
@@ -118,17 +119,14 @@ function PriceCell({ market, now }: { market: Market; now: Instant }) {
       </span>
     )
   }
-  const title = `Pool price from on-chain state at block ${price.block}. A ratio between the two tokens, not a dollar price.${price.stale ? ' Stale, not current.' : ''}`
-  // A leading ≈ is drawn quieter than the digits (DESIGN-V2 §6.3); the text reads the same.
-  const approx = price.text.startsWith('≈')
+  const title = `The pool’s own price on Robinhood Chain, at block ${price.block}.${price.stale ? ' Stale, not current.' : ''}`
   return (
     <span className="dm-mkt-price" data-pool-price={price.stale ? 'stale' : 'usable'} title={title}>
-      <span className="tnum font-medium text-fg">
-        {approx && <span className="dm-approx">≈</span>}
-        {approx ? price.text.slice(1) : price.text}
-      </span>
       <span className="dm-mkt-price-unit">
-        <PoolTokenLabel token={price.quote} /> per <PoolTokenLabel token={price.base} />
+        1 <PoolTokenLabel token={price.base} /> =
+      </span>
+      <span className="tnum font-medium text-fg">
+        {price.text} <PoolTokenLabel token={price.quote} />
       </span>
     </span>
   )

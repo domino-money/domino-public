@@ -1,11 +1,11 @@
 /**
- * USD prices for the Positions Wallet card (owner, 2026-09-25): "only the main
- * tokens, a few at most", each by its USD value, "if that doesn't cause too
- * much load". One provider GET per page view at most; nothing else asked.
+ * USD prices for the Positions Wallet card. The owner asked for the main
+ * tokens by USD value (2026-09-25), then, in round 6 (2026-09-27), for every
+ * token in the wallet converted to USD, the top 3 always shown.
  *
  * - USDG, the one token every selected pool holds, is $1 by definition, as
  *   everywhere else in the app (DESIGN-V2 §22.8). It is never asked for.
- * - Native ETH is valued at WETH's price, and WETH is always in the batch.
+ * - Native ETH is valued at WETH's price.
  * - Any other token's price comes from the provider's (DEX Screener) pair
  *   for that token with the most reported liquidity, and only when that
  *   liquidity is at least MIN_LIQUIDITY_USD. A pool holding a few dollars
@@ -16,11 +16,16 @@
  *   quote's own dollar price the provider derived the base's from
  *   (2026-09-25). A price the provider writes any other way than a plain
  *   positive decimal is none.
- * - One GET names up to 30 addresses (tokenArtwork.tokenPrices), with the
- *   artwork's bounded deadline. Its answers, a "no qualified price" included,
- *   are kept in memory for PRICE_TTL_MS, for this visit only: never in the
- *   browser's storage. A GET that failed is not kept: the card shows amounts
- *   for that view, and the next view asks again.
+ * - One GET names up to 30 addresses (the provider's limit,
+ *   tokenArtwork.tokenPrices). Round 6: a wallet holding more asks for all of
+ *   them at once, in PRICE_GETS GETs at most, side by side. Before, only the
+ *   first 30 were ever asked: the owner holds about 40 tokens, so UFG, his
+ *   largest holding, was never priced and never shown, and the card withheld
+ *   its total. Answers, a "no qualified price" included, are kept in memory
+ *   for PRICE_TTL_MS, each with the time it was answered; a GET that failed
+ *   is not kept, and the next ask repeats it. The card keeps its own last
+ *   answers per address in the browser, with those times (lib/walletMemory.ts),
+ *   never this module.
  * - The same reply names each token's artwork, which is handed to the
  *   artwork resolver, so the card's rows ask no token-pairs GET of their own.
  *
@@ -39,6 +44,8 @@ export const USDG = MAIN_USDG
 export const MIN_LIQUIDITY_USD = 10_000
 /** How long an answered price is reused in this visit. */
 export const PRICE_TTL_MS = 300_000
+/** The most price GETs one ask sends, side by side: 120 tokens. */
+export const PRICE_GETS = 4
 
 const ADDRESS = /^0x[0-9a-f]{40}$/
 
@@ -120,7 +127,12 @@ export function quotesFromTokens(body: unknown, asked: readonly string[]): Map<s
 export interface PriceAnswer {
   /** A quote, or null for "no qualified price", for every asked address that was answered (now or earlier in this visit). */
   quotes: ReadonlyMap<string, TokenQuote | null>
-  /** The provider was asked and gave no usable answer: the card shows amounts instead of values. */
+  /**
+   * When the provider answered each of `quotes`, on `now`'s clock (review of round 6, 2026-09-28: the card keeps each
+   * price with the time it was answered, so an answer reused from this visit's memory never looks newer than it is).
+   */
+  at: ReadonlyMap<string, number>
+  /** The provider was asked and no GET gave a usable answer. */
   failed: boolean
 }
 
@@ -129,13 +141,14 @@ export interface WalletPriceDeps {
   get: (addresses: readonly string[]) => Promise<unknown>
   /** Hands a token's artwork, found in the same reply, to the artwork resolver. */
   seed: (address: string, image: string | null) => void
-  /** A monotonic clock, in ms. */
+  /** A clock, in ms: the app's is the wall clock, since the times it gives are kept in the browser (lib/walletMemory.ts). */
   now: () => number
 }
 
 export function createWalletPrices(deps: WalletPriceDeps) {
   const kept = new Map<string, { quote: TokenQuote | null; at: number }>()
-  /** One GET per set of addresses on the wire, answered once: a second view of the same set joins it (StrictMode mounts twice). */
+  // The GET each address is on the wire in: a later ask naming it waits for that GET instead of sending it again (round
+  // 6: the card asks as each page names new tokens, and a page can land before the prices of the one before it do).
   const onWire = new Map<string, Promise<boolean>>()
 
   /** Reads one batch and keeps what it answered (and hands on its artwork); false when the provider gave no usable answer. */
@@ -146,16 +159,31 @@ export function createWalletPrices(deps: WalletPriceDeps) {
     const pairs = pairsOf(body)
     for (const [address, quote] of quotesFromTokens(body, batch)) {
       kept.set(address, { quote, at })
-      // The reply names the token's artwork when the token is a base there: its one image, or none.
+      // The reply names the token's artwork when the token is a base there: its one image, or none. A token no pair names
+      // at all is one the provider does not know (round 6: the card lists those too): no artwork, and no GET per row.
       if (pairs.some((pair) => baseOf(pair, address))) deps.seed(address, artworkFromPairs(body, address))
+      else if (!pairs.some((pair) => quoteOf(pair, address))) deps.seed(address, null)
     }
     return true
   }
 
+  /** One GET for `ask`, each of its addresses marked on the wire until it is answered. */
+  function send(ask: readonly string[]): Promise<boolean> {
+    const wire = read(ask)
+    for (const address of ask) onWire.set(address, wire)
+    void wire.finally(() => {
+      for (const address of ask) if (onWire.get(address) === wire) onWire.delete(address)
+    })
+    return wire
+  }
+
   /**
    * Quotes for `addresses` (in the caller's order of importance): USDG at $1,
-   * native ETH at WETH's price, the rest from this visit's memory, and what is
-   * left in ONE GET of at most PRICE_BATCH addresses. Never throws.
+   * native ETH at WETH's price, the rest from this visit's memory, an address
+   * already on the wire from its GET (a second view, StrictMode's second
+   * mount, the next page's ask all join it), and what is left in GETs of
+   * PRICE_BATCH addresses (PRICE_GETS at most), all at once. `failed` when
+   * every GET waited for gave no usable answer. Never throws.
    */
   async function price(addresses: readonly string[]): Promise<PriceAnswer> {
     const want = [...new Set(addresses.map((address) => address.toLowerCase()).filter((address) => ADDRESS.test(address)))]
@@ -164,33 +192,22 @@ export function createWalletPrices(deps: WalletPriceDeps) {
       const entry = kept.get(address)
       return entry !== undefined && deps.now() - entry.at < PRICE_TTL_MS ? entry : null
     }
-    const ask: string[] = []
-    for (const address of want) {
-      const source = sourceOf(address)
-      if (source !== USDG && fresh(source) === null && !ask.includes(source)) ask.push(source)
-    }
-    let failed = false
-    if (ask.length > 0) {
-      const batch = ask.slice(0, PRICE_BATCH)
-      const key = [...batch].sort().join(',')
-      let wire = onWire.get(key)
-      if (!wire) {
-        wire = read(batch)
-        onWire.set(key, wire)
-        void wire.finally(() => onWire.delete(key))
-      }
-      failed = !(await wire)
-    }
+    const needed = [...new Set(want.map(sourceOf))].filter((source) => source !== USDG && fresh(source) === null)
+    const wires = new Set(needed.flatMap((source) => onWire.get(source) ?? []))
+    const ask = needed.filter((source) => !onWire.has(source)).slice(0, PRICE_BATCH * PRICE_GETS)
+    for (let i = 0; i < ask.length; i += PRICE_BATCH) wires.add(send(ask.slice(i, i + PRICE_BATCH)))
+    const answered = await Promise.all(wires)
     const quotes = new Map<string, TokenQuote | null>()
+    const at = new Map<string, number>()
     for (const address of want) {
       const source = sourceOf(address)
-      if (source === USDG) quotes.set(address, USDG_QUOTE)
-      else {
-        const entry = fresh(source)
-        if (entry) quotes.set(address, entry.quote)
+      const entry = source === USDG ? { quote: USDG_QUOTE, at: deps.now() } : fresh(source)
+      if (entry) {
+        quotes.set(address, entry.quote)
+        at.set(address, entry.at)
       }
     }
-    return { quotes, failed }
+    return { quotes, at, failed: answered.length > 0 && !answered.includes(true) }
   }
 
   return { price }
@@ -200,5 +217,5 @@ export function createWalletPrices(deps: WalletPriceDeps) {
 export const walletPrices = createWalletPrices({
   get: (addresses) => tokenArtwork.tokenPrices(addresses),
   seed: (address, image) => tokenArtwork.seed(4663, address, image),
-  now: () => performance.now(),
+  now: () => Date.now(),
 })

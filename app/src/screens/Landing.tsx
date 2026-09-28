@@ -71,7 +71,7 @@ const LIMITS: ReadonlyArray<{ title: string; body: string; icon: ReactNode }> = 
   },
 ]
 
-/** The pill ROADMAP gives the first named capability that wears one, so Home says what Settings and the docs say. */
+/** The pill ROADMAP gives the first named capability that wears one, so Home says what Automate and the docs say. */
 const roadmapPill = (names: ReadonlyArray<string>): string | undefined => ROADMAP.filter((entry) => names.includes(entry.name)).map((entry) => ROADMAP_PILL[entry.status]).find((label) => label !== undefined)
 
 /**

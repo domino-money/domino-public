@@ -22,7 +22,9 @@ function protocolFeeWords(raw: number): string {
  * not, why it is unavailable and whether it is stale are its title, from the
  * estimate's own limitations and reasons, and its state is data either way;
  * the figure is in the site's own ink. It is never a figure the app worked
- * out.
+ * out. Changed on purpose 2026-09-27 (r6/marketsdata, the owner's plain-words
+ * rule): the ticker's figure no longer runs "from provider-reported inputs"
+ * after it; where the inputs come from stays in its title.
  */
 export function PoolAprEstimate({ observation, now, detailed = false, compact = false, label }: { observation?: AprEstimateObservation; now: Instant; detailed?: boolean; compact?: boolean; label?: string }) {
   const shown = presentAprEstimate(observation, now)
@@ -83,7 +85,6 @@ export function PoolAprEstimate({ observation, now, detailed = false, compact = 
       <span className={cx('tnum whitespace-nowrap', compact ? 'font-medium' : undefined, ink)} title={title}>
         {shown.text === null ? 'Est. APR unavailable' : `${shown.text}% ${compact ? 'est.' : 'est. APR'}`}
       </span>
-      {!compact && shown.text !== null && <span className="ml-1 text-fg-subtle">from provider-reported inputs</span>}
     </span>
   )
 }

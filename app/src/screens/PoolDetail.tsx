@@ -11,7 +11,6 @@ import { verifyCandidate } from '../lib/read/screens/catalogueSession'
 import { overviewPoolOption } from '../lib/read/publicOverview'
 import { failureText } from '../lib/read/screens/copy'
 import { parseAddressInput, poolIdKey, shortAddress } from '../lib/read/screens/identity'
-import { poolPrice, presetRange } from '../lib/read/screens/poolRange'
 import { optionUsableForDomino, type PoolOption } from '../lib/read/screens/poolsList'
 import { useReadSource } from '../lib/read/screens/readContext'
 import { askAgainLater, readWithin } from '../lib/read/screens/screenRead'
@@ -26,16 +25,13 @@ import type { TokenDisplay } from '../lib/read/types'
 
 const POOL_ID = /^0x[0-9a-fA-F]{64}$/
 
-/** Two ticks on the pool's spacing: the band the range planner draws. */
-type PlannedRange = { lower: number; upper: number }
-
 type Resolution =
   | { kind: 'verifying' }
   /** No answer to show: `code` is the read's state, `reason` its words, for the title and the live region only. */
   | { kind: 'failed'; code: string; reason: string }
   /** The pools route answered and did not include this pool. */
   | { kind: 'not_returned' }
-  | { kind: 'verified'; option: PoolOption; range: PlannedRange | null }
+  | { kind: 'verified'; option: PoolOption }
 
 /** A catalogue side as a mark only: its bundled artwork, bound to its address where the catalogue has one. Never metadata. */
 const catalogueMark = (entry: PoolCatalogueEntry, side: 0 | 1): TokenDisplay => ({
@@ -51,16 +47,18 @@ const catalogueMark = (entry: PoolCatalogueEntry, side: 0 | 1): TokenDisplay => 
 /**
  * The page while the pool is still only an id: the catalogue's pair labels for
  * one of the six, the id alone for any other, laid out as the verified page
- * will be, so nothing jumps when it arrives. No fee tier is stated before the
- * pool is verified, in the chip or the stat. While verifying, the figures and
- * the chart are resting blocks; once verification has no answer they are
- * dashes, with the reason in their title and in the live region, never a panel.
+ * will be (round 6: the name, the sentence under it, the key figures, the
+ * chart beside the earnings estimate), so nothing jumps when it arrives. No
+ * fee is stated before the pool is verified, in the chip or anywhere else.
+ * While verifying, the figures and the chart are resting blocks; once
+ * verification has no answer they are dashes, with the reason in their title
+ * and in the live region, never a panel.
  */
 function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: PoolCatalogueEntry; verifying?: boolean; reason?: { code: string; text: string } }) {
   // A resting bubble while verifying; the same box, empty, once verification has no answer.
   const bubble = (name: string) => <span aria-hidden="true" className={verifying ? `dm-skel ${name}` : name} />
   return (
-    <div aria-busy={verifying || undefined} data-pool-verification={verifying ? 'verifying' : reason?.code} title={reason?.text} className="dm-pool-layout">
+    <div aria-busy={verifying || undefined} data-pool-verification={verifying ? 'verifying' : reason?.code} title={reason?.text} className="dm-pool-layout" data-pool-pending={id}>
       <div className="dm-pool-head dm-pool-a-head animate-rise">
         <div className="dm-pool-title">
           <span className="dm-pool-marks">
@@ -71,49 +69,40 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
               {entry ? <><bdi>{entry.labels[0]}</bdi> / <bdi>{entry.labels[1]}</bdi></> : 'Pool'}
             </h1>
             <div className="dm-pool-chips">
-              {/* The fee tier is the verified pool's to state, as its stat below is: until then the chip names the protocol only. */}
-              {entry && <span className="dm-chip">Uniswap</span>}
-              <span className="dm-chip">Robinhood Chain</span>
-              <span className="dm-pool-id" title={id} translate="no">{shortAddress(id)}</span>
-              {verifying && <span role="status" className="dm-pool-verifying">Verifying this pool on Robinhood Chain…</span>}
+              {/* The fee is the verified pool's to state: until then the chip names the protocol only. */}
+              <span className="dm-chip">Uniswap</span>
+              {verifying && <span role="status" className="dm-pool-verifying">Checking this pool on Robinhood Chain…</span>}
               {!verifying && <span role="status" className="sr-only">{reason?.text}</span>}
             </div>
           </div>
         </div>
-        {/* Holds the New position button's place, unseen, so the title row does not move when it arrives. */}
+        {/* Holds the Create a position button's place, unseen, so the title row does not move when it arrives. */}
         {entry && <div aria-hidden="true" className="dm-pool-actions"><span className="dm-pool-skel-action" /></div>}
       </div>
-      {/* The verified page's grid, resting: the figures card beside the chart card, each figure a bubble, and a bubble
-          under each figure that has a line under it. */}
+      <div aria-hidden="true" className="dm-pool-intro dm-pool-a-lead">{bubble('dm-pool-skel-intro')}{bubble('dm-pool-skel-intro dm-pool-skel-intro--short')}</div>
+      {/* The verified page's key figures, resting: each figure a bubble, and a bubble under it for its line. */}
       <div className="dm-pool-figures dm-pool-a-figs animate-rise [--delay:40ms]">
-        <StatStrip cols={5} layout="list">
-          {['Price', 'TVL', '24h volume', 'Est. APR', 'Fee tier'].map((label) => (
-            <Stat key={label} label={label} className={label === 'Price' ? 'dm-pool-price-stat' : undefined}
-              sub={verifying && (label === 'Price' || label === 'Est. APR' || label === 'Fee tier') ? <Skeleton className="dm-pool-fig-sub-skel" /> : undefined}>
+        <StatStrip cols={4} layout="tiles" className="dm-pool-stats">
+          {['APR', '24h volume', 'TVL', 'Price'].map((label) => (
+            <Stat key={label} label={label} className="dm-pool-stat" sub={verifying ? <Skeleton className="dm-pool-fig-sub-skel" /> : undefined}>
               {verifying ? <Skeleton className="dm-pool-fig-skel" /> : <span className="text-fg-subtle">—</span>}
             </Stat>
           ))}
         </StatStrip>
       </div>
-      {/* The chart card at the verified card's height, row for row: the source switch, the close and its date, the
-          base and window switches, the plot, its time axis and the quiet row under it. Bubbles while verifying; once
-          verification has no answer, the same rows hold their place, empty. */}
+      {/* The chart card at the verified card's height, row for row: the title and the window switch, the price and its
+          line, the plot, its time axis and the switch under it. Bubbles while verifying; once verification has no
+          answer, the same rows hold their place, empty. */}
       <div className="dm-card dm-pool-chart dm-pool-a-chart animate-rise [--delay:80ms]">
         <div className="dm-pool-chart-head">
-          <h2 className="dm-title">Pool price history</h2>
-          {bubble('dm-pool-skel-switch')}
+          <h2 className="dm-title">Price history</h2>
+          {bubble('dm-pool-skel-seg')}
         </div>
         <div aria-hidden="true" className="dm-pool-skel-head">
-          {bubble('dm-pool-skel-sub')}
           {bubble('dm-pool-skel-price')}
           {bubble('dm-pool-skel-date')}
         </div>
-        <div aria-hidden="true" className="dm-pool-skel-controls">
-          {bubble('dm-pool-skel-seg')}
-          {bubble('dm-pool-skel-seg')}
-        </div>
-        {/* Stands in for the ratio chart the verified page opens on; no caption under the heading. */}
-        <div className="dm-pool-plot dm-dots-chart mt-4" title="Pool ratios from verified Robinhood Chain Swap events.">
+        <div className="dm-pool-plot dm-dots-chart mt-4" title="Prices from swaps on Robinhood Chain.">
           <div className="dm-pool-plot-empty">
             {verifying ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle" title={reason?.text}>—</span>}
           </div>
@@ -122,7 +111,20 @@ function Pending({ id, entry, verifying = true, reason }: { id: string; entry?: 
           {bubble('dm-pool-skel-tick')}
           {bubble('dm-pool-skel-tick')}
         </div>
-        <div aria-hidden="true" className="dm-pool-skel-quiet">{bubble('dm-pool-skel-summary')}</div>
+        <div aria-hidden="true" className="dm-pool-skel-quiet">{bubble('dm-pool-skel-seg')}</div>
+      </div>
+      {/* The estimate and the recent activity beside the chart, at their loaded heights. */}
+      <div aria-hidden="true" className="dm-card dm-pool-card dm-pool-a-earn dm-pool-skel-card animate-rise [--delay:120ms]">
+        <h2 className="dm-title">Estimate your earnings</h2>
+        {bubble('dm-pool-skel-field')}
+        {bubble('dm-pool-skel-seg')}
+        {bubble('dm-pool-skel-result')}
+        {bubble('dm-pool-skel-summary')}
+      </div>
+      <div aria-hidden="true" className="dm-card dm-pool-card dm-pool-a-recent dm-pool-skel-card animate-rise [--delay:160ms]">
+        <h2 className="dm-title">Recent activity</h2>
+        {bubble('dm-pool-skel-summary')}
+        {bubble('dm-pool-skel-summary')}
       </div>
     </div>
   )
@@ -178,8 +180,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
         }
         const option = overviewPoolOption(overview, id)
         if (option && option.currencies.some((currency) => currency.address === tokenKey)) {
-          const price = poolPrice(option, Date.now())
-          setState({ key, resolution: { kind: 'verified', option, range: price.state === 'usable' ? presetRange(price.tick, price.tickSpacing, 'standard') : null } })
+          setState({ key, resolution: { kind: 'verified', option } })
         } else if (overview.data.pools.some((entry) => entry.poolId === id && entry.acquisition.status === 'pending')) {
           cancel = whenVisibleAfter(5_000, () => setAsked({ key, attempt: attempt + 1 }))
         } else setState({ key, resolution: { kind: 'not_returned' } })
@@ -204,15 +205,13 @@ export function PoolDetail({ poolId }: { poolId: string }) {
         setState({ key, resolution: { kind: 'not_returned' } })
         return
       }
-      const price = poolPrice(result.option, Date.now())
-      setState({ key, resolution: { kind: 'verified', option: result.option, range: price.state === 'usable' ? presetRange(price.tick, price.tickSpacing, 'standard') : null } })
+      setState({ key, resolution: { kind: 'verified', option: result.option } })
     })()
     return () => { controller.abort(); cancel?.() }
   }, [source, id, tokenKey, key, attempt])
 
-  // A price read again moves the pool's price; the range drawn on it stays.
+  // A price read again moves the pool's price, and the typical range the workspace draws on it moves with it.
   const onOption = useCallback((option: PoolOption) => setState((current) => (current && current.resolution.kind === 'verified' ? { ...current, resolution: { ...current.resolution, option } } : current)), [])
-  const onRange = useCallback((range: PlannedRange) => setState((current) => (current && current.resolution.kind === 'verified' ? { ...current, resolution: { ...current.resolution, range } } : current)), [])
 
   const resolution: Resolution | null = key ? (state?.key === key ? state.resolution : { kind: 'verifying' }) : null
 
@@ -257,15 +256,14 @@ export function PoolDetail({ poolId }: { poolId: string }) {
       </div>
     )
   } else {
-    // New position opens positions only in pools with no hooks and a fixed fee: any other pool has no way there.
+    // New position opens positions only in pools with no hooks and a fixed fee: any other pool has no way there. The
+    // button opens the same New position flow as everywhere else, with this pool already chosen.
     body = (
       <PoolWorkspace
         source={source}
         option={resolution.option}
         onOption={onOption}
-        range={resolution.range}
-        onRange={onRange}
-        actions={optionUsableForDomino(resolution.option) ? <LinkButton href={newPositionHref(resolution.option.key)} size="lg" className="dm-pool-new" data-new-position="">New position</LinkButton> : undefined}
+        actions={optionUsableForDomino(resolution.option) ? <LinkButton href={newPositionHref(resolution.option.key, linked.token)} size="lg" className="dm-pool-new" data-new-position="">Create a position</LinkButton> : undefined}
       />
     )
   }

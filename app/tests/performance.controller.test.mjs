@@ -22,13 +22,13 @@ const fixture = path => JSON.parse(readFileSync(new URL(`../../api-contracts/per
 const epochs = fixture('responses/epochs'), cards = fixture('responses/cards');
 const flush = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
 const reply = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'X-Domino-Performance-Contract': runtime.CONTRACT_VERSION } });
-function harness(handler, { sequences, visible: shown = true } = {}) {
+function harness(handler, { sequences, visible: shown = true, cache } = {}) {
   let now = 0, visible = shown, identity = { kind: 'signed_in', owner: epochs.owner, chainId: 4663, epoch: 1, connectorUid: 'one' };
   const timers = new Map(), listeners = new Set(), calls = []; let serial = 0;
   const clock = { monoMs: () => now, wallMs: () => now, setTimer(fn, ms) { const id = serial++; timers.set(id, { fn, at: now + ms }); return () => timers.delete(id); } };
   const session = { csrfAccess: true, getSnapshot: () => identity, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     withCsrf: async (_epoch, fn) => fn('never-persist-this'), reportDenial() {} };
-  const controller = createPerformanceController({ session, runtime, clock, visible: () => visible, sequences,
+  const controller = createPerformanceController({ session, runtime, clock, visible: () => visible, sequences, cache,
     fetch: async (url, init) => { calls.push({ url, init }); if (handler) return handler(url, init);
       return new Response(JSON.stringify(url.endsWith('/epochs') ? epochs : cards), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Domino-Performance-Contract': runtime.CONTRACT_VERSION } }); } });
   const stop = controller.start();
@@ -58,9 +58,64 @@ test('foreign owner response never triggers cards or appears in the UI', async (
   const h = harness(() => new Response(JSON.stringify({ ...epochs, owner: '0x' + 'aa'.repeat(20) }), { headers: { 'Content-Type': 'application/json', 'X-Domino-Performance-Contract': runtime.CONTRACT_VERSION } }));
   await flush(); assert.equal(h.controller.getSnapshot().reason, 'owner_mismatch'); assert.equal(h.calls.length, 1); assert.deepEqual(h.controller.getSnapshot().cards, []); h.stop();
 });
-test('hidden tabs stop work, clear old numbers, and perform one bounded refresh on return', async () => {
-  const h = harness(); await flush(); h.visibility(false); assert.deepEqual(h.controller.getSnapshot().cards, []);
-  await h.advance(600000); assert.equal(h.calls.length, 2); h.visibility(true); await flush(); assert.equal(h.calls.length, 4); h.stop();
+// Changed on purpose (the owner, 2026-09-27, round 6: Managed positions must never flash empty): a hidden tab keeps the cards it
+// shows, a failed read keeps them too, and a view shown again finds them and reads at the service's own pace.
+test('hidden tabs stop work, keep what they show, and perform one bounded refresh on return', async () => {
+  const h = harness(); await flush(); h.visibility(false); assert.deepEqual(h.controller.getSnapshot().cards, cards.cards);
+  assert.equal(h.controller.getSnapshot().state, 'ready');
+  await h.advance(600000); assert.equal(h.calls.length, 2); h.visibility(true); await flush(); assert.equal(h.calls.length, 4);
+  assert.deepEqual(h.controller.getSnapshot().cards, cards.cards); h.stop();
+});
+test('a failed refresh keeps the cards shown, with its code for the section only; a view shown again keeps them and reads at its time', async () => {
+  let failing = false;
+  const h = harness(url => failing ? reply({ error: 'performance_store_unavailable' }, 503) : reply(url.endsWith('/epochs') ? epochs : cards)); await flush();
+  failing = true; await h.advance(60_000);
+  assert.deepEqual([h.controller.getSnapshot().state, h.controller.getSnapshot().reason, h.controller.getSnapshot().cards], ['unavailable', 'performance_store_unavailable', cards.cards]);
+  failing = false; await h.advance(60_000);
+  assert.equal(h.controller.getSnapshot().state, 'ready');
+  const asked = h.calls.length;
+  h.stop(); await h.advance(10_000);
+  const again = h.controller.start(); await flush();
+  assert.deepEqual([h.controller.getSnapshot().state, h.controller.getSnapshot().cards, h.calls.length], ['ready', cards.cards, asked], 'shown again: the same cards, no read before its time');
+  await h.advance(50_000); assert.equal(h.calls.length, asked + 2, 'then its refresh, at the pace the service asked');
+  again();
+});
+test('signed in, Managed positions show this browser’s copy at once and keep the first page they read; while the session is checked they are neither signed out nor read', async () => {
+  const saved = [], copy = { enrollments: epochs.enrollments, cards: cards.cards };
+  let release;
+  const h = harness(url => url.endsWith('/epochs') ? new Promise(resolve => { release = () => resolve(reply(epochs)); }) : reply(cards));
+  h.identity({ kind: 'pending' });
+  assert.deepEqual([h.controller.getSnapshot().state, h.controller.getSnapshot().cards], ['checking', []]);
+  h.stop();
+  const c = harness(url => url.endsWith('/epochs') ? new Promise(resolve => { release = () => resolve(reply(epochs)); }) : reply(cards),
+    { cache: { load: owner => owner === epochs.owner ? copy : null, save: (owner, e, k) => saved.push([owner, e.enrollments.length, k?.cards.length]) } });
+  await flush();
+  assert.deepEqual([c.controller.getSnapshot().state, c.controller.getSnapshot().cards, saved], ['loading', cards.cards, []], 'painted from the copy, the read on its way');
+  release(); await flush();
+  assert.deepEqual([c.controller.getSnapshot().state, saved], ['ready', [[epochs.owner, epochs.enrollments.length, cards.cards.length]]]);
+  c.stop();
+});
+// 2026-09-27, round 6: a new session of the same wallet keeps the cards; the copy never outlives a sign-in.
+// Changed on purpose (2026-09-28, round 6 review): the controller is no longer told of each session change to forget the copy (it
+// stops once no view shows it, so a sign-out elsewhere never reached it); the wallet island forgets every private copy, on any page
+// (finance/privateCards.ts forgetPrivate, tests/execution.controller.test.mjs and tests/finance.browser.test.mjs).
+test('a new session for the same wallet keeps its cards and reads at once; a sign-out shows none', async () => {
+  const loads = [];
+  const h = harness(undefined, { cache: { load: owner => { loads.push(owner); return null; }, save() {} } });
+  await flush(); assert.deepEqual([h.controller.getSnapshot().cards, h.calls.length, loads], [cards.cards, 2, [epochs.owner]]);
+  h.identity({ kind: 'signed_in', owner: epochs.owner, chainId: 4663, epoch: 2, connectorUid: 'one' });
+  assert.deepEqual([h.controller.getSnapshot().state, h.controller.getSnapshot().cards, loads.length], ['loading', cards.cards, 1], 'the same cards, no copy read over them');
+  await flush(); assert.equal(h.calls.length, 4, 'read at once for the new session');
+  h.identity({ kind: 'signed_out' });
+  assert.deepEqual([h.controller.getSnapshot().state, h.controller.getSnapshot().cards], ['signed_out', []]);
+  h.stop();
+});
+test('created while the wallet is signed in, the first paint is this browser’s copy, and nothing is read before the start', async () => {
+  const calls = [], copy = { enrollments: epochs.enrollments, cards: cards.cards };
+  const controller = createPerformanceController({ session: { csrfAccess: true, getSnapshot: () => ({ kind: 'signed_in', owner: epochs.owner, chainId: 4663, epoch: 1, connectorUid: 'one' }), subscribe: () => () => {}, withCsrf: async () => {}, reportDenial() {} },
+    runtime, clock: { monoMs: () => 0, wallMs: () => 0, setTimer: () => () => {} }, visible: () => true, cache: { load: () => copy, save() {} }, fetch: async url => { calls.push(url); } });
+  await flush();
+  assert.deepEqual([controller.getSnapshot().state, controller.getSnapshot().cards, calls], ['loading', cards.cards, []]);
 });
 test('20s deadline aborts a stalled network and preserves a 60s retry budget', async () => {
   const h = harness((_url, init) => new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(new Error('aborted')))));
@@ -300,6 +355,37 @@ test('the listing waits while hidden, is asked again at most three times after a
     assert.equal(reads.calls.length, reason === 'wallet_read_failed' ? 4 : 1, reason);
     assert.equal(x.controller.getSnapshot().sequences.reason, reason); x.stop();
   }
+});
+
+// 2026-09-28, round 6 review: one controller serves every view of Managed positions, so a stop no longer throws it away. A listing
+// cut off by a stop (the owner opened a position a few seconds after Positions) stayed "reading" for good, and Start tracking was
+// never offered until a reload; a failed listing's next ask was lost the same way.
+test('a listing a stop cut off is asked again once started, and reaches ready; a failed one keeps its next ask', async () => {
+  let release;
+  const reads = fakeReads({ list: n => n === 1 ? new Promise(resolve => { release = resolve; }) : { rows: [{ vault: enrollRequest.vault, rootTokenId: '1' }], older: false } });
+  const h = harness(performanceRoute, { sequences: reads });
+  await flush();
+  assert.deepEqual([h.controller.getSnapshot().state, h.controller.getSnapshot().sequences.state], ['ready', 'reading'], 'the listing is on its way, through the wallet');
+  // No view shows the cards: the shared controller stops, and the listing's answer comes after.
+  h.stop();
+  assert.equal(h.controller.getSnapshot().sequences.state, 'idle', 'cut off: not asked yet, never left reading');
+  release({ rows: [], older: false }); await flush();
+  assert.equal(h.controller.getSnapshot().sequences.state, 'idle', 'the late answer is dropped');
+  // Back on Positions: the cards are current, so it is listed again at once, and reaches ready.
+  const again = h.controller.start(); await flush();
+  assert.deepEqual([reads.calls.filter(call => call[0] === 'list').length, h.controller.getSnapshot().sequences], [2, { state: 'ready', rows: [{ vault: enrollRequest.vault, rootTokenId: '1' }], older: false, reason: null }]);
+  again();
+
+  const flaky = fakeReads({ list: n => { if (n === 1) throw new Error('wallet_timeout'); return { rows: [], older: false }; } });
+  const f = harness(performanceRoute, { sequences: flaky });
+  await flush();
+  assert.equal(f.controller.getSnapshot().sequences.state, 'unavailable');
+  // Stopped before its next ask (15 s on), and started again later: the ask is still due and goes with the next current answer.
+  f.stop(); await f.advance(20_000);
+  assert.equal(flaky.calls.length, 1, 'nothing is read while no view shows the cards');
+  const back = f.controller.start(); await flush();
+  assert.deepEqual([flaky.calls.length, f.controller.getSnapshot().sequences.state], [2, 'ready']);
+  back();
 });
 
 test('a failed positions read sends nothing and says why for that vault; an account change drops a Start tracking still on its way', async () => {

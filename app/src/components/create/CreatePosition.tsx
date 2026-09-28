@@ -753,6 +753,8 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     else openWallet()
   }
   const busy = phase === 'running'
+  // Changed on purpose (round 6, 2026-09-27, the owner: plain words): each reason below is one short sentence, and a
+  // held deposit is "refunded", the word of the button beside it (Refund the deposit instead).
   // Review's reading says the wallet cannot fund this position either way. The press stays open: it looks for an earlier
   // deposit in this pool first, which may be where the tokens are, and reads the wallet itself before anything is sent.
   const short = reviewed?.kind === 'short' && phase !== 'held' && phase !== 'running' && phase !== 'done'
@@ -760,17 +762,17 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   if (!ready) {
     // Why there is nothing to create: a missing choice, or a pool positions are not created in (hooks, a dynamic fee).
     reason = CREATE.review.notReady
-  } else if (!needs) reason = 'The pool’s price or the range could not be used. Go back to the range and choose it again.'
-  else if (onOtherNetwork) reason = 'Switch your wallet to Robinhood Chain to create the position.'
-  else if (!connected) reason = 'Connect your wallet to create the position. Each transaction appears in your wallet to sign.'
-  else if (phase === 'held' && refundFirst) reason = 'A deposit is held for this pool. Refund it to your wallet.'
-  else if (phase === 'held') reason = 'A deposit is held for this pool. Press Create position to create the position from it, or refund it.'
-  else if (busy) reason = batching ? 'Confirm the batch in your wallet: one signature for every step. The list above marks it as it goes.' : 'Confirm each step in your wallet. The list above marks each one as it is done.'
-  else if (short) reason = 'Your wallet does not seem to hold enough for this position. Lower the amount, or add the token named above to your wallet.'
+  } else if (!needs) reason = 'The price or the range can’t be used. Go back to Range and choose it again.'
+  else if (onOtherNetwork) reason = 'Switch your wallet to Robinhood Chain to continue.'
+  else if (!connected) reason = 'Connect a wallet to create this position.'
+  else if (phase === 'held' && refundFirst) reason = 'You have a deposit waiting in this pool. Refund it to your wallet.'
+  else if (phase === 'held') reason = 'You have a deposit waiting in this pool. Press Create position to finish from it, or refund it.'
+  else if (busy) reason = batching ? 'Confirm in your wallet: one signature for every step.' : 'Confirm each step in your wallet.'
+  else if (short) reason = CREATE.amount.short
   else if (phase === 'failed' && unrecognized) reason = 'Your wallet is asked nothing until you confirm the smart account below, or connect another account.'
-  else if (phase === 'failed') reason = 'Press Create position to try again. An allowance already set is not asked for again.'
+  else if (phase === 'failed') reason = 'Press Create position to try again.'
   else if (atomic === 'supported') reason = CREATE.review.batchReason
-  else reason = 'Your wallet asks you to sign each step in the list above, in order.'
+  else reason = 'Your wallet will ask you to confirm each step.'
   // A wallet that could batch once it turns on its smart account: offered beside the steps, never chosen for the person.
   const offerBatch = atomic === 'ready' && ready && needs !== null && connected && (phase === 'idle' || phase === 'failed') && !unrecognized
 

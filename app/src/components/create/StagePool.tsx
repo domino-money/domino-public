@@ -10,7 +10,8 @@ import { Button, Chip } from '../ui'
 
 /**
  * The chosen pool: its pair and fee, with where it was verified in the chip's
- * title rather than a line under the name.
+ * title rather than a line under the name. The same panel whichever way the
+ * pool came: from the list, or from a pool page's link.
  *
  * There is no choice of what to deposit here. A position holds both of the
  * pool's currencies, so the amount step shows a row for each and the token an
@@ -31,7 +32,8 @@ export function ChosenPool({ option, onChange }: { option: PoolOption; onChange:
             <SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} />
           </p>
           <p className="flex flex-wrap items-center gap-1.5">
-            <Chip title={CREATE.pool.verifiedAt(option.block)}>Uniswap · {option.fee}</Chip>
+            {/* Changed on purpose (round 6, 2026-09-27): the fee in plain words, "0.30% fee"; Uniswap is every pool's. */}
+            <Chip title={CREATE.pool.verifiedAt(option.block)}>{CREATE.pool.fee(option.fee)}</Chip>
           </p>
         </div>
         <Button type="button" variant="ghost" size="sm" onClick={onChange}>

@@ -4,7 +4,6 @@ import { automatable } from '../../lib/automate/picker'
 import { automationWord, useAutomation, type AutomationMode, type AutomationView } from '../../lib/automationState'
 import { createdHere } from '../../lib/create/createProgress'
 import { useWalletAnswer } from '../../lib/walletPositions'
-import { ModeArt, PlainArt } from '../automate/ModeArt'
 import { sequenceHref } from '../explore/routes'
 import { IconAutomate } from '../icons'
 import { LinkButton, Pill } from '../ui'
@@ -49,13 +48,6 @@ function switchOn(view: AutomationView): string | null {
   return SWITCH_ON[view.state.automation]
 }
 
-/** The feature's small picture: one range for a plain position, the mode's own thumbnail for the two automations. */
-function Art({ view }: { view: AutomationView }) {
-  if (view.phase !== 'ready' || view.state.automation === 'other') return null
-  const mode = view.state.automation
-  return mode === 'plain' ? <PlainArt className="dm-auto-art" /> : <ModeArt mode={mode} size="thumb" className="dm-auto-art" />
-}
-
 /**
  * For a position's own page: whether the position is one the automation page lists for the connected wallet, so that
  * nothing offers Automate for a position the page then leaves out (review of 2026-09-24: an NFT the wallet holds but
@@ -95,40 +87,55 @@ export function AutomationChip({ tokenId, listed }: { tokenId: string; listed: b
 }
 
 /**
- * The way from an open position to Automate. `row`: the line under a row of Your positions (the rows are links,
- * so this sits beside the row, never inside it): the position's feature, and Automate for a plain one, or how to switch
- * on a sequence that does not run. `action`: the same way on, on the position page beside the owner's Collect fees and
- * Close position. `open`: whether the automation page would list the position (automatable for a row of the wallet's
- * own list; useListedPosition on its page).
+ * The way from an open position to Automate. `row`: the Automation column of a row of Your positions (round 6,
+ * 2026-09-27, the owner: one tidy row, no line under it): a small badge for Auto-compound or Domino-compound, with
+ * Paused or Stopped under it when it does not run (its page says how to switch it on), or Automate for a plain one;
+ * the rows are links, so this sits over the row as its sibling, never inside it, and a click anywhere on it but on
+ * Automate is the row's (positions.css; 2026-09-28, review: the badge was a dead spot, its tooltip with it, so it has
+ * none). `action`: the same way on, on the
+ * position page beside the owner's Collect fees and Close position, or how to switch on a sequence that does not
+ * run. `open`: whether the automation page would list the position (automatable for a row of the wallet's own list;
+ * useListedPosition on its page).
  */
 export function AutomateEntry({ tokenId, open, variant = 'row' }: { tokenId: string; open: boolean; variant?: 'row' | 'action' }) {
   const view = useAutomation(open ? tokenId : null)
   if (!open) return null
   const row = variant === 'row'
+  const state = view.phase === 'ready' ? view.state : null
+  // A subscriber that is not Domino's: nothing to say and nothing to offer.
+  if (state?.automation === 'other') return null
+  const sequence = state && 'paused' in state ? state : null
+  const running = sequence !== null && sequence.active && !sequence.paused
   // On a position's page (2026-09-27) the way on is an outlined button like the owner's own actions beside it.
-  const look = row ? 'ghost' : 'outline'
-  const docs = switchOn(view)
   const go = offered(view) ? (
-    <LinkButton href={sequenceHref(tokenId)} variant={look} size={row ? 'sm' : 'md'} className="dm-auto-go" data-automate-entry={tokenId}>
+    <LinkButton href={sequenceHref(tokenId)} variant={row ? 'ghost' : 'outline'} size={row ? 'sm' : 'md'} className="dm-auto-go" data-automate-entry={tokenId}>
       <IconAutomate />
       Automate
     </LinkButton>
-  ) : docs ? (
-    <LinkButton href={docs} variant={look} size={row ? 'sm' : 'md'} className="dm-auto-go" data-automate-docs={tokenId}>
-      How to switch it on
-    </LinkButton>
   ) : null
-  if (!row) return go
-  // A subscriber that is not Domino's: nothing to say and nothing to offer, so no line at all.
-  if (view.phase === 'ready' && view.state.automation === 'other') return null
-  const text = stateText(view)
+  if (!row) {
+    const docs = switchOn(view)
+    return (
+      go ??
+      (docs && (
+        <LinkButton href={docs} variant="outline" size="md" className="dm-auto-go" data-automate-docs={tokenId}>
+          How to switch it on
+        </LinkButton>
+      ))
+    )
+  }
   return (
     <div className="dm-own-auto" data-position-automation={tokenId} {...dataOf(view)}>
-      <span className="dm-own-auto-state">
-        <Art view={view} />
-        {text}
-      </span>
-      {go}
+      {sequence ? (
+        <>
+          <span className="dm-own-badge" data-running={running ? '' : undefined}>
+            {FEATURES[sequence.automation].name}
+          </span>
+          {!running && <span className="dm-own-badge-word">{automationWord(sequence)}</span>}
+        </>
+      ) : (
+        go
+      )}
     </div>
   )
 }

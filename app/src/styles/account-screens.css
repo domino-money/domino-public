@@ -1,26 +1,8 @@
-/* foundation (DESIGN-V2 §17.2): Settings and the presentation of rugged97's screens, reached through
-   class names. Moved verbatim from account.css in F0 (Performance and Execution went to positions.css).
-   The !important declarations override a primitive's own utilities and are scoped to one card each. */
+/* foundation (DESIGN-V2 §17.2): the presentation of rugged97's screens, reached through class names. Moved
+   verbatim from account.css in F0 (Performance and Execution went to positions.css). The Settings rules left
+   with that page (2026-09-27, the owner's round 6, point 6). */
 
 @layer components {
-  /* ---- Settings (E.7) ---------------------------------------------------------------------- */
-  /* A reading column inside the one 1200px container (DESIGN-V2 2.7). */
-  .dm-acct-settings { display: grid; gap: 24px; max-width: 880px; margin-top: 32px; }
-  .dm-acct-set-title { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: -0.24px; color: var(--fg); }
-  .dm-acct-set-card { padding: 20px; }
-  .dm-acct-build { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px 24px; margin: 20px 0 0; }
-  /* A build fact is words, not a figure: it wraps instead of truncating, at body-lead size. */
-  .dm-acct-build dd { overflow: visible !important; font-size: 16px !important; line-height: 22px !important; letter-spacing: -0.24px !important; text-overflow: clip !important; white-space: normal !important; }
-  .dm-acct-build .dm-acct-mono { font-size: 14px; line-height: 22px; }
-  @media (max-width: 767px) { .dm-acct-build { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 479px) { .dm-acct-build { grid-template-columns: minmax(0, 1fr); } }
-  .dm-acct-caps { padding: 8px; }
-  .dm-acct-caps-title { padding: 12px 12px 8px; }
-  .dm-acct-cap { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; padding: 12px; border-radius: var(--radius-sm); }
-  .dm-acct-cap + .dm-acct-cap { background: linear-gradient(var(--border), var(--border)) top center / calc(100% - 24px) 1px no-repeat; }
-  .dm-acct-cap-name { font-size: 14px; line-height: 20px; font-weight: 500; color: var(--fg); }
-  .dm-acct-cap-note { max-width: 62ch; margin-top: 2px; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
-
   /* ---- Rugged97's screens (E.8): presentation only, reached through class names ------------- */
   .dm-acct-desc { max-width: 72ch; font-size: 14px; line-height: 20px; color: var(--fg-muted); text-wrap: pretty; }
   .dm-acct-lede { max-width: 60ch; margin-top: 8px; font-size: 14px; line-height: 20px; color: var(--fg-muted); }

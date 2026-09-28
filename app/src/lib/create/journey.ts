@@ -156,6 +156,18 @@ export function candidatesFromPool(option: PoolOption): TokenCandidate[] {
   })
 }
 
+/**
+ * The token a pool opened from a link starts with. Changed on purpose (round 6, 2026-09-27, the owner: New position
+ * opened from a pool must look and behave as it does from Positions, with the pool simply chosen): a position holds
+ * both of a pool's tokens and the amount step takes an amount in either, so step 1 no longer asks which one is
+ * deposited. It is the one the link was verified against (USDG where the pool holds it) when it can be read, else
+ * the first that can; null when neither can.
+ */
+export function linkedDepositToken(option: PoolOption, preferred: AddressKey): TokenCandidate | null {
+  const usable = candidatesFromPool(option).filter((candidate) => candidate.why === null && candidate.token.decimals !== null)
+  return usable.find((candidate) => candidate.key === preferred) ?? usable[0] ?? null
+}
+
 /* ---------------------------------------------------------------------------
    The pool id in the link
 --------------------------------------------------------------------------- */
@@ -533,7 +545,7 @@ export function walletSteps(state: JourneyState, swapFrom: 0 | 1 | null = null, 
     steps.push({ key: 'fund', title: words.fundStep, detail: words.fundStepDetail })
   } else {
     const held = pool.currencies[swapFrom]
-    steps.push({ key: 'fund', title: words.fundOneStep, detail: words.fundOneStepDetail(tokenAddress(held) === NATIVE_CURRENCY), token: held })
+    steps.push({ key: 'fund', title: words.fundOneStep, detail: words.fundOneStepDetail, token: held })
     steps.push({ key: 'swap', title: words.swapStep, detail: words.swapStepDetail(assistedFee) })
   }
   steps.push({ key: 'mint', title: words.mintStep, detail: words.mintStepDetail })
@@ -620,7 +632,8 @@ export function serialiseSummary(state: JourneyState, now: number, swapFrom: 0 |
   const lines = summaryLines(state, now).map((line) => `${line.label}: ${line.value}`)
   const position = positionText(state, now)
   if (position) lines.push(`${words.price}: ${position}`)
-  for (const [index, step] of walletSteps(state, swapFrom).entries()) lines.push(`${words.walletStep(index + 1)}: ${step.title}`)
+  // A step about one token names it after its title, as Review draws it ("Approve USDG").
+  for (const [index, step] of walletSteps(state, swapFrom).entries()) lines.push(`${words.walletStep(index + 1)}: ${step.title}${step.token ? ` ${tokenText(step.token)}` : ''}`)
   for (const fee of feeBases(state)) lines.push(`${fee.label}: ${fee.value}`)
   // The owner's own action: the wallet signs each step when Create position is pressed (components/create/CreatePosition.tsx).
   lines.push(`${words.create}: ${CREATE.review.final}`)

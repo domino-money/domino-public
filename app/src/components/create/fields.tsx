@@ -21,6 +21,7 @@ export function AmountField({
   error,
   below,
   value,
+  labelHidden = false,
   ...rest
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'id' | 'value'> & {
   id: string
@@ -36,12 +37,14 @@ export function AmountField({
   /** Anything under the panel before the hint, such as the raw units. */
   below?: ReactNode
   value: string
+  /** The label for assistive technology only, when the token pill in the panel already names the amount. */
+  labelHidden?: boolean
 }) {
   const hintId = `${id}-hint`
   const errorId = `${id}-error`
   return (
     <div className="min-w-0">
-      <label htmlFor={id} className="dm-label">
+      <label htmlFor={id} className={labelHidden ? 'sr-only' : 'dm-label'}>
         {label}
       </label>
       <div className="dm-flow-amount" data-invalid={error ? '' : undefined}>

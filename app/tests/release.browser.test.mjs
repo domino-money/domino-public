@@ -456,8 +456,9 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
     for (const [index, label] of LABELS.entries()) {
       assert.equal(await rows.nth(index).locator('td').first().locator('span.font-medium').innerText(), label, 'symbols come from the token reads, in the pool’s order');
     }
-    // And the price in the pool's own orientation, currency1 per currency0, with the read decimals (ETH 18, TKY 6).
-    assert.equal((await rowView(rows.nth(0))).price.text, '≈1,000,000,000,000 TKY per ETH');
+    // And the price with the read decimals (ETH 18, TKY 6). Changed on purpose 2026-09-27 (r6/marketsdata, the owner's
+    // plain-price rule): one of a token, so much of the other, the way round that reads as 1 or more.
+    assert.equal((await rowView(rows.nth(0))).price.text, '1 ETH = 1,000,000,000,000 TKY');
     assert.equal(await page.locator('a[href*="geckoterminal"]').count(), 0, 'sourceUrl is never linked');
     // #93: the headers name who reported each figure, on a phone as on a laptop; the ratio is Domino's; the estimate says what it is.
     for (const width of [1280, 390]) {
@@ -995,7 +996,11 @@ test('(r) a list served and current: its pools in its order, read first, under "
   const { context, page, errors } = await visit(withList(() => v5(200, servedList())));
   try {
     assert.equal(await settled(page), 'none');
-    assert.deepEqual(listReads(), [{ index: 0, method: 'POST', body: {} }], 'the list is the page’s first read, one POST of {}');
+    // Changed on purpose 2026-09-27 (r6/marketsdata): the read-v3 capabilities GET, which takes no place in the queue,
+    // is asked beside the list; the list is still the page's first POST, and nothing about a pool is read before it.
+    assert.deepEqual(listReads().map(({ method, body }) => ({ method, body })), [{ method: 'POST', body: {} }], 'one POST of {}');
+    assert.equal(reads.findIndex((r) => r.method === 'POST'), listReads()[0].index, 'the list is the page’s first POST');
+    assert.ok(reads.slice(0, listReads()[0].index).every((r) => r.path.endsWith('/capabilities')), 'only the capabilities beside it');
     assert.deepEqual(reads.filter((r) => r.path.endsWith('/pool-market')).map((r) => r.body.poolId), SERVED, 'then the markets of its pools, in its order');
     assert.equal(await page.locator('#pools [data-featured-source]').getAttribute('data-featured-source'), 'server');
     assert.equal(await page.locator('#pools h2').first().innerText(), 'Top pools · last 24h');

@@ -42,10 +42,14 @@ export const MARKETS: DocPage = {
       id: 'pool-page',
       title: 'A pool’s page',
       blocks: [
-        shot('pool', 'A pool’s page: its chart and figures, and New position at the top.'),
-        p('A pool’s page shows its price, TVL, 24h volume, APR and fee tier, with 24h fees where Domino history provides them. On request it draws hourly candles of either token’s USD price, with volume.'),
-        p('Its details list the pool id, tokens, fee, protocol fee, tick spacing, hooks, 24h volume over TVL and the block the pool was verified at. Where available, the page also shows the pool’s on-chain activity over the last 24 hours and the positions in the pool.'),
-        p(b('Plan a range'), ' draws a band against the pool’s price without saving or sending anything. ', b('New position'), ' opens the flow with this pool already chosen.'),
+        // 2026-09-27 (the owner's round 6, points 7 and 8): the page reworked for beginners, what matters on top and the
+        // technical facts in Details; its Create a position opens the same New position flow as everywhere else.
+        // 2026-09-28 (round 6 review): the estimate shares the pool's fees with the money already in it, and a pool
+        // Domino can't open positions in has no estimate or typical range.
+        shot('pool', 'A pool’s page: what the pool earns and its key figures, with Create a position at the top.'),
+        p('A pool’s page opens with one sentence on what the pool is and what it earns, then its APR, 24h volume, TVL and price, with 24h fees where Domino history provides them, and a chart of its price from its own swaps.'),
+        p(b('Estimate your earnings'), ' works out your share of the pool’s recent fees for an amount you type. ', b('A typical range'), ' draws the band New position starts on against the price now. ', b('Recent activity'), ' says the last day in words. A pool Domino can’t open positions in says why instead.'),
+        p(b('Details'), ', closed until opened, lists the pool id, tokens, fees, tick spacing, hooks, where the figures come from and the block the pool was verified at. ', b('Create a position'), ' opens the same four steps of New position as anywhere else, with this pool already chosen.'),
       ],
     },
   ],
@@ -69,6 +73,9 @@ export const NEW_POSITION: DocPage = {
             { title: CREATE.step.review.title, body: [CREATE.step.review.lead] },
           ],
         },
+        // 2026-09-27 (the owner's round 6, point 8): one flow, wherever it starts; the pool page's button is Create a
+        // position (r6/poolpage).
+        p('From a pool’s page, ', b('Create a position'), ' opens these same four steps, with that pool already chosen.'),
       ],
     },
     {
@@ -76,14 +83,14 @@ export const NEW_POSITION: DocPage = {
       title: 'Pool',
       blocks: [
         shot('new-pool', 'Step 1: choosing the pool.'),
-        p('Type a token’s name or paste its address, then choose a pool. Only pools without hooks and with a fixed fee are listed, largest TVL first.'),
+        p('Type a token’s name or paste its address, then choose a pool.'),
       ],
     },
     {
       id: 'step-range',
       title: 'Range',
       blocks: [
-        shot('new-range', 'Step 2: the band is your range; the dotted line is the price now.'),
+        shot('new-range', 'Step 2: pick how wide your range is; its lowest and highest price show under it.'),
         p(b('Closer'), ' and ', b('Wider'), ' are ready-made ranges around the pool’s price; ', b('Custom'), ' takes your own lowest and highest price. See ', doc('Price ranges', 'ranges'), '.'),
       ],
     },
@@ -91,9 +98,10 @@ export const NEW_POSITION: DocPage = {
       id: 'step-amount',
       title: 'Amount',
       blocks: [
-        shot('new-amount', 'Step 3: the amounts and the slippage tolerance.'),
-        p('Type an amount of either token; the other follows from your range and the pool’s price.'),
-        p('Slippage tolerance is how far the price may move against you before a step stops instead of going through. It starts at 0.5%; choose 0.1% to 5%.'),
+        shot('new-amount', 'Step 3: the amounts; slippage is under Advanced.'),
+        p('Type an amount of either token; the other follows from your range.'),
+        // 2026-09-27 (round 6): the tolerance moved under the amount step's Advanced, closed until opened.
+        p('Under ', b('Advanced'), ', slippage tolerance is how far the price may move before a step stops. It starts at 0.5%; choose 0.1% to 5%.'),
       ],
     },
     {
@@ -109,10 +117,10 @@ export const NEW_POSITION: DocPage = {
       id: 'create',
       title: 'Create position',
       blocks: [
-        p(b('Create position'), ' is the last step. It needs your wallet connected on Robinhood Chain, and no sign-in.'),
-        p('Your wallet asks you to sign, in order: an approval for each token it has not yet allowed, the deposit of both tokens (or of the one your wallet holds, then the swap of part of it inside the pool), and the position itself. Some wallets sign them all at once. With one token, the pool is checked first: if it cannot swap part of your deposit, Create position says so before anything is deposited.'),
+        p(b('Create position'), ' is the last step. It needs your wallet on Robinhood Chain, and no sign-in.'),
+        p('Your wallet asks you to sign, in order: an approval for each token it has not yet allowed, the deposit of both tokens (or of the one your wallet holds, then the swap of part of it inside the pool), and the position itself. Some wallets sign all at once. With one token, the pool is checked first: if it cannot swap part of your deposit, Create position says so before anything is deposited.'),
         p('When the position exists, you choose what its fees do. If a deposit went through and the position did not, pressing Create position again finishes it from that deposit, never depositing twice; the deposit can also be refunded.'),
-        note(['Positions are created in hookless pools that have a fixed fee. A direct position carries no Domino percentage fee, except the assisted-swap fee on the part swapped when your wallet holds one token; network gas still applies.']),
+        note(['Positions are created in hookless pools with a fixed fee. A direct position carries no Domino percentage fee, except the assisted-swap fee on the part swapped when your wallet holds one token; network gas still applies.']),
       ],
     },
   ],
@@ -121,7 +129,7 @@ export const NEW_POSITION: DocPage = {
 export const POSITIONS: DocPage = {
   slug: 'positions',
   title: 'Positions',
-  summary: 'Your positions and a page for each, collecting fees and closing, what automation did, and your wallet’s balances.',
+  summary: 'Your positions and a page for each, collecting fees and closing, what automation did, and your wallet’s top tokens.',
   sections: [
     {
       id: 'your-positions',
@@ -130,8 +138,9 @@ export const POSITIONS: DocPage = {
         shot('positions', 'Your positions, and how each one’s fees are used.'),
         p('Connect your wallet on Robinhood Chain and Positions lists the positions it created with Domino, read from the chain for your address: there is no ID to type, and nothing is kept in your browser. ', b('Open'), ' positions still hold liquidity; ', b('Closed'), ' ones hold none. Position NFTs made elsewhere are not listed.'),
         // 2026-09-27 (the owner's point 6): the product's plain words, Value and Fees ready to collect, once Principal and Unclaimed fees.
-        p('Each row shows the pair, whether the price is in range, its value and its fees ready to collect. The list updates itself every 30 seconds; select a row to open its page.'),
-        p('Each open row also says how its fees are used; ', b('Automate'), ' on a plain one sets up automation. Deposits that never became a position are listed too, each with its refund.'),
+        // Round 6 (2026-09-27): each row's Your APR, the figure its page shows; in as many words as before.
+        p('Each row shows the pair, whether the price is in range, its value, its fees ready to collect and ', b('Your APR'), ', as on its page. It updates itself every 30 seconds; select a row to open its page.'),
+        p('Open rows also say how their fees are used, or offer ', b('Automate'), '. Deposits that never became a position are listed too, with their refund.'),
       ],
     },
     {
@@ -157,7 +166,7 @@ export const POSITIONS: DocPage = {
       title: 'Collect fees and close',
       blocks: [
         p(b('Collect fees'), ' sends a position’s earned fees to your wallet. The position stays open.'),
-        p(b('Close position'), ' sends all of its tokens and their fees to your wallet. The empty position NFT stays in your wallet.'),
+        p(b('Close position'), ' sends all of its tokens and fees to your wallet; the empty position NFT stays there.'),
         // 2026-09-27 (review of 260a76a): only Close has a slippage limit and an "At least" row (PositionActions.tsx).
         p('Each shows what you receive and the network fee before your wallet asks you to sign; Close also shows the least you receive within your slippage limit. Collecting fees or closing stops Domino automation for that position.'),
       ],
@@ -167,9 +176,10 @@ export const POSITIONS: DocPage = {
       title: 'What automation did',
       blocks: [
         // 2026-09-27: the two cards as round 5 made them (short rows, See all on a page of their own). A position's own page
-        // shows what automation added back without sign-in (position-details, above).
-        p('Sign in, and Positions adds two cards. ', b('Managed positions'), ' shows each position under automation over the last 24 hours. ', b('Receipts'), ' lists each automation run and what it re-added; ', b('See all'), ' opens every receipt on a page of its own.'),
-        shot('receipts', 'Receipts: each time automation re-added a position’s fees.'),
+        // shows what automation added back without sign-in (position-details, above). Round 6, point 1: one phrase for it
+        // everywhere, "Fees added back".
+        p('Sign in, and Positions adds two cards. ', b('Managed positions'), ' shows each position under automation over the last 24 hours. ', b('Receipts'), ' lists each automation run and the fees it added back; ', b('See all'), ' opens every receipt on a page of its own.'),
+        shot('receipts', 'Receipts: each time automation added a position’s fees back.'),
         p('A receipt shows Done only once the chain has settled its transaction.'),
         p(b('Managed positions'), ' also lists your wallet’s automations, each with ', b('Start tracking'), ': it records how one does from then on, and grants no permission.'),
       ],
@@ -177,7 +187,8 @@ export const POSITIONS: DocPage = {
     {
       id: 'wallet-balances',
       title: 'Wallet balances',
-      blocks: [p('The Wallet card lists the token balances of the connected wallet, or of any address you enter. Balances are public data, not proof of wallet control.')],
+      // Round 6 (2026-09-27): every token in dollars, the three largest first (the owner's rule).
+      blocks: [p('The Wallet card shows the tokens of the connected wallet, or any address, in dollars: the three largest first, the rest under ', b('Show all'), '. Balances are public data.')],
     },
   ],
 }

@@ -51,7 +51,7 @@ function railEdges(node: HTMLElement, prev: Rail): Rail {
  * stop their provider reads and ask for the chain line. Every card with a row
  * then asks at once, cards in view first and the rest in rail order, through
  * the app's one scheduled source, which paces them; nothing waits for a card
- * to scroll into view. What this tab kept for a card is drawn at once and
+ * to scroll into view. What this browser kept for a card is drawn at once and
  * replaced when its own answer lands. Leaving the page cancels whatever is
  * still outstanding. One clock ticks for the whole rail, only while a card in
  * view has something that ages.
@@ -89,7 +89,7 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
     })
   }
 
-  // Leaving the page cancels what is still outstanding; what was answered stays in this tab's memory.
+  // Leaving the page cancels what is still outstanding; what was answered stays in this browser's memory.
   useEffect(() => {
     const flights = running.current
     return () => {

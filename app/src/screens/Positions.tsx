@@ -61,10 +61,23 @@ function ConnectedChip({ identity }: { identity: Connected }) {
   )
 }
 
-/** An empty plot with one sentence: what the Managed card shows while there is nothing to draw (the frame makes it its plate). */
-function Plot({ children, status = false }: { children: ReactNode; status?: boolean }) {
+/**
+ * A private card while its chunk loads: its own line over the empty plate, with no loading words (the owner, 2026-09-27,
+ * round 6: loading text only on a true first load with nothing kept, which the chunk decides once it is in).
+ */
+function Quiet({ line }: { line: string }) {
   return (
-    <div className="dm-acct-plot" role={status ? 'status' : undefined}>
+    <>
+      <p className="dm-acct-desc">{line}</p>
+      <p className="dm-acct-quiet" />
+    </>
+  )
+}
+
+/** An empty plot with one sentence: what the Managed card shows while there is nothing to draw (the frame makes it its plate). */
+function Plot({ children }: { children: ReactNode }) {
+  return (
+    <div className="dm-acct-plot">
       <span>{children}</span>
     </div>
   )
@@ -90,7 +103,7 @@ function ManagedCard() {
       data-managed-positions={Performance ? '' : undefined}
     >
       {Performance ? (
-        <Suspense fallback={<Plot status>Loading managed positions…</Plot>}>
+        <Suspense fallback={<Quiet line="How your automated positions did in the last 24 hours." />}>
           <Performance />
         </Suspense>
       ) : (
@@ -129,13 +142,7 @@ function ReceiptsCard({ limit, title = 'Receipts' }: { limit?: number; title?: s
       }
     >
       {Execution ? (
-        <Suspense
-          fallback={
-            <p role="status" className="dm-acct-quiet">
-              Loading receipts…
-            </p>
-          }
-        >
+        <Suspense fallback={<Quiet line="What automation did for your positions." />}>
           <Execution limit={limit} />
         </Suspense>
       ) : (

@@ -34,6 +34,9 @@ test('production and development builds remove the local flag and reject local m
 // every read. The deadline and queue bounds are still the scheduler's defaults.
 // Changed on purpose (2026-09-26, featured pools v1 §11.1): read-v5's featured list joins the same source before the
 // scheduler (lib/read/featuredList.ts createFeaturedReadSource), with the same options and its own runtime.
+// Changed on purpose (2026-09-27, r6/marketsdata): two stored reads may be on the wire at once (`storedWidth: 2`,
+// scheduler.ts), so Home's featured list and its overview travel together; local-live spaces every read, so the width
+// never applies there.
 test('the real source factory paces only local-live at 10.1 s; deployed reads retain 1.1 s and shared deadlines', () => {
   const source = readFileSync(resolve(root, 'src/lib/read/screens/appSourceBridge.ts'), 'utf8')
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
@@ -69,7 +72,8 @@ test('the real source factory paces only local-live at 10.1 s; deployed reads re
     assert.equal(calls[3][1], featuredSource, 'all versions share the existing scheduler')
     assert.equal(calls[3][2].minIntervalMs, localLive ? 10_100 : 1100)
     assert.equal(calls[3][2].unspacedStored, !localLive, 'only deployed stored reads skip the spacing; local-live spaces every read')
-    assert.deepEqual(Object.keys(calls[3][2]), ['minIntervalMs', 'unspacedStored'], '60 s total deadline and queue bounds are not changed')
+    assert.equal(calls[3][2].storedWidth, 2, 'two stored reads at once, of the gateway’s four stored slots')
+    assert.deepEqual(Object.keys(calls[3][2]), ['minIntervalMs', 'unspacedStored', 'storedWidth'], '60 s total deadline and queue bounds are not changed')
     assert.equal(calls[4][1], scheduled, 'only scheduled public outcomes enter the metadata cache')
   }
 })

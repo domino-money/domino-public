@@ -178,7 +178,8 @@ test('section, subsection and term ids are unique on their page, kebab-case, and
 
 test('every link stays inside this app, and names a docs page and a section of it that exist', () => {
   // The routes and Home sections a docs page may send a reader to (tests/render.test.mjs keeps the same list for the footer).
-  const screens = new Set(['#/', '#/markets', '#/positions', '#/automate', '#/new', '#/settings', '#/#learn', '#/#ranges', '#/#limits']);
+  // Changed on purpose (2026-09-27, the owner's round 6, point 6): Settings is gone, and an old link to it opens the docs.
+  const screens = new Set(['#/', '#/markets', '#/positions', '#/automate', '#/new', '#/#learn', '#/#ranges', '#/#limits']);
   let count = 0;
   for (const entry of DOC_PAGES) {
     for (const link of linksOf(entry)) {
@@ -248,7 +249,9 @@ test('the custody page opens with the approved sentence, word for word, then say
   assert.deepEqual(sectionIds(custody), ['your-wallet', 'sequence-vault', 'operator', 'pause-revoke-withdraw', 'sign-in-grants-nothing']);
   const text = textOf(custody);
   assert.match(text, /that NFT stays in your wallet/);
-  assert.match(text, /earned fees not yet reinvested, are held by your own sequence vault until you withdraw them/);
+  // Changed on purpose (2026-09-28, the owner's round 6, point 1): one plain phrase for what automation puts back, "added
+  // back", here as everywhere (was "not yet reinvested").
+  assert.match(text, /earned fees not yet added back, are held by your own sequence vault until you withdraw them/);
   assert.match(text, /Only your wallet controls the vault/);
   assert.match(text, /The operator cannot[\s\S]*Withdraw positions or fees/);
   // Sequence.tsx: the owner's own controls. setPolicy and setExecutionLimits are onlyOwner and refuse a pause flip,
@@ -319,7 +322,9 @@ test('Auto-compound sets up on a position NFT you opened with Domino, with two w
   // Changed on purpose (2026-09-24): the automation page lists the positions the wallet opened with Domino, so the page
   // no longer says any NFT the wallet holds, wherever it was opened.
   assert.match(start, /Auto-compound runs on a position NFT you opened with Domino and still hold\. Setup takes two wallet transactions: approve that one NFT to its sequence vault, then create the sequence, which starts paused\. Activation is a separate wallet transaction when the service is ready for your sequence\./);
-  assert.match(start, /Custody is the same as for Domino Compounder: the NFT stays in your wallet, and your sequence vault holds earned fees not yet reinvested until you withdraw them\./);
+  // Changed on purpose (2026-09-28, the owner's round 6, point 1): one plain phrase for what automation puts back, "added
+  // back", here as everywhere (was "not yet reinvested").
+  assert.match(start, /Custody is the same as for Domino Compounder: the NFT stays in your wallet, and your sequence vault holds earned fees not yet added back until you withdraw them\./);
   // Changed on purpose (2026-09-27, review of 260a76a): Collect fees and Close position on the position's page stop it too.
   assert.match(start, /Changes made to that NFT outside Domino can stop it, and so do Collect fees and Close position on its page: see Risks\./);
   // New position offers no automation choice any more, so the page no longer says choosing it there records anything.
@@ -365,7 +370,9 @@ test('Domino Compounder names the screen its Automate button opens, and Risks sa
   const glossary = page('glossary');
   assert.equal(termText(glossary, 'upside'), 'How far above the previous ceiling a next position’s ceiling sits, at least. You set it; the app draws it at 50%.');
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /New position draws/, entry.slug);
-  assert.equal(termText(glossary, 'sequence'), 'The vault contract created for your wallet that holds the positions automation opens and earned fees not yet reinvested. Only your wallet can withdraw from it.');
+  // Changed on purpose (2026-09-28, the owner's round 6, point 1): one plain phrase for what automation puts back, "added
+  // back", here as everywhere (was "not yet reinvested").
+  assert.equal(termText(glossary, 'sequence'), 'The vault contract created for your wallet that holds the positions automation opens and earned fees not yet added back. Only your wallet can withdraw from it.');
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /50% by default/, entry.slug);
 });
 
@@ -401,10 +408,16 @@ test('the wallet, pools, fees, markets, new position, positions, risks and what 
   const markets = page('markets');
   assert.match(sectionText(markets, 'find-a-token'), /Type the name of a token from the selected pools, or paste any token’s contract address\.\nThe token is read from chain\. Find pools then lists its existing pools, each verified on chain\./);
   const poolPage = sectionText(markets, 'pool-page');
-  assert.match(poolPage, /hourly candles of either token’s USD price, with volume/);
-  assert.match(poolPage, /pool id, tokens, fee, protocol fee, tick spacing, hooks, 24h volume over TVL and the block the pool was verified at/);
-  assert.match(poolPage, /Where available, the page also shows the pool’s on-chain activity over the last 24 hours and the positions in the pool\./);
-  assert.doesNotMatch(poolPage, /hourly USD price and volume/);
+  // Changed on purpose (2026-09-27, round 6, the pool page for beginners): the page leads with what the pool earns, its
+  // chart is its own swaps' price, the estimate and the typical range are new, and everything technical is in Details.
+  assert.match(poolPage, /one sentence on what the pool is and what it earns, then its APR, 24h volume, TVL and price/);
+  // Changed on purpose (2026-09-28, round 6 review): the estimate is a share of the pool's fees, not the APR applied
+  // to the amount alone, and a pool Domino can't open positions in has neither card.
+  assert.match(poolPage, /Estimate your earnings works out your share of the pool’s recent fees for an amount you type\./);
+  assert.match(poolPage, /A pool Domino can’t open positions in says why instead\./);
+  assert.match(poolPage, /Details, closed until opened, lists the pool id, tokens, fees, tick spacing, hooks, where the figures come from and the block the pool was verified at\./);
+  assert.match(poolPage, /Create a position opens the same four steps of New position as anywhere else, with this pool already chosen\./, 'one flow, wherever it starts (point 8)');
+  assert.doesNotMatch(poolPage, /hourly USD price and volume|Plan a range|hourly candles/);
 
   assert.match(sectionText(page('new-position'), 'review'), /^Review\nReview lists every choice and the wallet steps in order\. The steps are what your wallet signs when you press Create position: any approval, the deposit, then the position\. Automation is set up afterwards, from Automate, on the position you opened\./);
   // Changed on purpose (owner, 2026-09-22): the estimate paragraph went with Review's deposit amounts; the swap a
@@ -450,7 +463,8 @@ test('the docs use the product’s words for a position’s figures, say what Au
   const all = DOC_PAGES.map(textOf).join('\n');
   // Principal and Unclaimed fees are Position value (Value on the list) and Fees ready to collect on every screen.
   assert.doesNotMatch(all, /Unclaimed fees|unclaimed fees|the principal \(/);
-  assert.match(sectionText(positions, 'your-positions'), /its value and its fees ready to collect\./);
+  // Changed on purpose (round 6, 2026-09-27, the owner: each position's APR on the list): the row's Your APR too.
+  assert.match(sectionText(positions, 'your-positions'), /its value, its fees ready to collect and Your APR, as on its page\./);
   const details = sectionText(positions, 'position-details');
   for (const label of ['Position value', 'Fees ready to collect', 'Your APR', 'Current price']) assert.match(details, new RegExp(`\\n${label}: `), label);
   assert.match(details, /Your APR: this position’s own fees as a yearly rate, from its history\. Not the pool’s APR, and not a promise\./);
@@ -553,11 +567,13 @@ test('the Uniswap addresses are the ones the backend is configured with, the Dom
 test('Domino V1 is deployed; owner-scoped automation copy keeps each new sequence paused until its own service check passes', () => {
   assert.equal(DEPLOYMENT.publicReleaseVersion, 1);
   assert.equal(DEPLOYMENT.contractsDeployed, true);
-  for (const name of ['Compound', 'Fee-balancing swaps', 'Domino']) {
-    const entry = ROADMAP.find((row) => row.name === name);
+  // Changed on purpose (2026-09-27, the owner's round 6, point 6): the Settings page that listed ROADMAP with a note per
+  // row is gone, and the notes with it; ROADMAP names only the two automations whose pill a page shows.
+  assert.deepEqual(ROADMAP.map((row) => row.name), ['Compound', 'Domino']);
+  for (const entry of ROADMAP) {
     assert.equal(entry.status, 'owner-scoped');
     assert.equal(ROADMAP_PILL[entry.status], 'Per sequence');
-    assert.doesNotMatch(entry.note, /not running|not in operation/i);
+    assert.deepEqual(Object.keys(entry), ['name', 'status'], `${entry.name} carries no note`);
   }
   // Changed on purpose (2026-09-25, audit of 754014c): the automation page lost its owner controls, so no Domino screen
   // activates, pauses, revokes or withdraws any more. The docs and Settings said this site offered activation after a
@@ -577,15 +593,11 @@ test('Domino V1 is deployed; owner-scoped automation copy keeps each new sequenc
   const activate = blocksOf(page('domino-compounder')).find((block) => block.kind === 'steps').items.find((step) => step.title === 'Activate it');
   assert.match(inlineText(activate.body), /After the service confirms readiness for your sequence, a separate wallet transaction takes it out of pause\. Signing in or opening a page never does\./);
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /offers? activation|review activation|may activate|remain available through your wallet/i, entry.slug);
-  for (const row of ROADMAP) assert.doesNotMatch(row.note, /may activate|pauses or recovers|authorises or revokes the operator, and/i, row.name);
-  assert.match(ROADMAP.find((row) => row.name === 'Compound').note, /A new sequence starts paused; once the service confirms readiness, your position’s page offers Turn on, and your wallet activates it on your sequence vault\./);
-  assert.match(ROADMAP.find((row) => row.name === 'Wallet permissions').note, /Turning on and pausing are transactions it signs on that vault, from your position’s page; authorising or revoking the operator and withdrawing have no Domino screen today\./);
   for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /No Domino screen makes them today/, entry.slug);
   // The review of 2026-09-25: Turn on and Pause have no review wall (the owner's rule), so no text may say that every
-  // wallet step shows its amounts and limits first. Settings says only creation does; the docs name the two exceptions.
-  const permissions = ROADMAP.find((row) => row.name === 'Wallet permissions').note;
-  assert.match(permissions, /Creating a sequence shows its amounts and limits before your wallet requests approval; Turn on and Pause go straight to your wallet, which shows the transaction\.$/);
-  assert.doesNotMatch(permissions, /Each step shows/);
+  // wallet step shows its amounts and limits first; the docs name the two exceptions. (Settings said the same until the
+  // owner removed it, 2026-09-27.)
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /Each step shows its amounts/, entry.slug);
   assert.match(sectionText(page('what-is-domino'), 'your-wallet-signs'), /and Pause while it runs\. Turn on and Pause go straight to your wallet, which shows the transaction\./);
   // Changed on purpose (2026-09-27, review of 260a76a): no contract name a beginner has not met; Contracts names them.
   assert.match(sectionText(page('what-is-domino'), 'built-on-uniswap'), /Domino’s own contracts, Domino V1, run there too: one opens your positions, and another makes your sequence vault\./);
@@ -597,6 +609,56 @@ test('Domino V1 is deployed; owner-scoped automation copy keeps each new sequenc
     // No date and no promise; the public name is Domino V1, and the implementation's own version number stays out of the client's docs.
     assert.doesNotMatch(text, /\bsoon\b|\bshortly\b|\bwill be\b|\bplanned\b|\broadmap\b|version 4|implementation version/i, entry.slug);
   }
+});
+
+// 2026-09-27, the owner's round 6. Point 1: one plain phrase for what automation puts back, "added back", never
+// "re-added". Point 6: the Settings page is gone, so no page names it; what it said is in the docs, checked here. And the
+// docs say what the round changed: the Positions table's APR (point 3), the Wallet card's top three tokens (point 4), the
+// simpler range simulator (point 3), the reworked pool page (point 7) and one New position wherever it starts (point 8).
+test('round 6: "added back" everywhere, no Settings, and the docs describe the round’s screens', () => {
+  const all = strings([DOC_GROUPS, docs.DOCS_HOME, SHOTS]);
+  for (const text of all) {
+    assert.doesNotMatch(text, /re-?\u2060?add/i, `"re-add" in: ${text}`);
+    // 2026-09-28 (review): the Settings page by its name. The plain word "settings", as in a pool's own settings, stays;
+    // the link check below rejects any #/settings link.
+    assert.doesNotMatch(text, /\bSettings\b/, `Settings in: ${text}`);
+  }
+  for (const entry of DOC_PAGES) for (const link of linksOf(entry)) assert.doesNotMatch(link.to, /settings/, `${entry.slug}: ${link.to}`);
+  const positions = page('positions');
+  assert.match(sectionText(positions, 'managed-positions'), /Receipts lists each automation run and the fees it added back;/);
+  assert.match(SHOTS.receipts.alt, /added a position’s fees back, with what it added back\.$/);
+  // Point 3: the table's own APR, beside how each row's fees are used. Point 4: the Wallet card, every token in dollars,
+  // the three worth the most always shown. 2026-09-28 (review): the Positions picture, its size and its description are
+  // r6/postable's, which re-shot it with the APR column; this branch leaves them as they were, so they merge unchanged.
+  assert.match(sectionText(positions, 'your-positions'), /Open rows also say how their fees are used, or offer Automate\./);
+  assert.match(sectionText(positions, 'wallet-balances'), /The Wallet card shows the tokens of the connected wallet, or any address, in dollars: the three largest first, the rest under Show all\./);
+  // Point 3: the simulator in plain words. Point 7: Plan a range left the pool page, and its typical range took the place.
+  const ranges = page('ranges');
+  assert.match(sectionText(ranges, 'try-a-range'), /range simulator on Home lets you move the price and see, in plain words, whether a position earns fees and what it holds\./);
+  assert.match(sectionText(ranges, 'try-a-range'), /On a pool’s page, A typical range draws the band New position starts on against that pool’s price\. Nothing is saved or sent\./);
+  assert.ok(linksOf(ranges).some((link) => link.to === '#/#ranges'), 'the simulator is linked where it lives');
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /Plan a range/, entry.slug);
+  // Points 8 and 9: one New position wherever it starts, its steps in plain words, and slippage under Advanced.
+  const create = page('new-position');
+  // 2026-09-28 (review): the pool page's button has one name in the docs, Create a position (r6/poolpage's label).
+  assert.match(sectionText(create, 'four-steps'), /From a pool’s page, Create a position opens these same four steps, with that pool already chosen\./);
+  for (const entry of DOC_PAGES) assert.doesNotMatch(textOf(entry), /pool’s page, New position\b/, entry.slug);
+  assert.doesNotMatch(textOf(create), /largest TVL first/);
+  assert.match(sectionText(create, 'step-range'), /Closer and Wider are ready-made ranges around the pool’s price; Custom takes your own lowest and highest price\./);
+  assert.match(sectionText(create, 'step-amount'), /Under Advanced, slippage tolerance is how far the price may move before a step stops\. It starts at 0\.5%; choose 0\.1% to 5%\./);
+  // Point 7: technical facts live in Details on a pool's page, which Pools and fee tiers says of the protocol fee too.
+  assert.match(sectionText(page('pools'), 'fee-tiers'), /A pool’s page shows it in Details\./);
+  // 2026-09-28 (review): round 5's plain words for what makes a pool's id stay. Tick spacing is first explained on the
+  // next page, Price ranges, so it is not named here.
+  assert.match(sectionText(page('pools'), 'pool-identity'), /pools by their id, which comes from the two tokens, the fee and the pool’s other settings\./);
+  assert.doesNotMatch(sectionText(page('pools'), 'pool-identity'), /tick spacing/i);
+  // What Settings said, the docs say: the chain and its id, the service fees and the assisted swap's, that the automation's
+  // own balancing swaps cost nothing extra, and that every wallet step is shown by the wallet before it is signed.
+  assert.equal(rowsOf(page('contracts'), 'facts').find((row) => row.label === 'Chain ID').value, '4663');
+  assert.match(sectionText(page('fees'), 'service-fee'), /Auto-compound charges 2% of the earned fees it uses\. Domino-compound charges 4%/);
+  assert.match(sectionText(page('fees'), 'assisted-swap-fee'), /the automation’s own balancing swaps carry no swap fee\./);
+  assert.match(sectionText(page('what-is-domino'), 'your-wallet-signs'), /Nothing moves until your wallet signs\. Your wallet shows each transaction before you sign it\./);
+  assert.match(sectionText(page('wallet'), 'sign-in'), /It approves no token, deposits nothing, swaps nothing, withdraws nothing and starts no automation\./);
 });
 
 test('previous and next walk the pages in sidebar order: nothing before the first, nothing after the last', () => {

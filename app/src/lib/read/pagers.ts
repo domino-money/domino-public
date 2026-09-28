@@ -26,7 +26,8 @@ export interface PageStep<V> {
   added: number
 }
 
-function amountFact(item: WalletItem): Fact {
+/** A balance as a fact. Exported (2026-09-27) for the Wallet card's remembered rows (lib/walletMemory.ts). */
+export function amountFact(item: Pick<WalletItem, 'amountRaw' | 'decimals'>): Fact {
   const units = formatUnits(item.amountRaw, item.decimals)
   if (units === null) return { label: 'Balance', text: 'Unavailable', state: 'unavailable' }
   if (item.amountRaw === '0') return { label: 'Balance', text: '0', state: 'zero' }

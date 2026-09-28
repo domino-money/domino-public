@@ -597,8 +597,7 @@ not part of the frontend CI job.
 | `#/new`, `#/new/<pool id>` | New position: pool, range, amount, automation and review, then Setup |
 | `#/automate` | Auto-compound and Domino-compound, with the ways into Setup and the sequence screen |
 | `#/setup`, `#/sequence` | The owner's wallet screens: create or recover a position, and create or manage a sequence |
-| `#/docs`, `#/docs/<slug>` | The documentation |
-| `#/settings` | Build facts, capabilities |
+| `#/docs`, `#/docs/<slug>` | The documentation. The older link `#/settings` opens it too: the Settings page was removed on 2026-09-27 |
 
 ### Read-only pool exploration
 

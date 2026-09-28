@@ -70,6 +70,8 @@ execFileSync(
     'tests/row-apr.test.mjs',
     // 2026-09-27: Your APR, one position's own fees as a yearly rate (src/lib/positionApr.ts).
     'tests/position-apr.test.mjs',
+    // 2026-09-27, round 6: Your APR on the Your positions table, from the fees store, measured one position at a time.
+    'tests/list-apr.test.mjs',
     // 2026-09-27: a position's Activity rows, and the automation's only where its vault's record names it.
     'tests/position-activity.test.mjs',
     'tests/docs.test.mjs',

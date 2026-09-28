@@ -240,6 +240,48 @@ test('what the sections show does not depend on the size the maths runs on', () 
   }
 });
 
+// Added 2026-09-27 (owner, round 6: Home's simulator redone for newcomers). Its one control runs on a log scale around
+// the start; the price reads as a whole-percent move, never a multiple, and the range is the Closer range.
+test('the Home simulator: a log scale around the start, moves in whole percent, and the Closer range', () => {
+  const { SIM, simPrice, simAt, moved } = relative;
+  assert.deepEqual([SIM.lower, SIM.upper], [relative.RANGES.standard.lower, relative.RANGES.standard.upper], 'the Closer range');
+  assert.equal(simPrice(0), 1, 'the middle notch is the start price');
+  assert.equal(simAt(1), 0.5, 'the start sits in the middle');
+  assert.equal(simAt(simPrice(-SIM.reach)), 0);
+  assert.equal(simAt(simPrice(SIM.reach)), 1);
+  for (const notch of [-1.1, -0.52, 0, 0.3, 0.85]) assert.ok(Math.abs(simAt(simPrice(notch)) - (notch + SIM.reach) / (2 * SIM.reach)) < 1e-12, `notch ${notch}`);
+  // A fall of a third and a rise of a half sit about as far from the start: the range is roughly centred.
+  const low = 0.5 - simAt(SIM.lower);
+  const high = simAt(SIM.upper) - 0.5;
+  assert.ok(low > 0.2 && high > 0.2 && Math.abs(low - high) < 0.05, `range at ${simAt(SIM.lower)} to ${simAt(SIM.upper)}`);
+  assert.ok(simAt(SIM.lower) > 0.2 && simAt(SIM.upper) < 0.8, 'both sides of the range leave room for the zones outside it');
+  assert.equal(moved(SIM.lower), '−30%');
+  assert.equal(moved(SIM.upper), '+50%');
+  assert.equal(moved(1), '0%');
+  assert.equal(moved(simPrice(0.01)), '+1%');
+  assert.equal(moved(simPrice(-0.01)), '−1%', 'a real minus sign');
+  assert.equal(moved(simPrice(-SIM.reach)), '−53%');
+  assert.equal(moved(simPrice(SIM.reach)), '+114%');
+  for (const v of [SIM.reach, SIM.step]) assert.ok(Math.abs(v * 100 - Math.round(v * 100)) < 1e-9, `${v} is a whole number of notches`);
+});
+
+test('the Home simulator says what a position holds: both tokens inside the range, one token outside it', () => {
+  const { SIM, simPrice, UNIT } = relative;
+  const at = (notch) => previewPosition({ amount: UNIT, lower: SIM.lower, upper: SIM.upper, startingPrice: 1, scenarioPrice: simPrice(notch) });
+  const read = (notch) => [at(notch).status, Math.round(at(notch).tokenShare * 100)];
+  assert.deepEqual(read(0), ['inside', 53], 'about half and half at the start');
+  assert.deepEqual(read(0.3), ['inside', 28], 'less ETH as it rises');
+  assert.deepEqual(read(-SIM.reach), ['below', 100], 'only ETH below the range');
+  assert.deepEqual(read(-0.8), ['below', 100]);
+  assert.deepEqual(read(0.85), ['above', 0], 'only USDG above it');
+  assert.deepEqual(read(SIM.reach), ['above', 0]);
+  // The edges: the first notch under −30% is outside, the last one under +50% still inside.
+  assert.equal(at(-0.52).status, 'below');
+  assert.equal(at(-0.51).status, 'inside');
+  assert.equal(at(0.58).status, 'inside');
+  assert.equal(at(0.59).status, 'above');
+});
+
 // ---------------------------------------------------------------------------
 // Market rows. No dollar figure may be invented: a figure nobody observed is
 // unavailable, and there are no sample rows to fall back on.

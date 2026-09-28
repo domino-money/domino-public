@@ -7,8 +7,11 @@ import {
   candidatesFromPool,
   goTo,
   initialState,
+  linkedDepositToken,
   next,
+  poolHolds,
   preselectFrom,
+  USDG,
   priceOf,
   stageIndex,
   validateRange,
@@ -27,7 +30,7 @@ import { featuredStore, useFeatured } from '../../lib/read/featuredSource'
 import { verifyCandidate } from '../../lib/read/screens/catalogueSession'
 import { failureText } from '../../lib/read/screens/copy'
 import { DYNAMIC_FEE_PIPS } from '../../lib/read/screens/fee'
-import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
+import { NATIVE_CURRENCY, addressKey } from '../../lib/read/screens/identity'
 import { optionUsableForDomino, type PoolOption } from '../../lib/read/screens/poolsList'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { usePairBalances } from './usePairBalances'
@@ -40,6 +43,7 @@ import { FinalControl, StageReview } from './StageReview'
 import { StageToken, type PreselectStatus } from './StageToken'
 import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
 import { PositionPreview } from './PositionPreview'
+import { heldAmounts } from './valuation'
 
 /** The outcomes only the verification read, or the featured list before it, can produce. */
 type Verified = Extract<PreselectStatus, { kind: 'verified' | 'not_found' | 'unsupported' | 'failed' | 'withdrawn' }>
@@ -91,7 +95,7 @@ const fail = (reason: string): Check => ({ ok: false, reason })
  * here asks about automation: that is applied from Automate, to a position
  * that exists.
  */
-export function Journey({ poolId }: { poolId: string }) {
+export function Journey({ poolId, linkToken = null }: { poolId: string; linkToken?: string | null }) {
   const source = useReadSource()
   const now = useNow(false).wall
   const [state, setState] = useState<JourneyState>(initialState)
@@ -139,7 +143,11 @@ export function Journey({ poolId }: { poolId: string }) {
         setVerified({ poolId, attempt, outcome: { kind: 'withdrawn' } })
         return
       }
-      const result = await verifyCandidate(source, verificationToken(linked), null, linked.key, { signal: controller.signal })
+      // A pool of the lists is verified against the token its entry names; any other against the token its link names
+      // (the pool page's own, #/new/<id>/<token>), else USDG. Fixed 2026-09-27 (round 6): a pool page's link carried no
+      // token, so an unlisted pool without USDG was never verified and New position opened on an empty search.
+      const against = !linked.catalogue && linkToken ? addressKey(linkToken) : verificationToken(linked)
+      const result = await verifyCandidate(source, against, null, linked.key, { signal: controller.signal })
       if (controller.signal.aborted) return
       if (result.failure) {
         if (result.failure.state !== 'aborted') setVerified({ poolId, attempt, outcome: { kind: 'failed', line: failureText(result.failure, 'pools') } })
@@ -157,13 +165,20 @@ export function Journey({ poolId }: { poolId: string }) {
         return
       }
       const at = Date.now()
+      // The pool arrives chosen, with the token the link was verified against as the one an amount starts in, so step 1
+      // is exactly what choosing this pool from the search leaves (round 6, 2026-09-27: one flow, whichever way in).
       // A verification read again after a failure never replaces a pool the person chose in the meantime.
-      setState((was) => (attempt > 0 && was.pool ? was : withPool(was, option, at)))
+      const start = linkedDepositToken(option, poolHolds(option, USDG) ? USDG : against)
+      setState((was) => {
+        if (attempt > 0 && was.pool) return was
+        const held = was.token !== null && poolHolds(option, was.token.key)
+        return withPool(held || !start ? was : withToken(was, start), option, at)
+      })
       setCandidates((was) => mergeCandidates(was, candidatesFromPool(option)))
       setVerified({ poolId, attempt, outcome: { kind: 'verified', block: option.block } })
     })
     return () => controller.abort()
-  }, [source, poolId, attempt])
+  }, [source, poolId, linkToken, attempt])
 
   // No Retry on this page: a verification that failed in a way asking again could fix (a busy or unreachable
   // read service) is read again by itself, a few times, at doubling intervals, and only while the page is
@@ -369,7 +384,7 @@ export function Journey({ poolId }: { poolId: string }) {
       case 'range':
         return state.range && usablePrice ? <RangeSummary range={state.range} price={usablePrice} /> : null
       case 'amount':
-        return <AmountSummary state={state} />
+        return <AmountSummary state={state} held={heldAmounts(state, pair)} />
       case 'review':
         return null
       default:
@@ -408,7 +423,6 @@ export function Journey({ poolId }: { poolId: string }) {
         preview={current === 'pool' && !state.pool ? preview : null}
         price={usablePrice}
         balances={pair}
-        slippageDone={steps.some((step) => step.key === 'amount' && step.state === 'done')}
         step={current}
       />
     </PageShell>

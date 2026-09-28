@@ -10,10 +10,13 @@
  * 2026-09-26: the owner confirmed Domino's X account, https://x.com/dominomoney,
  * so it is the one link that leaves the app. It opens in a new tab with no
  * opener and no referrer, and nothing is ever fetched from it.
+ *
+ * 2026-09-27 (the owner's round 6, point 6): the Settings page is gone, and its
+ * link with it; Docs, under Guides, says what it said.
  */
 import type { ReactNode } from 'react'
 import { CAPABILITIES } from '../lib/capabilities'
-import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref, settingsHref } from './explore/routes'
+import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref } from './explore/routes'
 
 /** Domino's X account, confirmed by the owner on 2026-09-26. */
 export const X_PROFILE = 'https://x.com/dominomoney'
@@ -35,7 +38,6 @@ const COLUMNS: ReadonlyArray<{ heading: string; links: ReadonlyArray<{ label: st
       { label: 'Positions', href: positionsHref },
       { label: 'Automate', href: automateHref },
       { label: 'New position', href: newPositionHref() },
-      { label: 'Settings', href: settingsHref },
     ],
   },
   {

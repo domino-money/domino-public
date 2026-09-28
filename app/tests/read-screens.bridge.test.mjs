@@ -309,14 +309,20 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     await page.waitForFunction((hash) => location.hash === hash, `#/pool/${POOL}/${TOKEN}`);
     const workspace = page.locator(`[data-pool-workspace="${POOL}"]`);
     await workspace.waitFor({ timeout: 30_000 });
+    // Changed on purpose (2026-09-27, round 6, the pool page for beginners): the verification is a row of Details, the
+    // one closed card at the end of the page that holds everything technical.
+    await workspace.locator('[data-pool-details] > summary').click();
     assert.match(await workspace.innerText(), /Verified at block 700/);
     await page.waitForFunction(() => document.querySelectorAll('[data-pool-figures] [data-metric]').length > 0, null, { timeout: 30_000 });
-    // The range planner is always on the pool page, not behind a tab.
-    const range = page.locator('[data-picker="range"]');
+    // Changed on purpose (2026-09-27, round 6): a typical range to read, drawn on the pool's price, replaces the planner.
+    const range = page.locator('[data-pool-range-guide]');
     await range.waitFor();
-    assert.equal(await range.getAttribute('data-price-state'), 'usable');
-    assert.deepEqual(await range.locator('input[type="range"]').evaluateAll((els) => els.map((el) => el.id)), ['range-lower', 'range-upper']);
-    assert.equal(await page.locator('main').getByRole('link', { name: 'New position' }).getAttribute('href'), `#/new/${POOL}`);
+    assert.equal(await range.getAttribute('data-pool-range-guide'), 'ready');
+    assert.equal(await page.locator('main [data-picker="range"], main input[type="range"]').count(), 0, 'nothing to drag that saves nothing');
+    // Changed on purpose (round 6, 2026-09-27): New position's link names the token this page verified the pool with, so
+    // New position verifies it the same way (a pool of neither list may not hold USDG). Its name is the pool page's own,
+    // Create a position (r6/poolpage and r6/newposition merged, 2026-09-28).
+    assert.equal(await page.locator('main').getByRole('link', { name: 'Create a position' }).getAttribute('href'), `#/new/${POOL}/${TOKEN}`);
     // Every optional route this Worker lists is read by the page itself, one after another: its history, its activity, its positions.
     await page.locator('[data-pool-positions]:not([data-pool-positions="loading"])').waitFor({ timeout: 30_000 });
     const forbidden = /sign|approve|connect|deposit|swap|quote|mint|confirm|execute|buy|sell/i;
@@ -362,8 +368,9 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     await page.waitForTimeout(300);
     assert.equal(await page.locator('[data-found-pools], [data-pool-option]').count(), 0, 'a new token has no pools until asked');
     assert.deepEqual(posts().slice(before), [], 'the native metadata is still cached; selecting it starts no pool read');
-    await page.goto(`${origin}/#/settings`);
-    await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
+    // Changed on purpose (2026-09-27): through the docs, since the owner removed Settings (round 6, point 6).
+    await page.goto(`${origin}/#/docs`);
+    await page.getByRole('heading', { name: 'Docs', exact: true }).waitFor();
     await page.goto(`${origin}/#/pools`);
     await page.getByRole('heading', { name: 'Markets', exact: true }).waitFor();
     assert.equal(await page.locator('[data-token-lookup], [data-pool-option]').count(), 0, 'leaving the route discards its choices');
@@ -522,6 +529,9 @@ test('the pool page never shows activity months behind the chain as the last 24 
   };
   const { context, page, errors } = await visit(`/pool/${POOL}/${TOKEN}`);
   try {
+    // Changed on purpose (2026-09-27, round 6, the pool page for beginners): the activity figures are a part of the
+    // page's closed Details card, under a heading of their own; the page's Recent activity says the last day in words.
+    await page.locator('[data-pool-details] > summary').click();
     const card = page.locator('[data-pool-activity]');
     await page.locator('[data-pool-activity="unavailable"]').waitFor({ timeout: 30_000 });
     assert.equal(await card.getAttribute('data-activity-reason'), 'activity_stale');
@@ -531,7 +541,7 @@ test('the pool page never shows activity months behind the chain as the last 24 
     const shown = await visibleText(card);
     assert.equal(shown.replace(/[^—]/g, '').length, 10, `every figure is a dash: ${shown}`);
     assert.doesNotMatch(shown, /Older than 24 h|24 h covered|observed|10 to 700|stale|behind|indexed chain events/i, 'no window, pool age, blocks or reason on the card');
-    assert.equal(await card.locator('h2').getAttribute('title'), 'Swaps and fees over the 24 hours up to the last indexed block, from indexed chain events.');
+    assert.equal(await card.locator('h3').getAttribute('title'), 'Swaps and fees over the 24 hours up to the last indexed block, from indexed chain events.');
     assert.equal(posts().filter((r) => r.path.endsWith('/pool-activity')).length, 1, 'one read, not asked again');
     assert.deepEqual(errors, []);
   } finally {
@@ -728,7 +738,13 @@ const heldWallet = () => walletPage(({ native, token }) => [
 ]);
 const providerPair = (base, priceUsd, usd) => ({ chainId: 'robinhood', dexId: 'uniswap', baseToken: { address: base, symbol: 'X' }, quoteToken: { address: SELECTED_TOKENS[1], symbol: 'USDG' }, priceUsd, liquidity: { usd } });
 
-test('the Wallet card: the total, then the largest holdings by USD value from ONE provider GET; dust, unpriced tokens and a second USDG left out', async () => {
+const rowsOf = (list) => list.locator('[data-wallet-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-wallet-row')));
+
+// Changed on purpose (round 6, 2026-09-27; the owner: convert every token to USD and ALWAYS show the top 3 by value):
+// the card showed the five largest holdings worth $1 and left out dust and every token without a price. Now the top 3
+// are the card, and "Show all" opens every other held token: dust with its value, the priceless last with a dash.
+// A second "USDG" (a look-alike) is still left out.
+test('the Wallet card: the total, then the top 3 by USD value from ONE provider GET; Show all opens the rest, dust valued, the priceless last; a second USDG left out', async () => {
   overrideReply = (route) => (route === 'wallet-assets' ? heldWallet() : null);
   const asked = [];
   try {
@@ -741,21 +757,32 @@ test('the Wallet card: the total, then the largest holdings by USD value from ON
     try {
       const list = page.locator('[data-portfolio-tokens]');
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
-      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$3,025.50', '1,000,000 UFG at $0.003, 0.01 ETH at WETH’s $2,000, and 5.5 USDG at $1');
-      assert.deepEqual(await list.locator('[data-wallet-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-wallet-row'))), [UFG, NATIVE, SELECTED_TOKENS[1]], 'largest first, and nothing else');
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$3,025.60', '1,000,000 UFG at $0.003, 0.01 ETH at WETH’s $2,000, 5.5 USDG at $1 and one DUST at $0.10');
+      assert.deepEqual(await rowsOf(list), [UFG, NATIVE, SELECTED_TOKENS[1]], 'the top 3, largest first');
       assert.deepEqual(await list.locator('[data-usd]').allTextContents(), ['$3,000.00', '$20.00', '$5.50']);
       assert.deepEqual(await list.locator('[data-balance]').allTextContents(), ['1,000,000', '0.01', '5.5'], 'each amount, small, under its symbol');
-      assert.equal(await list.getByRole('button', { name: /^Show \d+ more$/ }).count(), 0, 'three holdings: nothing behind Show more');
-      assert.match(await list.locator('.dm-acct-tokens-count').textContent(), /6 tokens listed/, 'the count line still counts what was listed');
-      const prices = asked.filter((url) => url.includes('/tokens/v1/robinhood/'));
-      assert.equal(prices.length, 1, 'one price GET for the page view');
-      assert.ok(prices[0].includes(UFG) && prices[0].includes(WETH) && !prices[0].includes(SELECTED_TOKENS[1]) && !prices[0].includes(OWNER), `token addresses only, USDG never: ${prices[0]}`);
-      // Review of 2026-09-25: only what the wallet holds is named: no selected-pool token it does not hold, no look-alike.
-      assert.equal(new URL(prices[0]).pathname, `/tokens/v1/robinhood/${[WETH, UNPRICED, DUST, UFG].sort().join(',')}`);
-      assert.deepEqual(asked.filter((url) => url.includes('/token-pairs/')), [], 'the price reply answered the artwork: no GET per row');
+      assert.equal(await list.getAttribute('data-wallet-held'), '5', 'five tokens held, the look-alike aside');
       assert.equal(await list.locator('[data-token-mark="unknown"]').count(), 1, 'UFG has no artwork in the reply: its disc');
       assert.equal(await list.locator('[data-token-mark="unknown"]').getAttribute('data-letters'), 'UF', 'a monogram, never an empty circle');
       assert.equal(await list.locator('[data-token-mark="unknown"]').textContent(), '', 'drawn by its class: copying the row never picks the letters up');
+
+      const all = list.getByRole('button', { name: 'Show all 5' });
+      assert.equal(await all.getAttribute('aria-expanded'), 'false');
+      await all.click();
+      assert.deepEqual(await rowsOf(list), [UFG, NATIVE, SELECTED_TOKENS[1], DUST, UNPRICED], 'every held token: dust by its value, the priceless last');
+      assert.deepEqual(await list.locator('[data-usd]').allTextContents(), ['$3,000.00', '$20.00', '$5.50', '$0.10']);
+      assert.equal(await visibleText(list.locator(`[data-wallet-row="${UNPRICED}"] [data-no-price]`)), '—', 'no price: a quiet dash');
+      assert.equal(await list.locator(`[data-wallet-row="${UNPRICED}"] [data-no-price] .sr-only`).textContent(), 'No price', 'and words for a screen reader');
+      assert.equal(await list.locator('[data-wallet-unpriced-note]').innerText(), 'No price found');
+      assert.equal(await list.getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded'), 'true');
+      assert.equal(await list.locator(`[data-wallet-row="${FAKE_USDG}"]`).count(), 0, 'the second USDG never');
+
+      assert.match(await list.locator('.dm-acct-tokens-count').textContent(), /6 tokens listed/, 'the count line still counts what was listed');
+      const prices = asked.filter((url) => url.includes('/tokens/v1/robinhood/'));
+      assert.equal(prices.length, 1, 'one price GET for the page view');
+      // Review of 2026-09-25: only what the wallet holds is named: no selected-pool token it does not hold, no look-alike.
+      assert.equal(new URL(prices[0]).pathname, `/tokens/v1/robinhood/${[WETH, UNPRICED, DUST, UFG].sort().join(',')}`);
+      assert.deepEqual(asked.filter((url) => url.includes('/token-pairs/')), [], 'the price reply answered the artwork: no GET per row');
       assert.equal(await list.getAttribute('data-wallet-total-withheld'), null, 'a whole list: its total is shown');
       assert.equal(walletBodies().length, 1, 'one listing, nothing else asked of the read service');
       await page.waitForTimeout(1000);
@@ -769,17 +796,23 @@ test('the Wallet card: the total, then the largest holdings by USD value from ON
   }
 });
 
-test('the Wallet card without prices: native ETH, WETH and USDG only, with their amounts, and no total', async () => {
+// Changed on purpose (round 6): with no prices the card listed native ETH, WETH and USDG only, by their amounts. Now
+// it lists what the wallet holds as always: USDG is still $1, every other token shows its amount and a dash, the main
+// tokens first; no total.
+test('the Wallet card without prices: USDG at $1, the others with their amounts and a dash, the main tokens first, and no total', async () => {
   overrideReply = (route) => (route === 'wallet-assets' ? heldWallet() : null);
   const asked = [];
   try {
     const { context, page, errors } = await visit(`/portfolio/${OWNER}`, provider(asked, () => null));
     try {
       const list = page.locator('[data-portfolio-tokens]');
-      await page.locator('[data-portfolio-tokens][data-wallet-prices="failed"]').waitFor({ timeout: 30_000 });
-      assert.deepEqual(await list.locator('[data-wallet-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-wallet-row'))), [NATIVE, SELECTED_TOKENS[1]]);
-      assert.deepEqual(await list.locator('[data-balance]').allTextContents(), ['0.01', '5.5']);
-      assert.equal(await list.locator('[data-wallet-total], [data-usd]').count(), 0, 'no dollar figure without a price');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="failed"] [data-wallet-row]').first().waitFor({ timeout: 30_000 });
+      assert.deepEqual(await rowsOf(list), [SELECTED_TOKENS[1], NATIVE, DUST], 'USDG ($1 without a provider), then native ETH, then by symbol');
+      assert.deepEqual(await list.locator('[data-balance]').allTextContents(), ['5.5', '0.01', '1']);
+      assert.deepEqual(await list.locator('[data-usd]').allTextContents(), ['$5.50'], 'no dollar figure without a price');
+      assert.equal(await list.locator('[data-no-price]').count(), 2);
+      assert.equal(await list.locator('[data-wallet-total]').count(), 0, 'no total');
+      assert.equal(await list.getAttribute('data-wallet-total-withheld'), 'unanswered_prices');
       assert.equal(await list.getByRole('button', { name: /Retry|again/i }).count(), 0, 'no retry control');
       assert.equal(asked.filter((url) => url.includes('/tokens/v1/')).length, 1);
       assert.deepEqual(errors, []);
@@ -807,24 +840,50 @@ const pageTwo = () => walletPage(({ native, token }) => [
   { ...token, address: MANY, symbol: 'MANY', decimals: 18, amountRaw: '1000000000000000000000000' },
 ]);
 const twoPagePrices = (url) => (url.includes('/tokens/v1/') ? [providerPair(WETH, '2000', 1e7), providerPair(UFG, '0.003', 165_000), providerPair(MANY, '0.002', 400_000)] : []);
-/** Every total and row list the card ever showed together, in order (a MutationObserver from the first frame). */
+/**
+ * Every set of rows and total the card ever showed, in order (a MutationObserver from the first frame), and every
+ * moment it showed no row at all after it had shown some (round 6: the card must never shrink to nothing). Round 6
+ * also counts every time a total on screen went away, and every time the total's placeholder came up
+ * (`window.__mark()` starts both counts again, for what happens after it).
+ */
 const watchTotals = async (context) => {
   await context.addInitScript(() => {
     window.__totals = [];
+    window.__shown = [];
+    window.__emptied = 0;
+    window.__totalGone = 0;
+    window.__placeholders = 0;
+    let hadTotal = false;
+    let hadPlaceholder = false;
+    window.__mark = () => {
+      window.__totalGone = 0;
+      window.__placeholders = 0;
+    };
     const look = () => {
       const card = document.querySelector('[data-portfolio-tokens]');
+      const rows = card ? [...card.querySelectorAll('[data-wallet-row]')].map((row) => row.getAttribute('data-wallet-row')).join(',') : '';
+      if (window.__shown.at(-1) !== rows) {
+        if (rows === '' && window.__shown.some((seen) => seen !== '')) window.__emptied += 1;
+        window.__shown.push(rows);
+      }
       const total = card?.querySelector('[data-wallet-total]');
+      if (hadTotal && !total) window.__totalGone += 1;
+      hadTotal = Boolean(total);
+      const placeholder = Boolean(card?.querySelector('.dm-acct-total-skel'));
+      if (placeholder && !hadPlaceholder) window.__placeholders += 1;
+      hadPlaceholder = placeholder;
       if (!total) return;
-      const rows = [...card.querySelectorAll('[data-wallet-row]')].map((row) => row.getAttribute('data-wallet-row')).join(',');
       if (window.__totals.at(-1) !== rows) window.__totals.push(rows);
     };
     new MutationObserver(look).observe(document, { subtree: true, childList: true, attributes: true });
   });
 };
 
-// Review of 2026-09-25: the total and the top five are the whole list's. A wallet whose largest holding is on page 2 must
-// never show page 1's sum as its value: the card reads page 2 on its own, then prices the union in ONE GET, then shows it.
-test('the Wallet card reads every page before it values the list: the largest holding on page 2 leads, and no partial total is ever shown', async () => {
+// Review of 2026-09-25: the total and the top holdings are the whole list's. A wallet whose largest holding is on page 2
+// must never show page 1's sum as its value: the card reads page 2 on its own and draws the list once it is whole.
+// Changed on purpose (round 6): the prices of page 1's tokens are asked as soon as page 1 lands, and page 2's new token
+// alone when page 2 does (no address is asked twice); the card still draws once, the whole list in its final order.
+test('the Wallet card reads every page before it values the list: the largest holding on page 2 leads, and no partial total or order is ever shown', async () => {
   overrideReply = async (route, body) => {
     if (route !== 'wallet-assets') return null;
     if (body.cursor === undefined) return pageWithMore();
@@ -843,12 +902,13 @@ test('the Wallet card reads every page before it values the list: the largest ho
       assert.deepEqual(walletBodies(), [{ wallet: OWNER, autoDiscover: true }, { wallet: OWNER, autoDiscover: true, cursor: HANDLE }], 'page 2 read on its own, with the handle page 1 gave');
       assert.equal(await list.getAttribute('data-wallet-pages'), '2');
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50', 'MANY $2,000 + ETH $20 + USDG $5.50 + UFG $3');
-      assert.deepEqual(await list.locator('[data-wallet-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-wallet-row'))), [MANY, NATIVE, SELECTED_TOKENS[1], UFG], 'page 2’s MANY leads');
-      const prices = asked.filter((url) => url.includes('/tokens/v1/'));
-      assert.equal(prices.length, 1, 'ONE price GET, for both pages’ tokens');
-      assert.equal(new URL(prices[0]).pathname, `/tokens/v1/robinhood/${[WETH, UFG, MANY].sort().join(',')}`);
-      assert.deepEqual(await page.evaluate(() => window.__totals), [[MANY, NATIVE, SELECTED_TOKENS[1], UFG].join(',')], 'a total was only ever shown over the whole list');
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]], 'page 2’s MANY leads the top 3');
+      const prices = asked.filter((url) => url.includes('/tokens/v1/')).map((url) => new URL(url).pathname);
+      assert.deepEqual(prices, [`/tokens/v1/robinhood/${[WETH, UFG].sort().join(',')}`, `/tokens/v1/robinhood/${MANY}`], 'page 1’s tokens, then page 2’s new one: none asked twice');
+      assert.deepEqual(await page.evaluate(() => window.__shown.filter((rows) => rows !== '')), [[MANY, NATIVE, SELECTED_TOKENS[1]].join(',')], 'drawn once, the whole list in its final order');
+      assert.deepEqual(await page.evaluate(() => window.__totals), [[MANY, NATIVE, SELECTED_TOKENS[1]].join(',')], 'a total was only ever shown over the whole list');
       assert.equal(await list.getByRole('button', { name: /Load more/ }).count(), 0, 'nothing left to press');
+      assert.equal(await list.getByRole('button', { name: 'Show all 4' }).count(), 1);
       assert.match(await list.locator('.dm-acct-tokens-count').textContent(), /page 2 of up to 5/);
       assert.deepEqual(errors, []);
     } finally {
@@ -860,8 +920,9 @@ test('the Wallet card reads every page before it values the list: the largest ho
 });
 
 // Review of 2026-09-25: pressing Load more blanked the card to skeletons until the next page landed. A later step keeps
-// the rows on screen, and a list with a page it could not read shows no total at all.
-test('a page the list could not read leaves its rows with no total; Load more keeps them on screen while it reads, then the whole list is valued', async () => {
+// the rows on screen, and a list with a page it could not read shows no total at all. Round 6: "Show all" stays open
+// through it.
+test('a page the list could not read leaves its rows with no total; Load more keeps them on screen while it reads, Show all stays open, then the whole list is valued', async () => {
   let secondAsks = 0;
   overrideReply = async (route, body) => {
     if (route !== 'wallet-assets') return null;
@@ -874,30 +935,428 @@ test('a page the list could not read leaves its rows with no total; Load more ke
   };
   const asked = [];
   try {
-    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, provider(asked, twoPagePrices));
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await provider(asked, twoPagePrices)(ctx);
+      await watchTotals(ctx);
+    });
     try {
       const list = page.locator('[data-portfolio-tokens]');
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"][data-wallet-total-withheld]').waitFor({ timeout: 30_000 });
       assert.equal(await list.getAttribute('data-wallet-total-withheld'), 'read_failed');
       assert.equal(await list.locator('[data-wallet-total]').count(), 0, 'page 2 is unread: no figure claims to be the wallet’s value');
-      const rowsNow = () => list.locator('[data-wallet-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-wallet-row')));
-      assert.deepEqual(await rowsNow(), [NATIVE, SELECTED_TOKENS[1], UFG], 'page 1’s holdings, by value');
+      assert.deepEqual(await rowsOf(list), [NATIVE, SELECTED_TOKENS[1], UFG], 'page 1’s holdings, by value');
       const more = list.getByRole('button', { name: 'Load more' });
       await more.click();
       for (const wait of [100, 700, 700]) {
         await page.waitForTimeout(wait);
-        assert.deepEqual(await rowsNow(), [NATIVE, SELECTED_TOKENS[1], UFG], 'the rows stay while the next page is read');
+        assert.deepEqual(await rowsOf(list), [NATIVE, SELECTED_TOKENS[1], UFG], 'the rows stay while the next page is read');
         assert.equal(await list.locator('li[aria-hidden="true"]').count(), 0, 'no skeleton rows in their place');
         assert.equal(await list.locator('.dm-acct-tokens-actions button').last().textContent(), 'Loading…');
       }
       await page.locator('[data-portfolio-tokens] [data-wallet-total]').waitFor({ timeout: 30_000 });
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
-      assert.deepEqual(await rowsNow(), [MANY, NATIVE, SELECTED_TOKENS[1], UFG]);
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]]);
+      await list.getByRole('button', { name: 'Show all 4' }).click();
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1], UFG]);
       assert.equal(secondAsks, 2, 'the final failure was not asked again on its own; the press asked once');
       assert.deepEqual(asked.filter((url) => url.includes('/tokens/v1/')).map((url) => new URL(url).pathname), [
         `/tokens/v1/robinhood/${[WETH, UFG].sort().join(',')}`,
         `/tokens/v1/robinhood/${MANY}`,
       ], 'the press priced only the token it added: the rest are kept in memory');
+      assert.equal(await page.evaluate(() => window.__emptied), 0, 'never shrank to nothing');
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+// Round 6 (2026-09-27; the owner: the Wallet card's tokens took far too long to appear, and a card must never blank out
+// on a refresh). The card keeps its last whole list per address in the browser: a second visit draws it at once, with
+// its total, before the read service has answered anything; the list is read again behind it and nothing on screen
+// empties meanwhile. A read that fails leaves the remembered list, and its total, on screen.
+test('a second visit draws the remembered list at once, then reads it again behind it; a failed read leaves it on screen', async () => {
+  let slow = false;
+  let failing = false;
+  overrideReply = async (route, body) => {
+    if (route !== 'wallet-assets') return null;
+    if (failing) return { status: 502, text: '{"error":"upstream_invalid_response"}' };
+    if (slow) await sleep(2500);
+    return body.cursor === undefined ? pageWithMore() : pageTwo();
+  };
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await provider(asked, twoPagePrices)(ctx);
+      await watchTotals(ctx);
+    });
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
+      await list.getByRole('button', { name: 'Show all 4' }).click();
+      const kept = await page.evaluate(() => Object.keys(localStorage));
+      assert.deepEqual(kept, ['domino-wallet-v1'], 'one key, the card’s');
+      const stored = await page.evaluate(() => localStorage.getItem('domino-wallet-v1'));
+      assert.doesNotMatch(stored, new RegExp(HANDLE), 'the continuation handle is never kept');
+      assert.ok(stored.includes(OWNER.toLowerCase()) && stored.includes(MANY), 'the address and its tokens');
+
+      // A second visit, the read service now slow: the remembered list is on screen before any wallet-assets reply.
+      slow = true;
+      const before = walletBodies().length;
+      await page.reload();
+      await list.locator('[data-wallet-total]').waitFor({ timeout: 5_000 });
+      assert.equal(await list.getAttribute('data-wallet-source'), 'memory', 'drawn from memory');
+      assert.equal(await list.getAttribute('data-wallet-pages'), '0', 'before the first page of the new read has landed');
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]]);
+      assert.equal(await list.locator('li[aria-hidden="true"]').count(), 0, 'no skeleton on a second visit');
+      await page.locator('[data-portfolio-tokens][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
+      assert.equal(walletBodies().length - before, 2, 'the list was read again, both pages');
+      assert.deepEqual(await page.evaluate(() => [...new Set(window.__shown.filter((rows) => rows !== ''))]), [[MANY, NATIVE, SELECTED_TOKENS[1]].join(',')], 'the same rows all along');
+      assert.equal(await page.evaluate(() => window.__emptied), 0, 'never shrank to nothing while it was read again');
+
+      // A third visit, the read service failing: the remembered list stays, with its total.
+      failing = true;
+      await page.reload();
+      await list.locator('[data-wallet-total]').waitFor({ timeout: 5_000 });
+      await page.locator('[data-portfolio-tokens][data-wallet-status="failed"]').waitFor({ timeout: 30_000 });
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]], 'the rows stay');
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50', 'and the total');
+      assert.equal(await list.locator('[data-wallet-empty]').count(), 0, 'no empty line');
+      assert.equal(await page.evaluate(() => window.__emptied), 0);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+// Round 6: the list is read again every five minutes while the page is shown. The rows stay, "Show all" stays open.
+test('the quiet re-read every five minutes keeps the rows and keeps Show all open', async () => {
+  overrideReply = (route, body) => (route === 'wallet-assets' ? (body.cursor === undefined ? pageWithMore() : pageTwo()) : null);
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await provider(asked, twoPagePrices)(ctx);
+      await watchTotals(ctx);
+      // Fake timers that tick on their own, so five minutes can pass at once.
+      await ctx.clock.install();
+    });
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
+      await list.getByRole('button', { name: 'Show all 4' }).click();
+      const before = walletBodies().length;
+      await page.evaluate(() => window.__mark());
+      await page.clock.fastForward('05:01');
+      for (let i = 0; i < 120 && walletBodies().length < before + 2; i++) await page.waitForTimeout(250);
+      assert.equal(walletBodies().length, before + 2, 'read again, both pages');
+      await page.locator('[data-portfolio-tokens][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
+      assert.equal(await page.evaluate(() => window.__placeholders), 0, 'no placeholder where the total stood');
+      assert.equal(await list.getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded'), 'true', 'Show all is still open');
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1], UFG]);
+      assert.equal(await page.evaluate(() => window.__emptied), 0, 'never shrank to nothing');
+      assert.equal(await page.evaluate(() => window.__totalGone), 0, 'the total stayed on screen through the re-read');
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+// Round 6 (2026-09-27; the owner: the Wallet card's tokens took far too long to appear). A first visit waits for the
+// whole list and its prices FIRST_PAINT_MS (5 s) at most: a page that takes longer leaves the pages already read on
+// screen, by value, under the total's placeholder, and the whole list follows in place, with its total. Nothing is
+// ever emptied, and no total is ever shown over part of the list.
+test('a slow list on a first visit: the pages already read are drawn within five seconds, then the whole list and its total, never emptied', { timeout: 60_000 }, async () => {
+  overrideReply = async (route, body) => {
+    if (route !== 'wallet-assets') return null;
+    if (body.cursor === undefined) return pageWithMore();
+    await sleep(8000);
+    return pageTwo();
+  };
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await provider(asked, twoPagePrices)(ctx);
+      await watchTotals(ctx);
+    });
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await list.locator('[data-wallet-row]').first().waitFor({ timeout: 7_000 });
+      assert.equal(await list.getAttribute('data-wallet-pages'), '1', 'drawn while page 2 is still on the wire');
+      assert.deepEqual(await rowsOf(list), [NATIVE, SELECTED_TOKENS[1], UFG], 'page 1’s holdings, by value');
+      assert.equal(await list.locator('[data-wallet-total]').count(), 0, 'no total over part of the list');
+      assert.equal(await list.locator('.dm-acct-total-skel').count(), 1, 'the total’s place is held');
+      await page.locator('[data-portfolio-tokens] [data-wallet-total]').waitFor({ timeout: 30_000 });
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]], 'the whole list, in its final order');
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
+      assert.equal(await list.locator('.dm-acct-total-skel').count(), 0);
+      assert.deepEqual(await page.evaluate(() => window.__totals), [[MANY, NATIVE, SELECTED_TOKENS[1]].join(',')], 'a total only over the whole list');
+      assert.equal(await page.evaluate(() => window.__emptied), 0, 'never shrank to nothing');
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+// Round 6: a list that is not whole (its page skipped candidates) has no total. Read again every five minutes, it
+// brings up no placeholder where a total would be, and its rows stay as they are.
+test('a list with no total is read again quietly: no placeholder comes up and its rows stay as they are', async () => {
+  const USDG = SELECTED_TOKENS[1];
+  overrideReply = (route, body) => {
+    if (route !== 'wallet-assets') return null;
+    if (body.autoDiscover === false) return walletPage(({ native, token }) => [native, { ...token, address: USDG, symbol: 'USDG', decimals: 6, amountRaw: '5500000' }]);
+    return walletPage(({ native, token }) => [
+      { ...native, amountRaw: '10000000000000000' },
+      { ...token, address: UFG, symbol: 'UFG', decimals: 18, amountRaw: '1000000000000000000000000' },
+    ], { candidatesProbed: 13, candidatesSkipped: 7, skippedReason: 'request_budget_exhausted' });
+  };
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await provider(asked, twoPagePrices)(ctx);
+      await watchTotals(ctx);
+      await ctx.clock.install();
+    });
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"][data-wallet-total-withheld="skipped_candidates"]').waitFor({ timeout: 30_000 });
+      assert.deepEqual(await rowsOf(list), [UFG, NATIVE, USDG]);
+      await page.evaluate(() => window.__mark());
+      const before = walletBodies().length;
+      await page.clock.fastForward('05:01');
+      for (let i = 0; i < 120 && walletBodies().length < before + 2; i++) await page.waitForTimeout(250);
+      assert.equal(walletBodies().length, before + 2, 'read again: the page, then its check by address');
+      await page.locator('[data-portfolio-tokens][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
+      assert.equal(await page.evaluate(() => window.__placeholders), 0, 'no placeholder for a total the list never had');
+      assert.equal(await list.locator('[data-wallet-total]').count(), 0);
+      assert.deepEqual([...new Set(await page.evaluate(() => window.__shown.filter((rows) => rows !== '')))], [[UFG, NATIVE, USDG].join(',')], 'the same rows all along');
+      assert.equal(await page.evaluate(() => window.__emptied), 0);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+// Review of round 6 (2026-09-28): every quiet re-read took the form for other tokens off the page and put it back, so
+// the open form closed and what was typed in it was lost, every five minutes. The form now stays, the same element.
+test('the form for other tokens stays open, with what was typed in it, through the quiet re-reads', { timeout: 90_000 }, async () => {
+  const USDG = SELECTED_TOKENS[1];
+  overrideReply = async (route, body) => {
+    if (route !== 'wallet-assets') return null;
+    await sleep(1500);
+    if (body.tokens === undefined) return walletPage(({ native }) => [native], { rowsReceived: 0, candidatesProbed: 0 });
+    return walletPage(({ native, token }) => [native, ...body.tokens.map((address) => ({ ...token, address, amountRaw: address === USDG ? '1500000' : '0' }))], { rowsReceived: 0, candidatesProbed: 0 });
+  };
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await provider([], () => [])(ctx);
+      await ctx.clock.install();
+    });
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await list.locator(`[data-wallet-row="${USDG}"]`).waitFor({ timeout: 30_000 });
+      await page.locator('[data-portfolio-tokens][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
+      await list.locator('details.dm-acct-tokens-more > summary').click();
+      await list.locator('#portfolio-tokens').fill('0x1234');
+      // The very element typed into is marked: a form taken off the page and put back would be a new one.
+      await page.evaluate(() => { document.querySelector('#portfolio-tokens').dataset.typedHere = 'yes'; });
+      for (const round of [1, 2]) {
+        const before = walletBodies().length;
+        await page.clock.fastForward('05:01');
+        for (let i = 0; i < 120 && walletBodies().length < before + 1; i++) await page.waitForTimeout(250);
+        assert.equal(walletBodies().length, before + 1, `read again (${round}): the selected pools' tokens, by address`);
+        await page.locator('[data-portfolio-tokens][data-wallet-source="memory"]').waitFor({ timeout: 10_000 }).catch(() => {});
+        await page.locator('[data-portfolio-tokens][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
+        assert.equal(await list.locator('details.dm-acct-tokens-more').evaluate((details) => details.open), true, `still open after re-read ${round}`);
+        assert.equal(await list.locator('#portfolio-tokens').inputValue(), '0x1234', `what was typed is still there after re-read ${round}`);
+        assert.equal(await list.locator('#portfolio-tokens').getAttribute('data-typed-here'), 'yes', 'the same element all along');
+      }
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+const AIRDROP = '0x6666666666666666666666666666666666666666';
+const NEWDROP = '0x7777777777777777777777777777777777777777';
+const NEWER = '0x8888888888888888888888888888888888888888';
+/** The first page (0.01 ETH, 5.5 USDG, 1,000 UFG) with 1,000 of each extra [address, symbol] after them. */
+const pageOneWith = (extras) => walletPage(({ native, token }) => [
+  { ...native, amountRaw: '10000000000000000' },
+  { ...token, address: SELECTED_TOKENS[1], symbol: 'USDG', decimals: 6, amountRaw: '5500000' },
+  { ...token, address: UFG, symbol: 'UFG', decimals: 18, amountRaw: '1000000000000000000000' },
+  ...extras.map(([address, symbol]) => ({ ...token, address, symbol, decimals: 18, amountRaw: '1000000000000000000000' })),
+], { hasMore: true, nextCursor: HANDLE });
+
+// Review of round 6 (2026-09-28): the memory kept prices with no time of their own, and each list read wrote them back
+// under the list's new time. With the provider down, the card showed a total at prices days or weeks old, as current.
+// A price now counts for an hour after its answer: past that, the remembered list is drawn with no total, its rows in
+// their last known order by value (an airdrop with no price never takes a top-3 place), and writing the list back
+// keeps each price's own time.
+test('a remembered list whose prices are more than an hour old: no total at old prices, the rows in their last order, each price keeping its time', { timeout: 60_000 }, async () => {
+  let pricesDown = false;
+  overrideReply = (route, body) => (route === 'wallet-assets' ? (body.cursor === undefined ? pageOneWith([[AIRDROP, 'AAA']]) : pageTwo()) : null);
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await provider(asked, (url) => (pricesDown ? null : twoPagePrices(url)))(ctx);
+      await watchTotals(ctx);
+    });
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]]);
+      const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem('domino-wallet-v1')));
+      // Two hours pass (the kept list and every kept price made two hours older), and the provider is down.
+      const TWO_HOURS = 2 * 3600_000;
+      await page.evaluate((shift) => {
+        const all = JSON.parse(localStorage.getItem('domino-wallet-v1'));
+        for (const wallet of Object.values(all.wallets)) {
+          wallet.at -= shift;
+          for (const price of wallet.quotes) price[3] -= shift;
+        }
+        localStorage.setItem('domino-wallet-v1', JSON.stringify(all));
+      }, TWO_HOURS);
+      const aged = (await stored()).wallets[OWNER.toLowerCase()].quotes.map((price) => [price[0], price[3]]);
+      assert.equal(aged.length, 4, 'WETH, UFG, MANY and the airdrop (answered: no price)');
+      pricesDown = true;
+      await page.reload();
+      await list.locator('[data-wallet-row]').first().waitFor({ timeout: 5_000 });
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]], 'drawn from memory at once, in the last known order by value');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="failed"][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
+      assert.equal(await list.locator('[data-wallet-total]').count(), 0, 'no total at prices two hours old');
+      assert.equal(await list.getAttribute('data-wallet-total-withheld'), 'unanswered_prices');
+      assert.deepEqual(await page.evaluate(() => window.__totals), [], 'no total was ever shown on this visit');
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]], 'still in that order: the airdrop AAA takes no top-3 place');
+      assert.deepEqual(await list.locator('[data-usd]').allTextContents(), ['$5.50'], 'USDG alone has a value ($1 needs no provider)');
+      assert.equal(await list.locator('[data-no-price]').count(), 2, 'the others a quiet dash');
+      await list.getByRole('button', { name: 'Show all 5' }).click();
+      assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1], UFG, AIRDROP]);
+      assert.equal(await page.evaluate(() => window.__emptied), 0, 'never shrank to nothing');
+      const after = (await stored()).wallets[OWNER.toLowerCase()];
+      assert.deepEqual(after.quotes.map((price) => [price[0], price[3]]), aged, 'the list was written back; every price kept its own time');
+      assert.ok(after.at > Date.now() - 60_000, 'the list itself is the new read');
+      // Another visit: still no total.
+      await page.reload();
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="failed"][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
+      assert.equal(await list.locator('[data-wallet-total]').count(), 0);
+      assert.deepEqual(await page.evaluate(() => window.__totals), []);
+      // The provider back: the prices are answered again, and the total with them.
+      pricesDown = false;
+      await page.reload();
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+// Review of round 6 (2026-09-28): a read that named a token the wallet did not hold before took the total away until
+// that token's price came back, with nothing in its place: the card shrank and grew again. The total on screen now
+// stays while the new token's price is asked, on a quiet re-read and on a later visit drawn from memory alike.
+/** Answers the provider's price GETs for the two pages, NEWDROP ($0.01) and NEWER ($0.001), each `delay()` ms late. */
+const delayedPrices = (asked, delay) => async (context) => {
+  await context.route(/^https:\/\/(api|cdn)\.dexscreener\.com\//, async (route) => {
+    const url = route.request().url();
+    asked.push(url);
+    const prices = url.includes('/tokens/v1/');
+    if (prices && delay() > 0) await sleep(delay());
+    const reply = prices ? [...twoPagePrices(url), providerPair(NEWDROP, '0.01', 1e6), providerPair(NEWER, '0.001', 1e6)] : [];
+    return route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(reply) });
+  });
+};
+/** Waits until the card's total reads `text`, a few seconds at most, and says what it read last. */
+const totalBecomes = async (page, text) => {
+  const read = () => page.locator('[data-portfolio-tokens] [data-wallet-total] .dm-fig-xl').textContent({ timeout: 1000 }).catch(() => null);
+  for (let i = 0; i < 60 && (await read()) !== text; i++) await page.waitForTimeout(250);
+  return read();
+};
+
+test('a new token on a quiet re-read leaves the total on screen while its price is asked', { timeout: 60_000 }, async () => {
+  let extras = [];
+  let delay = 0;
+  overrideReply = (route, body) => (route === 'wallet-assets' ? (body.cursor === undefined ? pageOneWith(extras) : pageTwo()) : null);
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await delayedPrices(asked, () => delay)(ctx);
+      await watchTotals(ctx);
+      await ctx.clock.install();
+    });
+    try {
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
+      assert.equal(await totalBecomes(page, '$2,028.50'), '$2,028.50');
+      await page.evaluate(() => window.__mark());
+      // The re-read's first page names NEWDROP (1,000 at $0.01), its price answered 800 ms after it is asked.
+      extras = [[NEWDROP, 'NEWDROP']];
+      delay = 800;
+      const before = walletBodies().length;
+      const pricesBefore = asked.filter((url) => url.includes('/tokens/v1/')).length;
+      await page.clock.fastForward('05:01');
+      for (let i = 0; i < 120 && walletBodies().length < before + 2; i++) await page.waitForTimeout(250);
+      assert.equal(walletBodies().length, before + 2, 'read again, both pages');
+      assert.equal(await totalBecomes(page, '$2,038.50'), '$2,038.50', 'NEWDROP counted once its price came');
+      assert.ok(asked.filter((url) => url.includes('/tokens/v1/')).slice(pricesBefore).some((url) => url.includes(NEWDROP)), 'its price was asked');
+      assert.equal(await page.evaluate(() => window.__totalGone), 0, 'the total never left the screen');
+      assert.equal(await page.evaluate(() => window.__placeholders), 0, 'and no placeholder came up in its place');
+      assert.equal(await page.evaluate(() => window.__emptied), 0);
+      assert.deepEqual(errors, []);
+    } finally {
+      await context.close();
+    }
+  } finally {
+    overrideReply = null;
+  }
+});
+
+test('a later visit drawn from memory whose first page names a new token keeps its total on screen while that price is asked', { timeout: 60_000 }, async () => {
+  let extras = [[NEWDROP, 'NEWDROP']];
+  let delay = 0;
+  overrideReply = (route, body) => (route === 'wallet-assets' ? (body.cursor === undefined ? pageOneWith(extras) : pageTwo()) : null);
+  const asked = [];
+  try {
+    const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
+      await delayedPrices(asked, () => delay)(ctx);
+      await watchTotals(ctx);
+    });
+    try {
+      const list = page.locator('[data-portfolio-tokens]');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
+      assert.equal(await totalBecomes(page, '$2,038.50'), '$2,038.50');
+      // The next visit: its first page names NEWER (1,000 at $0.001), every price answered 800 ms after it is asked.
+      extras = [[NEWDROP, 'NEWDROP'], [NEWER, 'NEWER']];
+      delay = 800;
+      await page.reload();
+      await list.locator('[data-wallet-total]').waitFor({ timeout: 5_000 });
+      assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,038.50', 'the remembered total, at once');
+      assert.equal(await totalBecomes(page, '$2,039.50'), '$2,039.50', 'NEWER counted once its price came');
+      await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"][data-wallet-source="read"]').waitFor({ timeout: 30_000 });
+      assert.equal(await page.evaluate(() => window.__totalGone), 0, 'the total never left the screen');
+      assert.equal(await page.evaluate(() => window.__placeholders), 0, 'and no placeholder came up in its place');
+      assert.equal(await page.evaluate(() => window.__emptied), 0);
       assert.deepEqual(errors, []);
     } finally {
       await context.close();
