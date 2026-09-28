@@ -171,7 +171,7 @@
     },
     {
       "path": "backend/execution_v4.py",
-      "sha256": "4a4482f68c2d2e5f6742448f30ebdeafd50c4e49f4d0b0eb215b58c15fae4c07"
+      "sha256": "ba224167c661675ad0db1528bbe0a89512651e5e8695fa117e208829e0cc4041"
     },
     {
       "path": "backend/general_compound_receipts.py",

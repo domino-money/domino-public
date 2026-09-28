@@ -21,6 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eth_account import Account
 from eth_hash.auto import keccak
 
+from unittest.mock import patch
+
+import automation_cycle
 import execution_models as m
 import test_execution_v4_receipts_evm as evm
 from automation_config import validate_config
@@ -31,7 +34,7 @@ from automation_observer import ChainReader, derive_admission, pool_state
 from evm_harness import calldata, KEY_TYPE, LIMITS_TYPE, POLICY_TYPE
 from execution_pg import ExecutionPostgres
 from execution_runner import ExecutionJournal
-from execution_signer import ExecutionError
+from execution_signer import ExecutionError, ExecutionRpc
 from execution_store import ExecutionStoreError, _model
 from execution_v4_adapter import decode_plan
 
@@ -341,6 +344,34 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.finalize()
         self.assertEqual(self.cycle.run(self.entry)['outcome'], 'completed')
         self.assertEqual((self.counts()['effects'], self.counts()['publications']), (2, 2))
+
+    def test_a_reverted_qualification_closes_its_cycle_under_the_contract_error(self):
+        # The plan below adds twice what it funds: it passes planning, its
+        # publication is paid for, and the engine's bound refuses the execution
+        # (InvalidAmount) in the executor's qualification. The cycle closes under
+        # the error's name; a name in capitals was refused by the cycle store, so
+        # such a cycle could not be closed (27 September 2026, after #247).
+        self.setup()
+        self.cycle.run(self.entry)
+        self.warm_up()
+        self.advance(2)
+        self.trade()
+        real = automation_cycle.build_execution_plan
+
+        def overreaching(*args, **kwargs):
+            plan = real(*args, **kwargs)
+            return plan.model_copy(update={'liquidityIncrease': str(2 * int(plan.liquidityIncrease))})
+        # The production transport, as the VM's serve builds it: the harness's
+        # client reports every node error alike, so no revert would be named.
+        cycle = SequenceCycle(self.config, rpc=ExecutionRpc(self.rpc.url), operator_key=OPERATOR_KEY,
+                              publisher_key=PUBLISHER_KEY, gas_budget=SyntheticGasBudget())
+        with patch.object(automation_cycle, 'build_execution_plan', overreaching):
+            refused = cycle.run(self.entry)
+        reason = 'qualify_v4_call_reverted_invalid_amount'
+        self.assertEqual((refused['outcome'], refused['reason']), ('abandoned', reason), refused)
+        cycle = self.store.cycle(self.owner, refused['cycleId'])
+        self.assertEqual((cycle['state'], cycle['reason']), ('abandoned', reason))
+        self.assertEqual((self.counts()['publications'], self.counts()['attempts']), (1, 0))
 
     def test_a_base_fee_rise_after_the_reservation_still_publishes(self):
         # 27 September 2026: the cycle reserved the publisher's claim at one

@@ -3,6 +3,7 @@
 Admission is operator-controlled deployment configuration; price observations
 are independently published inputs, never a browser qualification or spot oracle.
 """
+import re
 from typing import Annotated, ClassVar
 from automation_tariff import is_simple, valid_policy_tariff
 from eth_abi import encode
@@ -35,12 +36,15 @@ CONTRACT_ERRORS = (
     'ReentrantCreate()', 'SequenceAlreadyCreated()', 'TransferFailed()', 'Unauthorized()', 'UnbackedReserve()',
     'UnexpectedCallback()', 'UnexpectedOwnerNonce(uint256,uint256)', 'UnknownSource()', 'UnsupportedChain()',
     'VaultDeploymentFailed()')
-REVERT_NAMES = {'0x' + keccak(error.encode())[:4].hex(): error.split('(')[0] for error in CONTRACT_ERRORS}
+# In snake case: a cycle records its reason only in [a-z0-9_] (automation_store),
+# so InvalidAmount is reported as invalid_amount.
+REVERT_NAMES = {'0x' + keccak(error.encode())[:4].hex(): re.sub(r'(?<=[a-z0-9])(?=[A-Z])', '_', error.split('(')[0]).lower()
+                for error in CONTRACT_ERRORS}
 
 
 def revert_code(revert):
-    """The code of a call the chain reverted: our contracts' error name, the
-    bare selector for anyone else's, `empty` for a revert without data."""
+    """The code of a call the chain reverted: our contracts' error name in snake
+    case, the bare selector for anyone else's, `empty` for a revert without data."""
     if len(revert) < 10:
         return 'v4_call_reverted_empty'
     return 'v4_call_reverted_' + REVERT_NAMES.get(revert[:10], revert[:10])
