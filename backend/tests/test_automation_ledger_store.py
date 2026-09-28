@@ -135,7 +135,13 @@ class LedgerIndexStoreTests(unittest.TestCase):
         self.index.record_withdrawal(self.owner, self.seq_hash, self.event(960, original=int(self.base.amountRaw) - 999))
         self.assertEqual(self.remaining(), {lot: 999})
         lease = self.store.acquire(self.owner, item['intentId'], self.worker)
-        self.error('execution_balance_reserved', lambda: self.store.reserve(self.owner, item['intentId'], self.worker, lease['fence']))
+        # The plan was observed before the withdrawal: the lot no longer matches it.
+        self.error('execution_origin_unavailable', lambda: self.store.reserve(self.owner, item['intentId'], self.worker, lease['fence']))
+        # The claim guard meets the same arithmetic from a worker that skips that check.
+        with self.assertRaises(psycopg.errors.CheckViolation) as refused:
+            self.sql(WORKER_ROLE, [("INSERT INTO lot_claims(owner,intent_id,lot_id,amount_raw) VALUES(%s,%s,%s,1000)", (self.owner, item['intentId'], lot))],
+                     worker=self.worker, fence=lease['fence'])
+        self.assertEqual(refused.exception.diag.message_primary, 'execution_balance_reserved')
         # The signer's spend against a canonical effect meets the same arithmetic.
         effect = [("INSERT INTO effects(owner,intent_id,transaction_hash,block_number,block_hash,canonical,receipt) VALUES(%s,%s,%s,7,%s,true,%s)",
                    (self.owner, item['intentId'], identity(961), identity(7), Jsonb({})))]
@@ -146,6 +152,27 @@ class LedgerIndexStoreTests(unittest.TestCase):
         self.sql(SIGNER_ROLE, effect + [("INSERT INTO spends(owner,intent_id,lot_id,amount_raw) VALUES(%s,%s,%s,999)", (self.owner, item['intentId'], lot))],
                  worker=self.worker, fence=lease['fence'])
         self.assertEqual(self.remaining(), {lot: 0})
+
+    def test_a_plan_observed_after_a_withdrawal_reserves_what_the_lot_still_holds(self):
+        # 28 September 2026: the reservation compared a lot without its
+        # withdrawal debits, so a plan observed after an owner's withdrawal
+        # was refused as execution_origin_unavailable while the planner saw
+        # the debited amount, and the cycle was abandoned.
+        lot = self.base.credit_id()
+        self.ledger.record_credit(self.owner, self.seq, self.source, lot, self.base)
+        self.index.record_withdrawal(self.owner, self.seq_hash, self.event(980, original=int(self.base.amountRaw) - 1000))
+        self.assertEqual(self.remaining(), {lot: 1000})
+        raw = self.obs.model_dump(mode='json')
+        raw['balances'][0]['amountRaw'] = '1000'
+        obs = m.Observation.model_validate_json(json.dumps(raw))
+        raw = self.plan.model_dump(mode='json')
+        raw['observationHash'] = obs.digest()
+        plan = m.ExecutionPlan.model_validate_json(json.dumps(raw))
+        item = self.store.persist(self.owner, plan, obs, actor=obs.operator)
+        lease = self.store.acquire(self.owner, item['intentId'], self.worker)
+        self.assertEqual(self.store.reserve(self.owner, item['intentId'], self.worker, lease['fence'])['state'], 'reserved')
+        self.assertEqual([(row['lot_id'], int(row['remaining']), int(row['reserved'])) for row in self.worker_store.available_lots(self.owner, self.seq_hash)],
+                         [(lot, 1000, 1000)])
 
     def test_withdrawals_and_debits_are_immutable_and_complete(self):
         lot = self.credit(970, 1000)
