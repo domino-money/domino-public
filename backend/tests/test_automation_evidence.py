@@ -15,8 +15,8 @@ import execution_planner as p
 import test_execution_planner as tp
 from automation_config import GasPoolKey, impact_bounds, validate_config
 from automation_evidence import (PPM, _next_initialized, build_evidence, engine_minimum_output, exposure_ppm, price_evidence,
-                                 price_impact_bps, quote_per_wei, ratio_bps, ratio_ceil_bps, simulate_exact_input, swap_amounts,
-                                 swap_cap, swap_fee_pips)
+                                 price_impact_bps, quote_per_wei, ratio_bps, ratio_ceil_bps, sequence_quote_per_wei, simulate_exact_input,
+                                 swap_amounts, swap_cap, swap_fee_pips)
 from automation_fixtures import FakeChainReader, address, gas_pool, identity, sample_automation_config, sample_config
 from automation_observer import ObservationContext, ObservationError, PoolState, measurement_history, sample_pool
 from execution_cases import identity as cid
@@ -229,6 +229,53 @@ class PricingTests(unittest.TestCase):
         raw = sample_config()
         raw['pricing']['gasPools'] = {}
         self.assertEqual(build_evidence(rd, ctx, self.admission, [], validate_config(raw), self.cfg), (None, ('gas_price_source_missing',)))
+
+    def test_a_quote_without_a_gas_source_is_priced_through_the_pool_s_other_currency(self):
+        # 28 September 2026: a vault quoted in PONS, paired with USDG, never
+        # acted: only USDG had a gas pool. Gas now goes through USDG and the
+        # vault's own pool, at the valuation band's upper edge.
+        seq = self.obs.sequence
+        self.assertEqual(seq.quoteCurrency, C1)
+
+        def pricing_with(pools):
+            raw = sample_config()
+            raw['pricing']['gasPools'] = pools
+            return validate_config(raw).pricing
+        only_base = pricing_with({C0: gas_pool(C0)})
+        gas = GasPoolKey(**gas_pool(C0)).pool_id()
+        rd = reader(sqrt_price=2**96 * 2, pools={gas: (2**96 * 50, 10**20)})  # 4 C1 atoms per C0 atom; 2500 C0 atoms per wei
+        ctx = context(self.obs, rd)
+        with self.assertRaisesRegex(ObservationError, 'gas_price_source_missing'):
+            quote_per_wei(rd, ctx, only_base, C1, address(20))
+        self.assertEqual(sequence_quote_per_wei(rd, ctx, only_base, seq, address(20), 10), Fraction(2500 * 4 * 10010, 10000))
+        # A quote with its own source is priced as before, with no detour.
+        both = sample_automation_config().pricing
+        c1_gas = GasPoolKey(**gas_pool(C1)).pool_id()
+        direct = reader(sqrt_price=2**96 * 2, pools={gas: (2**96 * 50, 10**20), c1_gas: (2**96 * 3, 10**20)})
+        self.assertEqual(sequence_quote_per_wei(direct, context(self.obs, direct), both, seq, address(20), 10), 9)
+        # A quote whose own gas pool is empty is a fault to report, not a reason to detour.
+        empty = reader(sqrt_price=2**96 * 2, pools={gas: (2**96 * 50, 10**20), c1_gas: (2**96 * 3, 0)})
+        with self.assertRaisesRegex(ObservationError, 'gas_price_unavailable'):
+            sequence_quote_per_wei(empty, context(self.obs, empty), both, seq, address(20), 10)
+        # Quoted in currency0, the pool's spot inverts.
+        reversed_seq = seq.model_copy(update={'baseCurrency': C1, 'quoteCurrency': C0})
+        only_c1 = pricing_with({C1: gas_pool(C1)})
+        other = reader(sqrt_price=2**96 * 2, pools={c1_gas: (2**96 * 50, 10**20)})
+        self.assertEqual(sequence_quote_per_wei(other, context(self.obs, other), only_c1, reversed_seq, address(20), 10),
+                         Fraction(2500, 4) * Fraction(10010, 10000))
+        # Neither currency priceable, or a pool with no price: no gas figure.
+        none = pricing_with({})
+        with self.assertRaisesRegex(ObservationError, 'gas_price_source_missing'):
+            sequence_quote_per_wei(rd, ctx, none, seq, address(20), 10)
+        for sqrt_price in (0, MAX_SQRT):
+            broken = reader(sqrt_price=sqrt_price, pools={gas: (2**96 * 50, 10**20)})
+            with self.subTest(sqrt_price=sqrt_price), self.assertRaisesRegex(ObservationError, 'gas_price_unavailable'):
+                sequence_quote_per_wei(broken, context(self.obs, broken), only_base, seq, address(20), 10)
+        # In the evidence, the vault is no longer left unqualified for it.
+        raw = sample_config()
+        raw['pricing']['gasPools'] = {C0: gas_pool(C0)}
+        evidence, reasons = build_evidence(rd, ctx, self.admission, [], validate_config(raw), self.cfg)
+        self.assertNotIn('gas_price_source_missing', reasons)
 
     def test_full_evidence_lets_the_planner_choose_and_the_wire_rebuild(self):
         # A pool whose liquidity is comparable to the sequence's fees, so the

@@ -90,6 +90,29 @@ def quote_per_wei(reader, ctx, pricing, quote_currency, state_view):
     return per_native * Fraction(10000 + pricing.gasPriceBufferBps, 10000)
 
 
+def sequence_quote_per_wei(reader, ctx, pricing, sequence, state_view, band_bps):
+    """Quote atoms one wei is worth for this sequence, rounded against the
+    operator. A quote currency with no gas source of its own is reached through
+    the pool's other currency when that one has a source: that currency's price
+    per wei, times this pool's own spot at the observed block at the valuation
+    band's upper edge, so the conversion never makes gas cheaper. A vault the
+    owner quoted in its token (PONS against USDG, 28 September 2026) is then
+    priced like one quoted in USDG instead of never acting."""
+    try:
+        return quote_per_wei(reader, ctx, pricing, sequence.quoteCurrency, state_view)
+    except ObservationError as error:
+        if error.code != 'automation_gas_price_source_missing':
+            raise
+    pair = (sequence.poolKey.currency0, sequence.poolKey.currency1)
+    other = pair[1 - pair.index(sequence.quoteCurrency)]
+    per_wei = quote_per_wei(reader, ctx, pricing, other, state_view)
+    if not MIN_SQRT <= ctx.pool.sqrt_price < MAX_SQRT:
+        raise ObservationError('automation_gas_price_unavailable')
+    spot = spot_price(ctx.pool.sqrt_price)  # currency1 atoms per currency0 atom
+    quote_per_other = spot if other == sequence.poolKey.currency0 else 1 / spot
+    return per_wei * quote_per_other * Fraction(10000 + band_bps, 10000)
+
+
 def ceil_fraction(value):
     return -(-value.numerator // value.denominator)
 
@@ -449,7 +472,7 @@ def build_evidence(reader, ctx, admission, samples, config, settings, *, used_pp
     if prices is None:
         return None, reasons
     try:
-        per_wei = quote_per_wei(reader, ctx, config.pricing, seq.quoteCurrency, admission.stateView)
+        per_wei = sequence_quote_per_wei(reader, ctx, config.pricing, seq, admission.stateView, config.pricing.valuationBandBps)
         l1 = (l1_component(reader, ctx.block, config.gas, admission.priceGuard, PUBLISH_CALLDATA_BYTES),
               l1_component(reader, ctx.block, config.gas, admission.sequence.vault, execute_calldata_bytes))
         costs = {}
