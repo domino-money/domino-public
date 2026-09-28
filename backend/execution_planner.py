@@ -469,15 +469,20 @@ def _liquidity_amounts(obs, dest, liquidity):
 
 
 def _earnings_rate(samples, prices):
-    """Conservative *total pool fee flow*, never an unlimited rate per added L.
-    Liquidity-time remains measured provenance; destination evidence independently
-    bounds total and competing liquidity through the finite forecast horizon.
+    """The *total pool fee flow*, never an unlimited rate per added L: what the
+    pool earned over the measured window divided by the window's time, the
+    time-weighted mean. A new token's fees come in bursts. The least interval,
+    the estimate until 28 September 2026, read a pool earning $52 an hour on
+    average as earning nothing, and reinvesting never qualified. The forecast
+    keeps its haircut. Liquidity-time remains measured provenance; destination
+    evidence independently bounds total and competing liquidity through the
+    finite forecast horizon.
     """
-    rates = []
+    earned, elapsed = Fraction(0), 0
     for a, b in zip(samples, samples[1:]):
-        earned = (b.cumulativeFee0-a.cumulativeFee0, b.cumulativeFee1-a.cumulativeFee1)
-        rates.append(_value(earned, prices) / (b.timestamp-a.timestamp))
-    return min(rates) if rates else Fraction(0)
+        earned += _value((b.cumulativeFee0-a.cumulativeFee0, b.cumulativeFee1-a.cumulativeFee1), prices)
+        elapsed += b.timestamp-a.timestamp
+    return earned / elapsed if elapsed > 0 else Fraction(0)
 
 
 def _candidate(obs, settings, evidence, samples, sources, dest, depth, quote, now, liquidity_cap=None):

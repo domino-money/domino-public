@@ -138,6 +138,25 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(amount_delta(Q96, sqrt_at_tick(root.tickUpper), candidate.liquidityIncrease+1, 0, True) > 960
                         or amount_delta(sqrt_at_tick(root.tickLower), Q96, candidate.liquidityIncrease+1, 1, True) > 960)
 
+    def test_a_bursty_pool_is_forecast_at_its_mean_not_its_quietest_interval(self):
+        # 28 September 2026: USDG/UFG earned $52 an hour on average over a day,
+        # yet 45 of 86 sampled intervals earned under $1. Forecast from the
+        # quietest interval, no compound of #3324336 qualified. The same fees
+        # earned in one burst or evenly over the window forecast the same.
+        obs, _, cfg = setup()
+        ev = evidence(obs, cfg)
+
+        def earned(cumulative):
+            base = history(obs)
+            samples = tuple(replace(s, cumulativeFee0=f, cumulativeFee1=f) for s, f in zip(base.samples, cumulative))
+            decision = p.plan(obs, replace(base, samples=samples), cfg, ev, now=NOW)
+            return [c.economics.incrementalEarningsQuote for c in decision.candidates[1:]]
+        even, burst = earned((0, 200, 400)), earned((0, 0, 400))
+        self.assertGreater(min(even), 0)
+        self.assertEqual(burst, even)
+        # A window that earned nothing forecasts nothing.
+        self.assertTrue(all(e == 0 for e in earned((0, 0, 0))))
+
     def test_fee_flow_dilution_includes_incumbent_owner_and_never_exceeds_pool_budget(self):
         obs, _, cfg = setup()
         hist = history(obs, increment=2)
@@ -431,14 +450,20 @@ class PlannerTests(unittest.TestCase):
         excessive_gas = replace(ev, destinations=tuple(replace(d, directGasWei=int(obs.policy.limits.maxGasCostWei)+1) for d in ev.destinations))
         self.assertEqual(p.plan(obs, hist, cfg, excessive_gas, now=NOW).action, 'wait')
 
-    def test_measurement_uses_worst_sample_not_inflated_average_or_repeated_rpc(self):
+    def test_measurement_is_the_window_mean_and_a_repeated_rpc_adds_nothing(self):
+        # Changed on purpose (the owner, 28 September 2026). The planner forecast
+        # from the window's worst interval since #87: immune to one spike, but a
+        # new token's bursty pool read as earning nothing, so reinvesting never
+        # qualified. It forecasts from the time-weighted mean, so a spike counts
+        # in proportion to what it adds to the window; the haircut still applies.
         obs, hist, cfg = setup()
         last = replace(hist.samples[-1], cumulativeFee0=100000, cumulativeFee1=100000)
         spike = replace(hist, samples=(*hist.samples[:-1], last))
-        a = p.plan(obs, hist, cfg, evidence(obs, cfg), now=NOW)
-        b = p.plan(obs, spike, cfg, evidence(obs, cfg), now=NOW)
-        self.assertEqual(a.candidates[a.selected].economics.incrementalEarningsQuote,
-                         b.candidates[b.selected].economics.incrementalEarningsQuote)
+        a = p.plan(obs, hist, cfg, evidence(obs, cfg), now=NOW).candidates[1]
+        b = p.plan(obs, spike, cfg, evidence(obs, cfg), now=NOW).candidates[1]
+        self.assertEqual(a.liquidityIncrease, b.liquidityIncrease)
+        # 100000 fee atoms over the window against 200: five hundred times the forecast.
+        self.assertLessEqual(abs(b.economics.incrementalEarningsQuote - 500 * a.economics.incrementalEarningsQuote), 500)
         repeated = p.observe(hist, hist.samples[-1], now=NOW+1)
         self.assertEqual(repeated.samples, hist.samples)
 
