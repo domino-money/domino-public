@@ -11,7 +11,11 @@
  *                                middleware hands to forward() itself
  *   functions/api/read/v5/       the featured pools list's one path, which
  *     featured-pools.ts          hands its request to forward() too and
- *                                keeps a valid answer at the edge for 60 s
+ *                                keeps a valid answer at the edge: 60 s
+ *                                fresh, then up to 15 min served while it
+ *                                is read again behind (since 2026-09-28)
+ *   functions/api/read/v3/       a pool's stored history, which does the
+ *     history.ts                 same and keeps a built answer for 20 s
  *   forward() below              one fixed prefix → one fixed binding
  *   env.<SVC>_BRIDGE.fetch()     that family's Worker from bridge/src
  *

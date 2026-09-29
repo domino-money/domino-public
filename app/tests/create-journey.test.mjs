@@ -873,7 +873,10 @@ test('a pool from a link starts from the token it was verified against, else the
   const stage = readFileSync(new URL('../src/components/create/StageToken.tsx', import.meta.url), 'utf8');
   assert.doesNotMatch(stage, /data-deposit-choice|depositWhich|create-deposit-token/, 'no deposit-token question on step 1');
   const flow = readFileSync(new URL('../src/components/create/Journey.tsx', import.meta.url), 'utf8');
-  assert.match(flow, /const against = !linked\.catalogue && linkToken \? addressKey\(linkToken\) : verificationToken\(linked\)/, 'a pool of neither list is verified with the token its link names');
+  // Changed on purpose 2026-09-28 (speed wave, study item 31): the rule is one function, asked once before the featured
+  // list's first answer (the verification then starts at once) and once after it, which decides.
+  assert.match(flow, /const tokenFor = \(linked: Extract<Preselect, \{ ok: true \}>\): AddressKey =>\n\s+!linked\.catalogue && linkToken \? addressKey\(linkToken\) : verificationToken\(linked\)/, 'a pool of neither list is verified with the token its link names');
+  assert.match(flow, /const against = linked\.ok \? tokenFor\(linked\) : null/);
   assert.match(flow, /const start = linkedDepositToken\(option, poolHolds\(option, USDG\) \? USDG : against\)/, 'USDG first where the pool holds it');
   assert.equal(CREATE.token.depositWhich, undefined);
   assert.equal(CREATE.token.depositWhichNote, undefined);

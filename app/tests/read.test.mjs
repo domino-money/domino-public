@@ -3145,11 +3145,31 @@ test('R-1 keeps the pacing: the read after an automatic retry starts 1.1 s after
     }
     return bridgeResponse(200, text(gateway(route === 'token' ? 'token.success' : 'pool-metrics.qualified')));
   };
-  const source = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch, clock }), { clock });
+  const source = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch, clock }), { clock, budget: null });
   const [token, metrics] = await Promise.all([source.read('token', tokenRequest), source.read('pool-metrics', { poolId: FIXTURE_POOL })]);
   assert.deepEqual([token.state, token.provenance.attempts, metrics.state], ['ok', 2, 'ok']);
   // The retry waits the bridge's Retry-After; the next read waits the queue's 1.1 s from that retry.
   assert.deepEqual(starts, [[0, 'token'], [1000, 'token'], [2100, 'pool-metrics']]);
+
+  // Changed on purpose 2026-09-28 (speed wave, item 5): with the gateway's budget kept, a retry means the gateway
+  // refused, so the budget is at one when the retry goes and spends it: the next read waits for a read and a quarter
+  // to come back, 2.5 s, which covers the 1.1 s. It used to go at 2.1 s into a gateway that had just said it was full.
+  const budgeted = fakeClock();
+  const again = [];
+  let refusing = true;
+  const refusedOnce = async (path, init) => {
+    if (init.method === 'GET') return bridgeResponse(200, text(gateway('capabilities.live_read_only')));
+    const route = path.slice('/api/read/v1/'.length);
+    again.push([budgeted.now(), route]);
+    if (route === 'token' && refusing) {
+      refusing = false;
+      return bridgeResponse(429, '{"error":"read_capacity_busy"}', { 'Retry-After': '1' });
+    }
+    return bridgeResponse(200, text(gateway(route === 'token' ? 'token.success' : 'pool-metrics.qualified')));
+  };
+  const counted = createScheduledSource(createBridgeSource({ enabled: true, validators: runtime, fetch: refusedOnce, clock: budgeted }), { clock: budgeted });
+  await Promise.all([counted.read('token', tokenRequest), counted.read('pool-metrics', { poolId: FIXTURE_POOL })]);
+  assert.deepEqual(again, [[0, 'token'], [1000, 'token'], [3500, 'pool-metrics']]);
 });
 
 /** A source that answers at once, telling the queue of `attempts(request)` attempts on the wire, and logs when each read started. */
@@ -3182,11 +3202,14 @@ test('the queue keeps the gateway’s budget for the tab: five at the 1.1 s pace
   assert.deepEqual([GATEWAY_BUDGET, BUDGET_RESERVE], [{ burst: 5, perMinute: 30 }, 0.25], 'the gateway’s own ClientBudgets, and 500 ms in hand');
 
   // A retry is an attempt too: a read that took three leaves less for the reads after it.
+  // Changed on purpose 2026-09-28 (speed wave, item 5): a retry also means the gateway refused the attempt before it,
+  // so the budget is at one when each retry goes: after a read that took three it stands at minus one, and the next
+  // read waits 4.5 s for a read and a quarter. It used to count on the four it thought were left.
   const retryClock = fakeClock();
   const retried = instantSource(retryClock, { attempts: (request) => (request.token === tokenAt(0).token ? 3 : 1) });
   const retryQueue = createScheduledSource(retried.source, { clock: retryClock });
   for (let i = 0; i < 6; i++) await retryQueue.read('token', tokenAt(i));
-  assert.deepEqual(retried.starts, [0, 1100, 2200, 3300, 4500, 6500]);
+  assert.deepEqual(retried.starts, [0, 4500, 6500, 8500, 10_500, 12_500]);
 
   // Without a budget, the spacing alone.
   const bareClock = fakeClock();
@@ -3204,8 +3227,336 @@ test('after a read comes back busy the whole queue holds for its Retry-After, pl
   const queue = createScheduledSource(source, { clock });
   const [busy, next, after] = await Promise.all([queue.read('token', { token: NATIVE }), queue.read('token', tokenRequest), queue.read('pool-metrics', { poolId: FIXTURE_POOL })]);
   assert.deepEqual([busy.state, next.state, after.state], ['busy', 'ok', 'ok']);
-  // 3 s asked, plus half of R-1's 250 ms of jitter; then the usual 1.1 s.
-  assert.deepEqual(starts, [0, 3125, 4225]);
+  // 3 s asked, plus half of R-1's 250 ms of jitter; then the budget.
+  // Changed on purpose 2026-09-28 (speed wave, item 5): a busy answer leaves the budget at nothing, so after the first
+  // read the third waits for a read and a quarter to come back (4.5 s), past the usual 1.1 s (4.225 s).
+  assert.deepEqual(starts, [0, 3125, 4500]);
+});
+
+test('the speed wave: two reads on the wire, a slow provider read beside the queue, 0 ms apart until a refusal brings 1.1 s back', async () => {
+  // Added 2026-09-28 (speed wave, item 1): the pool page's reads, with the deployed options. The v2 pool-market read
+  // (about 4.9 s live) used to hold the overview, the chart's history and the chain reads behind it.
+  const tick = () => new Promise((done) => setTimeout(done, 0));
+  const clock = fakeClock();
+  const log = [];
+  const pending = new Map();
+  const source = {
+    transport: 'bridge',
+    read: (route, request, opts = {}) => new Promise((resolve) => {
+      log.push([route, clock.monotonic()]);
+      opts.onAttempt?.();
+      pending.set(route, () => resolve({ route, state: 'ok', data: {}, provenance: {} }));
+    }),
+  };
+  const queue = createScheduledSource(source, { clock, minIntervalMs: 0, refusedIntervalMs: 1100, unspacedStored: true, width: 2, budget: null });
+  const market = queue.read('pool-market', { poolId: FIXTURE_POOL, includePriceHistory: false });
+  const overview = queue.read('overview', { poolIds: [FIXTURE_POOL] });
+  const history = queue.read('history', { poolId: FIXTURE_POOL, currency: NATIVE, windowSeconds: 86400, resolutionSeconds: 3600 });
+  await tick();
+  assert.deepEqual(log, [['pool-market', 0], ['overview', 0]], 'two at once, the slow one beside the queue');
+  pending.get('overview')();
+  await tick();
+  assert.deepEqual(log.at(-1), ['history', 0], 'the overview answered: the history takes its slot while the market read runs');
+  const activity = queue.read('pool-activity', { poolId: FIXTURE_POOL });
+  await tick();
+  assert.equal(log.length, 3, 'the width is two: the chain read waits for a slot');
+  pending.get('history')();
+  await tick();
+  assert.deepEqual(log.at(-1), ['pool-activity', 0], 'a second provider read beside the first, 0 ms apart');
+  pending.get('pool-market')();
+  pending.get('pool-activity')();
+  assert.deepEqual((await Promise.all([market, overview, history, activity])).map((outcome) => outcome.state), ['ok', 'ok', 'ok', 'ok']);
+
+  // A provider read that meets a refusal (its retry) brings the 1.1 s back, one provider read at a time; a stored read
+  // that joins the line while a provider read waits for its spacing goes first.
+  let steady = 0;
+  const sleepers = new Set();
+  const stepped = { now: () => steady, monotonic: () => steady, random: () => 0, timer: () => () => {},
+    sleep: (ms, signal) => new Promise((resolve, reject) => {
+      if (signal?.aborted) { reject(signal.reason); return; }
+      const sleeper = { at: steady + ms, resolve };
+      sleepers.add(sleeper);
+      signal?.addEventListener('abort', () => { sleepers.delete(sleeper); reject(signal.reason); }, { once: true });
+    }) };
+  const advance = async (ms) => { steady += ms; for (const sleeper of [...sleepers]) if (sleeper.at <= steady) { sleepers.delete(sleeper); sleeper.resolve(); } await tick(); };
+  const refusedStarts = [];
+  const retrying = {
+    transport: 'bridge',
+    read: async (route, request, opts = {}) => {
+      refusedStarts.push([route, steady]);
+      opts.onAttempt?.();
+      if (request.token === NATIVE) opts.onAttempt?.();
+      return { route, state: 'ok', data: {}, provenance: {} };
+    },
+  };
+  const spaced = createScheduledSource(retrying, { clock: stepped, minIntervalMs: 0, refusedIntervalMs: 1100, unspacedStored: true, width: 2, budget: null });
+  await spaced.read('token', { token: NATIVE });
+  const second = spaced.read('token', tokenAt(1));
+  await tick();
+  const stored = spaced.read('overview', { poolIds: [FIXTURE_POOL] });
+  await tick();
+  assert.deepEqual(refusedStarts, [['token', 0], ['overview', 0]], 'the stored read goes while the provider read waits for its 1.1 s');
+  const third = spaced.read('token', tokenAt(2));
+  await advance(1100);
+  assert.deepEqual(refusedStarts.at(-1), ['token', 1100]);
+  await advance(1100);
+  assert.deepEqual(refusedStarts.at(-1), ['token', 2200], 'one provider read at a time, 1.1 s apart');
+  assert.deepEqual((await Promise.all([second, stored, third])).map((outcome) => outcome.state), ['ok', 'ok', 'ok']);
+});
+
+test('the speed wave: a source that throws settles its read as a network failure at once, and the queue goes on', async () => {
+  // Added 2026-09-28 (speed wave, item 34): it held every reader, and the queue behind it, until the read's 60 s.
+  const clock = fakeClock();
+  const source = { transport: 'bridge', read: async (route) => { if (route === 'token') throw new TypeError('boom'); return { route, state: 'ok', data: {}, provenance: {} }; } };
+  const queue = createScheduledSource(source, { clock, budget: null, minIntervalMs: 0 });
+  const [thrown, next] = await Promise.all([queue.read('token', tokenRequest), queue.read('pool-metrics', { poolId: FIXTURE_POOL })]);
+  assert.deepEqual([thrown.state, thrown.cause?.kind, thrown.retryable, next.state], ['unavailable', 'network', false, 'ok']);
+  assert.equal(clock.monotonic(), 0);
+});
+
+test('the speed wave: one budget for the browser, shared by its documents on the wall clock, counted again after a wait', async () => {
+  // Added 2026-09-28 (speed wave, item 5): a reload, a pasted link or a second tab started with a full budget.
+  let kept = null;
+  const store = { load: () => kept, save: (state) => { kept = state; } };
+  // Answers that met the read service (a contract header): only a document whose reads met it keeps the budget.
+  const met = { answer: (route) => ({ route, state: 'ok', data: {}, provenance: { contract: '1.0.0' } }) };
+  const lonely = instantSource(fakeClock());
+  await createScheduledSource(lonely.source, { clock: fakeClock(), budgetStore: store, minIntervalMs: 0 }).read('token', tokenAt(0));
+  assert.equal(kept, null, 'reads that met no read service keep nothing in the browser');
+  const firstClock = fakeClock();
+  const first = instantSource(firstClock, met);
+  const one = createScheduledSource(first.source, { clock: firstClock, budgetStore: store, minIntervalMs: 0 });
+  for (let i = 0; i < 4; i++) await one.read('token', tokenAt(i));
+  assert.deepEqual(first.starts, [0, 0, 0, 0]);
+  assert.deepEqual(kept, { tokens: 1, at: 0 }, 'what is left, counted on the wall clock');
+  // A second document of the same browser, its own monotonic clock at 0: it starts from what the first left.
+  const secondClock = fakeClock();
+  const second = instantSource(secondClock);
+  const two = createScheduledSource(second.source, { clock: secondClock, budgetStore: store, minIntervalMs: 0 });
+  await two.read('token', tokenAt(9));
+  assert.deepEqual(second.starts, [500], 'a read and a quarter: half a second more');
+  // Something kept that makes no sense is not believed; storage that throws leaves each document its own count.
+  kept = { tokens: 'lots', at: 0 };
+  const thirdClock = fakeClock();
+  const third = instantSource(thirdClock);
+  await createScheduledSource(third.source, { clock: thirdClock, budgetStore: store, minIntervalMs: 0 }).read('token', tokenAt(8));
+  assert.deepEqual(third.starts, [0]);
+  const blocked = { load: () => { throw new Error('denied'); }, save: () => { throw new Error('denied'); } };
+  const fourthClock = fakeClock();
+  const fourth = instantSource(fourthClock);
+  const alone = createScheduledSource(fourth.source, { clock: fourthClock, budgetStore: blocked, minIntervalMs: 0 });
+  for (let i = 0; i < 5; i++) await alone.read('token', tokenAt(i));
+  assert.deepEqual(fourth.starts, [0, 0, 0, 0, 500]);
+  // A read that waited for the budget looks again before it goes: here another document spent it meanwhile.
+  let spentElsewhere = false;
+  const racing = { load: () => kept, save: (state) => { kept = state; } };
+  kept = { tokens: 0.25, at: 0 };
+  const raceClock = fakeClock();
+  const raced = { starts: [], source: { transport: 'bridge', read: async (route, request, opts = {}) => { raced.starts.push(raceClock.monotonic()); opts.onAttempt?.(); return { route, state: 'ok', data: {}, provenance: {} }; } } };
+  const origSleep = raceClock.sleep;
+  raceClock.sleep = async (ms, signal) => {
+    await origSleep(ms, signal);
+    if (!spentElsewhere) { spentElsewhere = true; kept = { tokens: kept.tokens - 1 + (raceClock.now() - kept.at) * 0.0005, at: raceClock.now() }; }
+  };
+  await createScheduledSource(raced.source, { clock: raceClock, budgetStore: racing, minIntervalMs: 0 }).read('token', tokenAt(7));
+  assert.deepEqual(raced.starts, [4000], 'it waited 2 s, found the budget spent meanwhile, and waited 2 s more');
+  // A read that took the budget at its start and never sent anything (its document went away while it waited for the
+  // capabilities, say) is not kept for the others: only what went out is.
+  kept = null;
+  const goneClock = fakeClock();
+  const stuck = createScheduledSource({ transport: 'bridge', read: (route, request, opts = {}) => {
+    if (request.token !== tokenAt(0).token) return new Promise(() => {});
+    opts.onAttempt?.();
+    return Promise.resolve(met.answer(route));
+  } }, { clock: goneClock, budgetStore: store, minIntervalMs: 0 });
+  await stuck.read('token', tokenAt(0));
+  void stuck.read('token', tokenAt(1));
+  void stuck.read('token', tokenAt(2));
+  await new Promise((done) => setTimeout(done, 0));
+  assert.deepEqual(kept, { tokens: 4, at: 0 }, 'one read sent; two holding the budget, nothing sent: the others see only the one');
+});
+
+/**
+ * A clock whose timers fire in time order, each after the code it woke has run: the sleeps of the queue and the answers
+ * `at` schedules. `settle` runs them all.
+ */
+function eventClock() {
+  let steady = 0;
+  const timers = new Set();
+  const at = (ms, fire) => {
+    const timer = { at: steady + ms, fire };
+    timers.add(timer);
+    return timer;
+  };
+  const tick = () => new Promise((done) => setTimeout(done, 0));
+  return {
+    at,
+    now: () => steady,
+    monotonic: () => steady,
+    random: () => 0,
+    timer: (ms, fire) => {
+      const timer = at(ms, fire);
+      return () => timers.delete(timer);
+    },
+    sleep: (ms, signal) => new Promise((resolve, reject) => {
+      if (signal?.aborted) { reject(signal.reason); return; }
+      const timer = at(ms, resolve);
+      signal?.addEventListener('abort', () => { timers.delete(timer); reject(signal.reason); }, { once: true });
+    }),
+    async settle() {
+      for (;;) {
+        for (let i = 0; i < 5; i++) await tick();
+        const next = [...timers].sort((a, b) => a.at - b.at)[0];
+        if (!next) return;
+        timers.delete(next);
+        steady = next.at;
+        next.fire();
+      }
+    },
+  };
+}
+
+// Added 2026-09-28 after review (speed wave, item 5): before a read of it met the read service, a document took the
+// budget kept in this browser afresh at every look, and forgot what it had just spent: a pool opened by a link or a
+// reload, whose list missed the edge, sent reads the gateway refused (kept 1.3: its second read at once; kept 2.3: its
+// third at 409 ms; kept 3: its fourth at 510 ms).
+test('the speed wave: a document counts its own spends against the budget it found kept, before any read of it met the read service', async () => {
+  const run = async (kept, { contract = '1.0.0', reads = 4, elsewhere = [] } = {}) => {
+    const clock = eventClock();
+    // The gateway: the same budget, burst 5 and one read every 2 s, counting each attempt as it arrives.
+    let gateway = Math.min(5, kept.tokens + (0 - kept.at) / 2000);
+    let countedAt = 0;
+    let refusals = 0;
+    const count = () => {
+      gateway = Math.min(5, gateway + (clock.monotonic() - countedAt) / 2000);
+      countedAt = clock.monotonic();
+      if (gateway >= 1) gateway -= 1;
+      else refusals += 1;
+    };
+    const starts = [];
+    const source = { transport: 'bridge', read: (route, request, opts = {}) => {
+      starts.push(clock.monotonic());
+      opts.onAttempt?.();
+      count();
+      // Answers 400 ms away; without a contract header, a read that met no read service (a dropped connection).
+      return new Promise((resolve) => clock.at(400, () => resolve(contract
+        ? { route, state: 'ok', data: {}, provenance: { contract } }
+        : { route, state: 'unavailable', cause: { kind: 'network' }, retryable: true, provenance: { contract: null } })));
+    } };
+    let state = kept;
+    const store = { load: () => state, save: (next) => { state = next; } };
+    // Another document of the browser, whose reads met the read service, spends a read at each of these times and keeps
+    // what it counts: never this document's spends, which it has not seen.
+    for (const at of elsewhere) clock.at(at, () => {
+      count();
+      state = { tokens: Math.min(5, state.tokens + (at - state.at) / 2000) - 1, at };
+    });
+    const queue = createScheduledSource(source, { clock, budgetStore: store, minIntervalMs: 0, refusedIntervalMs: 1100, unspacedStored: true, width: 2 });
+    const pending = Array.from({ length: reads }, (_, i) => queue.read('token', tokenAt(i)));
+    await clock.settle();
+    await Promise.all(pending);
+    return { starts, refusals };
+  };
+  assert.deepEqual(await run({ tokens: 2.3, at: 0 }), { starts: [0, 0, 1900, 3900], refusals: 0 }, 'kept 2.3: two at once, then the budget’s pace');
+  assert.deepEqual(await run({ tokens: 1.3, at: 0 }), { starts: [0, 1900, 3900, 5900], refusals: 0 }, 'kept 1.3');
+  assert.deepEqual(await run({ tokens: 3, at: 0 }), { starts: [0, 0, 500, 2500], refusals: 0 }, 'kept 3');
+  // Another document spends and keeps a read meanwhile: this document's two unkept spends come off what it kept.
+  assert.deepEqual(await run({ tokens: 4, at: 0 }, { elsewhere: [100] }), { starts: [0, 0, 500, 2500], refusals: 0 }, 'kept 4, and one spent elsewhere at 100 ms');
+  // Kept ten minutes ago: a full burst again, and no more, while none of its reads meets the read service.
+  assert.deepEqual(await run({ tokens: 0, at: -600_000 }, { contract: null, reads: 7 }), { starts: [0, 0, 400, 400, 800, 2500, 4500], refusals: 0 },
+    'filled to the burst, then this document’s own spends come off it');
+});
+
+/** Monotonic ms moved by `advance` alone (each advance then lets the woken code run); a sleep waits for it or its signal. */
+function steppedClock() {
+  let steady = 0;
+  const sleepers = new Set();
+  const tick = () => new Promise((done) => setTimeout(done, 0));
+  return {
+    now: () => steady, monotonic: () => steady, random: () => 0, timer: () => () => {},
+    sleep: (ms, signal) => new Promise((resolve, reject) => {
+      if (signal?.aborted) { reject(signal.reason); return; }
+      const sleeper = { at: steady + ms, resolve };
+      sleepers.add(sleeper);
+      signal?.addEventListener('abort', () => { sleepers.delete(sleeper); reject(signal.reason); }, { once: true });
+    }),
+    async advance(ms) {
+      steady += ms;
+      for (const sleeper of [...sleepers]) if (sleeper.at <= steady) { sleepers.delete(sleeper); sleeper.resolve(); }
+      await tick();
+      await tick();
+    },
+  };
+}
+/** A source whose reads the test answers (`answer(key)`), each logged with its start as `route:pool or token`. */
+function heldSource(clock) {
+  const log = [];
+  const pending = new Map();
+  const keyOf = (route, request) => `${route}:${request.poolId ?? request.poolIds?.[0] ?? request.token ?? ''}`;
+  return { log, answer: (key) => pending.get(key)(), source: { transport: 'bridge', read: (route, request, opts = {}) => new Promise((resolve) => {
+    const key = keyOf(route, request);
+    log.push([key, clock.monotonic()]);
+    opts.onAttempt?.();
+    // A read the gateway refused once, and sent again at once: a second attempt.
+    if (request.token === NATIVE) opts.onAttempt?.();
+    pending.set(key, () => resolve({ route, state: 'ok', data: {}, provenance: {} }));
+  }) } };
+}
+const DEPLOYED_PACE = { minIntervalMs: 0, refusedIntervalMs: 1100, unspacedStored: true, width: 2, budget: null };
+
+// Added 2026-09-28 after review (speed wave, item 4): the featured list, which the edge answers almost always, holds no
+// place of the width (commit a29e2157), and a list asked while the width is taken still goes at once.
+test('the speed wave: the featured list takes no place of the width, and goes at once while two reads hold it', async () => {
+  const clock = steppedClock();
+  const { log, answer, source } = heldSource(clock);
+  const queue = createScheduledSource(source, { clock, ...DEPLOYED_PACE });
+  const list = queue.read('featured-pools', {}, { priority: 'first' });
+  const overview = queue.read('overview', { poolIds: [FIXTURE_POOL] });
+  const market = queue.read('pool-market', { poolId: FIXTURE_POOL, includePriceHistory: false });
+  const activity = queue.read('pool-activity', { poolId: FIXTURE_POOL });
+  await clock.advance(0);
+  assert.deepEqual(log.map(([key]) => key), ['featured-pools:', `overview:${FIXTURE_POOL}`, `pool-market:${FIXTURE_POOL}`], 'the list on the wire, and two gateway reads beside it');
+  answer('featured-pools:');
+  await clock.advance(0);
+  assert.equal(log.length, 3, 'the list gave back no place: the chain read still waits for one');
+  const again = queue.read('featured-pools', {}, { priority: 'first' });
+  await clock.advance(0);
+  assert.deepEqual(log.at(-1), ['featured-pools:', 0], 'the width taken, the list goes at once');
+  answer(`overview:${FIXTURE_POOL}`);
+  await clock.advance(0);
+  assert.deepEqual(log.at(-1), [`pool-activity:${FIXTURE_POOL}`, 0], 'a gateway read’s place frees: the chain read takes it');
+  for (const key of ['featured-pools:', `pool-market:${FIXTURE_POOL}`, `pool-activity:${FIXTURE_POOL}`]) answer(key);
+  assert.deepEqual((await Promise.all([list, overview, market, activity, again])).map((outcome) => outcome.state), ['ok', 'ok', 'ok', 'ok', 'ok']);
+});
+
+// Added 2026-09-28 after review (speed wave, item 1): once a provider read met a refusal, provider reads go one at a
+// time, 1.1 s apart, the way a gateway older than #241 admits them: a second one never goes while one is on the wire.
+test('the speed wave: after a refusal a provider read waits for the one on the wire, not only for its 1.1 s', async () => {
+  const clock = steppedClock();
+  const { log, answer, source } = heldSource(clock);
+  const queue = createScheduledSource(source, { clock, ...DEPLOYED_PACE });
+  const refused = queue.read('token', { token: NATIVE });
+  await clock.advance(0);
+  answer(`token:${NATIVE}`);
+  assert.equal((await refused).state, 'ok');
+  const first = queue.read('token', tokenAt(1));
+  const second = queue.read('token', tokenAt(2));
+  await clock.advance(0);
+  assert.equal(log.length, 1, 'the refusal brought the 1.1 s back');
+  await clock.advance(1100);
+  assert.deepEqual(log.at(-1), [`token:${tokenAt(1).token}`, 1100]);
+  await clock.advance(1100);
+  await clock.advance(5000);
+  assert.equal(log.length, 2, 'its 1.1 s long past, the second waits for the first to answer');
+  const stored = queue.read('overview', { poolIds: [FIXTURE_POOL] });
+  await clock.advance(0);
+  assert.deepEqual(log.at(-1), [`overview:${FIXTURE_POOL}`, 7200], 'a stored read still goes beside it');
+  answer(`token:${tokenAt(1).token}`);
+  await clock.advance(0);
+  assert.deepEqual(log.at(-1), [`token:${tokenAt(2).token}`, 7200], 'the first answered: the second goes');
+  answer(`token:${tokenAt(2).token}`);
+  answer(`overview:${FIXTURE_POOL}`);
+  assert.deepEqual((await Promise.all([first, second, stored])).map((outcome) => outcome.state), ['ok', 'ok', 'ok']);
 });
 
 // ---------------------------------------------------------------------------

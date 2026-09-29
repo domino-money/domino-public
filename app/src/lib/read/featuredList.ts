@@ -33,6 +33,18 @@
  * a new order wait for a reload, or for a screen that shows the list to mount
  * again once the list on screen is 30 minutes old; a failure keeps the list.
  *
+ * Changed 2026-09-28 (speed wave, item 8): a first read that found no answer
+ * (its deadline passed, the service was busy, an edge page) put the embedded
+ * list on screen for 30 minutes, the served list waiting for a remount: the
+ * wrong pools on Home, the ticker, Markets and a link, for half an hour. Now
+ * the embedded list a failure that can clear by itself put up is provisional
+ * (an invalid list is not asked again): the list is asked again a few
+ * seconds on (FEATURED_RETRY_MS), and the first answer that comes takes the
+ * screen at once, as a first answer does. And a page with no copy of the last
+ * overview in this browser (marketsPaint.ts), whose first load waits for the
+ * list, gives that first read 3.5 s (FEATURED_FIRST_DEADLINE_MS) rather than
+ * 1.5 s, so a slow list is not taken for none.
+ *
  * Pure and Node-safe: the runtime is handed in, never imported, so the node
  * tests compile this file and give it the very same runtime.
  */
@@ -45,6 +57,7 @@ import { createBridgeSource, type BridgeOptions } from './bridgeSource'
 import type { PoolList } from './marketsProvider'
 import { realClock, type Clock } from './pipeline'
 import { fixedFeePercent } from './screens/fee'
+import { isTransient } from './screens/transient'
 import type { ReadOutcome, ReadResponses, ReadRoute, ReadSource, ReadValidators } from './types'
 
 export type FeaturedRuntime = Pick<typeof V5, 'CONTRACT_VERSION' | 'ERROR_STATUS_BY_CODE' | 'validateRequest' | 'validateResponse' | 'validateError' | 'matchesRequest'>
@@ -52,6 +65,10 @@ export type FeaturedRuntime = Pick<typeof V5, 'CONTRACT_VERSION' | 'ERROR_STATUS
 export const FEATURED_ROUTE = 'featured-pools' as const
 /** The list's whole read, from the moment it is asked: past it, the embedded list. */
 export const FEATURED_DEADLINE_MS = 1_500
+/** The first read's, on a page that waits for the list (no copy of the last overview in this browser). */
+export const FEATURED_FIRST_DEADLINE_MS = 3_500
+/** After a first read that found no answer, the list is asked again this long on, then this long after each (see the header). */
+export const FEATURED_RETRY_MS: readonly number[] = [3_000, 6_000, 12_000]
 /** A list served this long after it was generated is not shown at all (§11.2). */
 export const FEATURED_MAX_AGE_SECONDS = 72 * 3600
 /** A list with new pools or a new order waits until the one on screen is this old and a screen showing it mounts. */
@@ -161,9 +178,9 @@ export function createFeaturedReadSource(legacy: ReadSource, options: Omit<Bridg
   }
 }
 
-/** The list's read: first in the queue, 1.5 s from now. */
-export function readFeaturedList(source: ReadSource, { signal, clock = realClock }: { signal?: AbortSignal; clock?: Clock } = {}): Promise<ReadOutcome<'featured-pools'>> {
-  return source.read(FEATURED_ROUTE, {}, { priority: 'first', signal, deadlineAt: clock.monotonic() + FEATURED_DEADLINE_MS })
+/** The list's read: first in the queue, 1.5 s from now (or `deadlineMs`). */
+export function readFeaturedList(source: ReadSource, { signal, clock = realClock, deadlineMs = FEATURED_DEADLINE_MS }: { signal?: AbortSignal; clock?: Clock; deadlineMs?: number } = {}): Promise<ReadOutcome<'featured-pools'>> {
+  return source.read(FEATURED_ROUTE, {}, { priority: 'first', signal, deadlineAt: clock.monotonic() + deadlineMs })
 }
 
 /** What an answer means for the list, before the rules of §11.2 are applied. */
@@ -172,8 +189,11 @@ export type FeaturedAnswer =
   | { kind: 'list'; valid: ValidFeatured; withdrawn: readonly string[] }
   /** `none`, or the route is off or not there at all: the embedded list, at once. */
   | { kind: 'off'; withdrawn: readonly string[] }
-  /** Anything else: an invalid answer, another refusal, a busy service, the 1.5 s passed. */
-  | { kind: 'failed' }
+  /**
+   * Anything else: an invalid answer, another refusal, a busy service, the 1.5 s passed. `passing` when it can clear
+   * by itself (transient.ts: the deadline, a busy service, an edge page): only such a first failure is asked again.
+   */
+  | { kind: 'failed'; passing?: true }
 
 const withdrawnOf = (answer: FeaturedPoolsResponse) => answer.withdrawn.map((entry) => entry.poolId.toLowerCase())
 
@@ -190,7 +210,7 @@ export function answerOf(outcome: ReadOutcome<'featured-pools'>): FeaturedAnswer
   }
   // route_not_available (404), the build's live data off, the deployment with no forwarder for v5: the route is off.
   if (outcome.state === 'disabled' || outcome.state === 'not_connected') return { kind: 'off', withdrawn: [] }
-  return { kind: 'failed' }
+  return isTransient(outcome) ? { kind: 'failed', passing: true } : { kind: 'failed' }
 }
 
 /** The list's title (§11.7, option B): the criterion only for a `server` list; the neutral title of today otherwise. */
@@ -328,13 +348,27 @@ const NO_WITHDRAWN: ReadonlySet<string> = new Set()
  * The page's one list. `read` asks the list once and says what came back; it
  * never throws (readFeaturedList and answerOf, in the app).
  */
-export function createFeaturedStore({ read, clock = realClock }: { read: (signal?: AbortSignal) => Promise<FeaturedAnswer>; clock?: Clock }): FeaturedStore {
+export function createFeaturedStore({ read, clock = realClock }: { read: (signal?: AbortSignal, first?: boolean) => Promise<FeaturedAnswer>; clock?: Clock }): FeaturedStore {
   let snapshot: FeaturedSnapshot = { ...BUNDLED_LIST, settled: false, withdrawn: NO_WITHDRAWN }
   let waiting: FeaturedList | null = null
   /** When the pools on screen were put there, on the monotonic clock. */
   let shownAt = clock.monotonic()
   let first: Promise<void> | null = null
   const listeners = new Set<() => void>()
+  /** The embedded list is on screen only because no answer has come yet: the first one that comes takes the screen. */
+  let provisional = false
+  let retries = 0
+  let cancelRetry: (() => void) | null = null
+  /** While provisional, the list is asked again FEATURED_RETRY_MS on, a few times. */
+  const retry = () => {
+    cancelRetry?.()
+    cancelRetry = null
+    if (!provisional || retries >= FEATURED_RETRY_MS.length) return
+    cancelRetry = clock.timer(FEATURED_RETRY_MS[retries++], () => {
+      cancelRetry = null
+      void refresh()
+    })
+  }
 
   /** Puts `shown` on screen, and tells the page only when something it shows changed. */
   const publish = (shown: FeaturedList, withdrawn: ReadonlySet<string>) => {
@@ -348,13 +382,36 @@ export function createFeaturedStore({ read, clock = realClock }: { read: (signal
   }
   // A failure says nothing about removals: the ones known stay.
   const withdrawnFrom = (answer: FeaturedAnswer): ReadonlySet<string> => (answer.kind === 'failed' ? snapshot.withdrawn : new Set(answer.withdrawn))
-  const safely = (signal?: AbortSignal) => read(signal).catch((): FeaturedAnswer => ({ kind: 'failed' }))
+  const safely = (signal?: AbortSignal, firstRead = false) => read(signal, firstRead).catch((): FeaturedAnswer => ({ kind: 'failed' }))
 
   function ensure(): Promise<FeaturedSnapshot> {
-    first ??= safely().then((answer) => {
+    first ??= safely(undefined, true).then((answer) => {
       publish(listFrom(answer), withdrawnFrom(answer))
+      provisional = answer.kind === 'failed' && answer.passing === true
+      retry()
     })
     return first.then(() => snapshot)
+  }
+
+  async function refresh(signal?: AbortSignal): Promise<FeaturedSnapshot> {
+    if (!snapshot.settled) return ensure()
+    const answer = await safely(signal)
+    if (signal?.aborted) return snapshot
+    if (provisional && answer.kind !== 'failed') {
+      // The first answer since a first read that found none: it takes the screen, as a first answer does.
+      provisional = false
+      retry()
+      waiting = null
+      publish(listFrom(answer), withdrawnFrom(answer))
+      return snapshot
+    }
+    const next = nextList(snapshot, waiting, answer)
+    waiting = next.waiting
+    publish(next.shown, withdrawnFrom(answer))
+    // A failure that cannot clear by itself (an invalid list) is not asked again on the list's own.
+    if (provisional && answer.kind === 'failed' && !answer.passing) provisional = false
+    if (provisional && !cancelRetry) retry()
+    return snapshot
   }
 
   return {
@@ -366,15 +423,7 @@ export function createFeaturedStore({ read, clock = realClock }: { read: (signal
       }
     },
     ensure,
-    async refresh(signal) {
-      if (!snapshot.settled) return ensure()
-      const answer = await safely(signal)
-      if (signal?.aborted) return snapshot
-      const next = nextList(snapshot, waiting, answer)
-      waiting = next.waiting
-      publish(next.shown, withdrawnFrom(answer))
-      return snapshot
-    },
+    refresh,
     remount() {
       if (!waiting || !snapshot.settled || clock.monotonic() - shownAt < FEATURED_REMOUNT_MS) return
       const adopted = waiting

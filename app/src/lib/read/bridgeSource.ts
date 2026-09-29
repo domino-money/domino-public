@@ -46,6 +46,8 @@ import {
 
 export const READ_PREFIX = '/api/read/v1/'
 export const CONTRACT_HEADER = 'X-Domino-Read-Contract'
+/** `hit` from a Pages Function that answered from its edge cache (functions/_lib/featuredEdge.ts, publicEdge.ts). */
+export const EDGE_CACHE_HEADER = 'X-Domino-Edge-Cache'
 
 /** The only headers a read sends. Cookies are the browser's business, not ours. */
 export const READ_HEADERS: Readonly<Record<string, string>> = {
@@ -143,6 +145,7 @@ export async function rawReplyFrom(response: Response, signal?: AbortSignal): Pr
     contractHeader: response.headers.get(CONTRACT_HEADER),
     requestIdHeader: requestIdOf(response.headers.get('X-Domino-Request-Id')),
     retryAfterHeader: response.headers.get('Retry-After'),
+    ...(response.headers.get(EDGE_CACHE_HEADER) === 'hit' ? { edgeHit: true as const } : {}),
     body: opaqueRedirect ? { kind: 'text', text: '' } : await boundedBody(response, isJson(contentType) ? MAX_RESPONSE_BYTES : MAX_PAGE_BYTES, signal),
   }
 }
@@ -160,6 +163,12 @@ export interface BridgeOptions {
   askCapabilities?: boolean
   validators: ReadValidators
   fetch?: FetchLike
+  /**
+   * A reply already on its way for an attempt, taken instead of sending one: the featured list's and read-v3's
+   * capabilities, which public/early-list.js sent before the app started (lib/read/earlyList.ts, 2026-09-28). Null:
+   * the attempt is sent. One that fails to arrive sends the attempt after all.
+   */
+  first?: (path: string, method: string) => Promise<Response> | null
   clock?: Clock
   policy?: RetryPolicy
 }
@@ -187,7 +196,9 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
   const transport =
     (path: string, init: RequestInit): Transport =>
     async (_attempt, signal) => {
-      const response = await fetchImpl(path, { ...READ_INIT, ...init, signal })
+      const send = () => fetchImpl(path, { ...READ_INIT, ...init, signal })
+      const early = options.first?.(path, init.method ?? 'GET') ?? null
+      const response = await (early ? early.catch(send) : send())
       // A fetch that answered after its attempt was given up: the body is closed unread.
       if (signal.aborted) {
         discard(response)

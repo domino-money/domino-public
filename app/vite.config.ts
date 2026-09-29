@@ -168,6 +168,22 @@ function deployableBundleCheck(mode: string, deployable: boolean): Plugin {
   }
 }
 
+/**
+ * The deployable build's page loads public/early-list.js before the app's own script (speed wave, item 10,
+ * 2026-09-28): it sends Home's and Markets' first read, the featured pools list, while the app downloads, and the app
+ * takes its answer (src/lib/read/earlyList.ts). No other build loads it: their pages read no list, or read it from a
+ * test's own service, which counts every request.
+ */
+export const EARLY_LIST_TAG = '<script async src="/early-list.js"></script>'
+function earlyList(enabled: boolean): Plugin {
+  return {
+    name: 'domino:early-list',
+    transformIndexHtml(html) {
+      return enabled ? html.replace('<script type="module"', `${EARLY_LIST_TAG}\n    <script type="module"`) : html
+    },
+  }
+}
+
 export default defineConfig(({ mode, command }) => {
   // A local-live server is created only by the guarded native launcher. It
   // must never become an alternate build output or an ordinary Vite listener.
@@ -180,7 +196,7 @@ export default defineConfig(({ mode, command }) => {
     ? { ...MODES.development, deployable: false, wallet: false }
     : MODES[mode as keyof typeof MODES]
   return {
-    plugins: [react(), tailwindcss(), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable)],
+    plugins: [react(), tailwindcss(), earlyList(!localLive && settings.deployable && settings.pools === 'selected'), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable)],
     define: {
       __DOMINO_READ_MODE__: JSON.stringify(settings.read),
       __DOMINO_POOL_SET__: JSON.stringify(settings.pools),
@@ -221,6 +237,10 @@ export default defineConfig(({ mode, command }) => {
       // tests/consumer.bundle.test.mjs can scan the preview and deposit chunks
       // and prove neither reaches the build that deploys.
       manifest: settings.preview || settings.depositLab,
+      // The site's fonts (src/styles/fonts.css, 2026-09-28) are always files of their own under /assets/, never data:
+      // URLs: the page's CSP admits fonts from 'self' only (functions/_middleware.ts APP_CSP). Every other asset keeps
+      // Vite's default 4 KiB rule.
+      assetsInlineLimit: (file: string) => (file.endsWith('.woff2') ? false : undefined),
       rollupOptions: settings.lab ? { input: { main: here('./index.html'), lab: here('./read-lab.html') } } : undefined,
     },
   }

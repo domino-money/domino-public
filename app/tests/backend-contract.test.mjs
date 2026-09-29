@@ -397,3 +397,44 @@ test('every Python response passes read-v1 and the adapter pipeline, as the brid
     assert.equal(outcome.state, 'ok', `${name}: ${outcome.state}/${outcome.reason ?? ''}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Added 2026-09-28 (speed wave, after review; study item 29). The token search keeps the service's answers and
+// answers a longer query from a complete answer to a shorter one, with no read (src/lib/read/screens/searchAnswers.ts).
+// That is right only while the service's search keeps the shape it derives from: a token matches when its address or
+// symbol begins with the query, case-insensitively, the query's own %, _ and backslash taken literally; every other
+// condition is the same for every query; the rows come ordered by address, at most `limit` of them, one token per row.
+// Any other shape (a name or substring match, another order, no escaping, rows dropped after the limit) would make New
+// position and Markets leave out tokens the service would list, and never ask it. So a change to it fails here first.
+
+const BACKEND = (name) => readFileSync(join(ROOT, 'backend', name), 'utf8');
+const DERIVED = 'src/lib/read/screens/searchAnswers.ts derives answers from this search; change it with the backend';
+const squash = (value) => value.replace(/\s+/g, ' ').trim();
+
+test('the stored token search is the prefix search the search box derives its kept answers from', () => {
+  const observations = BACKEND('public_observations.py');
+  const method = observations.match(/\n    def search\(self, query, \*, limit=20\):\n([\s\S]*?)\n    def /);
+  assert.ok(method, `backend/public_observations.py has no search(self, query, *, limit=20): ${DERIVED}`);
+  const body = method[1];
+  assert.ok(body.includes(String.raw`term = query.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')`),
+    `the query's own backslash, % and _ are escaped, so ILIKE takes them literally: ${DERIVED}`);
+  const sql = body.match(/conn\.execute\("""([\s\S]*?)""", \((.*?)\)\)\.fetchall\(\)/);
+  assert.ok(sql, `the search is one SQL statement: ${DERIVED}`);
+  assert.equal(squash(sql[1]), "SELECT * FROM domino_public.entities WHERE kind='token' AND status='ready' AND payload->'asset'->>'readStatus' IN ('available','partial') AND (entity_id ILIKE %s OR payload->'asset'->>'symbol' ILIKE %s) ORDER BY entity_id LIMIT %s",
+    `a token matches when its address or symbol begins with the query, every other condition is the same for every query, ordered by address, at most limit: ${DERIVED}`);
+  assert.equal(sql[2], "term+'%', term+'%', limit", `both patterns are the escaped query followed by %, and the limit is the request's: ${DERIVED}`);
+  assert.match(body, /^\s*return rows$/m, `the rows are returned as the database gave them: ${DERIVED}`);
+  assert.ok(body.includes("not 1 <= limit <= 24"), `the limit is 1 to 24: ${DERIVED}`);
+
+  const service = squash(BACKEND('public_data_service.py'));
+  assert.ok(service.includes("def search(self, *, query, limit=20): REQUEST_MODELS['search'].model_validate({'query':query,'limit':limit}, strict=True) rows = self.repository.search(query, limit=limit)"),
+    `the service asks the repository with the request's own query and limit: ${DERIVED}`);
+  assert.ok(service.includes("'tokens':[token_item(row,row['entity_id']) for row in rows]"), `one token per row, none dropped after the limit: ${DERIVED}`);
+  assert.ok(squash(BACKEND('read_api.py')).includes("result = getattr(public_data, route)(**body.model_dump())"), `the gateway hands the request to the service as it came: ${DERIVED}`);
+
+  // The page's limit is one the request model and read-v3 accept, and fewer tokens than it means nothing was cut off.
+  const limit = Number(readFileSync(join(ROOT, 'app/src/lib/read/screens/searchAnswers.ts'), 'utf8').match(/export const SEARCH_LIMIT = (\d+)/)?.[1]);
+  assert.ok(limit >= 1 && limit <= 24, `SEARCH_LIMIT ${limit} is within the service's 1 to 24`);
+  assert.ok(squash(BACKEND('public_data_contract.py')).includes('class SearchRequest(WireModel): query: Annotated[StrictStr, Field(min_length=1, max_length=96)] limit: Annotated[StrictInt, Field(ge=1, le=24)] = 20'), `the request model's limit is 1 to 24: ${DERIVED}`);
+  assert.equal(publicRuntime.validateRequest('search', { query: 'us', limit }), true, 'read-v3 accepts the page’s search request');
+});

@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './fonts.css';    /* foundation: the three families, served from this site (was Google Fonts; 2026-09-28) */
 @import './shell.css';    /* foundation: header, menu, footer, ticker, primitives' component classes */
 @import './charts.css';   /* foundation: the shared charts kit */
 @import './art.css';      /* home: hero and feature vignettes, nav icon gestures */

@@ -4,6 +4,7 @@ import { ADDRESS_PROBLEM, failureText } from '../../../lib/read/screens/copy'
 import { parseAddressInput, screenPaste, shortAddress, type AddressKey } from '../../../lib/read/screens/identity'
 import { failureCode, quietTitle, reaskDelayMs, whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { readWithin } from '../../../lib/read/screens/screenRead'
+import { SEARCH_LIMIT, extendsQuery, keepSearch, keptSearch, searchCandidates } from '../../../lib/read/screens/searchAnswers'
 import { knownTokens, searchTokens, type KnownToken, type SearchResult } from '../../../lib/read/screens/tokenSearch'
 import { candidateFromToken, selectable, type TokenCandidate } from '../../../lib/read/screens/tokens'
 import type { ReadSource, TokenDisplay } from '../../../lib/read/types'
@@ -35,6 +36,9 @@ function displayOf(token: KnownToken): TokenDisplay {
   const unread = unreadToken(token.key)
   return token.artwork ? { ...unread, artwork: token.artwork } : unread
 }
+
+/** Whether typed text is a name the stored search is asked about: 2 to 96 characters, not an address. */
+const searchable = (query: string) => query.length >= 2 && query.length <= 96 && !/^0x/i.test(query)
 
 /** What is wrong with typed text that is an address attempt, once it is long enough to judge. */
 function typedProblem(value: string): string | null {
@@ -108,6 +112,8 @@ export function TokenSearch({
   placeholder = 'Search by name, e.g. USDG, or paste an address',
   autoFocus,
   initialValue,
+  onChoose,
+  onPoint,
 }: {
   source: ReadSource
   known: readonly KnownToken[]
@@ -120,6 +126,13 @@ export function TokenSearch({
   autoFocus?: boolean
   /** Text the field starts with, once, when it mounts (a name or an address someone already typed elsewhere). Nothing is read for it. */
   initialValue?: string
+  /**
+   * New position (speed wave, 2026-09-28): the address a choice is about, the moment it is made, so the pools can be
+   * asked beside the token read; null once that choice's token read ended without a token. Nothing on screen changes.
+   */
+  onChoose?: (key: AddressKey | null) => void
+  /** New position: the address of the row pointed at while the list is open, so its pool hints can be asked early. */
+  onPoint?: (key: AddressKey) => void
 }) {
   const [value, setValue] = useState(initialValue ?? '')
   const [open, setOpen] = useState(false)
@@ -135,9 +148,13 @@ export function TokenSearch({
   const quiet = useRef<(() => void) | null>(null)
   // The latest callback, so the outcome of a read reaches the caller as it is now.
   const found = useRef(onFound)
+  const chose = useRef(onChoose)
+  const point = useRef(onPoint)
   useEffect(() => {
     found.current = onFound
-  }, [onFound])
+    chose.current = onChoose
+    point.current = onPoint
+  }, [onFound, onChoose, onPoint])
   useEffect(
     () => () => {
       running.current?.abort()
@@ -151,28 +168,70 @@ export function TokenSearch({
 
   // Names search persisted verified metadata after a short debounce. Results
   // belong only to the exact current query; wallet balances never enter it.
+  // Changed on purpose 2026-09-28 (speed wave, study item 29): each read spends one of the gateway's reads for this
+  // visitor, and typing slowly spent them all: every pause sent a read, and the next key threw it away unanswered. A
+  // query that an answer kept for this page already answers is not asked (searchAnswers.ts): the same query again, or
+  // a longer one after a complete answer ("usd" after "us"). And a read already out for a shorter query is let finish
+  // while the typing goes on, since its answer may answer the longer one; a read no longer of use is stopped, as before.
+  const searching = useRef<{ query: string; controller: AbortController; done: Promise<void> } | null>(null)
+  useEffect(() => () => searching.current?.controller.abort(), [])
   useEffect(() => {
     const query = value.trim()
-    if (!open || query.length < 2 || query.length > 96 || /^0x/i.test(query) || !source.supportsStoredReads || !source.routeEnabled) return
-    const controller = new AbortController()
-    const timer = setTimeout(() => {
-      void source.routeEnabled?.('search', { signal: controller.signal }).then(async (check) => {
-        if (check?.state !== 'enabled' || controller.signal.aborted) return
-        const outcome = await readWithin(source, 'search', { query, limit: 20 }, { signal: controller.signal })
-        if (controller.signal.aborted || outcome.state !== 'ok') return
-        setStored({ query, candidates: outcome.data.tokens.flatMap((entry) => entry.value ? [candidateFromToken(entry.value, entry.address)] : []) })
-      })
-    }, 350)
-    return () => { clearTimeout(timer); controller.abort() }
+    const wanted = open && searchable(query) && !!source.supportsStoredReads && !!source.routeEnabled
+    const flying = searching.current
+    const adopted = wanted && flying !== null && extendsQuery(query, flying.query) ? flying : null
+    if (flying && !adopted) {
+      flying.controller.abort()
+      searching.current = null
+    }
+    if (!wanted || keptSearch(source, query)) return
+    const startedAt = Date.now()
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const ask = () => {
+      const controller = new AbortController()
+      const done = (source.routeEnabled?.('search', { signal: controller.signal }) ?? Promise.resolve(undefined))
+        .then(async (check) => {
+          if (check?.state !== 'enabled' || controller.signal.aborted) return
+          const outcome = await readWithin(source, 'search', { query, limit: SEARCH_LIMIT }, { signal: controller.signal })
+          if (controller.signal.aborted || outcome.state !== 'ok') return
+          keepSearch(source, query, outcome.data.tokens)
+          setStored({ query, candidates: searchCandidates(outcome.data.tokens) })
+        })
+        .finally(() => {
+          if (searching.current?.controller === controller) searching.current = null
+        })
+      searching.current = { query, controller, done }
+    }
+    // After the same short pause as before; a read for a shorter query still out is waited for first.
+    const later = () => {
+      if (!cancelled && !keptSearch(source, query)) timer = setTimeout(ask, Math.max(0, startedAt + 350 - Date.now()))
+    }
+    if (adopted) void adopted.done.then(later)
+    else later()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [source, value, open])
-  const persisted = stored?.query === value.trim() ? knownTokens({ catalogue: [], candidates: stored.candidates }) : []
+  const query = value.trim()
+  const answered = searchable(query) ? (keptSearch(source, query) ?? (stored?.query === query ? stored.candidates : null)) : null
+  const persisted = answered ? knownTokens({ catalogue: [], candidates: answered }) : []
   const present = new Set(known.map((token) => token.key))
   const results = searchTokens(value, [...known, ...persisted.filter((token) => !present.has(token.key))])
+  // A known token with no read of its own that the stored search verified (the catalogue's USDG, WETH...): choosing it
+  // hands over the search's answer instead of reading it again (study item 28, 2026-09-28).
+  const verifiedBySearch = new Map(persisted.flatMap((token) => (token.candidate ? [[token.key, token.candidate] as const] : [])))
   const expanded = open && problem === null
   const highlighted = results.length === 0 ? -1 : Math.min(active, results.length - 1)
   const listboxId = `${id}-listbox`
   const optionId = (result: SearchResult) => `${id}-option-${keyOf(result)}`
   const excluded = (result: SearchResult) => exclude !== null && keyOf(result) === exclude
+  // The row pointed at while the list is open: New position asks its pool hints now (speed wave, 2026-09-28).
+  const pointed = expanded && highlighted >= 0 ? keyOf(results[highlighted]) : null
+  useEffect(() => {
+    if (pointed) point.current?.(pointed)
+  }, [pointed])
 
   /** Stops whatever the last choice still has running or waiting. */
   const stop = () => {
@@ -212,6 +271,7 @@ export function TokenSearch({
         return
       }
       const text = failureText(outcome, 'token')
+      chose.current?.(null)
       setBusy(false)
       setFailed({ code: failureCode(outcome), reason: quietTitle(outcome, 'token') })
       setSaid({ code: text.code, words: text.title })
@@ -220,6 +280,7 @@ export function TokenSearch({
 
   const choose = (result: SearchResult) => {
     if (excluded(result)) return
+    chose.current?.(keyOf(result))
     setOpen(false)
     setProblem(null)
     if (result.kind === 'address') {
@@ -230,7 +291,7 @@ export function TokenSearch({
     }
     const name = nameOf(result.token)
     setValue(name)
-    const candidate = result.token.candidate
+    const candidate = result.token.candidate ?? verifiedBySearch.get(result.token.key) ?? null
     if (candidate && selectable(candidate)) {
       // Already read, or listed with its balance: nothing to ask the chain again.
       stop()

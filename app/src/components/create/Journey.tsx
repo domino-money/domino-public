@@ -23,14 +23,16 @@ import {
   withToken,
   type Check,
   type JourneyState,
+  type Preselect,
   type Stage,
   type TickRange,
 } from '../../lib/create/journey'
+import { forgetCreatePools } from '../../lib/create/poolsAhead'
 import { featuredStore, useFeatured } from '../../lib/read/featuredSource'
 import { verifyCandidate } from '../../lib/read/screens/catalogueSession'
 import { failureText } from '../../lib/read/screens/copy'
 import { DYNAMIC_FEE_PIPS } from '../../lib/read/screens/fee'
-import { NATIVE_CURRENCY, addressKey } from '../../lib/read/screens/identity'
+import { NATIVE_CURRENCY, addressKey, type AddressKey } from '../../lib/read/screens/identity'
 import { optionUsableForDomino, type PoolOption } from '../../lib/read/screens/poolsList'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { usePairBalances } from './usePairBalances'
@@ -39,7 +41,7 @@ import { mergeCandidates, type TokenCandidate } from '../../lib/read/screens/tok
 import { useNow } from '../../lib/read/useNow'
 import { Button, PageHeader, PageShell } from '../ui'
 import { StageAmount, StageRange } from './StageAmount'
-import { FinalControl, StageReview } from './StageReview'
+import { FinalControl, StageReview, preloadCreateControl } from './StageReview'
 import { StageToken, type PreselectStatus } from './StageToken'
 import { AmountSummary, PoolSummary, RangeSummary, StepList, VISUAL_STEPS, type StepView, type VisualStep } from './StepList'
 import { PositionPreview } from './PositionPreview'
@@ -120,7 +122,14 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   // The list on screen (lib/read/featuredSource.ts): a linked pool it names is found by its entry.
   const featured = useFeatured()
 
-  useEffect(() => () => running.current?.abort(), [])
+  // Leaving the flow cancels its link verification, and its pools reads still out, and forgets the lists it kept.
+  useEffect(
+    () => () => {
+      running.current?.abort()
+      forgetCreatePools()
+    },
+    [],
+  )
 
   // The pool id in the link, verified against the chain exactly as the
   // explorer verifies a featured pool: one pools read for that id, cancelled
@@ -128,26 +137,41 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
   // read answers; what to show meanwhile is derived below.
   useEffect(() => {
     const listed = featuredStore()
-    if (!source || !preselectFrom(poolId).ok) return
+    const link = preselectFrom(poolId)
+    if (!source || !link.ok) return
     running.current?.abort()
     const controller = new AbortController()
     running.current = controller
+    // A pool of the lists is verified against the token its entry names; any other against the token its link names
+    // (the pool page's own, #/new/<id>/<token>), else USDG. Fixed 2026-09-27 (round 6): a pool page's link carried no
+    // token, so an unlisted pool without USDG was never verified and New position opened on an empty search.
+    const tokenFor = (linked: Extract<Preselect, { ok: true }>): AddressKey =>
+      !linked.catalogue && linkToken ? addressKey(linkToken) : verificationToken(linked)
+    // Changed on purpose 2026-09-28 (speed wave, study item 31): the verification is asked at once, against the token
+    // the list on screen names now (the one read before, or the embedded one), beside the featured list's first answer
+    // instead of after it. That answer still decides: the read is used only when the list, once in, names the same
+    // token and has not withdrawn the pool; otherwise it is cancelled, and the pool is verified or refused as before.
+    const early = new AbortController()
+    const follow = () => early.abort()
+    controller.signal.addEventListener('abort', follow, { once: true })
+    const guess = preselectFrom(poolId, listed.getSnapshot().entries)
+    const guessed = guess.ok ? tokenFor(guess) : null
+    const ahead = guessed ? verifyCandidate(source, guessed, null, link.key, { signal: early.signal }) : null
     // The featured list first (its first answer is the page's one read of it, at most 1.5 s): a pool it withdrew by a
     // safety rule is refused from a link, never verified or preselected (featured pools v1 §11.5). The list as it is
     // now, once that first answer is in: a later refresh may have withdrawn the pool since (fixed 2026-09-26 after review).
     void listed.ensure().then(async () => {
       const list = listed.getSnapshot()
       const linked = preselectFrom(poolId, list.entries)
-      if (controller.signal.aborted || !linked.ok) return
+      const against = linked.ok ? tokenFor(linked) : null
+      const kept = ahead !== null && linked.ok && against === guessed && !list.withdrawn.has(linked.key) ? ahead : null
+      if (!kept) early.abort()
+      if (controller.signal.aborted || !linked.ok || !against) return
       if (list.withdrawn.has(linked.key)) {
         setVerified({ poolId, attempt, outcome: { kind: 'withdrawn' } })
         return
       }
-      // A pool of the lists is verified against the token its entry names; any other against the token its link names
-      // (the pool page's own, #/new/<id>/<token>), else USDG. Fixed 2026-09-27 (round 6): a pool page's link carried no
-      // token, so an unlisted pool without USDG was never verified and New position opened on an empty search.
-      const against = !linked.catalogue && linkToken ? addressKey(linkToken) : verificationToken(linked)
-      const result = await verifyCandidate(source, against, null, linked.key, { signal: controller.signal })
+      const result = await (kept ?? verifyCandidate(source, against, null, linked.key, { signal: controller.signal }))
       if (controller.signal.aborted) return
       if (result.failure) {
         if (result.failure.state !== 'aborted') setVerified({ poolId, attempt, outcome: { kind: 'failed', line: failureText(result.failure, 'pools') } })
@@ -215,6 +239,13 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
       : { kind: 'checking', again: attempt > 0 }
 
   const current = visualOf(state, part)
+
+  // Speed wave, 2026-09-28 (study item 33): Create position's code is asked once a pool is chosen, so Review finds it
+  // loaded instead of waiting for it behind its disabled button. Loading it runs nothing.
+  const poolChosen = state.pool !== null
+  useEffect(() => {
+    if (poolChosen) preloadCreateControl()
+  }, [poolChosen])
 
   /** Makes `updated` the state, with `nextPart` as the open half of the amount stage, and keeps the step it opens. */
   const open = (updated: JourneyState, nextPart: AmountPart = part) => {

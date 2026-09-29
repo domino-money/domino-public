@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { agedMarket, percentText, presentMetric, retrievedAgeSeconds, retrievedText, type Metric } from '../../../lib/markets'
 import { presentAprEstimate } from '../../../lib/read/aprEstimate'
 import { reasonText } from '../../../lib/read/describe'
@@ -137,11 +137,13 @@ function refusal(option: PoolOption): string {
  * changes) has no estimate and no typical range: what Domino can do here says
  * why, beside its chart.
  */
-export function PoolWorkspace({ source, option, onOption, actions }: {
+export function PoolWorkspace({ source, option, onOption, actions, painted }: {
   source: ReadSource
   option: PoolOption
   onOption: (next: PoolOption) => void
   actions?: ReactNode
+  /** This browser's copy of the last overview, when it names the pool: its figures stand until the page's own (item 44). */
+  painted?: Extract<ReadOutcome<'overview'>, { state: 'ok' }>
 }) {
   const poolId = option.key
   const optionChanged = useRef(onOption)
@@ -225,7 +227,15 @@ export function PoolWorkspace({ source, option, onOption, actions }: {
     return () => { controller.abort(); cancelRefresh?.() }
   }, [source, poolId, ready, storedFirst, bundled, marketAttempt])
 
-  const answered = market?.key === poolId ? market : null
+  // The copy's figures, dated as they were read, until the page's own first answer (speed wave, item 44, 2026-09-28);
+  // shown once the page knows which of its routes are listed, as its own answer is, so its cards take their places
+  // (the fifth figure, the activity's resting lines) as they always did, and no sentence is swapped for another.
+  const copied = useMemo((): MarketAnswer | null => {
+    const entry = painted?.data.pools.find((pool) => pool.poolId === poolId)
+    const ok = painted && entry ? storedPoolRead(entry, painted.data.generatedAt, painted.provenance) : null
+    return ok ? { key: poolId, ok, origin: 'overview', failure: null } : null
+  }, [painted, poolId])
+  const answered = market?.key === poolId ? market : ready ? copied : null
   const metricsListed = listed?.['pool-metrics'] === true
   const metricsRead = useChainRead(source, 'pool-metrics', poolId, metricsListed && answered !== null)
   const activityRead = useChainRead(source, 'pool-activity', poolId, listed?.['pool-activity'] === true && answered !== null)

@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState, type LazyExoticComponent } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import type { PairBalancesState } from './usePairBalances'
 import { priceOf, validateSlippage, walletSteps, type JourneyState } from '../../lib/create/journey'
@@ -292,6 +292,20 @@ const CreateControl = __DOMINO_WALLET_SESSION__
     )
   : null
 
+type CreateComponent = NonNullable<typeof CreateControl> extends LazyExoticComponent<infer C> ? C : never
+/** Create position once the chunk asked ahead is in, for Review to render as it is. */
+let loadedCreate: CreateComponent | null = null
+
+/**
+ * The same chunk, asked ahead once a pool is chosen (Journey.tsx), so Review finds Create position loaded instead of
+ * waiting for it behind the disabled button (speed wave, 2026-09-28; study item 33): the chunk's download, and the
+ * 300 ms React holds a lazy control's stand-in on screen once it has shown it. Loading runs nothing: the module only
+ * defines the control, which runs once Review renders it. The same import(), behind the same flag.
+ */
+export const preloadCreateControl = __DOMINO_WALLET_SESSION__
+  ? () => void import('./DepositAmounts').then((module) => { loadedCreate = module.CreatePosition }, () => undefined)
+  : () => undefined
+
 function Unavailable({ note }: { note: string }) {
   return (
     <>
@@ -317,11 +331,14 @@ function Unavailable({ note }: { note: string }) {
 export function FinalControl({ state, balances, onBusy }: { state: JourneyState; balances: PairBalancesState; onBusy?: (busy: boolean) => void }) {
   // The position Create position just made: what comes next is offered under it (2026-09-24, the three features).
   const created = useCreated()
-  if (CreateControl) {
+  // Create position as the chunk asked ahead left it, drawn at once; else lazily, behind the stand-in, as before
+  // (2026-09-28). Chosen once for the control's life, so it never changes type, and loses nothing, under the person.
+  const [Control] = useState(() => loadedCreate ?? CreateControl)
+  if (Control) {
     return (
       <>
         <Suspense fallback={<Unavailable note={CREATE.review.loading} />}>
-          <CreateControl state={state} reviewed={planFor(state, balances)} onBusy={onBusy} />
+          <Control state={state} reviewed={planFor(state, balances)} onBusy={onBusy} />
         </Suspense>
         {created && <CreatedNext tokenId={created} />}
       </>

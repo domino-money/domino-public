@@ -195,7 +195,13 @@ test('the default stylesheet loads nothing from elsewhere (BUN-2)', (t) => {
   const css = readdirSync(join(DIST, 'assets')).filter((file) => file.endsWith('.css'));
   assert.equal(css.length, 1);
   const text = readFileSync(join(DIST, 'assets', css[0]), 'utf8');
-  assert.deepEqual([...text.matchAll(/url\(\s*['"]?(?!data:)([^'")]+)/g)].map((match) => match[1]), []);
+  // Changed on purpose 2026-09-28 (speed wave, item 35): the stylesheet now names the site's own fonts
+  // (src/styles/fonts.css, until then Google Fonts' stylesheet in index.html), each a content-hashed woff2 file under
+  // /assets/ that the build itself carries. Still nothing from elsewhere: no other url(), no host, no @import.
+  const urls = [...text.matchAll(/url\(\s*['"]?(?!data:)([^'")]+)/g)].map((match) => match[1]);
+  const fonts = urls.filter((url) => /^\/assets\/[\w-]+\.woff2$/.test(url));
+  assert.deepEqual(urls.filter((url) => !fonts.includes(url)), []);
+  for (const url of new Set(fonts)) assert.ok(existsSync(join(DIST, url)), `${url} is in the build`);
   assert.ok(!/@import/.test(text));
   t.diagnostic(`dist/assets/${css[0]}: ${Buffer.byteLength(text)} bytes`);
 });

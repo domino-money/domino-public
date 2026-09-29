@@ -258,3 +258,154 @@ test('the New position picker reads nothing on render and shows no coverage, cat
   assert.doesNotMatch(rendered, /<details|Stored pool catalogue|Load catalogue candidates|Rejected candidates|sources &amp; coverage/)
   assert.equal((rendered.match(/dm-flow-pool-figures/g) ?? []).length, 2, 'each resting row rests with three figure cells')
 })
+
+// ---------------------------------------------------------------------------
+// Speed wave, 2026-09-28 (study items 27, 29 and 30): New position's pools read, asked when the token is chosen and
+// kept for the flow (lib/create/poolsAhead.ts), and the token search's kept answers (searchAnswers.ts).
+// ---------------------------------------------------------------------------
+
+const ahead = load('src/lib/create/poolsAhead.ts')
+const searchAnswers = load('src/lib/read/screens/searchAnswers.ts')
+// The pool hints come from the provider's token-pairs list (lib/tokenArtwork.ts): none here, so each read is the plain one.
+load('src/lib/tokenArtwork.ts').tokenArtwork.pairs = async () => null
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+/** A read source whose reads wait until the test answers them: ok (the fixture pools), or a failure that passes. */
+function heldSource() {
+  const reads = []
+  const provenance = () => ({ transport: 'bridge', contract: null, receivedAt: Date.now(), attempts: 1 })
+  const source = {
+    transport: 'bridge',
+    read(route, request, { signal } = {}) {
+      return new Promise((settle) => {
+        const entry = {
+          route,
+          request,
+          aborted: false,
+          ok: () => settle({ route, state: 'ok', data: runtime.assertResponse('pools', fixture('pools.success')), provenance: provenance() }),
+          fail: () => settle({ route, state: 'unavailable', cause: { kind: 'queue_full' }, retryable: true, provenance: provenance() }),
+        }
+        signal?.addEventListener('abort', () => { entry.aborted = true; settle({ route, state: 'aborted', provenance: provenance() }) }, { once: true })
+        reads.push(entry)
+      })
+    },
+  }
+  return { source, reads }
+}
+
+test('New position’s pools read is asked at the choice and taken by the list; an ok answer is kept a minute for the flow, a failed one never', async () => {
+  ahead.forgetCreatePools()
+  const { source, reads } = heldSource()
+  const token = candidate.key
+  ahead.startCreatePools(source, token, null)
+  await tick()
+  assert.equal(reads.length, 1, 'asked at the choice')
+  assert.deepEqual(reads[0].request, { token }, 'the list’s own request')
+  // The list mounts once the token read answers, and takes the read on its way: nothing new is asked.
+  const taken = ahead.readCreatePools(source, token, null, new AbortController().signal)
+  await tick()
+  assert.equal(reads.length, 1)
+  reads[0].ok()
+  const answer = await taken
+  assert.equal(answer.outcome.state, 'ok')
+  assert.equal(answer.restarted, false)
+  // Mounted again (Change pool, the same token chosen again): the kept answer, at once, with no read.
+  assert.equal(ahead.keptCreatePools(source, token, null), answer)
+  assert.equal(await ahead.readCreatePools(source, token, null, new AbortController().signal), answer)
+  ahead.startCreatePools(source, token, null)
+  assert.equal(reads.length, 1, 'chosen again: nothing asked')
+  assert.equal(ahead.keptCreatePools(heldSource().source, token, null), null, 'another source asks for itself')
+  // A minute later the list reads again, and a failed answer is not kept: the list's quiet re-ask reads once more.
+  const realNow = Date.now
+  try {
+    Date.now = () => realNow() + ahead.KEEP_MS
+    assert.equal(ahead.keptCreatePools(source, token, null), null)
+    const again = ahead.readCreatePools(source, token, null, new AbortController().signal)
+    await tick()
+    assert.equal(reads.length, 2)
+    reads[1].fail()
+    assert.equal((await again).outcome.state, 'unavailable')
+    assert.equal(ahead.keptCreatePools(source, token, null), null, 'a failure is never kept')
+    const third = ahead.readCreatePools(source, token, null, new AbortController().signal)
+    await tick()
+    assert.equal(reads.length, 3)
+    reads[2].ok()
+    await third
+    assert.notEqual(ahead.keptCreatePools(source, token, null), null)
+  } finally {
+    Date.now = realNow
+  }
+  ahead.forgetCreatePools()
+  assert.equal(ahead.keptCreatePools(source, token, null), null, 'the flow’s end forgets what it kept')
+})
+
+test('a read nobody waits for is cancelled: another choice cancels one no list took, a list leaving cancels its own, a failed token read cancels its choice’s', async () => {
+  ahead.forgetCreatePools()
+  const { source, reads } = heldSource()
+  const [a, b] = [candidate.key, '0x2222222222222222222222222222222222222222']
+  ahead.startCreatePools(source, a, null)
+  await tick()
+  ahead.startCreatePools(source, b, null)
+  await tick()
+  assert.deepEqual(reads.map((read) => [read.request.token, read.aborted]), [[a, true], [b, false]], 'the earlier choice’s read, which no list took, is cancelled')
+  // B's list takes its read: a later choice leaves it running while the list waits for it.
+  const list = new AbortController()
+  const taken = ahead.readCreatePools(source, b, null, list.signal)
+  ahead.startCreatePools(source, a, null)
+  await tick()
+  assert.deepEqual(reads.map((read) => read.aborted), [true, false, false])
+  // The list leaves while its read is out, and it is no longer the current choice's: cancelled.
+  list.abort()
+  assert.equal(await taken, null)
+  assert.equal(reads[1].aborted, true)
+  // The current choice's token read failed for good: its pools read is cancelled.
+  ahead.dropCreatePools()
+  assert.equal(reads[2].aborted, true)
+  ahead.forgetCreatePools()
+})
+
+test('the New position picker shows the flow’s kept list at once, with no read', async () => {
+  ahead.forgetCreatePools()
+  const { source, reads } = heldSource()
+  ahead.startCreatePools(source, candidate.key, null)
+  await tick()
+  reads[0].ok()
+  await ahead.readCreatePools(source, candidate.key, null, new AbortController().signal)
+  const { PoolPicker } = load('src/components/read/screens/PoolPicker.tsx')
+  const rendered = html(PoolPicker, { source, token: candidate.key, paired: null, pending: null, onPending() {}, catalogue: false, compact: true, variant: 'create' })
+  assert.equal(reads.length, 1, 'no read on render')
+  assert.match(rendered, /data-pools-state="ok"/)
+  assert.match(rendered, new RegExp(`data-pool-key="${option.key}"`))
+  assert.doesNotMatch(rendered, /dm-skel|animate-pulse/, 'no resting rows')
+  ahead.forgetCreatePools()
+})
+
+test('the token search keeps its answers a minute and answers a longer query from a complete shorter one, as the service would', () => {
+  searchAnswers.forgetSearches()
+  const stored = JSON.parse(readFileSync(resolve(root, '../api-contracts/read-v3/fixtures/search.json'), 'utf8')).tokens[0]
+  const entry = (address, symbol) => ({ ...stored, address, value: { ...stored.value, asset: { ...stored.value.asset, address, symbol } } })
+  const [usdg, usdc, usual] = [entry('0x5fc5360d0400a0fd4f2af552add042d716f1d168', 'USDG'), entry('0x3333333333333333333333333333333333333333', 'USDC'), entry('0x4444444444444444444444444444444444444444', 'usUAL')]
+  const keys = (candidates) => candidates?.map((c) => c.key) ?? null
+  const source = {}
+  // The service's answer to "us": every symbol beginning with it, by address.
+  searchAnswers.keepSearch(source, 'us', [usdc, usual, usdg], 20, 0)
+  assert.deepEqual(keys(searchAnswers.keptSearch(source, 'us', 1)), [usdc.address, usual.address, usdg.address])
+  assert.deepEqual(keys(searchAnswers.keptSearch(source, 'US', 1)), [usdc.address, usual.address, usdg.address], 'letter case is the service’s ILIKE')
+  assert.deepEqual(keys(searchAnswers.keptSearch(source, 'usd', 1)), [usdc.address, usdg.address], 'narrowed, in the service’s order')
+  assert.deepEqual(keys(searchAnswers.keptSearch(source, 'Usdg', 1)), [usdg.address])
+  assert.deepEqual(keys(searchAnswers.keptSearch(source, 'usdx', 1)), [], 'nothing begins with it')
+  assert.equal(searchAnswers.keptSearch(source, 'u', 1), null, 'a shorter query is asked')
+  assert.equal(searchAnswers.keptSearch(source, 'usé', 1), null, 'anything but ASCII is asked')
+  assert.equal(searchAnswers.keptSearch({}, 'usd', 1), null, 'another source asks for itself')
+  assert.equal(searchAnswers.keptSearch(source, 'usd', searchAnswers.SEARCH_KEEP_MS), null, 'a minute later it is asked again')
+  // An answer the limit cut off answers only itself.
+  const full = Array.from({ length: 20 }, (_, i) => entry(`0x${String(i + 10).repeat(20)}`, `WE${i}`))
+  searchAnswers.keepSearch(source, 'we', full, 20, 0)
+  assert.equal(searchAnswers.keptSearch(source, 'we1', 1), null)
+  assert.equal(searchAnswers.keptSearch(source, 'we', 1)?.length, 20)
+  // A symbol that only the service can compare to the query is never decided here.
+  searchAnswers.keepSearch(source, 'ab', [entry('0x5555555555555555555555555555555555555555', 'ABÇD')], 20, 0)
+  assert.equal(searchAnswers.keptSearch(source, 'abc', 1), null)
+  searchAnswers.forgetSearches()
+  assert.equal(searchAnswers.keptSearch(source, 'us', 1), null)
+})

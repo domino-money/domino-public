@@ -29,7 +29,8 @@
  * it to forward() itself (see onward()), and forward() refuses it.
  *
  * Whatever comes back, the Worker's answer or the forwarder's refusal, leaves
- * with Cache-Control "no-store, no-transform" and a CSP that renders nothing.
+ * with Cache-Control "no-store, no-transform" and a CSP that renders nothing;
+ * a public read, "no-store" alone, so the edge may compress it (2026-09-28).
  */
 import { forward, type BridgeEnv } from './_lib/bridge'
 import {
@@ -79,12 +80,15 @@ const MAX_FORM_BYTES = 1024
  * Brazilian ISP's DNS answers NXDOMAIN for chain.robinhood.com):
  * src/lib/chain/endpoints.ts names them and what each serves, and
  * src/lib/chain/failover.ts when they are asked. Exactly those hosts.
+ *
+ * 2026-09-28 (speed wave, item 35): the fonts are the site's own files (src/styles/fonts.css, the same files Google
+ * Fonts served), so style-src and font-src name 'self' alone and no Google host is reached.
  */
 export const APP_CSP = [
   "default-src 'self'",
   "script-src 'self'",
-  "style-src 'self' https://fonts.googleapis.com",
-  'font-src https://fonts.gstatic.com',
+  "style-src 'self'",
+  "font-src 'self'",
   "img-src 'self' data: https://cdn.dexscreener.com",
   "connect-src 'self' https://api.dexscreener.com https://rpc.mainnet.chain.robinhood.com https://robinhood-rpc.publicnode.com https://rpc.ordofi.network https://robinhood.drpc.org",
   "object-src 'none'",
@@ -263,25 +267,43 @@ function withoutCookies(request: Request): Request {
   return new Request(request, { headers })
 }
 
+/**
+ * The icons public/ serves under fixed names: tokens' artwork (public/tokens/) and wallets' (public/wallets/).
+ * 2026-09-28 (speed wave, item 41): kept a day, then used while it is checked again, instead of asked again through
+ * the gate on every page load (Home asked for four of them each time). A replaced icon reaches a returning visitor
+ * within a day. The docs' pictures and the favicon keep private, no-cache.
+ */
+export const ICON_PATH = /^\/(?:tokens|wallets)\//
+export const ICON_CACHE = 'private, max-age=86400, stale-while-revalidate=604800'
+
 /** The app's own response, with the security headers every page must carry. */
 function secured(response: Response, url: URL): Response {
   const out = new Response(response.body, response)
   for (const [name, value] of Object.entries(BASE_HEADERS)) out.headers.set(name, value)
-  out.headers.append('Vary', 'Cookie')
   const type = out.headers.get('Content-Type') ?? ''
+  // A content-hashed file under /assets/ is the same for everyone and kept a year in this browser alone (private).
+  // 2026-09-28 (speed wave, item 36): it no longer varies on Cookie, which made every chunk the browser held go back
+  // to the server, once each, whenever any cookie changed. Every other answer still varies on it.
+  const hashed = !API_PATH.test(url.pathname) && !type.includes('text/html') && url.pathname.startsWith('/assets/')
+  if (!hashed) out.headers.append('Vary', 'Cookie')
   if (API_PATH.test(url.pathname)) {
     // Never stored, never transformed on the way, never rendered as a page,
     // whatever the Worker or the forwarder sent. A Worker's no-store is kept
-    // and tightened, never relaxed to the app's private, no-cache.
-    out.headers.set('Cache-Control', 'no-store, no-transform')
+    // and tightened, never relaxed to the app's private, no-cache. Changed
+    // 2026-09-28 (speed wave, item 13): a public read may be compressed on the
+    // way; no-transform switched Cloudflare's own compression off, and an
+    // overview travelled 12 to 16 times larger than it needed to.
+    out.headers.set('Cache-Control', url.pathname.startsWith(PUBLIC_READ_PREFIX) ? 'no-store' : 'no-store, no-transform')
     out.headers.set('Content-Security-Policy', API_CSP)
   } else if (type.includes('text/html')) {
     out.headers.set('Content-Security-Policy', APP_CSP)
     out.headers.set('Cache-Control', 'private, no-cache')
-  } else if (url.pathname.startsWith('/assets/')) {
+  } else if (hashed) {
     // Content-hashed by Vite, so safe to keep, but only in this browser.
     out.headers.set('Cache-Control', 'private, max-age=31536000, immutable')
     if (WORKER_PATH.test(url.pathname)) out.headers.set('Content-Security-Policy', WORKER_CSP)
+  } else if (ICON_PATH.test(url.pathname)) {
+    out.headers.set('Cache-Control', ICON_CACHE)
   } else {
     out.headers.set('Cache-Control', 'private, no-cache')
   }

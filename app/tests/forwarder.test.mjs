@@ -780,9 +780,13 @@ test('forward() on its own refuses with no-store: another origin, a path no fami
 
 const { APP_CSP, API_CSP, LOGOUT_PATH } = require('../.test-build/app/functions/_middleware.js');
 
-/** The headers every /api answer past the gate must leave with. */
-function apiHeaders(response, label) {
-  assert.equal(response.headers.get('Cache-Control'), 'no-store, no-transform', label);
+/**
+ * The headers every /api answer past the gate must leave with. Changed on purpose 2026-09-28 (speed wave, item 13): a
+ * public read (`path` under /api/read/) leaves with no-store alone, so the edge may compress it; every other /api answer
+ * keeps no-transform.
+ */
+function apiHeaders(response, label, path = '') {
+  assert.equal(response.headers.get('Cache-Control'), path.startsWith('/api/read/') ? 'no-store' : 'no-store, no-transform', label);
   assert.equal(response.headers.get('Content-Security-Policy'), "default-src 'none'; frame-ancestors 'none'", label);
   assert.equal(API_CSP, "default-src 'none'; frame-ancestors 'none'");
   assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff', label);
@@ -793,7 +797,7 @@ function apiHeaders(response, label) {
   assert.match(response.headers.get('Vary') ?? '', /Cookie/, label);
 }
 
-test('every /api answer past the gate leaves with no-store, no-transform and a CSP that renders nothing', async () => {
+test('every /api answer past the gate leaves with no-store, no-transform (no-store alone for a public read) and a CSP that renders nothing', async () => {
   const real = workers();
   const cacheable = recorders(
     () =>
@@ -802,19 +806,20 @@ test('every /api answer past the gate leaves with no-store, no-transform and a C
       }),
   );
   const cases = {
-    'a real Worker answer': await pages(call('/api/read/v1/capabilities'), real.env),
-    'a real Worker refusal': await pages(call(ROUTE.deposit.path, { method: 'POST', body: '{}' }), real.env),
-    'a Worker answer that asked to be cached': await pages(call(ROUTE.session.path, { method: 'POST', body: '{}' }), cacheable.env),
-    'an unknown path': await pages(call('/api/x'), real.env),
-    'the bare /api': await pages(call('/api'), real.env),
-    'an upper-case path': await pages(call('/API/read/v1/capabilities'), real.env),
-    'a preview host': await pages(call('/api/read/v1/capabilities', { origin: 'https://domino-app-e65.pages.dev' }), real.env),
-    'a Worker subrequest': await pages(call('/api/read/v1/capabilities', { headers: { 'CF-Worker': 'x.example' } }), real.env),
-    'a missing binding': await pages(call('/api/read/v1/capabilities'), GATE),
-    'an empty segment': await pages(call('/api//x'), real.env),
-    'an empty segment under a family prefix': await pages(call('/api/read/v1//capabilities'), real.env),
+    'a real Worker answer': ['/api/read/v1/capabilities', await pages(call('/api/read/v1/capabilities'), real.env)],
+    'a real Worker refusal': [ROUTE.deposit.path, await pages(call(ROUTE.deposit.path, { method: 'POST', body: '{}' }), real.env)],
+    'a Worker answer that asked to be cached': [ROUTE.session.path, await pages(call(ROUTE.session.path, { method: 'POST', body: '{}' }), cacheable.env)],
+    'an unknown path': ['/api/x', await pages(call('/api/x'), real.env)],
+    'the bare /api': ['/api', await pages(call('/api'), real.env)],
+    // Not /api/read/: an upper-case path keeps no-transform.
+    'an upper-case path': ['/API/read/v1/capabilities', await pages(call('/API/read/v1/capabilities'), real.env)],
+    'a preview host': ['/api/read/v1/capabilities', await pages(call('/api/read/v1/capabilities', { origin: 'https://domino-app-e65.pages.dev' }), real.env)],
+    'a Worker subrequest': ['/api/read/v1/capabilities', await pages(call('/api/read/v1/capabilities', { headers: { 'CF-Worker': 'x.example' } }), real.env)],
+    'a missing binding': ['/api/read/v1/capabilities', await pages(call('/api/read/v1/capabilities'), GATE)],
+    'an empty segment': ['/api//x', await pages(call('/api//x'), real.env)],
+    'an empty segment under a family prefix': ['/api/read/v1//capabilities', await pages(call('/api/read/v1//capabilities'), real.env)],
   };
-  for (const [label, response] of Object.entries(cases)) apiHeaders(response, label);
+  for (const [label, [path, response]] of Object.entries(cases)) apiHeaders(response, label, path);
   assert.deepEqual(upstream, []);
 });
 
@@ -1214,7 +1219,7 @@ test('a signed-in capabilities read: gate → no Cookie header → [[path]].ts �
   }
   assert.equal(seen.method, 'GET');
   assert.equal(seen.url, `${ORIGIN}/api/read/v1/capabilities`);
-  apiHeaders(response, 'signed-in capabilities read');
+  apiHeaders(response, 'signed-in capabilities read', '/api/read/v1/capabilities');
 });
 
 test('the same signed-in capabilities read reaches the real read Worker, disabled, and it answers', async () => {
@@ -1368,7 +1373,7 @@ test('signed in, an /api path with an empty segment still gets the JSON 404, rea
       const traced = tracedPages(call(path, { method, cookie: JAR, ...(method === 'POST' ? { body: '{}' } : {}) }), env);
       const response = await traced.response;
       await refused(response, 404, 'not_found');
-      apiHeaders(response, `${method} ${path}`);
+      apiHeaders(response, `${method} ${path}`, path);
       // onward() answered it: Pages' next() and the route file never saw it.
       assert.deepEqual(traced.handed, [], `${method} ${path}`);
       assert.deepEqual(traced.routed, [], `${method} ${path}`);

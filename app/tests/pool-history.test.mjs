@@ -67,6 +67,49 @@ test('disabled or failed capabilities never fan out a history or legacy data req
     assert.equal(events[0].state, check?.state === 'failed' ? 'capability_failed' : 'not_enabled')
   }
 })
+// Added 2026-09-28 (speed wave, item 3): a capabilities check still failing in passing after publicSource.ts asked it
+// again is a failure now, not "not listed" (which sent the chart to the provider's candles): asked again as transient.ts
+// allows, then the history is read.
+test('a capabilities check that failed in passing is asked again quietly, then the history is read', async () => {
+  const clock = fakeClock(), controller = new AbortController(), events = [], checks = []
+  const answers = [{ state: 'failed', outcome: { state: 'unavailable', cause: { kind: 'edge', status: 502 }, retryable: false } }, { state: 'enabled' }]
+  const reads = []
+  const source = { transport: 'bridge', routeEnabled: async (route) => (checks.push(route), answers.shift()),
+    read: async (...args) => { reads.push(args); return new Promise(() => {}) } }
+  void watchPublicHistory(source, request, event => events.push(event), { signal: controller.signal, clock, page: null })
+  await flush()
+  assert.deepEqual(events.map((event) => event.state), ['capability_failed'])
+  assert.equal(reads.length, 0)
+  const wait = clock.sleeps.find((row) => !row.cancelled)
+  assert.ok(wait.ms >= 3000 && wait.ms <= 5000, `about 4 s (${wait.ms})`)
+  wait.resolve(); await flush()
+  assert.deepEqual(checks, ['history', 'history'])
+  assert.deepEqual(events.map((event) => event.state), ['capability_failed', 'reading'])
+  assert.equal(reads.length, 1)
+  // A final failure is not asked again.
+  const final = [], finalChecks = []
+  await watchPublicHistory({ transport: 'bridge', routeEnabled: async () => (finalChecks.push(1), { state: 'failed', outcome: { state: 'gate_required' } }) }, request, (event) => final.push(event), { signal: new AbortController().signal, clock: fakeClock(), page: null })
+  assert.deepEqual([final.map((event) => event.state), finalChecks.length], [['capability_failed'], 1])
+  controller.abort()
+})
+
+// Added 2026-09-28 (speed wave, item 6): an answer another screen read a moment ago (the Markets card's, kept 30 s,
+// publicMetadataCache.ts) is asked again on its own rhythm, so it is never shown longer than a fresh one would be.
+test('the next read counts its minute from when the answer was read, 30 s earlier at the most', async () => {
+  const clock = fakeClock(), controller = new AbortController()
+  let at = 20_000
+  clock.monotonic = () => at
+  const answers = [0, -1e9]
+  const source = { transport: 'bridge', routeEnabled: async () => ({ state: 'enabled' }),
+    read: async () => ({ state: 'ok', data: history(), provenance: { receivedMonotonic: answers.shift() ?? at, receivedAt: 0 } }) }
+  void watchPublicHistory(source, request, () => {}, { signal: controller.signal, clock, page: null })
+  await flush()
+  assert.ok(clock.sleeps.some((row) => row.ms === 40_000), 'read 20 s ago: asked again 40 s on')
+  clock.sleeps.find((row) => row.ms === 40_000).resolve(); await flush()
+  assert.ok(clock.sleeps.some((row) => row.ms === 30_000), 'never more than 30 s early')
+  controller.abort()
+})
+
 test('history refresh is serial, keeps the same request, and aborts on unmount', async () => {
   const clock = fakeClock(), controller = new AbortController(), calls = [], events = []
   let finish

@@ -169,6 +169,142 @@ test('read-v3 failing does not take the page down when V1/V2 can still serve it'
   assert.deepEqual(await source.routeEnabled('pools', {}), { state: 'enabled' });
 });
 
+// Added 2026-09-28 (speed wave, item 3). One edge page on the read-v3 capabilities GET sent Home's table down the older
+// path: one v2 provider read per pool, 4.9 s each, the table in 10 to 38 s instead of about 1 s (measured in the
+// study's harness: the sixth row at 32.4 s). A failure that can pass by itself is asked again at once, twice at most;
+// only an answer that says no (or a final failure, the development reader's empty 404 among them) sends the page to
+// V1/V2, and a failure that is still passing is the table's to ask again (FAILED_RETRY_MS), not a reason to fan out.
+test('a read-v3 capabilities check that fails in passing is asked again at once; still failing, it is a failure, never the older path', async () => {
+  const caps = () => new Response(JSON.stringify(fixture('capabilities')), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
+  const edgePage = () => new Response('<html>502</html>', { status: 502, headers: { 'Content-Type': 'text/html' } });
+  const legacy = { transport: 'bridge', read: async () => assert.fail('no legacy read'), routeEnabled: async () => ({ state: 'enabled' }) };
+  const sourceWith = (answers) => {
+    const gets = [];
+    const fetch = async (path) => { gets.push(path); return (answers.shift() ?? caps)(); };
+    return { gets, source: createPublicSource(legacy, { enabled: true, validators: v1, fetch }, v3) };
+  };
+  const once = sourceWith([edgePage]);
+  assert.deepEqual(await once.source.routeEnabled('overview', {}), { state: 'enabled' }, 'one edge page, then the answer');
+  assert.equal(once.gets.length, 2);
+  const down = sourceWith([edgePage, edgePage, edgePage, edgePage]);
+  const failed = await down.source.routeEnabled('overview', {});
+  assert.deepEqual([failed.state, failed.outcome.state, failed.outcome.cause.kind, failed.outcome.cause.status], ['failed', 'unavailable', 'edge', 502]);
+  assert.equal(down.gets.length, 3, 'asked twice more, and no more');
+  // The development reader's empty 404 is final: the older path at once, asked once.
+  const gone = sourceWith([() => new Response('', { status: 404 })]);
+  assert.deepEqual(await gone.source.routeEnabled('overview', {}), { state: 'not_enabled' });
+  assert.equal(gone.gets.length, 1);
+  // A cancelled check is a cancelled check.
+  const leaving = new AbortController();
+  leaving.abort();
+  assert.equal((await sourceWith([]).source.routeEnabled('overview', { signal: leaving.signal })).outcome.state, 'aborted');
+
+  // The table: one edge page, then the overview, and never a provider read.
+  const wire = [];
+  let v3caps = 0;
+  const fetch = async (path, init) => {
+    wire.push(path);
+    if (path === '/api/read/v3/capabilities') return (v3caps++ === 0 ? edgePage : caps)();
+    if (path === '/api/read/v3/overview') return new Response(JSON.stringify({ ...fixture('overview'), requestedPoolIds: JSON.parse(init.body).poolIds }), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
+    return assert.fail(`unexpected ${path}`);
+  };
+  const options = { enabled: true, validators: v1, fetch };
+  const table = createPublicMetadataCache(createScheduledSource(createPublicSource(createEstimateSource(options, v2), options, v3), { minIntervalMs: 0, budget: null, unspacedStored: true, width: 2 }));
+  const loaded = await loadSelectedPools(table, [pool], undefined, undefined, { overview: true });
+  assert.equal(loaded.rows.length, 1);
+  assert.deepEqual(wire, ['/api/read/v3/capabilities', '/api/read/v3/capabilities', '/api/read/v3/overview']);
+});
+
+// Added 2026-09-28 (speed wave, item 6): a pool's page opened from Home or Markets asked again for what they had just
+// read, its overview and its 24h chart (activity 3.2 s after the click from Markets, in the study's harness).
+test('a pool’s overview is cut from the table’s, once, within 30 s; a card’s 24h history answers the chart’s identical question for 30 s', async () => {
+  const { overviewFor: many } = await import('./markets-cards.fixtures.mjs');
+  const [P, Q] = [`0x${'a1'.repeat(32)}`, `0x${'b2'.repeat(32)}`];
+  let steady = 0;
+  const clock = { now: () => 1_000_000 + steady, monotonic: () => steady, random: () => 0, timer: () => () => {}, sleep: async () => {} };
+  const posts = [];
+  const provenance = () => ({ transport: 'bridge', contract: v3.CONTRACT_VERSION, receivedAt: 1_000_000 + steady, receivedMonotonic: steady, attempts: 1 });
+  const source = { transport: 'bridge', supportsStoredReads: true, read: async (route, request) => {
+    posts.push([route, request]);
+    const data = route === 'overview' ? { ...many(request), acquisitionAccepted: false } : { history: request };
+    return { route, state: 'ok', data, observation: { block: null, providers: [] }, provenance: provenance() };
+  } };
+  const cache = createPublicMetadataCache(source, clock);
+  const table = await cache.read('overview', { poolIds: [P, Q] });
+  steady += 10_000;
+  const slice = await cache.read('overview', { poolIds: [Q] });
+  assert.equal(posts.length, 1, 'no second overview');
+  assert.deepEqual(slice.data.requestedPoolIds, [Q]);
+  assert.deepEqual(slice.data.pools.map((entry) => entry.poolId), [Q]);
+  assert.equal(slice.data.acquisitionAccepted, false, 'the answer’s own acquisitionAccepted');
+  const currencies = slice.data.pools[0].value.market.pool.currencies;
+  assert.ok(slice.data.tokens.length > 0 && slice.data.tokens.every((entry) => currencies.includes(entry.address)), 'the pool’s own tokens');
+  assert.equal(slice.provenance.receivedAt, table.provenance.receivedAt, 'dated as it was read');
+  assert.equal(slice.provenance.attempts, 0);
+  // The page's own second read (its workspace) joins it; its later reads go to the service.
+  await cache.read('overview', { poolIds: [Q] });
+  assert.equal(posts.length, 1);
+  steady += 5_000;
+  await cache.read('overview', { poolIds: [Q] });
+  assert.equal(posts.length, 2, 'once per pool and answer');
+  // Another pool of the table, past 30 s: asked.
+  steady += 16_000;
+  await cache.read('overview', { poolIds: [P] });
+  assert.equal(posts.length, 3, 'past 30 s the table’s answer is too old');
+
+  const history = { poolId: P, currency: token, windowSeconds: 86400, resolutionSeconds: 3600 };
+  const card = await cache.read('history', history);
+  steady += 29_000;
+  const chart = await cache.read('history', history);
+  assert.equal(posts.length, 4, 'the chart’s question, answered by the card’s answer');
+  assert.equal(chart.provenance.receivedMonotonic, card.provenance.receivedMonotonic);
+  await cache.read('history', { ...history, windowSeconds: 604800 });
+  assert.equal(posts.length, 5, 'another window is another question');
+  steady += 1_000;
+  await cache.read('history', history);
+  assert.equal(posts.length, 6, 'past 30 s it is asked');
+});
+
+// Added 2026-09-28 after review (speed wave, item 45): a built history the edge kept (functions/api/read/v3/history.ts)
+// comes back with X-Domino-Edge-Cache: hit; through the real read-v3 source and the queue, that answer gives its read
+// back, and one the Worker made keeps it.
+test('a v3 history answered from the edge cache, through the read-v3 source and the queue, is marked edge and gives its read back', async () => {
+  const history = fixture('history');
+  const request = { poolId: history.poolId, currency: history.currency, windowSeconds: 86400, resolutionSeconds: 3600 };
+  const run = async (hit) => {
+    const clock = { now: () => 1_000, monotonic: () => 0, random: () => 0, timer: () => () => {}, sleep: async () => {} };
+    let kept = null;
+    const store = { load: () => kept, save: (state) => { kept = state; } };
+    const fetch = async (path) => {
+      const body = path === '/api/read/v3/capabilities' ? fixture('capabilities') : path === '/api/read/v3/history' ? history : assert.fail(`unexpected read: ${path}`);
+      const headers = { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION, ...(hit && path.endsWith('/history') ? { 'X-Domino-Edge-Cache': 'hit' } : {}) };
+      return new Response(JSON.stringify(body), { headers });
+    };
+    const options = { enabled: true, validators: v1, fetch, clock };
+    const queue = createScheduledSource(createPublicSource(createEstimateSource(options, v2), options, v3), { clock, budgetStore: store, minIntervalMs: 0, refusedIntervalMs: 1100, unspacedStored: true, width: 2 });
+    const outcome = await queue.read('history', request);
+    return { state: outcome.state, edge: outcome.provenance.edge ?? null, tokens: kept?.tokens };
+  };
+  assert.deepEqual(await run(true), { state: 'ok', edge: true, tokens: 5 }, 'the edge answered: the budget whole');
+  assert.deepEqual(await run(false), { state: 'ok', edge: null, tokens: 4 }, 'the Worker answered: one read spent');
+});
+
+// Added 2026-09-28 (speed wave, item 44): a pool's page paints from this browser's copy of the last overview.
+test('paintedPool: the copy names the pool with the token the page verifies it against, dated as it was read; nothing else', () => {
+  const { paintedPool } = built('publicOverview');
+  const data = fixture('overview');
+  const held = data.pools[0].value.market.pool.currencies[0].toLowerCase();
+  const memory = { load: () => ({ data, provenance: { transport: 'bridge', contract: v3.CONTRACT_VERSION, receivedAt: 5, attempts: 0 } }) };
+  const hit = paintedPool(memory, pool, held);
+  assert.equal(hit.option.key, pool);
+  assert.equal(hit.overview.state, 'ok');
+  assert.equal(hit.overview.provenance.receivedAt, 5, 'dated as it was read');
+  assert.equal(paintedPool(memory, pool, `0x${'9'.repeat(40)}`), null, 'another token: nothing');
+  assert.equal(paintedPool(memory, `0x${'9'.repeat(64)}`, held), null, 'another pool: nothing');
+  assert.equal(paintedPool({ load: () => null }, pool, held), null, 'no copy: nothing');
+  assert.equal(paintedPool(null, pool, held), null, 'a build that keeps none: nothing');
+});
+
 test('a gate failure on read-v3 is still a failure: signing in is the way out, not another route', async () => {
   const source = readFileSync(new URL('../src/lib/read/publicSource.ts', import.meta.url), 'utf8');
   assert.match(source, /const GATE = new Set\(\['gate_required', 'gate_unavailable', 'access_required'\]\)/);
@@ -388,7 +524,37 @@ test('the markets provider asks every read of its load first', () => {
   const reads = load.match(/source\.read\([^)]*\)[^\n]*/g) ?? [];
   assert.ok(reads.length >= 5, `${reads.length} reads found`);
   for (const read of reads) assert.match(read, /, asked\)/, read);
-  assert.match(load, /const asked = \{ signal, priority: 'first' as const \}/);
+  // Changed on purpose 2026-09-28 (speed wave, item 11): a refresh of rows already settled on screen is not asked first.
+  assert.match(load, /const asked = options\.inPlace \? \{ signal \} : \{ signal, priority: 'first' as const \}/);
+});
+
+// Added 2026-09-28 (speed wave, items 2 and 11), measured with the study's latencies: a row the provider was busy for
+// was asked again through its v2 market read (4.9 s on the provider lane, then a token read and a card history for a
+// row of another shape), and every catch-up ask of settled rows went first, ahead of the next page's reads.
+test('a stored table asks a busy provider row again through the overview, and its refreshes do not go first', async () => {
+  const { generatedAt } = fixture('overview');
+  const five = [0, 3, 6, 10, 17].map((s) => limited({ refreshing: true, observedAt: generatedAt + s }));
+  const busy = await catchUpTrace([...five, caughtUp], { loads: 6 });
+  assert.deepEqual(busy.seen.at(-1), figures(60_000), 'the busy row asked again a minute after it was seen, with the figures');
+  assert.equal(busy.overviews, 6, 'through the overview');
+  assert.equal(busy.fanned, 0, 'no provider read fanned out');
+  // Priorities: the first load's reads first, the minute's refresh of the settled rows in line.
+  let steady = 0;
+  const timers = [];
+  const reads = { now: () => 1_010_000 + steady, monotonic: () => steady, random: () => 0, timer: () => () => {},
+    sleep: (_ms, signal) => new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true })) };
+  const clock = { ...reads, timer: (ms, fire) => { timers.push(() => { steady += ms; fire(); }); return () => {}; } };
+  const priorities = [];
+  const { source } = setup({ clock: reads });
+  const watched = { ...source, read: (route, request, options) => (priorities.push(options?.priority ?? null), source.read(route, request, options)) };
+  const provider = createReadMarketsProvider({ source: watched, poolIds: [pool], kind: 'bridge', clock, refreshMs: 60_000, visibility: { hidden: () => false, onChange: () => () => {} } });
+  const release = provider.recoverQuietly();
+  await new Promise((resolve) => { const stop = provider.subscribe(() => { if (provider.getSnapshot().phase !== 'loading') { stop(); resolve(); } }); provider.ensure(); });
+  const before = timers.length;
+  timers.at(-1)();
+  for (let j = 0; j < 200 && timers.length === before; j++) await turn();
+  release();
+  assert.deepEqual(priorities, ['first', null], 'the load first; its refresh in line');
 });
 
 /**
@@ -605,14 +771,16 @@ test('two stored reads at once: the list and the table’s overview travel toget
   const gates = new Map();
   const starts = [];
   // Each read waits for its gate (the capabilities, say) before its one attempt goes out.
+  // Changed on purpose 2026-09-28 (speed wave, items 1 and 4): the width is every lane's (`width`), and the list takes
+  // its read from the budget too, giving it back when its answer came from the edge cache, as here.
   const source = { transport: 'bridge', read: async (route, request, opts = {}) => {
     starts.push([route, clock.monotonic()]);
     await new Promise((open) => gates.set(`${route}:${request.poolId ?? ''}`, open));
     opts.onAttempt?.();
-    return { route, state: 'ok', data: {}, provenance: {} };
+    return { route, state: 'ok', data: {}, provenance: route === 'featured-pools' ? { edge: true } : {} };
   } };
   const open = async (route, i) => { gates.get(`${route}:${i === undefined ? '' : historyOf(i).poolId}`)(); await turn(); await turn(); };
-  const queue = createScheduledSource(source, { clock, unspacedStored: true, storedWidth: 2, budget: { burst: 3, perMinute: 30 } });
+  const queue = createScheduledSource(source, { clock, unspacedStored: true, width: 2, budget: { burst: 3, perMinute: 30 } });
   const reads = [queue.read('featured-pools', {}, { priority: 'first' }), queue.read('overview', { poolIds: [pool] }, { priority: 'first' }), ...[0, 1, 2].map((i) => queue.read('history', historyOf(i)))];
   await turn();
   assert.deepEqual(starts, [['featured-pools', 0], ['overview', 0]], 'the list and the overview at once; the cards wait for a slot');
@@ -637,19 +805,51 @@ test('two stored reads at once: the list and the table’s overview travel toget
   // A read that never sent anything (a route not listed) gives its budget back: four in a burst of two, no wait.
   const instant = instantClock();
   const silent = createScheduledSource({ transport: 'bridge', read: async (route) => ({ route, state: 'disabled', reason: 'route_not_enabled', provenance: {} }) },
-    { clock: instant, unspacedStored: true, storedWidth: 2, budget: { burst: 2, perMinute: 30 } });
+    { clock: instant, unspacedStored: true, width: 2, budget: { burst: 2, perMinute: 30 } });
   for (let i = 0; i < 4; i++) await silent.read('history', historyOf(i));
   assert.equal(instant.monotonic(), 0);
 
   // Without a width, one at a time, as before.
+  // Changed on purpose 2026-09-28 (speed wave, item 1): the list, which the edge answers almost always, takes no place
+  // of the width (the gateway's workers never see it then), so two gateway reads show the one at a time here.
   const serial = steppedClock();
   const one = startsOn(serial, () => new Promise((resolve) => setTimeout(resolve, 5)));
   const serialQueue = createScheduledSource(one.source, { clock: serial, unspacedStored: true, budget: null });
-  const both = [serialQueue.read('featured-pools', {}), serialQueue.read('overview', { poolIds: [pool] })];
+  const both = [serialQueue.read('overview', { poolIds: [pool] }), serialQueue.read('history', historyOf(0))];
   await turn();
-  assert.deepEqual(one.starts.map(([route]) => route), ['featured-pools']);
+  assert.deepEqual(one.starts.map(([route]) => route), ['overview']);
   await Promise.all(both);
-  assert.deepEqual(one.starts.map(([route]) => route), ['featured-pools', 'overview']);
+  assert.deepEqual(one.starts.map(([route]) => route), ['overview', 'history']);
+  const beside = startsOn(steppedClock(), () => new Promise((resolve) => setTimeout(resolve, 5)));
+  const besideQueue = createScheduledSource(beside.source, { clock: steppedClock(), unspacedStored: true, budget: null });
+  const three = [besideQueue.read('overview', { poolIds: [pool] }), besideQueue.read('featured-pools', {}), besideQueue.read('history', historyOf(0))];
+  await turn();
+  assert.deepEqual(beside.starts.map(([route]) => route), ['overview', 'featured-pools'], 'the list goes beside the one read the width allows');
+  await Promise.all(three);
+});
+
+// Added 2026-09-28 (speed wave, items 4 and 5): a read waiting for the budget looks again as soon as some comes back,
+// here the list's read, which the edge answered: the pool page's overview waited for its whole computed wait.
+test('a read waiting for the budget goes as soon as the list’s read gives its budget back', async () => {
+  const clock = steppedClock();
+  const gates = new Map();
+  const starts = [];
+  const source = { transport: 'bridge', read: async (route, request, opts = {}) => {
+    starts.push([route, clock.monotonic()]);
+    opts.onAttempt?.();
+    await new Promise((open) => gates.set(route, open));
+    return { route, state: 'ok', data: {}, provenance: route === 'featured-pools' ? { edge: true } : {} };
+  } };
+  const queue = createScheduledSource(source, { clock, unspacedStored: true, width: 2, budget: { burst: 2, perMinute: 30 } });
+  const list = queue.read('featured-pools', {}, { priority: 'first' });
+  const overview = queue.read('overview', { poolIds: [pool] });
+  await turn();
+  assert.deepEqual(starts, [['featured-pools', 0]], 'the overview waits: the list took a read, one is left, and a read and a quarter is wanted');
+  assert.equal(clock.sleeping, 1);
+  gates.get('featured-pools')(); await turn(); await turn();
+  assert.deepEqual(starts, [['featured-pools', 0], ['overview', 0]], 'the edge answered the list: the overview goes at once');
+  gates.get('overview')();
+  assert.deepEqual((await Promise.all([list, overview])).map((outcome) => outcome.state), ['ok', 'ok']);
 });
 
 test('a read whose reader left before its attempt gives its budget back once, and an attempt that still goes out spends its own', async () => {
@@ -660,7 +860,7 @@ test('a read whose reader left before its attempt gives its budget back once, an
     await new Promise((go) => late.push(() => { opts.onAttempt?.(); go(); }));
     return { route, state: 'ok', data: {}, provenance: {} };
   } };
-  const queue = createScheduledSource(source, { clock, unspacedStored: true, storedWidth: 2, budget: { burst: 2, perMinute: 30 } });
+  const queue = createScheduledSource(source, { clock, unspacedStored: true, width: 2, budget: { burst: 2, perMinute: 30 } });
   const leaving = new AbortController();
   const gone = queue.read('history', historyOf(0), { signal: leaving.signal });
   await turn();
@@ -708,7 +908,7 @@ function anyPools({ held = () => false } = {}) {
     return new Response(JSON.stringify(overviewFor(body)), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
   };
   const options = { enabled: true, validators: v1, fetch };
-  const source = createPublicMetadataCache(createScheduledSource(createPublicSource(createEstimateSource(options, v2), options, v3), { minIntervalMs: 0, budget: null, unspacedStored: true, storedWidth: 2 }));
+  const source = createPublicMetadataCache(createScheduledSource(createPublicSource(createEstimateSource(options, v2), options, v3), { minIntervalMs: 0, budget: null, unspacedStored: true, width: 2 }));
   return { source, calls, overviews: () => calls.filter((call) => call.path === '/api/read/v3/overview').map((call) => call.body.poolIds) };
 }
 const poolIdOf = (hex) => `0x${hex.padStart(64, '0')}`;
@@ -747,14 +947,16 @@ test('without a copy the first load waits for the list, the capabilities asked m
     gets.push(path);
     return new Response(JSON.stringify({ error: 'upstream_unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
   } };
-  const down = createPublicMetadataCache(createScheduledSource(createPublicSource(createEstimateSource(options, v2), options, v3), { minIntervalMs: 0, budget: null, unspacedStored: true, storedWidth: 2 }));
+  const down = createPublicMetadataCache(createScheduledSource(createPublicSource(createEstimateSource(options, v2), options, v3), { minIntervalMs: 0, budget: null, unspacedStored: true, width: 2 }));
   const refused = createReadMarketsProvider({ source: down, poolIds: [], pools: refusing, kind: 'bridge', refreshMs: 60_000 });
   refused.ensure();
   for (let i = 0; i < 50 && gets.length === 0; i++) await turn();
   for (let i = 0; i < 20; i++) await turn();
   refusing.answer([B]);
   await new Promise((resolve) => { const stop = refused.subscribe(() => { if (refused.getSnapshot().phase !== 'loading') { stop(); resolve(); } }); });
-  assert.deepEqual(gets.filter((path) => path === '/api/read/v3/capabilities').length, 1, `one capabilities GET: ${gets.join(', ')}`);
+  // Changed on purpose 2026-09-28 (speed wave, item 3): the check itself asks a failure that can pass by itself again
+  // at once, twice at most (publicSource.ts CHECK_AGAIN); the load still asks it no second time.
+  assert.deepEqual(gets.filter((path) => path === '/api/read/v3/capabilities').length, 3, `one capabilities check, of three GETs: ${gets.join(', ')}`);
 
   // The copy names A: its overview goes out before the list answers; the list names B, so the load starts over at once.
   const list = heldList([A]);
@@ -817,6 +1019,20 @@ test('this browser’s copy of the last overview: kept 15 minutes, only while re
     storage.map.set(PAINT_KEY, typeof value === 'string' ? value : JSON.stringify(value));
     assert.equal(paint.load(), null, label);
   }
+  // Added 2026-09-28 (speed wave): the same text is checked against the runtime once, however often the app asks for
+  // it as it starts; new text is checked again, and the age is counted afresh at every ask.
+  let checks = 0;
+  const counted = { CONTRACT_VERSION: v3.CONTRACT_VERSION, validateResponse: (route, payload) => (checks += 1, v3.validateResponse(route, payload)) };
+  const again = createPaintMemory(() => storage, counted, () => wall);
+  storage.map.set(PAINT_KEY, JSON.stringify(stored));
+  assert.ok(again.load() && again.load() && again.load());
+  assert.equal(checks, 1, 'one check for the same text');
+  wall += PAINT_MAX_AGE_MS;
+  assert.equal(again.load(), null, 'too old, without another check');
+  wall -= PAINT_MAX_AGE_MS;
+  storage.map.set(PAINT_KEY, JSON.stringify({ ...stored, data: { ...stored.data, pools: 'nope' } }));
+  assert.equal(again.load(), null);
+  assert.equal(checks, 2, 'new text, checked');
   const blocked = createPaintMemory(() => { throw new Error('blocked'); }, v3, () => wall);
   assert.equal(blocked.load(), null);
   assert.doesNotThrow(() => blocked.save(overviewOk(wall)));

@@ -330,7 +330,7 @@
     },
     {
       "path": "app/functions/_lib/bridge.ts",
-      "sha256": "1b0d641189e3e7e5a58751b7e975682c4aaa6fc9be93e3c18a20bd2b8f4474e3"
+      "sha256": "07ae2ba70c2da500e87bcb364fb4ab9061901b395ae87709c171187611f5e9d3"
     },
     {
       "path": "bridge/wrangler.read.toml",

@@ -210,7 +210,14 @@ Do not add CDN, BFF or whole-response stale caching initially. (One exception,
 2026-09-26, featured-pools v1 §10.6: the featured pools list, read-v5, is the
 same for every visitor and changes once a day, so its Pages Function,
 `app/functions/api/read/v5/featured-pools.ts`, keeps a 200 that passes read-v5's
-runtime in the edge cache for 60 seconds; browsers still get `no-store`.)
+runtime in the edge cache for 60 seconds; browsers still get `no-store`.
+Changed 2026-09-28, the owner's OK on the speed study: past 60 seconds a kept
+list is still served, for up to 15 minutes, while the request that found it
+refreshes it in the background, and a refresh that meets `route_not_available`
+takes it out, so a rollback reaches visitors at their next read, within 15
+minutes at the most. Same day, the same rules for a pool's built stored history,
+read-v3 `history`, kept 20 seconds and never served stale:
+`app/functions/api/read/v3/history.ts`.)
 Keep PR #10's
 bounded market-observation cache: fresh for 60 seconds, stale fallback up to
 300 seconds of age since its original successful retrieval, and a 15-second

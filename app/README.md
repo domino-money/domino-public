@@ -234,7 +234,9 @@ browser → functions/_middleware.ts        gate, host allowlist, headers
   answers `route_not_available` before it reads a body.
 - Every `/api` answer past the gate leaves with `Cache-Control: no-store,
   no-transform` and `Content-Security-Policy: default-src 'none';
-  frame-ancestors 'none'`. The gate's own 401 is unchanged.
+  frame-ancestors 'none'`; a public read (`/api/read/*`) with `no-store`
+  alone since 2026-09-28, so the edge may compress it. The gate's own 401 is
+  unchanged.
 - **Production is bound; previews are not.** `wrangler.toml` binds
   `READ_BRIDGE`, `SESSION_BRIDGE`, `ONBOARDING_BRIDGE` and `DEPOSIT_BRIDGE`
   to the Workers `domino-read-bridge`, `domino-session-bridge`,
@@ -426,7 +428,9 @@ a Pinned chip (the method line under the title was removed on 2026-09-28, the
 owner's call; the docs page says how the list is chosen); a carried-over, manual or stale one (within 72 h, by the server's
 clock) keeps the neutral "Selected pools". Anything else (`none`,
 `route_not_available`, an error, an invalid answer, the 1.5 s passing) keeps
-the embedded list above, exactly as before the list existed. Every 60 s the
+the embedded list above, exactly as before the list existed; a first read that
+found no answer asks again 3, 6 and 12 s on, and its first answer takes the
+screen at once (2026-09-28). Every 60 s the
 list is read again: the same list changes nothing, pools that left it leave at
 once, `none` switches back to the embedded list at once, and new pools or a new
 order wait for a reload. `src/lib/read/featuredSource.ts` is the one place
@@ -454,12 +458,18 @@ Domino's qualified APR where pool-metrics gives one, otherwise the read
 service's estimate, and "Unavailable", never 0, when there is neither. An empty
 selection reads nothing and says "No pools selected yet".
 
-The shared scheduler (`src/lib/read/scheduler.ts`) keeps the tab inside the
+The shared scheduler (`src/lib/read/scheduler.ts`) keeps the page inside the
 gateway's per-client budget (a burst of 5, then 30 reads a minute, counting every
-attempt), starts provider-lane reads at least 1.1 s apart (read-v3's stored
-reads skip that spacing, which the gateway's stored lane does not have), starts
-the markets table's reads before any queued card or page read, and holds the
-whole queue for the service's Retry-After after any 429. When the stored
+attempt), one budget for the browser's tabs and reloads since 2026-09-28
+(localStorage `domino-read-budget:v1`, deployable build only, kept once a read
+met the read service). It puts at most two reads on the wire at once, as the
+gateway runs two, so a slow provider read goes beside the queue; provider-lane
+reads go 0 ms apart until one meets a refusal, which brings back 1.1 s between
+them, one at a time (read-v3's stored reads skip that spacing, which the
+gateway's stored lane does not have). The featured list takes no place of the
+two and gives its read back when the edge cache answered it. The scheduler
+starts the markets table's reads before any queued card or page read, and holds
+the whole queue for the service's Retry-After after any 429. When the stored
 overview serves a pool without figures that are coming (figures the provider
 gave before, no failed collection, and the next collection running or due
 within 10 s), the table asks again just after that collection and the row

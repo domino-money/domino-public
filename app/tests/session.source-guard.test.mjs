@@ -162,7 +162,10 @@ test('the wallet feature is reached only through the build flag', () => {
     // so a static `from './DepositAmounts'` (or a bare import of it) beside the lazy import still fails here, before any build.
     const mentions = [...code.matchAll(/['"`]\.\/DepositAmounts(?:\.tsx?)?['"`]/g)].length;
     const lazy = [...code.matchAll(/import\(\s*['"`]\.\/DepositAmounts(?:\.tsx?)?['"`]\s*\)/g)].length;
-    assert.deepEqual([mentions, lazy], [1, 1], `${path} names Create position's chunk once, in its lazy import()`);
+    // Changed on purpose 2026-09-28 (speed wave, study item 33): Review's chunk is also asked ahead once a pool is chosen
+    // (preloadCreateControl), with the same import() behind the same flag, so it is named twice, both times in import().
+    assert.match(code, /export const preloadCreateControl = __DOMINO_WALLET_SESSION__\s*\?\s*\(\)\s*=>\s*void import\('\.\/DepositAmounts'\)/, `${path} asks Create position's chunk ahead only behind the flag`);
+    assert.deepEqual([mentions, lazy], [2, 2], `${path} names Create position's chunk only in its two import() calls`);
   }
   for (const [path, spec] of Object.entries(POSITION_CHUNKS)) {
     const { code } = ALL.find((file) => file.path === path);

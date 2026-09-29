@@ -10,7 +10,7 @@ import { beforeEach, test } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const gate = require('../.test-build/app/functions/_lib/gate.js');
-const { onRequest, APP_CSP, LOGIN_PATH, LOGOUT_PATH, PERMISSIONS_POLICY, WORKER_CSP } = require('../.test-build/app/functions/_middleware.js');
+const { onRequest, APP_CSP, ICON_CACHE, LOGIN_PATH, LOGOUT_PATH, PERMISSIONS_POLICY, WORKER_CSP } = require('../.test-build/app/functions/_middleware.js');
 
 const PASSWORD = 'correct-horse-battery-staple-42';
 const KEY = 'q3VfK9mJx7Rt2WbN5cYp8LhD4sGa6ZeU1oTiQwErTyA';
@@ -253,6 +253,72 @@ test('hashed assets stay cacheable, but only in the browser that authenticated',
   });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('Cache-Control'), 'private, max-age=31536000, immutable');
+});
+
+/** An admitted request for `path`, answered by the static files with `type`. */
+async function admitted(path, type) {
+  const cookie = await signIn();
+  return onRequest({
+    request: fetchLike(path, { Cookie: cookie }),
+    env: ENV,
+    next: async () => new Response('x', { headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=0' } }),
+  });
+}
+
+// 2026-09-28 (speed wave, item 36): a content-hashed file is the same for everyone, and `private` already keeps it out
+// of shared caches, so it no longer varies on Cookie: that made every chunk the browser held go back to the server,
+// once each, after any cookie changed. Every other answer still varies on it.
+test('hashed assets do not vary on the cookie; pages, icons, other files and API answers do', async () => {
+  for (const [path, type] of [
+    ['/assets/index-abc123.js', 'text/javascript'],
+    ['/assets/index-abc123.css', 'text/css'],
+    ['/assets/geist-latin-AbC_12.woff2', 'font/woff2'],
+    ['/assets/feesReplay.worker-CdlBbZHL.js', 'text/javascript'],
+  ]) {
+    const response = await admitted(path, type);
+    assert.equal(response.headers.get('Vary'), null, path);
+    assert.equal(response.headers.get('Cache-Control'), 'private, max-age=31536000, immutable', path);
+  }
+  for (const [path, type] of [
+    ['/', 'text/html; charset=utf-8'],
+    // A missing file under /assets/ answered with the app's page: a page, so it varies and is never kept.
+    ['/assets/missing-abc.js', 'text/html; charset=utf-8'],
+    ['/tokens/weth.svg', 'image/svg+xml'],
+    ['/wallets/rabby.svg', 'image/svg+xml'],
+    ['/docs/markets.webp', 'image/webp'],
+    ['/favicon.svg', 'image/svg+xml'],
+    ['/api/read/v1/capabilities', 'application/json'],
+  ]) {
+    assert.match((await admitted(path, type)).headers.get('Vary') ?? '', /Cookie/, path);
+  }
+  assert.equal((await admitted('/assets/missing-abc.js', 'text/html; charset=utf-8')).headers.get('Cache-Control'), 'private, no-cache');
+});
+
+// 2026-09-28 (speed wave, item 41): the tokens' and wallets' icons public/ serves under fixed names are kept a day, then
+// used while they are checked again, instead of being asked through the gate on every page load. The docs' pictures,
+// the favicon and any other public file keep private, no-cache; an icon path answered with the app's page is a page.
+test('token and wallet icons are kept a day; other public files are checked on every load', async () => {
+  for (const [path, type] of [['/tokens/weth.svg', 'image/svg+xml'], ['/tokens/marlin.jpg', 'image/jpeg'], ['/wallets/metamask.svg', 'image/svg+xml']]) {
+    const response = await admitted(path, type);
+    assert.equal(response.headers.get('Cache-Control'), ICON_CACHE, path);
+    assert.equal(response.headers.get('Content-Security-Policy'), null, path);
+  }
+  assert.equal(ICON_CACHE, 'private, max-age=86400, stale-while-revalidate=604800');
+  for (const [path, type] of [['/docs/markets.webp', 'image/webp'], ['/favicon.svg', 'image/svg+xml'], ['/tokensx/weth.svg', 'image/svg+xml'], ['/x/tokens/weth.svg', 'image/svg+xml']]) {
+    assert.equal((await admitted(path, type)).headers.get('Cache-Control'), 'private, no-cache', path);
+  }
+  const missing = await admitted('/tokens/nosuchtoken.svg', 'text/html; charset=utf-8');
+  assert.equal(missing.headers.get('Cache-Control'), 'private, no-cache');
+  assert.equal(missing.headers.get('Content-Security-Policy'), APP_CSP);
+});
+
+// 2026-09-28 (speed wave, item 35): the fonts are the site's own files (src/styles/fonts.css), so the page's CSP admits
+// styles and fonts from this origin alone, and names no Google host.
+test('the page takes its styles and fonts from this origin alone', () => {
+  const parts = APP_CSP.split('; ');
+  assert.ok(parts.includes("style-src 'self'"), APP_CSP);
+  assert.ok(parts.includes("font-src 'self'"), APP_CSP);
+  assert.doesNotMatch(APP_CSP, /google|gstatic|data:[^;]*font|font-src[^;]*data:/i);
 });
 
 // 2026-09-25: the page and the fees replay worker read Robinhood Chain's public RPC themselves (it rate-limits

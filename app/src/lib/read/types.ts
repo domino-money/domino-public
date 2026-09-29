@@ -68,6 +68,8 @@ export interface RawReply {
   /** `X-Domino-Request-Id`, only in a shape requestId.ts accepts (a Worker UUID or a gateway's 32 lowercase hex), else null. */
   requestIdHeader: string | null
   retryAfterHeader: string | null
+  /** `X-Domino-Edge-Cache: hit`: a Pages Function answered from its edge cache, so no Worker or gateway saw it (2026-09-28). */
+  edgeHit?: true
   body: RawBody
 }
 
@@ -91,6 +93,8 @@ export interface Provenance {
   attempts: number
   /** Monotonic clock, ms (`Clock.monotonic`), by which the logical read this belongs to had to settle (R-1). A restart keeps it. */
   deadlineAt?: number
+  /** Answered from a Pages Function's edge cache (RawReply `edgeHit`): the gateway's budget never counted it. */
+  edge?: true
 }
 
 /** A data provider named by the payload itself, with its own time. */

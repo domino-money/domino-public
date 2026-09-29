@@ -11,6 +11,10 @@ import { createWorker } from '../../bridge/src/worker.mjs'
 import { BRIDGE_DIST, DIST, createGatedServer } from '../scripts/gated-server.mjs'
 import { historyFor, overviewFor, SELECTED } from './markets-cards.fixtures.mjs'
 import { withPendingPools, withStalePools } from './support/stale-store.mjs'
+// 2026-09-28 (speed wave): the read-v1 fixture pool and the contract versions, for New position's link tests below.
+import { FIXTURE_POOL } from './support/read-stub.mjs'
+import { CONTRACT_VERSION as READ_V1 } from '../../api-contracts/read-v1/runtime.mjs'
+import { CONTRACT_VERSION as READ_V5 } from '../../api-contracts/read-v5/runtime.mjs'
 
 const fixture = name => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v3/fixtures/${name}.json`, import.meta.url), 'utf8'))
 const TOKEN = '0x1111111111111111111111111111111111111111'
@@ -98,7 +102,9 @@ test('a token outside the selected list opens from one stored overview and pool 
  * POST arrivals at the edge within the gateway's per-client budget (backend ClientBudgets: a burst of five, 30 a minute).
  * Changed on purpose (2026-09-26, after review): the featured list's POST is answered at the edge, never by the gateway
  * (here the Worker's own route_not_available; once on, the Pages Function's cache, featured pools v1 §10.6), so the page
- * spends none of its budget on it (scheduler.ts EDGE_ANSWERED) and it is not counted here.
+ * spends none of its budget on it (scheduler.ts EDGE_ANSWERED) and it is not counted here. Changed 2026-09-28 (speed
+ * wave, item 4): the page takes a read from its budget for the list and gives it back when the edge cache answered, or
+ * the read Worker refused a route switched off there (scheduler.ts EDGE_CACHED, UNCOUNTED), as this Worker does.
  */
 function assertWithinBudget(allPosts) {
   const posts = allPosts.filter(post => post.path !== '/api/read/v5/featured-pools')
@@ -474,4 +480,159 @@ test('Home on the first day of the daily list: a pool the collector holds no fig
     await context.close()
     await site.close()
   }
+})
+
+// ---------------------------------------------------------------------------
+// Added 2026-09-28 (speed wave, after review; study item 31). A #/new/<pool>/<token> link's verification is asked at
+// once, against the token the list on screen names then, beside the featured list's first answer instead of after it;
+// that answer still decides (Journey.tsx). Only the deployable build reads the list (featuredSource.ts), so these run on
+// dist behind the gate and the Worker, the gateway answering from the package fixtures. The list's answer is held until
+// a pools read reaches the edge, or 1 s after it was asked (inside its 1.5 s): a verification asked only once the list
+// has answered reaches the edge after it is released, never before. Where the list keeps the read, it is held until the
+// page has that read's whole answer instead (fixed 2026-09-28): an early read dropped for the list's answer is then
+// asked again, a second read at the edge, rather than joined in flight by the scheduler, which no test could tell from
+// a read kept.
+const ZERO = '0x0000000000000000000000000000000000000000'
+const LINK_ENV = { APP_ORIGIN: APP, READ_BRIDGE_ENABLED: 'true', ENABLED_READS: 'token,pools,pool-market,wallet-assets,nft-positions,catalogue,pool-activity',
+  READ_V2_BRIDGE_ENABLED: 'false', ENABLED_V2_READS: '', READ_V5_BRIDGE_ENABLED: 'true', ENABLED_V5_READS: 'featured-pools',
+  GATEWAY_ORIGIN: 'https://gateway.test', ACCESS_CLIENT_ID: 'fixture-client', ACCESS_CLIENT_SECRET: 'fixture-secret' }
+const gatewayV1 = name => readFileSync(new URL(`../../api-contracts/read-v1/fixtures/gateway/${name}.json`, import.meta.url), 'utf8')
+const featuredV5 = name => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v5/fixtures/valid/${name}.json`, import.meta.url), 'utf8'))
+const verification = token => ({ token, maxPools: 1, poolIds: [FIXTURE_POOL] })
+
+/**
+ * The deployable build at `hash`, the featured list answering `featured` once released, and a pools read the gateway
+ * holds while `hold(request)` says so (until the visit closes). The list is released when a pools read reaches the
+ * edge, or, with `listAfter: 'answer'`, only once the page has a pools read's whole answer. `events` is what reached the
+ * edge and when the list was released, in order; `failed` the pools reads the page cancelled after sending them and
+ * before their answer arrived, complete once `offTheWire()` has resolved.
+ */
+async function linkVisit(hash, { featured, hold = () => false, listAfter = 'edge' }) {
+  if (!existsSync(join(DIST, 'index.html'))) throw new Error('dist/index.html is missing. Run `npm run build` before this test.')
+  const events = [], failed = [], errors = [], held = []
+  // The page's pools reads still on the wire, and the ones an answer arrived for.
+  const onWire = new Set(), answered = new WeakSet()
+  const isPools = request => new URL(request.url()).pathname === '/api/read/v1/pools'
+  let released = false, answerList
+  const listed = new Promise(resolve => { answerList = resolve })
+  const release = () => {
+    if (released) return
+    released = true
+    events.push('list released')
+    answerList()
+  }
+  const worker = createWorker({ getClientIp: () => '198.51.100.34', fetch: async (url, init) => {
+    const [, , , version, route] = new URL(url).pathname.split('/'), request = JSON.parse(init.body)
+    if (version === 'v5') {
+      setTimeout(release, 1000)
+      await listed
+      return new Response(JSON.stringify(featured), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': READ_V5 } })
+    }
+    if (route === 'pools' && hold(request)) await new Promise(resolve => held.push(resolve))
+    const name = route === 'token' ? (request.token === ZERO ? 'token.native' : 'token.success')
+      : route === 'pool-market' ? 'pool-market.not-requested' : route === 'wallet-assets' ? 'wallet-assets.last-page' : `${route}.success`
+    return new Response(gatewayV1(name), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': READ_V1 } })
+  } })
+  const site = createGatedServer({ dist: DIST,
+    env: { BETA_PASSWORD: PASSWORD, BETA_COOKIE_KEY: 'BrowserPublicFixtureKey_0123456789_abcdefgh' },
+    api: async request => {
+      const url = new URL(request.url), headers = new Headers(request.headers)
+      if (headers.get('origin') === url.origin) headers.set('origin', APP)
+      headers.delete('host')
+      const body = request.method === 'POST' ? await request.text() : undefined
+      if (url.pathname === '/api/read/v1/pools') {
+        events.push({ pools: JSON.parse(body) })
+        if (listAfter === 'edge') release()
+      }
+      return worker.fetch(new Request(new URL(url.pathname, APP), { method: request.method, headers, body }), LINK_ENV)
+    },
+  })
+  await new Promise(resolve => site.listen(0, '127.0.0.1', resolve))
+  const at = `http://127.0.0.1:${site.address().port}`
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } }), page = await context.newPage()
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('request', request => { if (isPools(request)) onWire.add(request) })
+  page.on('response', response => answered.add(response.request()))
+  page.on('requestfinished', request => {
+    if (!isPools(request)) return
+    onWire.delete(request)
+    if (listAfter === 'answer') release()
+  })
+  page.on('requestfailed', request => {
+    if (!isPools(request)) return
+    onWire.delete(request)
+    if (listAfter === 'answer' && answered.has(request)) release()
+    // Fixed 2026-09-28 (PR #262's CI): a read whose answer arrived is not one the page cancelled. Under this file's
+    // interception (context.route below), Chromium sometimes reports an answered read as net::ERR_ABORTED: the
+    // response, then its whole body, then loadingFailed with canceled, although the page never aborted its signal nor
+    // cancelled its body, and went on to preselect the pool from that very answer (21 of 830 local runs, none of 300
+    // without the interception). The cancellation item 31 is about, a verification dropped for the list's answer, is
+    // one sent and stopped before its answer, which is still counted. One stopped after its answer and never used
+    // would leave the pool unverified or be asked again, which the other assertions catch.
+    if (!answered.has(request)) failed.push({ pools: JSON.parse(request.postData()), error: request.failure()?.errorText })
+  })
+  await context.route('**/*', route => route.request().url().startsWith(at) ? route.continue() : route.abort())
+  const login = await context.request.post(`${at}/__beta/login`, { form: { password: PASSWORD }, headers: { Origin: at }, maxRedirects: 0 })
+  assert.equal(login.status(), 303)
+  await page.goto(`${at}/${hash}`)
+  return { page, events, failed, errors,
+    /** Once every pools read the page sent has finished or failed: `failed` is then complete for what was sent. */
+    async offTheWire() {
+      for (const until = Date.now() + 10000; onWire.size > 0;) {
+        if (Date.now() > until) throw new Error(`pools reads still on the wire after 10 s: ${[...onWire].map(request => request.postData()).join(', ')}`)
+        await page.waitForTimeout(25)
+      }
+    },
+    async close() {
+      await context.close()
+      release()
+      for (const resolve of held) resolve()
+      await new Promise(resolve => { site.close(resolve); site.closeAllConnections() })
+    },
+  }
+}
+
+test('a #/new link on the deployable build is verified beside the featured list’s first answer, which keeps that one read', { timeout: 30000 }, async () => {
+  const visit = await linkVisit(`#/new/${FIXTURE_POOL}/${TOKEN}`, { featured: featuredV5('none'), listAfter: 'answer' })
+  try {
+    await visit.page.locator('[data-stage="token"][data-preselect="verified"]').waitFor({ timeout: 20000 })
+    await visit.offTheWire()
+    assert.equal(await visit.page.locator('[data-chosen-pool]').getAttribute('data-chosen-pool'), FIXTURE_POOL)
+    assert.deepEqual(visit.events, [{ pools: verification(TOKEN) }, 'list released'], 'the verification reached the edge while the list’s answer was still held, and was the only one')
+    assert.deepEqual(visit.failed, [], 'the list kept it: nothing cancelled')
+    assert.deepEqual(visit.errors, [])
+  } finally { await visit.close() }
+})
+
+test('a #/new link to a pool the featured list withdrew: the verification asked early is cancelled, and the pool is refused as before', { timeout: 30000 }, async () => {
+  const featured = { ...featuredV5('none-with-withdrawn'), withdrawn: [{ at: 1790430634, poolId: FIXTURE_POOL, reason: 'tvl_collapse' }] }
+  // The gateway holds the verification, so the list's answer lands while it is out.
+  const visit = await linkVisit(`#/new/${FIXTURE_POOL}/${TOKEN}`, { featured, hold: () => true })
+  try {
+    await visit.page.locator('[data-stage="token"][data-preselect="withdrawn"] [data-preselect-withdrawn]').waitFor({ timeout: 20000 })
+    await visit.offTheWire()
+    assert.deepEqual(visit.failed, [{ pools: verification(TOKEN), error: 'net::ERR_ABORTED' }], 'the early verification was cancelled once the list withdrew the pool')
+    await visit.page.waitForTimeout(1500)
+    assert.deepEqual(visit.events, [{ pools: verification(TOKEN) }, 'list released'], 'asked early, and never again')
+    assert.equal(await visit.page.locator('[data-chosen-pool]').count(), 0, 'nothing preselected')
+    assert.deepEqual(visit.errors, [])
+  } finally { await visit.close() }
+})
+
+test('a #/new link whose pool the featured list names with another token: the verification asked early is cancelled, and the pool is verified with the list’s token', { timeout: 30000 }, async () => {
+  // The pool is in neither embedded list, so before the answer it is verified with the link's token; the served list
+  // names it as ETH / TOKEN, which is verified with TOKEN.
+  const OTHER = `0x${'2'.repeat(40)}`
+  const current = featuredV5('current')
+  const entry = { ...current.pools[1], poolId: FIXTURE_POOL, poolKey: { ...current.pools[1].poolKey, currency0: ZERO, currency1: TOKEN },
+    tokens: [{ address: ZERO, decimals: 18, symbol: 'ETH' }, { address: TOKEN, decimals: 6, symbol: 'TOKEN' }] }
+  const visit = await linkVisit(`#/new/${FIXTURE_POOL}/${OTHER}`, { featured: { ...current, pools: [current.pools[0], entry] }, hold: request => request.token === OTHER })
+  try {
+    await visit.page.locator('[data-stage="token"][data-preselect="verified"]').waitFor({ timeout: 20000 })
+    await visit.offTheWire()
+    assert.equal(await visit.page.locator('[data-chosen-pool]').getAttribute('data-chosen-pool'), FIXTURE_POOL)
+    assert.deepEqual(visit.events, [{ pools: verification(OTHER) }, 'list released', { pools: verification(TOKEN) }], 'asked early with the link’s token, then with the list’s once it answered')
+    assert.deepEqual(visit.failed, [{ pools: verification(OTHER), error: 'net::ERR_ABORTED' }], 'the early verification was cancelled, and decided nothing')
+    assert.deepEqual(visit.errors, [])
+  } finally { await visit.close() }
 })

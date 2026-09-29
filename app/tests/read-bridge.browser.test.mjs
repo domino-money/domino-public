@@ -149,8 +149,10 @@ after(async () => {
  * A signed-in visitor on the landing, with fresh request logs. `reply` replaces
  * the default gateway answers from the first read; `session` plants the
  * session and preauth cookies exactly as session-v1's bridge sets them.
+ * `until`: what the signed-in load waits for (added 2026-09-28, speed wave, item 1): a test that holds a read at the
+ * gateway waits for `load`, since reads no longer leave 1.1 s apart and no half-second of quiet comes before it.
  */
-async function visit({ reply = DEFAULT_REPLY, session = false } = {}) {
+async function visit({ reply = DEFAULT_REPLY, session = false, until = 'networkidle' } = {}) {
   answer = reply;
   edge = [];
   seen = [];
@@ -178,7 +180,7 @@ async function visit({ reply = DEFAULT_REPLY, session = false } = {}) {
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await page.fill('#password', PASSWORD);
   leaving(page);
-  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('button[type="submit"]')]);
+  await Promise.all([page.waitForNavigation({ waitUntil: until }), page.click('button[type="submit"]')]);
   return { context, page, errors };
 }
 
@@ -521,10 +523,16 @@ test('markets-snapshot enabled on the Worker: one snapshot read puts the row on 
         if (route === 'token') await held;
         return undefined;
       },
+      // Changed on purpose 2026-09-28 (speed wave, item 1): the token read leaves right after the snapshot's answer, no
+      // longer 1.1 s later, so the signed-in load is waited for until `load`, not a half-second of quiet.
+      until: 'load',
     });
     try {
       await page.waitForFunction(() => document.querySelector('#pools tbody tr[data-row-source="markets-snapshot"] [data-provenance]'), null, { timeout: 30_000 });
       while (!upstream.some((call) => call.route === 'token')) await page.waitForTimeout(25);
+      // A row reads its tokens one after the other (marketsProvider.ts readTokensOf): one held at the gateway, the
+      // other not asked yet.
+      await page.waitForTimeout(300);
       assert.deepEqual(upstream.map((call) => call.route), ['markets-snapshot', 'token'], 'the row is on screen while the first token read is held at the gateway');
       assert.deepEqual(upstream[0].body, { poolIds: [FIXTURE_POOL] }, 'the pool this build reads, and only it');
       release();

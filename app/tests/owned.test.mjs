@@ -486,11 +486,15 @@ test('wrangler 4.130.0 routes /api/owned/v2/positions to its own function, ahead
     // 2026-09-26 (featured-pools v1 §10.6): the featured pools list's edge cache (functions/api/read/v5/featured-pools.ts)
     // takes its one path ahead of the catch-all; it hands the request to forward() itself, and every other /api/read/v5/ path
     // still reaches the catch-all.
+    // 2026-09-28 (speed wave, item 45): a pool's stored history keeps its built answers at the edge too
+    // (functions/api/read/v3/history.ts), ahead of the catch-all the same way; every other /api/read/v3/ path still
+    // reaches the catch-all.
     assert.deepEqual(handlers, [
       ['/api/automation/v1/state', 'api/automation/v1/state.ts:onRequest'],
       ['/api/fees/v1/logs', 'api/fees/v1/logs.ts:onRequest'],
       ['/api/fees/v1/state', 'api/fees/v1/state.ts:onRequest'],
       ['/api/owned/v2/positions', 'api/owned/v2/positions.ts:onRequest'],
+      ['/api/read/v3/history', 'api/read/v3/history.ts:onRequest'],
       ['/api/read/v5/featured-pools', 'api/read/v5/featured-pools.ts:onRequest'],
       ['/api/:path*', 'api/[[path]].ts:onRequest'],
     ], 'Pages takes the first route that matches, after the root middleware');

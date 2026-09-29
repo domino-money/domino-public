@@ -236,6 +236,69 @@ test('the list is one POST of {} to read-v5 with its contract header, first in t
   assert.deepEqual(asked, [{ route: 'featured-pools', request: {}, options: { priority: 'first', signal: undefined, deadlineAt: 2500 } }]);
 });
 
+// Added 2026-09-28 (speed wave, item 10): the deployable page sends its first list read before the app starts
+// (public/early-list.js, loaded only by the deployable build, vite.config.ts earlyList); the app's first attempt takes
+// that reply, through the same checks, instead of sending another. A reply that fails to arrive sends the attempt.
+test('the first reads take the replies the page sent before the app started, once each, through the same checks', async () => {
+  const { takeEarly, EARLY_LIST_MS } = built('lib/read/earlyList');
+  const calls = [];
+  const fetch = async (path, init) => {
+    calls.push([path, init.method]);
+    return path === '/api/read/v3/capabilities' ? json(200, JSON.parse(readFileSync(new URL('../../api-contracts/read-v3/fixtures/capabilities.json', import.meta.url), 'utf8')), v3.CONTRACT_VERSION) : json(200, answer([A, B]));
+  };
+  const early = new Map();
+  const options = { enabled: true, validators: v1, fetch, first: (path, method) => { const key = `${method} ${path}`; const reply = early.get(key) ?? null; early.delete(key); return reply; } };
+  const inner = featured.createFeaturedReadSource(createPublicSource(createEstimateSource(options, v2), options, v3), options, v5);
+  const source = createScheduledSource(inner, { minIntervalMs: 0, budget: null });
+  early.set('POST /api/read/v5/featured-pools', Promise.resolve(json(200, answer([A, B]))));
+  early.set('GET /api/read/v3/capabilities', Promise.resolve(json(200, JSON.parse(readFileSync(new URL('../../api-contracts/read-v3/fixtures/capabilities.json', import.meta.url), 'utf8')), v3.CONTRACT_VERSION)));
+  const taken = await featured.readFeaturedList(source);
+  assert.deepEqual([taken.state, calls.length], ['ok', 0], 'the early reply, and no request of its own');
+  assert.deepEqual([(await source.routeEnabled('overview')).state, calls.length], ['enabled', 0], 'the capabilities, from the early reply too');
+  early.set('POST /api/read/v5/featured-pools', Promise.resolve(json(200, { schemaVersion: 1 })));
+  const refused = await featured.readFeaturedList(source);
+  assert.deepEqual([refused.state, refused.reason, calls.length], ['invalid', 'response_contract', 0], 'checked as any reply is');
+  early.set('POST /api/read/v5/featured-pools', Promise.reject(new TypeError('offline')));
+  const sent = await featured.readFeaturedList(source);
+  assert.deepEqual([sent.state, calls], ['ok', [['/api/read/v5/featured-pools', 'POST']]], 'one that never arrived: the attempt is sent');
+  const after = await featured.readFeaturedList(source);
+  assert.deepEqual([after.state, calls.length], ['ok', 2], 'no early reply left: sent');
+
+  // The slot: each reply taken once; the first ask leaves the slot taken, so the page's script sends nothing after it.
+  const reply = Promise.resolve(new Response('{}'));
+  globalThis.__dominoEarly = { at: performance.now(), replies: { 'POST /api/read/v5/featured-pools': reply } };
+  assert.equal(takeEarly('/api/read/v3/capabilities', 'GET'), null, 'nothing sent for it');
+  assert.equal(takeEarly('/api/read/v5/featured-pools', 'POST'), reply);
+  assert.equal(takeEarly('/api/read/v5/featured-pools', 'POST'), null, 'once');
+  globalThis.__dominoEarly = { at: performance.now() - EARLY_LIST_MS, replies: { 'POST /api/read/v5/featured-pools': reply } };
+  assert.equal(takeEarly('/api/read/v5/featured-pools', 'POST'), null, 'too old: let go');
+  delete globalThis.__dominoEarly;
+  assert.equal(takeEarly('/api/read/v5/featured-pools', 'POST'), null);
+  assert.deepEqual(globalThis.__dominoEarly, { at: -Infinity, replies: {} }, 'nothing sent: the slot is taken all the same');
+  delete globalThis.__dominoEarly;
+
+  // The page's script: the two same-origin requests the app itself sends first, on Home and Markets only, once.
+  const script = readFileSync(new URL('../public/early-list.js', import.meta.url), 'utf8');
+  assert.equal([...script.matchAll(/\bfetch\s*\(/g)].length, 1, 'one call');
+  assert.match(script, /var reply = fetch\(path, \{\n\s*method: method,\n\s*headers: body === undefined \? \{ Accept: 'application\/json' \} : \{ 'Content-Type': 'application\/json', Accept: 'application\/json' \},\n\s*body: body,\n\s*mode: 'same-origin',\n\s*credentials: 'same-origin',\n\s*redirect: 'manual',\n\s*cache: 'no-store',\n\s*referrerPolicy: 'same-origin',\n\s*\}\)/);
+  assert.deepEqual([...script.matchAll(/['"`](https?:\/\/[^'"`]*|\/[a-z][^'"`]*)['"`]/g)].map((match) => match[1]), ['/api/read/v5/featured-pools', '/api/read/v3/capabilities'], 'no other address');
+  assert.doesNotMatch(script, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB|document\.cookie|eval)\b/);
+  assert.match(script, /if \(window\.__dominoEarly !== undefined\) return/, 'nothing once the app has read');
+  assert.match(script, /\['', 'markets', 'explore', 'pools'\]\.indexOf\(first\) === -1\) return/, 'Home and Markets only');
+  const run = (hash, slot) => {
+    const sent = [];
+    const context = { location: { hash }, performance, window: slot === undefined ? {} : { __dominoEarly: slot }, fetch: (path, init) => (sent.push([init.method, path, init.body ?? null]), new Promise(() => {})) };
+    new Function('window', 'location', 'performance', 'fetch', script)(context.window, context.location, context.performance, context.fetch);
+    return [sent, Object.keys(context.window.__dominoEarly?.replies ?? {})];
+  };
+  const both = [[['POST', '/api/read/v5/featured-pools', '{}'], ['GET', '/api/read/v3/capabilities', null]], ['POST /api/read/v5/featured-pools', 'GET /api/read/v3/capabilities']];
+  assert.deepEqual(['', '#/', '#/#pools', '#/markets', '#/explore/0xab', '#/pools'].map((hash) => run(hash)), Array(6).fill(both));
+  assert.deepEqual(['#/pool/0xab', '#/positions', '#/new', '#/docs'].map((hash) => run(hash)), Array(4).fill([[], []]));
+  // A token's own view shows no list (src/components/explore/routes.ts): nothing is sent there.
+  assert.deepEqual([`#/markets/0x${'1'.repeat(40)}`, `#/pools/0x${'aB'.repeat(20)}#x`].map((hash) => run(hash)), Array(2).fill([[], []]));
+  assert.deepEqual(run('#/', { at: -Infinity, replies: {} }), [[], []], 'the app read first');
+});
+
 test('fallback on the wire: route_not_available, no forwarder, a 5xx, invalid JSON, another contract and a timeout all give the embedded list', async () => {
   const cases = [
     ['route_not_available', () => json(404, { error: 'route_not_available' }), 'off'],
@@ -266,23 +329,35 @@ test('fallback on the wire: route_not_available, no forwarder, a 5xx, invalid JS
 // Added 2026-09-26 after review: the list's POST spent one read of the tab's gateway budget, though the gateway never
 // sees it (the forwarder's or the Worker's 404 while it is off, the edge cache once on, §10.6). Every Markets card's
 // history read went one budget slot later: the last at 6.5 s instead of 4.5 s.
-test('the list costs the tab’s gateway budget nothing: Markets’ overview and six card histories start when they did before it', async () => {
-  const { EDGE_ANSWERED } = built('lib/read/scheduler');
+// Changed on purpose 2026-09-28 (speed wave, item 4): the list costs nothing only when the edge cache answered it
+// (the Pages Function's X-Domino-Edge-Cache: hit, provenance `edge`). A miss does reach the gateway, which counts it:
+// it drew two refusals on Markets opened directly. So the list takes a read as it starts and gives it back on a hit;
+// it still never waits for the budget. Nor does a list the read Worker refused, its route switched off there (UNCOUNTED,
+// with the answers the beta gate, Cloudflare Access or a missing Worker make): the gateway never saw those either.
+test('the list costs the tab’s gateway budget nothing when the edge answers it: Markets’ overview and six card histories start when they did before it; a miss is counted', async () => {
+  const { EDGE_ANSWERED, EDGE_CACHED, UNCOUNTED } = built('lib/read/scheduler');
   assert.deepEqual([...EDGE_ANSWERED], ['featured-pools']);
-  let steady = 0;
-  const clock = { now: () => steady, monotonic: () => steady, random: () => 0, timer: () => () => {},
-    sleep: async (ms, signal) => { if (signal?.aborted) throw signal.reason; steady += ms; } };
-  const starts = [];
-  const source = { transport: 'bridge', read: async (route, request, opts = {}) => {
-    starts.push([route, clock.monotonic()]);
-    opts.onAttempt?.();
-    return { route, state: 'ok', data: {}, provenance: {} };
-  } };
-  const queue = createScheduledSource(source, { clock, unspacedStored: true });
-  const history = (i) => ({ poolId: id((i + 1).toString(16).padStart(2, '0')), currency: NATIVE_ETH, windowSeconds: 86400, resolutionSeconds: 3600 });
-  await featured.readFeaturedList(queue, { clock });
-  await queue.read('overview', { poolIds: SELECTED_POOLS });
-  for (let i = 0; i < 6; i++) await queue.read('history', history(i));
+  assert.ok(EDGE_CACHED.has('featured-pools'));
+  assert.deepEqual([...UNCOUNTED].sort(), ['access_required', 'gate_required', 'gate_unavailable', 'not_connected']);
+  const run = async (hit) => {
+    let steady = 0;
+    const clock = { now: () => steady, monotonic: () => steady, random: () => 0, timer: () => () => {},
+      sleep: async (ms, signal) => { if (signal?.aborted) throw signal.reason; steady += ms; } };
+    const starts = [];
+    const source = { transport: 'bridge', read: async (route, request, opts = {}) => {
+      starts.push([route, clock.monotonic()]);
+      opts.onAttempt?.();
+      if (route === 'featured-pools' && typeof hit === 'object') return { route, provenance: {}, ...hit };
+      return { route, state: 'ok', data: {}, provenance: route === 'featured-pools' && hit ? { edge: true } : {} };
+    } };
+    const queue = createScheduledSource(source, { clock, unspacedStored: true });
+    const history = (i) => ({ poolId: id((i + 1).toString(16).padStart(2, '0')), currency: NATIVE_ETH, windowSeconds: 86400, resolutionSeconds: 3600 });
+    await featured.readFeaturedList(queue, { clock });
+    await queue.read('overview', { poolIds: SELECTED_POOLS });
+    for (let i = 0; i < 6; i++) await queue.read('history', history(i));
+    return { starts, queue, history, clock };
+  };
+  const { starts, queue, history, clock } = await run(true);
   assert.deepEqual(starts, [['featured-pools', 0], ['overview', 0], ...[0, 0, 0, 500, 2500, 4500].map((at) => ['history', at])],
     'the same starts as with no list read (read-public.test.mjs: 0, 0, 0, 0, 500, 2500, 4500)');
   // A list read never waits for the budget: asked with too little left for a gateway read, it goes at once.
@@ -291,6 +366,43 @@ test('the list costs the tab’s gateway budget nothing: Markets’ overview and
   assert.deepEqual(starts.slice(late), [['featured-pools', 4500]]);
   await queue.read('history', history(6));
   assert.deepEqual(starts.at(-1), ['history', 6500], 'the next gateway read keeps the budget’s own pace');
+  // A miss is a gateway read: the cards go one budget slot later.
+  const missed = await run(false);
+  assert.deepEqual(missed.starts.slice(2).map(([, at]) => at), [0, 0, 500, 2500, 4500, 6500]);
+  // Refused in front of the gateway: as a hit.
+  for (const answer of [{ state: 'disabled', reason: 'route_not_enabled' }, { state: 'not_connected', reason: 'no_forwarder' }, { state: 'gate_required' }]) {
+    assert.deepEqual((await run(answer)).starts.slice(2).map(([, at]) => at), [0, 0, 0, 500, 2500, 4500], answer.state);
+  }
+  // Another failure may have reached the gateway: counted.
+  assert.deepEqual((await run({ state: 'unavailable', cause: { kind: 'producer', code: 'upstream_unavailable', status: 503 }, retryable: true })).starts.slice(2).map(([, at]) => at), [0, 0, 500, 2500, 4500, 6500]);
+});
+
+// Added 2026-09-28 after review (speed wave, item 4): the Pages Function's header, through the real bridge source and
+// the queue, is what gives the read back. Nothing tested the header all the way: losing it would have spent a read of
+// the budget on every edge hit, silently.
+test('an answer with X-Domino-Edge-Cache: hit, through the bridge source and the queue, is marked edge and gives its read back; without it the read is kept', async () => {
+  const { GATEWAY_BUDGET } = built('lib/read/scheduler');
+  const { EDGE_CACHE_HEADER } = built('lib/read/bridgeSource');
+  assert.equal(EDGE_CACHE_HEADER, 'X-Domino-Edge-Cache');
+  const run = async (headers) => {
+    const clock = { now: () => 1_000, monotonic: () => 0, random: () => 0, timer: () => () => {}, sleep: async () => {} };
+    let kept = null;
+    const store = { load: () => kept, save: (state) => { kept = state; } };
+    const fetch = async (path) => {
+      assert.equal(path, '/api/read/v5/featured-pools');
+      const reply = json(200, answer([A, B]));
+      for (const [name, value] of Object.entries(headers)) reply.headers.set(name, value);
+      return reply;
+    };
+    const options = { enabled: true, validators: v1, fetch, clock };
+    const inner = featured.createFeaturedReadSource(createPublicSource(createEstimateSource(options, v2), options, v3), options, v5);
+    const queue = createScheduledSource(inner, { clock, budgetStore: store, minIntervalMs: 0, refusedIntervalMs: 1100, unspacedStored: true, width: 2 });
+    const outcome = await featured.readFeaturedList(queue, { clock });
+    return { state: outcome.state, edge: outcome.provenance.edge ?? null, kept };
+  };
+  assert.deepEqual(await run({ 'X-Domino-Edge-Cache': 'hit' }), { state: 'ok', edge: true, kept: { tokens: GATEWAY_BUDGET.burst, at: 1_000 } }, 'the edge answered: the budget whole');
+  assert.deepEqual(await run({}), { state: 'ok', edge: null, kept: { tokens: GATEWAY_BUDGET.burst - 1, at: 1_000 } }, 'the Worker answered: one read spent');
+  assert.deepEqual((await run({ 'X-Domino-Edge-Cache': 'miss' })).kept.tokens, GATEWAY_BUDGET.burst - 1, 'only `hit` is the edge');
 });
 
 // --- the refresh: the list on screen changes only as §11.1 says ---
@@ -382,6 +494,61 @@ test('before its first answer the store paints the embedded list; a read that th
   const settled = await store.ensure();
   assert.equal(settled.settled, true);
   assert.equal(settled.source, 'bundled');
+});
+
+// Added 2026-09-28 (speed wave, item 8). A first read that found no answer (its 1.5 s passed, the service was busy, an
+// edge page) put the embedded list up for 30 minutes: the served list waited for a remount, and Home, its ticker,
+// Markets and a link showed the wrong pools for half an hour (the study's harness: still the embedded list at +31 min).
+test('a first read that found no answer puts up the embedded list only until an answer comes: asked again seconds on, and the first answer takes the screen at once', async () => {
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const first = answered(answer([A, B], { listId: listId('01') }));
+  const timers = [];
+  const clock = { ...steadyClock(), timer: (ms, fire) => { const row = { ms, fire, cancelled: false }; timers.push(row); return () => { row.cancelled = true; }; } };
+  const answers = [{ kind: 'failed', passing: true }, { kind: 'failed', passing: true }, first, { kind: 'failed', passing: true }];
+  const firsts = [];
+  const store = featured.createFeaturedStore({ clock, read: async (_signal, isFirst) => { firsts.push(isFirst === true); return answers.shift() ?? first; } });
+  await store.ensure();
+  assert.equal(store.getSnapshot().source, 'bundled');
+  assert.deepEqual(timers.map((timer) => timer.ms), [3_000], 'asked again 3 s on');
+  timers[0].fire(); await settle();
+  assert.equal(store.getSnapshot().source, 'bundled');
+  assert.deepEqual(timers.map((timer) => timer.ms), [3_000, 6_000], 'then 6 s on');
+  timers[1].fire(); await settle();
+  assert.deepEqual([store.getSnapshot().source, idsOf(store.getSnapshot())], ['server', [A.poolId, B.poolId]], 'the first answer takes the screen at once');
+  assert.deepEqual(firsts, [true, false, false], 'only the page’s first read is its first');
+  await store.refresh();
+  assert.deepEqual([store.getSnapshot().source, timers.length], ['server', 2], 'a later failure keeps the list, and nothing more is asked on the store’s own');
+  // The markets' own refresh takes the first answer at once too.
+  const refreshed = scripted({ kind: 'failed', passing: true }, first);
+  await refreshed.store.ensure();
+  await refreshed.store.refresh();
+  assert.equal(refreshed.store.getSnapshot().source, 'server');
+  // A first answer of none is an answer: a list that comes later waits for a reload, as before.
+  const none = scripted(answered(read('valid/none.json')), first);
+  await none.store.ensure();
+  await none.store.refresh();
+  assert.equal(none.store.getSnapshot().source, 'bundled');
+  // At most three asks of its own, 3, 6 and 12 s apart.
+  const down = [];
+  const downClock = { ...steadyClock(), timer: (ms, fire) => { down.push(ms); void Promise.resolve().then(fire); return () => {}; } };
+  const failing = featured.createFeaturedStore({ clock: downClock, read: async () => ({ kind: 'failed', passing: true }) });
+  await failing.ensure();
+  for (let i = 0; i < 10; i++) await settle();
+  assert.deepEqual(down, featured.FEATURED_RETRY_MS);
+  // A failure that cannot clear by itself (an invalid list) is not asked again.
+  const invalid = [];
+  const invalidClock = { ...steadyClock(), timer: (ms) => (invalid.push(ms), () => {}) };
+  await featured.createFeaturedStore({ clock: invalidClock, read: async () => ({ kind: 'failed' }) }).ensure();
+  assert.deepEqual(invalid, []);
+  assert.deepEqual(featured.answerOf({ route: 'featured-pools', state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true, provenance: {} }), { kind: 'failed', passing: true });
+  assert.deepEqual(featured.answerOf({ route: 'featured-pools', state: 'invalid', reason: 'response_contract', provenance: {} }), { kind: 'failed' });
+  // The first read may be given longer: 3.5 s where the page waits for it.
+  assert.equal(featured.FEATURED_FIRST_DEADLINE_MS, 3_500);
+  const deadlines = [];
+  const source = { transport: 'bridge', read: async (route, request, options) => (deadlines.push(options.deadlineAt), { route, state: 'aborted', provenance: {} }) };
+  await featured.readFeaturedList(source, { clock: { monotonic: () => 100 } });
+  await featured.readFeaturedList(source, { clock: { monotonic: () => 100 }, deadlineMs: featured.FEATURED_FIRST_DEADLINE_MS });
+  assert.deepEqual(deadlines, [1_600, 3_600]);
 });
 
 // Added 2026-09-26 after review: ensure() used to resolve, for good, to the snapshot of the page's first answer, so a

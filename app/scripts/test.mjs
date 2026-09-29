@@ -60,6 +60,8 @@ execFileSync(
     'tests/range-price-input.test.mjs',
     'tests/picker-presentation.test.mjs',
     'tests/token-artwork.test.mjs',
+    // 2026-09-28 (speed wave, item 35): the site's fonts are its own files, and they are the ones Google Fonts served.
+    'tests/fonts.test.mjs',
     // 2026-09-24: New position's pool step (usable pools, TVL order, pool-id hints).
     'tests/pool-hints.test.mjs',
     'tests/pool-workspace.test.mjs',

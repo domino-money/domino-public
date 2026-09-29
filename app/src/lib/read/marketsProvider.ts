@@ -68,7 +68,10 @@
  *   - a row whose provider figures are unavailable because the provider was
  *     busy or rate limited: that pool's market read alone, after the read
  *     service's 60 s fresh window plus up to a quarter of it; three times a
- *     visit for each pool.
+ *     visit for each pool. Where the rows came from the stored overview, the
+ *     overview is what is asked again (changed 2026-09-28, speed wave, item
+ *     2): one stored read of about 65 ms for the table, where the pool's own
+ *     read is a provider read of about 4.9 s that held the queue.
  *
  * When the last viewer leaves while a read runs, it is cancelled 2 s later,
  * not at once: a screen that follows straight away (Home to Markets) joins it
@@ -79,7 +82,10 @@
  * later, had their figures:
  *
  *   - every read of a load is asked `priority: 'first'` (scheduler.ts), so the
- *     table, the ticker and Home wait for no Markets card's history read;
+ *     table, the ticker and Home wait for no Markets card's history read; a
+ *     refresh of rows already settled on screen, the catch-up asks included,
+ *     is not (changed 2026-09-28, speed wave, item 11): it jumped ahead of the
+ *     next page's own reads and spent the budget before them;
  *   - a stored overview that serves a pool without its provider figures is
  *     asked again soon, instead of a minute later, only where they are
  *     coming (`catchUpInMs`): the provider gave figures for that pool before
@@ -423,6 +429,8 @@ export interface LoadOptions {
   binds?: (poolId: string, pool: VerifiedPool) => boolean
   /** Every pool a read named, as read, by lowercase id: what a list that answers later is bound again against. */
   seen?: Map<string, VerifiedPool>
+  /** A refresh of rows already settled on screen: its reads are not asked first (speed wave, item 11). */
+  inPlace?: boolean
 }
 
 /** A row's own read: the pool's market read, or its entry in the stored snapshot. */
@@ -514,8 +522,10 @@ async function readMarkets(
   }
   /** Pools whose figures the producer is about to collect, while the provider will ask again for them. */
   const figuresBehind = new Set<string>()
-  // Every read of the table goes before any queued read that did not ask first: a Markets card's history, say.
-  const asked = { signal, priority: 'first' as const }
+  // Every read of the table goes before any queued read that did not ask first: a Markets card's history, say. A
+  // refresh of rows already settled on screen does not (changed 2026-09-28, speed wave, item 11): its catch-up asks
+  // jumped ahead of the next page's reads and spent its budget first.
+  const asked = options.inPlace ? { signal } : { signal, priority: 'first' as const }
 
   const setProblem = (problem: MarketProblem) => {
     const at = ledger.problems.findIndex((p) => problemKey(p) === problemKey(problem))
@@ -876,6 +886,8 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
   }
   /** Loads in a row that read nothing, for the wait before the next (FAILED_RETRY_MS). */
   let emptyLoads = 0
+  /** The last settled load read the stored overview: its busy provider rows are asked again through it (speed wave, item 2). */
+  let lastStored = false
 
   // The quiet re-asks: how many this visit, and when the next is due, on the monotonic clock their timers run on.
   let holders = 0
@@ -1005,6 +1017,7 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     memory.catchUp = refreshMs > 0 ? catchUpWaits : undefined
     // A check asked for a load that never read (cancelled while it waited for the list) is never another load's.
     memory.overviewCheck = undefined
+    memory.inPlace = inPlace
     if (pools) {
       // The list (featured pools v1 §11.1): its answer, then the markets of its pools. With this browser's copy of the
       // last overview, the page's first load does not wait: it reads the pools the copy names (the list this browser
@@ -1059,6 +1072,7 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
       return
     }
     ledger = loaded.ledger
+    if (!quiet) lastStored = loaded.stored === true
     const at = wall()
     const rows = loaded.rows.map(withKept)
     for (const row of rows) {
@@ -1244,6 +1258,12 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     }
     if (markets.size + tokens.size + metrics.size === 0) {
       plan()
+      return
+    }
+    // Rows the stored overview gave are asked again through it: one stored read for the table (about 65 ms), where a
+    // pool's own market read is a provider read of about 4.9 s. Changed 2026-09-28 (speed wave, item 2).
+    if (lastStored) {
+      void run(undefined, true)
       return
     }
     void run({ markets: [...markets], tokens: [...tokens], metrics: [...metrics] })

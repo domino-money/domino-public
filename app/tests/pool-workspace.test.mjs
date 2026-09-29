@@ -392,6 +392,24 @@ test('with every optional route listed: the stored snapshot paints first, the po
   for (const read of fixture.reads.slice(1)) assert.equal(read.options.signal.aborted, true, `${read.route} is cancelled with the page`)
 })
 
+// Added 2026-09-28 (speed wave, item 44): the copy's figures stand at once, and the chain reads start without waiting
+// for the page's own overview; the page's own answer replaces them.
+test('a painted pool shows the copy’s figures at once, starts its chain reads, and its own overview replaces them', async () => {
+  const fixture = workspace({ listed: ['overview', 'pool-activity'], dependencies: { storedPoolRead: (entry) => ok({ data: { poolId: entry.poolId, painted: true } }), overviewPoolOption: () => null, whenVisibleAfter: () => () => {} } })
+  fixture.props.source.supportsStoredReads = true
+  const painted = { route: 'overview', state: 'ok', data: { generatedAt: 0, pools: [{ poolId: id('a') }], tokens: [] }, provenance: { receivedAt: 1 } }
+  const host = mount(fixture.PoolWorkspace, { ...fixture.props, painted })
+  const figures = () => host.tree.props.children.find?.((child) => child?.props?.['data-pool-figures'] === '')?.props
+  assert.equal(figures()['data-market-read'], 'loading', 'resting while the page learns which routes are listed')
+  await flush(); host.render()
+  assert.equal(figures()['data-market-read'], 'overview', 'the copy’s figures, before any read')
+  await flush(); host.render()
+  assert.deepEqual(fixture.reads.map(({ route }) => route).sort(), ['overview', 'pool-activity'], 'the chain read goes beside the page’s own overview')
+  fixture.reads.find(({ route }) => route === 'overview').resolve(ok({ data: { generatedAt: 0, pools: [{ poolId: id('a'), acquisition: { status: 'ready' } }], tokens: [], acquisitionAccepted: true } })); await flush(); host.render()
+  assert.equal(figures()['data-market-read'], 'overview')
+  host.unmount()
+})
+
 test('G10: a store that holds nothing for the pool shows nothing, and the pool’s own lean read follows as a read of its own through the queue', async () => {
   const fixture = workspace({ listed: ['markets-snapshot'] }); const host = mount(fixture.PoolWorkspace, fixture.props)
   await flush(); host.render()
@@ -555,6 +573,8 @@ function poolPage(hash, dependencies = {}) {
     verifyCandidate(_source, tokenKey, paired, poolId, options) { const pending = deferred(); verifications.push({ tokenKey, paired, poolId, signal: options.signal, ...pending }); return pending.promise },
     // 2026-09-24: the page offers New position only for a pool Domino can open a position in (the real test).
     optionUsableForDomino: real('src/lib/read/screens/poolsList.ts').optionUsableForDomino,
+    // 2026-09-28 (speed wave, item 44): no copy of the last overview in this browser, unless a test says so.
+    appPaint: null, paintedPool: () => null,
     ...dependencies,
   })
   return { PoolDetail, verifications }
@@ -654,6 +674,55 @@ test('a verification with no answer leaves the page’s dashes, the reason in th
     assert.equal(verifications.length, 2, 'asked again, once')
     verifications[1].resolve({ failure: null, option: option('a'), restarted: false }); await flush(); host.render()
     assert.equal(part(host, 'PoolWorkspace').props.option.key, id('a'))
+  } finally { host.unmount(); globalThis.window = previous }
+})
+
+// Added 2026-09-28 (speed wave, items 3 and 12): read-v1's capabilities (the page's chain reads) are asked beside
+// read-v3's, not after the pool is verified; and a read-v3 check still failing in passing after publicSource.ts asked
+// it again is a failure now, not the older path, so the page asks it again on its own, as it does a verification.
+test('the pool page asks read-v1’s capabilities beside read-v3’s, and a check that failed in passing is asked again on its own', async () => {
+  const previous = globalThis.window
+  const checks = []
+  const asks = []
+  const reads = []
+  const answers = [{ state: 'failed', outcome: { state: 'unavailable', cause: { kind: 'edge', status: 502 }, retryable: false } }, { state: 'enabled' }]
+  const source = { transport: 'bridge', supportsStoredReads: true, routeEnabled: async (route) => (checks.push(route), route === 'overview' ? answers.shift() : { state: 'enabled' }) }
+  const { PoolDetail } = poolPage(`#/pool/${id('a')}`, {
+    useReadSource: () => source,
+    readWithin(_source, route, request) { const pending = deferred(); reads.push({ route, request, ...pending }); return pending.promise },
+    askAgainLater(outcome, attempt, signal) { const pending = deferred(); asks.push({ outcome, attempt, signal, ...pending }); return pending.promise },
+  })
+  const host = mount(PoolDetail, { poolId: id('a') })
+  try {
+    await flush(); host.render()
+    assert.deepEqual(checks, ['pool-activity', 'overview'], 'read-v1’s capabilities beside read-v3’s')
+    assert.equal(elements(host.tree, (node) => node.type?.name === 'Pending')[0].props.verifying, false, 'the failure is shown as the page’s dashes')
+    assert.deepEqual(asks.map(({ outcome, attempt }) => [outcome.state, attempt]), [['unavailable', 0]], 'asked again on its own')
+    asks[0].resolve(true); await flush(); host.render(); await flush()
+    assert.deepEqual(checks.slice(2), ['pool-activity', 'overview'])
+    assert.deepEqual(reads.map(({ route, request }) => [route, request]), [['overview', { poolIds: [id('a')] }]], 'the overview, never the older verification')
+  } finally { host.unmount(); globalThis.window = previous }
+})
+
+// Added 2026-09-28 (speed wave, item 44, the owner's OK): a pool this browser's copy of the last overview names is painted
+// from it at once, every figure as old as it is, while its own verification is on its way; the answer replaces it.
+test('a pool the copy names is painted from it at once, and its own verification replaces it', async () => {
+  const previous = globalThis.window
+  const copied = { route: 'overview', state: 'ok', data: { pools: [] }, provenance: { receivedAt: 1 } }
+  const painted = []
+  const { PoolDetail, verifications } = poolPage(`#/pool/${id('a')}`, {
+    appPaint: { load: () => null },
+    paintedPool: (memory, poolId, tokenKey) => (painted.push([poolId, tokenKey]), { overview: copied, option: { ...option('a'), block: 600 } }),
+  })
+  const host = mount(PoolDetail, { poolId: id('a') })
+  try {
+    assert.deepEqual(painted, [[id('a'), addr('5')]], 'the copy asked for the pool and the token it is verified against')
+    const early = part(host, 'PoolWorkspace')
+    assert.equal(early.props.option.block, 600, 'the copy’s pool, at once')
+    assert.equal(early.props.painted, copied, 'and its figures')
+    assert.equal(verifications.length, 1, 'its own verification still goes')
+    verifications[0].resolve({ failure: null, option: option('a'), restarted: false }); await flush(); host.render()
+    assert.equal(part(host, 'PoolWorkspace').props.option.block, 700, 'the answer replaces it')
   } finally { host.unmount(); globalThis.window = previous }
 })
 
@@ -1009,8 +1078,14 @@ function picker(props = {}) {
   const reads = []
   const asks = []
   const hinted = []
+  const readWithin = (_source, route, request, options) => { const pending = deferred(); reads.push({ route, request, options, ...pending }); return pending.promise }
+  const hintsWithin = (token, paired, signal) => { const pending = deferred(); hinted.push({ token, paired, signal, ...pending }); return pending.promise }
+  // Changed on purpose 2026-09-28 (speed wave): New position's read is the flow's (src/lib/create/poolsAhead.ts), the real
+  // module over the same deferred boundaries, one per picker, so what this checks of the picker's read holds as before.
+  const ahead = load('src/lib/create/poolsAhead.ts', { readWithin, hintsWithin, usablePoolsRequest: real('src/lib/read/screens/poolsList.ts').usablePoolsRequest })
   const { PoolPicker } = load('PoolPicker', {
-    readWithin(_source, route, request, options) { const pending = deferred(); reads.push({ route, request, options, ...pending }); return pending.promise },
+    keptCreatePools: ahead.keptCreatePools, readCreatePools: ahead.readCreatePools,
+    readWithin,
     askAgainLater(outcome, attempt, signal) { const pending = deferred(); asks.push({ outcome, attempt, signal, ...pending }); return pending.promise },
     asksAgain: real('src/lib/read/screens/transient.ts').asksAgain,
     failureCode: real('src/lib/read/screens/quietRead.ts').failureCode,
@@ -1019,7 +1094,7 @@ function picker(props = {}) {
     neutralOrder: (options) => options,
     // New position's variant (2026-09-24): its pool-id hints are a deferred boundary too; its request and its
     // projection (usable pools only, in TVL order) are the real ones.
-    hintsWithin(token, paired, signal) { const pending = deferred(); hinted.push({ token, paired, signal, ...pending }); return pending.promise },
+    hintsWithin,
     usablePoolsRequest: real('src/lib/read/screens/poolsList.ts').usablePoolsRequest,
     projectPoolsView: real('src/lib/read/screens/poolsList.ts').projectPoolsView,
     rowApr: real('src/lib/read/screens/rowApr.ts').rowApr, rowAprReasonText: real('src/lib/read/screens/rowApr.ts').rowAprReasonText,

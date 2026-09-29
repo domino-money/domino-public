@@ -27,6 +27,15 @@ const MAX_BODY = 262144
 const TIMEOUT = 6000
 /** How long one token-pairs body is reused: the provider's own `Cache-Control: max-age=30`. */
 const BODY_TTL = 30000
+/**
+ * How long a lookup's outcome is kept: found artwork an hour, the provider's answer that names none five minutes, and
+ * a lookup that got no answer at all (a timeout, a refusal, a network error, a reply that is not JSON, or one never
+ * sent because too many were waiting) 30 s, since it says nothing about the token (2026-09-28, speed wave, item 42:
+ * such a failure used to be kept as "no image" for five minutes).
+ */
+const FOUND_TTL = 3600000
+const NONE_TTL = 300000
+const FAILED_TTL = 30000
 /** Addresses one `tokens` GET may name: the provider's own limit. */
 export const PRICE_BATCH = 30
 
@@ -103,11 +112,10 @@ export function createTokenArtworkResolver(options: Options = {}) {
    *
    * Only a body is kept. A failure (a timeout, a 429, a network error, a reply
    * that is not JSON) is not an answer to reuse: the next ask reads again, and
-   * the artwork keeps its own negative cache (`remember`). A read in flight
-   * may have less time than the caller that joins it: an artwork lookup that
-   * waited in the queue starts with what is left of its six seconds. When
-   * such a read gives up, its null is not the joiner's answer, so the joiner
-   * reads again with the time it has left.
+   * the artwork keeps its own short negative cache (`remember`). A read in
+   * flight may have less time left than the caller that joins it (it started
+   * earlier). When such a read gives up, its null is not the joiner's answer,
+   * so the joiner reads again with the time it has left.
    */
   function pairsWithin(address: string, remaining: number): Promise<unknown> {
     const kept = bodies.get(address)
@@ -137,13 +145,17 @@ export function createTokenArtworkResolver(options: Options = {}) {
     return entry.result
   }
 
-  async function artworkWithin(address: string, remaining: number): Promise<string | null> {
-    try { return artworkFromPairs(await pairsWithin(address, remaining), address) } catch { return null }
+  /** The token's artwork, null when the provider's answer names none, or undefined when no answer came. */
+  async function artworkOf(address: string): Promise<string | null | undefined> {
+    try {
+      const body = await pairsWithin(address, TIMEOUT)
+      return body === null ? undefined : artworkFromPairs(body, address)
+    } catch { return undefined }
   }
 
-  function remember(key: string, value: string | null) {
+  function remember(key: string, value: string | null, failed = false) {
     cache.delete(key)
-    cache.set(key, { value, expires: now() + (value ? 3600000 : 300000) })
+    cache.set(key, { value, expires: now() + (value ? FOUND_TTL : failed ? FAILED_TTL : NONE_TTL) })
     while (cache.size > 128) cache.delete(cache.keys().next().value!)
   }
 
@@ -154,15 +166,15 @@ export function createTokenArtworkResolver(options: Options = {}) {
     if (cached && cached.expires > now()) return Promise.resolve(cached.value)
     const joined = pending.get(key)
     if (joined) return joined
-    if (pending.size >= 32) { remember(key, null); return Promise.resolve(null) }
-    const queuedAt = now()
+    if (pending.size >= 32) { remember(key, null, true); return Promise.resolve(null) }
     const result = new Promise<string | null>((done) => {
+      // Its six seconds start when its read does, not while it waits for a slot (2026-09-28, speed wave, item 42:
+      // a token late in the queue used to run out of time without ever being asked, then showed none for 5 minutes).
       const run = () => {
         active++
-        const remaining = TIMEOUT - (now() - queuedAt)
-        void (remaining <= 0 ? Promise.resolve(null) : artworkWithin(address.toLowerCase(), remaining)).then((value) => {
-          remember(key, value)
-          done(value)
+        void artworkOf(address.toLowerCase()).then((found) => {
+          remember(key, found ?? null, found === undefined)
+          done(found ?? null)
         }).finally(() => {
           pending.delete(key)
           active--

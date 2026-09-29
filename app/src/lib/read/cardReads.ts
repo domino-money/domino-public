@@ -30,22 +30,28 @@ import { CARD_CACHE, CARD_RESOLUTION_SECONDS, CARD_WINDOW_SECONDS, FAILURE_WAIT_
 import { followPublicHistory, pageShown } from './historyRead'
 import { realClock, type Clock } from './pipeline'
 import { failureText, type ScreenFailure } from './screens/copy'
-import { transientWaitSeconds } from './screens/transient'
-import { readWithin, type PageVisibility, type ScreenOutcome } from './screens/screenRead'
+import { isTransient, transientWaitSeconds, type TransientCandidate } from './screens/transient'
+import { quietRetryDelay, readWithin, type PageVisibility, type ScreenOutcome } from './screens/screenRead'
 import type { ReadSource } from './types'
 
 /** Which series this page's cards ask for; `none` when the capabilities themselves failed (the site's access check, say). */
 export type CardMode = CardSource | 'none'
 
-/** Whether `history` is listed, from the source's one shared capabilities answer. */
-export async function cardMode(source: ReadSource, signal: AbortSignal): Promise<CardMode> {
+/** The mode the source's one shared capabilities answer gives, and the failure behind a `none` that can pass by itself. */
+async function checkedMode(source: ReadSource, signal: AbortSignal): Promise<{ mode: CardMode; passing: TransientCandidate | null }> {
   try {
     const check = await source.routeEnabled?.('history', { signal })
-    if (!check || check.state === 'not_enabled') return 'provider'
-    return check.state === 'enabled' ? 'chain' : 'none'
+    if (!check || check.state === 'not_enabled') return { mode: 'provider', passing: null }
+    if (check.state === 'enabled') return { mode: 'chain', passing: null }
+    return { mode: 'none', passing: isTransient(check.outcome) ? check.outcome : null }
   } catch {
-    return 'none'
+    return { mode: 'none', passing: null }
   }
+}
+
+/** Whether `history` is listed, from the source's one shared capabilities answer. */
+export async function cardMode(source: ReadSource, signal: AbortSignal): Promise<CardMode> {
+  return (await checkedMode(source, signal)).mode
 }
 
 /** How long cards on the provider path wait before the page asks the capabilities again. */
@@ -67,14 +73,26 @@ export interface ModeWatch {
  * one costs its GET, once a minute at most. `chain` and `none` stand: the
  * check that listed `history` is kept for the document, and `none` is the
  * site's access check, which only signing in ends. `emit` hears each change.
+ *
+ * Changed 2026-09-28 (speed wave, item 3): a check that still fails in passing
+ * after publicSource.ts asked it again says so now, rather than "not listed";
+ * it decides nothing yet, and is asked again as transient.ts allows before it
+ * is taken for `none`.
  */
 export async function followCardMode(source: ReadSource, emit: (mode: CardMode) => void,
   { signal, clock = realClock, page = typeof document === 'undefined' ? null : document }: ModeWatch): Promise<void> {
   let last: CardMode | null = null
+  let attempt = 0
   try {
     while (!signal.aborted) {
-      const mode = await cardMode(source, signal)
+      const { mode, passing } = await checkedMode(source, signal)
       if (signal.aborted) return
+      const delay = passing ? quietRetryDelay(passing, attempt++) : null
+      if (delay !== null) {
+        await clock.sleep(delay, signal)
+        await pageShown(page, signal)
+        continue
+      }
       if (mode !== last) emit(mode)
       last = mode
       // A source with no capabilities to ask never changes its answer.

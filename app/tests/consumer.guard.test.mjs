@@ -157,7 +157,10 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lab scree
     // importersOf() cannot tell a static import from import(): every mention of the module must be the lazy one.
     const mentions = [...code.matchAll(/['"`]\.\/DepositAmounts(?:\.tsx?)?['"`]/g)].length;
     const lazy = [...code.matchAll(/import\(\s*['"`]\.\/DepositAmounts(?:\.tsx?)?['"`]\s*\)/g)].length;
-    assert.deepEqual([mentions, lazy], [1, 1], `${path} names the deposit amounts once, in its lazy import(), never in a static import beside it`);
+    // Changed on purpose 2026-09-28 (speed wave, study item 33): the chunk is also asked ahead once a pool is chosen, with
+    // the same import() behind the same flag (preloadCreateControl): two mentions, both import(), never a static import.
+    assert.match(code, /export const preloadCreateControl = __DOMINO_WALLET_SESSION__\s*\?\s*\(\)\s*=>\s*void import\('\.\/DepositAmounts'\)/, path);
+    assert.deepEqual([mentions, lazy], [2, 2], `${path} names the deposit amounts only in its two import() calls, never in a static import beside them`);
   }
   assert.deepEqual(importersOf('components/preview/SwapQuote'), ['screens/AdvancedSetup.tsx'], 'the swap quote is shown only inside the lazy Setup screen');
   assert.deepEqual(importersOf('deposit/fixtures/fixtureSession'), ['screens/Deposits.tsx']);

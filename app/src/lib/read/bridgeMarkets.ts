@@ -23,12 +23,11 @@
  * browser (marketsPaint.ts, added 2026-09-27), which paints the rows at once
  * on the next visit while the live read is on its way.
  */
-import * as publicRuntime from 'api-contracts/read-v3/runtime.mjs'
+import { appPaint } from './appPaint'
 import { BRIDGE_TEST_POOLS } from './bridgeTestPools'
 import { poolListOf } from './featuredList'
 import { featuredStore } from './featuredSource'
 import { createReadMarketsProvider } from './marketsProvider'
-import { createPaintMemory } from './marketsPaint'
 import { appBridgeSource } from './screens/appSourceBridge'
 
 export function bridgeMarkets() {
@@ -39,6 +38,5 @@ export function bridgeMarkets() {
   const source = appBridgeSource()
   if (__DOMINO_POOL_SET__ !== 'selected') return createReadMarketsProvider({ source, poolIds: BRIDGE_TEST_POOLS, kind: 'bridge', refreshMs: 60_000 })
   const pools = poolListOf(featuredStore())
-  const paint = createPaintMemory(() => localStorage, publicRuntime)
-  return createReadMarketsProvider({ source, poolIds: pools.ids(), pools, kind: 'bridge', refreshMs: 60_000, paint })
+  return createReadMarketsProvider({ source, poolIds: pools.ids(), pools, kind: 'bridge', refreshMs: 60_000, paint: appPaint ?? undefined })
 }

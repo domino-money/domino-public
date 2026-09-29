@@ -364,6 +364,31 @@ test('the cards’ series is asked again each minute the page can be seen while 
   assert.deepEqual(heard, ['provider'])
 })
 
+// Added 2026-09-28 (speed wave, item 3): a check still failing in passing after publicSource.ts asked it again says so
+// now, rather than "not listed". It decides nothing yet: the cards wait, it is asked again as transient.ts allows, and
+// only a final answer is taken for `none`.
+test('a capabilities check that failed in passing decides nothing: asked again quietly, and the cards move once it answers', async () => {
+  const clock = virtualClock(), modes = [], checked = []
+  const passing = { state: 'failed', outcome: { state: 'unavailable', cause: { kind: 'edge', status: 502 }, retryable: false } }
+  const answers = [passing, passing, { state: 'enabled' }]
+  const source = { transport: 'bridge', routeEnabled: async () => (checked.push(clock.monotonic()), answers.shift()), read: () => { throw new Error('no read to decide') } }
+  const running = followCardMode(source, (mode) => modes.push([mode, clock.monotonic()]), { signal: new AbortController().signal, clock, page: null })
+  await clock.advance(0)
+  assert.deepEqual(modes, [], 'nothing decided on a passing failure')
+  await clock.advance(30_000)
+  assert.equal(checked.length, 3, 'asked again twice, about 4 s and 8 s on')
+  assert.equal(modes.length, 1)
+  assert.equal(modes[0][0], 'chain')
+  await running
+  // A failure asked again as often as transient.ts allows is taken for `none` at last.
+  const always = { transport: 'bridge', routeEnabled: async () => passing, read: () => { throw new Error('no read') } }
+  const seen = []
+  const done = followCardMode(always, (mode) => seen.push(mode), { signal: new AbortController().signal, clock, page: null })
+  await clock.advance(600_000)
+  await done
+  assert.deepEqual(seen, ['none'])
+})
+
 test('a chain card draws what the tab kept at once, reads its 24h hourly history, and asks again a minute after each answer', async () => {
   const clock = virtualClock(), controller = new AbortController(), answers = []
   const cache = emptyCache()

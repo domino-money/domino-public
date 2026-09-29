@@ -11,7 +11,8 @@
  */
 import { useEffect, useSyncExternalStore } from 'react'
 import type { ReadV5ContractVersion } from 'api-contracts/read-v5/runtime.mjs'
-import { answerOf, bundledStore, createFeaturedStore, readFeaturedList, type FeaturedSnapshot, type FeaturedStore } from './featuredList'
+import { appPaint } from './appPaint'
+import { answerOf, bundledStore, createFeaturedStore, FEATURED_FIRST_DEADLINE_MS, readFeaturedList, type FeaturedSnapshot, type FeaturedStore } from './featuredList'
 import type { READ_V5_PIN } from './pin'
 import { appBridgeSource } from './screens/appSourceBridge'
 import { followFeaturedList } from './screens/featuredPools'
@@ -26,7 +27,9 @@ let store: FeaturedStore | null = null
 export function featuredStore(): FeaturedStore {
   if (store) return store
   if (__DOMINO_POOL_SET__ !== 'selected') return (store = bundledStore())
-  const made = createFeaturedStore({ read: (signal) => readFeaturedList(appBridgeSource(), { signal }).then(answerOf) })
+  // The first read has 3.5 s where the page waits for it, with no copy of the last overview to paint from (speed wave,
+  // item 8): a slow list was taken for none, and the embedded list stood in its place.
+  const made = createFeaturedStore({ read: (signal, first) => readFeaturedList(appBridgeSource(), { signal, ...(first && !appPaint?.load() ? { deadlineMs: FEATURED_FIRST_DEADLINE_MS } : {}) }).then(answerOf) })
   // New position names the pools of the list on screen (screens/featuredPools.ts).
   followFeaturedList(() => made.getSnapshot().entries)
   return (store = made)

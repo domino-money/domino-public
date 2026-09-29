@@ -121,9 +121,12 @@ function listFiles(root, dir) {
  * the featured pools list's route (functions/api/read/v5/featured-pools.ts)
  * checks each list with read-v5's runtime, which takes read-v1's error table.
  * tests/release.test.mjs fails when functions/ imports anything else from
- * outside itself, so no uploaded byte escapes the digest.
+ * outside itself, so no uploaded byte escapes the digest. Added 2026-09-28
+ * (speed wave, item 45): the stored history's route (functions/api/read/v3/
+ * history.ts) checks each answer with read-v3's runtime, which takes read-v1's
+ * and read-v2's.
  */
-export const BUNDLED = Object.freeze(['../api-contracts/read-v1/runtime.mjs', '../api-contracts/read-v5/runtime.mjs'])
+export const BUNDLED = Object.freeze(['../api-contracts/read-v1/runtime.mjs', '../api-contracts/read-v2/runtime.mjs', '../api-contracts/read-v3/runtime.mjs', '../api-contracts/read-v5/runtime.mjs'])
 
 /**
  * What a deploy uploads: every file of dist, the Pages Functions wrangler

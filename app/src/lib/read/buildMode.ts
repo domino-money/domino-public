@@ -14,11 +14,30 @@ import { deferredMarkets } from './deferredMarkets'
 import type { MarketsProvider } from './marketsProvider'
 import type { ReadSource } from './types'
 
+let appMarkets: MarketsProvider | null = null
+
+/**
+ * The app's one markets provider, made on first use: main.tsx may start its first load before the app renders (speed
+ * wave, item 9, 2026-09-28), and the app's own first render takes the same one.
+ */
 export function appMarketsProvider(): MarketsProvider {
+  if (appMarkets) return appMarkets
   if (__DOMINO_READ_MODE__ === 'fixture') {
-    return deferredMarkets('fixture', () => import('./fixtureMarkets').then((m) => m.fixtureMarkets('provider')))
+    return (appMarkets = deferredMarkets('fixture', () => import('./fixtureMarkets').then((m) => m.fixtureMarkets('provider'))))
   }
-  return bridgeMarkets()
+  return (appMarkets = bridgeMarkets())
+}
+
+/**
+ * Home's and Markets' first load, started as the script runs rather than once the page has rendered and committed
+ * (0.07 s on a laptop, 0.33 s on a phone, measured by the speed study). Until their table renders and holds the quiet
+ * re-asks itself, this holds them, so the first answer is read as the table will read it; it lets go after 10 s.
+ */
+export function startMarkets(): void {
+  const markets = appMarketsProvider()
+  markets.ensure()
+  const release = markets.recoverQuietly?.()
+  if (release) setTimeout(release, 10_000)
 }
 
 let appSource: Promise<ReadSource> | null = null

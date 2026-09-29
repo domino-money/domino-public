@@ -21,7 +21,8 @@ import * as runtime from '../../api-contracts/read-v5/runtime.mjs';
 import { createWorker } from '../../bridge/src/worker.mjs';
 
 const require = createRequire(import.meta.url);
-const { answerFeatured, cacheKey, FEATURED_PATH, LIST_SECONDS } = require('../.test-build/app/functions/_lib/featuredEdge.js');
+const { answerFeatured, cacheKey, FEATURED_PATH, LIST_SECONDS, STALE_SECONDS } = require('../.test-build/app/functions/_lib/featuredEdge.js');
+const { REFRESH_GUARD_MS } = require('../.test-build/app/functions/_lib/publicEdge.js');
 const { onRequest: gate, LOGIN_PATH, API_CSP } = require('../.test-build/app/functions/_middleware.js');
 
 const ORIGIN = 'https://domino.money';
@@ -93,13 +94,18 @@ function clock(start = Date.UTC(2026, 8, 26, 12)) {
   return { at, now: () => at.now };
 }
 
-const runtimeWith = (cache, time = clock()) => ({ contract: CONTRACT, cache, now: time.now });
+const runtimeWith = (cache, time = clock(), extra = {}) => ({ contract: CONTRACT, cache, now: time.now, refreshing: new Map(), ...extra });
 
+// Changed on purpose 2026-09-28 (speed wave, item 7, the owner's OK): a list older than 60 s is still served, for up to
+// 15 minutes, while the request that found it goes on to the Worker in the background; the entry lives that long.
 test('a valid list is passed on byte for byte and kept once; within 60 s the same question is answered from the edge', async () => {
   const cache = memoryCache();
   const time = clock();
   const { calls, env } = bridge();
-  const first = await answerFeatured(ask(), env, runtimeWith(cache, time));
+  const later = [];
+  const refreshing = new Map();
+  const runtime = () => runtimeWith(cache, time, { waitUntil: (work) => later.push(work), refreshing });
+  const first = await answerFeatured(ask(), env, runtime());
   assert.equal(first.status, 200);
   assert.equal(await first.text(), CURRENT);
   assert.equal(first.headers.get('X-Domino-Read-Contract'), VERSION);
@@ -107,11 +113,13 @@ test('a valid list is passed on byte for byte and kept once; within 60 s the sam
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, `${ORIGIN}${FEATURED_PATH}`);
   assert.equal(calls[0].body, '{}', 'the request goes on untouched');
-  assert.deepEqual(cache.puts, [{ url: `${ORIGIN}/api/read/v5/cache/${VERSION}/featured-pools`, cacheControl: `max-age=${LIST_SECONDS}` }]);
+  await Promise.all(later.splice(0));
+  assert.deepEqual(cache.puts, [{ url: `${ORIGIN}/api/read/v5/cache/${VERSION}/featured-pools`, cacheControl: `max-age=${STALE_SECONDS}` }]);
   assert.equal(cacheKey(VERSION), cache.puts[0].url);
+  assert.equal(first.headers.get('X-Domino-Edge-Cache'), null, 'the Worker answered');
 
   time.at.now += LIST_SECONDS * 1000 - 1;
-  const hit = await answerFeatured(ask({ body: ' { }\n', headers: { 'X-Domino-Read-Contract': null } }), env, runtimeWith(cache, time));
+  const hit = await answerFeatured(ask({ body: ' { }\n', headers: { 'X-Domino-Read-Contract': null } }), env, runtime());
   assert.equal(hit.status, 200);
   assert.equal(await hit.text(), CURRENT);
   assert.equal(hit.headers.get('Cache-Control'), 'no-store');
@@ -119,15 +127,59 @@ test('a valid list is passed on byte for byte and kept once; within 60 s the sam
   assert.equal(hit.headers.get('X-Content-Type-Options'), 'nosniff');
   assert.match(hit.headers.get('Content-Type'), /^application\/json/);
   assert.equal(hit.headers.get('X-Domino-Request-Id'), null, 'no Worker handled it');
+  assert.equal(hit.headers.get('X-Domino-Edge-Cache'), 'hit', 'and it says where it came from');
   assert.equal(calls.length, 1, 'the edge answered');
+  assert.equal(later.length, 0, 'nothing to refresh within 60 s');
   assert.equal(cache.puts.length, 1);
 
-  // At 60 s the entry is spent: the Worker is asked again and the new list kept.
+  // From 60 s the entry is still served at once, and the request that found it goes on to the Worker in the background,
+  // once, whose answer is kept for the next visitor.
   time.at.now += 1;
-  const again = await answerFeatured(ask(), env, runtimeWith(cache, time));
-  assert.equal(await again.text(), CURRENT);
+  const stale = await answerFeatured(ask(), env, runtime());
+  assert.equal(await stale.text(), CURRENT);
+  assert.equal(stale.headers.get('X-Domino-Edge-Cache'), null, 'the request that sends the refresh is counted by the gateway: no hit');
+  const again = await answerFeatured(ask(), env, runtime());
+  assert.equal(again.headers.get('X-Domino-Edge-Cache'), 'hit');
+  assert.equal(later.length, 1, 'one refresh at a time');
+  await Promise.all(later.splice(0));
   assert.equal(calls.length, 2);
+  assert.equal(calls[1].body, '{}', 'the request as it came');
   assert.equal(cache.puts.length, 2);
+  assert.equal(refreshing.size, 0);
+  // Past 15 minutes it is not served at all.
+  time.at.now += STALE_SECONDS * 1000;
+  const gone = await answerFeatured(ask(), env, runtime());
+  assert.equal(gone.headers.get('X-Domino-Edge-Cache'), null);
+  assert.equal(calls.length, 3);
+});
+
+// Added 2026-09-28 (speed wave, item 7): switching the list off still reaches every visitor at their next read. The
+// background read of a kept list meets the Worker's 404 route_not_available and takes the entry out.
+test('a list switched off is taken out of the edge by the background read that meets the refusal; a failure leaves it', async () => {
+  const cache = memoryCache();
+  cache.delete = async (request) => cache.entries.delete(request.url);
+  const time = clock();
+  let off = false;
+  let broken = false;
+  const { calls, env } = bridge(() => (off ? said('{"error":"route_not_available"}', { status: 404 }) : broken ? said('{"error":"upstream_unavailable"}', { status: 503 }) : said()));
+  const later = [];
+  const refreshing = new Map();
+  const runtime = () => runtimeWith(cache, time, { waitUntil: (work) => later.push(work), refreshing });
+  await answerFeatured(ask(), env, runtime());
+  await Promise.all(later.splice(0));
+  broken = true;
+  time.at.now += LIST_SECONDS * 1000;
+  assert.equal(await (await answerFeatured(ask(), env, runtime())).text(), CURRENT, 'served, and refreshed behind');
+  await Promise.all(later.splice(0));
+  assert.equal(cache.entries.size, 1, 'a failed refresh leaves the entry');
+  broken = false; off = true;
+  time.at.now += REFRESH_GUARD_MS;
+  assert.equal(await (await answerFeatured(ask(), env, runtime())).text(), CURRENT, 'served, and refreshed behind');
+  await Promise.all(later.splice(0));
+  assert.equal(cache.entries.size, 0, 'the route is off: the entry is out');
+  const next = await answerFeatured(ask(), env, runtime());
+  assert.equal(next.status, 404, 'the next visitor gets the Worker' + String.fromCharCode(8217) + 's own refusal');
+  assert.equal(calls.length, 4);
 });
 
 test('every valid answer is kept, none included, and every invalid one is passed on and never kept', async () => {
@@ -232,7 +284,9 @@ test('a request the Worker would refuse is never answered from the edge, even wi
 test('a kept entry that is stale, from the future, unstamped or not a valid list is not served', async () => {
   const time = clock();
   const entries = [
-    new Response(CURRENT, { headers: { 'X-Featured-Stored-At': String(time.at.now - LIST_SECONDS * 1000) } }),
+    // Changed on purpose 2026-09-28 (speed wave, item 7): stale is past 15 minutes now.
+    new Response(CURRENT, { headers: { 'X-Featured-Stored-At': String(time.at.now - STALE_SECONDS * 1000) } }),
+    new Response(CURRENT, { headers: { 'X-Edge-Stored-At': String(time.at.now - STALE_SECONDS * 1000) } }),
     new Response(CURRENT, { headers: { 'X-Featured-Stored-At': String(time.at.now + 1) } }),
     new Response(CURRENT, { headers: {} }),
     new Response(CURRENT, { headers: { 'X-Featured-Stored-At': 'soon' } }),
@@ -305,7 +359,8 @@ test('the gate comes first: no cookie, no list, from the edge or the Worker; wit
     const response = await gate({ request: signed, env: { ...GATE, ...env }, next: next(signed) });
     assert.equal(response.status, 200, expected);
     assert.equal(await response.text(), CURRENT);
-    assert.equal(response.headers.get('Cache-Control'), 'no-store, no-transform', `${expected}: the browser keeps nothing`);
+    // Changed on purpose 2026-09-28 (speed wave, item 13): a public read may be compressed on the way.
+    assert.equal(response.headers.get('Cache-Control'), 'no-store', `${expected}: the browser keeps nothing`);
     assert.equal(response.headers.get('Content-Security-Policy'), API_CSP);
   }
   assert.equal(reached, 2);
@@ -347,4 +402,65 @@ test('with the real read Worker: the committed config answers route_not_availabl
   const second = await answerFeatured(ask(), bound(on), runtimeWith(cache));
   assert.equal(await second.text(), CURRENT);
   assert.equal(gateway.length, 1, 'the VM was asked once');
+});
+
+// ---------------------------------------------------------------------------
+// A pool's stored history at the edge (functions/_lib/historyEdge.ts, functions/api/read/v3/history.ts). Added
+// 2026-09-28 (speed wave, item 45): the same rules as the list's, for a built history only, 20 s and no more.
+// ---------------------------------------------------------------------------
+
+const v3 = await import('../../api-contracts/read-v3/runtime.mjs');
+const { historyFor } = await import('./markets-cards.fixtures.mjs');
+const { answerHistory, historyKey, HISTORY_PATH, HISTORY_SECONDS } = require('../.test-build/app/functions/_lib/historyEdge.js');
+const HISTORY_CONTRACT = { CONTRACT_VERSION: v3.CONTRACT_VERSION, validateRequest: v3.validateRequest, validateResponse: v3.validateResponse, matchesRequest: v3.matchesRequest };
+const POOL = `0x${'ab'.repeat(32)}`;
+const ETH = '0x0000000000000000000000000000000000000000';
+const question = { poolId: POOL, currency: ETH, windowSeconds: 86400, resolutionSeconds: 3600 };
+const askHistory = (body = question, headers = {}) => ask({ url: `${ORIGIN}${HISTORY_PATH}`, body: JSON.stringify(body), headers: { 'X-Domino-Read-Contract': v3.CONTRACT_VERSION, ...headers } });
+const historySaid = (body, options = {}) => said(JSON.stringify(body), { version: v3.CONTRACT_VERSION, ...options });
+
+test('a built 24h history is kept 20 s for the identical question; one not built, another answer or another question is not', async () => {
+  const built = historyFor(question, { built: true });
+  assert.equal(v3.validateResponse('history', built), true, 'the fixture passes read-v3’s own runtime');
+  const cache = memoryCache();
+  const time = clock();
+  const { calls, env } = bridge(() => historySaid(built));
+  const runtime = () => ({ contract: HISTORY_CONTRACT, cache, now: time.now, refreshing: new Map() });
+  const first = await answerHistory(askHistory(), env, runtime());
+  assert.equal(first.status, 200);
+  assert.equal(cache.puts.length, 1);
+  assert.equal(cache.puts[0].url, historyKey(v3.CONTRACT_VERSION, question));
+  assert.equal(cache.puts[0].cacheControl, `max-age=${HISTORY_SECONDS}`);
+  time.at.now += HISTORY_SECONDS * 1000 - 1;
+  const hit = await answerHistory(askHistory(), env, runtime());
+  assert.equal(hit.headers.get('X-Domino-Edge-Cache'), 'hit');
+  assert.deepEqual(await hit.json(), built);
+  assert.equal(calls.length, 1);
+  // Another question, or past 20 s: the Worker.
+  await answerHistory(askHistory({ ...question, windowSeconds: 604800 }), env, runtime());
+  assert.equal(calls.length, 2);
+  time.at.now += 1;
+  const late = await answerHistory(askHistory(), env, runtime());
+  assert.equal(late.headers.get('X-Domino-Edge-Cache'), null, 'never served stale');
+  assert.equal(calls.length, 3);
+
+  // Not built yet: passed on, never kept, so it shows the moment it is built.
+  const notBuilt = historyFor(question, { built: false });
+  const pending = memoryCache();
+  const worker = bridge(() => historySaid(notBuilt));
+  await answerHistory(askHistory(), worker.env, { contract: HISTORY_CONTRACT, cache: pending, now: time.now });
+  assert.equal(pending.puts.length, 0);
+  // An answer about another pool, a refusal, another contract: passed on, never kept.
+  for (const answer of [() => historySaid({ ...built, poolId: `0x${'cd'.repeat(32)}` }), () => historySaid({ error: 'upstream_unavailable' }, { status: 503 }), () => said(JSON.stringify(built), { version: '1.0.0-rc.1' })]) {
+    const store = memoryCache();
+    await answerHistory(askHistory(), bridge(answer).env, { contract: HISTORY_CONTRACT, cache: store, now: time.now });
+    assert.equal(store.puts.length, 0);
+  }
+  // A request the Worker would refuse is never answered from the edge.
+  for (const variant of [askHistory({ ...question, extra: 1 }), askHistory(question, { Origin: 'https://evil.example' }), ask({ url: `${ORIGIN}${HISTORY_PATH}`, method: 'GET' })]) {
+    const refusing = bridge(() => said('{"error":"invalid_request"}', { status: 422, version: v3.CONTRACT_VERSION }));
+    const response = await answerHistory(variant, refusing.env, runtime());
+    assert.equal(response.headers.get('X-Domino-Edge-Cache'), null);
+    assert.equal(refusing.calls.length, 1);
+  }
 });

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { reasonText } from '../../../lib/read/describe'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { cataloguePoolId, createCatalogueSession, verifyCandidate, type CatalogueSession, type CatalogueSnapshot } from '../../../lib/read/screens/catalogueSession'
+import { keptCreatePools, readCreatePools, type PoolsAnswer } from '../../../lib/create/poolsAhead'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/read/screens/identity'
-import { hintsWithin } from '../../../lib/read/screens/poolHints'
-import { neutralOrder, poolsRequest, projectPoolsView, usablePoolsRequest, type PoolOption, type PoolsView } from '../../../lib/read/screens/poolsList'
+import { neutralOrder, poolsRequest, projectPoolsView, type PoolOption, type PoolsView } from '../../../lib/read/screens/poolsList'
 import { failureCode } from '../../../lib/read/screens/quietRead'
 import { askAgainLater, readWithin } from '../../../lib/read/screens/screenRead'
 import { asksAgain } from '../../../lib/read/screens/transient'
@@ -302,6 +302,21 @@ function rowAt(options: readonly PoolOption[], target: EventTarget | null): Pool
   return options[Array.prototype.indexOf.call(siblings, row)] ?? null
 }
 
+/** The pools for a token (and second asset), read once, and once more for a new catalogue revision. */
+async function plainPoolsRead(source: ReadSource, token: AddressKey, paired: AddressKey | null, signal: AbortSignal): Promise<PoolsAnswer> {
+  const request = poolsRequest(token, paired)
+  let outcome = await readWithin(source, 'pools', request, { signal })
+  let restarted = false
+  if (outcome.state === 'restart_required' && outcome.code === 'catalogue_revision_changed') {
+    restarted = true
+    // Same logical read, so the restart keeps the first attempt's deadline
+    // instead of starting a fresh screen budget it has not earned.
+    const deadlineAt = outcome.provenance.deadlineAt
+    outcome = await readWithin(source, 'pools', request, { signal, deadlineAt })
+  }
+  return { outcome, restarted }
+}
+
 type PoolsResult =
   | { kind: 'loading' }
   | { kind: 'ok'; view: PoolsView; restarted: boolean }
@@ -369,6 +384,9 @@ function RowAprFigure({ option, label = 'Pool APR' }: { option: PoolOption; labe
  * verifying (poolHints.ts, waiting at most 2.5 s) and names them in it. No
  * coverage summary, no rejected candidates and no catalogue: how many pools
  * were left out is data only, and an empty list is the same muted line.
+ * That read is the flow's (lib/create/poolsAhead.ts, 2026-09-28): the search
+ * starts it when the token is chosen, and an ok answer is shown again, with
+ * no read, when the list mounts again for the same token within a minute.
  */
 export function PoolPicker({
   source,
@@ -399,7 +417,12 @@ export function PoolPicker({
 }) {
   const create = variant === 'create'
   const question = `${token}:${paired ?? ''}`
-  const [answer, setAnswer] = useState<{ question: string; result: PoolsResult } | null>(null)
+  // New position's list shows an answer the flow already has at once (lib/create/poolsAhead.ts): Change pool, or the
+  // same token chosen again within a minute, reads nothing (speed wave, 2026-09-28).
+  const [answer, setAnswer] = useState<{ question: string; result: PoolsResult } | null>(() => {
+    const kept = create ? keptCreatePools(source, token, paired) : null
+    return kept?.outcome.state === 'ok' ? { question, result: { kind: 'ok', view: projectPoolsView(kept.outcome.data, kept.outcome.provenance.receivedAt, { only: 'domino' }), restarted: kept.restarted } } : null
+  })
   const result: PoolsResult = answer?.question === question ? answer.result : { kind: 'loading' }
   const [verified, setVerified] = useState<PoolOption[]>([])
   // Quiet re-asks spent on this token and pair; another question starts from none.
@@ -411,19 +434,11 @@ export function PoolPicker({
     const controller = new AbortController()
     const { signal } = controller
     void (async () => {
-      // New position names the pools worth verifying first; hints that are slow
-      // or missing leave the plain read, never a longer wait (poolHints.ts).
-      const request = create ? usablePoolsRequest(token, paired, await hintsWithin(token, paired, signal)) : poolsRequest(token, paired)
-      if (signal.aborted) return
-      let outcome = await readWithin(source, 'pools', request, { signal })
-      let restarted = false
-      if (outcome.state === 'restart_required' && outcome.code === 'catalogue_revision_changed') {
-        restarted = true
-        // Same logical read, so the restart keeps the first attempt's deadline
-        // instead of starting a fresh screen budget it has not earned.
-        const deadlineAt = outcome.provenance.deadlineAt
-        outcome = await readWithin(source, 'pools', request, { signal, deadlineAt })
-      }
+      // New position's read is the flow's (lib/create/poolsAhead.ts): started when the token was chosen, with the pools
+      // worth verifying named first (poolHints.ts), or kept from a minute ago. Changed on purpose 2026-09-28 (speed wave).
+      const read = create ? await readCreatePools(source, token, paired, signal) : await plainPoolsRead(source, token, paired, signal)
+      if (!read) return
+      const { outcome, restarted } = read
       if (signal.aborted || outcome.state === 'aborted') return
       if (outcome.state === 'ok') {
         setAnswer({ question, result: { kind: 'ok', view: projectPoolsView(outcome.data, outcome.provenance.receivedAt, create ? { only: 'domino' } : {}), restarted } })

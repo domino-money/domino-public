@@ -43,20 +43,38 @@ const reply = (route, body) => {
   return fixture(name ?? `${route}.success`);
 };
 
+/** The gateway refusing a read with `code` (read-v1's error table), as its reply to the Worker. */
+export const gatewayError = (code, status) =>
+  new Response(JSON.stringify({ error: code }), { status, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': RC3 } });
+
 /**
  * `answer(route, body)`, optional: the gateway's reply to one question, as JSON text, in place of the fixture; undefined
  * leaves the fixture. The Worker checks it like any gateway reply. For a scenario whose chain made something the
  * fixtures do not hold, such as the position NFT Create position has just minted (finance.browser).
+ *
+ * `stored(route, body)`, optional (added 2026-09-28, speed wave): lists read-v3's stored routes (overview, history,
+ * search) and answers them, as JSON text; without it read-v3 is off, as before.
+ *
+ * Added 2026-09-28 (speed wave, after review): either may also return a promise of its answer, for a service that
+ * answers late, and `answer` may return a Response, for the gateway refusing the read with its own status
+ * (`gatewayError`).
  */
-export function createReadStub({ answer } = {}) {
+export function createReadStub({ answer, stored } = {}) {
+  const env = stored ? { ...BRIDGE, READ_V3_BRIDGE_ENABLED: 'true', ENABLED_V3_READS: 'overview,history,search' } : BRIDGE;
   /** Every read the page asked the Worker for, as it arrived. */
   const requests = [];
   const worker = createWorker({
     getClientIp: () => '198.51.100.31',
     fetch: async (url, init) => {
-      const route = new URL(url).pathname.replace('/internal/read/v1/', '');
+      const path = new URL(url).pathname;
       const body = JSON.parse(init.body);
-      return new Response(answer?.(route, body) ?? reply(route, body), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': RC3 } });
+      if (stored && path.startsWith('/internal/read/v3/')) {
+        return new Response(await stored(path.replace('/internal/read/v3/', ''), body), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': '3.0.0-rc.1' } });
+      }
+      const route = path.replace('/internal/read/v1/', '');
+      const given = await answer?.(route, body);
+      if (given instanceof Response) return given;
+      return new Response(given ?? reply(route, body), { status: 200, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': RC3 } });
     },
   });
   return {
@@ -69,7 +87,7 @@ export function createReadStub({ answer } = {}) {
       headers.delete('host');
       const body = request.method === 'GET' ? undefined : await request.text();
       requests.push({ method: request.method, path: url.pathname, body });
-      return worker.fetch(new Request(new URL(`${url.pathname}${url.search}`, APP), { method: request.method, headers, body }), BRIDGE);
+      return worker.fetch(new Request(new URL(`${url.pathname}${url.search}`, APP), { method: request.method, headers, body }), env);
     },
   };
 }

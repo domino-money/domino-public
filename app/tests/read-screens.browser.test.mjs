@@ -173,10 +173,13 @@ test('the positions route reads nothing and offers no lookup by NFT id; every re
  *   lowercased, sorted and comma-separated (src/lib/tokenArtwork.ts
  *   tokenPrices, src/lib/walletPrices.ts).
  *
- * Any other resource from another host must be one the app itself names: the
- * fonts APP_CSP allows, and DexScreener's image CDN for the artwork. A host
- * that appears nowhere in the build (a local antivirus injecting its own
- * script into every page, say) is not the app's request.
+ * Any other resource from another host must be one the app itself names:
+ * DexScreener's image CDN for the artwork. A host that appears nowhere in the
+ * build (a local antivirus injecting its own script into every page, say) is
+ * not the app's request. Changed on purpose 2026-09-28 (speed wave, item 35):
+ * the fonts are the site's own files (src/styles/fonts.css), so Google Fonts is
+ * no longer excused; the build names neither of its hosts, so a request to one
+ * would fail here.
  */
 const ARTWORK_LOOKUP = /^\/token-pairs\/v1\/robinhood\/0x[0-9a-fA-F]{40}$/;
 const WALLET_PRICES = /^\/tokens\/v1\/robinhood\/0x[0-9a-f]{40}(,0x[0-9a-f]{40}){0,29}$/;
@@ -195,7 +198,8 @@ function ownRequestsOnly(requests, { walletAddress = null } = {}) {
       assert.equal(url.origin, origin, r.url);
       continue;
     }
-    if (url.origin === origin || url.host === 'fonts.googleapis.com' || url.host === 'fonts.gstatic.com') continue;
+    if (url.origin === origin) continue;
+    assert.ok(!/^fonts\.(googleapis|gstatic)\.com$/.test(url.host), `the page asked Google Fonts: ${r.url}`);
     assert.equal(built.includes(url.host), false, `the build itself requests ${r.url}`);
   }
 }

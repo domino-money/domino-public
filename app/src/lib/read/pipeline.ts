@@ -154,6 +154,7 @@ export async function runRead<R extends ReadKey>(run: ReadRun<R>): Promise<ReadO
     receivedMonotonic: clock.monotonic(),
     attempts,
     deadlineAt,
+    ...(reply?.edgeHit ? { edge: true as const } : {}),
   })
   const aborted = (attempts: number): ReadOutcome<R> => ({ route, provenance: provenance(attempts, null), state: 'aborted' })
   const late = (attempts: number, limit: 'attempt' | 'read'): ReadOutcome<R> => ({

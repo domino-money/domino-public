@@ -9,6 +9,7 @@ import { addressKey, poolIdKey } from './screens/identity'
 import { DYNAMIC_FEE_PIPS, feeLabel } from './screens/fee'
 import { figureFromMarket, retrievalNote } from './screens/figures'
 import type { PoolOption } from './screens/poolsList'
+import type { PaintMemory } from './marketsPaint'
 import type { Provenance, ReadOutcome } from './types'
 
 export function storedProvenance(provenance: Provenance, generatedAt: number, observedAt: number): Provenance {
@@ -66,4 +67,17 @@ export function overviewPoolOption(outcome: Extract<ReadOutcome<'overview'>, { s
     providerNote: read.data.market.data ? retrievalNote(read.data.market.data.retrievedAt) : null,
     aprReason: pool.aprReason, tokenMetadata: currencies.every((token) => token.readStatus === 'available') ? 'available' : 'partial', providerConflict: false,
   }
+}
+
+/**
+ * A pool as this browser's copy of the last overview (marketsPaint.ts) names it, for its page to paint while its own
+ * verification is on its way (speed wave, item 44, 2026-09-28): the copy as an answer, dated as it was read, and the
+ * pool's option, only where the copy names the pool with the token the page verifies it against. Null otherwise.
+ */
+export function paintedPool(memory: Pick<PaintMemory, 'load'> | null, poolId: string, token: string): { overview: Extract<ReadOutcome<'overview'>, { state: 'ok' }>; option: PoolOption } | null {
+  const copy = memory?.load()
+  if (!copy) return null
+  const overview = { route: 'overview' as const, state: 'ok' as const, data: copy.data, observation: { block: null, providers: [] }, provenance: copy.provenance }
+  const option = overviewPoolOption(overview, poolId)
+  return option && option.currencies.some((currency) => currency.address === token) ? { overview, option } : null
 }

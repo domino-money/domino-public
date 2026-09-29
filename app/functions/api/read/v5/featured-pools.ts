@@ -1,7 +1,9 @@
 /**
  * POST /api/read/v5/featured-pools: the featured pools list, from the read
- * Worker through the fixed forwarder, each valid list kept at the edge for
- * 60 seconds (functions/_lib/featuredEdge.ts; featured-pools v1 §10.3, §10.6).
+ * Worker through the fixed forwarder, each valid list kept at the edge: fresh
+ * for 60 seconds, then served for up to 15 minutes while a background read
+ * keeps a newer one (changed on purpose 2026-09-28, speed wave, item 7;
+ * functions/_lib/featuredEdge.ts; featured-pools v1 §10.3, §10.6).
  *
  * Pages routes this path here, ahead of functions/api/[[path]].ts: a route
  * with only static segments is more specific than the catch-all. Every other

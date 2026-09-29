@@ -48,13 +48,25 @@ export function createPaintMemory(
       return null
     }
   }
+  /**
+   * The copy as last read, checked, by the text it was read from (2026-09-28, speed wave): the markets provider, the
+   * featured list and a pool's page each ask for it as the app starts, and the same text is not parsed and checked
+   * against the runtime again. Its age is counted afresh at every ask.
+   */
+  let last: { raw: string; copy: PaintedOverview | null } | null = null
   return {
     load() {
       try {
-        const kept = JSON.parse(store()?.getItem(PAINT_KEY) ?? 'null')
-        const age = now() - kept.receivedAt
-        if (kept.v !== 1 || kept.contract !== runtime.CONTRACT_VERSION || !(age >= 0 && age < PAINT_MAX_AGE_MS) || !runtime.validateResponse('overview', kept.data)) return null
-        return { data: kept.data, provenance: { transport: 'bridge', contract: kept.contract, receivedAt: kept.receivedAt, attempts: 0 } }
+        const raw = store()?.getItem(PAINT_KEY) ?? null
+        if (raw === null) return null
+        if (last?.raw !== raw) {
+          const kept = JSON.parse(raw)
+          const valid = kept.v === 1 && kept.contract === runtime.CONTRACT_VERSION && Number.isFinite(kept.receivedAt) && runtime.validateResponse('overview', kept.data)
+          last = { raw, copy: valid ? { data: kept.data, provenance: { transport: 'bridge', contract: kept.contract, receivedAt: kept.receivedAt, attempts: 0 } } : null }
+        }
+        const copy = last.copy
+        const age = copy ? now() - copy.provenance.receivedAt : NaN
+        return copy && age >= 0 && age < PAINT_MAX_AGE_MS ? copy : null
       } catch {
         return null
       }

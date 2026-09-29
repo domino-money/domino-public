@@ -146,8 +146,10 @@ test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s
     /wss:\/\//,
   ];
   // The only URLs in a build are documentation links in error messages and
-  // XML namespaces, plus the Google Fonts stylesheet index.html has always
-  // loaded under the CSP. An RPC endpoint would be none of these.
+  // XML namespaces. An RPC endpoint would be none of these. Changed on purpose
+  // 2026-09-28 (speed wave, item 35): the Google Fonts stylesheet index.html
+  // loaded until then is gone (the site serves the same fonts itself,
+  // src/styles/fonts.css), so its two hosts are no longer admitted.
   // domino.invalid and json-schema.org are the $id and $schema of the
   // producer's JSON schemas, in the contract packages the read adapter
   // validates against. Both are identifiers: `.invalid` is reserved by RFC
@@ -175,8 +177,6 @@ test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s
     'react.dev',
     'uniswap.org',
     'www.w3.org',
-    'fonts.googleapis.com',
-    'fonts.gstatic.com',
     'domino.invalid',
     'json-schema.org',
     'cdn.dexscreener.com',
@@ -704,6 +704,13 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // (dist and wallet-test mode alike): chain code 18,085 -> 18,172 B, fees worker 24,761 -> 25,036 B. The chain code and
   // fees worker ceilings move by the minimum at 0.1 kB: 18.2 kB (28 B over both builds) and 25.1 kB (64 B); the
   // financial, all lazy and 90 kB session/read ceilings are unchanged.
+  // 2026-09-28, speed/wave-a-release (speed wave A: speed/reads, speed/newpos and speed/boot, each on featured-polish
+  // aaae6242, merged in that order on production 852a4140, hotfix/charts over the Vivo release): none of the three moved
+  // a ceiling, so the merged values are measured against production's. Measured on Windows, gzip level 9, clean builds
+  // of the merged tree: dist session/public reads 62,795 B, financial 177,988 B, all lazy 197,976 B; .wallet-test-dist
+  // session/public reads 63,326 B, financial 179,233 B, all lazy 199,395 B; chain code 18,172 B and fees worker 25,036 B
+  // in both. Every ceiling holds (financial 167 B to spare, all lazy 1,405 B, fees worker 64 B, chain code 28 B), so
+  // none moves: the 0.1 kB minimum applies only to a ceiling a build passes.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],

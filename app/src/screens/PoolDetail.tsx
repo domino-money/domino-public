@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { exploreHref, newPositionHref, parsePoolHash } from '../components/explore/routes'
 import { useHash } from '../components/explore/useHash'
 import { IconChevronLeft } from '../components/icons'
@@ -6,9 +6,10 @@ import { PoolWorkspace } from '../components/read/screens/PoolWorkspace'
 import { TokenMarkPair } from '../components/TokenIcon'
 import { EmptyState, LinkButton, Skeleton, Stat, StatStrip } from '../components/ui'
 import { SELECTED_POOL_CATALOGUE, entryToken, inPoolOrder, type PoolCatalogueEntry } from '../config/selectedPoolCatalogue'
+import { appPaint } from '../lib/read/appPaint'
 import { useFeatured } from '../lib/read/featuredSource'
 import { verifyCandidate } from '../lib/read/screens/catalogueSession'
-import { overviewPoolOption } from '../lib/read/publicOverview'
+import { overviewPoolOption, paintedPool } from '../lib/read/publicOverview'
 import { failureText } from '../lib/read/screens/copy'
 import { parseAddressInput, poolIdKey, shortAddress } from '../lib/read/screens/identity'
 import { optionUsableForDomino, type PoolOption } from '../lib/read/screens/poolsList'
@@ -167,6 +168,10 @@ export function PoolDetail({ poolId }: { poolId: string }) {
     const { signal } = controller
     let cancel: (() => void) | null = null
     void (async () => {
+      // The page asks read-v1's capabilities too (its chain reads) and read-v2's (the market read where the overview is
+      // not listed): now, beside read-v3's, not one after the other once the pool is verified (speed wave, item 12,
+      // 2026-09-28). A capabilities GET is the Worker's own answer: no read of the budget.
+      if (source.routeEnabled) void source.routeEnabled('pool-activity', { signal }).catch(() => undefined)
       const capability = source.supportsStoredReads ? await source.routeEnabled?.('overview', { signal }) : undefined
       if (signal.aborted) return
       if (capability?.state === 'enabled') {
@@ -189,6 +194,9 @@ export function PoolDetail({ poolId }: { poolId: string }) {
       if (capability?.state === 'failed') {
         const text = failureText(capability.outcome, 'pools')
         setState({ key, resolution: { kind: 'failed', code: text.code, reason: [text.title, text.detail].filter(Boolean).join('. ') } })
+        // A check that failed in passing is a failure now, not the older path (publicSource.ts, speed wave item 3): asked
+        // again on its own, as a verification is.
+        if (await askAgainLater(capability.outcome, attempt, signal)) setAsked({ key, attempt: attempt + 1 })
         return
       }
       const result = await verifyCandidate(source, tokenKey, null, poolIdKey(id), { signal })
@@ -213,7 +221,11 @@ export function PoolDetail({ poolId }: { poolId: string }) {
   // A price read again moves the pool's price, and the typical range the workspace draws on it moves with it.
   const onOption = useCallback((option: PoolOption) => setState((current) => (current && current.resolution.kind === 'verified' ? { ...current, resolution: { ...current.resolution, option } } : current)), [])
 
-  const resolution: Resolution | null = key ? (state?.key === key ? state.resolution : { kind: 'verifying' }) : null
+  // This browser's copy of the last overview (lib/read/appPaint.ts): a pool it names with the token this page verifies it
+  // against is painted from it, every figure as old as it is, while the page's own verification is on its way, and the
+  // answer replaces it (speed wave, item 44, 2026-09-28, the owner's OK: a figure may change on screen when it lands).
+  const painted = useMemo(() => (key ? paintedPool(appPaint, key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)) : null), [key])
+  const resolution: Resolution | null = key ? (state?.key === key ? state.resolution : painted ? { kind: 'verified', option: painted.option } : { kind: 'verifying' }) : null
 
   let body: React.ReactNode
   if (!id) {
@@ -262,6 +274,7 @@ export function PoolDetail({ poolId }: { poolId: string }) {
       <PoolWorkspace
         source={source}
         option={resolution.option}
+        painted={painted?.overview}
         onOption={onOption}
         actions={optionUsableForDomino(resolution.option) ? <LinkButton href={newPositionHref(resolution.option.key, linked.token)} size="lg" className="dm-pool-new" data-new-position="">Create a position</LinkButton> : undefined}
       />

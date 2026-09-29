@@ -10,6 +10,10 @@
  * activity is read by the figures dialog
  * only when it opens and by the pool page where the route is listed, and the
  * wallet listing's continuation handle travels only in POST bodies (B4).
+ *
+ * Changed on purpose 2026-09-28 (speed wave, item 1): "spaced the way the
+ * bridge admits them" is now the gateway's per-client budget, not 1.1 s
+ * between any two reads (assertWithinBudget below).
  */
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -135,7 +139,11 @@ after(async () => {
 });
 afterEach(async () => { await Promise.all(browser.contexts().map(context => context.close())); });
 
-async function visit(route, setup) {
+/**
+ * `until`: what the first load waits for. Added 2026-09-28 (speed wave, item 1): a test that holds a read on the wire
+ * waits for `load`, since reads no longer leave 1.1 s apart, so no half-second of quiet comes before the held one.
+ */
+async function visit(route, setup, { until = 'networkidle' } = {}) {
   edge = [];
   upstream = [];
   walletReplies = [];
@@ -150,7 +158,7 @@ async function visit(route, setup) {
   // navigation and contaminate the next route's request trace.
   const login = await context.request.post(`${origin}/__beta/login`, { form: { password: PASSWORD }, headers: { Origin: origin }, maxRedirects: 0 });
   assert.equal(login.status(), 303);
-  await page.goto(`${origin}/#${route}`, { waitUntil: 'networkidle' });
+  await page.goto(`${origin}/#${route}`, { waitUntil: until });
   return { context, page, errors };
 }
 
@@ -163,6 +171,23 @@ const visibleText = (locator) =>
   });
 
 const posts = () => edge.filter((r) => r.method === 'POST');
+
+/**
+ * POST arrivals within the gateway's per-client budget (backend ClientBudgets: a burst of five, then one every two
+ * seconds), counted as the gateway counts them, at arrival. Changed on purpose 2026-09-28 (speed wave, item 1): this
+ * build used to hold every read 1.1 s after the one before it; the gateway has no start interval since #241 and runs
+ * two reads at a time, so reads now leave 0 ms apart, two on the wire at most, within that budget (scheduler.ts), and
+ * the 1.1 s comes back only after a refusal.
+ */
+function assertWithinBudget(list) {
+  let tokens = 5;
+  for (let i = 0; i < list.length; i++) {
+    if (i > 0) tokens = Math.min(5, tokens + (list[i].at - list[i - 1].at) / 2000);
+    tokens -= 1;
+    // A few milliseconds of transit either way, which the page's quarter of a read in hand absorbs.
+    assert.ok(tokens >= -0.05, `POST ${i} (${list[i].path}) arrived over the budget: ${list.map((r) => r.at - list[0].at).join(', ')} ms`);
+  }
+}
 
 // Changed on purpose (owner, 2026-09-24): the lookup by typed NFT ids is gone, and with it every nft-positions post.
 test('Positions posts nothing to the read service: no lookup by NFT id, no position read', async () => {
@@ -237,8 +262,8 @@ test('the landing reads one listed pool, never a placeholder id, and pool activi
   await page.waitForFunction(() => document.querySelector('[data-figures-activity]')?.getAttribute('data-figures-activity') !== 'loading', null, { timeout: 30_000 });
   assert.equal(routes().filter((r) => r === 'pool-activity').length, 1);
   assert.match(await page.locator('[data-pool-figures-dialog]').innerText(), /Pool is 19 s old/);
-  const starts = posts().map((r) => r.at);
-  for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 1050, 'the dialog read queued behind the table reads, spaced');
+  // Changed on purpose 2026-09-28 (speed wave, item 1): the dialog's read shares the table's budget, no longer 1.1 s apart.
+  assertWithinBudget(posts());
   assert.deepEqual(errors, []);
   await context.close();
 });
@@ -255,7 +280,9 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     const cardIndex = posts().findIndex((read) => JSON.parse(read.body).includePriceHistory === true);
     const cardRead = JSON.parse(posts()[cardIndex].body);
     assert.deepEqual(cardRead, { poolId: POOL, includePriceHistory: true, priceToken: 'quote' }, 'the card asks for the same candles the pool page would');
-    assert.ok(cardIndex > 0 && posts()[cardIndex].at - posts()[cardIndex - 1].at >= 1050, 'the independent card still shares the request budget');
+    // Changed on purpose 2026-09-28 (speed wave, item 1): the budget it shares is the gateway's, no longer 1.1 s apart.
+    assert.ok(cardIndex > 0, 'the independent card reads after the table');
+    assertWithinBudget(posts());
     await page.locator('#markets-search').fill(TOKEN);
     const combobox = page.getByRole('combobox', { name: 'Token name or address' });
     await combobox.waitFor();
@@ -353,8 +380,8 @@ test('Markets reads the searched token, then its pools and the catalogue only on
       assert.equal(r.headers['sec-fetch-site'], 'same-origin');
       for (const forbidden of ['authorization', 'x-domino-csrf', 'x-domino-session']) assert.equal(r.headers[forbidden], undefined, forbidden);
     }
-    const starts = posts().map((r) => r.at);
-    for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 1050, `POST starts ${starts[i] - starts[i - 1]} ms apart`);
+    // Changed on purpose 2026-09-28 (speed wave, item 1): within the gateway's budget, no longer 1.1 s apart.
+    assertWithinBudget(posts());
 
     // Back on Markets with no token in the link, nothing of the search remains; a new search starts from its own token reads.
     await page.locator('nav[aria-label="Breadcrumb"]').getByRole('link', { name: 'Markets' }).click();
@@ -420,8 +447,8 @@ test('Markets with markets-snapshot listed: the stored pool is on screen from on
       assert.deepEqual(JSON.parse(posts()[0].body), { poolIds: [POOL] });
       assert.deepEqual(JSON.parse(posts().find((read) => JSON.parse(read.body).includePriceHistory === true).body), { poolId: POOL, includePriceHistory: true, priceToken: 'quote' });
       assert.equal(await page.locator('[data-selected-pools] tbody tr[data-row-source="markets-snapshot"]').count(), 1);
-      const starts = posts().map((r) => r.at);
-      for (let i = 1; i < starts.length; i++) assert.ok(starts[i] - starts[i - 1] >= 1050, `POST starts ${starts[i] - starts[i - 1]} ms apart`);
+      // Changed on purpose 2026-09-28 (speed wave, item 1): within the gateway's budget, no longer 1.1 s apart.
+      assertWithinBudget(posts());
       assert.deepEqual(errors, []);
     } finally {
       await context.close();
@@ -600,7 +627,8 @@ test('a partial wallet page lists what was read with no notice, checks the selec
         { wallet: OWNER, autoDiscover: true },
         { wallet: OWNER, tokens: SELECTED_TOKENS, autoDiscover: false },
       ], 'one listing, then one check of the selected pools’ tokens the page lacks, and nothing else');
-      assert.ok(walletPosts[1].at - walletPosts[0].at >= 1050, 'the check shares the public read pacing');
+      // Changed on purpose 2026-09-28 (speed wave, item 1): the pacing it shares is the gateway's budget, no longer 1.1 s.
+      assertWithinBudget(posts());
 
       const text = await list.innerText();
       assert.doesNotMatch(text, /All pages loaded|weren’t checked|skipped|partial/i, 'the partial coverage is not printed, and nothing calls the list complete');
@@ -1084,10 +1112,12 @@ test('a slow list on a first visit: the pages already read are drawn within five
   };
   const asked = [];
   try {
+    // Changed on purpose 2026-09-28 (speed wave, item 1): page 2 leaves at once, no longer 1.1 s after page 1, so the
+    // first load is waited for until `load`: no half-second of quiet comes before page 2's eight seconds.
     const { context, page, errors } = await visit(`/portfolio/${OWNER}`, async (ctx) => {
       await provider(asked, twoPagePrices)(ctx);
       await watchTotals(ctx);
-    });
+    }, { until: 'load' });
     try {
       const list = page.locator('[data-portfolio-tokens]');
       await list.locator('[data-wallet-row]').first().waitFor({ timeout: 7_000 });

@@ -12,6 +12,7 @@
  * added to the install.
  */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -417,6 +418,41 @@ test('dist carries no theme switch: no light palette, no theme selector, no stor
   const styles = css.map((file) => readFileSync(file, 'utf8')).join('\n');
   assert.doesNotMatch(styles, /\.dark\b|\[data-theme|color-scheme:\s*light/, 'no theme selector and no light palette');
   assert.match(styles, /color-scheme:\s*dark/, 'the one palette is dark');
+});
+
+// 2026-09-28 (speed wave, item 35): the fonts are the site's own files, the ones Google Fonts served (tests/fonts.test.mjs
+// checks the sources). In the build every @font-face points at a woff2 file under /assets/ that dist carries, byte for
+// byte one of src/fonts/, never a data: URL (the CSP's font-src is 'self') and never Google; and Home draws its
+// text in Geist and its titles in Instrument Serif, from this origin.
+test('the fonts are the site’s own files under /assets/, and Home loads them from this origin', async () => {
+  const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
+  const assets = readdirSync(join(DIST, 'assets'));
+  const styles = assets.filter((file) => file.endsWith('.css')).map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
+  const faces = styles.match(/@font-face\{[^}]*\}/g) ?? [];
+  assert.equal(faces.length, 36, 'the 36 rules of src/styles/fonts.css');
+  const urls = faces.map((face) => /src:url\((["']?)([^"')]+)\1\)\s*format\(["']?woff2["']?\)/.exec(face)?.[2]);
+  for (const url of urls) assert.match(url ?? '', /^\/assets\/[\w-]+\.woff2$/, 'a woff2 file under /assets/');
+  const sources = new Set(readdirSync(resolve(DIST, '../src/fonts')).filter((file) => file.endsWith('.woff2')).map((file) => sha(readFileSync(resolve(DIST, '../src/fonts', file)))));
+  const files = [...new Set(urls)];
+  assert.equal(files.length, 15);
+  for (const url of files) assert.ok(sources.has(sha(readFileSync(join(DIST, url)))), `${url} is one of src/fonts/, unchanged`);
+  const text = assets.filter((file) => TEXT_FILE.test(file)).map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n') + readFileSync(join(DIST, 'index.html'), 'utf8');
+  assert.doesNotMatch(text, /fonts\.googleapis\.com|fonts\.gstatic\.com/, 'nothing in the build names Google Fonts');
+
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const fonts = [];
+  page.on('request', (request) => { if (request.resourceType() === 'font') fonts.push(request.url()); });
+  await page.goto(`${origin}/#/`, { waitUntil: 'networkidle' });
+  await page.locator('#root h1').first().waitFor();
+  const loaded = await page.evaluate(async () => {
+    await document.fonts.ready;
+    return [...document.fonts].filter((face) => face.status === 'loaded').map((face) => `${face.family.replaceAll('"', '')} ${face.style}`);
+  });
+  assert.ok(loaded.includes('Geist normal'), `Geist is loaded: ${loaded.join(', ')}`);
+  assert.ok(loaded.includes('Instrument Serif normal'), `Instrument Serif is loaded: ${loaded.join(', ')}`);
+  assert.ok(fonts.length >= 2, `Home fetched its fonts: ${fonts.join(', ')}`);
+  for (const url of fonts) assert.ok(url.startsWith(`${origin}/assets/`) && url.endsWith('.woff2'), url);
+  await page.close();
 });
 
 // ---------------------------------------------------------------------------

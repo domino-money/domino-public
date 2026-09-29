@@ -11,7 +11,7 @@ import { createFakeSession } from './support/fake-session.mjs';
 import { createWalletServer } from './support/wallet-server.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
 import { ARTWORK, choosePool, footerButton, walkToReview } from './support/new-position.mjs';
-import { FIXTURE_TOKEN, createReadStub } from './support/read-stub.mjs';
+import { FIXTURE_TOKEN, createReadStub, gatewayError } from './support/read-stub.mjs';
 // The mint's own sizing, from the unit build (npm test compiles it first, as check:app runs it first).
 import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/create/mintPlan.js';
 // 2026-09-25: the public RPC as the page reads it, answered by a fake chain (the page reads the chain itself since the RPC
@@ -2318,6 +2318,242 @@ test('for USDG the pools read names the featured pools first, then the provider�
     // Changed on purpose (round 6, 2026-09-27): New position's rows no longer print their pool id; it is data-pool-key.
     assert.equal(await picker.locator('[data-pool-option]').first().getAttribute('data-pool-key'), ETH_USDG.toLowerCase(), 'the row is the read service’s own');
   } finally { await s.close(); }
+});
+
+// Added 2026-09-28 (speed wave, study items 27, 30 and 33): the chosen token's pools are asked beside its token read
+// (lib/create/poolsAhead.ts), Change pool shows the list the flow read, with no second read, and Create position's code
+// is asked once a pool is chosen, before Review. Only when things are asked changed: every screen is the same.
+test('New position reads the chosen token’s pools once, Change pool shows that list again with no read, and Create position’s code is loaded before Review', async () => {
+  const read = createReadStub();
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  const chunks = [];
+  s.page.on('request', (request) => { if (/\/assets\/DepositAmounts-[\w-]+\.js$/.test(request.url())) chunks.push(request.url()); });
+  const reads = (route) => read.requests.filter(r => r.path === `/api/read/v1/${route}`);
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await choosePool(s.page);
+    assert.deepEqual(reads('pools').map(r => JSON.parse(r.body)), [{ token: FIXTURE_TOKEN }], 'one pools read for the chosen token');
+    assert.equal(reads('token').length, 1, 'one token read');
+    // Create position's chunk is asked once the pool is chosen, not when Review opens.
+    await s.page.waitForFunction(() => performance.getEntriesByType('resource').some((entry) => /\/assets\/DepositAmounts-/.test(entry.name)), undefined, { timeout: 10_000 });
+    assert.equal(chunks.length, 1, 'the chunk is asked once');
+    assert.equal(await s.page.locator('[data-stage-card="review"]').count(), 0, 'before Review');
+    // Change pool: the list the flow read, at once, the chosen pool still checked, and nothing read again.
+    await s.page.locator('[data-chosen-pool] button').click();
+    const picker = s.page.locator('[data-picker="pool"]');
+    await picker.waitFor();
+    assert.equal(await picker.getAttribute('data-pools-state'), 'ok', 'the kept list, never a loading one');
+    assert.equal(await picker.locator('input[name="pool-option"]:checked').count(), 1, 'the chosen pool is still the checked row');
+    await s.page.waitForTimeout(1500);
+    assert.equal(reads('pools').length, 1, 'Change pool read nothing');
+    // The chosen pool's radio is already checked: keeping it is the step's own button.
+    await s.page.getByRole('button', { name: 'Keep this pool', exact: true }).click();
+    await s.page.locator('[data-chosen-pool]').waitFor();
+    await footerButton(s.page, 'Continue').click();
+    await s.page.locator('[data-stage="range"]').waitFor();
+    await footerButton(s.page, 'Continue').click();
+    await s.page.locator('[data-pair-side="1"] input[inputmode="decimal"]').fill('1');
+    // Changed on purpose 2026-09-28 (speed wave, after review): Review draws the loaded Create position in the frame it
+    // opens, never the disabled stand-in React holds 300 ms for a lazy control. Every change to the page is watched from
+    // here: the footer's first Review frame names the control it drew, and the stand-in's line must never appear.
+    await s.page.evaluate((loading) => {
+      const seen = (window.__reviewDrawn = { first: null, standIn: false });
+      const look = () => {
+        const footer = document.querySelector('[data-journey-footer][data-final]');
+        if (!footer) return;
+        if (seen.first === null) seen.first = footer.querySelector('[data-create-position]')?.getAttribute('data-create-position') ?? 'nothing';
+        if (document.querySelector('#create-reason')?.textContent === loading) seen.standIn = true;
+      };
+      new MutationObserver(look).observe(document.body, { childList: true, subtree: true, characterData: true });
+    }, 'Loading the wallet steps…');
+    await footerButton(s.page, 'Continue').click();
+    await s.page.locator('[data-stage-card="review"]').waitFor();
+    await s.page.locator('[data-create-position="connect"]').waitFor();
+    assert.equal(chunks.length, 1, 'Review found the chunk loaded');
+    assert.deepEqual(await s.page.evaluate(() => window.__reviewDrawn), { first: 'connect', standIn: false }, 'Create position (Connect wallet, with no wallet) in Review’s first frame, and never the stand-in');
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-28 (speed wave, after review; study item 27): the pools read starts at the choice, not once the token
+// read has answered. The provider lane carries one read at a time (scheduler.ts), so a pools read cannot leave while
+// the token read is still on the wire, whenever it was asked; what shows when it was asked is a token read that failed
+// for the moment. The choice then has no token, and the field waits 3 to 5 s to ask again, quietly. Only a pools read
+// asked at the choice leaves in that gap; a list mounted for the token asks nothing before the token read answers. The
+// token-pairs list the pools read's hints come from is asked earlier still, once the row is pointed at.
+// 2026-09-28, speed/wave-a-release (speed/reads merged with speed/newpos): the provider lane now carries two reads at
+// once, 0 ms apart (scheduler.ts width, minIntervalMs), so the pools read no longer needs the token read's failure to
+// leave; the order this test pins holds all the same.
+test('New position asks the chosen token’s pools at the choice: they are read while its token read, failed for the moment, waits to be asked again', async () => {
+  let tokenReads = 0;
+  const read = createReadStub({ answer: (route) => (route === 'token' && tokenReads++ === 0 ? gatewayError('upstream_unavailable', 503) : undefined) });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  const pairs = [];
+  await s.context.route(ARTWORK, (route) => {
+    if (/\/token-pairs\//.test(route.request().url())) pairs.push(route.request().url().toLowerCase());
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+  });
+  const provider = () => read.requests.filter(r => r.path.startsWith('/api/read/v1/') && r.method === 'POST').map(r => r.path.replace('/api/read/v1/', ''));
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
+    // The row offered for the pasted address is pointed at: the token-pairs list its hints come from is asked now,
+    // before the choice (warmPoolHints), so the pools read does not wait for it.
+    for (let waited = 0; !pairs.some(url => url.endsWith(FIXTURE_TOKEN)) && waited < 5000; waited += 50) await s.page.waitForTimeout(50);
+    assert.ok(pairs.some(url => url.endsWith(FIXTURE_TOKEN)), 'the pointed token’s pairs were asked before it was chosen');
+    await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    const picker = s.page.locator('[data-picker="pool"][data-pools-state="ok"]');
+    await picker.waitFor({ timeout: 30_000 });
+    assert.deepEqual(provider(), ['token', 'pools', 'token'], 'the pools read left between the failed token read and its quiet re-ask');
+    assert.deepEqual(read.requests.filter(r => r.path === '/api/read/v1/pools').map(r => JSON.parse(r.body)), [{ token: FIXTURE_TOKEN }]);
+    assert.ok(await picker.locator('input[name="pool-option"]').count() > 0, 'the list shows the rows that read brought');
+    await s.page.waitForTimeout(1500);
+    assert.deepEqual(provider(), ['token', 'pools', 'token'], 'the list took that read: nothing read again');
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-28 (speed wave, after review; study item 27): a choice whose token read fails for good has no list to
+// take its pools read, so that read is cancelled before it leaves (TokenSearch's onChoose(null)); before item 27 it was
+// never asked at all. Changed on purpose 2026-09-28, speed/wave-a-release (speed/reads merged with speed/newpos): the
+// provider lane no longer holds the pools read 1.1 s (two reads at once, 0 ms apart: scheduler.ts width, minIntervalMs),
+// so what holds it here is its hints (poolHints.ts hintsWithin, up to HINT_WAIT_MS): the token-pairs list answers 2 s
+// late, the token read fails for good long before, and the read is cancelled while it waits for them.
+test('New position cancels the chosen token’s pools read when the token read fails for good: nothing more is read for that choice', async () => {
+  const read = createReadStub({ answer: (route) => (route === 'token' ? gatewayError('invalid_request', 422) : undefined) });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, async (route) => {
+    if (/\/token-pairs\//.test(route.request().url())) await new Promise((wake) => setTimeout(wake, 2000));
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }).catch(() => undefined);
+  });
+  const reads = (route) => read.requests.filter(r => r.path === `/api/read/v1/${route}`);
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
+    await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    await s.page.locator('[data-token-search-failed]').waitFor({ timeout: 30_000 });
+    // Past the hints' late answer and their 2.5 s cap, when a pools read still asked would have left.
+    await s.page.waitForTimeout(3000);
+    assert.equal(reads('token').length, 1, 'the token read, final at once');
+    assert.equal(reads('pools').length, 0, 'the choice’s pools read was cancelled before it left');
+    assert.equal(await s.page.locator('[data-picker="pool"]').count(), 0, 'no list, as before');
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-28, speed/wave-a-release (speed/reads merged with speed/newpos): with its hints at hand, the pools read
+// leaves beside the token read (two reads at once), and a token read that then fails for good finds it on the wire. It
+// is dropped all the same (dropCreatePools cancels it and keeps no answer): no list, and nothing more is read for that
+// choice.
+test('New position drops a pools read already out when the token read fails for good: no list, nothing read again', async () => {
+  const read = createReadStub({ answer: (route) => (route === 'token' ? gatewayError('invalid_request', 422) : undefined) });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  const reads = (route) => read.requests.filter(r => r.path === `/api/read/v1/${route}`);
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await s.page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
+    await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    await s.page.locator('[data-token-search-failed]').waitFor({ timeout: 30_000 });
+    const pools = reads('pools').length;
+    assert.ok(pools <= 1, 'at most the one pools read that left beside the token read');
+    await s.page.waitForTimeout(3000);
+    assert.equal(reads('token').length, 1, 'the token read, final at once');
+    assert.equal(reads('pools').length, pools, 'nothing more is read for that choice');
+    assert.equal(await s.page.locator('[data-picker="pool"]').count(), 0, 'no list, as before');
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-28 (speed wave, after review; study item 30): a pools answer is kept for one New position flow only.
+// Leaving the flow forgets it (Journey's unmount, forgetCreatePools), so a new flow reads the pools afresh, as before.
+test('New position forgets the pools it read once the flow is left: the same token in a new flow is read again', async () => {
+  const read = createReadStub();
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  const reads = (route) => read.requests.filter(r => r.path === `/api/read/v1/${route}`);
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    await choosePool(s.page);
+    assert.equal(reads('pools').length, 1);
+    await s.page.evaluate(() => { window.location.hash = '#/app'; });
+    await s.page.waitForFunction(() => document.querySelector('[data-journey-footer]') === null);
+    await s.page.evaluate(() => { window.location.hash = '#/new'; });
+    await s.page.getByRole('combobox', { name: 'Search a token' }).fill(FIXTURE_TOKEN);
+    await s.page.locator(`[data-token-option="${FIXTURE_TOKEN}"]`).click();
+    await s.page.locator('[data-picker="pool"][data-pools-state="ok"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(reads('pools').map(r => JSON.parse(r.body)), [{ token: FIXTURE_TOKEN }, { token: FIXTURE_TOKEN }], 'the new flow read the pools again');
+  } finally { await s.close(); }
+});
+
+// Added 2026-09-28 (speed wave, study items 28 and 29): the stored search answers a longer query from a complete answer
+// to a shorter one, with no read (searchAnswers.ts), and a catalogue token the search verified is handed over as it
+// answered, with no token read. The tokens listed are the service's own answer to each query: here, the symbols that
+// begin with it, as backend/public_observations.py searches.
+test('typing a name slowly asks the stored search once, and a catalogue token it verified is chosen with no token read', async () => {
+  const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
+  const ZERO = `0x${'0'.repeat(40)}`;
+  const v3 = (name) => JSON.parse(readFileSync(new URL(`../../api-contracts/read-v3/fixtures/${name}.json`, import.meta.url), 'utf8'));
+  const searches = [];
+  let answerUs;
+  const heldUs = new Promise((done) => { answerUs = done; });
+  const stored = async (route, body) => {
+    if (route !== 'search') {
+      const base = v3(route);
+      if (route === 'overview') Object.assign(base, { selectedToken: body.token ?? null, requestedPoolIds: body.poolIds ?? [] });
+      return JSON.stringify(base);
+    }
+    searches.push(body.query);
+    // The service answers "us" only once the test says so, after "d" and "g" are typed (below).
+    if (body.query === 'us') await heldUs;
+    const base = v3('search'), [token] = base.tokens;
+    const usdg = JSON.parse(JSON.stringify(token).split(FIXTURE_TOKEN).join(USDG).split('"TOKEN"').join('"USDG"'));
+    const q = body.query.trim().toLowerCase();
+    return JSON.stringify({ ...base, query: body.query, tokens: [token, usdg].filter(entry => entry.value.asset.symbol.toLowerCase().startsWith(q)).sort((a, b) => (a.address < b.address ? -1 : 1)) });
+  };
+  const usdg = (route) => {
+    if (route !== 'pools') return undefined;
+    const base = readGateway('pools.success'), [pool] = base.pools;
+    return JSON.stringify({
+      ...base,
+      selectedToken: USDG,
+      tokens: base.tokens.map(token => (token.address === FIXTURE_TOKEN ? { ...token, address: USDG, symbol: 'USDG' } : token)),
+      // ETH/USDG, one of the featured pools the read names for USDG.
+      pools: [{ ...pool, poolId: '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e', currencies: [ZERO, USDG], poolKey: { ...pool.poolKey, currency0: ZERO, currency1: USDG }, requestedById: true }],
+    });
+  };
+  const read = createReadStub({ answer: usdg, stored });
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  const reads = (route) => read.requests.filter(r => r.path === `/api/read/v1/${route}`);
+  try {
+    await s.page.goto(`${s.origin}/#/new`);
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    const field = s.page.getByRole('combobox', { name: 'Search a token' });
+    await field.click();
+    // A pause after each key, longer than the search's 350 ms: before, each one was a read of its own.
+    for (const key of ['u', 's']) { await field.press(key); await s.page.waitForTimeout(500); }
+    // Changed on purpose 2026-09-28 (speed wave, after review): "d" and "g" are typed while the read for "us" is still
+    // out, as a slow service leaves it. Before, the next key threw that read away, its read already spent, and asked
+    // "usd"; now it is let finish, and its complete answer answers "usd" and "usdg".
+    for (let waited = 0; searches.length === 0 && waited < 10_000; waited += 50) await s.page.waitForTimeout(50);
+    assert.deepEqual(searches, ['us'], 'the read for "us" is out');
+    const answered = s.page.waitForResponse(response => response.url().endsWith('/api/read/v3/search'));
+    for (const key of ['d', 'g']) { await field.press(key); await s.page.waitForTimeout(500); }
+    answerUs();
+    await answered;
+    // The answer is kept a moment after it arrives (TokenSearch's read settles, then keeps it).
+    await s.page.waitForTimeout(300);
+    assert.deepEqual(searches, ['us'], '"usd" and "usdg" were answered from the complete answer to "us"');
+    const options = await s.page.locator('[data-token-option]').evaluateAll(els => els.map(el => el.getAttribute('data-token-option')));
+    assert.deepEqual(options, [USDG], 'the one token whose symbol begins with "usdg"');
+    await s.page.locator(`[data-token-option="${USDG}"]`).click();
+    await s.page.locator('[data-picker="pool"][data-pools-state="ok"]').waitFor({ timeout: 30_000 });
+    assert.equal(reads('token').length, 0, 'USDG came as the search verified it: no token read');
+    assert.deepEqual(reads('pools').map(r => JSON.parse(r.body).token), [USDG], 'one pools read, for USDG');
+  } finally { answerUs(); await s.close(); }
 });
 
 test('with no wallet connected Review’s last control is Connect wallet, says why, and opens the header’s wallet dialog', async () => {

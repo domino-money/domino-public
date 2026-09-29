@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { catalogueTokens } from '../../config/selectedPoolCatalogue'
 import { CREATE } from '../../lib/create/copy'
+import { dropCreatePools, startCreatePools, warmPoolHints } from '../../lib/create/poolsAhead'
 import { stilled } from '../../lib/motion/stilled'
 import type { JourneyState } from '../../lib/create/journey'
-import { shortAddress } from '../../lib/read/screens/identity'
+import { shortAddress, type AddressKey } from '../../lib/read/screens/identity'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { StatusLine } from '../../lib/read/screens/statusLine'
 import { knownTokens } from '../../lib/read/screens/tokenSearch'
@@ -68,6 +69,13 @@ const searchName = (candidate: TokenCandidate) => {
  * asks — the search reads a token only when one is chosen, and the pool list
  * reads once it mounts for a chosen token.
  *
+ * Changed on purpose 2026-09-28 (speed wave, study items 27 and 30): the pool
+ * list's read is asked the moment the token is chosen, beside the token read,
+ * and the token-pairs list its hints come from as soon as a row is pointed at;
+ * the list still mounts only once the token read has answered, and finds its
+ * read on the way (lib/create/poolsAhead.ts). Change pool shows the list the
+ * flow already read, for a minute, with no read.
+ *
  * Changed on purpose (round 6, 2026-09-27, the owner: New position from a pool
  * page looked different from New position from Positions): a pool from a link
  * arrives exactly as a pool chosen from the list does, the chosen pool and
@@ -106,6 +114,13 @@ export function StageToken({
   const fromSearch = (candidate: TokenCandidate) => {
     onCandidates(mergeCandidates(candidates, [candidate]))
     onToken(candidate)
+  }
+  // Speed wave, 2026-09-28 (study item 27): the chosen token's pools are asked beside its token read, not after it; the
+  // list below takes that read when it mounts (lib/create/poolsAhead.ts). Nothing is drawn sooner than before.
+  const choosing = (key: AddressKey | null) => {
+    if (!source) return
+    if (key) startCreatePools(source, key, state.paired?.key ?? null)
+    else dropCreatePools()
   }
   const pickPool = (option: PoolOption | null) => {
     onPool(option)
@@ -171,6 +186,8 @@ export function StageToken({
               label={CREATE.token.searchLabel}
               placeholder={CREATE.token.searchPlaceholder}
               initialValue={state.token ? searchName(state.token) : undefined}
+              onChoose={choosing}
+              onPoint={warmPoolHints}
             />
           ) : (
             <p role="status" className="text-body text-fg-muted">
