@@ -36,6 +36,11 @@ class ExecutionTransportTests(unittest.TestCase):
     def test_valid_read_and_closed_method_registry(self):
         self.assertEqual(self.rpc.request('eth_chainId',[]),'0x1237')
         self.assertEqual(len(self.requests),1)
+        # The automation simulates a plan with its publication before paying for either.
+        self.body=b'{"jsonrpc":"2.0","id":1,"result":[{"calls":[]}]}'
+        self.assertEqual(self.rpc.request('eth_simulateV1',[{'blockStateCalls':[]},'latest']),[{'calls':[]}])
+        self.assertEqual(len(self.requests),2)
+        self.requests.pop()
         for method in ('eth_sendTransaction','personal_unlockAccount','debug_traceCall'):
             with self.assertRaisesRegex(ExecutionError,'execution_rpc_method'):self.rpc.request(method,[])
         self.assertEqual(len(self.requests),1)

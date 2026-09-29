@@ -345,10 +345,49 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.assertEqual(self.cycle.run(self.entry)['outcome'], 'completed')
         self.assertEqual((self.counts()['effects'], self.counts()['publications']), (2, 2))
 
+    def overreaching_plans(self):
+        """Plans that add twice what they fund: they pass planning, and the
+        engine's bound refuses their execution (InvalidAmount)."""
+        real = automation_cycle.build_execution_plan
+
+        def overreaching(*args, **kwargs):
+            plan = real(*args, **kwargs)
+            return plan.model_copy(update={'liquidityIncrease': str(2 * int(plan.liquidityIncrease))})
+        return patch.object(automation_cycle, 'build_execution_plan', overreaching)
+
+    def test_a_plan_the_engine_refuses_is_refused_before_anything_is_paid(self):
+        # 27 September 2026: nine publications were paid for executions that
+        # could only revert. Simulated together with its publication, such a
+        # plan is refused before an intent, a claim or a publication exists.
+        self.setup()
+        self.cycle.run(self.entry)
+        self.warm_up()
+        self.advance(2)
+        self.trade()
+
+        def backoff():
+            with self.pg.admin() as conn:
+                return conn.execute('SELECT backoff_seconds FROM domino_execution.sequence_state').fetchone()[0]
+        before = backoff()
+        with self.overreaching_plans():
+            refused = self.cycle.run(self.entry)
+        self.assertEqual((refused['outcome'], refused['reason']), ('abandoned', 'presimulate_v4_call_reverted_invalid_amount'), refused)
+        counts = self.counts()
+        self.assertEqual((counts['intents'], counts['publications'], counts['attempts']), (0, 0, 0))
+        # The chain would refuse it now: the sequence waits as for no candidate.
+        scheduling = self.config.scheduling
+        self.assertEqual(backoff(), min(scheduling.maximumBackoffSeconds,
+                                        max(scheduling.minimumBackoffSeconds, (before or scheduling.minimumBackoffSeconds) * 2)))
+        # The plan the engine accepts goes on, with what its simulation measured.
+        acted = self.cycle.run(self.entry)
+        self.assertEqual(acted['outcome'], 'executing', acted)
+        latency = self.store.cycle(self.owner, acted['cycleId'])['cost']['latency']
+        self.assertGreater(latency['simulatedExecutionGas'], 0)
+        self.assertIn('simulatedMs', latency)
+
     def test_a_reverted_qualification_closes_its_cycle_under_the_contract_error(self):
-        # The plan below adds twice what it funds: it passes planning, its
-        # publication is paid for, and the engine's bound refuses the execution
-        # (InvalidAmount) in the executor's qualification. The cycle closes under
+        # Without a simulation the refused plan's publication is paid for, and
+        # the executor's qualification is what reverts. The cycle closes under
         # the error's name; a name in capitals was refused by the cycle store, so
         # such a cycle could not be closed (27 September 2026, after #247).
         self.setup()
@@ -356,22 +395,47 @@ class AutomationCycleEvmTests(unittest.TestCase):
         self.warm_up()
         self.advance(2)
         self.trade()
-        real = automation_cycle.build_execution_plan
-
-        def overreaching(*args, **kwargs):
-            plan = real(*args, **kwargs)
-            return plan.model_copy(update={'liquidityIncrease': str(2 * int(plan.liquidityIncrease))})
         # The production transport, as the VM's serve builds it: the harness's
         # client reports every node error alike, so no revert would be named.
-        cycle = SequenceCycle(self.config, rpc=ExecutionRpc(self.rpc.url), operator_key=OPERATOR_KEY,
-                              publisher_key=PUBLISHER_KEY, gas_budget=SyntheticGasBudget())
-        with patch.object(automation_cycle, 'build_execution_plan', overreaching):
+        transport = ExecutionRpc(self.rpc.url)
+        request = transport.request
+
+        def unsimulated(method, params):
+            if method == 'eth_simulateV1':
+                raise ExecutionError('execution_rpc_unavailable')
+            return request(method, params)
+        transport.request = unsimulated
+        cycle = SequenceCycle(self.config, rpc=transport, operator_key=OPERATOR_KEY, publisher_key=PUBLISHER_KEY,
+                              gas_budget=SyntheticGasBudget())
+        with self.overreaching_plans():
             refused = cycle.run(self.entry)
         reason = 'qualify_v4_call_reverted_invalid_amount'
         self.assertEqual((refused['outcome'], refused['reason']), ('abandoned', reason), refused)
-        cycle = self.store.cycle(self.owner, refused['cycleId'])
-        self.assertEqual((cycle['state'], cycle['reason']), ('abandoned', reason))
+        closed = self.store.cycle(self.owner, refused['cycleId'])
+        self.assertEqual((closed['state'], closed['reason'], closed['cost']['latency']['simulation']),
+                         ('abandoned', reason, 'unavailable'))
         self.assertEqual((self.counts()['publications'], self.counts()['attempts']), (1, 0))
+
+    def test_a_node_that_cannot_simulate_leaves_the_decision_to_the_executor(self):
+        self.setup()
+        self.cycle.run(self.entry)
+        self.warm_up()
+        self.advance(2)
+        self.trade()
+        request = self.rpc.request
+
+        def unsimulated(method, params):
+            if method == 'eth_simulateV1':
+                raise ExecutionError('execution_rpc_unavailable')
+            return request(method, params)
+        self.rpc.request = unsimulated
+        try:
+            acted = self.cycle.run(self.entry)
+        finally:
+            self.rpc.request = request
+        self.assertEqual(acted['outcome'], 'executing', acted)
+        latency = self.store.cycle(self.owner, acted['cycleId'])['cost']['latency']
+        self.assertEqual(latency['simulation'], 'unavailable')
 
     def test_a_base_fee_rise_after_the_reservation_still_publishes(self):
         # 27 September 2026: the cycle reserved the publisher's claim at one

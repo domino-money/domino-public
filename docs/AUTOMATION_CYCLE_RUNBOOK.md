@@ -153,14 +153,21 @@ the combinations the generator refuses.
    budget left, both signers above their minimum balance), the fast path: at a fresh
    head re-read only the pool, the vault and the ledger, re-quote only the destinations
    the evaluation found eligible (the samples are the ones just read), re-plan, build
-   and prove the `ExecutionPlan`, take a swap's share of its pool's cap (refused:
-   `swap_cap_exhausted`, before any intent exists), compute the anchor's id, persist
-   the intent with that id, reserve, then publish, wait for inclusion inside the
-   source-block window, then let the executor qualify, sign, send and reconcile.
+   and prove the `ExecutionPlan`, compute the anchor's id, simulate the publication
+   and the execution together in one block on the head (`eth_simulateV1`, the
+   publisher's call, then the operator's), take a swap's share of its pool's cap
+   (refused: `swap_cap_exhausted`, before any intent exists), persist the intent with
+   that id, reserve, then publish, wait for inclusion inside the source-block window,
+   then let the executor qualify, sign, send and reconcile. A plan the simulation
+   refuses is abandoned with `presimulate_<code>` (the publication's refusal is
+   `presimulate_publication_<code>`), before any intent, claim or publication exists,
+   and the sequence waits as for no candidate. A node that cannot simulate leaves the
+   decision to the executor's qualification (`latency.simulation: unavailable`).
 6. Record the cost (publication and execution gas from receipts) and the latency on the
    cycle: the source block and its timestamp, the wall-clock milliseconds of each phase
-   of the pass that acted (`evaluatedMs`, `plannedMs`, `persistedMs`, `reservedMs`,
-   `publicationSentMs`, `publicationIncludedMs`, `executionSentMs`), the blocks from the
+   of the pass that acted (`evaluatedMs`, `plannedMs`, `simulatedMs`, `persistedMs`,
+   `reservedMs`, `publicationSentMs`, `publicationIncludedMs`, `executionSentMs`), the
+   execution's simulated gas (`simulatedExecutionGas`), the blocks from the
    source to the publication and to the execution, the execution's chain seconds after
    the source and whether that met `latencyTargetSeconds`. Move the sequence's waiting
    interval to the receipt's block, release the lease with the next due time.
@@ -168,8 +175,10 @@ the combinations the generator refuses.
 Every refusal is a reason on the cycle row (`cycles.reason`) and in the CLI output:
 `replan_wait`, `swap_cap_exhausted`, `swap_cap_unmeasured`, `publish_publisher_source_window`,
 `publication_expired`, `anchor_revoked`, `price_outside_plan_band`, `plan_expired`,
-`authority_changed`, `qualify_<executor code>` (the executor refused for a reason it
-reports only as a sanitized code), `funding_required_publisher`, `execution_reverted`,
+`authority_changed`, `presimulate_<code>` (the simulation refused the plan before
+anything was paid), `qualify_<executor code>` (the executor refused for a reason it
+reports only as a sanitized code; a reverted call as `v4_call_reverted_<error>`, the
+contract's error in snake case), `funding_required_publisher`, `execution_reverted`,
 `execution_reorged`, and so on. Each decision also records the pool's swap cap per
 direction with the share other swaps hold (`swapCap`), and the publications a completed
 cycle is expected to take (`expectedPublicationsPerCompletion`, from the last 20 paid

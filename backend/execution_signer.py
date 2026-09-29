@@ -52,7 +52,7 @@ class ExecutionRpc:
     def request(self, method, params):
         allowed = {'eth_chainId','eth_getBlockByNumber','eth_getTransactionCount','eth_getCode','eth_call',
                    'eth_estimateGas','eth_getBalance','eth_sendRawTransaction','eth_getTransactionReceipt',
-                   'eth_getTransactionByHash','eth_getLogs'}
+                   'eth_getTransactionByHash','eth_getLogs','eth_simulateV1'}
         if method not in allowed:
             raise ExecutionError('execution_rpc_method')
         raw = json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params}, allow_nan=False).encode()

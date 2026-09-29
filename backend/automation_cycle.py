@@ -12,6 +12,7 @@ reason and cost on record; the next evaluation starts from current state.
 from fractions import Fraction
 import json
 import random
+import re
 import sys
 import time
 import uuid
@@ -25,11 +26,13 @@ from automation_evidence import PPM, SWAP_WINDOW_BLOCKS, build_evidence, exposur
 from automation_ledger import LedgerIndexStore, LedgerIndexer
 from automation_observer import (POLICY_TYPE, ChainReader, ObservationError, derive_admission, ledger_balances, measurement_history,
                                  observe_sequence, sample_pool)
-from automation_plan import PlanError, build_execution_plan, observation_id, observation_point
+from automation_plan import PlanError, build_execution_plan, checkpoints_for, observation_id, observation_point, publish_calldata
 from automation_store import CycleStore
 from execution_runner import ExecutionRunner
 from execution_signer import ExecutionError, ExecutionRpc, RestrictedSigner, SignerPolicy
 from execution_store import ExecutionStoreError, UnsignedExecutionStore, _model
+from execution_v4 import revert_code
+from execution_v4_adapter import rebuild_v4
 from gas_budget_bridge import GasBudgetClient
 from gas_usd_budget import GasBudgetError, QuotePolicy
 from publisher_signer import PublicationJournal, PublisherPolicy, PublisherSigner
@@ -44,6 +47,30 @@ ATTEMPT_WINDOW = 20
 PUBLICATION_POLL_SECONDS = 0.1
 EXECUTION_POLL_SECONDS = 0.5
 READINESS_MAX_INTERVAL_SECONDS = 15
+
+
+def simulation_refusal(publication, execution):
+    """Why a plan is refused, from its publication and execution simulated
+    together in one block; None when both succeed. A call the chain reverted
+    is named by the contract's error. A reply that cannot be read raises
+    ValueError: the caller then knows nothing, and the executor still decides."""
+    for prefix, call in (('presimulate_publication_', publication), ('presimulate_', execution)):
+        if type(call) is not dict or call.get('status') not in ('0x0', '0x1'):
+            raise ValueError('simulation_unreadable')
+        if call['status'] == '0x1':
+            continue
+        error = call.get('error') if type(call.get('error')) is dict else {}
+        data = error.get('data') or call.get('returnData') or '0x'
+        if type(data) is not str or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})*', data):
+            raise ValueError('simulation_unreadable')
+        # Nodes word a revert differently: go-ethereum and Nitro put its data
+        # in the error, Anvil in returnData under "execution failed". Revert
+        # data names the error; a failure without data is a revert only when
+        # the node says so, otherwise it ran out of gas or hit another fault.
+        message = error.get('message')
+        reverted = len(data) >= 10 or error.get('code') == 3 or (type(message) is str and message.startswith('execution reverted'))
+        return prefix + (revert_code(data[:10].lower()) if reverted else 'v4_call_failed')
+    return None
 
 
 def service_readiness_probe(cycle, entry):
@@ -406,9 +433,13 @@ class SequenceCycle:
         return None
 
     def _backoff(self, state, decision):
-        scheduling = self.config.scheduling
         if decision.action != 'wait':
-            return scheduling.evaluationIntervalSeconds
+            return self.config.scheduling.evaluationIntervalSeconds
+        return self._wait_backoff(state)
+
+    def _wait_backoff(self, state):
+        """Twice the last wait, within the configured bounds."""
+        scheduling = self.config.scheduling
         previous = state['backoffSeconds'] or scheduling.minimumBackoffSeconds
         return min(scheduling.maximumBackoffSeconds, max(scheduling.minimumBackoffSeconds, previous * 2))
 
@@ -467,6 +498,14 @@ class SequenceCycle:
         anchor = observation_id(admission.priceGuard, point)
         intent = plan.intent_id()
         observation = evaluation.ctx.observation
+        refusal = self._presimulate(admission, evaluation, plan, point, anchor, latency, started)
+        if refusal:
+            # Nothing exists yet: no intent, swap share, claim or publication.
+            # The chain would refuse this plan now, so wait as for no candidate.
+            self.store.update_cycle(owner, cycle_id, self.worker, fence, state='abandoned', reason=refusal[:100], cost={'latency': latency})
+            updates['backoff_seconds'] = self._wait_backoff(state)
+            updates['next_due_seconds'] = self._due(updates['backoff_seconds'])
+            return {'outcome': 'abandoned', 'reason': refusal}
         if plan.swap.enabled:
             refusal = self._reserve_swap(owner, seq_hash, fence, plan, evaluation, intent)
             if refusal:
@@ -485,6 +524,34 @@ class SequenceCycle:
         self.store.update_cycle(owner, cycle_id, self.worker, fence, state='planned', intent_id=intent, observation_id=anchor, cost={'latency': latency})
         cycle = self.store.cycle(owner, cycle_id)
         return self._drive(entry, admission, cycle, fence, updates, point=point, started=started)
+
+    def _presimulate(self, admission, evaluation, plan, point, anchor, latency, started):
+        """Publish and execute once, together, in one simulated block on the
+        head, before anything is reserved, published or signed. A plan the
+        engine refuses there is refused here, and its publication is never paid
+        for: on 27 September 2026 nine were, for executions that could only
+        revert. A node that cannot simulate leaves the decision to the executor,
+        whose own qualification still runs after publication."""
+        try:
+            head = self.rpc.request('eth_getBlockByNumber', ['latest', False])
+            execute = rebuild_v4(plan, evaluation.ctx.observation, checkpoints_for(evaluation.ctx, plan),
+                                 price_observation_id=anchor).calldata()
+            calls = [{'from': self.publisher.address, 'to': admission.priceGuard, 'data': publish_calldata(point),
+                      'gas': hex(self.publisher.policy.max_gas)},
+                     {'from': self.config.deployment.operator, 'to': admission.sequence.vault, 'data': execute,
+                      'gas': hex(self.config.operator.policy.max_gas)}]
+            block = {'blockOverrides': {'time': hex(g._quantity(head['timestamp']) + 1)}, 'calls': calls}
+            simulated = self.rpc.request('eth_simulateV1', [{'blockStateCalls': [block]}, head['hash']])
+            publication, execution = simulated[0]['calls']
+            refusal = simulation_refusal(publication, execution)
+            gas = None if refusal else g._quantity(execution['gasUsed'])
+        except (ExecutionError, PlanError, KeyError, IndexError, TypeError, ValueError):
+            latency['simulation'] = 'unavailable'
+            return None
+        latency['simulatedMs'] = self._elapsed(started)
+        if gas is not None:
+            latency['simulatedExecutionGas'] = gas
+        return refusal
 
     def _reserve_swap(self, owner, seq_hash, fence, plan, evaluation, intent):
         """The plan's share of its pool's swap cap, taken before the intent
