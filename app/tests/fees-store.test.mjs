@@ -19,7 +19,7 @@ import { fixtureRelay, loadCase, stateOfCase } from './support/fees/relay-fixtur
 
 const require = createRequire(import.meta.url);
 const { createFeesStore, RELEASE_MS, RETRY_MS } = require('../.test-build/app/src/lib/fees/store.js');
-const { runPipeline } = require('../.test-build/app/src/lib/fees/pipeline.js');
+const { outOfTime, runPipeline } = require('../.test-build/app/src/lib/fees/pipeline.js');
 const { BUDGET_BYTES, STATE_REFRESH_MS } = require('../.test-build/app/src/lib/fees/constants.js');
 
 const settle = () => new Promise((done) => setTimeout(done, 0));
@@ -309,7 +309,10 @@ test('a run that could not reach the chain is asked again once the lane’s wait
 // rests REST_MS after each refusal, and a chain ten blocks newer each second.
 // ---------------------------------------------------------------------------
 
-/** The lane's rest after a refusal (lib/chain/browser.ts LANE_PACE.restMs), and a run's reads up to its answer. */
+/**
+ * The lane's rest after a refusal (lib/chain/browser.ts LANE_PACE.restMs, 30 s until 2026-09-28 and 6 s since: the store
+ * takes whatever wait the worker says), and a run's reads up to its answer.
+ */
 const REST_MS = 30_000;
 const RUN_MS = 3_000;
 const REFUSED = { type: 'done', result: { ok: false, reason: 'rpc_unavailable', prices: null, checkpoint: null, bytes: 0 } };
@@ -463,6 +466,36 @@ test('fake timers: a verified run starts the count over: a later refusal is aske
   assert.equal(runs.length, 8, 'then none');
   assert.equal(store.view('3136705').phase, 'verified', 'the chart stays through every refusal');
   stop();
+});
+
+// 2026-09-28 (review of d478979d): a position page's run whose 30 s ran out, whatever had slowed the fees lane (live, the
+// quiet of a heavy reply after every ordinary one), ended as too_much_history, which is final for the visit: the chart
+// and Your APR came only with an F5. The worker now tells a run stopped by its time alone as one that could not reach
+// the chain (pipeline.ts outOfTime), which is asked again once the lane's wait is over, then on RETRY_MS.
+test('fake timers: a position page’s run that ran out of its time is asked again once the lane’s wait is over, and the chart is drawn; told as a history too large, it never was', async (t) => {
+  const verified = await verifiedResult();
+  const timedOut = { ok: false, reason: 'too_much_history', prices: null, checkpoint: null, bytes: 40_000 };
+  const told = outOfTime(timedOut, BUDGET_BYTES.page, true);
+  assert.deepEqual(told, { ...timedOut, reason: 'rpc_unavailable' });
+  const WAIT = 5_000;
+  const asked = onTheClock(t, (n) => (n === 1 ? { type: 'done', result: told, wait: WAIT } : { type: 'done', result: verified }));
+  const stop = asked.store.subscribeHistory(['3136705'], 'page', () => {});
+  await asked.flush();
+  await asked.to(RUN_MS);
+  assert.deepEqual([asked.store.view('3136705').phase, asked.store.view('3136705').reason], ['unclaimed-only', 'rpc_unavailable'], 'the chain’s unclaimed figure meanwhile, as the card always showed it');
+  await asked.to(RUN_MS + WAIT + 250 + RUN_MS);
+  assert.deepEqual(asked.runs.map((run) => run.at), [0, RUN_MS + WAIT + 250], 'asked again right after the lane’s wait');
+  assert.equal(asked.store.view('3136705').phase, 'verified', 'the chart, with no reload');
+  stop();
+  // As the worker told it before: too_much_history at the page's budget, and nothing more this visit.
+  t.mock.timers.reset();
+  const final = onTheClock(t, (n) => (n === 1 ? { type: 'done', result: timedOut, wait: WAIT } : { type: 'done', result: verified }));
+  const off = final.store.subscribeHistory(['3136705'], 'page', () => {});
+  await final.flush();
+  await final.to(10 * 60_000);
+  assert.equal(final.runs.length, 1, 'one run, newer blocks or not');
+  assert.deepEqual([final.store.view('3136705').phase, final.store.view('3136705').reason], ['unclaimed-only', 'too_much_history']);
+  off();
 });
 
 // 2026-09-25: the budget now bounds the pool's epochs too (pipeline.ts), where a stopped run has no place to keep: a

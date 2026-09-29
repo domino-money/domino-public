@@ -510,7 +510,7 @@ test('the fees history with the chain’s own RPC unreachable: the worker’s la
   const { logsWith } = require('../.test-build/app/src/lib/fees/logs.js');
   const flags = [globalThis.__DOMINO_DEPLOYABLE__, globalThis.__DOMINO_TEST_HOOKS__];
   globalThis.__DOMINO_DEPLOYABLE__ = true;
-  const lane = browser.chainLane({ bytesPerSecond: 10_000_000, burstBytes: 10_000_000, workFactor: 0, graceMs: 0, restMs: 150 });
+  const lane = browser.chainLane({ bytesPerSecond: 10_000_000, burstBytes: 10_000_000, workFactor: 0, graceMs: 0, restMs: 150, heavyMs: 10_000, heavyQuietMs: 0 });
   const code = { chainDeps: lane.deps, logsOnChain: relay.logsOnChain };
   const cache = browser.memoryCache();
   const pool = `0x${'ab'.repeat(32)}`;
@@ -533,6 +533,71 @@ test('the fees history with the chain’s own RPC unreachable: the worker’s la
     lane.close();
     [globalThis.__DOMINO_DEPLOYABLE__, globalThis.__DOMINO_TEST_HOOKS__] = flags;
     relay.resetRelayMemory();
+  }
+});
+
+// 2026-09-28, review of d478979d (the fees lane's quiet after a reply the node worked long on: LANE_PACE heavyMs and
+// heavyQuietMs). The lane measured "long" from the quickest reply it had seen, any reply: the router's own too, which it
+// makes in 1 to 15 ms for a call no fallback serves while the chain's RPC cannot be reached (a DNS that does not resolve
+// it, a phone changing networks). From then on every ordinary reply of the RPC (230 ms, a phone's round trip from
+// Brazil) was followed by 5 s of quiet, and a position page's run spent its 30 s on six calls (live, the 'blip' trace:
+// too_much_history, and no chart for the visit). Here with LANE_PACE itself, on the lane's own clock.
+test('the fees lane’s round trip is the chain’s own RPC’s: after a reply the router made itself, a fallback’s, or the one that found the RPC again, its ordinary replies get no quiet of a heavy one', async (t) => {
+  let at = 1_000_000;
+  const lane = browser.chainLane({ ...browser.LANE_PACE }, () => at);
+  const own = tiny(HEAD);
+  const log = [];
+  /** 'unreachable' (a name that does not resolve: every request fails, the probe too), or how long the RPC takes to reply. */
+  let rpc = 'unreachable';
+  const original = globalThis.fetch;
+  browser.routing().reset();
+  globalThis.fetch = async (url, init) => {
+    if (url !== RPC) return fallbackReply(url, init.body, { own, head: HEAD, log });
+    if (rpc === 'unreachable') throw new TypeError('Failed to fetch');
+    // The reach probe's no-cors GET, answered as the live RPC answers a GET.
+    if (init.mode === 'no-cors') return new Response(null, { status: 400 });
+    at += rpc;
+    return own(init.body);
+  };
+  const ask = async (deps, text) => (await deps.fetch(RPC, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text })).text();
+  try {
+    const deps = lane.deps();
+    // A range of logs no fallback serves, sent while calls went to the RPC: it is found unreachable, and the router answers.
+    const wide = body('eth_getLogs', [{ address: owned.POSITION_MANAGER, fromBlock: hex(HEAD - 1_727_999), toBlock: hex(HEAD) }]);
+    assert.match(await ask(deps, wide), /not served by any reachable endpoint/, 'the router’s own reply, at once');
+    assert.equal(browser.routing().primaryUp(), false);
+    // A read at the head, answered by a fallback, at once on the lane's clock too.
+    assert.equal(JSON.parse(await ask(deps, body('eth_blockNumber'))).result, hex(HEAD));
+    assert.ok(log.some((call) => call.method === 'eth_blockNumber'), 'a fallback’s reply');
+    assert.equal(lane.wait(), 0);
+    // The name resolves again (the phone left that network), each request 230 ms. Once the RPC's down period has passed,
+    // the replay's next wide read finds it through the router's probe and is answered by it: on the lane's clock, the
+    // probe's 230 ms and the read's. Taken for heavy by its time (rather than risk the RPC's refusal after a scan), it is
+    // followed by the quiet; it is no round trip either.
+    rpc = 230;
+    t.mock.timers.enable({ apis: ['Date'], now: Date.now() + router.FIRST_DOWN_MS });
+    assert.deepEqual(JSON.parse(await ask(deps, wide)).result, [], 'the RPC’s own answer');
+    assert.equal(browser.routing().primaryUp(), true);
+    const { workFactor, heavyQuietMs } = browser.LANE_PACE;
+    assert.equal(lane.wait(), heavyQuietMs);
+    at += lane.wait();
+    const waits = [];
+    for (let i = 0; i < 4; i++) {
+      await ask(deps, body('eth_blockNumber'));
+      waits.push(lane.wait());
+      at += lane.wait();
+    }
+    // 230 ms is 30 ms past a usual round trip (the lane's first quickest, ROUND_TRIP_MS): its work times workFactor.
+    assert.deepEqual(waits, Array(4).fill(workFactor * 30), `no ${heavyQuietMs} ms of quiet after an ordinary reply (d478979d: ${heavyQuietMs} after each)`);
+    // A reply the node did work long on is still followed by the quiet (the live Transfer scan: 751 ms).
+    rpc = 751;
+    await ask(deps, body('eth_blockNumber'));
+    assert.equal(lane.wait(), heavyQuietMs);
+  } finally {
+    t.mock.timers.reset();
+    globalThis.fetch = original;
+    browser.routing().reset();
+    lane.close();
   }
 });
 

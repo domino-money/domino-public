@@ -220,8 +220,29 @@ export async function simulateOnChain(params: unknown[]): Promise<unknown> {
  *   soon as the rest is over (`wait`), no longer a minute later;
  * - 2026-09-25 (review): the pace is the address's, across tabs: every lane
  *   counts the bytes the others read, and rests when one of them was refused.
+ * - 2026-09-28 (hotfix; C:/dwt/hotfix2, live from Node, where the RPC's 429 and its
+ *   x-envoy-upstream-service-time can be read): one log scan the node worked on
+ *   for 330 ms to 1.1 s (the NFT's Transfers over its last two days, the first
+ *   read of every history) makes the RPC refuse the address's next call for
+ *   about 4.5 s after it (refused 1, 2, 2.5 and 4 s after, answered 4.5 to 6 s
+ *   after); the pace above waited 0.9 to 3.2 s, and the refusal cost the chart a
+ *   30 s rest and a second run (45 to 80 s live). A reply whose headers came
+ *   `heavyMs` past the quickest reply is followed by `heavyQuietMs` of quiet
+ *   (such scans came 230 ms or more past it; the replay's batch of 50 block
+ *   headers, which draws no refusal of its own, 130 to 155 ms past it). And
+ *   the rest after a refusal is 6 s, no longer 30 s: the RPC took the address's
+ *   calls again 4.5 to 6 s after the work that drew it, and the fees store
+ *   still waits 30, 60 then 120 s before a position's third, fourth and fifth
+ *   runs (store.ts RETRY_MS).
+ * - 2026-09-28 (review of the above): the quickest reply is the chain's own
+ *   RPC's only, and a reply is taken for heavy only while the calls go to that
+ *   RPC. The replies the router makes itself while it is unreachable (1 to
+ *   15 ms) had become the quickest, and after them every ordinary reply of
+ *   200 ms or more (a phone's round trip from Brazil) was followed by 5 s of
+ *   quiet, until the run's time ran out (and a run that ran out of its time is
+ *   now asked again: fees/pipeline.ts outOfTime).
  */
-export const LANE_PACE = { bytesPerSecond: 96 * 1024, burstBytes: 128 * 1024, workFactor: 4, graceMs: 2_000, restMs: 30_000 } as const
+export const LANE_PACE = { bytesPerSecond: 96 * 1024, burstBytes: 128 * 1024, workFactor: 4, graceMs: 2_000, restMs: 6_000, heavyMs: 200, heavyQuietMs: 5_000 } as const
 export type LanePace = { [key in keyof typeof LANE_PACE]: number }
 
 /** A usual round trip to the RPC with no work in it (an eth_blockNumber took 150 to 200 ms from Brazil, 2026-09-25). */
@@ -315,7 +336,8 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
   let quietUntil = 0
   /**
    * The quickest reply seen: about the network's own round trip, which costs the RPC nothing. It starts at a round
-   * trip's usual length, so a first reply that was slow already counts as work.
+   * trip's usual length, so a first reply that was slow already counts as work. 2026-09-28 (review): the chain's own
+   * RPC's replies only (`own` in fetch).
    */
   let quickest = ROUND_TRIP_MS
   let restUntil = 0
@@ -417,9 +439,21 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
           if (input !== RPC_URL) return elsewhere()
           const joined = either(init.signal, signal)
           const sent = now()
+          // 2026-09-28 (review): only the chain's own RPC's reply to a call sent while the calls went to it, and answered
+          // while they still do (`own`), tells a round trip. The router's own replies (1 to 15 ms, while the RPC is
+          // unreachable) and a fallback's tell none: taken for the quickest, they made every ordinary reply after them
+          // look heavy, 5 s of quiet each, until the run's time ran out. A reply answered while the calls go to the RPC
+          // (`up`) may still be heavy: one the router got from it right after finding it again carries its probe's round
+          // trip too, and is taken for heavy rather than risk the RPC's refusal after a scan.
+          let own = router.primaryUp()
+          let quiet = 0
           let response: Response
           try {
             response = await router.send({ ...init, signal: joined.signal }, session)
+            const up = router.primaryUp()
+            own &&= up
+            // Its headers came heavyMs past the quickest reply or more: the node worked on it (see LANE_PACE).
+            quiet = up && now() - sent - quickest >= pace.heavyMs ? pace.heavyQuietMs : 0
           } catch (error) {
             joined.drop()
             // A call nobody wants any more is not a slow one either (see counted).
@@ -446,8 +480,8 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
             () => {
               joined.drop()
               const took = now() - sent
-              quickest = Math.min(quickest, took)
-              quietUntil = now() + pace.workFactor * Math.max(0, took - quickest)
+              if (own) quickest = Math.min(quickest, took)
+              quietUntil = now() + Math.max(pace.workFactor * Math.max(0, took - quickest), quiet)
             },
             signal,
           )

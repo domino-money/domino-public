@@ -23,12 +23,15 @@
  * - 2026-09-27 (the owner: the Fees earned chart took far too long): a run
  *   that could not reach the chain (the RPC refused a read, or answered too
  *   slowly) is asked again as soon as the worker's lane may ask the RPC again
- *   (the `wait` its `done` carries: the lane's 30 s rest after a refusal), no
- *   longer at the next minute's newer block (about 67 s to the chart, seen
- *   live on the owner's 3325113); then after 30, 60 and 120 s, each no sooner
- *   than the lane's wait (RETRY_MS), only while the page is visible, and not
- *   again this visit after that. Nothing else starts it meanwhile, and what
- *   the card shows stays.
+ *   (the `wait` its `done` carries: the lane's rest after a refusal, 6 s since
+ *   2026-09-28, 30 s before), no longer at the next minute's newer block
+ *   (about 67 s to the chart, seen live on the owner's 3325113); then after
+ *   30, 60 and 120 s, each no sooner than the lane's wait (RETRY_MS), only
+ *   while the page is visible, and not again this visit after that. Nothing
+ *   else starts it meanwhile, and what the card shows stays. 2026-09-28
+ *   (review): a position page's run that ran out of its time, not of its
+ *   bytes, is one of those too (the worker says rpc_unavailable: pipeline.ts
+ *   outOfTime), no longer too_much_history for the rest of the visit.
  * - The worker is created on the first run and terminated once nothing has
  *   been shown for a moment. If it fails (onerror, messageerror: a stale
  *   worker file after a deploy answers with the page), every history shows its

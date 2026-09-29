@@ -25,7 +25,7 @@ import { logsOnChain } from '../../../functions/_lib/fees'
 import { pathLogsOnChain } from '../../../functions/_lib/feesPath'
 import { logsWith } from './logs'
 import { BUDGET_BYTES, BUDGET_MS } from './constants'
-import { runPipeline } from './pipeline'
+import { outOfTime, runPipeline } from './pipeline'
 import type { FromWorker, ToWorker, WorkerResult } from './types'
 
 interface WorkerScope {
@@ -86,7 +86,8 @@ scope.onmessage = (event) => {
     .catch((): WorkerResult => ({ ok: false, reason: 'rpc_unavailable', prices: null, checkpoint: null, bytes: 0 }))
     .then((result) => {
       // 2026-09-27: with the lane's wait (its rest after a refusal): the store asks a failed run again once it is over.
-      if (result) post({ type: 'done', id: message.id, result, wait: lane.wait() })
+      // 2026-09-28 (review): a position page's run that ran out of time is one of those (pipeline.ts outOfTime).
+      if (result) post({ type: 'done', id: message.id, result: outOfTime(result, message.budgetBytes, urgent && Date.now() >= deadline), wait: lane.wait() })
     })
     .finally(() => {
       if (runs.get(message.id) === run) runs.delete(message.id)

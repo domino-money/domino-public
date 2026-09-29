@@ -24,7 +24,8 @@ const { chainDeps, chainLane, holdReads, routing, LANE_PACE } = browser;
 const walletPositions = require('../.test-build/app/src/lib/walletPositions.js');
 
 const RPC = 'https://rpc.mainnet.chain.robinhood.com';
-const PACE = { bytesPerSecond: 100_000, burstBytes: 1_000, workFactor: 1, graceMs: 60, restMs: 150 };
+// 2026-09-28: no reply heavy enough for a quiet of its own.
+const PACE = { bytesPerSecond: 100_000, burstBytes: 1_000, workFactor: 1, graceMs: 60, restMs: 150, heavyMs: 10_000, heavyQuietMs: 0 };
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 
 // Changed on purpose (2026-09-28, hotfix): no low-priority read of the page waits on the channel any more (the list's APR

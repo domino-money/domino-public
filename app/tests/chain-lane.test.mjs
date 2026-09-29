@@ -23,7 +23,8 @@ const client = require('../.test-build/app/src/lib/fees/client.js');
 const relay = require('../.test-build/app/functions/_lib/fees.js');
 
 const RPC = 'https://rpc.mainnet.chain.robinhood.com';
-const PACE = { bytesPerSecond: 100_000, burstBytes: 1_000, workFactor: 1, graceMs: 60, restMs: 150 };
+// 2026-09-28: no reply heavy enough for a quiet of its own, unless a test says so.
+const PACE = { bytesPerSecond: 100_000, burstBytes: 1_000, workFactor: 1, graceMs: 60, restMs: 150, heavyMs: 10_000, heavyQuietMs: 0 };
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 
 // Changed on purpose (2026-09-28, the page's fallbacks for an RPC it cannot reach): every stub here is the chain's own
@@ -52,8 +53,9 @@ async function call(deps, init = {}) {
   return response;
 }
 
-test('the pace is the one measured on 2026-09-25: under the RPC’s own limit, with a first burst small enough for any reply', () => {
-  assert.deepEqual({ ...LANE_PACE }, { bytesPerSecond: 96 * 1024, burstBytes: 128 * 1024, workFactor: 4, graceMs: 2_000, restMs: 30_000 });
+// 2026-09-28 (hotfix): the heavy reply's quiet and the 6 s rest were measured live that evening (see below).
+test('the pace is the one measured on 2026-09-25 and 2026-09-28: under the RPC’s own limit, with a first burst small enough for any reply', () => {
+  assert.deepEqual({ ...LANE_PACE }, { bytesPerSecond: 96 * 1024, burstBytes: 128 * 1024, workFactor: 4, graceMs: 2_000, restMs: 6_000, heavyMs: 200, heavyQuietMs: 5_000 });
 });
 
 test('one piece of work at a time in the lane, a position page’s before the list’s', async () => {
@@ -165,6 +167,91 @@ test('the lane says how long before it asks anything again: its rest after a ref
     }, () => call(slow));
     assert.equal(lane.wait(), 4 * (2_200 - 200));
   } finally { lane.close(); }
+});
+
+// 2026-09-28 (hotfix; the owner: for everyone, the Fees earned chart and Your APR took many reloads to show). Live that
+// evening, from Node, where the RPC's 429 and its x-envoy-upstream-service-time header can be read (C:/dwt/hotfix2): the
+// replay's first read, the NFT's Transfers over its last two days, kept the node working 330 ms to 1.1 s when cold, and
+// the RPC then refused the address's next call 1, 2, 2.5 and 4 s after it, and answered it 4.5 to 6 s after. The lane's
+// pace waited four times that work (0.9 to 3.2 s): the replay's next window was refused, the lane rested 30 s, and the
+// chart came 45 to 80 s after the page opened (C:/dwt/hotfix/traces). Its headers heavyMs past the quickest reply, such a
+// reply is now followed by heavyQuietMs of quiet.
+test('a reply the node worked long on is followed by heavyQuietMs of quiet; a lighter one by its work times workFactor', async () => {
+  let at = 1_000;
+  const lane = chainLane({ ...PACE, bytesPerSecond: 10_000_000, workFactor: 4, heavyMs: 200, heavyQuietMs: 5_000 }, () => at);
+  const reply = (ms) => () => {
+    at += ms;
+    return new Response('{}');
+  };
+  try {
+    const deps = lane.deps();
+    await withFetch(reply(160), () => call(deps));
+    assert.equal(lane.wait(), 0, 'a round trip with no work in it: the quickest reply');
+    await withFetch(reply(751), () => call(deps));
+    assert.equal(lane.wait(), 5_000, 'the Transfer scan of the live trace (751 ms): quiet for heavyQuietMs, not 4 × 591 ms');
+    at += 4_999;
+    assert.equal(lane.wait(), 1);
+    at += 1;
+    assert.equal(lane.wait(), 0);
+    await withFetch(reply(280), () => call(deps));
+    assert.equal(lane.wait(), 4 * 120, 'its headers 120 ms past the quickest: its work times workFactor only');
+    at += 10_000;
+    await withFetch(reply(2_160), () => call(deps));
+    assert.equal(lane.wait(), 4 * 2_000, 'work longer than the quiet: its work times workFactor');
+  } finally { lane.close(); }
+});
+
+// The same, through the relay's code and a fake RPC on a scaled clock: it refuses every call for 450 ms after a reply it
+// worked 200 ms on, as the live one did for about 4.5 s after the Transfer scan.
+test('through the relay’s code: after the reply the node worked long on, the lane waits until the RPC takes the address’s calls again, and the next read is answered', async () => {
+  const { caseChain } = await import('./support/fees/case-chain.mjs');
+  globalThis.__DOMINO_DEPLOYABLE__ = true;
+  const read = async (pace) => {
+    const chain = caseChain('3136705');
+    const lane = chainLane(pace);
+    const refused = [];
+    let worked = false;
+    let limitedUntil = 0;
+    const answer = async (url, init) => {
+      const calls = [JSON.parse(init.body)].flat();
+      if (Date.now() < limitedUntil) {
+        refused.push(calls.map((one) => one.method).join('+'));
+        return new Response('{"jsonrpc":"2.0","error":{"code":429,"message":"Too Many Requests"}}', { status: 429 });
+      }
+      const response = await chain.fetch(url, init);
+      if (!worked && calls.some((one) => one.method === 'eth_getLogs')) {
+        worked = true;
+        await wait(200);
+        limitedUntil = Date.now() + 450;
+      }
+      return response;
+    };
+    const twice = async () => {
+      const answers = [];
+      for (let i = 0; i < 2; i++) {
+        relay.resetRelayMemory();
+        client.forgetChainMemory();
+        answers.push(await client.chainLogs({ kind: 'transfer', tokenId: '3136705' }, { lane, urgent: true }));
+      }
+      return answers;
+    };
+    try {
+      const { result } = await withFetch(answer, twice);
+      return { ok: result.map((one) => one.ok), refused };
+    } finally { lane.close(); }
+  };
+  try {
+    const quiet = await read({ ...PACE, bytesPerSecond: 10_000_000, graceMs: 0, heavyMs: 100, heavyQuietMs: 500 });
+    assert.deepEqual(quiet, { ok: [true, true], refused: [] }, 'quiet for heavyQuietMs: the next read answered, nothing refused');
+    // The pace before (5d8051bf, 852a4140): the work times workFactor only.
+    const paced = await read({ ...PACE, bytesPerSecond: 10_000_000, graceMs: 0 });
+    // (3136705's Transfers since the first one span more than one window of LOG_BLOCKS_ONE: its next window is that call.)
+    assert.deepEqual(paced, { ok: [false, false], refused: ['eth_getLogs'] }, 'the next call refused, the run ended, and the resting lane asked nothing more');
+  } finally {
+    delete globalThis.__DOMINO_DEPLOYABLE__;
+    relay.resetRelayMemory();
+    client.forgetChainMemory();
+  }
 });
 
 // 2026-09-25 (review of r4/fees): each tab has its own fees worker and lane, and the RPC limits the visitor's address,

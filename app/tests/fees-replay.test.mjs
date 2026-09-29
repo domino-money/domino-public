@@ -16,7 +16,7 @@ import { CASES, fixtureRelay, loadCase, quietProbes, stateOfCase } from './suppo
 const USDG_UFG = ['0x5fc5360d0400a0fd4f2af552add042d716f1d168', '0xefab538cf3c29237a47c6afb145d50ddf204a0a3'];
 
 const require = createRequire(import.meta.url);
-const { runPipeline, PROBE_WINDOWS, PROBE_SLICES } = require('../.test-build/app/src/lib/fees/pipeline.js');
+const { outOfTime, runPipeline, PROBE_WINDOWS, PROBE_SLICES } = require('../.test-build/app/src/lib/fees/pipeline.js');
 const series = require('../.test-build/app/src/lib/fees/series.js');
 const { FeeReplay, Timeline, sqrtAtTick } = require('../.test-build/app/src/lib/fees/replay.js');
 
@@ -297,6 +297,29 @@ test('a run whose time is spent stops as at its byte budget: before the swap day
   const resumed = await runPipeline({ logs: fixtureRelay(fixture, { maxDays: 1 }).logs, ...quiet }, runOf(fixture, { checkpoint: stopped.checkpoint }));
   assert.equal(resumed.ok, true, resumed.reason);
   assert.deepEqual(resumed.history.earned.map(String), fixture.expect.earned);
+});
+
+// 2026-09-28 (review of d478979d): a position page's run whose time ran out was told to the fees store as
+// too_much_history, final for the visit, whatever had slowed the lane. What the worker now tells it (pipeline.ts
+// outOfTime, `late` once the page's run's time is spent): a stop by its time alone could not read the chain in time.
+test('a position page’s run stopped by its time alone is told as one that could not reach the chain; a stop at its bytes, a place kept for later or a time not spent is told as it is', async () => {
+  const fixture = loadCase('2310187');
+  const budget = runOf(fixture).budgetBytes;
+  const early = fixtureRelay(fixture);
+  const before = await runPipeline({ logs: early.logs, ...quiet, timeUp: () => early.requests.some((r) => r.kind === 'pool') }, runOf(fixture));
+  const late = fixtureRelay(fixture, { maxDays: 1 });
+  const among = await runPipeline({ logs: late.logs, ...quiet, timeUp: () => late.requests.filter((r) => r.kind === 'swaps').length >= 3 }, runOf(fixture));
+  for (const stopped of [before, among]) {
+    assert.equal(stopped.reason, 'too_much_history');
+    assert.deepEqual(outOfTime(stopped, budget, true), { ...stopped, reason: 'rpc_unavailable' }, 'asked again on RETRY_MS');
+    assert.equal(outOfTime(stopped, budget, false), stopped, 'its time not spent: a stop of its own (MAX_SWAP_DAYS, the probe’s bound), final as before');
+  }
+  const spent = { ...before, bytes: budget };
+  assert.equal(outOfTime(spent, budget, true), spent, 'at its byte budget: final as before');
+  const later = { ...among, later: true };
+  assert.equal(outOfTime(later, budget, true), later, 'a price path’s place kept: the next newer block goes on from it, as before');
+  const verified = await replayed('3136705');
+  for (const other of [verified.result, { ...before, reason: 'replay_mismatch' }, { ...before, reason: 'rpc_unavailable' }]) assert.equal(outOfTime(other, budget, true), other);
 });
 
 test('a verified checkpoint at the same block needs no log at all to verify again', async () => {

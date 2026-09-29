@@ -5369,6 +5369,22 @@ test('a copy kept over an hour ago shows no USD figure and no Total value until 
 // until the chain answered, 10.4 s after its first call, while the other tab's fees reads went on in B's waits.
 // Changed on purpose (2026-09-28, hotfix): tab A shows a position's page, not the list measuring its APR: the list
 // measures nothing any more (tests/list-apr.test.mjs), so no tab starts a history run from the list.
+// Changed on purpose (2026-09-29, CI of hotfix/lane-pace, PR #264, 'Frontend browser (finance)' on Linux): the lanes rest
+// 6 s after a refusal, no longer 30 s (LANE_PACE.restMs, d478979d). The test said no history run was even started in
+// either tab until 3 s after B's list. That held only while the rest was 30 s: A's page asks the run B's refusals stopped
+// again once its lane's rest is over (fees/store.ts RETRY_MS, with the `wait` the worker's `done` carries), 30 s later
+// then, past this test's end. And on a fast machine A's history was read to its end before B's first call, so the case
+// was not tested at all (seen here: A's run done 135 ms before it). On CI's runner A's run was still on. With A's third
+// history read held until B's first call (below), 3 runs of 3 on 6c493de0: A's page asked its run again 8.6 s after B's
+// first call, while B's list was still unread, and that run ended at once without a read, the lanes still resting from
+// B's refusal at 5.7 s; no fees read, B's list at 10.5 s. With restMs at 30 s again, 2 of 2 passed, B's list at 10.5 s.
+// No page holds back when its fees store starts a run (852a4140 took the page's quietIn away with the list's APR queue):
+// the list goes first at the RPC, where the lanes wait for its read and rest after its refusals. So this test now holds
+// A's history read on its way when B asks first, and asserts that B's refusals rest every lane, that no fees read is
+// asked from then until B's list is drawn nor while the rest of B's last refusal lasts, A's run asked again meanwhile
+// included, and that B, the list's tab, starts no history run. Measured: 16 of 16 here (4 with the CPU throttled 4x to
+// 8x); with the list's hold and the page's rest taken out (as on d1197112), A's worker read at 5,006 ms, refused; with
+// the page's rest alone taken out, no lane heard a rest.
 test('the RPC refusing for a few seconds while another tab reads a position’s history: the list is drawn at once from this browser’s copy and from the chain as soon as the RPC lets it in, and no fees read is asked meanwhile', async () => {
   const VAULT = `0x${'5a'.repeat(20)}`;
   const recorded = automatedChain('3325113', { vault: VAULT, owner: ACCOUNTS[0].address, executions: [] });
@@ -5380,6 +5396,20 @@ test('the RPC refusing for a few seconds while another tab reads a position’s 
     tokens: TOKENS,
   });
   const chain = listChain({ recorded, base, vault: VAULT });
+  // 2026-09-29: A's third history read is answered only once B has asked its first call, so A's history is being read
+  // when B opens Positions, however fast this machine is (a scan the node works on, as live).
+  const answer = chain.fetch;
+  const onItsWay = { at: 0, answer: null };
+  let historyReads = 0;
+  chain.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    const calls = (Array.isArray(body) ? body : [body]).map((call) => ({ method: call.method, topic: call.params?.[0]?.topics?.[0] }));
+    if (feesRead({ calls }) && ++historyReads === 3) {
+      onItsWay.at = Date.now();
+      await new Promise((done) => { onItsWay.answer = done; });
+    }
+    return answer(url, init);
+  };
   const rpc = refusing(chain);
   const site = siteRoutes();
   const s = await scenario({ chain, routes: [site.route] });
@@ -5393,16 +5423,23 @@ test('the RPC refusing for a few seconds while another tab reads a position’s 
       return send.call(this, message, ...rest);
     };
   });
+  const runsSince = async (page, at) => (await page.evaluate(() => window.__feesRuns ?? [])).filter((run) => run.at > at);
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     await countRuns(s.page);
+    // Every rest a refusal starts, when the lanes hear it (lib/chain/browser.ts: 'rest' on the pages' channel).
+    await s.page.evaluate(() => {
+      window.__rests = [];
+      window.__restsHeard = new BroadcastChannel('domino-chain-reads');
+      window.__restsHeard.onmessage = (event) => { if (event.data === 'rest') window.__rests.push(Date.now()); };
+    });
     await connectWallet(s.page);
     // A's list (it keeps this browser's copy), then 3325113's page: its run is on, and its worker reads the history.
     await s.page.locator('[data-owned="ready"] a[data-position-row="3325113"]').waitFor({ timeout: 20_000 });
     await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
     await s.page.waitForFunction(() => window.__feesRuns.some((run) => run.id === '3325113'), null, { timeout: 20_000 });
-    await until(() => rpc.asked.filter(feesRead).length >= 2, 'A’s fees worker reading the history', 20_000);
+    await until(() => onItsWay.at > 0, 'A’s fees worker reading the history, a read on its way', 20_000);
 
     // B opens Positions; the RPC refuses this address for six seconds from B's first call.
     b = await s.context.newPage();
@@ -5411,6 +5448,7 @@ test('the RPC refusing for a few seconds while another tab reads a position’s 
       if (!first) {
         first = Date.now();
         rpc.until = first + 6_000;
+        onItsWay.answer();
       }
       return route.fallback();
     });
@@ -5426,19 +5464,27 @@ test('the RPC refusing for a few seconds while another tab reads a position’s 
     const late = ready - rpc.until;
     assert.ok(late < 6_000, `B’s list from the chain ${late} ms after the RPC let the address in`);
     assert.deepEqual(await listSeen(b), ['kept', 'ready'], 'B: the copy, then the chain’s list; never the loading rows or a line');
+    assert.ok(onItsWay.at < first, 'A’s history read was on its way when B asked first');
 
-    // Nothing of the fees histories from B's first call to its list, nor for a while after (the rest).
-    await new Promise((done) => setTimeout(done, 3_000));
-    const meanwhile = rpc.asked.filter((request) => request.at > first + 100 && feesRead(request));
-    assert.deepEqual(meanwhile.map((request) => `${request.at - first} ms ${request.refused ? 'refused' : 'answered'} ${request.calls.map((call) => call.method).join('+')}`), [], 'no tab’s fees worker asked anything');
-    const runs = [];
-    for (const page of [s.page, b]) runs.push(...(await page.evaluate(() => window.__feesRuns ?? [])).filter((run) => run.at > first));
-    assert.deepEqual(runs, [], 'no history run was started in either tab');
+    // Nothing of the fees histories from B's first call to its list, nor while the rest its last refusal started lasts.
+    // A rest is told once the refused call it follows came back, so it lasts at least restMs from that call as the fake
+    // RPC saw it (the same clock): the last refusal before the last rest the lanes heard.
     const refused = rpc.asked.filter((request) => request.refused);
+    const rests = (await s.page.evaluate(() => window.__rests)).filter((at) => at >= first);
+    assert.ok(rests.length > 0, 'B’s refusals rested every lane');
+    const rested = Math.max(...refused.filter((request) => request.at <= rests.at(-1)).map((request) => request.at)) + LANE_PACE.restMs;
+    const quiet = Math.max(ready, rested);
+    await new Promise((done) => setTimeout(done, Math.max(3_000, quiet - Date.now() + 500)));
+    const meanwhile = rpc.asked.filter((request) => request.at > first + 100 && request.at <= quiet && feesRead(request));
+    assert.deepEqual(meanwhile.map((request) => `${request.at - first} ms ${request.refused ? 'refused' : 'answered'} ${request.calls.map((call) => call.method).join('+')}`), [], 'no tab’s fees worker asked anything');
+    assert.deepEqual(await runsSince(b, first), [], 'no history run was started in the list’s tab');
+    // A's page may ask the run B's refusals stopped again meanwhile (store.ts RETRY_MS): the reads above say it asked nothing.
+    const again = (await runsSince(s.page, first)).map((run) => `${run.id} at ${run.at - first} ms`);
     assert.ok(refused.length > 0 && refused.every((request) => request.at >= first && request.calls.every((call) => call.method === 'eth_blockNumber')), 'only the list’s first call was asked while refused');
-    console.log(`# B: its copy at once, the chain’s list ${late} ms after the RPC let the address in; ${refused.length} refused, each the list’s first call; no fees read from its first call to 3 s after its list`);
+    console.log(`# B: its copy at once, the chain’s list ${late} ms after the RPC let the address in; ${refused.length} refused, each the list’s first call; A’s history read on its way ${first - onItsWay.at} ms before B’s first call; no fees read from then to ${quiet - first} ms after it (its list at ${ready - first} ms, ${rests.length} rests); A’s page asked again: ${again.join(', ') || 'nothing'}`);
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
   } finally {
+    onItsWay.answer?.();
     await b?.close();
     await s.close();
   }
@@ -5453,6 +5499,8 @@ test('the RPC refusing for a few seconds while another tab reads a position’s 
 // 2026-09-27 (review of the retry): the store is sent exactly two runs, the second only once the rest is over. A worker
 // whose `done` lost its lane's wait (feesReplay.worker.ts) had the store ask again 2 s after the refusal, a run the resting
 // lane ended at once without a read, and the chart came at the 30 s attempt: the reads alone never showed it.
+// Changed on purpose (2026-09-28, hotfix): the lane's rest (LANE_PACE.restMs) is 6 s, no longer 30 s: live, the RPC takes
+// the address's calls again 4.5 to 6 s after the work that drew its refusal (src/lib/chain/browser.ts).
 test('the RPC refuses the replay’s header batch once: the chart is drawn right after the lane’s rest, not a minute later, and nothing is asked meanwhile', async () => {
   const chain = caseChain('3325113');
   const answer = chain.fetch;

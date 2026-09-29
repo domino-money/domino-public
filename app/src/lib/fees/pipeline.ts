@@ -235,6 +235,15 @@ function settled<T>(promise: Promise<T>): Promise<{ value: T } | { error: unknow
 }
 
 /**
+ * 2026-09-28 (review): what the fees store is told of a position page's run whose time is spent (`late`). Stopped by
+ * its time alone (not by its bytes, and with no place kept for a later run: `later`), it could not read the chain in
+ * time, and says so (rpc_unavailable): the store asks it again on RETRY_MS, where too_much_history was the end of the
+ * chart and of Your APR for the visit, whatever had slowed the lane. The units it read stay in the worker's memory.
+ */
+export const outOfTime = (result: WorkerResult, budgetBytes: number, late: boolean): WorkerResult =>
+  late && !result.ok && result.reason === 'too_much_history' && !result.later && result.bytes < budgetBytes ? { ...result, reason: 'rpc_unavailable' } : result
+
+/**
  * One run of the pipeline. Null when it was cancelled; otherwise the result
  * the worker posts back ({ ok: true, history, prices, checkpoint } when the
  * replay verified).

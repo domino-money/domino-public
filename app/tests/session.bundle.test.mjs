@@ -711,6 +711,16 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // session/public reads 63,326 B, financial 179,233 B, all lazy 199,395 B; chain code 18,172 B and fees worker 25,036 B
   // in both. Every ceiling holds (financial 167 B to spare, all lazy 1,405 B, fees worker 64 B, chain code 28 B), so
   // none moves: the 0.1 kB minimum applies only to a ceiling a build passes.
+  // 2026-09-28, hotfix/charts after its review (d478979d's quiet after a heavy reply had made every ordinary reply look
+  // heavy once the router had answered a call itself, and a position page's run then ran out of its time, which was
+  // final for the visit): the fees lane's quickest reply is the chain's own RPC's only, and a heavy one is one answered
+  // while the calls go to that RPC (lib/chain/browser.ts chainLane); a position page's run stopped by its time alone is
+  // told to the store as one that could not reach the chain, asked again on RETRY_MS (lib/fees/pipeline.ts outOfTime,
+  // feesReplay.worker.ts). Tried smaller first, not taken: one closure for the lane's looks at the router (7 B larger),
+  // the result changed in place (1 B smaller). Measured on Windows, gzip level 9, both builds from this tree (dist and
+  // wallet-test mode alike): fees worker 25,082 -> 25,132 B (outOfTime 41 B of it); chain code 18,172 B unchanged. The
+  // fees worker ceiling moves by the minimum at 0.1 kB, to 25.2 kB (68 B over both builds); the financial, all lazy,
+  // chain code and 90 kB session/read ceilings are unchanged.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -757,7 +767,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 179_400], ['all lazy', allLazy, 200_800], ['fees worker', worker, 25_100], ['chain code', chain, 18_200]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 179_400], ['all lazy', allLazy, 200_800], ['fees worker', worker, 25_200], ['chain code', chain, 18_200]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);
