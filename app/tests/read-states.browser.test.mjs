@@ -134,7 +134,8 @@ test('market rows: every observation reaches the table and the ticker as itself,
   const apr = ['Est.APR—', 'unavailable'];
   // The pool's price comes from the verified pool itself (ETH 18 and TOKEN 6 decimals at tick 0), whatever the provider said.
   // Changed on purpose 2026-09-27 (r6/marketsdata, the owner's plain-price rule): one of a token, so much of the other.
-  const price = ['1ETH=1,000,000,000,000TOKEN', 'usable'];
+  // Changed on purpose 2026-09-28 (one-sided): a token's price in ETH, the app's one way round (lib/read/orientation.ts).
+  const price = ['1TOKEN=0.000000000001ETH', 'usable'];
   // The figure alone in its cell: who reported it is on the row's provenance line, checked below.
   const provider = [price, ['$12.3K', 'provider'], ['$0.00', 'provider'], noEstimate];
   const rejected = [price, ['Unavailable', 'rejected'], ['Unavailable', 'rejected'], noEstimate];
@@ -152,7 +153,7 @@ test('market rows: every observation reaches the table and the ticker as itself,
     'rate-limited': blank,
     'retry-recovers': provider,
     // The symbol is untrusted text: literal in the price's unit too.
-    'untrusted-symbol': [[`1ETH=1,000,000,000,000${SYMBOL.replace(/\s/g, '')}`, 'usable'], ...provider.slice(1)],
+    'untrusted-symbol': [[`1${SYMBOL.replace(/\s/g, '')}=0.000000000001ETH`, 'usable'], ...provider.slice(1)],
   };
   const reported = /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/;
   for (const [id, cells] of Object.entries(expected)) {
@@ -184,7 +185,8 @@ test('market rows: every observation reaches the table and the ticker as itself,
 
 test('markets-snapshot listed: a current store is the row; a store that is not enough, or fails, ends in the pool’s own read; none of it is said on screen', async () => {
   // Changed on purpose 2026-09-27 (r6/marketsdata, the owner's plain-price rule): one of a token, so much of the other.
-  const price = ['1ETH=1,000,000,000,000TOKEN', 'usable'];
+  // Changed on purpose 2026-09-28 (one-sided): a token's price in ETH, the app's one way round (lib/read/orientation.ts).
+  const price = ['1TOKEN=0.000000000001ETH', 'usable'];
   const provider = { cells: [price, ['$12.3K', 'provider'], ['$0.00', 'provider'], ['—', 'unavailable']], ticker: ['Est.APR—', 'unavailable'] };
   const reported = /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/;
   const ends = {
@@ -406,7 +408,8 @@ test('Refresh keeps keyboard focus through its read; it is busy, never unmounted
   assert.deepEqual(await root.evaluate((el) => [el.contains(document.activeElement), document.activeElement?.textContent]), [true, 'Refresh']);
   assert.deepEqual(await figures(id), {
     // Changed on purpose 2026-09-27 (r6/marketsdata, the owner's plain-price rule): one of a token, so much of the other.
-    cells: [['1ETH=1,000,000,000,000TOKEN', 'usable'], ['$12.3K', 'provider'], ['$0.00', 'provider'], ['—', 'unavailable']],
+    // Changed on purpose 2026-09-28 (one-sided): a token's price in ETH, the app's one way round.
+    cells: [['1TOKEN=0.000000000001ETH', 'usable'], ['$12.3K', 'provider'], ['$0.00', 'provider'], ['—', 'unavailable']],
     ticker: ['Est.APR—', 'unavailable'],
   });
   assert.match(await provenance(id), /^Pool verified on-chain at block 700 · Reported by a market data provider, retrieved \d+ s ago$/, 'the provider attribution survives the refresh');

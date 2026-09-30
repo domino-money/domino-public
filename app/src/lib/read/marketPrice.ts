@@ -13,10 +13,14 @@
  * Written the way a person reads a price (changed on purpose 2026-09-27,
  * r6/marketsdata, the owner: "0.000011853 cbBTC per USDG" meant nothing to a
  * beginner): one of a token, so much of the other, "1 cbBTC = 84,367 USDG".
- * Which token is the one: priced in USDG, the dollar of the app, wherever the
- * pool holds it and that reads as 0.01 or more ("1 PONS = 0.5739 USDG");
- * otherwise the way round that reads as 1 or more ("1 USDG = 7,748.46
- * MARLIN"). The amount is the price at the pool's tick, which must agree
+ * Which token is the one is the app's one rule (lib/read/orientation.ts):
+ * priced in USDG wherever the pool holds it, then in ETH, otherwise in the
+ * pool's own order. Changed on purpose 2026-09-28 (one-sided, the owner: a
+ * falling token must read and draw as falling, on every screen): a token worth
+ * less than a cent was written the other way round ("1 USDG = 7,748.46
+ * MARLIN") and a pair without USDG the way that read as 1 or more, so a price
+ * could flip with the market; now "1 MARLIN = 0.0001291 USDG", as New position
+ * and the position pages write it. The amount is the price at the pool's tick, which must agree
  * with its square-root price, written whole from 10,000, six significant
  * digits from 1, four below. Changed on purpose 2026-09-28 (round 6
  * integration): the square-root price put "1 ETH = 2,500.09 USDG" on Markets
@@ -29,9 +33,9 @@
  * a failed refresh keeps the age of the read it came from, so it is never made
  * younger by being kept.
  */
-import { USDG } from '../../config/mainTokens'
 import type { Instant, Market } from '../markets'
 import type { TokenDisplay } from './types'
+import { priceInverted } from './orientation'
 import { groupedRatioText } from './ratioSeries'
 import { PRICE_STALE_MS, tickAgrees, type PriceProblem } from './screens/poolRange'
 
@@ -70,9 +74,13 @@ function stateAgeMs(market: Market, now: Instant): number | null {
   return Math.max(0, ms) + (market.poolState?.servedAgeSeconds ?? 0) * 1000
 }
 
-/** An amount as the price writes it; null past what reads as a plain number. */
+/**
+ * An amount as the price writes it; null past what reads as a plain number: 10^15 and more, or under 10^−15. The floor
+ * was added 2026-09-28 (one-sided): the price is no longer turned round to read as 1 or more, so it mirrors the ceiling,
+ * and a price written one way round before can be written the other way round now.
+ */
 export function plainAmount(value: number): string | null {
-  if (!(value > 0 && value < 1e15)) return null
+  if (!(value >= 1e-15 && value < 1e15)) return null
   return new Intl.NumberFormat('en-US', value >= 10_000 ? { maximumFractionDigits: 0 } : { maximumSignificantDigits: value >= 1 ? 6 : 4 }).format(value)
 }
 
@@ -84,12 +92,10 @@ export const plainClose = (close: string) => plainAmount(Number(close)) ?? group
 
 /**
  * The price the plain way round (see the header), from currency0's price in currency1: which currency is the one
- * priced, 0 or 1, and how much of the other it is worth.
+ * priced, 0 or 1, and how much of the other it is worth. The side follows the two currencies alone, never the price.
  */
 export function plainSide(price: number, currency0: string, currency1: string): { side: 0 | 1; value: number } {
-  if (currency1 === USDG && price >= 0.01) return { side: 0, value: price }
-  if (currency0 === USDG && 1 / price >= 0.01) return { side: 1, value: 1 / price }
-  return price >= 1 ? { side: 0, value: price } : { side: 1, value: 1 / price }
+  return priceInverted(currency0, currency1) ? { side: 1, value: 1 / price } : { side: 0, value: price }
 }
 
 /** currency0's price in currency1, in display units, at `tick` (tickPriceText's value, without its rounding). */

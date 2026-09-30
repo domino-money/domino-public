@@ -41,6 +41,11 @@ export type ErrorCode = ErrorResponse['error']
  */
 export interface ReadValidators {
   CONTRACT_VERSION: string
+  /**
+   * Every version a reply may carry in `X-Domino-Read-Contract`; absent, CONTRACT_VERSION alone. Only read-v5 names
+   * more than one: rc.1 and rc.2 while the VM moves to rc.2 (featured-policy v2, 2026-09-28).
+   */
+  CONTRACT_VERSIONS?: readonly string[]
   ERROR_STATUS_BY_CODE: Readonly<Record<ErrorCode, number>>
   assertResponse<R extends keyof ReadResponses>(route: R, payload: unknown): ReadResponses[R]
   validateRequest<R extends ReadRoute>(route: R, payload: unknown): payload is ReadRequests[R]

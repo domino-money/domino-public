@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { COPY } from '../../../lib/read/screens/copy'
 import type { ChainSelectionSlotProps, PickerChrome } from '../../../lib/read/screens/pickerChrome'
-import { poolPrice, presetRange, type PracticeRange } from '../../../lib/read/screens/poolRange'
+import { poolPrice, presetFor, shownPrice, shownRange, type PracticeRange } from '../../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import { useReadSource } from '../../../lib/read/screens/readContext'
 import type { TokenCandidate } from '../../../lib/read/screens/tokens'
@@ -39,7 +39,7 @@ function TokenSummary({ label, candidate }: { label: string; candidate: TokenCan
 /** A pool with a usable price starts on the app's "Closer" preset; one without has no range at all. */
 function startingRange(pool: PoolOption | null): PracticeRange | null {
   const price = pool ? poolPrice(pool, 0) : null
-  return price?.state === 'usable' ? presetRange(price.tick, price.tickSpacing, 'standard') : null
+  return price?.state === 'usable' ? presetFor(price, 'standard') : null
 }
 
 /** The chosen practice range, as it reads in the compact row. */
@@ -47,11 +47,14 @@ function RangeSummary({ pool, range }: { pool: PoolOption; range: PracticeRange 
   // Block, tick and decimals never change with time; only staleness does, and the range view says that.
   const price = poolPrice(pool, 0)
   if (price.state !== 'usable') return null
+  // Lowest price first, the app's one way round (2026-09-28): the page's frame, the pool's ticks after it.
+  const shown = shownPrice(price)
+  const view = shownRange(range, price.inverted)
   return (
     <p className="text-[12px]" data-summary="Range">
       <span className="text-fg-muted">{COPY.selection.rangeSummary}: </span>
       <span className="tnum font-mono">
-        {priceOrWords(range.lower, price)} to {priceOrWords(range.upper, price)}
+        {priceOrWords(view.lower, shown)} to {priceOrWords(view.upper, shown)}
       </span>{' '}
       <Units price={price} />
       <span className="text-fg-subtle">

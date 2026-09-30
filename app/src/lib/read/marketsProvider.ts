@@ -303,7 +303,7 @@ export const CATCH_UP_SHOWN_MS = 8_000
 /**
  * How far off a stored pool's figures are, when they are coming: in MILLISECONDS of server time from the answer
  * (`nextAttemptAt - generatedAt`, never this browser's clock), 0 while a collection runs. Null when they are not
- * coming soon: figures on hand, or provider figures rejected; a collection that failed (`reason` set: the store backs
+ * coming soon: fresh figures on hand, or provider figures rejected; a collection that failed (`reason` set: the store backs
  * it off for up to five minutes and a request does not bring it forward); a next collection further off than
  * CATCH_UP_HORIZON_MS, or none named; a rejected pool. Changed 2026-09-28 (see the header): a pool with no stored
  * value yet, and one whose collector holds no figures for it (`ageSeconds` null), are coming too.
@@ -311,7 +311,7 @@ export const CATCH_UP_SHOWN_MS = 8_000
 export function catchUpInMs(entry: StoredPool, generatedAt: number): number | null {
   const { value, acquisition } = entry
   if (acquisition.status === 'rejected' || acquisition.reason !== null) return null
-  if (value !== null && value.market.market.status !== 'unavailable') return null
+  if (value !== null && value.market.market.status !== 'unavailable' && value.market.market.status !== 'stale') return null
   if (acquisition.refreshing) return 0
   if (acquisition.nextAttemptAt === null) return null
   const inMs = Math.max(0, acquisition.nextAttemptAt - generatedAt) * 1000
@@ -936,6 +936,9 @@ export function createReadMarketsProvider({ source, poolIds: initialIds, pools, 
     const interval = catchUpIntervalMs(inMs)
     const over = collected || interval >= activeRefreshMs || at - since + interval > CATCH_UP_WINDOW_MS
     behindSince.set(id, { since, observedAt: seen ? seen.observedAt : entry.observedAt, over })
+    // Stale figures remain visible with their original ages while an imminent collection is read again. Never turn
+    // a valid old figure into a loading mask, extend its usable lifetime, or poll beyond the existing catch-up window.
+    if (!over && entry.value?.market.market.status === 'stale') return 'asked'
     return over ? false : at - since + interval <= CATCH_UP_SHOWN_MS ? 'shown' : 'asked'
   }
 

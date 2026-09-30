@@ -7,6 +7,8 @@ import { TokenMarkPair } from '../TokenIcon'
 import { IconChevronRight } from '../icons'
 import { Skeleton, cx } from '../ui'
 import type { RowApr } from './listApr'
+import { useLoadMilestone } from '../../lib/useLoadMilestone'
+import type { LoadQuality } from '../../lib/loadTiming'
 import { Amount, PairName, PositionStatus } from './PositionFigures'
 import { cardUsd } from './visual/PortfolioSummary'
 import { positive, unitsText } from './visual/value'
@@ -64,20 +66,23 @@ function Money({ card, state, which, label }: { card: LiveCard; state: PositionS
 }
 
 /** Your APR (listApr.ts): the page's own figure once its page drew it this visit, a calm dash otherwise. */
-function Apr({ apr }: { apr: RowApr | null }) {
+function Apr({ apr, quality }: { apr: RowApr | null; quality: LoadQuality | null }) {
+  useLoadMilestone('positions', 'apr', apr?.kind === 'rate' ? quality : null)
   let figure: ReactNode = <span className="dm-own-dash">—</span>
   let title: string | undefined = 'Shown on the position’s page'
   if (apr?.kind === 'rate') {
     title = apr.estimated ? 'An estimate for now: the position’s page reads it in full' : 'Since the position opened'
+    if (apr.saved) title = `Saved public-chain history through ${new Date(apr.saved.timestamp * 1000).toLocaleString('en-US')}, block ${apr.saved.block}; saved ${new Date(apr.saved.at).toISOString()}. Not current.`
     figure = (
       <>
         <span className="dm-own-fig">{apr.text}</span>
         {apr.estimated && <span className="dm-own-est">est.</span>}
+        {apr.saved && <span className="dm-own-est">saved</span>}
       </>
     )
   } else if (apr?.kind === 'missing') title = apr.words
   return (
-    <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : (apr?.kind ?? 'none')} title={title}>
+    <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : (apr?.kind ?? 'none')} data-apr-source={apr?.kind === 'rate' && apr.saved ? 'saved-public-history' : undefined} title={title}>
       <span className="dm-own-label">Your APR</span>
       <span className="dm-own-aprs">{figure}</span>
     </span>
@@ -90,7 +95,7 @@ function Apr({ apr }: { apr: RowApr | null }) {
  * shows their token amounts); `state` (the same read) values a pair with USDG. `automation`: its badge or
  * Automate, drawn over the row's Automation column as the row's sibling (a link holds no link).
  */
-export function PositionRow({ card, block, state = null, apr = null, automation }: { card: LiveCard; block: number; state?: PositionState | null; apr?: RowApr | null; automation?: ReactNode }) {
+export function PositionRow({ card, block, state = null, apr = null, aprQuality = null, automation }: { card: LiveCard; block: number; state?: PositionState | null; apr?: RowApr | null; aprQuality?: LoadQuality | null; automation?: ReactNode }) {
   const [base, quote] = card.currencies
   return (
     <div className="dm-own-item" data-position-item={card.tokenId}>
@@ -115,7 +120,7 @@ export function PositionRow({ card, block, state = null, apr = null, automation 
         <span className="dm-own-figs">
           <Money card={card} state={state} which="principal" label="Value" />
           <Money card={card} state={state} which="unsettledFees" label="Fees ready to collect" />
-          {card.hasLiquidity && <Apr apr={apr} />}
+          {card.hasLiquidity && <Apr apr={apr} quality={aprQuality} />}
         </span>
         <span className="dm-own-chev">
           <IconChevronRight size={16} />

@@ -295,16 +295,17 @@ test('v2 capabilities retain their version and share the one local slot with v1'
 })
 
 // Added 2026-09-26: read-v5's featured pools list through the local lane, validated both ways by read-v5's runtime.
+// Changed 2026-09-28 (featured-policy v2): read-v5 speaks rc.2 and still takes rc.1, as the read Worker does.
 test('v5 is a fixed featured-pools namespace with its own version, an empty request and a validated list', async () => {
   const fixture = (kind, name) => readFileSync(resolve(import.meta.dirname, `../../api-contracts/read-v5/fixtures/${kind}/${name}.json`), 'utf8')
-  let reply = fixture('valid', 'current'); let calls = 0; let sent
-  const s = await server(async (url, options) => { calls++; sent = { url, options }; return new Response(reply, { headers: { ...headers, 'X-Domino-Read-Contract': '1.0.0-rc.1' } }) })
+  let reply = fixture('valid', 'current'); let calls = 0; let sent; let version = '1.0.0-rc.2'
+  const s = await server(async (url, options) => { calls++; sent = { url, options }; return new Response(reply, { headers: { ...headers, 'X-Domino-Read-Contract': version } }) })
   try {
     const valid = await post(s, '{}', '/api/read/v5/featured-pools')
-    assert.equal(valid.status, 200); assert.equal(valid.headers.get('X-Domino-Read-Contract'), '1.0.0-rc.1')
+    assert.equal(valid.status, 200); assert.equal(valid.headers.get('X-Domino-Read-Contract'), '1.0.0-rc.2')
     assert.deepEqual(await valid.json(), JSON.parse(reply))
     assert.equal(sent.url, 'https://dev-read.domino.money/internal/read/v5/featured-pools')
-    assert.equal(sent.options.headers['X-Domino-Read-Contract'], '1.0.0-rc.1')
+    assert.equal(sent.options.headers['X-Domino-Read-Contract'], '1.0.0-rc.2')
     assert.equal(sent.options.body.toString(), '{}')
     for (const body of ['{"poolIds":[]}', '{"limit":6}', '[]', 'null']) assert.equal((await post(s, body, '/api/read/v5/featured-pools')).status, 422, body)
     assert.equal((await post(s, '{}', '/api/read/v5/capabilities')).status, 404)
@@ -313,10 +314,20 @@ test('v5 is a fixed featured-pools namespace with its own version, an empty requ
     reply = fixture('invalid', 'hooked-pool')
     const refused = await post(s, '{}', '/api/read/v5/featured-pools')
     assert.equal(refused.status, 502); assert.deepEqual(await refused.json(), { error: 'upstream_invalid_response' })
-    assert.equal(refused.headers.get('X-Domino-Read-Contract'), '1.0.0-rc.1')
+    assert.equal(refused.headers.get('X-Domino-Read-Contract'), '1.0.0-rc.2')
     reply = JSON.stringify({ error: 'route_not_available' })
     const absent = await fetch(`${s.origin}/api/read/v5/featured-pools`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
     assert.equal(absent.status, 502, 'a 200 that is an error body is not a list')
     assert.equal(calls, 3)
+    // An rc.1 list, the VM's until rugged's step 2, passes in rc.1; a list that names another version than its header does not.
+    reply = JSON.stringify({ ...JSON.parse(fixture('valid', 'current-policy-v1')), contractVersion: '1.0.0-rc.1' }); version = '1.0.0-rc.1'
+    const older = await post(s, '{}', '/api/read/v5/featured-pools')
+    assert.equal(older.status, 200); assert.equal(older.headers.get('X-Domino-Read-Contract'), '1.0.0-rc.1')
+    assert.deepEqual(await older.json(), JSON.parse(reply))
+    for (const [text, said] of [[fixture('valid', 'current'), '1.0.0-rc.1'], [reply, '1.0.0-rc.2'], [fixture('valid', 'current'), '1.0.0-rc.3']]) {
+      reply = text; version = said
+      const mismatch = await post(s, '{}', '/api/read/v5/featured-pools')
+      assert.equal(mismatch.status, 502, said); assert.deepEqual(await mismatch.json(), { error: 'upstream_contract_mismatch' })
+    }
   } finally { await s.close() }
 })

@@ -172,7 +172,9 @@ test('Markets on the deployable build: all six cards draw a real chart within se
     const line = page.locator(`[data-market-card="${SELECTED[0]}"] [data-price-line]`)
     const box = await line.boundingBox()
     await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2)
-    assert.match(await page.locator(`[data-market-card="${SELECTED[0]}"] .dm-mkt-card-caption`).innerText(), /^\d\d:00 UTC · 1 ETH = 123\.5 TOKEN · 4 swaps$/)
+    // Changed on purpose 2026-09-28 (one-sided): the card asks the history of the token the app prices, TOKEN in ETH
+    // (lib/read/orientation.ts), and the stub answers its fixed close for whichever token is asked.
+    assert.match(await page.locator(`[data-market-card="${SELECTED[0]}"] .dm-mkt-card-caption`).innerText(), /^\d\d:00 UTC · 1 TOKEN = 123\.5 ETH · 4 swaps$/)
 
     const posts = edge.filter(read => read.method === 'POST')
     assert.equal(posts.filter(read => read.path.startsWith('/api/read/v1/')).length, 0, 'no provider read: no read-v1 pool-market, nothing else of read-v1')
@@ -187,8 +189,10 @@ test('Markets on the deployable build: all six cards draw a real chart within se
     // lane its stored lane does not have (scheduler.ts). They keep the gateway's per-client budget, counted here as
     // the gateway counts it, at arrival: a burst of five, then one every two seconds.
     assertWithinBudget(posts)
+    // Changed on purpose 2026-09-28 (one-sided): each card asks the history of the token the app prices (TOKEN, priced
+    // in ETH, lib/read/orientation.ts), where it asked ETH's.
     assert.deepEqual(reads.filter(read => read.route === 'history').map(read => read.request).sort((a, b) => a.poolId.localeCompare(b.poolId)),
-      SELECTED.map(poolId => ({ poolId, currency: '0x0000000000000000000000000000000000000000', windowSeconds: 86400, resolutionSeconds: 3600 })).sort((a, b) => a.poolId.localeCompare(b.poolId)))
+      SELECTED.map(poolId => ({ poolId, currency: '0x1111111111111111111111111111111111111111', windowSeconds: 86400, resolutionSeconds: 3600 })).sort((a, b) => a.poolId.localeCompare(b.poolId)))
     assert.deepEqual(edge.filter(read => read.method === 'GET').map(read => read.path), ['/api/read/v3/capabilities'], 'the cards decided from the capabilities the page already held')
     assert.doesNotMatch(await page.locator('#market-rail').innerText(), /Reading|Retry|unavailable|\bv4\b|not enabled|read-only/i, 'no status words on the cards')
     assert.deepEqual(errors, [])

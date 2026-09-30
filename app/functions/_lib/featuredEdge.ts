@@ -12,7 +12,11 @@
  *
  * What is kept: every 200 with read-v5's contract header whose body passes
  * read-v5's runtime (api-contracts/read-v5/runtime.mjs, which the Worker ran
- * on it already), `none` included; the key names the contract version.
+ * on it already), `none` included; the key names the contract version. Since
+ * 2026-09-28 (featured-policy v2) that header is rc.1 or rc.2 while the VM
+ * moves to rc.2, and a kept list is served in the version it was answered in;
+ * the key names the version this build speaks (rc.2), so no entry an rc.1
+ * build kept is ever read.
  *
  * For how long: 60 seconds as it is (LIST_SECONDS), then, changed on purpose
  * 2026-09-28 (speed wave, item 7, the owner's OK), up to 15 minutes
@@ -46,6 +50,8 @@ export type { EdgeCache } from './publicEdge'
 /** What this route needs from api-contracts/read-v5/runtime.mjs. */
 export interface FeaturedContract {
   CONTRACT_VERSION: string
+  /** Every version an answer may carry: rc.1 and rc.2 during the transition. */
+  CONTRACT_VERSIONS: readonly string[]
   validateRequest(route: 'featured-pools', value: unknown): boolean
   validateResponse(route: 'featured-pools', value: unknown): boolean
 }
@@ -61,8 +67,8 @@ export const LIST_SECONDS = 60
 /** How long a kept list is served at all, refreshed in the background once LIST_SECONDS old (speed wave, item 7). */
 export const STALE_SECONDS = 15 * 60
 
-/** The synthetic GET the list is kept under, on the app's own origin. */
-export const cacheKey = (version: string) => `${APP_ORIGIN}/api/read/v5/cache/${encodeURIComponent(version)}/featured-pools`
+/** The synthetic GET is scoped to the validated app origin: preview never reads or replaces production entries. */
+export const cacheKey = (version: string, origin = APP_ORIGIN) => `${origin}/api/read/v5/cache/${encodeURIComponent(version)}/featured-pools`
 
 export function answerFeatured(request: Request, env: BridgeEnv, rt: FeaturedRuntime): Promise<Response> {
   const { contract } = rt
@@ -76,7 +82,8 @@ export function answerFeatured(request: Request, env: BridgeEnv, rt: FeaturedRun
   return answerFromEdge(request, env, rt, {
     path: FEATURED_PATH,
     version: contract.CONTRACT_VERSION,
-    keyOf: (body) => (contract.validateRequest('featured-pools', body) ? cacheKey(contract.CONTRACT_VERSION) : null),
+    versions: contract.CONTRACT_VERSIONS,
+    keyOf: (body, origin) => (contract.validateRequest('featured-pools', body) ? cacheKey(contract.CONTRACT_VERSION, origin) : null),
     answers: (_body, text) => valid(text),
     freshSeconds: LIST_SECONDS,
     staleSeconds: STALE_SECONDS,

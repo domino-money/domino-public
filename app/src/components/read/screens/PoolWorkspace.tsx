@@ -8,11 +8,12 @@ import { whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { protocolFee } from '../../../lib/read/screens/figures'
 import { NATIVE_CURRENCY } from '../../../lib/read/screens/identity'
-import { poolPrice, presetRange } from '../../../lib/read/screens/poolRange'
+import { poolPrice, presetFor } from '../../../lib/read/screens/poolRange'
 import { optionUsableForDomino, type PoolOption } from '../../../lib/read/screens/poolsList'
 import { askAgainLater, readWithin, type ScreenOutcome } from '../../../lib/read/screens/screenRead'
 import type { ReadOutcome, ReadRequests, ReadSource } from '../../../lib/read/types'
 import { useNow } from '../../../lib/read/useNow'
+import { useLoadMilestone } from '../../../lib/useLoadMilestone'
 import { MetricCell, TurnoverCell } from '../../explore/MetricCell'
 import { PoolTokenLabel } from '../../PoolCatalogueIdentity'
 import { TokenMarkPair } from '../../TokenIcon'
@@ -263,7 +264,8 @@ export function PoolWorkspace({ source, option, onOption, actions, painted }: {
   const priceNow = price.state === 'usable' ? priceAt(price.tick, price.decimals, quoteIndex) : null
   // The typical range New position starts on, worked out on the price now each time it is drawn (round 6 review): a
   // range kept from when the pool was checked would drift off a price read again, and its words with it.
-  const guide = usable && price.state === 'usable' ? rangeGuide(presetRange(price.tick, price.tickSpacing, 'standard'), price.tick, price.decimals, quoteIndex) : null
+  // Changed on purpose 2026-09-28 (one-sided): the preset is taken on the price as the page writes it, so it reads −30% and +50% whichever way the pool is.
+  const guide = usable && price.state === 'usable' ? rangeGuide(presetFor(price, 'standard'), price.tick, price.decimals, quoteIndex) : null
   const day = heard?.key === poolId && heard.span.base === base.address ? heard.span : null
   const unit = <><PoolTokenLabel token={quote} /> for 1 <PoolTokenLabel token={base} /></>
   const status = provenance?.market.status
@@ -301,6 +303,10 @@ export function PoolWorkspace({ source, option, onOption, actions, painted }: {
   // The 24h volume as the key figure writes it, for the recent activity's sentence.
   const volumeShown = shown ? presentMetric(shown.volume24hUsd) : null
   const volumeText = volumeShown?.kind === 'value' ? volumeShown.text : null
+  const tvlShown = shown ? presentMetric(shown.tvlUsd) : null
+  useLoadMilestone('pool', 'tvl', tvlShown?.kind === 'value' ? tvlShown.stale ? 'cached' : 'current' : null)
+  useLoadMilestone('pool', 'volume', volumeShown?.kind === 'value' ? volumeShown.stale ? 'cached' : 'current' : null)
+  useLoadMilestone('pool', 'apr', aprFromHistory ? apr?.state === 'stale' ? 'cached' : 'current' : estimate?.text !== null && estimate?.text !== undefined ? estimate.state === 'stale' ? 'cached' : 'estimated' : null)
   const protocol = option.protocolFeeRaw === undefined ? null : protocolFee(option.protocolFeeRaw)
   const activityListed = listed?.['pool-activity'] === true
 

@@ -4,6 +4,8 @@ interface StoragePort { readonly length: number; key(index: number): string | nu
 interface LockPort { request<T>(name: string, callback: () => Promise<T>): Promise<T> }
 const prefix = 'domino.offered-nonce.v1.'
 const batchPrefix = 'domino.offered-batch.v1.'
+/** When a batch's latch was claimed, in unix seconds, beside it under a prefix of its own (expireBatch). */
+const batchAtPrefix = 'domino.offered-batch-at.v1.'
 const keyFor = (owner: string, nonce: bigint) => {
   if (!/^0x[0-9a-f]{40}$/.test(owner) || nonce < 0n || nonce >= 2n ** 64n) throw new Error('invalid_wallet_nonce')
   return prefix + keccak256(stringToHex(`4663|${owner}|${nonce}`)).slice(2)
@@ -12,6 +14,7 @@ const batchKeyFor = (owner: string, operationId: string) => {
   if (!/^0x[0-9a-f]{40}$/.test(owner) || !/^0x[0-9a-f]{64}$/.test(operationId)) throw new Error('invalid_wallet_batch')
   return batchPrefix + keccak256(stringToHex(`4663|${owner}|${operationId}`)).slice(2)
 }
+const batchAtKeyFor = (owner: string, operationId: string) => batchAtPrefix + batchKeyFor(owner, operationId).slice(batchPrefix.length)
 /** A wallet's id for a batch (EIP-5792): printable ASCII, and never the separator the latch stores it after. */
 const BATCH_ID = /^[\x21-\x7b\x7d\x7e]{1,512}$/
 /** A cross-tab, reload-safe quarantine for a nonce offered to a wallet. Only
@@ -23,7 +26,9 @@ const BATCH_ID = /^[\x21-\x7b\x7d\x7e]{1,512}$/
  * owner's. It keeps the wallet's batch id beside the claim, the one value
  * from a wallet stored here, so the batch's status can be asked again after a
  * reload. The contract already refuses a second batch for the same id; the
- * latch keeps a second prompt from opening. */
+ * latch keeps a second prompt from opening. Beside it, the time it was claimed
+ * (2026-09-28), so a latch whose batch can no longer execute is freed
+ * (expireBatch) instead of holding every later press. */
 export function createNonceJournal(storage: StoragePort, locks: LockPort, randomId: () => string) {
   const held = () => {
     let count = 0
@@ -54,10 +59,15 @@ export function createNonceJournal(storage: StoragePort, locks: LockPort, random
       const value = storage.getItem(batchKeyFor(owner, operationId))
       return value === null ? null : value.slice(37)
     },
-    claimBatch: (owner: string, operationId: string) => locks.request(batchKeyFor(owner, operationId), async () => {
+    /** `at`: when, in unix seconds; kept beside the latch where storage allows, never failing the claim. */
+    claimBatch: (owner: string, operationId: string, at?: number) => locks.request(batchKeyFor(owner, operationId), async () => {
       const key = batchKeyFor(owner, operationId)
       if (storage.getItem(key) !== null) throw new Error('wallet_batch_already_offered')
-      return place(key)
+      const token = place(key)
+      if (at !== undefined && Number.isFinite(at) && at > 0) {
+        try { storage.setItem(batchAtKeyFor(owner, operationId), String(Math.floor(at))) } catch { /* expireBatch starts the clock instead */ }
+      }
+      return token
     }),
     /** Keeps the wallet's id for the batch this claim offered, so its status can be asked after a reload. */
     recordBatch: (owner: string, operationId: string, token: string, id: string) => locks.request(batchKeyFor(owner, operationId), async () => {
@@ -68,7 +78,32 @@ export function createNonceJournal(storage: StoragePort, locks: LockPort, random
     /** Frees the latch once nothing of the batch can still execute or it is done, by its claim or by the wallet's id. */
     releaseBatch: (owner: string, operationId: string, claim: string) => locks.request(batchKeyFor(owner, operationId), async () => {
       const key = batchKeyFor(owner, operationId), value = storage.getItem(key)
-      if (value !== null && claim !== '' && (value.slice(0, 36) === claim || value.slice(37) === claim)) storage.removeItem(key)
+      if (value !== null && claim !== '' && (value.slice(0, 36) === claim || value.slice(37) === claim)) {
+        storage.removeItem(key)
+        storage.removeItem(batchAtKeyFor(owner, operationId))
+      }
+    }),
+    /**
+     * Frees the latch claimed more than `maxAge` seconds before `now`: its batch can no longer execute (setup.ts
+     * BATCH_LATCH_EXPIRY_S says why), whether or not the wallet ever answered. A latch with no time beside it (claimed
+     * before times were kept, or where storage refused one) starts its clock now, and one claimed in the future (a clock
+     * set back) starts it again: either frees later than needed, never sooner. True when it freed one.
+     */
+    expireBatch: (owner: string, operationId: string, now: number, maxAge: number) => locks.request(batchKeyFor(owner, operationId), async () => {
+      const key = batchKeyFor(owner, operationId), atKey = batchAtKeyFor(owner, operationId)
+      if (storage.getItem(key) === null) {
+        storage.removeItem(atKey)
+        return false
+      }
+      const at = Number(storage.getItem(atKey) ?? Number.NaN)
+      if (!Number.isFinite(at) || at <= 0 || at > now) {
+        try { storage.setItem(atKey, String(Math.floor(now))) } catch { /* the latch stays, as before times were kept */ }
+        return false
+      }
+      if (now - at <= maxAge) return false
+      storage.removeItem(key)
+      storage.removeItem(atKey)
+      return true
     }),
   }
 }
@@ -80,6 +115,7 @@ export const ownerNonceOffered = (owner: string, nonce: bigint) => browserJourna
 export const claimOwnerNonce = (owner: string, nonce: bigint) => browserJournal().claim(owner, nonce)
 export const releaseOwnerNonceAfterRejection = (owner: string, nonce: bigint, token: string) => browserJournal().releaseAfterRejection(owner, nonce, token)
 export const ownerBatchOffered = (owner: string, operationId: string) => browserJournal().batchOffered(owner, operationId)
-export const claimOwnerBatch = (owner: string, operationId: string) => browserJournal().claimBatch(owner, operationId)
+export const claimOwnerBatch = (owner: string, operationId: string) => browserJournal().claimBatch(owner, operationId, Date.now() / 1000)
 export const recordOwnerBatch = (owner: string, operationId: string, token: string, id: string) => browserJournal().recordBatch(owner, operationId, token, id)
 export const releaseOwnerBatch = (owner: string, operationId: string, claim: string) => browserJournal().releaseBatch(owner, operationId, claim)
+export const expireOwnerBatch = (owner: string, operationId: string, now: number, maxAge: number) => browserJournal().expireBatch(owner, operationId, now, maxAge)

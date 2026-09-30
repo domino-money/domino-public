@@ -12,6 +12,7 @@ import { PoolFiguresSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/s
 import type { TokenDisplay } from '../lib/read/types'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { useNow } from '../lib/read/useNow'
+import { useLoadMilestone } from '../lib/useLoadMilestone'
 import { MetricCell, PendingFigure } from './explore/MetricCell'
 import { marketsHref, poolHref } from './explore/routes'
 import { IconChevronRight, IconInfo } from './icons'
@@ -148,6 +149,12 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
   // never "Unavailable" while they are coming. Only a figure that would say unavailable waits.
   const coming = (metric: Metric) => read.figuresPending === true && presentMetric(metric).kind === 'unavailable'
   const aprComing = read.figuresPending === true && !qualified && presentAprEstimate(m.feeAprEstimate, now).text === null
+  const tvlFigure = presentMetric(m.tvlUsd)
+  const volumeFigure = presentMetric(m.volume24hUsd)
+  const estimateFigure = presentAprEstimate(m.feeAprEstimate, now)
+  useLoadMilestone(['overview', 'markets'], 'tvl', tvlFigure.kind === 'value' ? tvlFigure.stale ? 'cached' : 'current' : null)
+  useLoadMilestone(['overview', 'markets'], 'volume', volumeFigure.kind === 'value' ? volumeFigure.stale ? 'cached' : 'current' : null)
+  useLoadMilestone(['overview', 'markets'], 'apr', qualified ? m.feeAprPercent.state === 'stale' ? 'cached' : 'current' : estimateFigure.text !== null ? estimateFigure.state === 'stale' ? 'cached' : 'estimated' : null)
   const name = (
     <>
       <PoolTokenLabel token={m.tokens.base} />/<PoolTokenLabel token={m.tokens.quote} />

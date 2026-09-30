@@ -16,7 +16,7 @@
  * bundles it from api-contracts/ at upload, and scripts/release.mjs hashes it
  * with the rest of what a deploy uploads.
  */
-import { CONTRACT_VERSION, validateRequest, validateResponse } from '../../../../../api-contracts/read-v5/runtime.mjs'
+import { CONTRACT_VERSION, CONTRACT_VERSIONS, validateRequest, validateResponse } from '../../../../../api-contracts/read-v5/runtime.mjs'
 import type { BridgeEnv } from '../../../_lib/bridge'
 import { answerFeatured, type EdgeCache } from '../../../_lib/featuredEdge'
 
@@ -35,7 +35,7 @@ function defaultCache(): EdgeCache | null {
 export async function onRequest(context: Context): Promise<Response> {
   try {
     return await answerFeatured(context.request, context.env, {
-      contract: { CONTRACT_VERSION, validateRequest, validateResponse },
+      contract: { CONTRACT_VERSION, CONTRACT_VERSIONS, validateRequest, validateResponse },
       cache: defaultCache(),
       now: () => Date.now(),
       waitUntil: context.waitUntil ? (work) => context.waitUntil?.(work) : undefined,

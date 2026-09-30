@@ -7,7 +7,7 @@
  * these module helpers, plain numbers only for geometry. Nothing here invents
  * a figure; an hour a history does not have carries its last value forward.
  */
-import type { FeeHistory, PositionState } from '../../../lib/fees/types'
+import type { FeeHistory, FeeDisplayState as PositionState } from '../../../lib/fees/types'
 import { type Basis, unitsNumber, valueUnits } from './value'
 
 export type FeesPeriod = '24h' | '7d' | '30d' | 'all'

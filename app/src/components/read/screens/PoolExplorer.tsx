@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { COPY } from '../../../lib/read/screens/copy'
-import { poolPrice, presetRange, type PracticeRange } from '../../../lib/read/screens/poolRange'
+import { poolPrice, presetFor, type PracticeRange } from '../../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import { useReadSource } from '../../../lib/read/screens/readContext'
 import { selectable, type TokenCandidate } from '../../../lib/read/screens/tokens'
@@ -47,7 +47,7 @@ export function PoolExplorer({ onSelection }: { onSelection?: (pool: PoolOption 
   const openRange = () => {
     if (!pool) return
     const price = poolPrice(pool, 0)
-    setRange((previous) => previous ?? (price.state === 'usable' ? presetRange(price.tick, price.tickSpacing, 'standard') : null))
+    setRange((previous) => previous ?? (price.state === 'usable' ? presetFor(price, 'standard') : null))
     setChoice('range')
   }
 

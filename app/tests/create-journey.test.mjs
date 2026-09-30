@@ -713,6 +713,30 @@ test('with one of the two tokens in the wallet, the steps approve and deposit th
   assert.deepEqual(journey.walletSteps({ ...ready(), pool: pool({ currencies: [token(addr('8')), token(addr('9'))] }) }, 0), []);
 });
 
+// 2026-09-28 (the owner: a wallet that can batch must show fewer wallet steps on Review, before anything is pressed).
+test('for a wallet that signs every step at once, the steps are one, named after what they hold, under the key Create position reports the batch by', () => {
+  const ethPool = pool({ currencies: [token(ZERO, 18, 'ETH'), token(addr('2'), 6, 'USDG')] });
+  const eth = journey.withBudget(journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), TWO), '1');
+  for (const [steps, title] of [
+    [journey.walletSteps(ready()), 'Approve, deposit and create the position'],
+    [journey.walletSteps(eth), 'Approve, deposit and create the position'],
+    [journey.walletSteps(ready(), 0), 'Approve, deposit, swap and create the position'],
+    [journey.walletSteps(eth, 1), 'Approve, deposit, swap and create the position'],
+    // ETH alone travels with the deposit: nothing to approve.
+    [journey.walletSteps(eth, 0), 'Deposit, swap and create the position'],
+  ]) {
+    const batched = journey.batchedSteps(steps);
+    assert.equal(batched.length, 1, title);
+    assert.deepEqual([batched[0].key, batched[0].title, batched[0].token], ['batch', title, undefined]);
+    assert.equal(batched[0].detail, 'All in one go, with the exact amounts. Anything the range doesn’t use comes back to you.');
+  }
+  assert.deepEqual(journey.batchedSteps([]), [], 'no steps, no step');
+  // The live run names its one step the same way (components/create/CreatePosition.tsx).
+  assert.equal(CREATE.review.batchStepTitle(true, false), CREATE.review.batchStep);
+  // Beginner first: the choice offered to a wallet that must first turn on its smart account names no standard.
+  assert.doesNotMatch(CREATE.review.batchOfferNote, /EIP|7702|5792/);
+});
+
 test('the fee bases are the pool’s, the assisted swap’s and gas: a direct deposit carries no Domino service fee', () => {
   const bases = journey.feeBases(ready());
   assert.deepEqual(bases.map((fee) => fee.label), ['Pool trading fee', 'Assisted swap fee', 'Network gas']);
@@ -901,7 +925,10 @@ test('plain figures: no ≈ on the steps, and a bound as "30% below today" or "5
     for (const text of walk(CREATE[key])) assert.doesNotMatch(text, /^≈| per [A-Z]/, `${key}: ${text}`);
   }
   const rail = readFileSync(new URL('../src/components/create/StepList.tsx', import.meta.url), 'utf8');
-  assert.match(rail, /1 <SymbolText token=\{price\.base\} \/> = \{words\(range\.lower\)\} to \{words\(range\.upper\)\} <SymbolText token=\{price\.quote\} \/>/, 'the done Range row: "1 ETH = 1,747.65 to 3,766.84 USDG"');
+  // Changed on purpose 2026-09-28 (one-sided): the row writes the range lowest price first in the page's frame
+  // (poolRange.ts shownRange), so a pool whose first token is USDG reads "1 MANY = 0.002 to 0.003 USDG".
+  assert.match(rail, /1 <SymbolText token=\{price\.base\} \/> = \{words\(view\.lower\)\} to \{words\(view\.upper\)\} <SymbolText token=\{price\.quote\} \/>/, 'the done Range row: "1 ETH = 1,747.65 to 3,766.84 USDG"');
+  assert.match(rail, /const view = shownRange\(range, price\.inverted === true\)/);
   // Added 2026-09-28: the slider's chip and the preview's picture round the distance as the words beside them do, so
   // the page never says "30% below today" beside "−30.1%".
   assert.equal(plain.awayShort(-3600, 0), '−30%');
@@ -961,4 +988,52 @@ test('Max leaves Review’s gas allowance in the wallet for native ETH, and take
   assert.equal(plan.plan.kind, 'both');
   const components = readFileSync(new URL('../src/components/create/PairedAmounts.tsx', import.meta.url), 'utf8');
   assert.match(components, /maxSpend\(BigInt\(balance\.raw\), currency\.address === NATIVE_CURRENCY\)/);
+});
+
+// Added 2026-09-28 (one-sided, the owner: "if I hold only MANY and want to sell it, I put the range above today's price;
+// to buy it with USDG, below. No swap: only one side of the pool's pair."). A range wholly above or below the pool's
+// price takes one token alone: the amount is typed in that token (the journey moves it there), Review's steps approve
+// and deposit that token alone, and nothing is swapped. No new mode and no buy or sell word anywhere.
+test('a range that takes one token alone: the amount moves to that token, and the steps approve and deposit it alone, with no swap', () => {
+  const inRange = ready();
+  assert.equal(journey.takesOnly(inRange), null, 'the standard preset holds the price: both tokens');
+  // Above tick 0 in this pool's own order (ONE priced in TWO): ONE alone. Below it: TWO alone.
+  const above = journey.withRange(inRange, { lower: 60, upper: 600 });
+  assert.equal(journey.takesOnly(above), 0);
+  assert.deepEqual([above.token.key, above.budget], [addr('1'), '0.5'], 'the amount was typed in ONE already: it stays');
+  const below = journey.withRange(inRange, { lower: -600, upper: -60 });
+  assert.equal(journey.takesOnly(below), 1);
+  assert.deepEqual([below.token.key, below.budget], [addr('2'), ''], 'an amount of ONE buys nothing there: TWO it is, and the amount goes');
+  assert.deepEqual(journey.canContinue('amount', below, NOW), { ok: false, reason: CREATE.amount.empty });
+  assert.deepEqual(journey.canContinue('amount', journey.withBudget(below, '100'), NOW), { ok: true });
+  // Back to a range around the price: the token stays where it was moved, and both amounts follow from it again.
+  assert.equal(journey.withRange(below, inRange.range).token.key, addr('2'));
+  // A range touching the price: at or above its upper edge v4 takes currency1 alone, so a range ending exactly at
+  // today's price takes TWO alone.
+  assert.equal(journey.takesOnly(journey.withRange(inRange, { lower: -600, upper: 0 })), 1);
+  assert.equal(journey.takesOnly(journey.withRange(inRange, { lower: 0, upper: 600 })), 0, 'and one starting exactly at it takes ONE alone');
+
+  // Review's steps: that token alone, deposited and created, and no swap; "Deposit ONE", never "Deposit both tokens".
+  const steps = journey.walletSteps(journey.withBudget(above, '0.5'));
+  assert.deepEqual(steps.map((step) => step.key), [`approve:${addr('1')}`, 'fund', 'mint']);
+  assert.deepEqual(steps.map((step) => step.title), ['Approve', 'Deposit', 'Create the position']);
+  assert.deepEqual(steps.map((step) => step.token?.address), [addr('1'), addr('1'), undefined]);
+  const text = journey.serialiseSummary(journey.withBudget(above, '0.5'), NOW).filter((line) => line.startsWith('Wallet step'));
+  assert.deepEqual(text, ['Wallet step 1: Approve ONE', 'Wallet step 2: Deposit ONE', 'Wallet step 3: Create the position']);
+  const buying = journey.walletSteps(journey.withBudget(below, '100'));
+  assert.deepEqual(buying.map((step) => [step.key, step.title, step.token?.address]), [[`approve:${addr('2')}`, 'Approve', addr('2')], ['fund', 'Deposit', addr('2')], ['mint', 'Create the position', undefined]]);
+  // Native ETH alone travels with the deposit: no approval at all.
+  const ethPool = pool({ currencies: [token(ZERO, 18, 'ETH'), token(addr('2'), 6, 'TWO')] });
+  const eth = journey.withRange(journey.withBudget(journey.withToken(journey.withPool(journey.initialState(), ethPool, NOW), candidate(ZERO, 18)), '1'), { lower: 60, upper: 600 });
+  assert.deepEqual(journey.walletSteps(eth).map((step) => step.key), ['fund', 'mint']);
+
+  // The wallet holds only the token the range does not take: all of it is swapped, and the step says so.
+  const whole = journey.walletSteps(journey.withBudget(below, '100'), 0);
+  assert.deepEqual(whole.map((step) => [step.key, step.title]), [[`approve:${addr('1')}`, 'Approve'], ['fund', 'Deposit'], ['swap', 'Swap your deposit'], ['mint', 'Create the position']]);
+  assert.match(whole[2].detail, /^Swaps all of it for the other token in this pool\. Fee: 0\.65% of it\.$/);
+  // Around the price, a one-token plan still swaps part of it, as before.
+  assert.equal(journey.walletSteps(inRange, 0)[2].title, 'Swap part of your deposit');
+  // No buy or sell word, and no new mode, anywhere in the flow's copy.
+  for (const text of allCreateStrings()) assert.doesNotMatch(text, /\b(buy|sell|buying|selling)\b/i, text);
+  assert.equal(CREATE.amount.earnsInRange, 'Earns once the price is in range');
 });

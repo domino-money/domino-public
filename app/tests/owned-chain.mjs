@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { decodeFunctionData, encodeAbiParameters, encodeFunctionResult, keccak256, numberToHex, pad, parseAbi } from 'viem';
+import { logLimitError } from './support/log-limits.mjs';
 
 const require = createRequire(import.meta.url);
 export const owned = require('../.test-build/app/functions/_lib/owned.js');
@@ -31,6 +32,8 @@ export const pmAbi = parseAbi([
   'function ownerOf(uint256) view returns (address)',
   'function getPositionLiquidity(uint256) view returns (uint128)',
   'function getPoolAndPositionInfo(uint256) view returns (PoolKey, uint256)',
+  // 2026-09-28 (speed wave B, item 17): the page's scan reads each position's subscriber with it (none unless said).
+  'function subscriber(uint256) view returns (address)',
 ]);
 export const stateViewAbi = parseAbi([
   'function getSlot0(bytes32) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)',
@@ -38,6 +41,16 @@ export const stateViewAbi = parseAbi([
   'function getPositionInfo(bytes32, address, int24, int24, bytes32) view returns (uint128 liquidity, uint256, uint256)',
 ]);
 export const erc20Abi = parseAbi(['function symbol() view returns (string)', 'function decimals() view returns (uint8)']);
+/**
+ * 2026-09-28 (speed wave B, item 23): the scan's first call asks ArbSys the (L2) block it runs at, beside the owner's
+ * nonce. The fake answers as Robinhood Chain (Arbitrum Nitro) does: ArbSys.arbBlockNumber() is the head eth_blockNumber
+ * names, and Multicall3.getBlockNumber() is block.number, the parent chain's block (PARENT_BLOCK; 26,079,411 when the
+ * head was 75,212,459, read 2026-09-28), so a scan that took its head from Multicall3 lists nothing and fails its tests.
+ */
+export const ARB_SYS = '0x0000000000000000000000000000000000000064';
+export const PARENT_BLOCK = 26_079_103n;
+export const blockAbi = parseAbi(['function getBlockNumber() view returns (uint256)']);
+export const arbSysAbi = parseAbi(['function arbBlockNumber() view returns (uint256)']);
 export const setupAbi = parseAbi([
   'struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }',
   'struct Operation { address owner; PoolKey key; uint128 balance0; uint128 balance1; bool swapped; bool closed; uint256 tokenId; }',
@@ -66,6 +79,10 @@ export const nft = (patch = {}) => ({ holder: OWNER, key: KEY, tickLower: -600, 
  * id { sqrtPriceX96, tick, growthInside: [a, b] }; a pool not in it reverts. `tokens`: per address { symbol, decimals },
  * or null for one whose reads revert. `logLimit`: the most logs one eth_getLogs may match before it is refused as too
  * large. `script`: per method, answers to give first (a Response or { error }). `deps.time` is the clock, in ms.
+ * Changed on purpose 2026-09-28 (speed wave B, item 23): `nonce` is by default the number of positions `minted` names
+ * for the owner, as DominoSetupV1 counts them (every mint is one of its operations), and the scan's first read, at
+ * 'latest', asks ArbSys for its block beside that nonce. `arbHead`: what ArbSys answers, if not the head (below 0: it
+ * reverts).
  */
 export function fakeChain({
   owner = OWNER,
@@ -74,22 +91,27 @@ export function fakeChain({
   nfts = {},
   pools = { [POOL]: { sqrtPriceX96: 2n ** 96n, tick: 0, growthInside: [0n, 0n] }, [ETH_POOL]: { sqrtPriceX96: 2n ** 96n, tick: 0, growthInside: [0n, 0n] } },
   tokens = { [USDG]: { symbol: 'USDG', decimals: 6 }, [TOKEN]: { symbol: 'UFG', decimals: 18 } },
-  nonce = 0n,
+  nonce = null,
   operations = {},
   recovery = {},
   logLimit = Infinity,
   script = {},
+  arbHead = null,
 } = {}) {
   const log = [];
   const slept = [];
+  nonce ??= BigInt(minted.filter(({ owner: recipient = owner }) => recipient === owner).length);
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
   const ok = (abi, functionName, result) => ({ success: true, returnData: encodeFunctionResult({ abi, functionName, result }) });
   const revert = { success: false, returnData: '0x08c379a0' };
   const nftOf = (id) => nfts[id.toString()];
   const view = (target, data) => {
+    if (target === owned.MULTICALL3) return ok(blockAbi, decodeFunctionData({ abi: blockAbi, data }).functionName, PARENT_BLOCK);
+    if (target === ARB_SYS) return arbHead < 0 ? revert : ok(arbSysAbi, decodeFunctionData({ abi: arbSysAbi, data }).functionName, BigInt(arbHead ?? head));
     if (target === PM) {
       const { functionName, args } = decodeFunctionData({ abi: pmAbi, data });
       const position = nftOf(args[0]);
+      if (functionName === 'subscriber') return ok(pmAbi, functionName, position?.subscriber ?? ZERO);
       if (!position) return revert;
       if (functionName === 'ownerOf') return position.burned ? revert : ok(pmAbi, functionName, position.holder);
       if (functionName === 'getPositionLiquidity') return ok(pmAbi, functionName, position.liquidity);
@@ -137,6 +159,9 @@ export function fakeChain({
       const from = Number(filter.fromBlock);
       const to = Number(filter.toBlock);
       assert.ok(from >= owned.SETUP_DEPLOY_BLOCK && to <= head && from <= to, `range ${from}..${to}`);
+      // 2026-09-28 (hotfix, merged with speed wave B): the RPC's gateway refuses a range past its limits, as it does live.
+      const limited = logLimitError(filter);
+      if (limited) return { error: limited };
       const hits = minted.filter(({ block, owner: recipient = owner }) => block >= from && block <= to && recipient === owner);
       if (hits.length > logLimit) return { error: { code: -32602, message: `query exceeds limit of ${logLimit}` } };
       return {
@@ -153,7 +178,8 @@ export function fakeChain({
     const [call, block] = params;
     assert.deepEqual(Object.keys(call).sort(), ['data', 'to']);
     assert.equal(call.to, owned.MULTICALL3);
-    assert.equal(block, numberToHex(head), 'every read is pinned to the head the logs end at');
+    // The first read runs at the head ('latest') and names its block; every other is pinned to it.
+    assert.ok(block === numberToHex(head) || (block === 'latest' && call.data.includes(owned.SELECTOR.arbBlockNumber)), 'every read is pinned to the head the logs end at');
     const { args } = decodeFunctionData({ abi: multicallAbi, data: call.data });
     for (const sub of args[0]) assert.equal(sub.allowFailure, true);
     return { result: encodeFunctionResult({ abi: multicallAbi, functionName: 'aggregate3', result: args[0].map((sub) => view(sub.target.toLowerCase(), sub.callData)) }) };

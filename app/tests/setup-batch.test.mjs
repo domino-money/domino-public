@@ -7,8 +7,9 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 const require = createRequire(import.meta.url);
-const { atomicStatus, createSetupClient, setupAbi, tokenAbi, STEP_DEADLINE_S } = require('../.test-build/app/src/finance/setup.js');
+const { atomicStatus, createSetupClient, setupAbi, tokenAbi, STEP_DEADLINE_S, BATCH_LATCH_EXPIRY_S } = require('../.test-build/app/src/finance/setup.js');
 const { createNonceJournal } = require('../.test-build/app/src/finance/nonce.js');
+const { atomicStatusOf } = require('../.test-build/app/src/finance/batch.js');
 const { decodeFunctionData, encodeFunctionResult, keccak256, numberToHex } = require('viem');
 
 const address = n => '0x' + n.toString(16).padStart(40, '0');
@@ -44,8 +45,9 @@ function fixture(options = {}) {
     delegateConfirmed: () => state.confirmed,
     batchOffered: id => journal.batchOffered(owner, id),
     // `state.onClaim` runs once the latch is claimed, before anything more: the moment another wallet or the clock can intervene.
-    claimBatch: async id => { const claim = await journal.claimBatch(owner, id); state.onClaim?.(state); return claim; },
+    claimBatch: async id => { const claim = await journal.claimBatch(owner, id, state.now); state.onClaim?.(state); return claim; },
     recordBatch: (id, claim, batch) => journal.recordBatch(owner, id, claim, batch), releaseBatch: (id, claim) => journal.releaseBatch(owner, id, claim),
+    expireBatch: (id, now, maxAge) => journal.expireBatch(owner, id, now, maxAge),
     request: async (method, params) => {
       calls.push({ method, params });
       switch (method) {
@@ -100,6 +102,58 @@ test('the wallet’s atomic batches are read for chain 4663 only: supported, rea
   // A wallet that never answers is unsupported once the wait ends.
   const silent = { owner, request: () => new Promise(() => {}) };
   assert.equal(await atomicStatus(silent, 20), 'unsupported');
+});
+
+// 2026-09-28 (the owner: the UI must work whenever a wallet can batch): wallets write the chain key in more than one way,
+// and EIP-5792 keeps chain 0x0 for what a wallet supports on every chain.
+test('the wallet’s answer is read under any key that names chain 4663, hex or decimal, and under chain 0x0 when 4663’s entry says nothing', async () => {
+  for (const [capabilities, expected, why] of [
+    [{ '4663': { atomic: { status: 'supported' } } }, 'supported', 'decimal, as viem reads it too'],
+    [{ '0x01237': { atomic: { status: 'ready' } } }, 'ready', 'a leading zero'],
+    [{ '0X1237': { atomic: { status: 'supported' } } }, 'supported', 'an upper-case prefix'],
+    [{ '0x0': { atomic: { status: 'supported' } } }, 'supported', 'every chain'],
+    [{ '0': { atomic: { status: 'ready' } } }, 'ready', 'every chain, in decimal'],
+    [{ '0x0': { atomic: { status: 'supported' } }, '0x1237': { atomic: { status: 'unsupported' } } }, 'unsupported', '4663’s own entry wins over every chain’s'],
+    [{ '0x0': { atomic: { status: 'supported' } }, '0x1237': { paymasterService: { supported: true } } }, 'supported', '4663’s entry says nothing of atomic'],
+    [{ '0x1237': { atomic: { status: 'supported' } }, '4663': { atomic: { status: 'ready' } } }, 'ready', 'two keys that disagree: the weakest'],
+    [{ '0x1237': { atomic: { status: 'supported' } }, '4663': { atomic: { status: 'bogus' } } }, 'unsupported', 'an unknown status is none'],
+    // Ambire's reply: every network it knows, version 1's atomicBatch beside version 2's atomic.
+    [{ '0x1': { atomicBatch: { supported: true }, atomic: { status: 'supported' } }, '0x1237': { atomicBatch: { supported: true }, atomic: { status: 'supported' } } }, 'supported', 'both versions side by side'],
+    [{ '0x12370': { atomic: { status: 'supported' } } }, 'unsupported', 'another chain'],
+    [{ '46630': { atomic: { status: 'supported' } } }, 'unsupported', 'another chain, in decimal'],
+    [{ '0x1237 ': { atomic: { status: 'supported' } } }, 'unsupported', 'not a chain key'],
+    [{ '0x0': { atomicBatch: { supported: true } } }, 'unsupported', 'version 1 on every chain'],
+    [[{ atomic: { status: 'supported' } }], 'unsupported', 'a list, not an object'],
+  ]) {
+    assert.equal(atomicStatusOf(capabilities), expected, why);
+    assert.equal(await atomicStatus(fixture({ capabilities }).wallet), expected, why);
+  }
+});
+
+test('a wallet that refuses the chain filter as an invalid parameter is asked once more without it; any other refusal is final', async () => {
+  const answering = (first) => {
+    const asked = [];
+    const wallet = { owner, request: async (method, params) => {
+      asked.push(params);
+      if (params.length === 2) throw first;
+      return { '0x1237': { atomic: { status: 'ready' } }, '0x1': { atomic: { status: 'supported' } } };
+    } };
+    return { asked, wallet };
+  };
+  const invalid = answering(rpcError(-32602, 'invalid params'));
+  assert.equal(await atomicStatus(invalid.wallet), 'ready');
+  assert.deepEqual(invalid.asked, [[owner, ['0x1237']], [owner]]);
+  // Rabby answers -32601 (no such method, measured 25 Sep 2026): the steps, and the wallet is not asked again.
+  for (const code of [-32601, 4200, 4100, 4001]) {
+    const other = answering(rpcError(code));
+    assert.equal(await atomicStatus(other.wallet), 'unsupported', String(code));
+    assert.deepEqual(other.asked, [[owner, ['0x1237']]], String(code));
+  }
+  // The second question shares the first one's wait.
+  let calls = 0;
+  const slow = { owner, request: (_, params) => { calls++; return params.length === 2 ? Promise.reject(rpcError(-32602)) : new Promise(() => {}); } };
+  assert.equal(await atomicStatus(slow, 20), 'unsupported');
+  assert.equal(calls, 2);
 });
 
 test('a batch holds the exact approvals, the funding into the id the contract opens next, and the mint in that operation, simulated from the owner', async () => {
@@ -224,6 +278,54 @@ test('a refusal frees the latch and says why; an answer that never came keeps it
   const unfit = fixture({ sendReply: { id: 'a|b' } });
   await assert.rejects(unfit.client.sendBatch(await unfit.client.prepareBatch(both, gas), true), /invalid_wallet_batch/);
   assert.equal(unfit.journal.batchOffered(owner, ID), '');
+});
+
+// 2026-09-28 (audit): a latch whose wallet never answered, or answered with an error other than a refusal, held every
+// later press of a wallet that batches, for good. Past the mint's latest deadline its batch can execute nothing.
+test('a latch the wallet never settled holds the next operation only until its batch can no longer execute, then a new batch is prepared', async () => {
+  assert.equal(BATCH_LATCH_EXPIRY_S, 1_500, 'the contract’s 1,200 s deadline ceiling and five minutes more');
+  assert.ok(BATCH_LATCH_EXPIRY_S > STEP_DEADLINE_S);
+  const lost = fixture({ sendError: rpcError(-32603, 'Internal JSON-RPC error.') });
+  await assert.rejects(lost.client.sendBatch(await lost.client.prepareBatch(both, gas), true), /Internal JSON-RPC error/);
+  assert.deepEqual(await lost.client.offeredBatch(), { operationId: ID, id: '' }, 'at first, watched and never offered twice');
+  await assert.rejects(lost.client.prepareBatch(both, gas), /batch_already_offered/);
+  lost.state.now = 100 + BATCH_LATCH_EXPIRY_S;
+  assert.deepEqual(await lost.client.offeredBatch(), { operationId: ID, id: '' }, 'not a second before its time');
+  lost.state.now = 101 + BATCH_LATCH_EXPIRY_S;
+  assert.equal(await lost.client.offeredBatch(), null, 'past it, freed');
+  assert.equal(lost.journal.batchOffered(owner, ID), null);
+  lost.state.sendError = null;
+  const again = await lost.client.prepareBatch(both, gas);
+  assert.equal(await lost.client.sendBatch(again, true), '0xba7c4', 'a new batch for the same operation');
+  // A batch the wallet took and still says is pending is freed the same way: it cannot execute past its deadline either.
+  const held = fixture({ status: 100 });
+  await held.client.sendBatch(await held.client.prepareBatch(both, gas), true);
+  held.state.now = 101 + BATCH_LATCH_EXPIRY_S;
+  assert.equal(await held.client.offeredBatch(), null);
+  // A latch claimed with no time beside it (before 28 Sep) starts its clock when first found, and one from a clock set
+  // back starts it again: either frees later, never sooner.
+  const legacy = fixture();
+  await legacy.journal.claimBatch(owner, ID);
+  legacy.state.now = 5_000;
+  assert.deepEqual(await legacy.client.offeredBatch(), { operationId: ID, id: '' });
+  legacy.state.now = 5_000 + BATCH_LATCH_EXPIRY_S;
+  assert.deepEqual(await legacy.client.offeredBatch(), { operationId: ID, id: '' });
+  legacy.state.now = 5_001 + BATCH_LATCH_EXPIRY_S;
+  assert.equal(await legacy.client.offeredBatch(), null);
+  const future = fixture();
+  await future.journal.claimBatch(owner, ID, 9_000);
+  future.state.now = 8_000;
+  assert.deepEqual(await future.client.offeredBatch(), { operationId: ID, id: '' });
+  future.state.now = 8_000 + BATCH_LATCH_EXPIRY_S;
+  assert.deepEqual(await future.client.offeredBatch(), { operationId: ID, id: '' }, 'restamped at 8,000, not freed from 9,000');
+  future.state.now = 8_001 + BATCH_LATCH_EXPIRY_S;
+  assert.equal(await future.client.offeredBatch(), null);
+  // Another operation's latch is left alone.
+  const other = fixture();
+  await other.journal.claimBatch(owner, OTHER_ID, 1);
+  other.state.now = 10 ** 6;
+  assert.equal(await other.client.offeredBatch(), null);
+  assert.equal(other.journal.batchOffered(owner, OTHER_ID), '');
 });
 
 test('a batch’s outcome is the operation it opens: created is read back closed with its NFT; not included or reverted frees the latch', async () => {

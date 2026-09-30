@@ -2569,7 +2569,7 @@
             "type": "integer"
           },
           "contractVersion": {
-            "const": "1.0.0-rc.1",
+            "const": "1.0.0-rc.2",
             "title": "Contractversion",
             "type": "string"
           },
@@ -7068,10 +7068,17 @@
             "type": "string"
           },
           "prevApr": {
-            "maxLength": 97,
-            "pattern": "^(?:0|[1-9][0-9]{0,77})(?:\\.[0-9]{1,18})?$",
-            "title": "Prevapr",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 97,
+                "pattern": "^(?:0|[1-9][0-9]{0,77})(?:\\.[0-9]{1,18})?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevapr"
           },
           "rankApr": {
             "maxLength": 97,
@@ -7080,10 +7087,17 @@
             "type": "string"
           },
           "referenceDepthUsd": {
-            "maxLength": 224,
-            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
-            "title": "Referencedepthusd",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 224,
+                "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referencedepthusd"
           },
           "reportedLiquidityUsd": {
             "maxLength": 224,
@@ -7242,28 +7256,56 @@
             "type": "string"
           },
           "maxAprPercent": {
-            "maxLength": 224,
-            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
-            "title": "Maxaprpercent",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 224,
+                "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxaprpercent"
           },
           "maxTurnover24h": {
-            "maxLength": 224,
-            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
-            "title": "Maxturnover24H",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 224,
+                "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxturnover24H"
           },
           "minPoolAgeHours": {
-            "maximum": 9007199254740991.0,
-            "minimum": 0.0,
-            "title": "Minpoolagehours",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minpoolagehours"
           },
           "minReferenceDepthUsd": {
-            "maxLength": 224,
-            "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
-            "title": "Minreferencedepthusd",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 224,
+                "pattern": "^[0-9]+(?:\\.[0-9]+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minreferencedepthusd"
           },
           "minTvlUsd": {
             "maxLength": 224,
@@ -7278,7 +7320,10 @@
             "type": "string"
           },
           "rankBy": {
-            "const": "min_fresh_and_previous_day_feeAprEstimate24hPercent",
+            "enum": [
+              "min_fresh_and_previous_day_feeAprEstimate24hPercent",
+              "feeAprEstimate24hPercent"
+            ],
             "title": "Rankby",
             "type": "string"
           },

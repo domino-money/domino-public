@@ -2,7 +2,12 @@
 // backend/featured_contract.py. Decimals are strings; times are Unix seconds.
 import type { ErrorResponse } from '../read-v1/types.js';
 
-export type ReadV5ContractVersion = '1.0.0-rc.1';
+/** The version this runtime speaks: rc.2, featured-policy v2 (rugged's handoff of 28/09/2026). */
+export type ReadV5ContractVersion = '1.0.0-rc.2';
+/** Every version an answer may carry: rc.1 while the VM moves to rc.2, each held to its own rules. */
+export type ReadV5AcceptedVersion = '1.0.0-rc.1' | ReadV5ContractVersion;
+/** The lower of today's and the previous day's APR (policy v1), or today's alone (policy v2, rc.2 on). */
+export type FeaturedRankBy = 'min_fresh_and_previous_day_feeAprEstimate24hPercent' | 'feeAprEstimate24hPercent';
 export type FeaturedStatus = 'current' | 'repaired' | 'carried_over' | 'manual' | 'none';
 export type FeaturedPoolSource = 'pinned' | 'ranked' | 'carried' | 'fallback' | 'manual';
 export type FeaturedIdentitySource = 'catalogue_event' | 'catalogue_hint' | 'position_manager' | 'initialize_scan';
@@ -30,9 +35,13 @@ export interface FeaturedPoolKey {
   currency0: string; currency1: string; fee_pips: number; tick_spacing: number;
   hooks: '0x0000000000000000000000000000000000000000'; feeMode: 'fixed';
 }
+/**
+ * Under policy v2 `rankApr` is `freshApr`. From rc.2, `prevApr` is null for a pool with no
+ * evaluation the day before, and `referenceDepthUsd` null where depth was not measured.
+ */
 export interface FeaturedRankInputs {
-  rankApr: string; freshApr: string; prevApr: string; volume24hUsd: string;
-  reportedLiquidityUsd: string; referenceDepthUsd: string; evaluatedAt: number;
+  rankApr: string; freshApr: string; prevApr: string | null; volume24hUsd: string;
+  reportedLiquidityUsd: string; referenceDepthUsd: string | null; evaluatedAt: number;
 }
 export interface FeaturedPool {
   /** 1..n in list order, without gaps. */
@@ -56,12 +65,16 @@ export interface FeaturedCoverage {
   source: 'geckoterminal_dex_pools_by_h24_volume'; pages: number;
   lastListedVolume24hUsd: string | null; truncated: boolean;
 }
+/**
+ * The rules a list was chosen by, as recorded with it. The two floors are always stated; from
+ * rc.2 any other market rule may be null, which means that rule is off (rc.1 states them all).
+ */
 export interface FeaturedRules {
-  rankBy: 'min_fresh_and_previous_day_feeAprEstimate24hPercent';
+  rankBy: FeaturedRankBy;
   estimateMethod: 'fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365';
   marketSource: 'geckoterminal';
-  minVolume24hUsd: string; minTvlUsd: string; minReferenceDepthUsd: string;
-  maxAprPercent: string; maxTurnover24h: string; minPoolAgeHours: number; size: number;
+  minVolume24hUsd: string; minTvlUsd: string; minReferenceDepthUsd: string | null;
+  maxAprPercent: string | null; maxTurnover24h: string | null; minPoolAgeHours: number | null; size: number;
 }
 export interface FeaturedEvaluation {
   candidates: number; shortlisted: number; eligible: number;
@@ -75,7 +88,7 @@ export interface FeaturedEvaluation {
  */
 export interface FeaturedPoolsResponse {
   schemaVersion: 1;
-  contractVersion: ReadV5ContractVersion;
+  contractVersion: ReadV5AcceptedVersion;
   chainId: 4663;
   mode: 'stored_featured_pools';
   status: FeaturedStatus;
@@ -106,6 +119,7 @@ export type ReadV5Route = keyof ReadV5Requests;
 export type { ErrorResponse };
 
 export const CONTRACT_VERSION: ReadV5ContractVersion;
+export const CONTRACT_VERSIONS: readonly ReadV5AcceptedVersion[];
 export const ENABLED_READS: readonly ReadV5Route[];
 export const ROUTES: Readonly<Record<ReadV5Route, Readonly<{ schemaVersion: 1 }>>>;
 export const ERROR_STATUS_BY_CODE: Readonly<Record<ErrorResponse['error'], number>>;

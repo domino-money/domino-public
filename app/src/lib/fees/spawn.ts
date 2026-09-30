@@ -12,8 +12,10 @@
 import { chainState } from './client'
 import { createFeesStore, type WorkerLike } from './store'
 import { whenVisibleAfter } from '../read/screens/quietRead'
+import { createHistoryCache } from './historyCache'
 
 export const feesStore = createFeesStore({
+  historyCache: createHistoryCache(() => { try { return window.localStorage } catch { return null } }),
   spawn: () => new Worker(new URL('./feesReplay.worker.ts', import.meta.url)) as unknown as WorkerLike,
   postState: (tokenIds) => chainState(tokenIds),
   later: whenVisibleAfter,

@@ -94,6 +94,8 @@ export interface WalletRpc {
   claimBatch?(operationId: Hex): Promise<string>
   recordBatch?(operationId: Hex, claim: string, id: string): Promise<void>
   releaseBatch?(operationId: Hex, claim: string): Promise<void>
+  /** Frees the latch claimed more than `maxAge` seconds before `now`, answered or not (./nonce.ts expireBatch); true when it did. */
+  expireBatch?(operationId: Hex, now: number, maxAge: number): Promise<boolean>
 }
 /**
  * What a batch opens and makes (./setup.ts prepareBatch): the funding, the assisted swap of a one-token deposit with
@@ -142,6 +144,15 @@ export const SIGN_WINDOW_S = 180
  * price band, not the deadline, is what bounds the price it executes at.
  */
 export const STEP_DEADLINE_S = SIGN_WINDOW_S + 300
+/**
+ * How long a batch's latch holds the operation it would open (./nonce.ts expireBatch; 2026-09-28). A batch ends with
+ * the mint, whose deadline the contract refuses once past, and refuses more than 1,200 s after the block it runs in;
+ * the batch was simulated whole against the newest block just before it was offered, and executes whole or not at
+ * all. So 1,200 s after the latch was claimed nothing of it can execute, whatever the device's clock says of the
+ * chain's; five minutes more for good measure. Even a batch still held past this could only revert: the contract
+ * opens each operation id once.
+ */
+export const BATCH_LATCH_EXPIRY_S = 1_200 + 300
 const fail = (code: string): never => { throw new Error(code) }
 const asHex = (value: unknown): Hex => typeof value === 'string' && /^0x(?:[0-9a-fA-F]{2})*$/.test(value) ? value as Hex : fail('invalid_wallet_reply')
 const quantity = (value: unknown): bigint => typeof value === 'string' && /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/.test(value) ? BigInt(value) : fail('invalid_wallet_quantity')
@@ -570,12 +581,20 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       if (!final?.number || quantity(final.number) < quantity(receipt.blockNumber)) return { state: 'included' as const }
       return { state: receipt.status === '0x1' ? 'finalized' as const : 'reverted' as const, blockHash: receipt.blockHash }
     }),
-    /** A batch this page or another tab offered for the operation the setup contract opens next, still latched: its id, '' when the wallet never answered. */
+    /**
+     * A batch this page or another tab offered for the operation the setup contract opens next, still latched: its id,
+     * '' when the wallet never answered. The operation is the next one, so the batch has opened nothing yet; once its
+     * latch is older than BATCH_LATCH_EXPIRY_S it never can, and the latch is freed for a new batch (2026-09-28: a
+     * wallet that never answered, or that answered with an error other than a refusal, left a latch that held every
+     * later press of a wallet that batches).
+     */
     offeredBatch: () => bounded(async (rpc): Promise<{ operationId: Hex; id: string } | null> => {
       await identity(rpc)
       const operationId = await nextOperationId(rpc)
       const id = wallet.batchOffered?.(operationId) ?? null
-      return id === null ? null : { operationId, id }
+      if (id === null) return null
+      if (await wallet.expireBatch?.(operationId, now(), BATCH_LATCH_EXPIRY_S)) return null
+      return { operationId, id }
     }),
     /**
      * The whole deposit as one batch (EIP-5792), prepared against the chain and simulated before the wallet is asked:

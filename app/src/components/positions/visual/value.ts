@@ -7,11 +7,12 @@
  * and only the screens round it, for display. Pure and Node-safe.
  */
 import { USDG } from '../../../config/mainTokens'
+import { quoteIndex as quoteOf } from '../../../lib/read/orientation'
 import { shortAmount } from '../../../lib/format/amount'
 import { group, scaledText } from '../../../lib/format/decimal'
 import { PRICE_SCALE, valueIn } from '../../../lib/format/price'
 import { formatUsd } from '../../../lib/format/usd'
-import type { PositionState, StateCurrency } from '../../../lib/fees/types'
+import type { FeeDisplayState as PositionState, StateCurrency } from '../../../lib/fees/types'
 import { unreadToken } from '../../../lib/read/project'
 import { tokenAmount } from '../../../lib/read/screens/figures'
 import { sqrtPriceAtTick } from '../../../lib/read/screens/poolRange'
@@ -40,13 +41,16 @@ export function usdgSide(currencies: readonly [{ address: string }, { address: s
 /**
  * The basis a state values at: USD when one side is USDG, else the quote side
  * (`quoteIndex`, the page's price orientation). Null when either decimals is
- * unknown or the price is not positive: nothing is guessed.
+ * unknown or the price is not positive: nothing is guessed. Changed on purpose
+ * 2026-09-28 (one-sided): without a `quoteIndex`, the quote is the app's one
+ * rule's (lib/read/orientation.ts), ETH where the pair holds it, the pair's
+ * second token otherwise, as every price on the page is written.
  */
-export function basisOf(state: PositionState, quoteIndex: 0 | 1 = 1): Basis | null {
+export function basisOf(state: PositionState, quoteIndex?: 0 | 1): Basis | null {
   const [a, b] = state.currencies
   if (a.decimals === null || b.decimals === null || state.sqrtPriceX96 <= 0n) return null
   const usd = usdgSide(state.currencies)
-  const into = usd ?? quoteIndex
+  const into = usd ?? quoteIndex ?? quoteOf(a.address, b.address)
   return {
     kind: usd === null ? 'quote' : 'usd',
     into,

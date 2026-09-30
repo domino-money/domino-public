@@ -31,7 +31,7 @@
  * Positions list finds the owner's ids another way when they cannot (functions/_lib/walletPositions.ts).
  */
 import { MAX_RPC_CALLS, RPC_URL, type OwnedDeps } from '../../../functions/_lib/owned'
-import { MAX_RPC_CALLS as RELAY_CALLS, type FeesCache } from '../../../functions/_lib/fees'
+import { MAX_RPC_CALLS as RELAY_CALLS, knownHead, type FeesCache } from '../../../functions/_lib/fees'
 import { FALLBACKS, PRIMARY } from './endpoints'
 import { failover, type Router } from './failover'
 
@@ -69,6 +69,15 @@ function pause(ms: number, signal?: AbortSignal, stop?: () => boolean): Promise<
   })
 }
 
+/**
+ * 2026-09-28 (speed wave B, items 23 and 39): a head a read learned otherwise than by eth_blockNumber (the wallet scan's
+ * first read), taken by this context's router for its fallbacks and by the relay's reads as their head of the moment
+ * (functions/_lib/fees.ts headBlock: one read of the page's state right after the list's scan asks none of its own).
+ */
+const seeHead = (block: number) => {
+  router.learn(block)
+  knownHead(block, Date.now())
+}
 /** This context's router to the chain (one per page, one per fees worker): what it knows lasts as long as the context. */
 const router: Router = failover({ send: rpcFetch, now: () => Date.now(), pause: (ms, signal) => pause(ms, signal), offline })
 /** For tests: this context's router, to read what it knows or forget it. */
@@ -95,6 +104,8 @@ export const REASK_UNREADABLE_MS = 400
 
 let channel: BroadcastChannel | null | undefined
 let reading = 0
+/** 2026-09-28 (speed wave B, item 15): whether a call of the page's reads on their way since the last were over was heavy. */
+let weighty = false
 /** A channel of our own name; in Node (the tests, the live proofs) it does not keep the process running. */
 function openChannel(): BroadcastChannel | null {
   if (typeof BroadcastChannel !== 'function') return null
@@ -102,14 +113,140 @@ function openChannel(): BroadcastChannel | null {
   ;(opened as unknown as { unref?: () => void }).unref?.()
   return opened
 }
+
+/** A rest after refusals: until when, and how many came in a row. */
+interface Rest {
+  until: number
+  count: number
+}
 /**
- * Says on the channel that a page read is on its way (true), that the last one ended (false) or that the RPC refused one
- * ('rest'); quiet where there is no channel (a browser without BroadcastChannel, or one that refuses to open it).
- * 2026-09-28 (hotfix): the page no longer listens (it did for the list's APR queue, which is gone).
+ * 2026-09-28 (speed wave B, item 19): the rest after a refusal is staged, no longer 30 s at the first: `firstRestMs`,
+ * then four times as long at each refusal met within `restMs` of the last rest's end, up to `restMs` (6, 24, then 30 s).
+ * A refusal the RPC lifts within seconds (its work limit) costs a chart seconds, not half a minute; one that goes on
+ * (its byte limit over a minute) still meets the whole rest by the third. Every context counts every refusal it hears
+ * of, its own and the other tabs', so they rest alike. 2026-09-29 (the release's live check, merged with hotfix/charts):
+ * the first rest is 6 s, not 2.5: the RPC takes an address's calls again 4.5 to 6 s after the work that drew its
+ * refusal (hotfix/charts, measured from Node), and live the wave's 2.5 s rest met a second refusal (see LANE_PACE).
  */
-function tell(news: boolean | 'rest'): void {
+function restAfter(rest: Rest, at: number, pace: LanePace = LANE_PACE): void {
+  rest.count = at < rest.until + pace.restMs ? Math.min(16, rest.count + 1) : 0
+  rest.until = Math.max(rest.until, at + Math.min(pace.restMs, pace.firstRestMs * 4 ** rest.count))
+}
+
+// A refusal is the visitor's, not just the worker's. The existing channel continues to pace live lanes; this
+// separate state channel also gives a newly opened page/worker the remaining cooldown, without an old tab treating
+// a new message shape as "page done". Absolute expiry avoids extending a refusal every time a peer repeats it.
+const COOLDOWN_CHANNEL = 'domino-chain-cooldown-v1'
+const sharedRest: Rest = { until: -Infinity, count: 0 }
+let cooldownChannel: BroadcastChannel | null | undefined
+let cooldownReady = Promise.resolve()
+function rememberRest(value: unknown): void {
+  if (!value || typeof value !== 'object') return
+  const { until, count } = value as Partial<Rest>
+  if (typeof until !== 'number' || !Number.isFinite(until) || typeof count !== 'number' || !Number.isInteger(count) || count < 0 || count > 16) return
+  const bounded = Math.min(until, Date.now() + LANE_PACE.restMs)
+  if (bounded > sharedRest.until) {
+    sharedRest.until = bounded
+    sharedRest.count = count
+  }
+}
+function openCooldown(): Promise<void> {
+  if (cooldownChannel !== undefined) return cooldownReady
   try {
-    if (channel === undefined) channel = openChannel()
+    cooldownChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(COOLDOWN_CHANNEL) : null
+    ;(cooldownChannel as unknown as { unref?: () => void } | null)?.unref?.()
+    if (cooldownChannel) {
+      cooldownChannel.onmessage = ({ data }: MessageEvent<unknown>) => {
+        if (data === '?') {
+          if (sharedRest.until > Date.now()) cooldownChannel?.postMessage({ ...sharedRest })
+        } else rememberRest(data)
+      }
+      // Give already-open peers one message turn to answer before a new context sends its first read.
+      cooldownReady = pause(25)
+      cooldownChannel.postMessage('?')
+    }
+  } catch {
+    cooldownChannel = null
+  }
+  return cooldownReady
+}
+function publishRest(rest: Rest, at: number): void {
+  void openCooldown()
+  const state = { until: Date.now() + Math.max(0, rest.until - at), count: rest.count }
+  rememberRest(state)
+  try { cooldownChannel?.postMessage(state) } catch { /* This context still keeps the pause. */ }
+}
+function inheritRest(rest: Rest, at: number): void {
+  const remaining = sharedRest.until - Date.now()
+  if (remaining > 0) {
+    rest.until = Math.max(rest.until, at + remaining)
+    rest.count = Math.max(rest.count, sharedRest.count)
+  }
+}
+/** Shared RPC deadline for a page's next scan, not a new refusal or an additional wait. */
+export const chainRetryAt = (): number => sharedRest.until > Date.now() ? sharedRest.until : 0
+/** Tests start a fresh visitor without carrying another test's refusal across runtimes. */
+export function resetChainCooldown(): void {
+  sharedRest.until = -Infinity
+  sharedRest.count = 0
+  cooldownChannel?.close()
+  cooldownChannel = undefined
+  cooldownReady = Promise.resolve()
+}
+
+/** The visitor's own round trip to the RPC, as a context learned it (the quickest reply), and whether a cheap call taught it. */
+interface Floor {
+  ms: number
+  learned: boolean
+  learnedAt: number
+}
+/** A fast connection from earlier in a visit must not classify a slower connection as expensive node work forever. */
+export const ROUND_TRIP_WINDOW_MS = 15_000
+/**
+ * 2026-09-28 (speed wave B, items 14, 15 and 20): the work a reply cost the RPC, measured to its headers (which the RPC
+ * sends once its work is done): for a log read, its time above the quickest reply seen; any other call costs it nothing,
+ * and teaches the round trip (`floor`), above or below ROUND_TRIP_MS, which is the floor until one has.
+ */
+function workOf(floor: Floor, body: unknown, took: number, at = Date.now()): number {
+  if (!logRead(body)) {
+    const renew = !floor.learned || at - floor.learnedAt >= ROUND_TRIP_WINDOW_MS
+    floor.ms = renew ? took : Math.min(floor.ms, took)
+    if (renew) floor.learnedAt = at
+    floor.learned = true
+    return 0
+  }
+  floor.ms = Math.min(floor.ms, took)
+  return took - floor.ms
+}
+/** Whether a request's body asks for logs (a batch with one log read in it counts). */
+const logRead = (body: unknown) => typeof body === 'string' && body.includes('"eth_getLogs"')
+/**
+ * 2026-09-28 (speed wave B, item 15): a page call that cost the RPC this much work or more is heavy: the lanes wait
+ * `graceMs` after the page's reads it was among. The others (its state reads, the head, a log read the RPC answered at
+ * once) hold the lanes only while they are on their way.
+ */
+const HEAVY_MS = 500
+/** A usual round trip to the RPC with no work in it (an eth_blockNumber took 150 to 200 ms from Brazil, 2026-09-25). */
+const ROUND_TRIP_MS = 200
+const pageFloor: Floor = { ms: ROUND_TRIP_MS, learned: false, learnedAt: 0 }
+
+/**
+ * Says on the channel that a page read is on its way (true), that the last one ended after a heavy call (false) or after
+ * light ones only (null), or that the RPC refused one ('rest'); quiet where there is no channel (a browser without
+ * BroadcastChannel, or one that refuses to open it). 2026-09-28 (speed wave B, item 15): a lane asks who reads ('?') when
+ * it starts and when a tab says it is done, and a page with a read on its way says so again: a worker spawned mid-read,
+ * or one tab done while another still reads, no longer takes the page for idle. That question is all the page hears
+ * (2026-09-28, log-limits hotfix: the list's APR queue, which listened for the rests and the other tabs' reads, is gone).
+ */
+function tell(news: boolean | null | 'rest'): void {
+  try {
+    if (channel === undefined) {
+      channel = openChannel()
+      if (channel)
+        channel.onmessage = ({ data }: MessageEvent<unknown>) => {
+          if (data === '?' && reading) channel?.postMessage(true)
+        }
+    }
     channel?.postMessage(news)
   } catch {
     channel = null
@@ -118,11 +255,16 @@ function tell(news: boolean | 'rest'): void {
 /**
  * One more (or one fewer) page read on its way. The lanes hear every read that starts (2026-09-28: their hold lasts
  * PAGE_HOLD_MS from the last they heard, so a list read that waits between refused calls holds them throughout) and the
- * last that ends.
+ * last that ends, and whether a heavy call was among them.
  */
-function pageReading(step: 1 | -1): void {
+function pageReading(step: 1 | -1, weight = false): void {
   reading += step
-  if (step > 0 || !reading) tell(step > 0)
+  weighty ||= weight
+  if (step > 0) tell(true)
+  else if (!reading) {
+    tell(weighty ? false : null)
+    weighty = false
+  }
 }
 
 /**
@@ -135,8 +277,13 @@ export function holdReads(): () => void {
   return () => pageReading(-1)
 }
 
-/** The runtime for one read: `signal` aborted means nobody wants the answer, and no further call is made. */
-export function chainDeps(signal?: AbortSignal): ChainDeps {
+/**
+ * The runtime for one read: `signal` aborted means nobody wants the answer, and no further call is made. 2026-09-28
+ * (speed wave B, item 26): an `aside` read (an automated position's vault record, read beside its chart) is not one the
+ * lanes step aside for: it neither holds them nor rests them but by a refusal.
+ */
+export function chainDeps(signal?: AbortSignal, aside = false): ChainDeps {
+  const ready = openCooldown()
   // The read's own account with the fallbacks: the endpoint it keeps to, and no more requests than its chain code's cap.
   const session = router.session(MAX_RPC_CALLS)
   const once = (init: RequestInit) =>
@@ -156,9 +303,19 @@ export function chainDeps(signal?: AbortSignal): ChainDeps {
   return {
     async fetch(input, init) {
       if (input !== RPC_URL) return elsewhere()
-      pageReading(1)
+      const step = aside ? 0 : 1
+      if (step) pageReading(1)
+      let work = 0
       try {
+        await ready
+        if (signal?.aborted || init.signal?.aborted) throw signal?.reason ?? init.signal?.reason ?? new DOMException('cancelled', 'AbortError')
+        const remaining = sharedRest.until - Date.now()
+        // A local refusal is not a new refusal from the RPC: do not broadcast it or lengthen the pause. Preserve the
+        // caller's deadline and existing bounded retries instead of sleeping past its ten-second network budget.
+        if (remaining > 0) return new Response(null, { status: 429, headers: { 'Retry-After': String(Math.ceil(remaining / 1000)) } })
+        const started = Date.now()
         let sent = await once(init)
+        if (sent.response) work = workOf(pageFloor, init.body, Date.now() - started)
         // A refusal the page meets is most often one the RPC lifts within half a second: asked once more first.
         if (sent.unreadable && !signal?.aborted) {
           await pause(REASK_UNREADABLE_MS, signal)
@@ -167,16 +324,21 @@ export function chainDeps(signal?: AbortSignal): ChainDeps {
         // Still unreadable: the RPC's 429, which the chain code waits out and asks again, as it does a 429 it can read.
         const response = sent.response ?? new Response(null, { status: 429, statusText: 'Unreadable reply' })
         // 2026-09-28: a refusal rests every tab's lane, so the page's own next call meets a quiet address.
-        if (response.status === 429 || response.status === 503) tell('rest')
+        if (response.status === 429 || response.status === 503) {
+          restAfter(sharedRest, Date.now())
+          publishRest(sharedRest, Date.now())
+          tell('rest')
+        }
         return response
       } finally {
-        pageReading(-1)
+        if (step) pageReading(-1, work >= HEAVY_MS)
       }
     },
     sleep: (ms) => pause(ms, signal),
     now: () => Date.now(),
     cancelled: () => signal?.aborted === true,
     wideLogs: () => router.primaryUp(),
+    head: seeHead,
   }
 }
 
@@ -186,7 +348,7 @@ export function chainDeps(signal?: AbortSignal): ChainDeps {
  * others, bounded to ten seconds. The reply's `result`, or the RPC's error thrown as itself.
  */
 export async function simulateOnChain(params: unknown[]): Promise<unknown> {
-  pageReading(1)
+  pageReading(1, true)
   try {
     const response = await router.send({ method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_simulateV1', params }), signal: AbortSignal.timeout(10_000) })
@@ -206,18 +368,22 @@ export async function simulateOnChain(params: unknown[]): Promise<unknown> {
  * made of (the list, a position's state):
  * - one request in flight for every history the worker replays, a position
  *   page's before the list's;
- * - none while the page has a read on its way, nor for `graceMs` after it;
- * - paced: after each reply, a wait of `workFactor` times the time it took
- *   above the quickest reply seen (the work it cost the RPC), and never faster
- *   than `bytesPerSecond` past a first `burstBytes`. The RPC also limits an
- *   address over a longer window: paced at 192 kB/s with the page reading
- *   every few seconds, its PONS/USDG epochs drew refusals after about a
- *   minute (12.6 MB), and the page's own reads were refused for half a minute
- *   after; at half that pace they were not;
+ * - none while the page has a read on its way, nor for `graceMs` after one
+ *   with a heavy call in it (2026-09-28, speed wave B, item 15: after a light
+ *   one, none);
+ * - paced: after each log read, a wait of `workFactor` times the time its reply
+ *   took to start above the quickest reply seen (the work it cost the RPC), at
+ *   most `maxQuietMs`, and never faster than `bytesPerSecond` past a first
+ *   `burstBytes`. The RPC also limits an address over a longer window: paced
+ *   at 192 kB/s with the page reading every few seconds, its PONS/USDG epochs
+ *   drew refusals after about a minute (12.6 MB), and the page's own reads
+ *   were refused for half a minute after; at half that pace they were not;
  * - at the first reply the worker cannot read, or that says 429, the run stops
- *   (the card keeps its unclaimed figure) and the lane rests `restMs` before it
- *   asks anything again; 2026-09-27: the fees store asks that run again as
- *   soon as the rest is over (`wait`), no longer a minute later;
+ *   (the card keeps its unclaimed figure) and the lane rests before it asks
+ *   anything again (2026-09-28, speed wave B, item 19: `firstRestMs`, then
+ *   longer at each refusal in a row, up to `restMs`: restAfter); 2026-09-27:
+ *   the fees store asks that run again as soon as the rest is over (`wait`),
+ *   no longer a minute later;
  * - 2026-09-25 (review): the pace is the address's, across tabs: every lane
  *   counts the bytes the others read, and rests when one of them was refused.
  * - 2026-09-28 (hotfix; C:/dwt/hotfix2, live from Node, where the RPC's 429 and its
@@ -241,15 +407,34 @@ export async function simulateOnChain(params: unknown[]): Promise<unknown> {
  *   200 ms or more (a phone's round trip from Brazil) was followed by 5 s of
  *   quiet, until the run's time ran out (and a run that ran out of its time is
  *   now asked again: fees/pipeline.ts outOfTime).
+ *
+ * 2026-09-28 (speed wave B, items 14 and 20: a phone's Fees earned chart took about 17 s where a desktop's took 9): the
+ * work is measured to the reply's headers, which the RPC sends once its work is done (live that day: a 5.6-million-block
+ * log read's headers and its last byte came 0.5 ms apart, both a round trip after the call), so the visitor's own
+ * download is the byte pace's alone; and the quickest reply is learned from the replies of calls that cost the RPC
+ * nothing (every call but a log read): the visitor's own round trip, above or below ROUND_TRIP_MS, where it used to start
+ * at ROUND_TRIP_MS and only go down, so a phone 300 ms away paid 4 × 100 ms of quiet after every call. The byte pace is
+ * the one measured, unchanged.
+ *
+ * 2026-09-29 (the release's live check, speed wave B merged with hotfix/charts; C:/dwt/wave-b-live): the wave's quiet
+ * after a log read is at most `maxQuietMs`, but after one that came `heavyMs` or more past the quickest reply while the
+ * calls go to the chain's own RPC it is hotfix/charts' own: `heavyQuietMs`, or its work times `workFactor` when that is
+ * longer. Live, with the wave's 1 s cap alone, the replay's cold Transfer scan (380 to 420 ms, about 250 ms of work)
+ * was followed 0.9 to 1.1 s later by a call the RPC refused, in 12 of 18 such scans across this release and production;
+ * the 2.5 s rest then met a second refusal, and in two of the three runs opened from the list the chart had not come
+ * 150 s later. The round trip (`floor`) is learned from the chain's own RPC's replies only, as hotfix/charts' review
+ * found: the router's own replies (1 to 15 ms, while the RPC is unreachable) would make every ordinary reply look
+ * heavy. The rest after a refusal stays the wave's staged one (restAfter), from 6 s where hotfix/charts rests 6 s every
+ * time; the store's retries stay the wave's (store.ts RETRY_MS).
  */
-export const LANE_PACE = { bytesPerSecond: 96 * 1024, burstBytes: 128 * 1024, workFactor: 4, graceMs: 2_000, restMs: 6_000, heavyMs: 200, heavyQuietMs: 5_000 } as const
+export const LANE_PACE = { bytesPerSecond: 96 * 1024, burstBytes: 128 * 1024, workFactor: 4, maxQuietMs: 1_000, heavyMs: 200, heavyQuietMs: 5_000, graceMs: 2_000, firstRestMs: 6_000, restMs: 30_000 } as const
 export type LanePace = { [key in keyof typeof LANE_PACE]: number }
 
-/** A usual round trip to the RPC with no work in it (an eth_blockNumber took 150 to 200 ms from Brazil, 2026-09-25). */
-const ROUND_TRIP_MS = 200
 
 /** The longest the lane waits on the page's reads at once, in case a page never said it was done (it was closed mid-read). */
 const PAGE_HOLD_MS = 15_000
+/** 2026-09-28 (speed wave B, item 15): how often a wait held by a page read on its way looks again, so it ends with it. */
+const BUSY_MS = 250
 
 /** A lane's runtime for one read: the chain code's, plus the wait for its turn (FeesDeps.turn). */
 export type LaneDeps = ChainDeps & { turn: () => Promise<number> }
@@ -266,6 +451,8 @@ export interface ChainLane {
   resting(): boolean
   /** 2026-09-27: how long before the lane asks anything again (0: at once): its rest, or the work its last reply cost. */
   wait(): number
+  /** 2026-09-28 (speed wave B, item 39): whether a call that costs the RPC nothing answered it: the round trip is known. */
+  learned(): boolean
   /** Stops listening to the page (the tests' lanes). */
   close(): void
 }
@@ -330,24 +517,43 @@ function counted(response: Response, spend: (bytes: number) => void, settle: () 
 
 /** The fees worker's lane to the RPC (see LANE_PACE). `now` is the tests' to replace. */
 export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.now): ChainLane {
+  const ready = openCooldown()
   let tokens = pace.burstBytes
   let filled = now()
   /** No call before this time: the work the last reply cost the RPC, paid back. */
   let quietUntil = 0
   /**
-   * The quickest reply seen: about the network's own round trip, which costs the RPC nothing. It starts at a round
-   * trip's usual length, so a first reply that was slow already counts as work. 2026-09-28 (review): the chain's own
-   * RPC's replies only (`own` in fetch).
+   * The quickest reply seen: about the network's own round trip, which costs the RPC nothing. Until a call that costs
+   * nothing has answered it is a round trip's usual length at most, so a first log read that was slow already counts as
+   * work; the first such call sets it, and the quickest of them keeps it (workOf, item 14 above). 2026-09-28 (hotfix/charts'
+   * review): the chain's own RPC's replies only (`own` in fetch).
    */
-  let quickest = ROUND_TRIP_MS
-  let restUntil = 0
+  const floor: Floor = { ms: ROUND_TRIP_MS, learned: false, learnedAt: 0 }
+  const rest: Rest = { until: -Infinity, count: 0 }
+  inheritRest(rest, now())
+  let inherited = false
+  const hydrated = async () => {
+    await ready
+    if (!inherited) {
+      inheritRest(rest, now())
+      inherited = true
+    }
+  }
   let busy = false
   const waiting: Array<{ urgent: boolean; start: () => void }> = []
-  // The page's reads: whether one is on its way, and when the last one ended.
+  // The page's reads: whether one is on its way, and when the last one with a heavy call in it ended.
   let pageBusy = false
   let pageBusySince = 0
   let pageDoneAt = Number.NEGATIVE_INFINITY
   let listening: BroadcastChannel | null = null
+  /** Tells the pages and the other tabs' lanes what this one read, that the RPC refused it, or asks who reads ('?'). */
+  const share = (news: number | 'rest' | '?') => {
+    try {
+      listening?.postMessage(news)
+    } catch {
+      // A channel that closed: this lane's own pace still holds.
+    }
+  }
   try {
     listening = openChannel()
     if (listening)
@@ -357,29 +563,33 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
         if (typeof news === 'number') {
           refill()
           tokens -= news
-        } else if (news === 'rest') restUntil = Math.max(restUntil, now() + pace.restMs)
+        } else if (news === 'rest') restAfter(rest, now(), pace)
         // 2026-09-28: every read the page starts says so again, and its hold counts from the last.
         else if (news === true) {
           pageBusy = true
           pageBusySince = now()
-        } else if (news === false) {
+        } else if (news !== '?') {
+          // Done (false after a heavy call, null after light ones only); a page still reading, in another tab, says so again.
           pageBusy = false
-          pageDoneAt = now()
+          if (news === false) pageDoneAt = now()
+          share('?')
         }
       }
   } catch {
     listening = null
   }
+  // 2026-09-28 (speed wave B, item 15): a lane made while a page read is on its way hears of it.
+  share('?')
   const refill = () => {
     const at = now()
     tokens = Math.min(pace.burstBytes, tokens + ((at - filled) * pace.bytesPerSecond) / 1000)
     filled = at
   }
-  /** How long to wait before the next call (0: now). */
+  /** How long to wait before the next call (0: now); while a page read is on its way, BUSY_MS at a time. */
   const due = () => {
     const at = now()
     refill()
-    const held = pageBusy && at - pageBusySince < PAGE_HOLD_MS ? pace.graceMs : Math.max(0, pageDoneAt + pace.graceMs - at)
+    const held = pageBusy && at - pageBusySince < PAGE_HOLD_MS ? BUSY_MS : Math.max(0, pageDoneAt + pace.graceMs - at)
     const paced = tokens < 0 ? Math.ceil((-tokens * 1000) / pace.bytesPerSecond) : 0
     return Math.max(held, paced, quietUntil - at)
   }
@@ -390,18 +600,11 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
     busy = true
     next.start()
   }
-  const resting = () => now() < restUntil
-  /** Tells the other tabs' lanes what this one read, or that the RPC refused it. */
-  const share = (news: number | 'rest') => {
-    try {
-      listening?.postMessage(news)
-    } catch {
-      // A channel that closed: this lane's own pace still holds.
-    }
-  }
+  const resting = () => now() < rest.until
   return {
     resting,
-    wait: () => Math.max(due(), restUntil - now()),
+    wait: () => Math.max(due(), rest.until - now()),
+    learned: () => floor.learned,
     close: () => listening?.close(),
     queue(work, urgent) {
       return new Promise((resolve, reject) => {
@@ -427,16 +630,21 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
         now,
         cancelled: stopped,
         wideLogs: () => router.primaryUp(),
+        head: seeHead,
         // Once refused, the chain code's wait before asking again is no wait: it asks nothing more.
         sleep: (ms) => pause(ms, signal, stopped),
         async turn() {
           const started = now()
+          await hydrated()
           // Never past `until`: a long wait for a large reply ends with the run's time.
           for (let wait = due(); wait > 0 && !stopped(); wait = due()) await pause(Math.min(wait, until - now()), signal)
           return now() - started
         },
         async fetch(input, init) {
           if (input !== RPC_URL) return elsewhere()
+          await hydrated()
+          if (signal?.aborted) throw new Error('cancelled')
+          if (stopped()) return new Response(null, { status: 429, statusText: 'RPC cooldown' })
           const joined = either(init.signal, signal)
           const sent = now()
           // 2026-09-28 (review): only the chain's own RPC's reply to a call sent while the calls went to it, and answered
@@ -446,14 +654,12 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
           // (`up`) may still be heavy: one the router got from it right after finding it again carries its probe's round
           // trip too, and is taken for heavy rather than risk the RPC's refusal after a scan.
           let own = router.primaryUp()
-          let quiet = 0
+          let up = false
           let response: Response
           try {
             response = await router.send({ ...init, signal: joined.signal }, session)
-            const up = router.primaryUp()
+            up = router.primaryUp()
             own &&= up
-            // Its headers came heavyMs past the quickest reply or more: the node worked on it (see LANE_PACE).
-            quiet = up && now() - sent - quickest >= pace.heavyMs ? pace.heavyQuietMs : 0
           } catch (error) {
             joined.drop()
             // A call nobody wants any more is not a slow one either (see counted).
@@ -465,11 +671,19 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
           if (response.status === 429 || response.status === 503) {
             joined.drop()
             refused = true
-            restUntil = now() + pace.restMs
+            restAfter(rest, now(), pace)
+            publishRest(rest, now())
             share('rest')
             await response.body?.cancel().catch(() => undefined)
             return new Response(null, { status: 429, statusText: response.statusText })
           }
+          // The work: to the reply's headers, and a log read's only (items 14 and 20 above); the round trip learned from the
+          // chain's own RPC's replies only (`own`). A log read that came heavyMs past it or more while the calls go to that
+          // RPC: the node worked on it, heavyQuietMs of quiet at least, uncapped (see LANE_PACE, 2026-09-29).
+          const took = now() - sent
+          const work = own ? workOf(floor, init.body, took, now()) : logRead(init.body) ? Math.max(0, took - floor.ms) : 0
+          const quiet = pace.workFactor * work
+          quietUntil = now() + (up && work >= pace.heavyMs ? Math.max(pace.heavyQuietMs, quiet) : Math.min(pace.maxQuietMs, quiet))
           return counted(
             response,
             (bytes) => {
@@ -477,12 +691,7 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
               tokens -= bytes
               share(bytes)
             },
-            () => {
-              joined.drop()
-              const took = now() - sent
-              if (own) quickest = Math.min(quickest, took)
-              quietUntil = now() + Math.max(pace.workFactor * Math.max(0, took - quickest), quiet)
-            },
+            joined.drop,
             signal,
           )
         },

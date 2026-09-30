@@ -84,12 +84,19 @@ executes whole or not at all. The batch holds the exact approvals, the funding,
 a one-token deposit's swap and the mint. Before the press, the app reads the
 wallet's `wallet_getCapabilities` for chain `0x1237`:
 
-- **`supported`** (the account is already a smart account): the press sends
-  the batch, and Review shows one wallet step.
+- **`supported`** (the account is already a smart account): Review's list is
+  one wallet step from the start, and the press sends the batch.
 - **`ready`** (the wallet can upgrade the account): the steps stay the main way.
   Beside them, **Sign all steps at once** says the wallet will first ask to
-  turn on its smart account (EIP-7702).
-- **Anything else:** today's steps.
+  turn on its smart account.
+- **Anything else:** today's steps. Rabby is here: it has no EIP-5792 method
+  (measured 25 Sep 2026, and its source at v0.94.10).
+
+The reply is read under any key that names 4663 (`0x1237`, `4663`, a leading
+zero), and under `0x0`, the standard's key for every chain, when 4663's own
+entry says nothing. A wallet that refuses the chain filter (-32602) is asked
+once more without it. `finance/batch.ts` `atomicStatusOf` holds these rules;
+the audit of 28 Sep 2026 is in the design below.
 
 The batch opens the operation id `nextOperationId(owner)` gives at preparation,
 and `open` accepts only that id, so a batch that meets another opening first
@@ -107,6 +114,9 @@ the page's own chain client. With neither, no batch is offered.
 sequences share, sends `wallet_sendCalls` (version 2.0.0,
 `atomicRequired: true`). A latch in the nonce journal, keyed by the owner and
 the operation id, keeps a second prompt from opening.
+A latch the wallet never settled is freed 25 minutes after it was claimed,
+when the mint's deadline has made the batch unable to execute
+(`BATCH_LATCH_EXPIRY_S`).
 `wallet_getCallsStatus` is read for the outcome, and the operation's own state
 decides it:
 

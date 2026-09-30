@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
+import { deferred } from '../components/Deferred'
 import PortfolioBody from '../components/portfolio/PortfolioBody'
 import { automateHref, marketsHref, newPositionHref } from '../components/explore/routes'
 import { IconTile } from '../components/figures'
@@ -9,6 +10,9 @@ import { AutomationFrame } from '../components/positions/visual/AutomationFrame'
 import { POSITION_KIT } from '../components/positions/visual/kit'
 import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
 import { Chip, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
+import { chainRead } from '../lib/fees/answers'
+import { warmState } from '../lib/fees/client'
+import { feesStore } from '../lib/fees/spawn'
 import { shortAddress } from '../lib/read/screens/identity'
 import { positionDetailId } from '../lib/read/screens/positions'
 import { useWalletIdentity, type WalletIdentityView } from '../lib/walletIdentity'
@@ -31,8 +35,28 @@ const HeldDeposits = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<Parameters<D
 
 // Your positions and a position's own page: chunks of their own, loaded only on Positions, so no other page pays for
 // them. The list exists only where a wallet can connect; the page is public chain data and opens in every build.
-const OwnedPositions = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<OwnedPositionsProps>>(() => import('../components/positions/OwnedPositions').catch(couldNotLoad)) : null
-const PositionDetail = lazy<ComponentType<{ tokenId: string; kit?: unknown }>>(() => import('./PositionDetail').catch(couldNotLoad))
+// 2026-09-28 (speed wave B, item 24): drawn as soon as their chunk is in (components/Deferred.tsx), not 300 ms after
+// their fallback as a Suspense boundary reveals them.
+const OwnedPositions = __DOMINO_WALLET_SESSION__ ? deferred<OwnedPositionsProps>(() => import('../components/positions/OwnedPositions').catch(couldNotLoad)) : null
+const PositionDetail = deferred<{ tokenId: string; kit?: unknown }>(() => import('./PositionDetail').catch(couldNotLoad))
+
+/**
+ * 2026-09-28 (speed wave B, items 24 and 37): what Positions reads, asked as soon as the route is known, outside the
+ * chunk that draws it: a position's state (its page takes it, lib/fees/client.ts warmState); and the chain code and the
+ * fees worker's file, fetched beside the page's chunk rather than after it. The wallet's list is read as its card's chunk
+ * is in, which nothing holds back any more (components/Deferred.tsx; a dynamic import of it here split its module out of
+ * the picker's chunk, for the few milliseconds the chunk takes from the cache).
+ */
+function useWarmPositions(detail: string | null): void {
+  useEffect(() => {
+    if (!chainRead()) return
+    void import('../lib/chain/chainCode').catch(() => undefined)
+    feesStore.warm()
+  }, [])
+  useEffect(() => {
+    if (detail && chainRead()) warmState(detail)
+  }, [detail])
+}
 
 /** The held deposits under Your positions, drawn by HeldDeposits once its chunk is in; nothing while it loads. */
 const heldDeposits: DepositsSlot | null = HeldDeposits
@@ -261,7 +285,7 @@ function PositionsList() {
           <div className="dm-acct-slot dm-acct-o1 dm-own-slot animate-rise" style={rise(1)}>
             {OwnedPositions ? (
               <Suspense fallback={<ListWaiting />}>
-                <OwnedPositions identity={identity} deposits={heldDeposits} onEmptyAction={setListEmpty} kit={POSITION_KIT} />
+                <OwnedPositions fallback={<ListWaiting />} identity={identity} deposits={heldDeposits} onEmptyAction={setListEmpty} kit={POSITION_KIT} />
               </Suspense>
             ) : (
               <NoWalletHere />
@@ -293,12 +317,13 @@ function PositionsList() {
  * included: there is no lookup any more) is the list.
  */
 export function Positions({ param = '' }: { param?: string }) {
+  const detail = param === 'receipts' ? null : positionDetailId(param)
+  useWarmPositions(detail)
   if (param === 'receipts') return <ReceiptsPage />
-  const detail = positionDetailId(param)
   if (!detail) return <PositionsList />
   return (
     <Suspense fallback={<DetailWaiting />}>
-      <PositionDetail key={detail} tokenId={detail} kit={POSITION_KIT} />
+      <PositionDetail key={detail} fallback={<DetailWaiting />} tokenId={detail} kit={POSITION_KIT} />
     </Suspense>
   )
 }

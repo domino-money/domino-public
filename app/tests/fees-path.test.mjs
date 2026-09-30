@@ -336,7 +336,8 @@ test('an estimate stays when the exact read runs out of time, and none is made a
   assert.ok(settled[0] > 0n, 'the collect settled some fees');
   const since = { ...state, unclaimed: [state.unclaimed[0] - settled[0], state.unclaimed[1] - settled[1]] };
   const noEstimate = [];
-  const exact = await runPipeline({ logs: pathRelay(withCollect, id).logs, ...quiet, estimate: (e) => noEstimate.push(e) }, { id, state: since, growth, budgetBytes: PAGE, checkpoint: null });
+  // A foreground run explicitly grants refinement, as the page worker does; background runs keep their own cap.
+  const exact = await runPipeline({ logs: pathRelay(withCollect, id).logs, ...quiet, estimate: (e) => noEstimate.push(e), extend: () => {} }, { id, state: since, growth, budgetBytes: PAGE, checkpoint: null });
   assert.deepEqual(noEstimate, [], 'no estimate after a settlement');
   assert.equal(exact?.ok, true, `not verified: ${exact?.reason}`);
   assert.deepEqual(exact.history.collected, settled, 'the collect’s fees, exactly');
@@ -345,7 +346,7 @@ test('an estimate stays when the exact read runs out of time, and none is made a
   // 2026-09-25 (review): what the collect settled is the path's own figure, within its rounding of the chain's.
   assert.equal(exact.history.near, true);
   // Against the chain's figure from before the collect, the same replay disagrees: no history is drawn.
-  const wrong = await runPipeline({ logs: pathRelay(withCollect, id).logs, ...quiet }, { id, state, growth, budgetBytes: PAGE, checkpoint: null });
+  const wrong = await runPipeline({ logs: pathRelay(withCollect, id).logs, ...quiet, extend: () => {} }, { id, state, growth, budgetBytes: PAGE, checkpoint: null });
   assert.deepEqual(wrong && { ok: wrong.ok, reason: wrong.reason }, { ok: false, reason: 'replay_mismatch' });
 });
 

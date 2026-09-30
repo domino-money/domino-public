@@ -28,9 +28,9 @@
  * X-Domino-*-Contract header, so an outside check can always tell this
  * forwarder from a Worker:
  *
- *   1. An origin other than https://domino.money  → 404 not_found. First on
- *      purpose: a preview or pages.dev host never reaches a binding, even one
- *      bound there by mistake.
+ *   1. An origin other than production or the explicitly enabled exact
+ *      preview alias's public reads → 404 not_found. Other Pages deployments
+ *      and private preview families never reach a binding.
  *   2. No family owns the path. None owns a path   → 404 not_found.
  *      with an empty segment, such as
  *      /api/read/v1//capabilities
@@ -43,7 +43,10 @@
  * as [[env.production.services]], one per family below, each naming its
  * bridge Worker (domino-read-bridge, domino-session-bridge,
  * domino-onboarding-bridge, domino-deposit-bridge), deployed with every flag
- * off. A preview has none, and its API calls end at refusal 1.
+ * off in source defaults. The exact preview alias gets only READ_BRIDGE and
+ * an explicit opt-in. Its browser boundary is checked before translating a
+ * public-read request to the Worker's canonical origin. No private family
+ * or beta cookie crosses that adapter. See docs/PREVIEW_PUBLIC_READS.md.
  * tests/forwarder.test.mjs checks that the names looked up here are the names
  * wrangler.toml binds.
  */
@@ -59,6 +62,7 @@ export interface Fetcher {
  * forward() checks what it finds before calling it.
  */
 export interface BridgeEnv {
+  PREVIEW_PUBLIC_READS?: string
   READ_BRIDGE?: unknown
   SESSION_BRIDGE?: unknown
   ONBOARDING_BRIDGE?: unknown
@@ -70,6 +74,8 @@ export interface BridgeEnv {
 
 /** The Workers' APP_ORIGIN, exactly: the only origin whose API calls are forwarded. */
 export const APP_ORIGIN = 'https://domino.money'
+/** The single gated preview alias, never a wildcard for Pages deployments. */
+export const PREVIEW_ORIGIN = 'https://preview.domino-app-e65.pages.dev'
 
 interface Family {
   prefix: string
@@ -141,7 +147,7 @@ const PASS = [
   'sec-fetch-user',
 ] as const
 
-type Refusal = 'not_found' | 'worker_subrequest_refused' | 'bridge_unavailable'
+type Refusal = 'not_found' | 'origin_not_allowed' | 'worker_subrequest_refused' | 'bridge_unavailable'
 
 function refuse(code: Refusal, status: number): Response {
   return new Response(JSON.stringify({ error: code }), {
@@ -192,11 +198,35 @@ function familyOf(pathname: string): Family | undefined {
   return FAMILIES.find((family) => pathname.startsWith(family.prefix))
 }
 
+/** Check the real browser BEFORE translating this fixed public-read alias.
+ * Mirrors the read Worker's browser checks: a foreign Origin/Host or a
+ * cross-site navigation must never become an admitted request by remapping.
+ */
+function isPreviewBrowserRead(request: Request, url: URL): boolean {
+  const host = request.headers.get('host')
+  if (host !== null && host !== url.host) return false
+  const capability = request.method === 'GET' && /^\/api\/read\/v[1-5]\/capabilities$/.test(url.pathname)
+  const origin = request.headers.get('origin')
+  if ((!capability || origin !== null) && origin !== PREVIEW_ORIGIN) return false
+  for (const [name, accepted] of [
+    ['sec-fetch-site', ['same-origin']],
+    ['sec-fetch-mode', ['cors', 'same-origin']],
+    ['sec-fetch-dest', ['empty']],
+  ] as const) {
+    const value = request.headers.get(name)
+    if (value !== null && !(accepted as readonly string[]).includes(value)) return false
+  }
+  return !request.headers.has('sec-fetch-user')
+}
+
 export async function forward(request: Request, env: BridgeEnv): Promise<Response> {
   const url = new URL(request.url)
-  if (url.origin !== APP_ORIGIN) return refuse('not_found', 404)
+  const preview = url.origin === PREVIEW_ORIGIN && env.PREVIEW_PUBLIC_READS === 'true'
+  if (url.origin !== APP_ORIGIN && !preview) return refuse('not_found', 404)
   const family = familyOf(url.pathname)
   if (!family) return refuse('not_found', 404)
+  if (preview && family.binding !== 'READ_BRIDGE') return refuse('not_found', 404)
+  if (preview && !isPreviewBrowserRead(request, url)) return refuse('origin_not_allowed', 403)
 
   // Cloudflare adds CF-Worker, naming the calling Worker's zone, to every
   // subrequest a Worker sends with fetch(). Such a request is not a browser's,
@@ -223,10 +253,21 @@ export async function forward(request: Request, env: BridgeEnv): Promise<Respons
   const cookie = familyCookies(request.headers.get('Cookie'), family.cookies)
   if (cookie !== null) headers.set('Cookie', cookie)
 
+  // Only a validated, fixed public-read alias is translated. There is no
+  // caller-supplied target, no credential forwarding and no private family.
+  if (preview) {
+    headers.set('host', new URL(APP_ORIGIN).host)
+    if (headers.has('origin')) headers.set('origin', APP_ORIGIN)
+  }
+
   let response: unknown
   try {
-    // The original URL, method and body. Only the headers are rebuilt.
-    response = await bridge.fetch(new Request(request, { headers }))
+    const forwarded = new Request(request, { headers })
+    // Production stays on its existing path. Preview keeps its path, query,
+    // method, body, signal and contract, changing only the vetted origin.
+    response = await bridge.fetch(preview
+      ? new Request(`${APP_ORIGIN}${url.pathname}${url.search}`, forwarded)
+      : forwarded)
   } catch {
     return refuse('bridge_unavailable', 503)
   }

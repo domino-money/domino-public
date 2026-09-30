@@ -125,32 +125,35 @@ function policyOf(call: { success: boolean; data: string }): { feeBps: bigint; p
   }
 }
 
-/** Each id's automation at the head, in the order asked. Throws ChainError when the chain cannot be read fully. */
-export async function scanAutomation(deps: OwnedDeps, ids: readonly bigint[]): Promise<AutomationAnswer> {
-  const budget: Budget = { calls: 0, started: deps.now(), logBytes: 0 }
-  const head = quantity(await paced(deps, budget, 'eth_blockNumber', []))
-  const subscribed = await batched(deps, budget, ids.map((id) => ({ target: POSITION_MANAGER, data: AUTOMATION_SELECTOR.subscriber + word(id) })), head)
-  const subscribers = subscribed.map((call) => {
-    const value = resultWord(call)
-    if (value === null) throw new ChainError('fatal', 'invalid_subscriber')
-    return asAddress(value)
-  })
-  const vaults = [...new Set(subscribers.filter((address) => address !== ZERO))]
-  const PER_VAULT = 4
-  const read = vaults.length
-    ? await batched(
-        deps,
-        budget,
-        vaults.flatMap((vault) => [
-          { target: SEQUENCE_FACTORY, data: AUTOMATION_SELECTOR.isVault + word(BigInt(vault)) },
-          { target: vault, data: AUTOMATION_SELECTOR.rootTokenId },
-          { target: vault, data: AUTOMATION_SELECTOR.policy },
-          { target: vault, data: AUTOMATION_SELECTOR.rootPermissionValid },
-        ]),
-        head,
-      )
-    : []
-  const positions = ids.map((id, index): PositionAutomation => {
+/*
+ * 2026-09-28 (speed wave B, item 17: the badges and a position's chip came 0.6 s after the rows and the header, from a
+ * read of three calls of their own): the two reads below are sub-calls the page's other reads carry too, the wallet's
+ * list (walletPositions.ts scanWallet) and a position's state (fees.ts readState): each id's subscriber in their first
+ * aggregate, the vaults' reads in their second. scanAutomation stays for the automation page's picker and the route.
+ */
+/** PositionManager.subscriber(id): no subscriber is a plain position. */
+export const subscriberCall = (id: bigint): SubCall => ({ target: POSITION_MANAGER, data: AUTOMATION_SELECTOR.subscriber + word(id) })
+/** The subscriber a subscriberCall answered. */
+export function subscriberOf(call: { success: boolean; data: string }): string {
+  const value = resultWord(call)
+  if (value === null) throw new ChainError('fatal', 'invalid_subscriber')
+  return asAddress(value)
+}
+/** The subscribers that may be Domino's vaults, each once: every one but the zero address. */
+export const vaultsOf = (subscribers: readonly string[]) => [...new Set(subscribers.filter((address) => address !== ZERO))]
+const PER_VAULT = 4
+/** Per vault: the factory's isVault, and the vault's rootTokenId(), policy() and rootPermissionValid(). */
+export const vaultCalls = (vaults: readonly string[]): SubCall[] =>
+  vaults.flatMap((vault) => [
+    { target: SEQUENCE_FACTORY, data: AUTOMATION_SELECTOR.isVault + word(BigInt(vault)) },
+    { target: vault, data: AUTOMATION_SELECTOR.rootTokenId },
+    { target: vault, data: AUTOMATION_SELECTOR.policy },
+    { target: vault, data: AUTOMATION_SELECTOR.rootPermissionValid },
+  ])
+/** Each id's automation, from its subscriber and the vaults' reads (vaultCalls of vaultsOf(subscribers)), in order. */
+export function automationsOf(ids: readonly bigint[], subscribers: readonly string[], read: readonly { success: boolean; data: string }[]): PositionAutomation[] {
+  const vaults = vaultsOf(subscribers)
+  return ids.map((id, index): PositionAutomation => {
     const tokenId = id.toString()
     const vault = subscribers[index]
     if (vault === ZERO) return { tokenId, automation: 'plain' }
@@ -163,7 +166,16 @@ export async function scanAutomation(deps: OwnedDeps, ids: readonly bigint[]): P
     if (!terms || !mode || valid === null) return { tokenId, automation: 'other' }
     return { tokenId, automation: mode, paused: terms.paused, active: !terms.paused && valid, vault }
   })
-  return { block: head, positions }
+}
+
+/** Each id's automation at the head, in the order asked. Throws ChainError when the chain cannot be read fully. */
+export async function scanAutomation(deps: OwnedDeps, ids: readonly bigint[]): Promise<AutomationAnswer> {
+  const budget: Budget = { calls: 0, started: deps.now(), logBytes: 0 }
+  const head = quantity(await paced(deps, budget, 'eth_blockNumber', []))
+  const subscribers = (await batched(deps, budget, ids.map(subscriberCall), head)).map(subscriberOf)
+  const vaults = vaultsOf(subscribers)
+  const read = vaults.length ? await batched(deps, budget, vaultCalls(vaults), head) : []
+  return { block: head, positions: automationsOf(ids, subscribers, read) }
 }
 
 /** The cache key for a set of ids: a digest, so no id list becomes part of a URL, even an internal one. */

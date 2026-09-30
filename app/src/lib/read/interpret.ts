@@ -379,7 +379,7 @@ export function interpretReply<R extends ReadKey>(
     }
     return { ...base, state: 'incompatible', reason: 'contract_header_missing' }
   }
-  if (raw.contractHeader !== validators.CONTRACT_VERSION) {
+  if (!(validators.CONTRACT_VERSIONS ?? [validators.CONTRACT_VERSION]).includes(raw.contractHeader)) {
     return { ...base, state: 'incompatible', reason: 'contract_version_not_accepted' }
   }
 

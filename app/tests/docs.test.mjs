@@ -205,6 +205,8 @@ test('the words: no build marker, no URL, no self-description, no dollar figure,
     assert.doesNotMatch(text, /(https?|wss?):\/\//, text);
     assert.doesNotMatch(text, /\balpha\b|\bbeta\b|\bv4\b|\bpreview\b|not enabled yet|not connected yet|read-only|coming soon/i, text);
     assert.doesNotMatch(text, /\$\s?\d/, text);
+    // Nor in words (2026-09-28): "1 million dollars" states a figure as surely as "$1M", and the pictures cannot keep up with it.
+    assert.doesNotMatch(text, /\d[\d,.]*\s*(?:thousand|million|billion)?\s*dollars?\b|\b(?:hundred|thousand|million|billion)\s+dollars?\b/i, text);
     assert.doesNotMatch(
       text,
       /personal_sign|eth_[a-z]|wallet_[a-zA-Z]|\/api\/|fetch\(|innerHTML|127\.0\.0\.1|\.create\(|\.prepare\(|\.send\(|approve\s*\(|sendTransaction|writeContract|signTypedData|Wallet sending isn|Synthetic fixture|live-preview|swap-preview/,
@@ -306,6 +308,11 @@ test('figures: Domino history first where the deployment provides it, the provid
   const markets = page('markets');
   assert.match(sectionText(markets, 'unavailable-figures'), /shows a dash, Unavailable, Not reported or Not current, never a zero\./);
   assert.match(sectionText(markets, 'pools-table'), /The APR is Domino’s own where its history covers the day, and the estimated APR otherwise\./);
+  // Changed on purpose (2026-09-28, featured-policy v2): the daily list ranks by today's estimated APR, above a volume
+  // and a TVL floor, with only the safety rules. The floors are named without figures, so the pictured list, which is
+  // not held to them, never contradicts the words above it.
+  assert.match(sectionText(markets, 'pools-table'), /Once a day, at 12:00 UTC, Domino ranks pools by estimated 24h fee APR\. A pool needs no hooks, a fixed fee, tokens that pass Domino’s checks, and enough 24h volume and TVL\./);
+  assert.doesNotMatch(sectionText(markets, 'pools-table'), /hundred|thousand|million|billion|\d{3}/i);
   // Risks and the glossary say the same, and no page still calls TVL or volume a provider's figure only.
   assert.match(sectionText(page('risks'), 'figures-describe-pools'), /TVL and 24h volume come from Domino history where the deployment provides it, and otherwise from a market data provider that Domino does not reconcile\./);
   const glossary = page('glossary');

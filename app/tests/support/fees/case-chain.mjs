@@ -15,10 +15,16 @@
  * POST body as the page sends it and returns the RPC's Response. Not a suite
  * of its own.
  */
-import { decodeFunctionData, encodeFunctionResult, numberToHex } from 'viem';
+import { decodeFunctionData, encodeFunctionResult, numberToHex, parseAbi } from 'viem';
 import { erc20Abi, fees, multicallAbi, owned, positionManagerAbi, stateViewAbi } from './fake-chain.mjs';
 import { loadCase } from './relay-fixture.mjs';
 import { logLimitError } from '../log-limits.mjs';
+
+// 2026-09-28 (speed wave B, item 23): the wallet scan's first read asks ArbSys the (L2) block it runs at; Multicall3's is
+// the parent chain's (tests/owned-chain.mjs PARENT_BLOCK).
+const ARB_SYS = '0x0000000000000000000000000000000000000064';
+const PARENT_BLOCK = 26_079_103n;
+const arbSysAbi = parseAbi(['function arbBlockNumber() view returns (uint256)']);
 
 const TOPICS = [fees.TOPIC.Initialize, fees.TOPIC.ModifyLiquidity, fees.TOPIC.ProtocolFeeUpdated, fees.TOPIC.Swap, fees.TOPIC.Donate, fees.TOPIC.Transfer];
 
@@ -72,7 +78,13 @@ export function caseChain(id, { edit = (position) => position, quietProbe = fals
   const chain = { id, fixture, head, log: [], refused: [] };
 
   function view(target, data) {
-    if (target === owned.MULTICALL3) return ok(multicallAbi, 'getCurrentBlockTimestamp', BigInt(fixture.state.timestamp));
+    // 2026-09-28 (speed wave B, item 23): as on Robinhood Chain (Arbitrum Nitro), ArbSys.arbBlockNumber() is the head and
+    // Multicall3.getBlockNumber() is block.number, the parent chain's block (tests/owned-chain.mjs PARENT_BLOCK).
+    if (target === ARB_SYS) return ok(arbSysAbi, 'arbBlockNumber', BigInt(head));
+    if (target === owned.MULTICALL3) {
+      const { functionName } = decodeFunctionData({ abi: multicallAbi, data });
+      return functionName === 'getBlockNumber' ? ok(multicallAbi, functionName, PARENT_BLOCK) : ok(multicallAbi, 'getCurrentBlockTimestamp', BigInt(fixture.state.timestamp));
+    }
     if (target === owned.POSITION_MANAGER) {
       const { functionName, args } = decodeFunctionData({ abi: positionManagerAbi, data });
       // 2026-09-25: the page reads each position's feature itself; nothing is subscribed to a recorded case.
@@ -122,7 +134,9 @@ export function caseChain(id, { edit = (position) => position, quietProbe = fals
       const at = Number(params[0]);
       return { result: at in headers ? { number: params[0], timestamp: numberToHex(headers[at]), hash: `0x${'ab'.repeat(32)}` } : null };
     }
-    if (method === 'eth_call' && params[0]?.to === owned.MULTICALL3 && Number(params[1]) <= head) {
+    // 2026-09-28 (speed wave B, item 23): the wallet scan's first read is an aggregate3 at 'latest' of ArbSys.arbBlockNumber
+    // and the owner's nonce, taken here at the head.
+    if (method === 'eth_call' && params[0]?.to === owned.MULTICALL3 && (params[1] === 'latest' || Number(params[1]) <= head)) {
       const { args } = decodeFunctionData({ abi: multicallAbi, data: params[0].data });
       return { result: encodeFunctionResult({ abi: multicallAbi, functionName: 'aggregate3', result: args[0].map((sub) => view(sub.target.toLowerCase(), sub.callData)) }) };
     }

@@ -4,7 +4,7 @@
  * one /state read and one replay shared by every screen showing an id, the
  * worker's message protocol (every message crosses a structured clone, as it
  * does between threads), the refresh that resumes from a checkpoint, the
- * budgets per scope, and a failed worker never created again.
+ * budgets per scope, and bounded recovery after a failed worker.
  *
  * The worker here is a loopback that runs pipeline.ts on the recorded relay
  * answers of tests/support/fees; the hooks are thin useSyncExternalStore
@@ -51,7 +51,7 @@ function loopback(relays = {}) {
       const relay = relays[inbound.id] ?? fixtureRelay(loadCase(inbound.id));
       runPipeline({ logs: relay.logs, sleep: async () => {}, cancelled: () => token.cancelled }, inbound).then((result) => {
         if (!result || token.cancelled) return;
-        setTimeout(() => worker.onmessage?.({ data: structuredClone({ type: 'done', id: inbound.id, result }) }), 0);
+        setTimeout(() => worker.onmessage?.({ data: structuredClone({ type: 'done', id: inbound.id, runId: inbound.runId, result }) }), 0);
       });
     },
     terminate() {
@@ -204,9 +204,9 @@ test('a relay failure after /state leaves the on-chain figure (unclaimed-only), 
   stop();
 });
 
-test('a worker that fails (a stale file after a deploy) leaves every history at its unclaimed figure and is never created again', async () => {
+test('a worker failure preserves known figures and respawns after backoff, sharing one replacement across positions', async () => {
   const workers = [];
-  const { store } = storeWith({
+  const { store, time } = storeWith({
     spawn: () => {
       const worker = { posted: [], onmessage: null, onerror: null, onmessageerror: null, terminated: false, postMessage(message) { this.posted.push(message); }, terminate() { this.terminated = true; } };
       workers.push(worker);
@@ -222,8 +222,59 @@ test('a worker that fails (a stale file after a deploy) leaves every history at 
   await until(() => store.view('2310187').phase === 'unclaimed-only', 'the second id');
   assert.equal(store.view('2310187').reason, 'worker_failed');
   assert.equal(workers.length, 1, 'not respawned');
+  time.fire('later', RETRY_MS[0]);
+  assert.equal(workers.length, 2, 'one replacement after the delay');
+  assert.deepEqual(workers[1].posted.map((m) => m.id).sort(), ['2310187', '3136705']);
+  assert.equal(workers[0].onmessage, null, 'retired worker cannot finish replacement runs');
+  workers[1].onerror({});
+  assert.equal(time.fire('later', RETRY_MS[0]), 0, 'consecutive crashes back off');
+  time.fire('later', RETRY_MS[1]);
+  assert.equal(workers.length, 3);
   a();
   b();
+});
+
+test('initial state failure retries before the minute, respects Retry-After, and recovers without remounting', async () => {
+  const service = stateService({ down: true });
+  const post = service.postState.bind(service);
+  service.postState = async (ids) => {
+    const answer = await post(ids);
+    return answer.ok ? answer : { ...answer, retryAfterMs: 9_000 };
+  };
+  const { store, time, workers } = storeWith({ service });
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => store.view('3136705').phase === 'unavailable', 'initial refusal');
+  assert.equal(workers.length, 0);
+  assert.equal(time.fire('later', 2_000), 0, 'server delay respected');
+  service.down = false;
+  assert.equal(time.fire('later', 9_000), 1);
+  await until(() => store.view('3136705').phase === 'verified', 'recovered');
+  assert.equal(service.asked.length, 2);
+  stop();
+});
+
+test('a successful offered state cancels the initial failure retry; terminal not-found removes cached header data', async () => {
+  const { store, service, time } = storeWith({ service: stateService({ down: true }) });
+  const stop = store.subscribeStates(['3136705'], () => {});
+  await until(() => service.asked.length > 0 && store.states(['3136705']) !== null, 'failed answer');
+  const fixture = loadCase('3136705');
+  store.offer({ ok: true, value: fixture.state, bytes: 100 });
+  assert.equal(time.fire('later', RETRY_MS[0]), 0);
+  assert.ok(store.position('3136705'));
+  store.offer({ ok: true, value: { ...fixture.state, block: fixture.state.block + 1, positions: [{ tokenId: '3136705', ok: false, reason: 'not_found' }] }, bytes: 100 });
+  assert.equal(store.position('3136705'), null, 'a gone position cannot leave a ready header');
+  stop();
+});
+
+test('fake timers: a history recovers after more than the old six attempts without reload', async (t) => {
+  const verified = await verifiedResult();
+  const { store, runs, to, flush } = onTheClock(t, (n) => n < 8 ? { ...REFUSED, wait: REST_MS } : { type: 'done', result: verified });
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await flush();
+  await to(9 * 60_000);
+  assert.ok(runs.length >= 8, 'recovery remains possible after the old cutoff');
+  assert.equal(store.view('3136705').phase, 'verified');
+  stop();
 });
 
 test('every minute while visible /state is read again; a newer block resumes from the checkpoint for the new logs only', async () => {
@@ -310,8 +361,8 @@ test('a run that could not reach the chain is asked again once the lane’s wait
 // ---------------------------------------------------------------------------
 
 /**
- * The lane's rest after a refusal (lib/chain/browser.ts LANE_PACE.restMs, 30 s until 2026-09-28 and 6 s since: the store
- * takes whatever wait the worker says), and a run's reads up to its answer.
+ * The lane's rest after a refusal (lib/chain/browser.ts LANE_PACE: 30 s until 2026-09-28; since, staged from 6 s up to
+ * 30 s: the store takes whatever wait the worker says), and a run's reads up to its answer.
  */
 const REST_MS = 30_000;
 const RUN_MS = 3_000;
@@ -331,7 +382,7 @@ function onTheClock(t, answer) {
     postMessage(message) {
       if (message.type !== 'run') return;
       runs.push({ at: Date.now(), block: message.state.block });
-      const done = { id: message.id, ...answer(runs.length) };
+      const done = { id: message.id, runId: message.runId, ...answer(runs.length) };
       setTimeout(() => worker.onmessage?.({ data: structuredClone(done) }), RUN_MS);
     },
     terminate() {},
@@ -404,26 +455,31 @@ test('fake timers: a run the RPC refused starts again right after the lane’s r
   stop();
 });
 
-test('fake timers: under repeated 429s, one run right after each rest, then 30, 60 and 120 s (never before the lane’s wait), then none this visit, newer blocks or not', async (t) => {
-  // The second refusal's rest runs longer: another tab's lane was refused meanwhile (lib/chain/browser.ts `rest`).
-  const waits = [REST_MS, 45_000, REST_MS, REST_MS, REST_MS];
-  const { store, runs, to, flush, reads } = onTheClock(t, (n) => ({ ...REFUSED, wait: waits[n - 1] }));
+// Changed on purpose 2026-09-28 (speed wave B, item 19): the lane's rest is staged (2.5, 10, then 30 s), and the ladder
+// asks again after 10 s too: 2, 10, 30, 60 and 120 s, each no sooner than the lane's wait.
+test('fake timers: repeated refusals back off to one probe per two minutes, without permanently disabling recovery or probing while unmounted', async (t) => {
+  // The lane's first rest is its shortest; the second runs longer: another tab's lane was refused meanwhile (lib/chain/browser.ts `rest`).
+  const waits = [2_500, 45_000, REST_MS, REST_MS, REST_MS, REST_MS];
+  const { store, runs, to, flush, reads } = onTheClock(t, (n) => ({ ...REFUSED, wait: waits[n - 1] ?? REST_MS }));
   const stop = store.subscribeHistory(['3136705'], 'page', () => {});
   await flush();
   await to(15 * 60_000);
   const starts = runs.map((run) => run.at);
-  assert.deepEqual(starts, [0, 33_250, 81_500, 144_500, 267_500], 'five runs in fifteen minutes');
+  assert.deepEqual(starts.slice(0, 6), [0, 5_750, 54_000, 87_250, 150_250, 273_250], 'the initial bounded ladder is unchanged');
   const gaps = starts.slice(1).map((at, i) => at - (starts[i] + RUN_MS));
-  assert.deepEqual(gaps, [REST_MS + 250, 45_000 + 250, RETRY_MS[2], RETRY_MS[3]], 'each after its refusal: the rest, the longer rest, 60 s, 120 s');
-  assert.deepEqual([...RETRY_MS], [2_000, 30_000, 60_000, 120_000]);
+  assert.deepEqual(gaps.slice(0, 5), [2_500 + 250, 45_000 + 250, REST_MS + 250, RETRY_MS[3], RETRY_MS[4]]);
+  assert.ok(gaps.slice(5).length > 0 && gaps.slice(5).every((gap) => gap === 120_000), 'later recovery probes remain capped, not every new block');
+  assert.deepEqual([...RETRY_MS], [2_000, 10_000, 30_000, 60_000, 120_000]);
   assert.ok(reads() >= 15, `the chain was read every minute meanwhile, a newer block each time (${reads()} reads), and started no run of its own`);
   assert.deepEqual([store.view('3136705').phase, store.view('3136705').reason], ['unclaimed-only', 'rpc_unavailable'], 'the card keeps the chain’s unclaimed figure');
-  // Leaving and coming back in the same visit asks nothing more either.
+  // No work for an unmounted history. Returning can resume recovery without a reload.
   stop();
-  await to(15 * 60_000 + 10_000);
-  const again = store.subscribeHistory(['3136705'], 'page', () => {});
+  const before = runs.length;
   await to(20 * 60_000);
-  assert.equal(runs.length, 5, 'no sixth run');
+  assert.equal(runs.length, before, 'no probes while unmounted');
+  const again = store.subscribeHistory(['3136705'], 'page', () => {});
+  await flush();
+  assert.equal(runs.length, before + 1, 'return resumes instead of retaining a permanent failure');
   again();
 });
 
@@ -446,7 +502,7 @@ test('fake timers: the new attempt waits for the tab to be visible, and starts a
 // 2026-09-27 (review of the retry): a verified run starts the count of refused runs over. Without that, a refusal after
 // the chart was drawn would wait 60 s instead of the lane's rest, and a long visit's refusals, however far apart, would
 // end its chart's updates for good after the fifth.
-test('fake timers: a verified run starts the count over: a later refusal is asked again right after the lane’s rest, with all four attempts', async (t) => {
+test('fake timers: a verified run starts the count over: a later refusal is asked again right after the lane’s rest, with all five attempts', async (t) => {
   const verified = await verifiedResult();
   // Two refusals, the chart, then every later run refused.
   const { store, runs, to, flush } = onTheClock(t, (n) => (n === 3 ? { type: 'done', result: verified } : { ...REFUSED, wait: REST_MS }));
@@ -462,8 +518,9 @@ test('fake timers: a verified run starts the count over: a later refusal is aske
   await to(15 * 60_000);
   const later = runs.slice(3).map((run) => run.at);
   const gaps = later.slice(1).map((at, i) => at - (later[i] + RUN_MS));
-  assert.deepEqual(gaps, [REST_MS + 250, REST_MS + 250, RETRY_MS[2], RETRY_MS[3]], 'all four attempts again: the rest, 30 s (no sooner than the rest), 60 s, 120 s');
-  assert.equal(runs.length, 8, 'then none');
+  // Changed on purpose 2026-09-28 (speed wave B, item 19): five attempts, the ladder's 10 s one among them.
+  assert.deepEqual(gaps.slice(0, 5), [REST_MS + 250, REST_MS + 250, REST_MS + 250, RETRY_MS[3], RETRY_MS[4]], 'all five attempts again');
+  assert.ok(gaps.slice(5).every((gap) => gap === 120_000), 'later probes retain the cap');
   assert.equal(store.view('3136705').phase, 'verified', 'the chart stays through every refusal');
   stop();
 });
@@ -536,7 +593,9 @@ test('watch hears every change to the ids it names and asks nothing for them', a
   stop();
 });
 
-test('leaving: the run is cancelled a moment after the last screen goes, the worker ended a moment later; a quick return keeps both', async () => {
+// Changed on purpose 2026-09-28 (speed wave B, item 21: the worker was ended 6 s after the last card left, and the units
+// it had read with it, which another position of the same pool read again): the worker is kept for the visit.
+test('leaving: the run is cancelled a moment after the last screen goes, the worker kept for the visit; a quick return keeps the run', async () => {
   const { store, workers, time } = storeWith();
   const stop = store.subscribeHistory(['2310187'], 'page', () => {});
   await until(() => workers[0]?.posted.length === 1, 'the run');
@@ -548,8 +607,13 @@ test('leaving: the run is cancelled a moment after the last screen goes, the wor
   assert.equal(time.fire('timer', RELEASE_MS), 1);
   assert.deepEqual(workers[0].posted.map((m) => m.type), ['run', 'cancel']);
   assert.equal(store.view('2310187').phase, 'idle');
-  assert.equal(time.fire('timer', RELEASE_MS), 1);
-  assert.equal(workers[0].terminated, true);
+  assert.equal(time.fire('timer', RELEASE_MS), 0, 'no timer ends the worker');
+  assert.equal(workers[0].terminated, false, 'kept for the visit');
+  // A later card uses the same worker.
+  const later = store.subscribeHistory(['2310187'], 'page', () => {});
+  await until(() => workers[0].posted.length === 3, 'the next run');
+  assert.deepEqual([workers.length, workers[0].posted.at(-1).type], [1, 'run']);
+  later();
 });
 
 // Changed on purpose (2026-09-25): the public RPC answers 429 to every call from Cloudflare's edge, so client.ts no
@@ -578,8 +642,12 @@ test('client.ts: no request in a build without the chain; the relay’s own read
     assert.equal(state.ok, true);
     // 2026-09-25: with the pool's protocol fee (slot0: 1,000 pips each way in the USDG/UFG pools), for the price path.
     const withFee = { ...fixture.state, positions: fixture.state.positions.map((p) => (p.ok ? { ...p, protocolFee: 4_097_000 } : p)) };
-    assert.deepEqual(state.value, withFee, 'the recorded /state answer, rebuilt by the page from the same chain values');
-    assert.equal(state.bytes, JSON.stringify(withFee).length);
+    // Changed on purpose 2026-09-28 (speed wave B, item 17): the page's own read carries each position's feature too, read
+    // in the same two aggregates (nothing is subscribed to a recorded case: plain).
+    const { automation, ...value } = state.value;
+    assert.deepEqual(value, withFee, 'the recorded /state answer, rebuilt by the page from the same chain values');
+    assert.deepEqual(automation, [{ tokenId: '3136705', automation: 'plain' }]);
+    assert.equal(state.bytes, JSON.stringify(state.value).length);
     assert.deepEqual(chain.log.map((call) => call.method), ['eth_blockNumber', 'eth_call', 'eth_call']);
     for (const [url, init] of sent) {
       assert.equal(url, 'https://rpc.mainnet.chain.robinhood.com');
@@ -729,7 +797,7 @@ test('an estimate is shown until the exact history verifies; it stays past a bud
         return worker;
       },
     });
-    const send = (message) => workers[0].onmessage?.({ data: structuredClone(message) });
+    const send = (message) => workers[0].onmessage?.({ data: structuredClone({ runId: workers[0].posted.findLast((m) => m.type === 'run' && m.id === message.id)?.runId, ...message }) });
     return { store, workers, send };
   };
 
@@ -784,7 +852,7 @@ function scriptedStore() {
     later: time.later,
     timer: time.timer,
   });
-  const send = (message) => workers[0].onmessage?.({ data: structuredClone(message) });
+  const send = (message) => workers[0].onmessage?.({ data: structuredClone({ runId: workers[0].posted.findLast((m) => m.type === 'run' && m.id === message.id)?.runId, ...message }) });
   const runs = () => (workers[0]?.posted ?? []).filter((m) => m.type === 'run');
   /** The next minute's /state read, `bump` blocks past the recorded one. */
   const minute = async (bump) => {
@@ -896,7 +964,11 @@ test('an estimate drawn for an older state is carried to the state read since it
     await until(() => runs().length === 1, 'the first run');
     const p = fixture.state.positions[0];
     chain.unclaimed = collected ? [0n, 0n] : [BigInt(p.unclaimed0) + 5n, BigInt(p.unclaimed1) + 5n];
-    await minute(700);
+    // Changed on purpose 2026-09-28 (speed wave B, item 15): the minute's read waits while the chart's run is on its way;
+    // a newer state read meanwhile (an action's, as here, or another screen's) is carried.
+    chain.bump = 700;
+    store.refresh(['3136705']);
+    for (let i = 0; i < 20; i++) await settle();
     assert.equal(store.view('3136705').phase, 'loading');
     send({ type: 'estimate', id: '3136705', history: verified.history, prices: verified.prices });
     const view = store.view('3136705');
@@ -921,4 +993,58 @@ test('carriedEstimate: the same view for an older block; null when the liquidity
   const same = carriedEstimate(view, newer);
   assert.equal(same.history.hourly.length, verified.history.hourly.length, 'the same hour: its end moves');
   assert.equal(same.history.hourly.at(-1).t, newer.timestamp);
+});
+
+// 2026-09-28 (speed wave B, item 16: a position's page read its state, then its fees card read it again on open, and each
+// kept a minute's clock of its own): the page hands the store its read, the card starts from it with nothing read again,
+// and the page follows the store's newest read.
+test('a page’s own /state read, offered to the store: its card starts from it and reads nothing again, and the store’s newest read is the page’s to follow', async () => {
+  const { store, workers, service } = storeWith();
+  const fixture = loadCase('3136705');
+  store.offer({ ok: true, value: fixture.state, bytes: 100 });
+  assert.deepEqual(store.position('3136705'), { position: fixture.state.positions[0], block: fixture.state.block });
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => workers[0]?.posted.length === 1, 'the run');
+  assert.deepEqual(service.asked, [], 'the card read nothing: the page’s read was its');
+  assert.equal(workers[0].posted[0].state.block, fixture.state.block);
+  // A failed read offered changes nothing.
+  store.offer({ ok: false, failure: 'unavailable', retryAfterMs: 0 });
+  assert.equal(store.position('3136705').block, fixture.state.block);
+  assert.equal(store.position('1'), null);
+  stop();
+});
+
+// 2026-09-28 (speed wave B, item 15: the minute's /state read, landing while a chart was being drawn, held its run 2 s
+// more): the read waits while a page's run is on its way and goes as soon as it is over; with nothing drawn, at once.
+test('the minute’s /state read waits while a page’s run is on its way, and goes as soon as the run is over', async () => {
+  const worker = { posted: [], onmessage: null, onerror: null, onmessageerror: null, postMessage(message) { this.posted.push(message); }, terminate() {} };
+  const service = stateService();
+  const time = clock();
+  const store = createFeesStore({ spawn: () => worker, postState: (ids) => service.postState(ids), later: time.later, timer: time.timer });
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => worker.posted.length === 1, 'the run');
+  assert.equal(service.asked.length, 1);
+  service.bump = 10;
+  assert.equal(time.fire('later', STATE_REFRESH_MS), 1, 'the minute is up');
+  await settle();
+  assert.equal(service.asked.length, 1, 'held: the run is on its way');
+  worker.onmessage({ data: { type: 'done', id: '3136705', runId: worker.posted[0].runId, result: { ok: false, reason: 'rpc_unavailable', prices: null, checkpoint: null, bytes: 0 }, wait: 0 } });
+  await until(() => service.asked.length === 2, 'the read once the run is over');
+  assert.deepEqual(service.asked[1], ['3136705']);
+  // And its next minute is set again.
+  assert.ok(time.pending.some((entry) => !entry.cancelled && entry.kind === 'later' && entry.ms === STATE_REFRESH_MS));
+  stop();
+});
+
+// 2026-09-28 (speed wave B, item 37): Positions creates the worker as it opens, so its file is in before the first run.
+test('warm creates the worker once, before any run, and a run uses it', async () => {
+  const { store, workers } = storeWith();
+  store.warm();
+  store.warm();
+  assert.equal(workers.length, 1);
+  assert.equal(workers[0].posted.length, 0, 'nothing sent to it yet');
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => workers[0].posted.length === 1, 'the run');
+  assert.equal(workers.length, 1);
+  stop();
 });

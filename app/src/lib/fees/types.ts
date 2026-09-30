@@ -12,6 +12,7 @@
  * in the client, a decimal string on the wire. Nothing here is valued in USD
  * or in a quote token; valuation belongs to the screens (visual/value.ts).
  */
+import type { PositionAutomation } from '../automationState'
 
 // ---------------------------------------------------------------------------
 // What the screens read (§15.6)
@@ -40,7 +41,20 @@ export type FeeHistoryView =
   | { phase: 'unclaimed-only'; state: PositionState; reason: FeesReason; prices: HourlyPrices | null }
   | { phase: 'verified'; state: PositionState; history: FeeHistory; prices: HourlyPrices }
   | { phase: 'estimated'; state: PositionState; history: FeeHistory; prices: HourlyPrices }
+  /** A previous visit's public replay, presentation only; never an authoritative current state. */
+  | CachedFeeHistory
   | { phase: 'unavailable'; reason: FeesReason }
+
+/** Public figures only: no NFT owner, connected wallet, session or action authority. */
+export type FeeDisplayState = Omit<PositionState, 'owner'>
+export interface CachedFeeHistory {
+  phase: 'cached'
+  state: FeeDisplayState
+  history: FeeHistory
+  prices: HourlyPrices
+  savedAt: number
+  source: 'public-chain-replay'
+}
 
 /** One currency of the pool. `symbol` is untrusted text from the token contract (render it as text only); null when unreadable. */
 export interface StateCurrency {
@@ -191,6 +205,8 @@ export interface StateResponse {
   block: number
   timestamp: number
   positions: StatePosition[]
+  /** 2026-09-28 (speed wave B, item 17): the page's own read only, each answered id's feature (functions/_lib/automation.ts). */
+  automation?: PositionAutomation[]
 }
 
 /**
@@ -294,8 +310,8 @@ export type Checkpoint = { readonly [checkpointBrand]: 'Checkpoint' }
  * because the screens never need it.
  */
 export type ToWorker =
-  | { type: 'run'; id: string; state: PositionState; growth: readonly [bigint, bigint]; budgetBytes: number; checkpoint: Checkpoint | null }
-  | { type: 'cancel'; id: string }
+  | { type: 'run'; id: string; runId: number; state: PositionState; growth: readonly [bigint, bigint]; budgetBytes: number; checkpoint: Checkpoint | null }
+  | { type: 'cancel'; id: string; runId: number }
 
 /**
  * `later` (2026-09-25, review): the checkpoint is a price path's that ran out of its run's budget or time, and any later
@@ -305,15 +321,16 @@ export type WorkerResult =
   | { ok: true; history: FeeHistory; prices: HourlyPrices; checkpoint: Checkpoint }
   | { ok: false; reason: FeesReason; prices: HourlyPrices | null; checkpoint: Checkpoint | null; bytes: number; later?: true }
 
+/** runId identifies the attempt, not just the NFT: queued replies from a cancelled run must never finish its successor. */
 export type FromWorker =
-  | { type: 'progress'; id: string; bytes: number; daysDone: number; daysTotal: number }
+  | { type: 'progress'; id: string; runId: number; bytes: number; daysDone: number; daysTotal: number }
   /** 2026-09-25: an estimated history, while the run goes on to the exact one (a busy pool's: pipeline.ts, path mode). */
-  | { type: 'estimate'; id: string; history: FeeHistory; prices: HourlyPrices }
+  | { type: 'estimate'; id: string; runId: number; history: FeeHistory; prices: HourlyPrices }
   /**
    * `wait` (2026-09-27): how long before the worker's lane asks the RPC anything again (its rest after a refusal); a run
    * that could not reach the chain is asked again no sooner (store.ts).
    */
-  | { type: 'done'; id: string; result: WorkerResult; wait?: number }
+  | { type: 'done'; id: string; runId: number; result: WorkerResult; wait?: number }
 
 /** How much the history of one subscriber may download: the position page, or the Positions list's aggregate. */
 export type FeesScope = 'page' | 'list'

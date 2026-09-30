@@ -275,8 +275,10 @@ class Live:
                 seen.add('tvl_collapse')
             if volume is not None and volume < Decimal(thresholds['minVolume24hUsd']) / 10:
                 seen.add('volume_collapse')
-            if ((apr is not None and apr > Decimal(thresholds['maxAprPercent'])) or
-                    (tvl and volume is not None and volume / tvl > Decimal(thresholds['maxTurnover24h']))):
+            ceiling, turnover = thresholds['maxAprPercent'], thresholds['maxTurnover24h']
+            # A policy with no ceiling (null) watches neither.
+            if ((ceiling is not None and apr is not None and apr > Decimal(ceiling)) or
+                    (turnover is not None and tvl and volume is not None and volume / tvl > Decimal(turnover))):
                 seen.add('apr_or_turnover_above_ceiling')
         start, reference = entry.get('selectionSqrtPriceX96'), entry.get('reference')
         if start and reference in pool['currencies']:

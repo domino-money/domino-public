@@ -604,6 +604,43 @@ const waits = (at, next) => ({ at, next, pending: true, tvl: 'unavailable', apr:
 const says = (at, next) => ({ at, next, pending: false, tvl: 'unavailable', apr: 'unavailable' });
 const figures = (at) => ({ at, next: 60_000, pending: false, tvl: 'provider', apr: 'available' });
 
+/** Existing valid producer evidence, still dated and stale; only its stored acquisition schedule varies. */
+const staleFigures = ({ inSeconds = 5, refreshing = false, reason = null } = {}) => () => {
+  const data = fixture('overview');
+  data.pools[0].value = JSON.parse(readFileSync(new URL('../../api-contracts/read-v2/fixtures/producer/pool-market.stale.json', import.meta.url), 'utf8'));
+  data.pools[0].acquisition = { status: 'ready', refreshing, reason, nextAttemptAt: inSeconds === null ? null : data.generatedAt + inSeconds };
+  return data;
+};
+
+test('stale public figures catch up after an imminent collection without masks, changed ages or provider fanout', async () => {
+  const expected = staleFigures()();
+  const initial = await catchUpTrace([staleFigures()]);
+  assert.deepEqual(initial.seen, [{ at: 0, next: 6_500, pending: false, tvl: 'stale', apr: 'stale' }]);
+  assert.equal(initial.row().tvlUsd.value, expected.pools[0].value.market.market.data.reportedLiquidityUsd, 'retain the producer figure');
+  assert.deepEqual(initial.row().feeAprEstimate.data, expected.pools[0].value.estimate, 'no change to the estimate, status or original provenance');
+  const recovered = await catchUpTrace([staleFigures(), caughtUp]);
+  assert.deepEqual(recovered.seen, [{ at: 0, next: 6_500, pending: false, tvl: 'stale', apr: 'stale' }, figures(6_500)]);
+  assert.equal(recovered.fanned, 0);
+  const running = await catchUpTrace([staleFigures({ refreshing: true, inSeconds: 30 }), caughtUp]);
+  assert.equal(running.seen[0].next, CATCH_UP_FLOOR_MS);
+  assert.equal(running.seen[0].pending, false);
+});
+
+test('stale public figure recovery remains bounded and respects collector failures, distant schedules and no viewers', async () => {
+  const stuck = await catchUpTrace([staleFigures(), staleFigures(), staleFigures(), staleFigures(), staleFigures()]);
+  assert.deepEqual(stuck.seen.map(({ at, next, pending }) => [at, next, pending]), [
+    [0, 6_500, false], [6_500, 6_500, false], [13_000, 6_500, false], [19_500, 60_000, false], [79_500, 60_000, false],
+  ]);
+  for (const options of [{ reason: 'collection_failed' }, { inSeconds: 120 }, { inSeconds: null }]) {
+    const blocked = await catchUpTrace([staleFigures(options)]);
+    assert.equal(blocked.seen[0].next, 60_000, JSON.stringify(options));
+    assert.equal(blocked.seen[0].pending, false);
+  }
+  const unseen = await catchUpTrace([staleFigures()], { holder: false });
+  assert.equal(unseen.seen[0].next, null, 'no accelerated read without a visible consumer');
+  assert.equal(unseen.fanned, 0);
+});
+
 test('a pool whose figures aged out waits for them and is asked again just after the store’s collection, not a minute later', async () => {
   const soon = 5_000 + CATCH_UP_MARGIN_MS;
   // The store collects the pool at the 5 s its own demand rule gives it (026_public_demand.sql) and has figures.

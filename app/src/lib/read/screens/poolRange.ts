@@ -18,6 +18,7 @@
  * here, and nothing is saved.
  */
 import { RANGES, type RangeKey } from '../../ranges'
+import { priceInverted } from '../orientation'
 import type { TokenDisplay } from '../types'
 import type { PoolOption } from './poolsList'
 import { tickPriceText } from './positions'
@@ -87,12 +88,20 @@ export type PoolPrice =
   | {
       state: 'usable'
       block: number
+      /** The pool's own tick: in the pool's order, as every range's ticks are. */
       tick: number
       tickSpacing: number
-      /** currency1 per currency0, from `tickPriceText`: six significant digits, never an exponent. */
+      /**
+       * The price the page writes, "1 `base` = `text` `quote`" (lib/read/orientation.ts, 2026-09-28): `base` in
+       * `quote`, from `tickPriceText`, six significant digits, never an exponent.
+       */
       text: string
+      /** The token the price is written for, and the one it is written in: the pool's order, or the other way round when `inverted`. */
       base: TokenDisplay
       quote: TokenDisplay
+      /** The page writes currency1 priced in currency0 (USDG or ETH is the pool's first currency). */
+      inverted: boolean
+      /** Both currencies' decimals, in the pool's order (currency0, currency1), whatever `inverted` says. */
       decimals: readonly [number, number]
       /** Token metadata the producer marked partial, or a symbol it could not read. */
       partial: boolean
@@ -113,17 +122,26 @@ export function poolPrice(option: PoolOption, now: number): PoolPrice {
   }
   if (sqrt === 0n) return { state: 'unavailable', problem: 'not_initialized', block }
   if (!tickAgrees(option.tick, sqrt)) return { state: 'unavailable', problem: 'tick_mismatch', block }
-  const [base, quote] = option.currencies
-  const d0 = decimalsOf(base)
-  const d1 = decimalsOf(quote)
+  const [currency0, currency1] = option.currencies
+  const d0 = decimalsOf(currency0)
+  const d1 = decimalsOf(currency1)
   if (d0 === null || d1 === null) return { state: 'unavailable', problem: 'decimals_unknown', block }
-  const text = tickPriceText(option.tick, d0, d1)
+  const inverted = priceInverted(currency0.address, currency1.address)
+  const text = tickPriceIn(option.tick, [d0, d1], inverted)
   if (text === null) return { state: 'unavailable', problem: 'beyond_display', block }
   const partial =
-    option.tokenMetadata === 'partial' || [base, quote].some((token) => token.origin === 'read' && (token.symbol === null || token.readStatus === 'partial'))
+    option.tokenMetadata === 'partial' || [currency0, currency1].some((token) => token.origin === 'read' && (token.symbol === null || token.readStatus === 'partial'))
   const stale = option.readAt !== null && now - option.readAt >= PRICE_STALE_MS
-  return { state: 'usable', block, tick: option.tick, tickSpacing: option.tickSpacing, text, base, quote, decimals: [d0, d1], partial, stale }
+  const [base, quote] = inverted ? [currency1, currency0] : [currency0, currency1]
+  return { state: 'usable', block, tick: option.tick, tickSpacing: option.tickSpacing, text, base, quote, inverted, decimals: [d0, d1], partial, stale }
 }
+
+/**
+ * The price at the pool's tick `tick` as the page writes it: currency1 per currency0 (`tickPriceText`), or, when
+ * `inverted`, currency0 per currency1, which is the same tick read from the other side (1.0001^−tick, decimals swapped).
+ */
+export const tickPriceIn = (tick: number, decimals: readonly [number, number], inverted: boolean): string | null =>
+  inverted ? tickPriceText(clean(-tick), decimals[1], decimals[0]) : tickPriceText(tick, decimals[0], decimals[1])
 
 /** A practice range: two ticks, multiples of the tick spacing, lower below upper. */
 export interface PracticeRange {
@@ -221,8 +239,48 @@ export function rangePosition(range: PracticeRange, tick: number): 'inside' | 'b
   return 'inside'
 }
 
-/** A bound's price as text, or null when it cannot be written as a plain number. */
-export const boundPrice = (tick: number, price: Extract<PoolPrice, { state: 'usable' }>) => tickPriceText(tick, price.decimals[0], price.decimals[1])
+/** A bound's price as text, as the page writes the pool's price (`base` in `quote`), or null when it cannot be written as a plain number. */
+export const boundPrice = (tick: number, price: Extract<PoolPrice, { state: 'usable' }>) => tickPriceIn(tick, price.decimals, price.inverted === true)
+
+/*
+ * The page's own frame (2026-09-28, lib/read/orientation.ts). A pool the page reads the other way round is drawn and
+ * edited as if it were a pool of `base` then `quote`: its ticks negated, so a higher tick is a higher price of `base`,
+ * its range's ends swapped, and its decimals swapped. Every helper above (presets, the width's derived mode, bounds,
+ * steps, the slider's window, a typed price) works unchanged in that frame; a range goes back to the pool's order with
+ * `shownRange` again (it is its own inverse) before anything keeps or sends it. Where today's price sits against a
+ * range is decided in the pool's order (`shownPosition`): v4's rule, lower ≤ tick < upper, is not symmetric.
+ */
+
+/** A tick in the page's frame: the pool's own, or negated when the page reads the pool the other way round. */
+export const shownTick = (tick: number, inverted: boolean): number => (inverted ? clean(-tick) : tick)
+
+/** A range in the page's frame, low then high as the page draws it; the same call takes it back to the pool's order. */
+export function shownRange(range: PracticeRange, inverted: boolean): PracticeRange {
+  return inverted ? { lower: clean(-range.upper), upper: clean(-range.lower) } : { lower: range.lower, upper: range.upper }
+}
+
+/** The pool's price in the page's frame: a pool of `base` then `quote`, written exactly as the pool's own price is. */
+export function shownPrice(price: Extract<PoolPrice, { state: 'usable' }>): Extract<PoolPrice, { state: 'usable' }> {
+  if (!price.inverted) return price
+  return { ...price, tick: shownTick(price.tick, true), decimals: [price.decimals[1], price.decimals[0]], inverted: false }
+}
+
+/**
+ * Where today's price sits against a range, as the page reads it: `below` the range (the range is above today's price,
+ * so it holds only `base`), `above` it (only `quote`), or `inside`. v4's rule on the pool's own ticks, then turned round
+ * for a pool the page reads the other way.
+ */
+export function shownPosition(range: PracticeRange, price: { tick: number; inverted?: boolean }): 'inside' | 'below' | 'above' {
+  const at = rangePosition(range, price.tick)
+  if (!price.inverted || at === 'inside') return at
+  return at === 'below' ? 'above' : 'below'
+}
+
+/** A preset (Closer, Wider) on the price as the page reads it, as the pool's own ticks: 0.7× to 1.5× of that figure. */
+export function presetFor(price: { tick: number; tickSpacing: number; inverted?: boolean }, key: RangeKey): PracticeRange {
+  const inverted = price.inverted === true
+  return shownRange(presetRange(shownTick(price.tick, inverted), price.tickSpacing, key), inverted)
+}
 
 /** A bound's distance from the pool's price, as a signed percentage for the slider thumb. */
 export function fromPoolPrice(tick: number, poolTick: number): string {

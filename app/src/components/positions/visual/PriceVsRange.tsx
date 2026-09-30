@@ -12,9 +12,10 @@ import type { FeeHistoryView, HourlyPrices, PositionState } from '../../../lib/f
 import { useFeeHistory } from '../../../lib/fees/useFeeHistory'
 import { shortAmount } from '../../../lib/format/amount'
 import { group } from '../../../lib/format/decimal'
-import { priceFromSqrt } from '../../../lib/format/price'
+import { priceFromSqrtIn } from '../../../lib/format/price'
 import { shortDate, shortTime } from '../../../lib/format/time'
-import type { CardPoolPrice } from '../../../lib/read/screens/positions'
+import { priceInverted } from '../../../lib/read/orientation'
+import { shownCardRange, shownCardTick, type CardPoolPrice } from '../../../lib/read/screens/positions'
 import type { TokenDisplay } from '../../../lib/read/types'
 import type { LiveCard } from '../../../lib/walletCards'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
@@ -22,7 +23,10 @@ import { dateTicks } from './ticks'
 
 const HOUR = 3_600
 
-/** One point of the pool's price: the close at `t` (currency1 per currency0, the page's orientation) and whether it sat in the range. */
+/**
+ * One point of the pool's price: the close at `t`, the app's one way round (lib/read/orientation.ts: its priced token
+ * in the other, so a falling token draws a falling line, 2026-09-28), and whether it sat in the range.
+ */
 interface PricePoint {
   t: number
   price: number
@@ -43,6 +47,7 @@ function priceText(decimal: string): string {
   return shortAmount(`${group(whole)}.${fraction}`).short
 }
 
+
 /**
  * The pool's hourly closes since the mint as a line the chart can draw (a
  * module helper: bigint square roots become plain numbers here, for geometry
@@ -56,8 +61,9 @@ function priceSeries(prices: HourlyPrices, state: PositionState, verified: boole
   if (c0.decimals === null || c1.decimals === null || prices.hours.length === 0) return null
   const d0 = c0.decimals
   const d1 = c1.decimals
+  const inverted = priceInverted(c0.address, c1.address)
   const point = (t: number, sqrt: bigint, tick: number): PricePoint => {
-    const decimal = priceFromSqrt(sqrt, d0, d1)
+    const decimal = priceFromSqrtIn(sqrt, d0, d1, inverted)
     return { t, price: Number(decimal), text: priceText(decimal), inRange: tick >= state.tickLower && tick < state.tickUpper }
   }
   const points: PricePoint[] = []
@@ -119,19 +125,19 @@ const plain = (text: string) => (text.startsWith('≈') ? text.slice(1) : text)
 
 /** The facts of a position's page, from its card and its pool price; null when a price or a decimal is missing (the page's bar stands in). */
 export function rangeFacts(card: LiveCard, price: CardPoolPrice | null): RangeFacts | null {
-  const [base, quote] = card.currencies
+  // The app's one way round (2026-09-28): prices of `base` in `quote`, the range's lowest first, in the page's frame.
+  const { base, quote, low, high, ticks } = shownCardRange(card)
   if (price?.state !== 'usable' || base.decimals === null || quote.decimals === null) return null
   const shift = Math.pow(10, base.decimals - quote.decimals)
   const at = (tick: number) => Math.pow(1.0001, tick) * shift
-  const { ends, tickLower, tickUpper } = card.range
   return {
     base,
     quote,
-    lower: ends.lower.kind === 'limit' ? 0 : at(tickLower),
-    upper: ends.upper.kind === 'limit' ? Infinity : at(tickUpper),
-    lowerText: ends.lower.kind === 'price' ? plain(ends.lower.text) : null,
-    upperText: ends.upper.kind === 'price' ? plain(ends.upper.text) : null,
-    now: at(price.tick),
+    lower: low.end.kind === 'limit' ? 0 : at(ticks.lower),
+    upper: high.end.kind === 'limit' ? Infinity : at(ticks.upper),
+    lowerText: low.end.kind === 'price' ? plain(low.end.text) : null,
+    upperText: high.end.kind === 'price' ? plain(high.end.text) : null,
+    now: at(shownCardTick(price)),
     nowText: plain(price.text),
     where: !card.hasLiquidity ? 'closed' : price.position === 'inside' ? 'inside' : price.position === 'below' ? 'under' : 'over',
   }

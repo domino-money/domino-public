@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Page } from '../App'
+import { deferred } from './Deferred'
 import { Button } from './ui'
 import { BrandMark } from './BrandMark'
 import { WalletBoundary } from './wallet/WalletBoundary'
@@ -8,8 +9,10 @@ import { HeaderMenu, PRIMARY_NAV } from './HeaderMenu'
 // The wallet session is one lazy chunk, reached only through this constant.
 // Where it is false the bundler drops the import and no wallet code is
 // emitted at all. The condition is the defined identifier itself rather than
-// a re-export of it, so the bundler folds it for certain.
-const WalletSession = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./wallet/WalletSessionIsland')) : null
+// a re-export of it, so the bundler folds it for certain. 2026-09-28 (speed
+// wave B, item 24): drawn as soon as its chunk is in (Deferred.tsx), not
+// 300 ms after its fallback: it says who is connected, which Positions waits for.
+const WalletSession = __DOMINO_WALLET_SESSION__ ? deferred(() => import('./wallet/WalletSessionIsland')) : null
 const LocalWallet = __DOMINO_LOCAL_LIVE__ ? lazy(() => import('./wallet/LocalWalletIsland')) : null
 
 /** Shown while the feature loads, or if it fails to. */
@@ -122,7 +125,7 @@ export function Header({ page }: { page: Page }) {
             // landing, the fallback is nothing rather than a disabled control.
             <WalletBoundary fallback={page === 'overview' ? null : <DisabledConnect title="Wallet sign-in could not load. Reload the page to try again." />}>
               <Suspense fallback={page === 'overview' ? null : <DisabledConnect title="Loading wallet sign-in" />}>
-                <WalletSession />
+                <WalletSession fallback={page === 'overview' ? null : <DisabledConnect title="Loading wallet sign-in" />} />
               </Suspense>
             </WalletBoundary>
           ) : (

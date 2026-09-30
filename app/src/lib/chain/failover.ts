@@ -51,7 +51,9 @@ export const FALLBACK_DOWN_MS = 60_000
 /** While a call only the primary serves is asked (or nothing else answers), the primary is probed at most this often. */
 export const NEEDED_PROBE_MS = 15_000
 /** How long a probe that reached the primary vouches for it: a TypeError meanwhile is its unreadable 429. */
-export const REACHED_MS = 60_000
+// A reach check distinguishes an unreadable 429 from an outage, but says little about a phone after it changes
+// networks. Reuse it only across the immediate 400 ms re-ask, not for a minute of failed reads.
+export const REACHED_MS = 1_000
 export const REACH_TIMEOUT_MS = 4_000
 export const PROBE_TIMEOUT_MS = 5_000
 export const REST_MS = 30_000
@@ -98,6 +100,8 @@ export interface Router {
   session(maxCalls: number): Session
   /** Whether calls go to the chain's own RPC (false while it is unreachable, until a probe finds it again). */
   primaryUp(): boolean
+  /** 2026-09-28 (speed wave B, item 23): a head a read learned otherwise than by eth_blockNumber, as one it answered. */
+  learn(block: number): void
   /** For tests: the quiet probe on its way, if any. */
   probing(): Promise<void> | null
   /** For tests: what the router knows of each endpoint. */
@@ -170,6 +174,9 @@ function blockOf(value: unknown): number | 'head' | null {
 
 /** The state reads, each with its block parameter's place. */
 const STATE_READS: Readonly<Record<string, number>> = { eth_call: 1, eth_getBalance: 1, eth_getCode: 1 }
+/** Only these existing, side-effect-free reads may be replayed at a different endpoint. State methods share one registry. */
+const SAFE_READS = new Set([...Object.keys(STATE_READS), 'eth_chainId', 'eth_blockNumber', 'eth_getBlockByNumber', 'eth_getLogs', 'eth_simulateV1'])
+const safeRead = (parsed: Parsed | null): parsed is Parsed => parsed !== null && parsed.calls.every((call) => SAFE_READS.has(call.method))
 
 /** What a call needs: the head, a numbered block's state, an archive, headers, a simulation or a range of logs. */
 function needOf({ method, params }: Call): Asked {
@@ -331,10 +338,11 @@ export function failover(runtime: RouterRuntime, options: RouterOptions = {}): R
     parsed.calls.forEach((call, i) => {
       if (call.method !== 'eth_blockNumber') return
       const result = (envelopes[i] as { result?: unknown } | undefined)?.result
-      if (typeof result !== 'string' || !QUANTITY.test(result)) return
-      const block = Number(BigInt(result))
-      if (Number.isSafeInteger(block) && block >= (headNow() ?? 0)) head = { block, at: now() }
+      if (typeof result === 'string' && QUANTITY.test(result)) seeHead(Number(BigInt(result)))
     })
+  }
+  function seeHead(block: number): void {
+    if (Number.isSafeInteger(block) && block >= (headNow() ?? 0)) head = { block, at: now() }
   }
 
   /** One POST to a fallback, read whole (within the read's bytes), and what it says. */
@@ -545,7 +553,8 @@ export function failover(runtime: RouterRuntime, options: RouterOptions = {}): R
       try {
         const response = await runtime.send(primary.url, { method: 'POST', headers: HEADERS, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }), signal: timeoutSignal(PROBE_TIMEOUT_MS) })
         await response.body?.cancel().catch(() => undefined)
-        back = true
+        // An HTTP gateway failure is reachable but not a recovered RPC. Do not bounce every next read back to it.
+        back = response.ok
       } catch (error) {
         back = error instanceof TypeError && !runtime.offline() && (await reached())
       }
@@ -565,9 +574,21 @@ export function failover(runtime: RouterRuntime, options: RouterOptions = {}): R
 
   /** One POST to the primary; one it cannot reach marks it so and goes to the fallbacks (`retry`: and back to it, once, if a needed probe finds it). */
   async function viaPrimary(init: RequestInit, current: Session, retry: boolean): Promise<Response> {
+    const eligible = safeRead(parse(init.body))
     try {
-      return await runtime.send(primary.url, init)
+      const response = await runtime.send(primary.url, init)
+      if (!eligible || ![502, 503, 504].includes(response.status) || runtime.offline() || init.signal?.aborted) return response
+      await response.body?.cancel().catch(() => undefined)
+      if (!p.down) goDownPrimary()
+      return fallback(init, current, new TypeError('primary temporarily unavailable'), retry)
     } catch (error) {
+      const timeout = error instanceof Error && error.name === 'TimeoutError'
+      if (eligible && timeout && !runtime.offline()) {
+        if (!p.down) goDownPrimary()
+        // Keep the caller's deadline: a timed-out signal cannot be renewed to make a second request. The next read
+        // can use the fallbacks immediately. A transport timeout with time left can use them in this read.
+        if (!init.signal?.aborted) return fallback(init, current, error, retry)
+      }
       if (!(error instanceof TypeError) || runtime.offline() || init.signal?.aborted) throw error
       // Reached: the RPC's own refusal, which a browser cannot read. The caller takes it as it always did.
       if (await reached()) throw error
@@ -579,8 +600,9 @@ export function failover(runtime: RouterRuntime, options: RouterOptions = {}): R
   /** The fallbacks' answer to a call the primary is not asked, or the router's own. */
   async function fallback(init: RequestInit, current: Session, failure: unknown, retry: boolean): Promise<Response> {
     const parsed = parse(init.body)
+    if (!safeRead(parsed)) throw failure instanceof Error ? failure : new TypeError('not a supported chain read')
     // A fallback gets exactly the body the primary would have: the chain code's own calls.
-    const routed = parsed ? await viaFallbacks(init.body as string, parsed, init.signal, current) : { kind: 'none' as const }
+    const routed = await viaFallbacks(init.body as string, parsed, init.signal, current)
     if (routed.kind === 'response') return routed.response
     if (routed.kind === 'resting') return resting()
     // 2026-09-28 (review): only the primary serves this call (no reachable fallback does, or none is reachable at all).
@@ -597,6 +619,7 @@ export function failover(runtime: RouterRuntime, options: RouterOptions = {}): R
 
   return {
     session,
+    learn: seeHead,
     primaryUp: () => !p.down,
     probing: () => p.probe,
     send(init, current = session(Infinity)) {

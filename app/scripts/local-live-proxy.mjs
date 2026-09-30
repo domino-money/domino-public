@@ -25,7 +25,8 @@ const FAMILY = {
   v1: { version: CONTRACT_VERSION, reads: READS, validateResponse, validateRequest },
   v2: { version: readV2.CONTRACT_VERSION, reads: readV2.ENABLED_READS, validateResponse: readV2.validateResponse, validateRequest: readV2.validateRequest },
   v3: { version: readV3.CONTRACT_VERSION, reads: READS_V3, validateResponse: readV3.validateResponse, validateRequest: readV3.validateRequest },
-  v5: { version: readV5.CONTRACT_VERSION, reads: READS_V5, validateResponse: readV5.validateResponse, validateRequest: readV5.validateRequest },
+  // read-v5 takes rc.1 and rc.2 while the VM moves to rc.2 (featured-policy v2, 2026-09-28), as the read Worker does.
+  v5: { version: readV5.CONTRACT_VERSION, versions: readV5.CONTRACT_VERSIONS, reads: READS_V5, validateResponse: readV5.validateResponse, validateRequest: readV5.validateRequest },
 }
 /** The family a raw URL belongs to, for the replies sent before a route is resolved. */
 const familyForUrl = (url) => url.startsWith('/api/read/v5/') ? FAMILY.v5 : url.startsWith('/api/read/v3/') ? FAMILY.v3
@@ -107,7 +108,11 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
         payload = parseStrictJson(text)
         if (secrets.some((value) => JSON.stringify(payload).includes(value))) return error(502, 'upstream_invalid_response')
       } catch { return error(502, 'upstream_invalid_response') }
-      if (response.headers.get(CONTRACT) !== version) return error(502, 'upstream_contract_mismatch')
+      const family = FAMILY[request.version ?? 'v1']
+      const answered = response.headers.get(CONTRACT)
+      if (!(family.versions ?? [version]).includes(answered)) return error(502, 'upstream_contract_mismatch')
+      // Where two versions pass, a list names the one its header does.
+      if (family.versions && response.status === 200 && payload?.contractVersion !== answered) return error(502, 'upstream_contract_mismatch')
       const valid = response.status === 200
         ? request.route === 'status' ? validateStatus(statusSchema, payload)
           : request.version === 'v2' ? readV2.validateResponse(request.route, payload) || (request.route === 'pool-market' && refusedForEstimateOnly(payload))
@@ -116,7 +121,7 @@ export function createLocalProxy({ credentials, statusSchema, fetchImpl = fetch,
       if (!valid) return error(502, 'upstream_invalid_response')
       if (request.version === 'v2' && request.route === 'pool-market' && response.status === 200 && payload.poolId !== JSON.parse(body).poolId) return error(502, 'upstream_invalid_response')
       if (request.route === 'capabilities' && response.status === 200 && payload.enabledReads.some((name) => !FAMILY[request.version ?? 'v1'].reads.includes(name))) return error(502, 'upstream_invalid_response')
-      const headers = { [CONTRACT]: version }
+      const headers = { [CONTRACT]: answered }
       const id = response.headers.get('X-Domino-Request-Id')
       if (id && /^[0-9a-f]{32}$/.test(id) && !secrets.includes(id)) headers['X-Domino-Request-Id'] = id
       const retry = response.headers.get('Retry-After')

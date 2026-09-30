@@ -97,6 +97,8 @@ export const CREATE = {
       above: 'Today’s price is above this range: the position starts with one token only and earns no fees until the price falls into it.',
     },
     rangeIn: 'Today’s price is inside this range.',
+    /** The preview's calm word for a range beside today's price (PositionPreview.tsx, 2026-09-28, one-sided): no red alarm. */
+    earnsInRange: 'Earns once the price is in range',
     customHint: 'Type a price or drag. It moves to the nearest price the pool allows.',
     /**
      * A typed price the range controls refused (lib/read/screens/RangePriceInput.ts, shared with the pool page), in the
@@ -253,18 +255,35 @@ export const CREATE = {
      * (components/create/CreatePosition.tsx; docs/plans/2026-09-25-eip5792-batches-design.md).
      */
     batchStep: 'Approve, deposit and create the position',
+    /**
+     * The one step's title, naming what it does (2026-09-28): an approval only when a token needs one (ETH travels
+     * with the deposit), and the swap when the wallet holds one of the two tokens.
+     */
+    batchStepTitle: (approves: boolean, swaps: boolean) =>
+      `${approves ? 'Approve, deposit' : 'Deposit'}${swaps ? ', swap' : ''} and create the position`,
+    /** Under that one step on Review, before Create position is pressed (StageReview.tsx). */
+    batchStepDetail: 'All in one go, with the exact amounts. Anything the range doesn’t use comes back to you.',
     batchReason: 'Your wallet asks you to sign once: every step together, or none of them.',
     /** Beside the steps when the wallet can batch only after it turns on its smart account: the person chooses. */
     batchOffer: 'Sign all steps at once',
-    batchOfferNote: 'Your wallet will first ask to turn on its smart account (EIP-7702). Your address stays the same, and your key stays in control.',
+    // Changed on purpose (2026-09-28, beginner first): no "(EIP-7702)" on the main screen; the wallet names the upgrade itself.
+    batchOfferNote: 'Your wallet will first ask to turn on its smart account. Your address stays the same, and your key stays in control.',
     mintStepDetail: 'Your position arrives in your wallet. Anything the range doesn’t use comes back to you.',
     /** The deposit and the swap when the wallet holds one of the two tokens (lib/create/depositPlan.ts). */
     fundOneStep: 'Deposit',
     fundOneStepDetail: 'Sends it to Domino’s contract. You can get it back until the position is created.',
     swapStep: 'Swap part of your deposit',
     swapStepDetail: (fee: string) => `Swaps part of it for the other token in this pool. Fee: ${fee} of the swapped part.`,
+    /**
+     * The same step when the range takes only the other token (lib/create/journey.ts walletSteps, 2026-09-28,
+     * one-sided): all of the deposit is swapped, and said so.
+     */
+    swapAllStep: 'Swap your deposit',
+    swapAllStepDetail: (fee: string) => `Swaps all of it for the other token in this pool. Fee: ${fee} of it.`,
     /** Under the headline when part of the deposit is swapped (StageReview.tsx names the two tokens before it): what the swap costs. */
     swapNote: (fee: string) => `The swapped part pays the pool’s fee and Domino’s ${fee} fee.`,
+    /** The same when all of it is swapped. */
+    swapAllNote: (fee: string) => `The swap pays the pool’s fee and Domino’s ${fee} fee.`,
     /** Under the swap note when the pool's liquidity figure is reported and zero (lib/create/reviewPlan.ts). Nothing is said when the figure is missing. */
     emptyPool: 'This pool is empty, so part of your deposit can’t be swapped in it. Add both tokens, or choose another pool.',
     /** Review's closed Details: the technical facts behind the position, for whoever wants them. */

@@ -8,7 +8,7 @@ import { atomicStatus, createSetupClient, deploymentFrom, isRevert, walletBalanc
 import { errorCode, financeErrorText } from '../../finance/words'
 import { switchToRobinhood } from '../../wallet/port'
 import { CREATE } from '../../lib/create/copy'
-import { publishCreateProgress, publishCreated, type LiveState, type LiveStep } from '../../lib/create/createProgress'
+import { publishBatchAbility, publishCreateProgress, publishCreated, type LiveState, type LiveStep } from '../../lib/create/createProgress'
 import { depositPlan, needsSides, quoteWithin, sizeSwap, swapFeePips, type DepositPlan, type PoolTerms, type Side, type SwapSize } from '../../lib/create/depositPlan'
 import { setupDraft, type JourneyState, type SetupDraft } from '../../lib/create/journey'
 import { mintPlanFor } from '../../lib/create/mintPlan'
@@ -47,7 +47,8 @@ import { Button } from '../ui'
  * the mint is sized at the pool's price read on chain at that moment, for the
  * worst price inside the band, so it fits the deposit wherever in the band it
  * executes (lib/create/mintPlan.ts). What it does not use comes back with the
- * NFT.
+ * NFT. A range that takes one token alone takes exactly the amount Review
+ * shows, with no room (lib/create/depositPlan.ts, 2026-09-28, one-sided).
  *
  * When the position exists, Review offers what comes next in this control's
  * place (2026-09-24, the three features joined up: components/create/
@@ -101,6 +102,12 @@ const PREFLIGHT = {
   held: 'This pool has no liquidity at its current price, so your deposit cannot be swapped in it. Refund the deposit to your wallet.',
   heldClock: 'Your device’s clock is more than 5 minutes off the network’s time, so the swap cannot be signed. Your deposit is held: set the clock right and press Create position again, or refund it.',
 } as const
+/**
+ * A deposit of one token for a range that took it alone, met with the price moved into the range since (2026-09-28,
+ * one-sided): the range needs both tokens now, and Review showed no swap, so none is sent. The next press on the held
+ * deposit may swap part of it, and this sentence says so first.
+ */
+const INTO_RANGE = 'The price moved into your range, which now needs both tokens. Your deposit is held: press Create position to swap part of it and finish, or refund it.'
 /** What a batch's watch says when it ends without the position (createInOneBatch, watchBatch). */
 const BATCH = {
   dropped: 'Your wallet did not include the batch. Nothing was deposited. Press Create position again.',
@@ -212,6 +219,8 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   const generation = useRef(0)
   const running = useRef(false)
   // Whether the last press asked for one signature (a batch): its line says so, and a confirmation that runs the press again keeps it.
+  // 2026-09-28 (review): false again as soon as that press goes on step by step (a held deposit's mint, a batch the wallet
+  // refused or no simulation could check), so the line never says "one signature" while the wallet asks for each step.
   const [batching, setBatching] = useState(false)
   const steps = useRef<readonly LiveStep[]>([])
   // Another wallet or network: whatever was prepared or held for the previous one no longer applies.
@@ -258,6 +267,12 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     )
     return () => { live = false }
   }, [wallet])
+  // Review's list of wallet steps shows the one signature as soon as it is known (2026-09-28), for this wallet only:
+  // null again for another wallet, until it is read, and once this control leaves the page.
+  useEffect(() => {
+    publishBatchAbility(wallet === null ? null : atomic)
+  }, [wallet, atomic])
+  useEffect(() => () => publishBatchAbility(null), [])
 
   const ready = draft !== null
   const needs = draft ? needsOf(draft) : null
@@ -347,8 +362,13 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
    * The assisted swap, when the deposit holds only one token and the range needs the other too: part of it for
    * the other, sized from the contract's own quotes so the position it leaves is the largest (lib/create/depositPlan.ts
    * sizeSwap). Once per deposit. True when a swap was sent and included.
+   *
+   * Fixed 2026-09-28 (one-sided): a deposit that already makes the position as it is (one token for a range that takes
+   * it alone, its edge touching the price included) is never swapped: the mint's band stays on that side of the range
+   * (lib/create/mintPlan.ts). The study found a range whose edge touched the price swapping about 1% of the deposit, a
+   * swap Review had not shown. `allowed`: whether this press planned a swap; one that did not sends none.
    */
-  async function swapIfNeeded(client: Client, key: PoolKey, gas: GasBudget, open: Open, gen: number): Promise<boolean> {
+  async function swapIfNeeded(client: Client, key: PoolKey, gas: GasBudget, open: Open, gen: number, allowed: boolean): Promise<boolean> {
     if (!draft) throw new Stop('')
     const operation = await client.inspect(open.id)
     if (operation.swapped) {
@@ -356,12 +376,25 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
       return false
     }
     const terms = await termsNow(client, key, draft.pool, draft)
+    const asHeld = mintPlanFor({
+      sqrtPriceX96: String(terms.sqrtPriceX96),
+      tickLower: draft.tickLower,
+      tickUpper: draft.tickUpper,
+      balance0: operation.balance0,
+      balance1: operation.balance1,
+      slippageBps: draft.slippageBps,
+    })
+    if (asHeld) {
+      drop('swap', gen)
+      return false
+    }
     const [needs0, needs1] = needsSides(terms)
     const from: Side | null = needs1 && operation.balance1 === 0n && operation.balance0 > 0n ? 0 : needs0 && operation.balance0 === 0n && operation.balance1 > 0n ? 1 : null
     if (from === null) {
       drop('swap', gen)
       return false
     }
+    if (!allowed) throw new Stop(INTO_RANGE, 'range_needs_both')
     if (!steps.current.some((step) => step.key === 'swap')) {
       const at = steps.current.findIndex((step) => step.key === 'mint')
       const swapStep: LiveStep = { key: 'swap', title: CREATE.review.swapStep, state: 'waiting' }
@@ -540,9 +573,10 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     }
   }
 
-  async function mintFrom(client: Client, key: PoolKey, gas: GasBudget, open: Open, gen: number): Promise<bigint> {
+  /** `swapAllowed`: whether a swap may be sent for this deposit: one this press planned, or a deposit an earlier press left held. */
+  async function mintFrom(client: Client, key: PoolKey, gas: GasBudget, open: Open, gen: number, swapAllowed: boolean): Promise<bigint> {
     if (!draft) throw new Stop('')
-    const swapped = await swapIfNeeded(client, key, gas, open, gen)
+    const swapped = await swapIfNeeded(client, key, gas, open, gen, swapAllowed)
     // The node may answer a moment behind the receipt: the mint is sized on the balances the swap left, never on the ones before it.
     const operation = await settledOperation(client, open.id, (value) => (!swapped || value.swapped) && (value.balance0 > 0n || value.balance1 > 0n))
     if (swapped && !operation.swapped) throw new Stop('The swap was included, and your deposit is still being read back. Press Create position again in a moment: nothing is swapped twice.')
@@ -589,6 +623,8 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     // Review keeps its own plan in view until this run knows its steps.
     show([], gen)
     let open: Open | null = held
+    // A deposit an earlier press left held may need its swap; a new one is swapped only when this press plans it.
+    let swapAllowed = true
     try {
       const { client, rpc, gas } = await connectClient()
       const key = poolKeyOf(pool)
@@ -617,6 +653,8 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         }
       }
       if (open) {
+        // A held deposit's swap and mint are steps of their own: never in a batch.
+        if (generation.current === gen) setBatching(false)
         show([
           { key: 'fund', title: CREATE.review.fundStep, state: 'done' },
           { key: 'mint', title: CREATE.review.mintStep, state: 'waiting' },
@@ -646,17 +684,22 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
           throw new Stop(`Your wallet holds ${units(have, token)} ${symbolOf(token)}${token.address === zeroAddress ? ' after network gas' : ''}; this position needs ${units(plan.need, token)}. Lower the amount, or add ${symbolOf(token)} to your wallet.`)
         }
         const funding: readonly [bigint, bigint] = plan.kind === 'both' ? [plan.amount0, plan.amount1] : plan.from === 0 ? [plan.deposit, 0n] : [0n, plan.deposit]
+        swapAllowed = plan.kind === 'swap'
+        // The one token deposited: a one-token plan's, or the one a range that takes one token alone is funded with.
+        const one: Side | null = plan.kind === 'swap' ? plan.from : funding[0] === 0n ? 1 : funding[1] === 0n ? 0 : null
         const inOrder: readonly LiveStep[] = [
           ...pool.currencies.flatMap((token, index) =>
             token.address !== zeroAddress && funding[index] > 0n ? [{ key: `approve:${token.address}`, title: CREATE.review.approveStep, token, state: 'waiting' as const }] : [],
           ),
-          plan.kind === 'swap'
-            ? { key: 'fund', title: CREATE.review.fundOneStep, token: pool.currencies[plan.from], state: 'waiting' as const }
+          one !== null
+            ? { key: 'fund', title: CREATE.review.fundOneStep, token: pool.currencies[one], state: 'waiting' as const }
             : { key: 'fund', title: CREATE.review.fundStep, state: 'waiting' as const },
-          ...(plan.kind === 'swap' ? [{ key: 'swap', title: CREATE.review.swapStep, state: 'waiting' as const }] : []),
+          ...(plan.kind === 'swap' ? [{ key: 'swap', title: plan.swap >= plan.deposit ? CREATE.review.swapAllStep : CREATE.review.swapStep, state: 'waiting' as const }] : []),
           { key: 'mint', title: CREATE.review.mintStep, state: 'waiting' },
         ]
-        show(batch ? [{ key: 'batch', title: CREATE.review.batchStep, state: 'waiting' }] : inOrder, gen)
+        // One step for the batch, named after what it holds, as Review named it before the press (journey.ts batchedSteps).
+        const batchTitle = CREATE.review.batchStepTitle(inOrder.some((step) => step.key.startsWith('approve:')), plan.kind === 'swap')
+        show(batch ? [{ key: 'batch', title: batchTitle, state: 'waiting' }] : inOrder, gen)
         // One token alone is deposited only into a pool that can swap part of it: checked before any approval.
         const checked = plan.kind === 'swap' ? await swapPreflight(client, key, draft, plan.from, plan.deposit, gen) : null
         if (batch) {
@@ -670,6 +713,8 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
             open = made.held
             if (generation.current === gen) setHeld(open)
           } else show(inOrder, gen)
+          // Whatever is left is asked step by step, and the line under the button says so from here on.
+          if (generation.current === gen) setBatching(false)
         }
         // The deposit keeps ETH back for the swap and the mint, or a refund, that follow it.
         const reserved: GasBudget = { ...gas, reserveWei: kept }
@@ -696,7 +741,7 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
           if (generation.current === gen) setHeld(open)
         }
       }
-      const tokenId = await mintFrom(client, key, gas, open, gen)
+      const tokenId = await mintFrom(client, key, gas, open, gen, swapAllowed)
       finish(tokenId, gen)
     } catch (error) {
       if (generation.current !== gen) return

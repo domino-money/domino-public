@@ -251,7 +251,11 @@ test('depositPlan outside the range: the one token the range takes is deposited 
   // Below the range the position is all ETH: typing ETH needs no TOKEN at all.
   const below = terms(-5000, -3600, 4080, 3000, 65);
   const typed = 10n ** 15n;
-  assert.deepEqual(plan(0, typed, [10n ** 18n, 0n], 50, below), { kind: 'both', amount0: withRoom(typed, 50), amount1: 0n });
+  // Changed on purpose 2026-09-28 (one-sided, review): exactly the typed amount, with no slippage room (was
+  // withRoom(typed, 50)). A one-sided mint turns the whole deposit into position, so a room made it larger than Review.
+  assert.deepEqual(plan(0, typed, [10n ** 18n, 0n], 50, below), { kind: 'both', amount0: typed, amount1: 0n });
+  assert.deepEqual(plan(0, typed, null, 50, below), { kind: 'both', amount0: typed, amount1: 0n }, 'balances unknown: the same');
+  assert.deepEqual(plan(0, typed, [10n ** 18n, 0n], 500, below), { kind: 'both', amount0: typed, amount1: 0n }, 'whatever the slippage limit');
   // Holding only TOKEN, all of the deposit is swapped for the ETH the range takes.
   const result = plan(0, typed, [0n, 10n ** 30n], 50, below);
   assert.equal(result.kind, 'swap');
@@ -503,4 +507,75 @@ test('quoteWithin refuses a size the pool cannot fill or that would end past the
   const flat = quoteWithin(65, true, 3000, 1n, async () => ({ kind: 'quote', out: 10n, outNext: 10n }));
   assert.equal(await flat(10n ** 18n), null, 'nothing more for more in: says nothing');
   assert.equal(await quoteWithin(10_000, true, 3000, 1n, async () => assert.fail('never asked'))(10n ** 18n), null, 'nothing left after the fee');
+});
+
+// Added 2026-09-28 (one-sided): Review's plan and Create position's path read a range that touches today's price the
+// same way. The range takes one token alone at the pool's price (pairAmount.ts), Review plans that token alone with no
+// swap, and the deposit it funds makes the mint as it is (mintPlan.ts), so Create position has nothing to swap.
+test('a range touching today’s price: Review plans the one token with no swap, and that deposit mints as it is', () => {
+  const MANY = 500_000n * 10n ** 18n;
+  const t = terms(338460, 333360, 338460);
+  const need = pairedAmount({ sqrtPriceX96: String(t.sqrtPriceX96), tickLower: t.tickLower, tickUpper: t.tickUpper, independent: 1, amountRaw: String(MANY) });
+  assert.deepEqual(need, { kind: 'amount', raw: '0', only: 1 });
+  const plan = depositPlan({ terms: t, independent: 1, typedRaw: MANY, need0: 0n, need1: MANY, slippageBps: 50, balances: [0n, 1_000_000n * 10n ** 18n] });
+  // Changed on purpose 2026-09-28 (one-sided, review): exactly the MANY typed (was withRoom(MANY, 50): 502,500 MANY
+  // approved, deposited and minted under a Review of 500,000).
+  assert.deepEqual(plan, { kind: 'both', amount0: 0n, amount1: MANY }, 'MANY alone, exactly as typed, and no swap');
+  const minted = mintPlanFor({ sqrtPriceX96: String(t.sqrtPriceX96), tickLower: t.tickLower, tickUpper: t.tickUpper, balance0: plan.amount0, balance1: plan.amount1, slippageBps: 50 });
+  assert.ok(minted && minted.maxAmount0 === 0n, 'the deposit as funded makes the position');
+  // The two-sided band still says the range reaches currency0 inside the slippage band: that is exactly why Create
+  // position now asks the mint as held first (CreatePosition.tsx swapIfNeeded) instead of this.
+  assert.deepEqual(needsSides(t), [true, true]);
+});
+
+// Added 2026-09-28 (one-sided, case C): only MANY in the wallet, a range that takes USDG alone. The whole deposit is
+// swapped for USDG (nothing of MANY is kept), and Review and the amount step say "all of it".
+test('only the other token in the wallet: the deposit is swapped whole for the one the range takes', () => {
+  const USDG = 1_000n * 10n ** 6n;
+  // The pool at 499 MANY per USDG; a range of 600 to 1000 MANY per USDG takes only USDG (currency0).
+  const t = terms(338460, 340260, 345420);
+  const need = pairedAmount({ sqrtPriceX96: String(t.sqrtPriceX96), tickLower: t.tickLower, tickUpper: t.tickUpper, independent: 0, amountRaw: String(USDG) });
+  assert.deepEqual(need, { kind: 'amount', raw: '0', only: 0 });
+  const plan = depositPlan({ terms: t, independent: 0, typedRaw: USDG, need0: USDG, need1: 0n, slippageBps: 50, balances: [0n, 1_000_000n * 10n ** 18n] });
+  assert.equal(plan.kind, 'swap');
+  assert.equal(plan.from, 1);
+  assert.equal(plan.swap, plan.deposit, 'all of it');
+  assert.ok(plan.receive >= USDG, `buys at least the USDG asked for: ${plan.receive}`);
+});
+
+// Added 2026-09-28 (one-sided, review): the position a range beside the price makes is the one Review shows. A
+// one-sided mint has no second token to hold it back, so whatever is deposited becomes position: the deposit is exactly
+// the typed amount, and the mint takes no more than it (and no less than its 10 bps slack leaves), at any slippage
+// limit and wherever on that side of the range the price lands inside the mint's band.
+test('a range beside today’s price: the approval, the deposit and the minted position are the typed amount, never more', () => {
+  const Q = 1n << 96n;
+  const up = (n, d) => (n + d - 1n) / d;
+  /** What the pool takes for `liquidity` between two square-root prices, rounded up as v4-core's SqrtPriceMath rounds a mint. */
+  const taken0 = (sL, sU, liquidity) => up(up(liquidity * Q * (sU - sL), sU), sL);
+  const taken1 = (sL, sU, liquidity) => up(liquidity * (sU - sL), Q);
+  const MANY = 500_000n * 10n ** 18n;
+  const USDG = 1_000n * 10n ** 6n;
+  // The study's pool: USDG (currency0) / MANY (currency1) at 499 MANY per USDG. Case A sells MANY (a range under the
+  // pool's tick takes currency1 alone), case B buys it with USDG (a range over the pool's tick takes currency0 alone).
+  for (const [label, lower, upper, independent, typed] of [['A', 333360, 337860, 1, MANY], ['A at the edge', 333360, 338460, 1, MANY], ['B', 340260, 345420, 0, USDG]]) {
+    for (const slippageBps of [50, 500]) {
+      const t = terms(338460, lower, upper, 3000, ASSISTED_SWAP_FEE_BPS, sqrtPriceAtTick(338460), slippageBps);
+      const [need0, need1] = needs(independent, typed, t);
+      assert.equal(independent === 0 ? need1 : need0, 0n, `${label}: the range takes one token alone`);
+      for (const balances of [null, independent === 0 ? [typed * 3n, 0n] : [0n, typed * 3n], [typed * 3n, typed * 3n], independent === 0 ? [typed, 0n] : [0n, typed]]) {
+        const plan = depositPlan({ terms: t, independent, typedRaw: typed, need0, need1, slippageBps, balances });
+        const exact = independent === 0 ? { kind: 'both', amount0: typed, amount1: 0n } : { kind: 'both', amount0: 0n, amount1: typed };
+        assert.deepEqual(plan, exact, `${label} at ${slippageBps} bps, balances ${balances}: the typed amount alone`);
+      }
+      const sL = sqrtPriceAtTick(lower), sU = sqrtPriceAtTick(upper);
+      // Wherever the price lands on the range's own side inside the band, the mint is the same and fits the deposit.
+      for (const at of [t.sqrtPriceX96, independent === 0 ? (t.sqrtPriceX96 * 9990n) / 10000n : (t.sqrtPriceX96 * 10010n) / 10000n]) {
+        const minted = mintPlanFor({ sqrtPriceX96: String(at), tickLower: lower, tickUpper: upper, balance0: independent === 0 ? typed : 0n, balance1: independent === 0 ? 0n : typed, slippageBps });
+        assert.ok(minted, `${label}: a position`);
+        const taken = independent === 0 ? taken0(sL, sU, minted.liquidity) : taken1(sL, sU, minted.liquidity);
+        assert.ok(taken <= typed, `${label} at ${slippageBps} bps: the mint takes ${taken}, at most the ${typed} typed`);
+        assert.ok(taken * 10_000n >= typed * 9_989n, `${label} at ${slippageBps} bps: the mint takes ${taken}, all but its 10 bps slack of ${typed}`);
+      }
+    }
+  }
 });

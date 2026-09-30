@@ -237,8 +237,8 @@ class Selector:
 
         A listing the provider cut short is `incomplete` and retried while
         `final` is false; the final attempt of the day then keeps yesterday's
-        list (`carried_over`). The first run with no evaluation to persist
-        against only records one (`bootstrap`).
+        list (`carried_over`). With persistence on, the first run with no
+        evaluation to persist against only records one (`bootstrap`).
         """
         if phase not in ('shadow', 'live'):
             raise DataError('featured_phase_unavailable')
@@ -314,7 +314,7 @@ class Selector:
         composed = listing = None
         if not complete:
             outcome = 'carried_over' if final else 'incomplete'
-        elif previous is None:
+        elif previous is None and self.policy['persistence']:
             outcome = 'bootstrap'
         else:
             composed = rules.compose(evaluations, self.policy, previous_list=[{'poolId': pool_id} for pool_id in incumbents],

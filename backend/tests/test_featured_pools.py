@@ -1,5 +1,6 @@
-"""featured-policy v1: every rule on its own, the depth walk, and the list it composes."""
+"""featured-policy v1 and v2: every rule on its own, the depth walk, and the list it composes."""
 import copy
+from decimal import Decimal
 from fractions import Fraction
 import json
 from pathlib import Path
@@ -9,9 +10,9 @@ import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from discovery import DataError
-from featured_pools import (MARKET, POLICY_PATH, SAFETY, band_bound, check_policy, compose, depth_usd,
-                            eth_usd, evaluate, list_id, load_policy, policy_version, reference_depth,
-                            reference_side, symbol_reading, token_reasons)
+from featured_pools import (MARKET, OPTIONAL_DECIMALS, OPTIONAL_INTEGERS, POLICY_PATH, SAFETY, band_bound,
+                            check_policy, compose, depth_usd, eth_usd, evaluate, list_id, load_policy,
+                            policy_version, reference_depth, reference_side, symbol_reading, token_reasons)
 from v4_math import Q96, amount_delta, sqrt_at_tick, tick_at_sqrt
 
 ZERO='0x'+'0'*40
@@ -22,7 +23,11 @@ OTHER='0x1111111111111111111111111111111111111111'
 POOL='0x'+'4b'*32
 NOW=1_790_380_000
 DAY=86400
-POLICY=load_policy()
+# featured-policy v1, as it ran until v2: every rule on, ranked by the lower of two days' APR.
+V1_POLICY_PATH=Path(__file__).resolve().parent/'fixtures/featured_policy_v1.json'
+POLICY=load_policy(V1_POLICY_PATH)
+# featured-policy v2, shipped: today's APR ranks, above a 24 h volume and a liquidity floor.
+V2=load_policy()
 
 
 def good():
@@ -204,6 +209,150 @@ class RuleTests(unittest.TestCase):
         self.assertFalse(set(SAFETY)&set(MARKET))
         self.assertEqual(judged(changed([(('chain','liquidity'),0)]))['safe'],False)
         self.assertEqual(judged(changed([(('market','volume24hUsd'),'1')]))['safe'],True)
+
+
+class PolicyV2Tests(unittest.TestCase):
+    """The owner's choice of 28/09: the highest APR today, above US$ 1M of 24 h volume and
+    US$ 100k of liquidity; every safety rule stays, no other market rule applies."""
+    def judged(self,candidate,*,previous=None,relaxed=False):
+        return evaluate(candidate,V2,now=NOW,previous={} if previous is None else previous,relaxed=relaxed)
+
+    def test_the_shipped_policy_is_the_owner_s(self):
+        thresholds=V2['thresholds']
+        self.assertEqual((V2['rankBy'],V2['persistence'],V2['fill']),('fresh',False,['fallback']))
+        self.assertEqual((thresholds['minVolume24hUsd'],thresholds['minTvlUsd']),('1000000','100000'))
+        self.assertEqual({name for name,value in thresholds.items() if value is None},
+                         set(OPTIONAL_DECIMALS+OPTIONAL_INTEGERS))
+        self.assertEqual(V2['hysteresis'],{'incumbentFloorFactor':'1','challengerMargin':'1',
+                                           'maxRankedSwapsPerDay':V2['size']})
+        self.assertTrue(V2['rejectUpgradeableTokens'])
+        self.assertEqual({key:value for key,value in V2.items() if key not in ('rankBy','persistence','fill',
+                                                                               'thresholds','hysteresis')},
+                         {key:value for key,value in POLICY.items() if key not in ('rankBy','persistence','fill',
+                                                                                   'thresholds','hysteresis')})
+
+    def test_a_null_threshold_turns_its_rule_off(self):
+        # Each change fails exactly its rule under v1 and none under v2.
+        cases=[
+            ('reference_depth_below_floor',[(('depth','usd'),'9999.99')]),
+            ('reference_depth_unmeasurable',[(('depth',),{'status':'unmeasurable','reason':'too_many_ticks'})]),
+            ('apr_above_ceiling',[(('estimate','feeAprEstimate24hPercent'),'1000.01')]),
+            ('turnover_above_ceiling',[(('market','volume24hUsd'),'50000001'),(('listing','volume6hUsd'),'6000000')]),
+            ('pool_too_young',[(('age','createdAt'),NOW-72*3600+1)]),
+            ('age_unknown',[(('age',),{'createdAt':None})]),
+            ('age_unknown',[(('age',),KeyError)]),
+            ('activity_below_floor',[(('listing','transactions24h','buyers'),119)]),
+            ('activity_below_floor',[(('listing','transactions24h','sells'),199)]),
+            ('activity_below_floor',[(('listing','transactions24h'),None)]),
+            ('volume_faded',[(('listing','volume6hUsd'),'99999.99')]),
+            ('volume_faded',[(('listing','volume6hUsd'),None)]),
+            ('price_move_outlier',[(('listing','priceChange24hPercent'),'-300.01')]),
+            ('provider_price_disagreement',[(('providerPriceDeviation',),'0.0501')]),
+        ]
+        for reason,changes in cases:
+            with self.subTest(reason=reason,changes=changes):
+                self.assertEqual(judged(changed(changes))['reasons'],[reason])
+                result=self.judged(changed(changes))
+                self.assertEqual(result['reasons'],[])
+                self.assertTrue(result['eligible'])
+        # Every one of them at once.
+        everything=changed([(('depth',),{'status':'unmeasurable','reason':'too_many_ticks'}),
+                            (('estimate','feeAprEstimate24hPercent'),'5000'),(('market','volume24hUsd'),'50000001'),
+                            (('listing','volume6hUsd'),None),(('age',),{'createdAt':None}),
+                            (('listing','transactions24h'),None),(('listing','priceChange24hPercent'),'-900'),
+                            (('providerPriceDeviation',),'0.5')])
+        self.assertEqual(len(judged(everything)['reasons']),8)
+        self.assertEqual(self.judged(everything)['reasons'],[])
+        # Without a previous evaluation, v1 waits a day; v2 does not.
+        self.assertEqual(judged(good(),previous={})['reasons'],['not_persistent'])
+        self.assertTrue(self.judged(good(),previous={})['eligible'])
+
+    def test_each_activity_floor_is_off_on_its_own(self):
+        for off,passes,fails in (('minTraders24h',(('buyers',119),),(('sells',199),)),
+                                 ('minSwaps24h',(('sells',199),),(('buyers',119),))):
+            policy=copy.deepcopy(POLICY);policy['thresholds'][off]=None
+            for field,value in passes:
+                with self.subTest(off=off,field=field):
+                    candidate=changed([(('listing','transactions24h',field),value)])
+                    self.assertEqual(evaluate(candidate,policy,now=NOW,previous={POOL:{'eligibleExceptPersistence':True,
+                                                                                       'freshApr':'120'}})['reasons'],[])
+            for field,value in fails:
+                with self.subTest(off=off,field=field):
+                    candidate=changed([(('listing','transactions24h',field),value)])
+                    self.assertEqual(evaluate(candidate,policy,now=NOW,previous={POOL:{'eligibleExceptPersistence':True,
+                                                                                       'freshApr':'120'}})['reasons'],
+                                     ['activity_below_floor'])
+
+    def test_the_two_floors_stay_even_for_incumbents(self):
+        for path,floor in ((('market','volume24hUsd'),'1000000'),(('market','reportedLiquidityUsd'),'100000')):
+            reason='volume_below_floor' if path[1]=='volume24hUsd' else 'tvl_below_floor'
+            for relaxed in (False,True):
+                with self.subTest(path=path,relaxed=relaxed):
+                    self.assertTrue(self.judged(changed([(path,floor)]),relaxed=relaxed)['eligible'])
+                    below=str(Decimal(floor)-Decimal('0.01'))
+                    self.assertEqual(self.judged(changed([(path,below)]),relaxed=relaxed)['reasons'],[reason])
+                    self.assertEqual(self.judged(changed([(path,None)]),relaxed=relaxed)['reasons'],[reason])
+
+    def test_every_safety_rule_stays(self):
+        key=('chain','pool','poolKey')
+        for reason,changes in (('hooked_pool_unsupported',[(key+('hooks',),'0x'+'22'*20)]),
+                               ('dynamic_fee_unsupported',[(key+('fee_pips',),0x800000)]),
+                               ('token_upgradeable_unreviewed',[(('token','proxy'),'eip1967')]),
+                               ('token_protected_unreviewed',[(('token','symbol'),'TSLA')]),
+                               ('estimate_not_available',[(('estimate',),None)]),
+                               ('no_active_liquidity',[(('chain','liquidity'),0)])):
+            with self.subTest(reason=reason):
+                result=self.judged(changed(changes))
+                self.assertIn(reason,result['reasons'])
+                self.assertFalse(result['eligible'])
+
+    def test_today_s_apr_ranks_and_the_previous_one_is_only_reported(self):
+        for previous,prior in (({POOL:{'eligibleExceptPersistence':True,'freshApr':'120'}},'120'),
+                               ({POOL:{'eligibleExceptPersistence':False,'freshApr':'900'}},'900'),({},None)):
+            with self.subTest(previous=previous):
+                result=self.judged(good(),previous=previous)
+                self.assertEqual((result['freshApr'],result['prevApr'],result['rankApr'],result['eligible']),
+                                 ('150.5',prior,'150.5',True))
+        self.assertEqual(judged(good())['rankApr'],'120')
+
+    def test_a_policy_v2_cannot_state_is_refused(self):
+        def refused(change):
+            policy=copy.deepcopy(V2);change(policy)
+            with self.assertRaisesRegex(DataError,'invalid_featured_policy'):check_policy(policy)
+        def accepted(change):
+            policy=copy.deepcopy(V2);change(policy);check_policy(policy)
+        # Ranking by two days needs every eligible pool to have been evaluated the day before.
+        refused(lambda p:p.update(rankBy='min_fresh_and_previous'))
+        accepted(lambda p:p.update(rankBy='min_fresh_and_previous',persistence=True))
+        accepted(lambda p:p.update(persistence=True))
+        for rank_by in ('volume','min',None):
+            with self.subTest(rank_by=rank_by):
+                refused(lambda p:p.update(rankBy=rank_by,persistence=True))
+        for name,value in (('rankBy','volume'),('rankBy',None),('persistence',1),('persistence','false'),
+                           ('persistence',None),('fill','fallback'),('fill',''),('fill',{'fallback':1}),
+                           ('fill',['fallback','fallback']),('fill',['pinned']),('fill',['fallback',None]),
+                           ('fill',[['carried']])):
+            with self.subTest(name=name,value=value):
+                refused(lambda p:p.update({name:value}))
+        for fill in ([],['carried'],['fallback'],['carried','fallback'],['fallback','carried']):
+            with self.subTest(fill=fill):
+                accepted(lambda p:p.update(fill=fill))
+        for name in ('rankBy','persistence','fill'):
+            with self.subTest(missing=name):
+                refused(lambda p:p.pop(name))
+        # The floors are required, and every threshold is what the list will state (a decimal string).
+        for name,value in (('minVolume24hUsd',None),('minTvlUsd',None),('minTvlUsd',100000),('minTvlUsd','1e5'),
+                           ('minTvlUsd','-1'),('minTvlUsd',' 100000'),('minTvlUsd','100000.'),('minTvlUsd',''),
+                           ('minVolume24hUsd','1'*225),('maxAprPercent','x'),('maxAprPercent',1000),
+                           ('maxTurnover24h',True),('minPoolAgeHours','72'),('minPoolAgeHours',True),
+                           ('minPoolAgeHours',-1),('minPoolAgeHours',72.0),('minSwaps24h','500')):
+            with self.subTest(name=name,value=value):
+                refused(lambda p:p['thresholds'].update({name:value}))
+        for name in OPTIONAL_DECIMALS+OPTIONAL_INTEGERS+('minVolume24hUsd','minTvlUsd'):
+            with self.subTest(missing=name):
+                refused(lambda p:p['thresholds'].pop(name))
+        accepted(lambda p:p['thresholds'].update(minTvlUsd='0',minVolume24hUsd='0.5',minPoolAgeHours=0,
+                                                 maxAprPercent='1'*224))
 
 
 class TokenRuleTests(unittest.TestCase):
@@ -447,6 +596,43 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(self.names(result),[(1,'R1','ranked'),(2,'R2','ranked'),(3,'R3','ranked'),
                                              (4,'C1','carried'),(5,'F1','fallback')])
         self.assertEqual(result['status'],'current')
+
+    def test_fill_names_what_completes_a_short_list_and_in_which_order(self):
+        ranked=[ev(pid('R1'),tok('R1'),300),ev(pid('R2'),tok('R2'),200),ev(pid('R3'),tok('R3'),100)]
+        carried=ev(pid('C1'),tok('C1'),5,eligible=False)
+        fallback=ev(pid('F1'),tok('F1'),5,eligible=False)
+        clash=ev(pid('F2'),tok('R1'),5,eligible=False)
+        for fill,rest in (([],[]),(['fallback'],[('F1','fallback')]),(['carried'],[('C1','carried')]),
+                          (['fallback','carried'],[('F1','fallback'),('C1','carried')]),
+                          (['carried','fallback'],[('C1','carried'),('F1','fallback')])):
+            with self.subTest(fill=fill):
+                result=compose(ranked+[carried,fallback,clash],{**POLICY,'fill':fill},previous_list=[{'poolId':pid('C1')}],
+                               embedded=[pid('F2'),pid('F1')])
+                self.assertEqual(self.names(result),[(1,'R1','ranked'),(2,'R2','ranked'),(3,'R3','ranked')]
+                                 +[(slot,name,source) for slot,(name,source) in enumerate(rest,start=4)])
+        # Only a list's free slots are completed.
+        full=[ev(pid(f'N{n}'),tok(f'N{n}'),100+n) for n in range(6)]
+        result=compose(full+[fallback],{**POLICY,'fill':['fallback']},previous_list=[],embedded=[pid('F1')])
+        self.assertEqual([entry['source'] for entry in result['pools']],['ranked']*6)
+
+    def test_v2_lists_the_best_today_whatever_was_listed_yesterday(self):
+        incumbents=[ev(pid(f'I{n}'),tok(f'I{n}'),100+n) for n in range(6)]
+        challengers=[ev(pid(f'N{n}'),tok(f'N{n}'),1000+n) for n in range(6)]
+        result=compose(incumbents+challengers,V2,previous_list=[{'poolId':i['poolId']} for i in incumbents])
+        self.assertEqual([NAMES[entry['poolId']] for entry in result['pools']],['N5','N4','N3','N2','N1','N0'])
+        self.assertEqual(result['rankedSwaps'],6)
+        # A tie keeps the incumbent; anything above the weakest replaces it.
+        for rank,swaps in (('100',0),('100.0000000001',1)):
+            with self.subTest(rank=rank):
+                result=compose(incumbents+[ev(pid('NEW'),tok('NEW'),rank)],V2,
+                               previous_list=[{'poolId':i['poolId']} for i in incumbents])
+                self.assertEqual(result['rankedSwaps'],swaps)
+        # The embedded list completes it; yesterday's pools that fell out do not.
+        ranked=[ev(pid('R1'),tok('R1'),300),ev(pid('R2'),tok('R2'),200),ev(pid('R3'),tok('R3'),100)]
+        result=compose(ranked+[ev(pid('C1'),tok('C1'),5,eligible=False),ev(pid('F1'),tok('F1'),5,eligible=False)],V2,
+                       previous_list=[{'poolId':pid('C1')}],embedded=[pid('F1')])
+        self.assertEqual(self.names(result),[(1,'R1','ranked'),(2,'R2','ranked'),(3,'R3','ranked'),
+                                             (4,'F1','fallback')])
 
     def test_fewer_than_three_ranked_or_pinned_keeps_yesterday_s_list(self):
         ranked=[ev(pid('R1'),tok('R1'),300),ev(pid('R2'),tok('R2'),200)]

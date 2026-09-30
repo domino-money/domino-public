@@ -76,3 +76,38 @@ test('inputs that make no plan are refused as null, never as a zero or a throw',
   assert.equal(mintPlanFor({ ...base, slippageBps: 501 }), null, 'above it');
   assert.equal(mintPlanFor({ ...base, slippageBps: 50.5 }), null, 'whole basis points only');
 });
+
+// Added 2026-09-28 (one-sided). The study's edge case: a range whose upper edge is exactly today's price holds only
+// currency1 (v4 takes currency1 alone at or above the upper edge), and Review planned it with no swap. The mint was
+// sized for a band reaching into the range, found currency0 missing, and Create position swapped about 1% of the
+// deposit for it, a swap Review never showed. A deposit of one token alone now keeps its band on that side of the range.
+test('one token alone for a range that takes it alone: the band stops at the range’s edge, the edge touching the price included', () => {
+  const MANY = 500_000n * 10n ** 18n;
+  // The study's pool: tick 338460, and the sell range whose upper edge is exactly that price.
+  const at = sqrtPriceAtTick(338460);
+  const edge = mintPlanFor({ sqrtPriceX96: String(at), tickLower: 333360, tickUpper: 338460, balance0: 0n, balance1: MANY, slippageBps: 50 });
+  assert.ok(edge, 'the deposit alone makes the position: nothing to swap');
+  assert.equal(edge.minSqrtPriceX96, at, 'never below the upper edge, where the range would need currency0 too');
+  assert.equal(edge.maxSqrtPriceX96, (at * 20050n + 19999n) / 20000n);
+  assert.equal(edge.maxAmount0, 0n);
+  assert.equal(edge.liquidity, (liquidityForAmount1(sqrtPriceAtTick(333360), at, MANY) * 9990n) / 10000n);
+  // Wherever in its band it lands, the mint needs no currency0 and fits the deposit.
+  for (const sqrt of [edge.minSqrtPriceX96, edge.maxSqrtPriceX96]) {
+    const [need0, need1] = takes(sqrt, 333360, 338460, edge.liquidity);
+    assert.ok(need0 === 0n && need1 + 1n <= MANY, `sqrt ${sqrt}: ${need0}/${need1}`);
+  }
+  // The mirror: currency0 alone for a range whose lower edge is exactly today's price.
+  const low = mintPlanFor({ sqrtPriceX96: String(at), tickLower: 338460, tickUpper: 342060, balance0: 1_000_000_000n, balance1: 0n, slippageBps: 50 });
+  assert.ok(low);
+  assert.equal(low.maxSqrtPriceX96, at, 'never above the lower edge');
+  assert.equal(low.minSqrtPriceX96, (at * 19950n) / 20000n);
+  // Farther out the band is the plain one: nothing to clamp.
+  const far = mintPlanFor({ sqrtPriceX96: String(sqrtPriceAtTick(-1200)), tickLower: -600, tickUpper: 600, balance0: 1_000_000n, balance1: 0n, slippageBps: 50 });
+  assert.equal(far.maxSqrtPriceX96, (sqrtPriceAtTick(-1200) * 20050n + 19999n) / 20000n);
+  // Once the price is inside the range, one token alone makes no position: the range needs both.
+  assert.equal(mintPlanFor({ sqrtPriceX96: String(sqrtPriceAtTick(338400)), tickLower: 333360, tickUpper: 338460, balance0: 0n, balance1: MANY, slippageBps: 50 }), null);
+  assert.equal(mintPlanFor({ sqrtPriceX96: String(sqrtPriceAtTick(338520)), tickLower: 338460, tickUpper: 342060, balance0: 1_000_000_000n, balance1: 0n, slippageBps: 50 }), null);
+  // Both tokens: the plain band, as before.
+  const both = mintPlanFor({ sqrtPriceX96: String(at), tickLower: 333360, tickUpper: 342060, balance0: 1_000_000_000n, balance1: MANY, slippageBps: 50 });
+  assert.equal(both.minSqrtPriceX96, (at * 19950n) / 20000n);
+});

@@ -5,7 +5,20 @@
  * 2026-09-24: connecting the wallet shows its positions, nothing is typed,
  * nothing is kept in the browser, and the read service is not needed).
  *
- *   1. eth_blockNumber: the head every other answer is pinned to.
+ *   1. The head every other answer is pinned to, and the owner's
+ *      DominoSetupV1.ownerNonce at it: 2026-09-28 (speed wave B, item 23), one
+ *      aggregate3 at 'latest' of ArbSys.arbBlockNumber and ownerNonce, in
+ *      place of an eth_blockNumber (and of the nonce in the first read). The
+ *      head is ArbSys's, never Multicall3.getBlockNumber: on Robinhood Chain
+ *      (Arbitrum Nitro) that is block.number, the parent chain's block
+ *      (26,079,411 when eth_blockNumber and ArbSys said 75,212,459; see
+ *      contracts/src/DominoL2Block.sol), and a head below DominoSetupV1's
+ *      deployment block is refused as unread. A
+ *      wallet whose nonce is 0 never opened a setup operation, so it has no
+ *      SetupMinted log and no held deposit, and its empty answer is that one
+ *      call (it paid the whole scan before, three calls in a row). The runtime
+ *      is told the head (OwnedDeps.head: the page's router routes its
+ *      fallbacks' numbered reads by it, src/lib/chain/failover.ts).
  *   2. eth_getLogs of DominoSetupV1's SetupMinted events for the owner (topic
  *      2), newest first, from the head back to the contract's deployment
  *      block. A range the RPC refuses as too large or too slow is split in
@@ -19,8 +32,9 @@
  *      answer, OwnedDeps.wideLogs), the same ids come from DominoSetupV1's own
  *      state instead (operationIds): no log is read at all.
  *   3. One Multicall3 aggregate3 at the head (per IDS_PER_CALL ids): per id
- *      ownerOf, getPositionLiquidity and getPoolAndPositionInfo, and the
- *      owner's DominoSetupV1.ownerNonce. An id burned (ownerOf reverts) or
+ *      ownerOf, getPositionLiquidity and getPoolAndPositionInfo (2026-09-28,
+ *      item 17, the page's scan: and its PositionManager subscriber, whose
+ *      vault's reads join the second aggregate, automation.ts). An id burned (ownerOf reverts) or
  *      sent away since is dropped; held with liquidity is open, without it
  *      closed. The packed PositionInfo gives the range and the pool id's top
  *      25 bytes, which must match the pool key read with it.
@@ -43,6 +57,7 @@
 import {
   ChainError,
   HASH,
+  LOG_BLOCKS_ONE,
   MAX_LOG_BYTES,
   MIN_SPLIT_BLOCKS,
   POSITION_MANAGER,
@@ -71,7 +86,15 @@ import {
   type SubCall,
 } from './owned'
 import { SELECTOR as STATE_SELECTOR, STATE_VIEW, decodeSymbol, poolIdOf } from './fees'
+import { automationsOf, subscriberCall, subscriberOf, vaultCalls, vaultsOf } from './automation'
+import type { AutomationAnswer } from '../../src/lib/automationState'
 import type { WalletAnswer, WalletDeposit, WalletPosition, WalletToken } from '../../src/lib/walletPositions'
+
+/**
+ * Arbitrum's ArbSys precompile, whose arbBlockNumber() is the chain's own (L2) block, the one eth_blockNumber names
+ * (the scan's head, item 23). Kept here, not in owned.ts: the page's bundle has no bytes to spare for another export.
+ */
+const ARB_SYS = '0x0000000000000000000000000000000000000064'
 
 /** The most positions one answer lists: the most recently minted ones. */
 export const MAX_POSITIONS = 100
@@ -179,11 +202,15 @@ function mintedId(log: unknown, ownerTopic: string): bigint | null {
  * MAX_POSITIONS. Ranges are asked newest first; one the RPC refuses as too
  * large or too slow is split in two, down to MIN_SPLIT_BLOCKS, its newer half
  * asked first. `capped` says the walk stopped before the deployment block.
+ * 2026-09-28 (owned.ts LOG_BLOCKS_ONE, merged with speed wave B's scan): a walk
+ * wider than the RPC serves for one filter at all is asked in windows of that
+ * width, newest first, rather than refused first and halved.
  */
 export async function mintedIds(deps: OwnedDeps, budget: Budget, owner: string, head: number, known: MintedMemory | null = null): Promise<{ ids: bigint[]; capped: boolean }> {
   const ownerTopic = `0x${addressWord(owner)}`
   const start = known ? Math.max(SETUP_DEPLOY_BLOCK, known.block - REREAD_BLOCKS + 1) : SETUP_DEPLOY_BLOCK
-  const queue: [number, number][] = head >= start ? [[start, head]] : []
+  const queue: [number, number][] = []
+  for (let top = head; top >= start; top -= LOG_BLOCKS_ONE) queue.push([Math.max(start, top - LOG_BLOCKS_ONE + 1), top])
   const ids: bigint[] = []
   const seen = new Set<bigint>()
   while (queue.length > 0) {
@@ -236,9 +263,8 @@ export const MINTED_OPERATIONS = 2 * 150
  * the owner's operations whose tokenId is not zero are exactly the ids its SetupMinted logs name. An operation that is
  * not the owner's (a reply that cannot be trusted) fails the answer, as a log that is not the one asked for does.
  */
-export async function operationIds(deps: OwnedDeps, budget: Budget, owner: string, head: number): Promise<{ ids: bigint[]; capped: boolean }> {
-  const [asked] = await aggregate(deps, budget, [{ target: SETUP_CONTRACT, data: SELECTOR.ownerNonce + addressWord(owner) }], head)
-  const nonce = resultWord(asked)
+export async function operationIds(deps: OwnedDeps, budget: Budget, owner: string, head: number, known: bigint | null = null): Promise<{ ids: bigint[]; capped: boolean }> {
+  const nonce = known ?? resultWord((await aggregate(deps, budget, [{ target: SETUP_CONTRACT, data: SELECTOR.ownerNonce + addressWord(owner) }], head))[0])
   if (nonce === null) throw new ChainError('fatal', 'nonce_unread')
   const oldest = nonce > BigInt(MINTED_OPERATIONS) ? nonce - BigInt(MINTED_OPERATIONS) : 0n
   const operations: string[] = []
@@ -257,10 +283,23 @@ export async function operationIds(deps: OwnedDeps, budget: Budget, owner: strin
 }
 
 /** Several aggregate3 calls of at most `per` sub-calls each, at one block; their results in order. */
-async function aggregateAll(deps: OwnedDeps, budget: Budget, calls: SubCall[], block: number, per = CALLS_PER_AGGREGATE) {
+async function aggregateAll(deps: OwnedDeps, budget: Budget, calls: SubCall[], block: number | 'latest', per = CALLS_PER_AGGREGATE) {
   const out: { success: boolean; data: string }[] = []
   for (let i = 0; i < calls.length; i += per) out.push(...(await aggregate(deps, budget, calls.slice(i, i + per), block)))
   return out
+}
+
+/** Each ERC-20's symbol() and decimals() (native ETH is 'ETH', 18): a page's Receipts, in one read (2026-09-28, speed wave B, item 25). */
+export async function tokenDetails(deps: OwnedDeps, addresses: readonly string[]): Promise<WalletToken[]> {
+  const results = await aggregateAll(deps, { calls: 0, started: deps.now(), logBytes: 0 }, addresses.flatMap((address) => [{ target: address, data: STATE_SELECTOR.symbol }, { target: address, data: STATE_SELECTOR.decimals }]), 'latest')
+  return addresses.map((address, i) => tokenOf(address, results[2 * i], results[2 * i + 1]))
+}
+
+/** A token from its symbol() and decimals() answers; native ETH is 'ETH', 18. */
+function tokenOf(address: string, symbolCall: { success: boolean; data: string }, decimalsCall: { success: boolean; data: string }): WalletToken {
+  if (address === ZERO) return { address, symbol: 'ETH', decimals: 18 }
+  const decimals = resultWord(decimalsCall)
+  return { address, symbol: symbolCall.success ? decodeSymbol(symbolCall.data) : null, decimals: decimals !== null && decimals <= 255n ? Number(decimals) : null }
 }
 
 interface PoolKey {
@@ -283,40 +322,47 @@ interface Held {
 /**
  * The positions and held deposits of one owner (a lowercase 0x address), at the head. `earlier`: what an earlier scan of
  * this owner found (the page's own, 2026-09-25), so only the logs since are read; `minted` is what the next may reuse,
- * null when this one stopped at a cap.
+ * null when this one stopped at a cap. `automation` (the page's, 2026-09-28, item 17): each listed position's feature,
+ * read in the same calls (automation.ts), as `automation`.
  */
-export async function scanWallet(deps: OwnedDeps, owner: string, earlier: MintedMemory | null = null): Promise<OwnerScan & { body: WalletAnswer; minted: MintedMemory | null }> {
+export async function scanWallet(deps: OwnedDeps, owner: string, earlier: MintedMemory | null = null, automation = false): Promise<OwnerScan & { body: WalletAnswer; minted: MintedMemory | null; automation?: AutomationAnswer }> {
   const budget: Budget = { calls: 0, started: deps.now(), logBytes: 0 }
-  const head = quantity(await paced(deps, budget, 'eth_blockNumber', []))
+  // The head (ArbSys's L2 block, never Multicall3's parent-chain block.number) and the owner's setup nonce at it (item
+  // 23 above): one aggregate3 at the RPC's own head. A head before DominoSetupV1 existed is not one.
+  const [top, asked] = await aggregate(deps, budget, [{ target: ARB_SYS, data: SELECTOR.arbBlockNumber }, { target: SETUP_CONTRACT, data: SELECTOR.ownerNonce + addressWord(owner) }], 'latest')
+  const tip = resultWord(top)
+  const nonce = resultWord(asked)
+  const head = tip === null ? 0 : quantity(hex(tip))
+  if (nonce === null || head < SETUP_DEPLOY_BLOCK) throw new ChainError('fatal', 'nonce_unread')
+  deps.head?.(head)
+  // No setup operation ever: nothing minted, nothing held.
+  if (nonce === 0n) return { body: { owner, block: head, positions: [], deposits: [] }, capped: false, minted: { block: head, ids: [] }, automation: automation ? { block: head, positions: [] } : undefined }
   // A node behind the earlier scan's block reads the logs from where it stands; the earlier ids are kept. 2026-09-28: a
   // runtime that cannot read wide log ranges now (the page's, on the chain's public fallbacks) reads the ids from
   // DominoSetupV1's state instead, whatever an earlier scan found: every one of them, at this head.
   const { ids, capped } =
     deps.wideLogs?.() === false
-      ? await operationIds(deps, budget, owner, head)
+      ? await operationIds(deps, budget, owner, head, nonce)
       : await mintedIds(deps, budget, owner, head, earlier && earlier.block <= head ? earlier : earlier ? { block: head, ids: earlier.ids } : null)
 
-  // First read: which ids the owner still holds, their pool keys, ranges and liquidity, and the owner's setup nonce.
+  // First read: which ids the owner still holds, their pool keys, ranges and liquidity (and their subscribers).
   const held: Held[] = []
-  let nonce: bigint | null = null
-  const chunks = Math.max(1, Math.ceil(ids.length / IDS_PER_CALL))
-  for (let chunk = 0; chunk < chunks; chunk++) {
+  const subscribers: string[] = []
+  const per = automation ? 4 : 3
+  for (let chunk = 0; chunk * IDS_PER_CALL < ids.length; chunk++) {
     const part = ids.slice(chunk * IDS_PER_CALL, (chunk + 1) * IDS_PER_CALL)
-    const calls: SubCall[] = chunk === 0 ? [{ target: SETUP_CONTRACT, data: SELECTOR.ownerNonce + addressWord(owner) }] : []
+    const calls: SubCall[] = []
     for (const id of part) {
       calls.push({ target: POSITION_MANAGER, data: SELECTOR.ownerOf + word(id) })
       calls.push({ target: POSITION_MANAGER, data: SELECTOR.getPositionLiquidity + word(id) })
       calls.push({ target: POSITION_MANAGER, data: SELECTOR.getPoolAndPositionInfo + word(id) })
+      if (automation) calls.push(subscriberCall(id))
     }
     const results = await aggregate(deps, budget, calls, head)
     let at = 0
-    if (chunk === 0) {
-      nonce = resultWord(results[0])
-      at = 1
-    }
     for (const id of part) {
-      const [holder, liquidityCall, infoCall] = [results[at], results[at + 1], results[at + 2]]
-      at += 3
+      const [holder, liquidityCall, infoCall, subscribed] = [results[at], results[at + 1], results[at + 2], results[at + 3]]
+      at += per
       // Burned (ownerOf reverts): not listed.
       if (!holder.success) continue
       const holderWord = resultWord(holder)
@@ -333,12 +379,13 @@ export async function scanWallet(deps: OwnedDeps, owner: string, earlier: Minted
       const tickUpper = Number(BigInt.asIntN(24, w[5] >> 32n))
       if (tickLower >= tickUpper || tickLower < MIN_TICK || tickUpper > MAX_TICK) throw new ChainError('fatal', 'invalid_range')
       held.push({ id, key, poolId, tickLower, tickUpper, liquidity: bounded(words(liquidityCall.data, 1)[0], 128n) })
+      if (automation) subscribers.push(subscriberOf(subscribed))
     }
   }
 
   // Second read, at the same block: the pools' prices, each position's fee growth, the tokens, the held deposits.
   const operations: string[] = []
-  if (nonce !== null && nonce > 0n) for (let n = nonce - 1n; n >= 0n && n >= nonce - BigInt(RECENT_OPERATIONS); n--) operations.push(operationId(owner, n))
+  for (let n = nonce - 1n; n >= 0n && n >= nonce - BigInt(RECENT_OPERATIONS); n--) operations.push(operationId(owner, n))
   const pools = [...new Set(held.map((p) => p.poolId))]
   const tokens = [...new Set(held.flatMap((p) => [p.key.currency0, p.key.currency1]))].filter((address) => address !== ZERO)
   const tick = (value: number) => word(BigInt(value))
@@ -357,6 +404,8 @@ export async function scanWallet(deps: OwnedDeps, owner: string, earlier: Minted
       { target: SETUP_CONTRACT, data: SELECTOR.recoveryStarted + id.slice(2) },
     ]),
   ]
+  const vaultsAt = second.length
+  second.push(...vaultCalls(vaultsOf(subscribers)))
   const results = second.length > 0 ? await aggregateAll(deps, budget, second, head) : []
 
   const slot0 = new Map<string, { sqrtPriceX96: bigint; tick: number } | null>()
@@ -368,11 +417,7 @@ export async function scanWallet(deps: OwnedDeps, owner: string, earlier: Minted
   })
   const known = new Map<string, WalletToken>()
   const readTokens = (addresses: readonly string[], from: readonly { success: boolean; data: string }[], at: number) =>
-    addresses.forEach((address, i) => {
-      const [symbolCall, decimalsCall] = [from[at + 2 * i], from[at + 2 * i + 1]]
-      const decimals = resultWord(decimalsCall)
-      known.set(address, { address, symbol: symbolCall.success ? decodeSymbol(symbolCall.data) : null, decimals: decimals !== null && decimals <= 255n ? Number(decimals) : null })
-    })
+    addresses.forEach((address, i) => known.set(address, tokenOf(address, from[at + 2 * i], from[at + 2 * i + 1])))
   const tokensAt = pools.length + held.length * 2
   readTokens(tokens, results, tokensAt)
 
@@ -444,7 +489,12 @@ export async function scanWallet(deps: OwnedDeps, owner: string, earlier: Minted
 
   // Open first, then closed; the newest NFT first within each.
   positions.sort((a, b) => (a.status === b.status ? (BigInt(a.tokenId) > BigInt(b.tokenId) ? -1 : 1) : a.status === 'open' ? -1 : 1))
-  return { body: { owner, block: head, positions, deposits }, capped, minted: capped ? null : { block: head, ids } }
+  return {
+    body: { owner, block: head, positions, deposits },
+    capped,
+    minted: capped ? null : { block: head, ids },
+    automation: automation ? { block: head, positions: automationsOf(held.map((p) => p.id), subscribers, results.slice(vaultsAt)) } : undefined,
+  }
 }
 
 /** POST /api/owned/v2/positions with {"owner": "0x…"} (and optionally "fresh": true): the owner's answer, as JSON. */

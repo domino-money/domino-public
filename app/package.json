@@ -33,7 +33,7 @@
     "build:consumer-test": "vite build --mode consumer-test",
     "test:consumer": "npm run build:consumer-test && node --test --test-force-exit tests/consumer.bundle.test.mjs tests/consumer.browser.test.mjs",
     "check:producer-fixtures": "node scripts/check-producer-fixtures.mjs",
-    "test:finance": "npm run build:wallet-test && node --test --test-force-exit tests/finance.browser.test.mjs tests/position-actions.browser.test.mjs tests/charts.browser.test.mjs"
+    "test:finance": "npm run build:wallet-test && node --test --test-force-exit tests/finance.browser.test.mjs tests/position-actions.browser.test.mjs tests/charts.browser.test.mjs tests/fluidity.browser.test.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",

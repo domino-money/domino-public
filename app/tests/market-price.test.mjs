@@ -62,7 +62,10 @@ test('a usable price is one of a token and so much of the other, at the pool’s
 // Added 2026-09-27 (r6/marketsdata): which token is the one. In USDG, the app's dollar, wherever the pool holds it and
 // that reads as 0.01 or more; otherwise the way round that reads as 1 or more. The main pools, at ticks near their
 // prices of 2026-09-27.
-test('the price reads the way a person reads one: in USDG when the pool holds it, otherwise the way round that reads as 1 or more', () => {
+// Changed on purpose 2026-09-28 (one-sided, the owner: a falling token must read and draw as falling on every screen):
+// the app's one rule (lib/read/orientation.ts), in USDG wherever the pool holds it whatever the price, then in ETH,
+// otherwise in the pool's own order, so no pool flips from one reading to the other when its price crosses a figure.
+test('the price reads the way a person reads one: in USDG when the pool holds it, then in ETH, otherwise in the pool’s own order', () => {
   const CBBTC = '0xcec185eb182c47d1ba1efc84e6959e18cd620be4';
   const MARLIN = '0xab35d04e1ee39c789c4a65d522417b3c7f2e4723';
   const PONS = '0x39dbed3a2bd333467115de45665cc57f813c4571';
@@ -78,10 +81,14 @@ test('the price reads the way a person reads one: in USDG when the pool holds it
   assert.equal(said(-67381, [USDG, 'USDG', 6], [CBBTC, 'cbBTC', 8]), '1 cbBTC = 84,367 USDG');
   assert.equal(said(-281877, [PONS, 'PONS', 18], [USDG, 'USDG', 6]), '1 PONS = 0.5739 USDG');
   assert.equal(said(4, [USDG, 'USDG', 6], [U, 'U', 6]), '1 U = 0.9996 USDG');
-  // In USDG it would read 0.000129: the other way round.
-  assert.equal(said(365880, [USDG, 'USDG', 6], [MARLIN, 'MARLIN', 18]), '1 USDG = 7,747.69 MARLIN');
-  // No USDG: the way round that reads as 1 or more.
-  assert.equal(said(-13864, [A, 'AAA', 18], [B, 'BBB', 18]), '1 BBB = 4.00015 AAA');
+  // A token worth less than a cent is still priced in USDG.
+  assert.equal(said(365880, [USDG, 'USDG', 6], [MARLIN, 'MARLIN', 18]), '1 MARLIN = 0.0001291 USDG');
+  // ETH next: a token and ETH read in ETH, ETH being the pool's first currency; WETH the same.
+  const ETH = '0x0000000000000000000000000000000000000000';
+  assert.equal(said(69082, [ETH, 'ETH', 18], [A, 'MANY', 18]), '1 MANY = 0.0009999 ETH');
+  assert.equal(said(69082, [WETH, 'WETH', 18], [B, 'MANY', 18]), '1 MANY = 0.0009999 WETH');
+  // Two tokens of the same rank: the pool's own order, whichever reads as more.
+  assert.equal(said(-13864, [A, 'AAA', 18], [B, 'BBB', 18]), '1 AAA = 0.25 BBB');
   assert.equal(said(13864, [A, 'AAA', 18], [B, 'BBB', 18]), '1 AAA = 4.00015 BBB');
   assert.equal(plainBase({ ...row(), poolState: undefined }), null, 'no price, no side');
 });
@@ -90,6 +97,10 @@ test('an amount is whole from 10,000, six significant digits from 1 and four bel
   assert.deepEqual([84367.14, 10_000, 9_999.994, 2492.184, 1.0004, 1, 0.573917, 0.0123456].map(plainAmount), ['84,367', '10,000', '9,999.99', '2,492.18', '1.0004', '1', '0.5739', '0.01235']);
   assert.equal(plainAmount(999_999_999_999_999), '999,999,999,999,999');
   assert.equal(plainAmount(1e15), null);
+  // Added 2026-09-28 (one-sided): under 10^−15, the ceiling's mirror, it is not written either.
+  assert.equal(plainAmount(1e-12), '0.000000000001');
+  assert.equal(plainAmount(1e-15), '0.000000000000001');
+  assert.equal(plainAmount(9.9e-16), null);
   assert.equal(plainAmount(0), null);
   assert.equal(plainAmount(Number.NaN), null);
 });
@@ -112,7 +123,8 @@ test('the projection carries the verified pool’s state, and the package fixtur
     currency1: data.pool.poolKey.currency1.toLowerCase(),
   });
   const price = marketPoolPrice(market, at(1000));
-  assert.deepEqual([price.state, price.text, price.quote.symbol, price.base.symbol, price.block], ['usable', '1,000,000,000,000', 'TOKEN', 'ETH', 700]);
+  // Changed on purpose 2026-09-28 (one-sided): the app prices a token in ETH, "1 TOKEN = 0.000000000001 ETH".
+  assert.deepEqual([price.state, price.text, price.quote.symbol, price.base.symbol, price.block], ['usable', '0.000000000001', 'ETH', 'TOKEN', 700]);
 });
 
 test('decimals that were not read make the price unavailable, never guessed', () => {

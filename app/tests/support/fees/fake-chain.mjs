@@ -19,6 +19,9 @@ export const multicallAbi = parseAbi([
   'struct Result { bool success; bytes returnData; }',
   'function aggregate3(Call3[] calls) payable returns (Result[] returnData)',
   'function getCurrentBlockTimestamp() view returns (uint256)',
+  // 2026-09-28 (speed wave B, item 23): the parent chain's block on Nitro, which the fakes answer so a scan that took its
+  // head from it fails (the scan asks ArbSys.arbBlockNumber).
+  'function getBlockNumber() view returns (uint256)',
 ]);
 export const positionManagerAbi = parseAbi([
   'struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }',

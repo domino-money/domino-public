@@ -2,7 +2,16 @@
 // hand in read-v4's pattern. The producer is backend/featured_contract.py: this
 // accepts exactly what its models accept, and fixtures/ holds both sides to it.
 // Closed shapes, no coercion, no defaults; any other input is refused, never thrown.
-export const CONTRACT_VERSION = '1.0.0-rc.1'
+//
+// rc.2 (featured-policy v2, rugged's handoff of 28/09/2026 §1): a list may rank by
+// today's APR, a market rule may be off (its threshold null), and a ranked pool may
+// have no previous-day APR or no measured depth. A list chosen under v1 is served
+// in rc.2 as it was recorded. rc.1 is still accepted, with exactly its own rules,
+// while the VM moves to rc.2 (§4, step 2); dropping it is step 5.
+const RC1 = '1.0.0-rc.1'
+export const CONTRACT_VERSION = '1.0.0-rc.2'
+/** Every version an answer may carry, in its body and its header: rc.1 during the transition, then rc.2. */
+export const CONTRACT_VERSIONS = Object.freeze([RC1, CONTRACT_VERSION])
 export const ENABLED_READS = Object.freeze(['featured-pools'])
 export const ROUTES = Object.freeze({'featured-pools': Object.freeze({schemaVersion: 1})})
 export { ERROR_STATUS_BY_CODE, validateError } from '../read-v1/runtime.mjs'
@@ -17,6 +26,9 @@ const AGE_SOURCES = ['catalogue_event', 'provider_pool_created_at', 'initialize_
 const WITHDRAW_REASONS = ['excluded_by_owner', 'pool_integration_unsupported', 'fixed_fee_mismatch',
   'invalid_protocol_fee', 'protocol_fee_directional_unsupported', 'token_code_changed', 'tvl_collapse',
   'price_fall', 'apr_or_turnover_above_ceiling', 'estimate_unavailable', 'volume_collapse']
+// backend/featured_contract.py RANK_BY: the lower of today's and the previous day's APR (v1), or today's (v2, rc.2 on).
+const RANK_BY_V1 = 'min_fresh_and_previous_day_feeAprEstimate24hPercent'
+const RANK_BY_TODAY = 'feeAprEstimate24hPercent'
 const LIMITATIONS = ['provider_reported_volume_and_tvl_unreconciled', 'provider_listed_universe_only',
   'no_wash_trading_certification', 'not_a_return_forecast_or_recommendation']
 // backend/featured_pools.py REASONS: the safety rules, then the market rules.
@@ -70,19 +82,21 @@ const token = value => exact(value, ['address', 'symbol', 'decimals']) && addres
 const poolKey = value => exact(value, ['currency0', 'currency1', 'fee_pips', 'tick_spacing', 'hooks', 'feeMode'])
   && address(value.currency0) && address(value.currency1) && integer(value.fee_pips, 0, 999_999)
   && integer(value.tick_spacing, 1, 32_767) && value.hooks === ZERO && value.feeMode === 'fixed'
-const rankInputs = value => exact(value, ['rankApr', 'freshApr', 'prevApr', 'volume24hUsd',
+// `rc2`: the answer is rc.2's, where a pool may have no previous-day APR or no measured depth (null).
+const rankInputs = (value, rc2) => exact(value, ['rankApr', 'freshApr', 'prevApr', 'volume24hUsd',
   'reportedLiquidityUsd', 'referenceDepthUsd', 'evaluatedAt'])
-  && apr(value.rankApr) && apr(value.freshApr) && apr(value.prevApr) && decimal(value.volume24hUsd)
-  && decimal(value.reportedLiquidityUsd) && decimal(value.referenceDepthUsd) && uint(value.evaluatedAt)
+  && apr(value.rankApr) && apr(value.freshApr) && (rc2 ? orNull(apr, value.prevApr) : apr(value.prevApr))
+  && decimal(value.volume24hUsd) && decimal(value.reportedLiquidityUsd)
+  && (rc2 ? orNull(decimal, value.referenceDepthUsd) : decimal(value.referenceDepthUsd)) && uint(value.evaluatedAt)
 
-function pool(value) {
+function pool(value, rc2) {
   if (!exact(value, POOL_KEYS) || !integer(value.slot, 1, MAX_POOLS) || !oneOf(SOURCES, value.source)
       || !hash(value.poolId) || !poolKey(value.poolKey) || value.integrationClass !== 'hookless_fixed_fee'
       || !Array.isArray(value.tokens) || value.tokens.length !== 2 || !value.tokens.every(token)
       || !oneOf(IDENTITY_SOURCES, value.identitySource) || !orNull(v => oneOf(AGE_SOURCES, v), value.ageSource)
       || !orNull(uint, value.initializeBlock)
       || !exact(value.verifiedAt, ['number', 'hash']) || !uint(value.verifiedAt.number) || !hash(value.verifiedAt.hash)
-      || !orNull(rankInputs, value.rankInputs)) return false
+      || !orNull(v => rankInputs(v, rc2), value.rankInputs)) return false
   const {currency0, currency1} = value.poolKey
   // Sorted currencies, named in order by the tokens; rank inputs on ranked pools only.
   return currency0 < currency1 && value.tokens[0].address === currency0 && value.tokens[1].address === currency1
@@ -95,14 +109,17 @@ const span = value => exact(value, ['start', 'end']) && uint(value.start) && uin
 const coverage = value => exact(value, ['source', 'pages', 'lastListedVolume24hUsd', 'truncated'])
   && value.source === 'geckoterminal_dex_pools_by_h24_volume' && integer(value.pages, 0, 10)
   && orNull(decimal, value.lastListedVolume24hUsd) && typeof value.truncated === 'boolean'
-const rules = value => exact(value, ['rankBy', 'estimateMethod', 'marketSource', 'minVolume24hUsd', 'minTvlUsd',
+// The two floors are always stated. From rc.2 a list may rank by today's APR, and the other market
+// rules may be off (null); rc.1 knows neither.
+const rules = (value, rc2) => exact(value, ['rankBy', 'estimateMethod', 'marketSource', 'minVolume24hUsd', 'minTvlUsd',
   'minReferenceDepthUsd', 'maxAprPercent', 'maxTurnover24h', 'minPoolAgeHours', 'size'])
-  && value.rankBy === 'min_fresh_and_previous_day_feeAprEstimate24hPercent'
+  && (value.rankBy === RANK_BY_V1 || (rc2 && value.rankBy === RANK_BY_TODAY))
   && value.estimateMethod === 'fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365'
   && value.marketSource === 'geckoterminal'
-  && ['minVolume24hUsd', 'minTvlUsd', 'minReferenceDepthUsd', 'maxAprPercent', 'maxTurnover24h']
-    .every(name => decimal(value[name]))
-  && uint(value.minPoolAgeHours) && integer(value.size, 1, MAX_POOLS)
+  && decimal(value.minVolume24hUsd) && decimal(value.minTvlUsd)
+  && ['minReferenceDepthUsd', 'maxAprPercent', 'maxTurnover24h']
+    .every(name => (rc2 ? orNull(decimal, value[name]) : decimal(value[name])))
+  && (rc2 ? orNull(uint, value.minPoolAgeHours) : uint(value.minPoolAgeHours)) && integer(value.size, 1, MAX_POOLS)
 const evaluation = value => exact(value, ['candidates', 'shortlisted', 'eligible', 'rejectedByReason'])
   && uint(value.candidates) && uint(value.shortlisted) && uint(value.eligible) && object(value.rejectedByReason)
   && Object.entries(value.rejectedByReason).every(([reason, count]) => oneOf(REJECTION_REASONS, reason) && uint(count))
@@ -113,14 +130,16 @@ export function validateRequest(route, body) {
 }
 
 function validBody(body) {
-  if (!exact(body, RESPONSE_KEYS) || body.schemaVersion !== 1 || body.contractVersion !== CONTRACT_VERSION
-      || body.chainId !== 4663 || body.mode !== 'stored_featured_pools' || !oneOf(STATUSES, body.status)
+  if (!exact(body, RESPONSE_KEYS) || body.schemaVersion !== 1 || !oneOf(CONTRACT_VERSIONS, body.contractVersion)) return false
+  // Each version is held to its own rules: an rc.1 answer to rc.1's.
+  const rc2 = body.contractVersion !== RC1
+  if (body.chainId !== 4663 || body.mode !== 'stored_featured_pools' || !oneOf(STATUSES, body.status)
       || !orNull(uint, body.revision) || !orNull(hash, body.listId)
       || !orNull(v => typeof v === 'string' && /^featured-v1:[0-9a-f]{12}$/.test(v), body.policyVersion)
       || !orNull(day, body.selectionDate) || !orNull(uint, body.generatedAt) || !orNull(uint, body.effectiveAt)
       || !orNull(uint, body.validUntil) || !uint(body.servedAt) || !orNull(span, body.window)
-      || !orNull(coverage, body.coverage) || !orNull(rules, body.rules)
-      || !list(body.pools, MAX_POOLS, pool) || !list(body.withdrawn, MAX_WITHDRAWN, withdrawn)
+      || !orNull(coverage, body.coverage) || !orNull(v => rules(v, rc2), body.rules)
+      || !list(body.pools, MAX_POOLS, item => pool(item, rc2)) || !list(body.withdrawn, MAX_WITHDRAWN, withdrawn)
       || body.upcoming !== null || !orNull(evaluation, body.evaluation)
       || body.suggested !== false || body.executionAvailable !== false
       || !Array.isArray(body.limitations) || !body.limitations.every(item => oneOf(LIMITATIONS, item))) return false

@@ -50,6 +50,9 @@
  * reviewed config (bridge/wrangler.read.toml) and the Pages forwarder
  * (functions/_lib/bridge.ts), which that manifest hashes, gained the
  * /api/read/v5/ path, off in git. Nothing in read-v2 itself changed.
+ * The read-v2 digest moved on 2026-09-29 for the explicitly opted-in preview
+ * public-read adapter in that same Pages forwarder. Its generated schemas,
+ * runtime, fixtures, version and financial calculations are unchanged.
  * The read-v1, read-v2, session-v1, onboarding-v1, deposit-v1, performance-v2
  * and execution-v1 digests moved with the read path's capacity for 100+ users
  * (26 September 2026): the reader and gateway admit eight provider reads at
@@ -112,7 +115,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'c0aaa9c807eaed239af0849404fea98b1afe0178b83f5a5a6d51ccf420aa8185',
+  manifestSha256: '346207ed1b7f069b29776c745f721144e32f346dae92626dac2e461b185e75e4',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
@@ -125,10 +128,20 @@ export const READ_V3_PIN = {
  * The featured pools list (featured-pools v1 §10.4). read-v5 has no manifest:
  * its runtime is written by hand, so the pin is the SHA-256 of runtime.mjs
  * itself, the validator both the Worker and this app run.
+ *
+ * rc.2 since 2026-09-28 (featured-policy v2, rugged's handoff of that day): a
+ * list may rank by today's APR, a market rule may be off (null), and a ranked
+ * pool may have no previous-day APR or measured depth. The runtime still takes
+ * rc.1, held to rc.1's rules, while the VM moves to rc.2 (CONTRACT_VERSIONS);
+ * `version` is the one this build asks in. The read-v2 digest moved with it
+ * only because that manifest hashes the read Worker (bridge/src/worker.mjs),
+ * which now takes both versions, and the Pages forwarder
+ * (functions/_lib/bridge.ts), whose header comment the speed wave changed
+ * without moving the manifest; nothing in read-v2 changed.
  */
 export const READ_V5_PIN = {
-  version: '1.0.0-rc.1',
-  runtimeSha256: '42c6b7364ec11d906a08366b6334562c249aa0936ae2a258aab3d41efdfcd95e',
+  version: '1.0.0-rc.2',
+  runtimeSha256: 'f3a705de31761b4e02a17bc671c726891c6302e621ecb5e0124a85d5254068cd',
 } as const
 
 /**
@@ -143,7 +156,7 @@ export const READ_V5_PIN = {
 export const BACKEND_OPENAPI_PIN = {
   path: 'backend/openapi-read.json',
   infoVersion: '0.8.0',
-  sha256: '47d530e2b2365ff5873516772d5411ce3fdf2663f93262a8ddc40e91b6518392',
+  sha256: '17b70f5440aeb278d134d21bc40d4af46bbac450b98e866ff52168f4cc9c763a',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

@@ -69,6 +69,7 @@ function load(name, dependencies, expose = '') {
     // A stat renders its label, value and source line as text, so attribution can be checked as visible words.
     Stat: ({ label, children, sub }) => React.createElement('div', null, label, ' ', children, ' ', sub ?? null),
     useNow: () => ({ wall: 1001000, monotonic: 0 }), agedMarket: (market) => market,
+    useLoadMilestone: () => undefined, // Readiness instrumentation has its own clock/privacy tests.
     retrievedAgeSeconds: () => 12, retrievedText: (age) => (age === null ? 'retrieval time unknown' : `retrieved ${age} s ago`),
     presentMetric: (value, format) => ['provider', 'stale', 'qualified'].includes(value.state) && value.value !== null ? { kind: 'value', text: format ? format(value) : '$42', source: value.source, asOf: value.asOf, stale: value.state === 'stale' } : { kind: 'unavailable', reason: value.reason },
     percentText: (metric) => metric.value,
@@ -79,7 +80,8 @@ function load(name, dependencies, expose = '') {
     failureText: () => ({ code: 'offline', title: 'Unavailable', detail: 'No response', retry: true }),
     addressKey: (value) => value, poolIdKey: (value) => value, shortAddress: (value) => `${value.slice(0, 6)}…${value.slice(-4)}`, NATIVE_CURRENCY: addr('0'),
     parseAddressInput: (raw) => (/^0x[0-9a-fA-F]{40}$/.test(raw) ? { ok: true, wire: raw, key: raw.toLowerCase() } : { ok: false, reason: 'length' }),
-    poolPrice: () => ({ state: 'usable', tick: 0, tickSpacing: 60, text: '≈1', base: token('1'), quote: token('2'), decimals: [18, 18], block: 700, stale: false, partial: false }), presetRange: () => ({ lower: -60, upper: 60 }),
+    // Changed on purpose 2026-09-28 (one-sided): the page takes its preset with presetFor, on the price as it writes it.
+    poolPrice: () => ({ state: 'usable', tick: 0, tickSpacing: 60, text: '≈1', base: token('1'), quote: token('2'), inverted: false, decimals: [18, 18], block: 700, stale: false, partial: false }), presetRange: () => ({ lower: -60, upper: 60 }), presetFor: () => ({ lower: -60, upper: 60 }),
     // 2026-09-27 (round 6): the pool page's plain words are the real module (src/components/pool/plain.ts), its estimate
     // is the observation's own figure, and New position's test is the one poolsList.ts states.
     ...real('src/components/pool/plain.ts'),
@@ -1575,6 +1577,9 @@ test('round 6: plain words: prices in USDG where the pool holds it, a yearly rat
   assert.equal(plain.quoteSide([{ address: addr('3') }, { address: USDG }]), 1, 'PONS/USDG: USDG for 1 PONS')
   assert.equal(plain.quoteSide([{ address: USDG }, { address: addr('9') }]), 0, 'USDG/MARLIN: USDG for 1 MARLIN, not the other way round')
   assert.equal(plain.quoteSide([{ address: addr('3') }, { address: addr('9') }]), 1, 'no USDG: the pool’s own order')
+  // Added 2026-09-28 (one-sided): ETH comes next, the app's one rule (lib/read/orientation.ts): ETH/MARLIN reads in ETH.
+  assert.equal(plain.quoteSide([{ address: addr('0') }, { address: addr('9') }]), 0, 'ETH/MARLIN: ETH for 1 MARLIN')
+  assert.equal(plain.quoteSide([{ address: addr('0') }, { address: USDG }]), 1, 'ETH/USDG: USDG for 1 ETH')
   assert.deepEqual([100.35, 32.13, 2.16, 0.05, 1234.5, 0].map(plain.aboutPercent), ['100%', '32%', '2.2%', 'less than 0.1%', '1,235%', '0%'])
   assert.deepEqual(['1,000', '$250.5', ' 10 000 ', '0', '-5', 'abc', '1e3', '10000000000'].map(plain.parseAmount), [1000, 250.5, 10000, null, null, null, null, null])
   const month = plain.earnings(1000, 100.35)
@@ -1605,6 +1610,13 @@ test('round 6: a typical range reads low to high in the page’s direction, with
   assert.deepEqual([flipped.low, flipped.high, flipped.below, flipped.above], ['0.697689', '1.50378', '−30%', '+50%'])
   assert.ok(flipped.values.low < flipped.values.now && flipped.values.now < flipped.values.high)
   assert.equal(plain.rangeGuide({ lower: -60, upper: 60 }, 0, [0, 40], 1), null, 'a price that cannot be written draws no range')
+  // Added 2026-09-28 (one-sided): the preset the page draws is taken on its own price (presetFor), so a USDG-first pool
+  // reads −30% and +50% too, at any tick.
+  const { presetFor } = real('src/lib/read/screens/poolRange.ts')
+  const usdgFirst = { tick: 338460, tickSpacing: 60, inverted: true }
+  const guided = plain.rangeGuide(presetFor(usdgFirst, 'standard'), 338460, [6, 18], 0)
+  assert.deepEqual([guided.below, guided.above], ['−30%', '+50%'])
+  assert.ok(guided.values.low < guided.values.now && guided.values.now < guided.values.high)
   const day = plain.daySpan({ candles: [{ startTimestamp: 0, high: '2', low: '1', close: '1.5' }, { startTimestamp: 3600, high: '3', low: '1.2', close: '2.5' }], requestedWindow: { startTimestamp: 0 }, resolutionSeconds: 3600 }, addr('1'))
   assert.deepEqual(day, { base: addr('1'), low: '1', high: '3', first: '1.5', last: '2.5', whole: true })
 })
@@ -1778,9 +1790,10 @@ test('round 6: the pool page’s button is “Create a position”, into the sam
 // Added 2026-09-28 (round 6 review): the typical range used to be worked out once, when the pool was checked, while the
 // price moved on with every read; past one of its ends the sentence read "−9% above it". It is now drawn on the price now.
 test('round 6: the typical range is worked out on the price now, so a price that moved past an end still reads −30% to +50%', async () => {
-  const { presetRange } = real('src/lib/read/screens/poolRange.ts')
-  const usablePrice = (chosen) => ({ state: 'usable', tick: chosen.tick, tickSpacing: chosen.tickSpacing, text: '≈1', base: token('1'), quote: token('2'), decimals: [6, 6], block: 700, stale: false, partial: false })
-  const fixture = workspace({ dependencies: { presetRange, poolPrice: usablePrice } })
+  // Changed on purpose 2026-09-28 (one-sided): the page's preset is presetFor, the real one.
+  const { presetFor } = real('src/lib/read/screens/poolRange.ts')
+  const usablePrice = (chosen) => ({ state: 'usable', tick: chosen.tick, tickSpacing: chosen.tickSpacing, text: '≈1', base: token('1'), quote: token('2'), inverted: false, decimals: [6, 6], block: 700, stale: false, partial: false })
+  const fixture = workspace({ dependencies: { presetFor, poolPrice: usablePrice } })
   const host = mount(fixture.PoolWorkspace, fixture.props)
   fixture.reads[0].resolve(ok()); await flush(); host.render()
   const at = () => { const { guide } = part(host, 'PoolRangeGuide').props; return [guide.below, guide.above, guide.values.low < guide.values.now && guide.values.now < guide.values.high] }

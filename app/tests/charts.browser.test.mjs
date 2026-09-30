@@ -106,8 +106,10 @@ async function period(card, name) {
 }
 
 /**
- * The key figures' Current price figure (`396.786` of "1 USDG = 396.786 UFG"), which the chart's price now repeats
- * exactly. Changed on purpose at the integration (2026-09-27): r5/position writes the page's figures without "≈".
+ * The key figures' Current price figure (`0.00252025` of "1 UFG = 0.00252025 USDG"), which the chart's price now
+ * repeats exactly. Changed on purpose at the integration (2026-09-27): r5/position writes the page's figures without
+ * "≈". Changed on purpose 2026-09-28 (one-sided, the owner: "UFG's price is falling, but my position's range is
+ * rising"): these USDG/UFG pools are written UFG's price in USDG (lib/read/orientation.ts), where they read UFG per USDG.
  */
 async function headerPrice(page) {
   return (await page.locator('[data-stat="price"] [data-current-price="usable"] .dm-fig-lg').innerText()).trim();
@@ -124,9 +126,11 @@ test('an automated position: the card says in two lines what Auto-compound put b
     await page.locator('[data-position-detail][data-position-id="2310187"]').waitFor({ timeout: 20_000 });
     const card = page.locator('[data-fees-card][data-fees-state="verified"]');
     await card.waitFor({ timeout: 60_000 });
-    // The lines come with the card (it waits for the vault's read), never after it.
+    // The chart verifies independently; the attribution appears once the vault
+    // read covers the complete history, not merely its early warm interval.
     const impact = card.locator('[data-automation-impact="compound"]');
-    assert.equal(await impact.count(), 1, 'the automation lines are there the moment the card is');
+    await impact.locator('[data-impact="added"]').filter({ hasText: /^Auto-compound added \$[\d,]+\.\d\d back · 4 times$/ }).waitFor({ timeout: 20_000 });
+    assert.equal(await impact.count(), 1, 'the complete automation attribution is present');
     const added = await impact.locator('[data-impact="added"]').innerText();
     assert.match(added, /^Auto-compound added \$[\d,]+\.\d\d back · 4 times$/, added);
     const grew = await impact.locator('[data-impact="growth"]').innerText();
@@ -143,17 +147,29 @@ test('an automated position: the card says in two lines what Auto-compound put b
     // transfers out of it in those executions' blocks (the service fees); no route of the site.
     const blocks = chain.fixture.expect.events.map((event) => event[1]);
     const executed = PAIRS.filter((_, i) => i !== 1).map((prefix) => chain.fixture.expect.events.find((event) => event[2].startsWith(prefix))[1]);
+    // Changed on purpose 2026-09-28 (speed wave B, item 26): the vault's executions are read as soon as the page's own read
+    // names the vault, from the factory's first block to that read's block; this recording is older than the factory (no
+    // position Domino opened is), so they are read again from the NFT's mint, and the card waits for that read.
     // Changed on purpose (2026-09-28, hotfix: the chain's RPC serves one filter over 10,000,000 blocks at most, and one with
-    // several addresses over 100,000): this record's 11.8 million blocks are two windows, oldest first, and the fees paid
-    // over its 8.8 million blocks of executions are asked one currency at a time.
+    // several addresses over 100,000; merged with wave B): the card's record, from the mint to the page's read, is past
+    // 10 million blocks, so two windows, oldest first, and the fees paid over its 8.8 million blocks of executions are
+    // asked one currency at a time. The early read's span is inside both limits: one read.
+    const state = chain.fixture.state.block;
     const window = 10_000_000;
-    assert.ok(Math.max(...blocks) - blocks[0] + 1 > window && executed.at(-1) - executed[0] + 1 > 100_000, 'a record past both limits');
-    assert.deepEqual(chain.vaultAsked, [
+    const last = Math.max(state, ...blocks);
+    assert.ok(state - 69_239_633 + 1 <= window && last - blocks[0] + 1 > window && executed.at(-1) - executed[0] + 1 > 100_000, 'a record past both limits');
+    assert.deepEqual(chain.vaultAsked.filter((ask) => !ask.transfers), [
+      { fromBlock: 69_239_633, toBlock: state },
       { fromBlock: blocks[0], toBlock: blocks[0] + window - 1 },
-      { fromBlock: blocks[0] + window, toBlock: Math.max(...blocks) },
+      { fromBlock: blocks[0] + window, toBlock: last },
+    ]);
+    assert.deepEqual(chain.vaultAsked.filter((ask) => ask.transfers).slice(-2), [
       { transfers: true, address: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', fromBlock: executed[0], toBlock: executed.at(-1) },
       { transfers: true, address: '0xefab538cf3c29237a47c6afb145d50ddf204a0a3', fromBlock: executed[0], toBlock: executed.at(-1) },
     ]);
+    // Every read of the vault keeps inside the RPC's limits (tests/support/log-limits.mjs): one address over 10 million
+    // blocks at most, an address list over 100,000 at most.
+    for (const ask of chain.vaultAsked) assert.ok(ask.toBlock - ask.fromBlock + 1 <= (Array.isArray(ask.address) ? 100_000 : window), JSON.stringify(ask));
     assert.deepEqual(s.asked, []);
 
     // The Activity says which increases were the automation's, with the chart's own mark. Changed on purpose
@@ -216,11 +232,13 @@ test('an automated position: the card says in two lines what Auto-compound put b
     assert.equal(await range.getAttribute('data-pvr-where'), 'inside');
     assert.match(await range.locator('.dm-pvr-says').innerText(), /In range\s+The price is inside your range, so this position is earning fees\./);
     // The only numbers on its axis: the range's two ends and the price now, each as the header writes it.
-    assert.equal(await range.locator('[data-pvr-end="max"]').innerText(), '630.981');
-    assert.equal(await range.locator('[data-pvr-end="min"]').innerText(), '197.815');
+    // Changed on purpose 2026-09-28 (one-sided): UFG's price in USDG, so the pool's upper tick is the range's lowest price.
+    assert.equal(await range.locator('[data-pvr-end="max"]').innerText(), '0.00505522');
+    assert.equal(await range.locator('[data-pvr-end="min"]').innerText(), '0.00158483');
     assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(page), 'one price now on the screen');
-    assert.match(await page.locator('[data-stat="range"]').innerText(), /^197\.815\s+Your range\s+630\.981\s/);
-    assert.deepEqual(await range.locator('.dm-pvr-legend > *').allInnerTexts(), ['Your range', 'Price', 'Prices in UFG for 1 USDG']);
+    assert.match(await page.locator('[data-stat="range"]').innerText(), /^0\.00158483\s+Your range\s+0\.00505522\s/);
+    assert.deepEqual(await range.locator('.dm-pvr-legend > *').allInnerTexts(), ['Your range', 'Price', 'Prices in USDG for 1 UFG']);
+    assert.match(await page.locator('[data-stat="price"]').innerText(), /1 UFG =\s+0\.00\d+\s+USDG/);
     await rangeCard(page).screenshot({ path: join(shots(), 'desktop-price-range-in.png') });
   } finally { await s.close(); }
 });
@@ -232,6 +250,7 @@ test('an automated position on a phone: the same two lines and marks, the chart 
     const page = s.page;
     const card = page.locator('[data-fees-card][data-fees-state="verified"]');
     await card.waitFor({ timeout: 60_000 });
+    await card.locator('[data-automation-impact="compound"] [data-impact="added"]').filter({ hasText: /^Auto-compound added \$[\d,]+\.\d\d back · 4 times$/ }).waitFor({ timeout: 20_000 });
     assert.equal(await card.locator('[data-automation-impact="compound"]').count(), 1);
     await period(card, 'All');
     assert.equal(await card.locator('.dm-chart-series .dm-fees-auto').count(), 4);
@@ -246,23 +265,46 @@ test('an automated position on a phone: the same two lines and marks, the chart 
   } finally { await s.close(); }
 });
 
-test('a Domino-compound position: the line says how many next positions it opened and with how much in fees', async () => {
+test('a Domino-compound position: the line says how many next positions it opened and with how much in fees', { timeout: 90_000 }, async () => {
   // The recording's last collect (no increase) as the vault's MINT of a next position, the four pairs as re-adds.
   const base = automatedChain('2310187', { vault: VAULT, executions: [] });
   const mint = base.fixture.expect.events.filter((event) => event[0] === 'collect').at(-1)[2];
   const executions = [...PAIRS.filter((_, i) => i !== 1).map((prefix) => ({ tx: txOf(base, prefix), action: 0 })), { tx: mint, action: 3, destination: '3999999' }];
   const chain = automatedChain('2310187', { vault: VAULT, owner: ACCOUNTS[0].address, feeBps: 400, executions });
+  // The public chart verifies independently of the vault's wider attribution
+  // read. Hold that expansion, not the history, to exercise this ordering every
+  // time: the early factory-to-head record alone does not cover all four adds.
+  let release, started;
+  const held = new Promise((done) => { release = done; });
+  const expansionStarted = new Promise((done) => { started = done; });
+  const answer = chain.fetch;
+  chain.fetch = async (url, init) => {
+    const request = JSON.parse(init.body);
+    const filter = request.params?.[0];
+    if (request.method === 'eth_getLogs' && filter?.address === VAULT && Number(filter.fromBlock) < 69_239_633) {
+      started();
+      await held;
+    }
+    return answer(url, init);
+  };
   const s = await scenario(chain, '#/positions/2310187');
   try {
     const card = s.page.locator('[data-fees-card][data-fees-state="verified"]');
-    await card.waitFor({ timeout: 60_000 });
+    await Promise.all([card.waitFor({ timeout: 60_000 }), expansionStarted]);
+    assert.equal(await card.locator('.dm-fees-chart').count(), 1, 'the verified public chart does not wait for attribution');
+    assert.equal(await card.locator('[data-automation-impact]').count(), 0, 'the early partial record is not presented as complete attribution');
+    release();
     const impact = card.locator('[data-automation-impact="domino"]');
+    const added = impact.locator('[data-impact="added"]');
+    // Wait for the complete result, not merely the chart or an interim warm
+    // record. The exact four-add and successor assertions remain unchanged.
+    await added.filter({ hasText: /^Domino-compound added \$[\d,]+\.\d\d back · 4 times$/ }).waitFor({ timeout: 20_000 });
     assert.equal(await impact.count(), 1);
-    assert.match(await impact.locator('[data-impact="added"]').innerText(), /^Domino-compound added \$[\d,]+\.\d\d back · 4 times$/);
+    assert.match(await added.innerText(), /^Domino-compound added \$[\d,]+\.\d\d back · 4 times$/);
     assert.match(await impact.locator('[data-impact="opened"]').innerText(), /^Domino-compound opened 1 new position with \$[\d,]+\.\d\d of fees$/);
     await period(card, 'All');
     await card.screenshot({ path: join(shots(), 'desktop-domino-card.png') });
-  } finally { await s.close(); }
+  } finally { release(); await s.close(); }
 });
 
 /** The plain position: the recording of NFT 3136705, held by Test Wallet A's address, nothing subscribed. */
@@ -282,14 +324,15 @@ test('a plain position: no automation line, no mark and no vault read; the price
     assert.ok(!logs.flat().includes('0xa75f5619abce0f39b6b0ace7eb96f20ba345b963b9799beed8451480a406cde0'), 'no vault is read for a plain position');
     const range = page.locator('[data-pvr-where]');
     await range.waitFor();
-    assert.equal(await range.getAttribute('data-pvr-where'), 'under');
-    assert.match(await range.locator('.dm-pvr-says').innerText(), /Out of range\s+The price is under your range, so this position is not earning fees right now\./);
+    // Changed on purpose 2026-09-28 (one-sided): UFG's price in USDG sits over this range (it read UFG per USDG, under it).
+    assert.equal(await range.getAttribute('data-pvr-where'), 'over');
+    assert.match(await range.locator('.dm-pvr-says').innerText(), /Out of range\s+The price is over your range, so this position is not earning fees right now\./);
     assert.equal(await range.locator('.dm-pvr-chip:not([data-in])').count(), 1, 'the price now in the out-of-range colour');
     assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(page), 'one price now on the screen');
-    // Just under the range: its floor's number stays readable, clear of the chip's.
-    assert.equal(await range.locator('[data-pvr-end="min"]').innerText(), '440.228');
-    const [floor, chip] = await Promise.all([range.locator('[data-pvr-end="min"]').boundingBox(), range.locator('[data-pvr-now]').boundingBox()]);
-    assert.ok(floor.y + floor.height <= chip.y, `the floor's number sits above the chip (${floor.y + floor.height} <= ${chip.y})`);
+    // Just over the range: its ceiling's number stays readable, clear of the chip's.
+    assert.equal(await range.locator('[data-pvr-end="max"]').innerText(), '0.00227155');
+    const [ceiling, chip] = await Promise.all([range.locator('[data-pvr-end="max"]').boundingBox(), range.locator('[data-pvr-now]').boundingBox()]);
+    assert.ok(ceiling.y >= chip.y + chip.height, `the ceiling's number sits under the chip (${ceiling.y} >= ${chip.y + chip.height})`);
     await period(card, 'All');
     await page.screenshot({ path: join(shots(), 'desktop-plain-all.png'), fullPage: true });
     await period(card, '24H');
@@ -309,9 +352,64 @@ test('a plain position: no automation line, no mark and no vault read; the price
   } finally { await phone.close(); }
 });
 
+/**
+ * Where the key figures' Current price bar puts the price now (KeyFigures.tsx RangeLine: the range from 5% to 95% of the
+ * bar on a log price axis, a price beyond an end at 1.5% or 98.5%), from the prices the page writes: the range's ends
+ * and the price now, as `share` of the bar. And the words the Price range card and that bar say it in (PositionRange.tsx
+ * rangeWords and CurrentPrice, whose "beyond the drawn axis" is chainCardPrice's bar scale: the range widened by a
+ * quarter of its own width on each side).
+ */
+async function priceOnBar(page) {
+  const range = page.locator('[data-pvr-where]');
+  await range.waitFor({ timeout: 20_000 });
+  const nowText = await headerPrice(page);
+  const [min, max, now] = [Number(await range.locator('[data-pvr-end="min"]').innerText()), Number(await range.locator('[data-pvr-end="max"]').innerText()), Number(nowText)];
+  const span = Math.log(max / min);
+  const share = Math.log(now / min) / span;
+  const want = share < 0 ? 0.015 : share > 1 ? 0.985 : 0.05 + 0.9 * share;
+  const at = await page.locator('[data-stat="range"] .dm-range-now').evaluate((dot) => parseFloat(dot.style.left) / 100);
+  const beyond = Math.log(now / max) > span / 4 || Math.log(min / now) > span / 4;
+  const label = await page.locator('[data-stat="range"] [role="img"]').getAttribute('aria-label');
+  const words = (await page.locator('[data-range] .dm-acct-range-now').textContent()).replace(/\s+/g, ' ').trim();
+  // The price now as a pattern: its point a literal point.
+  return { min, max, now, nowText: nowText.replaceAll('.', '[.]'), share, want, at, beyond, label, words };
+}
+
+// Added 2026-09-28 (one-sided, review, the owner: "UFG's price is falling, but my position's range is rising"): the dot
+// on the Current price bar and the Price range card's words are the app's one way round, UFG's price in USDG, as the
+// chart is. Drawn in the pool's own order, UFG per USDG, the dot sat on the wrong side of the bar.
+test('the Current price bar puts UFG’s price where the chart does: near its range’s lowest price, near the bar’s low end; over the range, past its high end; and the words agree', async () => {
+  const inRange = await scenario(automated(), '#/positions/2310187');
+  try {
+    const bar = await priceOnBar(inRange.page);
+    assert.ok(bar.share > 0 && bar.share < 0.5, `UFG sits in the lower half of its range: ${bar.now} in ${bar.min} to ${bar.max}`);
+    assert.ok(Math.abs(bar.at - bar.want) < 0.01, `the dot at ${bar.at}, where the chart's prices put it: ${bar.want}`);
+    assert.ok(bar.at < 0.5, 'nearer the bar’s low end');
+    assert.match(bar.words, new RegExp(`^Pool price ≈?${bar.nowText} USDG per UFG at block [0-9]+ · inside this range$`), bar.words);
+    assert.match(bar.label, new RegExp(`; pool price ≈?${bar.nowText} at block [0-9]+, inside this range$`), bar.label);
+  } finally { await inRange.close(); }
+  // NFT 3136705 is just over its range; the same pool with a range of about 0.0014 to 0.0015 USDG (the pool's ticks
+  // 341,200 to 342,000, UFG per USDG) sits far under UFG's price: past the drawn axis, on the high side.
+  for (const [options, far] of [[{}, false], [{ range: [341_200, 342_000] }, true]]) {
+    const out = await scenario(plain(options), '#/positions/3136705');
+    try {
+      const bar = await priceOnBar(out.page);
+      assert.equal(await out.page.locator('[data-pvr-where]').getAttribute('data-pvr-where'), 'over');
+      assert.ok(bar.share > 1, `UFG's price over its range: ${bar.now} over ${bar.max}`);
+      assert.equal(bar.beyond, far, `${bar.now} against ${bar.min} to ${bar.max}`);
+      assert.ok(Math.abs(bar.at - 0.985) < 0.001, `the dot past the bar's high end: ${bar.at}`);
+      const beyond = far ? ', beyond the drawn axis' : '';
+      assert.match(bar.words, new RegExp(`^Pool price ≈?${bar.nowText} USDG per UFG at block [0-9]+ · above this range${beyond}$`), bar.words);
+      assert.match(bar.label, new RegExp(`; pool price ≈?${bar.nowText} at block [0-9]+, above this range${beyond}$`), bar.label);
+    } finally { await out.close(); }
+  }
+});
+
 test('a range that reaches the pool’s limits: the chart labels no end at 0 or ∞ (never a number in exponent form), and its band runs to the edge', async () => {
   // NFT 3136705's pool spaces its ticks by 400: its usable limits are -887,200 and 887,200.
-  for (const [ticks, header, label] of [[[337_200, 887_200], /^440\.228\s+Your range\s+∞\s/, 'upper-limit'], [[-887_200, 887_200], /^0\s+Your range\s+∞\s/, 'full-range']]) {
+  // Changed on purpose 2026-09-28 (one-sided): UFG's price in USDG, so the pool's upper limit is the range's price 0, and
+  // the band runs off the plot's foot.
+  for (const [ticks, header, label] of [[[337_200, 887_200], /^0\s+Your range\s+0\.00227155\s/, 'lower-limit'], [[-887_200, 887_200], /^0\s+Your range\s+∞\s/, 'full-range']]) {
     const s = await scenario(plain({ range: ticks }), '#/positions/3136705');
     try {
       const page = s.page;
@@ -321,17 +419,18 @@ test('a range that reaches the pool’s limits: the chart labels no end at 0 or 
       await range.waitFor();
       const text = await rangeCard(page).innerText();
       assert.doesNotMatch(text, /\de[+-]\d/, `no exponent: ${text}`);
-      assert.equal(await range.locator('[data-pvr-end="max"]').count(), 0, 'no number at ∞');
+      assert.equal(await range.locator('[data-pvr-end="min"]').count(), 0, 'no number at 0');
       if (label === 'full-range') {
-        assert.equal(await range.locator('[data-pvr-end]').count(), 0, 'no number at 0 either');
+        assert.equal(await range.locator('[data-pvr-end]').count(), 0, 'no number at ∞ either');
         assert.equal(await range.getAttribute('data-pvr-where'), 'inside');
       } else {
-        assert.equal(await range.locator('[data-pvr-end="min"]').innerText(), '440.228');
+        assert.equal(await range.locator('[data-pvr-end="max"]').innerText(), '0.00227155');
       }
-      // The band runs off the plot where the range does, with no edge line there.
+      // The band runs off the plot where the range does, with no edge line there: its foot at 0, and its top too at ∞.
       const plot = await range.locator('.dm-pvr').boundingBox();
       const band = await range.locator('.dm-pvr-band').boundingBox();
-      assert.ok(Math.abs(band.y - (plot.y + 12)) <= 1, `the band reaches the plot's top (${band.y} vs ${plot.y + 12})`);
+      assert.ok(Math.abs(band.y + band.height - (plot.y + plot.height - 30)) <= 1, `the band reaches the plot's foot (${band.y + band.height} vs ${plot.y + plot.height - 30})`);
+      if (label === 'full-range') assert.ok(Math.abs(band.y - (plot.y + 12)) <= 1, `the band reaches the plot's top (${band.y} vs ${plot.y + 12})`);
       assert.equal(await range.locator('.dm-pvr-edge').count(), label === 'full-range' ? 0 : 1);
       assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(page));
       await page.waitForTimeout(900);
@@ -362,9 +461,10 @@ test('while the history is read the card shows the chain’s unclaimed figure an
       const range = s.page.locator('[data-pvr-where]');
       await range.waitFor({ timeout: 10_000 });
       assert.equal(await range.getAttribute('data-pvr-line'), null);
-      assert.match(await range.locator('.dm-pvr-says').innerText(), /Out of range\s+The price is under your range/);
+      // Changed on purpose 2026-09-28 (one-sided): UFG's price in USDG, over this range.
+      assert.match(await range.locator('.dm-pvr-says').innerText(), /Out of range\s+The price is over your range/);
       assert.equal(await range.locator('[data-pvr-now]').innerText(), await headerPrice(s.page));
-      assert.equal(await range.locator('[data-pvr-end="min"]').innerText(), '440.228');
+      assert.equal(await range.locator('[data-pvr-end="max"]').innerText(), '0.00227155');
       assert.equal(await rangeCard(s.page).locator('.dm-acct-range-bar, .dm-pos-ends, .dm-pos-preview-wrap').count(), 0);
       const early = await rangeCard(s.page).boundingBox();
       await s.page.waitForTimeout(900);
@@ -382,28 +482,62 @@ test('while the history is read the card shows the chain’s unclaimed figure an
   }
 });
 
-test('an automated position fills in without a jump: its lines are in the card the first frame it is drawn, and nothing under them moves after', async () => {
+test('an automated position fills in without a jump: its chart draws before attribution and the reserved lines keep everything below stable', { timeout: 120_000 }, async () => {
   for (const [device, label] of [[DESKTOP, 'desktop'], [PHONE, 'phone']]) {
-    // Every frame, where the chart, the activity and the price range stand, from the first frame the card is drawn.
+    // Capture the whole staged arrival, not just 90 frames which could all
+    // precede the attribution. The sequence is already known; its record waits.
     const watch = () => {
       window.__frames = [];
       const tick = () => {
         const card = document.querySelector('[data-fees-card][data-fees-state="verified"]');
         if (card) {
           const top = (selector) => { const node = document.querySelector(selector); return node ? Math.round(node.getBoundingClientRect().top + scrollY) : null; };
-          window.__frames.push({ impact: !!card.querySelector('[data-automation-impact]'), chart: top('.dm-fees-chart'), activity: top('.dm-fees-activity'), range: top('[data-pvr-where]'), height: Math.round(card.getBoundingClientRect().height) });
+          window.__frames.push({ impact: !!card.querySelector('[data-automation-impact]'), chart: top('.dm-fees-chart'), timeInRange: top('.dm-fees-tir'), activity: top('[data-position-activity]'), range: top('[data-pvr-where]'), height: Math.round(card.getBoundingClientRect().height) });
         }
-        if (window.__frames.length < 90) requestAnimationFrame(tick);
+        if (!window.__stopFrames && window.__frames.length < 5000) requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
     };
-    const s = await scenario(automated(), '#/positions/2310187', device, watch);
+    const chain = automated();
+    let release, started;
+    const held = new Promise((done) => { release = done; });
+    const expansionStarted = new Promise((done) => { started = done; });
+    const answer = chain.fetch;
+    chain.fetch = async (url, init) => {
+      const request = JSON.parse(init.body);
+      const filter = request.params?.[0];
+      if (request.method === 'eth_getLogs' && filter?.address === VAULT && Number(filter.fromBlock) < 69_239_633) {
+        started();
+        await held;
+      }
+      return answer(url, init);
+    };
+    const s = await scenario(chain, '#/positions/2310187', device, watch);
     try {
-      await s.page.waitForFunction(() => window.__frames?.length >= 90, null, { timeout: 90_000 });
+      await Promise.all([
+        s.page.waitForFunction(() => window.__frames?.length >= 10, null, { timeout: 60_000 }),
+        expansionStarted,
+      ]);
+      const card = s.page.locator('[data-fees-card][data-fees-state="verified"]');
+      assert.equal(await card.locator('.dm-fees-chart').count(), 1, `${label}: public chart does not wait for attribution`);
+      assert.equal(await card.locator('[data-automation-impact]').count(), 0, `${label}: no incomplete totals`);
+      assert.equal(await card.locator('.dm-fees-impact-slot[data-kind="compound"]').count(), 1, `${label}: the known sequence reserves its lines`);
+      release();
+      const impact = card.locator('[data-automation-impact="compound"]');
+      await impact.locator('[data-impact="added"]').filter({ hasText: /^Auto-compound added \$[\d,]+\.\d\d back · 4 times$/ }).waitFor({ timeout: 20_000 });
+      assert.match(await impact.locator('[data-impact="growth"]').innerText(), /^Your position grew \d+\.\d\d% from fees$/);
+      await s.page.waitForFunction(() => window.__frames.filter((frame) => frame.impact).length >= 90, null, { timeout: 10_000 });
+      await s.page.evaluate(() => { window.__stopFrames = true; });
       const frames = await s.page.evaluate(() => window.__frames);
-      assert.equal(frames[0].impact, true, `${label}: the lines come with the card`);
-      const moved = frames.filter((frame) => frame.chart !== frames[0].chart || frame.activity !== frames[0].activity || frame.range !== frames[0].range || frame.height !== frames[0].height);
-      assert.deepEqual(moved, [], `${label}: nothing moves after the card is drawn (first ${JSON.stringify(frames[0])})`);
-    } finally { await s.close(); }
+      assert.equal(frames[0].impact, false, `${label}: the chart was drawn before its complementary read`);
+      assert.equal(frames.at(-1).impact, true, `${label}: capture includes completed attribution`);
+      const moved = frames.filter((frame) => frame.chart !== frames[0].chart || frame.timeInRange !== frames[0].timeInRange || frame.range !== frames[0].range || frame.height !== frames[0].height);
+      assert.deepEqual(moved, [], `${label}: chart, range and card never move during attribution (first ${JSON.stringify(frames[0])})`);
+      // Activity appears only once its automation labels are known. From its
+      // first appearance onward its anchor must remain fixed as well.
+      const activityTops = frames.map((frame) => frame.activity).filter((top) => top !== null);
+      assert.ok(activityTops.length > 0, `${label}: activity eventually appears`);
+      assert.equal(new Set(activityTops).size, 1, `${label}: visible activity never moves`);
+    } finally { release(); await s.close(); }
   }
 });

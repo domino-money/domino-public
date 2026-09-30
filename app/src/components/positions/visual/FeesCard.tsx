@@ -4,7 +4,9 @@ import { Delta, LiveFigure, PeriodTabs, StackedBar, UsdText, type PeriodKey } fr
 import { TokenMarkPair } from '../../TokenIcon'
 import { Badge, cx } from '../../ui'
 import { useFeeHistories } from '../../../lib/fees/useFeeHistory'
-import type { FeeHistoryView, PositionState } from '../../../lib/fees/types'
+import type { FeeHistoryView, FeeDisplayState as PositionState } from '../../../lib/fees/types'
+import { useLoadMilestone } from '../../../lib/useLoadMilestone'
+import { historyLoadQuality } from '../../../lib/fees/freshness'
 import type { TokenDisplay } from '../../../lib/read/types'
 import { automationImpact, useVaultRecord } from '../../../lib/automationImpact'
 import { useAutomation } from '../../../lib/automationState'
@@ -176,17 +178,18 @@ function combined(views: ReadonlyArray<FeeHistoryView>): FeeHistoryView['phase']
   if (views.length === 0) return 'idle'
   if (views.every((view) => view.phase === 'verified')) return 'verified'
   if (views.every((view) => view.phase === 'verified' || view.phase === 'estimated')) return 'estimated'
+  if (views.every((view) => view.phase === 'verified' || view.phase === 'estimated' || view.phase === 'cached')) return 'cached'
   if (views.some((view) => view.phase === 'loading')) return 'loading'
   if (views.some((view) => view.phase === 'idle')) return 'idle'
   return views.find((view) => view.phase !== 'verified')?.phase ?? 'unavailable'
 }
 
 /** The drawn sources (verified, or estimated), each with its basis; null when any cannot be valued (an unknown decimals: nothing is guessed). */
-function sourcesOf(ids: readonly string[], views: ReadonlyMap<string, FeeHistoryView>, quoteIndex: 0 | 1): FeesSource[] | null {
+function sourcesOf(ids: readonly string[], views: ReadonlyMap<string, FeeHistoryView>, quoteIndex: 0 | 1 | undefined): FeesSource[] | null {
   const out: FeesSource[] = []
   for (const id of ids) {
     const view = views.get(id)
-    if (view?.phase !== 'verified' && view?.phase !== 'estimated') return null
+    if (view?.phase !== 'verified' && view?.phase !== 'estimated' && view?.phase !== 'cached') return null
     const basis = basisOf(view.state, quoteIndex)
     if (!basis) return null
     out.push({ id, state: view.state, history: view.history, basis })
@@ -211,7 +214,7 @@ function sourcesOf(ids: readonly string[], views: ReadonlyMap<string, FeeHistory
  * cannot be drawn leaves the card with the chain's unclaimed figure and a flat,
  * quiet plot, never an empty place where a card was.
  */
-export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex = 1, tokens, standalone = false, empty, activity = true }: FeesCardProps) {
+export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex, tokens, standalone = false, empty, activity = true }: FeesCardProps) {
   const titleId = useId()
   const list = 'tokenIds' in source
   // One string per id set, so a new array with the same ids is the same card.
@@ -222,18 +225,24 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   const [inspected, setInspected] = useState<number | null>(null)
 
   const phase = combined(ids.map((id) => views.get(id) ?? { phase: 'idle' as const }))
-  const sources = useMemo(() => (phase === 'verified' || phase === 'estimated' ? sourcesOf(ids, views, quoteIndex) : null), [phase, ids, views, quoteIndex])
+  const sources = useMemo(() => (phase === 'verified' || phase === 'estimated' || phase === 'cached' ? sourcesOf(ids, views, quoteIndex) : null), [phase, ids, views, quoteIndex])
   const view = useMemo(() => (sources ? feesView(sources) : null), [sources])
   const period: FeesPeriod = view && chosen && view.periods.includes(chosen) ? chosen : (view?.defaultPeriod ?? 'all')
   const pv = useMemo(() => (view ? periodView(view, period) : null), [view, period])
+  const chartSource = views.get(ids[0])
+  useLoadMilestone('position', 'chart', kind === 'plain' && !list && view && pv && chartSource ? historyLoadQuality(chartSource) : null)
 
   // 2026-09-27 (the owner: show what Domino's automation did): one position's page reads its sequence (the chip's own
   // read, shared) and, when a vault holds it, that vault's record up to the NFT's latest settlement; a new settlement
   // is the only thing that can bring a new execution, so nothing more is read until the history shows one.
   const single = kind === 'plain' && !list
-  const automation = useAutomation(single ? ids[0] : null)
+  const first = views.get(ids[0])
+  const state = first && (first.phase === 'loading' || first.phase === 'unclaimed-only' || first.phase === 'verified' || first.phase === 'estimated' || first.phase === 'cached') ? first.state : null
+  // The early/saved card must not start a duplicate automation scan before the shared state read supplies it.
+  const automation = useAutomation(single && state && phase !== 'cached' ? ids[0] : null)
   const sequence = automation.phase === 'ready' && automation.state.automation !== 'plain' && automation.state.automation !== 'other' ? automation.state : null
-  const own = sources?.[0] ?? null
+  // A saved chart never drives automation attribution or its additional reads.
+  const own = phase === 'cached' ? null : sources?.[0] ?? null
   const from = own ? own.history.mintedAt.block : 0
   const to = own ? own.history.events.reduce((top, event) => Math.max(top, event.block), from) : 0
   const pair = own ? ([own.state.currencies[0].address, own.state.currencies[1].address] as const) : null
@@ -243,28 +252,21 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
     () => (sequence && own && record ? automationImpact({ tokenId: ids[0], kind: sequence.automation, history: own.history, state: own.state, basis: own.basis, record }) : null),
     [sequence, own, record, ids],
   )
-  // 2026-09-27 (review: the lines arrived after the chart and pushed it down): the lines come with the card, never
-  // after it. One position's card stays in its loading state until the chip's read answered and, when a vault holds
-  // the NFT, until the vault's first read answered or failed (a read that failed is asked again; only then can lines
-  // arrive later).
-  const waiting = single && (automation.phase === 'loading' || (sequence !== null && own !== null && !vault.settled))
-  // While it waits, the card keeps the look it had: a history drawn after a quiet plot (read again after a failure)
-  // does not pass through the skeleton.
-  const [before, setBefore] = useState<'loading' | 'unclaimed-only'>('loading')
-  if ((phase === 'loading' || phase === 'unclaimed-only') && phase !== before) setBefore(phase)
-  const shown = waiting && (phase === 'verified' || phase === 'estimated') ? before : phase
+  // The fees history is independently verified. Automation attribution adds
+  // its own facts once its reads answer; it must not hide an already drawn
+  // history while its feature or vault is still loading.
 
   if (kind !== 'plain') {
     return <AutomationFrame title="Fees earned" art={kind} empty={empty} />
   }
 
-  const first = views.get(ids[0])
-  const state = first && (first.phase === 'loading' || first.phase === 'unclaimed-only' || first.phase === 'verified' || first.phase === 'estimated') ? first.state : null
+  const saved = first?.phase === 'cached' ? first : null
+  const savedTitle = saved ? `Saved public-chain replay on Robinhood Chain; block ${saved.state.block}, ${new Date(saved.state.timestamp * 1000).toISOString()}. Not revalidated on this visit.` : undefined
   const reason = first && (first.phase === 'unclaimed-only' || first.phase === 'unavailable') ? first.reason : undefined
   // A currency with unknown decimals: no guessed formatting, no card (§15.6).
   if (state && (state.currencies[0].decimals === null || state.currencies[1].decimals === null)) return null
   const root = (state_: string, children: ReactNode, className?: string) => (
-    <section className={cx('dm-card dm-fees', className)} aria-labelledby={titleId} data-fees-card="" data-fees-state={state_} data-fees-reason={reason}>
+    <section className={cx('dm-card dm-fees', className)} aria-labelledby={titleId} data-fees-card="" data-fees-state={state_} data-fees-reason={reason} data-fees-source={saved?.source} data-fees-block={state?.block} data-fees-timestamp={state?.timestamp}>
       {children}
     </section>
   )
@@ -276,7 +278,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   // /state read failed) or once the NFT is gone, so nothing that was on screen goes away.
   if (phase === 'unavailable') return null
 
-  if (shown === 'loading') {
+  if (phase === 'loading') {
     const basis = state ? basisOf(state, quoteIndex) : null
     return root(
       'loading',
@@ -287,7 +289,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
     )
   }
 
-  if (shown === 'unclaimed-only') {
+  if (phase === 'unclaimed-only') {
     if (!state) return null
     // No history to draw (2026-09-25: the card stays): the chain's unclaimed figure, and the plot flat and quiet.
     return root(
@@ -309,7 +311,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   const estimated = phase === 'estimated'
   const { basis } = view
   const lead = view.sources[0].state
-  const blockTitle = `Pool price at block ${basis.block}`
+  const blockTitle = savedTitle ?? `Pool price at block ${basis.block}`
   const bucket = inspected === null ? null : (pv.buckets[inspected] ?? null)
   // The hero: everything earned since the mint, or at the inspected bucket's end.
   const heroUnits = bucket ? bucket.earned : view.earned
@@ -328,9 +330,10 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   )
 
   return root(
-    estimated ? 'estimated' : 'verified',
+    saved ? 'cached' : estimated ? 'estimated' : 'verified',
     <>
-      <Head titleId={titleId} state={lead} tokens={tokens} standalone={standalone} tabs={<span className="dm-fees-tabs">{tabs}</span>} mark={estimated ? <Badge kind="estimate" data-fees-estimate="" /> : undefined} />
+      <Head titleId={titleId} state={lead} tokens={tokens} standalone={standalone} tabs={<span className="dm-fees-tabs">{tabs}</span>} mark={saved ? <span className="dm-own-est" title={savedTitle} data-fees-saved="">Saved snapshot</span> : estimated ? <Badge kind="estimate" data-fees-estimate="" /> : undefined} />
+      {saved && <p className="dm-fees-amounts" title={savedTitle}>As of {new Date(saved.state.timestamp * 1000).toLocaleString()} · Checking for updates</p>}
       <div className="dm-fees-body" data-zero={view.zero ? '' : undefined}>
         <div className="dm-fees-summary">
           <p className="dm-fees-hero" title={blockTitle}>
@@ -368,7 +371,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
                 </span>
                 <span className="dm-fees-legend-label">
                   <span aria-hidden="true" className="dm-fees-dot" data-tone="unclaimed" />
-                  Ready to collect
+                  {saved ? 'Unclaimed at snapshot' : 'Ready to collect'}
                   <span className="dm-fig-xs dm-fees-zero-fig">
                     <Value basis={basis} units={view.unclaimed} state={lead} />
                   </span>
@@ -396,7 +399,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
                 />
                 <LegendRow
                   tone="unclaimed"
-                  label="Ready to collect"
+                  label={saved ? 'Unclaimed at snapshot' : 'Ready to collect'}
                   title={blockTitle}
                   money={positive(view.unclaimed)}
                   value={<Value basis={basis} units={view.unclaimed} state={lead} />}
@@ -404,7 +407,9 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
                 />
                 {SHOW_REALISED_APR && <AprRow view={view} />}
               </div>
-              {impact && <AutomationImpact impact={impact} basis={basis} symbol={basis.kind === 'quote' ? symbolOf(lead, basis.into) : null} />}
+              {sequence && <div className="dm-fees-impact-slot" data-kind={sequence.automation}>
+                {impact && <AutomationImpact impact={impact} basis={basis} symbol={basis.kind === 'quote' ? symbolOf(lead, basis.into) : null} />}
+              </div>}
             </>
           )}
 

@@ -245,7 +245,8 @@
      card (decoration only). The first panel keeps a little more room at its foot, so the medallion never
      sits on the balance line or its Use max. */
   .dm-flow-link { position: relative; z-index: 2; display: grid; place-items: center; width: 36px; height: 36px; margin: -16px auto; border-radius: var(--radius-pill); background: var(--card); box-shadow: 0 0 0 4px var(--card), inset 0 0 0 1px var(--border-card); color: var(--fg-subtle); pointer-events: none; }
-  .dm-flow-pair-row:first-child .dm-flow-amount { padding-bottom: 18px; }
+  /* A range that takes one token alone draws that token's panel only (2026-09-28): no + to make room for. */
+  .dm-flow-pair-row:first-child:not(:only-child) .dm-flow-amount { padding-bottom: 18px; }
   /* A note or an error under the first panel keeps its line: the + then sits under it, not over it. */
   .dm-flow-pair-row:has(.dm-error, .dm-hint) + .dm-flow-link { margin-top: 4px; }
 

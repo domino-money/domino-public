@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "size": 6,
+  "selectionHourUtc": 12,
+  "selectionLeadMinutes": 30,
+  "selectionRetryUntilMinutes": 10,
+  "maxPins": 2,
+  "maxListingPages": 10,
+  "listingProviderHeadroom": 2,
+  "referenceTokens": {
+    "0x0000000000000000000000000000000000000000": {
+      "symbol": "ETH",
+      "decimals": 18
+    },
+    "0x0bd7d308f8e1639fab988df18a8011f41eacad73": {
+      "symbol": "WETH",
+      "decimals": 18
+    },
+    "0x5fc5360d0400a0fd4f2af552add042d716f1d168": {
+      "symbol": "USDG",
+      "decimals": 6
+    }
+  },
+  "sameAssetPairs": [
+    [
+      "0x0000000000000000000000000000000000000000",
+      "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+    ]
+  ],
+  "ethUsdPricePool": "0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e",
+  "protectedSymbols": [
+    "USDC",
+    "USDT",
+    "DAI",
+    "BTC",
+    "WBTC",
+    "CBBTC",
+    "TSLA",
+    "GOOGL",
+    "META",
+    "MSTR",
+    "NET",
+    "CRCL",
+    "SPY",
+    "NVDAX3L"
+  ],
+  "forbiddenSymbols": [
+    "DOMINO",
+    "ROBINHOOD"
+  ],
+  "reviewedTokens": [],
+  "requireReviewedTokens": false,
+  "rejectUpgradeableTokens": true,
+  "rankBy": "min_fresh_and_previous",
+  "persistence": true,
+  "fill": [
+    "carried",
+    "fallback"
+  ],
+  "thresholds": {
+    "minVolume24hUsd": "250000",
+    "minTvlUsd": "250000",
+    "minReferenceDepthUsd": "10000",
+    "maxAprPercent": "1000",
+    "maxTurnover24h": "25",
+    "minPoolAgeHours": 72,
+    "minTraders24h": 200,
+    "minSwaps24h": 500,
+    "minH6ShareOfH24": "0.10",
+    "maxAbsPriceChange24hPercent": "300",
+    "maxProviderPriceDeviation": "0.05"
+  },
+  "referenceDepth": {
+    "bandPercent": "10",
+    "maxSteps": 300
+  },
+  "hysteresis": {
+    "incumbentFloorFactor": "0.7",
+    "challengerMargin": "1.2",
+    "maxRankedSwapsPerDay": 2
+  },
+  "diversity": {
+    "perNonReferenceToken": 1,
+    "keep": "deepest",
+    "maxMajorPairs": 1
+  },
+  "minPublishable": 3,
+  "validHours": 36,
+  "persistenceLookbackHours": 48
+}

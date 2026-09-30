@@ -92,8 +92,8 @@ function tickAt(sqrtPriceX96) {
 
 /**
  * The pools, in the featured list's order (highest estimated APR first). `price` is currency1 per currency0; TVL and
- * volume are the provider's figures, in dollars; `yesterday` the APR the list's ranking also read (its rule takes the
- * lower of the two days).
+ * volume are the provider's figures, in dollars; `yesterday` the pool's APR the day before, which the list records
+ * (featured-policy v2, 2026-09-28: the list ranks by today's APR alone).
  */
 const POOL_SPECS = [
   { name: 'ETH/USDG 0.30%', currency0: ETH, currency1: USDG, fee: 3000, tickSpacing: 60, price: '2500', tvl: '2410000', volume: '598200', yesterday: '28.1' },
@@ -428,7 +428,8 @@ function walletAssets(body) {
 
 /**
  * read-v5 featured-pools: the five pools as today's list, made at 12:00 UTC the way the service makes it, each with
- * the figures it was ranked by. The template's clock is moved by whole days to today's.
+ * the figures it was ranked by. The template's clock is moved by whole days to today's. Under featured-policy v2
+ * (read-v5 rc.2, 2026-09-28) a pool is ranked by today's APR (`rankApr` is `freshApr`), and depth is not measured.
  */
 function featuredList() {
   const value = structuredClone(V5_TEMPLATE);
@@ -451,8 +452,8 @@ function featuredList() {
       evaluatedAt: value.generatedAt + 60,
       freshApr: Number(pool.apr).toFixed(1),
       prevApr: pool.yesterday,
-      rankApr: String(Math.min(Number(Number(pool.apr).toFixed(1)), Number(pool.yesterday))),
-      referenceDepthUsd: String(Math.round(Number(pool.tvl) / 40)),
+      rankApr: Number(pool.apr).toFixed(1),
+      referenceDepthUsd: null,
       reportedLiquidityUsd: pool.tvl,
       volume24hUsd: pool.volume,
     },

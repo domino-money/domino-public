@@ -457,8 +457,9 @@ test('(d) reads enabled: one capabilities GET per namespace and the lean load in
       assert.equal(await rows.nth(index).locator('td').first().locator('span.font-medium').innerText(), label, 'symbols come from the token reads, in the pool’s order');
     }
     // And the price with the read decimals (ETH 18, TKY 6). Changed on purpose 2026-09-27 (r6/marketsdata, the owner's
-    // plain-price rule): one of a token, so much of the other, the way round that reads as 1 or more.
-    assert.equal((await rowView(rows.nth(0))).price.text, '1 ETH = 1,000,000,000,000 TKY');
+    // plain-price rule): one of a token, so much of the other, the way round that reads as 1 or more. Changed on purpose
+    // 2026-09-28 (one-sided): a token's price in ETH, the app's one way round (lib/read/orientation.ts).
+    assert.equal((await rowView(rows.nth(0))).price.text, '1 TKY = 0.000000000001 ETH');
     assert.equal(await page.locator('a[href*="geckoterminal"]').count(), 0, 'sourceUrl is never linked');
     // #93: the headers name who reported each figure, on a phone as on a laptop; the ratio is Domino's; the estimate says what it is.
     for (const width of [1280, 390]) {

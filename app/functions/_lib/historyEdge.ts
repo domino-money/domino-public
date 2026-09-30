@@ -32,9 +32,9 @@ export const HISTORY_SECONDS = 20
 
 interface Asked { poolId: string; currency: string; windowSeconds?: number; resolutionSeconds?: number }
 
-/** The synthetic GET a history is kept under: the contract version and the question, in one order. */
-export const historyKey = (version: string, asked: Asked) =>
-  `${APP_ORIGIN}/api/read/v3/cache/${encodeURIComponent(version)}/history/${encodeURIComponent(JSON.stringify([asked.poolId.toLowerCase(), asked.currency.toLowerCase(), asked.windowSeconds ?? null, asked.resolutionSeconds ?? null]))}`
+/** The synthetic GET names the validated app origin, contract version and question, in one order. */
+export const historyKey = (version: string, asked: Asked, origin = APP_ORIGIN) =>
+  `${origin}/api/read/v3/cache/${encodeURIComponent(version)}/history/${encodeURIComponent(JSON.stringify([asked.poolId.toLowerCase(), asked.currency.toLowerCase(), asked.windowSeconds ?? null, asked.resolutionSeconds ?? null]))}`
 
 export function answerHistory(request: Request, env: BridgeEnv, rt: HistoryRuntime): Promise<Response> {
   const { contract } = rt
@@ -49,7 +49,7 @@ export function answerHistory(request: Request, env: BridgeEnv, rt: HistoryRunti
   return answerFromEdge(request, env, rt, {
     path: HISTORY_PATH,
     version: contract.CONTRACT_VERSION,
-    keyOf: (body) => (contract.validateRequest('history', body) ? historyKey(contract.CONTRACT_VERSION, body as Asked) : null),
+    keyOf: (body, origin) => (contract.validateRequest('history', body) ? historyKey(contract.CONTRACT_VERSION, body as Asked, origin) : null),
     answers: (body, text) => answer(body, text) !== null,
     keep: (text) => {
       try {

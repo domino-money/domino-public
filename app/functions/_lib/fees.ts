@@ -48,6 +48,7 @@ import {
   keccak256,
   timeoutSignal,
 } from './owned'
+import { automationsOf, subscriberCall, subscriberOf, vaultCalls, vaultsOf } from './automation'
 import type { CompactEvent, CompactLog, LogsRequest, LogsResponse, LogsUnit, RelayAnswer, StateCurrency, StatePosition, StateResponse } from '../../src/lib/fees/types'
 
 // ---------------------------------------------------------------------------
@@ -229,6 +230,14 @@ function shared<T>(key: string, work: () => Promise<T>): Promise<T> {
 
 /** The head as this isolate last read it, reused for one second. */
 let lastHead: { block: number; at: number } | null = null
+
+/**
+ * 2026-09-28 (speed wave B, item 39): a head this context learned elsewhere (the replay worker: the block of the state
+ * its run replays up to, read by the page a moment ago), taken as read now when it is past the one remembered.
+ */
+export function knownHead(block: number, at: number): void {
+  if (!lastHead || block > lastHead.block) lastHead = { block, at }
+}
 
 /** For tests: forget every in-flight read and the remembered head. */
 export function resetRelayMemory(): void {
@@ -421,7 +430,9 @@ export async function headBlock(rt: FeesRuntime, budget: Budget, atLeast: number
   const now = rt.deps.now()
   if (lastHead && lastHead.block >= atLeast && (atLeast > 0 || (now >= lastHead.at && now - lastHead.at < 1000))) return lastHead.block
   const block = quantity(await call(rt, budget, 'eth_blockNumber', []))
-  lastHead = { block, at: now }
+  // 2026-09-28 (speed wave B, item 39): dated when it was read, after any wait for its turn (the replay worker's lane),
+  // so the next request within the second takes it.
+  lastHead = { block, at: rt.deps.now() }
   return block
 }
 
@@ -696,8 +707,12 @@ function failure(outcome: Outcome, retryAfterMs: number): Response {
 // POST /api/fees/v1/state
 // ---------------------------------------------------------------------------
 
-/** The positions `ids` at head − 2, as a StateResponse: three RPC calls (the head and two aggregate3 at one block). */
-export async function readState(rt: FeesRuntime, budget: Budget, ids: readonly bigint[]): Promise<StateResponse> {
+/**
+ * The positions `ids` at head − 2, as a StateResponse: three RPC calls (the head and two aggregate3 at one block).
+ * `automation` (the page's, 2026-09-28, speed wave B, item 17): each id's feature too, in the same two aggregates
+ * (automation.ts), as `automation`.
+ */
+export async function readState(rt: FeesRuntime, budget: Budget, ids: readonly bigint[], automation = false): Promise<StateResponse> {
   const head = await headBlock(rt, budget, 0)
   const block = Math.max(0, head - 2)
   const first = await aggregate(
@@ -709,10 +724,17 @@ export async function readState(rt: FeesRuntime, budget: Budget, ids: readonly b
         { target: POSITION_MANAGER, data: SELECTOR.getPositionLiquidity + word(id) },
         { target: POSITION_MANAGER, data: SELECTOR.ownerOf + word(id) },
       ]),
+      ...(automation ? ids.map(subscriberCall) : []),
       { target: MULTICALL3, data: SELECTOR.getCurrentBlockTimestamp },
     ],
     block,
   )
+  let subscribers: string[] = []
+  try {
+    subscribers = automation ? first.slice(3 * ids.length, 4 * ids.length).map(subscriberOf) : []
+  } catch {
+    // A subscriber that does not read as an address says nothing of the feature; the state stands.
+  }
   const stamp = first[first.length - 1]
   if (!stamp.success) throw new RelayError('fatal', 'no_timestamp')
   const timestamp = Number(bounded(words(stamp.data, 1)[0], 48n))
@@ -770,6 +792,7 @@ export async function readState(rt: FeesRuntime, budget: Budget, ids: readonly b
               { target: address, data: SELECTOR.symbol },
               { target: address, data: SELECTOR.decimals },
             ]),
+            ...vaultCalls(vaultsOf(subscribers)),
           ],
           block,
         )
@@ -822,7 +845,8 @@ export async function readState(rt: FeesRuntime, budget: Budget, ids: readonly b
     })
   })
   const positions = ids.map((id): StatePosition => answered.get(id) ?? { tokenId: id.toString(), ok: false, reason: failures.get(id) ?? 'rpc_unavailable' })
-  return { v: 1, block, timestamp, positions }
+  const vaultsAt = tokenAt + currencies.length * 2
+  return { v: 1, block, timestamp, positions, ...(known.length && subscribers.length ? { automation: automationsOf(ids, subscribers, second.slice(vaultsAt)) } : {}) }
 }
 
 type StateKept = { outcome: 'answer'; text: string } | { outcome: Outcome }
@@ -1178,14 +1202,15 @@ export function failedRead(error: unknown, budget: Budget): RelayAnswer<never> {
 /**
  * POST /api/fees/v1/state's read without the route: the same id check, the
  * same three RPC calls at head − 2, as a RelayAnswer. `bytes` is the size of
- * the answer's JSON, as the route's reply measured it.
+ * the answer's JSON, as the route's reply measured it. `automation`: the page's
+ * own (2026-09-28, speed wave B, item 17), each position's feature with it.
  */
-export async function stateOnChain(rt: FeesRuntime, tokenIds: readonly string[]): Promise<RelayAnswer<StateResponse>> {
+export async function stateOnChain(rt: FeesRuntime, tokenIds: readonly string[], automation = false): Promise<RelayAnswer<StateResponse>> {
   const ids = stateIdsOf({ tokenIds: [...tokenIds] })
   if (!ids) return { ok: false, failure: 'bad_request', retryAfterMs: 0 }
   const budget = newBudget(rt)
   try {
-    const value = await readState(rt, budget, ids)
+    const value = await readState(rt, budget, ids, automation)
     return { ok: true, value, bytes: JSON.stringify(value).length }
   } catch (error) {
     return failedRead(error, budget)

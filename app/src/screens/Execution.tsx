@@ -8,6 +8,8 @@ import { realClock } from '../lib/clock'
 import { shortAmount } from '../lib/format/amount'
 import { groupRaw, hundredthsToPercentText } from '../lib/raw'
 import { formatUnits } from '../lib/read/decimal'
+import { chainToken, noteTokens } from '../lib/chainTokens'
+import { chainRead } from '../lib/fees/answers'
 import { useReadSource } from '../lib/read/screens/readContext'
 import { readWithin } from '../lib/read/screens/screenRead'
 import { CopyButton } from '../components/read/screens/CopyButton'
@@ -44,6 +46,23 @@ const keptTokens = (data: unknown): Array<[string, TokenDetail]> | null => Array
  * browser keeps them (public data) for the next visit (finance/privateCards.ts).
  */
 const known = new Map<string, TokenDetail>(readKept('tokens', KEPT_MS, keptTokens))
+/** Keeps the details read so far in this browser for the next visit. */
+const keepKnown = () => keep('tokens', [...known].flatMap(([address, kept]) => kept.state === 'read' ? [[address, kept.symbol, kept.decimals]] : []).slice(-64))
+/**
+ * 2026-09-28 (speed wave B, item 25: Receipts named its tokens one at a time through the read path, 1.1 s apart, about
+ * 2.7 to 4.5 s on a first visit): the tokens asked of the chain this visit. Before the read path, a token is named from
+ * this visit's chain reads (lib/chainTokens.ts), and every other one of the receipts' tokens from one read of the chain
+ * (lib/chain/chainCode.ts tokenDetails); only one the chain gives no decimals for goes on to the read path.
+ */
+const onChain = new Set<string>()
+async function fromChain(addresses: readonly string[]): Promise<Array<[string, TokenDetail]>> {
+  const rest = addresses.filter(address => !chainToken(address))
+  if (rest.length) noteTokens(await import('../lib/chain/chainCode').then(code => code.tokenDetails(code.chainDeps(), rest)).catch(() => []))
+  return addresses.flatMap(address => {
+    const token = chainToken(address)
+    return token ? [[address, { state: 'read', symbol: token.symbol, decimals: token.decimals }]] : []
+  })
+}
 
 /**
  * Token details for the currencies the shown receipts name: one address at a
@@ -59,6 +78,17 @@ function useTokenDetails(addresses: readonly string[]): ReadonlyMap<string, Toke
   const wanted = [...new Set(addresses.map(address => address.toLowerCase()))].sort().join(',')
   useEffect(() => {
     if (!source || !wanted) return
+    const fresh = chainRead() ? wanted.split(',').filter(address => details.get(address) === undefined && !onChain.has(address)) : []
+    if (fresh.length > 0) {
+      for (const address of fresh) onChain.add(address)
+      void fromChain(fresh).then(found => {
+        for (const [address, detail] of found) known.set(address, detail)
+        if (found.length > 0) keepKnown()
+        // Drawn again either way: a token the chain did not name goes on to the read path.
+        setDetails(old => new Map([...old, ...found]))
+      })
+      return
+    }
     const now = realClock.monoMs()
     const next = wanted.split(',').find(address => {
       const detail = details.get(address)
@@ -74,7 +104,7 @@ function useTokenDetails(addresses: readonly string[]): ReadonlyMap<string, Toke
       if (outcome.state === 'ok') {
         const asset = outcome.data.asset
         known.set(next, detail = { state: 'read', symbol: asset.symbol, decimals: asset.displayUnitsAvailable ? asset.decimals : null })
-        keep('tokens', [...known].flatMap(([address, kept]) => kept.state === 'read' ? [[address, kept.symbol, kept.decimals]] : []).slice(-64))
+        keepKnown()
       } else {
         const reason = outcome.state === 'unavailable' ? (outcome.cause.kind === 'producer' ? outcome.cause.code : outcome.cause.kind) : outcome.state === 'local' ? outcome.code : outcome.state
         const transient = outcome.state === 'busy' || outcome.state === 'local' || (outcome.state === 'unavailable' && outcome.retryable)

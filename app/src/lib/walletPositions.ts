@@ -37,6 +37,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { OwnedDeps } from '../../functions/_lib/owned'
 import type { MintedMemory } from '../../functions/_lib/walletPositions'
+import { noteAutomation, parseAutomationAnswer } from './automationState'
+import { noteTokens } from './chainTokens'
+import { madeCount } from './create/createProgress'
 // The read screens' own wait that holds while the page is hidden. 2026-09-27: this module's copy of it went; quietRead.ts
 // is in the entry chunk every page loads, so the picker loads nothing more for it.
 import { whenVisibleAfter } from './read/screens/quietRead'
@@ -216,7 +219,7 @@ export function parseWalletAnswer(value: unknown, owner: string): WalletAnswer |
   return { owner: value.owner, block: value.block, positions, deposits }
 }
 
-export type WalletRead = { ok: true; answer: WalletAnswer } | { ok: false; reason: string }
+export type WalletRead = { ok: true; answer: WalletAnswer } | { ok: false; reason: string; retryAt?: number }
 
 /**
  * Whether a failed read is asked again: every failure of the chain or of the
@@ -235,9 +238,53 @@ const ZERO_OWNER = /^0x0{40}$/
  * fresh at its own head. Only the page's own runtime keeps it; a read handed its runtime (the tests) scans in full.
  */
 const minted = new Map<string, MintedMemory>()
-/** For tests: forget what earlier scans found. */
+/**
+ * 2026-09-28 (speed wave B, item 18: every way back to Positions showed its loading rows again for most of a second, and
+ * a position's page scanned the wallet again only to decide its Automate): the last answer the page's own read got per
+ * wallet, in this page's memory only (never the browser's storage), and when. For KEPT_MS it is drawn at once on the way
+ * back (askWallet), a position's page draws its header from its row (keptPosition), and the page's Automate is decided
+ * from it. An action that changes the list forgets it (forgetWallet: Close, Collect, a refund), and so does a position
+ * Create position made since (madeCount).
+ */
+const answers = new Map<string, { answer: WalletAnswer; at: number; made: number }>()
+export const KEPT_MS = 60_000
+/** The answer kept for `owner` while it is at most KEPT_MS old and no position was created since. */
+function keptWallet(owner: string): { answer: WalletAnswer; at: number } | null {
+  const kept = answers.get(owner)
+  return kept && Date.now() - kept.at < KEPT_MS && kept.made === madeCount() ? kept : null
+}
+/** Forgets the answers kept, and a first read shared since (it may be from before an action). */
+export function forgetWallet(): void {
+  answers.clear()
+  warm = null
+}
+/** `tokenId`'s row in a wallet answer kept this visit (keptWallet), with the wallet and the answer's block. */
+export function keptPosition(tokenId: string): { position: WalletPosition; owner: string; block: number } | null {
+  for (const owner of answers.keys()) {
+    const answer = keptWallet(owner)?.answer
+    const position = answer?.positions.find((one) => one.tokenId === tokenId)
+    if (answer && position) return { position, owner, block: answer.block }
+  }
+  return null
+}
+/**
+ * 2026-09-28 (speed wave B, item 18): a wallet's first read on a screen is shared by every screen that asks for the same
+ * wallet while it is on its way, or WARM_MS after it answered, and no screen that leaves stops it: a position's page
+ * opened from the list while the list's read is on its way takes its answer rather than scanning the wallet again.
+ */
+let warm: { owner: string; read: Promise<WalletRead>; settled: number; made: number } | null = null
+const WARM_MS = 5_000
+function sharedRead(owner: string): Promise<WalletRead> {
+  if (warm?.owner === owner && Date.now() - warm.settled < WARM_MS && warm.made === madeCount()) return warm.read
+  const started = { owner, read: readWalletPositions(owner, new AbortController().signal), settled: Infinity, made: madeCount() }
+  void started.read.then(() => void (started.settled = Date.now()))
+  warm = started
+  return started.read
+}
+/** For tests: forget what earlier scans found (and, 2026-09-28, the answers kept and a read started early). */
 export function forgetMinted(): void {
   minted.clear()
+  forgetWallet()
 }
 
 /**
@@ -257,15 +304,20 @@ export async function readWalletPositions(owner: string, signal: AbortSignal, de
     // waits between refused calls included.
     const release = deps ? null : code.holdReads()
     try {
-      const scan = await code.scanWallet(deps ?? code.chainDeps(signal), lower, deps ? null : (minted.get(lower) ?? null))
+      // 2026-09-28 (speed wave B, item 17): the page's own read carries each position's feature, for its badges.
+      const scan = await code.scanWallet(deps ?? code.chainDeps(signal), lower, deps ? null : (minted.get(lower) ?? null), !deps)
       body = scan.body
       if (!deps) {
         if (scan.minted) minted.set(lower, scan.minted)
         else minted.delete(lower)
+        const features = scan.automation && parseAutomationAnswer(scan.automation, scan.automation.positions.map((one) => one.tokenId))
+        features?.positions.forEach(noteAutomation)
       }
     } catch (error) {
       if (signal.aborted) return { ok: false, reason: 'aborted' }
-      return { ok: false, reason: error instanceof code.ChainError && error.kind === 'rate' ? 'chain_busy' : 'chain_unavailable' }
+      const reason = error instanceof code.ChainError && error.kind === 'rate' ? 'chain_busy' : 'chain_unavailable'
+      const retryAt = reason === 'chain_busy' && !deps ? code.chainRetryAt() : 0
+      return { ok: false, reason, ...(retryAt > 0 ? { retryAt } : {}) }
     } finally {
       release?.()
     }
@@ -276,6 +328,10 @@ export async function readWalletPositions(owner: string, signal: AbortSignal, de
   if (signal.aborted) return { ok: false, reason: 'aborted' }
   // The scan's answer as a route would have sent it, taken only when every field is what the parser expects.
   const answer = parseWalletAnswer(JSON.parse(JSON.stringify(body)), lower)
+  if (answer && !deps) {
+    answers.set(lower, { answer, at: Date.now(), made: madeCount() })
+    noteTokens(rows(answer).flatMap((row) => row.currencies))
+  }
   return answer ? { ok: true, answer } : { ok: false, reason: 'invalid_reply' }
 }
 
@@ -363,8 +419,12 @@ export function askWallet(owner: string, shown: { current: WalletAnswer | null }
   // A read the refresh asks on its own, held back while `paused` (a held deposit's refund on its way, which a new list
   // could unmount mid-refund).
   const later = (ms: number): void => after(ms, () => (paused?.current ? later(pace!) : ask()))
+  // The first read of the page's own: the one other screens share (sharedRead).
+  let first = read === readWalletPositions
   const ask = () => {
-    void read(owner, controller.signal).then((result) => {
+    const asked = first ? sharedRead(owner) : read(owner, controller.signal)
+    first = false
+    void asked.then((result) => {
       if (controller.signal.aborted) return
       const before = shown.current?.owner === owner ? shown.current : null
       // (a)-(c) only with the refresh on: a reader without it (the picker, the automation page) draws each answer it
@@ -385,11 +445,28 @@ export function askWallet(owner: string, shown: { current: WalletAnswer | null }
       }
       if (!again) return
       if (before && pace) later(REFRESH_FAILED_MS[attempts ? 1 : 0])
-      else after(attempts < REASK_MS.length ? REASK_MS[reason === 'chain_busy' && attempts === 1 ? 0 : attempts] : LATER_MS, ask)
+      else {
+        // A shared cooldown is an absolute gate, not another failed scan to poll through. Its deadline comes
+        // from the local runtime above, never from wallet/provider metadata, and must not restart when sharedRead
+        // returns a failure kept a few seconds earlier. Wake at that deadline (with the usual
+        // two-second minimum) instead of exhausting retries locally and then sleeping ten/thirty seconds past it.
+        const retryAt = !result.ok && reason === 'chain_busy' ? result.retryAt ?? 0 : 0
+        const wait = Number.isFinite(retryAt) && retryAt > 0
+          ? Math.max(REASK_MS[0], retryAt - Date.now())
+          : attempts < REASK_MS.length ? REASK_MS[reason === 'chain_busy' && attempts === 1 ? 0 : attempts] : LATER_MS
+        after(wait, ask)
+      }
       attempts += 1
     })
   }
-  ask()
+  // The answer this page's own read got for the wallet a moment ago (item 18 above), drawn at once when nothing is on
+  // screen: then read again only as the refresh would have (none without it), a read of its own, never one shared.
+  const memory = first && shown.current?.owner !== owner ? keptWallet(owner) : null
+  if (memory) {
+    first = false
+    put({ phase: 'ready', answer: (shown.current = memory.answer) })
+    if (pace) later(Math.max(0, pace - (Date.now() - memory.at)))
+  } else ask()
   return () => {
     controller.abort()
     cancel?.()
@@ -411,6 +488,8 @@ export function useWalletAnswer(owner: string | null, asked = 0, every: number |
   const shown = useRef<WalletAnswer | null>(null)
   useEffect(() => {
     if (!owner) return
+    // Asked again after an action changed the list: never the answer kept from before it.
+    if (asked) forgetWallet()
     return askWallet(owner, shown, (value) => setState({ owner, value }), every, paused)
   }, [owner, asked, every, paused])
   if (!owner) return { phase: 'idle' }

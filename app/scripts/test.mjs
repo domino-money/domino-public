@@ -26,6 +26,7 @@ execFileSync(
   [
     '--test',
     'tests/domain.test.mjs',
+    'tests/load-timing.test.mjs',
     'tests/gate.test.mjs',
     'tests/read.test.mjs',
     'tests/read-estimate.test.mjs',
@@ -84,6 +85,8 @@ execFileSync(
     'tests/card-series.test.mjs',
     'tests/token-search.test.mjs',
     'tests/market-price.test.mjs',
+    // 2026-09-28 (one-sided): one way round for every pool price, and a range that takes one token alone.
+    'tests/price-orientation.test.mjs',
     'tests/local-live-boundary.test.mjs',
     'tests/local-live-build.test.mjs',
     'tests/local-live-proxy.test.mjs',
@@ -119,6 +122,12 @@ execFileSync(
     'tests/fees-relay.test.mjs',
     'tests/fees-topics.test.mjs',
     'tests/fees-store.test.mjs',
+    'tests/fees-history-cache.test.mjs',
+    'tests/fees-cache-store.test.mjs',
+    'tests/fees-freshness.test.mjs',
+    'tests/fees-checkpoint-recovery.test.mjs',
+    'tests/fees-worker-correlation.test.mjs',
+    'tests/apr-prefetch-queue.test.mjs',
     // 2026-09-25: the price path (a busy pool's position from the Swaps of its own life), its estimate and its two reads.
     'tests/fees-path.test.mjs',
     // 2026-09-25: the fees worker's paced lane to the public RPC, and the reads that share it with the page.

@@ -16,8 +16,8 @@ import {
   validateResponse as validateV4Response, matchesRequest as matchesV4Request,
 } from '../../api-contracts/read-v4/runtime.mjs';
 import {
-  CONTRACT_VERSION as V5_CONTRACT_VERSION, ERROR_STATUS_BY_CODE as V5_ERROR_STATUS_BY_CODE,
-  ROUTES as V5_ROUTES, validateRequest as validateV5Request,
+  CONTRACT_VERSION as V5_CONTRACT_VERSION, CONTRACT_VERSIONS as V5_CONTRACT_VERSIONS,
+  ERROR_STATUS_BY_CODE as V5_ERROR_STATUS_BY_CODE, ROUTES as V5_ROUTES, validateRequest as validateV5Request,
   validateResponse as validateV5Response, matchesRequest as matchesV5Request,
 } from '../../api-contracts/read-v5/runtime.mjs';
 
@@ -51,8 +51,12 @@ const V4_PROTOCOL = Object.freeze({
 });
 // The featured pools list (featured-pools v1 §10.3): one stored route whose
 // request names nothing, so every visitor asks the same question.
+// Since 2026-09-28 (rugged's featured-policy v2 handoff) it speaks rc.2 and still
+// takes rc.1, from the browser and from the gateway, while the VM moves to rc.2:
+// `versions` is every version accepted, `version` the one this Worker speaks.
 const V5_PROTOCOL = Object.freeze({
   prefix: '/api/read/v5/', upstreamPrefix: '/internal/read/v5/', version: V5_CONTRACT_VERSION,
+  versions: V5_CONTRACT_VERSIONS,
   enabledFlag: 'READ_V5_BRIDGE_ENABLED', readsFlag: 'ENABLED_V5_READS', routes: V5_ROUTES,
   validateRequest: validateV5Request, validateResponse: validateV5Response,
   errors: V5_ERROR_STATUS_BY_CODE, matchesRequest: matchesV5Request,
@@ -61,6 +65,10 @@ export const LIMITS = Object.freeze({ requestBytes: 8192, responseBytes: 1024 * 
 
 // Shared, finite and status-specific. Unknown producer failures never reach clients.
 export { ERROR_STATUS_BY_CODE };
+
+// Every contract version a protocol takes in X-Domino-Read-Contract: its own, or
+// the list it declares (read-v5, during its rc.1 to rc.2 transition).
+const acceptedVersions = (protocol) => protocol.versions ?? [protocol.version];
 
 class BridgeError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -210,19 +218,21 @@ async function readText(body, limit, scope, errorCode) {
   }
 }
 
-function headersFor(requestId, protocol, extra = {}) {
+// `version` is the contract the reply speaks: the protocol's own, the one the
+// browser asked in, or, for a relayed answer, the one the gateway answered in.
+function headersFor(requestId, version, extra = {}) {
   return {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-    [CONTRACT_HEADER]: protocol.version,
+    [CONTRACT_HEADER]: version,
     'X-Domino-Request-Id': requestId,
     ...extra,
   };
 }
 
-function errorResponse(code, requestId, protocol, extra) {
-  return new Response(JSON.stringify({ error: code }), { status: protocol.errors[code], headers: headersFor(requestId, protocol, extra) });
+function errorResponse(code, requestId, protocol, extra, version = protocol.version) {
+  return new Response(JSON.stringify({ error: code }), { status: protocol.errors[code], headers: headersFor(requestId, version, extra) });
 }
 
 function clientIp(value) {
@@ -239,7 +249,7 @@ function retryAfter(headers) {
   return /^[0-9]{1,3}$/.test(value ?? '') && Number(value) >= 1 && Number(value) <= 60 ? String(Number(value)) : '1';
 }
 
-async function upstreamRead(request, body, payload, route, settings, fetchImpl, trustedIp, started, requestId, protocol) {
+async function upstreamRead(request, body, payload, route, settings, fetchImpl, trustedIp, started, requestId, protocol, version) {
   const ip = clientIp(trustedIp);
   if (!ip) fail('upstream_unavailable');
   const remaining = LIMITS.totalMs - (Date.now() - started);
@@ -270,7 +280,8 @@ async function upstreamRead(request, body, payload, route, settings, fetchImpl, 
     // Access/infrastructure can return login HTML with a misleading 200. Inspect
     // media before version negotiation so it remains an availability failure.
     if (!jsonContentType(response.headers)) fail('upstream_unavailable');
-    if (response.headers.get(CONTRACT_HEADER) !== protocol.version) fail('upstream_contract_mismatch');
+    const answered = response.headers.get(CONTRACT_HEADER);
+    if (!acceptedVersions(protocol).includes(answered)) fail('upstream_contract_mismatch');
     // Native fetch supplies decoded bytes. Identity is explicit on our gateway;
     // reject encoded responses instead of relying on runtime decoding ambiguity.
     const encoding = response.headers.get('Content-Encoding');
@@ -290,18 +301,21 @@ async function upstreamRead(request, body, payload, route, settings, fetchImpl, 
     if (response.status === 200) {
       if (!isObject(result) || Object.hasOwn(result, 'error')) fail('upstream_invalid_response');
       if (result.schemaVersion !== protocol.routes[route].schemaVersion || result.chainId !== CHAIN_ID) fail('upstream_contract_mismatch');
+      // Where two versions pass, the answer names the one its header does.
+      if (protocol.versions && result.contractVersion !== answered) fail('upstream_contract_mismatch');
       const valid = protocol.validateResponse(route, result) && protocol.matchesRequest(payload, result, route);
       scope.check();
       if (!valid) fail('upstream_contract_mismatch');
       // Both gateway and BFF validate the full pinned response schema. Preserve
       // original JSON bytes/names/numbers, including the gateway's opaque cursor.
-      const output = new Response(text, { status: 200, headers: headersFor(requestId, protocol) });
+      // Relayed in the version it was answered in: an rc.1 list stays rc.1 (the app takes both).
+      const output = new Response(text, { status: 200, headers: headersFor(requestId, answered) });
       scope.check();
-      return { response: output };
+      return { response: output, version: answered };
     }
     if (!isObject(result) || Object.keys(result).length !== 1 || typeof result.error !== 'string') fail('upstream_invalid_response');
     if (!Object.hasOwn(protocol.errors, result.error) || protocol.errors[result.error] !== response.status) fail('upstream_unavailable');
-    const output = errorResponse(result.error, requestId, protocol, response.status === 429 ? { 'Retry-After': retryAfter(response.headers) } : undefined);
+    const output = errorResponse(result.error, requestId, protocol, response.status === 429 ? { 'Retry-After': retryAfter(response.headers) } : undefined, version);
     scope.check();
     // The code is already checked against the reviewed table above, so the
     // record can name it without reading the relayed body back.
@@ -324,6 +338,8 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
       const requestId = crypto.randomUUID();
       const started = Date.now();
       let protocol = V1_PROTOCOL;
+      // The contract this reply speaks, once the browser's header is checked: the one it asked in, else the protocol's.
+      let version = null;
       // The raw URL never reaches the record: only a declared route name does.
       let loggedRoute = 'unmatched';
       const finish = (response, reason) => {
@@ -331,7 +347,7 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
         // body's shape; the record names it rather than leaving the line silent.
         console.log(JSON.stringify({
           service: 'read-bridge', requestId, route: loggedRoute,
-          contractVersion: protocol.version,
+          contractVersion: version ?? protocol.version,
           // Bounded like the Python hops: a method is short or it is not one.
           method: String(request.method).slice(0, 16),
           status: response.status, durationMs: Date.now() - started,
@@ -353,10 +369,11 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
         if (request.method !== (capability ? 'GET' : 'POST')) fail('method_not_allowed');
         checkBrowser(request, settings.appOrigin, capability);
         const requestedContract = request.headers.get(CONTRACT_HEADER);
-        if (requestedContract !== null && requestedContract !== protocol.version) fail('upstream_contract_mismatch');
+        if (requestedContract !== null && !acceptedVersions(protocol).includes(requestedContract)) fail('upstream_contract_mismatch');
+        version = requestedContract ?? protocol.version;
         if (capability) {
           const output = new Response(JSON.stringify({
-            contractVersion: protocol.version,
+            contractVersion: version,
             dataMode: settings.enabledReads.length ? 'live_read_only' : 'disabled',
             chainId: CHAIN_ID,
             enabledReads: settings.enabledReads,
@@ -364,7 +381,7 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
             privateAccounts: false,
             ownerTransactions: false,
             automation: false,
-          }), { headers: headersFor(requestId, protocol) });
+          }), { headers: headersFor(requestId, version) });
           if (Date.now() - started >= LIMITS.totalMs) fail('request_timeout');
           return finish(output);
         }
@@ -390,11 +407,12 @@ export function createWorker({ fetch: fetchImpl = globalThis.fetch, getClientIp 
           if (error instanceof BridgeError) throw error;
           fail('invalid_request');
         } finally { scope.dispose(); }
-        const relayed = await upstreamRead(request, text, body, route, settings, fetchImpl, getClientIp(request), started, requestId, protocol);
+        const relayed = await upstreamRead(request, text, body, route, settings, fetchImpl, getClientIp(request), started, requestId, protocol, version);
+        if (relayed.version) version = relayed.version;
         return finish(relayed.response, relayed.reason);
       } catch (error) {
         const code = error instanceof BridgeError ? error.code : 'upstream_unavailable';
-        return finish(errorResponse(code, requestId, protocol), code);
+        return finish(errorResponse(code, requestId, protocol, undefined, version ?? protocol.version), code);
       }
     },
   };

@@ -12,8 +12,11 @@ export const MARKETS: DocPage = {
       title: 'The pools table',
       blocks: [
         // 2026-09-28: the line under the table's title that stated the thresholds was removed (the owner), so this no
-        // longer points to it.
-        p('Markets lists selected Uniswap pools on Robinhood Chain. Once a day, at 12:00 UTC, Domino ranks pools with no hooks, a fixed fee and a minimum 24h volume and liquidity by estimated 24h fee APR. When that list is unavailable, a fixed selection is shown instead. Neither is a recommendation.'),
+        // longer points to it. Later that day the list's rules became featured-policy v2 (rugged's handoff): today's
+        // APR, a 24h volume floor and a TVL floor, and the safety rules; no other market rule. The floors are named but
+        // not stated, in symbols or in words: the owner took the figures off Markets, and the pictured list below is not
+        // held to them (tests/docs.test.mjs).
+        p('Markets lists selected Uniswap pools on Robinhood Chain. Once a day, at 12:00 UTC, Domino ranks pools by estimated 24h fee APR. A pool needs no hooks, a fixed fee, tokens that pass Domino’s checks, and enough 24h volume and TVL. When that list is unavailable, a fixed selection is shown instead. Neither is a recommendation.'),
         shot('markets', 'Each row is a pool. Select it to open the pool’s page.'),
         list(
           [b('Price'), ': the pool’s own price between its two tokens, not a dollar price.'],

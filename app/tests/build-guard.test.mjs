@@ -213,7 +213,9 @@ test('a deployable row that reads fixtures fails every build, the test builds in
       );
     }
   } finally {
-    rmSync(copy, { force: true });
+    // This is one known regular file. On the Windows/OneDrive checkout,
+    // Node's rmSync(force) can return without removing it; unlink is exact.
+    if (existsSync(copy)) unlinkSync(copy);
   }
   assert.ok(!existsSync(copy), 'the copy was removed');
 });

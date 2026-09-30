@@ -686,8 +686,11 @@ test('a chosen pool gets range controls on its read price: presets, steppers and
   // What the view is, in the words over it: a drawing on a read price, and nothing executable.
   assert.match(text, /A range drawn on this pool’s price as read, at one block\. Nothing is quoted, created, approved or signed\./);
   assert.match(text, /Pool price/);
-  assert.match(await dialog.locator('[data-pool-price-text]').innerText(), /^≈1,000,000,000,000$/);
-  assert.match(text, /TOKEN per ETH/);
+  // Changed on purpose 2026-09-28 (one-sided): the app writes a token's price in ETH (lib/read/orientation.ts), so the
+  // view reads TOKEN's price in ETH, Min is TOKEN's lowest price, and each end's tick (data-bound-tick) is the pool's own:
+  // the lowest price sits at the pool's upper tick.
+  assert.match(await dialog.locator('[data-pool-price-text]').innerText(), /^≈0\.000000000001$/);
+  assert.match(text, /ETH per TOKEN/);
   assert.doesNotMatch(text, /· block 700/, 'the block a price was read at is not something to read beside it');
   assert.match(text, /Enter a price and apply, or drag a handle\. Prices snap outward to the pool’s tick spacing\./);
   assert.equal(await priceState(dialog), 'usable');
@@ -696,7 +699,7 @@ test('a chosen pool gets range controls on its read price: presets, steppers and
   assert.doesNotMatch(text, /\$\s?\d|amount|deposit/i, 'no amount and no money: an illustration of a range on a price');
 
   // The app's "Closer" preset, 0.7× to 1.5× of the pool price, on multiples of 60.
-  assert.deepEqual(await boundTicks(dialog), ['-3600', '4080']);
+  assert.deepEqual(await boundTicks(dialog), ['3600', '-4080']);
   assert.equal(await dialog.getByRole('radio', { name: /Closer/ }).getAttribute('aria-checked'), 'true');
   // A range that holds the price says so to assistive technology and nothing on
   // screen; the line appears only when the range does not hold it.
@@ -704,7 +707,7 @@ test('a chosen pool gets range controls on its read price: presets, steppers and
   assert.equal(await dialog.locator('p[data-range-position]').count(), 0, 'nothing to warn about, nothing printed');
 
   await dialog.getByRole('button', { name: 'Raise the max price by one tick spacing' }).click();
-  assert.deepEqual(await boundTicks(dialog), ['-3600', '4140']);
+  assert.deepEqual(await boundTicks(dialog), ['3600', '-4140']);
   assert.equal(await dialog.getByRole('radio', { name: 'Custom' }).getAttribute('aria-checked'), 'true');
 
   // The slider is a real range input on the tick spacing; its spoken value carries no symbol.
@@ -712,19 +715,19 @@ test('a chosen pool gets range controls on its read price: presets, steppers and
   assert.deepEqual([await lower.getAttribute('step'), await lower.getAttribute('min'), await lower.getAttribute('max')], ['60', '-13920', '13920']);
   await lower.focus();
   await page.keyboard.press('ArrowRight');
-  assert.deepEqual(await boundTicks(dialog), ['-3540', '4140']);
+  assert.deepEqual(await boundTicks(dialog), ['3540', '-4140']);
   const spoken = await lower.getAttribute('aria-valuetext');
-  assert.match(spoken, /^≈[\d,]+, −[\d.]+% from the pool price, tick -3540$/);
+  assert.match(spoken, /^≈[\d,.]+, −[\d.]+% from the pool price, tick 3540$/);
   assert.doesNotMatch(spoken, /TOKEN|ETH/, 'an untrusted symbol never goes into an attribute');
   assert.match(await dialog.locator('[data-range-bound="lower"] .pointer-events-none').innerText(), /^−[\d.]+%$/, 'the handle shows the distance from the pool price');
   // A bound never crosses the other: the lower stops one spacing below the upper.
   await page.keyboard.press('End');
-  assert.deepEqual(await boundTicks(dialog), ['4080', '4140']);
+  assert.deepEqual(await boundTicks(dialog), ['-4080', '-4140']);
   assert.equal(await dialog.locator('[data-range-position]').getAttribute('data-range-position'), 'below');
   assert.match(await dialog.locator('[data-range-position]').innerText(), /The pool price at this block is below this range\./);
 
   await dialog.getByRole('radio', { name: /Wider/ }).click();
-  assert.deepEqual(await boundTicks(dialog), ['-6960', '6960']);
+  assert.deepEqual(await boundTicks(dialog), ['6960', '-6960']);
   assert.deepEqual(await widthChecked(dialog), ['Wider']);
 
   for (const name of await dialog.locator('button').allInnerTexts()) assert.doesNotMatch(name, FORBIDDEN_CONTROL, name);
@@ -745,7 +748,7 @@ test('a chosen pool gets range controls on its read price: presets, steppers and
   await page.waitForFunction(() => document.activeElement?.textContent === 'Start with a token you know.');
   assert.match(
     await dialog.locator('[data-summary="Range"]').innerText(),
-    /^Range: ≈.+ to ≈.+ TOKEN per ETH · ticks -6960 to 6960 · on the price at block 700 · not saved, nothing is created$/,
+    /^Range: ≈.+ to ≈.+ ETH per TOKEN · ticks -6960 to 6960 · on the price at block 700 · not saved, nothing is created$/,
   );
 
   // Reopened, the kept range says what it is: Wider, not the default Closer.
@@ -754,7 +757,7 @@ test('a chosen pool gets range controls on its read price: presets, steppers and
     await page.waitForFunction(() => document.activeElement?.textContent === 'Range on this pool');
   };
   await reopen();
-  assert.deepEqual(await boundTicks(dialog), ['-6960', '6960']);
+  assert.deepEqual(await boundTicks(dialog), ['6960', '-6960']);
   assert.deepEqual(await widthChecked(dialog), ['Wider'], 'a kept Wider range reopens as Wider');
   // Back leaves the kept range as it was.
   await dialog.getByRole('button', { name: 'Raise the max price by one tick spacing' }).click();
@@ -767,9 +770,9 @@ test('a chosen pool gets range controls on its read price: presets, steppers and
   await dialog.getByRole('button', { name: 'Raise the max price by one tick spacing' }).click();
   await dialog.getByRole('button', { name: 'Use this range' }).click();
   await page.waitForFunction(() => document.activeElement?.textContent === 'Start with a token you know.');
-  assert.match(await dialog.locator('[data-summary="Range"]').innerText(), /ticks -6960 to 7020/);
+  assert.match(await dialog.locator('[data-summary="Range"]').innerText(), /ticks -7020 to 6960/);
   await reopen();
-  assert.deepEqual(await boundTicks(dialog), ['-6960', '7020']);
+  assert.deepEqual(await boundTicks(dialog), ['6960', '-7020']);
   assert.deepEqual(await widthChecked(dialog), ['Custom'], 'a kept custom range reopens as Custom');
   await dialog.getByRole('button', { name: 'Back to pair' }).click();
 
@@ -835,7 +838,7 @@ test('a price read more than 5 minutes ago on the page is marked stale in its ti
   await jump(page, '00:15');
   await page.waitForFunction(() => document.querySelector('[data-picker="range"]')?.getAttribute('data-price-state') === 'stale');
   assert.equal(await dialog.locator('[data-price-stale]').getAttribute('title'), 'This price was read more than 5 minutes ago on this page, and the pool’s price has probably moved since.');
-  assert.match(await dialog.locator('[data-pool-price-text]').innerText(), /^≈1,000,000,000,000$/, 'the same price, in the same ink');
+  assert.match(await dialog.locator('[data-pool-price-text]').innerText(), /^≈0\.000000000001$/, 'the same price, in the same ink');
   assert.doesNotMatch(await dialog.locator('[data-pool-price]').innerHTML(), /money-wait|dm-pill|>Stale</, 'no pill, no colour, no word');
   assert.equal(await dialog.locator('[data-picker="range"] .dm-pill').count(), 0);
   assert.equal(await dialog.getByRole('button', { name: /Refresh|Read the price again/ }).count(), 0, 'no refresh control');
@@ -848,8 +851,8 @@ test('a price read more than 5 minutes ago on the page is marked stale in its ti
   assert.match(await dialog.locator('[data-pool-price] [role="status"]').textContent(), /^Price read again at block 705\.$/, 'said to assistive technology only');
   assert.equal(await priceState(dialog), 'usable');
   // The lab's second reading moved the price one tick spacing, to tick 60.
-  assert.match(await dialog.innerText(), /TOKEN per ETH/);
-  assert.deepEqual(await boundTicks(dialog), ['-3600', '4080'], 'the practice range stays');
+  assert.match(await dialog.innerText(), /ETH per TOKEN/);
+  assert.deepEqual(await boundTicks(dialog), ['3600', '-4080'], 'the practice range stays');
   assert.deepEqual(await widthChecked(dialog), ['Custom'], 'the kept range is no longer Closer on the moved price');
   const log = await caseLog(page);
   assert.equal(log.length, reads + 1, 'one read, on request');

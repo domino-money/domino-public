@@ -129,3 +129,74 @@ test('NFT 3325113 behind the RPC’s limits: its history verifies through the pa
     globalThis.__DOMINO_DEPLOYABLE__ = flags;
   }
 });
+
+// 2026-09-28, speed wave B merged after the hotfix: the reads wave B adds or changes keep inside the RPC's limits too.
+// The wallet scan (its head from ArbSys and the owner's nonce in its first call, each position's feature in its own
+// aggregates) walks DominoSetupV1's SetupMinted logs from the contract's deployment: once the chain is more than
+// LOG_BLOCKS_ONE blocks past it, the walk is asked in windows of that width, newest first, never refused first and
+// halved (tests/owned-chain.mjs answers the gateway's refusal too).
+test('speed wave B’s wallet scan keeps inside the limits: its SetupMinted walk in windows, newest first, nothing refused', async () => {
+  const ownedChain = await import('./owned-chain.mjs');
+  const start = owned.SETUP_DEPLOY_BLOCK;
+  const head = start + LOG_BLOCKS_ONE + 5_000_000;
+  const chain = ownedChain.fakeChain({ head, minted: [{ block: start + 1_000, id: 7 }, { block: head - 1_000, id: 9 }], nfts: { 7: ownedChain.nft(), 9: ownedChain.nft() } });
+  const scan = await ownedChain.wallet.scanWallet(chain.deps, ownedChain.OWNER, null, true);
+  assert.deepEqual(scan.body.positions.map((position) => position.tokenId), ['9', '7'], 'both, the newest first');
+  assert.deepEqual(scan.automation.positions.map((position) => [position.tokenId, position.automation]), [['9', 'plain'], ['7', 'plain']], 'each position’s feature, from the same reads');
+  const filters = logFilters(chain);
+  assert.deepEqual(refusedAny(filters), [], 'nothing the RPC refuses');
+  assert.deepEqual(filters.map((filter) => [Number(filter.fromBlock), Number(filter.toBlock)]), [[head - LOG_BLOCKS_ONE + 1, head], [start, head - LOG_BLOCKS_ONE]], 'two windows, newest first');
+  // A later scan of the same wallet reads only the blocks since (the page's memory of it): one small window.
+  chain.log.length = 0;
+  const again = await ownedChain.wallet.scanWallet(chain.deps, ownedChain.OWNER, scan.minted, true);
+  assert.deepEqual(again.body.positions.map((position) => position.tokenId), ['9', '7']);
+  assert.deepEqual(logFilters(chain).map((filter) => [Number(filter.fromBlock), Number(filter.toBlock)]), [[head - ownedChain.wallet.REREAD_BLOCKS + 1, head]]);
+});
+
+// Item 26: an automated position's vault record is read as soon as the page's own read names the vault, from the
+// factory's first block (lib/automationImpact.ts warmVault, VAULT_FIRST_BLOCK) to that read's block. That span grows with
+// the chain: past LOG_BLOCKS_ONE it is asked in windows, oldest first, and the fees paid over executions more than
+// LOG_BLOCKS_MANY blocks apart one currency at a time; every read inside both limits, none refused.
+test('speed wave B’s early vault record, from the factory’s first block, keeps inside both limits', async () => {
+  const impact = require('../.test-build/app/src/lib/automationImpact.js');
+  const flags = [globalThis.__DOMINO_DEPLOYABLE__, globalThis.__DOMINO_TEST_HOOKS__];
+  globalThis.__DOMINO_DEPLOYABLE__ = true;
+  globalThis.__DOMINO_TEST_HOOKS__ = false;
+  const VAULT = '0x5290e7d1a3cb728cc497b455e2397b3ec31eab69';
+  const TOKEN = '3325113';
+  const word = (n) => BigInt(n).toString(16).padStart(64, '0');
+  const first = impact.VAULT_FIRST_BLOCK;
+  const head = first + LOG_BLOCKS_ONE + 2_000_000;
+  const executed = (tx, block) => ({ address: VAULT, topics: [impact.EXECUTION_COMPLETED, `0x${'a3'.repeat(32)}`, `0x${'d8'.repeat(32)}`], data: `0x${word(0)}${word(TOKEN)}${word(TOKEN)}${word(3)}`, blockNumber: `0x${block.toString(16)}`, transactionHash: tx, logIndex: '0x8', removed: false });
+  const EXECUTIONS = [executed(`0x${'01'.repeat(32)}`, first + 500_000), executed(`0x${'02'.repeat(32)}`, head - 500_000)];
+  const asked = [];
+  const deps = {
+    async fetch(url, init) {
+      const call = JSON.parse(init.body);
+      const filter = call.params[0];
+      asked.push(filter);
+      const limited = logLimitError(filter);
+      const inside = (log) => Number(log.blockNumber) >= Number(filter.fromBlock) && Number(log.blockNumber) <= Number(filter.toBlock);
+      const reply = limited ? { error: limited } : { result: filter.topics[0] === impact.EXECUTION_COMPLETED ? EXECUTIONS.filter(inside) : [] };
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: call.id, ...reply }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    },
+    sleep: async () => undefined,
+    now: () => Date.now(),
+  };
+  try {
+    const record = await impact.readVault(VAULT, TOKEN, [USDG, UFG], first, head, deps);
+    assert.ok(record, 'the record is read');
+    assert.deepEqual(record.executions.map((execution) => execution.block), [first + 500_000, head - 500_000]);
+    assert.deepEqual(refusedAny(asked), [], 'nothing the RPC refuses');
+    assert.deepEqual(asked.map((filter) => [filter.address, Number(filter.fromBlock), Number(filter.toBlock)]), [
+      [VAULT, first, first + LOG_BLOCKS_ONE - 1],
+      [VAULT, first + LOG_BLOCKS_ONE, head],
+      [USDG, first + 500_000, first + 500_000 + LOG_BLOCKS_ONE - 1],
+      [USDG, first + 500_000 + LOG_BLOCKS_ONE, head - 500_000],
+      [UFG, first + 500_000, first + 500_000 + LOG_BLOCKS_ONE - 1],
+      [UFG, first + 500_000 + LOG_BLOCKS_ONE, head - 500_000],
+    ], 'the executions in windows, oldest first; the fees paid one currency at a time, each in windows too');
+  } finally {
+    [globalThis.__DOMINO_DEPLOYABLE__, globalThis.__DOMINO_TEST_HOOKS__] = flags;
+  }
+});

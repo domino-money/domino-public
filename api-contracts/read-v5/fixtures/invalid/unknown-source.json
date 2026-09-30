@@ -1,6 +1,6 @@
 {
   "chainId": 4663,
-  "contractVersion": "1.0.0-rc.1",
+  "contractVersion": "1.0.0-rc.2",
   "coverage": {
     "lastListedVolume24hUsd": "513000",
     "pages": 10,
@@ -12,7 +12,7 @@
     "candidates": 212,
     "eligible": 25,
     "rejectedByReason": {
-      "pool_too_young": 55,
+      "hooked_pool_unsupported": 13,
       "tvl_below_floor": 63
     },
     "shortlisted": 38
@@ -80,9 +80,9 @@
       "rankInputs": {
         "evaluatedAt": 1790422260,
         "freshApr": "551.0",
-        "prevApr": "546.1",
-        "rankApr": "546.1",
-        "referenceDepthUsd": "41000.5",
+        "prevApr": null,
+        "rankApr": "551.0",
+        "referenceDepthUsd": null,
         "reportedLiquidityUsd": "620000",
         "volume24hUsd": "1170000"
       },
@@ -110,13 +110,13 @@
   "rules": {
     "estimateMethod": "fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365",
     "marketSource": "geckoterminal",
-    "maxAprPercent": "1000",
-    "maxTurnover24h": "25",
-    "minPoolAgeHours": 72,
-    "minReferenceDepthUsd": "10000",
-    "minTvlUsd": "250000",
-    "minVolume24hUsd": "250000",
-    "rankBy": "min_fresh_and_previous_day_feeAprEstimate24hPercent",
+    "maxAprPercent": null,
+    "maxTurnover24h": null,
+    "minPoolAgeHours": null,
+    "minReferenceDepthUsd": null,
+    "minTvlUsd": "100000",
+    "minVolume24hUsd": "1000000",
+    "rankBy": "feeAprEstimate24hPercent",
     "size": 6
   },
   "schemaVersion": 1,

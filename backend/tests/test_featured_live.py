@@ -30,7 +30,7 @@ from featured_selector import list_entry
 from featured_store import FeaturedStore
 import manage_featured
 from public_observations import PgPublicData
-from test_featured_selection import Anchored
+from test_featured_selection import V1_POLICY_PATH, Anchored
 from test_public_observations import fixtures
 
 ZERO='0x'+'0'*40
@@ -132,7 +132,7 @@ class LiveTests(unittest.TestCase):
         self.catalogue=PgCatalogue(self.settings)
         self.store=FeaturedStore(self.catalogue)
         self.public=PgPublicData(self.catalogue,writer=True)
-        self.policy=load_policy()
+        self.policy=load_policy(V1_POLICY_PATH)
         self.charts,self.checker,self.node=Charts(),Checker(),Node()
         self.embedded=[pool_of(TOKENS[12])]
 
@@ -408,6 +408,26 @@ class LiveTests(unittest.TestCase):
                                                  pool_of(c,500):'apr_or_turnover_above_ceiling'})
         self.assertEqual(check(3*HOUR)['removed'],{pool_of(a):'volume_collapse',pool_of(e):'estimate_unavailable'})
         self.assertEqual(self.served_ids(),[pool_of(d)])
+
+    def test_under_v2_no_ceiling_removes_a_pool_and_the_collapses_read_its_floors(self):
+        self.policy=load_policy()
+        a,b,c,d,e=TOKENS[:5]
+        evaluations=[ev(a,300),ev(b,290),ev(c,280,fee=500),ev(d,270),ev(e,260)]
+        self.record_selection(evaluations)
+        self.serve(evaluations,[pool_of(a),pool_of(b),pool_of(c,500),pool_of(d),pool_of(e)],day=DAY,at=AT)
+        start=AT+2*HOUR
+
+        def check(offset):
+            self.figures(a,at=start+offset-5,volume='99999')                     # under a tenth of the 1M floor
+            self.figures(b,at=start+offset-5,tvl='1000000',volume='10000000')    # turnover 10, APR 1095%
+            self.figures(c,at=start+offset-5,tvl='1000000',volume='30000000',fee=500)   # turnover 30, APR 547%
+            self.figures(d,at=start+offset-5,tvl='50000')                        # half the 100k floor
+            self.figures(e,at=start+offset-400)                                  # too old to estimate
+            return self.live().tick(start+offset)['health']
+        self.assertEqual(check(0)['status'],'healthy')
+        self.assertEqual(check(1800)['status'],'healthy')
+        self.assertEqual(check(3*HOUR)['removed'],{pool_of(a):'volume_collapse',pool_of(e):'estimate_unavailable'})
+        self.assertEqual(self.served_ids(),[pool_of(b),pool_of(c,500),pool_of(d)])
 
     def test_listed_tokens_code_is_read_once_an_hour(self):
         a=TOKENS[0]

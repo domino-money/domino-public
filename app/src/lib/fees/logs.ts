@@ -12,7 +12,7 @@
  */
 import type { FeesCache } from '../../../functions/_lib/fees'
 import type { pathLogsOnChain } from '../../../functions/_lib/feesPath'
-import type { ChainLane } from '../chain/browser'
+import type { ChainDeps, ChainLane } from '../chain/browser'
 import type * as ChainCodeModule from '../chain/chainCode'
 import { UNAVAILABLE, chainRead, checked, isLogsResponse } from './answers'
 import type { LogsRequest, LogsResponse, RelayAnswer } from './types'
@@ -21,7 +21,7 @@ import type { LogsRequest, LogsResponse, RelayAnswer } from './types'
  * The chain code a context reads with (lib/chain/chainCode.ts). The replay worker's also reads the path kinds
  * (2026-09-25, functions/_lib/feesPath.ts), which the page never asks: without it they answer `unavailable`.
  */
-export type ChainCode = Pick<typeof ChainCodeModule, 'chainDeps' | 'logsOnChain'> & { pathLogsOnChain?: typeof pathLogsOnChain }
+export type ChainCode = Pick<typeof ChainCodeModule, 'logsOnChain'> & { chainDeps: (signal?: AbortSignal) => ChainDeps; pathLogsOnChain?: typeof pathLogsOnChain }
 
 /**
  * How a unit of logs is read: `lane` is the replay worker's, `urgent` a position page's run, `until` the time (as

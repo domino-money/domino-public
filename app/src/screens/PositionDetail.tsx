@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
 import { newPositionHref, poolHref, positionsHref } from '../components/explore/routes'
 import { IconChevronDown, IconChevronLeft, IconMarkets, IconPlus, IconSearch } from '../components/icons'
 import { PairName, PositionStatus } from '../components/positions/PositionFigures'
@@ -14,9 +14,11 @@ import { TokenLabel } from '../components/read/TokenLabel'
 import { Address } from '../components/read/screens/Address'
 import { TokenMarkPair } from '../components/TokenIcon'
 import { Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, PageShell } from '../components/ui'
-import { chainState } from '../lib/fees/client'
+import { chainState, takeWarmState } from '../lib/fees/client'
+import { feesStore } from '../lib/fees/spawn'
 import { refreshFeeStates } from '../lib/fees/useFeeHistory'
-import type { StatePositionOk } from '../lib/fees/types'
+import type { RelayAnswer, StatePositionOk, StateResponse } from '../lib/fees/types'
+import { warmVault } from '../lib/automationImpact'
 import { useAutomation } from '../lib/automationState'
 import { useMediaQuery } from '../lib/useMediaQuery'
 import { NATIVE_CURRENCY } from '../lib/read/screens/identity'
@@ -25,6 +27,7 @@ import { cardPoolUsableForDomino } from '../lib/read/screens/positions'
 import type { TokenDisplay } from '../lib/read/types'
 import { positionOfState, walletCard, walletState, type CurrencyView } from '../lib/walletCards'
 import { useWalletIdentity, walletKey } from '../lib/walletIdentity'
+import { forgetWallet, keptPosition, type WalletPosition } from '../lib/walletPositions'
 
 /**
  * What the owner's actions take (components/positions/PositionActions.tsx, the
@@ -61,10 +64,14 @@ const couldNotLoad = () => ({
 })
 const PositionActions = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ActionsProps>>(() => import('../components/positions/PositionActions').catch(couldNotLoad)) : null
 
-/** The page's own chain read: the fees relay's /state read of this NFT, from the chain, at one block. */
+/**
+ * The page's own chain read: the fees relay's /state read of this NFT, from the chain, at one block. 2026-09-28 (speed
+ * wave B, item 18): until it answers, the NFT's row of the wallet's list read a moment ago in this visit, if there is
+ * one (lib/walletPositions.ts keptPosition): the same figures, a list's block older.
+ */
 type Detail =
   | { phase: 'loading' }
-  | { phase: 'ready'; position: StatePositionOk; block: number }
+  | { phase: 'ready'; position: WalletPosition; owner: string; block: number; row?: true }
   | { phase: 'failed'; reason: string }
   /** ownerOf reverts: never minted, or burned. */
   | { phase: 'gone'; block: number }
@@ -84,18 +91,37 @@ const NOT_FOUND_REASK_MS = [3_000, 8_000, 12_000] as const
  */
 const AFTER_ACTION_MS = 11_000
 /**
- * The page reads itself again a minute after each read that succeeded, while it is visible (the owner's OK,
- * 2026-09-27): the header's principal, unclaimed fees, price against the range and USD change in place. Test builds
- * only when a test asks for it before the page loads (window.__dominoRefresh), so every other suite counts its reads as
- * before.
+ * The page reads itself again every minute while it is visible (the owner's OK, 2026-09-27): the header's principal,
+ * unclaimed fees, price against the range and USD change in place. 2026-09-28 (speed wave B, item 16: the page and its
+ * fees card each kept a minute's clock, two reads a minute, and the card read the page's state again on open): the page
+ * hands its read to the fees store (feesStore.offer), whose cards start from it, and follows the store's own minute read
+ * (feesStore.position); a read that fails keeps the header, and the next minute's is asked as the store asks it. Test
+ * builds only when a test asks for it before the page loads (window.__dominoRefresh), so every other suite counts its
+ * reads as before.
  */
-const REFRESH_MS = __DOMINO_TEST_HOOKS__ && !(window as { __dominoRefresh?: boolean }).__dominoRefresh ? 0 : 60_000
+const REFRESH = !__DOMINO_TEST_HOOKS__ || !!(window as { __dominoRefresh?: boolean }).__dominoRefresh
+
+type Ready = Extract<Detail, { phase: 'ready' }>
+/** A read position as the page shows it. */
+const ready = (position: StatePositionOk, block: number): Ready => ({ phase: 'ready', position: positionOfState(position), owner: position.owner, block })
+/** The NFT's row in the wallet's list read a moment ago in this visit, as the page shows it until its own read answers. */
+function fromList(tokenId: string): Detail {
+  const row = keptPosition(tokenId)
+  return row ? { phase: 'ready', position: row.position, owner: row.owner, block: row.block, row: true } : { phase: 'loading' }
+}
+/** The store's newest read of `tokenId` (feesStore.position), followed while the refresh is on. */
+function useStoredPosition(tokenId: string): Readonly<{ position: StatePositionOk; block: number }> | null {
+  const watch = useCallback((listener: () => void) => feesStore.watch([tokenId], listener), [tokenId])
+  return useSyncExternalStore(watch, () => (REFRESH ? feesStore.position(tokenId) : null), () => null)
+}
 /**
- * With the refresh on, once the page shows a position, a read that fails or finds nothing, whatever the reason, keeps it
- * and is asked again after 60 s, then every 120 s, for as long as the page is open (the list's REFRESH_FAILED_MS; the
- * 2026-09-27 review): never REASK_MS's quick waits in a 429 episode, and never a stop that would leave the header stale.
+ * 2026-09-28 (speed wave B, item 26): the vault record of a position a sequence holds is read as soon as the page's read
+ * names its vault (item 17), beside its chart rather than after it.
  */
-const REFRESH_FAILED_MS = [60_000, 120_000] as const
+function vaultOf(answer: RelayAnswer<StateResponse>, found: StatePositionOk): void {
+  const feature = answer.ok ? answer.value.automation?.find((one) => one.tokenId === found.tokenId) : undefined
+  if (answer.ok && feature && 'vault' in feature) warmVault(feature.vault, found.tokenId, [found.poolKey.currency0, found.poolKey.currency1], answer.value.block)
+}
 
 /** A token as the actions take it: its address and what the chain said about it. */
 const currency = (token: TokenDisplay): CurrencyView => ({ address: token.address, symbol: token.symbol, decimals: token.decimals })
@@ -117,11 +143,10 @@ function Back() {
  * Robinhood Chain, also gets Collect fees and Close position in the title row; anyone else reads the same page with
  * no action on it. Every figure but the fees history's is from one chain read, at its block (the figures' title).
  */
-function LiveDetail({ position, block, changes, onChanged }: { position: StatePositionOk; block: number; changes: number; onChanged: () => void }) {
-  const wallet = useMemo(() => positionOfState(position), [position])
-  const card = useMemo(() => walletCard(wallet, position.owner), [wallet, position.owner])
+function LiveDetail({ wallet, owner, block, cached, changes, onChanged }: { wallet: WalletPosition; owner: string; block: number; cached: boolean; changes: number; onChanged: () => void }) {
+  const card = useMemo(() => walletCard(wallet, owner), [wallet, owner])
   // The same read values the amounts for a pair with USDG (§6.2): one price, one block.
-  const state = useMemo(() => walletState(wallet, block, position.owner), [wallet, block, position.owner])
+  const state = useMemo(() => walletState(wallet, block, owner), [wallet, block, owner])
   const price = chainCardPrice(card, { sqrtPriceX96: wallet.sqrtPriceX96, tick: wallet.tick, block })
   const [base, quote] = card.currencies
   const token = base.address === NATIVE_CURRENCY ? quote.address : base.address
@@ -186,10 +211,11 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
         )}
       </div>
 
-      <KeyFigures card={card} state={state && usdgIndex !== null ? state : null} price={price} block={block} />
+      <KeyFigures card={card} state={state && usdgIndex !== null ? state : null} price={price} block={block} cached={cached} />
 
       {/* The fees card's own settlements move to Activity, after Price range (2026-09-27). */}
-      <FeesCard kind="plain" source={{ tokenId: card.tokenId }} bandPresent quoteIndex={1} tokens={[base, quote]} activity={false} />
+      {/* The quote of a pair without USDG is the app's one way round's (visual/value.ts basisOf, 2026-09-28). */}
+      <FeesCard kind="plain" source={{ tokenId: card.tokenId }} bandPresent tokens={[base, quote]} activity={false} />
 
       <div className="dm-pos-grid" data-has-price-chart={series ? '' : undefined}>
         <section className="dm-card dm-pos-card" aria-labelledby="position-range-title">
@@ -283,14 +309,28 @@ function LiveDetail({ position, block, changes, onChanged }: { position: StatePo
  * against the public RPC since 2026-09-25, so it opens whether or not the read
  * service or the site's routes are up. A read that failed only for
  * the moment is asked again on its own while the page is visible; the owner's
- * actions ask the page to read again once they are included on chain; and a
- * minute after each read that succeeded, it reads again (REFRESH_MS), a read
- * that fails then being asked again after 60 s and every 120 s after that
- * (REFRESH_FAILED_MS).
+ * actions ask the page to read again once they are included on chain; and
+ * every minute the fees store's read of it moves its header on (REFRESH).
+ * 2026-09-28 (speed wave B, item 24): its first read may be on its way before
+ * this chunk is in (Positions starts it, lib/fees/client.ts warmState).
  */
 export default function PositionDetail({ tokenId }: { tokenId: string }) {
-  const [detail, setDetail] = useState<Detail>({ phase: 'loading' })
+  const [detail, setDetail] = useState<Detail>(() => fromList(tokenId))
   const [asked, setAsked] = useState(0)
+  const stored = useStoredPosition(tokenId)
+  // A successful store read can also recover the first read's failure. It must
+  // name this NFT, never replace a confirmed absence, and never move a ready
+  // header back to an older block. The store keeps reading after our bounded
+  // initial retries end, so it is the same source of recovery as of refreshes.
+  const current = useMemo(() => {
+    if (!stored || stored.position.tokenId !== tokenId || detail.phase === 'gone') return detail
+    if (detail.phase === 'ready' && stored.block <= detail.block) return detail
+    return ready(stored.position, stored.block)
+  }, [detail, stored, tokenId])
+  // Keep the last successful store answer in the header too. If a later
+  // read cannot find the NFT, the store may clear its copy; that must not
+  // roll the visible figures back to the page's first, older answer.
+  if (current !== detail && current.phase === 'ready') setDetail(current)
   useEffect(() => {
     const controller = new AbortController()
     let attempts = 0
@@ -307,23 +347,27 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
         ask()
       })
     }
+    let first = asked === 0
     const ask = () => {
-      void chainState([tokenId], controller.signal).then((answer) => {
+      const read = (first && takeWarmState(tokenId)) || chainState([tokenId], controller.signal)
+      first = false
+      void read.then((answer) => {
         if (controller.signal.aborted) return
+        // The fees card starts from this read, and the store's minute read goes on from it (item 16).
+        feesStore.offer(answer)
         const found = answer.ok ? answer.value.positions.find((p) => p.tokenId === tokenId) : undefined
         if (answer.ok && found?.ok) {
           const block = answer.value.block
-          // An answer from an older block than the one on screen (the relay's cache, right after an action) changes nothing.
-          setDetail((before) => (before.phase === 'ready' && before.block > block ? before : { phase: 'ready', position: found, block }))
+          // An answer from an older block than the one on screen (the relay's cache, right after an action) changes nothing;
+          // the list's row gives way to the page's own read whatever its block (its read is at head − 2, the list's at the head).
+          setDetail((before) => (before.phase === 'ready' && !before.row && before.block > block ? before : ready(found, block)))
+          vaultOf(answer, found)
           attempts = empties = 0
           shown = true
-          if (REFRESH_MS) askAfter(REFRESH_MS)
           return
         }
-        if (REFRESH_MS && shown) {
-          askAfter(Math.max(REFRESH_FAILED_MS[attempts++ ? 1 : 0], answer.ok ? 0 : answer.retryAfterMs))
-          return
-        }
+        // A position on screen stays there through a read that fails: the store's next minute read is the next ask.
+        if (REFRESH && shown) return
         if (answer.ok && found && !found.ok && found.reason === 'not_found') {
           // Not there yet, perhaps: asked again a few times, the skeleton (or the position already shown) kept.
           if (empties < NOT_FOUND_REASK_MS.length) {
@@ -356,31 +400,31 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
   }, [tokenId, asked])
 
   let body
-  if (detail.phase === 'loading') {
+  if (current.phase === 'loading') {
     body = (
       <div data-position-loading="" aria-busy="true">
         <p role="status" className="sr-only">
           Reading position {tokenId}…
         </p>
-        <PositionSkeleton />
+        <PositionSkeleton fees={<FeesCard kind="plain" source={{ tokenId }} bandPresent={false} standalone />} />
       </div>
     )
-  } else if (detail.phase === 'failed') {
+  } else if (current.phase === 'failed') {
     body = (
       <>
-        <div className="dm-pos-empty" title="Its details could not be read from chain just now. They are asked again on their own." data-position-reason={detail.reason}>
+        <div className="dm-pos-empty" title="Its details could not be read from chain just now. They are asked again on their own." data-position-reason={current.reason}>
           <EmptyState icon={<IconSearch />} title={`Position #${tokenId}`} body="Its details could not be read just now." plate data-empty="position-unread" />
         </div>
         {/* The fees card reads this NFT from public chain data on its own (§12.4). */}
         <FeesCard kind="plain" source={{ tokenId }} bandPresent={false} standalone />
       </>
     )
-  } else if (detail.phase === 'gone') {
+  } else if (current.phase === 'gone') {
     body = (
       <EmptyState
         icon={<IconSearch />}
         title="This position NFT no longer exists"
-        body={`NFT #${tokenId} was not found at block ${detail.block}.`}
+        body={`NFT #${tokenId} was not found at block ${current.block}.`}
         plate
         className="dm-pos-empty"
         action={
@@ -391,15 +435,18 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
         data-empty="position-gone"
       />
     )
-  } else {
+  } else if (current.phase === 'ready') {
     body = (
       <LiveDetail
-        position={detail.position}
-        block={detail.block}
+        wallet={current.position}
+        owner={current.owner}
+        block={current.block}
+        cached={current.row === true}
         changes={asked}
         onChanged={() => {
           setAsked((n) => n + 1)
-          // The fees card reads its own state (every minute): at once too.
+          // The list kept for this visit is from before the action (item 18); the fees card reads its own state at once too.
+          forgetWallet()
           refreshFeeStates([tokenId])
         }}
       />

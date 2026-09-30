@@ -22,7 +22,7 @@ from psycopg.types.json import Jsonb
 from catalogue import PgCatalogue
 from dev_postgres import ADMIN, PORT, SOCKET
 from discovery import Block, DataError, parse_block
-from featured_contract import rules_of
+from featured_contract import build_response, rules_of
 from featured_pools import load_policy
 from featured_selector import PROVIDER_SPACING, RATE_LIMIT_WAIT, Selector
 from featured_store import FeaturedStore
@@ -31,6 +31,7 @@ from manage_featured import tick, window
 from test_discovery import BLOCK, FakeRpc, KEY, POOL, TOKEN, ZERO
 
 NOW=1_790_380_000   # 2026-09-25 22:13:20 UTC
+V1_POLICY_PATH=Path(__file__).resolve().parent/'fixtures/featured_policy_v1.json'
 DAY=86400
 UNKNOWN='0x'+'5a'*32
 YOUNG='0x'+'6b'*32
@@ -132,7 +133,7 @@ class FeaturedTests(unittest.TestCase):
               domino_activity.pool_requests,domino_catalogue.events,domino_catalogue.hints''')
         self.catalogue=PgCatalogue(self.settings)
         self.store=FeaturedStore(self.catalogue)
-        self.policy={**load_policy(),'minPublishable':1}
+        self.policy={**load_policy(V1_POLICY_PATH),'minPublishable':1}
         self.clock=[NOW]
         # The selection's monotonic clock: its waits advance it, nothing sleeps.
         self.monotonic,self.waits=[0.0],[]
@@ -250,6 +251,34 @@ class FeaturedTests(unittest.TestCase):
         baseline=self.store.token_baselines()[TOKEN]
         self.assertEqual(baseline['symbol_reading'],'TOKEN')
         self.assertRegex(baseline['listed_code_hash'],r'^0x[0-9a-f]{64}$')
+
+    def test_under_v2_the_first_run_selects_by_today_s_apr(self):
+        # Ranking by today alone needs no evaluation to persist against: no bootstrap day.
+        self.policy={**load_policy(),'minPublishable':1}
+        young=gt_pool(YOUNG,TOKEN,USDG,created=NOW-DAY,volume='999999.99')
+        thin=gt_pool('0x'+'7c'*32,TOKEN,USDG,tvl='99999.99')
+        self.provider.pages=[[gt_pool(POOL,TOKEN,ZERO),young,thin]]
+        first=self.selector().select(now=NOW)
+        self.assertEqual(first['outcome'],'selected',first)
+        # Only the two floors screen the listing: a day-old pool is no reason on its own.
+        self.assertEqual((first['screened'],first['evaluated'],first['eligible']),(2,1,1))
+        self.assertEqual(first['rejectedByReason'],{'tvl_below_floor':1,'volume_below_floor':1})
+        latest=self.store.previous_list('shadow')
+        self.assertEqual([(entry['slot'],entry['poolId'],entry['source']) for entry in latest['pools']],
+                         [(1,POOL,'ranked')])
+        inputs=latest['pools'][0]['rankInputs']
+        self.assertEqual((Decimal(inputs['rankApr']),Decimal(inputs['freshApr']),inputs['prevApr']),
+                         (Decimal('54.75'),Decimal('54.75'),None))
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            payload=conn.execute('SELECT payload FROM domino_public.featured_lists WHERE revision=%s',
+                                 (latest['revision'],)).fetchone()[0]
+        self.assertEqual(payload['rules'],rules_of(self.policy))
+        # What read-v5 serves once the list is published: rc.2 states the v2 rules.
+        body=build_response({'revision':latest['revision'],'status':'current','list_id':payload['listId'],
+                             'selection_date':date(2026,9,25),'generated_at':NOW,'effective_at':NOW,
+                             'valid_until':NOW+36*3600,'payload':{**payload,'withdrawn':[]}},now=NOW)
+        self.assertEqual((body['contractVersion'],body['rules']['rankBy'],body['rules']['minPoolAgeHours']),
+                         ('1.0.0-rc.2','feeAprEstimate24hPercent',None))
 
     def test_identity_and_age_come_from_the_catalogue_when_it_has_the_pool(self):
         with psycopg.connect(**self.settings,user=ADMIN) as conn:

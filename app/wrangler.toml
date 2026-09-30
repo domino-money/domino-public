@@ -10,14 +10,9 @@ name = "domino-app"
 pages_build_output_dir = "./dist"
 compatibility_date = "2026-09-10"
 
-# Production only. How wrangler 4.130.0 reads this file for Pages, as
-# Cloudflare's Pages configuration docs also describe: a deploy to the
-# production branch (main, which `npm run deploy` targets) reads
-# [env.production] over the top level; any other branch reads [env.preview],
-# and as there is none, the top level alone. `vars` and service bindings are
-# not inherited: an environment gets them from its own section only, and a
-# preview gets whatever the top level holds. So the top level must never hold
-# either; tests/forwarder.test.mjs fails if it does.
+# Wrangler reads the explicit production/preview sections independently.
+# Vars and service bindings are not inherited. Keep the top level empty:
+# production has seven service bindings; preview has public reads only.
 #
 # Secrets are not part of this file. They stay in each environment's
 # settings, set with `wrangler pages secret put` or in the dashboard.
@@ -27,16 +22,18 @@ compatibility_date = "2026-09-10"
 # hash URL of a production deployment is an entrance. It covers deployments
 # made from now on; older ones are closed by deleting them.
 #
-# Seven service bindings, production only: functions/_lib/bridge.ts forwards
-# each /api family to one of them, and each names one bridge Worker from
-# bridge/, deployed with every flag off. There is no [env.preview] and no
-# top-level services, so a preview deployment has no binding at all and its
-# /api calls end at the forwarder's origin check (404 not_found). Only
-# "binding" and "service" are set: wrangler 4.130.0 requires those two, and
-# the Workers' default entrypoint and environment are the ones meant.
-# tests/forwarder.test.mjs reads this file with wrangler 4.130.0's own reader
-# and fails unless production has exactly these seven and preview none.
-# Rollback: remove the seven tables and deploy production again.
+# The exact gated preview alias can use only the public read Worker, via the
+# validated fixed alias adapter in functions/_lib/bridge.ts. Hash deployments,
+# other preview hosts and all private/session/financial families stay denied.
+# Existing Worker flags, credentials and backend admission remain unchanged.
+# Preview rollback: set PREVIEW_PUBLIC_READS false and redeploy preview only.
+[env.preview.vars]
+PREVIEW_PUBLIC_READS = "true"
+
+[[env.preview.services]]
+binding = "READ_BRIDGE"
+service = "domino-read-bridge"
+
 [env.production.vars]
 CANONICAL_HOSTS_ONLY = "true"
 

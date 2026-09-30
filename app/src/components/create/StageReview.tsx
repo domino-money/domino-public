@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, type LazyExoticComponent } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import type { PairBalancesState } from './usePairBalances'
-import { priceOf, validateSlippage, walletSteps, type JourneyState } from '../../lib/create/journey'
+import { batchedSteps, priceOf, takesOnly, validateSlippage, walletSteps, type JourneyState } from '../../lib/create/journey'
 import { slippageWarns, slippageWritten } from '../../lib/create/slippage'
 import { formatUnits } from '../../lib/read/decimal'
 import { rangePosition } from '../../lib/read/screens/poolRange'
@@ -11,7 +11,7 @@ import { Button } from '../ui'
 import { ASSISTED_SWAP_FEE_BPS, type DepositPlan } from '../../lib/create/depositPlan'
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
-import { useCreateProgress, useCreated, type LiveState } from '../../lib/create/createProgress'
+import { useBatchAbility, useCreateProgress, useCreated, type LiveState } from '../../lib/create/createProgress'
 import { PoolPair, RangeSummary } from './StepList'
 import { CreatedNext } from './CreatedNext'
 import { AmountText, UsdText } from '../figures'
@@ -81,7 +81,12 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
   const plan = planned?.plan ?? null
   const swap = plan && plan.kind === 'swap' ? plan : null
   const fee = `${ASSISTED_SWAP_FEE_BPS / 100}%`
-  const steps = walletSteps(state, swap ? swap.from : null, fee)
+  // A wallet that signs every step at once (EIP-5792 `atomic` supported, as Create position read it): the one step it
+  // asks for, from the start (2026-09-28). A wallet that could only after turning on its smart account keeps the steps,
+  // with the one-signature choice under Create position; one that cannot batch, or not yet read, keeps them too.
+  const ability = useBatchAbility()
+  const inOrder = walletSteps(state, swap ? swap.from : null, fee)
+  const steps = ability === 'supported' ? batchedSteps(inOrder) : inOrder
   // Once Create position runs, its own steps, as they happen: the tokens it found in the wallet decide them.
   const progress = useCreateProgress()
   const live = progress && progress.length > 0 ? progress : null
@@ -95,6 +100,10 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
   // The headline's value in USD (USDG pairs only).
   const total = planned ? (heldAmounts(state, balances)?.total ?? null) : null
   const other = swap ? (swap.from === 0 ? 1 : 0) : 0
+  // A range that takes one token alone (2026-09-28, one-sided): the headline names that token only, never "0" of the
+  // other; and a deposit swapped whole for it is said as all of it, never "about 0" kept.
+  const only = takesOnly(state)
+  const whole = swap !== null && swap.swap >= swap.deposit
   return (
     <div className="dm-flow-stack" data-stage="review">
       <section aria-labelledby="create-choices-heading" className="dm-flow-section">
@@ -117,12 +126,17 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           </p>
           <p className="dm-flow-headline-amounts tnum" data-review-amounts="" data-review-plan={plan?.kind}>
             {/* Each side is one phrase that keeps its line, and the + leads the second, so a narrow line breaks only before the +. */}
-            {swap && pool ? (
+            {swap && pool && whole ? (
+              // All of the one token swapped: what it buys, an estimate before the pool's own price impact.
+              <Side side={sideOf(pool, other, swap.receive)} index={other} lead={`${CREATE.review.about} `} />
+            ) : swap && pool ? (
               // What the position holds once part of the one token is swapped: estimates, before the pool's own price impact.
               <>
                 <Side side={sideOf(pool, swap.from, swap.deposit - swap.swap)} index={swap.from} lead={`${CREATE.review.about} `} />{' '}
                 <Side side={sideOf(pool, other, swap.receive)} index={other} lead="+ " />
               </>
+            ) : held && only !== null ? (
+              <Side side={held[only]} index={only} />
             ) : held ? (
               <>
                 <Side side={held[0]} index={0} /> <Side side={held[1]} index={1} lead="+ " />
@@ -137,10 +151,18 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
             </p>
           )}
           {swap && pool && (
-            <p className="dm-flow-headline-line tnum" data-review-swap={swap.from}>
-              You put in <AmountText text={sideOf(pool, swap.from, swap.deposit).amount} /> <SymbolText token={pool.currencies[swap.from]} />. About{' '}
-              <AmountText text={sideOf(pool, swap.from, swap.swap).amount} /> <SymbolText token={pool.currencies[swap.from]} /> of it is swapped for{' '}
-              <SymbolText token={pool.currencies[other]} />.
+            <p className="dm-flow-headline-line tnum" data-review-swap={swap.from} data-review-swap-whole={whole ? '' : undefined}>
+              You put in <AmountText text={sideOf(pool, swap.from, swap.deposit).amount} /> <SymbolText token={pool.currencies[swap.from]} />.{' '}
+              {whole ? (
+                <>
+                  All of it is swapped for <SymbolText token={pool.currencies[other]} />.
+                </>
+              ) : (
+                <>
+                  About <AmountText text={sideOf(pool, swap.from, swap.swap).amount} /> <SymbolText token={pool.currencies[swap.from]} /> of it is swapped for{' '}
+                  <SymbolText token={pool.currencies[other]} />.
+                </>
+              )}
             </p>
           )}
           <p className="dm-flow-headline-line tnum" data-review-range="">
@@ -173,10 +195,17 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
         {swap && pool && (
           // One span: the line is a flex row (its dot, then the sentence), and the symbols must stay inside the sentence.
           <p role="status" className="dm-flow-position" data-tone="neutral" data-review-swap-note="">
-            <span>
-              You don’t have enough <SymbolText token={pool.currencies[other]} />, so part of your <SymbolText token={pool.currencies[swap.from]} /> is swapped for it in this pool
-              first. {CREATE.review.swapNote(fee)}
-            </span>
+            {whole ? (
+              <span>
+                You don’t have enough <SymbolText token={pool.currencies[other]} />, so the <SymbolText token={pool.currencies[swap.from]} /> you put in is swapped for it in
+                this pool first. {CREATE.review.swapAllNote(fee)}
+              </span>
+            ) : (
+              <span>
+                You don’t have enough <SymbolText token={pool.currencies[other]} />, so part of your <SymbolText token={pool.currencies[swap.from]} /> is swapped for it in this pool
+                first. {CREATE.review.swapNote(fee)}
+              </span>
+            )}
           </p>
         )}
         {/* The pool's liquidity figure is reported and zero: the swap has nothing to trade against. Create position checks the pool on chain too, before anything is deposited. */}

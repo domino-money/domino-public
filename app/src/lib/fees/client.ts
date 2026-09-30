@@ -25,6 +25,8 @@
 import type { FeesCache } from '../../../functions/_lib/fees'
 import { UNAVAILABLE, chainRead, checked, isStateResponse } from './answers'
 import { logsWith, type LogsOptions } from './logs'
+import { noteAutomation, parseAutomationAnswer } from '../automationState'
+import { noteTokens } from '../chainTokens'
 import type { LogsRequest, LogsResponse, RelayAnswer, StateResponse } from './types'
 
 export { isLogsResponse, isStateResponse } from './answers'
@@ -64,26 +66,70 @@ function unlessDropped<T>(work: Promise<T>, signal: AbortSignal | undefined, fal
   })
 }
 
-/** The /state reads on their way, by id set: a position page and its fees card ask the same ids at once, and share one read. */
-const statesAsked = new Map<string, Promise<RelayAnswer<StateResponse>>>()
+/**
+ * The /state reads on their way, by id set: a position page and its fees card ask the same ids at once, and share one
+ * read. 2026-09-28 (speed wave B, item 43): with how many askers still wait for it (one with no signal waits for good),
+ * and its own signal: once every asker has left, the read makes no further call.
+ */
+const statesAsked = new Map<string, { answer: Promise<RelayAnswer<StateResponse>>; waiting: number; stop: AbortController }>()
 
 /**
- * Up to eight positions at one block (head − 2), read from the chain. Two
- * askers of the same ids while a read is on its way share it (2026-09-25: each
- * read is three calls from the visitor's own address, under the RPC's limit);
- * a read that has answered is never reused, so a page reading again after an
- * action gets the chain as it is then.
+ * The position's features a /state read carried (item 17), for the chips, badges and cards that show them, and its tokens
+ * (item 25), for Receipts.
+ */
+function noted(answer: RelayAnswer<StateResponse>): RelayAnswer<StateResponse> {
+  if (answer.ok) for (const position of answer.value.positions) if (position.ok) noteTokens(position.currencies)
+  const features = answer.ok ? answer.value.automation : undefined
+  const parsed = features && parseAutomationAnswer({ block: answer.ok && answer.value.block, positions: features }, features.map((one) => one.tokenId))
+  parsed?.positions.forEach(noteAutomation)
+  return answer
+}
+
+/**
+ * Up to eight positions at one block (head − 2), read from the chain, each with its feature (item 17). Two askers of
+ * the same ids while a read is on its way share it (2026-09-25: each read is three calls from the visitor's own
+ * address, under the RPC's limit); a read that has answered is never reused, so a page reading again after an action
+ * gets the chain as it is then.
  */
 export async function chainState(tokenIds: readonly string[], signal?: AbortSignal): Promise<RelayAnswer<StateResponse>> {
   if (!chainRead() || signal?.aborted) return UNAVAILABLE
   const key = [...tokenIds].sort().join(',')
   let read = statesAsked.get(key)
   if (!read) {
-    read = chainCode()
-      .then((code) => code.stateOnChain({ deps: code.chainDeps(), cache: (cache ??= code.memoryCache()) }, tokenIds))
-      .then((answer) => checked(answer, isStateResponse), (): RelayAnswer<StateResponse> => UNAVAILABLE)
-      .finally(() => statesAsked.delete(key))
+    const stop = new AbortController()
+    const answer = chainCode()
+      .then((code) => code.stateOnChain({ deps: code.chainDeps(stop.signal), cache: (cache ??= code.memoryCache()) }, tokenIds, true))
+      .then((answer) => checked(noted(answer), isStateResponse), (): RelayAnswer<StateResponse> => UNAVAILABLE)
+      .finally(() => statesAsked.get(key) === read && statesAsked.delete(key))
+    read = { answer, waiting: 0, stop }
     statesAsked.set(key, read)
   }
-  return unlessDropped(read, signal, UNAVAILABLE)
+  const shared = read
+  shared.waiting += 1
+  signal?.addEventListener(
+    'abort',
+    () => {
+      if (--shared.waiting > 0) return
+      shared.stop.abort()
+      if (statesAsked.get(key) === shared) statesAsked.delete(key)
+    },
+    { once: true },
+  )
+  return unlessDropped(shared.answer, signal, UNAVAILABLE)
 }
+
+/**
+ * 2026-09-28 (speed wave B, item 24): a position page's first read, started by Positions as soon as the route names the
+ * NFT, before the page's chunk is in; the page's first ask takes it (takeWarmState) rather than reading again.
+ */
+let warm: { id: string; answer: Promise<RelayAnswer<StateResponse>>; at: number } | null = null
+export function warmState(tokenId: string): void {
+  if (warm?.id !== tokenId) warm = { id: tokenId, answer: chainState([tokenId]), at: Date.now() }
+}
+/** The read warmState started for `tokenId`, if it is the last one and at most WARM_MS old; taken once. */
+export function takeWarmState(tokenId: string): Promise<RelayAnswer<StateResponse>> | null {
+  const found = warm?.id === tokenId && Date.now() - warm.at < WARM_MS ? warm.answer : null
+  warm = null
+  return found
+}
+const WARM_MS = 5_000

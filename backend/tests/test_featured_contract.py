@@ -26,8 +26,9 @@ from bridge_http import LocalReaderHTTP
 from catalogue import PgCatalogue
 from dev_postgres import ADMIN, PORT, SOCKET
 from discovery import DataError
-from featured_contract import (CONTRACT_VERSION, FeaturedReader, build_response, prune_withdrawn,
+from featured_contract import (CONTRACT_VERSION, FeaturedReader, build_response, prune_withdrawn, rules_of,
                                validate_featured_response)
+from featured_pools import load_policy
 from featured_store import FeaturedStore
 from public_observations import PgPublicData
 from read_api import ReadGate, create_app
@@ -96,8 +97,9 @@ class ContractTests(unittest.TestCase):
 
     def test_every_valid_fixture_passes_and_every_invalid_fixture_fails(self):
         valid, invalid = load('valid'), load('invalid')
-        self.assertEqual(set(valid), {'current', 'repaired', 'manual', 'none', 'none-with-withdrawn'})
-        self.assertGreaterEqual(len(invalid), 45)
+        self.assertEqual(set(valid), {'current', 'current-policy-v1', 'repaired', 'manual', 'none',
+                                      'none-with-withdrawn'})
+        self.assertGreaterEqual(len(invalid), 57)
         for name, body in valid.items():
             with self.subTest(valid=name):
                 self.assertIs(validate_featured_response('featured-pools', body), body)
@@ -106,6 +108,19 @@ class ContractTests(unittest.TestCase):
                 validate_featured_response('featured-pools', body)
         with self.assertRaises(ValueError):
             validate_featured_response('sequence-snapshot', valid['current'])
+
+    def test_either_policy_states_rules_the_contract_accepts(self):
+        v1 = load_policy(Path(__file__).resolve().parent / 'fixtures/featured_policy_v1.json')
+        for policy, rank_by, off in ((v1, 'min_fresh_and_previous_day_feeAprEstimate24hPercent', set()),
+                                     (load_policy(), 'feeAprEstimate24hPercent',
+                                      {'minReferenceDepthUsd', 'maxAprPercent', 'maxTurnover24h', 'minPoolAgeHours'})):
+            row = exporter.stored()['current']
+            row['payload']['rules'] = rules_of(policy)
+            rules = build_response(row, now=exporter.SERVED_AT)['rules']
+            with self.subTest(rank_by=rank_by):
+                self.assertEqual(rules['rankBy'], rank_by)
+                self.assertEqual({name for name, value in rules.items() if value is None}, off)
+        self.assertEqual(CONTRACT_VERSION, '1.0.0-rc.2')
 
     def test_the_answer_is_the_stored_list_without_its_private_fields(self):
         row = exporter.stored()['current']

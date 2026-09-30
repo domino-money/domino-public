@@ -128,8 +128,17 @@ function productionClosures() {
   // 2026-09-28, hotfix/charts after its review: 25,200 B, the same ceiling as tests/session.bundle.test.mjs (the fees
   // lane's round trip is the chain's own RPC's, and a position page's run that ran out of time is asked again: 25,132 B
   // measured on Windows, both builds alike; it was 25,082 B at d478979d).
+  // 2026-09-28, speed/wave-b-release: 25,300 B, the same ceiling as tests/session.bundle.test.mjs (speed wave B merged on
+  // speed-wave-a 7368b077: the lane's work measured to a reply's headers, its staged rest, its question of who reads, and
+  // the head the page's state read names, over the hotfix's windowed log reads: 25,293 B measured on Windows, both builds
+  // alike; it was 25,036 B at 7368b077).
+  // 2026-09-29, speed/wave-b-release with hotfix/charts merged at its live check: 25,500 B, the same ceiling as
+  // tests/session.bundle.test.mjs (the lane's quiet after a cold scan, its round trip the chain's own RPC's, a position
+  // page's run out of time asked again: 25,405 B measured on Windows, both builds alike; it was 25,293 B at 1a9a9b73).
   const workers = scripts.filter((file) => /^feesReplay\.worker-/.test(file));
-  for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 25_200, `${file} is over its 25,200 B gzip ceiling`);
+  // 2026-09-29: safe history resumption and correlated worker recovery measure 26,391 B gzip in both clean builds.
+  // Match the explicitly measured 27 kB ceiling in session.bundle.test.mjs; no unclassified script is exempted.
+  for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 27_000, `${file} is over its 27,000 B gzip ceiling`);
   // 2026-09-25: the chain code the page runs (src/lib/chain/chainCode.ts: the routes' scan and relay reads, the RPC runtime,
   // Keccak), one chunk loaded by dynamic import on a page's first read of the chain, is an admitted root of its own
   // (tests/session.bundle.test.mjs measures it, with its own ceiling).

@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import { createWorker } from '../src/worker.mjs';
 import { CONTRACT_VERSION as V3_VERSION } from '../../api-contracts/read-v3/runtime.mjs';
-import { CONTRACT_VERSION, ERROR_STATUS_BY_CODE, ROUTES } from '../../api-contracts/read-v5/runtime.mjs';
+import { CONTRACT_VERSION, CONTRACT_VERSIONS, ERROR_STATUS_BY_CODE, ROUTES } from '../../api-contracts/read-v5/runtime.mjs';
 
 const origin = 'https://app.example.invalid';
 const fixtures = new URL('../../api-contracts/read-v5/fixtures/', import.meta.url);
@@ -14,6 +14,9 @@ const read = (kind) => readdirSync(new URL(`${kind}/`, fixtures)).filter((name) 
 const VALID = read('valid');
 const INVALID = read('invalid');
 const CURRENT = VALID.find(([name]) => name === 'current.json')[1];
+// rc.1, what the VM serves until rugged's step 2 (handoff of 28/09/2026 §4): the v1 list as rc.1's producer writes it.
+const RC1 = '1.0.0-rc.1';
+const RC1_LIST = JSON.stringify({ ...JSON.parse(VALID.find(([name]) => name === 'current-policy-v1.json')[1]), contractVersion: RC1 });
 const env = {
   APP_ORIGIN: origin,
   GATEWAY_ORIGIN: 'https://gateway.example.invalid',
@@ -51,10 +54,10 @@ function harness(responder = () => upstream()) {
   }) };
 }
 
-async function expectError(response, status, error) {
+async function expectError(response, status, error, version = CONTRACT_VERSION) {
   assert.equal(response.status, status);
   assert.deepEqual(await response.json(), { error });
-  assert.equal(response.headers.get('X-Domino-Read-Contract'), CONTRACT_VERSION);
+  assert.equal(response.headers.get('X-Domino-Read-Contract'), version);
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
   assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
   assert.equal(response.headers.get('Access-Control-Allow-Origin'), null);
@@ -112,7 +115,7 @@ for (const patch of [{ GATEWAY_ORIGIN: origin }, { GATEWAY_ORIGIN: 'http://gatew
 
 test('on, it forwards {} to the one upstream path with the service identity and relays every valid answer byte for byte', async () => {
   assert.deepEqual(Object.keys(ROUTES), ['featured-pools']);
-  assert.equal(VALID.length, 5);
+  assert.equal(VALID.length, 6);
   for (const [name, text] of VALID) {
     const h = harness(() => upstream({ body: text }));
     const response = await h.worker.fetch(request({ body: ' { }\n' }), env);
@@ -138,8 +141,34 @@ test('on, it forwards {} to the one upstream path with the service identity and 
   assert.deepEqual((await capabilities.json()).enabledReads, ['featured-pools']);
 });
 
+// Added 2026-09-28 (featured-policy v2, read-v5 rc.2): the Worker goes out first, while the VM still serves rc.1.
+test('during the transition an rc.1 list is relayed as rc.1 and an rc.2 list as rc.2, whatever version the browser asked in', async () => {
+  assert.deepEqual(CONTRACT_VERSIONS, [RC1, CONTRACT_VERSION]);
+  for (const asked of [null, RC1, CONTRACT_VERSION]) {
+    for (const [text, version] of [[RC1_LIST, RC1], [CURRENT, CONTRACT_VERSION]]) {
+      const h = harness(() => upstream({ body: text, version }));
+      const response = await h.worker.fetch(request(asked ? { headers: { 'X-Domino-Read-Contract': asked } } : {}), env);
+      assert.equal(response.status, 200, `${asked} asked, ${version} answered`);
+      assert.equal(await response.text(), text);
+      assert.equal(response.headers.get('X-Domino-Read-Contract'), version, 'the version it was answered in');
+      assert.equal(new Headers(h.calls[0].init.headers).get('X-Domino-Read-Contract'), CONTRACT_VERSION, 'the Worker asks in rc.2');
+    }
+  }
+  // A reply the Worker writes itself speaks the version the browser asked in, else rc.2: an rc.1 page reads its refusal.
+  const busy = () => upstream({ body: '{"error":"read_capacity_busy"}', status: 429, version: RC1 });
+  await expectError(await harness(busy).worker.fetch(request({ headers: { 'X-Domino-Read-Contract': RC1 } }), env), 429, 'read_capacity_busy', RC1);
+  await expectError(await harness(busy).worker.fetch(request(), env), 429, 'read_capacity_busy', CONTRACT_VERSION);
+  await expectError(await harness(() => upstream({ body: CURRENT, version: '1.0.0-rc.3' })).worker.fetch(request({ headers: { 'X-Domino-Read-Contract': RC1 } }), env), 502, 'upstream_contract_mismatch', RC1);
+  const capabilities = await harness().worker.fetch(request({ method: 'GET', url: `${origin}/api/read/v5/capabilities`, headers: { 'X-Domino-Read-Contract': RC1 } }), env);
+  assert.equal(capabilities.headers.get('X-Domino-Read-Contract'), RC1);
+  assert.equal((await capabilities.json()).contractVersion, RC1);
+  // rc.1 is held to rc.1's rules: a list with rc.2's nulls or ranking under rc.1's name is refused.
+  const v2AsRc1 = JSON.stringify({ ...JSON.parse(CURRENT), contractVersion: RC1 });
+  await expectError(await harness(() => upstream({ body: v2AsRc1, version: RC1 })).worker.fetch(request(), env), 502, 'upstream_contract_mismatch');
+});
+
 test('every invalid list the producer could store is refused as upstream_contract_mismatch, never relayed', async () => {
-  assert.equal(INVALID.length, 50);
+  assert.equal(INVALID.length, 57);
   for (const [name, text] of INVALID) {
     const h = harness(() => upstream({ body: text }));
     const response = await h.worker.fetch(request(), env);
@@ -179,13 +208,15 @@ test('only the exact POST path reaches it; other versions cannot name it and it 
     const response = await h.worker.fetch(request({ method, body: method === 'GET' || method === 'HEAD' ? undefined : '{}' }), env);
     assert.equal(response.status, 405, method);
   }
-  // A browser contract header, if sent, is v5's exactly. (read-v4 happens to
-  // share v5's version string, so the path, not the header, keeps them apart.)
-  for (const version of [V3_VERSION, '1.0.0-rc.2', `${CONTRACT_VERSION}, ${CONTRACT_VERSION}`]) {
+  // A browser contract header, if sent, is one of v5's exactly: rc.2, or rc.1 during the transition. (read-v4
+  // happens to share rc.1's version string, so the path, not the header, keeps them apart.)
+  for (const version of [V3_VERSION, '1.0.0-rc.3', '1.0.0-rc.0', `${CONTRACT_VERSION}, ${RC1}`, `${CONTRACT_VERSION}, ${CONTRACT_VERSION}`]) {
     await expectError(await h.worker.fetch(request({ headers: { 'X-Domino-Read-Contract': version } }), env), 502, 'upstream_contract_mismatch');
   }
   assert.equal(h.calls.length, 0);
-  assert.equal((await harness().worker.fetch(request({ headers: { 'X-Domino-Read-Contract': CONTRACT_VERSION } }), env)).status, 200);
+  for (const version of [CONTRACT_VERSION, RC1]) {
+    assert.equal((await harness().worker.fetch(request({ headers: { 'X-Domino-Read-Contract': version } }), env)).status, 200, version);
+  }
 });
 
 test('browser checks run before dispatch', async () => {
@@ -200,7 +231,10 @@ test('browser checks run before dispatch', async () => {
 test('the gateway answer must carry v5 and be finite JSON; a known refusal passes with its own status', async () => {
   for (const [responder, status, error] of [
     [() => upstream({ version: V3_VERSION }), 502, 'upstream_contract_mismatch'],
-    [() => upstream({ version: '1.0.0-rc.2' }), 502, 'upstream_contract_mismatch'],
+    [() => upstream({ version: '1.0.0-rc.3' }), 502, 'upstream_contract_mismatch'],
+    // The body names the version its header does (2026-09-28: two versions pass).
+    [() => upstream({ version: RC1 }), 502, 'upstream_contract_mismatch'],
+    [() => upstream({ body: RC1_LIST }), 502, 'upstream_contract_mismatch'],
     [() => upstream({ headers: { 'Content-Type': 'text/html' }, body: '<html>login</html>' }), 503, 'upstream_unavailable'],
     [() => upstream({ status: 302, headers: { Location: 'https://evil.invalid' } }), 503, 'upstream_unavailable'],
     [() => upstream({ body: '{"error":"upstream_contract_mismatch"}', status: 502 }), 502, 'upstream_contract_mismatch'],

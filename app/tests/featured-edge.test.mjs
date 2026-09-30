@@ -23,11 +23,12 @@ import { createWorker } from '../../bridge/src/worker.mjs';
 const require = createRequire(import.meta.url);
 const { answerFeatured, cacheKey, FEATURED_PATH, LIST_SECONDS, STALE_SECONDS } = require('../.test-build/app/functions/_lib/featuredEdge.js');
 const { REFRESH_GUARD_MS } = require('../.test-build/app/functions/_lib/publicEdge.js');
+const { PREVIEW_ORIGIN } = require('../.test-build/app/functions/_lib/bridge.js');
 const { onRequest: gate, LOGIN_PATH, API_CSP } = require('../.test-build/app/functions/_middleware.js');
 
 const ORIGIN = 'https://domino.money';
 const VERSION = runtime.CONTRACT_VERSION;
-const CONTRACT = { CONTRACT_VERSION: VERSION, validateRequest: runtime.validateRequest, validateResponse: runtime.validateResponse };
+const CONTRACT = { CONTRACT_VERSION: VERSION, CONTRACT_VERSIONS: runtime.CONTRACT_VERSIONS, validateRequest: runtime.validateRequest, validateResponse: runtime.validateResponse };
 const FIXTURES = new URL('../../api-contracts/read-v5/fixtures/', import.meta.url);
 const fixtures = (kind) => readdirSync(new URL(`${kind}/`, FIXTURES)).filter((name) => name.endsWith('.json')).sort()
   .map((name) => [name, readFileSync(new URL(`${kind}/${name}`, FIXTURES), 'utf8')]);
@@ -95,6 +96,90 @@ function clock(start = Date.UTC(2026, 8, 26, 12)) {
 }
 
 const runtimeWith = (cache, time = clock(), extra = {}) => ({ contract: CONTRACT, cache, now: time.now, refreshing: new Map(), ...extra });
+const previewAsk = (options = {}) => ask({ ...options, url: options.url ?? `${PREVIEW_ORIGIN}${FEATURED_PATH}`, headers: { Origin: PREVIEW_ORIGIN, ...options.headers } });
+
+test('preview public caches are opt-in and isolated from production, while forwarding only canonical public reads', async () => {
+  const cache = memoryCache();
+  const production = bridge(() => said(CURRENT));
+  const preview = bridge(() => said(NONE));
+  const env = { ...preview.env, PREVIEW_PUBLIC_READS: 'true' };
+  await answerFeatured(ask(), production.env, runtimeWith(cache));
+  const first = await answerFeatured(previewAsk({ headers: {
+    Cookie: '__Host-domino-beta=synthetic; __Host-domino-session=synthetic',
+    Authorization: 'Bearer synthetic', 'CF-Access-Client-Secret': 'synthetic',
+  } }), env, runtimeWith(cache));
+  assert.equal(await first.text(), NONE, 'preview never takes the production entry');
+  assert.equal(preview.calls.length, 1);
+  assert.equal(preview.calls[0].url, `${ORIGIN}${FEATURED_PATH}`);
+  assert.equal(preview.calls[0].headers.origin, ORIGIN);
+  assert.equal(preview.calls[0].headers.host, new URL(ORIGIN).host);
+  for (const header of ['cookie', 'authorization', 'cf-access-client-secret']) assert.equal(header in preview.calls[0].headers, false);
+  const hit = await answerFeatured(previewAsk(), env, runtimeWith(cache));
+  assert.equal(await hit.text(), NONE);
+  assert.equal(hit.headers.get('X-Domino-Edge-Cache'), 'hit');
+  assert.equal(hit.headers.get('X-Domino-Request-Id'), null);
+  assert.equal(preview.calls.length, 1, 'the second preview read costs no Worker call');
+  assert.equal(await (await answerFeatured(ask(), production.env, runtimeWith(cache))).text(), CURRENT, 'preview never replaces production');
+  assert.equal(production.calls.length, 1);
+  assert.deepEqual(cache.puts.map(({ url }) => url), [cacheKey(VERSION), cacheKey(VERSION, PREVIEW_ORIGIN)]);
+});
+
+test('a warm preview cache cannot bypass opt-in, binding, original browser checks or exact host isolation', async () => {
+  const cache = memoryCache();
+  const { calls, env: bound } = bridge();
+  const env = { ...bound, PREVIEW_PUBLIC_READS: 'true' };
+  await answerFeatured(previewAsk(), env, runtimeWith(cache));
+  for (const flag of [undefined, 'false', 'TRUE']) {
+    const response = await answerFeatured(previewAsk(), { ...env, PREVIEW_PUBLIC_READS: flag }, runtimeWith(cache));
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get('X-Domino-Edge-Cache'), null);
+  }
+  for (const reader of [undefined, null, 'reader', { fetch: 'no' }]) {
+    const response = await answerFeatured(previewAsk(), { ...env, READ_BRIDGE: reader }, runtimeWith(cache));
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get('X-Domino-Edge-Cache'), null);
+  }
+  for (const headers of [
+    { Origin: ORIGIN }, { Origin: null }, { Origin: 'https://evil.example' }, { Host: 'domino.money' },
+    { 'Sec-Fetch-Site': 'cross-site' }, { 'Sec-Fetch-Mode': 'navigate' }, { 'Sec-Fetch-Dest': 'document' },
+    { 'Sec-Fetch-User': '?1' }, { 'CF-Worker': 'other.example' },
+  ]) {
+    const response = await answerFeatured(previewAsk({ headers }), env, runtimeWith(cache));
+    assert.equal(response.status, 403, JSON.stringify(headers));
+    assert.equal(response.headers.get('X-Domino-Edge-Cache'), null);
+  }
+  for (const origin of ['https://abc123.domino-app-e65.pages.dev', 'https://domino-app-e65.pages.dev', 'https://preview.domino-app-e65.pages.dev.evil.example']) {
+    const response = await answerFeatured(previewAsk({ url: `${origin}${FEATURED_PATH}`, headers: { Origin: origin } }), env, runtimeWith(cache));
+    assert.equal(response.status, 404);
+  }
+  assert.equal(calls.length, 1, 'none of the refused requests reaches a binding');
+  assert.equal(cache.puts.length, 1);
+});
+
+test('a stale preview list refreshes behind the gate without refreshing production or extending its lifetime', async () => {
+  const cache = memoryCache();
+  const time = clock();
+  const worker = bridge();
+  const env = { ...worker.env, PREVIEW_PUBLIC_READS: 'true' };
+  const later = [];
+  const refreshing = new Map();
+  const rt = () => runtimeWith(cache, time, { refreshing, waitUntil: (work) => later.push(work) });
+  await answerFeatured(previewAsk(), env, rt());
+  await Promise.all(later.splice(0));
+  time.at.now += LIST_SECONDS * 1000;
+  const stale = await answerFeatured(previewAsk(), env, rt());
+  assert.equal(await stale.text(), CURRENT);
+  assert.equal(stale.headers.get('X-Domino-Edge-Cache'), null, 'the refreshing visitor keeps its gateway budget charge');
+  await Promise.all(later.splice(0));
+  assert.equal(worker.calls.length, 2);
+  assert.ok(worker.calls.every((call) => call.url === `${ORIGIN}${FEATURED_PATH}`));
+  assert.ok(cache.puts.every(({ url }) => url === cacheKey(VERSION, PREVIEW_ORIGIN)));
+  time.at.now += STALE_SECONDS * 1000;
+  const expired = await answerFeatured(previewAsk(), env, rt());
+  assert.equal(expired.headers.get('X-Domino-Edge-Cache'), null);
+  assert.equal(worker.calls.length, 3, 'past the existing stale window the Worker must answer');
+  await Promise.all(later);
+});
 
 // Changed on purpose 2026-09-28 (speed wave, item 7, the owner's OK): a list older than 60 s is still served, for up to
 // 15 minutes, while the request that found it goes on to the Worker in the background; the entry lives that long.
@@ -190,7 +275,7 @@ test('every valid answer is kept, none included, and every invalid one is passed
     assert.equal(await response.text(), text, name);
     assert.equal(cache.puts.length, 1, name);
   }
-  assert.equal(INVALID.length, 50);
+  assert.equal(INVALID.length, 57);
   for (const [name, text] of INVALID) {
     const cache = memoryCache();
     const { env } = bridge(() => said(text));
@@ -198,6 +283,39 @@ test('every valid answer is kept, none included, and every invalid one is passed
     assert.equal(response.status, 200, name);
     assert.equal(await response.text(), text, `${name}: passed on as it came`);
     assert.equal(cache.puts.length, 0, `${name}: never kept`);
+  }
+});
+
+// Added 2026-09-28 (featured-policy v2, read-v5 rc.2): this route and the Worker go out while the VM still serves rc.1.
+test('during the transition a list is kept and served in the version the Worker answered it in, and a request may ask in either', async () => {
+  const RC1 = '1.0.0-rc.1';
+  assert.deepEqual(runtime.CONTRACT_VERSIONS, [RC1, VERSION]);
+  const RC1_LIST = JSON.stringify({ ...JSON.parse(VALID.find(([name]) => name === 'current-policy-v1.json')[1]), contractVersion: RC1 });
+  const cache = memoryCache();
+  const time = clock();
+  const { calls, env } = bridge(() => said(RC1_LIST, { version: RC1 }));
+  const first = await answerFeatured(ask({ headers: { 'X-Domino-Read-Contract': RC1 } }), env, runtimeWith(cache, time));
+  assert.equal(first.headers.get('X-Domino-Read-Contract'), RC1);
+  assert.equal(await first.text(), RC1_LIST);
+  assert.deepEqual(cache.puts.map((put) => put.url), [cacheKey(VERSION)], 'kept under the key of the version this build speaks');
+  for (const asked of [RC1, VERSION, null]) {
+    const hit = await answerFeatured(ask({ headers: { 'X-Domino-Read-Contract': asked } }), env, runtimeWith(cache, time));
+    assert.equal(hit.headers.get('X-Domino-Edge-Cache'), 'hit', String(asked));
+    assert.equal(hit.headers.get('X-Domino-Read-Contract'), RC1, 'served in the version it was answered in');
+    assert.equal(await hit.text(), RC1_LIST);
+  }
+  assert.equal(calls.length, 1);
+  // A request in a version the route does not take is the Worker's to refuse, never the edge's to answer.
+  const refusing = bridge(() => said('{"error":"upstream_contract_mismatch"}', { status: 502 }));
+  const other = await answerFeatured(ask({ headers: { 'X-Domino-Read-Contract': '1.0.0-rc.3' } }), refusing.env, runtimeWith(cache, time));
+  assert.equal(other.status, 502);
+  assert.equal(refusing.calls.length, 1);
+  // An answer in a version the route does not take, or whose list names another version than its header, is not kept.
+  for (const [text, version] of [[CURRENT, '1.0.0-rc.3'], [CURRENT, RC1], [RC1_LIST, VERSION]]) {
+    const fresh = memoryCache();
+    const response = await answerFeatured(ask(), bridge(() => said(text, { version })).env, runtimeWith(fresh, time));
+    assert.equal(await response.text(), text, version);
+    assert.equal(fresh.puts.length, 0, `${version}: never kept`);
   }
 });
 
@@ -333,14 +451,38 @@ test('a cache that fails, or none at all, leaves the Worker answering; a put goe
 
 const GATE = { BETA_PASSWORD: 'featured-suite-beta-password-01', BETA_COOKIE_KEY: 'Qm4tX8rLw1Kp7ZcN3dVy6HhJ2gFa9ReU5oTiBwErSzD' };
 
-async function betaCookie() {
+async function betaCookie(origin = ORIGIN) {
   const response = await gate({
-    request: new Request(`${ORIGIN}${LOGIN_PATH}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: ORIGIN }, body: `password=${encodeURIComponent(GATE.BETA_PASSWORD)}` }),
+    request: new Request(`${origin}${LOGIN_PATH}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: origin }, body: `password=${encodeURIComponent(GATE.BETA_PASSWORD)}` }),
     env: GATE,
     next: async () => assert.fail('login reached the app'),
   });
   return response.headers.get('Set-Cookie').split(';')[0];
 }
+
+test('the preview beta gate refuses access before a warm public cache and preserves no-store on hits', async () => {
+  const cache = memoryCache();
+  const worker = bridge();
+  const env = { ...GATE, ...worker.env, PREVIEW_PUBLIC_READS: 'true' };
+  const cookie = await betaCookie(PREVIEW_ORIGIN);
+  let reached = 0;
+  const serve = (request) => gate({ request, env, next: async (passed) => {
+    reached += 1;
+    return answerFeatured(passed ?? request, env, runtimeWith(cache));
+  } });
+  for (const expected of [null, 'hit']) {
+    const response = await serve(previewAsk({ headers: { Cookie: cookie } }));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('X-Domino-Edge-Cache'), expected);
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+    assert.equal(response.headers.get('Content-Security-Policy'), API_CSP);
+  }
+  const refused = await serve(previewAsk());
+  assert.equal(refused.status, 401);
+  assert.deepEqual(await refused.json(), { error: 'beta_access_required' });
+  assert.equal(reached, 2, 'unsigned request never reaches the warm cache');
+  assert.equal(worker.calls.length, 1);
+});
 
 test('the gate comes first: no cookie, no list, from the edge or the Worker; with one, the answer leaves no-store with the API CSP', async () => {
   const cache = memoryCache();
@@ -418,6 +560,31 @@ const ETH = '0x0000000000000000000000000000000000000000';
 const question = { poolId: POOL, currency: ETH, windowSeconds: 86400, resolutionSeconds: 3600 };
 const askHistory = (body = question, headers = {}) => ask({ url: `${ORIGIN}${HISTORY_PATH}`, body: JSON.stringify(body), headers: { 'X-Domino-Read-Contract': v3.CONTRACT_VERSION, ...headers } });
 const historySaid = (body, options = {}) => said(JSON.stringify(body), { version: v3.CONTRACT_VERSION, ...options });
+
+test('preview history cache is origin-scoped, expires at 20 s and never keeps incomplete or failed answers', async () => {
+  const built = historyFor(question, { built: true });
+  const cache = memoryCache();
+  const time = clock();
+  const worker = bridge(() => historySaid(built));
+  const env = { ...worker.env, PREVIEW_PUBLIC_READS: 'true' };
+  const rt = () => ({ contract: HISTORY_CONTRACT, cache, now: time.now });
+  const request = () => previewAsk({ url: `${PREVIEW_ORIGIN}${HISTORY_PATH}`, body: JSON.stringify(question), headers: { 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
+  await answerHistory(askHistory(), env, rt());
+  await answerHistory(request(), env, rt());
+  assert.equal(worker.calls.length, 2, 'preview did not borrow production history');
+  assert.deepEqual(cache.puts.map(({ url }) => url), [historyKey(v3.CONTRACT_VERSION, question), historyKey(v3.CONTRACT_VERSION, question, PREVIEW_ORIGIN)]);
+  assert.equal((await answerHistory(request(), env, rt())).headers.get('X-Domino-Edge-Cache'), 'hit');
+  assert.equal(worker.calls.length, 2);
+  time.at.now += HISTORY_SECONDS * 1000;
+  assert.equal((await answerHistory(request(), env, rt())).headers.get('X-Domino-Edge-Cache'), null);
+  assert.equal(worker.calls.length, 3);
+  for (const answer of [() => historySaid(historyFor(question, { built: false })), () => historySaid({ error: 'upstream_unavailable' }, { status: 503 })]) {
+    const pending = memoryCache();
+    const upstream = bridge(answer);
+    await answerHistory(request(), { ...upstream.env, PREVIEW_PUBLIC_READS: 'true' }, { ...rt(), cache: pending });
+    assert.equal(pending.puts.length, 0);
+  }
+});
 
 test('a built 24h history is kept 20 s for the identical question; one not built, another answer or another question is not', async () => {
   const built = historyFor(question, { built: true });

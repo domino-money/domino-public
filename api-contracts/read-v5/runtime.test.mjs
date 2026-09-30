@@ -7,7 +7,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
-  CONTRACT_VERSION, ENABLED_READS, ERROR_STATUS_BY_CODE, ROUTES,
+  CONTRACT_VERSION, CONTRACT_VERSIONS, ENABLED_READS, ERROR_STATUS_BY_CODE, ROUTES,
   matchesRequest, validateError, validateRequest, validateResponse,
 } from './runtime.mjs';
 
@@ -48,6 +48,13 @@ const DEFECTS = {
   'long-symbol.json': SYMBOL,
   'missing-key.json': /^\/[A-Za-z]+$/,
   'none-with-pools.json': /^\/status$/,
+  // rc.2 (28/09/2026): the two floors and a ranked pool's own figures are never null.
+  'null-fresh-apr.json': /^\/pools\/\d+\/rankInputs\/freshApr$/,
+  'null-min-tvl.json': /^\/rules\/minTvlUsd$/,
+  'null-min-volume.json': /^\/rules\/minVolume24hUsd$/,
+  'null-rank-apr.json': /^\/pools\/\d+\/rankInputs\/rankApr$/,
+  'null-rank-liquidity.json': /^\/pools\/\d+\/rankInputs\/reportedLiquidityUsd$/,
+  'null-rank-volume.json': /^\/pools\/\d+\/rankInputs\/volume24hUsd$/,
   'null-symbol.json': SYMBOL,
   'numeric-apr.json': /^\/pools\/\d+\/rankInputs\/(rank|fresh|prev)Apr$/,
   'numeric-decimal.json': /^\/pools\/\d+\/rankInputs\/(volume24h|reportedLiquidity|referenceDepth)Usd$/,
@@ -66,6 +73,7 @@ const DEFECTS = {
   'too-many-withdrawn.json': /^\/withdrawn\/\d+(\/.+)?$/,
   'unknown-identity-source.json': /^\/pools\/\d+\/identitySource$/,
   'unknown-limitation.json': /^\/limitations\/\d+$/,
+  'unknown-rank-by.json': /^\/rules\/rankBy$/,
   'unknown-rejection-reason.json': /^\/evaluation\/rejectedByReason\/[^/]+$/,
   'unknown-source.json': /^\/pools\/\d+\/source$/,
   'unknown-status.json': /^\/status$/,
@@ -95,7 +103,7 @@ function differences(left, right, path = '', found = []) {
 }
 
 test('every valid fixture is accepted, as parsed JSON and as the Worker parses it', () => {
-  assert.deepEqual(names('valid'), ['current.json', 'manual.json', 'none-with-withdrawn.json', 'none.json', 'repaired.json']);
+  assert.deepEqual(names('valid'), ['current-policy-v1.json', 'current.json', 'manual.json', 'none-with-withdrawn.json', 'none.json', 'repaired.json']);
   for (const name of names('valid')) {
     const body = fixture('valid', name);
     assert.equal(accepts(body), true, name);
@@ -129,6 +137,15 @@ function tuple(file, name) {
   const open = source.indexOf('(', start);
   return strings(source.slice(open + 1, source.indexOf(')', open)));
 }
+// A model's fields and their annotations, as its class body writes them (one per line).
+function fields(file, name) {
+  const source = python(file);
+  const start = source.indexOf(`\nclass ${name}(`);
+  assert.ok(start >= 0, `${file} defines ${name}`);
+  const body = source.slice(source.indexOf('\n', start + 1) + 1).split(/\n(?=\S)/)[0];
+  return Object.fromEntries([...body.matchAll(/^    ([A-Za-z0-9_]+): (.+)$/gm)].map((match) => [match[1], match[2]]));
+}
+const nullable = (model) => Object.keys(model).filter((name) => / \| None$/.test(model[name])).sort();
 function literal(file, field) {
   const match = python(file).match(new RegExp(`\\b${field}: Literal\\[([^\\]]*)\\]`));
   assert.ok(match, `${file} types ${field}`);
@@ -160,6 +177,25 @@ test('the runtime speaks the producer\'s version, limits and vocabulary', () => 
   for (const reason of reasons) {
     assert.equal(accepts(edit((body) => { body.evaluation.rejectedByReason = { [reason]: 1 }; })), true, reason);
   }
+  // rc.2: both ways of ranking, and exactly the fields the producer lets be null (that rule off, or not measured).
+  const rankBy = python('featured_contract.py').match(/^RANK_BY = \{([^}]*)\}$/m);
+  assert.ok(rankBy, 'featured_contract.py defines RANK_BY');
+  const ways = strings(rankBy[1]).filter((_, index) => index % 2 === 1);
+  assert.deepEqual(ways, ['min_fresh_and_previous_day_feeAprEstimate24hPercent', 'feeAprEstimate24hPercent']);
+  for (const way of ways) assert.equal(accepts(edit((body) => { body.rules.rankBy = way; })), true, way);
+  const rules = fields('featured_contract.py', 'Rules');
+  assert.deepEqual(Object.keys(rules).sort(), Object.keys(CURRENT.rules).sort());
+  assert.deepEqual(nullable(rules), ['maxAprPercent', 'maxTurnover24h', 'minPoolAgeHours', 'minReferenceDepthUsd']);
+  const inputs = fields('featured_contract.py', 'RankInputs');
+  assert.deepEqual(Object.keys(inputs).sort(), Object.keys(CURRENT.pools[1].rankInputs).sort());
+  assert.deepEqual(nullable(inputs), ['prevApr', 'referenceDepthUsd']);
+  for (const name of Object.keys(rules)) {
+    assert.equal(accepts(edit((body) => { body.rules[name] = null; })), nullable(rules).includes(name), `rules.${name} null`);
+  }
+  for (const name of Object.keys(inputs)) {
+    assert.equal(accepts(edit((body) => { body.pools[1].rankInputs[name] = null; })), nullable(inputs).includes(name), `rankInputs.${name} null`);
+  }
+
   const sources = tuple('featured_pools.py', 'SOURCES');
   assert.deepEqual(sources, ['pinned', 'ranked', 'carried', 'fallback', 'manual']);
   for (const source of sources) {
@@ -259,8 +295,60 @@ test('a request names nothing; other routes and shapes are refused without throw
   assert.equal(matchesRequest({}, null), false);
 });
 
+// The transition (rugged's handoff of 28/09/2026, §4): the VM serves rc.1 until its step 2, and the Worker and the
+// app go first, so both versions pass, each held to its own rules. Step 5 drops rc.1.
+test('an rc.1 answer still passes during the transition, held to rc.1\'s rules; no other version does', () => {
+  const V1_LIST = fixture('valid', 'current-policy-v1.json');
+  // A list chosen under v1 and served in rc.2: the list of the day rugged's reader moves to rc.2.
+  assert.equal(V1_LIST.contractVersion, '1.0.0-rc.2');
+  assert.equal(V1_LIST.rules.rankBy, 'min_fresh_and_previous_day_feeAprEstimate24hPercent');
+  const rc1 = (change = () => {}) => {
+    const body = structuredClone(V1_LIST);
+    body.contractVersion = '1.0.0-rc.1';
+    change(body);
+    return body;
+  };
+  // What rc.1's producer serves today: every rule stated, the lower of two days, every rank input measured.
+  assert.equal(accepts(rc1()), true);
+  assert.equal(accepts(bare(rc1())), true, 'without a prototype');
+  for (const name of ['none.json', 'none-with-withdrawn.json', 'manual.json', 'repaired.json']) {
+    const body = fixture('valid', name);
+    body.contractVersion = '1.0.0-rc.1';
+    if (body.rules) body.rules = structuredClone(V1_LIST.rules);
+    for (const item of body.pools) if (item.rankInputs) item.rankInputs = structuredClone(V1_LIST.pools[1].rankInputs);
+    assert.equal(accepts(body), true, `${name} as rc.1`);
+  }
+  // Nothing rc.2 added passes under rc.1.
+  const rc2Only = {
+    'ranking by today\'s APR': (body) => { body.rules.rankBy = 'feeAprEstimate24hPercent'; },
+    'no depth rule': (body) => { body.rules.minReferenceDepthUsd = null; },
+    'no APR ceiling': (body) => { body.rules.maxAprPercent = null; },
+    'no turnover ceiling': (body) => { body.rules.maxTurnover24h = null; },
+    'no age rule': (body) => { body.rules.minPoolAgeHours = null; },
+    'no previous-day APR': (body) => { body.pools[1].rankInputs.prevApr = null; },
+    'no measured depth': (body) => { body.pools[1].rankInputs.referenceDepthUsd = null; },
+  };
+  for (const [name, change] of Object.entries(rc2Only)) {
+    assert.equal(accepts(rc1(change)), false, `rc.1 with ${name}`);
+    assert.equal(accepts(edit(change)), true, `rc.2 with ${name}`);
+  }
+  // Neither version lets a floor or a ranked pool's own figures go.
+  for (const change of [(body) => { body.rules.minVolume24hUsd = null; }, (body) => { body.rules.minTvlUsd = null; },
+    (body) => { body.pools[1].rankInputs.rankApr = null; }, (body) => { body.pools[1].rankInputs.freshApr = null; }]) {
+    assert.equal(accepts(rc1(change)), false);
+    assert.equal(accepts(edit(change)), false);
+  }
+  for (const version of ['1.0.0-rc.0', '1.0.0-rc.3', '1.0.0', '1.0.0-rc.2 ', ' 1.0.0-rc.1', '1.0.0-RC.2', null, 2]) {
+    assert.equal(accepts(edit((body) => { body.contractVersion = version; })), false, JSON.stringify(version));
+    assert.equal(accepts(rc1((body) => { body.contractVersion = version; })), false, JSON.stringify(version));
+  }
+});
+
 test('version, route table and errors follow read-v4', () => {
-  assert.equal(CONTRACT_VERSION, '1.0.0-rc.1');
+  assert.equal(CONTRACT_VERSION, '1.0.0-rc.2');
+  assert.deepEqual(CONTRACT_VERSIONS, ['1.0.0-rc.1', '1.0.0-rc.2']);
+  assert.equal(CONTRACT_VERSIONS.at(-1), CONTRACT_VERSION, 'the version spoken is the newest accepted');
+  assert.ok(Object.isFrozen(CONTRACT_VERSIONS));
   assert.deepEqual(ENABLED_READS, ['featured-pools']);
   assert.deepEqual(Object.keys(ROUTES), ['featured-pools']);
   assert.equal(ROUTES['featured-pools'].schemaVersion, 1);

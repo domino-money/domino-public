@@ -95,7 +95,9 @@ test('only session/contract.ts imports the session package at runtime; everythin
 test('the wallet feature is reached only through the build flag', () => {
   const importers = ALL.filter(({ code }) => /import\(\s*'\.\/wallet\/WalletSessionIsland'\s*\)/.test(code));
   assert.deepEqual(importers.map(({ path }) => path), ['components/Header.tsx']);
-  assert.match(importers[0].code, /__DOMINO_WALLET_SESSION__\s*\?\s*lazy\(/);
+  // Changed on purpose 2026-09-28 (speed wave B, item 24): opened by components/Deferred.tsx's loader, which draws it as
+  // soon as its chunk is in, not 300 ms after its fallback as a Suspense boundary reveals a lazy one; still behind the flag.
+  assert.match(importers[0].code, /__DOMINO_WALLET_SESSION__\s*\?\s*deferred\(/);
   const localImporters = ALL.filter(({ code }) => /import\(\s*'\.\/wallet\/LocalWalletIsland'\s*\)/.test(code));
   assert.deepEqual(localImporters.map(({ path }) => path), ['components/Header.tsx']);
   assert.match(localImporters[0].code, /__DOMINO_LOCAL_LIVE__\s*\?\s*lazy\(/);

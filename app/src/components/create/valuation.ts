@@ -1,10 +1,10 @@
 import { USDG } from '../../config/mainTokens'
-import { priceFromSqrt } from '../../lib/format/price'
+import { priceFromSqrtIn } from '../../lib/format/price'
 import { usdgValue } from '../../lib/format/usd'
 import type { JourneyState, TickRange } from '../../lib/create/journey'
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { formatUnits } from '../../lib/read/decimal'
-import { boundPrice, rangePosition, usableTicks, type PoolPrice } from '../../lib/read/screens/poolRange'
+import { boundPrice, rangePosition, shownPrice, shownRange, usableTicks, type PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import type { PairBalancesState } from './usePairBalances'
 
@@ -18,7 +18,10 @@ import type { PairBalancesState } from './usePairBalances'
 
 type Usable = Extract<PoolPrice, { state: 'usable' }>
 
-/** A range as the preview draws it: prices in the pool's orientation (currency1 per currency0), 0 and Infinity at the pool's tick limits. */
+/**
+ * A range as the preview draws it: prices as the page writes them (the app's one way round, lib/read/orientation.ts,
+ * 2026-09-28: `base` in `quote`, lowest first), 0 and Infinity at the pool's tick limits.
+ */
 export interface RangeView {
   lower: number
   upper: number
@@ -28,14 +31,17 @@ export interface RangeView {
   /** The texts the range step already writes: `≈0.430178`, or its words beyond display. */
   lowerText: string | null
   upperText: string | null
+  /** The pool's tick and the range's two ends in the page's frame (poolRange.ts shownRange), for their distances. */
+  ticks: { pool: number; lower: number; upper: number }
 }
 
-const tickPrice = (tick: number, price: Usable) => Math.pow(1.0001, tick) * Math.pow(10, price.decimals[0] - price.decimals[1])
+/** The price at a tick of the page's frame (`shown` is shownPrice's): its `base` in its `quote`. */
+const tickPrice = (tick: number, shown: Usable) => Math.pow(1.0001, tick) * Math.pow(10, shown.decimals[0] - shown.decimals[1])
 
-/** The pool's price as a number for drawing only, from the exact decimal `priceFromSqrt` writes. */
+/** The pool's price as a number for drawing only, from the exact decimal `priceFromSqrt` writes, the page's way round. */
 function currentPrice(pool: PoolOption, price: Usable): number | null {
   try {
-    const value = parseFloat(priceFromSqrt(BigInt(pool.sqrtPriceX96), price.decimals[0], price.decimals[1]))
+    const value = parseFloat(priceFromSqrtIn(BigInt(pool.sqrtPriceX96), price.decimals[0], price.decimals[1], price.inverted === true))
     return Number.isFinite(value) && value > 0 ? value : null
   } catch {
     return null
@@ -44,13 +50,16 @@ function currentPrice(pool: PoolOption, price: Usable): number | null {
 
 export function rangeView(range: TickRange, price: Usable, pool: PoolOption): RangeView {
   const { min, max } = usableTicks(price.tickSpacing)
+  const shown = shownPrice(price)
+  const view = shownRange(range, price.inverted === true)
   return {
-    lower: range.lower <= min ? 0 : tickPrice(range.lower, price),
-    upper: range.upper >= max ? Infinity : tickPrice(range.upper, price),
+    lower: view.lower <= min ? 0 : tickPrice(view.lower, shown),
+    upper: view.upper >= max ? Infinity : tickPrice(view.upper, shown),
     current: currentPrice(pool, price),
     inRange: rangePosition(range, price.tick) === 'inside',
-    lowerText: boundPrice(range.lower, price),
-    upperText: boundPrice(range.upper, price),
+    lowerText: boundPrice(view.lower, shown),
+    upperText: boundPrice(view.upper, shown),
+    ticks: { pool: shown.tick, lower: view.lower, upper: view.upper },
   }
 }
 
@@ -101,6 +110,12 @@ export interface Held {
   estimate: boolean
   /** The one-token plan's deposit, what Review says comes "From your wallet": its side and amount; null for any other plan. */
   wallet: { side: 0 | 1; text: string } | null
+  /**
+   * The one token the position holds, when it holds one alone (a range wholly above or below the price, or a deposit
+   * swapped whole for the token such a range takes, 2026-09-28): the steps and the picture name that token alone, never
+   * "0" of the other. Null when it holds both.
+   */
+  only: 0 | 1 | null
 }
 
 const textOf = (raw: bigint, decimals: number | null) => {
@@ -134,6 +149,7 @@ export function heldAmounts(state: JourneyState, balances: PairBalancesState): H
     text: textOf(amounts[index], pool.currencies[index].decimals),
     usd: usdOf(pool, index === 0 ? [amounts[0], 0n] : [0n, amounts[1]]),
   })
-  return { sides: [side(0), side(1)], total: usdOf(pool, amounts), estimate, wallet }
+  const only = amounts[0] === 0n && amounts[1] > 0n ? 1 : amounts[1] === 0n && amounts[0] > 0n ? 0 : null
+  return { sides: [side(0), side(1)], total: usdOf(pool, amounts), estimate, wallet, only }
 }
 

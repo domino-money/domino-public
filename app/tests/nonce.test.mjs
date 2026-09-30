@@ -45,6 +45,38 @@ test('a batch is latched once per owner and operation id across tabs, keeps the 
  assert.throws(()=>a.batchOffered(owner,'0x'+'c'.repeat(63)),/invalid_wallet_batch/);
  assert.throws(()=>a.batchOffered('0xABC','0x'+'c'.repeat(64)),/invalid_wallet_batch/);
 });
+// 2026-09-28: a batch's latch keeps when it was claimed, so one its wallet never settled is freed once its batch cannot execute.
+test('a batch latch keeps its claim time beside it, is freed only past its age, and a latch with no time or a future one starts its clock again',async()=>{
+ const s=storage(),j=createNonceJournal(s,locks(),token),op='0x'+'c'.repeat(64),next='0x'+'d'.repeat(64);
+ await j.claimBatch(owner,op,1000.9);
+ const at=[...s.map.keys()].filter(key=>key.startsWith('domino.offered-batch-at.v1.'));
+ assert.equal(at.length,1);assert.match(at[0],/^domino.offered-batch-at.v1.[0-9a-f]{64}$/);assert.equal(s.map.get(at[0]),'1000');
+ for(const [key,value] of s.map){assert(!key.includes(owner)&&!value.includes(owner))}
+ assert.equal(await j.expireBatch(owner,op,1100,100),false);assert.equal(j.batchOffered(owner,op),'');
+ assert.equal(await j.expireBatch(owner,op,1101,100),true);assert.equal(j.batchOffered(owner,op),null);
+ assert.equal(s.map.size,0,'both entries gone');
+ // Released by its claim, the time goes with it; nothing to expire is false and leaves no time behind.
+ const again=await j.claimBatch(owner,op,5);await j.recordBatch(owner,op,again,'0xfeed');await j.releaseBatch(owner,op,'0xfeed');
+ assert.equal(s.map.size,0);assert.equal(await j.expireBatch(owner,op,10**9,1),false);assert.equal(s.map.size,0);
+ // No time beside it (claimed before times were kept): stamped at the first look, freed a full age later.
+ await j.claimBatch(owner,op);assert.equal(s.map.size,1);
+ assert.equal(await j.expireBatch(owner,op,2000,100),false);assert.equal(await j.expireBatch(owner,op,2100,100),false);
+ assert.equal(await j.expireBatch(owner,op,2101,100),true);
+ // Claimed in the future (a clock set back): stamped now instead, never freed sooner.
+ await j.claimBatch(owner,op,9000);assert.equal(await j.expireBatch(owner,op,3000,100),false);
+ assert.equal(await j.expireBatch(owner,op,3100,100),false);assert.equal(await j.expireBatch(owner,op,3101,100),true);
+ // Only that operation's latch.
+ await j.claimBatch(owner,op,1);await j.claimBatch(owner,next,1);assert.equal(await j.expireBatch(owner,next,10**6,100),true);assert.equal(j.batchOffered(owner,op),'');
+ // A time that storage refuses never fails the claim.
+ const kept=new Map(),refusing={get length(){return kept.size},key:i=>[...kept.keys()][i]??null,getItem:k=>kept.get(k)??null,setItem:(k,v)=>{if(k.startsWith('domino.offered-batch-at.'))throw new Error('quota');kept.set(k,v)},removeItem:k=>kept.delete(k)};
+ const f=createNonceJournal(refusing,locks(),token);
+ assert.match(await f.claimBatch(owner,op,1),/^[0-9a-f-]{36}$/);assert.equal(f.batchOffered(owner,op),'');
+ assert.equal(await f.expireBatch(owner,op,10**6,100),false,'no time could be kept: the latch stays');
+ // The time does not count toward the journal's bound.
+ const b=storage(),jb=createNonceJournal(b,locks(),token);
+ for(let i=0;i<1024;i++)b.setItem('domino.offered-batch-at.v1.'+i.toString(16).padStart(64,'0'),'1');
+ assert(await jb.claimBatch(owner,op,1));
+});
 test('nonces and batches share one bound on what the journal holds',async()=>{
  const s=storage(),j=createNonceJournal(s,locks(),token);
  for(let i=0;i<1024;i++)s.setItem('domino.offered-batch.v1.'+i.toString(16).padStart(64,'0'),token());

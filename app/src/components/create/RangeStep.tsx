@@ -3,7 +3,22 @@ import { CREATE } from '../../lib/create/copy'
 import type { JourneyState, TickRange } from '../../lib/create/journey'
 import { awayFrom, awayShort, plainFigure } from '../../lib/create/plain'
 import { RANGES, type RangeKey } from '../../lib/ranges'
-import { PRICE_STALE_MS, boundPrice, moveBound, poolPrice, presetRange, rangeMode, rangePosition, sliderWindow, stepBound, type PoolPrice, type RangeMode } from '../../lib/read/screens/poolRange'
+import {
+  PRICE_STALE_MS,
+  boundPrice,
+  moveBound,
+  poolPrice,
+  presetFor,
+  rangeMode,
+  shownPosition,
+  shownPrice,
+  shownRange,
+  shownTick,
+  sliderWindow,
+  stepBound,
+  type PoolPrice,
+  type RangeMode,
+} from '../../lib/read/screens/poolRange'
 import type { AddressKey } from '../../lib/read/screens/identity'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { editablePrice, priceInputToTick } from '../../lib/read/screens/RangePriceInput'
@@ -35,7 +50,7 @@ function useStaleClock(readAt: number | null): number {
   return turned === readAt ? readAt + PRICE_STALE_MS : readAt
 }
 
-/** "1 ETH = 2,499.91 USDG": a price of the pool's second token for one of its first, the symbols as untrusted text. */
+/** "1 ETH = 2,499.91 USDG": the price as the page writes it (lib/read/orientation.ts), the symbols as untrusted text. */
 export function OneFor({ price, figure }: { price: Usable; figure: string }) {
   return (
     <>
@@ -52,11 +67,12 @@ function awayWords(tick: number, price: Usable): string {
 
 
 /**
- * One end of the range: its price for one of the pool's first token and how far it is from today's. With Custom
+ * One end of the range: its price for one of the priced token and how far it is from today's. With Custom
  * chosen, the price can be typed (applied on Enter or when the field is left), stepped by the pool's smallest step,
- * or dragged; typed prices move outward to the nearest price the pool allows.
+ * or dragged; typed prices move outward to the nearest price the pool allows. `range` and `price` are in the page's
+ * frame (poolRange.ts shownPrice): its lower end is the lowest price of the priced token, whichever way the pool is.
  */
-function Bound({ which, range, price, editing, onRange }: { which: 'lower' | 'upper'; range: TickRange; price: Usable; editing: boolean; onRange: (next: TickRange) => void }) {
+function Bound({ which, range, price, inverted, editing, onRange }: { which: 'lower' | 'upper'; range: TickRange; price: Usable; inverted: boolean; editing: boolean; onRange: (next: TickRange) => void }) {
   const label = which === 'lower' ? CREATE.amount.lowest : CREATE.amount.highest
   const tick = range[which]
   const id = `range-${which}`
@@ -130,8 +146,9 @@ function Bound({ which, range, price, editing, onRange }: { which: 'lower' | 'up
           {written ? <OneFor price={price} figure={written} /> : CREATE.review.summary.beyondDisplay}
         </p>
       )}
+      {/* The pool's own tick for this end (the page's frame turned back). */}
       <span className="sr-only" data-bound-tick="">
-        {tick}
+        {shownTick(tick, inverted)}
       </span>
       {error && (
         <p id={`${id}-error`} role="alert" className="dm-error">
@@ -167,6 +184,11 @@ function Bound({ which, range, price, editing, onRange }: { which: 'lower' | 'up
  * Its only read is the price again: once it is more than 5 minutes old, the next change to the range reads it, one
  * pools read of this pool at a time (useStalePriceRead, shared with the pool page's range controls). There is no
  * control to press for it.
+ *
+ * Changed on purpose 2026-09-28 (one-sided, the owner: "the range is upside down"): the prices read the app's one way
+ * round (lib/read/orientation.ts), "1 MANY = 0.0025 USDG" in a pool whose first token is USDG, so a range above
+ * today's price is one where MANY is dearer. The step draws and edits the range in that frame and keeps it in the
+ * pool's own ticks (shownRange), and the presets are 0.7× to 1.5× of the price as written (presetFor).
  */
 export function RangeStep({
   source,
@@ -186,23 +208,29 @@ export function RangeStep({
   const now = useStaleClock(pool.readAt)
   const price = poolPrice(pool, now)
   const usable = price.state === 'usable' ? price : null
+  // The price and the range in the page's frame: the lower end is the priced token's lowest price, whichever way the
+  // pool is. Everything drawn or edited here is in that frame; a range goes back to the pool's ticks before it is kept.
+  const inverted = usable?.inverted === true
+  const shown = usable ? shownPrice(usable) : null
   // Only a tie-break and an explicit "Custom"; the checked width is derived from the range on the price as read now.
   const [picked, setPicked] = useState<RangeMode | null>(null)
   const { said, readIfStale } = useStalePriceRead(source, token, state.paired?.key ?? null, pool.key, onPool)
   const range = state.range
-  const mode = usable && range ? rangeMode(range, usable.tick, usable.tickSpacing, picked) : null
+  const view = range ? shownRange(range, inverted) : null
+  const mode = shown && view ? rangeMode(view, shown.tick, shown.tickSpacing, picked) : null
 
   const pick = (key: RangeMode) => {
     if (!usable) return
     readIfStale(usable.stale)
     setPicked(key)
-    if (key !== 'custom') onRange(presetRange(usable.tick, usable.tickSpacing, key))
-    else if (!range) onRange(presetRange(usable.tick, usable.tickSpacing, 'standard'))
+    if (key !== 'custom') onRange(presetFor(usable, key))
+    else if (!range) onRange(presetFor(usable, 'standard'))
   }
+  /** A range from the controls, in the page's frame: kept in the pool's own ticks. */
   const custom = (next: TickRange) => {
     readIfStale(usable?.stale === true)
     setPicked('custom')
-    onRange(next)
+    onRange(shownRange(next, inverted))
   }
   const arrows = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
@@ -213,7 +241,7 @@ export function RangeStep({
     event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')[index]?.focus()
   }
 
-  const position = usable && range ? rangePosition(range, usable.tick) : null
+  const position = usable && range ? shownPosition(range, usable) : null
   const priceState = price.state === 'usable' ? (price.stale ? 'stale' : price.partial ? 'partial' : 'usable') : 'unavailable'
   return (
     <div className="dm-flow-stack" data-stage="range" data-picker="range" data-price-state={priceState} data-price-read={said?.code}>
@@ -247,11 +275,11 @@ export function RangeStep({
           {mode && <p className="dm-flow-width-line">{CREATE.amount.widthLines[mode]}</p>}
         </div>
       )}
-      {usable && range && (
+      {shown && view && (
         <div className="dm-flow-bounds" data-range-controls="">
           {/* Keyed by Custom: leaving it for Closer or Wider drops a half-typed or refused price with its fields. */}
-          <Bound key={mode === 'custom' ? 'lower-edit' : 'lower'} which="lower" range={range} price={usable} editing={mode === 'custom'} onRange={custom} />
-          <Bound key={mode === 'custom' ? 'upper-edit' : 'upper'} which="upper" range={range} price={usable} editing={mode === 'custom'} onRange={custom} />
+          <Bound key={mode === 'custom' ? 'lower-edit' : 'lower'} which="lower" range={view} price={shown} inverted={inverted} editing={mode === 'custom'} onRange={custom} />
+          <Bound key={mode === 'custom' ? 'upper-edit' : 'upper'} which="upper" range={view} price={shown} inverted={inverted} editing={mode === 'custom'} onRange={custom} />
         </div>
       )}
       {mode === 'custom' && <p className="dm-hint">{CREATE.amount.customHint}</p>}

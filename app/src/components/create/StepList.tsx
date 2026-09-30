@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { CREATE } from '../../lib/create/copy'
 import type { JourneyState, Stage, TickRange } from '../../lib/create/journey'
-import { boundPrice, type PoolPrice } from '../../lib/read/screens/poolRange'
+import { boundPrice, shownPrice, shownRange, type PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { plainFigure } from '../../lib/create/plain'
 import { AmountText } from '../figures'
@@ -52,12 +52,18 @@ export function PoolSummary({ state }: { state: JourneyState }) {
   return <PoolPair option={state.pool} />
 }
 
-/** "1 WETH = 2,241.12 to 3,738.54 USDG": the pool's own orientation, in plain words (round 6: no "≈", no "per"). */
+/**
+ * "1 WETH = 2,241.12 to 3,738.54 USDG", in plain words (round 6: no "≈", no "per"). Changed on purpose 2026-09-28
+ * (one-sided): the app's one way round (lib/read/orientation.ts), lowest price first, "1 MANY = 0.002 to 0.003 USDG"
+ * where the pool's first token is USDG.
+ */
 export function RangeSummary({ range, price }: { range: TickRange; price: Usable }) {
-  const words = (tick: number) => plainFigure(boundPrice(tick, price) ?? CREATE.review.summary.beyondDisplay)
+  const shown = shownPrice(price)
+  const view = shownRange(range, price.inverted === true)
+  const words = (tick: number) => plainFigure(boundPrice(tick, shown) ?? CREATE.review.summary.beyondDisplay)
   return (
     <>
-      1 <SymbolText token={price.base} /> = {words(range.lower)} to {words(range.upper)} <SymbolText token={price.quote} />
+      1 <SymbolText token={price.base} /> = {words(view.lower)} to {words(view.upper)} <SymbolText token={price.quote} />
     </>
   )
 }
@@ -74,6 +80,15 @@ export function AmountSummary({ state, held }: { state: JourneyState; held: Held
     return (
       <>
         {state.budget} <SymbolText token={state.token.token} />
+      </>
+    )
+  }
+  // One token alone (a range wholly above or below the price, 2026-09-28): that token only, never "0" of the other.
+  if (held.only !== null) {
+    return (
+      <>
+        {held.estimate && `${CREATE.review.about} `}
+        <AmountText text={held.sides[held.only].text} /> <SymbolText token={pool.currencies[held.only]} />
       </>
     )
   }
@@ -116,6 +131,9 @@ export function StepList({ steps, onOpen, locked = false }: { steps: readonly St
     const still = stilled()
     const timer = setTimeout(
       () => {
+        // A person may already be pressing a control while the panel settles. Do not move that control between
+        // pointer-down and pointer-up: the gesture would end elsewhere and its click would be lost.
+        if (document.activeElement !== heading) return
         const top = heading.getBoundingClientRect().top
         const header = document.querySelector('header')?.getBoundingClientRect().height ?? 0
         if (top < header + 8 || top > window.innerHeight * 0.6) {

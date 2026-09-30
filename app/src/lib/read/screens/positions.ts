@@ -11,13 +11,14 @@
  * pair with USDG themselves. Nothing here is stored.
  */
 import { formatUnits } from '../decimal'
+import { priceInverted } from '../orientation'
 import type { TokenDisplay } from '../types'
 import { DYNAMIC_FEE_PIPS } from './fee'
 import { tokenAmount } from './figures'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from './identity'
 // poolRange imports tickPriceText from here; the cycle is safe because
 // neither module calls the other while it loads, only from inside functions.
-import { rangePosition, tickAgrees, usableTicks, type PriceProblem } from './poolRange'
+import { shownPosition, shownRange, shownTick, tickAgrees, tickPriceIn, usableTicks, type PriceProblem } from './poolRange'
 
 const UINT256 = 2n ** 256n
 
@@ -75,10 +76,15 @@ export type ChainPositionCard =
       valuation: { state: 'unavailable'; reason: 'no_qualified_price_source' }
     }
 
-/** 1.0001^tick × 10^(dec0 − dec1): currency1 per currency0, to six significant digits, never an exponent. */
+/**
+ * 1.0001^tick × 10^(dec0 − dec1): currency1 per currency0, to six significant digits, never an exponent. Null past
+ * 10^24 or under 10^−24. Changed on purpose 2026-09-28 (one-sided): the floor was 10^−12, and the app now writes many
+ * pools the other way round (lib/read/orientation.ts, the same tick with its decimals swapped and negated), so the floor
+ * mirrors the ceiling: a price the pages could write one way round, they can write the other way round too.
+ */
 export function tickPriceText(tick: number, decimals0: number, decimals1: number): string | null {
   const value = Math.pow(1.0001, tick) * Math.pow(10, decimals0 - decimals1)
-  if (!isFinite(value) || value < 1e-12 || value > 1e24) return null
+  if (!isFinite(value) || value < 1e-24 || value > 1e24) return null
   return `≈${new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6 }).format(value)}`
 }
 
@@ -105,6 +111,39 @@ export function rangeEnd(tick: number, side: 'lower' | 'upper', tickSpacing: num
   if (decimals0 === null || decimals1 === null) return { kind: 'tick', problem: 'decimals_unknown' }
   const text = tickPriceText(tick, decimals0, decimals1)
   return text === null ? { kind: 'tick', problem: 'beyond_display' } : { kind: 'price', text }
+}
+
+/**
+ * A card's range as the page writes it (the app's one way round, lib/read/orientation.ts, 2026-09-28): the token its
+ * prices are for (`base`) and the one they are in (`quote`), and the range's lowest and highest price of `base`, each
+ * with the pool tick it is at. A pool whose first currency is USDG or ETH is read the other way round from its own
+ * order: its upper tick is then the range's lowest price, and the end at the pool's upper tick limit is 0.
+ */
+export interface ShownCardRange {
+  base: TokenDisplay
+  quote: TokenDisplay
+  inverted: boolean
+  low: { end: RangeEnd; tick: number }
+  high: { end: RangeEnd; tick: number }
+  /** The range's two ends in the page's frame (poolRange.ts shownRange): a higher tick is a higher price of `base`. */
+  ticks: { lower: number; upper: number }
+}
+
+export function shownCardRange(card: Pick<Extract<ChainPositionCard, { kind: 'live' }>, 'currencies' | 'range' | 'tickSpacing'>): ShownCardRange {
+  const [currency0, currency1] = card.currencies
+  const inverted = priceInverted(currency0.address, currency1.address)
+  const { tickLower, tickUpper } = card.range
+  const ticks = shownRange({ lower: tickLower, upper: tickUpper }, inverted)
+  if (!inverted) return { base: currency0, quote: currency1, inverted, low: { end: card.range.ends.lower, tick: tickLower }, high: { end: card.range.ends.upper, tick: tickUpper }, ticks }
+  const [dBase, dQuote] = [decimalsOf(currency1), decimalsOf(currency0)]
+  return {
+    base: currency1,
+    quote: currency0,
+    inverted,
+    low: { end: rangeEnd(ticks.lower, 'lower', card.tickSpacing, dBase, dQuote), tick: tickUpper },
+    high: { end: rangeEnd(ticks.upper, 'upper', card.tickSpacing, dBase, dQuote), tick: tickLower },
+    ticks,
+  }
 }
 
 /** Why a card writes a range end as a tick, or null. An unread decimal comes first: it is the one a reader can act on. */
@@ -229,11 +268,17 @@ export type CardPoolPrice =
       state: 'usable'
       /** The block of the read the price is from: the card's own. */
       block: number
+      /** The pool's own tick. */
       tick: number
-      /** currency1 per currency0, written with the card's decimals: six significant digits, never an exponent. */
+      /**
+       * The price as the page writes it, the app's one way round (lib/read/orientation.ts, 2026-09-28): `base` in `quote`
+       * of shownCardRange, written with the card's decimals, six significant digits, never an exponent.
+       */
       text: string
-      /** Where that tick sits against the card's range. */
+      /** Where the price sits against the card's range, as the page reads it: `below` it means the range is above today's price. */
       position: 'inside' | 'below' | 'above'
+      /** The page reads the pool the other way round from its own order (currency1 priced in currency0). */
+      inverted: boolean
     }
 
 const decimalsOf = (token: TokenDisplay) => (token.origin === 'read' ? token.decimals : null)
@@ -258,7 +303,12 @@ export function chainPoolPrice(card: Extract<ChainPositionCard, { kind: 'live' }
   const d0 = decimalsOf(card.currencies[0])
   const d1 = decimalsOf(card.currencies[1])
   if (d0 === null || d1 === null) return { state: 'unavailable', problem: 'decimals_unknown', block }
-  const text = tickPriceText(price.tick, d0, d1)
+  const inverted = priceInverted(card.currencies[0].address, card.currencies[1].address)
+  const text = tickPriceIn(price.tick, [d0, d1], inverted)
   if (text === null) return { state: 'unavailable', problem: 'beyond_display', block }
-  return { state: 'usable', block, tick: price.tick, text, position: rangePosition({ lower: card.range.tickLower, upper: card.range.tickUpper }, price.tick) }
+  const position = shownPosition({ lower: card.range.tickLower, upper: card.range.tickUpper }, { tick: price.tick, inverted })
+  return { state: 'usable', block, tick: price.tick, text, position, inverted }
 }
+
+/** The pool's tick in the page's frame of a card's price (shownCardRange's `ticks`): a higher tick is a higher price of `base`. */
+export const shownCardTick = (price: { tick: number; inverted: boolean }) => shownTick(price.tick, price.inverted)

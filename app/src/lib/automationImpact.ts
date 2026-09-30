@@ -28,7 +28,7 @@
  * - for Domino-compound, the next positions it opened (MINT) and the fees it moved out for them (MINT and FUND).
  * Nothing is invented: without the vault's logs, or with any log that is not what was asked for, there is no figure.
  */
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import type { OwnedDeps } from '../../functions/_lib/owned'
 import { type Basis, principalAt, valueUnits } from '../components/positions/visual/value'
 import type { FeeHistory, PositionState } from './fees/types'
@@ -235,7 +235,8 @@ export async function readVault(vault: string, tokenId: string, currencies: read
   if (!/^0x[0-9a-f]{40}$/.test(vault) || !/^[1-9]\d{0,77}$/.test(tokenId) || !(from >= 0 && to >= from)) return null
   try {
     const code = await import('./chain/chainCode')
-    const rt = deps ?? code.chainDeps()
+    // 2026-09-28 (speed wave B, item 26): read beside the position's chart, not a read its fees lane waits for.
+    const rt = deps ?? code.chainDeps(undefined, true)
     const budget = { calls: 0, started: rt.now(), logBytes: 0 }
     const logs = async (filter: { address: string | string[]; topics: (string | null)[] }, a: number, b: number) => {
       const queue: [number, number][] = [[a, b]]
@@ -273,11 +274,20 @@ export async function readVault(vault: string, tokenId: string, currencies: read
   }
 }
 
-/** What the store keeps per vault and NFT: the blocks read up to, the record (null until one read succeeded) and when the last read failed (0: it did not). */
+/**
+ * What the store keeps per vault and NFT: the blocks read from and up to, the record (null until one read succeeded) and
+ * when the last read failed (0: it did not).
+ */
 export interface VaultEntry {
+  from: number
   to: number
   record: VaultRecord | null
   failedAt: number
+}
+
+/** A warm or retained record is displayable only when it covers the entire requested interval. */
+export function coveredVaultRecord(entry: VaultEntry | null, from: number, to: number): VaultRecord | null {
+  return entry && entry.from <= from && entry.to >= to ? entry.record : null
 }
 
 type Ask = [vault: string, tokenId: string, currencies: readonly [string, string], from: number, to: number]
@@ -300,13 +310,17 @@ export function vaultStore(read: (...ask: Ask) => Promise<VaultRecord | null> = 
     const key = `${vault}:${tokenId}`
     latest.set(key, ask)
     const entry = kept.get(key)
-    if (asking.has(key) || (entry?.record && entry.to >= to) || (entry && timers.now() - entry.failedAt < retryMs)) return
-    const known = entry?.record ?? null
+    // 2026-09-28 (speed wave B, item 26): a record read from a later block than asked (warmVault's, from the factory's
+    // first block) is read again from the block asked, whole.
+    const earlier = !!entry?.record && from < entry.from
+    if (asking.has(key) || (entry?.record && entry.to >= to && !earlier) || (entry?.failedAt && timers.now() - entry.failedAt < retryMs)) return
+    const known = earlier ? null : (entry?.record ?? null)
+    const end = Math.max(to, earlier && entry ? entry.to : to)
     asking.add(key)
-    void read(vault, tokenId, currencies, known && entry ? entry.to + 1 : from, to).then((got) => {
+    void read(vault, tokenId, currencies, known && entry ? entry.to + 1 : from, end).then((got) => {
       asking.delete(key)
       const record = got && known ? { executions: [...known.executions, ...got.executions], paid: known.paid && got.paid ? new Map([...known.paid, ...got.paid]) : null } : got
-      kept.set(key, got ? { to, record, failedAt: 0 } : { to: entry?.to ?? -1, record: known, failedAt: timers.now() })
+      kept.set(key, got ? { from: known && entry ? entry.from : from, to: end, record, failedAt: 0 } : { from: entry?.from ?? from, to: entry?.to ?? -1, record: entry?.record ?? null, failedAt: timers.now() })
       if (!got && !retrying.has(key)) {
         retrying.add(key)
         timers.set(() => {
@@ -316,6 +330,9 @@ export function vaultStore(read: (...ask: Ask) => Promise<VaultRecord | null> = 
         }, retryMs)
       }
       for (const listener of listeners) listener()
+      // The blocks a screen asked while this read was on its way (a card's own, while the page's early read went).
+      const again = latest.get(key)
+      if (got && again) want(...again)
     })
   }
 
@@ -331,9 +348,22 @@ export function vaultStore(read: (...ask: Ask) => Promise<VaultRecord | null> = 
 
 const store = vaultStore()
 
+/** The first block any vault of Domino's factory can have an execution in: the factory's own (docs/deployments/v1-robinhood-mainnet-2026-09-21). */
+export const VAULT_FIRST_BLOCK = 69_239_633
+/**
+ * 2026-09-28 (speed wave B, item 26: an automated position's Fees earned card waited for its vault's record, read only
+ * once the chart was drawn, as the history named the blocks): read as soon as the page's own read names the vault, from
+ * the factory's first block to that read's (`block`); the card takes its own blocks' part of it (useVaultRecord).
+ */
+export function warmVault(vault: string, tokenId: string, currencies: readonly [string, string], block: number): void {
+  store.want(vault, tokenId, currencies, VAULT_FIRST_BLOCK, block)
+}
+
 /**
  * The vault's record for `tokenId` from its mint (`from`) to its latest settlement (`to`): null while unknown, and
- * `settled` once a first read answered or failed (the card waits for it, so the lines never push the chart down).
+ * `settled` once a first read from `from` answered or failed. A failure is not
+ * coverage: `record` remains null until the complete interval has been read.
+ * The independently verified fee chart does not wait for this attribution.
  */
 export function useVaultRecord(vault: string | null, tokenId: string, currencies: readonly [string, string] | null, from: number, to: number): { record: VaultRecord | null; settled: boolean } {
   const first = currencies?.[0] ?? ''
@@ -346,5 +376,8 @@ export function useVaultRecord(vault: string | null, tokenId: string, currencies
     () => (vault ? store.get(vault, tokenId) : null),
     () => null,
   )
-  return { record: entry?.record ?? null, settled: entry !== null }
+  // A record read wider than asked (warmVault): its executions in [from, to] only, as a read of those blocks has them.
+  const record = coveredVaultRecord(entry, from, to)
+  const own = useMemo(() => record && { ...record, executions: record.executions.filter((execution) => execution.block >= from && execution.block <= to) }, [record, from, to])
+  return { record: own ?? null, settled: entry !== null && (entry.from <= from || entry.failedAt > 0) }
 }

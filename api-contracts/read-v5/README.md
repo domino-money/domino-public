@@ -3,17 +3,42 @@
 One stored route, separate from read-v1 to read-v4 (featured-pools v1 §10):
 
 - `POST /api/read/v5/featured-pools`, body `{}` (no keys), header
-  `X-Domino-Read-Contract: 1.0.0-rc.1`; upstream `/internal/read/v5/featured-pools`.
+  `X-Domino-Read-Contract: 1.0.0-rc.2`; upstream `/internal/read/v5/featured-pools`.
 - The answer is the list the VM serves now, the same for every visitor, as it
   was stored when it was published or repaired. `status` is `current`,
   `repaired`, `carried_over`, `manual` or `none`; `none` (nothing served, or the
   owner's `mode off`) is a 200 with no pools, and may still carry the week's
-  `withdrawn` pools. `upcoming` is always `null` in rc.1.
+  `withdrawn` pools. `upcoming` is always `null` (rc.1 and rc.2).
 - Errors are read-v1's codes (`ERROR_STATUS_BY_CODE`); a stored list the
   producer's contract refuses is `upstream_contract_mismatch` (502), never a
   partial list.
 
 The producer's contract is `backend/featured_contract.py`.
+
+## rc.2 (featured-policy v2, 28/09/2026)
+
+The owner's policy v2 ranks by today's APR alone, above two floors (24 h
+volume and liquidity), with every safety rule and no other market rule. What
+changes on the wire from rc.1:
+
+- `contractVersion` (and the header) is `1.0.0-rc.2`;
+- `rules.rankBy` is `feeAprEstimate24hPercent` (today's APR) or, for a list
+  chosen under v1, `min_fresh_and_previous_day_feeAprEstimate24hPercent`;
+- `rules.minReferenceDepthUsd`, `maxAprPercent`, `maxTurnover24h` and
+  `minPoolAgeHours` may be `null`: that rule is off;
+- a ranked pool's `rankInputs.prevApr` may be `null` (no evaluation the day
+  before) and `rankInputs.referenceDepthUsd` may be `null` (not measured).
+
+Still required: `rules.minVolume24hUsd` and `minTvlUsd`, and a ranked pool's
+`rankApr`, `freshApr`, `volume24hUsd` and `reportedLiquidityUsd`. Under v2,
+`rankApr` equals `freshApr`. A list stored under v1 is served as it was
+recorded, with rc.2's version (`valid/current-policy-v1.json`).
+
+During the transition (the Worker and the app first, then the VM) the runtime
+also accepts rc.1, held to rc.1's rules (`CONTRACT_VERSIONS`), in the body and
+in the header. The Worker asks in rc.2, relays each answer in the version it
+was answered in, and refuses one whose body names another version than its
+header. Dropping rc.1 is the last step.
 
 ## Fixtures
 

@@ -18,8 +18,8 @@
  * cannot be reached, to its public fallbacks (lib/chain/endpoints.ts); nothing new is exported.
  */
 export { ChainError, paced } from '../../../functions/_lib/owned'
-export { scanWallet } from '../../../functions/_lib/walletPositions'
+export { scanWallet, tokenDetails } from '../../../functions/_lib/walletPositions'
 export { logsOnChain, stateOnChain } from '../../../functions/_lib/fees'
 export { scanAutomation } from '../../../functions/_lib/automation'
 // 2026-09-28: the list's read holds the lanes (holdReads).
-export { chainDeps, holdReads, memoryCache, simulateOnChain } from './browser'
+export { chainDeps, chainRetryAt, holdReads, memoryCache, simulateOnChain } from './browser'

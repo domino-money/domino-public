@@ -1,4 +1,5 @@
 import { Skeleton } from '../../ui'
+import type { ReactNode } from 'react'
 import { FeesSkeleton } from './FeesSkeleton'
 
 /**
@@ -8,7 +9,7 @@ import { FeesSkeleton } from './FeesSkeleton'
  * card. Rows the height of the loaded layout; nothing here carries a
  * data-position-* attribute but the wrapper's own.
  */
-export function PositionSkeleton() {
+export function PositionSkeleton({ fees }: { fees?: ReactNode } = {}) {
   return (
     <>
       <div className="dm-pos-title" aria-hidden="true">
@@ -29,12 +30,12 @@ export function PositionSkeleton() {
           </div>
         ))}
       </div>
-      <div className="dm-card dm-fees" aria-hidden="true">
+      {fees ?? <div className="dm-card dm-fees" aria-hidden="true">
         <div className="dm-fees-head">
           <Skeleton className="dm-pos-skel-title" />
         </div>
         <FeesSkeleton />
-      </div>
+      </div>}
       <div className="dm-pos-grid" aria-hidden="true">
         <div className="dm-card dm-pos-card dm-pos-skel-card">
           <Skeleton className="dm-pos-skel-title" />

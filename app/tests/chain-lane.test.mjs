@@ -13,18 +13,23 @@
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { test } from 'node:test';
+import { beforeEach, test } from 'node:test';
 
 import { isProbe, reachable } from './support/reach.mjs';
 
 const require = createRequire(import.meta.url);
-const { chainDeps, chainLane, LANE_PACE, routing } = require('../.test-build/app/src/lib/chain/browser.js');
+const { chainDeps, chainLane, LANE_PACE, ROUND_TRIP_WINDOW_MS, resetChainCooldown, routing } = require('../.test-build/app/src/lib/chain/browser.js');
+beforeEach(() => resetChainCooldown());
 const client = require('../.test-build/app/src/lib/fees/client.js');
 const relay = require('../.test-build/app/functions/_lib/fees.js');
 
 const RPC = 'https://rpc.mainnet.chain.robinhood.com';
-// 2026-09-28: no reply heavy enough for a quiet of its own, unless a test says so.
-const PACE = { bytesPerSecond: 100_000, burstBytes: 1_000, workFactor: 1, graceMs: 60, restMs: 150, heavyMs: 10_000, heavyQuietMs: 0 };
+// Changed on purpose 2026-09-28 (speed wave B, items 19 and 20): a lane's pace also caps one quiet period (maxQuietMs)
+// and stages its rest (firstRestMs); here the first rest is the whole one, as before, unless a test says otherwise.
+// 2026-09-28 (hotfix/charts): no reply heavy enough for a quiet of its own, unless a test says so.
+const PACE = { bytesPerSecond: 100_000, burstBytes: 1_000, workFactor: 1, maxQuietMs: 1_000, heavyMs: 10_000, heavyQuietMs: 0, graceMs: 60, firstRestMs: 150, restMs: 150 };
+/** A log read's body, as the relay's code sends one: the only calls whose time counts as the RPC's work (item 20). */
+const LOGS = '{"jsonrpc":"2.0","id":1,"method":"eth_getLogs","params":[{"fromBlock":"0x1","toBlock":"0x2"}]}';
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 
 // Changed on purpose (2026-09-28, the page's fallbacks for an RPC it cannot reach): every stub here is the chain's own
@@ -53,9 +58,12 @@ async function call(deps, init = {}) {
   return response;
 }
 
-// 2026-09-28 (hotfix): the heavy reply's quiet and the 6 s rest were measured live that evening (see below).
+// Changed on purpose 2026-09-28 (speed wave B, items 19 and 20): the byte pace is the one measured, unchanged; one quiet
+// period after a log read is at most a second, and the rest after a refusal is staged, up to the 30 s it was.
+// Changed on purpose 2026-09-29 (speed wave B merged with hotfix/charts): the heavy reply's quiet was measured live on
+// 2026-09-28 (see below), and the first rest is the 6 s that evening measured (hotfix/charts rests 6 s every time).
 test('the pace is the one measured on 2026-09-25 and 2026-09-28: under the RPC’s own limit, with a first burst small enough for any reply', () => {
-  assert.deepEqual({ ...LANE_PACE }, { bytesPerSecond: 96 * 1024, burstBytes: 128 * 1024, workFactor: 4, graceMs: 2_000, restMs: 6_000, heavyMs: 200, heavyQuietMs: 5_000 });
+  assert.deepEqual({ ...LANE_PACE }, { bytesPerSecond: 96 * 1024, burstBytes: 128 * 1024, workFactor: 4, maxQuietMs: 1_000, heavyMs: 200, heavyQuietMs: 5_000, graceMs: 2_000, firstRestMs: 6_000, restMs: 30_000 });
 });
 
 test('one piece of work at a time in the lane, a position page’s before the list’s', async () => {
@@ -80,7 +88,7 @@ test('replies are paced by their bytes past a first burst, and by the work they 
   const work = chainLane({ ...PACE, bytesPerSecond: 10_000_000 });
   try {
     const deps = bytes.deps();
-    assert.ok((await deps.turn()) < 20, 'the first call goes at once');
+    assert.ok((await deps.turn()) < 150, 'the first call goes after the bounded peer-cooldown handshake');
     await withFetch(() => new Response('x'.repeat(6_000)), () => call(deps));
     const waited = await deps.turn();
     assert.ok(waited >= 40 && waited < 400, `5,000 bytes past the burst at 100 kB/s: about 50 ms (${waited})`);
@@ -88,9 +96,12 @@ test('replies are paced by their bytes past a first burst, and by the work they 
     const quick = work.deps();
     await withFetch(() => new Response('{}'), () => call(quick));
     assert.ok((await quick.turn()) < 20, 'a reply that cost nothing asks for no wait');
-    await withFetch(async () => { await wait(150); return new Response('{}'); }, () => call(quick));
+    // Changed on purpose 2026-09-28 (speed wave B, item 20): only a log read's time counts as the RPC's work.
+    await withFetch(async () => { await wait(150); return new Response('{}'); }, () => call(quick, { body: LOGS }));
     const paid = await quick.turn();
-    assert.ok(paid >= 100 && paid < 600, `a reply that took 150 ms more than the quickest waits about as long again (${paid})`);
+    assert.ok(paid >= 100 && paid < 600, `a log read that took 150 ms more than the quickest waits about as long again (${paid})`);
+    await withFetch(async () => { await wait(150); return new Response('{}'); }, () => call(quick));
+    assert.ok((await quick.turn()) < 20, 'any other call that took as long asks for no wait');
   } finally { bytes.close(); work.close(); }
 });
 
@@ -147,26 +158,145 @@ test('the first refusal stops the run and rests the lane; an unreadable reply is
 
 // 2026-09-27 (the owner: the Fees earned chart took far too long): the fees worker hands the store how long its lane waits
 // before it asks the RPC anything again, and the store asks a refused run again then (store.ts RETRY_MS), not a minute later.
+// Changed on purpose 2026-09-28 (speed wave B, items 14, 19 and 20): the rest is staged (here 2.5 s, then 10 s), the work
+// is a log read's only, above the visitor's own round trip, and one quiet period is a second at most.
 test('the lane says how long before it asks anything again: its rest after a refusal, or the work its last reply cost; 0 when it may ask at once', async () => {
   let at = 1_000;
-  const lane = chainLane({ ...PACE, restMs: 30_000, workFactor: 4 }, () => at);
+  const lane = chainLane({ ...PACE, firstRestMs: 2_500, restMs: 30_000, workFactor: 4, maxQuietMs: 1_000 }, () => at);
   try {
     assert.equal(lane.wait(), 0, 'a new lane asks at once');
     const deps = lane.deps();
     await withFetch(() => new Response('Too Many Requests', { status: 429 }), () => deps.fetch(RPC, { method: 'POST', body: '{}' }));
-    assert.equal(lane.wait(), 30_000, 'refused: the whole rest');
-    at += 29_000;
+    assert.equal(lane.wait(), 2_500, 'refused: the first rest');
+    at += 1_500;
     assert.equal(lane.wait(), 1_000);
     at += 1_000;
     assert.equal(lane.wait(), 0, 'the rest is over');
-    // A slow reply: the work it cost the RPC, workFactor times its time above a usual round trip, is waited out as well.
+    // Refused again soon after: a longer rest.
+    await withFetch(() => new Response('Too Many Requests', { status: 429 }), () => lane.deps().fetch(RPC, { method: 'POST', body: '{}' }));
+    assert.equal(lane.wait(), 10_000, 'refused again: four times as long');
+    at += 10_000;
+    // A slow log read: the work it cost the RPC, workFactor times its time above a usual round trip, at most maxQuietMs.
     const slow = lane.deps();
+    await withFetch(() => {
+      at += 350;
+      return new Response('{}');
+    }, () => call(slow, { body: LOGS }));
+    assert.equal(lane.wait(), 4 * (350 - 200));
     await withFetch(() => {
       at += 2_200;
       return new Response('{}');
-    }, () => call(slow));
-    assert.equal(lane.wait(), 4 * (2_200 - 200));
+    }, () => call(slow, { body: LOGS }));
+    assert.equal(lane.wait(), 1_000, 'a second at most');
   } finally { lane.close(); }
+});
+
+// 2026-09-28 (speed wave B, item 14: a phone 300 ms from the RPC paid 4 x 100 ms of quiet after every call, its round trip
+// taken for the RPC's work): the quickest reply is learned from calls that cost the RPC nothing, higher or lower than a
+// usual round trip, and a log read's work is its time to the headers above it.
+test('the work is a log read’s time above the visitor’s own round trip, learned from the calls that cost the RPC nothing', async () => {
+  let at = 1_000;
+  const lane = chainLane({ ...PACE, workFactor: 4, maxQuietMs: 1_000 }, () => at);
+  try {
+    const deps = lane.deps();
+    const reply = (ms) => () => {
+      at += ms;
+      return new Response('{}');
+    };
+    assert.equal(lane.learned(), false);
+    // Before any cheap call, the usual round trip (200 ms) is the floor: a 300 ms log read is 100 ms of work.
+    await withFetch(reply(300), () => call(deps, { body: LOGS }));
+    assert.equal(lane.wait(), 4 * 100);
+    at += 1_000;
+    // The head, 300 ms away: the visitor's own round trip, which costs the RPC nothing.
+    await withFetch(reply(300), () => call(deps, { body: '{"jsonrpc":"2.0","id":2,"method":"eth_blockNumber","params":[]}' }));
+    assert.equal(lane.learned(), true);
+    assert.equal(lane.wait(), 0, 'a cheap call asks for no wait');
+    await withFetch(reply(320), () => call(deps, { body: LOGS }));
+    assert.equal(lane.wait(), 4 * 20, 'a log read 20 ms above the round trip: 80 ms, not 480');
+    at += 1_000;
+    // A quicker cheap reply lowers it again.
+    await withFetch(reply(250), () => call(deps, { body: '{}' }));
+    await withFetch(reply(300), () => call(deps, { body: LOGS }));
+    assert.equal(lane.wait(), 4 * 50);
+  } finally { lane.close(); }
+});
+
+test('a cheap call renews an expired round trip after the network slows, without removing the heavy-log guard', async () => {
+  let at = 100_000;
+  const lane = chainLane(LANE_PACE, () => at);
+  const reply = (ms) => () => { at += ms; return new Response('{}'); };
+  try {
+    const deps = lane.deps();
+    await withFetch(reply(150), () => call(deps));
+    at += ROUND_TRIP_WINDOW_MS + 1;
+    await withFetch(reply(1_000), () => call(deps));
+    await withFetch(reply(1_000), () => call(deps, { body: LOGS }));
+    assert.equal(lane.wait(), 0, 'same network latency, no manufactured five-second pause');
+    await withFetch(reply(1_300), () => call(deps, { body: LOGS }));
+    assert.equal(lane.wait(), LANE_PACE.heavyQuietMs, 'real work above the renewed network floor still rests');
+  } finally { lane.close(); }
+});
+
+test('a genuine refusal gates page reads and a newly-created lane, without renewing the cooldown on local refusals', async () => {
+  const lane = chainLane({ ...PACE, firstRestMs: 150, restMs: 150 });
+  let later;
+  let calls = 0;
+  try {
+    await withFetch(() => ++calls === 1 ? new Response(null, { status: 429 }) : new Response('{}'), async () => {
+      await lane.deps().fetch(RPC, { method: 'POST', body: '{}' });
+      assert.equal(lane.resting(), true);
+      const page = chainDeps();
+      assert.equal((await page.fetch(RPC, { method: 'POST', body: '{}' })).status, 429);
+      assert.equal(calls, 1, 'the page does not consume the address while the worker rests');
+      later = chainLane(PACE);
+      await later.deps().turn();
+      assert.equal(later.resting(), true, 'new lane inherited the refusal');
+      await wait(90);
+      assert.equal((await page.fetch(RPC, { method: 'POST', body: '{}' })).status, 429);
+      await wait(100);
+      assert.equal((await page.fetch(RPC, { method: 'POST', body: '{}' })).status, 200);
+      assert.equal(calls, 2, 'local refusals did not postpone recovery or send an RPC');
+    });
+  } finally { lane.close(); later?.close(); }
+});
+
+test('a fresh page receives another context’s current cooldown before sending its first read', async () => {
+  const peer = new BroadcastChannel('domino-chain-cooldown-v1');
+  peer.onmessage = ({ data }) => {
+    if (data === '?') peer.postMessage({ until: Date.now() + 500, count: 0 });
+  };
+  try {
+    const read = await withFetch(() => new Response('{}'), () => chainDeps().fetch(RPC, { method: 'POST', body: '{}' }));
+    assert.equal(read.result.status, 429);
+    assert.equal(read.sent.length, 0, 'the new page did not undo an existing worker’s quiet period');
+  } finally { peer.close(); }
+});
+
+// 2026-09-28 (speed wave B, item 19): a refusal the RPC lifts within a second costs seconds; one in a row four times the
+// rest before, up to the whole; after a quiet as long as the whole rest, the first rest again.
+test('the rest after a refusal is staged: the first short, each in a row four times longer, up to the whole, and short again after a quiet', async () => {
+  let at = 1_000;
+  const lane = chainLane({ ...PACE, firstRestMs: 50, restMs: 800 }, () => at);
+  const other = chainLane({ ...PACE, firstRestMs: 50, restMs: 800 }, () => at);
+  try {
+    const refuse = () => withFetch(() => new Response('Too Many Requests', { status: 429 }), () => lane.deps().fetch(RPC, { method: 'POST', body: '{}' }));
+    const rests = [];
+    for (let i = 0; i < 4; i++) {
+      await refuse();
+      rests.push(lane.wait());
+      at += lane.wait();
+    }
+    assert.deepEqual(rests, [50, 200, 800, 800]);
+    await wait(10);
+    assert.equal(other.resting(), true, 'every tab’s lane rests too');
+    at += 800;
+    await refuse();
+    assert.equal(lane.wait(), 50, 'after a quiet as long as the whole rest, the first rest again');
+  } finally {
+    lane.close();
+    other.close();
+  }
 });
 
 // 2026-09-28 (hotfix; the owner: for everyone, the Fees earned chart and Your APR took many reloads to show). Live that
@@ -176,6 +306,8 @@ test('the lane says how long before it asks anything again: its rest after a ref
 // pace waited four times that work (0.9 to 3.2 s): the replay's next window was refused, the lane rested 30 s, and the
 // chart came 45 to 80 s after the page opened (C:/dwt/hotfix/traces). Its headers heavyMs past the quickest reply, such a
 // reply is now followed by heavyQuietMs of quiet.
+// Changed on purpose 2026-09-29 (speed wave B merged with hotfix/charts): the heavy reply is a log read, as the wave's work
+// is a log read's only; a call that is no log read costs the RPC nothing, however long it took.
 test('a reply the node worked long on is followed by heavyQuietMs of quiet; a lighter one by its work times workFactor', async () => {
   let at = 1_000;
   const lane = chainLane({ ...PACE, bytesPerSecond: 10_000_000, workFactor: 4, heavyMs: 200, heavyQuietMs: 5_000 }, () => at);
@@ -187,17 +319,20 @@ test('a reply the node worked long on is followed by heavyQuietMs of quiet; a li
     const deps = lane.deps();
     await withFetch(reply(160), () => call(deps));
     assert.equal(lane.wait(), 0, 'a round trip with no work in it: the quickest reply');
-    await withFetch(reply(751), () => call(deps));
+    await withFetch(reply(751), () => call(deps, { body: LOGS }));
     assert.equal(lane.wait(), 5_000, 'the Transfer scan of the live trace (751 ms): quiet for heavyQuietMs, not 4 × 591 ms');
     at += 4_999;
     assert.equal(lane.wait(), 1);
     at += 1;
     assert.equal(lane.wait(), 0);
-    await withFetch(reply(280), () => call(deps));
+    await withFetch(reply(280), () => call(deps, { body: LOGS }));
     assert.equal(lane.wait(), 4 * 120, 'its headers 120 ms past the quickest: its work times workFactor only');
     at += 10_000;
-    await withFetch(reply(2_160), () => call(deps));
-    assert.equal(lane.wait(), 4 * 2_000, 'work longer than the quiet: its work times workFactor');
+    await withFetch(reply(2_160), () => call(deps, { body: LOGS }));
+    assert.equal(lane.wait(), 4 * 2_000, 'work longer than the quiet: its work times workFactor, past maxQuietMs');
+    at += 10_000;
+    await withFetch(reply(751), () => call(deps, { body: '{"jsonrpc":"2.0","id":3,"method":"eth_getBlockByNumber","params":["0x1",false]}' }));
+    assert.equal(lane.wait(), 0, 'no log read: no work, however long it took');
   } finally { lane.close(); }
 });
 
@@ -263,7 +398,7 @@ test('two tabs’ lanes share one pace: each counts the bytes the other read, an
   try {
     const tabA = a.deps();
     const tabB = b.deps();
-    assert.ok((await tabB.turn()) < 20, 'B goes at once while nothing was read');
+    assert.ok((await tabB.turn()) < 150, 'B goes after the bounded peer-cooldown handshake while nothing was read');
     await withFetch(() => new Response('x'.repeat(8_000)), () => call(tabA));
     await wait(10);
     const waited = await tabB.turn();
@@ -361,6 +496,71 @@ test('two askers of the same position’s state share one read; one that leaves 
     // Once answered, a read is never reused: asked again, the position is read again (the head, a second old, is the relay's).
     const again = await withFetch((url, init) => chain.fetch(url, init), () => client.chainState(['3136705']));
     assert.deepEqual([again.result.ok, again.sent.filter((s) => JSON.parse(s.init.body).method === 'eth_call').length], [true, 2]);
+  } finally {
+    delete globalThis.__DOMINO_DEPLOYABLE__;
+  }
+});
+
+// 2026-09-28 (speed wave B, item 43: a page's chain reads went on after it was left): a /state read shared by several
+// askers stops once every one of them has left, and makes no further call; one with no signal keeps it to its end.
+test('a shared /state read stops once every asker has left, and one that stays keeps it going', async () => {
+  const { caseChain } = await import('./support/fees/case-chain.mjs');
+  const chain = caseChain('3136705');
+  globalThis.__DOMINO_DEPLOYABLE__ = true;
+  relay.resetRelayMemory();
+  try {
+    const a = new AbortController();
+    const b = new AbortController();
+    const slow = async (url, init) => {
+      await wait(30);
+      return chain.fetch(url, init);
+    };
+    const left = await withFetch(slow, async () => {
+      const both = [client.chainState(['3136705'], a.signal), client.chainState(['3136705'], b.signal)];
+      await wait(10);
+      a.abort();
+      b.abort();
+      const answers = await Promise.all(both);
+      await wait(150);
+      return answers;
+    });
+    assert.deepEqual(left.result.map((answer) => answer.ok), [false, false]);
+    assert.ok(left.sent.length <= 1, `no call after both left (${left.sent.length})`);
+    relay.resetRelayMemory();
+    const c = new AbortController();
+    const kept = await withFetch(slow, async () => {
+      const staying = client.chainState(['3136705']);
+      const leaving = client.chainState(['3136705'], c.signal);
+      c.abort();
+      return Promise.all([leaving, staying]);
+    });
+    assert.deepEqual(kept.result.map((answer) => answer.ok), [false, true], 'the one that stayed gets its answer');
+    // 2026-09-28 (speed wave B, item 17): with each position's feature, for the page's chips.
+    assert.deepEqual(kept.result[1].value.automation, [{ tokenId: '3136705', automation: 'plain' }]);
+  } finally {
+    delete globalThis.__DOMINO_DEPLOYABLE__;
+  }
+});
+
+// 2026-09-28 (speed wave B, item 24): a position's page's first read, started as soon as its route is known, is the one
+// the page takes, once, and only for a moment.
+test('the state read warmed for a position’s page is the one it takes, once', async () => {
+  const { caseChain } = await import('./support/fees/case-chain.mjs');
+  const chain = caseChain('3136705');
+  globalThis.__DOMINO_DEPLOYABLE__ = true;
+  relay.resetRelayMemory();
+  try {
+    const run = await withFetch((url, init) => chain.fetch(url, init), async () => {
+      client.warmState('3136705');
+      client.warmState('3136705');
+      const taken = client.takeWarmState('3136705');
+      const again = client.takeWarmState('3136705');
+      return { answer: await taken, again };
+    });
+    assert.equal(run.result.answer.ok, true);
+    assert.equal(run.result.again, null, 'taken once');
+    assert.equal(run.sent.filter((s) => JSON.parse(s.init.body).method === 'eth_call').length, 2, 'one read');
+    assert.equal(client.takeWarmState('1'), null);
   } finally {
     delete globalThis.__DOMINO_DEPLOYABLE__;
   }

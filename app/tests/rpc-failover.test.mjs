@@ -10,7 +10,7 @@
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { test } from 'node:test';
+import { beforeEach, test } from 'node:test';
 import { KEY, OWNER, fakeChain, nft, opId, wallet as walletScan } from './owned-chain.mjs';
 import { browserChain } from './support/browser-chain.mjs';
 import { DRPC, FALLBACK_URLS, ORDOFI, PUBLICNODE, fallbackReply } from './support/fallbacks.mjs';
@@ -21,6 +21,7 @@ const relay = require('../.test-build/app/functions/_lib/fees.js');
 const endpoints = require('../.test-build/app/src/lib/chain/endpoints.js');
 const router = require('../.test-build/app/src/lib/chain/failover.js');
 const browser = require('../.test-build/app/src/lib/chain/browser.js');
+beforeEach(() => browser.resetChainCooldown());
 const walletPositions = require('../.test-build/app/src/lib/walletPositions.js');
 
 const RPC = owned.RPC_URL;
@@ -71,6 +72,8 @@ function world({ primary = 'dns', head = HEAD, busy = new Set(), chainId, option
         if (w.primary === 'dns') throw new TypeError('Failed to fetch');
         if (init.mode === 'no-cors') return new Response(null, { status: 200 });
         if (w.primary === 'hidden') throw new TypeError('Failed to fetch');
+        if (w.primary === 'timeout') throw new DOMException('transport timeout', 'TimeoutError');
+        if (typeof w.primary === 'number') return new Response(null, { status: w.primary });
         return own(init.body);
       }
       assert.ok(FALLBACK_URLS.includes(url), `only the registry's endpoints: ${url}`);
@@ -138,6 +141,53 @@ test('a refusal the browser cannot read (the RPC’s 429: a TypeError) is not a 
   assert.deepEqual(w.sent.slice(2), ['robinhood eth_blockNumber']);
   assert.equal(w.log.length, 0, 'no fallback was asked anything');
   // Through the page's runtime: asked once more, then that 429, as before (tests/wallet-positions.test.mjs).
+});
+
+test('a recent positive reach check does not hide a changed network for a minute', async () => {
+  const w = world({ primary: 'hidden' });
+  await assert.rejects(w.post(body('eth_blockNumber')), TypeError);
+  w.primary = 'dns';
+  w.clock += router.REACHED_MS + 1;
+  assert.ok(router.REACHED_MS <= 1_000);
+  assert.equal(await result(await w.post(body('eth_blockNumber'))), hex(HEAD));
+  assert.equal(w.router.primaryUp(), false);
+});
+
+test('transient HTTP failures and transport timeouts use only capable read fallbacks, with the primary circuit resting', async () => {
+  for (const primary of [502, 503, 504, 'timeout']) {
+    const w = world({ primary });
+    assert.equal(await result(await w.post(body('eth_blockNumber'))), hex(HEAD), String(primary));
+    assert.equal(w.router.primaryUp(), false);
+    assert.ok(w.sent.includes('publicnode eth_blockNumber'));
+    const primaryCalls = w.sent.filter((x) => x.startsWith('robinhood ')).length;
+    await w.post(body('eth_blockNumber'));
+    assert.equal(w.sent.filter((x) => x.startsWith('robinhood ')).length, primaryCalls, 'no hot loop at the failing primary');
+  }
+  const wide = world({ primary: 503 });
+  const answer = await (await wide.post(body('eth_getLogs', [{ fromBlock: '0x1', toBlock: hex(HEAD) }]))).json();
+  assert.match(answer.error.message, /not served/);
+  assert.equal(wide.log.length, 0, 'no reserve is asked a history beyond its measured capacity');
+});
+
+test('an expired caller deadline is not extended; a following read can use the recovered route', async () => {
+  const w = world({ primary: 'timeout' });
+  const stop = new AbortController();
+  stop.abort(new DOMException('deadline', 'TimeoutError'));
+  await assert.rejects(w.router.send({ method: 'POST', body: body('eth_blockNumber'), signal: stop.signal }), { name: 'TimeoutError' });
+  assert.equal(w.log.length, 0, 'no request sent with an expired deadline');
+  assert.equal(w.router.primaryUp(), false);
+  assert.equal(await result(await w.post(body('eth_blockNumber'))), hex(HEAD));
+});
+
+test('writes, unknown methods and mixed batches are never replayed at a fallback', async () => {
+  for (const payload of [body('eth_sendRawTransaction', ['0x1234']), body('wallet_sendCalls', [{}]), JSON.stringify([{ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }, { jsonrpc: '2.0', id: 2, method: 'eth_sendRawTransaction', params: ['0x1234'] }])]) {
+    const w = world({ primary: 503 });
+    assert.equal((await w.post(payload)).status, 503);
+    assert.equal(w.log.length, 0);
+    w.primary = 'dns';
+    await assert.rejects(w.post(payload));
+    assert.equal(w.log.length, 0);
+  }
 });
 
 test('back to the chain’s own RPC: a quiet probe once its down period has passed, twice as long at each probe it does not answer, and every call after its answer goes to it', async () => {
@@ -433,7 +483,8 @@ test('DominoSetupV1’s own state names exactly the ids its SetupMinted logs nam
   assert.equal(read.body.deposits.length, 1);
   assert.deepEqual([read.capped, read.minted], [false, { block: 71_700_000, ids: [9n, 8n, 7n] }], 'every one, most recent first: a later scan may read only the logs since');
   assert.equal(chain.log.filter((call) => call.method === 'eth_getLogs').length, 0, 'not one log');
-  assert.deepEqual(chain.log.map((call) => call.method), ['eth_blockNumber', 'eth_call', 'eth_call', 'eth_call', 'eth_call'], 'the head, the nonce, the operations, then the scan’s own two reads');
+  // Changed on purpose 2026-09-28 (speed wave B, item 23): the head and the nonce in one aggregate3 at 'latest'.
+  assert.deepEqual(chain.log.map((call) => call.method), ['eth_call', 'eth_call', 'eth_call', 'eth_call'], 'the head and the nonce, the operations, then the scan’s own two reads');
   // An operation that is not the owner's is a reply that cannot be trusted.
   const forged = mintedWallet();
   forged.operations[opId(OWNER, 2n)] = { ...forged.operations[opId(OWNER, 2n)], owner: '0x000000000000000000000000000000000000beef' };
@@ -456,7 +507,9 @@ test('Your positions with the chain’s own RPC unreachable: read through the fa
   assert.deepEqual(read.answer, route, 'the list the chain’s own RPC gives, field for field');
   assert.deepEqual([...new Set(asked)], [RPC, PUBLICNODE], 'the primary once (its call and its probe), then publicnode only');
   assert.equal(asked.filter((url) => url === RPC).length, 2);
-  assert.deepEqual(log.map((call) => call.method), ['eth_chainId', 'eth_blockNumber', 'eth_call', 'eth_call', 'eth_call', 'eth_call']);
+  // Changed on purpose 2026-09-28 (speed wave B, item 23): the head and the nonce in one aggregate3 at 'latest', whose
+  // head the router is told (the numbered reads after it go to publicnode, which keeps the state near the head).
+  assert.deepEqual(log.map((call) => call.method), ['eth_chainId', 'eth_call', 'eth_call', 'eth_call', 'eth_call']);
   // 2026-09-28 (review): publicnode failing every read (a gateway's 502 after its chain id): the same list, through the
   // next fallbacks, and publicnode asked no more than that once.
   walletPositions.forgetMinted();
@@ -510,7 +563,7 @@ test('the fees history with the chain’s own RPC unreachable: the worker’s la
   const { logsWith } = require('../.test-build/app/src/lib/fees/logs.js');
   const flags = [globalThis.__DOMINO_DEPLOYABLE__, globalThis.__DOMINO_TEST_HOOKS__];
   globalThis.__DOMINO_DEPLOYABLE__ = true;
-  const lane = browser.chainLane({ bytesPerSecond: 10_000_000, burstBytes: 10_000_000, workFactor: 0, graceMs: 0, restMs: 150, heavyMs: 10_000, heavyQuietMs: 0 });
+  const lane = browser.chainLane({ bytesPerSecond: 10_000_000, burstBytes: 10_000_000, workFactor: 0, maxQuietMs: 1_000, heavyMs: 10_000, heavyQuietMs: 0, graceMs: 0, firstRestMs: 150, restMs: 150 });
   const code = { chainDeps: lane.deps, logsOnChain: relay.logsOnChain };
   const cache = browser.memoryCache();
   const pool = `0x${'ab'.repeat(32)}`;
@@ -542,6 +595,10 @@ test('the fees history with the chain’s own RPC unreachable: the worker’s la
 // it, a phone changing networks). From then on every ordinary reply of the RPC (230 ms, a phone's round trip from
 // Brazil) was followed by 5 s of quiet, and a position page's run spent its 30 s on six calls (live, the 'blip' trace:
 // too_much_history, and no chart for the visit). Here with LANE_PACE itself, on the lane's own clock.
+// Changed on purpose 2026-09-29 (speed wave B merged with hotfix/charts): the wave's work is a log read's only, and its
+// round trip is learned from the calls that cost the RPC nothing: the head, 230 ms away, teaches it and asks no wait;
+// the ordinary replies watched are then narrow log reads, which the router's own replies (0 ms on this clock) would
+// otherwise have made heavy.
 test('the fees lane’s round trip is the chain’s own RPC’s: after a reply the router made itself, a fallback’s, or the one that found the RPC again, its ordinary replies get no quiet of a heavy one', async (t) => {
   let at = 1_000_000;
   const lane = browser.chainLane({ ...browser.LANE_PACE }, () => at);
@@ -578,20 +635,24 @@ test('the fees lane’s round trip is the chain’s own RPC’s: after a reply t
     t.mock.timers.enable({ apis: ['Date'], now: Date.now() + router.FIRST_DOWN_MS });
     assert.deepEqual(JSON.parse(await ask(deps, wide)).result, [], 'the RPC’s own answer');
     assert.equal(browser.routing().primaryUp(), true);
-    const { workFactor, heavyQuietMs } = browser.LANE_PACE;
+    const { heavyQuietMs } = browser.LANE_PACE;
     assert.equal(lane.wait(), heavyQuietMs);
     at += lane.wait();
+    // The head, 230 ms away: the visitor's own round trip, and no work.
+    await ask(deps, body('eth_blockNumber'));
+    assert.equal(lane.wait(), 0);
+    const narrow = body('eth_getLogs', [{ address: owned.POSITION_MANAGER, fromBlock: hex(HEAD - 9), toBlock: hex(HEAD) }]);
     const waits = [];
     for (let i = 0; i < 4; i++) {
-      await ask(deps, body('eth_blockNumber'));
+      await ask(deps, narrow);
       waits.push(lane.wait());
       at += lane.wait();
     }
-    // 230 ms is 30 ms past a usual round trip (the lane's first quickest, ROUND_TRIP_MS): its work times workFactor.
-    assert.deepEqual(waits, Array(4).fill(workFactor * 30), `no ${heavyQuietMs} ms of quiet after an ordinary reply (d478979d: ${heavyQuietMs} after each)`);
+    // 230 ms is the round trip itself: no work.
+    assert.deepEqual(waits, Array(4).fill(0), `no ${heavyQuietMs} ms of quiet after an ordinary reply (d478979d: ${heavyQuietMs} after each)`);
     // A reply the node did work long on is still followed by the quiet (the live Transfer scan: 751 ms).
     rpc = 751;
-    await ask(deps, body('eth_blockNumber'));
+    await ask(deps, narrow);
     assert.equal(lane.wait(), heavyQuietMs);
   } finally {
     t.mock.timers.reset();

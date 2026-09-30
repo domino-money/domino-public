@@ -1,4 +1,5 @@
 import { USDG } from '../../config/mainTokens'
+import { quoteIndex } from '../../lib/read/orientation'
 import { tickPriceText } from '../../lib/read/screens/positions'
 
 /*
@@ -9,11 +10,13 @@ import { tickPriceText } from '../../lib/read/screens/positions'
  */
 
 /**
- * The side a person prices the pool in: USDG where the pool holds it, so "1 PONS = 0.62 USDG" reads as a dollar
- * price; otherwise the pool's own order (its second token per its first).
+ * The side a person prices the pool in, the app's one rule (lib/read/orientation.ts): USDG where the pool holds it,
+ * so "1 PONS = 0.62 USDG" reads as a dollar price, then ETH; otherwise the pool's own order (its second token per its
+ * first). Changed on purpose 2026-09-28 (one-sided): a pool of ETH and another token is priced in ETH, as every screen
+ * now writes it.
  */
 export function quoteSide(currencies: readonly [{ address: string }, { address: string }]): 0 | 1 {
-  return isUsdg(currencies[0].address) && !isUsdg(currencies[1].address) ? 0 : 1
+  return quoteIndex(currencies[0].address, currencies[1].address)
 }
 
 /** Whether an address is USDG's, the one token the page values at $1. */

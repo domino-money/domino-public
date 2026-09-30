@@ -173,7 +173,7 @@ test('rendered ratio chart names its denomination, real coverage and exact value
   // 2026-09-24 (V2 final polish): the time axis adds interior ticks with timeTicks (lib/chart/scale.ts) labelled by
   // axisLabel (lib/format/time.ts); numbers only, and the hook set and the 5-useState order are unchanged.
   const { timeTicks } = require('../.test-build/app/src/lib/chart/scale.js'), { axisLabel } = require('../.test-build/app/src/lib/format/time.js')
-  const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, useNow: () => ({ wall: 86400000 }),
+  const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, useLoadMilestone() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, useNow: () => ({ wall: 86400000 }),
     Segmented: () => null, Skeleton: () => null, PoolPriceChart: () => null, daySpan: () => null,
     PoolTokenLabel: ({ token }) => React.createElement('span', null, token.symbol), Address: ({ value }) => React.createElement('span', null, value) }
   new Function('require', 'module', 'exports', code)(name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : dependencies, mod, mod.exports)
@@ -201,7 +201,7 @@ test('the price switch shows only while the chart is read, once a line is drawn,
     const values = [side, 'day', answer, null]
     let index = 0
     const hooks = { useState: () => [values[index++], () => {}], useEffect() {}, useId: () => 'test' }
-    const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, useNow: () => ({ wall: 86400000 }),
+    const mod = { exports: {} }, dependencies = { watchPublicHistory() {}, useLoadMilestone() {}, ratioGeometry, ratioText, ratioCandleText, areaUnder, curveFor, linePath, percentChange, timeTicks, axisLabel, useNow: () => ({ wall: 86400000 }),
       Segmented: ({ label }) => React.createElement('span', { 'data-switch': label }), Skeleton: () => null, PoolPriceChart: () => null, daySpan: () => null,
       PoolTokenLabel: ({ token }) => React.createElement('span', null, token.symbol) }
     new Function('require', 'module', 'exports', code)(name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : dependencies, mod, mod.exports)

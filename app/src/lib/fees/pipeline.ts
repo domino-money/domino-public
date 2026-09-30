@@ -42,7 +42,8 @@
  * Stopped among the swap days, it keeps a checkpoint a later run with a larger
  * budget resumes from; before them there is nothing to keep, and a larger
  * budget starts over. A verified run's checkpoint lets the next state block's
- * run replay only the new logs.
+ * run replay only the new logs. A transient RPC failure keeps only the last
+ * completely applied, internally consistent day/span, never an in-flight unit.
  *
  * The price path (2026-09-25). When the probe says the pool's whole history
  * is past the budget (a busy pool: PONS/USDG, USDG/DELTA), the run no longer
@@ -93,7 +94,7 @@
  *       life (`modifies`), as well as in its owners' payments: an
  *       Auto-compound pays no owner and is paid by none.
  */
-import { BEHIND_RETRY_MS, BUDGET_MS, CLIENT_CONCURRENCY, DAY_SPAN, EPOCH_SPAN, HOUR_SPAN, MAX_DAYS_PER_REQUEST, MAX_HEADERS_PER_REQUEST, MAX_HOLDERS, MAX_SLOTS, MAX_SPANS_PER_REQUEST, MAX_SWAP_DAYS, PATH_BURST, PATH_LIFE_SHARE, PATH_NOW_BYTES, PATH_REFINE_BYTES, PATH_REFINE_MS, POSITION_MANAGER, SAMPLE_BATCH_BYTES, SAMPLE_BYTES, SAMPLE_MIN_BLOCKS, SAMPLE_SPANS_PER_REQUEST, SPAN_BLOCKS_MAX, SPAN_CAP_BYTES, SPAN_MIN_BLOCKS, SPAN_TARGET_BYTES, TRANSFER_RECENT } from './constants'
+import { BEHIND_RETRY_MS, BUDGET_BYTES, BUDGET_MS, CLIENT_CONCURRENCY, DAY_SPAN, EPOCH_SPAN, HOUR_SPAN, MAX_DAYS_PER_REQUEST, MAX_HEADERS_PER_REQUEST, MAX_HOLDERS, MAX_SLOTS, MAX_SPANS_PER_REQUEST, MAX_SWAP_DAYS, PATH_BURST, PATH_LIFE_SHARE, PATH_NOW_BYTES, PATH_REFINE_BYTES, PATH_REFINE_MS, POSITION_MANAGER, SAMPLE_BATCH_BYTES, SAMPLE_BYTES, SAMPLE_MIN_BLOCKS, SAMPLE_SPANS_PER_REQUEST, SPAN_BLOCKS_MAX, SPAN_CAP_BYTES, SPAN_MIN_BLOCKS, SPAN_TARGET_BYTES, TRANSFER_RECENT } from './constants'
 import { estimateHistory, type EstimateSlot } from './estimate'
 import { FeeReplay, ReplayError, Timeline, type ReplayData } from './replay'
 import type { Checkpoint, CompactLog, FeeHistory, FeesReason, HourlyPrices, LogsRequest, LogsResponse, PositionState, RelayAnswer, WorkerResult } from './types'
@@ -109,7 +110,7 @@ export interface PipelineDeps {
   timeUp?: () => boolean
   /** 2026-09-25: an estimated history, drawn while the run goes on to the exact one (the price path, P2). */
   estimate?: (partial: { history: FeeHistory; prices: HourlyPrices }) => void
-  /** 2026-09-25: the run's time runs on to `ms` from now (the worker's deadline): the exact read after an estimate. */
+  /** Foreground permission to extend time and refinement bytes after an estimate; never provided to list/prefetch runs. */
   extend?: (ms: number) => void
 }
 
@@ -171,7 +172,7 @@ interface Probing {
 }
 
 class Stop extends Error {
-  /** `keepPlace`: the budget ran out, and a later run with a larger one may go on from here. */
+  /** `keepPlace`: the budget or a transient read stopped the run; a completed prefix may be resumed. */
   constructor(
     readonly reason: FeesReason,
     readonly keepPlace = false,
@@ -254,7 +255,10 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
   const top = state.block
   const saved = run.checkpoint as unknown as PipelineCheckpoint | null
   const resumable =
-    saved !== null && saved.v === 1 && saved.tokenId === run.id && saved.poolId === state.poolId && saved.tickLower === state.tickLower && saved.tickUpper === state.tickUpper && saved.through <= top
+    saved !== null && saved.v === 1 && saved.tokenId === run.id && saved.poolId === state.poolId && saved.tickLower === state.tickLower && saved.tickUpper === state.tickUpper &&
+    Number.isSafeInteger(saved.mintBlock) && saved.mintBlock >= 0 && Number.isSafeInteger(saved.through) && saved.through >= saved.mintBlock && saved.through <= top &&
+    saved.replay?.v === 1 && saved.replay.target.tokenId === tokenId && saved.replay.target.tickLower === state.tickLower && saved.replay.target.tickUpper === state.tickUpper &&
+    saved.replay.minted?.block === saved.mintBlock && saved.replay.last !== null && saved.replay.last[0] <= saved.through && Boolean(saved.path) === Boolean(saved.replay.target.path)
   const checkpoint = resumable ? saved : null
   let bytes = checkpoint?.bytes ?? 0
   let replay: FeeReplay | null = checkpoint ? FeeReplay.resume(checkpoint.replay) : null
@@ -279,7 +283,16 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
   const keep = (spentBytes = bytes): Checkpoint | null =>
     replay === null
       ? null
-      : ({ v: 1, ...(onPath ? { path: { holders, rate, ...(ownSource ? { own: ownSource } : {}) } } : {}), tokenId: run.id, poolId: state.poolId, tickLower: state.tickLower, tickUpper: state.tickUpper, mintBlock, through, points, replay: replay.save(), bytes: spentBytes } satisfies PipelineCheckpoint as unknown as Checkpoint)
+      : ({ v: 1, ...(onPath ? { path: { holders: [...holders], rate, ...(ownSource ? { own: ownSource } : {}) } } : {}), tokenId: run.id, poolId: state.poolId, tickLower: state.tickLower, tickUpper: state.tickUpper, mintBlock, through, points: points.map(([block, time]) => [block, time]), replay: replay.save(), bytes: spentBytes } satisfies PipelineCheckpoint as unknown as Checkpoint)
+
+  // This copy changes only after a whole unit has been applied. apply() can mutate before throwing: never save the
+  // live replay from a read-error catch. A previously completed prefix is also safe while a new run reads its inputs.
+  let completed: Checkpoint | null = checkpoint ? { ...checkpoint, bytes: 0 } as unknown as Checkpoint : null
+  const coherent = () => replay !== null && replay.minted !== null && replay.minted.block === mintBlock && through >= mintBlock &&
+    replay.last !== null && replay.last[0] <= through && replay.checks.tickMismatch === 0 && replay.checks.liquidityMismatch === 0 &&
+    replay.checks.swapFeeMismatch === 0 && (onPath || replay.checks.inconsistentLastStep === 0)
+  const completeUnit = () => { completed = coherent() ? keep(0) : null }
+  if (completed && !coherent()) completed = null
 
   /** One relay request: rate limits waited out, a lagging relay asked once more, any other failure stops the run. */
   async function ask(request: LogsRequest): Promise<Answer> {
@@ -295,7 +308,7 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
             await deps.sleep(BEHIND_RETRY_MS)
             continue
           }
-          throw new Stop('rpc_unavailable')
+          throw new Stop('rpc_unavailable', true)
         }
         return answer.value
       }
@@ -303,7 +316,7 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
         await deps.sleep(Math.max(answer.retryAfterMs, 2000 * attempt))
         continue
       }
-      throw new Stop(answer.failure === 'too_large' ? 'too_much_history' : 'rpc_unavailable')
+      throw new Stop(answer.failure === 'too_large' ? 'too_much_history' : 'rpc_unavailable', answer.failure === 'unavailable' || answer.failure === 'rate_limited')
     }
   }
 
@@ -524,8 +537,12 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
       if (!unknown || PATH_BURST * rate * life > PATH_NOW_BYTES) {
         if (sample.history && settledSince === 0) deps.estimate?.(sample.history)
         if (rate * life > PATH_REFINE_BYTES) throw new Stop('too_much_history')
-        deps.extend?.(PATH_REFINE_MS)
-        budget = bytes + PATH_REFINE_BYTES
+        // A background/list run must retain its original cap even when it can estimate the busy pool's history.
+        // Only the foreground worker grants this capability; do not amplify a list budget via its refinement path.
+        if (deps.extend && run.budgetBytes > BUDGET_BYTES.list) {
+          deps.extend(PATH_REFINE_MS)
+          budget = Math.max(budget, bytes + PATH_REFINE_BYTES)
+        }
       }
     }
     // (d) The Swaps of the life, in spans sized to about SPAN_TARGET_BYTES, replayed with the NFT's own events in chain order.
@@ -570,7 +587,7 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
         throw error
       }
       const unit = 'units' in answer ? answer.units[0] : undefined
-      if (!unit || unit.from !== at || unit.to !== to) throw new Stop('rpc_unavailable')
+      if (!('units' in answer) || answer.units.length !== 1 || !unit || unit.from !== at || unit.to !== to) throw new Stop('rpc_unavailable')
       apply(unit.logs.filter((log) => log[0] >= at && log[0] <= to && log[0] > through), to)
       through = to
       // Sized by the busier of the last span and the life read so far (a burst after a quiet span, 2026-09-25, review).
@@ -578,6 +595,7 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
       read.blocks += to - at + 1
       rate = Math.max((bytes - spent0) / (to - at + 1), read.bytes / read.blocks, 1e-6)
       blocks = Math.min(SPAN_BLOCKS_MAX, Math.round(1.5 * (to - at + 1)), Math.max(SPAN_MIN_BLOCKS, Math.round(SPAN_TARGET_BYTES / rate)))
+      completeUnit()
       deps.progress?.({ bytes, daysDone: Math.floor(((to - from + 1) * 100) / total), daysTotal: 100 })
       at = to + 1
     }
@@ -778,6 +796,8 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
           if (!(error instanceof Stop && (error.reason === 'replay_mismatch' || (error.reason === 'too_much_history' && bytes < run.budgetBytes)))) throw error
           failed = error
         }
+        // A path that disagreed must never survive a failure while preparing the exact replay instead.
+        completed = null
         // 2026-09-27: a young position's probe left its older epochs' samples for now: they say whether that history fits.
         if (!plan.complete) {
           plan = await probe(initBlock)
@@ -798,6 +818,9 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     const lastEpoch = Math.floor(top / EPOCH_SPAN)
     const epochs = Array.from({ length: Math.max(0, lastEpoch - firstEpoch + 1) }, (_, i) => firstEpoch + i)
     const poolAnswers = await pooled(epochs, CLIENT_CONCURRENCY, (epoch) => askWhole(inParts ? { kind: 'pool', poolId: state.poolId, epoch, until: top, parts: true } : { kind: 'pool', poolId: state.poolId, epoch, until: top }))
+    // A prefix is complete only when every prerequisite epoch covers exactly the range asked of it.
+    if (poolAnswers.some((answer, i) => !('units' in answer) || answer.units.length !== 1 || answer.units[0].unit !== epochs[i] ||
+      answer.units[0].from !== epochs[i] * EPOCH_SPAN || answer.units[0].to !== Math.min(top, (epochs[i] + 1) * EPOCH_SPAN - 1))) throw new Stop('rpc_unavailable')
     const poolLogs = poolAnswers.flatMap(rangeLogs).filter((log) => log[0] > through && log[0] <= top).sort(byPosition)
     let mintLog: CompactLog | null = null
     if (!checkpoint) {
@@ -857,9 +880,10 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
       if ('error' in outcome) throw outcome.error
       const answer = outcome.value
       const units = 'units' in answer ? answer.units : []
-      if (units.some((unit, i) => unit.unit !== day + i)) throw new Stop('rpc_unavailable')
+      if (units.length > Math.min(MAX_DAYS_PER_REQUEST, lastDay - day + 1) || units.some((unit, i) => unit.unit !== day + i ||
+        unit.from !== (day + i) * DAY_SPAN || unit.to !== Math.min(top, (day + i + 1) * DAY_SPAN - 1))) throw new Stop('rpc_unavailable')
       const nextDay = 'next' in answer && answer.next !== null ? answer.next : day + units.length
-      if (nextDay < day + units.length || (units.length === 0 && nextDay === day && ++idle >= IDLE_TRIES)) throw new Stop('rpc_unavailable')
+      if (nextDay !== day + units.length || (units.length === 0 && nextDay === day && ++idle >= IDLE_TRIES)) throw new Stop('rpc_unavailable')
       // An answer with no whole day still kept the hours it read: the next one starts further in.
       if (units.length === 0) await deps.sleep(IDLE_WAIT_MS)
       else idle = 0
@@ -880,6 +904,7 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
         const end = Math.min(unitDay * DAY_SPAN + DAY_SPAN - 1, top)
         feed(end, logs)
         through = end
+        completeUnit()
         daysDone += 1
         deps.progress?.({ bytes, daysDone, daysTotal })
       }
@@ -913,9 +938,10 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     if (error instanceof Cancelled) return null
     if (error instanceof ReplayError) return { ok: false, reason: 'replay_mismatch', prices: null, checkpoint: null, bytes }
     const reason: FeesReason = error instanceof Stop ? error.reason : 'rpc_unavailable'
-    // Only a budget stop keeps its place: a later run with a larger budget goes on from it; a price path's, any later run
-    // (2026-09-25, review: each counts its own bytes, `later`).
-    const kept = error instanceof Stop && error.keepPlace && replay !== null && through >= 0 ? keep() : null
-    return { ok: false, reason, prices: null, checkpoint: kept, bytes, ...(kept && onPath ? { later: true as const } : {}) }
+    // A transient read may retry at the same state block with its own budget. Only the committed prefix survives:
+    // bad replies, replay errors and accounting mismatches must not turn into an accepted partial history.
+    const retryable = reason === 'rpc_unavailable' && error instanceof Stop && error.keepPlace
+    const kept = retryable ? completed : reason === 'too_much_history' && error instanceof Stop && error.keepPlace && coherent() ? keep() : null
+    return { ok: false, reason, prices: null, checkpoint: kept, bytes, ...(kept && (onPath || retryable) ? { later: true as const } : {}) }
   }
 }

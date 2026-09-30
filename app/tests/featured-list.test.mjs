@@ -229,7 +229,7 @@ test('the list is one POST of {} to read-v5 with its contract header, first in t
   const { source, calls } = composed(() => json(200, answer([A, B])));
   const outcome = await featured.readFeaturedList(source);
   assert.equal(outcome.state, 'ok');
-  assert.deepEqual(calls, [{ path: '/api/read/v5/featured-pools', method: 'POST', body: '{}', contract: '1.0.0-rc.1' }]);
+  assert.deepEqual(calls, [{ path: '/api/read/v5/featured-pools', method: 'POST', body: '{}', contract: '1.0.0-rc.2' }]);
   assert.equal(STORED_LANE.has('featured-pools'), true);
   const asked = [];
   await featured.readFeaturedList({ transport: 'bridge', read: async (route, request, options) => (asked.push({ route, request, options }), { state: 'aborted' }) }, { clock: { monotonic: () => 1000 } });
@@ -309,6 +309,7 @@ test('fallback on the wire: route_not_available, no forwarder, a 5xx, invalid JS
     ['invalid JSON', () => json(200, '{"schemaVersion":'), 'failed'],
     ['an invalid answer', () => json(200, read('invalid/hooked-pool.json')), 'failed'],
     ['another contract', () => json(200, answer([A]), '1.1.0-rc.3'), 'failed'],
+    ['a read-v5 version the app does not take', () => json(200, answer([A]), '1.0.0-rc.3'), 'failed'],
   ];
   for (const [label, reply, kind] of cases) {
     const { source } = composed(reply);
@@ -684,6 +685,27 @@ test('bindsToEntry: the key, the currencies and the integration class must all b
   // A pending overview entry (no value) has no row to bind, so it stays listed: see marketsProvider.ts `bound`.
 });
 
+// Added 2026-09-28 (featured-policy v2, read-v5 rc.2). The VM serves rc.1 until rugged's step 2, and this build goes out
+// first: an rc.1 list, held to rc.1's rules, is still the server's list, and the app asks in rc.2.
+test('during the transition an rc.1 list is still the server’s list; the app asks in rc.2, and rc.1 keeps its own rules', async () => {
+  assert.deepEqual(v5.CONTRACT_VERSIONS, ['1.0.0-rc.1', '1.0.0-rc.2']);
+  const v1List = read('valid/current-policy-v1.json');
+  for (const [body, contract] of [[{ ...clone(v1List), contractVersion: '1.0.0-rc.1' }, '1.0.0-rc.1'], [v1List, '1.0.0-rc.2'], [CURRENT, '1.0.0-rc.2']]) {
+    const { source, calls } = composed(() => json(200, body, contract));
+    const outcome = await featured.readFeaturedList(source);
+    assert.equal(outcome.state, 'ok', contract);
+    assert.equal(calls[0].contract, '1.0.0-rc.2', 'asked in rc.2');
+    const list = featured.listFrom(featured.answerOf(outcome));
+    assert.equal(list.source, 'server', `${contract}: the criterion title`);
+    assert.deepEqual(list.entries.map((entry) => entry.rankApr ?? null), body.pools.map((item) => item.rankInputs?.rankApr ?? null));
+  }
+  // rc.2's ranking and its nulls under rc.1's name are refused whole: the embedded list stands.
+  const { source } = composed(() => json(200, { ...clone(CURRENT), contractVersion: '1.0.0-rc.1' }, '1.0.0-rc.1'));
+  const refused = featured.answerOf(await featured.readFeaturedList(source));
+  assert.equal(refused.kind, 'failed');
+  assert.equal(featured.listFrom(refused), featured.BUNDLED_LIST);
+});
+
 // --- entries, links, labels and New position ---
 
 test('an entry names its symbols as untrusted labels, its fee as fee.ts writes it, its key, and its pinned mark; its link names USDG', () => {
@@ -692,7 +714,9 @@ test('an entry names its symbols as untrusted labels, its fee as fee.ts writes i
   assert.equal(pinned.fee, '0.30%');
   assert.equal(pinned.pinned, true);
   assert.equal(ranked.pinned, undefined);
-  assert.equal(ranked.rankApr, '546.1');
+  // Policy v2 (read-v5 rc.2, 2026-09-28): the list ranks by today's APR, so rankApr is freshApr.
+  assert.equal(ranked.rankApr, '551.0');
+  assert.equal(featured.entryOf(read('valid/current-policy-v1.json').pools[1]).rankApr, '546.1', 'a v1 list keeps the lower of two days');
   assert.deepEqual(pinned.artwork, [null, 'USDG']);
   assert.equal(referenceToken(pinned.addresses), USDG);
   assert.equal(referenceToken([NATIVE_ETH, addr('11')]), addr('11'), 'never native ETH: it names no contract');

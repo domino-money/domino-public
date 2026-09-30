@@ -16,6 +16,14 @@
  * price that moved more than the limit since the read leaves the pool outside
  * it, and the mint reverts in simulation rather than at a price never shown.
  *
+ * A deposit of one token alone for a range that takes only that token (a
+ * range wholly above or below the pool's price, 2026-09-28, one-sided) keeps
+ * its band on that side of the range: the mint may land anywhere the price
+ * leaves the range taking that token alone, its edge included, and never
+ * inside it, where it would need the other token too. Before this a range
+ * whose edge touched the price was sized for a band reaching into it, found
+ * the other token missing and swapped for it, a swap Review had not shown.
+ *
  * Nothing here reads the chain or the wallet, and nothing here signs.
  */
 import { sqrtPriceAtTick } from '../read/screens/poolRange'
@@ -61,8 +69,13 @@ export interface Band {
   high: bigint
 }
 
-/** The band around this price for this slippage limit and range, or null when the inputs make none. */
-export function bandFor(sqrtPriceX96: bigint, tickLower: number, tickUpper: number, slippageBps: number): Band | null {
+/**
+ * The band around this price for this slippage limit and range, or null when the inputs make none. `only`: the one
+ * currency a deposit holds (the other balance is zero). The band then stays on the side of the range where the position
+ * takes that currency alone: at or below the range's lower edge for currency0, at or above its upper edge for
+ * currency1. Null when the price is not on that side: the deposit alone makes no position there.
+ */
+export function bandFor(sqrtPriceX96: bigint, tickLower: number, tickUpper: number, slippageBps: number, only: 0 | 1 | null = null): Band | null {
   let sqrtLower: bigint
   let sqrtUpper: bigint
   try {
@@ -77,9 +90,18 @@ export function bandFor(sqrtPriceX96: bigint, tickLower: number, tickUpper: numb
   // liquidity takes of currency0 grows as the price falls, of currency1 as it rises: size for the worst of each,
   // so the mint fits the balances wherever in the band it lands. What it does not use returns with the NFT.
   const band = BigInt(slippageBps)
-  const minSqrtPriceX96 = (sqrtPriceX96 * (20000n - band)) / 20000n
-  const maxSqrtPriceX96 = (sqrtPriceX96 * (20000n + band) + 19999n) / 20000n
+  let minSqrtPriceX96 = (sqrtPriceX96 * (20000n - band)) / 20000n
+  let maxSqrtPriceX96 = (sqrtPriceX96 * (20000n + band) + 19999n) / 20000n
   if (minSqrtPriceX96 <= 0n || maxSqrtPriceX96 >= 2n ** 160n) return null
+  // One currency alone: the price must stay where the range takes only it (v4 takes currency0 alone at or below the
+  // lower edge, currency1 alone at or above the upper edge), so the band stops at that edge.
+  if (only === 0) {
+    if (sqrtPriceX96 > sqrtLower) return null
+    if (maxSqrtPriceX96 > sqrtLower) maxSqrtPriceX96 = sqrtLower
+  } else if (only === 1) {
+    if (sqrtPriceX96 < sqrtUpper) return null
+    if (minSqrtPriceX96 < sqrtUpper) minSqrtPriceX96 = sqrtUpper
+  }
   return {
     minSqrtPriceX96,
     maxSqrtPriceX96,
@@ -112,7 +134,9 @@ export function mintPlanFor(input: MintInput): MintPlan | null {
   }
   const { balance0, balance1 } = input
   if (balance0 < 0n || balance1 < 0n) return null
-  const band = bandFor(sqrtPrice, input.tickLower, input.tickUpper, input.slippageBps)
+  // A deposit of one currency alone mints only where the range takes that currency alone (bandFor `only`).
+  const only = balance1 === 0n && balance0 > 0n ? 0 : balance0 === 0n && balance1 > 0n ? 1 : null
+  const band = bandFor(sqrtPrice, input.tickLower, input.tickUpper, input.slippageBps, only)
   if (!band) return null
   const [from0, from1] = bandLiquidity(band, balance0, balance1)
   const exact = from0 === null ? from1 : from1 === null ? from0 : from0 < from1 ? from0 : from1

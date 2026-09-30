@@ -1,4 +1,5 @@
 import type { WalletPosition, WalletPositionsState, WalletToken } from '../walletPositions'
+import { priceInverted } from '../read/orientation'
 import { DYNAMIC_FEE_PIPS } from '../read/screens/fee'
 import { NATIVE_CURRENCY } from '../read/screens/identity'
 
@@ -58,17 +59,23 @@ export function feeText(pips: number): string {
   return `${whole}.${fraction.slice(0, 2)}${fraction.slice(2).replace(/0+$/, '')}%`
 }
 
-/** The mini range bar: the range with half its width of room on each side, and where the pool's tick sits (0 to 1), when it was read. */
-export function rangeView(position: Pick<WalletPosition, 'tickLower' | 'tickUpper' | 'tick'>): { lower: number; upper: number; current: number | null; inRange: boolean | null } {
+/**
+ * The mini range bar: the range with half its width of room on each side, and where the pool's tick sits (0 to 1), when
+ * it was read. Drawn the app's one way round (lib/read/orientation.ts, 2026-09-28): the left end is the lowest price of
+ * the priced token, so for a pool read the other way round from its own order the price's dot is mirrored.
+ */
+export function rangeView(position: Pick<WalletPosition, 'tickLower' | 'tickUpper' | 'tick'> & { currencies?: WalletPosition['currencies'] }): { lower: number; upper: number; current: number | null; inRange: boolean | null } {
   const width = Math.max(1, position.tickUpper - position.tickLower)
   const min = position.tickLower - width / 2
   const span = width * 2
   const at = (tick: number) => Math.min(1, Math.max(0, (tick - min) / span))
   const tick = position.tick
+  const inverted = position.currencies ? priceInverted(position.currencies[0].address, position.currencies[1].address) : false
+  const current = tick === null ? null : at(tick)
   return {
     lower: at(position.tickLower),
     upper: at(position.tickUpper),
-    current: tick === null ? null : at(tick),
+    current: current === null || !inverted ? current : 1 - current,
     inRange: tick === null ? null : tick >= position.tickLower && tick < position.tickUpper,
   }
 }

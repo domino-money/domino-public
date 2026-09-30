@@ -42,20 +42,60 @@ const unsupportedMethod = (error: unknown) => {
 }
 
 /**
+ * The chain a key of a capabilities reply names: hex as EIP-5792 writes it ("0x1237", in either case, leading zeros
+ * allowed), or decimal ("4663"), as viem's own getCapabilities reads both (Number(key)). Anything else names none.
+ */
+const chainOfKey = (key: string): number | null =>
+  /^0x[0-9a-f]{1,16}$/i.test(key) ? Number.parseInt(key.slice(2), 16) : /^[0-9]{1,16}$/.test(key) ? Number(key) : null
+/** The `atomic` status one chain's entry states, or null when it states none. */
+const statusOf = (entry: unknown): unknown => {
+  const atomic = entry && typeof entry === 'object' ? (entry as Record<string, unknown>).atomic : null
+  return atomic && typeof atomic === 'object' ? (atomic as Record<string, unknown>).status ?? null : null
+}
+const RANK: Record<AtomicStatus, number> = { unsupported: 0, ready: 1, supported: 2 }
+
+/**
+ * What a `wallet_getCapabilities` reply says of chain 4663 (EIP-5792 version 2). Its entry is found under any key that
+ * names 4663, hex or decimal; entries that disagree count as the weakest of them. With no `atomic` there, the entry
+ * under chain 0, which the standard reserves for what the wallet supports on every chain, is read instead. Any other
+ * shape, version 1's `atomicBatch` included, is `unsupported`: version 1 wallets do not take the version 2 batch sent.
+ */
+export function atomicStatusOf(reply: unknown): AtomicStatus {
+  if (!reply || typeof reply !== 'object' || Array.isArray(reply)) return 'unsupported'
+  const found: unknown[] = [], everywhere: unknown[] = []
+  for (const [key, entry] of Object.entries(reply as Record<string, unknown>)) {
+    const chain = chainOfKey(key)
+    const status = statusOf(entry)
+    if (status === null) continue
+    if (chain === 4663) found.push(status)
+    else if (chain === 0) everywhere.push(status)
+  }
+  const stated = found.length > 0 ? found : everywhere
+  if (stated.length === 0) return 'unsupported'
+  return stated.map((status): AtomicStatus => (status === 'supported' || status === 'ready' ? status : 'unsupported'))
+    .reduce((weakest, status) => (RANK[status] < RANK[weakest] ? status : weakest))
+}
+
+/**
  * The connected wallet's EIP-5792 atomic batches on chain 4663, read through its own provider: `supported` when the
  * account executes a batch atomically now, `ready` when the wallet would first upgrade it (EIP-7702) and asks the person
- * to, `unsupported` otherwise. A read that fails or times out, and a reply in any other shape, version 1's
- * `atomicBatch` included, is `unsupported`: no batch is offered then. Reads only.
+ * to, `unsupported` otherwise (atomicStatusOf reads the reply). A wallet that refuses the chain filter as an invalid
+ * parameter (-32602, as drafts before version 2 took only the account) is asked once more without it. A read that
+ * fails or times out is `unsupported`: no batch is offered then, and the steps go one by one. Reads only.
  */
 export async function atomicStatus(wallet: { owner: Address; request: Request }, timeoutMs = 5_000): Promise<AtomicStatus> {
   let timer: ReturnType<typeof setTimeout> | undefined
+  const ask = async () => {
+    try {
+      return await wallet.request('wallet_getCapabilities', [wallet.owner, ['0x1237']])
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code !== -32602) throw error
+      return wallet.request('wallet_getCapabilities', [wallet.owner])
+    }
+  }
   try {
-    const reply = await Promise.race([wallet.request('wallet_getCapabilities', [wallet.owner, ['0x1237']]),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), timeoutMs) })])
-    const chain = reply && typeof reply === 'object' ? (reply as Record<string, unknown>)['0x1237'] : null
-    const atomic = chain && typeof chain === 'object' ? (chain as Record<string, unknown>).atomic : null
-    const status = atomic && typeof atomic === 'object' ? (atomic as Record<string, unknown>).status : null
-    return status === 'supported' || status === 'ready' ? status : 'unsupported'
+    return atomicStatusOf(await Promise.race([ask(),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), timeoutMs) })]))
   } catch {
     return 'unsupported'
   } finally { clearTimeout(timer) }

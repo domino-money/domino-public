@@ -10,7 +10,7 @@ import { rowApr } from '../../lib/read/screens/rowApr'
 import { AmountText, LiveFigure, UsdText } from '../figures'
 import { SymbolText } from '../read/screens/SymbolText'
 import { TokenMark, TokenMarkPair } from '../TokenIcon'
-import { Badge } from '../ui'
+import { Badge, Pill } from '../ui'
 import { PreviewArt } from './PreviewArt'
 import type { PairBalancesState } from './usePairBalances'
 import type { VisualStep } from './StepList'
@@ -210,7 +210,13 @@ export function PositionPreview({
           <div className="dm-flow-pv-price">
             <div className="dm-flow-pv-price-head">
               <span className="dm-flow-pv-label">{CREATE.amount.now}</span>
-              <Badge kind={view.inRange ? 'in-range' : 'out-of-range'} />
+              {/* Changed on purpose 2026-09-28 (one-sided): a range beside today's price is a choice, not an alarm, so it is
+                  said calmly (no red "Out of range"): the position earns once the price enters it. */}
+              {view.inRange ? (
+                <Badge kind="in-range" />
+              ) : (
+                <Pill data-preview-waits="">{CREATE.amount.earnsInRange}</Pill>
+              )}
             </div>
             <p className="dm-flow-pv-price-line">
               <span className="dm-fig-lg">
@@ -224,7 +230,7 @@ export function PositionPreview({
               </span>
             </p>
           </div>
-          <RangeStage view={view} poolTick={price.tick} lowerTick={state.range.lower} upperTick={state.range.upper} priceText={price.text} />
+          <RangeStage view={view} poolTick={view.ticks.pool} lowerTick={view.ticks.lower} upperTick={view.ticks.upper} priceText={price.text} />
           <dl className="dm-flow-pv-bounds">
             <div>
               <dt>{CREATE.amount.lowest}</dt>
@@ -268,6 +274,8 @@ export function PositionPreview({
           )}
           {chosen.currencies.map((currency, index) => {
             const part = held.sides[index]
+            // One token alone: its row only, never "0" of the other.
+            if (held.only !== null && index !== held.only) return null
             return (
               <div key={currency.address} className="dm-flow-pv-row">
                 <TokenMark token={currency} size={28} />

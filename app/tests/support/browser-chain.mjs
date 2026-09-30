@@ -66,7 +66,13 @@ const multicallAbi = parseAbi([
   'struct Result { bool success; bytes returnData; }',
   'function aggregate3(Call3[] calls) payable returns (Result[] returnData)',
   'function getCurrentBlockTimestamp() view returns (uint256)',
+  // 2026-09-28 (speed wave B, item 23): what a scan that took its head from Multicall3 would read (the parent chain's block).
+  'function getBlockNumber() view returns (uint256)',
 ]);
+// 2026-09-28 (speed wave B, item 23): the wallet scan's first read asks ArbSys the (L2) block it runs at.
+const ARB_SYS = '0x0000000000000000000000000000000000000064';
+const PARENT_BLOCK = 26_079_103n;
+const arbSysAbi = parseAbi(['function arbBlockNumber() view returns (uint256)']);
 const pmAbi = parseAbi([
   'struct PoolKey { address currency0; address currency1; uint24 fee; int24 tickSpacing; address hooks; }',
   'function ownerOf(uint256) view returns (address)',
@@ -157,7 +163,9 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
     }
     if (target === SETUP) {
       const { functionName, args } = decodeFunctionData({ abi: setupAbi, data });
-      if (functionName === 'ownerNonce') return ok(setupAbi, functionName, BigInt((chain.deposits[lower(args[0])] ?? []).length + mintedBy(lower(args[0])).length));
+      // Changed on purpose 2026-09-28 (speed wave B, item 23): every position the owner minted is one of its operations, with
+      // `operations` or not (a nonce of 0 is now a wallet with nothing, answered without a log read).
+      if (functionName === 'ownerNonce') return ok(setupAbi, functionName, BigInt((chain.deposits[lower(args[0])] ?? []).length + chain.positions.filter((p) => lower(p.minter ?? p.holder) === lower(args[0])).length));
       if (functionName === 'recoveryStarted') return ok(setupAbi, functionName, false);
       for (const [owner, list] of Object.entries(chain.deposits)) {
         const i = list.findIndex((_, n) => opIdOf(owner, n) === args[0]);
@@ -171,7 +179,13 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
       }
       return ok(setupAbi, functionName, { owner: ZERO, key: { currency0: ZERO, currency1: ZERO, fee: 0, tickSpacing: 0, hooks: ZERO }, balance0: 0n, balance1: 0n, swapped: false, closed: false, tokenId: 0n });
     }
-    if (target === MULTICALL3) return ok(multicallAbi, 'getCurrentBlockTimestamp', BigInt(chain.timestamp));
+    // 2026-09-28 (speed wave B, item 23): as on Robinhood Chain (Arbitrum Nitro), ArbSys.arbBlockNumber() is the head and
+    // Multicall3.getBlockNumber() is block.number, the parent chain's block (tests/owned-chain.mjs PARENT_BLOCK).
+    if (target === ARB_SYS) return ok(arbSysAbi, 'arbBlockNumber', BigInt(chain.head));
+    if (target === MULTICALL3) {
+      const { functionName } = decodeFunctionData({ abi: multicallAbi, data });
+      return functionName === 'getBlockNumber' ? ok(multicallAbi, functionName, PARENT_BLOCK) : ok(multicallAbi, 'getCurrentBlockTimestamp', BigInt(chain.timestamp));
+    }
     if (target === SEQUENCE_FACTORY) {
       const { functionName, args } = decodeFunctionData({ abi: factoryAbi, data });
       const vault = chain.vaults[lower(args[0])];
@@ -223,7 +237,9 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
       };
     }
     if (method === 'eth_getBlockByNumber') return { result: { number: params[0], timestamp: numberToHex(chain.timestamp), hash: `0x${'ab'.repeat(32)}` } };
-    if (method === 'eth_call' && lower(params[0]?.to) === MULTICALL3 && Number(params[1]) <= chain.head) {
+    // 2026-09-28 (speed wave B, item 23): the wallet scan's first read is an aggregate3 at 'latest' of ArbSys.arbBlockNumber
+    // and the owner's nonce, taken here at the head.
+    if (method === 'eth_call' && lower(params[0]?.to) === MULTICALL3 && (params[1] === 'latest' || Number(params[1]) <= chain.head)) {
       const { args } = decodeFunctionData({ abi: multicallAbi, data: params[0].data });
       // One more read of each NFT this call asks ownerOf for, before any of its sub-calls is answered.
       for (const sub of args[0]) {

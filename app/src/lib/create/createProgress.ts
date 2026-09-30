@@ -44,6 +44,36 @@ export function useCreateProgress(): readonly LiveStep[] | null {
 }
 
 /*
+ * What the connected wallet can do with a batch on this chain (EIP-5792 `atomic`: finance/batch.ts atomicStatus), as
+ * Create position read it for that wallet: `supported` signs every step at once, so Review's list shows the one step
+ * the wallet will ask for before anything is pressed (the owner, 2026-09-28: fewer wallet steps when the wallet can
+ * batch). Null while unread, for no wallet, and once the control leaves the page. A plain value: nothing of the wallet
+ * feature is imported here.
+ */
+export type BatchAbility = 'supported' | 'ready' | 'unsupported'
+let ability: BatchAbility | null = null
+const abilityListeners = new Set<() => void>()
+
+/** What the connected wallet can do with a batch, or null. */
+export function publishBatchAbility(next: BatchAbility | null) {
+  if (next === ability) return
+  ability = next
+  for (const listener of abilityListeners) listener()
+}
+
+function subscribeBatchAbility(listener: () => void): () => void {
+  abilityListeners.add(listener)
+  return () => {
+    abilityListeners.delete(listener)
+  }
+}
+
+/** What the connected wallet can do with a batch, live; null while unread. */
+export function useBatchAbility(): BatchAbility | null {
+  return useSyncExternalStore(subscribeBatchAbility, () => ability, () => null)
+}
+
+/*
  * The position Create position made, once it is in the wallet (2026-09-24, the three features joined up): Review's
  * last control then offers what comes next, keeping it plain or automating it (components/create/CreatedNext.tsx),
  * instead of opening Positions by itself. Published by the same control, null again when it leaves the page.
@@ -67,6 +97,8 @@ export function publishCreated(tokenId: string | null) {
 
 /** Whether Create position made `tokenId` during this visit. */
 export const createdHere = (tokenId: string) => madeHere.has(tokenId)
+/** 2026-09-28 (speed wave B, item 18): how many it made, so a wallet's list kept before the last is not drawn after it. */
+export const madeCount = () => madeHere.size
 
 function subscribeCreated(listener: () => void): () => void {
   createdListeners.add(listener)

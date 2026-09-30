@@ -1,4 +1,4 @@
-"""Featured pools: the selection rules of featured-policy v1, with no I/O.
+"""Featured pools: the selection rules of featured-policy v1 and v2, with no I/O.
 
 The selector (manage_featured.py) gathers, for each candidate, the provider
 observation from the listing, the chain-verified pool, the APR estimate the
@@ -9,6 +9,10 @@ slots. The same inputs give the same list, byte for byte.
 Safety (S) rules are never relaxed, not for incumbents, pins or a manual
 list. Market (M) rules are calibrated in the shadow phase; pins skip them and
 incumbents meet the volume, liquidity and depth floors at a discount.
+
+v2 (featured_policy.json `rankBy`, `persistence`, `fill`): a market rule whose
+threshold is null is off, today's APR alone may rank, and a short list may be
+completed from the embedded list only.
 """
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
@@ -16,6 +20,7 @@ import hashlib
 import json
 from math import isqrt
 from pathlib import Path
+import re
 import unicodedata
 
 from automation_evidence import MAX_TICK, MIN_TICK, _next_initialized
@@ -50,6 +55,18 @@ MARKET = (
     'price_move_outlier', 'provider_price_disagreement',                                       # E18
 )
 REASONS = SAFETY + MARKET
+# featured-policy v2: a market rule whose threshold is null is off. The floors stay.
+OPTIONAL_DECIMALS = ('minReferenceDepthUsd', 'maxAprPercent', 'maxTurnover24h', 'minH6ShareOfH24',
+                     'maxAbsPriceChange24hPercent', 'maxProviderPriceDeviation')
+OPTIONAL_INTEGERS = ('minPoolAgeHours', 'minTraders24h', 'minSwaps24h')
+# min_fresh_and_previous: the lower of today's and the previous evaluation's APR (v1);
+# fresh: today's APR alone.
+RANKINGS = ('min_fresh_and_previous', 'fresh')
+# What may complete a short list (`fill`, in its order, each at most once):
+# yesterday's pools still safe (carried), the embedded list's (fallback).
+FILLS = ('carried', 'fallback')
+# A threshold as a list states it (read_contract.DecimalString).
+DECIMAL_STRING = re.compile(r'[0-9]+(?:\.[0-9]+)?')
 SOURCES = ('pinned', 'ranked', 'carried', 'fallback', 'manual')
 
 # Letters that only look Latin, and digits and signs that pass for letters,
@@ -122,12 +139,17 @@ def check_policy(policy):
                  and policy['diversity'] == {'perNonReferenceToken': 1, 'keep': 'deepest',
                                              'maxMajorPairs': policy['diversity']['maxMajorPairs']}
                  and 0 <= policy['diversity']['maxMajorPairs'] <= policy['size']
-                 and all(Decimal(policy['thresholds'][name]) >= 0 for name in (
-                     'minVolume24hUsd', 'minTvlUsd', 'minReferenceDepthUsd', 'maxAprPercent',
-                     'maxTurnover24h', 'minH6ShareOfH24', 'maxAbsPriceChange24hPercent',
-                     'maxProviderPriceDeviation'))
-                 and all(type(policy['thresholds'][name]) is int and policy['thresholds'][name] >= 0
-                         for name in ('minPoolAgeHours', 'minTraders24h', 'minSwaps24h'))
+                 and all(_decimal_string(policy['thresholds'][name]) for name in ('minVolume24hUsd', 'minTvlUsd'))
+                 and all(policy['thresholds'][name] is None or _decimal_string(policy['thresholds'][name])
+                         for name in OPTIONAL_DECIMALS)
+                 and all(policy['thresholds'][name] is None or (type(policy['thresholds'][name]) is int
+                                                                 and policy['thresholds'][name] >= 0)
+                         for name in OPTIONAL_INTEGERS)
+                 and policy['rankBy'] in RANKINGS and type(policy['persistence']) is bool
+                 # Ranking by the previous evaluation needs one for every eligible pool.
+                 and (policy['persistence'] or policy['rankBy'] == 'fresh')
+                 and type(policy['fill']) is list and len(set(policy['fill'])) == len(policy['fill'])
+                 and set(policy['fill']) <= set(FILLS)
                  and 0 < Decimal(policy['hysteresis']['incumbentFloorFactor']) <= 1
                  and Decimal(policy['hysteresis']['challengerMargin']) >= 1
                  and type(policy['hysteresis']['maxRankedSwapsPerDay']) is int
@@ -136,6 +158,10 @@ def check_policy(policy):
         valid = False
     if not valid:
         raise DataError('invalid_featured_policy')
+
+
+def _decimal_string(value):
+    return type(value) is str and len(value) <= 224 and DECIMAL_STRING.fullmatch(value) is not None
 
 
 def policy_version(policy, overrides):
@@ -310,22 +336,26 @@ def screen(market, listing, created_at, policy, *, now, relaxed=False):
         reasons.append('volume_below_floor')
     if tvl is None or tvl < Decimal(thresholds['minTvlUsd']) * factor:
         reasons.append('tvl_below_floor')
-    if volume is not None and tvl is not None and tvl > 0 and volume / tvl > Decimal(thresholds['maxTurnover24h']):
+    turnover = thresholds['maxTurnover24h']
+    if turnover is not None and volume is not None and tvl is not None and tvl > 0 and volume / tvl > Decimal(turnover):
         reasons.append('turnover_above_ceiling')
-    if created_at is None:
-        reasons.append('age_unknown')
-    elif now - created_at < thresholds['minPoolAgeHours'] * HOURS:
-        reasons.append('pool_too_young')
-    trades = listing.get('transactions24h')
-    if (trades is None or trades['buyers'] + trades['sellers'] < thresholds['minTraders24h']
-            or trades['buys'] + trades['sells'] < thresholds['minSwaps24h']):
-        reasons.append('activity_below_floor')
-    recent = _decimal(listing.get('volume6hUsd'))
+    if thresholds['minPoolAgeHours'] is not None:
+        if created_at is None:
+            reasons.append('age_unknown')
+        elif now - created_at < thresholds['minPoolAgeHours'] * HOURS:
+            reasons.append('pool_too_young')
+    traders, swaps = thresholds['minTraders24h'], thresholds['minSwaps24h']
+    if traders is not None or swaps is not None:
+        trades = listing.get('transactions24h')
+        if (trades is None or (traders is not None and trades['buyers'] + trades['sellers'] < traders)
+                or (swaps is not None and trades['buys'] + trades['sells'] < swaps)):
+            reasons.append('activity_below_floor')
+    share, recent = thresholds['minH6ShareOfH24'], _decimal(listing.get('volume6hUsd'))
     # Without a 24 h volume E10 already fails; the share is then undefined.
-    if volume is not None and (recent is None or recent < volume * Decimal(thresholds['minH6ShareOfH24'])):
+    if share is not None and volume is not None and (recent is None or recent < volume * Decimal(share)):
         reasons.append('volume_faded')
-    change = _decimal(listing.get('priceChange24hPercent'))
-    if change is not None and abs(change) > Decimal(thresholds['maxAbsPriceChange24hPercent']):
+    move, change = thresholds['maxAbsPriceChange24hPercent'], _decimal(listing.get('priceChange24hPercent'))
+    if move is not None and change is not None and abs(change) > Decimal(move):
         reasons.append('price_move_outlier')
     return reasons, volume, tvl
 
@@ -394,25 +424,31 @@ def evaluate(candidate, policy, *, now, previous, relaxed=False, excluded_pools=
                                    now=now, relaxed=relaxed)
     reasons.extend(screened)
     depth = candidate.get('depth') or {}
-    depth_value = _decimal(depth.get('usd'))
-    if depth.get('status') != 'measured' or depth_value is None:
-        reasons.append('reference_depth_unmeasurable')
-    elif depth_value < Decimal(thresholds['minReferenceDepthUsd']) * factor:
-        reasons.append('reference_depth_below_floor')
+    depth_value, depth_floor = _decimal(depth.get('usd')), thresholds['minReferenceDepthUsd']
+    if depth_floor is not None:
+        if depth.get('status') != 'measured' or depth_value is None:
+            reasons.append('reference_depth_unmeasurable')
+        elif depth_value < Decimal(depth_floor) * factor:
+            reasons.append('reference_depth_below_floor')
     before = previous.get(pool_id) if previous else None
     prior = _decimal(before.get('freshApr')) if before else None
-    if fresh is not None and max(fresh, prior if prior is not None else fresh) > Decimal(thresholds['maxAprPercent']):
+    ceiling = thresholds['maxAprPercent']
+    if (ceiling is not None and fresh is not None
+            and max(fresh, prior if prior is not None else fresh) > Decimal(ceiling)):
         reasons.append('apr_above_ceiling')
-    if not (before and before.get('eligibleExceptPersistence')):
+    if policy['persistence'] and not (before and before.get('eligibleExceptPersistence')):
         reasons.append('not_persistent')
-    deviation = candidate.get('providerPriceDeviation')
-    if deviation is not None and _decimal(deviation) > Decimal(thresholds['maxProviderPriceDeviation']):
+    deviation, limit = candidate.get('providerPriceDeviation'), thresholds['maxProviderPriceDeviation']
+    if limit is not None and deviation is not None and _decimal(deviation) > Decimal(limit):
         reasons.append('provider_price_disagreement')
     reasons.sort(key=REASONS.index)
 
     safe = not any(reason in SAFETY for reason in reasons)
     market_reasons = [reason for reason in reasons if reason in MARKET]
-    rank = min(fresh, prior) if fresh is not None and prior is not None else None
+    if policy['rankBy'] == 'fresh':
+        rank = fresh
+    else:
+        rank = min(fresh, prior) if fresh is not None and prior is not None else None
     return {
         'poolId': pool_id, 'reasons': reasons, 'safe': safe,
         'eligible': safe and not market_reasons,
@@ -502,8 +538,8 @@ def compose(evaluations, policy, *, previous_list, pins=(), embedded=()):
        replaces the weakest incumbent only above `challengerMargin` times its
        rankApr, at most `maxRankedSwapsPerDay` times;
     4. ranked pools fill the other slots by rankApr;
-    5. short lists are completed with incumbents that are still safe
-       (carried) and then the embedded list's safe pools (fallback).
+    5. short lists are completed, in the order `fill` names, with incumbents
+       that are still safe (carried) and the embedded list's safe pools (fallback).
     Fewer than `minPublishable` pinned or ranked pools keeps the previous list.
     """
     size, hysteresis = policy['size'], policy['hysteresis']
@@ -562,8 +598,9 @@ def compose(evaluations, policy, *, previous_list, pins=(), embedded=()):
         dropped.append({'poolId': item['poolId'], 'reason': 'below_hysteresis'})
     entries = [{'poolId': item['poolId'], 'source': 'ranked'} for item in chosen]
     listed = pinned_ids | {item['poolId'] for item in chosen}
-    for source, pool_ids in (('carried', incumbent_ids), ('fallback', embedded)):
-        for pool_id in pool_ids:
+    sources = {'carried': incumbent_ids, 'fallback': embedded}
+    for source in policy['fill']:
+        for pool_id in sources[source]:
             if len(entries) + len(pinned) >= size:
                 break
             item = by_id.get(pool_id)

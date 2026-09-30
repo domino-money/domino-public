@@ -3,10 +3,13 @@ import { LiveFigure, StackedBar, UsdText } from '../figures'
 import { Badge, RangeBar, Skeleton, Stat, StatStrip, cx } from '../ui'
 import { TokenLabel } from '../read/TokenLabel'
 import { useFeeHistory } from '../../lib/fees/useFeeHistory'
+import { useLoadMilestone } from '../../lib/useLoadMilestone'
+import { historyLoadQuality } from '../../lib/fees/freshness'
+import { visibleAmountQuality } from './valueReadiness'
 import type { PositionState } from '../../lib/fees/types'
 import { formatUsd } from '../../lib/format/usd'
 import { APR_MISSING, aprText, positionApr, spanText } from '../../lib/positionApr'
-import type { RangeEnd } from '../../lib/read/screens/positions'
+import { shownCardRange, shownCardTick, type RangeEnd } from '../../lib/read/screens/positions'
 import type { LiveCard } from '../../lib/walletCards'
 import { Amount, blockTitle } from './PositionFigures'
 import { rangeWords, type CardPrice } from './PositionRange'
@@ -42,12 +45,14 @@ function Amounts({ card, which }: { card: LiveCard; which: 'principal' | 'unsett
  */
 function YourApr({ tokenId }: { tokenId: string }) {
   const fees = useFeeHistory(tokenId)
-  const drawn = fees.phase === 'verified' || fees.phase === 'estimated' ? fees : null
+  const drawn = fees.phase === 'verified' || fees.phase === 'estimated' || fees.phase === 'cached' ? fees : null
   const rates = useMemo(() => {
     if (!drawn) return null
     const into = usdgSide(drawn.state.currencies) ?? 1
     return { all: positionApr(drawn.history, drawn.state, into, 'all'), day: positionApr(drawn.history, drawn.state, into, '24h') }
   }, [drawn])
+  const saved = fees.phase === 'cached' ? fees : null
+  useLoadMilestone('position', 'apr', rates?.all.ok ? historyLoadQuality(fees) : null)
   let figure: ReactNode = <span className="text-fg-subtle">—</span>
   let sub: ReactNode = 'Not measured yet'
   if (fees.phase === 'idle' || fees.phase === 'loading') {
@@ -60,11 +65,13 @@ function YourApr({ tokenId }: { tokenId: string }) {
       <>
         {aprText(all.rate)}
         {fees.phase === 'estimated' && <Badge kind="estimate" className="dm-pos-est" />}
+        {saved && <span className="text-caption text-fg-muted"> saved</span>}
       </>
     )
     sub = (
       <span className="dm-pos-lines">
-        <span>Since opened ({spanText(all.seconds)})</span>
+        <span>{saved ? 'Saved history' : 'Since opened'} ({spanText(all.seconds)})</span>
+        {saved && <span>Through {new Date(saved.state.timestamp * 1000).toLocaleString('en-US')} · not current</span>}
         {all.seconds > HOURS_25 && <span>Last 24 hours: {day.ok ? aprText(day.rate) : '—'}</span>}
       </span>
     )
@@ -76,6 +83,8 @@ function YourApr({ tokenId }: { tokenId: string }) {
       className="dm-pos-stat"
       data-cell="apr"
       data-apr={rates ? (rates.all.ok ? 'ready' : rates.all.reason) : fees.phase}
+      data-apr-source={saved ? 'saved-public-history' : undefined}
+      title={saved ? `Saved public-chain replay at block ${saved.state.block}; saved ${new Date(saved.savedAt).toISOString()}. Historical, not a current rate.` : undefined}
       sub={sub}
     >
       <span className="dm-fig-lg dm-pos-apr">{figure}</span>
@@ -83,9 +92,12 @@ function YourApr({ tokenId }: { tokenId: string }) {
   )
 }
 
-/** The pool's price as a person says it, "1 USDG = 332.36 UFG"; a dash whose reason is its title otherwise. */
+/**
+ * The pool's price as a person says it, "1 UFG = 0.003009 USDG" (changed on purpose 2026-09-28, one-sided: the app's
+ * one way round, lib/read/orientation.ts, where it read "1 USDG = 332.36 UFG"); a dash whose reason is its title otherwise.
+ */
 function PriceNow({ price, card }: { price: CardPrice; card: LiveCard }) {
-  const [base, quote] = card.currencies
+  const { base, quote } = shownCardRange(card)
   const { state } = price
   if (state.phase === 'ready' && state.price.state === 'usable') {
     return (
@@ -113,19 +125,21 @@ function PriceNow({ price, card }: { price: CardPrice; card: LiveCard }) {
  * the price is beyond it), the two ends under it and, while it holds liquidity, whether it earns fees now.
  */
 function RangeLine({ price, card }: { price: CardPrice; card: LiveCard }) {
-  const { ends, tickLower, tickUpper, fullRange } = card.range
+  const { fullRange } = card.range
+  // The app's one way round (2026-09-28): the lowest price of the priced token at the bar's left.
+  const { low, high, ticks } = shownCardRange(card)
   const usable = price.state.phase === 'ready' && price.state.price.state === 'usable' ? price.state.price : null
   // The band from 5% to 95% of the bar; a price beyond it sits in the room outside its end.
-  const share = usable ? (usable.tick - tickLower) / Math.max(1, tickUpper - tickLower) : null
+  const share = usable ? (shownCardTick(usable) - ticks.lower) / Math.max(1, ticks.upper - ticks.lower) : null
   const at = share === null ? null : share < 0 ? 0.015 : share > 1 ? 0.985 : 0.05 + 0.9 * share
   const live = card.hasLiquidity ? card.inRange : null
   return (
     <div className="dm-pos-span" data-stat="range" data-full-range={fullRange ? '' : undefined}>
       <RangeBar lower={0.05} upper={0.95} current={at} inRange={live} label={rangeWords(card, price)} />
       <span className="dm-pos-span-ends">
-        <span>{endText(ends.lower, tickLower)}</span>
+        <span>{endText(low.end, low.tick)}</span>
         <span className="dm-pos-span-word">Your range</span>
-        <span>{endText(ends.upper, tickUpper)}</span>
+        <span>{endText(high.end, high.tick)}</span>
       </span>
       {live !== null && (
         <span className="dm-pos-span-state" data-in={String(live)}>
@@ -137,12 +151,14 @@ function RangeLine({ price, card }: { price: CardPrice; card: LiveCard }) {
 }
 
 /** The four tiles. `state`: the page's read as a valued state (a pair with USDG), null otherwise. */
-export function KeyFigures({ card, state, price, block }: { card: LiveCard; state: PositionState | null; price: CardPrice; block: number }) {
+export function KeyFigures({ card, state, price, block, cached = false }: { card: LiveCard; state: PositionState | null; price: CardPrice; block: number; cached?: boolean }) {
   const principal = cardUsd(card, state, 'principal')
   const fees = cardUsd(card, state, 'unsettledFees')
   const basis = state && principal ? basisOf(state) : null
   const raw = rawPair([card.principal[0].raw, card.principal[1].raw])
   const shares = basis && raw ? valueShares(basis, raw) : null
+  const valueQuality = principal ? 'current' : visibleAmountQuality(card.principal)
+  useLoadMilestone('position', 'value', valueQuality && cached ? 'cached' : valueQuality)
   return (
     <StatStrip layout="tiles" className="dm-pos-stats" title={blockTitle(block)} data-position-stats="" data-valued={principal ? '' : undefined}>
       <Stat

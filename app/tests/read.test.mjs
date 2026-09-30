@@ -4172,13 +4172,28 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // his address): the page says on it too that the RPC refused one of its reads ('rest', which rests every lane), and
   // hears there the lanes' refusals and the other tabs' reads, for the list's APR (quietIn): a flag or the word, nothing else.
   // Changed on purpose (2026-09-28, hotfix: the list's APR queue replayed the fees histories from the list and is gone):
-  // the page only speaks on the channel now, and hears nothing from it.
-  assert.deepEqual([...chainClient.matchAll(/\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['news', 'news'], 'the channel carries the page’s news and the lanes’ news');
-  assert.match(chainClient, /function tell\(news: boolean \| 'rest'\): void \{/, 'the page’s news: a read on its way or not, or a refusal it met');
-  assert.deepEqual([...chainClient.matchAll(/\btell\(([^)]*)\)/g)].map((m) => m[1]).sort(), ["'rest'", "news: boolean | 'rest'", 'step > 0'], 'the page says nothing else');
-  assert.equal([...chainClient.matchAll(/\.onmessage = /g)].length, 1, 'only the lanes listen');
-  assert.match(chainClient, /const share = \(news: number \| 'rest'\) => \{/, 'the lanes’ news: a byte count or a refusal, nothing else');
-  assert.deepEqual([...chainClient.matchAll(/\bshare\(([^)]*)\)/g)].map((m) => m[1]).sort(), ["'rest'", 'bytes'], 'what each lane read, and that it was refused');
+  // the page no longer hears the lanes' refusals nor the other tabs' reads. Changed on purpose 2026-09-28 (speed wave B,
+  // item 15, merged after the hotfix): the page says too whether its reads that ended had a heavy call (false) or light
+  // ones only (null), and a lane asks who reads ('?') when it starts and when a tab says it is done, which a page with a
+  // read on its way answers (true): the question is all the page hears; a flag, null, the word or the question, nothing else.
+  // 2026-09-29: a separate same-origin channel shares the bounded cooldown with a newly opened page/worker.
+  // It carries only an expiry and refusal count, or the question: never a request, address, result or credential.
+  assert.deepEqual([...chainClient.matchAll(/\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['{ ...sharedRest }', "'?'", 'state', 'true', 'news', 'news'], 'only cooldown state and the existing page/lane news are broadcast');
+  assert.deepEqual([...chainClient.matchAll(/cooldownChannel\??\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['{ ...sharedRest }', "'?'", 'state'], 'cooldown payloads stay on their own channel');
+  assert.match(chainClient, /const COOLDOWN_CHANNEL = 'domino-chain-cooldown-v1'/);
+  assert.match(chainClient, /new BroadcastChannel\(COOLDOWN_CHANNEL\)/, 'fixed same-origin channel, not a configurable destination');
+  assert.match(chainClient, /interface Rest \{\n\s*until: number\n\s*count: number\n\}/, 'state contains only numeric scheduling metadata');
+  assert.match(chainClient, /const sharedRest: Rest = \{ until: -Infinity, count: 0 \}/);
+  assert.match(chainClient, /const state = \{ until: Date\.now\(\) \+ Math\.max\(0, rest\.until - at\), count: rest\.count \}/, 'published state contains no request or response data');
+  assert.match(chainClient, /const \{ until, count \} = value as Partial<Rest>\n\s*if \(typeof until !== 'number' \|\| !Number\.isFinite\(until\) \|\| typeof count !== 'number' \|\| !Number\.isInteger\(count\) \|\| count < 0 \|\| count > 16\) return/, 'untrusted peer state is validated before use');
+  assert.match(chainClient, /const bounded = Math\.min\(until, Date\.now\(\) \+ LANE_PACE\.restMs\)/, 'a peer cannot lengthen a cooldown past the existing maximum');
+  assert.match(chainClient, /cooldownChannel\.onmessage = \(\{ data \}: MessageEvent<unknown>\) => \{\n\s*if \(data === '\?'\) \{\n\s*if \(sharedRest\.until > Date\.now\(\)\) cooldownChannel\?\.postMessage\(\{ \.\.\.sharedRest \}\)\n\s*\} else rememberRest\(data\)\n\s*\}/, 'only an active cooldown answers the question; all received state is validated');
+  assert.match(chainClient, /function tell\(news: boolean \| null \| 'rest'\): void \{/, 'the page’s news: a read on its way or not, or a refusal it met');
+  assert.deepEqual([...chainClient.matchAll(/\btell\(([^)]*)\)/g)].map((m) => m[1]).sort(), ["'rest'", "news: boolean | null | 'rest'", 'true', 'weighty ? false : null'], 'the page says nothing else');
+  assert.equal([...chainClient.matchAll(/\.onmessage = /g)].length, 3, 'the page, lanes and isolated cooldown receiver listen');
+  assert.match(chainClient, /channel\.onmessage = \(\{ data \}: MessageEvent<unknown>\) => \{\n\s*if \(data === '\?' && reading\) channel\?\.postMessage\(true\)\n\s*\}\n/, 'the page takes the question and nothing else from it');
+  assert.match(chainClient, /const share = \(news: number \| 'rest' \| '\?'\) => \{/, 'the lanes’ news: a byte count, a refusal or the question, nothing else');
+  assert.deepEqual([...chainClient.matchAll(/\bshare\(([^)]*)\)/g)].map((m) => m[1]).sort(), ["'?'", "'?'", "'rest'", 'bytes'], 'what each lane read, that it was refused, and who reads');
   assert.match(chainClient, /import \{ MAX_RPC_CALLS, RPC_URL, type OwnedDeps \} from '\.\.\/\.\.\/\.\.\/functions\/_lib\/owned'/, 'the URL is the routes\' own pin');
   assert.doesNotMatch(chainClient, /['"`]https?:\/\/|['"`]\/api\//, 'no other network route in the chain client');
   // 2026-09-28: the registry. The chain's own RPC is the routes' pin and comes first; the three fallbacks are the ones

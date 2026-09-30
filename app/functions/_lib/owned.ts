@@ -102,6 +102,11 @@ export const SELECTOR = {
   getPoolAndPositionInfo: '7ba03aad',
   aggregate3: '82ad56cb',
   ownerNonce: 'e8ad29b4',
+  /**
+   * ArbSys.arbBlockNumber(): the L2 block a call at 'latest' ran at (walletPositions.ts scanWallet, 2026-09-28). Not
+   * Multicall3.getBlockNumber(): on Nitro that is block.number, the parent chain's block.
+   */
+  arbBlockNumber: 'a3b1b31d',
   operation: '47da73be',
   recoveryStarted: '20698983',
 } as const
@@ -133,6 +138,11 @@ export interface OwnedDeps {
    * operationIds). Optional; a Function's runtime and the tests' fakes read the chain's own RPC and have none.
    */
   wideLogs?: () => boolean
+  /**
+   * 2026-09-28 (speed wave B, item 23): the head a read learned otherwise than by eth_blockNumber (walletPositions.ts
+   * scanWallet's first aggregate3), for a runtime that routes by it (the page's router). Optional.
+   */
+  head?: (block: number) => void
 }
 
 /** Wait and ask again; split the range; stop; or (logs only) the answer's log bytes are used up. */
@@ -452,9 +462,9 @@ export function quantity(value: unknown): number {
   return n
 }
 
-/** One Multicall3 aggregate3 eth_call at `block`, every sub-call allowed to fail; its results, one per call. */
-export async function aggregate(deps: OwnedDeps, budget: Budget, calls: SubCall[], block: number) {
-  const result = await paced(deps, budget, 'eth_call', [{ to: MULTICALL3, data: encodeAggregate3(calls) }, hex(block)])
+/** One Multicall3 aggregate3 eth_call at `block` (or at the head, 'latest'), every sub-call allowed to fail; its results, one per call. */
+export async function aggregate(deps: OwnedDeps, budget: Budget, calls: SubCall[], block: number | 'latest') {
+  const result = await paced(deps, budget, 'eth_call', [{ to: MULTICALL3, data: encodeAggregate3(calls) }, block === 'latest' ? block : hex(block)])
   if (typeof result !== 'string') throw new ChainError('fatal', 'invalid_call_result')
   const decoded = decodeAggregate3(result)
   if (decoded.length !== calls.length) throw new ChainError('fatal', 'invalid_call_result')

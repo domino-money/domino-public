@@ -7,6 +7,7 @@ import { reasonText } from '../../../lib/read/describe'
 import { areaGeometry, changeOverWindow, midpoint, volumeGeometry, windowCandles, type AreaGeometry, type BarGeometry } from '../../../lib/read/priceSeries'
 import { unreadToken } from '../../../lib/read/project'
 import { useNow } from '../../../lib/read/useNow'
+import { useLoadMilestone } from '../../../lib/useLoadMilestone'
 import { failureText } from '../../../lib/read/screens/copy'
 import { utcTime } from '../../../lib/read/screens/figures'
 import { useReadSource } from '../../../lib/read/screens/readContext'
@@ -241,6 +242,7 @@ export function PoolPriceChart({ market, autoLoad = false, control }: { market: 
   const current = (inspecting ? points.find((point) => point.candle.startTimestamp === inspected) : undefined) ?? points.at(-1)
   const index = current ? points.indexOf(current) : -1
   const last = points.at(-1)
+  useLoadMilestone('pool', 'chart', active && !reading && !expired && answer?.state === 'ok' && data && plot && current && last ? stale ? 'cached' : 'current' : null)
 
   const ask = () => {
     setInspected(null)

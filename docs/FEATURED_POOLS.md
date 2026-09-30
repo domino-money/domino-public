@@ -1,4 +1,4 @@
-# Featured pools (featured-policy v1)
+# Featured pools (featured-policy v2)
 
 Once a day, before 12:00 UTC, the VM chooses the pools the site features, by
 public rules, and records the choice and every reason behind it. The owner
@@ -9,6 +9,30 @@ sets the phase:
 - **live**: the day's list is published at 12:00 UTC, kept warm and repaired
   during the day, and served to the site by read-v5
   (`POST /v5/read/featured-pools`).
+
+## Policy v2 (28/09/2026)
+
+The owner's choice after the first live list: the highest APR today, above
+US$ 1M of 24 h volume and US$ 100k of liquidity, with every safety rule
+(upgradeable and protected tokens stay out) and no other market rule.
+`featured_policy.json` states it with three switches and null thresholds:
+
+| Key | v1 | v2 |
+| --- | --- | --- |
+| `rankBy` | `min_fresh_and_previous` (the lower of today's and the previous evaluation's APR) | `fresh` (today's APR) |
+| `persistence` | `true` (eligible the day before too, E17b) | `false` |
+| `fill` | `["carried", "fallback"]` | `["fallback"]` (the embedded list only) |
+| `minVolume24hUsd`, `minTvlUsd` | 250000, 250000 | 1000000, 100000 |
+| depth, APR and turnover ceilings, age, activity, fading volume, price move, provider price | set | `null` (off) |
+| `hysteresis` | 0.7, 1.2, 2 swaps a day | 1, 1, 6: the day's best replace yesterday's |
+
+A null threshold turns its rule off everywhere: in the listing screen, in the
+evaluation and in the live health checks (`apr_or_turnover_above_ceiling`
+needs a ceiling). The floors stay required, thresholds are decimal strings as
+the list states them, and `check_policy` refuses ranking by two days without
+persistence. Lists state their rules on the wire, so v2 needs read-v5 rc.2
+(`api-contracts/read-v5/README.md`); `tests/fixtures/featured_policy_v1.json`
+keeps v1 for its tests.
 
 ## What runs
 
@@ -41,7 +65,8 @@ sets the phase:
    selection's 10-minute deadline.
 2. **Screen.** Pools not already shown are dropped on provider fields alone
    (reference side, volume, liquidity, turnover, age, activity, fading
-   volume, price move) before any chain read.
+   volume, price move, each only while its threshold is set) before any
+   chain read.
 3. **Verify.** Each survivor's listing observation goes into a private cache
    and through `ReadService.pool_market(allow_provider=False)`, the same
    verified read the collector uses: the key rehashed to the pool id, the
@@ -56,10 +81,11 @@ sets the phase:
 5. **Pools already shown** (pinned, the previous list, the embedded list)
    that the listing did not reach are read with one `/pools/multi` call and
    evaluated the same way.
-6. **Rules and list.** `featured_pools.evaluate` and `compose`. The first run
-   has no earlier evaluation to persist against, so it only records one
-   (`bootstrap`); "eligible yesterday" (E17b) reads the latest completed run of
-   the last 48 hours.
+6. **Rules and list.** `featured_pools.evaluate` and `compose`. With
+   `persistence` on, the first run has no earlier evaluation to persist
+   against, so it only records one (`bootstrap`); "eligible yesterday" (E17b)
+   reads the latest completed run of the last 48 hours, which also gives
+   `prevApr`.
 
 A listing the provider cut short (`http_429`, the allowance refused) is
 `incomplete` and retried each minute until 11:50 UTC; the last attempt keeps
@@ -150,7 +176,8 @@ Safety rules are never relaxed, not for pins: verified identity, no hook,
 fixed fee, symmetric protocol fee, a reference side (ETH, WETH or USDG, not
 ETH/WETH), the token rules, owner exclusions, an `available` estimate and
 active liquidity. Market rules are calibrated in the shadow; pins skip them and
-the previous list's pools meet the volume, liquidity and depth floors at 70%.
+the previous list's pools meet the volume, liquidity and depth floors at
+`incumbentFloorFactor` (70% in v1, 100% in v2).
 `featured_policy.json` holds every value; `rules.REASONS` lists every code a
 rejection can carry.
 
@@ -259,7 +286,10 @@ below the week tier.
 
 - Volume and liquidity are the provider's. Wash trading on-chain is real
   trading, and positions are cheap to split across addresses: the reference
-  depth (real ETH, WETH or USDG within 10%) is the rule that costs capital.
+  depth (real ETH, WETH or USDG within 10%) is the rule that costs capital,
+  and v2 turns it off, with the APR and turnover ceilings. A pool with bought
+  volume above the two floors can rank; the safety rules and the owner's
+  exclusions and veto are what stays.
 - The depth is measured once, at selection; the selection minute is public.
 - The universe is the listing's top pools by volume (`coverage.truncated`).
 - Age comes from the catalogue's Initialize block when the catalogue has the

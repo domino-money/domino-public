@@ -51,9 +51,10 @@ const RUNTIME = {
 const require = createRequire(import.meta.url);
 const { onRequest: gate, LOGIN_PATH } = require('../.test-build/app/functions/_middleware.js');
 const { onRequest: apiRoute } = require('../.test-build/app/functions/api/[[path]].js');
-const { forward } = require('../.test-build/app/functions/_lib/bridge.js');
+const { forward, PREVIEW_ORIGIN } = require('../.test-build/app/functions/_lib/bridge.js');
 
 const ORIGIN = 'https://domino.money';
+const PREVIEW = 'https://preview.domino-app-e65.pages.dev';
 const PASSWORD = 'forwarder-suite-beta-password';
 const GATE = { BETA_PASSWORD: PASSWORD, BETA_COOKIE_KEY: 'Rk7sV2mQx9Lp4TbN8cWy3ZdJ6hGa1FeU5oXiQwErTzB' };
 
@@ -362,6 +363,183 @@ test('the origin is checked before the binding: a preview host without bindings 
     const response = await pages(call(path, { method: 'POST', body, origin: 'https://domino-app-e65.pages.dev' }), GATE);
     await refused(response, 404, 'not_found');
   }
+});
+
+// The named preview has an explicit public-read alias, not another entrance
+// to session or financial Workers. The original browser checks happen before
+// its request can be translated to the read Worker's canonical origin.
+test('the preview alias is one exact HTTPS origin and an exact opt-in', async () => {
+  assert.equal(PREVIEW_ORIGIN, PREVIEW);
+  const { env, calls } = recorders();
+  for (const value of [undefined, '', 'false', 'TRUE', 'True', '1', 'yes', ' true', 'true ', true, 1]) {
+    await refused(await pages(call('/api/read/v1/capabilities', { origin: PREVIEW }), {
+      ...env, PREVIEW_PUBLIC_READS: value,
+    }), 404, 'not_found');
+  }
+  assert.equal(calls(), 0);
+});
+
+test('preview capabilities in every public read version reach the real Worker without a fabricated Origin', async () => {
+  const { env, calls } = workers();
+  env.PREVIEW_PUBLIC_READS = 'true';
+  for (const version of [1, 2, 3, 4, 5]) {
+    const path = `/api/read/v${version}/capabilities`;
+    const response = await pages(call(path, { origin: PREVIEW }), env);
+    assert.equal(response.status, 200, path);
+    assert.ok(response.headers.get('x-domino-read-contract'), path);
+    const body = await response.json();
+    assert.equal(body.dataMode, 'disabled');
+    assert.equal(body.chainId, 4663);
+    assert.deepEqual(body.enabledReads, []);
+    assert.equal(body.walletAuthentication, false);
+    assert.equal(body.ownerTransactions, false);
+  }
+  assert.deepEqual(calls, [1, 2, 3, 4, 5].map(version => `read GET ${ORIGIN}/api/read/v${version}/capabilities`));
+  assert.deepEqual(upstream, []);
+});
+
+test('preview public POSTs preserve method, bytes, query and contract while translating only the vetted origin', async () => {
+  const paths = [
+    '/api/read/v1/pools', '/api/read/v2/pool-market', '/api/read/v3/overview',
+    '/api/read/v4/sequence-snapshot', '/api/read/v5/featured-pools',
+  ];
+  for (const path of paths) {
+    const { binding, calls } = recorder();
+    const body = '{ "token": "0x1111111111111111111111111111111111111111" }\n';
+    const response = await pages(call(`${path}?unchanged=1`, {
+      method: 'POST', body, origin: PREVIEW,
+      headers: { 'X-Domino-Read-Contract': 'test-contract', 'Content-Length': String(Buffer.byteLength(body)) },
+    }), { ...GATE, PREVIEW_PUBLIC_READS: 'true', READ_BRIDGE: binding });
+    assert.equal(response.status, 200, path);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, `${ORIGIN}${path}?unchanged=1`);
+    assert.equal(calls[0].method, 'POST');
+    assert.equal(calls[0].headers.host, 'domino.money');
+    assert.equal(calls[0].headers.origin, ORIGIN);
+    assert.equal(calls[0].headers['x-domino-read-contract'], 'test-contract');
+    assert.equal(calls[0].headers['content-length'], String(Buffer.byteLength(body)));
+    assert.equal(new TextDecoder().decode(calls[0].body), body);
+  }
+});
+
+test('preview POST origin translation passes the real read Worker and queries still get its own refusal', async () => {
+  const { env, calls } = workers();
+  env.PREVIEW_PUBLIC_READS = 'true';
+  await workerSaid(await pages(call(ROUTE.read.path, {
+    method: 'POST', body: ROUTE.read.body, origin: PREVIEW,
+  }), env), 'read', 'route_not_available');
+  await workerSaid(await pages(call('/api/read/v1/capabilities?refresh=1', {
+    origin: PREVIEW, headers: { Origin: PREVIEW },
+  }), env), 'read', 'route_not_available');
+  assert.deepEqual(calls, [
+    `read POST ${ORIGIN}${ROUTE.read.path}`,
+    `read GET ${ORIGIN}/api/read/v1/capabilities?refresh=1`,
+  ]);
+  assert.deepEqual(upstream, []);
+});
+
+test('enabled preview keeps every private family shut even if every binding is accidentally present', async () => {
+  const { env, calls } = recorders();
+  env.PREVIEW_PUBLIC_READS = 'true';
+  for (const family of FAMILIES.filter(name => name !== 'read')) {
+    const { path, body } = ROUTE[family];
+    await refused(await pages(call(path, { method: 'POST', body, origin: PREVIEW }), env), 404, 'not_found');
+  }
+  for (const path of ['/api/session/v1/me', '/api/other/v1/x', '/api/read/v6/capabilities', '/api/read/v1//capabilities']) {
+    await refused(await pages(call(path, { origin: PREVIEW }), env), 404, 'not_found');
+  }
+  assert.equal(calls(), 0);
+});
+
+test('preview opt-in never admits other pages.dev, hash, lookalike, insecure or port-bearing origins', async () => {
+  const { env, calls } = recorders();
+  env.PREVIEW_PUBLIC_READS = 'true';
+  for (const origin of [
+    'https://domino-app-e65.pages.dev', 'https://abc123de.domino-app-e65.pages.dev',
+    'https://other.domino-app-e65.pages.dev', 'https://preview.domino-app-e65.pages.dev.evil.example',
+    'https://preview.domino-app-e65.pages.dev.', 'http://preview.domino-app-e65.pages.dev',
+    'https://preview.domino-app-e65.pages.dev:8443',
+  ]) {
+    await refused(await pages(call('/api/read/v1/capabilities', { origin }), env), 404, 'not_found');
+    await refused(await pages(call(ROUTE.read.path, { method: 'POST', body: ROUTE.read.body, origin }), env), 404, 'not_found');
+  }
+  assert.equal(calls(), 0);
+});
+
+test('preview original Host, Origin and Fetch Metadata are checked before the service sees canonical headers', async () => {
+  const { env, calls } = recorders();
+  env.PREVIEW_PUBLIC_READS = 'true';
+  for (const headers of [
+    { Host: 'domino.money' }, { Host: 'preview.domino-app-e65.pages.dev.evil.example' },
+    { Origin: null }, { Origin: ORIGIN }, { Origin: 'https://evil.example' },
+    { Origin: `${PREVIEW}.evil.example` }, { 'Sec-Fetch-Site': 'cross-site' },
+    { 'Sec-Fetch-Site': 'same-site' }, { 'Sec-Fetch-Mode': 'navigate' },
+    { 'Sec-Fetch-Dest': 'document' }, { 'Sec-Fetch-User': '?1' },
+  ]) {
+    await refused(await pages(call(ROUTE.read.path, {
+      method: 'POST', body: ROUTE.read.body, origin: PREVIEW, headers,
+    }), env), 403, 'origin_not_allowed');
+  }
+  for (const headers of [{ Origin: ORIGIN }, { Origin: 'https://evil.example' }, { Host: 'domino.money' }]) {
+    await refused(await pages(call('/api/read/v1/capabilities', { origin: PREVIEW, headers }), env), 403, 'origin_not_allowed');
+  }
+  // No-Origin is an exception for exact capabilities GETs, never all GETs.
+  for (const path of ['/api/read/v1/pools', '/api/read/v1/capabilities/']) {
+    await refused(await pages(call(path, { origin: PREVIEW }), env), 403, 'origin_not_allowed');
+  }
+  assert.equal(calls(), 0);
+});
+
+test('preview accepts omitted optional browser metadata but does not synthesize an Origin on capabilities GET', async () => {
+  const { binding, calls } = recorder();
+  const response = await pages(call('/api/read/v1/capabilities', {
+    origin: PREVIEW,
+    headers: { Host: null, 'Sec-Fetch-Site': null, 'Sec-Fetch-Mode': null, 'Sec-Fetch-Dest': null },
+  }), { ...GATE, PREVIEW_PUBLIC_READS: 'true', READ_BRIDGE: binding });
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].headers.origin, undefined);
+  assert.equal(calls[0].url, `${ORIGIN}/api/read/v1/capabilities`);
+});
+
+test('preview keeps the CF-Worker refusal and beta gate ahead of its public-read adapter', async () => {
+  const { env, calls } = recorders();
+  env.PREVIEW_PUBLIC_READS = 'true';
+  await refused(await pages(call('/api/read/v1/capabilities', {
+    origin: PREVIEW, headers: { 'CF-Worker': 'other-zone.example' },
+  }), env), 403, 'worker_subrequest_refused');
+  await refused(await pages(call('/api/read/v1/capabilities', { origin: PREVIEW, cookie: null }), env), 401, 'beta_access_required');
+  assert.equal(calls(), 0);
+});
+
+test('preview public reads strip every cookie and unrelated credential, preserving only the edge client address', async () => {
+  const { binding, calls } = recorder();
+  const response = await pages(call(ROUTE.read.path, {
+    method: 'POST', body: ROUTE.read.body, origin: PREVIEW,
+    cookie: `${BETA}; ${PREAUTH}; ${SESSION}; unrelated=private-cookie`,
+    headers: {
+      Authorization: 'Bearer private-auth', 'CF-Access-Client-Id': 'private-id',
+      'CF-Access-Client-Secret': 'private-secret', 'Cf-Access-Jwt-Assertion': 'private-jwt',
+      'X-Domino-CSRF': CSRF, 'X-Domino-Browser-Origin': 'https://evil.example',
+      'X-Forwarded-For': '198.51.100.7', 'X-Forwarded-Host': 'evil.example',
+      Forwarded: 'host=evil.example', 'X-Real-IP': '198.51.100.8',
+    },
+  }), { ...GATE, PREVIEW_PUBLIC_READS: 'true', READ_BRIDGE: binding });
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  const headers = calls[0].headers;
+  for (const name of [
+    'cookie', 'authorization', 'cf-access-client-id', 'cf-access-client-secret', 'cf-access-jwt-assertion',
+    'x-domino-csrf', 'x-domino-browser-origin', 'x-forwarded-for', 'x-forwarded-host', 'forwarded', 'x-real-ip',
+  ]) assert.equal(headers[name], undefined, name);
+  assert.equal(headers['cf-connecting-ip'], '203.0.113.9');
+  assert.doesNotMatch(JSON.stringify(calls), /private-auth|private-id|private-secret|private-jwt|private-cookie/);
+});
+
+test('an admitted preview with no read binding reports bridge_unavailable, not an unsupported origin', async () => {
+  await refused(await pages(call('/api/read/v1/capabilities', { origin: PREVIEW }), {
+    ...GATE, PREVIEW_PUBLIC_READS: 'true',
+  }), 503, 'bridge_unavailable');
 });
 
 // ---------------------------------------------------------------------------
@@ -926,7 +1104,7 @@ test('the host allowlist is off unless the variable is exactly "true", so previe
 });
 
 // ---------------------------------------------------------------------------
-// wrangler.toml: what production gets, and that previews get nothing.
+// wrangler.toml: unchanged production bindings, and preview's public-read-only opt-in.
 // ---------------------------------------------------------------------------
 
 /**
@@ -952,12 +1130,12 @@ function wranglerToml() {
   return tables;
 }
 
-test('wrangler.toml: vars and service bindings can only ever be production\'s', () => {
+test('wrangler.toml: preview gets only its public-read opt-in and read binding; production keeps all seven', () => {
   const tables = wranglerToml();
-  // wrangler reads [env.production] for the production branch and the top
-  // level alone for every preview; vars and services are never inherited.
+  // Each Pages environment declares its own vars/services. Nothing belongs
+  // at the top level where an unrelated environment could inherit it.
   for (const { header } of tables.slice(1)) {
-    assert.ok(['[env.production.vars]', '[[env.production.services]]'].includes(header), `table ${header} would reach a preview or is not allowed`);
+    assert.ok(['[env.production.vars]', '[[env.production.services]]', '[env.preview.vars]', '[[env.preview.services]]'].includes(header), `table ${header} is not allowed`);
   }
   for (const key of Object.keys(tables[0].keys)) {
     assert.ok(['name', 'pages_build_output_dir', 'compatibility_date', 'compatibility_flags'].includes(key), `top-level ${key}`);
@@ -970,6 +1148,12 @@ test('wrangler.toml: vars and service bindings can only ever be production\'s', 
   const services = tables.filter(({ header }) => header === '[[env.production.services]]');
   assert.equal(services.length, FAMILIES.length);
   for (const { keys } of services) assert.deepEqual(Object.keys(keys).sort(), ['binding', 'service']);
+  assert.deepEqual(tables.filter(({ header }) => header === '[env.preview.vars]').map(({ keys }) => keys), [
+    { PREVIEW_PUBLIC_READS: '"true"' },
+  ]);
+  assert.deepEqual(tables.filter(({ header }) => header === '[[env.preview.services]]').map(({ keys }) => keys), [
+    { binding: '"READ_BRIDGE"', service: '"domino-read-bridge"' },
+  ]);
 });
 
 test('the deploy scripts pin wrangler 4.130.0, whose Pages router the stand-in and onward() follow', async () => {
@@ -1039,7 +1223,7 @@ function wrangler() {
   return wranglerRead;
 }
 
-test('wrangler 4.130.0 reads the declared production service bindings for the exact bridge Workers, and none for preview', () => {
+test('wrangler 4.130.0 reads seven production Workers and only the explicitly enabled public read Worker for preview', () => {
   const read = wrangler();
   assert.equal(read.version, '4.130.0');
   assert.equal(read.production.targetEnvironment, 'production');
@@ -1049,8 +1233,8 @@ test('wrangler 4.130.0 reads the declared production service bindings for the ex
     FAMILIES.map((family) => ({ binding: FAMILY[family].binding, service: FAMILY[family].service })),
   );
   assert.equal(read.preview.targetEnvironment, 'preview');
-  assert.deepEqual(read.preview.vars, {});
-  assert.deepEqual(read.preview.services, []);
+  assert.deepEqual(read.preview.vars, { PREVIEW_PUBLIC_READS: 'true' });
+  assert.deepEqual(read.preview.services, [{ binding: 'READ_BRIDGE', service: 'domino-read-bridge' }]);
 });
 
 test("the binding names forward() looks up are exactly the names wrangler.toml binds, each to its family's Worker", async () => {
@@ -1152,18 +1336,31 @@ test('production as wrangler.toml binds it: every family reaches its own disable
   assert.deepEqual(upstream, []);
 });
 
-test('a preview as wrangler.toml deploys it has no binding, and every /api call there gets the 404 not_found of the origin check', async () => {
+test('preview as wrangler.toml deploys it reaches only the read Worker from its exact named alias', async () => {
   const { env, calls } = deployed('preview');
-  assert.deepEqual(Object.keys(env).filter((name) => name.endsWith('_BRIDGE')), []);
-  for (const origin of ['https://preview.domino-app-e65.pages.dev', 'https://abc123de.domino-app-e65.pages.dev']) {
-    for (const family of FAMILIES) {
-      const { path, body } = ROUTE[family];
-      const response = await pages(call(path, { method: 'POST', body, origin, headers: { 'X-Domino-CSRF': CSRF } }), env);
-      await refused(response, 404, 'not_found');
-    }
-    await refused(await pages(call('/api/read/v1/capabilities', { origin }), env), 404, 'not_found');
+  assert.deepEqual(Object.keys(env).filter((name) => name.endsWith('_BRIDGE')), ['READ_BRIDGE']);
+  assert.equal(env.PREVIEW_PUBLIC_READS, 'true');
+  const capability = await pages(call('/api/read/v1/capabilities', { origin: PREVIEW }), env);
+  assert.equal(capability.status, 200);
+  assert.equal((await capability.json()).dataMode, 'disabled');
+  await workerSaid(await pages(call(ROUTE.read.path, {
+    method: 'POST', body: ROUTE.read.body, origin: PREVIEW,
+  }), env), 'read', 'route_not_available');
+  for (const family of FAMILIES.filter(name => name !== 'read')) {
+    const { path, body } = ROUTE[family];
+    await refused(await pages(call(path, { method: 'POST', body, origin: PREVIEW }), env), 404, 'not_found');
   }
-  assert.deepEqual(calls, []);
+  for (const family of FAMILIES) {
+    const { path, body } = ROUTE[family];
+    await refused(await pages(call(path, {
+      method: 'POST', body, origin: 'https://abc123de.domino-app-e65.pages.dev',
+    }), env), 404, 'not_found');
+  }
+  await refused(await pages(call('/api/read/v1/capabilities', { origin: 'https://abc123de.domino-app-e65.pages.dev' }), env), 404, 'not_found');
+  assert.deepEqual(calls, [
+    `domino-read-bridge GET ${ORIGIN}/api/read/v1/capabilities`,
+    `domino-read-bridge POST ${ORIGIN}${ROUTE.read.path}`,
+  ]);
   assert.equal(served, 0);
   assert.deepEqual(upstream, []);
 });

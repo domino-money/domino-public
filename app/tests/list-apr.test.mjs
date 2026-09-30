@@ -1,14 +1,5 @@
-/**
- * Your APR on the Your positions table (src/components/positions/listApr.ts, round 6, 2026-09-27: the owner asked for
- * each position's APR on the list). The figure is the page's own (lib/positionApr.ts on the same fees history), shown at
- * once when the fees store holds that history.
- *
- * Changed on purpose (2026-09-28, hotfix: from that morning, for everyone, a position's Fees earned chart and Your APR
- * often did not show, and it took many reloads): the list measures nothing itself any more. Its queue (these tests drove
- * it with a fake store and clock, and with the real store) replayed each open position's history from the list at a
- * page's budget; live, it drew the RPC's refusals of the list's own read, and a history it could not finish stayed the
- * store's answer, so the position's page opened from the list read nothing more until a reload. A row whose page did not
- * draw its history this visit shows the calm dash; nothing asks the fees store for a history from the list.
+/** Pure list APR presentation: identical detail arithmetic, saved provenance, and no reads from rendering rows.
+ * The separately bounded queue is exercised in apr-prefetch-queue and finance.browser tests.
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -44,6 +35,19 @@ test('the list’s APR is the page’s own: the same history, the same arithmeti
   for (const phase of ['idle', 'loading', 'unclaimed-only', 'unavailable']) assert.equal(aprOfView({ phase, state: null, reason: 'rpc_unavailable' }), null);
 });
 
+test('a saved history keeps the same calculation but carries its original age and never claims a current rate', () => {
+  const view = { ...drawn('cached'), savedAt: (T0 + 49 * HOUR) * 1000, source: 'public-chain-replay' };
+  delete view.state.owner;
+  const expected = positionApr(view.history, view.state, 1, 'all');
+  assert.equal(expected.ok, true);
+  assert.deepEqual(aprOfView(view), {
+    kind: 'rate', text: aprText(expected.rate), estimated: false,
+    saved: { at: view.savedAt, block: view.state.block, timestamp: view.state.timestamp },
+  });
+  const short = { ...drawn('cached', 3), savedAt: view.savedAt, source: view.source };
+  assert.deepEqual(aprOfView(short), { kind: 'missing', words: `Saved history: ${APR_MISSING.short}. Not current.` });
+});
+
 test('each row shows the history its page drew this visit (the fees store’s view), and a calm dash otherwise', () => {
   const views = new Map([['1', drawn('verified')], ['2', drawn('estimated')], ['3', { phase: 'idle' }], ['4', { phase: 'loading', state: null }], ['5', { phase: 'unclaimed-only', state: null, reason: 'too_much_history' }]]);
   const aprs = rowAprs(['1', '2', '3', '4', '5', '6'], views);
@@ -53,13 +57,14 @@ test('each row shows the history its page drew this visit (the fees store’s vi
   assert.deepEqual([...aprs.keys()], ['1', '2', '3', '4', '5', '6'], 'in the list’s order');
 });
 
-test('the list has no measuring queue to start: nothing in listApr.ts or on the list asks the fees store for a history', async () => {
+test('rows and their APR calculation never subscribe histories; bounded warming belongs to the separate visibility-aware adapter', async () => {
   const { readFileSync } = await import('node:fs');
   assert.deepEqual(Object.keys(listApr).sort(), ['aprOfView', 'rowAprs']);
   const source = (path) => readFileSync(new URL(`../src/components/positions/${path}`, import.meta.url), 'utf8');
   for (const path of ['listApr.ts', 'OwnedPositions.tsx', 'PositionRow.tsx']) {
     assert.doesNotMatch(source(path), /subscribeHistory|useFeeHistor(?:y|ies)\(|createAprQueue|__dominoListApr|IntersectionObserver/, path);
   }
-  // The list only watches the store's views (their changes), as the page's own reads fill them.
+  assert.match(source('OwnedPositions.tsx'), /useAprPrefetch\(measured, fresh && tab === 'open' && !refunding\)/);
+  // Drawing rows only watches store values, without creating a subscriber per row.
   assert.match(source('OwnedPositions.tsx'), /feesStore\.watch\(/);
 });

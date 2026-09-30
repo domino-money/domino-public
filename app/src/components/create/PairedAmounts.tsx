@@ -1,6 +1,6 @@
 import { Fragment } from 'react'
 import { CREATE } from '../../lib/create/copy'
-import { candidatesFromPool, candidateDecimals, validateBudget, type JourneyState } from '../../lib/create/journey'
+import { candidatesFromPool, candidateDecimals, takesOnly, validateBudget, type JourneyState } from '../../lib/create/journey'
 import { pairedAmount } from '../../lib/create/pairAmount'
 import { maxSpend, reviewPlan } from '../../lib/create/reviewPlan'
 import { shortAmount } from '../../lib/format/amount'
@@ -47,6 +47,12 @@ const fieldText = (text: string) => shortAmount(text).short.replace(/,/g, '')
  * under the panels says how much of the typed one is swapped for it; when the
  * wallet cannot fund the amounts either way, one line says that. Nothing here
  * signs, approves or deposits.
+ *
+ * A range wholly above or below today's price takes one of the two tokens
+ * alone (2026-09-28, one-sided): only that token's panel is shown, and the
+ * amount is typed in it (the journey moves it there, journey.ts withRange).
+ * Nothing is swapped when the wallet holds that token; when it holds only the
+ * other one, the line under the panel says all of it is swapped.
  */
 export function PairedAmounts({
   state,
@@ -80,9 +86,13 @@ export function PairedAmounts({
         : null
       : null
 
+  // The one token the range takes, when it takes one alone: only its panel is drawn.
+  const only = takesOnly(state)
   // How the wallet funds it, from the balances the read service reported (Review's own reading, lib/create/reviewPlan.ts).
   const plan = reviewPlan(state, rawBalances(balances))?.plan ?? null
   const swap = plan && plan.kind === 'swap' && plan.swap > 0n ? plan : null
+  // All of the deposit is swapped: said so, never "part" or "about" a figure that is all of it.
+  const whole = swap !== null && swap.swap >= swap.deposit
   // Funded from one token, the other panel keeps what the range pairs with the typed amount, quieter and with no USD of
   // its own: beside its balance it shows why the swap is needed. Fixed 2026-09-28 (round 6 review): it showed what the swap
   // would bring instead, so a wallet holding 2,500 USDG read "1,550.92 USDG" over "You don't have enough USDG".
@@ -114,6 +124,8 @@ export function PairedAmounts({
       <div className="dm-flow-pair" data-paired-amounts={independent === -1 ? 'none' : String(independent)}>
         {pool.currencies.map((currency, index) => {
           const side = index as 0 | 1
+          // A range that takes one token alone asks for that token's amount only.
+          if (only !== null && side !== only) return null
           const mine = side === independent
           const choice = choices[side]
           const unreadable = choice.why !== null || choice.token.decimals === null
@@ -127,7 +139,7 @@ export function PairedAmounts({
           return (
             <Fragment key={currency.address}>
               {/* Between the two panels, as the swap form joins its two: decoration only. */}
-              {index === 1 && (
+              {index === 1 && only === null && (
                 <span aria-hidden="true" className="dm-flow-link">
                   <IconPlus size={16} />
                 </span>
@@ -188,11 +200,19 @@ export function PairedAmounts({
         <p className="dm-flow-position" data-tone="neutral" data-amount-swap={swap.from} data-amount-swap-typed={swapped === independent ? '' : undefined}>
           {swapped === independent ? (
             // The swap buys the typed token: the wallet's other token pays for all of it, more than its own panel shows.
-            <span>
-              You don’t have enough <SymbolText token={pool.currencies[swapped]} />, so <AmountText text={unitsOf(swap.deposit, pool.currencies[swap.from].decimals)} />{' '}
-              <SymbolText token={pool.currencies[swap.from]} /> will come from your wallet. About <AmountText text={unitsOf(swap.swap, pool.currencies[swap.from].decimals)} />{' '}
-              <SymbolText token={pool.currencies[swap.from]} /> of it will be swapped for <SymbolText token={pool.currencies[swapped]} /> when you create the position.
-            </span>
+            whole ? (
+              <span>
+                You don’t have enough <SymbolText token={pool.currencies[swapped]} />, so <AmountText text={unitsOf(swap.deposit, pool.currencies[swap.from].decimals)} />{' '}
+                <SymbolText token={pool.currencies[swap.from]} /> will come from your wallet. All of it will be swapped for <SymbolText token={pool.currencies[swapped]} /> when
+                you create the position.
+              </span>
+            ) : (
+              <span>
+                You don’t have enough <SymbolText token={pool.currencies[swapped]} />, so <AmountText text={unitsOf(swap.deposit, pool.currencies[swap.from].decimals)} />{' '}
+                <SymbolText token={pool.currencies[swap.from]} /> will come from your wallet. About <AmountText text={unitsOf(swap.swap, pool.currencies[swap.from].decimals)} />{' '}
+                <SymbolText token={pool.currencies[swap.from]} /> of it will be swapped for <SymbolText token={pool.currencies[swapped]} /> when you create the position.
+              </span>
+            )
           ) : (
             <span>
               You don’t have enough <SymbolText token={pool.currencies[swapped]} />, so about <AmountText text={unitsOf(swap.swap, pool.currencies[swap.from].decimals)} /> of your{' '}

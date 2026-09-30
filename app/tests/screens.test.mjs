@@ -423,11 +423,20 @@ test('the pool price on a card: the same chain read’s tick, checked against it
   const card = chainCard({});
   const at = (tick, block = 700) => positions.chainPoolPrice(card, { sqrtPriceX96: poolRange.sqrtPriceAtTick(tick).toString(), tick, block });
   const price = at(0);
-  assert.deepEqual(price, { state: 'usable', block: 700, tick: 0, text: '≈1,000,000,000,000', position: 'inside' });
-  assert.equal(price.text, positions.tickPriceText(0, 18, 6), 'the same words as a bound price');
-  assert.equal(at(-120).position, 'below');
-  assert.equal(at(-60).position, 'inside');
-  assert.equal(at(60).position, 'above', 'v4 counts the upper tick as outside');
+  // Changed on purpose 2026-09-28 (one-sided): ETH is this pool's currency0 and the app prices a token in ETH
+  // (lib/read/orientation.ts), so the card writes TOKEN's price in ETH, and where the price sits is said that way round.
+  assert.deepEqual(price, { state: 'usable', block: 700, tick: 0, text: '≈0.000000000001', position: 'inside', inverted: true });
+  assert.equal(price.text, positions.tickPriceText(0, 6, 18), 'the same words as a bound price, read from TOKEN’s side');
+  // Where the price sits, on a card whose price stays writable either side (TOKEN with 18 decimals too).
+  const even = chainCard({ currencies: [{ address: NATIVE, symbol: 'ETH', decimals: 18 }, { address: FIXTURE_TOKEN, symbol: 'TOKEN', decimals: 18 }] });
+  const evenAt = (tick) => positions.chainPoolPrice(even, { sqrtPriceX96: poolRange.sqrtPriceAtTick(tick).toString(), tick, block: 700 });
+  assert.equal(evenAt(-120).position, 'above');
+  assert.equal(evenAt(-60).position, 'inside');
+  assert.equal(evenAt(60).position, 'below', 'v4 counts the upper tick as outside');
+  // A pool the app reads in its own order (two tokens of the same rank) keeps the pool's words: below is below.
+  const own = chainCard({ currencies: [{ address: `0x${'1'.repeat(40)}`, symbol: 'AAA', decimals: 18 }, { address: `0x${'2'.repeat(40)}`, symbol: 'BBB', decimals: 6 }] });
+  const ownAt = (tick) => positions.chainPoolPrice(own, { sqrtPriceX96: poolRange.sqrtPriceAtTick(tick).toString(), tick, block: 700 });
+  assert.deepEqual([ownAt(0).text, ownAt(0).inverted, ownAt(-120).position, ownAt(60).position], ['≈1,000,000,000,000', false, 'below', 'above']);
   // Checked the way the range controls check a pool price: the tick has to agree with the square-root price.
   assert.deepEqual(positions.chainPoolPrice(card, { sqrtPriceX96: String(2n ** 96n), tick: 5000, block: 700 }), { state: 'unavailable', problem: 'tick_mismatch', block: 700 });
   assert.deepEqual(positions.chainPoolPrice(card, { sqrtPriceX96: '0', tick: 0, block: 700 }), { state: 'unavailable', problem: 'not_initialized', block: 700 });
@@ -1065,9 +1074,11 @@ test('a chosen pool’s price comes only from its read tick, square-root price a
   const price = poolRange.poolPrice(option, 1_000);
   assert.equal(price.state, 'usable');
   // ETH (18 decimals) is currency0 and TOKEN (6) currency1: 10^12 TOKEN per ETH at tick 0, from the helper the NFT cards use.
-  assert.equal(price.text, '≈1,000,000,000,000');
-  assert.equal(price.text, positions.tickPriceText(0, 18, 6));
-  assert.deepEqual([price.block, price.tick, price.base.symbol, price.quote.symbol, price.partial, price.stale], [700, 0, 'ETH', 'TOKEN', false, false]);
+  // Changed on purpose 2026-09-28 (one-sided): the app writes a token's price in ETH (lib/read/orientation.ts), so the
+  // page reads "1 TOKEN = 0.000000000001 ETH"; the tick and the decimals stay the pool's own.
+  assert.equal(price.text, '≈0.000000000001');
+  assert.equal(price.text, positions.tickPriceText(0, 6, 18));
+  assert.deepEqual([price.block, price.tick, price.base.symbol, price.quote.symbol, price.inverted, price.decimals, price.partial, price.stale], [700, 0, 'TOKEN', 'ETH', true, [18, 6], false, false]);
 
   const problem = (o) => {
     const p = poolRange.poolPrice(o, 1_000);
@@ -1087,7 +1098,7 @@ test('a chosen pool’s price comes only from its read tick, square-root price a
     }),
     1_000,
   );
-  assert.deepEqual([partial.state, partial.partial, partial.text, partial.quote.symbol], ['usable', true, '≈1,000,000,000,000', null]);
+  assert.deepEqual([partial.state, partial.partial, partial.text, partial.base.symbol], ['usable', true, '≈0.000000000001', null]);
 
   // Stale is time since the reply arrived on this page, never the payload's own clock.
   assert.equal(poolRange.poolPrice(option, 1_000 + poolRange.PRICE_STALE_MS - 1).stale, false);
@@ -1156,7 +1167,8 @@ test('range presets sit on the tick spacing, inside v4’s ticks, around the poo
   assert.equal(poolRange.fromPoolPrice(-3600, 0), '−30.2%');
   assert.equal(poolRange.fromPoolPrice(13920, 0), '+302%');
   const price = poolRange.poolPrice(optionFrom('pools.success'), 1_000);
-  assert.equal(poolRange.boundPrice(-3600, price), positions.tickPriceText(-3600, 18, 6));
+  // Changed on purpose 2026-09-28 (one-sided): a bound is written the way the page writes the pool's price, TOKEN in ETH here.
+  assert.equal(poolRange.boundPrice(-3600, price), positions.tickPriceText(3600, 6, 18));
   assert.equal(poolRange.boundPrice(887220, price), null, 'beyond display is said in words, never an exponent');
 });
 

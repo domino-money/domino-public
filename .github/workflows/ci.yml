@@ -140,7 +140,11 @@ jobs:
     # Run 36114583875 spent 6.8 minutes on pages, 7.4 on finance (0.7 on
     # 19 September) and 9.4 on gate; each job adds about a minute to install
     # and build.
-    timeout-minutes: 20
+    # The recovery/saved-history suite completed its 136 checks in 19 minutes
+    # on run 36648824770, then the 20-minute job limit interrupted reporting
+    # (installation and both builds take another minute). Keep every assertion
+    # and give the complete browser suites bounded reporting headroom.
+    timeout-minutes: 25
     strategy:
       # Every suite reports, even when another one fails.
       fail-fast: false

@@ -21,12 +21,13 @@ import { parseDecimal } from '../read/decimal'
 import { tokenText } from '../read/project'
 import { DYNAMIC_FEE_PIPS } from '../read/screens/fee'
 import { CHAIN_ID, NATIVE_CURRENCY, addressKey, poolIdKey, shortAddress, type AddressKey, type PoolIdKey } from '../read/screens/identity'
-import { boundPrice, poolPrice, presetRange, rangePosition, usableTicks, type PoolPrice } from '../read/screens/poolRange'
+import { boundPrice, poolPrice, presetFor, rangePosition, shownPrice, shownRange, usableTicks, type PoolPrice } from '../read/screens/poolRange'
 import type { PoolOption } from '../read/screens/poolsList'
 import type { TokenCandidate } from '../read/screens/tokens'
 import type { TokenDisplay } from '../read/types'
 import type { BudgetFields } from './budgets'
 import { CREATE } from './copy'
+import { rangeTakesOnly } from './pairAmount'
 import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom, slippageWritten } from './slippage'
 
 export type Stage = 'token' | 'pool' | 'amount' | 'balance' | 'review'
@@ -308,6 +309,9 @@ export function canContinue(stage: Stage, state: JourneyState, now: number): Che
       if (!budget.ok) return fail(budget.reason)
       const range = validateRange(state.range, state.pool)
       if (!range.ok) return range
+      // A range that takes one token alone takes its amount in that token (takesOnly; withRange moves the amount there).
+      const only = takesOnly(state)
+      if (only !== null && tokenAddress(state.pool.currencies[only]) !== state.token.key) return fail(CREATE.amount.pairUnused(state.pool.currencies[only].symbol ?? ''))
       const slippage = validateSlippage(state.slippageBps)
       return slippage.ok ? OK : fail(slippage.reason)
     }
@@ -366,15 +370,43 @@ export function withPaired(state: JourneyState, paired: TokenCandidate | null): 
   return { ...state, paired, pool, range: pool ? state.range : null }
 }
 
-/** A pool read again keeps its range; a different pool starts with the standard preset on its price, or no range. */
-export function withPool(state: JourneyState, pool: PoolOption | null, now: number): JourneyState {
-  if (pool && state.pool && pool.key === state.pool.key) return { ...state, pool }
-  if (!pool) return { ...state, pool: null, range: null }
-  const price = poolPrice(pool, now)
-  return { ...state, pool, range: price.state === 'usable' ? presetRange(price.tick, price.tickSpacing, 'standard') : null }
+/**
+ * The one token a range takes at the pool's price, when it takes one alone (pairAmount.ts rangeTakesOnly): a range
+ * wholly above the price as the page writes it takes only the priced token, one wholly below only the other. Null
+ * when it takes both, or a choice is missing. Added 2026-09-28 (one-sided).
+ */
+export function takesOnly(state: Pick<JourneyState, 'pool' | 'range'>): 0 | 1 | null {
+  const { pool, range } = state
+  if (!pool || !range) return null
+  return rangeTakesOnly({ sqrtPriceX96: pool.sqrtPriceX96, tickLower: range.lower, tickUpper: range.upper })
 }
 
-export const withRange = (state: JourneyState, range: TickRange | null): JourneyState => ({ ...state, range })
+/**
+ * The amount follows the range (2026-09-28, one-sided, the owner: "no swap, only one side of the pool's pair"): a
+ * range that takes one token alone takes its amount in that token, so an amount typed in the other one, which buys
+ * nothing there, goes, and the token the amount is typed in becomes the one the range takes. Anything else stays.
+ */
+function amountFollowsRange(state: JourneyState): JourneyState {
+  const only = takesOnly(state)
+  if (only === null || !state.pool || !state.token || tokenAddress(state.pool.currencies[only]) === state.token.key) return state
+  const taken = candidatesFromPool(state.pool)[only]
+  if (taken.why !== null || taken.token.decimals === null) return state
+  return { ...state, token: taken, paired: state.paired && state.paired.key === taken.key ? null : state.paired, budget: '' }
+}
+
+/**
+ * A pool read again keeps its range; a different pool starts with the standard preset on its price as the page writes
+ * it (presetFor: 0.7× to 1.5× of "1 MANY = 0.0025 USDG", 2026-09-28), or no range.
+ */
+export function withPool(state: JourneyState, pool: PoolOption | null, now: number): JourneyState {
+  // The same pool read again: its range stays, and a price that moved past it may leave it taking one token alone.
+  if (pool && state.pool && pool.key === state.pool.key) return amountFollowsRange({ ...state, pool })
+  if (!pool) return { ...state, pool: null, range: null }
+  const price = poolPrice(pool, now)
+  return { ...state, pool, range: price.state === 'usable' ? presetFor(price, 'standard') : null }
+}
+
+export const withRange = (state: JourneyState, range: TickRange | null): JourneyState => amountFollowsRange({ ...state, range })
 export const withBudget = (state: JourneyState, budget: string): JourneyState => ({ ...state, budget })
 export const withSlippage = (state: JourneyState, slippageBps: string): JourneyState => ({ ...state, slippageBps })
 export const withAutomation = (state: JourneyState, automation: Automation): JourneyState => ({ ...state, automation })
@@ -531,25 +563,50 @@ export interface WalletStep {
  * a one-token deposit is made in (lib/create/depositPlan.ts): only it is
  * approved and deposited, and a swap inside the pool comes before the mint.
  * `assistedFee` is the deployment's assisted-swap fee, as written.
+ *
+ * A range that takes one token alone (takesOnly, 2026-09-28, one-sided) is
+ * funded with that token alone and no swap: "Approve MANY, Deposit MANY,
+ * Create the position". A one-token deposit of the token such a range does not
+ * take is swapped whole, and its step says so.
  */
 export function walletSteps(state: JourneyState, swapFrom: 0 | 1 | null = null, assistedFee = '0.65%'): WalletStep[] {
   const { token, pool } = state
   if (!token || !pool || !poolHolds(pool, token.key)) return []
   const words = CREATE.review
+  const only = takesOnly(state)
+  // The one token deposited: the one a one-token plan swaps from, else the one the range takes alone; null for both.
+  const deposited = swapFrom ?? only
   const steps: WalletStep[] = []
   for (const [index, currency] of pool.currencies.entries()) {
-    if (tokenAddress(currency) === NATIVE_CURRENCY || (swapFrom !== null && index !== swapFrom)) continue
+    if (tokenAddress(currency) === NATIVE_CURRENCY || (deposited !== null && index !== deposited)) continue
     steps.push({ key: `approve:${tokenAddress(currency)}`, title: words.approveStep, detail: words.approveStepDetail, token: currency })
   }
-  if (swapFrom === null) {
+  if (deposited === null) {
     steps.push({ key: 'fund', title: words.fundStep, detail: words.fundStepDetail })
   } else {
-    const held = pool.currencies[swapFrom]
-    steps.push({ key: 'fund', title: words.fundOneStep, detail: words.fundOneStepDetail, token: held })
-    steps.push({ key: 'swap', title: words.swapStep, detail: words.swapStepDetail(assistedFee) })
+    steps.push({ key: 'fund', title: words.fundOneStep, detail: words.fundOneStepDetail, token: pool.currencies[deposited] })
+  }
+  if (swapFrom !== null) {
+    // The range takes only the other token: the deposit is swapped whole for it.
+    const whole = only !== null && only !== swapFrom
+    steps.push({ key: 'swap', title: whole ? words.swapAllStep : words.swapStep, detail: whole ? words.swapAllStepDetail(assistedFee) : words.swapStepDetail(assistedFee) })
   }
   steps.push({ key: 'mint', title: words.mintStep, detail: words.mintStepDetail })
   return steps
+}
+
+/**
+ * The same steps as the one signature a wallet that executes batches atomically asks for (EIP-5792 `atomic`
+ * `supported`; components/create/CreatePosition.tsx sends them as one batch): one step under the key Create position
+ * reports it by, 'batch', named after what it holds. No steps, no step. Added 2026-09-28 (the owner: when the wallet
+ * can batch, Review must show fewer wallet steps before anything is pressed, not only once the press runs).
+ */
+export function batchedSteps(steps: readonly WalletStep[]): WalletStep[] {
+  if (steps.length === 0) return []
+  const words = CREATE.review
+  const approves = steps.some((step) => step.key.startsWith('approve:'))
+  const swaps = steps.some((step) => step.key === 'swap')
+  return [{ key: 'batch', title: words.batchStepTitle(approves, swaps), detail: words.batchStepDetail }]
 }
 
 export interface FeeBasis {
@@ -581,11 +638,14 @@ export interface SummaryLine {
   done: boolean
 }
 
+/** The range's lowest and highest price as the page writes them (the app's one way round, 2026-09-28), then its ticks. */
 const rangeText = (range: TickRange, price: PoolPrice | null): string => {
   const words = CREATE.review.summary
   if (price && price.state === 'usable') {
-    const lower = boundPrice(range.lower, price) ?? words.beyondDisplay
-    const upper = boundPrice(range.upper, price) ?? words.beyondDisplay
+    const shown = shownPrice(price)
+    const view = shownRange(range, price.inverted)
+    const lower = boundPrice(view.lower, shown) ?? words.beyondDisplay
+    const upper = boundPrice(view.upper, shown) ?? words.beyondDisplay
     return words.rangePrices(lower, upper, range.lower, range.upper)
   }
   return words.rangeTicks(range.lower, range.upper)

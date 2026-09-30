@@ -67,7 +67,9 @@ export async function startLatencySite({ latency = TYPICAL, store = null, histor
       await sleep(latency.featured)
       body = { ...v5(featured), servedAt: Math.floor(Date.now() / 1000) }
     } else body = v3(route)
-    const contract = route === 'featured-pools' ? '1.0.0-rc.1' : '3.0.0-rc.1'
+    // The list's own version (read-v5 answers rc.1 or rc.2 while the VM moves to rc.2, 2026-09-28): the Worker refuses
+    // a list that names another version than its header.
+    const contract = route === 'featured-pools' ? body.contractVersion : '3.0.0-rc.1'
     return new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': contract } })
   } })
   const site = createGatedServer({ dist,

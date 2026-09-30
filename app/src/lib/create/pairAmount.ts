@@ -70,6 +70,17 @@ export type PairAmount =
   | { kind: 'unknown' }
 
 /**
+ * The one currency a range takes at this price, or null when it takes both (or the inputs say nothing): currency0
+ * when the price is at or below the range, currency1 when it is at or above it, exactly as `pairedAmount` decides.
+ * Added 2026-09-28 (one-sided): a range wholly above or below the price is funded with that one token alone, with no
+ * swap, and every step (the amount fields, Review's steps, Create position) asks this one rule which.
+ */
+export function rangeTakesOnly(input: { sqrtPriceX96: string; tickLower: number; tickUpper: number }): 0 | 1 | null {
+  const out = pairedAmount({ ...input, independent: 0, amountRaw: '0' })
+  return out.kind === 'unknown' ? null : out.only
+}
+
+/**
  * The amount of the pool's other currency, or why there is none.
  *
  * Below the range a position is all currency0, above it all currency1: then one

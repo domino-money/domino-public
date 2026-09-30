@@ -322,7 +322,7 @@
     },
     {
       "path": "bridge/src/worker.mjs",
-      "sha256": "16176e6daeef0252142a530726a33e90de363200ca5eda64bc8da724af2f8807"
+      "sha256": "d2c1881a43671a499232b532dbb7fd6c0ac3fffa7f0e324b2e6c590950a11fcf"
     },
     {
       "path": "bridge/src/strict-json.mjs",
@@ -330,7 +330,7 @@
     },
     {
       "path": "app/functions/_lib/bridge.ts",
-      "sha256": "07ae2ba70c2da500e87bcb364fb4ab9061901b395ae87709c171187611f5e9d3"
+      "sha256": "1de2840ee677b7f562cf11699d5292d97553351330cf30021952e28d3fc6d753"
     },
     {
       "path": "bridge/wrangler.read.toml",

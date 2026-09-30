@@ -10,9 +10,12 @@ import {
   fromPoolPrice,
   moveBound,
   poolPrice,
-  presetRange,
+  presetFor,
   rangeMode,
-  rangePosition,
+  shownPosition,
+  shownPrice,
+  shownRange,
+  shownTick,
   sliderWindow,
   stepBound,
   type PoolPrice,
@@ -103,12 +106,15 @@ function BoundControl({
   which,
   range,
   price,
+  inverted,
   bounds,
   onRange,
 }: {
   which: 'lower' | 'upper'
   range: PlannedRange
   price: Usable
+  /** The page reads the pool the other way round: `range` and `price` are in its frame, and a tick said is the pool's own. */
+  inverted: boolean
   bounds: { min: number; max: number }
   onRange: (next: PlannedRange) => void
 }) {
@@ -130,7 +136,7 @@ function BoundControl({
     if (!parsed.ok) { setError(parsed.message); return }
     change({ ...range, [which]: parsed.tick })
   }
-  const spoken = (t: number) => `${priceOrWords(t, price)}, ${fromPoolPrice(t, price.tick)} from the pool price, tick ${t}`
+  const spoken = (t: number) => `${priceOrWords(t, price)}, ${fromPoolPrice(t, price.tick)} from the pool price, tick ${shownTick(t, inverted)}`
   return (
     <div className="dm-pool-bound" data-range-bound={which}>
       <div className="dm-pool-bound-head">
@@ -168,7 +174,7 @@ function BoundControl({
       </div>
       <p id={`${id}-unit`} className="dm-pool-bound-unit"><Units price={price} /> · displayed approximately</p>
       <p className="sr-only" data-bound-price="">{priceOrWords(tick, price)}</p>
-      <span className="sr-only" data-bound-tick="">{tick}</span>
+      <span className="sr-only" data-bound-tick="">{shownTick(tick, inverted)}</span>
       {value !== displayed && <Button type="button" variant="outline" size="sm" className="mt-2" onClick={apply}>Apply {label.toLowerCase()}</Button>}
       {error && <p id={`${id}-error`} role="alert" className="dm-error">{error}</p>}
       <PriceSlider
@@ -303,6 +309,10 @@ export function useStalePriceRead(source: ReadSource, token: AddressKey, paired:
  * reads it again, one pools read of this pool id at a time, asked again
  * quietly only when that read was busy or briefly out (useStalePriceRead).
  * There is no separate refresh control.
+ *
+ * Changed on purpose 2026-09-28 (one-sided): prices read the app's one way round (lib/read/orientation.ts), and the
+ * controls work in that frame (poolRange.ts shownPrice), so Min is always the priced token's lowest price. `range`
+ * and `onRange` stay in the pool's own ticks.
  */
 export function PoolRangeControls({
   source,
@@ -329,9 +339,13 @@ export function PoolRangeControls({
   const { said, readIfStale } = useStalePriceRead(source, token, paired, option.key, onOption)
 
   const usable = price.state === 'usable' ? price : null
+  const inverted = usable?.inverted === true
+  // The price and the range in the page's frame; `range` and `onRange` stay in the pool's ticks.
+  const shown = usable ? shownPrice(usable) : null
+  const view = range ? shownRange(range, inverted) : null
   // Derived each render from the range and the price as read now, so reopening a kept range
   // or reading the price again never leaves a preset checked that no longer describes it.
-  const mode = usable && range ? rangeMode(range, usable.tick, usable.tickSpacing, picked) : null
+  const mode = shown && view ? rangeMode(view, shown.tick, shown.tickSpacing, picked) : null
   const widths: RangeMode[] = [...(Object.keys(RANGES) as RangeKey[]), 'custom']
   const { track, thumb } = useWidthThumb(mode === null ? -1 : widths.indexOf(mode))
 
@@ -342,16 +356,17 @@ export function PoolRangeControls({
     if (!usable) return
     readStalePrice()
     setPicked(key)
-    onRange(presetRange(usable.tick, usable.tickSpacing, key))
+    onRange(presetFor(usable, key))
   }
+  /** A range from the controls, in the page's frame: handed on in the pool's own ticks. */
   const custom = (next: PlannedRange) => {
     readStalePrice()
     setPicked(null)
-    onRange(next)
+    onRange(shownRange(next, inverted))
   }
 
-  const position = usable && range ? rangePosition(range, usable.tick) : null
-  const bounds = usable && range ? sliderWindow(usable.tick, usable.tickSpacing, range) : null
+  const position = usable && range ? shownPosition(range, usable) : null
+  const bounds = shown && view ? sliderWindow(shown.tick, shown.tickSpacing, view) : null
   const tone = position === 'inside' ? 'in' : 'out'
   const unavailable = price.state === 'unavailable' ? `${COPY.range.unavailableTitle}: ${COPY.range.problems[price.problem]} ${COPY.range.noControls}` : null
 
@@ -389,7 +404,7 @@ export function PoolRangeControls({
         )}
       </section>
 
-      {usable && range && bounds && (
+      {shown && view && bounds && (
         <section aria-label="Range controls" className="grid gap-4" data-range-controls="">
           <div ref={track} role="radiogroup" tabIndex={-1} aria-label={COPY.range.width} className="dm-seg dm-pool-widths" onKeyDown={(event) => {
             if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
@@ -426,10 +441,10 @@ export function PoolRangeControls({
               {COPY.range.custom}
             </button>
           </div>
-          <RangeInterval range={range} price={usable} bounds={bounds} />
+          <RangeInterval range={view} price={shown} bounds={bounds} />
           <div className="dm-pool-bounds">
-            <BoundControl which="lower" range={range} price={usable} bounds={bounds} onRange={custom} />
-            <BoundControl which="upper" range={range} price={usable} bounds={bounds} onRange={custom} />
+            <BoundControl which="lower" range={view} price={shown} inverted={inverted} bounds={bounds} onRange={custom} />
+            <BoundControl which="upper" range={view} price={shown} inverted={inverted} bounds={bounds} onRange={custom} />
           </div>
           <div className="grid gap-1.5">
             {/* Only when there is something to warn about: a range that does not

@@ -23,26 +23,42 @@
  * - 2026-09-27 (the owner: the Fees earned chart took far too long): a run
  *   that could not reach the chain (the RPC refused a read, or answered too
  *   slowly) is asked again as soon as the worker's lane may ask the RPC again
- *   (the `wait` its `done` carries: the lane's rest after a refusal, 6 s since
- *   2026-09-28, 30 s before), no longer at the next minute's newer block
- *   (about 67 s to the chart, seen live on the owner's 3325113); then after
- *   30, 60 and 120 s, each no sooner than the lane's wait (RETRY_MS), only
- *   while the page is visible, and not again this visit after that. Nothing
- *   else starts it meanwhile, and what the card shows stays. 2026-09-28
- *   (review): a position page's run that ran out of its time, not of its
- *   bytes, is one of those too (the worker says rpc_unavailable: pipeline.ts
- *   outOfTime), no longer too_much_history for the rest of the visit.
- * - The worker is created on the first run and terminated once nothing has
- *   been shown for a moment. If it fails (onerror, messageerror: a stale
- *   worker file after a deploy answers with the page), every history shows its
- *   unclaimed figure only (worker_failed) and no worker is created again in
- *   this session.
- * - Memory only, for this visit: no localStorage, sessionStorage or IndexedDB.
+ *   (the `wait` its `done` carries: the lane's rest after a refusal, 30 s
+ *   before 2026-09-28; since, the lane's staged rest from 6 s,
+ *   lib/chain/browser.ts restAfter), no longer at the next minute's newer
+ *   block (about 67 s to the chart, seen live on the owner's 3325113); then
+ *   after 30, 60 and 120 s (2026-09-28, speed wave B, item 19: 10, 30, 60 and
+ *   120 s, with the lane's staged rest), each no sooner than the lane's wait
+ *   (RETRY_MS), only while the page is visible. After that ladder, transient
+ *   failures are probed at its capped interval, never permanently latched for
+ *   the visit. Nothing else starts it meanwhile, and what the card shows stays.
+ *   2026-09-28 (hotfix/charts' review): a position page's run that ran out of
+ *   its time, not of its bytes, is one of those too (the worker says
+ *   rpc_unavailable: pipeline.ts outOfTime), no longer too_much_history for
+ *   the rest of the visit.
+ * - The worker is created on the first run (2026-09-28, speed wave B, item 37:
+ *   or as soon as Positions opens, `warm`) and kept for the visit (item 21: it
+ *   was terminated a few seconds after the last card left, and with it the
+ *   units it had read, which another position of the same pool read again; its
+ *   memory is bounded at 32 MB, lib/chain/browser.ts memoryCache). If it fails
+ *   (onerror, messageerror: a stale worker file after a deploy answers with the
+ *   page), any history not drawn yet shows its unclaimed figure (worker_failed)
+ *   and the worker is recreated after a bounded, visibility-aware backoff. Old worker
+ *   messages cannot complete a new worker's run.
+ * - 2026-09-28 (speed wave B, item 16): a position's page hands the store its own
+ *   /state read (`offer`), so its cards start from it rather than reading it
+ *   again, and follows the store's minute read (`position`) rather than keeping
+ *   a clock of its own. Item 15: the minute read waits while a page's run is on
+ *   its way (a chart being drawn) and goes as soon as it is over.
+ * - Replay checkpoints and live state stay memory-only. A successful public history
+ *   may be saved for display on a later visit; it is restored as `cached`, never
+ *   as a current chain state, and re-read independently in the background.
  *
  * Views are immutable objects replaced on change, so useSyncExternalStore can
  * compare them by identity. Nothing here reads a clock or renders.
  */
 import { BUDGET_BYTES, HOUR_SPAN, MAX_STATE_IDS, STATE_REFRESH_MS } from './constants'
+import { HISTORY_MAX_AGE_MS, savedHistoryMatches, type HistoryCache } from './historyCache'
 import type { Checkpoint, FeeHistoryView, FeesReason, FeesScope, FromWorker, PositionState, RelayAnswer, StatePositionOk, StateResponse, ToWorker, WorkerResult } from './types'
 
 /** The part of a Worker the store uses (a real one from spawn.ts; a fake in the tests). */
@@ -55,6 +71,8 @@ export interface WorkerLike {
 }
 
 export interface StoreDeps {
+  historyCache?: HistoryCache
+  now?: () => number
   spawn: () => WorkerLike
   /** The /state read of up to eight ids (client.ts chainState: the relay's read, from the chain since 2026-09-25). */
   postState: (tokenIds: readonly string[]) => Promise<RelayAnswer<StateResponse>>
@@ -67,6 +85,8 @@ export interface StoreDeps {
 export interface FeesStore {
   /** Shows the histories of `ids` to `listener` until the returned function is called. */
   subscribeHistory(ids: readonly string[], scope: FeesScope, listener: () => void): () => void
+  /** Low-priority, immediately cancellable public replay; refused while any detail is open. */
+  prefetchHistory(id: string, listener: (end?: 'failed' | 'yielded') => void, options?: { revalidate?: boolean }): (() => void) | null
   /** Shows the /state of `ids` (no history) to `listener` until the returned function is called. */
   subscribeStates(ids: readonly string[], listener: () => void): () => void
   /** Tells `listener` of every change to the views of `ids` without asking anything for them (the list's aggregate, useFeeHistories). */
@@ -83,6 +103,12 @@ export interface FeesStore {
    * fees card kept its unclaimed figure for up to a minute, STATE_REFRESH_MS, while the page above it showed the new one).
    */
   refresh(ids: readonly string[]): void
+  /** 2026-09-28 (speed wave B, item 16): a /state read made elsewhere (a position's page's own), taken as the store's. */
+  offer(answer: RelayAnswer<StateResponse>): void
+  /** The newest /state position read for `id` and its block (the page's header follows it), or null. */
+  position(id: string): Readonly<{ position: StatePositionOk; block: number }> | null
+  /** 2026-09-28 (speed wave B, item 37): creates the worker now, so its file is in before the first run. */
+  warm(): void
 }
 
 const IDLE: FeeHistoryView = { phase: 'idle' }
@@ -93,9 +119,10 @@ export const RELEASE_MS = 3_000
 const RUN_ATTEMPTS = 3
 /**
  * 2026-09-27: after each run in a row that could not reach the chain, the wait before the next (never less than the
- * worker's lane's own wait, its rest after a refusal, and REST_MARGIN_MS); none after the last.
+ * worker's lane's own wait, its rest after a refusal, and REST_MARGIN_MS). The last wait is the cap, not a permanent stop.
  */
-export const RETRY_MS = [2_000, 30_000, 60_000, 120_000] as const
+export const RETRY_MS = [2_000, 10_000, 30_000, 60_000, 120_000] as const
+const retryAfter = (failures: number) => RETRY_MS[Math.min(failures, RETRY_MS.length - 1)]!
 /** Past the lane's wait, for the message on its way from the worker: a run started while the lane still rests fails at once. */
 const REST_MARGIN_MS = 250
 /** After an action, the second /state read: past the few blocks head − 2 may still lack (as the position page reads again). */
@@ -107,8 +134,10 @@ export const AFTER_ACTION_MS = 11_000
 export const MAX_RESUMES = 8
 
 interface Run {
+  runId: number
   state: PositionState
   budget: number
+  cacheable: boolean
 }
 
 interface Entry {
@@ -117,13 +146,23 @@ interface Entry {
   pageRefs: number
   listRefs: number
   stateRefs: number
-  /** The newest state read, and the chain's inside − insideLast with it. */
+  prefetchRefs: number
+  /** A bounded list attempt must not replay an old in-memory state before its fresh state read answers. */
+  prefetchRevalidating?: boolean
+  prefetchListeners: Set<(end?: 'failed' | 'yielded') => void>
+  restored: boolean
+  snapshotExpiry?: () => void
+  /** The newest state read, and the chain's inside − insideLast with it; `read`, that read's position as it came. */
   state: PositionState | null
+  read: { position: StatePositionOk; block: number } | null
   growth: readonly [bigint, bigint] | null
   /** Why the state could not be read, while none is known. */
   stateReason: FeesReason | null
   /** Whether a /state answer (or refusal) arrived for this id. */
   answered: boolean
+  /** Initial state failures retry quietly; successful reads still use the normal minute refresh. */
+  stateFailures: number
+  stateRetry: (() => void) | null
   view: FeeHistoryView
   running: Run | null
   checkpoint: Checkpoint | null
@@ -234,8 +273,11 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const stateMaps = new Map<string, { parts: Array<PositionState | null | undefined>; map: ReadonlyMap<string, PositionState | null> | null }>()
   let worker: WorkerLike | null = null
   let workerBroken = false
-  let stopWorker: (() => void) | null = null
+  let workerFailures = 0
+  let nextRunId = 0
   let refresh: (() => void) | null = null
+  /** The minute read came while a page's run was on its way: it goes once that run is over (item 15). */
+  let held = false
   const asking = new Set<string>()
   let queued: string[] = []
   let flushing = false
@@ -243,12 +285,13 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const entry = (id: string): Entry => {
     let found = entries.get(id)
     if (!found) {
-      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, state: null, growth: null, stateReason: null, answered: false, view: IDLE, running: null, checkpoint: null, settled: null, settledBudget: 0, failures: 0, refused: 0, retry: null, resumes: 0, failedAt: null, release: null }
+      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, prefetchRefs: 0, prefetchListeners: new Set(), restored: false, state: null, read: null, growth: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, view: IDLE, running: null, checkpoint: null, settled: null, settledBudget: 0, failures: 0, refused: 0, retry: null, resumes: 0, failedAt: null, release: null }
       entries.set(id, found)
     }
     return found
   }
-  const historyRefs = (e: Entry) => e.pageRefs + e.listRefs
+  const historyRefs = (e: Entry) => e.pageRefs + e.listRefs + e.prefetchRefs
+  const detailOpen = () => [...entries.values()].some((e) => e.pageRefs > 0)
   const shown = (e: Entry) => historyRefs(e) + e.stateRefs > 0
   const budgetOf = (e: Entry) => (e.pageRefs > 0 ? BUDGET_BYTES.page : BUDGET_BYTES.list)
   const notify = (e: Entry) => {
@@ -257,22 +300,65 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   }
   const setView = (e: Entry, view: FeeHistoryView) => {
     if (e.view === view) return
+    if (view.phase !== 'cached') { e.snapshotExpiry?.(); e.snapshotExpiry = undefined }
     e.view = view
     notify(e)
+  }
+  function restore(e: Entry): void {
+    if (e.restored) return
+    e.restored = true
+    const saved = deps.historyCache?.load(e.id)
+    if (saved && e.view.phase === 'idle' && (!e.state || savedHistoryMatches(saved, e.state))) {
+      setView(e, saved)
+      const remaining = Math.min(saved.savedAt, saved.state.timestamp * 1000) + HISTORY_MAX_AGE_MS - (deps.now?.() ?? Date.now())
+      e.snapshotExpiry = deps.timer(Math.max(0, remaining), () => {
+        e.snapshotExpiry = undefined
+        if (e.view.phase !== 'cached') return
+        deps.historyCache?.remove(e.id)
+        setView(e, e.state ? { phase: 'loading', state: e.state } : { phase: 'unavailable', reason: 'rpc_unavailable' })
+      })
+    }
+  }
+  function stopRun(e: Entry): void {
+    if (e.running) {
+      try { worker?.postMessage({ type: 'cancel', id: e.id, runId: e.running.runId }) } catch { /* A failed worker has nothing to cancel. */ }
+      e.running = null
+    }
+  }
+  function endPrefetch(e: Entry, why: 'failed' | 'yielded'): void {
+    for (const listener of Array.from(e.prefetchListeners)) listener(why)
+  }
+  function invalidate(e: Entry): void {
+    deps.historyCache?.remove(e.id)
+    e.checkpoint = null
+    stopRun(e)
+    e.retry?.(); e.retry = null
+    e.failedAt = null
+    if (e.view.phase === 'cached') setView(e, { phase: 'loading', state: e.state })
   }
 
   // --- the worker ------------------------------------------------------------
 
   function broken(): void {
+    if (workerBroken) return
     workerBroken = true
     const dead = worker
     worker = null
+    if (dead) dead.onmessage = dead.onerror = dead.onmessageerror = null
     dead?.terminate()
     for (const e of entries.values()) {
       if (!e.running) continue
       e.running = null
-      if (e.view.phase !== 'verified' && e.view.phase !== 'estimated') setView(e, e.state ? { phase: 'unclaimed-only', state: e.state, reason: 'worker_failed', prices: null } : { phase: 'unavailable', reason: 'worker_failed' })
+      endPrefetch(e, 'failed')
+      if (e.view.phase !== 'verified' && e.view.phase !== 'estimated' && e.view.phase !== 'cached') setView(e, e.state ? { phase: 'unclaimed-only', state: e.state, reason: 'worker_failed', prices: null } : { phase: 'unavailable', reason: 'worker_failed' })
     }
+    const after = retryAfter(workerFailures)
+    workerFailures = Math.min(workerFailures + 1, RETRY_MS.length)
+    deps.later(after, () => {
+      workerBroken = false
+      for (const e of entries.values()) next(e)
+    })
+    if (held && !drawing()) refreshNow()
   }
 
   function theWorker(): WorkerLike | null {
@@ -284,27 +370,33 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       broken()
       return null
     }
-    worker.onmessage = (event) => received(event.data)
-    worker.onerror = () => broken()
-    worker.onmessageerror = () => broken()
+    const active = worker
+    worker.onmessage = (event) => {
+      if (worker === active) received(event.data)
+    }
+    worker.onerror = () => { if (worker === active) broken() }
+    worker.onmessageerror = () => { if (worker === active) broken() }
     return worker
   }
 
   function received(message: FromWorker): void {
     if (!message || typeof message !== 'object') return
+    const e = entries.get(message.id)
+    // Cancellation cannot retract a message already queued by the worker. Match the exact attempt before touching
+    // its display, checkpoint, retry state or persistent snapshot; an absent token is never a legacy fallback.
+    if (!e?.running || message.runId !== e.running.runId) return
     if (message.type === 'estimate') {
-      const e = entries.get(message.id)
       // An estimate never takes the place of a verified history; it is carried to a state read since its run began.
-      if (e?.running && e.view.phase !== 'verified') carry(e, { phase: 'estimated', state: e.running.state, history: message.history, prices: message.prices })
+      if (e.view.phase !== 'verified') carry(e, { phase: 'estimated', state: e.running.state, history: message.history, prices: message.prices })
       return
     }
     if (message.type !== 'done') return
-    const e = entries.get(message.id)
-    if (!e || !e.running) return
+    workerFailures = 0
     const run = e.running
     e.running = null
     finished(e, run, message.result, Number(message.wait) || 0)
     next(e)
+    if (held && !drawing()) refreshNow()
   }
 
   /**
@@ -326,22 +418,28 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       e.resumes = 0
       e.failedAt = null
       e.settled = null
-      setView(e, { phase: 'verified', state: run.state, history: result.history, prices: result.prices })
+      const verified = { phase: 'verified' as const, state: run.state, history: result.history, prices: result.prices }
+      if (run.cacheable) deps.historyCache?.save(e.id, verified)
+      setView(e, verified)
       return
     }
+    endPrefetch(e, 'failed')
     if (result.reason === 'hooked_pool' || result.reason === 'not_found') {
+      invalidate(e)
       e.settled = result.reason
       setView(e, { phase: 'unavailable', reason: result.reason })
       return
     }
     if (result.reason === 'rpc_unavailable' || result.reason === 'worker_failed') {
-      // 2026-09-27: asked again once the lane's rest is over, then after 30, 60 and 120 s (RETRY_MS), the page visible.
-      const after = RETRY_MS[e.refused++]
-      if (after !== undefined)
-        e.retry = deps.later(Math.max(after, wait + REST_MARGIN_MS), () => {
-          e.retry = null
-          next(e)
-        })
+      // Only the worker can construct this in-memory coherent prefix. Never load it from storage.
+      if (result.reason === 'rpc_unavailable' && result.later && result.checkpoint !== null) e.checkpoint = result.checkpoint
+      // 2026-09-27: asked again once the lane's rest is over, then after 10, 30, 60 and 120 s (RETRY_MS), the page visible.
+      const after = retryAfter(e.refused)
+      e.refused = Math.min(e.refused + 1, RETRY_MS.length)
+      if (historyRefs(e) > 0) e.retry = deps.later(Math.max(after, wait + REST_MARGIN_MS), () => {
+        e.retry = null
+        next(e)
+      })
     } else if (result.reason === 'too_much_history' && result.later && result.checkpoint !== null && e.resumes < MAX_RESUMES) {
       // 2026-09-25 (review): a price path's read that ran out of its run's budget or time kept its place, and the next
       // newer state block goes on from it, never at once (the RPC limits the visitor's address).
@@ -359,9 +457,11 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       if (result.reason === 'too_much_history') e.checkpoint = result.checkpoint
       else e.checkpoint = null
     }
+    if (result.reason === 'replay_mismatch') deps.historyCache?.remove(e.id)
     // A verified history (or an estimated one) stays up past a stop or a bad moment of the RPC; a replay that disagrees
     // with the chain takes an estimate down.
     if (e.view.phase === 'verified' && result.reason !== 'replay_mismatch') return
+    if (e.view.phase === 'cached' && result.reason !== 'replay_mismatch') return
     if (e.view.phase === 'estimated' && result.reason !== 'replay_mismatch') return carry(e)
     const state = e.state ?? run.state
     setView(e, { phase: 'unclaimed-only', state, reason: result.reason, prices: result.prices })
@@ -370,6 +470,8 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   /** Starts the run `e` needs now, if any. */
   function next(e: Entry): void {
     if (historyRefs(e) === 0 || e.running || !e.state || !e.growth) return
+    if (e.prefetchRevalidating && e.pageRefs + e.listRefs === 0) return
+    if (e.prefetchRefs > 0 && e.pageRefs + e.listRefs === 0 && detailOpen()) return
     const state = e.state
     const view = e.view
     if (view.phase === 'verified' && view.state.block >= state.block) return
@@ -378,36 +480,56 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     // or starts over when the stop came before the swap days (2026-09-25: the budget now bounds those steps too).
     if (e.settled === 'too_much_history' && budgetOf(e) <= e.settledBudget) return
     if (e.failures >= RUN_ATTEMPTS) return
-    // A run that could not reach the chain: its next waits for its time (`retry`), newer blocks or not; none after the last.
-    if (e.retry || e.refused > RETRY_MS.length) return
+    // A transient failure always waits for its timer, even when a newer block arrives.
+    if (e.retry) return
     if (e.failedAt !== null && state.block <= e.failedAt) return
     const target = theWorker()
     if (!target) {
-      if (view.phase !== 'verified') setView(e, { phase: 'unclaimed-only', state, reason: 'worker_failed', prices: null })
+      if (view.phase !== 'verified' && view.phase !== 'estimated' && view.phase !== 'cached') setView(e, { phase: 'unclaimed-only', state, reason: 'worker_failed', prices: null })
       return
     }
-    const run: Run = { state, budget: budgetOf(e) }
+    const run: Run = { runId: ++nextRunId, state, budget: budgetOf(e), cacheable: true }
     e.running = run
     if (view.phase === 'idle' || view.phase === 'unavailable' || (view.phase === 'loading' && view.state !== state)) setView(e, { phase: 'loading', state })
-    target.postMessage({ type: 'run', id: e.id, state, growth: e.growth, budgetBytes: run.budget, checkpoint: e.checkpoint })
+    try {
+      target.postMessage({ type: 'run', id: e.id, runId: run.runId, state, growth: e.growth, budgetBytes: run.budget, checkpoint: e.checkpoint })
+    } catch {
+      broken()
+    }
   }
 
   // --- /state ----------------------------------------------------------------
 
   function applyState(e: Entry, answer: RelayAnswer<StateResponse>): void {
+    e.prefetchRevalidating = false
     const position = answer.ok ? answer.value.positions.find((p) => p.tokenId === e.id) : undefined
     e.answered = true
     if (!answer.ok || !position || (!position.ok && position.reason === 'rpc_unavailable')) {
+      endPrefetch(e, 'failed')
       // A refresh that failed leaves what is known; a first read that failed shows nothing.
       if (!e.state) {
         e.stateReason = 'rpc_unavailable'
-        if (historyRefs(e) > 0) setView(e, { phase: 'unavailable', reason: 'rpc_unavailable' })
+        if (historyRefs(e) > 0 && e.view.phase !== 'cached') setView(e, { phase: 'unavailable', reason: 'rpc_unavailable' })
         notify(e)
+        if (!e.stateRetry && shown(e)) {
+          const wait = answer.ok ? 0 : answer.retryAfterMs
+          e.stateRetry = deps.later(Math.max(retryAfter(e.stateFailures), Number.isFinite(wait) ? wait : 0), () => {
+            e.stateRetry = null
+            if (shown(e) && !e.state) ask([e.id])
+          })
+          e.stateFailures = Math.min(e.stateFailures + 1, RETRY_MS.length)
+        }
       }
       return
     }
+    e.stateRetry?.()
+    e.stateRetry = null
+    e.stateFailures = 0
     if (!position.ok) {
+      endPrefetch(e, 'failed')
+      invalidate(e)
       e.state = null
+      e.read = null
       e.growth = null
       e.stateReason = position.reason
       e.settled = position.reason
@@ -416,7 +538,9 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       return
     }
     const { state, growth } = stateOf(position, answer.value.block, answer.value.timestamp)
+    if (e.view.phase === 'cached' && !savedHistoryMatches(e.view, state)) invalidate(e)
     if (e.state && state.block <= e.state.block) return
+    e.read = { position, block: answer.value.block }
     e.state = state
     e.growth = growth
     e.stateReason = null
@@ -459,14 +583,21 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     })
   }
 
+  /** Whether a page's run (its chart) is on its way. */
+  const drawing = () => [...entries.values()].some((e) => e.running && e.pageRefs > 0)
+  function refreshNow(): void {
+    held = false
+    const ids = [...entries.values()].filter(shown).map((e) => e.id)
+    if (ids.length === 0) return
+    ask(ids)
+    scheduleRefresh()
+  }
   function scheduleRefresh(): void {
     if (refresh) return
     refresh = deps.later(STATE_REFRESH_MS, () => {
       refresh = null
-      const ids = [...entries.values()].filter(shown).map((e) => e.id)
-      if (ids.length === 0) return
-      ask(ids)
-      scheduleRefresh()
+      if (drawing()) held = true
+      else refreshNow()
     })
   }
 
@@ -475,31 +606,27 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   function hold(e: Entry): void {
     e.release?.()
     e.release = null
-    stopWorker?.()
-    stopWorker = null
   }
 
+  /**
+   * Its history no longer shown: its run stops a moment later (2026-09-28, speed wave B, item 22: a state still shown
+   * keeps only its minute read; the list measures no APR since the log-limits hotfix, so no list holds a state).
+   */
   function letGo(e: Entry): void {
-    if (shown(e)) return
+    if (historyRefs(e) > 0) return
     e.release?.()
     e.release = deps.timer(RELEASE_MS, () => {
       e.release = null
-      if (shown(e)) return
+      if (historyRefs(e) > 0) return
       if (e.running) {
-        worker?.postMessage({ type: 'cancel', id: e.id })
+        worker?.postMessage({ type: 'cancel', id: e.id, runId: e.running.runId })
         e.running = null
         if (e.view.phase === 'loading') e.view = IDLE
       }
       if (![...entries.values()].some(shown)) {
         refresh?.()
         refresh = null
-        stopWorker?.()
-        stopWorker = deps.timer(RELEASE_MS, () => {
-          stopWorker = null
-          if ([...entries.values()].some((other) => other.running)) return
-          worker?.terminate()
-          worker = null
-        })
+        held = false
       }
     })
   }
@@ -509,7 +636,12 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     for (const e of own) {
       e.listeners.add(listener)
       add(e, 1)
-      hold(e)
+      if (historyRefs(e) > 0) restore(e)
+      // Its history shown again (a quick return, StrictMode's second mount): its run goes on.
+      if (historyRefs(e) > 0) hold(e)
+    }
+    if (detailOpen()) for (const e of entries.values()) {
+      if (e.prefetchRefs > 0 && e.pageRefs + e.listRefs === 0) { stopRun(e); endPrefetch(e, 'yielded') }
     }
     ask(own.filter((e) => !e.state && !e.answered).map((e) => e.id))
     for (const e of own) {
@@ -528,6 +660,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
         add(e, -1)
         letGo(e)
       }
+      if (!detailOpen()) for (const e of entries.values()) if (e.prefetchRefs > 0) next(e)
     }
   }
 
@@ -538,6 +671,36 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
         else e.listRefs += step
       })
     },
+    prefetchHistory(id, listener, options) {
+      if (detailOpen()) return null
+      const e = entry(id)
+      if (options?.revalidate) {
+        e.prefetchRevalidating = true
+        if (e.pageRefs + e.listRefs === 0) stopRun(e)
+      }
+      e.prefetchListeners.add(listener)
+      const unsubscribe = subscribe([id], listener, (target, step) => { target.prefetchRefs += step })
+      if (options?.revalidate) ask([id])
+      let active = true
+      return () => {
+        if (!active) return
+        active = false
+        e.prefetchListeners.delete(listener)
+        unsubscribe()
+        if (historyRefs(e) === 0) {
+          e.prefetchRevalidating = false
+          // A queued request has not reached the RPC yet: navigation/cancellation can still withdraw it.
+          if (e.stateRefs === 0 && queued.includes(id)) {
+            queued = queued.filter((pending) => pending !== id)
+            asking.delete(id)
+          }
+          stopRun(e)
+          e.retry?.(); e.retry = null
+          e.stateRetry?.(); e.stateRetry = null
+          e.release?.(); e.release = null
+        }
+      }
+    },
     subscribeStates(ids, listener) {
       return subscribe(ids, listener, (e, step) => {
         e.stateRefs += step
@@ -546,6 +709,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     watch(ids, listener) {
       const own = [...new Set(ids)].map(entry)
       for (const e of own) e.listeners.add(listener)
+      for (const e of own) restore(e)
       return () => {
         for (const e of own) e.listeners.delete(listener)
       }
@@ -554,10 +718,23 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       return entries.get(id)?.view ?? IDLE
     },
     refresh(ids) {
+      for (const id of ids) {
+        deps.historyCache?.remove(id)
+        const e = entries.get(id)
+        // Preserve the current visit's existing carry/replay behavior, but an
+        // in-flight pre-action result must not resurrect the persisted snapshot.
+        if (e?.running) e.running.cacheable = false
+        if (e?.view.phase === 'cached') invalidate(e)
+      }
       const known = (list: readonly string[]) => list.filter((id) => entries.get(id)?.answered)
       ask(known(ids))
       deps.timer(AFTER_ACTION_MS, () => ask(known(ids)))
     },
+    offer(answer) {
+      if (answer.ok) for (const position of answer.value.positions) applyState(entry(position.tokenId), answer)
+    },
+    position: (id) => entries.get(id)?.read ?? null,
+    warm: () => void theWorker(),
     views(ids) {
       const key = ids.join(',')
       const views = ids.map((id) => entries.get(id)?.view ?? IDLE)

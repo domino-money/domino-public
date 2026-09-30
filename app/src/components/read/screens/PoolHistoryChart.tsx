@@ -7,6 +7,7 @@ import { ratioCandleText, ratioGeometry, ratioText } from '../../../lib/read/rat
 import type { PoolOption } from '../../../lib/read/screens/poolsList'
 import type { ReadSource } from '../../../lib/read/types'
 import { useNow } from '../../../lib/read/useNow'
+import { useLoadMilestone } from '../../../lib/useLoadMilestone'
 import { areaUnder, curveFor, linePath } from '../../../lib/chart/paths'
 import { timeTicks } from '../../../lib/chart/scale'
 import { percentChange } from '../../../lib/format/change'
@@ -125,8 +126,6 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
       <div className="dm-pool-plot-empty">{loading ? <Skeleton className="dm-pool-plot-baseline" /> : <span className="text-fg-subtle" title={failed}>—</span>}</div>
     </div>
   </div>
-  if (disabled) return <div data-history-mode="provider">{provider()}</div>
-
   const plot = data ? ratioGeometry(data, PLOT.width, PLOT.height, PLOT.pad) : null
   const inspecting = !!plot && inspected?.key === key
   const index = plot ? Math.min(inspecting && inspected ? inspected.index : plot.points.length - 1, plot.points.length - 1) : -1
@@ -134,6 +133,8 @@ export function PoolHistoryChart({ source, option, market, loading, failed, quot
   const recentFailure = current?.failed === true
   const aged = data?.snapshot && now.wall / 1000 - data.snapshot.timestamp > 120
   const stale = data?.status === 'stale' || aged || recentFailure
+  useLoadMilestone('pool', 'chart', !disabled && !reading && plot && point ? stale ? 'cached' : data?.status === 'partial' ? 'partial' : 'current' : null)
+  if (disabled) return <div data-history-mode="provider">{provider()}</div>
   // The producer's `reason` defaults to a restatement of the status
   // (backend/public_history.py: history_refresh_pending for stale,
   // history_acquisition_pending for not_built and partial). Appending those

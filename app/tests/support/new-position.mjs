@@ -23,16 +23,28 @@ export async function choosePool(page) {
 
 /**
  * To Review: deposit TOKEN into ETH / TOKEN, the standard range the pool's price gives, `amount` TOKEN (1 unless
- * said). Nothing about automation is asked on the way.
+ * said). Nothing about automation is asked on the way. `range` (added 2026-09-28, one-sided): a Custom range typed
+ * as the page writes prices, [lowest, highest], the highest first so the two never cross on the way.
  */
-export async function walkToReview(page, { amount = '1' } = {}) {
+export async function walkToReview(page, { amount = '1', range = null } = {}) {
   await choosePool(page);
-  await footerButton(page, 'Continue').click();
-  await page.locator('[data-stage="range"]').waitFor();
-  await footerButton(page, 'Continue').click();
+  const current = (step) => page.locator(`li[data-step="${step}"][aria-current="step"]`);
+  await footerButton(current('pool'), 'Continue').click();
+  await current('range').waitFor();
+  if (range) {
+    const step = current('range').locator('[data-picker="range"]');
+    await step.getByRole('radio', { name: 'Custom' }).click();
+    for (const [which, price] of [['upper', range[1]], ['lower', range[0]]]) {
+      const field = step.locator(`#range-${which}-price`);
+      await field.fill(price);
+      await field.press('Enter');
+    }
+  }
+  await footerButton(current('range'), 'Continue').click();
+  await current('amount').waitFor();
   // The amount step has a row per pool token; typing in one makes it the independent token.
-  await page.locator('[data-pair-side="1"] input[inputmode="decimal"]').fill(amount);
+  await current('amount').locator('[data-pair-side="1"] input[inputmode="decimal"]').fill(amount);
   // Amount continues straight to Review: the balance stage has no step of its own, and there is no automation step.
-  await footerButton(page, 'Continue').click();
+  await footerButton(current('amount'), 'Continue').click();
   await page.locator('[data-stage-card="review"]').waitFor();
 }

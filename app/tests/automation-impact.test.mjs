@@ -253,6 +253,34 @@ test('the vault is read from the chain by the page: its executions from the mint
   }
 });
 
+// 2026-09-28 (speed wave B, item 26: an automated position's card waited for its vault's record, read only once its chart
+// was drawn): the page reads it as soon as its own read names the vault, from the factory's first block; a card whose
+// blocks start there or later takes its part of it with nothing read again, and one whose blocks start earlier (no
+// position Domino opened does) has it read again from there, whole, and waits for that read.
+test('the vault read early, from the factory’s first block: a card within it reads nothing more; one from an earlier block reads again from there, and waits for it', async () => {
+  const asked = [];
+  const record = { executions: impact.executionsOf(LOGS, VAULT, TOKEN), paid: new Map() };
+  const answers = [record, record];
+  const store = impact.vaultStore(async (...ask) => { asked.push(ask.slice(3)); return answers.shift() ?? null; }, 60_000, { set: () => undefined, now: () => 0 });
+  const settle = () => new Promise((done) => setImmediate(done));
+  const stop = store.subscribe(() => undefined);
+  assert.equal(impact.VAULT_FIRST_BLOCK, 69_239_633);
+  store.want(VAULT, TOKEN, [USDG, UFG], impact.VAULT_FIRST_BLOCK, 74_118_377);
+  // The card asks its own blocks while the early read is on its way: nothing more is read for them.
+  store.want(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363);
+  await settle();
+  await settle();
+  assert.deepEqual(asked, [[impact.VAULT_FIRST_BLOCK, 74_118_377]]);
+  assert.deepEqual([store.get(VAULT, TOKEN).from, store.get(VAULT, TOKEN).to], [impact.VAULT_FIRST_BLOCK, 74_118_377]);
+  // A card from an earlier block (a recording older than the factory): read again from its block, to the end read so far.
+  store.want(VAULT, TOKEN, [USDG, UFG], 60_000_000, 73_705_363);
+  await settle();
+  await settle();
+  assert.deepEqual(asked.at(-1), [60_000_000, 74_118_377]);
+  assert.equal(store.get(VAULT, TOKEN).from, 60_000_000);
+  stop();
+});
+
 test('a vault read that fails is asked again a minute later, with the latest blocks wanted, while a screen shows it; the card is told it settled either way', async () => {
   let clock = 1_000_000;
   const timers = [];
@@ -266,7 +294,8 @@ test('a vault read that fails is asked again a minute later, with the latest blo
   store.want(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_600_000);
   await settle();
   // The first read failed (a 429, a timeout): the card is told, with no record, and one retry is set for a minute on.
-  assert.deepEqual(store.get(VAULT, TOKEN), { to: -1, record: null, failedAt: clock });
+  // Changed on purpose 2026-09-28 (speed wave B, item 26): the entry says from which block it was read too.
+  assert.deepEqual(store.get(VAULT, TOKEN), { from: 73_233_307, to: -1, record: null, failedAt: clock });
   assert.deepEqual([heard, timers.map((timer) => timer.ms)], [1, [60_000]]);
   // A new settlement in the meantime is not read at once; the retry asks for it.
   store.want(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363);
@@ -288,4 +317,18 @@ test('a vault read that fails is asked again a minute later, with the latest blo
   timers.shift().run();
   await settle();
   assert.equal(asked.length, 3);
+});
+
+test('automation attribution exposes only full interval coverage, never an early warm record or failed expansion', () => {
+  const record = { executions: impact.executionsOf(LOGS, VAULT, TOKEN), paid: new Map() };
+  const complete = { from: 73_233_307, to: 73_705_363, record, failedAt: 0 };
+  assert.equal(impact.coveredVaultRecord(null, complete.from, complete.to), null);
+  assert.equal(impact.coveredVaultRecord(complete, complete.from, complete.to), record, 'exact inclusive coverage');
+  assert.equal(impact.coveredVaultRecord(complete, complete.from + 1, complete.to - 1), record, 'a wider read covers the requested subset');
+  assert.equal(impact.coveredVaultRecord({ ...complete, from: complete.from + 1 }, complete.from, complete.to), null, 'warm read omits the beginning');
+  assert.equal(impact.coveredVaultRecord({ ...complete, to: complete.to - 1 }, complete.from, complete.to), null, 'retained read omits the latest settlement');
+  assert.equal(impact.coveredVaultRecord({ ...complete, from: complete.from + 1, failedAt: 1_000_000 }, complete.from, complete.to), null, 'a failed earlier expansion cannot certify its retained partial record');
+  assert.equal(impact.coveredVaultRecord({ ...complete, to: complete.to - 1, failedAt: 1_000_000 }, complete.from, complete.to), null, 'a failed later expansion cannot certify its retained partial record');
+  assert.equal(impact.coveredVaultRecord({ ...complete, failedAt: 1_000_000 }, complete.from, complete.to), record, 'failure outside an already covered interval does not remove that interval');
+  assert.equal(impact.coveredVaultRecord({ ...complete, record: null }, complete.from, complete.to), null);
 });

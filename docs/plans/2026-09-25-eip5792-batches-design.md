@@ -138,3 +138,79 @@ Out of scope:
 - the advanced funding form, which stays step by step;
 - the deposit-v1 lab, which has no wallet handoff;
 - gas sponsorship (`paymasterService`), phase 3, postponed on 25 Sep: no wallet in reach supported it on 4663 ([decision](2026-09-25-gas-sponsorship-design.md)).
+
+## Audit, 28 Sep 2026: which wallets batch on 4663
+
+The owner asked whether Rabby now supports EIP-7702, and for Review to show
+fewer wallet steps whenever a wallet can batch.
+
+**What the wallets do.**
+
+| Wallet | EIP-5792 | EIP-7702 | On 4663 |
+| --- | --- | --- | --- |
+| Rabby (extension v0.94.10, 23 Sep 2026) | None: no `wallet_getCapabilities`, `wallet_sendCalls` or `wallet_getCallsStatus` handler in its provider controller. It answered -32601 on 25 Sep. | Detects delegations, and revokes them from its own approvals page. 4663 (`hood`) is in its revoke list. It refuses any 7702 transaction a site asks for (`'not support 7702'`). | Step by step. A Rabby account delegated elsewhere signs plain transactions, one per step. |
+| MetaMask | Version 2: `atomic` `supported`/`ready`, EIP-7702 upgrade to its EIP7702StatelessDeleGator. | Upgrades accounts only on the networks it lists. Its help centre does not list Robinhood Chain; its Smart Accounts Kit 2.0.0 lists it, and the delegator's code is on 4663. | Not measured: the probe says. |
+| Base Account / Coinbase | Version 2 for the smart wallet. | EIP7702Proxy, whose code is on 4663. | Base Account does not list 4663. |
+| Ambire | Version 2, with version 1's `atomicBatch` beside `atomic`. One hex key for every network it knows, user-added ones included. The chain filter is ignored. | EOA7702 accounts always say `supported`. AmbireAccount7702's code is on 4663. | Can batch if Robinhood Chain is added to it: the probe says. |
+| OKX | Closed source. | Upgrade from its own app menu. | Not measured: the probe says. |
+
+No wallet batches through anything but EIP-5792. A 7702 account could run a
+batch as one transaction to itself (`executeBatch` on its own delegate), but
+that depends on each delegate's ABI. MetaMask refuses a site's transaction to
+the user's own account with data, and no wallet shows such a call clearly.
+It is not built.
+
+**What changed in the app (feat/eip7702).**
+
+- `atomicStatusOf` reads the reply under any key that names 4663: hex in
+  either case, a leading zero, or decimal, as viem's `getCapabilities` reads
+  keys (`Number(key)`).
+- With no `atomic` there, it reads `0x0`, which EIP-5792 reserves for
+  capabilities on every chain.
+- Two keys that disagree count as the weaker. Version 1's shape stays
+  unsupported.
+- A wallet that refuses the chain filter (-32602) is asked once more without
+  it, within the same five seconds.
+- Review's list of wallet steps is one step before the press for a
+  `supported` wallet. The step is named after what it holds: "Approve,
+  deposit, swap and create the position", without "Approve" when only ETH goes
+  in. Before, the list showed every step until the press ran.
+- `ready` keeps the steps and the offer. The offer's note no longer says
+  "(EIP-7702)" (beginner first).
+- A latch the wallet never settled is freed 25 minutes after its claim. That
+  covers an answer that never came and an error other than a refusal (-32603,
+  say). Before, it held every later press of a `supported` wallet for good,
+  each ending "could not be read".
+  - Why it is safe: the batch ends with the mint, and the contract refuses a
+    deadline more than 1,200 s past the block. The batch was simulated whole
+    against the newest block just before it was offered. So 1,200 s after the
+    claim, nothing of it can execute; `BATCH_LATCH_EXPIRY_S` adds five minutes.
+  - The claim time sits beside the latch (`domino.offered-batch-at.v1.<hash>`).
+    A latch from before this change starts its clock when first found.
+- The finance suite covers `0x0`, a decimal `ready`, a Rabby-shaped wallet
+  (-32601) on a delegated account, and a latch that is still live and one
+  that has expired.
+
+**Fewer steps for Rabby needs a contract change.** The setup contract has no
+multicall, so without a batch the deposit, the swap and the mint stay separate
+transactions. Two ways to shorten them, both owner decisions for the
+contracts:
+
+- one entry point that opens, swaps and mints in one call (approve + 1);
+- Permit2 signatures, where the approvals become free signatures.
+
+**Measuring.** `C:/dwt/eip7702/probe.js` reads a connected wallet and sends
+nothing: `eth_accounts`, `eth_chainId`, `eth_getCode`, `wallet_getCapabilities`,
+and `wallet_getCallsStatus` for an id that does not exist, to see whether the
+method exists. It then says what the site will do with that wallet.
+
+Sources: [EIP-5792](https://eips.ethereum.org/EIPS/eip-5792);
+[Rabby's provider controller](https://github.com/RabbyHub/Rabby/blob/develop/src/background/controller/provider/controller.ts)
+and [its 7702 revoke chains](https://github.com/RabbyHub/Rabby/blob/develop/src/constant/eip7702.ts);
+[Rabby #3102](https://github.com/RabbyHub/Rabby/issues/3102);
+[MetaMask batches](https://docs.metamask.io/wallet/how-to/send-transactions/send-batch-transactions/);
+[MetaMask's refusal of data to an own account](https://github.com/MetaMask/core/blob/main/packages/transaction-controller/src/utils/validation.ts);
+[MetaMask smart account networks](https://support.metamask.io/configure/accounts/switch-to-or-revert-from-a-smart-account/);
+[Smart Accounts Kit networks](https://docs.metamask.io/smart-accounts-kit/get-started/supported-networks/);
+[Ambire's capabilities](https://github.com/AmbireTech/extension/blob/main/src/common/modules/provider/ProviderController.ts);
+[OKX 7702](https://web3.okx.com/help/okx-wallet-to-support-eip-7702).

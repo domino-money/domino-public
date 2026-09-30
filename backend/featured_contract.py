@@ -17,7 +17,11 @@ from featured_pools import REASONS, SOURCES
 from pool_apr import AprDecimal, METHOD
 from read_contract import Address, DecimalString, FalseFlag, Hash, UInt, WireModel
 
-CONTRACT_VERSION = '1.0.0-rc.1'
+# rc.2 (featured-policy v2): today's APR may rank the list, a market rule may be off
+# (null threshold), and a ranked pool may have no previous-day APR or no measured depth.
+CONTRACT_VERSION = '1.0.0-rc.2'
+RANK_BY = {'min_fresh_and_previous': 'min_fresh_and_previous_day_feeAprEstimate24hPercent',
+           'fresh': 'feeAprEstimate24hPercent'}
 ZERO = '0x' + '0' * 40
 MAX_POOLS = 12
 MAX_WITHDRAWN = 24
@@ -66,10 +70,12 @@ class Block(WireModel):
 class RankInputs(WireModel):
     rankApr: AprDecimal
     freshApr: AprDecimal
-    prevApr: AprDecimal
+    # null: no evaluation the day before (a new pool, when persistence is off).
+    prevApr: AprDecimal | None
     volume24hUsd: DecimalString
     reportedLiquidityUsd: DecimalString
-    referenceDepthUsd: DecimalString
+    # null: not measured, when the depth rule is off.
+    referenceDepthUsd: DecimalString | None
     evaluatedAt: UInt
 
 
@@ -116,15 +122,16 @@ class Coverage(WireModel):
 
 
 class Rules(WireModel):
-    rankBy: Literal['min_fresh_and_previous_day_feeAprEstimate24hPercent']
+    rankBy: Literal[tuple(RANK_BY.values())]
     estimateMethod: Literal[METHOD]
     marketSource: Literal['geckoterminal']
     minVolume24hUsd: DecimalString
     minTvlUsd: DecimalString
-    minReferenceDepthUsd: DecimalString
-    maxAprPercent: DecimalString
-    maxTurnover24h: DecimalString
-    minPoolAgeHours: UInt
+    # null: that rule is off.
+    minReferenceDepthUsd: DecimalString | None
+    maxAprPercent: DecimalString | None
+    maxTurnover24h: DecimalString | None
+    minPoolAgeHours: UInt | None
     size: Annotated[int, Field(strict=True, ge=1, le=MAX_POOLS)]
 
 
@@ -192,7 +199,7 @@ def validate_featured_response(route, body):
 def rules_of(policy):
     """What a list states about how it was chosen: recorded with the list at selection."""
     thresholds = policy['thresholds']
-    return {'rankBy': 'min_fresh_and_previous_day_feeAprEstimate24hPercent', 'estimateMethod': METHOD,
+    return {'rankBy': RANK_BY[policy['rankBy']], 'estimateMethod': METHOD,
             'marketSource': 'geckoterminal', 'minVolume24hUsd': thresholds['minVolume24hUsd'],
             'minTvlUsd': thresholds['minTvlUsd'], 'minReferenceDepthUsd': thresholds['minReferenceDepthUsd'],
             'maxAprPercent': thresholds['maxAprPercent'], 'maxTurnover24h': thresholds['maxTurnover24h'],

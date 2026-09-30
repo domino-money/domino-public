@@ -6,7 +6,8 @@ for stored revisions; each invalid answer is the valid `current` answer with a
 single defect, named by its file. A consumer's validator (the Worker's
 runtime.mjs, the app) must accept every file under valid/ and refuse every file
 under invalid/, exactly as backend/featured_contract.py does
-(featured-pools v1 §10.2). `--check` compares instead of writing.
+(featured-pools v1 §10.2; rc.2 adds featured-policy v2). `--check` compares
+instead of writing.
 """
 import argparse
 import copy
@@ -34,10 +35,20 @@ TOKEN_B = '0x' + 'b1' * 20
 TOKEN_C = '0x' + '1c' * 20
 SELECTED_AT, EFFECTIVE_AT, SERVED_AT = 1790422200, 1790424000, 1790431234
 DAY = date(2026, 9, 26)
+METHOD = 'fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365'
+# featured-policy v2 (backend/featured_policy.json): today's APR ranks, a null rule is off.
+RULES = {'rankBy': 'feeAprEstimate24hPercent', 'estimateMethod': METHOD, 'marketSource': 'geckoterminal',
+         'minVolume24hUsd': '1000000', 'minTvlUsd': '100000', 'minReferenceDepthUsd': None,
+         'maxAprPercent': None, 'maxTurnover24h': None, 'minPoolAgeHours': None, 'size': 6}
+# featured-policy v1: the lower of today's and the previous day's APR ranks; every rule is on.
+RULES_V1 = {'rankBy': 'min_fresh_and_previous_day_feeAprEstimate24hPercent', 'estimateMethod': METHOD,
+            'marketSource': 'geckoterminal', 'minVolume24hUsd': '250000', 'minTvlUsd': '250000',
+            'minReferenceDepthUsd': '10000', 'maxAprPercent': '1000', 'maxTurnover24h': '25',
+            'minPoolAgeHours': 72, 'size': 6}
 
 
 def pool(token, symbol, decimals, *, slot, source, fee=3000, spacing=60, identity='catalogue_hint',
-         age='provider_pool_created_at', initialize_block=None, rank=None):
+         age='provider_pool_created_at', initialize_block=None, rank=None, prev=None, depth='41000.5'):
     """A stored list entry, made by the selector's own list_entry from one evaluation."""
     currencies = sorted((token, USDG))
     symbols = {token: (symbol, decimals), USDG: ('USDG', 6)}
@@ -48,28 +59,24 @@ def pool(token, symbol, decimals, *, slot, source, fee=3000, spacing=60, identit
                    for currency in currencies],
         'identitySource': identity, 'ageSource': age, 'initializeBlock': initialize_block, 'reference': USDG,
         'block': {'number': 73400000, 'hash': '0x' + 'ab' * 32, 'timestamp': SELECTED_AT + 60},
-        'sqrtPriceX96': str(2 ** 96), 'rankApr': rank, 'freshApr': '551.0', 'prevApr': rank,
-        'volume24hUsd': '1170000', 'reportedLiquidityUsd': '620000', 'referenceDepthUsd': '41000.5'}
+        'sqrtPriceX96': str(2 ** 96), 'rankApr': rank, 'freshApr': '551.0', 'prevApr': prev,
+        'volume24hUsd': '1170000', 'reportedLiquidityUsd': '620000', 'referenceDepthUsd': depth}
     pool_id = '0x' + keccak(encode(KEY_TYPES, (*currencies, fee, spacing, ZERO))).hex()
     return list_entry({'slot': slot, 'source': source, 'poolId': pool_id}, evaluation)
 
 
-def revision(number, status, pools, *, withdrawn=(), selected=True):
+def revision(number, status, pools, *, withdrawn=(), selected=True, rules=RULES,
+             policy='featured-v1:3f9c2a1b7d0e', rejected=(('hooked_pool_unsupported', 13), ('tvl_below_floor', 63))):
     """A stored featured_lists row: selected lists state how they were chosen, owner lists do not."""
     payload = {'schemaVersion': 1, 'phase': 'live', 'pools': pools, 'listId': list_id(pools),
                'generatedAt': SELECTED_AT, 'withdrawn': list(withdrawn)}
     if selected:
         payload.update(
-            policyVersion='featured-v1:3f9c2a1b7d0e', window={'start': SELECTED_AT - 86400, 'end': SELECTED_AT},
+            policyVersion=policy, window={'start': SELECTED_AT - 86400, 'end': SELECTED_AT},
             coverage={'source': 'geckoterminal_dex_pools_by_h24_volume', 'pages': 10,
                       'lastListedVolume24hUsd': '513000', 'truncated': True, 'stoppedBy': None, 'rejectedItems': 0},
-            rules={'rankBy': 'min_fresh_and_previous_day_feeAprEstimate24hPercent',
-                   'estimateMethod': 'fixed_lp_fee_x_volume24h_over_reported_tvl_annualized_365',
-                   'marketSource': 'geckoterminal', 'minVolume24hUsd': '250000', 'minTvlUsd': '250000',
-                   'minReferenceDepthUsd': '10000', 'maxAprPercent': '1000', 'maxTurnover24h': '25',
-                   'minPoolAgeHours': 72, 'size': 6},
-            evaluation={'candidates': 212, 'shortlisted': 38, 'eligible': 25,
-                        'rejectedByReason': {'pool_too_young': 55, 'tvl_below_floor': 63}})
+            rules=dict(rules),
+            evaluation={'candidates': 212, 'shortlisted': 38, 'eligible': 25, 'rejectedByReason': dict(rejected)})
     return {'revision': number, 'status': status, 'list_id': payload['listId'], 'selection_date': DAY,
             'generated_at': SELECTED_AT, 'effective_at': EFFECTIVE_AT, 'valid_until': EFFECTIVE_AT + 36 * 3600,
             'payload': payload}
@@ -77,14 +84,21 @@ def revision(number, status, pools, *, withdrawn=(), selected=True):
 
 def stored():
     pinned = pool(PONS, 'PONS', 18, slot=1, source='pinned')
+    # Ranked by today's APR, first evaluated today (no previous APR), its depth not measured.
     ranked = pool(TOKEN_B, 'TKNB', 18, slot=2, source='ranked', identity='catalogue_event',
-                  age='catalogue_event', initialize_block=57898668, rank='546.1')
+                  age='catalogue_event', initialize_block=57898668, rank='551.0', prev=None, depth=None)
+    ranked_v1 = pool(TOKEN_B, 'TKNB', 18, slot=2, source='ranked', identity='catalogue_event',
+                     age='catalogue_event', initialize_block=57898668, rank='546.1', prev='546.1')
     fallback = pool(TOKEN_C, 'TKNC', 9, slot=2, source='fallback', fee=2500, spacing=50, identity='position_manager',
                     age=None)
     withdrawn = {'poolId': ranked['poolId'], 'reason': 'tvl_collapse', 'at': SERVED_AT - 600}
     earlier = {'poolId': '0x' + '22' * 32, 'reason': 'excluded_by_owner', 'at': SERVED_AT - 3 * 86400}
     return {
         'current': revision(41, 'current', [pinned, ranked], withdrawn=[earlier]),
+        # A list chosen under featured-policy v1, as stored before v2: served as it was recorded.
+        'current-policy-v1': revision(40, 'current', [pinned, ranked_v1], withdrawn=[earlier], rules=RULES_V1,
+                                      policy='featured-v1:8e2d51c07a94',
+                                      rejected=(('pool_too_young', 55), ('tvl_below_floor', 63))),
         # The ranked pool left during the day; a pool of the embedded list took its slot.
         'repaired': revision(42, 'repaired', [pinned, fallback], withdrawn=[earlier, withdrawn]),
         'manual': revision(43, 'manual', [{**pinned, 'source': 'manual'}], selected=False),
@@ -122,7 +136,7 @@ def invalid(current):
         'extra-key': defect(lambda b: b.update(cached=True)),
         'missing-key': defect(lambda b: b.pop('limitations')),
         'wrong-chain': defect(lambda b: b.update(chainId=1)),
-        'wrong-contract-version': defect(lambda b: b.update(contractVersion='1.0.0-rc.2')),
+        'wrong-contract-version': defect(lambda b: b.update(contractVersion='1.0.0-rc.3')),
         'wrong-schema-version': defect(lambda b: b.update(schemaVersion=2)),
         'wrong-mode': defect(lambda b: b.update(mode='live_featured_pools')),
         'unknown-status': defect(lambda b: b.update(status='stale')),
@@ -163,6 +177,14 @@ def invalid(current):
         'unknown-withdrawn-reason': defect(lambda b: b['withdrawn'][0].update(reason='vibes')),
         'listed-and-withdrawn': defect(lambda b: b['withdrawn'][0].update(poolId=second(b)['poolId'])),
         'unknown-rejection-reason': defect(lambda b: b['evaluation']['rejectedByReason'].update(vibes=1)),
+        # rc.2: a market rule may be off (null); the rank, the floors and what they read may not.
+        'unknown-rank-by': defect(lambda b: b['rules'].update(rankBy='volume24hUsd')),
+        'null-min-volume': defect(lambda b: b['rules'].update(minVolume24hUsd=None)),
+        'null-min-tvl': defect(lambda b: b['rules'].update(minTvlUsd=None)),
+        'null-rank-apr': defect(lambda b: second(b)['rankInputs'].update(rankApr=None)),
+        'null-fresh-apr': defect(lambda b: second(b)['rankInputs'].update(freshApr=None)),
+        'null-rank-volume': defect(lambda b: second(b)['rankInputs'].update(volume24hUsd=None)),
+        'null-rank-liquidity': defect(lambda b: second(b)['rankInputs'].update(reportedLiquidityUsd=None)),
         'numeric-decimal': defect(lambda b: second(b)['rankInputs'].update(volume24hUsd=1170000)),
         'numeric-apr': defect(lambda b: second(b)['rankInputs'].update(rankApr=546.1)),
         'rank-inputs-on-pin': defect(lambda b: first(b).update(rankInputs=second(b)['rankInputs'])),

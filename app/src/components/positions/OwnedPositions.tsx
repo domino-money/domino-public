@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { drop, keep, readKept } from '../../finance/privateCards'
 import { feesStore } from '../../lib/fees/spawn'
+import { historyLoadQuality } from '../../lib/fees/freshness'
 import type { FeeHistoryView } from '../../lib/fees/types'
 import { CHAIN_ID } from '../../lib/read/screens/identity'
 import { walletCard, walletState } from '../../lib/walletCards'
 import { REFRESH_MS, parseWalletAnswer, useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
+import { useLoadMilestone } from '../../lib/useLoadMilestone'
 import type { WalletIdentityView } from '../../lib/walletIdentity'
 import { newPositionHref } from '../explore/routes'
 import { IconSearch, IconWallet } from '../icons'
@@ -12,6 +14,8 @@ import { Button, EmptyState, LinkButton, Skeleton, Tabs } from '../ui'
 import { AutomateEntry } from './AutomateEntry'
 import { automatable } from '../../lib/automate/picker'
 import { rowAprs, type RowApr } from './listApr'
+import { useAprPrefetch } from './useAprPrefetch'
+import { visibleAmountQuality } from './valueReadiness'
 import { PendingRow, PendingRows, PendingSummary, PositionRow, RowsHead } from './PositionRow'
 import { PortfolioSummary, portfolioOf } from './visual/PortfolioSummary'
 
@@ -37,14 +41,9 @@ function quiet() {}
 const noViews: ReadonlyMap<string, FeeHistoryView> = new Map()
 
 /**
- * Your APR on the rows (round 6, listApr.ts): the history a position's page drew this visit, from the fees store, which
- * the list only watches. 2026-09-28 (the owner: from that morning, a position's Fees earned chart and Your APR often did
- * not show, and it took many reloads): the list no longer measures anything itself. Its queue replayed each open
- * position's history from the list, in every tab, as the position's page would (the load the 2026-09-25 review had taken
- * off the list): live, it drew the RPC's refusals of the list's own read, and a history it could not finish stayed the
- * fees store's answer for the visit, so the position's page opened from the list showed its unclaimed figure only and
- * read nothing more until a reload. A row whose page was not opened this visit shows the calm dash (its title: shown on
- * the position's page).
+ * Rows only watch the store: drawing one never subscribes a history or repeats its reads. useAprPrefetch separately
+ * warms at most two visible rows per visit, one at a time at the small list budget, yielding immediately to detail.
+ * This is not the removed unbounded per-wallet replay queue. A missing/partial history still gives no APR.
  */
 function useRowAprs(ids: readonly string[]): ReadonlyMap<string, RowApr> {
   const key = ids.join(',')
@@ -217,6 +216,10 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   const measured = useMemo(() => (tabs ? tabs.open.slice(0, pages.open * PAGE_SIZE).filter((row) => row.card.hasLiquidity).map((row) => row.card.tokenId) : []), [tabs, pages.open])
   const aprs = useRowAprs(measured)
   const fresh = ready !== null
+  const prefetchRows = useAprPrefetch(measured, fresh && tab === 'open' && !refunding)
+  const shownValues = shown.map((row) => visibleAmountQuality(row.card.principal))
+  const valueQuality = shownValues.includes('current') ? 'current' : shownValues.includes('partial') ? 'partial' : null
+  useLoadMilestone('positions', 'value', valueQuality && !fresh ? 'cached' : valueQuality)
   const total = tabs ? tabs.open.length + tabs.closed.length : 0
   const phase = ready ? 'ready' : copy ? 'kept' : unread ? 'unlisted' : answer.phase === 'retrying' ? 'retrying' : 'loading'
   // `No positions yet` carries its own New position: the page's title row steps its own back (before paint, no flash).
@@ -256,7 +259,7 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
     body = <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />
   } else {
     body = (
-      <div className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
+      <div ref={prefetchRows} className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
         {/* The column names for the eye; each row's own cells carry their names for a screen reader. */}
         <RowsHead closed={tab === 'closed'} />
         {shown.map((row) => (
@@ -266,6 +269,7 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
             block={list?.block ?? 0}
             state={row.state}
             apr={aprs.get(row.card.tokenId) ?? null}
+            aprQuality={historyLoadQuality(feesStore.view(row.card.tokenId))}
             automation={fresh && <AutomateEntry tokenId={row.card.tokenId} open={automatable(row.position)} />}
           />
         ))}
@@ -317,10 +321,8 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
           </div>
         )}
       </Frame>
-      {/* No fees history is replayed for the list (2026-09-25, review of r3/chain, option a): each row shows its unclaimed
-          fees from the list's own read, and only a position's page replays its history, bounded. The list's aggregate card
-          replayed every open position's history from the visitor's browser, which the public RPC's per-address limit could
-          not bear (PONS/USDG's is over 60 MB), and its refusals then held back the list's own reads. */}
+      {/* No aggregate history replay: at most two visible APR candidates are warmed, independently of these cards.
+          Busy histories stay for the detail's larger budget; the list never walks the entire wallet in the background. */}
       {deposits &&
         held.length > 0 &&
         deposits({

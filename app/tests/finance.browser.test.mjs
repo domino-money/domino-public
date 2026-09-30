@@ -14,6 +14,8 @@ import { ARTWORK, choosePool, footerButton, walkToReview } from './support/new-p
 import { FIXTURE_TOKEN, createReadStub, gatewayError } from './support/read-stub.mjs';
 // The mint's own sizing, from the unit build (npm test compiles it first, as check:app runs it first).
 import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/create/mintPlan.js';
+// 2026-09-28 (one-sided, review): v4-core's tick maths, for what a one-sided mint takes and a price inside a range.
+import { sqrtPriceAtTick } from '../.test-build/app/src/lib/read/screens/poolRange.js';
 // 2026-09-25: the public RPC as the page reads it, answered by a fake chain (the page reads the chain itself since the RPC
 // rate-limits Cloudflare's edge), and a recorded fees case as the chain it was read from.
 import { SETUP_MINTED_TOPIC, browserChain, busyHistory, opIdOf, routeChain as routeRpc } from './support/browser-chain.mjs';
@@ -54,7 +56,7 @@ const RELEASE_OFF = { status: 200, body: { contractVersion: '1.0.0-rc.1', chainI
  * (no position, no deposit, every NFT unknown), as the site's routes answered before 2026-09-25. `refresh` (2026-09-27):
  * Your positions and a position's page read themselves again on their own, as they do outside test builds.
  */
-async function scenario({ clock = false, routes = [], chain = browserChain(), refresh = false } = {}) {
+async function scenario({ clock = false, routes = [], chain = browserChain(), refresh = false, prefetch = false } = {}) {
   const fake = createFakeSession();
   const calls = [], executions = [], releases = [], deposits = [], errors = [];
   const state = { performance: 'available', execution: 'on', setupRelease: RELEASE_OFF, sequenceRelease: RELEASE_OFF, deposit: null };
@@ -97,6 +99,7 @@ async function scenario({ clock = false, routes = [], chain = browserChain(), re
   const context = await browser.newContext({ viewport: { width: 1320, height: 1000 } });
   if (clock) await context.clock.install({ time: Date.now() });
   if (refresh) await context.addInitScript(() => { window.__dominoRefresh = true; });
+  if (prefetch) await context.addInitScript(() => { window.__dominoAprPrefetch = true; });
   await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   const rpc = await routeRpc(context, chain);
   const wallet = await installWallets(context);
@@ -635,8 +638,11 @@ const DELEGATES = JSON.parse(readFileSync(new URL('./support/eip7702-delegates.c
  * below it nothing is in range, so getLiquidity reports 0 at the stub's price, a swap that raises the price crosses the
  * empty stretch for nothing in and nothing out and fills above it (as v4-core crosses empty ticks), and one that lowers
  * it finds nothing. `quoteDelayMs`: how long each quoter question takes to answer, as a slow wallet's does.
+ *
+ * Added 2026-09-28 (one-sided, review): after `moveOnOpen(price)`, an `open` included leaves the pool's square-root
+ * price there, as if another trader's swap moved it between the deposit and the mint.
  */
-function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0, ownerCode = '0x', delegateCode = null, atomic = null, batchError = null, simulation = 'ok' } = {}) {
+function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0, ownerCode = '0x', delegateCode = null, atomic = null, capabilities = null, batchError = null, simulation = 'ok' } = {}) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`;
   const setup = at(0x71), poolManager = at(0x72), positionManager = at(0x73), stateView = at(0x74), feeRecipient = at(0x75);
   const code = { [setup]: '0x6071', [poolManager]: '0x6072', [positionManager]: '0x6073', [stateView]: '0x6074', [QUOTER.address]: QUOTER.code };
@@ -653,6 +659,8 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
   const log = [], refused = [], missing = [], sends = [], viewed = [], declined = [], quotes = [], quoted = [], reverts = [];
   /** The pool's square-root price now: the stub's, until a swap is included. */
   let sqrtPrice = STUB_SQRT_PRICE;
+  /** Where an `open` included leaves the pool's price (moveOnOpen), or null: where it was. */
+  let priceOnOpen = null;
   /** What is in range at square-root price `price`: the pool's `liquidity`, or nothing below `liquidFrom`. */
   const liquidityAt = price => (liquidFrom !== null && price < liquidFrom ? 0n : liquidity);
   /**
@@ -749,7 +757,9 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
   /**
    * A batch (EIP-5792), as a wallet that executes it atomically does: `atomic` is what the wallet says of chain 4663
    * (`supported`, `ready`, or nothing), `batchError` its answer to the first batch it is offered (a refusal such as
-   * 5750 or 5760), `simulation` whether it carries eth_simulateV1. Each call is checked as the setup contract checks it
+   * 5750 or 5760), `simulation` whether it carries eth_simulateV1. `capabilities`, when given, is the wallet's whole
+   * answer to wallet_getCapabilities instead, as `{ result }` or `{ error }` (2026-09-28: the keys other wallets write,
+   * and Rabby's -32601); `atomic` still says what its batches do. Each call is checked as the setup contract checks it
    * (the operation id the owner opens next, the allowance, the ETH carried, the swap's own limits) and applied in turn;
    * one that fails undoes them all.
    */
@@ -796,7 +806,10 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
       if (functionName === 'approve' && lower(args[0]) === setup) allowances.set(lower(tx.to), args[1]);
       return;
     }
-    if (functionName === 'open') operations.set(args[0], { owner, key: args[1], balance0: args[2], balance1: args[3], swapped: false, closed: false, tokenId: 0n });
+    if (functionName === 'open') {
+      operations.set(args[0], { owner, key: args[1], balance0: args[2], balance1: args[3], swapped: false, closed: false, tokenId: 0n });
+      if (priceOnOpen !== null) sqrtPrice = priceOnOpen;
+    }
     if (functionName === 'swap') {
       const plan = args[0], op = operations.get(plan.operationId), [output, after] = swapped(plan);
       sqrtPrice = after;
@@ -818,7 +831,9 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
         case 'eth_chainId': return { result: '0x1237' };
         case 'wallet_switchEthereumChain': return { result: null };
         case 'eth_getCode': return { result: code[lower(params[0])] ?? '0x' };
-        case 'wallet_getCapabilities': return { result: capability ? { '0x1237': { atomic: { status: capability } } } : {} };
+        case 'wallet_getCapabilities':
+          if (capabilities) return capabilities;
+          return { result: capability ? { '0x1237': { atomic: { status: capability } } } : {} };
         case 'eth_simulateV1': {
           if (simulation !== 'ok') return { error: { code: -32601, message: 'the method eth_simulateV1 does not exist/is not available' } };
           return { result: [{ calls: atomically(params[0].blockStateCalls[0].calls, false) }] };
@@ -898,6 +913,7 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     /** An operation of this owner already on chain, under the owner's next id. */
     seed(operation) { const id = operationId(BigInt(operations.size)); operations.set(id, { owner, swapped: false, closed: false, tokenId: 0n, ...operation }); return id; },
     decline(functionName) { refuse.add(functionName); },
+    moveOnOpen(price) { priceOnOpen = price; },
     revert(functionName) { toRevert.add(functionName); },
     /** Every transaction sent, decoded against the contract it went to. */
     decoded: () => sends.map(tx => ({ to: lower(tx.to), from: lower(tx.from), value: BigInt(tx.value), nonce: tx.nonce, ...decode(tx) })),
@@ -931,10 +947,19 @@ const stateViewAbi = parseAbi(['function getSlot0(bytes32 poolId) view returns (
 const withRoom = amount => (amount * 10050n + 9999n) / 10000n;
 /** The read stub's pool (support/read-stub.mjs), as the setup contract keys it: ETH against TOKEN, 0.30%, spacing 60, no hooks. */
 const STUB_POOL_KEY = { currency0: zeroAddress, currency1: FIXTURE_TOKEN, fee: 3000, tickSpacing: 60, hooks: zeroAddress };
-/** The standard range the read stub's pool price (tick 0) gives New position, in ticks, as Review states it. */
-const STUB_RANGE = [-3600, 4080];
+/**
+ * The standard range the read stub's pool price (tick 0) gives New position, in ticks, as Review states it. Changed on
+ * purpose 2026-09-28 (one-sided): the app writes this pool's price as TOKEN's in ETH (lib/read/orientation.ts), and
+ * Closer is 0.7× to 1.5× of that price, so the pool's ticks are the old ones negated and swapped (were -3600 to 4080).
+ */
+const STUB_RANGE = [-4080, 3600];
 /** The read stub's pool price: tick 0. */
 const STUB_SQRT_PRICE = 2n ** 96n;
+/**
+ * ETH for gas only beside 10,000,000,000 TOKEN typed at STUB_RANGE, which pairs with about 0.0089 ETH: 0.008 ETH.
+ * Changed on purpose 2026-09-28 (one-sided): 0.01 ETH, while Closer (-3600 to 4080) paired that TOKEN with 0.0112 ETH.
+ */
+const GAS_ONLY_ETH = 8n * 10n ** 15n;
 const Q96 = 2n ** 96n;
 const lowerKey = key => ({ ...key, currency0: key.currency0.toLowerCase(), currency1: key.currency1.toLowerCase(), hooks: key.hooks.toLowerCase() });
 /**
@@ -1004,6 +1029,36 @@ const recordWalletSteps = page => page.evaluate(() => {
   };
   new MutationObserver(record).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-step-state', 'data-wallet-step'] });
 });
+/**
+ * 2026-09-28 (review): records every change of the line under Create position with Review's wallet steps at that
+ * moment, in `window.__reasonLog`, as `line | key=state ...`, from now on.
+ */
+const recordReason = page => page.evaluate(() => {
+  const log = (window.__reasonLog = []);
+  const record = () => {
+    const line = document.querySelector('#create-reason')?.textContent ?? '';
+    const now = `${line} | ${[...document.querySelectorAll('[data-wallet-steps] li')].map(item => `${item.getAttribute('data-wallet-step')}=${item.getAttribute('data-step-state')}`).join(' ')}`;
+    if (log.at(-1) !== now) log.push(now);
+  };
+  record();
+  new MutationObserver(record).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-step-state', 'data-wallet-step'] });
+});
+/**
+ * A press that went on step by step: while the wallet was asked a step of its own (an approval, the deposit, the swap
+ * or the mint), the line said to confirm each step, never "one signature for every step". `steps`: the keys the wallet
+ * was asked, in order (an approval as `approve`); `batchAsked`: whether the wallet was offered the batch first, and the
+ * line said one signature while it was.
+ */
+async function saidEachStep(page, { batchAsked, steps }) {
+  const log = await page.evaluate(() => window.__reasonLog);
+  const asking = log.filter(entry => /(?:^| )(?:approve:\S+|fund|swap|mint)=wallet(?: |$)/.test(entry.split(' | ')[1]));
+  const keys = [...new Set(asking.flatMap(entry => entry.split(' | ')[1].split(' ').filter(pair => pair.endsWith('=wallet')).map(pair => pair.split(/[:=]/)[0])))];
+  assert.deepEqual(keys, steps, `the wallet was asked each step: ${log.join('\n')}`);
+  assert.deepEqual(asking.filter(entry => !entry.startsWith('Confirm each step in your wallet. | ')), [], 'each step is said as its own');
+  const batch = log.filter(entry => / batch=wallet(?: |$)/.test(` ${entry.split(' | ')[1]}`));
+  assert.equal(batch.length > 0, batchAsked, `the batch was ${batchAsked ? '' : 'never '}offered: ${log.join('\n')}`);
+  assert.ok(batch.every(entry => entry.startsWith('Confirm in your wallet: one signature for every step. | ')), 'one signature while the batch was offered');
+}
 /** The order in which the recorded steps turned done, each with what the others were at that moment. */
 async function doneOrder(page) {
   const log = await page.evaluate(() => window.__walletStepLog);
@@ -1022,7 +1077,7 @@ async function doneOrder(page) {
  * (StageReview.tsx FinalControl). `answer` goes to the read stub; `amount` is the TOKEN amount typed; `routes` are
  * more same-origin endpoints for the wallet-server, asked before the read stub.
  */
-async function atReview(chain, { answer, amount, routes = [] } = {}) {
+async function atReview(chain, { answer, amount, range = null, routes = [] } = {}) {
   const read = createReadStub({ answer: firstAnswer(answer, walletAssets(chain)) });
   const s = await scenario({ chain: mintedChain(chain), routes: [...routes, (request, url) => read.handle(request, url)] });
   try {
@@ -1039,13 +1094,82 @@ async function atReview(chain, { answer, amount, routes = [] } = {}) {
     await dialog.getByRole('button', { name: 'Connect Deposit Wallet', exact: true }).click();
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
     await s.page.keyboard.press('Escape');
-    await walkToReview(s.page, { amount });
+    await walkToReview(s.page, { amount, range });
     await s.page.locator('[data-create-position="idle"]').waitFor({ timeout: 30_000 });
     // Review's plan is drawn once the read service has answered the wallet's balances.
     await s.page.locator('[data-review-plan]').waitFor({ timeout: 30_000 });
     return Object.assign(s, { read, services });
   } catch (error) { await s.close().catch(() => {}); throw error; }
 }
+
+for (const pressing of [false, true]) test(`New position’s delayed title scroll ${pressing ? 'does not move a pressed Continue away' : 'still reveals its focused title and allows keyboard Continue'}`, async () => {
+  const read = createReadStub();
+  const s = await scenario({ routes: [(request, url) => read.handle(request, url)] });
+  try {
+    await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.setViewportSize({ width: 1320, height: 600 });
+    await s.page.goto(`${s.origin}/#/new`);
+    await choosePool(s.page);
+    await s.page.evaluate(() => {
+      const schedule = window.setTimeout.bind(window);
+      const cancel = window.clearTimeout.bind(window);
+      const scroll = window.scrollTo.bind(window);
+      window.__stepScrollTimers = [];
+      window.__stepScrollCalls = [];
+      // Hold only StepList's after-animation scroll, not network reads or rendering. Deliver it at the exact
+      // pointer-down/up boundary that can occur under load; make its scroll immediate to remove frame timing.
+      window.setTimeout = (callback, ms, ...args) => {
+        if (ms !== 260) return schedule(callback, ms, ...args);
+        const id = schedule(() => {}, 60_000);
+        window.__stepScrollTimers.push({ id, deliver: () => callback(...args) });
+        return id;
+      };
+      window.clearTimeout = (id) => {
+        window.__stepScrollTimers = window.__stepScrollTimers.filter(timer => timer.id !== id);
+        return cancel(id);
+      };
+      window.scrollTo = (options, y) => {
+        window.__stepScrollCalls.push(options);
+        if (typeof options === 'object') return scroll({ ...options, behavior: 'instant' });
+        return scroll(options, y);
+      };
+    });
+    await footerButton(s.page, 'Continue').click();
+    const range = s.page.locator('li[data-step="range"][aria-current="step"]');
+    await range.waitFor();
+    await s.page.waitForFunction(() => window.__stepScrollTimers.length > 0);
+    const next = range.locator('[data-journey-footer]').getByRole('button', { name: 'Continue', exact: true });
+    await next.scrollIntoViewIfNeeded();
+    await s.page.evaluate(async () => {
+      await Promise.all(document.getAnimations().map(animation => animation.finished.catch(() => {})));
+      const heading = document.querySelector('li[data-step="range"][aria-current="step"] h2');
+      const header = document.querySelector('header').getBoundingClientRect().bottom;
+      window.scrollTo({ top: window.scrollY + heading.getBoundingClientRect().top - header + 24, behavior: 'instant' });
+      window.__stepScrollCalls = [];
+    });
+    const point = await next.boundingBox();
+    assert.ok(point, 'the enabled Continue is visible');
+    const headingTop = await range.locator('h2').evaluate(element => element.getBoundingClientRect().top);
+    const headerBottom = await s.page.locator('header').evaluate(element => element.getBoundingClientRect().bottom);
+    assert.ok(headingTop < headerBottom + 8, `the held timer would bring the title back below the header (${headingTop} < ${headerBottom + 8})`);
+    if (pressing) {
+      await s.page.mouse.move(point.x + point.width / 2, point.y + point.height / 2);
+      await s.page.mouse.down();
+    }
+    try {
+      assert.equal(await (pressing ? next : range.locator('h2')).evaluate(element => document.activeElement === element), true, pressing ? 'the user is interacting with Continue' : 'the newly opened title still owns focus');
+      await s.page.evaluate(() => window.__stepScrollTimers.splice(0).forEach(timer => timer.deliver()));
+    } finally { if (pressing) await s.page.mouse.up(); }
+    assert.equal(await s.page.evaluate(() => window.__stepScrollCalls.length), pressing ? 0 : 1, pressing ? 'no automatic scroll during the press' : 'the untouched title is still brought into view');
+    if (!pressing) {
+      await next.focus();
+      await next.press('Enter');
+    }
+    await s.page.locator('li[data-step="amount"][aria-current="step"] [data-pair-side="1"] input[inputmode="decimal"]').waitFor({ timeout: 3_000 });
+    assert.deepEqual(s.wallet.state.signed, []);
+    assert.deepEqual(s.deposits, []);
+  } finally { await s.close(); }
+});
 
 /**
  * No service and no session took part, and the wallet was asked nothing outside connecting and the chain's own reads and sends.
@@ -1115,7 +1239,7 @@ test('Create position opens the position from Review through a connected wallet 
     assert.match(await detail.locator('.dm-pos-chips').innerText(), /#4242\s+In range/);
     // Changed on purpose (2026-09-27, the owner: technical data only in Details, closed until opened, at the page's end).
     await detail.locator('[data-position-details] > summary').click();
-    assert.match(await detail.locator('.dm-pos-facts').innerText(), new RegExp(`Owner\\s+${OWNER}[\\s\\S]*Ticks\\s+-3600 to 4080`));
+    assert.match(await detail.locator('.dm-pos-facts').innerText(), new RegExp(`Owner\\s+${OWNER}[\\s\\S]*Ticks\\s+${STUB_RANGE[0]} to ${STUB_RANGE[1]}`));
     await s.page.screenshot({ path: join(shots(), 'create-position-positions.png'), fullPage: true });
 
     // What the wallet was asked to sign, in order, decoded from the calldata it recorded.
@@ -1210,6 +1334,16 @@ test('a wallet that executes batches atomically creates the position with one si
     await s.page.locator('#create-reason', { hasText: 'Your wallet asks you to sign once: every step together, or none of them.' }).waitFor({ timeout: 30_000 });
     assert.equal(await s.page.locator('[data-create-batch]').count(), 0);
     assert.deepEqual([chain.sends, chain.batches], [[], []], 'nothing asked by arriving');
+    // 2026-09-28 (the owner): Review's list is the one signature from the start, not only once the press runs.
+    await s.page.locator('[data-wallet-steps]:not([data-live]) [data-wallet-step="batch"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await s.page.locator('[data-wallet-steps] li').evaluateAll(items => items.map(item => item.getAttribute('data-wallet-step'))), ['batch'], 'one wallet step before the press');
+    assert.equal(await s.page.locator('[data-wallet-step="batch"] .dm-flow-wstep-title').innerText(), 'Approve, deposit and create the position');
+    assert.equal(await s.page.locator('[data-wallet-step="batch"] .dm-flow-wstep-note').innerText(), 'All in one go, with the exact amounts. Anything the range doesn’t use comes back to you.');
+    // The window as the person sees it once the steps have settled, scrolled to the list and the button under it.
+    await s.page.waitForTimeout(1_000);
+    await s.page.locator('[data-wallet-steps]').evaluate(element => element.scrollIntoView({ block: 'center' }));
+    await s.page.waitForTimeout(300);
+    await s.page.screenshot({ path: join(shots(), 'create-position-batch-review.png') });
     await s.page.locator('[data-create-position="idle"]').click();
     await s.page.locator('[data-wallet-step="batch"]').waitFor();
     assert.equal(await s.page.locator('[data-wallet-steps] li').count(), 1, 'one wallet step');
@@ -1238,9 +1372,16 @@ test('a wallet that can batch once it turns on its smart account is offered one 
     const offer = s.page.locator('[data-create-batch="offer"]');
     await offer.waitFor({ timeout: 30_000 });
     assert.equal(await offer.innerText(), 'Sign all steps at once');
-    assert.equal(await s.page.locator('#create-batch-note').innerText(), 'Your wallet will first ask to turn on its smart account (EIP-7702). Your address stays the same, and your key stays in control.');
+    // Changed on purpose (2026-09-28, beginner first): no "(EIP-7702)" on the main screen.
+    assert.equal(await s.page.locator('#create-batch-note').innerText(), 'Your wallet will first ask to turn on its smart account. Your address stays the same, and your key stays in control.');
     assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet will ask you to confirm each step.', 'the steps stay the main way');
-    await s.page.screenshot({ path: join(shots(), 'create-position-batch-offer.png'), fullPage: true });
+    // Review keeps the steps while the one signature is only offered: nothing is chosen for the person.
+    assert.deepEqual(await s.page.locator('[data-wallet-steps] li').evaluateAll(items => items.map(item => item.getAttribute('data-wallet-step'))), [`approve:${FIXTURE_TOKEN}`, 'fund', 'mint']);
+    // Once the steps have settled, the list with the button and the offer under it (a full-page capture caught the panels mid-way).
+    await s.page.waitForTimeout(1_000);
+    await s.page.locator('#create-batch-note').evaluate(element => element.scrollIntoView({ block: 'center' }));
+    await s.page.waitForTimeout(300);
+    await s.page.screenshot({ path: join(shots(), 'create-position-batch-offer.png') });
     await offer.click();
     const notice = s.page.locator('[data-create-notice="batch_upgrade_declined"]');
     await notice.waitFor({ timeout: 30_000 });
@@ -1251,6 +1392,96 @@ test('a wallet that can batch once it turns on its smart account is offered one 
     await openCreated(s.page, '4242', 60_000);
     assert.deepEqual(chain.sends, []);
     assert.deepEqual(batchCalls(chain, chain.batches[0]).map(call => call.functionName), ['approve', 'open', 'mint']);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// 2026-09-28 (the owner: the UI must work whenever a wallet can batch). EIP-5792 writes chain keys in hex and keeps chain
+// 0x0 for what a wallet supports on every chain; viem reads decimal keys too. Each is read as 0x1237's own entry.
+test('a wallet that states its batches under chain 0x0, or under a decimal key, is read as for 0x1237: one step on Review and one batch, or the offer beside the steps', async () => {
+  let chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, capabilities: { result: { '0x0': { atomic: { status: 'supported' } } } } });
+  let s = await atReview(chain);
+  try {
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-wallet-steps]:not([data-live]) [data-wallet-step="batch"]').waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.locator('[data-wallet-steps] li').count(), 1);
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.sends, [], 'no transaction of its own');
+    assert.deepEqual(batchCalls(chain, chain.batches[0]).map(call => call.functionName), ['approve', 'open', 'mint']);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+  chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'ready', capabilities: { result: { '4663': { atomic: { status: 'ready' } } } } });
+  s = await atReview(chain);
+  try {
+    await s.page.locator('[data-create-batch="offer"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual((await walletStepStates(s.page)).map(([key]) => key), [`approve:${FIXTURE_TOKEN}`, 'fund', 'mint'], 'the steps stay while one signature is only offered');
+    await s.page.locator('[data-create-batch="offer"]').click();
+    // Chosen, the list is the one step the wallet is asked for.
+    await s.page.locator('[data-wallet-steps][data-live] [data-wallet-step="batch"]').waitFor({ timeout: 30_000 });
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.sends, []);
+    assert.equal(chain.batches.length, 1);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// Rabby (measured 25 Sep 2026; its source at v0.94.10, 23 Sep 2026): no EIP-5792 method, and it refuses any EIP-7702
+// transaction a site asks for. An account delegated elsewhere still signs plain transactions in it, one per step.
+test('a wallet without batches (wallet_getCapabilities -32601, as Rabby answers) on an account already delegated (EIP-7702): Review keeps the steps, nothing offers one signature, and each step is signed', async () => {
+  const delegate = '0xe6cae83bde06e4c305530e199d7217f42808555b';
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, ownerCode: '0xef0100' + delegate.slice(2), delegateCode: DELEGATES.code[delegate],
+    capabilities: { error: { code: -32601, message: 'method wallet_getCapabilities not found' } } });
+  const s = await atReview(chain);
+  try {
+    await s.page.locator('#create-reason', { hasText: 'Your wallet will ask you to confirm each step.' }).waitFor({ timeout: 30_000 });
+    // The wallet was asked, and its refusal is its answer: the line under Create position stays the steps' own.
+    for (let beat = 0; beat < 300 && !chain.log.includes('wallet_getCapabilities'); beat++) await new Promise(resolve => setTimeout(resolve, 100));
+    assert.ok(chain.log.includes('wallet_getCapabilities'));
+    await new Promise(resolve => setTimeout(resolve, 500));
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet will ask you to confirm each step.');
+    assert.equal(await s.page.locator('[data-create-batch]').count(), 0, 'no one-signature choice');
+    assert.deepEqual((await walletStepStates(s.page)).map(([key]) => key), [`approve:${FIXTURE_TOKEN}`, 'fund', 'mint']);
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open', 'mint'], 'one signature per step');
+    assert.deepEqual(chain.batches, []);
+    assert.ok(!chain.log.includes('wallet_sendCalls') && !chain.log.includes('eth_simulateV1'), 'no batch was prepared or offered');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// 2026-09-28 (audit): a batch the wallet never answered (a closed tab, an error other than a refusal) left its latch in
+// the browser for good, and every later press of a wallet that batches ended "could not be read". Past the mint's latest
+// deadline the batch can execute nothing, and the latch is freed (finance/setup.ts BATCH_LATCH_EXPIRY_S).
+test('a batch the wallet never answered holds Create position while it could still execute, and no longer once it cannot: then one new batch makes the position', async () => {
+  // The latch as the journal keeps it (finance/nonce.ts): a claim with no wallet id, and when it was claimed.
+  const seed = (page, operationId, age) => page.evaluate(([hash, seconds]) => {
+    localStorage.setItem(`domino.offered-batch.v1.${hash}`, crypto.randomUUID());
+    localStorage.setItem(`domino.offered-batch-at.v1.${hash}`, String(Math.floor(Date.now() / 1000) - seconds));
+  }, [keccak256(stringToHex(`4663|${OWNER}|${operationId}`)).slice(2), age]);
+  // Claimed a minute ago: it may still execute, so it is watched, and nothing is offered or sent.
+  let chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported' });
+  let s = await atReview(chain);
+  try {
+    await seed(s.page, chain.operationId(0n), 60);
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="batch_unknown"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual([chain.sends, chain.batches], [[], []]);
+    assert.ok(!chain.log.includes('wallet_sendCalls'));
+  } finally { await s.close(); }
+  // Claimed 26 minutes ago: past anything it could do. Freed, and one new batch makes the position.
+  chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported' });
+  s = await atReview(chain);
+  try {
+    await seed(s.page, chain.operationId(0n), 26 * 60);
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.sends, []);
+    assert.equal(chain.batches.length, 1);
+    assert.deepEqual(await s.page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.offered-batch'))), [], 'the old latch and the new one, both done');
     await onlyTheWallet(s, chain);
   } finally { await s.close(); }
 });
@@ -1313,18 +1544,48 @@ test('a one-token deposit in one batch: the ETH as the deposit’s value, the sw
   } finally { await s.close(); }
 });
 
+// 2026-09-28 (review): once the same press goes on step by step, the line under Create position says to confirm each
+// step, never "one signature for every step", while the wallet asks for the approval, the deposit and the mint.
 test('a batch the wallet cannot make after all goes step by step in the same press; one the wallet cannot simulate is simulated on the chain’s RPC', async () => {
   // Said supported, refused as unsupported: asked once, then each step as for any wallet.
   let chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', batchError: { code: 5760, message: 'Atomicity not supported' } });
   let s = await atReview(chain);
   try {
     await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await recordReason(s.page);
     await s.page.locator('[data-create-position="idle"]').click();
     await openCreated(s.page, '4242', 60_000);
     assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open', 'mint']);
     assert.deepEqual(chain.batches, []);
     assert.equal(chain.log.filter(method => method === 'wallet_sendCalls').length, 1, 'asked once, refused, never again');
+    await saidEachStep(s.page, { batchAsked: true, steps: ['approve', 'fund', 'mint'] });
     await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+  // No simulation anywhere (not in the wallet, not on the chain's RPC, not at a fallback): the batch is never offered,
+  // and the same press goes on step by step, said as such.
+  chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', simulation: 'unsupported' });
+  s = await atReview(chain);
+  const simulated = [];
+  try {
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
+    const noSimulation = (status, reply) => async route => {
+      const request = route.request();
+      const body = request.method() === 'POST' ? JSON.parse(request.postData() ?? '{}') : {};
+      if (body.method !== 'eth_simulateV1') return route.fallback();
+      simulated.push(new URL(request.url()).hostname);
+      return route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: body.id, ...reply }) });
+    };
+    await s.context.route(/rpc\.mainnet\.chain\.robinhood\.com/, noSimulation(500, { error: { code: -32603, message: 'internal error' } }));
+    await s.context.route(/^https:\/\/(?:robinhood-rpc\.publicnode\.com|rpc\.ordofi\.network|robinhood\.drpc\.org)\/?$/, noSimulation(200, { error: { code: -32601, message: 'the method eth_simulateV1 does not exist/is not available' } }));
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await recordReason(s.page);
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.ok(simulated.includes('rpc.mainnet.chain.robinhood.com'), 'the chain’s RPC was asked to simulate');
+    assert.deepEqual(chain.batches, []);
+    assert.equal(chain.log.filter(method => method === 'wallet_sendCalls').length, 0, 'nothing unsimulated is offered as a batch');
+    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open', 'mint'], 'each step, as for any wallet');
+    await saidEachStep(s.page, { batchAsked: false, steps: ['approve', 'fund', 'mint'] });
   } finally { await s.close(); }
   // No eth_simulateV1 in the wallet: the chain's own RPC simulates the batch, and the wallet still signs it once.
   chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', simulation: 'unsupported' });
@@ -1344,7 +1605,10 @@ test('a batch the wallet cannot make after all goes step by step in the same pre
     await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
     await s.page.locator('[data-create-position="idle"]').click();
     await openCreated(s.page, '4242', 60_000);
-    assert.deepEqual(asked, ['eth_simulateV1']);
+    // Changed on purpose 2026-09-28 (speed wave B, item 24): the new position's page reads its state as soon as its route
+    // is open, before its chunk is in: what Create position asked the chain's RPC is the simulation, first and once.
+    assert.deepEqual(asked.filter((method) => method === 'eth_simulateV1'), ['eth_simulateV1']);
+    assert.equal(asked[0], 'eth_simulateV1');
     assert.deepEqual(chain.sends, []);
     assert.equal(chain.batches.length, 1);
     assert.deepEqual(chain.refused, [], 'the wallet’s refusal of eth_simulateV1 is its own answer, not a method this page needs');
@@ -1376,6 +1640,26 @@ test('Create position finds this wallet’s earlier deposit in the same pool and
     assert.ok(!chain.viewed.includes('allowance') && !chain.viewed.includes('balanceOf') && !chain.viewed.includes('nextOperationId'), 'nothing about a new deposit was even read');
     assert.equal(chain.operations.size, 1, 'no second operation');
     await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// 2026-09-28 (review): a held deposit's mint is never in a batch, so with a wallet that signs everything at once the
+// line under Create position still says to confirm each step while the wallet asks for the mint.
+test('with a wallet that signs everything at once, an earlier deposit’s mint is its own step, and Create position says so', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { tokenId: 4243n, atomic: 'supported' });
+  chain.seed({ key: STUB_POOL_KEY, balance0: 2_000_000n, balance1: 1_000_000n });
+  const s = await atReview(chain);
+  try {
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-position="held"]').waitFor({ timeout: 30_000 });
+    await recordReason(s.page);
+    await s.page.locator('[data-create-position="held"]').click();
+    await openCreated(s.page, '4243', 60_000);
+    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['mint'], 'the mint alone');
+    assert.deepEqual(chain.batches, []);
+    assert.equal(chain.log.filter(method => method === 'wallet_sendCalls').length, 0, 'no batch is offered for a held deposit');
+    await saidEachStep(s.page, { batchAsked: false, steps: ['mint'] });
   } finally { await s.close(); }
 });
 
@@ -1443,6 +1727,118 @@ test('a deposit that reverts in a block not yet final is reported as reverted, a
   } finally { await s.close(); }
 });
 
+// ---- A range beside today's price takes one token alone (2026-09-28, one-sided, the owner: "if I hold only MANY and
+// want to sell it, I put the range above today's price. No swap: only one side of the pool's pair.") The fixture pool
+// reads "1 TOKEN = 0.000000000001 ETH" (lib/read/orientation.ts): a range above that price takes TOKEN alone. ----
+
+test('a range above today’s price with TOKEN only: the amount step asks for TOKEN alone, Review lists Approve TOKEN, Deposit TOKEN and Create, and nothing is swapped', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  const s = await atReview(chain, { range: ['0.0000000000015', '0.000000000003'] });
+  const { setup } = chain.release.deployment;
+  try {
+    // No mode and no word of buying or selling: the range step and Review say what they always said.
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /\b(buy|sell|buying|selling)\b/i);
+    // The rail's Amount row names TOKEN alone, never "0 ETH".
+    assert.match(await s.page.locator('li[data-step="amount"] .dm-flow-row-summary').innerText(), /^1 TOKEN$/);
+    const amounts = s.page.locator('[data-review-amounts]');
+    assert.equal(await amounts.getAttribute('data-review-plan'), 'both', 'the wallet funds it as it is: no swap');
+    assert.equal(await amounts.innerText(), '1 TOKEN', 'the one token it takes, never "0 ETH +"');
+    assert.equal(await s.page.locator('[data-review-swap], [data-review-swap-note]').count(), 0);
+    assert.equal(await s.page.locator('[data-review-position]').innerText(), 'Today’s price is outside this range, so the position won’t earn fees until the price moves into it.');
+    assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, null], ['fund', null], ['mint', null]]);
+    const steps = await s.page.locator('[data-wallet-steps]').innerText();
+    assert.match(steps, /Approve TOKEN[\s\S]*Deposit TOKEN[\s\S]*Create the position/);
+    assert.doesNotMatch(steps, /Swap|both tokens/);
+    // The preview says it calmly: no red Out of range.
+    assert.equal(await s.page.locator('.dm-flow-preview [data-preview-waits]').innerText(), 'Earns once the price is in range');
+    assert.equal(await s.page.locator('.dm-flow-preview .dm-pill--out').count(), 0);
+    await s.page.locator('[data-stage-card="review"]').screenshot({ path: join(shots(), 'one-sided-review.png') });
+
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-wallet-steps][data-live]').waitFor();
+    assert.deepEqual((await walletStepStates(s.page)).map(([key]) => key), [`approve:${FIXTURE_TOKEN}`, 'fund', 'mint'], 'the chain’s balances make the same plan');
+    await openCreated(s.page, '4242', 60_000);
+    const sent = chain.decoded();
+    assert.deepEqual(sent.map(tx => tx.functionName), ['approve', 'open', 'mint'], 'no swap');
+    const [approve, open, mint] = sent;
+    // Changed on purpose 2026-09-28 (one-sided, review): exactly the 1 TOKEN Review shows, with no slippage room (was
+    // withRoom(1_000_000n)): a one-sided mint makes position of all of it, so a room made the position larger than Review.
+    assert.deepEqual([approve.to, approve.args[0].toLowerCase(), approve.args[1]], [FIXTURE_TOKEN, setup, 1_000_000n], 'the 1 TOKEN alone is approved');
+    assert.deepEqual([open.args[2], open.args[3], open.value], [0n, 1_000_000n, 0n], 'the 1 TOKEN alone is deposited, and no ETH');
+    const minted = mint.args[0];
+    assert.ok(minted.tickLower < minted.tickUpper && minted.tickUpper <= 0, `the pool’s range lies at or under its tick 0 (TOKEN dearer): ${minted.tickLower} to ${minted.tickUpper}`);
+    assert.deepEqual([minted.maxAmount0, minted.maxAmount1], [0n, 1_000_000n]);
+    // The position takes no more than the 1 TOKEN typed (v4-core rounds a mint's amount up), and all but the mint's 10 bps slack of it.
+    const taken = (minted.liquidity * (sqrtPriceAtTick(minted.tickUpper) - sqrtPriceAtTick(minted.tickLower)) + Q96 - 1n) / Q96;
+    assert.ok(taken <= 1_000_000n && taken >= 998_900n, `the mint takes ${taken} of the 1,000,000 deposited`);
+    assert.equal(chain.quoted.length, 0, 'the pool was never asked for a swap quote');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('a range whose lowest price is today’s exactly: Review plans TOKEN alone, and Create position sends no swap the review did not show', async () => {
+  // The study's edge case (2026-09-28): the range's edge on the pool's price, where the mint's slippage band used to
+  // reach into the range and Create position swapped about 1% of the deposit for ETH without saying so.
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  const s = await atReview(chain, { range: ['0.000000000001', '0.000000000002'] });
+  try {
+    assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'both');
+    assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, null], ['fund', null], ['mint', null]]);
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    const sent = chain.decoded();
+    assert.deepEqual(sent.map(tx => tx.functionName), ['approve', 'open', 'mint'], 'no swap');
+    const minted = sent[2].args[0];
+    assert.equal(minted.tickUpper, 0, 'the range’s edge is the pool’s tick');
+    assert.equal(minted.maxAmount0, 0n);
+    assert.equal(minted.minSqrtPriceX96, STUB_SQRT_PRICE, 'the mint’s band stops at the range’s edge, where TOKEN alone makes it');
+    assert.ok(minted.maxSqrtPriceX96 > STUB_SQRT_PRICE);
+    assert.equal(chain.quoted.length, 0);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('a one-token deposit for a range beside the price, and the price moves into the range before the mint: no swap Review did not show, the deposit held and said so; the next press swaps part of it and mints', async () => {
+  // Added 2026-09-28 (one-sided, review): the guard in CreatePosition.tsx swapIfNeeded (INTO_RANGE). Review planned TOKEN
+  // alone for a range above today's price; once the deposit is in, the pool's price moves to half its tick-0 price
+  // (TOKEN twice as dear, 2·10⁻¹² ETH), inside the range of 1.5·10⁻¹² to 3·10⁻¹² ETH, which then needs ETH too.
+  const inside = (STUB_SQRT_PRICE * 7071n) / 10000n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  chain.moveOnOpen(inside);
+  const s = await atReview(chain, { range: ['0.0000000000015', '0.000000000003'] });
+  try {
+    assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'both');
+    assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, null], ['fund', null], ['mint', null]]);
+    await s.page.locator('[data-create-position="idle"]').click();
+    const notice = s.page.locator('[data-create-notice="range_needs_both"]');
+    await notice.waitFor({ timeout: 60_000 });
+    assert.equal(await notice.innerText(), 'The price moved into your range, which now needs both tokens. Your deposit is held: press Create position to swap part of it and finish, or refund it.');
+    const again = s.page.locator('[data-create-position="held"]');
+    await again.waitFor();
+    const sent = chain.decoded();
+    assert.deepEqual(sent.map(tx => tx.functionName), ['approve', 'open'], 'the approval and the deposit Review showed, and no swap');
+    assert.deepEqual([chain.quotes, chain.quoted], [[], []], 'no swap was even quoted');
+    const [held] = [...chain.operations.values()];
+    assert.deepEqual([held.balance0, held.balance1, held.swapped, held.closed], [0n, 1_000_000n, false, false], 'the deposit is held as it was made');
+    assert.deepEqual(await walletStepStates(s.page), [[`approve:${FIXTURE_TOKEN}`, 'done'], ['fund', 'done'], ['mint', 'waiting']], 'no swap step was shown');
+    assert.doesNotMatch(await s.page.locator('[data-wallet-steps]').innerText(), /Swap/);
+
+    // The next press on the held deposit swaps part of it, as the sentence said: the step appears, then the mint.
+    await again.click();
+    await s.page.locator('[data-wallet-steps] li[data-wallet-step="swap"]').waitFor({ timeout: 30_000 });
+    await openCreated(s.page, '4242', 60_000);
+    const all = chain.decoded();
+    assert.deepEqual(all.map(tx => tx.functionName), ['approve', 'open', 'swap', 'mint']);
+    const [, , swap, mint] = all;
+    assert.equal(swap.args[0].zeroForOne, false, 'part of the TOKEN, for ETH');
+    assert.ok(swap.args[0].grossInput > 0n && swap.args[0].grossInput < 1_000_000n, `part of it: ${swap.args[0].grossInput}`);
+    assert.ok(chain.quotes.length >= 1, 'the contract was asked what sizes buy, after the deposit');
+    const minted = mint.args[0];
+    assert.ok(minted.maxAmount0 > 0n && minted.maxAmount1 > 0n, 'both tokens, for a range the price is inside');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
 // ---- Create position with one of the pool's two tokens: part of it is swapped inside the pool before the mint ----
 
 /** Each wallet step's marker, whether it is drawn in the money-in green (styles/flow.css), and what it shows. */
@@ -1465,9 +1861,10 @@ async function doneInTurn(page, keys) {
 }
 
 test('with TOKEN and only gas in ETH, Review plans the swap; Create position approves and deposits the typed TOKEN alone, swaps part of it for ETH inside the pool, mints, and opens the position, each wallet step turning green in turn', async () => {
-  // 10,000,000,000 TOKEN (6 decimals) pairs with about 0.0112 ETH at this range; the wallet holds 0.01 ETH, enough for gas only.
+  // 10,000,000,000 TOKEN (6 decimals) pairs with about 0.0089 ETH at this range; the wallet holds 0.008 ETH, enough for
+  // gas only (GAS_ONLY_ETH, changed on purpose 2026-09-28, one-sided).
   const typed = 10n ** 16n;
-  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed } });
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed } });
   const s = await atReview(chain, { amount: '10000000000' });
   const { setup } = chain.release.deployment;
   try {
@@ -1685,7 +2082,7 @@ const emptyPools = (route) => {
 
 test('a one-token deposit into a pool with nothing in range is refused before anything is sent: Review warns from the pool’s reported liquidity, and Create position reads the pool, says nothing was deposited, and asks the wallet for nothing', async () => {
   const typed = 10n ** 16n;
-  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidity: 0n });
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidity: 0n });
   const s = await atReview(chain, { answer: emptyPools, amount: '10000000000' });
   try {
     assert.equal(await s.page.locator('[data-review-amounts]').getAttribute('data-review-plan'), 'swap');
@@ -1719,7 +2116,7 @@ test('a one-token deposit into a pool with nothing in range is refused before an
 test('in a pool too thin for the balanced split, the check backs off to a swap the pool fills inside its limit before anything is sent, and Create position approves, deposits, swaps and mints', async () => {
   const typed = 10n ** 16n;
   // 5·10¹⁶ of liquidity: swapping half the TOKEN, as the balanced split would, moves the square-root price about 10%.
-  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidity: 5n * 10n ** 16n });
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidity: 5n * 10n ** 16n });
   const s = await atReview(chain, { amount: '10000000000' });
   try {
     const [, part] = (await s.page.locator('[data-review-swap]').innerText()).match(/About ([\d.,]+) TOKEN of it is swapped/) ?? [];
@@ -1793,7 +2190,7 @@ const LIQUID_FROM = (STUB_SQRT_PRICE * 10160n) / 10000n;
 
 test('a pool with nothing in range at its price and a range just above it: the quotes find the swap filling there, inside its limit, and Create position approves, deposits, swaps and mints', async () => {
   const typed = 10n ** 16n;
-  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: 10n ** 16n, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidFrom: LIQUID_FROM });
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed }, liquidFrom: LIQUID_FROM });
   const s = await atReview(chain, { amount: '10000000000' });
   try {
     assert.equal(chain.liquidityAt(STUB_SQRT_PRICE), 0n, 'nothing in range at the pool’s price');
@@ -2011,7 +2408,11 @@ test('a link from a pool page verifies the pool with the token it names, and ste
 // keyboard on the width switch, a price typed the way the page writes one, a refused price whose error leaves with Custom,
 // the line for a range that does not hold today's price, and the price read again once it is 5 minutes old, once. The
 // fixture pool is ETH/TOKEN at tick 0 with a tick spacing of 60: 1 ETH = 1,000,000,000,000 TOKEN.
-test('New position’s Range step: Closer, Wider and Custom in words, the arrow keys, a grouped price moved outward, a refused price cleared by a preset, the out-of-range line, and a stale price read again once', async () => {
+// Changed on purpose 2026-09-28 (one-sided): the app writes a token's price in ETH (lib/read/orientation.ts), so the step
+// reads "1 TOKEN = 0.000000000001 ETH", its lowest price first; each end's tick (data-bound-tick) is still the pool's own,
+// so the lowest price sits at the pool's upper tick. Its prices are too small for thousands separators: the typed price
+// is a plain decimal now.
+test('New position’s Range step: Closer, Wider and Custom in words, the arrow keys, a typed price moved outward, a refused price cleared by a preset, the out-of-range line, and a stale price read again once', async () => {
   const read = createReadStub();
   const s = await scenario({ clock: true, routes: [(request, url) => read.handle(request, url)] });
   await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
@@ -2028,42 +2429,44 @@ test('New position’s Range step: Closer, Wider and Custom in words, the arrow 
     const lowerPrice = step.locator('#range-lower-price'), upperPrice = step.locator('#range-upper-price');
     const focused = () => s.page.evaluate(() => document.activeElement?.getAttribute('data-width'));
 
-    // Closer by default: today's price and both ends as "1 ETH = …", how far each is from today, and no field to type in.
-    assert.equal(await step.locator('[data-pool-price-text]').innerText(), '1 ETH = 1,000,000,000,000 TOKEN');
+    // Closer by default: today's price and both ends as "1 TOKEN = …", how far each is from today, and no field to type in.
+    assert.equal(await step.locator('[data-pool-price-text]').innerText(), '1 TOKEN = 0.000000000001 ETH');
     assert.deepEqual(await checked(), ['Closer']);
-    assert.deepEqual(await ticks(), ['-3600', '4080']);
+    assert.deepEqual(await ticks(), ['3600', '-4080']);
     assert.deepEqual(await away(), ['30% below today', '50% above today']);
     assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'Earns more while the price stays near today’s.');
-    assert.match(await step.locator('[data-range-bound="lower"] [data-bound-price]').innerText(), /^1 ETH = [\d,.]+ TOKEN$/);
+    assert.equal(await step.locator('[data-range-bound="lower"] [data-bound-price]').innerText(), '1 TOKEN = 0.000000000000697689 ETH');
+    assert.equal(await step.locator('[data-range-bound="upper"] [data-bound-price]').innerText(), '1 TOKEN = 0.00000000000150378 ETH');
     assert.equal(await step.locator('input').count(), 0, 'no field, step or slider until Custom');
     assert.doesNotMatch(await step.innerText(), /≈|\bper\b|\btick/i, 'no "≈", no "per", no ticks on screen');
 
     await step.getByRole('radio', { name: 'Wider' }).click();
     assert.deepEqual(await checked(), ['Wider']);
-    assert.deepEqual(await ticks(), ['-6960', '6960']);
+    assert.deepEqual(await ticks(), ['6960', '-6960']);
     assert.deepEqual(await away(), ['50% below today', '101% above today']);
     assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'Earns less, but keeps earning through bigger moves.');
 
     // The arrow keys move the width switch, and the focus with it; Home and End go to either end.
     await step.getByRole('radio', { name: 'Wider' }).focus();
     await s.page.keyboard.press('ArrowLeft');
-    assert.deepEqual([await checked(), await ticks(), await focused()], [['Closer'], ['-3600', '4080'], 'standard']);
+    assert.deepEqual([await checked(), await ticks(), await focused()], [['Closer'], ['3600', '-4080'], 'standard']);
     await s.page.keyboard.press('End');
-    assert.deepEqual([await checked(), await ticks()], [['Custom'], ['-3600', '4080']], 'Custom keeps the range it opens on');
+    assert.deepEqual([await checked(), await ticks()], [['Custom'], ['3600', '-4080']], 'Custom keeps the range it opens on');
     assert.equal(await step.locator('.dm-flow-width-line').innerText(), 'Set your own lowest and highest price.');
     await s.page.keyboard.press('Home');
     assert.deepEqual(await checked(), ['Closer']);
     await s.page.keyboard.press('ArrowRight');
-    assert.deepEqual([await checked(), await ticks()], [['Wider'], ['-6960', '6960']]);
+    assert.deepEqual([await checked(), await ticks()], [['Wider'], ['6960', '-6960']]);
     await s.page.keyboard.press('ArrowLeft');
     await s.page.keyboard.press('ArrowLeft');
-    assert.deepEqual([await checked(), await ticks(), await focused()], [['Custom'], ['-3600', '4080'], 'custom'], 'from Closer, left wraps round to Custom');
+    assert.deepEqual([await checked(), await ticks(), await focused()], [['Custom'], ['3600', '-4080'], 'custom'], 'from Closer, left wraps round to Custom');
     assert.equal(await lowerPrice.count(), 1, 'Custom opens the fields');
+    assert.equal(await upperPrice.inputValue(), '0.00000000000150378', 'the field holds the price as the page writes it');
 
-    // A price typed the way the page writes one is read without its separators, and moves outward to the pool's step.
-    await upperPrice.fill('2,000,000,000,000.5');
+    // A typed price moves outward to the pool's step: TOKEN's highest price 2·10⁻¹² ETH, the pool's tick −6960.
+    await upperPrice.fill('0.000000000002');
     await upperPrice.press('Enter');
-    assert.deepEqual(await ticks(), ['-3600', '6960']);
+    assert.deepEqual(await ticks(), ['3600', '-6960']);
     assert.deepEqual(await away(), ['30% below today', '101% above today']);
     assert.equal(await alerts.count(), 0);
 
@@ -2071,13 +2474,13 @@ test('New position’s Range step: Closer, Wider and Custom in words, the arrow 
     await lowerPrice.fill('lots');
     await lowerPrice.press('Enter');
     assert.equal(await alerts.innerText(), 'Enter a price as a number, like 2000 or 0.5.');
-    await lowerPrice.fill('9,000,000,000,000');
+    await lowerPrice.fill('0.000000000009');
     await lowerPrice.press('Enter');
     assert.equal(await alerts.innerText(), 'The lowest price must stay below the highest price.');
     assert.equal(await lowerPrice.getAttribute('aria-invalid'), 'true');
-    assert.deepEqual(await ticks(), ['-3600', '6960'], 'the range is untouched');
+    assert.deepEqual(await ticks(), ['3600', '-6960'], 'the range is untouched');
     await step.getByRole('radio', { name: 'Closer' }).click();
-    assert.deepEqual([await checked(), await ticks()], [['Closer'], ['-3600', '4080']]);
+    assert.deepEqual([await checked(), await ticks()], [['Closer'], ['3600', '-4080']]);
     assert.equal(await alerts.count(), 0, 'the error leaves with Custom');
     await footerButton(s.page, 'Continue').click();
     await s.page.locator('li[data-step="amount"][aria-current="step"]').waitFor();
@@ -2086,14 +2489,14 @@ test('New position’s Range step: Closer, Wider and Custom in words, the arrow 
     assert.equal(await alerts.count(), 0, 'and is not there after Amount and Back');
     await step.getByRole('radio', { name: 'Custom' }).click();
     assert.equal(await alerts.count(), 0, 'nor when Custom opens again');
-    assert.doesNotMatch(await lowerPrice.inputValue(), /^9/, 'the field shows the range’s own price, not the refused one');
+    assert.equal(await lowerPrice.inputValue(), '0.000000000000697689', 'the field shows the range’s own price, not the refused one');
     assert.equal(await lowerPrice.getAttribute('aria-invalid'), null);
 
     // A lowest price above today's: the range does not hold today's price, and one line says what that means.
     assert.equal(await step.locator('p[data-range-position]').count(), 0, 'nothing to warn about while the range holds the price');
-    await lowerPrice.fill('1,100,000,000,000');
+    await lowerPrice.fill('0.0000000000011');
     await lowerPrice.press('Enter');
-    assert.deepEqual(await ticks(), ['900', '4080'], 'moved outward, down to the pool’s step');
+    assert.deepEqual(await ticks(), ['-900', '-4080'], 'moved outward, down to the pool’s step');
     assert.deepEqual(await away(), ['9.4% above today', '50% above today']);
     assert.equal(await step.locator('p[data-range-position="below"]').innerText(),
       'Today’s price is below this range: the position starts with one token only and earns no fees until the price rises into it.');
@@ -2109,7 +2512,7 @@ test('New position’s Range step: Closer, Wider and Custom in words, the arrow 
     assert.equal(await step.locator('[data-pool-price-text]').getAttribute('title'), 'The pool price was read more than 5 minutes ago on this page.');
     assert.equal(priceReads(), before, 'nothing is read by itself');
     await step.getByRole('radio', { name: 'Wider' }).click();
-    assert.deepEqual(await ticks(), ['-6960', '6960'], 'the width is drawn at once');
+    assert.deepEqual(await ticks(), ['6960', '-6960'], 'the width is drawn at once');
     await s.page.waitForFunction(() => document.querySelector('li[data-step="range"] [data-picker="range"]')?.getAttribute('data-price-read') === 'ok');
     assert.equal(priceReads(), before + 1, 'read again, once');
     assert.equal(await step.getAttribute('data-price-state'), 'usable');
@@ -2117,7 +2520,7 @@ test('New position’s Range step: Closer, Wider and Custom in words, the arrow 
     await step.getByRole('radio', { name: 'Custom' }).click();
     await s.page.waitForTimeout(500);
     assert.equal(priceReads(), before + 1, 'a fresh price is not read again');
-    assert.deepEqual(await ticks(), ['-3600', '4080']);
+    assert.deepEqual(await ticks(), ['3600', '-4080']);
   } finally { await s.close(); }
 });
 
@@ -2750,6 +3153,38 @@ async function shootBoth(page, name, target = null) {
 
 // Changed on purpose (2026-09-27, round 5 review): the Positions tab and the receipts page share one controller, so See all
 // and the way back read no list of their own (execution-v1 allows one read per 30 s), and a failed receipt's sentence is plain.
+// 2026-09-28 (speed wave B, item 25: Receipts named its tokens one at a time through the read path, 1.1 s apart, about 2.7
+// to 4.5 s on a first visit): a receipt's tokens are named from one read of the chain for all of them (their symbol() and
+// decimals() in one aggregate3), and only one the chain gives no decimals for goes on to the read path.
+test('a receipt’s tokens are named from one read of the chain; only one the chain gives no decimals for is asked of the read path', async () => {
+  const TOKEN = '0x' + '11'.repeat(20), OTHER = '0x' + '22'.repeat(20), UNKNOWN = '0x' + '33'.repeat(20);
+  const chain = browserChain({ tokens: { [TOKEN]: { symbol: 'TOKEN', decimals: 6 }, [OTHER]: { symbol: 'OTH', decimals: 18 } } });
+  const s = await scenario({ clock: true, chain });
+  const reserved = statusWire.responses['status.reserved'].item;
+  const source = (id, currency, added) => ({ sourceId: '0x' + id.repeat(32), currency, grossOriginalConsumedRaw: added, chargedConsumedRaw: '0', serviceFeeRaw: '0', liquidityAddedRaw: added, originalAfterRaw: '0', chargedAfterRaw: '0' });
+  const finalized = { ...reserved, intentId: '0x' + '56'.repeat(32), state: 'reconciled', canCancel: false, signer: '0x' + '57'.repeat(20), nonceRaw: '3',
+    attempts: [{ ordinal: 0, transactionHash: '0x' + 'ab'.repeat(32) }],
+    receipt: { transactionHash: '0x' + 'ab'.repeat(32), blockNumberRaw: '8123456', blockHash: '0x' + 'cd'.repeat(32), canonical: true, finalized: true, serviceFeeBps: 200,
+      serviceFeeRecipient: '0x' + '78'.repeat(20), liquidityIncreaseRaw: '1000000', fullL2CostWei: null,
+      sources: [source('9a', TOKEN, '1470000'), source('9b', OTHER, '2000000000000000000'), source('9c', UNKNOWN, '41')] } };
+  const list = { ...statusWire.responses['list.empty'], owner: OWNER, items: [finalized] };
+  assert.ok(executionRuntime.validateResponse('list', list));
+  await s.context.route(/\/api\/execution\/v1\/(list|status)$/, async route => {
+    await route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', headers: { 'X-Domino-Execution-Contract': executionRuntime.CONTRACT_VERSION }, body: JSON.stringify(list) });
+  });
+  const asked = await answerTokenReads(s.context, {});
+  try {
+    await login(s.page);
+    const done = s.page.locator(`section[aria-label="Execution receipts"] [data-execution-intent="${finalized.intentId}"]`);
+    await done.locator('[data-receipt-added]').getByText('1.47 TOKEN', { exact: true }).waitFor({ timeout: 30_000 });
+    await done.locator('[data-receipt-added]').getByText('2 OTH', { exact: true }).waitFor({ timeout: 30_000 });
+    await done.locator(`[data-receipt-added] [data-receipt-currency="${UNKNOWN}"] [data-amount-reason="decimals_unavailable"]`).waitFor({ timeout: 30_000 });
+    assert.deepEqual(asked, [UNKNOWN], 'the read path asked only for the token the chain gave no decimals for');
+    const reads = chain.log.filter((call) => call.method === 'eth_call' && call.params[1] === 'latest' && call.params[0].data.includes('95d89b41'));
+    assert.equal(reads.length, 1, 'one read of the chain for the receipt’s tokens');
+  } finally { await s.close(); }
+});
+
 test('many receipts: the Positions tab shows four short rows at most, cancelled ones folded into one, and See all opens their own page with what the tab read, where the next page arrives by itself', async () => {
   const s = await scenario({ clock: true });
   const first = [receiptItem(1, 'cancelled'), receiptItem(2, 'reconciled', { block: 7346840, usdg: '16490000', ufg: '1086592191816706700000' }), receiptItem(3, 'cancelled'),
@@ -3335,7 +3770,9 @@ test('with no wallet the page asks to connect; connected, the wallet’s own pos
     const text = await main.innerText();
     assert.doesNotMatch(text, /Owner controls|Network budget|Create a paused sequence|Manage a sequence|Root NFT|Read my sequences|Sequence address/i);
     assert.doesNotMatch(text, FORBIDDEN);
-    assert.equal(s.rpc.scans(OWNER), 1, 'the positions are read from the chain, once');
+    // Changed on purpose 2026-09-28 (speed wave B, item 23): a wallet that never opened a setup operation (its nonce, read
+    // with the head in the list's first call) has no position: no SetupMinted log is read for it.
+    assert.equal(s.rpc.scans(OWNER), 0, 'the positions are read from the chain, once: its nonce says there are none');
     assert.deepEqual(chain.log, [], 'nothing is read from the chain by opening the page');
     assert.deepEqual(chain.sends, []);
     assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
@@ -3478,7 +3915,8 @@ test('a wallet that can batch once it turns on its smart account sets up automat
     const offer = card.locator('[data-sequence-batch="offer"]');
     await offer.waitFor({ timeout: 30_000 });
     assert.equal(await offer.innerText(), 'Sign both steps at once');
-    assert.equal(await card.locator('#sequence-batch-note').innerText(), 'Your wallet will first ask to turn on its smart account (EIP-7702). Your address stays the same, and your key stays in control.');
+    // Changed on purpose (2026-09-28, beginner first): no "(EIP-7702)" on the main screen.
+    assert.equal(await card.locator('#sequence-batch-note').innerText(), 'Your wallet will first ask to turn on its smart account. Your address stays the same, and your key stays in control.');
     assert.equal(await card.locator('#sequence-reason').innerText(), 'Your wallet asks you to approve the position, then to create the sequence.', 'the steps stay the main way');
     await offer.click();
     const notice = card.locator('[data-notice-code="batch_upgrade_declined"]');
@@ -3920,7 +4358,7 @@ function refusing(chain) {
   chain.fetch = async (url, init) => {
     const body = JSON.parse(init.body);
     const refused = Date.now() < state.until;
-    state.asked.push({ at: Date.now(), refused, calls: (Array.isArray(body) ? body : [body]).map((call) => ({ method: call.method, topic: call.params?.[0]?.topics?.[0] })) });
+    state.asked.push({ at: Date.now(), refused, calls: (Array.isArray(body) ? body : [body]).map((call) => ({ method: call.method, topic: call.params?.[0]?.topics?.[0], params: call.params })) });
     if (refused) return new Response('Too Many Requests', { status: 429, headers: { 'access-control-allow-origin': '*,*', 'content-type': 'text/plain' } });
     return answer(url, init);
   };
@@ -3942,6 +4380,11 @@ const swapRead = (filter) => {
   const first = [filter.topics?.[0]].flat();
   return first.length === 2 || (first.length === 1 && first[0] === EPOCH_TOPICS.donate);
 };
+/**
+ * 2026-09-28 (speed wave B, item 23): the list's first call, its head and the wallet's nonce in one aggregate3 at 'latest'
+ * (functions/_lib/walletPositions.ts scanWallet), where it asked eth_blockNumber before.
+ */
+const listHead = (call) => call.method === 'eth_call' && call.params?.[1] === 'latest';
 /** Whether a request is the fees worker's (a history's logs or block headers), not the list's or a position's state. */
 const feesRead = (request) => request.calls.some((call) => call.method === 'eth_getBlockByNumber' || (call.method === 'eth_getLogs' && call.topic !== SETUP_MINTED_TOPIC));
 /** After a reload or in a new tab: the wallet connects again by itself, or is connected again from the header. */
@@ -4057,7 +4500,8 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // closed until opened.
     assert.match(await detail.locator('.dm-pos-chips').innerText(), /Uniswap · 0\.30% fee · #3135288\s+In range/);
     const stats = await detail.locator('[data-position-stats]').innerText();
-    assert.match(stats, /CURRENT PRICE\s+1 ETH = 1,000,000,000,000 TOKEN\s+994,018,000,000\s+Your range\s+1,006,020,000,000\s+In range: earning fees/, 'the pool’s price from the same read, with no button to ask for it');
+    // Changed on purpose 2026-09-28 (one-sided): TOKEN's price in ETH, the app's one way round (lib/read/orientation.ts).
+    assert.match(stats, /CURRENT PRICE\s+1 TOKEN = 0\.000000000001 ETH\s+0\.000000000000994018\s+Your range\s+0\.00000000000100602\s+In range: earning fees/, 'the pool’s price from the same read, with no button to ask for it');
     assert.match(stats, /FEES READY TO COLLECT\s+[\d.,]+ ETH\s+0 TOKEN/);
     assert.match(stats, /POSITION VALUE\s+[\d.,]+ ETH/);
     // Your APR waits for the fees history (a skeleton meanwhile); this chain has none to give it, so a dash and why.
@@ -4133,7 +4577,8 @@ test('a read that fails is never “no positions”: the loading rows and one qu
   const chain = browserChain({ positions: [onChain(OWNED_OPEN), ...OWNED_CLOSED.map((id) => closedOnChain(id))], tokens: { ...TOKENS, [USDG]: { symbol: 'USDG', decimals: 6 } }, deposits: { [OWNER]: [deposit] } });
   // The chain refuses the page's first two reads, then answers.
   let refusals = 0;
-  chain.outage = (call) => (call.method === 'eth_blockNumber' && ++refusals <= 2 ? 500 : null);
+  // Changed on purpose 2026-09-28 (speed wave B, item 23): the list's first call is its head and nonce's aggregate3.
+  chain.outage = (call) => (listHead(call) && ++refusals <= 2 ? 500 : null);
   const site = siteRoutes();
   const read = createReadStub();
   const s = await scenario({ chain, routes: [site.route, (request, url) => read.handle(request, url)] });
@@ -4300,6 +4745,9 @@ test('Your positions and a position’s page read themselves again while the tab
     const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
     await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
     const fees = () => detail.locator('[data-stat="fees"] [data-amount]').first().getAttribute('title');
+    // The list's warm row paints first at its head. Wait for the page's own
+    // head - 2 answer before measuring the following minute's refresh.
+    await s.page.waitForFunction((block) => document.querySelector('[data-position-detail]')?.getAttribute('data-snapshot') === String(block), chain.head - 2);
     assert.equal(await fees(), '0.000001267650600228');
     const read = await detail.getAttribute('data-snapshot');
     await watchDetail(s.page);
@@ -4362,7 +4810,8 @@ test('a failed refresh keeps the figures: no loading rows, no line and no reason
     // 31 s later (past the quick waits and the list's own 30 s): not asked again.
     await jump(s.page, '00:31');
     await s.page.waitForTimeout(500);
-    assert.deepEqual(refused, ['eth_blockNumber'], 'not asked again before 60 s');
+    // Changed on purpose 2026-09-28 (speed wave B, item 23): the list's first call is its head and nonce's aggregate3.
+    assert.deepEqual(refused, ['eth_call'], 'not asked again before 60 s');
     // Past 60 s: asked again, and this time the chain answers.
     chain.outage = null;
     chain.head += 120;
@@ -4394,6 +4843,7 @@ test('a position’s page keeps its header through refreshes that fail or find n
       const page = document.querySelector('[data-position-detail]');
       return page?.getAttribute('data-snapshot') === String(block) && page.querySelector('[data-stat="fees"] [data-amount]')?.getAttribute('title') === title;
     }, [chain.head - 2, fees]);
+    await drawn('0.000000633825300114');
     assert.deepEqual(await header(), [String(chain.head - 2), '0.000000633825300114']);
     await watchDetail(s.page);
     const refused = [];
@@ -4497,6 +4947,73 @@ test('a held deposit’s refund holds the list’s refresh: nothing is read whil
     await until(() => chain.scans(OWNER) === 3, 'the refresh 30 s later');
     assert.deepEqual([wallet.refused, wallet.missing], [[], []], 'the wallet was asked only what it answers');
     assert.deepEqual([chain.refused, chain.missing], [[], []]);
+  } finally { await s.close(); }
+});
+
+test('an initial position read failure recovers from the fees store before the page retries, without connecting a wallet', async () => {
+  const chain = browserChain({ positions: [onChain(OWNED_OPEN)], tokens: TOKENS });
+  const fetch = chain.fetch;
+  let heads = 0;
+  let held = false;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  chain.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.method === 'eth_blockNumber') {
+      heads += 1;
+      if (heads === 1) return new Response('Unavailable', { status: 500 });
+      if (heads === 2) { held = true; await gate; }
+    }
+    return fetch(url, init);
+  };
+  const s = await scenario({ chain, clock: true, refresh: true });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    await s.page.locator('[data-empty="position-unread"]').waitFor();
+    await until(() => held, 'the fees store’s independent state read');
+    // Pause only after both reads started (the RPC runtime has a brief
+    // startup handshake). The held store answer, not the page's pending
+    // three-second retry, must recover this header.
+    await s.page.clock.pauseAt(new Date(await s.page.evaluate(() => Date.now() + 100)));
+    assert.equal(await s.page.locator('[data-position-detail]').count(), 0);
+    release();
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"][data-snapshot="${chain.head - 2}"]`);
+    await detail.waitFor({ timeout: 10_000 });
+    assert.equal(await s.page.locator('[data-empty="position-unread"]').count(), 0);
+    assert.equal(await detail.locator('[data-cell="apr"]').count(), 1, 'Your APR is mounted again with the recovered position');
+    assert.equal(await detail.locator('[data-position-actions]').count(), 0, 'public state is not an authenticated wallet');
+    assert.deepEqual(s.wallet.state.signed, []);
+  } finally { release(); await s.close(); }
+});
+
+test('a different NFT’s stored state cannot populate a missing position or replace its confirmed absence', async () => {
+  const MISSING = '919191';
+  const chain = browserChain({ positions: [onChain(OWNED_OPEN)], tokens: TOKENS });
+  const s = await scenario({ chain, clock: true, refresh: true });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"][data-snapshot="${chain.head - 2}"]`).waitFor();
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, MISSING);
+    await until(() => chain.asked.get(MISSING) === 1, 'the first missing-NFT read');
+    await s.page.locator('[data-position-loading]').waitFor();
+    assert.equal(await s.page.locator('[data-position-detail]').count(), 0, 'the previous position’s cached values never cross identities');
+    for (const [index, delay] of ['00:04', '00:09', '00:13'].entries()) {
+      // The deliberately retained new-NFT skeleton is aria-busy while its
+      // bounded retry timer waits; each jump fires that next timer once.
+      await jump(s.page, delay, { pending: true });
+      await until(() => chain.asked.get(MISSING) === index + 2, 'the next missing-NFT read');
+    }
+    const gone = s.page.locator('[data-empty="position-gone"]');
+    await gone.waitFor();
+    assert.match(await gone.innerText(), new RegExp(`NFT #${MISSING} was not found`));
+    await jump(s.page, '02:01');
+    assert.equal(await gone.count(), 1, 'a confirmed absence stays absent');
+    assert.equal(await s.page.locator('[data-position-detail], [data-position-actions]').count(), 0);
+    assert.deepEqual(s.wallet.state.signed, []);
   } finally { await s.close(); }
 });
 
@@ -4658,7 +5175,9 @@ test('a position’s page offers Automate and says Plain position only for one o
     await s.page.evaluate((id) => { location.hash = `#/sequence/${id}`; }, ELSEWHERE);
     await s.page.locator('main.dm-seq [data-sequence-release]').first().waitFor({ timeout: 10_000 });
     await s.page.waitForTimeout(1_000);
-    assert.equal(chain.scans(OWNER) - before, 1, 'the wallet’s list was read once, and not again for an id it lacks');
+    // Changed on purpose 2026-09-28 (speed wave B, item 18): the wallet's list read a moment ago on Positions is this
+    // visit's, kept in the page's memory: the automation page takes it and reads it neither once more nor for an id it lacks.
+    assert.equal(chain.scans(OWNER) - before, 0, 'the wallet’s list kept from Positions, not read again, and not for an id it lacks');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
   } finally { await s.close(); }
 });
@@ -5066,6 +5585,48 @@ test('the owner’s Auto-compound position draws its fees from its own life: set
   } finally { await s.close(); }
 });
 
+test('a verified fees chart is shown while its automation vault record is still pending, then adds only verified attribution', async () => {
+  const VAULT = `0x${'5b'.repeat(20)}`;
+  const sample = caseChain('3325113');
+  const tx = sample.fixture.expect.events.find((event) => event[0] === 'increase')[2];
+  const chain = automatedChain('3325113', { vault: VAULT, owner: OWNER, executions: [{ tx, action: 0 }] });
+  const fetch = chain.fetch;
+  let held = 0;
+  let released = false;
+  let release;
+  const gate = new Promise((resolve) => { release = () => { released = true; resolve(); }; });
+  chain.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    const calls = Array.isArray(body) ? body : [body];
+    if (calls.some((call) => call.method === 'eth_getLogs' && String(call.params[0].address).toLowerCase() === VAULT)) {
+      held += 1;
+      await gate;
+    }
+    return fetch(url, init);
+  };
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
+    await until(() => held > 0, 'the held vault record');
+    // The APR uses the completed history independently of the vault record.
+    // At that same point the graph must show it, not wait for decoration.
+    await s.page.locator('[data-cell="apr"][data-apr="ready"]').waitFor({ timeout: 30_000 });
+    const chart = s.page.locator('[data-fees-card][data-fees-state="verified"]');
+    await chart.waitFor({ timeout: 1_000 });
+    assert.equal(released, false);
+    assert.equal(await chart.locator('[data-automation-impact]').count(), 0, 'no automation claim before the vault answers');
+    const earned = await chart.locator('.dm-fees-hero').innerText();
+    release();
+    await chart.locator('[data-automation-impact="compound"] [data-impact="added"]').waitFor({ timeout: 10_000 });
+    assert.equal(await chart.locator('.dm-fees-hero').innerText(), earned, 'attribution does not replace the verified fee figure');
+    assert.deepEqual(site.asked, []);
+    assert.deepEqual(s.wallet.state.signed, []);
+  } finally { release(); await s.close(); }
+});
+
 // 2026-09-27, round 6 (the owner: add each position's APR to Your positions, and keep the table clean): the owner's own
 // Auto-compound 3325113 (recorded, tests/support/fees/3325113.json.gz, held by a vault Domino's factory made) beside a
 // plain position. The row shows the page's own figure. Nothing is kept in the browser.
@@ -5075,7 +5636,86 @@ test('the owner’s Auto-compound position draws its fees from its own life: set
 // history it could not finish stayed the fees store's answer, so the page opened from the list read nothing more until a
 // reload. Now the list starts no history run: each row shows a calm dash until its page drew the history this visit, and
 // then the page's own figure, with nothing read again on the way back.
-test('Your positions replays no history: each row shows its page’s own APR once the page drew it this visit, a calm dash until then, and the way back reads nothing again', async () => {
+/** A list with one real recorded history: the RPC is still entirely offline/fake. */
+function earlyAprChain() {
+  const vault = `0x${'5a'.repeat(20)}`;
+  const recorded = automatedChain('3325113', { vault, owner: ACCOUNTS[0].address, executions: [] });
+  const position = recorded.fixture.state.positions[0];
+  const base = browserChain({
+    head: recorded.head,
+    timestamp: recorded.fixture.state.timestamp,
+    positions: [{ tokenId: '3325113', holder: OWNER, key: position.poolKey, tickLower: position.tickLower, tickUpper: position.tickUpper, liquidity: 1n, unclaimed: [0n, 0n] }],
+    tokens: TOKENS,
+  });
+  return listChain({ recorded, base, vault });
+}
+
+async function observePrefetch(s, now, holdList = false) {
+  // Preserve the fixture's actual timestamp; only the test's wall clock moves, never the recorded financial history.
+  await s.context.addInitScript((now) => {
+    const RealDate = Date;
+    globalThis.Date = class extends RealDate {
+      constructor(...args) { super(...(args.length ? args : [now])); }
+      static now() { return now; }
+    };
+  }, now);
+  await s.context.addInitScript(({ holdList }) => {
+    const send = Worker.prototype.postMessage;
+    window.__prefetchRuns = [];
+    Worker.prototype.postMessage = function (message, ...rest) {
+      if (message?.type === 'run' || message?.type === 'cancel') {
+        window.__prefetchRuns.push({ type: message.type, id: message.id, budget: message.budgetBytes ?? null });
+        // Hold only the test's opportunistic run; a detail's ordinary worker always executes normally.
+        if (holdList && message.type === 'run' && message.budgetBytes <= 1024 * 1024) return;
+      }
+      return send.call(this, message, ...rest);
+    };
+  }, { holdList });
+  await s.page.reload();
+  await s.page.locator('[data-empty="owned-connect"]').waitFor();
+  await connectWallet(s.page);
+  await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 20_000 });
+}
+
+test('bounded visible APR prefetch draws the recorded position’s qualified rate without opening its detail or signing', async () => {
+  const site = siteRoutes();
+  const chain = earlyAprChain();
+  const s = await scenario({ chain, routes: [site.route], prefetch: true });
+  try {
+    await observePrefetch(s, (chain.recorded.fixture.state.timestamp + 5) * 1000);
+    const row = s.page.locator('[data-position-row="3325113"]');
+    await row.scrollIntoViewIfNeeded();
+    await row.locator('[data-cell="apr"][data-apr="ready"]').waitFor({ timeout: 15_000 });
+    assert.match((await row.locator('[data-cell="apr"]').innerText()).trim(), /%/);
+    assert.equal(await s.page.locator('[data-position-detail]').count(), 0, 'no detail was opened to populate the APR');
+    const runs = await s.page.evaluate(() => window.__prefetchRuns.filter((message) => message.type === 'run'));
+    assert.deepEqual(runs, [{ type: 'run', id: '3325113', budget: 1024 * 1024 }], 'one low-priority list run, not page-budget fan-out');
+    assert.equal(s.wallet.state.log.some((call) => /personal_sign|eth_sign|sendTransaction/.test(call.method)), false);
+  } finally { await s.close(); }
+});
+
+test('opening a position cancels its held background APR before the detail starts its own full-budget history', async () => {
+  const site = siteRoutes();
+  const chain = earlyAprChain();
+  const s = await scenario({ chain, routes: [site.route], prefetch: true });
+  try {
+    await observePrefetch(s, (chain.recorded.fixture.state.timestamp + 5) * 1000, true);
+    const row = s.page.locator('[data-position-row="3325113"]');
+    await row.scrollIntoViewIfNeeded();
+    await s.page.waitForFunction(() => window.__prefetchRuns.some((message) => message.type === 'run' && message.budget === 1024 * 1024));
+    await row.click();
+    await s.page.locator('[data-position-detail][data-position-id="3325113"]').waitFor({ timeout: 15_000 });
+    await s.page.waitForFunction(() => window.__prefetchRuns.some((message) => message.type === 'run' && message.budget === 2 * 1024 * 1024));
+    const messages = await s.page.evaluate(() => window.__prefetchRuns);
+    const cancel = messages.findIndex((message) => message.type === 'cancel' && message.id === '3325113');
+    const pageRun = messages.findIndex((message) => message.type === 'run' && message.budget === 2 * 1024 * 1024);
+    assert.ok(cancel > 0 && cancel < pageRun, JSON.stringify(messages));
+    await s.page.locator('[data-fees-card][data-fees-state="verified"]').first().waitFor({ timeout: 20_000 });
+    assert.equal(messages.filter((message) => message.type === 'run' && message.budget === 1024 * 1024).length, 1);
+  } finally { await s.close(); }
+});
+
+test('with background prefetch disabled, each row shows its page’s own APR once the page drew it this visit and the way back reads nothing again', async () => {
   const VAULT = `0x${'5a'.repeat(20)}`;
   const recorded = automatedChain('3325113', { vault: VAULT, owner: ACCOUNTS[0].address, executions: [] });
   const position = recorded.fixture.state.positions[0];
@@ -5092,7 +5732,9 @@ test('Your positions replays no history: each row shows its page’s own APR onc
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     // Every run the fees store sends its worker and every cancel, and each run's end the worker sends back, in order.
-    await s.page.evaluate(() => {
+    // Changed on purpose 2026-09-28 (speed wave B, item 37): Positions creates the worker as it opens, so these are
+    // counted from the page's load (an init script, and the page loaded again).
+    await s.context.addInitScript(() => {
       const Base = window.Worker;
       const send = Base.prototype.postMessage;
       window.__feesRuns = [];
@@ -5109,6 +5751,7 @@ test('Your positions replays no history: each row shows its page’s own APR onc
         }
       };
     });
+    await s.page.reload();
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     // 2026-09-28 (review: every figure moved left when the badges, then an APR, arrived): where each row's figures stand
     // the moment the list is drawn, before the automation's own read and any APR.
@@ -5117,7 +5760,7 @@ test('Your positions replays no history: each row shows its page’s own APR onc
       new MutationObserver((_, observer) => {
         if (!document.querySelector('[data-owned="ready"] a[data-position-row]')) return;
         observer.disconnect();
-        window.__drawn = { edges: window.__rowEdges(), late: document.querySelectorAll('.dm-own-badge, .dm-own-auto a, [data-apr="ready"]').length };
+        window.__drawn = { edges: window.__rowEdges(), late: document.querySelectorAll('[data-apr="ready"]').length };
       }).observe(document.body, { subtree: true, childList: true, attributes: true });
     });
     await connectWallet(s.page);
@@ -5144,8 +5787,29 @@ test('Your positions replays no history: each row shows its page’s own APR onc
     // Nothing moved: the figures stand where they were drawn, now that the badges are in (their columns kept their room
     // from the first paint).
     const drawn = await s.page.evaluate(() => window.__drawn);
-    assert.equal(drawn.late, 0, 'measured before the badges came');
+    // Changed on purpose 2026-09-28 (speed wave B, item 17): each position's feature comes with the list's own read, so its
+    // badge or its Automate is drawn with the row, and nothing moves after (the list draws no APR of its own since the
+    // log-limits hotfix; a row's APR is its page's, on the way back).
+    assert.equal(drawn.late, 0, 'measured before any APR came');
     assert.deepEqual(await s.page.evaluate(() => window.__rowEdges()), drawn.edges, 'every figure where it was first drawn');
+
+    // 2026-09-29 (final release, speed wave B with feat/one-sided): the page's header is drawn at once from the list's row
+    // (wave B, item 18: lib/walletPositions.ts keptPosition), and that first frame writes the price the app's one way round
+    // (lib/read/orientation.ts) as the page's own read does after it: this pool's first currency is USDG, so "1 UFG = …
+    // USDG" with the range's lowest price of UFG first, never "1 USDG = … UFG". Every frame the header shows is recorded.
+    await s.page.evaluate(() => {
+      window.__headers = [];
+      const note = () => {
+        const detail = document.querySelector('[data-position-detail][data-position-id="3325113"]');
+        const price = detail?.querySelector('[data-stat="price"] [data-current-price="usable"]');
+        const ends = detail?.querySelector('[data-stat="range"] .dm-pos-span-ends');
+        if (!price || !ends) return;
+        const frame = { snapshot: detail.getAttribute('data-snapshot'), price: price.textContent.replace(/\s+/g, ' ').trim(), ends: [...ends.children].map((end) => end.textContent.trim()) };
+        const last = window.__headers.at(-1);
+        if (!last || last.snapshot !== frame.snapshot || last.price !== frame.price || last.ends.join() !== frame.ends.join()) window.__headers.push(frame);
+      };
+      new MutationObserver(note).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+    });
 
     // Its page, opened by a click on the badge (2026-09-28, review: the badge was a dead spot in the row): its own run,
     // the chart and Your APR.
@@ -5160,6 +5824,19 @@ test('Your positions replays no history: each row shows its page’s own APR onc
     const figure = (await pageApr.locator('.dm-pos-apr').innerText()).trim().split(/\s/)[0];
     assert.match(figure, /^[\d,]+(\.\d)?%$/);
     assert.deepEqual((await s.page.evaluate(() => window.__feesRuns)).filter((entry) => entry.startsWith('run')), ['run 3325113'], 'the page’s own run, once');
+    // The header from the row, then from the page's own read: one way round in every frame.
+    const headers = await s.page.evaluate(() => window.__headers);
+    assert.ok(headers.length > 0, 'the header was drawn');
+    for (const frame of headers) {
+      assert.match(frame.price, /^1 UFG = [\d,]+(\.\d+)? USDG$/, `block ${frame.snapshot}: UFG’s price in USDG`);
+      const [low, , high] = frame.ends.map((end) => Number(end.replace(/[^\d.]/g, '')));
+      assert.ok(low > 0 && high > low, `block ${frame.snapshot}: the range’s lowest price first (${frame.ends.join(' ')})`);
+    }
+    const snapshots = [...new Set(headers.map((frame) => frame.snapshot))];
+    assert.equal(snapshots.at(-1), await detail.getAttribute('data-snapshot'), 'the last frame is the page’s own read');
+    // The list's row is at the chain's head, the page's own read two blocks behind it (lib/fees/client.ts).
+    assert.ok(snapshots.length >= 2 && Number(snapshots[0]) > Number(snapshots.at(-1)), `the first frame is the list’s row: blocks ${snapshots.join(', ')}`);
+    console.log(`# the header's frames: ${headers.map((frame) => `block ${frame.snapshot} "${frame.price}" ${frame.ends.join(' ')}`).join('; ')}`);
     // Back: the page's figure at once on its row, the other row still a dash, and nothing replayed again.
     const before = (await s.page.evaluate(() => window.__feesRuns)).length;
     await s.page.evaluate(() => { location.hash = '#/positions'; });
@@ -5194,6 +5871,11 @@ test('Your positions draws this browser’s copy at once while the RPC refuses, 
   const read = createReadStub();
   const s = await scenario({ chain, routes: [site.route, (request, url) => read.handle(request, url)] });
   try {
+    await s.context.addInitScript(() => {
+      window.__cooldowns = [];
+      window.__cooldownObserver = new BroadcastChannel('domino-chain-cooldown-v1');
+      window.__cooldownObserver.onmessage = ({ data }) => { if (data && typeof data === 'object') window.__cooldowns.push({ at: Date.now(), ...data }); };
+    });
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     await connectWallet(s.page);
@@ -5231,16 +5913,25 @@ test('Your positions draws this browser’s copy at once while the RPC refuses, 
     assert.deepEqual(await ownedRows(s.page), fresh, 'the copy’s rows stay under it');
     assert.equal(await s.page.locator('[data-owned] [data-owned-loading], [data-owned] [data-empty]').count(), 0);
     const lifted = Date.now();
+    // Genuine repeated refusals rest pages as well as workers now. Lifting the fake RPC does not revoke the
+    // announced cooldown: require silence until it expires, then the same prompt recovery as before.
+    const cooldowns = await s.page.evaluate(() => window.__cooldowns);
+    const cooldown = cooldowns.at(-1);
+    assert.ok(cooldown && cooldown.count >= 1 && cooldown.until > lifted, 'the repeated refusal announced an active staged cooldown');
+    assert.ok(cooldown.until - cooldown.at <= LANE_PACE.restMs, 'the announced cooldown stays within the real backoff cap');
     rpc.until = 0;
-    await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
-    const late = Date.now() - lifted;
-    assert.ok(late < 6_000, `the chain’s list ${late} ms after the RPC let the address in`);
+    await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: Math.max(0, cooldown.until - Date.now()) + 6_000 });
+    const late = Date.now() - cooldown.until;
+    assert.ok(late >= 0 && late < 6_000, `the chain’s list ${late} ms after the shared cooldown expired`);
+    assert.deepEqual(rpc.asked.filter((request) => request.at >= lifted && request.at < cooldown.until), [], 'no physical RPC read bypassed the announced cooldown');
+    console.log(`# Wallet copy: chain-backed list ${late} ms after the staged cooldown expired; no RPC read during its remaining ${cooldown.until - lifted} ms`);
     assert.equal(await s.page.locator('[data-owned] [data-owned-note]').count(), 0, 'and no line over the chain’s list');
     await s.page.locator('[data-held-deposit]').waitFor();
     await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor();
     assert.deepEqual(await listSeen(s.page), ['kept', 'kept:rereading', 'ready'], 'the copy, the copy under the quiet line, then the chain’s list: never the loading rows');
     assert.deepEqual(await ownedRows(s.page), fresh);
-    assert.equal(rpc.asked.filter((request) => request.refused && request.calls.some((call) => call.method !== 'eth_blockNumber')).length, 0, 'while refused, only the list’s first call was asked again');
+    // Changed on purpose 2026-09-28 (speed wave B, item 23): the list's first call is its head and nonce's aggregate3.
+    assert.equal(rpc.asked.filter((request) => request.refused && request.calls.some((call) => !listHead(call))).length, 0, 'while refused, only the list’s first call was asked again');
 
     // Copies that are never drawn: the reload finds none it may draw, the chain refusing meanwhile, and drops them.
     const other = ACCOUNTS[1].address.toLowerCase();
@@ -5433,6 +6124,9 @@ test('the RPC refusing for a few seconds while another tab reads a position’s 
       window.__rests = [];
       window.__restsHeard = new BroadcastChannel('domino-chain-reads');
       window.__restsHeard.onmessage = (event) => { if (event.data === 'rest') window.__rests.push(Date.now()); };
+      window.__cooldowns = [];
+      window.__cooldownObserver = new BroadcastChannel('domino-chain-cooldown-v1');
+      window.__cooldownObserver.onmessage = ({ data }) => { if (data && typeof data === 'object') window.__cooldowns.push({ at: Date.now(), ...data }); };
     });
     await connectWallet(s.page);
     // A's list (it keeps this browser's copy), then 3325113's page: its run is on, and its worker reads the history.
@@ -5443,6 +6137,15 @@ test('the RPC refusing for a few seconds while another tab reads a position’s 
 
     // B opens Positions; the RPC refuses this address for six seconds from B's first call.
     b = await s.context.newPage();
+    await b.addInitScript(() => {
+      window.__ownedReadyAt = 0;
+      const observed = new MutationObserver(() => {
+        if (!document.querySelector('[data-owned="ready"] a[data-position-row="3325113"]')) return;
+        window.__ownedReadyAt = Date.now();
+        observed.disconnect();
+      });
+      observed.observe(document, { childList: true, subtree: true, attributes: true });
+    });
     let first = 0;
     await b.route(/^https:\/\/rpc\.mainnet\.chain\.robinhood\.com\/?$/, (route) => {
       if (!first) {
@@ -5460,28 +6163,51 @@ test('the RPC refusing for a few seconds while another tab reads a position’s 
     await b.locator('[data-owned="kept"] a[data-position-row="3325113"]').waitFor({ timeout: 5_000 });
     await until(() => first > 0, 'B’s first call');
     await b.locator('[data-owned="ready"] a[data-position-row="3325113"]').waitFor({ timeout: 30_000 });
-    const ready = Date.now();
+    // Measure the browser's transition, not when Playwright's next poll notices it. Once the list is drawn,
+    // another tab may legitimately resume its history before waitFor returns to the test process.
+    const ready = await b.evaluate(() => window.__ownedReadyAt);
+    assert.ok(ready > first, 'the browser observed B’s chain-backed list');
     const late = ready - rpc.until;
     assert.ok(late < 6_000, `B’s list from the chain ${late} ms after the RPC let the address in`);
     assert.deepEqual(await listSeen(b), ['kept', 'ready'], 'B: the copy, then the chain’s list; never the loading rows or a line');
     assert.ok(onItsWay.at < first, 'A’s history read was on its way when B asked first');
 
     // Nothing of the fees histories from B's first call to its list, nor while the rest its last refusal started lasts.
-    // A rest is told once the refused call it follows came back, so it lasts at least restMs from that call as the fake
-    // RPC saw it (the same clock): the last refusal before the last rest the lanes heard.
+    // A rest is told once the refused call it follows came back, so it lasts at least its stage from that call as the fake
+    // RPC saw it (the same clock): each rest the lanes heard, from the last refusal before it.
+    // 2026-09-29 (final release, speed wave B with hotfix/charts): the rest is staged (lib/chain/browser.ts restAfter:
+    // LANE_PACE.firstRestMs, then four times as long for each rest heard within LANE_PACE.restMs of the last one's end, up
+    // to LANE_PACE.restMs: 6, 24, then 30 s), so the window follows the stages of the rests heard, as the lanes count them
+    // (one per page call the RPC refused, which may be two refused requests: the page asks an unreadable refusal once more
+    // before it tells the rest), no longer restMs from the last refusal.
     const refused = rpc.asked.filter((request) => request.refused);
     const rests = (await s.page.evaluate(() => window.__rests)).filter((at) => at >= first);
     assert.ok(rests.length > 0, 'B’s refusals rested every lane');
-    const rested = Math.max(...refused.filter((request) => request.at <= rests.at(-1)).map((request) => request.at)) + LANE_PACE.restMs;
-    const quiet = Math.max(ready, rested);
+    const lane = { until: 0, count: 0 };
+    for (const heard of rests) {
+      const before = refused.filter((request) => request.at <= heard).map((request) => request.at);
+      assert.ok(before.length > 0, 'every rest follows a refusal');
+      const at = Math.max(...before);
+      lane.count = at < lane.until + LANE_PACE.restMs ? lane.count + 1 : 0;
+      lane.until = Math.max(lane.until, at + Math.min(LANE_PACE.restMs, LANE_PACE.firstRestMs * 4 ** lane.count));
+    }
+    const cooldowns = (await s.page.evaluate(() => window.__cooldowns)).filter((value) => value.at >= first);
+    assert.ok(cooldowns.length > 0, 'B’s refusal also announced its absolute cooldown to pages and new workers');
+    assert.ok(cooldowns.every((value) => value.until > value.at && value.until - value.at <= LANE_PACE.restMs), 'each shared cooldown is bounded');
+    const restUntil = Math.max(lane.until, ...cooldowns.map((value) => value.until));
+    const quiet = Math.max(ready, restUntil);
     await new Promise((done) => setTimeout(done, Math.max(3_000, quiet - Date.now() + 500)));
     const meanwhile = rpc.asked.filter((request) => request.at > first + 100 && request.at <= quiet && feesRead(request));
     assert.deepEqual(meanwhile.map((request) => `${request.at - first} ms ${request.refused ? 'refused' : 'answered'} ${request.calls.map((call) => call.method).join('+')}`), [], 'no tab’s fees worker asked anything');
     assert.deepEqual(await runsSince(b, first), [], 'no history run was started in the list’s tab');
-    // A's page may ask the run B's refusals stopped again meanwhile (store.ts RETRY_MS): the reads above say it asked nothing.
-    const again = (await runsSince(s.page, first)).map((run) => `${run.id} at ${run.at - first} ms`);
-    assert.ok(refused.length > 0 && refused.every((request) => request.at >= first && request.calls.every((call) => call.method === 'eth_blockNumber')), 'only the list’s first call was asked while refused');
-    console.log(`# B: its copy at once, the chain’s list ${late} ms after the RPC let the address in; ${refused.length} refused, each the list’s first call; A’s history read on its way ${first - onItsWay.at} ms before B’s first call; no fees read from then to ${quiet - first} ms after it (its list at ${ready - first} ms, ${rests.length} rests); A’s page asked again: ${again.join(', ') || 'nothing'}`);
+    // A's page may ask the run B's refusals stopped again meanwhile (store.ts RETRY_MS): the reads above say it asked
+    // nothing, and it is the page's own run, never the list's (speed wave B, item 19).
+    const againRuns = await runsSince(s.page, first);
+    assert.ok(againRuns.every((run) => run.id === '3325113'), 'tab A: only its page’s own run, asked again');
+    const again = againRuns.map((run) => `${run.id} at ${run.at - first} ms`);
+    // Changed on purpose 2026-09-28 (speed wave B, item 23): the list's first call is its head and nonce's aggregate3.
+    assert.ok(refused.length > 0 && refused.every((request) => request.at >= first && request.calls.every(listHead)), 'only the list’s first call was asked while refused');
+    console.log(`# B: its copy at once, the chain’s list ${late} ms after the RPC let the address in; ${refused.length} refused, each the list’s first call; A’s history read on its way ${first - onItsWay.at} ms before B’s first call; no fees read from then to ${quiet - first} ms after it (its list at ${ready - first} ms, ${rests.length} rests, the shared rest to ${restUntil - first} ms); A’s page asked again: ${again.join(', ') || 'nothing'}`);
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
   } finally {
     onItsWay.answer?.();
@@ -5500,7 +6226,8 @@ test('the RPC refusing for a few seconds while another tab reads a position’s 
 // whose `done` lost its lane's wait (feesReplay.worker.ts) had the store ask again 2 s after the refusal, a run the resting
 // lane ended at once without a read, and the chart came at the 30 s attempt: the reads alone never showed it.
 // Changed on purpose (2026-09-28, hotfix): the lane's rest (LANE_PACE.restMs) is 6 s, no longer 30 s: live, the RPC takes
-// the address's calls again 4.5 to 6 s after the work that drew its refusal (src/lib/chain/browser.ts).
+// the address's calls again 4.5 to 6 s after the work that drew its refusal (src/lib/chain/browser.ts). 2026-09-29
+// (speed wave B merged with hotfix/charts): that 6 s is the wave's first, staged rest (LANE_PACE.firstRestMs).
 test('the RPC refuses the replay’s header batch once: the chart is drawn right after the lane’s rest, not a minute later, and nothing is asked meanwhile', async () => {
   const chain = caseChain('3325113');
   const answer = chain.fetch;
@@ -5536,15 +6263,18 @@ test('the RPC refuses the replay’s header batch once: the chart is drawn right
     assert.equal(refusals.length, 1, 'the header batch was refused');
     const refusedAt = refusals[0].at;
     const verified = s.page.locator('[data-fees-card][data-fees-state="verified"]');
-    await verified.first().waitFor({ timeout: LANE_PACE.restMs + 20_000 });
+    // Changed on purpose 2026-09-28 (speed wave B, item 19): the lane's rest after a first refusal is its first, staged one
+    // (LANE_PACE.firstRestMs: 2.5 s, and 6 s since 2026-09-29 with hotfix/charts), no longer the whole 30 s.
+    const rest = LANE_PACE.firstRestMs;
+    await verified.first().waitFor({ timeout: rest + 20_000 });
     const drawn = Date.now() - refusedAt;
     const next = workerReads(refusedAt)[0];
-    assert.ok(next && next.at - refusedAt >= LANE_PACE.restMs - 250, `nothing asked while the lane rested: the next read ${next ? next.at - refusedAt : '-'} ms after the refusal`);
-    assert.ok(drawn >= LANE_PACE.restMs && drawn < LANE_PACE.restMs + 5_000, `the chart ${drawn} ms after the refusal: the rest (${LANE_PACE.restMs} ms) and one run`);
+    assert.ok(next && next.at - refusedAt >= rest - 250, `nothing asked while the lane rested: the next read ${next ? next.at - refusedAt : '-'} ms after the refusal`);
+    assert.ok(drawn >= rest && drawn < rest + 5_000, `the chart ${drawn} ms after the refusal: the rest (${rest} ms) and one run`);
     const runs = (await s.page.evaluate(() => window.__feesRuns)).filter((run) => run.id === '3325113').map((run) => run.at - refusedAt);
     assert.equal(runs.length, 2, `two runs sent to the worker, the first and one after the rest: ${runs.join(', ')} ms from the refusal`);
     assert.ok(runs[0] <= 0, 'the first, refused');
-    assert.ok(runs[1] >= LANE_PACE.restMs && runs[1] < LANE_PACE.restMs + 3_000, `the second ${runs[1]} ms after the refusal: once the lane's rest (${LANE_PACE.restMs} ms) is over, not during it`);
+    assert.ok(runs[1] >= rest && runs[1] < rest + 3_000, `the second ${runs[1]} ms after the refusal: once the lane's rest (${rest} ms) is over, not during it`);
     assert.ok(Date.now() - started < 60_000, 'before the minute’s /state read would have asked again');
     assert.ok(workerReads(refusedAt).some((call) => call.method === 'eth_getBlockByNumber'), 'the headers, read on the new attempt');
     assert.equal(refusals.length, 1, 'one refusal, nothing else refused');
@@ -5786,9 +6516,11 @@ test('while a busy history is replayed the list and the position’s page come b
     await s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 10_000 });
     const took = Date.now() - stopped;
     assert.ok(took < 5_000, `the card stopped loading ${took} ms after the first refusal`);
-    await new Promise((done) => setTimeout(done, 3_000));
+    // Changed on purpose 2026-09-28 (speed wave B, item 19): nothing asked again during the lane's first rest (2.5 s; 6 s
+    // since 2026-09-29, with hotfix/charts), after which the store asks the run once more (its first retry).
+    await new Promise((done) => setTimeout(done, Math.max(0, LANE_PACE.firstRestMs - took - 300)));
     const refused = chain.refusals.slice(refusedBefore);
-    assert.equal(refused.length, 1, `one refused request, and nothing asked again: ${refused.map((r) => r.method).join(', ')}`);
+    assert.equal(refused.length, 1, `one refused request, and nothing asked again during the rest: ${refused.map((r) => r.method).join(', ')}`);
     assert.match(await s.page.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
     // Changed on purpose (2026-09-25, the owner: the card loaded, then vanished): the card stays, with the chain's
     // unclaimed figure and a flat, quiet plot where no history can be drawn.
@@ -5827,7 +6559,9 @@ test('the list replays no fees history: each row shows its unclaimed fees from t
     await new Promise((done) => setTimeout(done, 3_000));
     const logs = chain.log.filter((call) => call.method === 'eth_getLogs' && call.params[0].topics?.[0] !== SETUP_MINTED_TOPIC);
     assert.deepEqual(logs, [], 'no Transfer, pool or swap log: nothing is replayed for the list');
-    assert.deepEqual(workers, [], 'no replay worker is created');
+    // Changed on purpose 2026-09-28 (speed wave B, item 37): Positions creates the replay worker as it opens (its file in
+    // beside the page's chunk); it is sent nothing to replay for the list, and reads nothing (no log above).
+    assert.ok(workers.length <= 1, `the one worker Positions opens with, at most: ${workers.join(', ')}`);
     assert.equal(await s.page.locator('[data-fees-card]').count(), 0, 'and no Fees card');
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
   } finally { await s.close(); }

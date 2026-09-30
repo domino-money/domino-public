@@ -287,7 +287,7 @@ export async function sizeSwap(terms: PoolTerms, from: Side, balance: bigint, qu
 }
 
 export type DepositPlan =
-  /** Both tokens, each with the slippage room. */
+  /** Both tokens, each with the slippage room; for a range that takes one token alone, exactly that token's need. */
   | { kind: 'both'; amount0: bigint; amount1: bigint }
   /** One token alone: `deposit` of token `from`, of which `swap` (an estimate before the pool's impact) is swapped for `receive` of the other. */
   | { kind: 'swap'; from: Side; deposit: bigint; swap: bigint; receive: bigint }
@@ -314,10 +314,20 @@ export interface PlanInput {
  * token itself, the other token pays for the whole position: its own share
  * and the cost of the typed amount. Unknown balances: both, and the chain
  * decides at Create position.
+ *
+ * A range that takes one token alone (one need is zero: pairAmount.ts
+ * rangeTakesOnly) is funded with exactly that need, with no slippage room
+ * (2026-09-28, one-sided, review): what one token alone makes of a range
+ * beside the price does not depend on where the price sits on that side, and
+ * a one-sided mint has no second token to hold it back, so a room would
+ * become position. Review shows 500,000 MANY, and 500,000 MANY is approved,
+ * deposited and minted (mintPlan.ts keeps back its 10 bps slack for the
+ * rounding, returned with the NFT).
  */
 export function depositPlan(input: PlanInput): DepositPlan {
   const { terms, independent, typedRaw, need0, need1, slippageBps, balances } = input
-  const room: readonly [bigint, bigint] = [withRoom(need0, slippageBps), withRoom(need1, slippageBps)]
+  const oneSided = (need0 === 0n) !== (need1 === 0n)
+  const room: readonly [bigint, bigint] = oneSided ? [need0, need1] : [withRoom(need0, slippageBps), withRoom(need1, slippageBps)]
   if (!balances) return { kind: 'both', amount0: room[0], amount1: room[1] }
   // Both at hand, with the room where the wallet has it: the mint is sized to what was deposited.
   if (balances[0] >= need0 && balances[1] >= need1) {

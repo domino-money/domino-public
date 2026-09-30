@@ -60,7 +60,7 @@ import { fixedFeePercent } from './screens/fee'
 import { isTransient } from './screens/transient'
 import type { ReadOutcome, ReadResponses, ReadRoute, ReadSource, ReadValidators } from './types'
 
-export type FeaturedRuntime = Pick<typeof V5, 'CONTRACT_VERSION' | 'ERROR_STATUS_BY_CODE' | 'validateRequest' | 'validateResponse' | 'validateError' | 'matchesRequest'>
+export type FeaturedRuntime = Pick<typeof V5, 'CONTRACT_VERSION' | 'CONTRACT_VERSIONS' | 'ERROR_STATUS_BY_CODE' | 'validateRequest' | 'validateResponse' | 'validateError' | 'matchesRequest'>
 
 export const FEATURED_ROUTE = 'featured-pools' as const
 /** The list's whole read, from the moment it is asked: past it, the embedded list. */
@@ -145,11 +145,14 @@ export function validateFeatured(runtime: Pick<FeaturedRuntime, 'validateRespons
 
 /**
  * The runtime as the read pipeline's validators: the answer must pass it
- * whole, a request is exactly `{}`, and an error is read-v1's.
+ * whole, a request is exactly `{}`, and an error is read-v1's. The list is
+ * asked in the runtime's version (rc.2) and taken in any it accepts: rc.1 too
+ * while the VM moves to rc.2 (featured-policy v2, 2026-09-28).
  */
 export function featuredValidators(runtime: FeaturedRuntime): ReadValidators {
   return {
     CONTRACT_VERSION: runtime.CONTRACT_VERSION,
+    CONTRACT_VERSIONS: runtime.CONTRACT_VERSIONS,
     ERROR_STATUS_BY_CODE: runtime.ERROR_STATUS_BY_CODE,
     assertResponse<R extends keyof ReadResponses>(route: R, payload: unknown): ReadResponses[R] {
       if (route === FEATURED_ROUTE && validateFeatured(runtime, payload)) return payload as ReadResponses[R]
