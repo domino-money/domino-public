@@ -336,6 +336,6 @@ class UniswapQuote:
                 'failureCodes': failures, 'independentSuccessProven': False},
             'approvalApplicable': approval,
             'provenance': {'endpoint': ENDPOINT, 'schemaCommit': SCHEMA_COMMIT,
-                'routerVersion': '2.1.1', 'providerBlockNumber': block, 'providerBlockHash': None,
+                'routerVersion': '2.1.2', 'providerBlockNumber': block, 'providerBlockHash': None,
                 'onchainSnapshotVerified': False, 'routeIdentity': 'provider_pool_key_hash_checked',
                 'tokenTransferSafetyVerified': False, 'ownerControlVerified': False}}

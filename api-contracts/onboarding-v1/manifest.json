@@ -20,7 +20,7 @@
     },
     {
       "path": "fixtures/responses/swap-preview.json",
-      "sha256": "df0b5928e0944344310d1135fda7bfa21948dfcf06679e70396fd0bca06b8ddf"
+      "sha256": "8959348976b77d27927703f887395e2afcd95c01b4d774dc6a97249cfb2dfc36"
     },
     {
       "path": "fixtures/variants/position-preview.blocked.json",
@@ -36,7 +36,7 @@
     },
     {
       "path": "fixtures/variants/swap-preview.unknown.json",
-      "sha256": "a86187395dcf6c2765780cb5c047f260d09627336681097648852cdbdd45cb97"
+      "sha256": "68fa0ca6ae79f2b2439aa00e77c459795ab0abfd12569606f2e6f5c8b91d844a"
     },
     {
       "path": "runtime.d.mts",
@@ -44,7 +44,7 @@
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "7b02d7d4882501665787c1dea4ce19306ab825e8347a8a73ab70112d5887298a"
+      "sha256": "246492bd5af279291669819e7edc8992674b878e084aa1f6f35de9ba85b29773"
     },
     {
       "path": "schemas/error.response.schema.json",
@@ -64,11 +64,11 @@
     },
     {
       "path": "schemas/swap-preview.response.schema.json",
-      "sha256": "f52a8af836a1a8a680557b948701e750e8fd9f47cf8cc0b5602712ea5159d7e3"
+      "sha256": "dd4bd7f8626d357407fa2e34e788fb127d928da0e83c9a7a1676c878f4aa6ac0"
     },
     {
       "path": "types.ts",
-      "sha256": "0d32dfdba2be275967548894d8f2b684edc6233f556d82ffc881c3df4b80ce6f"
+      "sha256": "3249b9920f6c8a287b928536a09fe65d35c014e751c9ec9a344b0ad32d291a78"
     },
     {
       "path": "runtime.mjs",
@@ -87,7 +87,7 @@
   "sources": [
     {
       "path": "backend/onboarding_models.py",
-      "sha256": "4c28456815938a590d8f29d373a23afd29b6aeef3d516a6c75405fa98d94e5ae"
+      "sha256": "e0180ad02de0e067f1cae07a97d179844d862115c647dfc585a842f796e1de9c"
     },
     {
       "path": "backend/onboarding_api.py",
@@ -135,7 +135,7 @@
     },
     {
       "path": "backend/uniswap_quote.py",
-      "sha256": "9d80aac65117aa072af715c79fc82e67c51c5b57c7be98d1ef475bb2b1651de5"
+      "sha256": "87f8943c899befe90c9a4ebb12bc0138d313819b067fca41ad21d5e33e753268"
     },
     {
       "path": "backend/uniswap_position.py",
@@ -143,7 +143,7 @@
     },
     {
       "path": "backend/tests/test_uniswap_quote.py",
-      "sha256": "5fb6f9ea062e1ee28009d9dbff78fbcc3799867aed1c516ad9065c439d475836"
+      "sha256": "72ad25e5c53af4909f143f190c509d393827d4d71639ca27fad0cb9e65c4e4f0"
     },
     {
       "path": "backend/tests/test_uniswap_position.py",

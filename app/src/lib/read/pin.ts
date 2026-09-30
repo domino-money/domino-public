@@ -75,6 +75,11 @@
  * schemas, reason codes and version are unchanged.
  * It moved again when those error names became snake case, the only form a
  * cycle's recorded reason takes; nothing in the contract changed.
+ * The onboarding-v1, read-v1 and read-v2 digests moved when Uniswap quotes were
+ * asked of Universal Router 2.1.2, since Uniswap sunsets 2.0 and 2.1.1 on
+ * 21 October 2026: swap-preview's routerVersion const is "2.1.2" (a coordinated
+ * change to a candidate never enabled), and read-v1 and read-v2 hash
+ * backend/discovery.py, which holds the header. Their wire is unchanged.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -82,7 +87,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '1909b426a1afd8a4b41d18fa60c9f2b5369ca6cbf4bf04082ecbbb6e41c988e1',
+      manifestSha256: 'db50dce9e5a2b09b956d5b5ad05f2c40a255ca9e5aa3fb4b41dd469de554ae25',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -90,7 +95,7 @@ export const PRODUCER_PIN = {
     },
     'onboarding-v1': {
       version: '1.0.0',
-      manifestSha256: 'ab9019d4033a9d699e318319a978ecfe68ab22bd4ce1c9cc500121fcd341a160',
+      manifestSha256: 'd178dc8034e3c91095742c319a80a0fc0c4d71db03df81d156d1c5186f18aee7',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
@@ -102,7 +107,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'd2e2c2c10d8988bacc8986edb3daadc0a78e7abbf9831e9e90428341b170be0b',
+  manifestSha256: '57350707935770f1fe68e7fa4c11949e101c07d4395ab06f08cbbe9c9fb435a6',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

@@ -220,7 +220,7 @@ export type SwapPreview = {
 export type SwapProvenance = {
   "endpoint": "https://trade-api.gateway.uniswap.org/v1/quote";
   "schemaCommit": "da6d36f71c4d2fd665b0aae1a052a4ffda917b31";
-  "routerVersion": "2.1.1";
+  "routerVersion": "2.1.2";
   "providerBlockNumber": string | null;
   "providerBlockHash": null;
   "onchainSnapshotVerified": false;

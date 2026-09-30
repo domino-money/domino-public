@@ -33,7 +33,7 @@
       "providerBlockHash": null,
       "providerBlockNumber": "59031060",
       "routeIdentity": "provider_pool_key_hash_checked",
-      "routerVersion": "2.1.1",
+      "routerVersion": "2.1.2",
       "schemaCommit": "da6d36f71c4d2fd665b0aae1a052a4ffda917b31",
       "tokenTransferSafetyVerified": false
     },

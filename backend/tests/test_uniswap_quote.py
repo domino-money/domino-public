@@ -309,7 +309,7 @@ class QuoteTests(unittest.TestCase):
         calls=[]
         def opener(request,**kwargs):calls.append(request);return io.BytesIO(b'{}')
         json_http(ENDPOINT,{},headers={'x-api-key':KEY,**TRADING_QUOTE_HEADERS},opener=opener)
-        self.assertEqual(calls[0].get_header('X-universal-router-version'),'2.1.1')
+        self.assertEqual(calls[0].get_header('X-universal-router-version'),'2.1.2')
         for url,headers in ((ENDPOINT+'/',TRADING_QUOTE_HEADERS),
                            ('https://example.test',TRADING_QUOTE_HEADERS),
                            (ENDPOINT,{'x-universal-router-version':'2.0'}),

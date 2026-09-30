@@ -16,7 +16,8 @@ Robinhood chain 4663 is fixed. No symbols, assumed token decimals, default amoun
 or default risk tolerance are used.
 
 The request uses `EXACT_INPUT`, owner as both swapper and recipient, `BEST_PRICE`,
-V4-only routes without hooks, and explicit router version 2.1.1. Eight split paths
+V4-only routes without hooks, and explicit router version 2.1.2 (Uniswap sunsets
+2.0 and 2.1.1 on 21 October 2026). Eight split paths
 of up to four hops each are accepted. Full PoolKeys must hash to the supplied
 PoolIds, pools cannot repeat, currency paths must connect, and path-boundary
 amounts must sum to the exact requested input and quoted output. Intermediate
@@ -122,10 +123,11 @@ The deferred Cloudflare setup and consumer evidence remain #5 integration work.
 ## Primary reference sources
 
 - [Uniswap quote API](https://developers.uniswap.org/docs/api-reference/aggregator_quote): exact-input output fees, slippage, simulation and routing semantics.
-- [Supported chains](https://developers.uniswap.org/docs/trading/swapping-api/supported-chains): Robinhood 4663 and router 2.1.1.
+- [Supported chains](https://developers.uniswap.org/docs/trading/swapping-api/supported-chains): Robinhood 4663.
+- [Sunset of Universal Router 2.0 and 2.1.1](https://developers.uniswap.org/docs/changelog/active-notifications/sunset-of-universal-router-2-0-and-2-1-1): pinning either fails from 21 October 2026; 2.1.2 is the replacement.
 - [Pinned OpenAPI](https://github.com/Uniswap/interface/blob/da6d36f71c4d2fd665b0aae1a052a4ffda917b31/packages/api/src/clients/trading/api.json): source schema, not blindly trusted validation.
 - [Pinned route serialization](https://github.com/Uniswap/routing-api/blob/f5a81893b812b6745b1f8b7fa3a55a714cb9d89b/lib/handlers/quote/quote.ts#L568): boundary amounts and string tick spacing.
 - [Pinned SDK output floor](https://github.com/Uniswap/sdks/blob/1d7d7129e1e005db8fed0c8970301470b46b68a0/sdks/router-sdk/src/entities/trade.ts#L333): multiplication by one minus tolerance.
 
 The installed swap-integration skill 1.5.0 guides the flow. Current official
-numeric chain IDs and router 2.1.1 supersede its generic string/2.0 examples.
+numeric chain IDs and router 2.1.2 supersede its generic string/2.0 examples.

@@ -30,7 +30,7 @@ KEY_TYPES = ('address', 'address', 'uint24', 'int24', 'address')
 MAX_RESPONSE_BYTES = 2_000_000
 TRADING_QUOTE_ENDPOINT = 'https://trade-api.gateway.uniswap.org/v1/quote'
 TRADING_QUOTE_HEADERS = {
-    'x-universal-router-version': '2.1.1',
+    'x-universal-router-version': '2.1.2',
     'x-agent-info': '{"integration_name":"swap-integration","decision_origin":"human_mediated","version":"1.5.0"}',
 }
 # A read consumes node computation, never wallet gas. Keep a finite ceiling even

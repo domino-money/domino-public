@@ -1780,7 +1780,7 @@ export const SCHEMAS = {
               "type": "string"
             },
             "routerVersion": {
-              "const": "2.1.1",
+              "const": "2.1.2",
               "title": "Routerversion",
               "type": "string"
             },

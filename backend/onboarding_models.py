@@ -306,7 +306,7 @@ class SwapSimulation(StrictModel):
 class SwapProvenance(StrictModel):
     endpoint: Literal['https://trade-api.gateway.uniswap.org/v1/quote']
     schemaCommit: Literal[SCHEMA_COMMIT]
-    routerVersion: Literal['2.1.1']
+    routerVersion: Literal['2.1.2']
     providerBlockNumber: Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,18})$', max_length=19, json_schema_extra={'x-maximum-raw': str(2**63-1)}), AfterValidator(_block)] | None
     providerBlockHash: None
     onchainSnapshotVerified: FalseFlag
