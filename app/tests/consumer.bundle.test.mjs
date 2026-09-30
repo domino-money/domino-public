@@ -10,13 +10,14 @@
  * no second React.
  *
  * The product consumes onboarding-v1 as well (coverage audit G15): Setup's
- * assisted swap quote, inside the lazy Setup screen. So the onboarding client
- * and its runtime ship, but only in that opt-in closure, never in the entry;
+ * assisted swap quote inside the lazy Setup screen and routed Create quote.
+ * The onboarding client and runtime ship only in those lazy closures, never in the entry;
  * the lab screens, their synthetic catalogue and fixtures, and the lab's
  * wording still never ship. Changed on purpose (owner, 2026-09-22): New
  * position's deposit amounts (G8) were deleted from Review, and the lazy chunk
  * Review opens in wallet builds (DepositAmounts-*.js) is Create position alone,
- * which signs through the wallet and asks the onboarding service nothing.
+ * which signs through the wallet. The routed-swap integration admits the
+ * authenticated onboarding client in that same lazy financial closure, not the entry.
  */
 import assert from 'node:assert/strict';
 import { parse } from '@babel/parser';
@@ -50,16 +51,17 @@ const SETUP_DEPOSIT_MARKERS = [
   'domino-deposit-last-operation-v1',
 ];
 // The onboarding client, its runtime and the page's preview budget: admitted in the product consumer's opt-in
-// closure (Setup with its swap quote), never in the entry's and never in Create position's.
+// closures (Setup's swap quote and Create position's routed decision), never in the entry's.
 const ONBOARDING_MARKERS = [
   '/api/onboarding/v1',
   'X-Domino-Onboarding-Contract',
   'swap-preview',
+  'swap-route',
   'domino-preview-budget-v1',
 ];
 // Error codes both packages define ('preview_expired' is a deposit-v1 code and an onboarding-v1 one): the deposit
-// client's confinement still holds for them. Admitted in Setup's exclusive chunks, never in a chunk Setup shares
-// with the other private screens.
+// runtime is used by both consumers. Admit these in Setup and lazy onboarding closures, never the entry;
+// deposit-specific markers above still require Setup's exclusive closure.
 const SHARED_CODE_MARKERS = ['preview_expired'];
 // The labs, their synthetic catalogue and fixtures, and the lab's own wording: never in the build that deploys.
 const CONSUMER_MARKERS = [
@@ -162,9 +164,9 @@ function productionClosures() {
     return Object.values(node).some((child) => (Array.isArray(child) ? child.some((item) => opens(item, file)) : opens(child, file)));
   };
   assert.ok(opens(trees.get(entry[0]), amounts[0]), 'the entry opens Create position through a dynamic import');
-  const onboardingAdmitted = new Set([...setupClosure].filter((file) => !entryClosure.has(file)));
+  const onboardingAdmitted = new Set([...setupClosure, ...amountsClosure].filter((file) => !entryClosure.has(file)));
   const setupOnly = new Set([...setupClosure].filter((file) => !shared.has(file)));
-  const sharedCodeAdmitted = setupOnly;
+  const sharedCodeAdmitted = new Set([...setupOnly, ...onboardingAdmitted]);
   return { setupOnly, setupClosure, amountsClosure, onboardingAdmitted, sharedCodeAdmitted };
 }
 
@@ -180,18 +182,19 @@ test('production excludes preview/deposit labs and confines the live deposit cli
       if (text.includes(marker)) assert.ok(file.startsWith('assets/') && onboardingAdmitted.has(basename(file)), `dist/${file} contains ${marker} outside the opt-in onboarding consumer`);
     }
     for (const marker of SHARED_CODE_MARKERS) {
-      if (text.includes(marker)) assert.ok(file.startsWith('assets/') && sharedCodeAdmitted.has(basename(file)), `dist/${file} contains ${marker} outside Setup's own chunks`);
+      if (text.includes(marker)) assert.ok(file.startsWith('assets/') && sharedCodeAdmitted.has(basename(file)), `dist/${file} contains ${marker} outside the lazy deposit/onboarding closures`);
     }
   }
   assert.ok(files.some(({ text }) => SHARED_CODE_MARKERS.every((marker) => text.includes(marker))), 'the shared error codes are still in the build, so the confinement above is checked against something');
   // Create position's chunk carries the setup client it signs through, its assisted swap and its way to the new position's
   // page on Positions ('#/positions/<id>', a position's own page since 2026-09-24),
-  // and nothing of the onboarding service: Review asks no preview any more.
+  // and the authenticated route decision. Only the lazy financial chunk may reach that service.
   const amountsText = [...amountsClosure].map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
   for (const marker of ['quoteSwap', 'swap_output_insufficient', 'getSlot0', '#/positions/']) {
     assert.ok(amountsText.includes(marker), `the production Create position closure is missing ${marker}`);
   }
-  for (const marker of [...ONBOARDING_MARKERS, 'position-preview']) assert.ok(!amountsText.includes(marker), `the production Create position closure carries ${marker}`);
+  for (const marker of ['/api/onboarding/v1/', 'swap-route', 'X-Domino-Onboarding-Contract', 'X-Domino-CSRF']) assert.ok(amountsText.includes(marker), `the production Create position closure is missing ${marker}`);
+  for (const marker of SETUP_DEPOSIT_MARKERS) assert.ok(!amountsText.includes(marker), `the production Create position closure carries deposit-only ${marker}`);
   const assets = readdirSync(join(DIST, 'assets'));
   assert.deepEqual(assets.filter((file) => /^(LivePreview|Deposits|OperationPanel|PreviewPanels)/.test(file)), []);
   const setupText = [...setupClosure].map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');

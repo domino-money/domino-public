@@ -6,11 +6,16 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { validateResponse } from '../../api-contracts/onboarding-v1/runtime.mjs';
+import { routeTransactions } from './support/routed-swap.mjs';
 const require = createRequire(import.meta.url);
 const { atomicStatus, createSetupClient, setupAbi, tokenAbi, STEP_DEADLINE_S, BATCH_LATCH_EXPIRY_S } = require('../.test-build/app/src/finance/setup.js');
 const { createNonceJournal } = require('../.test-build/app/src/finance/nonce.js');
 const { atomicStatusOf } = require('../.test-build/app/src/finance/batch.js');
-const { decodeFunctionData, encodeFunctionResult, keccak256, numberToHex } = require('viem');
+const { checkRoutedSwap, routeExecuteAbi, routePermitAbi } = require('../.test-build/app/src/finance/routedSwap.js');
+const { ROUTE_FEE_RECIPIENT, ROUTE_PERMIT2, UNIVERSAL_ROUTER } = require('../.test-build/app/src/finance/pin.js');
+const { decodeFunctionData, encodeAbiParameters, encodeFunctionData, encodeFunctionResult, keccak256, numberToHex } = require('viem');
 
 const address = n => '0x' + n.toString(16).padStart(40, '0');
 const owner = address(1), setup = address(2), token = address(9);
@@ -33,15 +38,15 @@ function locks() { const queues = new Map(); return { request(k, fn) { const pri
  */
 function fixture(options = {}) {
   const code = '0x6000', hash = keccak256(code);
-  const deployment = { setup, poolManager: address(3), positionManager: address(4), stateView: address(5), feeRecipient: address(6),
+  const deployment = { setup, poolManager: address(3), positionManager: address(4), stateView: address(5), feeRecipient: options.feeRecipient ?? address(6),
     setupCodeHash: hash, poolManagerCodeHash: hash, positionManagerCodeHash: hash, stateViewCodeHash: hash, feeBps: 65, tariffVersion: '1', expiresAt: 10000 };
   const state = { ownerCode: '0x', receive: 'accept', allowance: 0n, pending: 0, balance: 10n ** 20n, nextId: ID, operation: NONE, confirmed: true,
     simulate: 'ok', capabilities: undefined, sendError: null, sendReply: { id: '0xba7c4' }, status: 200, statusError: null,
-    live: true, now: 100, onClaim: null, ...options };
+    live: true, now: 100, onClaim: null, permitAmount: 0n, permitExpiration: 0, routeAuthorized: true, ...options };
   const calls = [], journal = createNonceJournal(storage(), locks(), () => crypto.randomUUID());
   const views = () => ({ manager: deployment.poolManager, positions: deployment.positionManager, stateView: deployment.stateView, feeRecipient: deployment.feeRecipient,
     assistedFeeBps: 65, tariffVersion: 1n, nextOperationId: state.nextId, operation: state.operation });
-  const wallet = { owner, current: () => state.live, nonceOffered: () => false, claimNonce: async () => 'claim', releaseRejectedNonce: async () => {},
+  const wallet = { owner, current: () => state.live, nonceOffered: () => false, claimNonce: async () => { state.onNonceClaim?.(state); return 'claim'; }, releaseRejectedNonce: async () => {},
     delegateConfirmed: () => state.confirmed,
     batchOffered: id => journal.batchOffered(owner, id),
     // `state.onClaim` runs once the latch is claimed, before anything more: the moment another wallet or the clock can intervene.
@@ -54,13 +59,18 @@ function fixture(options = {}) {
         case 'eth_accounts': return [owner];
         case 'eth_chainId': return '0x1237';
         case 'eth_getCode': return params[0] === owner ? state.ownerCode : code;
-        case 'eth_getTransactionCount': return params[1] === 'pending' ? numberToHex(state.pending) : '0x0';
+        case 'eth_getTransactionCount': return params[1] === 'pending' ? numberToHex(state.pending) : numberToHex(state.confirmedNonce ?? 0);
         case 'eth_getBalance': return numberToHex(state.balance);
         case 'eth_call': {
           // The one-wei payment probe to an account with code: accepted, or refused by that code as a node says it.
           if (params[0].to === owner) {
             if (state.receive === 'revert') throw Object.assign(new Error('execution reverted'), { code: 3, data: '0x' });
             return '0x';
+          }
+          if (params[0].to === UNIVERSAL_ROUTER) return '0x';
+          if (params[0].to === ROUTE_PERMIT2) {
+            const called = decodeFunctionData({ abi: routePermitAbi, data: params[0].data });
+            return called.functionName === 'allowance' ? encodeFunctionResult({ abi: routePermitAbi, functionName: 'allowance', result: [state.permitAmount, state.permitExpiration, 0] }) : '0x';
           }
           // Any token's allowance to the setup contract: the one `state.allowance` says.
           if (params[0].to !== setup) return encodeFunctionResult({ abi: tokenAbi, functionName: 'allowance', result: state.allowance });
@@ -75,15 +85,232 @@ function fixture(options = {}) {
           return [{ calls: Array.from({ length: count }, (_, i) => ({ status: state.simulate === i ? '0x0' : '0x1', gasUsed: '0x10000' })) }];
         }
         case 'wallet_getCapabilities': if (state.capabilities instanceof Error) throw state.capabilities; return state.capabilities;
-        case 'wallet_sendCalls': if (state.sendError) throw state.sendError; return state.sendReply;
+        case 'wallet_sendCalls': if (state.sendPending) return state.sendPending; if (state.sendError) throw state.sendError; return state.sendReply;
         case 'wallet_getCallsStatus': if (state.statusError) throw state.statusError; return { version: '2.0.0', id: params[0], chainId: '0x1237', status: state.status, atomic: true, receipts: [] };
+        case 'eth_estimateGas': return '0x10000';
+        case 'eth_sendTransaction': {
+          if (state.sendPending) return state.sendPending;
+          if (state.sendError) throw state.sendError;
+          state.sentTransaction = { ...params[0], hash: '0x' + 'ef'.repeat(32), input: params[0].data };
+          return state.sentTransaction.hash;
+        }
+        case 'eth_getTransactionByHash': return state.sentTransaction ?? null;
+        case 'eth_getTransactionReceipt': return state.sentTransaction ? { transactionHash: state.sentTransaction.hash, from: owner, blockNumber: '0x1', blockHash: ID, status: state.receiptStatus ?? '0x1' } : null;
+        case 'eth_getBlockByNumber': return { number: '0x2', hash: ID };
       }
       throw new Error('unexpected fixture request: ' + method);
     } };
-  const client = createSetupClient(wallet, deployment, () => state.now, async () => deployment, options.fallback ? { simulate: options.fallback } : {});
+  const client = createSetupClient(wallet, deployment, () => state.now, async () => deployment, {
+    ...(options.fallback ? { simulate: options.fallback } : {}), validateRoute: body => validateResponse('swap-route', body), routeAuthorized: () => state.routeAuthorized });
   return { client, calls, state, journal, wallet, asked: method => calls.filter(c => c.method === method) };
 }
 const decoded = call => decodeFunctionData({ abi: call.to === setup ? setupAbi : tokenAbi, data: call.data });
+
+function routedPlan({ nativeIn = false, nativeOut = false } = {}) {
+  const preview = JSON.parse(readFileSync(new URL('../../api-contracts/onboarding-v1/fixtures/responses/swap-route.json', import.meta.url), 'utf8')).preview;
+  preview.request.owner = owner;
+  preview.requestedAt = preview.retrievedAt = 100;
+  preview.expiresAt = 130;
+  if (nativeIn || nativeOut) {
+    preview.request.poolKey.currency0 = address(0);
+    preview.request.tokenIn = nativeIn ? address(0) : preview.request.poolKey.currency1;
+    preview.tokenOut = nativeIn ? preview.request.poolKey.currency1 : address(0);
+  }
+  const k = preview.request.poolKey;
+  preview.request.poolId = keccak256(encodeAbiParameters([{ type: 'address' }, { type: 'address' }, { type: 'uint24' }, { type: 'int24' }, { type: 'address' }], [k.currency0, k.currency1, k.fee_pips, k.tick_spacing, k.hooks]));
+  Object.assign(preview.uniswap, routeTransactions(preview));
+  assert.ok(validateResponse('swap-route', { contractVersion: '1.1.0', preview }));
+  const totalInput = 2_000_000_000n, minimum = BigInt(preview.uniswap.minimumAmountOutRaw);
+  const amount0 = nativeOut ? minimum : 1_000_000_000n, amount1 = nativeOut ? 1_000_000_000n : minimum;
+  return { key: { currency0: k.currency0, currency1: k.currency1, fee: k.fee_pips, tickSpacing: k.tick_spacing, hooks: k.hooks }, amount0, amount1, swap: null,
+    mint: { ...mint, tickLower: -400, tickUpper: 400, maxAmount0: amount0, maxAmount1: amount1 }, routed: { preview, totalInput } };
+}
+const checkedRoute = plan => checkRoutedSwap(plan.routed, plan.key, plan.amount0, plan.amount1, owner, ROUTE_FEE_RECIPIENT, 100, body => validateResponse('swap-route', body));
+
+test('routed batch binds exact Permit2/reset, router, both-token Setup funding and mint, with one whole simulation and no Setup swap', async () => {
+  const plan = routedPlan(), f = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, allowance: 5n });
+  const batch = await f.client.prepareBatch(plan, gas), calls = batch.calls;
+  assert.deepEqual(calls.map(call => call.to), [plan.key.currency0, plan.key.currency0, ROUTE_PERMIT2, UNIVERSAL_ROUTER,
+    plan.key.currency0, plan.key.currency0, plan.key.currency1, plan.key.currency1, setup, setup]);
+  const normalized = args => args.map(value => typeof value === 'string' ? value.toLowerCase() : value);
+  assert.deepEqual(normalized(decodeFunctionData({ abi: tokenAbi, data: calls[0].data }).args), [ROUTE_PERMIT2, 0n]);
+  assert.deepEqual(normalized(decodeFunctionData({ abi: tokenAbi, data: calls[1].data }).args), [ROUTE_PERMIT2, 1_000_000_000n]);
+  assert.deepEqual(normalized(decodeFunctionData({ abi: routePermitAbi, data: calls[2].data }).args).map(String), [plan.key.currency0, UNIVERSAL_ROUTER, '1000000000', '1900']);
+  const setupCalls = calls.filter(call => call.to === setup).map(call => decodeFunctionData({ abi: setupAbi, data: call.data }));
+  assert.deepEqual(setupCalls.map(call => call.functionName), ['open', 'mint']);
+  assert.deepEqual(setupCalls[0].args.slice(2), [plan.amount0, plan.amount1]);
+  assert.equal(batch.expiresAt, 125);
+  assert.equal(f.asked('eth_simulateV1').length, 1);
+  assert.deepEqual(f.asked('eth_simulateV1')[0].params[0].blockStateCalls[0].calls, calls.map(call => ({ from: owner, ...call })));
+  assert.equal(f.asked('eth_sendTransaction').length + f.asked('wallet_sendCalls').length, 0);
+});
+
+test('routed native input counts router plus remaining deposit; native output funds Setup from the guaranteed proceeds', async () => {
+  for (const nativeIn of [true, false]) {
+    const plan = routedPlan(nativeIn ? { nativeIn } : { nativeOut: true });
+    const f = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT });
+    const batch = await f.client.prepareBatch(plan, gas), swap = batch.calls.find(call => call.to === UNIVERSAL_ROUTER), open = batch.calls.find(call => call.to === setup);
+    assert.equal(BigInt(swap.value), nativeIn ? 1_000_000_000n : 0n);
+    assert.equal(BigInt(open.value), plan.amount0);
+    assert.equal(batch.calls.some(call => call.to === ROUTE_PERMIT2), !nativeIn);
+    const bound = (nativeIn ? 2_000_000_000n : 0n) + batch.gasLimit;
+    await assert.rejects(fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, balance: bound - 1n }).client.prepareBatch(plan, gas), /native_gas_reserve_insufficient/);
+    assert.equal((await fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, balance: bound }).client.prepareBatch(plan, gas)).kind, 'batch');
+  }
+});
+
+test('a range requiring only the output token may route the entire selected input without inventing a second deposit', async () => {
+  const plan = routedPlan();
+  plan.routed.totalInput = 1_000_000_000n;
+  plan.amount0 = plan.mint.maxAmount0 = 0n;
+  const f = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT });
+  const prepared = await f.client.prepareBatch(plan, gas);
+  const open = prepared.calls.filter(call => call.to === setup).map(call => decodeFunctionData({ abi: setupAbi, data: call.data }))[0];
+  assert.deepEqual(open.args.slice(2), [0n, 447750n]);
+});
+
+test('routed calldata independently rejects hidden commands, wrong recipient/token/fee/floor, deadlines and mutable or forged plans', async () => {
+  const original = routedPlan();
+  assert.equal(checkedRoute(original).gross, 1_000_000_000n);
+  const swapAbi = routeExecuteAbi;
+  const change = (fn) => {
+    const plan = structuredClone(original), transaction = plan.routed.preview.uniswap.swapTransaction;
+    const decoded = decodeFunctionData({ abi: swapAbi, data: transaction.data });
+    const args = structuredClone(decoded.args); fn(args);
+    transaction.data = encodeFunctionData({ abi: swapAbi, functionName: 'execute', args });
+    assert.throws(() => checkedRoute(plan), /invalid_routed_swap/);
+  };
+  const payment = [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }];
+  change(args => { args[0] = '0x90070404'; }); // allow-revert forbidden
+  change(args => { args[0] = '0x14070404'; }); // position manager call forbidden
+  change(args => { args[0] = '0x21070404'; }); // subplan forbidden
+  change(args => { args[2]++; }); // permit and swap no longer share a deadline
+  change(args => { args[1][2] = encodeAbiParameters(payment, [original.key.currency1, address(999), 447750n]); });
+  change(args => { args[1][1] = encodeAbiParameters(payment, [original.key.currency0, ROUTE_FEE_RECIPIENT, 65n * 10n ** 14n]); });
+  change(args => { args[1][1] = encodeAbiParameters(payment, [original.key.currency1, ROUTE_FEE_RECIPIENT, 66n * 10n ** 14n]); });
+  change(args => { args[1][2] = encodeAbiParameters(payment, [original.key.currency1, owner, 447749n]); });
+  change(args => { args[0] = '0x07100404'; [args[1][0], args[1][1]] = [args[1][1], args[1][0]]; }); // fee cannot precede output
+  change(args => { args[0] = '0x10070704'; args[1][2] = args[1][1]; }); // never two integrator fees
+  change(args => { const [actions, inputs] = require('viem').decodeAbiParameters([{ type: 'bytes' }, { type: 'bytes[]' }], args[1][0]);
+    inputs[1] = encodeAbiParameters([{ type: 'address' }, { type: 'uint256' }, { type: 'bool' }], [address(55), 10n, true]);
+    args[1][0] = encodeAbiParameters([{ type: 'bytes' }, { type: 'bytes[]' }], [actions, inputs]); });
+  for (const alter of [p => { p.amount0++; }, p => { p.swap = oneToken.swap; }, p => { p.routed.preview.request.owner = address(5); },
+    p => { p.routed.preview.request.poolId = OTHER_ID; }, p => { p.routed.preview.uniswap.swapTransaction.to = address(77); },
+    p => { p.routed.preview.uniswap.permitTransaction.to = address(77); }, p => { p.routed.preview.expiresAt = 99; }]) {
+    const plan = structuredClone(original); alter(plan);
+    if (plan.swap) assert.throws(() => checkRoutedSwap(plan.routed, plan.key, plan.amount0, plan.amount1, owner, ROUTE_FEE_RECIPIENT, 100, () => false), /invalid_routed_swap/);
+    else assert.throws(() => checkedRoute(plan), /invalid_routed_swap/);
+  }
+});
+
+test('V2 and V3 exact-input routes admit generic intermediate pools but cannot spend another wallet token', () => {
+  for (const version of [2, 3]) {
+    const plan = routedPlan(), p = plan.routed.preview, transaction = p.uniswap.swapTransaction;
+    const args = [...decodeFunctionData({ abi: routeExecuteAbi, data: transaction.data }).args];
+    args[1] = [...args[1]];
+    const self = address(2), path = version === 2 ? [plan.key.currency0, address(22), plan.key.currency1]
+      : plan.key.currency0 + '000bb8' + address(22).slice(2) + '0001f4' + plan.key.currency1.slice(2);
+    const fields = [{ type: 'address' }, { type: 'uint256' }, { type: 'uint256' }, { type: version === 2 ? 'address[]' : 'bytes' }, { type: 'bool' }];
+    args[0] = version === 2 ? '0x08070404' : '0x00070404';
+    args[1][0] = encodeAbiParameters(fields, [self, 1_000_000_000n, 450679n, path, true]);
+    transaction.data = encodeFunctionData({ abi: routeExecuteAbi, functionName: 'execute', args });
+    assert.equal(checkedRoute(plan).minimum, 447750n);
+    const unrelated = version === 2 ? [address(23), plan.key.currency1] : address(23) + '000bb8' + plan.key.currency1.slice(2);
+    args[1][0] = encodeAbiParameters(fields, [self, 1n, 450679n, unrelated, true]);
+    transaction.data = encodeFunctionData({ abi: routeExecuteAbi, functionName: 'execute', args });
+    assert.throws(() => checkedRoute(plan), /invalid_routed_swap/);
+  }
+});
+
+test('sequential routed steps require the whole batch proof, exact allowances, confirmation-bound receipts and a fresh review', async () => {
+  const plan = routedPlan(), f = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT });
+  const batch = await f.client.prepareBatch(plan, gas);
+  await assert.rejects(f.client.prepareRoutedStep({ ...batch }, gas), /wallet_review_required/);
+  let step = await f.client.prepareRoutedStep(batch, gas);
+  assert.equal(step.kind, 'approve');
+  assert.deepEqual(decodeFunctionData({ abi: tokenAbi, data: step.transaction.data }).args.map(value => typeof value === 'string' ? value.toLowerCase() : value), [ROUTE_PERMIT2, 1_000_000_000n]);
+  f.state.allowance = 1n;
+  step = await f.client.prepareRoutedStep(batch, gas);
+  assert.deepEqual(decodeFunctionData({ abi: tokenAbi, data: step.transaction.data }).args.map(value => typeof value === 'string' ? value.toLowerCase() : value), [ROUTE_PERMIT2, 0n]);
+  f.state.allowance = 1_000_000_000n;
+  assert.equal((await f.client.prepareRoutedStep(batch, gas)).kind, 'route-permit');
+  f.state.permitAmount = 1_000_000_000n; f.state.permitExpiration = 1890;
+  step = await f.client.prepareRoutedStep(batch, gas);
+  assert.equal(step.kind, 'route-swap');
+  const hash = await f.client.send(step, true);
+  assert.equal((await f.client.receipt(hash)).state, 'finalized');
+  f.state.pending = f.state.confirmedNonce = 1;
+  await assert.rejects(f.client.prepareBatch(plan, gas), /routed_swap_already_offered/);
+  // Reload recovery does not need an unexpired quote, but it MUST match the
+  // original exact router data and value, not any successful owner tx.
+  const reloaded = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, now: 5000, sentTransaction: f.state.sentTransaction });
+  assert.equal((await reloaded.client.receipt(hash, undefined, plan)).state, 'finalized');
+  reloaded.state.sentTransaction = { ...f.state.sentTransaction, to: address(55) };
+  await assert.rejects(reloaded.client.receipt(hash, undefined, plan), /transaction_does_not_match_review/);
+  const expired = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT });
+  const before = await expired.client.prepareBatch(plan, gas); expired.state.now = 126;
+  await assert.rejects(expired.client.prepareRoutedStep(before, gas), /wallet_review_required/);
+});
+
+test('a route whose whole simulation fails never offers either sequential approvals or a wallet batch', async () => {
+  for (const simulate of [0, 'unsupported']) {
+    const f = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, simulate });
+    await assert.rejects(f.client.prepareBatch(routedPlan(), gas), /batch_simulation_(reverted|unavailable)/);
+    assert.equal(f.asked('eth_sendTransaction').length + f.asked('wallet_sendCalls').length, 0);
+  }
+});
+
+test('session loss while claiming a routed step or batch never reaches the wallet; unknown sends remain distinguishable', async () => {
+  const plan = routedPlan();
+  await assert.rejects(fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, routeAuthorized: false }).client.prepareBatch(plan, gas), /route_session_changed/);
+  const f = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, allowance: 1_000_000_000n, permitAmount: 1_000_000_000n, permitExpiration: 1900 });
+  const prepared = await f.client.prepareBatch(plan, gas), step = await f.client.prepareRoutedStep(prepared, gas);
+  f.state.onNonceClaim = state => { state.routeAuthorized = false; };
+  await assert.rejects(f.client.send(step, true), /route_session_changed/);
+  assert.equal(f.client.wasOffered(step), false);
+  assert.equal(f.asked('eth_sendTransaction').length, 0);
+  const atomic = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, onClaim: state => { state.routeAuthorized = false; } });
+  const atomicPrepared = await atomic.client.prepareBatch(plan, gas);
+  await assert.rejects(atomic.client.sendBatch(atomicPrepared, true), /wallet_review_expired/);
+  assert.equal(atomic.client.wasBatchOffered(atomicPrepared), false);
+  assert.equal(atomic.asked('wallet_sendCalls').length, 0);
+  assert.equal(atomic.journal.batchOffered(owner, ID), null);
+  const lost = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, allowance: 1_000_000_000n, permitAmount: 1_000_000_000n, permitExpiration: 1900, sendError: rpcError(-32603) });
+  const sent = await lost.client.prepareRoutedStep(await lost.client.prepareBatch(plan, gas), gas);
+  await assert.rejects(lost.client.send(sent, true));
+  assert.equal(lost.client.wasOffered(sent), true);
+  assert.equal(lost.asked('eth_sendTransaction').length, 1);
+  const reverted = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, allowance: 1_000_000_000n, permitAmount: 1_000_000_000n, permitExpiration: 1900, receiptStatus: '0x0' });
+  const failed = await reverted.client.prepareRoutedStep(await reverted.client.prepareBatch(plan, gas), gas);
+  const hash = await reverted.client.send(failed, true);
+  assert.equal((await reverted.client.receipt(hash)).state, 'reverted');
+  reverted.state.pending = reverted.state.confirmedNonce = 1;
+  assert.equal((await reverted.client.prepareBatch(plan, gas)).kind, 'batch', 'canonical revert frees the in-client route quarantine');
+});
+
+test('only actual wallet offers are marked; late definite refusals clear the exact step or batch, but unknown errors retain it', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const [atomic, code] of [[false, 4001], [true, 4001], [true, 5760], [false, -32603], [true, -32603]]) {
+    let reject;
+    const f = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, allowance: 1_000_000_000n, permitAmount: 1_000_000_000n, permitExpiration: 1900,
+      sendPending: new Promise((_, no) => { reject = no; }) });
+    const batch = await f.client.prepareBatch(routedPlan(), gas);
+    const prepared = atomic ? batch : await f.client.prepareRoutedStep(batch, gas);
+    const offered = () => atomic ? f.client.wasBatchOffered(prepared) : f.client.wasOffered(prepared);
+    assert.equal(offered(), false);
+    const sending = atomic ? f.client.sendBatch(prepared, true) : f.client.send(prepared, true);
+    const timedOut = assert.rejects(sending, /wallet_timeout/);
+    await new Promise(setImmediate);
+    assert.equal(offered(), true, 'the provider was actually asked before timeout');
+    t.mock.timers.tick(180_000);
+    await timedOut;
+    assert.equal(offered(), true, 'timeout is not proof of rejection');
+    reject(rpcError(code));
+    await new Promise(setImmediate);
+    assert.equal(offered(), code === -32603, `late ${code} in ${atomic ? 'batch' : 'step'}`);
+    if (atomic) assert.equal(f.journal.batchOffered(owner, ID), code === -32603 ? '' : null);
+  }
+});
 
 test('the wallet’s atomic batches are read for chain 4663 only: supported, ready, or anything else is unsupported', async () => {
   for (const [capabilities, expected] of [

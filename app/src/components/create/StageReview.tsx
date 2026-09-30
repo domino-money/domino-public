@@ -12,6 +12,7 @@ import { ASSISTED_SWAP_FEE_BPS, type DepositPlan } from '../../lib/create/deposi
 import { reviewPlan } from '../../lib/create/reviewPlan'
 import { NATIVE_CURRENCY } from '../../lib/read/screens/identity'
 import { useBatchAbility, useCreateProgress, useCreated, type LiveState } from '../../lib/create/createProgress'
+import { useRoutedReview } from '../../lib/create/routedReview'
 import { PoolPair, RangeSummary } from './StepList'
 import { CreatedNext } from './CreatedNext'
 import { AmountText, UsdText } from '../figures'
@@ -24,6 +25,7 @@ interface HeldSide {
   amount: string
   token: PoolOption['currencies'][number]
 }
+const routeRemainder = (total: string, gross: string) => BigInt(total) - BigInt(gross)
 
 const sideOf = (pool: PoolOption, index: 0 | 1, raw: bigint | string): HeldSide => {
   const currency = pool.currencies[index]
@@ -80,13 +82,28 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
   const planned = reviewPlan(state, rawBalances(balances))
   const plan = planned?.plan ?? null
   const swap = plan && plan.kind === 'swap' ? plan : null
+  const routed = useRoutedReview()
+  const routeKept = routed ? routeRemainder(routed.totalInput, routed.gross) : 0n
   const fee = `${ASSISTED_SWAP_FEE_BPS / 100}%`
   // A wallet that signs every step at once (EIP-5792 `atomic` supported, as Create position read it): the one step it
   // asks for, from the start (2026-09-28). A wallet that could only after turning on its smart account keeps the steps,
   // with the one-signature choice under Create position; one that cannot batch, or not yet read, keeps them too.
   const ability = useBatchAbility()
-  const inOrder = walletSteps(state, swap ? swap.from : null, fee)
-  const steps = ability === 'supported' ? batchedSteps(inOrder) : inOrder
+  const ordinary = walletSteps(state, swap ? swap.from : null, fee)
+  const inOrder = routed && pool ? [
+    ...(pool.currencies[routed.from].address !== NATIVE_CURRENCY ? [
+      { key: 'route-approve', title: 'Approve the exact swap amount', token: pool.currencies[routed.from], detail: 'Only if allowance is short; a reset may need an extra confirmation.' },
+      { key: 'route-permit', title: 'Authorize the Uniswap router', detail: 'Exact amount with a deadline.' },
+    ] : []),
+    { key: 'route-swap', title: 'Swap through Uniswap', detail: '0.65% fee on the received token, once.' },
+    ...pool.currencies.filter((token, i) => token.address !== NATIVE_CURRENCY && (i !== routed.from || routeKept > 0n))
+      .map((token) => ({ key: `approve:${token.address}`, title: CREATE.review.approveStep, token, detail: 'Only if allowance is short.' })),
+    { key: 'fund', title: CREATE.review.fundStep, detail: '' },
+    { key: 'mint', title: CREATE.review.mintStep, detail: '' },
+  ] : ordinary
+  const steps = ability === 'supported'
+    ? routed ? [{ key: 'batch', title: 'Approve, swap and create position', detail: CREATE.review.batchStepDetail }] : batchedSteps(inOrder)
+    : inOrder
   // Once Create position runs, its own steps, as they happen: the tokens it found in the wallet decide them.
   const progress = useCreateProgress()
   const live = progress && progress.length > 0 ? progress : null
@@ -126,7 +143,12 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           </p>
           <p className="dm-flow-headline-amounts tnum" data-review-amounts="" data-review-plan={plan?.kind}>
             {/* Each side is one phrase that keeps its line, and the + leads the second, so a narrow line breaks only before the +. */}
-            {swap && pool && whole ? (
+            {routed && pool ? (
+              <>
+                {routeKept > 0n && <Side side={sideOf(pool, routed.from, routeKept)} index={routed.from} lead={`${CREATE.review.about} `} />}
+                {' '}<Side side={sideOf(pool, routed.from === 0 ? 1 : 0, routed.minimum)} index={routed.from === 0 ? 1 : 0} lead={routeKept > 0n ? '+ ' : `${CREATE.review.about} `} />
+              </>
+            ) : swap && pool && whole ? (
               // All of the one token swapped: what it buys, an estimate before the pool's own price impact.
               <Side side={sideOf(pool, other, swap.receive)} index={other} lead={`${CREATE.review.about} `} />
             ) : swap && pool ? (
@@ -145,12 +167,12 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
               CREATE.page.notChosen
             )}
           </p>
-          {total !== null && (
+          {!routed && total !== null && (
             <p className="dm-usd-line dm-flow-headline-usd">
               <UsdText value={total} />
             </p>
           )}
-          {swap && pool && (
+          {!routed && swap && pool && (
             <p className="dm-flow-headline-line tnum" data-review-swap={swap.from} data-review-swap-whole={whole ? '' : undefined}>
               You put in <AmountText text={sideOf(pool, swap.from, swap.deposit).amount} /> <SymbolText token={pool.currencies[swap.from]} />.{' '}
               {whole ? (
@@ -164,6 +186,19 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
                 </>
               )}
             </p>
+          )}
+          {routed && pool && (
+            <>
+              <p className="dm-flow-headline-line tnum" data-review-route="uniswap">
+                Swap <AmountText text={sideOf(pool, routed.from, routed.gross).amount} /> <SymbolText token={pool.currencies[routed.from]} /> via Uniswap.{' '}
+                {routed.poolUnfilled ? 'The selected pool cannot fill this swap.' : routed.advantageBps !== null ? `${(routed.advantageBps / 100).toFixed(2)}% more output than the selected pool.` : ''}
+              </p>
+              <p className="dm-flow-headline-line tnum" data-review-route-minimum="">
+                Receive at least <AmountText text={sideOf(pool, routed.from === 0 ? 1 : 0, routed.minimum).amount} /> <SymbolText token={pool.currencies[routed.from === 0 ? 1 : 0]} /> after the fee.{' '}
+                Estimated fee: <AmountText text={sideOf(pool, routed.from === 0 ? 1 : 0, routed.fee).amount} /> <SymbolText token={pool.currencies[routed.from === 0 ? 1 : 0]} /> (0.65%, once).
+                {' '}Price impact: {routed.priceImpact === null ? 'unavailable' : `${routed.priceImpact}%`}. The deposit uses the guaranteed minimum; any extra received stays in your wallet.
+              </p>
+            </>
           )}
           <p className="dm-flow-headline-line tnum" data-review-range="">
             {state.range && usable ? (
@@ -192,7 +227,12 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           </p>
         )}
         {inside === true && usable && <span className="sr-only" data-review-position="inside">{CREATE.review.inRange}</span>}
-        {swap && pool && (
+        {routed?.sequential && (
+          <p role="status" className="dm-flow-position" data-tone="neutral" data-review-route-risk="">
+            <span>Confirm each step separately. If you stop after the swap, the received tokens stay in your wallet; the swap and its fee are not undone. Creating the position does not charge another swap fee.</span>
+          </p>
+        )}
+        {!routed && swap && pool && (
           // One span: the line is a flex row (its dot, then the sentence), and the symbols must stay inside the sentence.
           <p role="status" className="dm-flow-position" data-tone="neutral" data-review-swap-note="">
             {whole ? (
@@ -209,7 +249,7 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           </p>
         )}
         {/* The pool's liquidity figure is reported and zero: the swap has nothing to trade against. Create position checks the pool on chain too, before anything is deposited. */}
-        {swap && planned?.noLiquidity && (
+        {!routed && swap && planned?.noLiquidity && (
           <p role="status" className="dm-flow-position" data-tone="neutral" data-review-liquidity="none">
             {CREATE.review.emptyPool}
           </p>
@@ -284,7 +324,7 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
             {swap && (
               <div>
                 <dt>{CREATE.review.feeLabels.swap}</dt>
-                <dd>{CREATE.review.feeValues.swap}</dd>
+                <dd>{routed ? '0.65% of the received token, once. No additional assisted-swap fee on the deposit.' : CREATE.review.feeValues.swap}</dd>
               </div>
             )}
             <div>

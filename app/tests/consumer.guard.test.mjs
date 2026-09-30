@@ -142,7 +142,8 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lab scree
   // Setup's preview consumer reads the session through the live port, as Performance, Execution and the owner-only sequence activation check do; New position does not.
   // Changed on purpose (2026-09-24): the automation page lost its owner controls, and with them the activation check that read the live port.
   // Changed on purpose (owner, 2026-09-25): that check is back, behind a sequence's Turn on (components/positions/SequenceSwitch.tsx).
-  assert.deepEqual(importersOf('session/livePort'), ['components/positions/SequenceSwitch.tsx', 'finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
+  // The one new production consumer is the lazy finance facade for Create position's authenticated route decision.
+  assert.deepEqual(importersOf('session/livePort'), ['components/positions/SequenceSwitch.tsx', 'finance/routedQuote.ts', 'finance/wallet.ts', 'screens/AdvancedSetup.tsx', 'screens/Execution.tsx', 'screens/LivePreview.tsx', 'screens/Performance.tsx', 'screens/Setup.tsx']);
   // Create position's chunk and what it is made of ask no preview and read no session: it signs through the wallet alone.
   for (const path of ['components/create/DepositAmounts.tsx', 'components/create/CreatePosition.tsx', 'components/create/StageReview.tsx', 'lib/create/depositPlan.ts', 'lib/create/createProgress.ts']) {
     const targets = specifiers(byPath(path).code).filter((spec) => spec.startsWith('.')).map((spec) => target(path, spec));

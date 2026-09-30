@@ -91,6 +91,11 @@ export const POSITION_MANAGER = '0x58daec3116aae6d93017baaea7749052e8a04fa7'
 export const V4_QUOTER = '0x8dc178efb8111bb0973dd9d722ebeff267c98f94'
 export const V4_QUOTER_CODE_HASH = '0xd707b1da8cb165e5ea35a3b4450d971eb562ec171e23492aa117036b78a868f6'
 
+/** Owner-requested routed swaps only; these are never selected by a quote. */
+export const ROUTE_PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+export const UNIVERSAL_ROUTER = '0x204faca1764b154221e35c0d20abb3c525710498'
+export const ROUTE_FEE_RECIPIENT = '0x1488c84dafc03f7f4c4fb986f83ba99fd530c6f4'
+
 /**
  * Uniswap v4's StateView on the same chain, the one the published setup
  * profile names beside the position manager. The owner's own position actions

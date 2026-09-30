@@ -13,6 +13,8 @@ import type {
 export type { OnboardingErrorCode, OnboardingRequests, OnboardingResponses, OnboardingRoute }
 export type SwapPreview = OnboardingResponses['swap-preview']['preview']
 export type PositionPreview = OnboardingResponses['position-preview']['preview']
+export type SwapRoutePreview = OnboardingResponses['swap-route']['preview']
+export type SwapRouteRequest = OnboardingRequests['swap-route']
 export type PreviewOf<R extends OnboardingRoute> = OnboardingResponses[R]['preview']
 
 /**

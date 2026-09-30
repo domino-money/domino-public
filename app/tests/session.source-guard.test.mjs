@@ -53,11 +53,15 @@ test('batches (EIP-5792) are asked for, offered and read back only by the closed
   assert.deepEqual(hits(ALL, batch), ['finance/batch.ts']);
 });
 
-test('exact approvals are confined to the closed setup and sequence ABIs', () => {
+test('exact approvals are confined to the closed setup, Permit2 and sequence ABIs', () => {
   // The closed ABIs are JSON (so the page ships no ABI parser): an approval is declared as an item named approve.
   const apis =
     /\b(sendTransaction|writeContract|sendCalls|signTypedData|simulateContract|useSendTransaction|useWriteContract|useSignTypedData|approve\s*\()|\bname:\s*['"`]approve['"`]/;
-  assert.deepEqual(hits(ALL, apis), ['finance/sequence.ts', 'finance/setup.ts'], 'only the closed owner ABIs declare exact token or NFT approval');
+  assert.deepEqual(hits(ALL, apis), ['finance/routedSwap.ts', 'finance/sequence.ts', 'finance/setup.ts'], 'only the closed owner ABIs and exact-amount Permit2 adapter declare approvals');
+  const route = ALL.find(file => file.path === 'finance/routedSwap.ts').code;
+  assert.match(route, /approval\.spender !== ROUTE_PERMIT2/);
+  assert.match(route, /BigInt\(approval\.amountRaw\) !== gross/);
+  assert.match(route, /args: \[tokenIn, UNIVERSAL_ROUTER, gross, Number\(deadline\)\]/);
 });
 
 test('no connector SDK, public chain definition or network transport is used', () => {

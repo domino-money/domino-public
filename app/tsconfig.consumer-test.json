@@ -24,6 +24,7 @@
     "src/onboarding/echo.ts",
     "src/onboarding/expiry.ts",
     "src/onboarding/client.ts",
+    "src/onboarding/routed.ts",
     "src/onboarding/budget.ts",
     "src/onboarding/catalog.ts",
     "src/onboarding/inputs.ts",
@@ -55,6 +56,8 @@
     "src/finance/execution.ts",
     "src/finance/setup.ts",
     "src/finance/nonce.ts",
+    "src/finance/routedJournal.ts",
+    "src/finance/routedPlan.ts",
     "src/finance/position.ts"
   ]
 }

@@ -54,6 +54,9 @@ const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> 
   invalid_swap_budget: 'Check the swap: a budget within the operation balance, a slippage limit from 0.1% to 5% and a price limit.',
   invalid_slippage: 'Choose a swap slippage limit from 0.1% to 5%.',
   swap_output_insufficient: 'The simulated swap output is too small for your slippage limit.',
+  invalid_routed_swap: 'The Uniswap route could not be independently verified. Nothing was sent.',
+  routed_swap_already_offered: 'This swap was already offered. Check its outcome before continuing; it will not be sent twice.',
+  route_session_changed: 'Your wallet session or route quote changed. Prepare and review the route again before signing.',
   invalid_mint_limits: 'Check the mint: ticks on the pool spacing, caps within the operation balance and valid price limits.',
   invalid_transaction_hash: 'Enter the transaction hash as a 32-byte hex value.',
   invalid_transaction: 'That transaction was not sent from this wallet.',
@@ -125,13 +128,15 @@ export const RECEIPT_TEXT: Readonly<Record<'pending' | 'included' | 'confirming'
 }
 
 /** What each prepared setup step is, for its review heading. */
-export const SETUP_STEP_TEXT: Readonly<Record<'approve' | 'fund' | 'swap' | 'mint' | 'cancel' | 'recover', string>> = {
+export const SETUP_STEP_TEXT: Readonly<Record<'approve' | 'fund' | 'swap' | 'mint' | 'cancel' | 'recover' | 'route-permit' | 'route-swap', string>> = {
   approve: 'exact allowance',
   fund: 'funding',
   swap: 'assisted swap',
   mint: 'mint',
   cancel: 'refund',
   recover: 'single-token refund',
+  'route-permit': 'exact router permission',
+  'route-swap': 'routed assisted swap',
 }
 
 /** What each prepared sequence step is, for its review heading. */

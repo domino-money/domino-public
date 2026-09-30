@@ -93,6 +93,7 @@ execFileSync(
     'tests/local-live-credentials.test.mjs',
     'tests/local-live-vite.test.mjs',
     'tests/onboarding.client.test.mjs',
+    'tests/routed-flow.test.mjs',
     'tests/onboarding.controller.test.mjs',
     'tests/onboarding.project.test.mjs',
     'tests/deposit.client.test.mjs',

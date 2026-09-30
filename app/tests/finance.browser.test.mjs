@@ -6,7 +6,9 @@ import { join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { concatHex, encodeAbiParameters, keccak256, toFunctionSelector } from 'viem';
-import { createFakeOnboarding } from './support/fake-onboarding.mjs';
+import { createFakeOnboarding, routedSwapPreview } from './support/fake-onboarding.mjs';
+import { routePermitAbi, routeExecuteAbi } from '../.test-build/app/src/finance/routedSwap.js';
+import { ROUTE_PERMIT2, UNIVERSAL_ROUTER, ROUTE_FEE_RECIPIENT } from '../.test-build/app/src/finance/pin.js';
 import { createFakeSession } from './support/fake-session.mjs';
 import { createWalletServer } from './support/wallet-server.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
@@ -642,12 +644,14 @@ const DELEGATES = JSON.parse(readFileSync(new URL('./support/eip7702-delegates.c
  * Added 2026-09-28 (one-sided, review): after `moveOnOpen(price)`, an `open` included leaves the pool's square-root
  * price there, as if another trader's swap moved it between the deposit and the mint.
  */
-function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0, ownerCode = '0x', delegateCode = null, atomic = null, capabilities = null, batchError = null, simulation = 'ok' } = {}) {
+function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0, ownerCode = '0x', delegateCode = null, atomic = null, capabilities = null, batchError = null, simulation = 'ok', routed = false } = {}) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`;
-  const setup = at(0x71), poolManager = at(0x72), positionManager = at(0x73), stateView = at(0x74), feeRecipient = at(0x75);
+  const setup = at(0x71), poolManager = at(0x72), positionManager = at(0x73), stateView = at(0x74), feeRecipient = routed ? ROUTE_FEE_RECIPIENT : at(0x75);
   const code = { [setup]: '0x6071', [poolManager]: '0x6072', [positionManager]: '0x6073', [stateView]: '0x6074', [QUOTER.address]: QUOTER.code };
   const deployment = { setup, setupCodeHash: keccak256(code[setup]), poolManager, positionManager, stateView, poolManagerCodeHash: keccak256(code[poolManager]),
-    positionManagerCodeHash: keccak256(code[positionManager]), stateViewCodeHash: keccak256(code[stateView]), feeRecipient, feeBps: 30, tariffVersion: '1', expiresAt: Math.floor(Date.now() / 1000) + 86_400 };
+    positionManagerCodeHash: keccak256(code[positionManager]), stateViewCodeHash: keccak256(code[stateView]), feeRecipient, feeBps: routed ? 65 : 30, tariffVersion: '1', expiresAt: Math.floor(Date.now() / 1000) + 86_400 };
+  if (routed) { code[ROUTE_PERMIT2] = '0x6001'; code[UNIVERSAL_ROUTER] = '0x6002'; }
+  const routeAllowances = new Map(), permits = new Map(), routerOutputs = new Map();
   const FINALIZED = { number: finality === 'lagging' ? '0x1' : '0x100', hash: at(0xbf, 32) };
   const lower = value => String(value).toLowerCase();
   // The owner's own code: none, a plain EOA, or an EIP-7702 designator whose delegate answers `delegateCode`.
@@ -708,8 +712,14 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
   let permitted = false;
   const blockOf = index => ({ number: numberToHex(0x10 + index), hash: at(0xb0 + index, 32) });
   const hashOf = index => at(0xc0 + index, 32);
-  const decode = tx => decodeFunctionData({ abi: lower(tx.to) === setup ? setupChainAbi : erc20Abi, data: tx.data });
+  const decode = tx => decodeFunctionData({ abi: lower(tx.to) === setup ? setupChainAbi : routed && lower(tx.to) === ROUTE_PERMIT2 ? routePermitAbi : routed && lower(tx.to) === UNIVERSAL_ROUTER ? routeExecuteAbi : erc20Abi, data: tx.data });
   function view(to, data, tag) {
+    if (routed && to === ROUTE_PERMIT2) {
+      const { functionName, args } = decodeFunctionData({ abi: routePermitAbi, data });
+      if (functionName === 'allowance') return encodeFunctionResult({ abi: routePermitAbi, functionName, result: [...(permits.get(lower(args[1])) ?? [0n, 0]), 0] });
+      return '0x';
+    }
+    if (routed && to === UNIVERSAL_ROUTER) return '0x';
     // The one-wei payment to the owner's own account that an account with code is probed with (finance/setup.ts
     // acceptsNativeEth): this account's code accepts it.
     if (to === lower(owner) && ownerCode !== '0x' && !data) { viewed.push('native_probe'); return '0x'; }
@@ -735,7 +745,7 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     if (to === setup) {
       const { functionName, args = [] } = decodeFunctionData({ abi: setupChainAbi, data });
       viewed.push(functionName);
-      const answers = { manager: poolManager, positions: positionManager, stateView, feeRecipient, assistedFeeBps: 30, tariffVersion: 1n, ownerNonce: BigInt(operations.size),
+      const answers = { manager: poolManager, positions: positionManager, stateView, feeRecipient, assistedFeeBps: deployment.feeBps, tariffVersion: 1n, ownerNonce: BigInt(operations.size),
         nextOperationId: operationId(BigInt(operations.size)), operation: operations.get(args[0]) ?? NONE, recoveryStarted: false };
       if (functionName in answers) return encodeFunctionResult({ abi: setupChainAbi, functionName, result: answers[functionName] });
       if (functionName === 'swap') {
@@ -749,7 +759,7 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     }
     const { functionName, args } = decodeFunctionData({ abi: erc20Abi, data });
     viewed.push(functionName);
-    if (functionName === 'allowance') return encodeFunctionResult({ abi: erc20Abi, functionName, result: lower(args[1]) === setup ? allowances.get(to) ?? 0n : 0n });
+    if (functionName === 'allowance') return encodeFunctionResult({ abi: erc20Abi, functionName, result: lower(args[1]) === setup ? allowances.get(to) ?? 0n : routed && lower(args[1]) === ROUTE_PERMIT2 ? routeAllowances.get(to) ?? 0n : 0n });
     if (functionName === 'approve') return encodeFunctionResult({ abi: erc20Abi, functionName, result: true });
     if (functionName === 'balanceOf') return encodeFunctionResult({ abi: erc20Abi, functionName, result: lower(args[0]) === lower(owner) ? held.get(to) ?? 0n : 0n });
     throw new Error(`unexpected ${functionName} on ${to}`);
@@ -766,6 +776,14 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
   const batches = [];
   let capability = atomic, refuseBatch = batchError;
   function check(tx) {
+    if (routed && lower(tx.to) === UNIVERSAL_ROUTER) {
+      const p = routerOutputs.get(tx.data);
+      if (!p) throw reverting('unregistered route');
+      const input = p.request.tokenIn, gross = BigInt(p.request.amountRaw);
+      if (BigInt(tx.value ?? '0x0') !== (input === zeroAddress ? gross : 0n)) throw reverting('router native value');
+      if (input !== zeroAddress && ((routeAllowances.get(input) ?? 0n) < gross || (permits.get(input)?.[0] ?? 0n) < gross)) throw reverting('router allowance');
+      return;
+    }
     if (lower(tx.to) !== setup) return;
     const { functionName, args } = decode(tx);
     if (functionName === 'open') {
@@ -779,7 +797,7 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     if (functionName === 'mint' && (operations.get(args[0].operationId)?.closed ?? true)) throw reverting('InvalidSetup()');
   }
   function atomically(calls, keep) {
-    const saved = { allowances: new Map(allowances), operations: new Map(operations), sqrtPrice };
+    const saved = { allowances: new Map(allowances), routeAllowances: new Map(routeAllowances), permits: new Map(permits), held: new Map(held), eth, operations: new Map(operations), sqrtPrice };
     const results = [];
     for (const call of calls) {
       if (results.some(result => result.status === '0x0')) { results.push({ status: '0x0', gasUsed: '0x0' }); continue; }
@@ -794,6 +812,9 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     }
     if (!keep || results.some(result => result.status === '0x0')) {
       allowances.clear(); saved.allowances.forEach((value, key) => allowances.set(key, value));
+      routeAllowances.clear(); saved.routeAllowances.forEach((value, key) => routeAllowances.set(key, value));
+      permits.clear(); saved.permits.forEach((value, key) => permits.set(key, value));
+      held.clear(); saved.held.forEach((value, key) => held.set(key, value)); eth = saved.eth;
       operations.clear(); saved.operations.forEach((value, key) => operations.set(key, value));
       sqrtPrice = saved.sqrtPrice;
     }
@@ -802,8 +823,17 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
   /** What the contracts make of a transaction once it is included. */
   function include(tx) {
     const { functionName, args } = decode(tx);
+    if (routed && lower(tx.to) === ROUTE_PERMIT2) { permits.set(lower(args[0]), [args[2], args[3]]); return; }
+    if (routed && lower(tx.to) === UNIVERSAL_ROUTER) {
+      check(tx);
+      const p = routerOutputs.get(tx.data), gross = BigInt(p.request.amountRaw), output = BigInt(p.uniswap.amountOutRaw);
+      if (p.request.tokenIn === zeroAddress) eth -= gross; else held.set(p.request.tokenIn, (held.get(p.request.tokenIn) ?? 0n) - gross);
+      if (p.tokenOut === zeroAddress) eth += output; else held.set(p.tokenOut, (held.get(p.tokenOut) ?? 0n) + output);
+      return;
+    }
     if (lower(tx.to) !== setup) {
       if (functionName === 'approve' && lower(args[0]) === setup) allowances.set(lower(tx.to), args[1]);
+      if (routed && functionName === 'approve' && lower(args[0]) === ROUTE_PERMIT2) routeAllowances.set(lower(tx.to), args[1]);
       return;
     }
     if (functionName === 'open') {
@@ -824,6 +854,9 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     log.push(method);
     try {
       switch (method) {
+        case 'personal_sign':
+          if (routed) return { result: await ACCOUNTS[0].signMessage({ message: { raw: params[0] } }) };
+          break;
         case 'eth_requestAccounts': permitted = true; return { result: [owner] };
         case 'wallet_requestPermissions': permitted = true; return { result: [{ parentCapability: 'eth_accounts', caveats: [{ type: 'restrictReturnedAccounts', value: [owner] }] }] };
         case 'wallet_revokePermissions': permitted = false; return { result: null };
@@ -900,6 +933,9 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
   }
   return {
     log, refused, missing, sends, viewed, declined, quotes, quoted, reverts, request, operationId, tokenId, operations, swapOutput, batches,
+    registerRoute(preview) { if (preview.uniswap?.swapTransaction) routerOutputs.set(preview.uniswap.swapTransaction.data, preview); },
+    /** Test-only capability change across a reload; pending offers must still be recovered before changing paths. */
+    setAtomic(status) { capability = status; },
     /** A batch's call decoded against the contract it goes to. */
     decodeCall: call => decode({ to: call.to, data: call.data }),
     /** A batch simulated on this chain as the chain's RPC would (eth_simulateV1's calls), changing nothing. */
@@ -1077,10 +1113,12 @@ async function doneOrder(page) {
  * (StageReview.tsx FinalControl). `answer` goes to the read stub; `amount` is the TOKEN amount typed; `routes` are
  * more same-origin endpoints for the wallet-server, asked before the read stub.
  */
-async function atReview(chain, { answer, amount, range = null, routes = [] } = {}) {
+async function atReview(chain, { answer, amount, range = null, routes = [], routedQuote = undefined } = {}) {
   const read = createReadStub({ answer: firstAnswer(answer, walletAssets(chain)) });
-  const s = await scenario({ chain: mintedChain(chain), routes: [...routes, (request, url) => read.handle(request, url)] });
+  let onboarding;
+  const s = await scenario({ chain: mintedChain(chain), routes: [...routes, (request, url) => routedQuote !== undefined && url.pathname.startsWith('/api/onboarding/v1/') ? onboarding.handle(request) : undefined, (request, url) => read.handle(request, url)] });
   try {
+    if (routedQuote !== undefined) { onboarding = createFakeOnboarding({ session: s.fake }); onboarding.origin = s.origin; onboarding.controls.swapRoute = routedQuote; }
     await s.context.route(ARTWORK, route => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await installDepositWallet(s.context, chain);
     s.set({ setupRelease: { status: 200, body: chain.release } });
@@ -1093,12 +1131,16 @@ async function atReview(chain, { answer, amount, range = null, routes = [] } = {
     await s.page.locator('header [aria-haspopup="dialog"]').click();
     await dialog.getByRole('button', { name: 'Connect Deposit Wallet', exact: true }).click();
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    if (routedQuote !== undefined) {
+      await dialog.getByRole('button', { name: 'Sign in', exact: true }).click();
+      await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    }
     await s.page.keyboard.press('Escape');
     await walkToReview(s.page, { amount, range });
     await s.page.locator('[data-create-position="idle"]').waitFor({ timeout: 30_000 });
     // Review's plan is drawn once the read service has answered the wallet's balances.
     await s.page.locator('[data-review-plan]').waitFor({ timeout: 30_000 });
-    return Object.assign(s, { read, services });
+    return Object.assign(s, { read, services, onboarding });
   } catch (error) { await s.close().catch(() => {}); throw error; }
 }
 
@@ -1324,6 +1366,177 @@ test('an account delegated (EIP-7702) to a recognized wallet’s contract create
 
 /** The wallet's one batch, its calls decoded against the contracts they go to, each with the ETH it carries. */
 const batchCalls = (chain, batch) => batch.calls.map(call => ({ ...chain.decodeCall(call), to: call.to.toLowerCase(), value: BigInt(call.value) }));
+
+/** Route choices are synthetic and registered with this scenario's fake node only, never a public provider. */
+function chosenRoute(chain, percent = 110n) {
+  return ({ request, now }) => {
+    const poolOut = chain.swapOutput(BigInt(request.amountRaw), request.tokenIn === zeroAddress) ?? 0n;
+    const preview = routedSwapPreview({ request, now, poolOutRaw: String(poolOut), amountOutRaw: String(poolOut > 0n ? poolOut * percent / 100n : BigInt(request.amountRaw)) });
+    chain.registerRoute(preview);
+    return preview;
+  };
+}
+
+for (const nativeInput of [false, true]) test(`routed Create position ${nativeInput ? 'native input' : 'ERC20 input'} requires review before one atomic wallet offer and deposits both tokens without a Setup swap`, { timeout: 120_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, atomic: 'supported', ...(nativeInput ? {} : { eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed } }) });
+  const s = await atReview(chain, { amount: nativeInput ? undefined : '10000000000', routedQuote: chosenRoute(chain) });
+  try {
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor();
+    assert.equal(s.onboarding.calls('swap-route').length, 0, 'typing and arriving at Review never request a route');
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    const request = s.onboarding.calls('swap-route')[0].body;
+    assert.equal(s.onboarding.calls('swap-route').length, 1);
+    assert.equal(request.tokenIn, nativeInput ? zeroAddress : FIXTURE_TOKEN);
+    assert.equal('owner' in request, false, 'the session supplies the owner');
+    await s.page.locator('[data-review-route="uniswap"]').waitFor();
+    assert.match(await s.page.locator('[data-review-route-minimum]').innerText(), /Receive at least[\s\S]*after the fee[\s\S]*0\.65%, once/);
+    assert.deepEqual([chain.sends, chain.batches], [[], []], 'the newly chosen route never signs before the person reviews it');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'a current route is reused for consent, not polled');
+    assert.equal(chain.batches.length, 1);
+    assert.deepEqual(chain.sends, []);
+    const calls = batchCalls(chain, chain.batches[0]);
+    const swapIndex = calls.findIndex(call => call.to === UNIVERSAL_ROUTER);
+    assert.ok(swapIndex >= 0);
+    if (!nativeInput) assert.deepEqual(calls.slice(0, 3).map(call => [call.to, call.functionName]), [[FIXTURE_TOKEN, 'approve'], [ROUTE_PERMIT2, 'approve'], [UNIVERSAL_ROUTER, 'execute']]);
+    else assert.equal(calls[0].functionName, 'execute');
+    assert.equal(calls[swapIndex].value, nativeInput ? BigInt(request.amountRaw) : 0n);
+    const setup = calls.filter(call => call.to === chain.release.deployment.setup);
+    assert.deepEqual(setup.map(call => call.functionName), ['open', 'mint'], 'no second swap or second swap fee in Setup');
+    assert.ok(setup[0].args[2] > 0n && setup[0].args[3] > 0n);
+    assert.ok(chain.log.indexOf('eth_simulateV1') < chain.log.indexOf('wallet_sendCalls'));
+    assert.deepEqual(s.onboarding.state.violations, []);
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+  } finally { await s.close(); }
+});
+
+test('routed Create position warns before sequential signing and never repeats a completed router swap when the later deposit is declined', { timeout: 150_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed } });
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.match(await s.page.locator('[data-review-route-risk]').innerText(), /stop after the swap[\s\S]*tokens stay in your wallet[\s\S]*fee are not undone/);
+    assert.deepEqual(chain.sends, []);
+    chain.decline('open');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice]', { hasText: 'The Uniswap swap completed and its fee was collected.' }).waitFor({ timeout: 60_000 });
+    assert.match(await s.page.locator('[data-create-notice]').innerText(), /received tokens remain in your wallet[\s\S]*continue without another swap/);
+    const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+    assert.equal(routerCalls().length, 1, 'the swap completed before the user declined depositing');
+    assert.ok(chain.declined.includes('open'));
+    assert.deepEqual(chain.batches, []);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1);
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+test('routed Create position keeps the selected-pool path on a failed quote and blocks a valid zero-output pool decision before any wallet offer', { timeout: 150_000 }, async () => {
+  for (const empty of [false, true]) {
+    const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, atomic: 'supported' });
+    const s = await atReview(chain, { routedQuote: null });
+    try {
+      if (empty) s.onboarding.controls.swapRoute = ({ request, now }) => {
+        const p = JSON.parse(readFileSync(new URL('../../api-contracts/onboarding-v1/fixtures/variants/swap-route.unavailable.json', import.meta.url))).preview;
+        const gross = BigInt(request.amountRaw), fee = gross * 65n / 10000n;
+        Object.assign(p, { request, requestedAt: now, retrievedAt: now, expiresAt: now + 30, tokenOut: request.tokenIn === request.poolKey.currency0 ? request.poolKey.currency1 : request.poolKey.currency0 });
+        Object.assign(p.pool, { amountInRaw: String(gross), feeRaw: String(fee), netInputRaw: String(gross - fee), amountOutRaw: '0' });
+        return p;
+      };
+      else s.onboarding.failNext('swap-route', 'provider_unavailable');
+      await s.page.locator('[data-create-position="idle"]').click();
+      if (empty) {
+        await s.page.locator('[data-create-notice="pool_no_liquidity"]').waitFor({ timeout: 60_000 });
+        assert.deepEqual([chain.sends, chain.batches], [[], []]);
+      } else {
+        await openCreated(s.page, '4242', 60_000);
+        assert.deepEqual(batchCalls(chain, chain.batches[0]).filter(call => call.to === chain.release.deployment.setup).map(call => call.functionName), ['open', 'swap', 'mint']);
+        assert.equal(batchCalls(chain, chain.batches[0]).some(call => call.to === UNIVERSAL_ROUTER), false);
+      }
+      assert.equal(s.onboarding.calls('swap-route').length, 1);
+      assert.deepEqual(s.onboarding.state.violations, []);
+      assert.deepEqual(chain.missing, []);
+    } finally { await s.close(); }
+  }
+});
+
+test('routed Create position quarantines an unknown atomic offer across reload and cannot switch to a second sequential swap', { timeout: 120_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, atomic: 'supported', eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed }, batchError: { code: -32603, message: 'The wallet connection ended after the offer.' } });
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const offers = () => chain.log.filter(method => method === 'wallet_sendCalls').length;
+  const records = page => page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith('domino.routed-offer.v1.')));
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor();
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice]:not([data-create-notice="route_review_required"])').waitFor();
+    await s.page.locator('[data-create-position="failed"]').waitFor();
+    assert.equal(offers(), 1, 'one wallet offer whose reply was lost is not an explicit rejection');
+    const saved = await records(s.page);
+    assert.equal(saved.length, 1);
+    assert.match(saved[0][0], /^domino\.routed-offer\.v1\.[0-9a-f]{64}$/);
+    assert.match(saved[0][1], /^[0-9a-f-]{36}\|b:0x[0-9a-f]{64}$/, 'only the claim and public Setup operation id survive');
+    assert.deepEqual(chain.sends, []);
+    chain.setAtomic(null);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, { amount: '10000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="batch_unknown"]').waitFor({ timeout: 30_000 });
+    assert.equal(offers(), 1, 'reload cannot offer the unknown batch again');
+    assert.deepEqual(chain.sends, [], 'nor can the fallback offer an independent router transfer');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'the pending operation is checked before requesting a new route');
+    assert.deepEqual(await records(s.page), saved, 'unknown is not treated as rejected or completed');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+test('routed Create position never uses a ready quote from a signed-out session and reviews fresh changed terms before sending', { timeout: 120_000 }, async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, atomic: 'supported' });
+  const s = await atReview(chain, { routedQuote: chosenRoute(chain) });
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor();
+    const firstMinimum = await s.page.locator('[data-review-route-minimum]').innerText();
+    const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await dialog.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await dialog.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await s.page.keyboard.press('Escape');
+    s.onboarding.controls.swapRoute = chosenRoute(chain, 120n);
+    await s.page.locator('[data-create-position]').click();
+    await s.page.waitForFunction(previous => {
+      const current = document.querySelector('[data-review-route-minimum]')?.innerText;
+      return Boolean(current) && current !== previous;
+    }, firstMinimum);
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor();
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'the old session quote is replaced, even though its deadline has not elapsed');
+    assert.notEqual(await s.page.locator('[data-review-route-minimum]').innerText(), firstMinimum);
+    assert.deepEqual([chain.sends, chain.batches], [[], []], 'renewing a session does not silently approve different terms');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(chain.batches.length, 1);
+    assert.equal(s.onboarding.calls('swap-route').length, 2);
+    assert.deepEqual(chain.sends, []);
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
 
 test('a wallet that executes batches atomically creates the position with one signature: the exact approval, the deposit and the mint in one batch, and no transaction of their own', async () => {
   const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported' });
@@ -1627,6 +1840,7 @@ test('Create position finds this wallet’s earlier deposit in the same pool and
     // Found, not chosen: its amounts are said, and the wallet is asked nothing until the next press.
     await s.page.getByRole('status').filter({ hasText: /^You have an earlier deposit in this pool: [\d.,]+ ETH and 1 TOKEN\. Press Create position to create this range from it, or refund it to your wallet\.$/ }).waitFor({ timeout: 30_000 });
     assert.deepEqual(chain.sends, [], 'nothing was sent by finding it');
+    assert.equal(chain.viewed.filter(name => name === 'nextOperationId').length, 1, 'one pending-batch recovery identity check on the first press');
     assert.equal(await s.page.getByRole('button', { name: 'Refund the deposit instead', exact: true }).count(), 1, 'it can be refunded instead');
     await s.page.locator('[data-create-position="held"]').click();
     await openCreated(s.page, '4243', 60_000);
@@ -1637,7 +1851,10 @@ test('Create position finds this wallet’s earlier deposit in the same pool and
     assert.deepEqual([plan.operationId, plan.tickLower, plan.tickUpper, plan.maxAmount0, plan.maxAmount1, plan.initialSqrtPriceX96], [id, ...STUB_RANGE, 2_000_000n, 1_000_000n, 0n],
       'the held operation, Review’s range, the held balances as caps');
     assert.ok(plan.liquidity > 0n);
-    assert.ok(!chain.viewed.includes('allowance') && !chain.viewed.includes('balanceOf') && !chain.viewed.includes('nextOperationId'), 'nothing about a new deposit was even read');
+    assert.ok(!chain.viewed.includes('allowance') && !chain.viewed.includes('balanceOf'), 'no allowances or wallet token balances for new funding were read');
+    // nextOperationId identifies any pending batch before continuing; it does not prepare new funding.
+    // The two explicit presses each read that recovery identity once, and the held id/range/caps above still mint alone.
+    assert.equal(chain.viewed.filter(name => name === 'nextOperationId').length, 2, 'one pending-batch identity read per explicit press, without duplicate recovery reads');
     assert.equal(chain.operations.size, 1, 'no second operation');
     await onlyTheWallet(s, chain);
   } finally { await s.close(); }
@@ -2106,7 +2323,9 @@ test('a one-token deposit into a pool with nothing in range is refused before an
     // refused every size asked, NotEnoughLiquidity, as it did for the owner's pool.
     assert.ok(chain.quoted.length >= 1 && chain.quoted.every(q => q.sent === 0), `${chain.quoted.length} sizes asked, all before anything was sent`);
     assert.deepEqual(chain.reverts, chain.quoted.map(() => 'execution reverted: NotEnoughLiquidity'), 'each refused by the quoter');
-    assert.ok(!chain.log.includes('eth_estimateGas') && !chain.viewed.includes('allowance') && !chain.viewed.includes('nextOperationId'), 'no step was even prepared');
+    assert.ok(!chain.log.includes('eth_estimateGas') && !chain.viewed.includes('allowance'), 'no spending step was prepared');
+    assert.equal(chain.viewed.filter(name => name === 'nextOperationId').length, 1, 'only the pending-batch recovery identity was read, not a new funding preparation');
+    assert.ok(!chain.log.includes('wallet_sendCalls'), 'no atomic spending request was offered either');
     assert.equal(chain.operations.size, 0);
     await onlyTheWallet(s, chain, { reverts: true });
     assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
@@ -2256,6 +2475,8 @@ test('leaving New position while the pool is checked before a one-token deposit:
     await s.page.locator('[data-wallet-step="swap"][data-step-state="reading"]').waitFor({ timeout: 30_000 });
     // The first size answered, and more to come: the person leaves by another page's link.
     await until(() => chain.quoted.length >= 1);
+    const fundingReads = () => chain.viewed.filter(name => ['allowance', 'balanceOf', 'nextOperationId'].includes(name));
+    const fundingReadsBeforeLeave = fundingReads();
     await s.page.evaluate(() => { location.hash = '#/docs'; });
     const left = chain.quoted.length;
     await s.page.locator('[data-create-position]').waitFor({ state: 'detached', timeout: 10_000 });
@@ -2268,7 +2489,10 @@ test('leaving New position while the pool is checked before a one-token deposit:
     await new Promise(resolve => setTimeout(resolve, 2_000));
     assert.deepEqual(chain.sends, [], 'no approval and no deposit');
     assert.ok(!chain.log.includes('eth_sendTransaction'), 'the wallet was never asked to sign');
-    assert.ok(!chain.log.includes('eth_estimateGas') && !chain.viewed.includes('allowance') && !chain.viewed.includes('nextOperationId'), 'no step was even prepared');
+    assert.ok(!chain.log.includes('eth_estimateGas') && !chain.viewed.includes('allowance'), 'no spending step was prepared');
+    assert.equal(chain.viewed.filter(name => name === 'nextOperationId').length, 1, 'the sole recovery identity read preceded the pool check');
+    assert.deepEqual(fundingReads(), fundingReadsBeforeLeave, 'leaving stops new funding/recovery reads as well as spending preparation');
+    assert.ok(!chain.log.includes('wallet_sendCalls'), 'the wallet was never asked for an atomic batch');
     assert.ok(chain.quoted.length <= left + 1, `the check stopped with the question in flight: ${left} asked when the page was left, ${chain.quoted.length} in all`);
     assert.equal(chain.operations.size, 0);
   } finally { await s.close(); }

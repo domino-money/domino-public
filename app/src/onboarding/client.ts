@@ -3,12 +3,12 @@
  * and one interpretation of the reply, in this order (the tests fail if two
  * steps swap):
  *
- *   1. The transport: an abort from an invalidation, this page's 27 s
- *      deadline, a network failure, a redirect.
+ *   1. The transport: an abort from an invalidation, this page's deadline
+ *      (12 s for route selection, 27 s for previews), a network failure, a redirect.
  *   2. No `X-Domino-Onboarding-Contract` header: the beta gate's 401 and 503,
  *      a missing route (404, 405, the SPA's HTML), anything else. None of
  *      these is a preview state, and no validator sees them.
- *   3. A header other than the pinned 1.0.0.
+ *   3. A header other than the pinned onboarding contract.
  *   4. JSON media, the 128 KiB bound, parsing.
  *   5. 200: the package runtime, then the owner (S-5), then the echo (INV-2).
  *   6. Anything else: `validateError` checks code and status together, then
@@ -30,6 +30,8 @@ export const ONBOARDING_HEADER = 'X-Domino-Onboarding-Contract'
 export const CSRF_HEADER = 'X-Domino-CSRF'
 /** Just above the worker's 25 s budget, so its own 504 is what the user normally sees. */
 export const PREVIEW_TIMEOUT_MS = 27_000
+/** Route selection is optional: leave time for the existing pool path to proceed. */
+export const SWAP_ROUTE_TIMEOUT_MS = 12_000
 export const MAX_REQUEST_BYTES = 8192
 /**
  * The producer's own ceiling: the onboarding service and worker refuse to
@@ -37,7 +39,7 @@ export const MAX_REQUEST_BYTES = 8192
  * rugged97 on #38), so a larger one is never a supported answer.
  */
 export const MAX_RESPONSE_BYTES = 128 * 1024
-export const ROUTES: readonly OnboardingRoute[] = ['swap-preview', 'position-preview']
+export const ROUTES: readonly OnboardingRoute[] = ['swap-preview', 'position-preview', 'swap-route']
 
 export type UnavailableDetail =
   | 'network'
@@ -174,7 +176,7 @@ export function createOnboardingClient({ fetch, runtime, clock }: { fetch: Fetch
           },
           body,
         },
-        { contractHeader: ONBOARDING_HEADER, maxBytes: MAX_RESPONSE_BYTES, timeoutMs: PREVIEW_TIMEOUT_MS, signal, clock },
+        { contractHeader: ONBOARDING_HEADER, maxBytes: MAX_RESPONSE_BYTES, timeoutMs: route === 'swap-route' ? SWAP_ROUTE_TIMEOUT_MS : PREVIEW_TIMEOUT_MS, signal, clock },
       )
       return interpretPreview(route, request, result, runtime, sessionOwner)
     },

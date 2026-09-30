@@ -4,11 +4,15 @@ import { confirmDelegate, setupWallet } from '../../finance/wallet'
 import { suggestGasBudget } from '../../finance/gas'
 import { readRelease } from '../../finance/release'
 import { saveSetupProfile } from '../../finance/recoveryProfile'
+import { lookupRoute, routeCurrent, validateRoute, type RouteQuote } from '../../finance/routedQuote'
+import { routeJournal, type RouteRecord } from '../../finance/routedJournal'
+import { routedBatchPlan, routedTermsKey } from '../../finance/routedPlan'
 import { atomicStatus, createSetupClient, deploymentFrom, isRevert, walletBalance, type AtomicStatus, type BatchPlan, type BatchState, type GasBudget, type PoolKey, type PreparedBatch, type PreparedSetup, type SetupOperation, type WalletRpc } from '../../finance/setup'
 import { errorCode, financeErrorText } from '../../finance/words'
 import { switchToRobinhood } from '../../wallet/port'
 import { CREATE } from '../../lib/create/copy'
 import { publishBatchAbility, publishCreateProgress, publishCreated, type LiveState, type LiveStep } from '../../lib/create/createProgress'
+import { publishRoutedReview } from '../../lib/create/routedReview'
 import { depositPlan, needsSides, quoteWithin, sizeSwap, swapFeePips, type DepositPlan, type PoolTerms, type Side, type SwapSize } from '../../lib/create/depositPlan'
 import { setupDraft, type JourneyState, type SetupDraft } from '../../lib/create/journey'
 import { mintPlanFor } from '../../lib/create/mintPlan'
@@ -22,7 +26,9 @@ import { Button } from '../ui'
 /**
  * Review's last control: Create position. One press opens the position the
  * four steps describe, on Domino V1's own setup contract, through the wallet
- * alone — no private session, no service between the page and the chain.
+ * alone. The existing pool path needs no private session. For a signed-in
+ * wallet, an optional authenticated route comparison can select Uniswap;
+ * every transaction is still verified and signed through that wallet.
  *
  * What the wallet holds decides how it is funded (lib/create/depositPlan.ts):
  * both tokens as the range pairs them, or one token alone, part of which is
@@ -53,8 +59,9 @@ import { Button } from '../ui'
  * When the position exists, Review offers what comes next in this control's
  * place (2026-09-24, the three features joined up: components/create/
  * CreatedNext.tsx): open it on Positions as a plain position, or automate it.
- * Nothing is kept in the browser: Positions lists it from chain for the
- * connected wallet (2026-09-24). An earlier deposit of this wallet
+ * No quote or financial response is kept in browser storage: only opaque
+ * offer latches and transaction/operation hashes prevent duplicate swaps.
+ * Positions lists the result from chain for the connected wallet. An earlier deposit of this wallet
  * in this pool whose mint did not happen is never funded again: it is shown
  * with its amounts, and the next press creates the position from it, or it
  * can be refunded.
@@ -63,6 +70,7 @@ import { Button } from '../ui'
 type Client = ReturnType<typeof createSetupClient>
 type Open = { id: Hex; operation: SetupOperation }
 type Phase = 'idle' | 'running' | 'failed' | 'held' | 'done'
+type RouteContinuation = { owner: Address; plan: BatchPlan; claim: string; hash: Hex | null; swapped: boolean; wasOffered: () => boolean }
 
 const readSetupRelease = () => readRelease('/api/setup/v1/release', (value) => deploymentFrom(value))
 /** A batch simulated on the chain's own RPC, for a wallet without eth_simulateV1: the page's chain code, loaded as its reads load it. */
@@ -223,6 +231,13 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
   // refused or no simulation could check), so the line never says "one signature" while the wallet asks for each step.
   const [batching, setBatching] = useState(false)
   const steps = useRef<readonly LiveStep[]>([])
+  const quote = useRef<RouteQuote | null>(null)
+  const reviewedRoute = useRef<string | null>(null)
+  const routeAbort = useRef<AbortController | null>(null)
+  const continuation = useRef<RouteContinuation | null>(null)
+  const pendingAtomic = useRef<{ claim: string; offered: () => boolean } | null>(null)
+  const recoverySeen = useRef<string | null>(null)
+  const routeFallback = useRef<string | null>(null)
   // Another wallet or network: whatever was prepared or held for the previous one no longer applies.
   const wallet = walletKey(identity)
   const [seenWallet, setSeenWallet] = useState(wallet)
@@ -242,12 +257,22 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     steps.current = []
     publishCreateProgress(null)
     publishCreated(null)
+    routeAbort.current?.abort()
+    quote.current = null
+    reviewedRoute.current = null
+    continuation.current = null
+    pendingAtomic.current = null
+    recoverySeen.current = null
+    routeFallback.current = null
+    publishRoutedReview(null)
   }, [wallet])
   useEffect(
     () => () => {
       generation.current++
       publishCreateProgress(null)
       publishCreated(null)
+      routeAbort.current?.abort()
+      publishRoutedReview(null)
     },
     [],
   )
@@ -594,10 +619,151 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     const live = await readSetupRelease()
     if (live.kind !== 'available') throw new Stop('The deployment could not be confirmed just now. Nothing was sent. Try again in a moment.')
     const rpc = await setupWallet()
-    const client = createSetupClient(rpc, live.deployment, () => Date.now() / 1000, currentSetupDeployment, { simulate: simulateOnChain })
+    const client = createSetupClient(rpc, live.deployment, () => Date.now() / 1000, currentSetupDeployment, {
+      simulate: simulateOnChain, validateRoute,
+      routeAuthorized: () => quote.current !== null && routeCurrent(quote.current),
+    })
     const gas = await suggestGasBudget(rpc)
     saveSetupProfile(live.deployment)
     return { client, rpc, gas }
+  }
+
+  /** Called at Create, not while typing. A new route is shown in the existing Review
+   * before the same button may offer it to the wallet. Session/epoch and the short
+   * monotonic quote lifetime are checked again immediately before each offer. */
+  async function chooseRoute(rpc: WalletRpc, key: PoolKey, settled: SetupDraft, from: Side, gross: bigint, deposit: bigint, batch: boolean, gen: number, refresh = false): Promise<RouteQuote | null> {
+    const request = { chainId: 4663, poolId: settled.pool.key, poolKey: { currency0: key.currency0, currency1: key.currency1, fee_pips: key.fee, tick_spacing: key.tickSpacing, hooks: zeroAddress }, tokenIn: from === 0 ? key.currency0 : key.currency1, amountRaw: String(gross), slippageBps: settled.slippageBps }
+    let selected = quote.current
+    const sameRequest = selected && selected.preview.request.owner.toLowerCase() === rpc.owner.toLowerCase()
+      && selected.preview.request.poolId === request.poolId && selected.preview.request.tokenIn === request.tokenIn
+      && selected.preview.request.amountRaw === request.amountRaw && selected.preview.request.slippageBps === request.slippageBps
+    if (refresh || !selected || !sameRequest || !routeCurrent(selected)) {
+      routeAbort.current?.abort()
+      const abort = new AbortController()
+      routeAbort.current = abort
+      const result = await lookupRoute(request, rpc.owner, abort.signal)
+      stillHere(gen)
+      if (!result.ok) {
+        quote.current = null
+        publishRoutedReview(null)
+        if (result.reason === 'aborted') throw new Stop('The wallet session changed. Press Create position again.', 'route_session_changed')
+        return null
+      }
+      selected = result
+      quote.current = result
+    }
+    if (selected.preview.decision !== 'uniswap' || !selected.preview.uniswap) {
+      publishRoutedReview(null)
+      if (selected.preview.pool.amountOutRaw === '0') throw new Stop(PREFLIGHT.noLiquidity, 'pool_no_liquidity')
+      return null
+    }
+    const p = selected.preview, u = p.uniswap!
+    const terms = routedTermsKey(p, deposit) + (batch ? '|atomic' : '|sequential')
+    publishRoutedReview({ from, gross: p.request.amountRaw, totalInput: String(deposit), output: u.amountOutRaw, minimum: u.minimumAmountOutRaw,
+      fee: u.feeRaw, advantageBps: p.advantageBps, priceImpact: u.priceImpactPercent, poolUnfilled: p.pool.amountOutRaw === '0', sequential: !batch })
+    if (reviewedRoute.current !== terms) {
+      reviewedRoute.current = terms
+      show([], gen)
+      throw new Stop(batch ? 'A better Uniswap route is ready. Review the updated amounts and fee, then press Create position to confirm.'
+        : 'A better Uniswap route is ready. Review the amounts and steps, then press Create position. If you stop after the swap, its tokens remain in your wallet; the swap and fee are not undone.', 'route_review_required')
+    }
+    return selected
+  }
+
+  /** Confirm a prior router transaction without relying on stored financial data.
+   * A reload cannot restart its swap; it can only use a new both-token deposit. */
+  async function recoverRoute(rpc: WalletRpc, record: RouteRecord, gen: number) {
+    if (!record.hash) throw new Stop('A Uniswap swap was already offered to your wallet and its outcome is unknown. Check wallet activity before continuing; Domino will not offer it again.', 'route_outcome_unknown')
+    const [tx, receipt] = await Promise.all([
+      rpc.request('eth_getTransactionByHash', [record.hash]), rpc.request('eth_getTransactionReceipt', [record.hash]),
+    ]) as [{ from?: string; to?: string; hash?: string; blockHash?: string } | null, { transactionHash?: string; blockHash?: string; blockNumber?: string; status?: string } | null]
+    stillHere(gen)
+    if (!receipt || !tx || tx.hash?.toLowerCase() !== record.hash || receipt.transactionHash?.toLowerCase() !== record.hash
+      || tx.from?.toLowerCase() !== rpc.owner.toLowerCase() || tx.to?.toLowerCase() !== '0x204faca1764b154221e35c0d20abb3c525710498'
+      || !receipt.blockNumber || !receipt.blockHash || tx.blockHash?.toLowerCase() !== receipt.blockHash.toLowerCase()) {
+      throw new Stop('The earlier Uniswap swap is still pending or could not be verified. Check wallet activity; nothing is swapped again.', 'route_outcome_unknown')
+    }
+    const block = await rpc.request('eth_getBlockByNumber', [receipt.blockNumber, false]) as { hash?: string } | null
+    stillHere(gen)
+    if (block?.hash?.toLowerCase() !== receipt.blockHash.toLowerCase()) throw new Stop('The earlier swap’s block changed. Wait for its outcome to be confirmed; nothing is swapped again.', 'route_outcome_unknown')
+    if (receipt.status === '0x0') {
+      await routeJournal().release(rpc.owner.toLowerCase(), record.claim)
+      throw new Stop('The earlier Uniswap swap reverted. No swap fee was collected; network gas was spent. Press Create position to try again.', 'route_reverted')
+    }
+    if (receipt.status !== '0x1') throw new Stop('The earlier swap’s outcome could not be verified. Nothing is swapped again.', 'route_outcome_unknown')
+    if (recoverySeen.current !== record.hash) {
+      recoverySeen.current = record.hash
+      throw new Stop('Your earlier Uniswap swap completed. Its tokens and the unspent input remain in your wallet, and the swap fee was collected. Press Create position to use both wallet balances without another swap, or go back to change the amount.', 'route_recovered')
+    }
+  }
+
+  /** The sequential router transfer is quarantined before opening the wallet.
+   * After a confirmed swap every retry funds/mints only; no fee can be repeated. */
+  async function runRoutedSwap(client: Client, gas: GasBudget, prepared: PreparedBatch, plan: BatchPlan, selected: RouteQuote, gen: number) {
+    const owner = prepared.owner.toLowerCase() as Address
+    for (let i = 0; i < 4; i++) {
+      stillHere(gen)
+      if (!routeCurrent(selected)) throw new Stop('The route quote expired. Press Create position to refresh it before signing.', 'route_expired')
+      const step = await client.prepareRoutedStep(prepared, gas)
+      stillHere(gen)
+      if (!routeCurrent(selected)) throw new Stop('The route quote expired. Press Create position to refresh it before signing.', 'route_expired')
+      if (step.kind !== 'route-swap') {
+        const stepKey = step.kind === 'route-permit' ? 'route-permit' : 'route-approve'
+        mark(stepKey, 'waiting', gen, true)
+        await sendAndWait(client, step, stepKey, gen)
+        continue
+      }
+      const journal = routeJournal()
+      const claim = await journal.claim(owner)
+      const pending: RouteContinuation = { owner, plan, claim, hash: null, swapped: false, wasOffered: () => client.wasOffered(step) }
+      continuation.current = pending
+      mark('route-swap', 'wallet', gen)
+      let hash: Hex
+      try {
+        stillHere(gen)
+        if (!routeCurrent(selected)) throw new Stop('The route expired before signing. Press Create position again.', 'route_expired')
+        hash = await client.send(step, true)
+      } catch (error) {
+        // Only explicit rejection (or our pre-send check) proves no signed transaction exists.
+        if (!client.wasOffered(step) || isRejection(error)) {
+          await journal.release(owner, claim)
+          continuation.current = null
+        }
+        throw error
+      }
+      pending.hash = hash
+      await journal.record(owner, claim, hash)
+      mark('route-swap', 'chain', gen)
+      await waitRouted(client, pending, gen)
+      return
+    }
+    throw new Stop('The route approvals could not be confirmed. Check wallet activity before trying again.', 'route_approval_unavailable')
+  }
+
+  async function waitRouted(client: Client, pending: RouteContinuation, gen: number) {
+    if (!pending.hash && !pending.wasOffered()) {
+      await routeJournal().release(pending.owner, pending.claim)
+      continuation.current = null
+      throw new Stop('The wallet declined the earlier swap. Nothing was swapped. Press Create position to prepare it again.', 'route_rejected')
+    }
+    if (!pending.hash) throw new Stop('The swap was offered but its outcome is unknown. Check wallet activity; nothing will be swapped again.', 'route_outcome_unknown')
+    const until = Date.now() + RECEIPT_WAIT_MS
+    for (;;) {
+      stillHere(gen)
+      const receipt = await client.receipt(pending.hash, undefined, pending.plan)
+      if (receipt.state === 'included' || receipt.state === 'finalized') {
+        pending.swapped = true
+        mark('route-swap', 'done', gen)
+        return
+      }
+      if (receipt.state === 'reverted') {
+        await routeJournal().release(pending.owner, pending.claim)
+        continuation.current = null
+        throw new Stop('The Uniswap swap reverted. Nothing was deposited and no swap fee was collected; network gas was spent.', 'route_reverted')
+      }
+      if (receipt.state === 'reorged' || Date.now() > until) throw new Stop('The Uniswap swap’s outcome is not confirmed. Check wallet activity, then press Create position to check again; nothing is swapped twice.', 'route_outcome_unknown')
+      await sleep(RECEIPT_EVERY_MS)
+    }
   }
 
   /** The position is in the wallet: Review offers what comes next in this control's place. */
@@ -625,13 +791,62 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
     let open: Open | null = held
     // A deposit an earlier press left held may need its swap; a new one is swapped only when this press plans it.
     let swapAllowed = true
+    let routedRecord: RouteRecord | null = null
     try {
       const { client, rpc, gas } = await connectClient()
       const key = poolKeyOf(pool)
+      routedRecord = routeJournal().read(rpc.owner.toLowerCase())
+      if (routedRecord?.batchOperation) {
+        if (pendingAtomic.current?.claim === routedRecord.claim && !pendingAtomic.current.offered()) {
+          await routeJournal().release(rpc.owner.toLowerCase(), routedRecord.claim)
+          pendingAtomic.current = null
+          throw new Stop('The earlier batch was not sent. Press Create position to prepare it again.', 'route_rejected')
+        }
+        show([{ key: 'batch', title: CREATE.review.batchStepTitle(true, true), state: 'chain' }], gen)
+        try {
+          const prior = await watchBatch(client, rpc.batchOffered?.(routedRecord.batchOperation) ?? '', routedRecord.batchOperation, gen)
+          if ('tokenId' in prior) {
+            await routeJournal().release(rpc.owner.toLowerCase(), routedRecord.claim)
+            pendingAtomic.current = null
+            finish(prior.tokenId, gen)
+            return
+          }
+          if (!sameKey(prior.held.operation.key, pool)) throw new Stop('The earlier batch belongs to another pool. Return to that pool to finish or refund its deposit.', 'route_context_changed')
+          open = prior.held
+          swapAllowed = false
+        } catch (error) {
+          if (['batch_dropped', 'batch_reverted'].includes(errorCode(error) ?? '')) {
+            await routeJournal().release(rpc.owner.toLowerCase(), routedRecord.claim)
+            pendingAtomic.current = null
+          }
+          throw error
+        }
+      }
+      // Any previously offered atomic route is watched first, before quoting
+      // another route or preparing the sequential fallback.
+      const priorBatch = routedRecord?.batchOperation ? null : await client.offeredBatch()
+      if (priorBatch) {
+        show([{ key: 'batch', title: CREATE.review.batchStepTitle(true, true), state: 'chain' }], gen)
+        const prior = await watchBatch(client, priorBatch.id, priorBatch.operationId, gen)
+        if ('tokenId' in prior) { finish(prior.tokenId, gen); return }
+        open = prior.held
+        swapAllowed = false
+      }
+      const continuing = continuation.current
+      if (continuing && continuing.owner === rpc.owner.toLowerCase()) {
+        if (!sameKey(continuing.plan.key, pool)) throw new Stop('The earlier swap belongs to another pool. Return to that pool to finish using its tokens; no new swap will be sent.', 'route_context_changed')
+        if (!continuing.swapped) await waitRouted(client, continuing, gen)
+        swapAllowed = false
+      } else if (routedRecord && !routedRecord.batchOperation) {
+        await recoverRoute(rpc, routedRecord, gen)
+        swapAllowed = false
+      }
       if (open) {
         // The deposit this page holds, as the chain has it now: minted meanwhile, refunded, or still waiting for its mint.
         const current = await client.inspect(open.id)
         if (current.closed && current.tokenId > 0n) {
+          if (routedRecord) await routeJournal().release(rpc.owner.toLowerCase(), routedRecord.claim)
+          continuation.current = null
           finish(current.tokenId, gen)
           return
         }
@@ -677,14 +892,18 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         if (eth < gasTotal) throw new Stop(`Keep some ETH for network gas: your wallet holds ${ethText(eth)} ETH, and these steps may need up to ${ethText(gasTotal)} ETH.`)
         const spendable = (raw: bigint, index: 0 | 1) => (pool.currencies[index].address === zeroAddress ? raw - gasTotal : raw)
         const terms = await termsNow(client, key, pool, draft)
-        const plan = depositPlan({ terms, independent: draft.independent, typedRaw: BigInt(draft.amountRaw), need0: needs[0], need1: needs[1], slippageBps: draft.slippageBps, balances: [spendable(held0, 0), spendable(held1, 1)] })
+        const resumed = continuing?.swapped ? continuing.plan : null
+        const plan: DepositPlan = resumed
+          ? { kind: 'both', amount0: resumed.amount0, amount1: resumed.amount1 }
+          : depositPlan({ terms, independent: draft.independent, typedRaw: BigInt(draft.amountRaw), need0: needs[0], need1: needs[1], slippageBps: draft.slippageBps, balances: [spendable(held0, 0), spendable(held1, 1)] })
         if (plan.kind === 'short') {
           const token = pool.currencies[plan.token]
           const have = plan.have < 0n ? 0n : plan.have
           throw new Stop(`Your wallet holds ${units(have, token)} ${symbolOf(token)}${token.address === zeroAddress ? ' after network gas' : ''}; this position needs ${units(plan.need, token)}. Lower the amount, or add ${symbolOf(token)} to your wallet.`)
         }
-        const funding: readonly [bigint, bigint] = plan.kind === 'both' ? [plan.amount0, plan.amount1] : plan.from === 0 ? [plan.deposit, 0n] : [0n, plan.deposit]
-        swapAllowed = plan.kind === 'swap'
+        let funding: readonly [bigint, bigint] = plan.kind === 'both' ? [plan.amount0, plan.amount1] : plan.from === 0 ? [plan.deposit, 0n] : [0n, plan.deposit]
+        if (routedRecord && plan.kind === 'swap') throw new Stop('Your earlier Uniswap swap completed. Use both tokens now in your wallet: go back and lower the amount or add the missing token. No second swap will be sent.', 'route_use_balances')
+        swapAllowed = !routedRecord && plan.kind === 'swap'
         // The one token deposited: a one-token plan's, or the one a range that takes one token alone is funded with.
         const one: Side | null = plan.kind === 'swap' ? plan.from : funding[0] === 0n ? 1 : funding[1] === 0n ? 0 : null
         const inOrder: readonly LiveStep[] = [
@@ -699,10 +918,110 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         ]
         // One step for the batch, named after what it holds, as Review named it before the press (journey.ts batchedSteps).
         const batchTitle = CREATE.review.batchStepTitle(inOrder.some((step) => step.key.startsWith('approve:')), plan.kind === 'swap')
-        show(batch ? [{ key: 'batch', title: batchTitle, state: 'waiting' }] : inOrder, gen)
+        if (resumed) {
+          setBatching(false)
+          show([{ key: 'route-swap', title: 'Swap through Uniswap · 0.65% output fee', state: 'done' }, ...inOrder], gen)
+        } else show(batch ? [{ key: 'batch', title: batchTitle, state: 'waiting' }] : inOrder, gen)
         // One token alone is deposited only into a pool that can swap part of it: checked before any approval.
-        const checked = plan.kind === 'swap' ? await swapPreflight(client, key, draft, plan.from, plan.deposit, gen) : null
-        if (batch) {
+        let checked: { sized: SwapSize; price: bigint } | null = null
+        let poolFailure: unknown = null
+        if (plan.kind === 'swap') {
+          try { checked = await swapPreflight(client, key, draft, plan.from, plan.deposit, gen) } catch (error) {
+            if (!['pool_no_liquidity', 'pool_too_thin'].includes(errorCode(error) ?? '')) throw error
+            poolFailure = error
+          }
+        }
+        let routePrepared: PreparedBatch | null = null
+        let routePlan: BatchPlan | null = null
+        let selected: RouteQuote | null = null
+        const intent = JSON.stringify([wallet, pool.key, draft.tickLower, draft.tickUpper, draft.amountRaw, draft.slippageBps])
+        if (plan.kind === 'swap' && (checked || poolFailure) && routeFallback.current !== intent) {
+          const gross = checked?.sized.gross ?? plan.swap
+          selected = await chooseRoute(rpc, key, draft, plan.from, gross, plan.deposit, batch, gen)
+          if (selected) {
+            for (let attempt = 0; attempt < 2; attempt++) {
+              try {
+                routePlan = routedBatchPlan(selected.preview, plan.deposit, key, draft, await client.price(key))
+                routePrepared = await client.prepareBatch(routePlan, gas)
+                break
+              } catch {
+                stillHere(gen)
+                if (attempt === 0) {
+                  selected = await chooseRoute(rpc, key, draft, plan.from, gross, plan.deposit, batch, gen, true)
+                  if (selected) continue
+                }
+                selected = null
+                routePlan = null
+                routePrepared = null
+                routeFallback.current = intent
+                quote.current = null
+                publishRoutedReview(null)
+                if (poolFailure) throw poolFailure
+                throw new Stop('The Uniswap route could not be independently verified. Review the selected-pool swap instead, then press Create position. Nothing was sent.', 'route_pool_fallback')
+              }
+            }
+          }
+        }
+        if (poolFailure && !routePrepared) throw poolFailure
+        if (selected && routePlan && routePrepared) {
+          stillHere(gen)
+          if (!routeCurrent(selected)) throw new Stop('The route expired during its safety check. Press Create position to refresh it.', 'route_expired')
+          if (batch) {
+            // The same cross-tab latch protects BOTH atomic and sequential
+            // routed swaps. The Setup operation latch alone cannot protect a
+            // standalone router transfer racing an atomic batch in another tab.
+            const journal = routeJournal(), owner = rpc.owner.toLowerCase()
+            const claim = await journal.claim(owner)
+            const prepared = routePrepared
+            pendingAtomic.current = { claim, offered: () => client.wasBatchOffered(prepared) }
+            try {
+              await journal.recordBatch(owner, claim, prepared.operationId)
+              routedRecord = journal.read(owner)
+              stillHere(gen)
+              if (!routeCurrent(selected)) throw new Stop('The route expired before signing. Press Create position again.', 'route_expired')
+              mark('batch', 'wallet', gen)
+              // Never silently turn an atomic swap into independent transactions.
+              const id = await client.sendBatch(prepared, true)
+              mark('batch', 'chain', gen)
+              const made = await watchBatch(client, id, prepared.operationId, gen)
+              if ('tokenId' in made) {
+                await journal.release(owner, claim)
+                pendingAtomic.current = null
+                finish(made.tokenId, gen)
+                return
+              }
+              open = made.held
+              if (generation.current === gen) setHeld(open)
+            } catch (error) {
+              if (errorCode(error) === 'batch_unsupported' && generation.current === gen) {
+                setAtomic('unsupported')
+                setBatching(false)
+              }
+              if (!client.wasBatchOffered(prepared) || isRejection(error) || ['batch_dropped', 'batch_reverted', 'batch_upgrade_declined', 'batch_unsupported'].includes(errorCode(error) ?? '')) {
+                await journal.release(owner, claim)
+                pendingAtomic.current = null
+              }
+              throw error
+            }
+          } else {
+            const routeSteps: LiveStep[] = [
+              ...(selected.preview.request.tokenIn !== zeroAddress ? [
+                { key: 'route-approve', title: 'Approve the exact swap amount', token: pool.currencies[plan.kind === 'swap' ? plan.from : 0], state: 'waiting' as const },
+                { key: 'route-permit', title: 'Authorize the Uniswap router', state: 'waiting' as const },
+              ] : []),
+              { key: 'route-swap', title: 'Swap through Uniswap · 0.65% output fee', state: 'waiting' },
+              ...pool.currencies.flatMap((token, index) => token.address !== zeroAddress && (index === 0 ? routePlan!.amount0 : routePlan!.amount1) > 0n
+                ? [{ key: `approve:${token.address}`, title: CREATE.review.approveStep, token, state: 'waiting' as const }] : []),
+              { key: 'fund', title: CREATE.review.fundStep, state: 'waiting' },
+              { key: 'mint', title: CREATE.review.mintStep, state: 'waiting' },
+            ]
+            show(routeSteps, gen)
+            await runRoutedSwap(client, gas, routePrepared, routePlan, selected, gen)
+            routedRecord = routeJournal().read(rpc.owner.toLowerCase())
+          }
+          funding = [routePlan.amount0, routePlan.amount1]
+          swapAllowed = false
+        } else if (batch && !resumed) {
           const made = await createInOneBatch(client, gas, key, draft, plan, funding, checked, gen)
           if (made && 'tokenId' in made) {
             finish(made.tokenId, gen)
@@ -742,11 +1061,17 @@ export default function CreatePosition({ state, reviewed = null, onBusy }: { sta
         }
       }
       const tokenId = await mintFrom(client, key, gas, open, gen, swapAllowed)
+      if (routedRecord) await routeJournal().release(rpc.owner.toLowerCase(), routedRecord.claim)
+      continuation.current = null
       finish(tokenId, gen)
     } catch (error) {
       if (generation.current !== gen) return
       stopAt(gen)
-      const said = failureText(error, open !== null, 'The wallet could not complete this step. Check your wallet activity, then press Create position again: a deposit already made is never made twice.')
+      const said = continuation.current
+        ? { text: continuation.current.swapped
+          ? `The Uniswap swap completed and its fee was collected. ${open ? 'Your deposit is held: continue or refund it.' : 'The received tokens remain in your wallet. Press Create position to continue without another swap.'}`
+          : 'A Uniswap swap was offered. Its outcome must be confirmed before continuing; nothing will be swapped twice. Check wallet activity, then press Create position again.', code: errorCode(error) }
+        : failureText(error, open !== null, 'The wallet could not complete this step. Check your wallet activity, then press Create position again: a deposit already made is never made twice.')
       if (said.text) setNotice(said)
       setPhase(open ? 'held' : 'failed')
       if (open) setHeld(open)

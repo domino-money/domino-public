@@ -28,6 +28,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadMiddleware } from '../../scripts/gated-server.mjs';
 import { DERIVED_POSITIONS, DERIVED_SWAPS, fingerprintOf } from './onboarding-derived.mjs';
+import { routeTransactions } from './routed-swap.mjs';
 
 const PACKAGE = resolve(import.meta.dirname, '../../../api-contracts/onboarding-v1');
 export const runtime = await import(pathToFileURL(resolve(PACKAGE, 'runtime.mjs')).href);
@@ -36,11 +37,38 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const PREFIX = '/api/onboarding/v1/';
 const HEADER = 'X-Domino-Onboarding-Contract';
-const ROUTES = ['swap-preview', 'position-preview'];
+const ROUTES = ['swap-preview', 'position-preview', 'swap-route'];
 const SWAPS = { happy: read('responses/swap-preview.json').preview, unknown: read('variants/swap-preview.unknown.json').preview };
 const POSITIONS = ['responses/position-preview.json', 'variants/position-preview.incomplete.json', 'variants/position-preview.blocked.json', 'variants/position-preview.native.json'].map(
   (path) => read(path).preview,
 );
+
+/** A synthetic routed response, only for isolated browser tests. The test supplies both outputs explicitly. */
+export function routedSwapPreview({ request, now, poolOutRaw, amountOutRaw }) {
+  const preview = read('responses/swap-route.json').preview;
+  const input = BigInt(request.amountRaw), inputFee = input * 65n / 10000n;
+  const grossOut = BigInt(amountOutRaw) * 10000n / 9935n, fee = grossOut * 65n / 10000n, out = grossOut - fee;
+  const minimumGross = grossOut * BigInt(10000 - request.slippageBps) / 10000n;
+  const minimumFee = minimumGross * 65n / 10000n, minimumOut = minimumGross - minimumFee;
+  const poolOut = BigInt(poolOutRaw);
+  const advantage = poolOut === 0n ? 10n ** 12n : (out - poolOut) * 10000n / poolOut - ((out - poolOut) * 10000n % poolOut < 0n ? 1n : 0n);
+  const useUniswap = out * 10000n > poolOut * 10050n;
+  Object.assign(preview, {
+    request: { ...request, poolKey: { ...request.poolKey } }, requestedAt: now, retrievedAt: now, expiresAt: now + 30,
+    requestFingerprint: fingerprintOf(request), tokenOut: request.tokenIn === request.poolKey.currency0 ? request.poolKey.currency1 : request.poolKey.currency0,
+    pool: { source: 'v4_quoter', amountInRaw: request.amountRaw, feeRaw: String(inputFee), netInputRaw: String(input - inputFee), amountOutRaw: String(poolOut) },
+    decision: useUniswap ? 'uniswap' : 'pool', reason: useUniswap ? 'uniswap_better_by_threshold' : 'pool_within_threshold',
+    advantageBps: Number(advantage > 10n ** 12n ? 10n ** 12n : advantage),
+  });
+  Object.assign(preview.uniswap, {
+    grossOutputRaw: String(grossOut), amountOutRaw: String(out), minimumAmountOutRaw: String(minimumOut),
+    feeRaw: String(fee), minimumFeeRaw: String(minimumFee), simulatedAmountOutRaw: String(out), simulatedFeeRaw: String(fee),
+    approval: null, permitTransaction: null, swapTransaction: null,
+  });
+  if (useUniswap) Object.assign(preview.uniswap, routeTransactions(preview));
+  if (!runtime.validateResponse('swap-route', { contractVersion: runtime.CONTRACT_VERSION, preview })) throw new Error('invalid_synthetic_route');
+  return preview;
+}
 
 const sorted = (value) =>
   Array.isArray(value)
@@ -87,6 +115,8 @@ export function createFakeOnboarding({ session }) {
   const controls = {
     disabled: false,
     swap: 'happy',
+    /** Test-only route builder. Null keeps the existing pool flow with a contract-valid unavailable quote. */
+    swapRoute: null,
     /** A key of DERIVED_SWAPS applied to every swap answer, or null. */
     swapDerived: null,
     /** A key of DERIVED_POSITIONS: the only position the fake then answers, or null. */
@@ -251,6 +281,20 @@ export function createFakeOnboarding({ session }) {
     return stamp(preview);
   }
 
+  function swapRoute(body, owner) {
+    const request = { ...body, poolKey: { ...body.poolKey }, owner };
+    const now = Math.floor(Date.now() / 1000);
+    if (controls.swapRoute) return controls.swapRoute({ request, now });
+    // The routed service is optional for every existing browser scenario. Its
+    // default fallback is valid, not an unknown route/contract violation.
+    const preview = read('variants/swap-route.unavailable.json').preview;
+    const amount = BigInt(request.amountRaw), fee = amount * 65n / 10000n;
+    preview.request = request;
+    preview.tokenOut = request.tokenIn.toLowerCase() === request.poolKey.currency0 ? request.poolKey.currency1 : request.poolKey.currency0;
+    preview.pool = { source: 'v4_quoter', amountInRaw: request.amountRaw, feeRaw: String(fee), netInputRaw: String(amount - fee), amountOutRaw: String(amount * 2n) };
+    return stamp(preview);
+  }
+
   async function handle(request) {
     const url = new URL(request.url);
     const route = url.pathname.slice(PREFIX.length);
@@ -341,7 +385,7 @@ export function createFakeOnboarding({ session }) {
       return done(error(code));
     }
     const owner = controls.ownerOverride ?? who.owner;
-    const preview = route === 'swap-preview' ? swapPreview(body, owner) : positionPreview(body, owner);
+    const preview = route === 'swap-preview' ? swapPreview(body, owner) : route === 'swap-route' ? swapRoute(body, owner) : positionPreview(body, owner);
     if (!preview) return done(error('provider_request_rejected'));
     const answer = { contractVersion: runtime.CONTRACT_VERSION, preview };
     if (!runtime.validateResponse(route, answer)) violation(`fake produced an invalid ${route} answer`);
