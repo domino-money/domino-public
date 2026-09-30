@@ -26,7 +26,7 @@ const REQUEST_ID = '0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e';
 const HEADER = 'X-Domino-Onboarding-Contract';
 
 const REQUESTS = { 'swap-preview': fixture('onboarding-v1', 'requests/swap-preview.json'), 'position-preview': fixture('onboarding-v1', 'requests/position-preview.json') };
-const onb = (status, body, options = {}) => reply(status, body, { contract: '1.0.0', ...options });
+const onb = (status, body, options = {}) => reply(status, body, { contract: '1.1.0', ...options });
 const requestOf = (preview) => {
   const { owner: _owner, ...rest } = preview.request;
   return rest;
@@ -110,7 +110,7 @@ test('a preview is one same-origin POST with the pinned header and the lent CSRF
     sent.push({ url, init });
     return new Response(fixtureText('onboarding-v1', 'responses/swap-preview.json'), {
       status: 200,
-      headers: { 'Content-Type': 'application/json; charset=utf-8', [HEADER]: '1.0.0', 'X-Domino-Request-Id': REQUEST_ID },
+      headers: { 'Content-Type': 'application/json; charset=utf-8', [HEADER]: '1.1.0', 'X-Domino-Request-Id': REQUEST_ID },
     });
   };
   const client = createOnboardingClient({ fetch, runtime, clock: fakeClock() });
@@ -126,7 +126,7 @@ test('a preview is one same-origin POST with the pinned header and the lent CSRF
   assert.equal(init.redirect, 'manual');
   assert.equal(init.cache, 'no-store');
   assert.equal(init.referrerPolicy, 'same-origin');
-  assert.deepEqual(init.headers, { 'Content-Type': 'application/json', Accept: 'application/json', [HEADER]: '1.0.0', 'X-Domino-CSRF': 'lent-csrf' });
+  assert.deepEqual(init.headers, { 'Content-Type': 'application/json', Accept: 'application/json', [HEADER]: '1.1.0', 'X-Domino-CSRF': 'lent-csrf' });
   assert.deepEqual(JSON.parse(init.body), REQUESTS['swap-preview']);
   assert.ok(init.signal instanceof AbortSignal);
 });
@@ -162,14 +162,14 @@ test('the page gives up after 27 s of its own clock, a little after the worker w
 });
 
 test('a reply keeps its request id in either shape Domino writes, a Worker UUID or a gateway’s 32 hex, and drops anything else', async () => {
-  const replyWith = (id) => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json', [HEADER]: '1.0.0', 'X-Domino-Request-Id': id } });
+  const replyWith = (id) => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json', [HEADER]: '1.1.0', 'X-Domino-Request-Id': id } });
   const GATEWAY_ID = 'c549ebea4bfca053878e1646dfe6cf7d';
   assert.equal((await rawReplyOf(replyWith(REQUEST_ID), HEADER, MAX_RESPONSE_BYTES)).requestIdHeader, REQUEST_ID);
   assert.equal((await rawReplyOf(replyWith(GATEWAY_ID), HEADER, MAX_RESPONSE_BYTES)).requestIdHeader, GATEWAY_ID, 'the development gateway’s id, as the local-live proxy passes it on');
   for (const junk of ['-'.repeat(36), GATEWAY_ID.toUpperCase(), 'x'.repeat(32), REQUEST_ID.toUpperCase(), `${GATEWAY_ID}0`]) {
     assert.equal((await rawReplyOf(replyWith(junk), HEADER, MAX_RESPONSE_BYTES)).requestIdHeader, null, junk);
   }
-  const without = new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json', [HEADER]: '1.0.0' } });
+  const without = new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json', [HEADER]: '1.1.0' } });
   assert.equal((await rawReplyOf(without, HEADER, MAX_RESPONSE_BYTES)).requestIdHeader, null);
 });
 
@@ -223,10 +223,10 @@ test('other replies without the header: a missing route is "not available", anyt
   assert.deepEqual(spy.reached, []);
 });
 
-test('the header must be exactly 1.0.0, the body JSON, within bounds and parseable', () => {
+test('the header must be exactly 1.1.0, the body JSON, within bounds and parseable', () => {
   const body = fixture('onboarding-v1', 'responses/swap-preview.json');
   const interpret = (result) => interpretPreview('swap-preview', REQUESTS['swap-preview'], result, runtime, SWAP_OWNER).failure.detail;
-  for (const version of ['1.0.1', '1.0', '1.0.0 ', 'v1.0.0', '2.0.0']) assert.equal(interpret(reply(200, body, { contract: version })), 'contract_version', version);
+  for (const version of ['1.0.0', '1.1.1', '1.1', '1.1.0 ', 'v1.1.0', '2.0.0']) assert.equal(interpret(reply(200, body, { contract: version })), 'contract_version', version);
   assert.equal(interpret(onb(200, body, { contentType: 'text/plain' })), 'not_json');
   const tooLarge = onb(200, body);
   tooLarge.reply.body = { kind: 'too_large' };

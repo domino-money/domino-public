@@ -863,7 +863,7 @@
   "additionalProperties": false,
   "properties": {
     "contractVersion": {
-      "const": "1.0.0",
+      "const": "1.1.0",
       "title": "Contractversion",
       "type": "string"
     },
@@ -877,7 +877,7 @@
   ],
   "title": "SwapResponse",
   "type": "object",
-  "x-contract-version": "1.0.0",
+  "x-contract-version": "1.1.0",
   "x-domino-constraints": [
     "All scalars are strict; JSON number lexemes must be canonical safe integers.",
     "Raw token strings are exact canonical uint256 values (positive when specified).",
@@ -885,6 +885,7 @@
     "Selected ticks must be spaced and ordered; the independent token must belong to the pool.",
     "Preview timestamps have a 30-second lifetime; position prepared deadline is 1200 seconds.",
     "Unknown values remain null; cost/status arithmetic must match the adapter projection.",
-    "Session-derived owner, response identity and freshness are checked by the service."
+    "Session-derived owner, response identity and freshness are checked by the service.",
+    "swap-route alone returns unsigned transactions, only for a Uniswap route it chose and simulated; the swap goes to the pinned Universal Router, its allowance through Permit2 for the exact input."
   ]
 }

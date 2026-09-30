@@ -76,7 +76,7 @@ class OnboardingApiTests(unittest.TestCase):
         response=self.post()
         self.assertEqual(response.status_code,200,response.text)
         self.assertFalse(response.json()['preview']['executionAvailable'])
-        self.assertEqual(response.headers['X-Domino-Onboarding-Contract'],'1.0.0')
+        self.assertEqual(response.headers['X-Domino-Onboarding-Contract'],'1.1.0')
         self.assertTrue({'no-store', 'no-transform'} <= {value.strip().lower() for value in response.headers['cache-control'].split(',')})
         self.assertNotIn('content-encoding', response.headers)
         self.assertEqual(response.headers['X-Content-Type-Options'],'nosniff')

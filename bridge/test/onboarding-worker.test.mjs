@@ -17,6 +17,9 @@ function fresh(route = 'swap-preview', value = responses[route], now = Math.floo
   const body = structuredClone(value);
   Object.assign(body.preview, { requestedAt: now, retrievedAt: now, expiresAt: now + 30 });
   if (route === 'position-preview') body.preview.preparedDeadline = now + 1200;
+  // A routed swap's Permit2 allowance lapses with the router call's deadline, 30 minutes on: its last word.
+  const permit = route === 'swap-route' ? body.preview.uniswap?.permitTransaction : null;
+  if (permit) permit.data = permit.data.slice(0, -64) + (now + 1800).toString(16).padStart(64, '0');
   return body;
 }
 function request(route = 'swap-preview', options = {}) {
@@ -85,7 +88,7 @@ for (const route of ROUTES) test(`${route} forwards only fixed auth headers and 
   assert.equal(h.calls[0].init.method, 'POST');
   assert.equal(h.calls[0].init.redirect, 'manual');
   assert.equal(h.calls[0].init.body, JSON.stringify(requests[route]));
-  assert.deepEqual(h.calls[0].init.headers, { 'Content-Type': 'application/json', 'X-Domino-Onboarding-Contract': '1.0.0',
+  assert.deepEqual(h.calls[0].init.headers, { 'Content-Type': 'application/json', 'X-Domino-Onboarding-Contract': CONTRACT_VERSION,
     'CF-Access-Client-Id': env.ONBOARDING_ACCESS_CLIENT_ID, 'CF-Access-Client-Secret': env.ONBOARDING_ACCESS_CLIENT_SECRET,
     'X-Domino-Client-Id': '203.0.113.7', 'X-Domino-Browser-Origin': origin,
     'X-Domino-Session': session, 'X-Domino-CSRF': csrf });
@@ -308,7 +311,7 @@ test('unversioned Access errors, redirects, HTML and arbitrary errors are saniti
   }
 });
 test('contract versions are pinned on success and safe errors', async () => {
-  for (const version of ['2.0.0', '1.0.0, 1.0.0']) {
+  for (const version of ['2.0.0', '1.0.0', `${CONTRACT_VERSION}, ${CONTRACT_VERSION}`]) {
     const h = harness(() => response(fresh(), 200, { 'X-Domino-Onboarding-Contract': version }));
     await error(await h.worker.fetch(request(), env), 'upstream_contract_mismatch');
     const local = harness();
@@ -319,7 +322,7 @@ test('contract versions are pinned on success and safe errors', async () => {
 test('upstream encoded duplicate-key invalidUTF8 and oversized output fails closed', async () => {
   for (const output of [response(fresh(), 200, { 'Content-Encoding': 'gzip' }), response('{"preview":{},"preview":{}}'),
     response('x'.repeat(ONBOARDING_LIMITS.responseBytes + 1)), response(fresh(), 200, { 'Content-Length': String(ONBOARDING_LIMITS.responseBytes + 1) }),
-    new Response(new Uint8Array([0xc3, 0x28]), { headers: { 'Content-Type': 'application/json', 'X-Domino-Onboarding-Contract': '1.0.0' } })]) {
+    new Response(new Uint8Array([0xc3, 0x28]), { headers: { 'Content-Type': 'application/json', 'X-Domino-Onboarding-Contract': CONTRACT_VERSION } })]) {
     const h = harness(() => output);
     await error(await h.worker.fetch(request(), env), 'upstream_invalid_response');
   }
@@ -381,7 +384,7 @@ test('partial response chunks cannot reset the shared upstream deadline', async 
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000000 });
   let cancelled = false;
   const h = harness(() => new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{')); },
-    cancel() { cancelled = true; } }), { headers: { 'Content-Type': 'application/json', 'X-Domino-Onboarding-Contract': '1.0.0' } }));
+    cancel() { cancelled = true; } }), { headers: { 'Content-Type': 'application/json', 'X-Domino-Onboarding-Contract': CONTRACT_VERSION } }));
   const pending = h.worker.fetch(request(), env); await flush();
   t.mock.timers.tick(ONBOARDING_LIMITS.upstreamMs + 1);
   await error(await pending, 'upstream_timeout');

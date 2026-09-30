@@ -169,7 +169,7 @@ export const SCHEMAS = {
       ],
       "title": "PositionRequest",
       "type": "object",
-      "x-contract-version": "1.0.0",
+      "x-contract-version": "1.1.0",
       "x-domino-constraints": [
         "All scalars are strict; JSON number lexemes must be canonical safe integers.",
         "Raw token strings are exact canonical uint256 values (positive when specified).",
@@ -177,7 +177,8 @@ export const SCHEMAS = {
         "Selected ticks must be spaced and ordered; the independent token must belong to the pool.",
         "Preview timestamps have a 30-second lifetime; position prepared deadline is 1200 seconds.",
         "Unknown values remain null; cost/status arithmetic must match the adapter projection.",
-        "Session-derived owner, response identity and freshness are checked by the service."
+        "Session-derived owner, response identity and freshness are checked by the service.",
+        "swap-route alone returns unsigned transactions, only for a Uniswap route it chose and simulated; the swap goes to the pinned Universal Router, its allowance through Permit2 for the exact input."
       ]
     },
     "response": {
@@ -906,7 +907,7 @@ export const SCHEMAS = {
       "additionalProperties": false,
       "properties": {
         "contractVersion": {
-          "const": "1.0.0",
+          "const": "1.1.0",
           "title": "Contractversion",
           "type": "string"
         },
@@ -920,7 +921,7 @@ export const SCHEMAS = {
       ],
       "title": "PositionResponse",
       "type": "object",
-      "x-contract-version": "1.0.0",
+      "x-contract-version": "1.1.0",
       "x-domino-constraints": [
         "All scalars are strict; JSON number lexemes must be canonical safe integers.",
         "Raw token strings are exact canonical uint256 values (positive when specified).",
@@ -928,7 +929,8 @@ export const SCHEMAS = {
         "Selected ticks must be spaced and ordered; the independent token must belong to the pool.",
         "Preview timestamps have a 30-second lifetime; position prepared deadline is 1200 seconds.",
         "Unknown values remain null; cost/status arithmetic must match the adapter projection.",
-        "Session-derived owner, response identity and freshness are checked by the service."
+        "Session-derived owner, response identity and freshness are checked by the service.",
+        "swap-route alone returns unsigned transactions, only for a Uniswap route it chose and simulated; the swap goes to the pinned Universal Router, its allowance through Permit2 for the exact input."
       ]
     }
   },
@@ -987,7 +989,7 @@ export const SCHEMAS = {
       ],
       "title": "SwapRequest",
       "type": "object",
-      "x-contract-version": "1.0.0",
+      "x-contract-version": "1.1.0",
       "x-domino-constraints": [
         "All scalars are strict; JSON number lexemes must be canonical safe integers.",
         "Raw token strings are exact canonical uint256 values (positive when specified).",
@@ -995,7 +997,8 @@ export const SCHEMAS = {
         "Selected ticks must be spaced and ordered; the independent token must belong to the pool.",
         "Preview timestamps have a 30-second lifetime; position prepared deadline is 1200 seconds.",
         "Unknown values remain null; cost/status arithmetic must match the adapter projection.",
-        "Session-derived owner, response identity and freshness are checked by the service."
+        "Session-derived owner, response identity and freshness are checked by the service.",
+        "swap-route alone returns unsigned transactions, only for a Uniswap route it chose and simulated; the swap goes to the pinned Universal Router, its allowance through Permit2 for the exact input."
       ]
     },
     "response": {
@@ -1863,7 +1866,7 @@ export const SCHEMAS = {
       "additionalProperties": false,
       "properties": {
         "contractVersion": {
-          "const": "1.0.0",
+          "const": "1.1.0",
           "title": "Contractversion",
           "type": "string"
         },
@@ -1877,7 +1880,7 @@ export const SCHEMAS = {
       ],
       "title": "SwapResponse",
       "type": "object",
-      "x-contract-version": "1.0.0",
+      "x-contract-version": "1.1.0",
       "x-domino-constraints": [
         "All scalars are strict; JSON number lexemes must be canonical safe integers.",
         "Raw token strings are exact canonical uint256 values (positive when specified).",
@@ -1885,7 +1888,698 @@ export const SCHEMAS = {
         "Selected ticks must be spaced and ordered; the independent token must belong to the pool.",
         "Preview timestamps have a 30-second lifetime; position prepared deadline is 1200 seconds.",
         "Unknown values remain null; cost/status arithmetic must match the adapter projection.",
-        "Session-derived owner, response identity and freshness are checked by the service."
+        "Session-derived owner, response identity and freshness are checked by the service.",
+        "swap-route alone returns unsigned transactions, only for a Uniswap route it chose and simulated; the swap goes to the pinned Universal Router, its allowance through Permit2 for the exact input."
+      ]
+    }
+  },
+  "swap-route": {
+    "request": {
+      "$defs": {
+        "PoolKeyModel": {
+          "additionalProperties": false,
+          "properties": {
+            "currency0": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Currency0",
+              "type": "string"
+            },
+            "currency1": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Currency1",
+              "type": "string"
+            },
+            "fee_pips": {
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Fee Pips",
+              "type": "integer"
+            },
+            "hooks": {
+              "const": "0x0000000000000000000000000000000000000000",
+              "title": "Hooks",
+              "type": "string"
+            },
+            "tick_spacing": {
+              "maximum": 32767,
+              "minimum": 1,
+              "title": "Tick Spacing",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "currency0",
+            "currency1",
+            "fee_pips",
+            "tick_spacing",
+            "hooks"
+          ],
+          "title": "PoolKeyModel",
+          "type": "object"
+        }
+      },
+      "$id": "https://domino.invalid/contracts/onboarding-v1/swap-route.request.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "amountRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Amountraw",
+          "type": "string",
+          "x-maximum-raw": "340282366920938463463374607431768211455"
+        },
+        "chainId": {
+          "maximum": 4663,
+          "minimum": 4663,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "poolId": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Poolid",
+          "type": "string"
+        },
+        "poolKey": {
+          "$ref": "#/$defs/PoolKeyModel"
+        },
+        "slippageBps": {
+          "maximum": 500,
+          "minimum": 10,
+          "title": "Slippagebps",
+          "type": "integer"
+        },
+        "tokenIn": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "title": "Tokenin",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chainId",
+        "poolId",
+        "poolKey",
+        "tokenIn",
+        "amountRaw",
+        "slippageBps"
+      ],
+      "title": "SwapRouteRequest",
+      "type": "object",
+      "x-contract-version": "1.1.0",
+      "x-domino-constraints": [
+        "All scalars are strict; JSON number lexemes must be canonical safe integers.",
+        "Raw token strings are exact canonical uint256 values (positive when specified).",
+        "Pool keys are ordered, distinct, hookless and fixed fee; the backend verifies Keccak PoolId.",
+        "Selected ticks must be spaced and ordered; the independent token must belong to the pool.",
+        "Preview timestamps have a 30-second lifetime; position prepared deadline is 1200 seconds.",
+        "Unknown values remain null; cost/status arithmetic must match the adapter projection.",
+        "Session-derived owner, response identity and freshness are checked by the service.",
+        "swap-route alone returns unsigned transactions, only for a Uniswap route it chose and simulated; the swap goes to the pinned Universal Router, its allowance through Permit2 for the exact input."
+      ]
+    },
+    "response": {
+      "$defs": {
+        "PoolKeyModel": {
+          "additionalProperties": false,
+          "properties": {
+            "currency0": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Currency0",
+              "type": "string"
+            },
+            "currency1": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Currency1",
+              "type": "string"
+            },
+            "fee_pips": {
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Fee Pips",
+              "type": "integer"
+            },
+            "hooks": {
+              "const": "0x0000000000000000000000000000000000000000",
+              "title": "Hooks",
+              "type": "string"
+            },
+            "tick_spacing": {
+              "maximum": 32767,
+              "minimum": 1,
+              "title": "Tick Spacing",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "currency0",
+            "currency1",
+            "fee_pips",
+            "tick_spacing",
+            "hooks"
+          ],
+          "title": "PoolKeyModel",
+          "type": "object"
+        },
+        "PoolRouteQuote": {
+          "additionalProperties": false,
+          "properties": {
+            "amountInRaw": {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "title": "Amountinraw",
+              "type": "string"
+            },
+            "amountOutRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Amountoutraw",
+              "type": "string"
+            },
+            "feeRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Feeraw",
+              "type": "string"
+            },
+            "netInputRaw": {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "title": "Netinputraw",
+              "type": "string"
+            },
+            "source": {
+              "const": "v4_quoter",
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "amountInRaw",
+            "feeRaw",
+            "netInputRaw",
+            "amountOutRaw"
+          ],
+          "title": "PoolRouteQuote",
+          "type": "object"
+        },
+        "RouteApproval": {
+          "additionalProperties": false,
+          "properties": {
+            "amountRaw": {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "title": "Amountraw",
+              "type": "string"
+            },
+            "spender": {
+              "const": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+              "title": "Spender",
+              "type": "string"
+            },
+            "token": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          "required": [
+            "token",
+            "spender",
+            "amountRaw"
+          ],
+          "title": "RouteApproval",
+          "type": "object"
+        },
+        "RouteBlock": {
+          "additionalProperties": false,
+          "properties": {
+            "hash": {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "title": "Hash",
+              "type": "string"
+            },
+            "number": {
+              "maxLength": 19,
+              "pattern": "^(0|[1-9][0-9]{0,18})$",
+              "title": "Number",
+              "type": "string",
+              "x-maximum-raw": "9223372036854775807"
+            }
+          },
+          "required": [
+            "number",
+            "hash"
+          ],
+          "title": "RouteBlock",
+          "type": "object"
+        },
+        "RoutePermitTransaction": {
+          "additionalProperties": false,
+          "description": "Permit2.approve(token, spender, amount, expiration): four static words.",
+          "properties": {
+            "data": {
+              "pattern": "^0x87517c45[0-9a-f]{256}$",
+              "title": "Data",
+              "type": "string"
+            },
+            "to": {
+              "const": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+              "title": "To",
+              "type": "string"
+            },
+            "valueRaw": {
+              "const": "0",
+              "title": "Valueraw",
+              "type": "string"
+            }
+          },
+          "required": [
+            "to",
+            "data",
+            "valueRaw"
+          ],
+          "title": "RoutePermitTransaction",
+          "type": "object"
+        },
+        "RouteSwapTransaction": {
+          "additionalProperties": false,
+          "description": "Universal Router 2.1.2's execute, the only router a routed swap is sent to.",
+          "properties": {
+            "data": {
+              "maxLength": 32770,
+              "pattern": "^0x3593564c([0-9a-f]{2})*$",
+              "title": "Data",
+              "type": "string"
+            },
+            "to": {
+              "const": "0x204faca1764b154221e35c0d20abb3c525710498",
+              "title": "To",
+              "type": "string"
+            },
+            "valueRaw": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Valueraw",
+              "type": "string"
+            }
+          },
+          "required": [
+            "to",
+            "data",
+            "valueRaw"
+          ],
+          "title": "RouteSwapTransaction",
+          "type": "object"
+        },
+        "SwapRouteIdentity": {
+          "additionalProperties": false,
+          "properties": {
+            "amountRaw": {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "title": "Amountraw",
+              "type": "string",
+              "x-maximum-raw": "340282366920938463463374607431768211455"
+            },
+            "chainId": {
+              "maximum": 4663,
+              "minimum": 4663,
+              "title": "Chainid",
+              "type": "integer"
+            },
+            "owner": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Owner",
+              "type": "string"
+            },
+            "poolId": {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "title": "Poolid",
+              "type": "string"
+            },
+            "poolKey": {
+              "$ref": "#/$defs/PoolKeyModel"
+            },
+            "slippageBps": {
+              "maximum": 500,
+              "minimum": 10,
+              "title": "Slippagebps",
+              "type": "integer"
+            },
+            "tokenIn": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-fA-F]{40}$",
+              "title": "Tokenin",
+              "type": "string"
+            }
+          },
+          "required": [
+            "chainId",
+            "poolId",
+            "poolKey",
+            "tokenIn",
+            "amountRaw",
+            "slippageBps",
+            "owner"
+          ],
+          "title": "SwapRouteIdentity",
+          "type": "object"
+        },
+        "SwapRoutePlan": {
+          "additionalProperties": false,
+          "properties": {
+            "advantageBps": {
+              "anyOf": [
+                {
+                  "maximum": 1000000000000,
+                  "minimum": -10000,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Advantagebps"
+            },
+            "assistedSwapFeeBps": {
+              "const": 65,
+              "title": "Assistedswapfeebps",
+              "type": "integer"
+            },
+            "block": {
+              "$ref": "#/$defs/RouteBlock"
+            },
+            "chainId": {
+              "maximum": 4663,
+              "minimum": 4663,
+              "title": "Chainid",
+              "type": "integer"
+            },
+            "decision": {
+              "enum": [
+                "pool",
+                "uniswap"
+              ],
+              "title": "Decision",
+              "type": "string"
+            },
+            "expiresAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Expiresat",
+              "type": "integer"
+            },
+            "feeRecipient": {
+              "const": "0x1488c84dafc03f7f4c4fb986f83ba99fd530c6f4",
+              "title": "Feerecipient",
+              "type": "string"
+            },
+            "pool": {
+              "$ref": "#/$defs/PoolRouteQuote"
+            },
+            "reason": {
+              "enum": [
+                "uniswap_better_by_threshold",
+                "pool_within_threshold",
+                "uniswap_simulation_failed",
+                "uniswap_quote_unavailable",
+                "uniswap_quote_rejected",
+                "uniswap_quote_invalid"
+              ],
+              "title": "Reason",
+              "type": "string"
+            },
+            "request": {
+              "$ref": "#/$defs/SwapRouteIdentity"
+            },
+            "requestFingerprint": {
+              "maxLength": 64,
+              "minLength": 64,
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Requestfingerprint",
+              "type": "string"
+            },
+            "requestedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Requestedat",
+              "type": "integer"
+            },
+            "retrievedAt": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Retrievedat",
+              "type": "integer"
+            },
+            "schemaVersion": {
+              "maximum": 1,
+              "minimum": 1,
+              "title": "Schemaversion",
+              "type": "integer"
+            },
+            "source": {
+              "const": "swap_route_v1",
+              "title": "Source",
+              "type": "string"
+            },
+            "status": {
+              "const": "route_selected",
+              "title": "Status",
+              "type": "string"
+            },
+            "thresholdBps": {
+              "const": 50,
+              "title": "Thresholdbps",
+              "type": "integer"
+            },
+            "tokenOut": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Tokenout",
+              "type": "string"
+            },
+            "uniswap": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/UniswapRouteQuote"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "schemaVersion",
+            "chainId",
+            "status",
+            "source",
+            "requestedAt",
+            "retrievedAt",
+            "expiresAt",
+            "requestFingerprint",
+            "request",
+            "tokenOut",
+            "decision",
+            "reason",
+            "thresholdBps",
+            "assistedSwapFeeBps",
+            "feeRecipient",
+            "block",
+            "pool",
+            "uniswap",
+            "advantageBps"
+          ],
+          "title": "SwapRoutePlan",
+          "type": "object"
+        },
+        "UniswapRouteQuote": {
+          "additionalProperties": false,
+          "properties": {
+            "amountOutRaw": {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "title": "Amountoutraw",
+              "type": "string"
+            },
+            "approval": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RouteApproval"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "feeRaw": {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "title": "Feeraw",
+              "type": "string"
+            },
+            "grossOutputRaw": {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "title": "Grossoutputraw",
+              "type": "string"
+            },
+            "minimumAmountOutRaw": {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "title": "Minimumamountoutraw",
+              "type": "string"
+            },
+            "minimumFeeRaw": {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "title": "Minimumfeeraw",
+              "type": "string"
+            },
+            "permitTransaction": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RoutePermitTransaction"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "priceImpactPercent": {
+              "anyOf": [
+                {
+                  "maxLength": 208,
+                  "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+                  "type": "string",
+                  "x-fraction-digits": 36,
+                  "x-maximum-decimal": "100",
+                  "x-minimum-decimal": "-100"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priceimpactpercent"
+            },
+            "quoteId": {
+              "pattern": "^[A-Za-z0-9-]{1,64}$",
+              "title": "Quoteid",
+              "type": "string"
+            },
+            "simulatedAmountOutRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Simulatedamountoutraw"
+            },
+            "simulatedFeeRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Simulatedfeeraw"
+            },
+            "source": {
+              "const": "uniswap_trading_route_v1",
+              "title": "Source",
+              "type": "string"
+            },
+            "swapTransaction": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RouteSwapTransaction"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "source",
+            "quoteId",
+            "grossOutputRaw",
+            "amountOutRaw",
+            "minimumAmountOutRaw",
+            "feeRaw",
+            "minimumFeeRaw",
+            "priceImpactPercent",
+            "simulatedAmountOutRaw",
+            "simulatedFeeRaw",
+            "approval",
+            "permitTransaction",
+            "swapTransaction"
+          ],
+          "title": "UniswapRouteQuote",
+          "type": "object"
+        }
+      },
+      "$id": "https://domino.invalid/contracts/onboarding-v1/swap-route.response.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "1.1.0",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "preview": {
+          "$ref": "#/$defs/SwapRoutePlan"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "preview"
+      ],
+      "title": "SwapRouteResponse",
+      "type": "object",
+      "x-contract-version": "1.1.0",
+      "x-domino-constraints": [
+        "All scalars are strict; JSON number lexemes must be canonical safe integers.",
+        "Raw token strings are exact canonical uint256 values (positive when specified).",
+        "Pool keys are ordered, distinct, hookless and fixed fee; the backend verifies Keccak PoolId.",
+        "Selected ticks must be spaced and ordered; the independent token must belong to the pool.",
+        "Preview timestamps have a 30-second lifetime; position prepared deadline is 1200 seconds.",
+        "Unknown values remain null; cost/status arithmetic must match the adapter projection.",
+        "Session-derived owner, response identity and freshness are checked by the service.",
+        "swap-route alone returns unsigned transactions, only for a Uniswap route it chose and simulated; the swap goes to the pinned Universal Router, its allowance through Permit2 for the exact input."
       ]
     }
   }

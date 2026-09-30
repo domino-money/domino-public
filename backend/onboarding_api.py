@@ -1,4 +1,4 @@
-"""Disabled-by-default private onboarding listener. Previews, never execution."""
+"""Disabled-by-default private onboarding listener. Previews and unsigned swap routes; never a signer."""
 import os
 import re
 from types import SimpleNamespace
@@ -38,6 +38,8 @@ def main():
     from uniswap_config import load_config, CONFIG_PATH
     from uniswap_position import UniswapPosition
     from uniswap_quote import UniswapQuote
+    from uniswap_route import UniswapRoute
+    from swap_route import RouteRpc, SwapRoute
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--enable', action='store_true')
     parser.add_argument('--port', type=int, default=8880)
@@ -63,8 +65,11 @@ def main():
             store = SessionStore(database_settings(), abuse_secret=bytes.fromhex(secret))
             checker = EoaChecker(configured_rpc_urls(config),
                                      allowed_hosts=config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS))
+            # The route reads and simulates on the operator's primary endpoint only.
+            primary = configured_rpc_urls(config)[0]
+            route = SwapRoute(UniswapRoute(api_key), lambda: RouteRpc(primary, max_requests=16))
             service = OnboardingService(OnboardingAuth(store, checker), UniswapQuote(api_key),
-                                        UniswapPosition(api_key), private_values=(api_key,))
+                                        UniswapPosition(api_key), route=route, private_values=(api_key,))
             verifier = AccessVerifier(os.environ.get('DOMINO_ONBOARDING_ACCESS_ISSUER'),
                 os.environ.get('DOMINO_ONBOARDING_ACCESS_AUDIENCE'), os.environ.get('DOMINO_ONBOARDING_ACCESS_SERVICE_ID'))
             gateway = OnboardingGateway(service=service, verifier=verifier,

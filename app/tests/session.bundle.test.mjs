@@ -721,6 +721,16 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // wallet-test mode alike): fees worker 25,082 -> 25,132 B (outOfTime 41 B of it); chain code 18,172 B unchanged. The
   // fees worker ceiling moves by the minimum at 0.1 kB, to 25.2 kB (68 B over both builds); the financial, all lazy,
   // chain code and 90 kB session/read ceilings are unchanged.
+  // 2026-09-29, claude/swap-route (onboarding-v1 1.1.0, the owner: New position's assisted swap routed through Uniswap
+  // when that returns more than 0.5% above the pool): the onboarding runtime New position's SwapQuote already loads
+  // (onboarding/contract.ts) carries every route's schemas, now swap-route's too, which New position is to call. No app
+  // code changed. Measured on macOS, gzip level 9, both builds from this tree against 40c8d59: dist financial 177,584 ->
+  // 179,670 B, all lazy 197,568 -> 199,665 B; .wallet-test-dist financial 178,863 -> 180,961 B, all lazy 199,034 ->
+  // 201,129 B, about +2.1 kB each. This machine measures 398-404 B less than CI (40c8d59 in run 36637875233: dist
+  // financial 177,985 B, all lazy 197,972 B; .wallet-test-dist financial 179,262 B, all lazy 199,432 B), so CI should
+  // see about 181,360 B financial and 201,527 B all lazy in the larger build. Each moves to the 0.1 kB above that with
+  // room for the estimate: financial 181.5 kB, all lazy 201.7 kB; the fees worker, chain code and 90 kB session/read
+  // ceilings are unchanged.
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -767,7 +777,7 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 179_400], ['all lazy', allLazy, 200_800], ['fees worker', worker, 25_200], ['chain code', chain, 18_200]]) {
+    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 181_500], ['all lazy', allLazy, 201_700], ['fees worker', worker, 25_200], ['chain code', chain, 18_200]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);

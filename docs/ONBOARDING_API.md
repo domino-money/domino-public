@@ -1,9 +1,11 @@
 # Authenticated onboarding previews — issue #38
 
-The `onboarding-v1` 1.0.0 candidate connects SIWE sessions to the existing Uniswap
-swap and LP adapters. It supplies a typed API for frontend integration, without
-another liquidity formula or swap-ratio solver. A login never becomes permission
-to spend. Every execution flag remains false.
+The `onboarding-v1` 1.1.0 candidate connects SIWE sessions to the existing Uniswap
+swap and LP adapters, and routes Setup's assisted swap (`swap-route`, below). It
+supplies a typed API for frontend integration, without another liquidity formula
+or swap-ratio solver. A login never becomes permission to spend. Every preview's
+execution flag remains false; `swap-route` returns unsigned transactions that only
+the owner's wallet can sign.
 
 The worker and private listener are **disabled by default**. No `app/` or `web/`
 file, public deployment or personal-bot setting changes. The task-local branch
@@ -11,25 +13,27 @@ combines corrected session #33/#53 and preview #35/#37 dependencies, without mer
 
 ## Exact browser contract
 
-Both routes use POST JSON, the existing HttpOnly session cookie and
+Every route uses POST JSON, the existing HttpOnly session cookie and
 `X-Domino-CSRF` from login or the latest `/api/session/v1/me` response. An optional
-request `X-Domino-Onboarding-Contract` must equal `1.0.0`; every response includes
-that header. Success is `{"contractVersion":"1.0.0","preview":...}`. Errors are
+request `X-Domino-Onboarding-Contract` must equal `1.1.0`; every response includes
+that header. Success is `{"contractVersion":"1.1.0","preview":...}`. Errors are
 `{"error":"fixed_code"}` with the package's declared HTTP status.
 
 | Route | Required body | Optional body, default null |
 | --- | --- | --- |
 | `/api/onboarding/v1/swap-preview` | `chainId`, `tokenIn`, `tokenOut`, `amountRaw`, `slippageBps`, `maxPriceImpactBps` | None |
 | `/api/onboarding/v1/position-preview` | `chainId`, `poolId`, `poolKey`, `independentToken`, `amountRaw`, `tickLower`, `tickUpper`, `slippageBps` | `budget0Raw`, `budget1Raw`, `nativeBalanceRaw`, `nativeGasReserveRaw` |
+| `/api/onboarding/v1/swap-route` | `chainId`, `poolId`, `poolKey`, `tokenIn` (one of the pool's currencies), `amountRaw` (at most uint128), `slippageBps` | None |
 
 `chainId` is the integer 4663. `poolKey` preserves the read contract's
 `currency0`, `currency1`, `fee_pips`, `tick_spacing`, `hooks` names. Its addresses
 and full PoolId use canonical lowercase. Only existing hookless fixed-fee v4
-pools are admitted. Human-price orientation and spaced ticks come from the
+pools are admitted as the position's pool; a routed swap may pass through pools
+with hooks. Human-price orientation and spaced ticks come from the
 official frontend/SDK. Native ETH and WETH remain distinct identities.
 
 `slippageBps` is a whole number of basis points from 10 to 500 (0.1% to 5%),
-both ends included, on both routes: the bound the app offers a person, and the
+both ends included, on every route: the bound the app offers a person, and the
 tolerance the position's amount caps and the swap's minimum output are drawn
 with. The adapters' 0–9999 guard is the provider's, not a product limit.
 
@@ -51,6 +55,62 @@ tariff. Direct deposits incur no Domino setup percentage or 2% earned-fee cut.
 Neither route charges fees or combines a swap and mint into an atomic operation.
 See [quote semantics](FUNDING_QUOTE_PREVIEW.md) and
 [position semantics](POSITION_PREVIEW.md).
+
+## swap-route: Setup's assisted swap, routed
+
+For a single-sided deposit, Setup swaps part of the input into the pool's other
+currency. `swap-route` decides where that swap runs, on every request:
+
+1. **The pool.** DominoSetup keeps 65 bps of the gross input for its fee
+   recipient and swaps the rest in the position's own pool. The V4 quoter prices
+   that net input at the node's head block. A quoter revert (too little
+   liquidity, pool not initialized) means the pool returns nothing.
+2. **Uniswap.** The Trading API is asked for the same exact input, owner as
+   swapper and recipient, the request's slippage, Universal Router 2.1.2, V2/V3/V4
+   pools with hooks admitted, and Domino's 65 bps to the same recipient as its only
+   integrator fee. The fee comes out of the output instead of the input. The
+   adapter refuses any answer that is not exactly that, then asks `/swap` for
+   that quote's router call. Both calls together are bounded at 6 seconds,
+   inside a 10-second plan.
+
+   The provider's own simulation is not used. It runs before the allowance the
+   route adds, fails for any owner who holds the input, and then the quote
+   carries no router call. The Permit2 allowance is built by the backend, not
+   taken from the provider, whose permit grants the router the maximum uint160
+   for 30 days. Ours is the exact input, lapsing with the router call's deadline
+   (30 minutes, at most an hour).
+3. **The decision.** Uniswap is chosen only when the owner's output beats the
+   pool's by more than 0.5% (`out × 10000 > pool × 10050`), and the owner's whole
+   sequence also beats it:
+   - the sequence is ERC-20 approval to Permit2, the Permit2 allowance of the
+     exact input to the router, and the router's `execute`;
+   - it is run through `eth_simulateV1` on the same block;
+   - it must credit the owner and the fee recipient at least the quote's minimums.
+
+   Anything else keeps the pool, including a provider timeout or error, and the
+   response names the reason.
+
+Only a `uniswap` decision carries transactions, and they are unsigned. The app
+must follow this order:
+1. If the input is ERC-20 and its allowance to Permit2 is below the input,
+   `approve` Permit2 for the exact input.
+2. Send `permitTransaction`, when present.
+3. Send `swapTransaction`.
+4. Call Setup `open` with both tokens.
+5. Call `mint`.
+
+Setup's own swap does not run in this path. On `pool` the flow is today's. The
+schema pins the router, Permit2 and both selectors. The runtime re-derives
+everything else from the amounts: the permit's four words, the pool's fee and
+net input, the reason, the advantage, and which transactions exist. The
+[package README](../api-contracts/onboarding-v1/README.md#swap-route) has the
+field rules.
+
+The route reads the chain through the first configured RPC. That RPC must allow
+`eth_simulateV1`, and the node answers it. The route shares the listener,
+quotas and error table with the previews. Without a route service the listener
+answers `route_not_available`, and a node failure answers
+`upstream_unavailable`.
 
 ## Freshness and errors
 
@@ -87,7 +147,7 @@ Cloudflare ingress supplies the client IP under the existing reviewed trust
 assumptions; this worker must not be mounted on an arbitrary header-trusting host.
 
 The private listener permits numeric-loopback clients and only
-`/internal/onboarding/v1/{swap-preview,position-preview}`. Browser Origin, Cookie
+`/internal/onboarding/v1/{swap-preview,position-preview,swap-route}`. Browser Origin, Cookie
 and Authorization headers are forbidden. Its separate Access service JWT must
 verify before any session DB, account RPC or Uniswap work.
 
@@ -111,7 +171,7 @@ request's fresh EOA check. Previews and protected refresh keep CSRF stable.
 | Private listener total | 20 seconds including upload, Access, DB, account RPC and provider |
 | Uniswap request | Existing 12 seconds, shortened by remaining parent budget |
 | Concurrent private workers | 2, no queue, singleton listener |
-| IP / account / global | 20 / 10 / 60 per 60-second window, shared by both routes |
+| IP / account / global | 20 / 10 / 60 per 60-second window, shared by every route |
 
 Durable limits use keyed IP/account identifiers in the existing auth schema.
 IP scope is canonical IPv4 or IPv6 /64. Multiple sessions share an account quota.
@@ -167,7 +227,7 @@ and operate within scope, recording results alongside or after execution.
 Technical controls, compatibility evidence and wallet consent still apply.
 
 The [shared package](../api-contracts/onboarding-v1/README.md) includes schemas,
-types, runtime validation, deterministic fixtures and producer hashes. The onboarding payload contract stays 1.0.0; inherited read-v1 rc.3 and
+types, runtime validation, deterministic fixtures and producer hashes. The onboarding payload contract is 1.1.0 (swap-route added, the previews unchanged); inherited read-v1 rc.3 and
 session-v1 3.0.0-rc.4 must be pinned from this combined producer. Session/source
 manifest hashes change with the composed private authorization methods. Any
 authorized collaborator may integrate amount/range/review hooks and run rendering

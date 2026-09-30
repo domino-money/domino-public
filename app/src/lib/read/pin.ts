@@ -80,6 +80,11 @@
  * 21 October 2026: swap-preview's routerVersion const is "2.1.2" (a coordinated
  * change to a candidate never enabled), and read-v1 and read-v2 hash
  * backend/discovery.py, which holds the header. Their wire is unchanged.
+ * onboarding-v1 is 1.1.0 with swap-route, an additive route: Setup's assisted
+ * swap routed through Uniswap when that returns more than 0.5% above the pool,
+ * with unsigned transactions for the wallet. The two previews are unchanged
+ * but for the version. read-v1 and read-v2 moved with it: discovery.py now also
+ * admits the router-version header on Uniswap's /swap. Their wire is unchanged.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -87,15 +92,15 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: 'db50dce9e5a2b09b956d5b5ad05f2c40a255ca9e5aa3fb4b41dd469de554ae25',
+      manifestSha256: '53b74f4c1da5723e610325cfd75a654ca1327e1e8d83e850065036f1120fea87',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
       manifestSha256: 'e10f66fae4d045632b5667aacc7f30c4e77ecc3d5b4e4472baeefe101d9ce5ac',
     },
     'onboarding-v1': {
-      version: '1.0.0',
-      manifestSha256: 'd178dc8034e3c91095742c319a80a0fc0c4d71db03df81d156d1c5186f18aee7',
+      version: '1.1.0',
+      manifestSha256: '6395986d1b860ca057bb29b9905715f448269bf89328c0f3c4d3257457d4c85d',
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
@@ -107,7 +112,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '57350707935770f1fe68e7fa4c11949e101c07d4395ab06f08cbbe9c9fb435a6',
+  manifestSha256: 'c0aaa9c807eaed239af0849404fea98b1afe0178b83f5a5a6d51ccf420aa8185',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

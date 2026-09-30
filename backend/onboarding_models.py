@@ -1,4 +1,8 @@
-"""Closed preview-only onboarding contract; no browser-supplied owner or authority."""
+"""Closed onboarding contract; no browser-supplied owner or authority.
+
+Previews never execute. swap-route alone may return unsigned transactions, and
+only for a route it chose and simulated; the wallet reviews and signs them.
+"""
 from decimal import Decimal
 from fractions import Fraction
 from typing import Annotated, Literal
@@ -8,8 +12,11 @@ from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Fie
 from discovery import PoolKey, ZERO
 from lp_mint_inspection import MAX_LIQUIDITY
 from uniswap_liquidity import SCHEMA_COMMIT
+from swap_route import ADVANTAGE_CAP_BPS, THRESHOLD_BPS, advantage_bps
+from uniswap_route import (EXECUTE_SELECTOR, FEE_BPS, FEE_RECIPIENT, MAX_CALLDATA_BYTES, MAX_DEADLINE_SECONDS, PERMIT2,
+                           PERMIT2_APPROVE_SELECTOR, SOURCE as ROUTE_SOURCE, UNIVERSAL_ROUTER)
 
-CONTRACT_VERSION = '1.0.0'
+CONTRACT_VERSION = '1.1.0'
 MAX_BODY = 8192
 MAX_RESPONSE = 131072
 UINT256_MAX = (1 << 256) - 1
@@ -542,6 +549,176 @@ class PositionPreview(PreviewBase):
         return self
 
 
+class SwapRouteRequest(StrictModel):
+    chainId: Chain
+    poolId: PoolId
+    poolKey: PoolKeyModel
+    tokenIn: Address
+    amountRaw: Annotated[PositiveRaw, AfterValidator(_uint128), Field(json_schema_extra={'x-maximum-raw': str(2**128-1)})]
+    slippageBps: Slippage
+
+    @model_validator(mode='after')
+    def pool_currency(self):
+        self.poolKey.checked(self.poolId)
+        if self.tokenIn.lower() not in (self.poolKey.currency0, self.poolKey.currency1):
+            raise ValueError('pool_currency_required')
+        return self
+
+
+class SwapRouteIdentity(SwapRouteRequest):
+    owner: NormalizedAddress
+
+
+class RouteBlock(StrictModel):
+    number: Annotated[str, Field(pattern=r'^(0|[1-9][0-9]{0,18})$', max_length=19, json_schema_extra={'x-maximum-raw': str(2**63-1)}),
+                      AfterValidator(_block)]
+    hash: PoolId
+
+
+class PoolRouteQuote(StrictModel):
+    source: Literal['v4_quoter']
+    amountInRaw: PositiveRaw
+    feeRaw: Raw
+    netInputRaw: PositiveRaw
+    # "0" when the quoter cannot fill the net input there (it reverts).
+    amountOutRaw: Raw
+
+
+class RouteApproval(StrictModel):
+    token: NormalizedAddress
+    spender: Literal[PERMIT2]
+    amountRaw: PositiveRaw
+
+
+class RouteSwapTransaction(StrictModel):
+    """Universal Router 2.1.2's execute, the only router a routed swap is sent to."""
+    to: Literal[UNIVERSAL_ROUTER]
+    data: Annotated[str, Field(pattern='^' + EXECUTE_SELECTOR + r'([0-9a-f]{2})*$', max_length=2 + 2 * MAX_CALLDATA_BYTES)]
+    valueRaw: Raw
+
+
+class RoutePermitTransaction(StrictModel):
+    """Permit2.approve(token, spender, amount, expiration): four static words."""
+    to: Literal[PERMIT2]
+    data: Annotated[str, Field(pattern='^' + PERMIT2_APPROVE_SELECTOR + r'[0-9a-f]{256}$')]
+    valueRaw: Literal['0']
+
+
+def _permit_grants(data, token, amount, requested_at, expires_at):
+    """The allowance Permit2 gives the router: this token, the router, the exact input, and an expiry
+    after the request, at most the router call's longest deadline past the route's own expiry."""
+    words = [data[10 + 64 * index:74 + 64 * index] for index in range(4)]
+    return (words[0] == '0' * 24 + token[2:] and words[1] == '0' * 24 + UNIVERSAL_ROUTER[2:]
+            and int(words[2], 16) == amount and requested_at < int(words[3], 16) <= expires_at + MAX_DEADLINE_SECONDS)
+
+
+class UniswapRouteQuote(StrictModel):
+    source: Literal[ROUTE_SOURCE]
+    quoteId: Annotated[str, Field(pattern=r'^[A-Za-z0-9-]{1,64}$')]
+    grossOutputRaw: PositiveRaw
+    amountOutRaw: PositiveRaw
+    minimumAmountOutRaw: PositiveRaw
+    feeRaw: PositiveRaw
+    minimumFeeRaw: PositiveRaw
+    priceImpactPercent: PriceImpact | None
+    simulatedAmountOutRaw: Raw | None
+    simulatedFeeRaw: Raw | None
+    approval: RouteApproval | None
+    permitTransaction: RoutePermitTransaction | None
+    swapTransaction: RouteSwapTransaction | None
+
+    @model_validator(mode='after')
+    def fee_leg(self):
+        gross, out, fee = int(self.grossOutputRaw), int(self.amountOutRaw), int(self.feeRaw)
+        if (gross != out + fee or abs(fee - gross * FEE_BPS // 10000) > 1 or int(self.minimumAmountOutRaw) > out
+                or int(self.minimumFeeRaw) > fee or (self.simulatedAmountOutRaw is None) != (self.simulatedFeeRaw is None)):
+            raise ValueError('route_fee_mismatch')
+        return self
+
+
+RouteReason = Literal['uniswap_better_by_threshold', 'pool_within_threshold', 'uniswap_simulation_failed',
+    'uniswap_quote_unavailable', 'uniswap_quote_rejected', 'uniswap_quote_invalid']
+
+
+class SwapRoutePlan(StrictModel):
+    schemaVersion: SchemaVersion
+    chainId: Chain
+    status: Literal['route_selected']
+    source: Literal['swap_route_v1']
+    requestedAt: Timestamp
+    retrievedAt: Timestamp
+    expiresAt: Timestamp
+    requestFingerprint: Fingerprint
+    request: SwapRouteIdentity
+    tokenOut: NormalizedAddress
+    decision: Literal['pool', 'uniswap']
+    reason: RouteReason
+    thresholdBps: Literal[THRESHOLD_BPS]
+    assistedSwapFeeBps: Literal[FEE_BPS]
+    feeRecipient: Literal[FEE_RECIPIENT]
+    block: RouteBlock
+    pool: PoolRouteQuote
+    uniswap: UniswapRouteQuote | None
+    advantageBps: Annotated[StrictInt, Field(ge=-10000, le=ADVANTAGE_CAP_BPS)] | None
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if not self.requestedAt <= self.retrievedAt < self.expiresAt or self.expiresAt != self.requestedAt + 30:
+            raise ValueError('route_times_mismatch')
+        request, pool, uniswap = self.request, self.pool, self.uniswap
+        currencies = (request.poolKey.currency0, request.poolKey.currency1)
+        token_in = request.tokenIn.lower()
+        if request.owner in (ZERO, FEE_RECIPIENT) or self.tokenOut != currencies[1 - currencies.index(token_in)]:
+            raise ValueError('route_request_mismatch')
+        gross = int(request.amountRaw)
+        if (pool.amountInRaw != request.amountRaw or int(pool.feeRaw) != gross * FEE_BPS // 10000
+                or int(pool.netInputRaw) != gross - int(pool.feeRaw)):
+            raise ValueError('route_pool_fee_mismatch')
+        pool_out = int(pool.amountOutRaw)
+        beats = lambda output: output * 10000 > pool_out * (10000 + THRESHOLD_BPS)
+        unavailable = self.reason in ('uniswap_quote_unavailable', 'uniswap_quote_rejected', 'uniswap_quote_invalid')
+        if unavailable != (uniswap is None) or unavailable != (self.advantageBps is None):
+            raise ValueError('route_reason_mismatch')
+        if (self.decision == 'uniswap') != (self.reason == 'uniswap_better_by_threshold'):
+            raise ValueError('route_reason_mismatch')
+        if uniswap is None:
+            return self
+        quoted = int(uniswap.amountOutRaw)
+        simulated = None if uniswap.simulatedAmountOutRaw is None else int(uniswap.simulatedAmountOutRaw)
+        output = quoted if simulated is None else simulated
+        if self.advantageBps != advantage_bps(output, pool_out):
+            raise ValueError('route_advantage_mismatch')
+        if self.reason == 'pool_within_threshold' and beats(output):
+            raise ValueError('route_reason_mismatch')
+        if self.reason in ('uniswap_simulation_failed', 'uniswap_better_by_threshold') and not beats(quoted):
+            raise ValueError('route_reason_mismatch')
+        transactions = (uniswap.approval, uniswap.permitTransaction, uniswap.swapTransaction)
+        if self.decision == 'pool':
+            if any(value is not None for value in transactions):
+                raise ValueError('route_pool_transactions')
+            return self
+        native = token_in == ZERO
+        swap, permit, approval = uniswap.swapTransaction, uniswap.permitTransaction, uniswap.approval
+        if (simulated is None or not beats(simulated) or simulated < int(uniswap.minimumAmountOutRaw)
+                or int(uniswap.simulatedFeeRaw) < int(uniswap.minimumFeeRaw)):
+            raise ValueError('route_simulation_mismatch')
+        if swap is None or swap.valueRaw != (request.amountRaw if native else '0'):
+            raise ValueError('route_transaction_mismatch')
+        if native != (approval is None) or native != (permit is None):
+            raise ValueError('route_transaction_mismatch')
+        if approval is not None and (approval.token != token_in or approval.amountRaw != request.amountRaw):
+            raise ValueError('route_transaction_mismatch')
+        if permit is not None and not _permit_grants(permit.data, token_in, gross, self.requestedAt, self.expiresAt):
+            raise ValueError('route_transaction_mismatch')
+        return self
+
+
+class SwapRouteResponse(StrictModel):
+    contractVersion: Literal[CONTRACT_VERSION]
+    # The bridge associates every onboarding answer through its preview's request and times.
+    preview: SwapRoutePlan
+
+
 class SwapResponse(StrictModel):
     contractVersion: Literal[CONTRACT_VERSION]
     preview: SwapPreview
@@ -552,8 +729,8 @@ class PositionResponse(StrictModel):
     preview: PositionPreview
 
 
-REQUEST_MODELS = {'swap-preview': SwapRequest, 'position-preview': PositionRequest}
-RESPONSE_MODELS = {'swap-preview': SwapResponse, 'position-preview': PositionResponse}
+REQUEST_MODELS = {'swap-preview': SwapRequest, 'position-preview': PositionRequest, 'swap-route': SwapRouteRequest}
+RESPONSE_MODELS = {'swap-preview': SwapResponse, 'position-preview': PositionResponse, 'swap-route': SwapRouteResponse}
 ROUTES = frozenset(REQUEST_MODELS)
 
 

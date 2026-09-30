@@ -29,6 +29,7 @@ ZERO = '0x' + '00' * 20
 KEY_TYPES = ('address', 'address', 'uint24', 'int24', 'address')
 MAX_RESPONSE_BYTES = 2_000_000
 TRADING_QUOTE_ENDPOINT = 'https://trade-api.gateway.uniswap.org/v1/quote'
+TRADING_SWAP_ENDPOINT = 'https://trade-api.gateway.uniswap.org/v1/swap'
 TRADING_QUOTE_HEADERS = {
     'x-universal-router-version': '2.1.2',
     'x-agent-info': '{"integration_name":"swap-integration","decision_origin":"human_mediated","version":"1.5.0"}',
@@ -301,7 +302,7 @@ def json_http(url, body=None, *, timeout=12, opener=_JSON_OPENER, headers=None,
     if not valid:
         raise DataError('https_endpoint_required')
     extra = {} if headers is None else headers
-    fixed = TRADING_QUOTE_HEADERS if url == TRADING_QUOTE_ENDPOINT else {}
+    fixed = TRADING_QUOTE_HEADERS if url in (TRADING_QUOTE_ENDPOINT, TRADING_SWAP_ENDPOINT) else {}
     if (not isinstance(extra, dict) or any(name != "x-api-key" and
             (name not in fixed or value != fixed[name]) for name, value in extra.items()) or
             any(not isinstance(value, str) or not 1 <= len(value) <= 512 or

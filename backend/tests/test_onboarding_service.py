@@ -56,7 +56,7 @@ class OnboardingServiceTests(unittest.TestCase):
             with self.subTest(route=route):
                 service, auth, transport, body = make_service(route=route)
                 result = self.run_preview(service,body,route)
-                self.assertEqual(result['contractVersion'],'1.0.0')
+                self.assertEqual(result['contractVersion'],'1.1.0')
                 self.assertFalse(result['preview']['executionAvailable'])
                 self.assertEqual(result['preview']['request']['owner'],auth.begin.return_value['owner'])
                 auth.begin.assert_called_once_with('192.0.2.1',SESSION,CSRF)

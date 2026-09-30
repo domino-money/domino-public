@@ -1,6 +1,6 @@
 {
   "contract": "onboarding-v1",
-  "contractVersion": "1.0.0",
+  "contractVersion": "1.1.0",
   "files": [
     {
       "path": "fixtures/errors.json",
@@ -15,36 +15,60 @@
       "sha256": "48ae2a2412ab94a63c3b3cd760d1b7b2ccc56f7c5e8bdbefae18c78be8bba06a"
     },
     {
+      "path": "fixtures/requests/swap-route.json",
+      "sha256": "48f0b94edcbd773c2072b35a919141138f2bf7d37aa41c3a8097318a5c5f9e5d"
+    },
+    {
       "path": "fixtures/responses/position-preview.json",
-      "sha256": "ccc0ef912d7b1d9bc2a89aafaf617aa8bbedaad52d0a961a87cd1f7dca930e03"
+      "sha256": "c1fd58a605b5e563c449053dc63b34e03e196f615555176247dfa0dcb1e1ffcf"
     },
     {
       "path": "fixtures/responses/swap-preview.json",
-      "sha256": "8959348976b77d27927703f887395e2afcd95c01b4d774dc6a97249cfb2dfc36"
+      "sha256": "e34f9cf3f2719d447160f5dfb78699c5ecba176454e1be91fca705fe9e8f459c"
+    },
+    {
+      "path": "fixtures/responses/swap-route.json",
+      "sha256": "a49882b2be7914cf039a66837a111b19f6731af50e250f328153ced3a0501512"
     },
     {
       "path": "fixtures/variants/position-preview.blocked.json",
-      "sha256": "1054e7640b93aff41b9caf27831aefff6103b3a3c24439f5c7d90859ae61b51c"
+      "sha256": "e2b9cfc0182d915d9eed77452cb8332ffd487ff07e24418db60b34c1752fff2a"
     },
     {
       "path": "fixtures/variants/position-preview.incomplete.json",
-      "sha256": "ff36d22f09306d747db9aab019c8b2063d37d915a19ca52973f18ad7c0ebcdcf"
+      "sha256": "61f61c94c05fa045273fffc6e7eafbb13f2bd8b49c4e656a79142dcad1780fd2"
     },
     {
       "path": "fixtures/variants/position-preview.native.json",
-      "sha256": "9ecc6b70827ba5a3181c048981bc852d09fbb046d08441429346238e2314adbb"
+      "sha256": "a5a17ea445e87f2ad029d299ddfb58496c46e5582d4a5517a78215102f3a1e35"
     },
     {
       "path": "fixtures/variants/swap-preview.unknown.json",
-      "sha256": "68fa0ca6ae79f2b2439aa00e77c459795ab0abfd12569606f2e6f5c8b91d844a"
+      "sha256": "20c177306bb2422810dde4de98c01145247e59b87347974cfad2d338e2a121b4"
+    },
+    {
+      "path": "fixtures/variants/swap-route.native.json",
+      "sha256": "5e1df338c5529f3648bc670a5eb067c882450b72604945d9dc2cdd1a920a367f"
+    },
+    {
+      "path": "fixtures/variants/swap-route.pool.json",
+      "sha256": "9befbdd16ce557c38bf9624d9e1f2dafa9f1ebe8f5ce40bba68daa2840df04f5"
+    },
+    {
+      "path": "fixtures/variants/swap-route.unavailable.json",
+      "sha256": "bdc6c26baa9c9bd7d2c298b8718dcd8f8136708170d5046647fdcc47a5e86c80"
+    },
+    {
+      "path": "fixtures/variants/swap-route.unfilled.json",
+      "sha256": "58795d700907695e3567ba9d7887912aa2461e83100a63754fdbbf97e08e5ce4"
     },
     {
       "path": "runtime.d.mts",
-      "sha256": "d4035be21d48ca03a991df4ff436db999a18648c9c6b7644ece5efdae8b633cf"
+      "sha256": "4e410110ef21850e564fcd3bed489958d7faedb6b29dbc301cccce8b7619cf7a"
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "246492bd5af279291669819e7edc8992674b878e084aa1f6f35de9ba85b29773"
+      "sha256": "22ef4a50b3bf1d8604fbeebcd4821e77f67a4fbf4d5c7b6be3160777546421cc"
     },
     {
       "path": "schemas/error.response.schema.json",
@@ -52,46 +76,54 @@
     },
     {
       "path": "schemas/position-preview.request.schema.json",
-      "sha256": "6127fbe4ff8e8646c444ec7366ab041d9d6324bc4ee11eeeca6f45ec1ccb0e80"
+      "sha256": "0d4b855e4e2217b369cacf556ccbf084dbe577e1173275061028f62a60eea9f3"
     },
     {
       "path": "schemas/position-preview.response.schema.json",
-      "sha256": "a38ef3c3354088c694a304c1af59631af055e2975b56d494e71c7fb13101a025"
+      "sha256": "bf7a9498210663f5299d8537b3472c88a4236e8864c6b6cf063d09589cd0b28d"
     },
     {
       "path": "schemas/swap-preview.request.schema.json",
-      "sha256": "982cb7030ef820124a75d5a8a7c2336f59d55df7a04e0e2c349206fc6dac0aad"
+      "sha256": "b79e3d5901aff7e6a58d37d57388c71017c8f5bb745bcacc155e67cf545834d9"
     },
     {
       "path": "schemas/swap-preview.response.schema.json",
-      "sha256": "dd4bd7f8626d357407fa2e34e788fb127d928da0e83c9a7a1676c878f4aa6ac0"
+      "sha256": "a0b16545b2e1b2a1caf03db9939e8b1e115e5cf74d07726e744c6853cc5ba1fc"
+    },
+    {
+      "path": "schemas/swap-route.request.schema.json",
+      "sha256": "ff2842650ca64c3faef3e0d7f7a926b45958d252c330211643c2a60f62570ee7"
+    },
+    {
+      "path": "schemas/swap-route.response.schema.json",
+      "sha256": "1230510a298ae9ae8c3a436f497da166cf23b31376a15f66405cf0d0278ea637"
     },
     {
       "path": "types.ts",
-      "sha256": "3249b9920f6c8a287b928536a09fe65d35c014e751c9ec9a344b0ad32d291a78"
+      "sha256": "3b95223a594e82216fc619cbad963d618552a91e1354fb57730d87742eeac34a"
     },
     {
       "path": "runtime.mjs",
-      "sha256": "5a4e00069bf5c580e11244f4606450b2ef056f127f9c7bf9780b1a3ffb312add"
+      "sha256": "a5a298a2ea8ef4df9b724e72d992971d33ba2984afcaf4f3ee8bef6b56f39262"
     },
     {
       "path": "README.md",
-      "sha256": "75aff773378afe01632648b9e145bb5c4ed3279c8b181f80c02ef4b63b7889c4"
+      "sha256": "dd364d72f8f49ed6e7c0491e4641f8b2fe84810f88397303e4f54c0793acb48c"
     },
     {
       "path": "consumer.typecheck.mts",
-      "sha256": "6452e19901649a5af453b864f51f8edb697936f4f537f07fa517a46eda17874a"
+      "sha256": "97beb05d00ae83e0074755db0328887c1ef38069fe8bf4743f00f824fecb2de4"
     }
   ],
   "generator": "scripts/export-onboarding-contract.py",
   "sources": [
     {
       "path": "backend/onboarding_models.py",
-      "sha256": "e0180ad02de0e067f1cae07a97d179844d862115c647dfc585a842f796e1de9c"
+      "sha256": "8ae40a3208441d611e351a12ccd7912b32bfe91f98c9ee314b3cda1d3d00aa83"
     },
     {
       "path": "backend/onboarding_api.py",
-      "sha256": "20c1d9a7ff559f4f5f6e6ecbdb05a9b4abb578ecf6037bb555733476b50ba88a"
+      "sha256": "b3eb0af9b591ae5887ffe5cb73a72c458c22c49669613b86369777c0ce72e427"
     },
     {
       "path": "backend/authenticated_api.py",
@@ -103,7 +135,7 @@
     },
     {
       "path": "backend/onboarding_service.py",
-      "sha256": "b678376b09ca7589684bf19dbce796d87174cb0306bf000491d076c8e3f3792b"
+      "sha256": "b85534ab28d9ca8ba65470e6263ad2900da14af0e4f95afcd3bcc7a7da76065f"
     },
     {
       "path": "backend/onboarding_auth.py",
@@ -123,7 +155,7 @@
     },
     {
       "path": "backend/tests/test_onboarding_flow.py",
-      "sha256": "6856a2a3ff7c00f3a86af19f5012bef46fa904e2170d1222b8480a83f513d5ef"
+      "sha256": "81242efd3751574c695640a4098fcc9d8351e83442f8ab8e25595c45cddc864d"
     },
     {
       "path": "backend/tests/test_onboarding_auth.py",
@@ -131,7 +163,7 @@
     },
     {
       "path": "backend/tests/onboarding_contract_fixtures.py",
-      "sha256": "be5780fb1ec09503664659cf4bc3fbccf2e7ffd9b173a624770db516bc4e5a1c"
+      "sha256": "49883ef52fbf8508b3a3ed7e81a5480f4403d4982ca269d8ce756383d05c4d4f"
     },
     {
       "path": "backend/uniswap_quote.py",
@@ -142,6 +174,14 @@
       "sha256": "e7767b81a900c0a1860853934b265b4be96f9ad0b50d86896b8eda94606d280a"
     },
     {
+      "path": "backend/uniswap_route.py",
+      "sha256": "85abdeb6db738bcc852bc03840f663c823f80a76e7a87fea20167220953a5b65"
+    },
+    {
+      "path": "backend/swap_route.py",
+      "sha256": "ce7f26ca7a762fac003e9465a222315949cf52a5b24496d200d07ef583518d5e"
+    },
+    {
       "path": "backend/tests/test_uniswap_quote.py",
       "sha256": "72ad25e5c53af4909f143f190c509d393827d4d71639ca27fad0cb9e65c4e4f0"
     },
@@ -150,12 +190,16 @@
       "sha256": "66b66b15bcffabac999e0c5e7399768f25598aa7074b1798991ef8c9213de525"
     },
     {
+      "path": "backend/tests/test_swap_route.py",
+      "sha256": "0b63c55135aa8d812a0256be799a5bfbabb6c656e0c107cd11b0ff78ffba3c9a"
+    },
+    {
       "path": "backend/tests/test_lp_mint_inspection.py",
       "sha256": "8d09f843241f9dd43aa9fbb23561580bb713c7c2916c80b06f2b1fd3cac0603b"
     },
     {
       "path": "scripts/export-onboarding-contract.py",
-      "sha256": "c33af72e796ff0bcd06f58db8e9860dd3aef9fb6bd5ce68cdcb7bbbd22f6692d"
+      "sha256": "6394a1e5a44955f03816776c7d8046a2d0df2f5e637d12a781c892a315b43fca"
     }
   ],
   "status": "candidate_disabled_pending_consumer_acknowledgement"

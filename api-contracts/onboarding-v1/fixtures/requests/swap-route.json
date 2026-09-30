@@ -1,0 +1,14 @@
+{
+  "amountRaw": "1000000000",
+  "chainId": 4663,
+  "poolId": "0xede427ef32c53233bdf4ac2317a9e06a41e31f537e1f905fa80cf82c305bac47",
+  "poolKey": {
+    "currency0": "0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+    "currency1": "0x0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+    "fee_pips": 40000,
+    "hooks": "0x0000000000000000000000000000000000000000",
+    "tick_spacing": 400
+  },
+  "slippageBps": 50,
+  "tokenIn": "0x0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+}

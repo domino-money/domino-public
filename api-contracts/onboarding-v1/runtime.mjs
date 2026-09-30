@@ -1,6 +1,7 @@
-// Closed generated-schema validation plus arithmetic/identity checks. No ABI or LP math.
+// Closed generated-schema validation plus arithmetic/identity checks. No LP math; the
+// only ABI read is swap-route's four static Permit2 words.
 import { SCHEMAS, ERRORS } from './schema-data.mjs';
-export const CONTRACT_VERSION = '1.0.0';
+export const CONTRACT_VERSION = '1.1.0';
 export const ROUTES = Object.freeze(Object.keys(SCHEMAS));
 export const ERROR_STATUS_BY_CODE = Object.freeze({ ...ERRORS });
 const UINT256_MAX = (1n << 256n) - 1n;
@@ -8,6 +9,14 @@ const object = (value) => value !== null && typeof value === 'object' && !Array.
   [Object.prototype, null].includes(Object.getPrototypeOf(value));
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const positiveRawPattern = '^[1-9][0-9]{0,77}$';
+const ZERO = '0x' + '0'.repeat(40);
+// swap-route: Universal Router 2.1.2 (the schema pins it as the swap's target;
+// here it is the spender inside the Permit2 allowance), the router call's
+// longest deadline, which the allowance shares, and the advantage cap for a
+// pool that returns nothing.
+const ROUTER = '0x204faca1764b154221e35c0d20abb3c525710498';
+const MAX_PERMIT_SECONDS = 3600;
+const ADVANTAGE_CAP_BPS = 10n ** 12n;
 const rawPattern = '^(0|[1-9][0-9]{0,77})$';
 
 function validate(schema, value, root, depth = 0) {
@@ -125,10 +134,68 @@ function positionAssociations(value) {
   return equal(value.previewChecks.reasons, [...blocked, ...incomplete]);
 }
 
+// Floored basis points above the pool, as the backend computes them (BigInt
+// division truncates toward zero; Python's // floors).
+function advantageBps(output, poolOut) {
+  if (poolOut === 0n) return ADVANTAGE_CAP_BPS;
+  const numerator = (output - poolOut) * 10000n;
+  const floor = numerator / poolOut - (numerator % poolOut < 0n ? 1n : 0n);
+  return floor < ADVANTAGE_CAP_BPS ? floor : ADVANTAGE_CAP_BPS;
+}
+// Permit2.approve(token, spender, amount, expiration), four static words: this
+// token, the router, the exact input, and an expiry after the request.
+function permitGrants(data, token, amount, requestedAt, expiresAt) {
+  const word = (index) => data.slice(10 + 64 * index, 74 + 64 * index), expiration = BigInt('0x' + word(3));
+  return word(0) === '0'.repeat(24) + token.slice(2) && word(1) === '0'.repeat(24) + ROUTER.slice(2) &&
+    BigInt('0x' + word(2)) === amount && BigInt(requestedAt) < expiration && expiration <= BigInt(expiresAt + MAX_PERMIT_SECONDS);
+}
+function routeQuote(value) {
+  const gross = BigInt(value.grossOutputRaw), out = BigInt(value.amountOutRaw), fee = BigInt(value.feeRaw);
+  const expected = gross * 65n / 10000n;
+  return gross === out + fee && fee - expected <= 1n && expected - fee <= 1n &&
+    BigInt(value.minimumAmountOutRaw) <= out && BigInt(value.minimumFeeRaw) <= fee &&
+    (value.simulatedAmountOutRaw === null) === (value.simulatedFeeRaw === null);
+}
+// The decision is derived, not declared: the pool's fee and net input, the
+// reason, the advantage and which transactions exist all follow from the
+// amounts. Only a Uniswap decision carries transactions.
+function routePlan(value) {
+  const { request, pool, uniswap } = value;
+  const tokenIn = request.tokenIn.toLowerCase(), currencies = [request.poolKey.currency0, request.poolKey.currency1];
+  if (!(value.requestedAt <= value.retrievedAt && value.retrievedAt < value.expiresAt && value.expiresAt === value.requestedAt + 30) ||
+      [ZERO, value.feeRecipient].includes(request.owner) || value.tokenOut !== currencies[1 - currencies.indexOf(tokenIn)]) return false;
+  const gross = BigInt(request.amountRaw), fee = gross * BigInt(value.assistedSwapFeeBps) / 10000n;
+  if (pool.amountInRaw !== request.amountRaw || BigInt(pool.feeRaw) !== fee || BigInt(pool.netInputRaw) !== gross - fee) return false;
+  const poolOut = BigInt(pool.amountOutRaw);
+  const beats = (output) => output * 10000n > poolOut * (10000n + BigInt(value.thresholdBps));
+  const unavailable = ['uniswap_quote_unavailable', 'uniswap_quote_rejected', 'uniswap_quote_invalid'].includes(value.reason);
+  if (unavailable !== (uniswap === null) || unavailable !== (value.advantageBps === null) ||
+      (value.decision === 'uniswap') !== (value.reason === 'uniswap_better_by_threshold')) return false;
+  if (uniswap === null) return true;
+  const quoted = BigInt(uniswap.amountOutRaw);
+  const simulated = uniswap.simulatedAmountOutRaw === null ? null : BigInt(uniswap.simulatedAmountOutRaw);
+  const output = simulated ?? quoted;
+  if (BigInt(value.advantageBps) !== advantageBps(output, poolOut) ||
+      (value.reason === 'pool_within_threshold' && beats(output)) ||
+      (['uniswap_simulation_failed', 'uniswap_better_by_threshold'].includes(value.reason) && !beats(quoted))) return false;
+  const { approval, permitTransaction: permit, swapTransaction: swap } = uniswap;
+  if (value.decision === 'pool') return approval === null && permit === null && swap === null;
+  const native = tokenIn === ZERO;
+  return simulated !== null && beats(simulated) && simulated >= BigInt(uniswap.minimumAmountOutRaw) &&
+    BigInt(uniswap.simulatedFeeRaw) >= BigInt(uniswap.minimumFeeRaw) &&
+    swap !== null && swap.valueRaw === (native ? request.amountRaw : '0') &&
+    native === (approval === null) && native === (permit === null) &&
+    (approval === null || (approval.token === tokenIn && approval.amountRaw === request.amountRaw)) &&
+    (permit === null || permitGrants(permit.data, tokenIn, gross, value.requestedAt, value.expiresAt));
+}
+
 function semantic(name, value) {
   if (name === 'PoolKeyModel') return value.currency0 < value.currency1;
   if (['SwapRequest', 'SwapIdentity'].includes(name)) return value.tokenIn.toLowerCase() !== value.tokenOut.toLowerCase();
   if (['PositionRequest', 'PositionIdentity'].includes(name)) return positionRequest(value);
+  if (['SwapRouteRequest', 'SwapRouteIdentity'].includes(name)) return [value.poolKey.currency0, value.poolKey.currency1].includes(value.tokenIn.toLowerCase());
+  if (name === 'UniswapRouteQuote') return routeQuote(value);
+  if (name === 'SwapRoutePlan') return routePlan(value);
   if (name === 'RouteHop') return equal([value.tokenIn.address, value.tokenOut.address].sort(),
     [value.poolKey.currency0, value.poolKey.currency1]);
   if (name === 'SwapChecks') return (value.status === 'blocked') === Boolean(value.reasons.length) && new Set(value.reasons).size === value.reasons.length;

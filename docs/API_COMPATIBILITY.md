@@ -4,6 +4,36 @@ Applies to [issue #5](https://github.com/domino-money/domino/issues/5) and the
 shared frontend adapter in [issue #1](https://github.com/domino-money/domino/issues/1).
 Technical compatibility rules remain applicable. Under [EXECUTION_POLICY.md](EXECUTION_POLICY.md), any authorized collaborator may update producer and consumer together; a notice records the change and does not require a named owner's acknowledgement or a separate approval window.
 
+## onboarding-v1 1.1.0: routed assisted swap — 29 September 2026
+
+`swap-route` is a new route, so this is a minor version. Given the position's
+pool, the input currency, the exact input and the slippage, it answers where
+Setup's assisted swap should run:
+- in the pool itself (DominoSetup, 65 bps of the input);
+- or through Uniswap's Universal Router 2.1.2 (the same 65 bps as the only
+  integrator fee, taken from the output). The router is chosen only when it
+  returns the owner more than 0.5% above the pool and the owner's whole
+  sequence simulates at that block.
+
+The route may return unsigned transactions (a Permit2 approval, a Permit2
+allowance, the router's execute), but only for that choice. The wallet signs
+them; nothing is signed, sent or kept. The schema pins the router, Permit2 and
+the selectors.
+
+The two previews' requests, responses, errors and fields are unchanged. Only
+`contractVersion` and the `X-Domino-Onboarding-Contract` header move from
+1.0.0 to 1.1.0.
+
+Consumers updated in the same change:
+- the Worker, which forwards the route through the generic runtime with no
+  code change;
+- the app's pin (version and manifest digest) and client test;
+- the backend listener and service.
+
+Old-consumer tests pass on both previews. The app's client still asks only for
+the two previews; wiring `swap-route` into the create flow is frontend work.
+The contract stays a disabled candidate.
+
 ## Mode-specific automation fees — 21 September 2026
 
 The owner selected 200 bps for simple Auto-compound and 400 bps for every

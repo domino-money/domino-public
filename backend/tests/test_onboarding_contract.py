@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'backend'))
 from onboarding_models import OnboardingError, validate_request, validate_response
 from onboarding_contract_fixtures import build_fixtures, build_variants
+from test_swap_route import SWAP_PROXY, fixture_plan
+from uniswap_route import FEE_RECIPIENT, UNIVERSAL_ROUTER
 
 
 def replace(value, path, replacement):
@@ -18,6 +20,11 @@ def replace(value, path, replacement):
     for key in path[:-1]: target = target[key]
     target[path[-1]] = replacement
     return result
+
+
+def replace_all(value, changes):
+    for path, replacement in changes: value = replace(value, path, replacement)
+    return value
 
 
 def boundary_cases():
@@ -73,8 +80,88 @@ def boundary_cases():
                          (['preview','simulation','status'],'unknown'),
                          (['preview','provenance','endpoint'],'https://evil.invalid')]:
         add('response','swap-preview',replace(responses['swap-preview'],path,value))
+    route_cases(requests['swap-route'], responses['swap-route'], build_variants(), add)
     for _, (route, value) in build_variants().items(): add('response', route, value, True)
     return cases
+
+
+def route_cases(request, routed, variants, add):
+    """swap-route: the request's pool currency and bound, then a chosen route's pins, permit words and
+    derived decision, a native route, a pool that cannot fill and the pool's own decisions."""
+    add('request', 'swap-route', {**request, 'tokenIn': '0x' + request['tokenIn'][2:].upper()}, True)
+    add('request', 'swap-route', {**request, 'amountRaw': str(2**128 - 1)}, True)
+    for field, value in [('tokenIn', '0x' + 'f' * 40), ('amountRaw', str(2**128)), ('poolKey', {**request['poolKey'], 'hooks': '0x' + '1' * 40})]:
+        add('request', 'swap-route', {**request, field: value})
+    preview = routed['preview']
+    permit = preview['uniswap']['permitTransaction']['data']
+    word = lambda index, value: permit[:10 + 64 * index] + value + permit[74 + 64 * index:]
+    uniswap = lambda *path: ['preview', 'uniswap', *path]
+    for path, value in [
+            (uniswap('swapTransaction', 'to'), SWAP_PROXY), (uniswap('swapTransaction', 'data'), '0x2894adf9' + '00' * 96),
+            (uniswap('swapTransaction', 'valueRaw'), '1'), (uniswap('swapTransaction'), None),
+            (uniswap('permitTransaction', 'to'), SWAP_PROXY), (uniswap('permitTransaction', 'valueRaw'), '1'),
+            (uniswap('permitTransaction', 'data'), word(0, '0' * 24 + preview['tokenOut'][2:])),
+            (uniswap('permitTransaction', 'data'), word(1, '0' * 24 + SWAP_PROXY[2:])),
+            (uniswap('permitTransaction', 'data'), word(2, '%064x' % (int(preview['request']['amountRaw']) + 1))),
+            (uniswap('permitTransaction', 'data'), word(3, '%064x' % preview['requestedAt'])),
+            (uniswap('permitTransaction', 'data'), word(3, '%064x' % (preview['expiresAt'] + 3600 + 1))),
+            (uniswap('permitTransaction'), None),
+            (uniswap('permitTransaction', 'data'), permit + '00'),
+            (uniswap('approval', 'spender'), UNIVERSAL_ROUTER), (uniswap('approval', 'amountRaw'), '1'),
+            (uniswap('approval', 'token'), preview['tokenOut']), (uniswap('approval'), None),
+            (uniswap('feeRaw'), '1'), (uniswap('minimumAmountOutRaw'), str(int(preview['uniswap']['amountOutRaw']) + 1)),
+            (uniswap('simulatedAmountOutRaw'), None), (uniswap('simulatedAmountOutRaw'), preview['pool']['amountOutRaw']),
+            (uniswap('simulatedFeeRaw'), '0'),
+            (['preview', 'advantageBps'], preview['advantageBps'] + 1), (['preview', 'advantageBps'], None),
+            (['preview', 'decision'], 'pool'), (['preview', 'reason'], 'pool_within_threshold'),
+            (['preview', 'pool', 'feeRaw'], '0'), (['preview', 'pool', 'amountOutRaw'], preview['uniswap']['amountOutRaw']),
+            (['preview', 'tokenOut'], preview['request']['tokenIn']), (['preview', 'request', 'owner'], FEE_RECIPIENT),
+            (['preview', 'thresholdBps'], 30), (['preview', 'assistedSwapFeeBps'], 50), (['preview', 'feeRecipient'], SWAP_PROXY)]:
+        add('response', 'swap-route', replace(routed, path, value))
+    # Each of these breaks one rule alone: the rest of the plan stays consistent.
+    gross, fee = int(preview['uniswap']['grossOutputRaw']), int(preview['uniswap']['feeRaw'])
+    for changes in [
+            [(uniswap('grossOutputRaw'), str(gross + 1))],
+            [(uniswap('grossOutputRaw'), str(gross + 10)), (uniswap('feeRaw'), str(fee + 10))],
+            [(['preview', 'expiresAt'], preview['requestedAt'] + 31)],
+            [(['preview', 'pool', 'netInputRaw'], str(int(preview['pool']['netInputRaw']) + 1))],
+            [(['preview', 'pool', 'amountInRaw'], '1')],
+            [(['preview', 'decision'], 'uniswap'), (['preview', 'reason'], 'uniswap_simulation_failed')],
+            [(['preview', 'decision'], 'pool'), (['preview', 'reason'], 'pool_within_threshold'),
+             (uniswap('approval'), None), (uniswap('permitTransaction'), None), (uniswap('swapTransaction'), None)],
+            [(uniswap('simulatedAmountOutRaw'), '442200'), (uniswap('minimumAmountOutRaw'), '442000'), (['preview', 'advantageBps'], 50)],
+            [(uniswap('minimumAmountOutRaw'), str(int(preview['uniswap']['simulatedAmountOutRaw']) + 1))]]:
+        add('response', 'swap-route', replace_all(routed, changes))
+    within = variants['swap-route.pool'][1]
+    for path, value in [(['preview', 'uniswap', 'minimumAmountOutRaw'], str(int(within['preview']['uniswap']['amountOutRaw']) + 1)),
+                        (['preview', 'uniswap', 'minimumFeeRaw'], str(int(within['preview']['uniswap']['feeRaw']) + 1))]:
+        add('response', 'swap-route', replace(within, path, value))
+    short = {'contractVersion': routed['contractVersion'], 'preview': fixture_plan('short')}
+    add('response', 'swap-route', short, True)
+    for path, value in [(['preview', 'uniswap', 'simulatedFeeRaw'], None), (['preview', 'reason'], 'uniswap_better_by_threshold')]:
+        add('response', 'swap-route', replace(short, path, value))
+    unavailable = variants['swap-route.unavailable'][1]
+    for changes in [[(['preview', 'advantageBps'], 0)], [(['preview', 'reason'], 'pool_within_threshold'), (['preview', 'advantageBps'], 0)]]:
+        add('response', 'swap-route', replace_all(unavailable, changes))
+    native = variants['swap-route.native'][1]
+    native_permit = dict(preview['uniswap']['permitTransaction'], data=word(0, '0' * 64))
+    for path, value in [(['preview', 'uniswap', 'swapTransaction', 'valueRaw'], '0'),
+                        (['preview', 'uniswap', 'approval'], preview['uniswap']['approval']),
+                        (['preview', 'uniswap', 'permitTransaction'], preview['uniswap']['permitTransaction']),
+                        (['preview', 'uniswap', 'permitTransaction'], native_permit)]:
+        add('response', 'swap-route', replace(native, path, value))
+    unfilled = variants['swap-route.unfilled'][1]
+    for path, value in [(['preview', 'pool', 'amountOutRaw'], '1'), (['preview', 'advantageBps'], 10**12 - 1)]:
+        add('response', 'swap-route', replace(unfilled, path, value))
+    for path, value in [(['preview', 'uniswap', 'swapTransaction'], preview['uniswap']['swapTransaction']),
+                        (['preview', 'reason'], 'uniswap_simulation_failed'), (['preview', 'reason'], 'uniswap_quote_unavailable')]:
+        add('response', 'swap-route', replace(within, path, value))
+    # Behind the pool the advantage is negative and floored, as Python's // floors;
+    # over a pool of one raw unit it is capped.
+    for kind in ('behind', 'capped'):
+        plan = {'contractVersion': routed['contractVersion'], 'preview': fixture_plan(kind)}
+        add('response', 'swap-route', plan, True)
+        add('response', 'swap-route', replace(plan, ['preview', 'advantageBps'], plan['preview']['advantageBps'] - 1))
 
 
 class OnboardingContractTests(unittest.TestCase):

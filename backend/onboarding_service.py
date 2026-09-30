@@ -1,4 +1,4 @@
-"""Bind Uniswap previews to a SIWE session. Never a transaction authority."""
+"""Bind Uniswap previews and Setup swap routes to a SIWE session. Never a signer."""
 from dataclasses import asdict
 import json
 import math
@@ -13,8 +13,8 @@ from read_deadline import check_read_deadline
 
 
 class OnboardingService:
-    def __init__(self, auth, quote, position, *, clock=time.time, private_values=()):
-        self.auth, self.quote, self.position, self.clock = auth, quote, position, clock
+    def __init__(self, auth, quote, position, *, route=None, clock=time.time, private_values=()):
+        self.auth, self.quote, self.position, self.route, self.clock = auth, quote, position, route, clock
         self.private_values = tuple(private_values)
 
     def _now(self):
@@ -53,6 +53,16 @@ class OnboardingService:
             adapter, kwargs = self.quote, {'token_in': identity['tokenIn'], 'token_out': identity['tokenOut'],
                 'amount_raw': request['amountRaw'], 'slippage_bps': request['slippageBps'],
                 'max_price_impact_bps': request['maxPriceImpactBps']}
+        elif route == 'swap-route':
+            if self.route is None:
+                raise OnboardingError('route_not_available')
+            raw_key = request['poolKey']
+            key = PoolKey.checked((raw_key['currency0'], raw_key['currency1'], raw_key['fee_pips'],
+                raw_key['tick_spacing'], raw_key['hooks']), request['poolId'])
+            identity.update(poolId=bytes32(request['poolId']), poolKey=asdict(key),
+                tokenIn=address(request['tokenIn']), amountRaw=request['amountRaw'], slippageBps=request['slippageBps'])
+            adapter, kwargs = self.route, {'pool_id': identity['poolId'], 'key': key, 'token_in': identity['tokenIn'],
+                'amount_raw': request['amountRaw'], 'slippage_bps': request['slippageBps']}
         else:
             raw_key = request['poolKey']
             key = PoolKey.checked((raw_key['currency0'], raw_key['currency1'], raw_key['fee_pips'],
@@ -71,11 +81,17 @@ class OnboardingService:
                 'native_gas_reserve_raw': request['nativeGasReserveRaw']}
         check_read_deadline()
         try:
-            preview = adapter.preview(owner=owner, chain_id=CHAIN_ID, **kwargs)
+            if route == 'swap-route':
+                preview = adapter.plan(owner=owner, **kwargs)
+            else:
+                preview = adapter.preview(owner=owner, chain_id=CHAIN_ID, **kwargs)
         except DataError as error:
             code = str(error)
             if code == 'read_deadline_exceeded' or code.endswith('_deadline_exceeded'):
                 reason = 'request_timeout'
+            elif route == 'swap-route':
+                # The pool quote or the chain read failed; a provider failure alone never gets here.
+                reason = 'preview_expired' if code == 'swap_route_expired' else 'upstream_unavailable'
             elif code in ('uniswap_quote_expired', 'uniswap_position_expired'):
                 reason = 'preview_expired'
             elif code in ('uniswap_quote_rate_limited', 'uniswap_position_rate_limited'):

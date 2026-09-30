@@ -126,7 +126,7 @@ class OnboardingFlowTests(unittest.TestCase):
         headers = {'Content-Type': 'application/json', 'CF-Access-Jwt-Assertion': ASSERTION,
                    'X-Domino-Browser-Origin': ORIGIN,
                    'X-Domino-Client-Id': credentials.get('client', client_id),
-                   f'X-Domino-{kind.title()}-Contract': SESSION_VERSION if kind == 'session' else '1.0.0'}
+                   f'X-Domino-{kind.title()}-Contract': SESSION_VERSION if kind == 'session' else '1.1.0'}
         for name in ('preauth', 'session', 'csrf'):
             if credentials.get(name) is not None:
                 headers['X-Domino-' + name] = credentials[name]
@@ -178,7 +178,7 @@ class OnboardingFlowTests(unittest.TestCase):
             self.assertEqual(preview['request']['chainId'], 4663)
             self.assertFalse(preview['executionAvailable'])
             self.assertEqual(preview['status'], 'preview_only')
-            self.assertEqual(response.headers['X-Domino-Onboarding-Contract'], '1.0.0')
+            self.assertEqual(response.headers['X-Domino-Onboarding-Contract'], '1.1.0')
             self.assertTrue({'no-store', 'no-transform'} <= {value.strip().lower() for value in response.headers['cache-control'].split(',')})
             self.assertNotIn('content-encoding', response.headers)
             self.assertNotIn('set-cookie', response.headers)
