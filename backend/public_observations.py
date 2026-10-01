@@ -177,6 +177,8 @@ class PgPublicData:
         lease = secrets.token_hex(16)
         with self.connection(write=True) as conn:
             preferred=None
+            # 'hot': a pool on screen in the last minute, or one the featured list keeps
+            # warm (#278): both go ahead of the background backlog in three turns of four.
             if demand=='scheduled':
                 # Count persisted claims rather than invocations: a deadline,
                 # spent RPC budget or restart must not erase background's turn.
@@ -194,9 +196,11 @@ class PgPublicData:
                    AND (lease_until IS NULL OR lease_until<clock_timestamp())
                    AND NOT(entity_id=ANY(%s))
                    AND (%s::text IS NULL OR
-                     (last_requested_at>=clock_timestamp()-interval '60 seconds')=(%s='hot'))
+                     (last_requested_at>=clock_timestamp()-interval '60 seconds'
+                      OR keep_warm_until>clock_timestamp())=(%s='hot'))
                  ORDER BY CASE WHEN %s::text IS NULL OR
-                   (last_requested_at>=clock_timestamp()-interval '60 seconds')=(%s='hot') THEN 0 ELSE 1 END,
+                   (last_requested_at>=clock_timestamp()-interval '60 seconds'
+                    OR keep_warm_until>clock_timestamp())=(%s='hot') THEN 0 ELSE 1 END,
                    next_due,entity_id FOR UPDATE SKIP LOCKED LIMIT %s)
               RETURNING *""", (lease, lease_seconds, kind,exclude,demand,demand,preferred,preferred,limit)).fetchall()
 

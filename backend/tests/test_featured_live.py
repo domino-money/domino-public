@@ -24,7 +24,7 @@ from catalogue import LOCK_ID, PgCatalogue
 from dev_postgres import ADMIN, PORT, SOCKET
 from discovery import Block, KEY_TYPES, POOL_MANAGER
 from featured_contract import build_response
-from featured_live import Live, window
+from featured_live import CANDIDATE_WARM_SECONDS, VACANCY_SECONDS, Live, window
 from featured_pools import list_id, load_policy
 from featured_selector import list_entry
 from featured_store import FeaturedStore
@@ -404,7 +404,7 @@ class LiveTests(unittest.TestCase):
             self.figures(b,at=start+offset-5,tvl='1000000',volume='10000000')    # turnover 10, APR 1095%
             self.figures(c,at=start+offset-5,tvl='1000000',volume='30000000',fee=500)   # turnover 30, APR 547%
             self.figures(d,at=start+offset-5)
-            self.figures(e,at=start+offset-7*HOUR)                               # last good longer ago than the horizon
+            self.figures(e,at=start+offset-7*HOUR)                                  # last good longer ago than the horizon
             return self.live().tick(start+offset)['health']
         self.assertEqual(check(0)['status'],'healthy')
         self.assertEqual(check(1800-1)['status'],'healthy')
@@ -447,6 +447,10 @@ class LiveTests(unittest.TestCase):
         served=self.store.current()
         self.assertEqual((served['status'],self.served_ids()),('manual',[pool_of(b)]))
         self.assertEqual(served['valid_until'],before['valid_until'])
+        # Nor is it completed later, with c ready: only the owner chooses a manual list's pools.
+        for token in (b,c):self.figures(token,at=now+60+VACANCY_SECONDS-5)
+        self.assertEqual(live.tick(now+60+VACANCY_SECONDS)['health'],{'status':'healthy'})
+        self.assertEqual(self.served_ids(),[pool_of(b)])
 
     def test_a_collapse_must_hold_across_checks_before_the_pool_leaves(self):
         a,b=TOKENS[:2]
@@ -491,6 +495,72 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(check(3*HOUR)['removed'],{pool_of(c):'estimate_unavailable'})
         self.assertEqual(check(6*HOUR)['status'],'healthy')
         self.assertEqual(self.served_ids(),[pool_of(a),pool_of(b)])
+
+    def test_a_short_list_takes_a_replacement_once_it_is_ready_without_another_pool_leaving(self):
+        # #278: a list repaired while no replacement was ready stayed short for the rest of the day.
+        a,b,c=TOKENS[:3]
+        self.serve_today([a],extra=[b,c])
+        start,live=AT+2*HOUR,self.live()
+        self.figures(a,at=start-5)
+        self.assertEqual(live.tick(start)['health'],{'status':'healthy','vacant':self.policy['size']-1})
+        # b is ready now, but the list looks again only VACANCY_SECONDS after it last looked.
+        for token in (a,b):self.figures(token,at=start+60-5)
+        self.assertEqual(live.tick(start+60)['health']['status'],'healthy')
+        self.assertEqual(self.served_ids(),[pool_of(a)])
+        for token in (a,b):self.figures(token,at=start+VACANCY_SECONDS-5)
+        health=live.tick(start+VACANCY_SECONDS)['health']
+        self.assertEqual((health['status'],health['added']),('refilled',[pool_of(b)]))
+        self.assertEqual(self.served_ids(),[pool_of(a),pool_of(b)])
+        self.assertEqual(self.store.current()['status'],'repaired')
+
+    def test_a_list_every_pool_left_takes_replacements_once_they_are_ready(self):
+        a,b=TOKENS[:2]
+        self.serve_today([a],extra=[b])
+        start,live=AT+2*HOUR,self.live()
+        self.store.add_override('exclude_pool',pool_of(a),reason='rug report')
+        health=live.tick(start)['health']
+        self.assertEqual((health['removed'],health['added']),({pool_of(a):'excluded_by_owner'},[]))
+        self.assertEqual(self.served_ids(),[])
+        # The repair has just looked: ready a minute later, b still waits for the next look.
+        self.figures(b,at=start+60-5)
+        self.assertEqual(live.tick(start+60)['health'],{'status':'idle','vacant':self.policy['size']})
+        self.figures(b,at=start+VACANCY_SECONDS-5)
+        health=live.tick(start+VACANCY_SECONDS)['health']
+        self.assertEqual((health['status'],health['added']),('refilled',[pool_of(b)]))
+        self.assertEqual(self.served_ids(),[pool_of(b)])
+
+    def test_a_vetoed_selection_fills_no_vacancy(self):
+        a,b=TOKENS[:2]
+        self.serve_today([a],extra=[b])
+        self.store.add_override('veto',DAY.isoformat(),reason='owner veto in the daily note')
+        start=AT+2*HOUR
+        for token in (a,b):self.figures(token,at=start-5)
+        self.assertEqual(self.live().tick(start)['health'],{'status':'healthy','vacant':self.policy['size']-1})
+        self.assertEqual(self.served_ids(),[pool_of(a)])
+
+    def test_a_short_list_keeps_its_next_candidates_warm_for_an_hour(self):
+        size=self.policy['size']
+        listed,extra=TOKENS[:size],TOKENS[size:size+5]
+        self.serve_today(listed[:size-2],extra=extra)                          # two vacancies, five candidates
+        now=AT+2*HOUR
+        for token in (*listed,*extra):self.figures(token,at=now-3*HOUR)        # too old to be ready
+        self.live().tick(now)
+
+        def warm():
+            with psycopg.connect(**self.settings,user=ADMIN) as conn:
+                return {row[0]:int(row[1]) for row in conn.execute("""SELECT entity_id,extract(epoch FROM keep_warm_until)
+                  FROM domino_public.entities WHERE kind='pool' AND keep_warm_until IS NOT NULL""")}
+        found=warm()
+        self.assertEqual(found[pool_of(listed[0])],now+26*HOUR)
+        # The two that would fill the vacancies and two beyond, in refill order; not the fifth.
+        self.assertEqual({pool_of(token):found.get(pool_of(token)) for token in extra},
+                         {**{pool_of(token):now+CANDIDATE_WARM_SECONDS for token in extra[:4]},pool_of(extra[4]):None})
+        # A full list warms no candidate.
+        with psycopg.connect(**self.settings,user=ADMIN) as conn:
+            conn.execute('UPDATE domino_public.entities SET keep_warm_until=NULL')
+        self.serve([ev(token) for token in (*listed,*extra)],[pool_of(token) for token in listed])   # served yesterday
+        self.live().tick(now)
+        self.assertEqual({pool_of(token) for token in extra} & set(warm()),set())
 
     def test_a_recovered_condition_starts_its_window_again(self):
         a=TOKENS[0]

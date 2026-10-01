@@ -112,11 +112,13 @@ class PublicInstallTests(unittest.TestCase):
         for setting in ('--max-pools 64','--max-steps 1','--max-seconds 50','--max-rpc-calls 2048','--max-header-calls 1000'):
             self.assertIn(setting,queue)
         self.assertIn('TimeoutStartSec=65',queue)
-        self.assertIn('OnUnitInactiveSec=60s',units['domino-queue-worker.timer.d/90-public-data.conf'])
         for timer in ('domino-queue-worker','domino-catalogue-follower'):
             with self.subTest(timer=timer):
-                # Re-armed by every activation, not only by boot or by the service's last run.
-                self.assertIn('\nOnActiveSec=30s\n',units[timer+'.timer.d/90-public-data.conf'])
+                # A calendar trigger after the one reset: it always has a next elapse
+                # (test_financial_release_systemd.py loads it into systemd itself).
+                lines=[line for line in units[timer+'.timer.d/90-public-data.conf'].splitlines()
+                       if line.startswith('On')]
+                self.assertEqual(lines,['OnBootSec=','OnCalendar=minutely'])
 
 
 if __name__=='__main__':unittest.main()
