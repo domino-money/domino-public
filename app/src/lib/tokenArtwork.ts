@@ -75,8 +75,11 @@ export function createTokenArtworkResolver(options: Options = {}) {
   const reading = new Map<string, { result: Promise<unknown>; deadline: number }>()
 
   /** One guarded GET of a provider body (`token-pairs/…` or `tokens/…` on Robinhood): parsed JSON, or null for anything else. */
-  async function retrieve(path: string, remaining: number): Promise<unknown> {
+  async function retrieve(path: string, remaining: number, signal?: AbortSignal): Promise<unknown> {
+    if (signal?.aborted) return null
     const controller = new AbortController()
+    const cancel = () => controller.abort()
+    signal?.addEventListener('abort', cancel, { once: true })
     const timer = setTimeout(() => controller.abort(), remaining)
     try {
       const response = await fetch(`https://api.dexscreener.com/${path}`, {
@@ -102,7 +105,7 @@ export function createTokenArtworkResolver(options: Options = {}) {
       if (controller.signal.aborted) return null
       return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
     } catch { return null }
-    finally { clearTimeout(timer); controller.abort() }
+    finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); controller.abort() }
   }
 
   /**
@@ -204,9 +207,9 @@ export function createTokenArtworkResolver(options: Options = {}) {
    * null: one guarded GET with the artwork's deadline, never retried here.
    * The Wallet card's prices (lib/walletPrices.ts) are its one caller.
    */
-  function tokenPrices(addresses: readonly string[]): Promise<unknown> {
+  function tokenPrices(addresses: readonly string[], signal?: AbortSignal): Promise<unknown> {
     const list = [...new Set(addresses.map((address) => address.toLowerCase()))].filter((address) => ADDRESS.test(address)).sort().slice(0, PRICE_BATCH)
-    return list.length === 0 ? Promise.resolve(null) : retrieve(`tokens/v1/robinhood/${list.join(',')}`, TIMEOUT)
+    return list.length === 0 ? Promise.resolve(null) : retrieve(`tokens/v1/robinhood/${list.join(',')}`, TIMEOUT, signal)
   }
 
   /**

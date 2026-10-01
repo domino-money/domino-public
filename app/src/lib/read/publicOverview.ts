@@ -1,6 +1,6 @@
-/** Project stored observations through the existing V1/V2 presentation. The
- * envelope arrival is not a fresh observation: server-reported storage age is
- * carried onto the page's clocks, preserving both provider and snapshot age. */
+/** Project stored observations through the existing V1/V2 presentation. Token
+ * and pool state keep their storage age. Market/APR ages are already evaluated
+ * at generatedAt by read-v3, and only age further after the envelope arrives. */
 import type { VerifiedPool } from 'api-contracts/read-v1/types'
 import type { StoredPool, StoredToken } from 'api-contracts/read-v3/types'
 import { observe } from './interpret'
@@ -29,7 +29,8 @@ export function storedTokenRead(entry: StoredToken, generatedAt: number, provena
 export function storedPoolRead(entry: StoredPool, generatedAt: number, provenance: Provenance): Extract<ReadOutcome<'pool-market'>, { state: 'ok' }> | null {
   if (!entry.value || entry.observedAt === null) return null
   return { state: 'ok', route: 'pool-market', data: entry.value.market, estimate: entry.value.estimate,
-    observation: observe('pool-market', entry.value.market), provenance: storedProvenance(provenance, generatedAt, entry.observedAt) }
+    observation: observe('pool-market', entry.value.market), provenance,
+    servedAgeSeconds: Math.max(0, generatedAt - entry.observedAt) }
 }
 
 /** The overview's rows; with `keep`, only the pools it keeps (a list's binding, marketsProvider.ts). */
@@ -61,7 +62,7 @@ export function overviewPoolOption(outcome: Extract<ReadOutcome<'overview'>, { s
     key: poolIdKey(poolId), kind: 'stored', currencies, fee: feeLabel(pool.poolKey),
     feePips: pool.poolKey.feeMode === 'dynamic' ? DYNAMIC_FEE_PIPS : pool.poolKey.fee_pips,
     tickSpacing: pool.poolKey.tick_spacing, tick: pool.tick, sqrtPriceX96: pool.sqrtPriceX96,
-    readAt: read.provenance.receivedAt, hooks: addressKey(pool.poolKey.hooks), protocolFeeRaw: pool.protocolFeeRaw,
+    readAt: read.provenance.receivedAt - (read.servedAgeSeconds ?? 0) * 1000, hooks: addressKey(pool.poolKey.hooks), protocolFeeRaw: pool.protocolFeeRaw,
     integration: pool.integrationClass, block: pool.snapshot.number, catalogue: null, requestedById: true,
     liquidity: figureFromMarket(read.data.market, 'liquidity'), volume: figureFromMarket(read.data.market, 'volume'),
     providerNote: read.data.market.data ? retrievalNote(read.data.market.data.retrievedAt) : null,

@@ -502,7 +502,6 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     const path = resumed && replay ? replay : FeeReplay.start({ tokenId, tickLower: state.tickLower, tickUpper: state.tickUpper, tickSpacing: start?.tickSpacing ?? 1, fee: start?.lpFee ?? 0, path: true, ...(state.protocolFee === undefined ? {} : { protocolFee: state.protocolFee }) }, start?.initPrice ?? 0n, start?.initTick ?? 0)
     replay = path
     const from = resumed ? through + 1 : mintBlock
-    const timeline = await timelineFrom(from)
     // (a) The NFT's own ModifyLiquidity events: its mint (in its block) and every settlement since. They must account for
     // the position's liquidity now: one missed (an increase, or a decrease paid to someone who was never an owner) and the
     // path cannot land on the chain's figures, so it stops before reading.
@@ -510,6 +509,9 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     const own = from <= top ? await ownEvents(from, base) : []
     const liquidity = own.reduce((sum, log) => sum + BigInt.asIntN(256, word(log[5], 2)), base)
     if (liquidity !== state.liquidity) throw new Stop('replay_mismatch')
+    // Timestamps cannot repair missing position events. Read them only after this prerequisite reconciles, so a
+    // refused settlements read does not first spend up to two batches of headers from the same RPC budget.
+    const timeline = await timelineFrom(from)
     if (!resumed) {
       if (own.length === 0 || own[0][0] !== mintBlock) throw new Stop('rpc_unavailable')
       // (b) The price at the mint: the last Swap before its block (its own block's come with the first span), or the Initialize.

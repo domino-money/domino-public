@@ -28,7 +28,7 @@
  * - for Domino-compound, the next positions it opened (MINT) and the fees it moved out for them (MINT and FUND).
  * Nothing is invented: without the vault's logs, or with any log that is not what was asked for, there is no figure.
  */
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import type { OwnedDeps } from '../../functions/_lib/owned'
 import { type Basis, principalAt, valueUnits } from '../components/positions/visual/value'
 import type { FeeHistory, PositionState } from './fees/types'
@@ -229,19 +229,21 @@ const MANY_VALUES_BLOCKS = 100_000
  * the transfers out of the vault in their blocks (one more). Null when either could not be read. `deps` is the page's
  * runtime (lib/chain/browser.ts) unless a test hands in its own.
  */
-export async function readVault(vault: string, tokenId: string, currencies: readonly [string, string], from: number, to: number, deps?: OwnedDeps): Promise<VaultRecord | null> {
+export async function readVault(vault: string, tokenId: string, currencies: readonly [string, string], from: number, to: number, deps?: OwnedDeps, signal?: AbortSignal): Promise<VaultRecord | null> {
   // The deployable builds and the wallet test builds (whose browsers answer the RPC with a fake chain) read the chain.
   if (!(__DOMINO_DEPLOYABLE__ || __DOMINO_TEST_HOOKS__)) return null
   if (!/^0x[0-9a-f]{40}$/.test(vault) || !/^[1-9]\d{0,77}$/.test(tokenId) || !(from >= 0 && to >= from)) return null
   try {
     const code = await import('./chain/chainCode')
     // 2026-09-28 (speed wave B, item 26): read beside the position's chart, not a read its fees lane waits for.
-    const rt = deps ?? code.chainDeps(undefined, true)
+    if (signal?.aborted) return null
+    const rt = deps ?? code.chainDeps(signal, true)
     const budget = { calls: 0, started: rt.now(), logBytes: 0 }
     const logs = async (filter: { address: string | string[]; topics: (string | null)[] }, a: number, b: number) => {
       const queue: [number, number][] = [[a, b]]
       const out: unknown[] = []
       while (queue.length > 0) {
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
         const [start, end] = queue.shift() as [number, number]
         if (end - start >= ONE_VALUE_BLOCKS) {
           queue.unshift([start, start + ONE_VALUE_BLOCKS - 1], [start + ONE_VALUE_BLOCKS, end])
@@ -268,7 +270,7 @@ export async function readVault(vault: string, tokenId: string, currencies: read
     const [first, last] = [executions[0].block, executions[executions.length - 1].block]
     const transfers = last - first + 1 > MANY_VALUES_BLOCKS ? [...(await logs({ address: pair[0], topics: [TRANSFER, vaultWord] }, first, last)), ...(await logs({ address: pair[1], topics: [TRANSFER, vaultWord] }, first, last))] : await logs({ address: [...pair], topics: [TRANSFER, vaultWord] }, first, last)
     const paid = paymentsOf(transfers, vault, pair, new Set(executions.map((execution) => execution.tx)))
-    return paid ? { executions, paid } : null
+    return !signal?.aborted && paid ? { executions, paid } : null
   } catch {
     return null
   }
@@ -298,12 +300,25 @@ type Ask = [vault: string, tokenId: string, currencies: readonly [string, string
  * blocks wanted, for as long as a screen shows it (2026-09-27, review: one 429 must not hide the lines for the visit).
  * `read` and `timers` are the page's own unless a test hands in its own.
  */
-export function vaultStore(read: (...ask: Ask) => Promise<VaultRecord | null> = (...ask) => readVault(...ask), retryMs = 60_000, timers: { set: (run: () => void, ms: number) => unknown; now: () => number } = { set: (run, ms) => setTimeout(run, ms), now: () => Date.now() }) {
+export function vaultStore(read: (...ask: [...Ask, AbortSignal]) => Promise<VaultRecord | null> = (vault, tokenId, currencies, from, to, signal) => readVault(vault, tokenId, currencies, from, to, undefined, signal), retryMs = 60_000, timers: { set: (run: () => void, ms: number) => unknown; clear?: (timer: unknown) => void; now: () => number } = { set: (run, ms) => setTimeout(run, ms), clear: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>), now: () => Date.now() }) {
   const kept = new Map<string, VaultEntry>()
   const latest = new Map<string, Ask>()
-  const asking = new Set<string>()
-  const retrying = new Set<string>()
-  const listeners = new Set<() => void>()
+  const asking = new Map<string, AbortController>()
+  const retrying = new Map<string, { timer: unknown }>()
+  const listeners = new Map<string, Set<() => void>>()
+  const interested = (key: string) => (listeners.get(key)?.size ?? 0) > 0
+
+  function retry(key: string, delay: number) {
+    if (!interested(key) || retrying.has(key)) return
+    const pending = { timer: undefined as unknown }
+    retrying.set(key, pending)
+    pending.timer = timers.set(() => {
+      if (retrying.get(key) !== pending) return
+      retrying.delete(key)
+      const again = latest.get(key)
+      if (again && interested(key)) want(...again)
+    }, delay)
+  }
 
   function want(...ask: Ask) {
     const [vault, tokenId, currencies, from, to] = ask
@@ -313,33 +328,43 @@ export function vaultStore(read: (...ask: Ask) => Promise<VaultRecord | null> = 
     // 2026-09-28 (speed wave B, item 26): a record read from a later block than asked (warmVault's, from the factory's
     // first block) is read again from the block asked, whole.
     const earlier = !!entry?.record && from < entry.from
-    if (asking.has(key) || (entry?.record && entry.to >= to && !earlier) || (entry?.failedAt && timers.now() - entry.failedAt < retryMs)) return
+    if (asking.has(key) || (entry?.record && entry.to >= to && !earlier)) return
+    if (entry?.failedAt && timers.now() - entry.failedAt < retryMs) {
+      retry(key, retryMs - (timers.now() - entry.failedAt))
+      return
+    }
     const known = earlier ? null : (entry?.record ?? null)
     const end = Math.max(to, earlier && entry ? entry.to : to)
-    asking.add(key)
-    void read(vault, tokenId, currencies, known && entry ? entry.to + 1 : from, end).then((got) => {
+    const controller = new AbortController()
+    asking.set(key, controller)
+    void read(vault, tokenId, currencies, known && entry ? entry.to + 1 : from, end, controller.signal).catch(() => null).then((got) => {
+      if (asking.get(key) !== controller || controller.signal.aborted) return
       asking.delete(key)
       const record = got && known ? { executions: [...known.executions, ...got.executions], paid: known.paid && got.paid ? new Map([...known.paid, ...got.paid]) : null } : got
       kept.set(key, got ? { from: known && entry ? entry.from : from, to: end, record, failedAt: 0 } : { from: entry?.from ?? from, to: entry?.to ?? -1, record: entry?.record ?? null, failedAt: timers.now() })
-      if (!got && !retrying.has(key)) {
-        retrying.add(key)
-        timers.set(() => {
-          retrying.delete(key)
-          const again = latest.get(key)
-          if (again && listeners.size > 0) want(...again)
-        }, retryMs)
-      }
-      for (const listener of listeners) listener()
+      if (!got) retry(key, retryMs)
+      for (const listener of listeners.get(key) ?? []) listener()
       // The blocks a screen asked while this read was on its way (a card's own, while the page's early read went).
       const again = latest.get(key)
-      if (got && again) want(...again)
+      if (got && again && interested(key)) want(...again)
     })
   }
 
-  function subscribe(listener: () => void) {
-    listeners.add(listener)
+  function subscribe(vault: string, tokenId: string, listener: () => void) {
+    const key = `${vault}:${tokenId}`
+    const group = listeners.get(key) ?? new Set<() => void>()
+    group.add(listener)
+    listeners.set(key, group)
     return () => {
-      listeners.delete(listener)
+      if (!group.delete(listener) || listeners.get(key) !== group) return
+      if (group.size > 0) return
+      listeners.delete(key)
+      const pending = retrying.get(key)
+      if (pending) timers.clear?.(pending.timer)
+      retrying.delete(key)
+      asking.get(key)?.abort()
+      asking.delete(key)
+      latest.delete(key)
     }
   }
 
@@ -355,7 +380,12 @@ export const VAULT_FIRST_BLOCK = 69_239_633
  * once the chart was drawn, as the history named the blocks): read as soon as the page's own read names the vault, from
  * the factory's first block to that read's (`block`); the card takes its own blocks' part of it (useVaultRecord).
  */
-export function warmVault(vault: string, tokenId: string, currencies: readonly [string, string], block: number): void {
+export function warmVault(vault: string, tokenId: string, currencies: readonly [string, string], block: number, signal?: AbortSignal): void {
+  if (signal?.aborted) return
+  if (signal) {
+    const stop = store.subscribe(vault, tokenId, () => undefined)
+    signal.addEventListener('abort', stop, { once: true })
+  }
   store.want(vault, tokenId, currencies, VAULT_FIRST_BLOCK, block)
 }
 
@@ -371,8 +401,9 @@ export function useVaultRecord(vault: string | null, tokenId: string, currencies
   useEffect(() => {
     if (vault && first && second) store.want(vault, tokenId, [first, second], from, to)
   }, [vault, tokenId, first, second, from, to])
+  const subscribe = useCallback((listener: () => void) => vault ? store.subscribe(vault, tokenId, listener) : () => undefined, [vault, tokenId])
   const entry = useSyncExternalStore(
-    store.subscribe,
+    subscribe,
     () => (vault ? store.get(vault, tokenId) : null),
     () => null,
   )

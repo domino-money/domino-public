@@ -37,8 +37,11 @@ export async function boundedText(response: Response, maxBytes = MAX_BYTES): Pro
  * strict profile parser: null for `available: false`, a thrown code for
  * anything malformed or expired. Never throws itself.
  */
-export async function readRelease<T>(path: ReleasePath, parse: (value: unknown) => T | null, get: typeof financialFetch = financialFetch, timeoutMs = 10_000): Promise<ReleaseRead<T>> {
+export async function readRelease<T>(path: ReleasePath, parse: (value: unknown) => T | null, get: typeof financialFetch = financialFetch, timeoutMs = 10_000, signal?: AbortSignal): Promise<ReleaseRead<T>> {
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs)
+  const abort = () => controller.abort()
+  signal?.addEventListener('abort', abort, { once: true })
+  if (signal?.aborted) abort()
   const unavailable = (reason: string): ReleaseRead<T> => ({ kind: 'unavailable', reason })
   try {
     let response: Response
@@ -70,5 +73,71 @@ export async function readRelease<T>(path: ReleasePath, parse: (value: unknown) 
     return unavailable('network')
   } finally {
     clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
+  }
+}
+
+/** Display admission only. Every financial press still reads and validates the release afresh. */
+const RELEASE_KEEP_MS = 60_000
+const RELEASE_RETRY_MS = [2_000, 10_000, 30_000] as const
+// A 429 is not retried here: this tiny release reader does not consume Retry-After, so it must not shorten it.
+const TRANSIENT_RELEASE = new Set(['network', 'timeout', 'bridge_unavailable', 'upstream_unavailable', 'status_502', 'status_503', 'status_504'])
+interface ReleaseWatchPorts {
+  now(): number
+  visible(): boolean
+  later(fn: () => void, ms: number): () => void
+  visibility(fn: () => void): () => void
+}
+const watchPorts: ReleaseWatchPorts = {
+  now: Date.now,
+  visible: () => !document.hidden,
+  later: (fn, ms) => { const timer = setTimeout(fn, ms); return () => clearTimeout(timer) },
+  visibility: (fn) => { document.addEventListener('visibilitychange', fn); return () => document.removeEventListener('visibilitychange', fn) },
+}
+
+/**
+ * One public GET shared by mounted views. A passing outage gets three bounded retries, not a permanent disabled
+ * screen. Returning to the tab starts a fresh read window. Refusals/contracts stay closed; no financial request is
+ * retried here. Hidden/unmounted views cancel pending work, and a late answer cannot replace a newer one.
+ */
+export function createReleaseWatch<T>(read: (signal: AbortSignal) => Promise<ReleaseRead<T>>, ports: ReleaseWatchPorts = watchPorts) {
+  const listeners = new Set<(value: ReleaseRead<T>) => void>()
+  let value: ReleaseRead<T> | null = null, at = -Infinity, retries = 0
+  let pending: AbortController | null = null, cancel: (() => void) | null = null, unwatch: (() => void) | null = null
+  function stopWork() {
+    cancel?.(); cancel = null
+    pending?.abort(); pending = null
+  }
+  function plan(ms: number) {
+    cancel?.()
+    if (!ports.visible() || !listeners.size) return
+    cancel = ports.later(() => { cancel = null; void ask() }, ms)
+  }
+  async function ask() {
+    if (!listeners.size || !ports.visible() || pending) return
+    cancel?.(); cancel = null
+    const mine = new AbortController()
+    pending = mine
+    const answer = await read(mine.signal).catch((): ReleaseRead<T> => ({ kind: 'unavailable', reason: 'network' }))
+    if (mine.signal.aborted || pending !== mine) return
+    pending = null; value = answer; at = ports.now()
+    for (const listener of listeners) listener(answer)
+    if (answer.kind === 'available') { retries = 0; plan(RELEASE_KEEP_MS) }
+    else if (TRANSIENT_RELEASE.has(answer.reason) && retries < RELEASE_RETRY_MS.length) plan(RELEASE_RETRY_MS[retries++])
+  }
+  function wake() {
+    if (!ports.visible()) { stopWork(); return }
+    retries = 0
+    if (value?.kind !== 'available' || ports.now() - at >= RELEASE_KEEP_MS) void ask()
+    else plan(RELEASE_KEEP_MS - (ports.now() - at))
+  }
+  return (listener: (value: ReleaseRead<T>) => void) => {
+    listeners.add(listener)
+    if (value) listener(value)
+    if (listeners.size === 1) { unwatch = ports.visibility(wake); wake() }
+    return () => {
+      listeners.delete(listener)
+      if (!listeners.size) { stopWork(); unwatch?.(); unwatch = null }
+    }
   }
 }

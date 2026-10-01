@@ -10,6 +10,8 @@
  *      first failure. Nothing that is not outstanding is reconciled.
  *   2. After a version or state conflict: one get of the same operation.
  *      The mutation is never replayed.
+ *   3. When the same controller is mounted again: list and get only. An
+ *      interrupted boot or user action never repeats a mutation on remount.
  *   A session denial (session_required, csrf_invalid, account_unsupported)
  *   from any of these goes to the session port exactly as one from a user
  *   action does (rugged97, P2 on #72); only a remembered id that is not
@@ -93,7 +95,7 @@ export interface DepositFlow {
   subscribe(listener: () => void): () => void
   dispatch(event: FlowEvent): void
   readonly issueWalletStepAllowed: boolean
-  /** Follows the session and, the first time, boots. Returns what stops following it. */
+  /** Follows the session and boots once; later mounts recover by reads only. Cleanup releases this subscriber. */
   start(): () => void
   dispose(): void
 }
@@ -163,6 +165,8 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
   let run = 0
   let inflight: AbortController | null = null
   let cancelDeadline: (() => void) | null = null
+  const starts = new Set<symbol>()
+  let disposed = false
   /** Deadlines this page established, one per issued step (see the header). */
   const deadlines = new Map<string, number>()
   const stepKey = (id: string, step: { step: number; nonceRaw: string; issuedAt: number; expiresAt: number }) =>
@@ -205,11 +209,12 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
 
   /** Runs one call under the current session; a result from an older run or session is dropped. */
   async function call<R extends DepositRoute>(_route: R, send: (options: { epoch: number; signal: AbortSignal }) => Promise<DepositOutcome<R>>): Promise<DepositOutcome<R> | null> {
+    if (disposed || starts.size === 0) return null
     const mine = run
     const controller = new AbortController()
     inflight = controller
     const outcome = await send({ epoch: epochOf(), signal: controller.signal })
-    if (mine !== run) return null
+    if (mine !== run || disposed || starts.size === 0) return null
     if (inflight === controller) inflight = null
     if (!outcome.ok && outcome.failure.kind === 'aborted') return null
     return outcome
@@ -271,14 +276,16 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
   function scheduleDeadline(deadline: number | null) {
     cancelDeadline?.()
     cancelDeadline = null
-    if (deadline === null) return
+    if (deadline === null || disposed || starts.size === 0) return
     // Re-render when the handoff stops being fresh; nothing is sent.
-    cancelDeadline = clock.setTimer(() => set({}), Math.max(0, deadline - clock.monoMs()))
+    const mine = run
+    cancelDeadline = clock.setTimer(() => { if (mine === run && starts.size > 0 && !disposed) set({}) }, Math.max(0, deadline - clock.monoMs()))
   }
 
-  async function boot() {
+  async function boot(readOnly = false) {
     const mine = run
-    set({ ...INITIAL, phase: 'booting', latched: state.latched, knownPairs: [] })
+    const previous = readOnly ? state.current : null
+    set({ ...INITIAL, phase: 'booting', latched: state.latched, knownPairs: readOnly ? state.knownPairs : [] })
     const listed = await call('list', (options) => client.list({ limit: 20 }, options))
     if (!listed) return
     if (!listed.ok) {
@@ -294,7 +301,11 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
       const got = await call('get', (options) => client.get({ intentId: remembered }, options))
       if (!got) return
       if (got.ok) {
-        current = withOp(got.data.operation)
+        const op = got.data.operation
+        // A read may confirm the same handoff already held in this controller, never issue a new one. Keep its
+        // original monotonic deadline (including an expired one); a changed operation drops the artifact.
+        const same = previous && previous.op.id === op.id && previous.op.version === op.version && previous.op.state === op.state && sameStep(previous.op.history.at(-1), op.history.at(-1))
+        current = same ? { ...previous, op } : withOp(op)
         set({ current })
       } else if ((got.failure.kind === 'error' && got.failure.code === 'deposit_not_found') || (got.failure.kind === 'contract' && got.failure.detail === 'owner')) {
         // A remembered id another owner or the archive no longer knows: forget it, say nothing.
@@ -305,7 +316,7 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
         return
       }
     }
-    for (const item of items) {
+    for (const item of readOnly ? [] : items) {
       if (!item.outstanding) continue
       const version = current && current.op.id === item.id ? current.op.version : item.version
       const reconciled = await call('reconcile', (options) => client.reconcile({ intentId: item.id, version }, options))
@@ -323,9 +334,11 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
     }
     if (mine !== run) return
     set({ phase: 'ready', busy: null })
+    scheduleDeadline(current?.walletStepDeadlineMono ?? null)
   }
 
   function onSession() {
+    if (disposed || starts.size === 0) return
     const next = session.getSnapshot()
     if (next === snapshot) return
     const nextKey = sessionKey(next)
@@ -390,7 +403,7 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
   }
 
   async function userAction(event: FlowEvent) {
-    if (state.phase !== 'ready' || state.busy !== null || snapshot.kind !== 'signed_in') return
+    if (disposed || starts.size === 0 || state.phase !== 'ready' || state.busy !== null || snapshot.kind !== 'signed_in') return
     const current = state.current
     switch (event.action) {
       case 'open': {
@@ -485,6 +498,11 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
   function stop() {
     unsubscribe?.()
     unsubscribe = null
+    run += 1
+    inflight?.abort()
+    inflight = null
+    scheduleDeadline(null)
+    set({ busy: null })
   }
 
   return {
@@ -495,21 +513,29 @@ export function createDepositFlow({ client, session, memory, clock, handoff }: F
       return () => listeners.delete(listener)
     },
     start() {
-      if (unsubscribe === null) unsubscribe = session.subscribe(onSession)
-      if (!booted) {
-        booted = true
+      if (disposed) return () => undefined
+      const lease = Symbol()
+      starts.add(lease)
+      if (unsubscribe === null) {
+        unsubscribe = session.subscribe(onSession)
+        const mine = run
         if (session.getSnapshot() !== snapshot) onSession()
-        else if (snapshot.kind === 'signed_in') void boot()
+        // A session change already started its own first boot. Otherwise the same session resumes only reads.
+        if (mine === run && snapshot.kind === 'signed_in') void boot(booted)
+        booted = true
       }
-      return stop
+      return () => {
+        if (!starts.delete(lease)) return
+        if (starts.size === 0) stop()
+      }
     },
     dispatch(event) {
       void userAction(event)
     },
     dispose() {
-      run += 1
-      inflight?.abort()
-      scheduleDeadline(null)
+      if (disposed) return
+      disposed = true
+      starts.clear()
       deadlines.clear()
       stop()
       listeners.clear()

@@ -13,6 +13,7 @@
     }
   },
   "files": [
+    "src/finance/receiptWait.ts",
     "src/lib/scenario.ts",
     "src/lib/geometry.ts",
     "src/lib/markets.ts",

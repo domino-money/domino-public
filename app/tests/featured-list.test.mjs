@@ -422,7 +422,7 @@ function scripted(...answers) {
   return { store, clock, reads };
 }
 
-test('refresh: the same listId changes nothing; a reorder or a new pool waits; removals apply at once; a failure keeps the list', async () => {
+test('refresh: the same listId changes nothing; reorders wait, admissions and removals apply at once, and a failure keeps the list', async () => {
   const first = answered(answer([A, B, C], { listId: listId('01') }));
   const reordered = answered(answer([C, A, B], { listId: listId('02') }));
   const entered = answered(answer([A, B, C, pool(id('d4'), addr('d4'), 'TKND')], { listId: listId('03') }));
@@ -438,29 +438,29 @@ test('refresh: the same listId changes nothing; a reorder or a new pool waits; r
   await store.refresh();
   assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId, C.poolId], 'no reorder on refresh');
   await store.refresh();
-  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId, C.poolId], 'a new pool waits');
+  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId, C.poolId, id('d4')], 'a newly admitted pool appears on the same refresh');
   await store.refresh();
-  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId, C.poolId], 'a failure keeps the list');
+  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, B.poolId, C.poolId, id('d4')], 'a failure keeps the list');
   await store.refresh();
   assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, C.poolId], 'the removal at once, on the refresh that saw it');
   assert.equal(store.getSnapshot().source, 'server');
 });
 
-test('refresh: a removal beside a new pool applies at once while the new pool waits; the waiting list is taken on a remount after 30 min only', async () => {
+test('refresh: a removal and its admitted replacement apply together without reload or a thirty-minute wait', async () => {
   const first = answered(answer([A, B, C], { listId: listId('01') }));
   const repaired = answered(answer([A, C, pool(id('d4'), addr('d4'), 'TKND')], { listId: listId('05'), status: 'repaired' }));
   const { store, clock } = scripted(first, repaired);
   await store.ensure();
   await store.refresh();
-  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, C.poolId], 'B left at once');
+  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, C.poolId, id('d4')], 'B leaves and its replacement appears together');
   store.remount();
-  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, C.poolId], 'a remount before 30 min takes nothing');
+  assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, C.poolId, id('d4')], 'remount is not required for admission');
   clock.advance(featured.FEATURED_REMOUNT_MS);
   store.remount();
   assert.deepEqual(idsOf(store.getSnapshot()), [A.poolId, C.poolId, id('d4')], 'a remount after 30 min takes the waiting list');
 });
 
-test('refresh: none or a route that is off mid-session switches to the embedded list at once; a server list then waits for a reload', async () => {
+test('refresh: a disabled route falls back, and a recovered server list is admitted without reload', async () => {
   const first = answered(answer([A, B], { listId: listId('01') }));
   const { store } = scripted(first, answered(read('valid/none-with-withdrawn.json')), first);
   await store.ensure();
@@ -470,7 +470,7 @@ test('refresh: none or a route that is off mid-session switches to the embedded 
   assert.deepEqual(idsOf(store.getSnapshot()), SELECTED_POOLS);
   assert.equal(store.getSnapshot().withdrawn.size, 2, 'none still carries its removals');
   await store.refresh();
-  assert.equal(store.getSnapshot().source, 'bundled', 'switching back on is an entry: it waits');
+  assert.equal(store.getSnapshot().source, 'server', 'the recovered validated server list takes effect immediately');
   const off = scripted(first, featured.answerOf({ route: 'featured-pools', state: 'disabled', reason: 'route_not_enabled', provenance: {} }));
   await off.store.ensure();
   await off.store.refresh();
@@ -524,11 +524,11 @@ test('a first read that found no answer puts up the embedded list only until an 
   await refreshed.store.ensure();
   await refreshed.store.refresh();
   assert.equal(refreshed.store.getSnapshot().source, 'server');
-  // A first answer of none is an answer: a list that comes later waits for a reload, as before.
+  // A later validated list replaces an initial none without requiring a reload.
   const none = scripted(answered(read('valid/none.json')), first);
   await none.store.ensure();
   await none.store.refresh();
-  assert.equal(none.store.getSnapshot().source, 'bundled');
+  assert.equal(none.store.getSnapshot().source, 'server');
   // At most three asks of its own, 3, 6 and 12 s apart.
   const down = [];
   const downClock = { ...steadyClock(), timer: (ms, fire) => { down.push(ms); void Promise.resolve().then(fire); return () => {}; } };

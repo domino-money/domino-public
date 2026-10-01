@@ -98,6 +98,46 @@ function clock(start = Date.UTC(2026, 8, 26, 12)) {
 const runtimeWith = (cache, time = clock(), extra = {}) => ({ contract: CONTRACT, cache, now: time.now, refreshing: new Map(), ...extra });
 const previewAsk = (options = {}) => ask({ ...options, url: options.url ?? `${PREVIEW_ORIGIN}${FEATURED_PATH}`, headers: { Origin: PREVIEW_ORIGIN, ...options.headers } });
 
+test('a ready featured refresh is returned to the same caller, with one binding call and its quota charge', async () => {
+  const cache = memoryCache(), time = clock(), later = [], refreshing = new Map();
+  let fresh = false;
+  const worker = bridge(() => said(fresh ? NONE : CURRENT));
+  const rt = () => runtimeWith(cache, time, { refreshing, waitUntil: work => later.push(work) });
+  await answerFeatured(ask(), worker.env, rt()); await Promise.all(later.splice(0));
+  fresh = true; time.at.now += LIST_SECONDS * 1000;
+  const result = await answerFeatured(ask(), worker.env, rt());
+  assert.equal(await result.text(), NONE);
+  assert.equal(result.headers.get('X-Domino-Edge-Cache'), null);
+  assert.equal(worker.calls.length, 2);
+  await Promise.all(later);
+});
+
+test('slow featured refresh waits at most one second, keeps the dated cache and coalesces visitors', async () => {
+  const cache = memoryCache(), time = clock(), later = [], refreshing = new Map();
+  let unblock, fire, armed;
+  const timerReady = new Promise(resolve => { armed = resolve; });
+  let slow = false;
+  const worker = bridge(() => slow ? new Promise(resolve => { unblock = resolve; }) : said());
+  const rt = () => runtimeWith(cache, time, { refreshing, waitUntil: work => later.push(work), timer: (ms, fn) => {
+    assert.equal(ms, 1000); fire = fn; armed(); return () => {};
+  } });
+  await answerFeatured(ask(), worker.env, rt()); await Promise.all(later.splice(0));
+  const before = await cache.entries.get(cacheKey(VERSION)).clone().text();
+  slow = true; time.at.now += LIST_SECONDS * 1000;
+  const first = answerFeatured(ask(), worker.env, rt()); await timerReady;
+  const shared = await answerFeatured(ask(), worker.env, rt());
+  assert.equal(shared.headers.get('X-Domino-Edge-Cache'), 'hit');
+  assert.equal(await shared.text(), CURRENT);
+  fire(); const expiredWait = await first;
+  assert.equal(await expiredWait.text(), CURRENT);
+  assert.equal(expiredWait.headers.get('X-Domino-Edge-Cache'), null);
+  assert.equal(await cache.entries.get(cacheKey(VERSION)).clone().text(), before);
+  assert.equal(cache.puts.length, 1, 'waiting does not extend the old entry lifetime');
+  while (!unblock) await new Promise(resolve => setImmediate(resolve));
+  unblock(said(NONE)); await Promise.all(later);
+  assert.equal(worker.calls.length, 2, 'one original and one refresh, not one per visitor');
+});
+
 test('preview public caches are opt-in and isolated from production, while forwarding only canonical public reads', async () => {
   const cache = memoryCache();
   const production = bridge(() => said(CURRENT));
@@ -259,7 +299,9 @@ test('a list switched off is taken out of the edge by the background read that m
   assert.equal(cache.entries.size, 1, 'a failed refresh leaves the entry');
   broken = false; off = true;
   time.at.now += REFRESH_GUARD_MS;
-  assert.equal(await (await answerFeatured(ask(), env, runtime())).text(), CURRENT, 'served, and refreshed behind');
+  const disabled = await answerFeatured(ask(), env, runtime());
+  assert.equal(disabled.status, 404, 'a ready definitive refusal reaches this visitor, not just the next one');
+  assert.deepEqual(await disabled.json(), { error: 'route_not_available' });
   await Promise.all(later.splice(0));
   assert.equal(cache.entries.size, 0, 'the route is off: the entry is out');
   const next = await answerFeatured(ask(), env, runtime());

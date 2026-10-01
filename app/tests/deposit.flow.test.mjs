@@ -46,8 +46,9 @@ function lab(id, { session = createFixtureSessionPort(), wallMs = WALL_2027 } = 
   const clock = createFixtureClock({ wallMs });
   const client = createDepositClient({ transport, runtime, session });
   const flow = createDepositFlow({ client, session, memory, clock, handoff: DISABLED_WALLET_HANDOFF });
-  flow.start();
+  const stop = flow.start();
   const h = {
+    stop,
     scenario,
     fixture,
     flow,
@@ -582,4 +583,127 @@ test('what the lab shows does not depend on the device clock (DB-14)', async () 
     return out;
   };
   assert.deepEqual(await render(Date.parse('2026-09-11T12:00:00Z')), await render(Date.parse('2028-06-01T00:00:00Z')));
+});
+
+function deferredFlow() {
+  const calls = [];
+  const client = { transportKind: 'fixture', ...Object.fromEntries(['list', 'get', 'reconcile', 'prepare', 'create', 'cancel', 'report', 'allowances'].map((route) => [route, (body, options) => new Promise((resolve) => calls.push({ route, body, signal: options.signal, resolve: (data) => resolve({ ok: true, route, data }) }))])) };
+  const memory = createMemory(inMemoryBackend());
+  memory.remember(OPERATION_ID);
+  const flow = createDepositFlow({ client, session: createFixtureSessionPort(), memory, clock: createFixtureClock({ wallMs: WALL_2027 }), handoff: DISABLED_WALLET_HANDOFF });
+  return { calls, flow, routes: () => calls.map((call) => call.route) };
+}
+
+test('leaving Setup aborts its read, drops a late answer and remount recovers only list/get', async () => {
+  const h = deferredFlow();
+  const oldStop = h.flow.start();
+  assert.deepEqual(h.routes(), ['list']);
+  oldStop();
+  assert.equal(h.calls[0].signal.aborted, true);
+  h.calls[0].resolve(listBody([RESERVED().operation]));
+  await settle();
+  assert.deepEqual(h.routes(), ['list'], 'the abandoned boot must not advance to get/reconcile');
+  const nextStop = h.flow.start();
+  assert.deepEqual(h.routes(), ['list', 'list']);
+  oldStop();
+  assert.equal(h.calls[1].signal.aborted, false, 'old cleanup does not stop the new subscription');
+  h.calls[1].resolve(listBody([RESERVED().operation]));
+  await settle();
+  h.calls[2].resolve(RESERVED());
+  await settle();
+  assert.equal(h.flow.getState().phase, 'ready');
+  assert.equal(h.flow.getState().busy, null);
+  assert.deepEqual(h.routes(), ['list', 'list', 'get'], 'remount never repeats an automatic mutation');
+  nextStop();
+});
+
+test('an interrupted user prepare is never repeated or adopted after remount', async () => {
+  const h = deferredFlow();
+  const stop = h.flow.start();
+  h.calls[0].resolve(listBody([DRAFT().operation]));
+  await settle();
+  h.calls[1].resolve(DRAFT());
+  await settle();
+  h.flow.dispatch({ t: 'user', action: 'prepare' });
+  assert.deepEqual(h.routes(), ['list', 'get', 'prepare']);
+  stop();
+  assert.equal(h.calls[2].signal.aborted, true);
+  h.calls[2].resolve(JSON.parse(fixtureText('deposit-v1', 'variants/mint.json')));
+  await settle();
+  assert.equal(h.flow.getState().current.walletStep, null, 'an abandoned mutation answer cannot install a wallet handoff');
+  h.flow.dispatch({ t: 'user', action: 'prepare' });
+  assert.equal(h.calls.length, 3, 'an unmounted flow sends nothing');
+  const again = h.flow.start();
+  h.calls[3].resolve(listBody([RESERVED().operation]));
+  await settle();
+  h.calls[4].resolve(RESERVED());
+  await settle();
+  assert.deepEqual(h.routes(), ['list', 'get', 'prepare', 'list', 'get']);
+  assert.equal(h.flow.getState().current.walletStep, null);
+  assert.equal(h.flow.getState().current.walletStepDeadlineMono, null, 'the server reservation is not a freshly issued step');
+  assert.equal(h.flow.getState().busy, null);
+  again();
+});
+
+test('a completed boot reconciles once; overlapping subscribers share it and a later mount reads only', async () => {
+  const h = deferredFlow();
+  const a = h.flow.start();
+  const b = h.flow.start();
+  a();
+  assert.equal(h.calls[0].signal.aborted, false, 'the remaining subscriber still owns the boot');
+  h.calls[0].resolve(listBody([RESERVED().operation]));
+  await settle();
+  h.calls[1].resolve(RESERVED());
+  await settle();
+  h.calls[2].resolve(RESERVED());
+  await settle();
+  assert.deepEqual(h.routes(), ['list', 'get', 'reconcile']);
+  b();
+  const c = h.flow.start();
+  h.calls[3].resolve(listBody([RESERVED().operation]));
+  await settle();
+  h.calls[4].resolve(RESERVED());
+  await settle();
+  assert.deepEqual(h.routes(), ['list', 'get', 'reconcile', 'list', 'get']);
+  c();
+});
+
+test('remount preserves the original handoff deadline and denial latch without a fresh prepare', async () => {
+  const h = lab('variant:mint');
+  await settle();
+  await h.act('prepare');
+  const prepared = h.state().current;
+  const deadline = prepared.walletStepDeadlineMono;
+  assert.ok(deadline > h.clock.monoMs());
+  let notifications = 0;
+  h.flow.subscribe(() => notifications++);
+  h.stop();
+  const afterStop = notifications;
+  h.clock.advance(deadline - h.clock.monoMs() + 1);
+  assert.equal(notifications, afterStop, 'the deadline timer is cancelled while the flow is unmounted');
+  h.fixture.script('list', reply(200, listBody([prepared.op])));
+  h.fixture.script('get', reply(200, { ...DRAFT(), operation: prepared.op, walletStep: null }));
+  const again = h.flow.start();
+  await settle();
+  assert.equal(h.state().current.walletStepDeadlineMono, deadline);
+  assert.equal(h.view().kind, 'handoff_expired');
+  assert.deepEqual(h.routes(), ['list', 'get', 'prepare', 'list', 'get']);
+  assert.deepEqual(h.fixture.unscripted(), []);
+  again();
+
+  const denied = lab('admission-denied');
+  await settle();
+  await denied.act('prepare');
+  const current = denied.state().current;
+  denied.stop();
+  denied.fixture.script('list', reply(200, listBody([current.op])));
+  denied.fixture.script('get', reply(200, { ...DRAFT(), operation: current.op, walletStep: null }));
+  const last = denied.flow.start();
+  await settle();
+  await denied.act('prepare');
+  assert.equal(denied.state().latched[OPERATION_ID], 'deposit_admission_required');
+  assert.equal(denied.count('prepare'), 1);
+  assert.equal(denied.count('create'), 0);
+  assert.equal(denied.count('reconcile'), 0);
+  last();
 });

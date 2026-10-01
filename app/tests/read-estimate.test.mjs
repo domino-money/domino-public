@@ -18,7 +18,7 @@ const good = fixture('available');
 const id = good.poolId;
 const caps = (version, enabled = true) => ({ contractVersion: version, dataMode: enabled ? 'live_read_only' : 'disabled', chainId: 4663, enabledReads: enabled ? version === v2.CONTRACT_VERSION ? ['pool-market'] : ['pool-market', 'token'] : [], walletAuthentication: false, privateAccounts: false, ownerTransactions: false, automation: false });
 const response = (body, version = v2.CONTRACT_VERSION, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': version } });
-function setup(override = () => null) {
+function setup(override = () => null, clock) {
   const calls = [];
   const fetch = async (url, init) => {
     calls.push({ url, init });
@@ -29,10 +29,24 @@ function setup(override = () => null) {
     if (url.endsWith('/token')) return response(old(JSON.parse(init.body).token === '0x0000000000000000000000000000000000000000' ? 'token.native' : 'token.success'), v1.CONTRACT_VERSION);
     return response(good.market, v1.CONTRACT_VERSION);
   };
-  return { calls, source: createEstimateSource({ enabled: true, validators: v1, fetch }, v2) };
+  return { calls, source: createEstimateSource({ enabled: true, validators: v1, fetch, clock }, v2) };
 }
 const observe = (data) => ({ data, receivedAt: 0, receivedMonotonic: 0 });
 const now = (seconds) => ({ wall: seconds * 1000, monotonic: seconds * 1000 });
+
+test('an absent v2 recovers after one minute without remount and shares its renewed capabilities check', async () => {
+  let at = 0, enabled = false;
+  const clock = { ...built('pipeline').realClock, now: () => 5000 + at, monotonic: () => at };
+  const { calls, source } = setup(url => url === '/api/read/v2/capabilities' ? response(caps(v2.CONTRACT_VERSION, enabled)) : null, clock);
+  assert.equal((await source.read('pool-market', { poolId: id })).estimate, undefined);
+  enabled = true; at = 59_999;
+  assert.equal((await source.read('pool-market', { poolId: id })).estimate, undefined);
+  at = 60_000;
+  const results = await Promise.all([source.read('pool-market', { poolId: id }), source.read('pool-market', { poolId: id })]);
+  assert.ok(results.every(result => result.estimate?.feeAprEstimate24hPercent === good.estimate.feeAprEstimate24hPercent));
+  assert.equal(calls.filter(call => call.url === '/api/read/v2/capabilities').length, 2);
+  assert.equal(calls.filter(call => call.url.endsWith('/pool-market')).length, 4, 'one POST per requested read, no fallback POST after a v2 answer');
+});
 
 test('v2 supplies one market+estimate; row keeps historical APR separate and tokens use v1', async () => {
   const { source, calls } = setup();

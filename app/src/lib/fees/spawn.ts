@@ -17,7 +17,7 @@ import { createHistoryCache } from './historyCache'
 export const feesStore = createFeesStore({
   historyCache: createHistoryCache(() => { try { return window.localStorage } catch { return null } }),
   spawn: () => new Worker(new URL('./feesReplay.worker.ts', import.meta.url)) as unknown as WorkerLike,
-  postState: (tokenIds) => chainState(tokenIds),
+  postState: (tokenIds, signal) => chainState(tokenIds, signal),
   later: whenVisibleAfter,
   timer: (ms, run) => {
     const id = setTimeout(run, ms)

@@ -3,7 +3,7 @@ import type { Hex } from 'viem'
 import * as executionRuntime from 'api-contracts/execution-v1/runtime.mjs'
 import { automationReadyUntil } from '../../finance/automationAvailability'
 import { financialFetch } from '../../finance/http'
-import { connectSequence, readSequenceRelease, settleStep } from '../../finance/sequenceLive'
+import { connectSequence, watchSequenceRelease, settleStep } from '../../finance/sequenceLive'
 import { errorCode, financeErrorText } from '../../finance/words'
 import { livePort } from '../../session/livePort'
 import { readyUntil, renewIn, switchOffer, type Readiness } from '../../lib/automate/switchGate'
@@ -40,8 +40,6 @@ interface Run {
 const LABEL = { 'turn-on': 'Turn on', pause: 'Pause' } as const satisfies Readonly<Record<Action, string>>
 const DONE: Readonly<Record<Action, string>> = { 'turn-on': 'Turned on.', pause: 'Paused.' }
 const PROGRESS: Partial<Record<Stage, string>> = { wallet: 'Confirm in your wallet.', chain: 'Waiting for the network.' }
-/** How long the published release is kept before a page that shows the switch asks for it again. */
-const RELEASE_KEEP_MS = 60_000
 
 /** This control's sentences for the codes a press meets; any other code goes through finance/words.ts. */
 const OWN: Readonly<Record<string, string>> = {
@@ -82,16 +80,6 @@ function noticeFor(error: unknown, sent: boolean, action: Action): { text: strin
   else if (offered) text = 'The wallet outcome may be unknown. Check your wallet activity before trying again.'
   else text = financeErrorText(code, 'Your wallet could not complete this step. Nothing was sent.', LABEL[action])
   return { text: sent ? text.replace(NOTHING, '').trim() || outcomeUnknown('transaction') : text, code: declined(inner) ? 'declined' : code }
-}
-
-let releaseRead: { at: number; ask: Promise<boolean> } | null = null
-/** Whether the sequence deployment is published (one public GET, kept a minute for every switch on the page). */
-function releaseAvailable(): Promise<boolean> {
-  const now = Date.now()
-  if (!releaseRead || now - releaseRead.at > RELEASE_KEEP_MS) {
-    releaseRead = { at: now, ask: readSequenceRelease().then((release) => release.kind === 'available', () => false) }
-  }
-  return releaseRead.ask
 }
 
 /** The service's word for this owner and vault, asked through the session: when its "ready" expires, or null (finance/automationAvailability.ts: a refusal is null). */
@@ -146,13 +134,7 @@ export function SequenceSwitch({ tokenId, holder, liquid, fallback = null, signI
   const wanted = sequence !== null && owner !== null
   useEffect(() => {
     if (!wanted) return
-    let live = true
-    void releaseAvailable().then((available) => {
-      if (live) setRelease(available)
-    })
-    return () => {
-      live = false
-    }
+    return watchSequenceRelease((value) => setRelease(value.kind === 'available'))
   }, [wanted])
 
   // The service is asked for a paused sequence of this owner's, in its session, while the page is in view, and again

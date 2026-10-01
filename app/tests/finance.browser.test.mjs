@@ -3468,6 +3468,8 @@ test('many receipts: the Positions tab shows four short rows at most, cancelled 
     assert.deepEqual(await rowTexts(list), ['In progress | Adding fees back', 'Done | Fees added back | 4.2 USDG', 'Done | Fees added back | 16.49 USDG + 1,086.59 UFG', 'Cancelled | 7 cancelled before sending']);
     await all.click();
     await s.page.waitForFunction(() => location.hash === '#/positions/receipts');
+    // The old Positions list also matches `full`; a changed hash alone does not mean the Receipts page committed.
+    await s.page.getByRole('heading', { level: 1, name: 'Receipts' }).waitFor();
     await full.locator('.dm-rcpt-list').waitFor();
     assert.equal(listReads(), 1, 'nor does the way back, nor See all again');
     // Changed on purpose (the owner, 2026-09-27, round 6: Show more vanished and the rest never came): the next page is read by
@@ -4448,12 +4450,24 @@ test('when the creation was sent but its receipt could not be read, the step sta
   // Changed on purpose (2026-09-25): once the press ends, a sent step whose receipt never settled is `sent`, not `chain`, so
   // nothing spins or says it waits for the network while nothing reads its receipt. The approval's own receipt is the second case.
   for (const [index, states] of [[1, ['done', 'sent']], [0, ['sent', 'upcoming']]]) {
-    const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true });
-    await routeChain(s, chain, CHAIN_METHODS, (method, params) => method === 'eth_getTransactionReceipt' && String(params[0]).toLowerCase() === sentHash(index)
-      ? { error: { code: -32000, message: 'header not found' } } : chain.request(method, params));
+    const s = await scenario({ clock: true }), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true });
+    let failedReads = 0;
+    await routeChain(s, chain, CHAIN_METHODS, (method, params) => {
+      if (method === 'eth_getTransactionReceipt' && String(params[0]).toLowerCase() === sentHash(index)) {
+        failedReads++;
+        return { error: { code: -32000, message: 'header not found' } };
+      }
+      return chain.request(method, params);
+    });
     try {
       await connectOnly(s.page);
       const card = await setUpFromLink(s, chain);
+      await until(() => failedReads >= 2, 'the same sent receipt retried', 30_000);
+      assert.equal(chain.sends.length, index + 1, 'recovering receipt reads never sends the transaction again');
+      assert.equal(await card.locator('p[role="status"]').count(), 0, 'a transient read failure does not end receipt recovery');
+      // Recovery is bounded by the existing four-minute deadline, not the old immediate-failure behavior.
+      // The operation is deliberately still busy; advance the controlled clock instead of waiting four real minutes.
+      await jump(s.page, '04:01', { pending: true });
       assert.equal((await said(card)).text, 'A transaction was sent. Check your wallet activity before pressing Set up automation again.');
       assert.deepEqual(await stepStates(card), states, 'the step is sent, not failed: only its receipt can say that');
       assert.equal(chain.sends.length, index + 1);
@@ -5186,7 +5200,10 @@ test('an initial position read failure recovers from the fees store before the p
     if (body.method === 'eth_blockNumber') {
       heads += 1;
       if (heads === 1) return new Response('Unavailable', { status: 500 });
-      if (heads === 2) { held = true; await gate; }
+      // Loading -> failed replaces the FeesCard subscription. Its cancelled read can remain in this mock while
+      // the new consumer starts a replacement; hold all recovery reads, not just that abandoned second request.
+      held = true;
+      await gate;
     }
     return fetch(url, init);
   };

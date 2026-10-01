@@ -47,6 +47,8 @@ export interface EdgeRuntime {
   waitUntil?: (work: Promise<unknown>) => void
   /** Keys refreshed in the background lately, with when: this isolate's own unless a test gives one. */
   refreshing?: Map<string, number>
+  /** A bounded foreground wait; its cancellation never cancels the background refresh. */
+  timer?: (ms: number, fire: () => void) => () => void
 }
 
 /** One public route's rules. */
@@ -64,6 +66,8 @@ export interface EdgePolicy {
   freshSeconds: number
   /** Past `freshSeconds` and before this, served at once and refreshed in the background. Absent: `freshSeconds`. */
   staleSeconds?: number
+  /** Return a ready refresh to the requesting visitor within this bound; no extra upstream request. */
+  refreshWaitMs?: number
 }
 
 /** The read Worker's request limit (bridge/src/worker.mjs LIMITS.requestBytes). */
@@ -176,19 +180,35 @@ async function keepable(response: Response, body: unknown, policy: EdgePolicy): 
   return policy.answers(body, text) && names(policy, text, version) && (policy.keep?.(text) ?? true) ? { text, version } : null
 }
 
-/** The Worker's answer to a stale entry's request, kept for the next visitor; a route that is off takes the entry out. */
-async function refresh(request: Request, env: BridgeEnv, rt: EdgeRuntime, key: string, body: unknown, policy: EdgePolicy): Promise<void> {
+/** Keep the refreshed answer for other visitors, and offer it to the caller waiting within its short bound. */
+async function refresh(request: Request, env: BridgeEnv, rt: EdgeRuntime, key: string, body: unknown, policy: EdgePolicy): Promise<Response | null> {
   try {
     const response = await forward(request, env)
     if (response.status === 404 && accepted(policy).includes(response.headers.get(CONTRACT_HEADER) ?? '')) {
       await rt.cache?.delete?.(new Request(key))
-      return
+      return response
     }
     const answer = await keepable(response, body, policy)
-    if (answer !== null) await keep(rt, key, answer, policy)
+    if (answer !== null) {
+      await keep(rt, key, answer, policy)
+      return fromCache(answer.text, answer.version, false)
+    }
   } catch {
     // The entry stands; a later request refreshes it.
   }
+  return null
+}
+
+/** One refresh, not a second request. A slow or failed refresh leaves the dated stale answer available. */
+function readyRefresh(work: Promise<Response | null>, ms: number, rt: EdgeRuntime): Promise<Response | null> {
+  return new Promise((resolve) => {
+    const timer = rt.timer ?? ((delay, fire) => {
+      const handle = setTimeout(fire, delay)
+      return () => clearTimeout(handle)
+    })
+    const cancel = timer(ms, () => resolve(null))
+    void work.then((response) => { cancel(); resolve(response) })
+  })
 }
 
 export async function answerFromEdge(request: Request, env: BridgeEnv, rt: EdgeRuntime, policy: EdgePolicy): Promise<Response> {
@@ -208,6 +228,10 @@ export async function answerFromEdge(request: Request, env: BridgeEnv, rt: EdgeR
         const work = refresh(again, env, rt, key, body, policy).finally(() => refreshing.delete(key))
         if (rt.waitUntil) rt.waitUntil(work)
         else void work
+        if (policy.refreshWaitMs) {
+          const fresh = await readyRefresh(work, policy.refreshWaitMs, rt)
+          if (fresh) return fresh
+        }
       }
       // The request that sends the refresh is the one the gateway counts: its page keeps the read it took.
       return fromCache(hit.text, hit.version, !renew)

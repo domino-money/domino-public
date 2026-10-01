@@ -29,9 +29,9 @@
  * Read again with the markets' 60 s refresh, a new answer changes the list on
  * screen only this way: the same listId changes nothing but the title; pools
  * that left the list leave at once; `none` or a route that is off switch to
- * the embedded list at once (how a rollback reaches open tabs); new pools or
- * a new order wait for a reload, or for a screen that shows the list to mount
- * again once the list on screen is 30 minutes old; a failure keeps the list.
+ * the embedded list at once (how a rollback reaches open tabs); valid new pools
+ * enter at once after the surviving pools in their existing order. A reorder
+ * alone waits for a remount after 30 minutes; a failure keeps the list.
  *
  * Changed 2026-09-28 (speed wave, item 8): a first read that found no answer
  * (its deadline passed, the service was busy, an edge page) put the embedded
@@ -307,16 +307,19 @@ export function nextList(shown: FeaturedList, waiting: FeaturedList | null, answ
   if (answer.kind === 'failed') return { shown, waiting }
   const candidate = listFrom(answer)
   if (candidate.source === 'bundled') return { shown: BUNDLED_LIST, waiting: null }
+  if (shown.source === 'bundled') return { shown: candidate, waiting: null }
   // The same list: its pools and order stay; its title follows the answer (a list gone stale says so).
-  if (shown.source !== 'bundled' && candidate.listId === shown.listId) return { shown: { ...shown, source: candidate.source }, waiting: null }
+  if (candidate.listId === shown.listId) return { shown: { ...shown, source: candidate.source }, waiting: null }
   const ids = idsOf(candidate)
-  if (shown.source !== 'bundled' && onlyRemovals(idsOf(shown), ids)) return { shown: candidate, waiting: null }
-  // New pools or a new order wait. Pools the service no longer lists leave the list on screen at once, unless none would stay.
-  if (shown.source !== 'bundled') {
-    const kept = shown.entries.filter((entry) => ids.includes(entry.poolId))
-    if (kept.length === 0) return { shown: candidate, waiting: null }
-    if (kept.length < shown.entries.length) return { shown: { ...shown, entries: kept }, waiting: candidate }
-  }
+  if (onlyRemovals(idsOf(shown), ids)) return { shown: candidate, waiting: null }
+  // Replacements cannot wait for a remount: remove departed pools, keep survivors
+  // in their existing order, and append only the newly admitted, validated entries.
+  const before = new Set(idsOf(shown))
+  const added = candidate.entries.filter((entry) => !before.has(entry.poolId))
+  const kept = shown.entries.flatMap((entry) => candidate.entries.filter((next) => next.poolId === entry.poolId))
+  if (added.length) return { shown: { ...candidate, entries: [...kept, ...added] }, waiting: null }
+  if (kept.length === 0) return { shown: candidate, waiting: null }
+  if (kept.length < shown.entries.length) return { shown: { ...shown, entries: kept }, waiting: candidate }
   return { shown, waiting: candidate }
 }
 

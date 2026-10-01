@@ -138,7 +138,7 @@ export interface PriceAnswer {
 
 export interface WalletPriceDeps {
   /** One provider GET for up to PRICE_BATCH addresses: its parsed body, or null. */
-  get: (addresses: readonly string[]) => Promise<unknown>
+  get: (addresses: readonly string[], signal?: AbortSignal) => Promise<unknown>
   /** Hands a token's artwork, found in the same reply, to the artwork resolver. */
   seed: (address: string, image: string | null) => void
   /** A clock, in ms: the app's is the wall clock, since the times it gives are kept in the browser (lib/walletMemory.ts). */
@@ -149,12 +149,13 @@ export function createWalletPrices(deps: WalletPriceDeps) {
   const kept = new Map<string, { quote: TokenQuote | null; at: number }>()
   // The GET each address is on the wire in: a later ask naming it waits for that GET instead of sending it again (round
   // 6: the card asks as each page names new tokens, and a page can land before the prices of the one before it do).
-  const onWire = new Map<string, Promise<boolean>>()
+  type Wire = { result: Promise<boolean>; controller: AbortController; users: number; settled: boolean }
+  const onWire = new Map<string, Wire>()
 
   /** Reads one batch and keeps what it answered (and hands on its artwork); false when the provider gave no usable answer. */
-  async function read(batch: readonly string[]): Promise<boolean> {
-    const body = await deps.get(batch).catch(() => null)
-    if (body === null || !Array.isArray(body)) return false
+  async function read(batch: readonly string[], signal: AbortSignal): Promise<boolean> {
+    const body = await deps.get(batch, signal).catch(() => null)
+    if (signal.aborted || body === null || !Array.isArray(body)) return false
     const at = deps.now()
     const pairs = pairsOf(body)
     for (const [address, quote] of quotesFromTokens(body, batch)) {
@@ -168,10 +169,12 @@ export function createWalletPrices(deps: WalletPriceDeps) {
   }
 
   /** One GET for `ask`, each of its addresses marked on the wire until it is answered. */
-  function send(ask: readonly string[]): Promise<boolean> {
-    const wire = read(ask)
+  function send(ask: readonly string[]): Wire {
+    const controller = new AbortController()
+    const wire: Wire = { result: read(ask, controller.signal), controller, users: 0, settled: false }
     for (const address of ask) onWire.set(address, wire)
-    void wire.finally(() => {
+    void wire.result.finally(() => {
+      wire.settled = true
       for (const address of ask) if (onWire.get(address) === wire) onWire.delete(address)
     })
     return wire
@@ -185,29 +188,57 @@ export function createWalletPrices(deps: WalletPriceDeps) {
    * PRICE_BATCH addresses (PRICE_GETS at most), all at once. `failed` when
    * every GET waited for gave no usable answer. Never throws.
    */
-  async function price(addresses: readonly string[]): Promise<PriceAnswer> {
+  async function price(addresses: readonly string[], options: { signal?: AbortSignal; onProgress?: (answer: PriceAnswer) => void } = {}): Promise<PriceAnswer> {
     const want = [...new Set(addresses.map((address) => address.toLowerCase()).filter((address) => ADDRESS.test(address)))]
     const sourceOf = (address: string) => (address === NATIVE ? WETH : address)
     const fresh = (address: string) => {
       const entry = kept.get(address)
       return entry !== undefined && deps.now() - entry.at < PRICE_TTL_MS ? entry : null
     }
+    const snapshot = (failed = false): PriceAnswer => {
+      const quotes = new Map<string, TokenQuote | null>()
+      const at = new Map<string, number>()
+      for (const address of want) {
+        const source = sourceOf(address)
+        const entry = source === USDG ? { quote: USDG_QUOTE, at: deps.now() } : fresh(source)
+        if (entry) {
+          quotes.set(address, entry.quote)
+          at.set(address, entry.at)
+        }
+      }
+      return { quotes, at, failed }
+    }
+    if (options.signal?.aborted) return snapshot()
     const needed = [...new Set(want.map(sourceOf))].filter((source) => source !== USDG && fresh(source) === null)
     const wires = new Set(needed.flatMap((source) => onWire.get(source) ?? []))
     const ask = needed.filter((source) => !onWire.has(source)).slice(0, PRICE_BATCH * PRICE_GETS)
     for (let i = 0; i < ask.length; i += PRICE_BATCH) wires.add(send(ask.slice(i, i + PRICE_BATCH)))
-    const answered = await Promise.all(wires)
-    const quotes = new Map<string, TokenQuote | null>()
-    const at = new Map<string, number>()
-    for (const address of want) {
-      const source = sourceOf(address)
-      const entry = source === USDG ? { quote: USDG_QUOTE, at: deps.now() } : fresh(source)
-      if (entry) {
-        quotes.set(address, entry.quote)
-        at.set(address, entry.at)
+    for (const wire of wires) wire.users++
+    let active = true
+    const publish = () => {
+      if (active && !options.signal?.aborted) options.onProgress?.(snapshot())
+    }
+    let cancel: () => void = () => undefined
+    const cancelled = new Promise<null>((resolve) => { cancel = () => resolve(null) })
+    options.signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      publish()
+      const completed = Promise.all([...wires].map((wire) => wire.result.then((ok) => { publish(); return ok })))
+      const answered = await Promise.race([completed, cancelled])
+      return snapshot(answered !== null && answered.length > 0 && !answered.includes(true))
+    } finally {
+      active = false
+      options.signal?.removeEventListener('abort', cancel)
+      for (const wire of wires) {
+        wire.users--
+        // A remount/new page may join in this turn. Cancel only after the last consumer really left.
+        queueMicrotask(() => {
+          if (wire.users > 0 || wire.settled) return
+          wire.controller.abort()
+          for (const [address, current] of onWire) if (current === wire) onWire.delete(address)
+        })
       }
     }
-    return { quotes, at, failed: answered.length > 0 && !answered.includes(true) }
   }
 
   return { price }
@@ -215,7 +246,7 @@ export function createWalletPrices(deps: WalletPriceDeps) {
 
 /** The app's one price memory, for this visit. */
 export const walletPrices = createWalletPrices({
-  get: (addresses) => tokenArtwork.tokenPrices(addresses),
+  get: (addresses, signal) => tokenArtwork.tokenPrices(addresses, signal),
   seed: (address, image) => tokenArtwork.seed(4663, address, image),
   now: () => Date.now(),
 })

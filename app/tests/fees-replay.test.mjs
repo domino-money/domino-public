@@ -178,7 +178,7 @@ test('the probe stops a history its budget cannot hold before any of it is read,
   // and windows of its life (the estimate's, which size the whole read); its life's Swaps are past PATH_REFINE_BYTES at
   // their rate, and the run stops there.
   const kinds = busy.relay.requests.map((r) => r.kind);
-  assert.deepEqual(kinds.slice(0, 6), ['transfer', 'initialize', 'probe', 'headers', 'settlements', 'swapBefore']);
+  assert.deepEqual(kinds.slice(0, 6), ['transfer', 'initialize', 'probe', 'settlements', 'headers', 'swapBefore']);
   assert.ok(kinds.slice(6).every((kind) => kind === 'span') && kinds.length > 6, 'then windows of its life only: nothing of the pool’s history');
   const windows = busy.relay.requests.filter((r) => r.kind === 'span');
   assert.ok(windows.every((r) => r.spans.length <= 4 && r.spans.every(([from, to]) => to - from + 1 <= 36_000)), 'small windows, a few a request');

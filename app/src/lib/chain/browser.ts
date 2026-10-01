@@ -227,7 +227,7 @@ function workRead(body: unknown): boolean {
   if (!body.includes('"eth_getBlockByNumber"')) return false
   try {
     const calls: unknown = JSON.parse(body)
-    return Array.isArray(calls) && calls.filter((call: unknown) => call !== null && typeof call === 'object' && 'method' in call && call.method === 'eth_getBlockByNumber').length > 1
+    return Array.isArray(calls) && calls.filter((call: { method?: unknown } | null) => call?.method === 'eth_getBlockByNumber').length > 1
   } catch {
     return false
   }
@@ -289,6 +289,11 @@ export function holdReads(): () => void {
   return () => pageReading(-1)
 }
 
+/** Keep the caller's cancellation reason at every boundary, including older browsers without throwIfAborted. */
+function checkAbort(signal?: AbortSignal): void {
+  if (signal?.aborted) throw signal.reason ?? new DOMException('cancelled', 'AbortError')
+}
+
 /**
  * The runtime for one read: `signal` aborted means nobody wants the answer, and no further call is made. 2026-09-28
  * (speed wave B, item 26): an `aside` read (an automated position's vault record, read beside its chart) is not one the
@@ -318,21 +323,26 @@ export function chainDeps(signal?: AbortSignal, aside = false): ChainDeps {
       const step = aside ? 0 : 1
       if (step) pageReading(1)
       let work = 0
+      const joined = either(init.signal, signal)
+      let bodyOwnsSignal = false
       try {
         await ready
-        if (signal?.aborted || init.signal?.aborted) throw signal?.reason ?? init.signal?.reason ?? new DOMException('cancelled', 'AbortError')
+        checkAbort(joined.signal)
         const remaining = sharedRest.until - Date.now()
         // A local refusal is not a new refusal from the RPC: do not broadcast it or lengthen the pause. Preserve the
         // caller's deadline and existing bounded retries instead of sleeping past its ten-second network budget.
         if (remaining > 0) return new Response(null, { status: 429, headers: { 'Retry-After': String(Math.ceil(remaining / 1000)) } })
         const started = Date.now()
-        let sent = await once(init)
+        const request = { ...init, signal: joined.signal }
+        let sent = await once(request)
         if (sent.response) work = workOf(pageFloor, init.body, Date.now() - started)
         // A refusal the page meets is most often one the RPC lifts within half a second: asked once more first.
-        if (sent.unreadable && !signal?.aborted) {
-          await pause(REASK_UNREADABLE_MS, signal)
-          sent = await once(init)
+        if (sent.unreadable && !joined.signal?.aborted) {
+          await pause(REASK_UNREADABLE_MS, joined.signal)
+          checkAbort(joined.signal)
+          sent = await once(request)
         }
+        checkAbort(joined.signal)
         // Still unreadable: the RPC's 429, which the chain code waits out and asks again, as it does a 429 it can read.
         const response = sent.response ?? new Response(null, { status: 429, statusText: 'Unreadable reply' })
         // 2026-09-28: a refusal rests every tab's lane, so the page's own next call meets a quiet address.
@@ -341,8 +351,13 @@ export function chainDeps(signal?: AbortSignal, aside = false): ChainDeps {
           publishRest(sharedRest, Date.now())
           tell('rest')
         }
-        return response
+        // Fetch resolves at the headers, not after the body. Keep the joined signal alive until consumption/cancel,
+        // so leaving a page also aborts a large reply already streaming, without cancelling another consumer.
+        const result = counted(response, () => undefined, joined.drop, signal)
+        bodyOwnsSignal = true
+        return result
       } finally {
+        if (!bodyOwnsSignal) joined.drop()
         if (step) pageReading(-1, work >= HEAVY_MS)
       }
     },
@@ -473,17 +488,15 @@ export interface ChainLane {
 function either(a: AbortSignal | null | undefined, b: AbortSignal | undefined): { signal: AbortSignal | undefined; drop: () => void } {
   if (!a || !b) return { signal: a ?? b, drop: () => undefined }
   const controller = new AbortController()
-  const fromA = () => controller.abort(a.reason)
-  const fromB = () => controller.abort(b.reason)
+  const abort = () => controller.abort(a.aborted ? a.reason : b.reason)
   const drop = () => {
-    a.removeEventListener('abort', fromA)
-    b.removeEventListener('abort', fromB)
+    a.removeEventListener('abort', abort)
+    b.removeEventListener('abort', abort)
   }
-  if (a.aborted) fromA()
-  else if (b.aborted) fromB()
+  if (a.aborted || b.aborted) abort()
   else {
-    a.addEventListener('abort', fromA, { once: true })
-    b.addEventListener('abort', fromB, { once: true })
+    a.addEventListener('abort', abort, { once: true })
+    b.addEventListener('abort', abort, { once: true })
   }
   return { signal: controller.signal, drop }
 }

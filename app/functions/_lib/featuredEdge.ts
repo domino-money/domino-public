@@ -20,8 +20,11 @@
  *
  * For how long: 60 seconds as it is (LIST_SECONDS), then, changed on purpose
  * 2026-09-28 (speed wave, item 7, the owner's OK), up to 15 minutes
- * (STALE_SECONDS) served at once while the request that found it older goes on
- * to the Worker in the background to keep a newer one. A visitor who came
+ * (STALE_SECONDS) retained while the request that found it older goes on
+ * to the Worker. That visitor waits at most REFRESH_WAIT_MS for this same
+ * refresh, receiving its newer validated answer without another polling cycle;
+ * a slow or failed refresh leaves the dated cached list in place. Others hit
+ * the cache while this single refresh is in flight. A visitor who came
  * after the site was quiet for more than a minute used to wait for the VM's
  * own 0.55 to 0.78 s (Home's figures at 1.2 s, measured; 0.5 s from the edge).
  * A route switched off (READ_V5_BRIDGE_ENABLED=false) is seen by that
@@ -66,6 +69,8 @@ export const FEATURED_PATH = '/api/read/v5/featured-pools'
 export const LIST_SECONDS = 60
 /** How long a kept list is served at all, refreshed in the background once LIST_SECONDS old (speed wave, item 7). */
 export const STALE_SECONDS = 15 * 60
+/** Below the browser's 1.5 s featured deadline; does not add a gateway read. */
+export const REFRESH_WAIT_MS = 1_000
 
 /** The synthetic GET is scoped to the validated app origin: preview never reads or replaces production entries. */
 export const cacheKey = (version: string, origin = APP_ORIGIN) => `${origin}/api/read/v5/cache/${encodeURIComponent(version)}/featured-pools`
@@ -87,5 +92,6 @@ export function answerFeatured(request: Request, env: BridgeEnv, rt: FeaturedRun
     answers: (_body, text) => valid(text),
     freshSeconds: LIST_SECONDS,
     staleSeconds: STALE_SECONDS,
+    refreshWaitMs: REFRESH_WAIT_MS,
   })
 }

@@ -597,6 +597,25 @@ test('guided recent() can replay only a fixed finalized snapshot after wallet et
   assert.equal(chain.log.includes('claimNonce'),false);
   const broken = createSequenceClient(wallet,{...chain.d,expiresAt:0},()=>1000,undefined,async()=>({...snapshot,blockHash:hexOf(0xcc,32)}));
   await assert.rejects(broken.recent(),/chain_changed/);
+  for (const delayedMethod of ['eth_call', 'eth_getCode']) {
+    let now = 1000, delayed = false, snapshots = 0;
+    const slow = { ...chain.wallet, request: async (method, params) => {
+      const value = await original(method, params);
+      if (method === delayedMethod && !delayed) { delayed = true; now += 31; }
+      return value;
+    } };
+    const recovered = createSequenceClient(slow, { ...chain.d, expiresAt: 0 }, () => now, undefined, async () => {
+      snapshots++; return snapshot;
+    });
+    assert.deepEqual(await recovered.recent(), [], delayedMethod);
+    assert.equal(snapshots, 1, 'contract read timeout can use the same validated snapshot');
+    const exhausted = createSequenceClient(slow, { ...chain.d, expiresAt: 0 }, () => now, undefined, async () => {
+      now += 25; return snapshot;
+    });
+    delayed = false;
+    await assert.rejects(exhausted.recent(), /sequence_read_timeout/);
+  }
+  assert.equal(chain.log.includes('claimNonce'), false);
 });
 
 test('guided inspectRoot() rechecks deployed links, NFT owner, pool identity and approval from a typed snapshot', async () => {
@@ -898,13 +917,15 @@ test('owner sequence reads distinguish an undecodable contract result and their 
   await assert.rejects(undecodable.recent(), /sequence_read_decode/);
 
   let now = 1000;
+  let snapshots = 0;
   const delayed = fakeChain({ sequences: 0 });
   const timeout = createSequenceClient({ ...delayed.wallet, request: async (method, params) => {
     const value = await delayed.wallet.request(method, params);
     if (method === 'eth_accounts') now += 31;
     return value;
-  } }, { ...delayed.d, expiresAt: 0 }, () => now);
+  } }, { ...delayed.d, expiresAt: 0 }, () => now, undefined, async () => { snapshots++; throw new Error('not allowed'); });
   await assert.rejects(timeout.recent(), /sequence_read_timeout/);
+  assert.equal(snapshots, 0, 'account timeout never falls back to a contract snapshot');
   assert.equal(delayed.log.includes('claimNonce'), false);
 });
 

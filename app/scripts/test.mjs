@@ -81,6 +81,7 @@ execFileSync(
     'tests/position-activity.test.mjs',
     'tests/docs.test.mjs',
     'tests/price-series.test.mjs',
+    'tests/price-series-recovery.test.mjs',
     'tests/pool-history.test.mjs',
     'tests/card-series.test.mjs',
     'tests/token-search.test.mjs',
@@ -107,6 +108,7 @@ execFileSync(
     'tests/automation-availability.test.mjs',
     // 2026-09-25 (owner): a sequence's Turn on and Pause, offered only on the automation service's fresh word.
     'tests/sequence-switch.test.mjs',
+    'tests/receipt-recovery.test.mjs',
     'tests/nonce.test.mjs',
     'tests/setup-recovery.test.mjs',
     // 2026-09-25: the EIP-7702 delegates this app recognizes, and the confirmation funding waits for otherwise.
@@ -127,6 +129,7 @@ execFileSync(
     'tests/fees-cache-store.test.mjs',
     'tests/fees-freshness.test.mjs',
     'tests/fees-checkpoint-recovery.test.mjs',
+    'tests/fees-initialize-recovery.test.mjs',
     'tests/fees-worker-correlation.test.mjs',
     'tests/apr-prefetch-queue.test.mjs',
     // 2026-09-25: the price path (a busy pool's position from the Swaps of its own life), its estimate and its two reads.

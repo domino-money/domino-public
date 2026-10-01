@@ -21,6 +21,39 @@ const initial = fixture('overview');
 const pool = initial.pools[0].poolId;
 const token = initial.tokens[0].address;
 
+test('stored APR age is counted once and still expires on its monotonic deadline', () => {
+  const data = fixture('overview'), at = 100_000;
+  data.generatedAt = data.pools[0].observedAt + 14;
+  const p = data.pools[0].value.estimate.provenance;
+  p.effectiveMarketAgeSeconds = 14; p.snapshotAgeSeconds = 14;
+  const provenance = { transport: 'bridge', receivedAt: at, receivedMonotonic: at, attempts: 1 };
+  const row = overviewRows({ data, provenance })[0];
+  const { presentAprEstimate } = built('aprEstimate');
+  const read = ms => presentAprEstimate(row.feeAprEstimate, { wall: 999999999, monotonic: at + ms });
+  assert.equal(read(0).ageSeconds, 14, 'not 28 seconds');
+  assert.equal(read(45_000).ageSeconds, 59);
+  assert.equal(read(286_000).text !== null, true, 'the original 300-second boundary is retained');
+  assert.equal(read(287_000).text, null, 'expired data is never promoted to current');
+  assert.equal(row.poolState.servedAgeSeconds, 14, 'pool state keeps its own stored observation age');
+});
+
+test('a successful disabled capability answer is renewed after sixty seconds, shared by concurrent callers', async () => {
+  let at = 0, enabled = false, calls = 0;
+  const clock = { ...built('pipeline').realClock, now: () => at, monotonic: () => at };
+  const source = createBridgeSource({ enabled: true, validators: v3, namespace: 'v3', clock, fetch: async () => {
+    calls++; const data = fixture('capabilities');
+    if (!enabled) { data.dataMode = 'disabled'; data.enabledReads = []; }
+    return new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json', 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
+  } });
+  assert.equal((await source.routeEnabled('overview')).outcome.state, 'disabled');
+  enabled = true; at = 59_999;
+  assert.equal((await source.routeEnabled('overview')).outcome.state, 'disabled');
+  at = 60_000;
+  const result = await Promise.all([source.routeEnabled('overview'), source.routeEnabled('overview')]);
+  assert.ok(result.every(value => value.state === 'enabled'));
+  assert.equal(calls, 2);
+});
+
 function setup({ answer = () => fixture('overview'), enabled = true, clock } = {}) {
   const calls = [];
   const fetch = async (path, init) => {
@@ -50,9 +83,10 @@ test('stored table gets metadata and APR in one overview POST, retains original 
   const read = await source.read('overview', { poolIds: [pool] });
   assert.equal(calls.length, 2, 'the following page reuses its just-read bundle briefly');
   const row = overviewRows(read)[0];
-  assert.ok(Math.abs(row.provenance.market.receivedAt - (read.provenance.receivedAt - 40_000)) < 1);
+  assert.equal(row.provenance.market.receivedAt, read.provenance.receivedAt, 'market/APR ages already include stored age');
   const option = overviewPoolOption(read, pool);
   assert.equal(option.kind, 'stored'); assert.equal(option.block, data.pools[0].value.market.snapshot.number);
+  assert.equal(option.readAt, read.provenance.receivedAt - 40_000, 'pool state still retains its actual observation age');
   assert.equal(option.catalogue, null, 'a stored observation is not fabricated catalogue provenance');
   const metadata = await source.read('token', { token });
   assert.equal(metadata.state, 'ok'); assert.equal(calls.length, 2, 'metadata is reusable outside the table');
@@ -1114,7 +1148,7 @@ test('the copy paints the rows before the first read, as old as they are and wai
   assert.equal(row.poolId, pool);
   assert.equal(row.figuresPending, true, 'what it has no figure for waits for the answer');
   assert.equal(row.tvlUsd.value, overviewRows(overviewOk(wall - 30_000, data))[0].tvlUsd.value, 'the copy’s own figure');
-  assert.equal(row.provenance.market.receivedAt, wall - 30_000 - (data.generatedAt - data.pools[0].observedAt) * 1000, 'dated from the copy’s arrival, less the store’s own age');
+  assert.equal(row.provenance.market.receivedAt, wall - 30_000, 'the copy ages from its original arrival, without counting stored metric age twice');
   assert.equal(row.provenance.market.receivedMonotonic, undefined);
   const release = provider.recoverQuietly();
   provider.ensure();

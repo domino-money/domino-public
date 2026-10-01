@@ -48,8 +48,8 @@
  * - 2026-09-28 (speed wave B, item 16): a position's page hands the store its own
  *   /state read (`offer`), so its cards start from it rather than reading it
  *   again, and follows the store's minute read (`position`) rather than keeping
- *   a clock of its own. Item 15: the minute read waits while a page's run is on
- *   its way (a chart being drawn) and goes as soon as it is over.
+ *   a clock of its own. Current state keeps that visible-minute cadence even during
+ *   a slow replay; each replay still verifies only against its captured Run.state.
  * - Replay checkpoints and live state stay memory-only. A successful public history
  *   may be saved for display on a later visit; it is restored as `cached`, never
  *   as a current chain state, and re-read independently in the background.
@@ -75,7 +75,7 @@ export interface StoreDeps {
   now?: () => number
   spawn: () => WorkerLike
   /** The /state read of up to eight ids (client.ts chainState: the relay's read, from the chain since 2026-09-25). */
-  postState: (tokenIds: readonly string[]) => Promise<RelayAnswer<StateResponse>>
+  postState: (tokenIds: readonly string[], signal?: AbortSignal) => Promise<RelayAnswer<StateResponse>>
   /** Calls `run` once `ms` have passed and the page is visible; returns a cancel. */
   later: (ms: number, run: () => void) => () => void
   /** A plain timer (for letting go of an id a moment after its last screen leaves); returns a cancel. */
@@ -276,9 +276,10 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   let workerFailures = 0
   let nextRunId = 0
   let refresh: (() => void) | null = null
-  /** The minute read came while a page's run was on its way: it goes once that run is over (item 15). */
-  let held = false
   const asking = new Set<string>()
+  const stateReads = new Map<string, { ids: readonly string[]; stop: AbortController; retained: boolean }>()
+  /** An explicit after-action refresh also serves the store's cache when no screen is currently subscribed. */
+  const retainedState = new Set<string>()
   let queued: string[] = []
   let flushing = false
 
@@ -358,7 +359,6 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       workerBroken = false
       for (const e of entries.values()) next(e)
     })
-    if (held && !drawing()) refreshNow()
   }
 
   function theWorker(): WorkerLike | null {
@@ -396,7 +396,6 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     e.running = null
     finished(e, run, message.result, Number(message.wait) || 0)
     next(e)
-    if (held && !drawing()) refreshNow()
   }
 
   /**
@@ -555,8 +554,13 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     next(e)
   }
 
-  function ask(ids: readonly string[]): void {
+  function ask(ids: readonly string[], retain = false): void {
     for (const id of ids) {
+      if (retain) {
+        const read = stateReads.get(id)
+        if (read) read.retained = true
+        else retainedState.add(id)
+      }
       if (asking.has(id)) continue
       asking.add(id)
       queued.push(id)
@@ -569,11 +573,17 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       queued = []
       for (let i = 0; i < batch.length; i += MAX_STATE_IDS) {
         const part = batch.slice(i, i + MAX_STATE_IDS)
+        const read = { ids: part, stop: new AbortController(), retained: part.some((id) => retainedState.has(id)) }
+        for (const id of part) { stateReads.set(id, read); retainedState.delete(id) }
         deps
-          .postState(part)
+          .postState(part, read.stop.signal)
           .catch((): RelayAnswer<StateResponse> => ({ ok: false, failure: 'unavailable', retryAfterMs: 0 }))
           .then((answer) => {
             for (const id of part) {
+              // An aborted request can resolve after a remount started its replacement. It owns neither that
+              // replacement's dedup marker nor the new subscriber's state.
+              if (stateReads.get(id) !== read) continue
+              stateReads.delete(id)
               asking.delete(id)
               const e = entries.get(id)
               if (e) applyState(e, answer)
@@ -583,10 +593,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     })
   }
 
-  /** Whether a page's run (its chart) is on its way. */
-  const drawing = () => [...entries.values()].some((e) => e.running && e.pageRefs > 0)
   function refreshNow(): void {
-    held = false
     const ids = [...entries.values()].filter(shown).map((e) => e.id)
     if (ids.length === 0) return
     ask(ids)
@@ -596,8 +603,9 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     if (refresh) return
     refresh = deps.later(STATE_REFRESH_MS, () => {
       refresh = null
-      if (drawing()) held = true
-      else refreshNow()
+      // Keep current figures on their existing visible-minute cadence. A history run retains its own immutable
+      // Run.state for verification; next() resumes from that result only after it finishes, never concurrently.
+      refreshNow()
     })
   }
 
@@ -606,6 +614,18 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   function hold(e: Entry): void {
     e.release?.()
     e.release = null
+  }
+
+  function releaseState(e: Entry): void {
+    if (shown(e)) return
+    if (!retainedState.has(e.id) && queued.includes(e.id)) {
+      queued = queued.filter((id) => id !== e.id)
+      asking.delete(e.id)
+    }
+    const read = stateReads.get(e.id)
+    if (!read || read.retained || read.ids.some((id) => { const other = entries.get(id); return other && shown(other) })) return
+    for (const id of read.ids) if (stateReads.get(id) === read) { stateReads.delete(id); asking.delete(id) }
+    read.stop.abort()
   }
 
   /**
@@ -626,7 +646,6 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       if (![...entries.values()].some(shown)) {
         refresh?.()
         refresh = null
-        held = false
       }
     })
   }
@@ -658,6 +677,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       for (const e of own) {
         e.listeners.delete(listener)
         add(e, -1)
+        releaseState(e)
         letGo(e)
       }
       if (!detailOpen()) for (const e of entries.values()) if (e.prefetchRefs > 0) next(e)
@@ -689,11 +709,6 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
         unsubscribe()
         if (historyRefs(e) === 0) {
           e.prefetchRevalidating = false
-          // A queued request has not reached the RPC yet: navigation/cancellation can still withdraw it.
-          if (e.stateRefs === 0 && queued.includes(id)) {
-            queued = queued.filter((pending) => pending !== id)
-            asking.delete(id)
-          }
           stopRun(e)
           e.retry?.(); e.retry = null
           e.stateRetry?.(); e.stateRetry = null
@@ -727,8 +742,8 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
         if (e?.view.phase === 'cached') invalidate(e)
       }
       const known = (list: readonly string[]) => list.filter((id) => entries.get(id)?.answered)
-      ask(known(ids))
-      deps.timer(AFTER_ACTION_MS, () => ask(known(ids)))
+      ask(known(ids), true)
+      deps.timer(AFTER_ACTION_MS, () => ask(known(ids), true))
     },
     offer(answer) {
       if (answer.ok) for (const position of answer.value.positions) applyState(entry(position.tokenId), answer)

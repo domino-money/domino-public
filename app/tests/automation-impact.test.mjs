@@ -261,9 +261,9 @@ test('the vault read early, from the factory’s first block: a card within it r
   const asked = [];
   const record = { executions: impact.executionsOf(LOGS, VAULT, TOKEN), paid: new Map() };
   const answers = [record, record];
-  const store = impact.vaultStore(async (...ask) => { asked.push(ask.slice(3)); return answers.shift() ?? null; }, 60_000, { set: () => undefined, now: () => 0 });
+  const store = impact.vaultStore(async (...ask) => { asked.push(ask.slice(3, 5)); return answers.shift() ?? null; }, 60_000, { set: () => undefined, now: () => 0 });
   const settle = () => new Promise((done) => setImmediate(done));
-  const stop = store.subscribe(() => undefined);
+  const stop = store.subscribe(VAULT, TOKEN, () => undefined);
   assert.equal(impact.VAULT_FIRST_BLOCK, 69_239_633);
   store.want(VAULT, TOKEN, [USDG, UFG], impact.VAULT_FIRST_BLOCK, 74_118_377);
   // The card asks its own blocks while the early read is on its way: nothing more is read for them.
@@ -286,10 +286,10 @@ test('a vault read that fails is asked again a minute later, with the latest blo
   const timers = [];
   const asked = [];
   const answers = [null, { executions: impact.executionsOf(LOGS, VAULT, TOKEN), paid: new Map() }];
-  const store = impact.vaultStore(async (...ask) => { asked.push(ask.slice(3)); return answers.shift() ?? null; }, 60_000, { set: (run, ms) => timers.push({ run, ms }), now: () => clock });
+  const store = impact.vaultStore(async (...ask) => { asked.push(ask.slice(3, 5)); return answers.shift() ?? null; }, 60_000, { set: (run, ms) => timers.push({ run, ms }), now: () => clock });
   const settle = () => new Promise((done) => setImmediate(done));
   let heard = 0;
-  const stop = store.subscribe(() => { heard += 1; });
+  const stop = store.subscribe(VAULT, TOKEN, () => { heard += 1; });
   assert.equal(store.get(VAULT, TOKEN), null, 'nothing read yet: the card waits');
   store.want(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_600_000);
   await settle();
@@ -314,9 +314,78 @@ test('a vault read that fails is asked again a minute later, with the latest blo
   store.want(VAULT, '42', [USDG, UFG], 1, 2);
   await settle();
   clock += 60_000;
-  timers.shift().run();
+  assert.equal(timers.length, 0, 'an unobserved warm read never schedules retries');
   await settle();
   assert.equal(asked.length, 3);
+});
+
+test('vault retries belong to the observed position, not listeners of another position', async () => {
+  let now = 1000;
+  const timers = [];
+  const calls = [];
+  const store = impact.vaultStore(async (...ask) => { calls.push(ask[1]); return null; }, 100, {
+    set: (run) => { timers.push(run); return run; },
+    clear: () => undefined,
+    now: () => now,
+  });
+  const old = store.subscribe(VAULT, TOKEN, () => undefined);
+  store.want(VAULT, TOKEN, [USDG, UFG], 1, 2);
+  await new Promise(setImmediate);
+  const staleTimer = timers[0];
+  old();
+  const current = store.subscribe(VAULT, '42', () => undefined);
+  store.want(VAULT, '42', [USDG, UFG], 1, 2);
+  await new Promise(setImmediate);
+  now += 100;
+  staleTimer();
+  await new Promise(setImmediate);
+  assert.deepEqual(calls, [TOKEN, '42']);
+  current();
+});
+
+test('last vault subscriber cancels its read; shared readers survive and late answers cannot replace a new read', async () => {
+  const calls = [];
+  const store = impact.vaultStore((...ask) => new Promise((resolve) => calls.push({ signal: ask[5], resolve })), 100, { set: () => undefined, now: () => 1000 });
+  const a = store.subscribe(VAULT, TOKEN, () => undefined);
+  const b = store.subscribe(VAULT, TOKEN, () => undefined);
+  store.want(VAULT, TOKEN, [USDG, UFG], 1, 2);
+  a();
+  assert.equal(calls[0].signal.aborted, false);
+  b();
+  assert.equal(calls[0].signal.aborted, true);
+  const next = store.subscribe(VAULT, TOKEN, () => undefined);
+  store.want(VAULT, TOKEN, [USDG, UFG], 1, 3);
+  b();
+  assert.equal(calls[1].signal.aborted, false, 'repeated old cleanup cannot cancel the remounted consumer');
+  calls[0].resolve({ executions: [], paid: new Map() });
+  await new Promise(setImmediate);
+  assert.equal(store.get(VAULT, TOKEN), null, 'cancelled response does not land');
+  calls[1].resolve({ executions: [], paid: new Map() });
+  await new Promise(setImmediate);
+  assert.equal(store.get(VAULT, TOKEN).to, 3);
+  next();
+});
+
+test('a remounted vault consumer resumes the remaining cooldown without waiting for another render', async () => {
+  let now = 1000;
+  const timers = [];
+  let calls = 0;
+  const store = impact.vaultStore(async () => { calls++; return null; }, 100, {
+    set: (run, ms) => { timers.push({ run, ms }); return run; }, clear: () => undefined, now: () => now,
+  });
+  const first = store.subscribe(VAULT, TOKEN, () => undefined);
+  store.want(VAULT, TOKEN, [USDG, UFG], 1, 2);
+  await new Promise(setImmediate);
+  first();
+  now += 40;
+  const second = store.subscribe(VAULT, TOKEN, () => undefined);
+  store.want(VAULT, TOKEN, [USDG, UFG], 1, 2);
+  assert.equal(timers.at(-1).ms, 60);
+  now += 60;
+  timers.at(-1).run();
+  await new Promise(setImmediate);
+  assert.equal(calls, 2);
+  second();
 });
 
 test('automation attribution exposes only full interval coverage, never an early warm record or failed expansion', () => {

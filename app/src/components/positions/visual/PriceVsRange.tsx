@@ -8,7 +8,7 @@ import { Pill } from '../../ui'
 import { TokenLabel } from '../../read/TokenLabel'
 import { logScale } from '../../../lib/chart/scale'
 import { nearestIndex } from '../../../lib/chart/inspect'
-import type { FeeHistoryView, HourlyPrices, PositionState } from '../../../lib/fees/types'
+import type { FeeDisplayState, FeeHistoryView, HourlyPrices } from '../../../lib/fees/types'
 import { useFeeHistory } from '../../../lib/fees/useFeeHistory'
 import { shortAmount } from '../../../lib/format/amount'
 import { group } from '../../../lib/format/decimal'
@@ -38,7 +38,9 @@ export interface PriceSeries {
   points: ReadonlyArray<PricePoint>
   /** The index where the known hours stop and only the current price follows (an unfinished history); -1 when continuous. */
   gapAt: number
-  state: PositionState
+  state: FeeDisplayState
+  /** Presentation qualification only; a retained or estimated series never promotes its fees history. */
+  quality: 'verified' | 'estimated' | 'cached' | 'partial'
 }
 
 /** A price at most six significant digits, grouped, nothing rounded up (`407.278`, `0.00245312`). */
@@ -56,7 +58,7 @@ function priceText(decimal: string): string {
  * verified, the closes stop where the replay stopped: the current price then
  * stands alone at the end, never joined to them.
  */
-function priceSeries(prices: HourlyPrices, state: PositionState, verified: boolean): PriceSeries | null {
+function priceSeries(prices: HourlyPrices, state: FeeDisplayState, quality: PriceSeries['quality']): PriceSeries | null {
   const [c0, c1] = state.currencies
   if (c0.decimals === null || c1.decimals === null || prices.hours.length === 0) return null
   const d0 = c0.decimals
@@ -77,20 +79,20 @@ function priceSeries(prices: HourlyPrices, state: PositionState, verified: boole
   const now = point(state.timestamp, state.sqrtPriceX96, state.tick)
   let gapAt = -1
   if (now.t > last.t) {
-    if (verified) {
+    if (quality === 'verified' || quality === 'cached') {
       if (now.t - HOUR > last.t) points.push({ ...last, t: now.t - HOUR })
     } else gapAt = points.length
     points.push(now)
   }
-  return { points, gapAt, state }
+  return { points, gapAt, state, quality }
 }
 
 /** The price line of a position's pool, when its fees history has read one (§12.1); null otherwise. */
 export function usePriceSeries(tokenId: string | null): PriceSeries | null {
   const view: FeeHistoryView = useFeeHistory(tokenId, 'page')
   return useMemo(() => {
-    if (view.phase === 'verified') return priceSeries(view.prices, view.state, true)
-    if (view.phase === 'unclaimed-only' && view.prices) return priceSeries(view.prices, view.state, false)
+    if (view.phase === 'verified' || view.phase === 'estimated' || view.phase === 'cached') return priceSeries(view.prices, view.state, view.phase)
+    if (view.phase === 'unclaimed-only' && view.prices) return priceSeries(view.prices, view.state, 'partial')
     return null
   }, [view])
 }
@@ -103,6 +105,8 @@ type Where = 'inside' | 'under' | 'over' | 'closed'
  * before any history, and writes them exactly as the header does, so one screen never shows two prices now.
  */
 export interface RangeFacts {
+  /** The actual current-price snapshot, never inferred from a historical line's timestamp. */
+  block: number
   base: TokenDisplay
   quote: TokenDisplay
   /** The range's ends as prices, for geometry only: 0 and Infinity at the pool's limits. */
@@ -131,6 +135,7 @@ export function rangeFacts(card: LiveCard, price: CardPoolPrice | null): RangeFa
   const shift = Math.pow(10, base.decimals - quote.decimals)
   const at = (tick: number) => Math.pow(1.0001, tick) * shift
   return {
+    block: price.block,
     base,
     quote,
     lower: low.end.kind === 'limit' ? 0 : at(ticks.lower),
@@ -198,8 +203,15 @@ export function PriceVsRange({ series }: { series: PriceSeries | null; unit?: Re
 function PriceChart({ facts, series }: { facts: RangeFacts; series: PriceSeries | null }) {
   const { base, quote, lower, upper, lowerText, upperText, now, nowText, where } = facts
   const phone = useMediaQuery('(max-width: 767px)')
-  // The line, its last point the price now as the header has it (one price now on the screen).
-  const points = useMemo(() => (series ? [...series.points.slice(0, -1), { ...series.points[series.points.length - 1], price: now, text: nowText, inRange: where === 'inside' }] : []), [series, now, nowText, where])
+  // Only the same snapshot may share the header's current-price text. A retained line keeps its real endpoint:
+  // writing a newer price there would fabricate a move at the old timestamp. The current dot is separate.
+  const points = useMemo(() => {
+    if (!series) return []
+    const last = series.points[series.points.length - 1]
+    return facts.block === series.state.block && last?.t === series.state.timestamp
+      ? [...series.points.slice(0, -1), { ...last, price: now, text: nowText, inRange: where === 'inside' }]
+      : series.points
+  }, [series, facts.block, now, nowText, where])
   const gapAt = series?.gapAt ?? -1
   const drawn = points.length > 1
   const start = drawn ? points[0].t : 0
@@ -331,7 +343,7 @@ function PriceChart({ facts, series }: { facts: RangeFacts; series: PriceSeries 
   }
 
   return (
-    <div className="dm-pvr-wrap" data-pvr-where={where} data-pvr-line={drawn ? '' : undefined}>
+    <div className="dm-pvr-wrap" data-pvr-where={where} data-pvr-line={drawn ? '' : undefined} data-pvr-quality={series?.quality}>
       <p className="dm-pvr-says">
         {where === 'closed' ? (
           <Pill dot>Closed</Pill>
@@ -346,7 +358,7 @@ function PriceChart({ facts, series }: { facts: RangeFacts; series: PriceSeries 
         className="dm-pvr"
         height={phone ? 180 : 208}
         padding={{ top: 12, right: gutter, bottom: 30, left: 0 }}
-        label="Price range"
+        label={series && series.quality !== 'verified' ? `Price range (${series.quality})` : 'Price range'}
         points={drawn ? points.length : 0}
         indexAt={(px, plot) => nearestIndex(xs, start + ((px - plot.left) / Math.max(1, plot.right - plot.left)) * (end - start))}
         valueText={(index) => `${shortDate(points[index].t)} ${shortTime(points[index].t)}, ${points[index].text}`}

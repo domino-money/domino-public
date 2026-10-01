@@ -488,10 +488,15 @@ export function PortfolioTokens({ address }: { address: string }) {
   const settled = !loading && snap !== null
   useEffect(() => {
     if (ask === '') return
-    let alive = true
+    const controller = new AbortController()
     const asked = ask.split(',')
-    void walletPrices.price(asked).then((answer) => {
-      if (!alive) return
+    void walletPrices.price(asked, {
+      signal: controller.signal,
+      onProgress: (answer) => {
+        if (answer.quotes.size > 0) setBook((before) => withAnswer(before, answer, Date.now()))
+      },
+    }).then((answer) => {
+      if (controller.signal.aborted) return
       // A new answer goes over the ones before it, each at its own time; a GET that failed takes nothing away, but a
       // price answered more than an hour ago stops counting.
       setBook((before) => withAnswer(before, answer, Date.now()))
@@ -500,7 +505,7 @@ export function PortfolioTokens({ address }: { address: string }) {
       if (settled) setPainted(true)
     })
     return () => {
-      alive = false
+      controller.abort()
     }
   }, [ask, settled])
 

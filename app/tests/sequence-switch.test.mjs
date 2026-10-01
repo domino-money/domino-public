@@ -13,6 +13,75 @@ import * as runtime from '../../api-contracts/execution-v1/runtime.mjs';
 const require = createRequire(import.meta.url);
 const { NOT_READY_RECHECK_MS, READY_KEEP_MS, READY_RENEW_LEAD_MS, READY_RENEW_MIN_MS, READY_RENEW_MS, readyFor, readyUntil, renewIn, switchOffer } = require('../.test-build/app/src/lib/automate/switchGate.js');
 const { automationAvailable, automationReadyUntil } = require('../.test-build/app/src/finance/automationAvailability.js');
+const { createReleaseWatch, readRelease } = require('../.test-build/app/src/finance/release.js');
+
+const drainRelease = async () => { for (let i = 0; i < 15; i++) await Promise.resolve(); };
+function releaseWatchFixture(read) {
+  let now = 0, shown = true, wake = () => {};
+  const timers = new Set(), calls = [];
+  const ports = { now: () => now, visible: () => shown,
+    later(fn, ms) { const timer = { fn, at: now + ms }; timers.add(timer); return () => timers.delete(timer); },
+    visibility(fn) { wake = fn; return () => { wake = () => {}; }; },
+  };
+  const watch = createReleaseWatch(signal => { calls.push(signal); return read(signal, calls.length); }, ports);
+  return { watch, calls, timers,
+    async advance(ms) { now += ms; for (const timer of [...timers]) if (timer.at <= now) { timers.delete(timer); timer.fn(); } await drainRelease(); },
+    async visibility(value) { shown = value; wake(); await drainRelease(); },
+  };
+}
+
+test('public release outage recovers without remount and subscribers share the read; every answer remains fail closed', async () => {
+  const available = { kind: 'available', deployment: { public: true } };
+  const f = releaseWatchFixture(async (_, n) => n === 1 ? { kind: 'unavailable', reason: 'network' } : available);
+  const one = [], two = [];
+  const stopOne = f.watch(value => one.push(value));
+  const stopTwo = f.watch(value => two.push(value));
+  await drainRelease();
+  assert.equal(f.calls.length, 1);
+  assert.equal(one.at(-1).kind, 'unavailable');
+  await f.advance(1999); assert.equal(f.calls.length, 1);
+  await f.advance(1); assert.equal(f.calls.length, 2);
+  assert.equal(one.at(-1), available); assert.deepEqual(one, two);
+  stopOne(); await f.advance(60_000); assert.equal(f.calls.length, 3, 'remaining view keeps one bounded refresh');
+  stopTwo(); await f.advance(60_000); assert.equal(f.calls.length, 3); assert.equal(f.timers.size, 0);
+});
+
+test('release retries stop after three; hidden tabs do no work and returning may recover; definitive refusals do not poll', async () => {
+  const f = releaseWatchFixture(async () => ({ kind: 'unavailable', reason: 'timeout' }));
+  const stop = f.watch(() => {}); await drainRelease();
+  for (const ms of [2000, 10_000, 30_000]) await f.advance(ms);
+  assert.equal(f.calls.length, 4); await f.advance(600_000); assert.equal(f.calls.length, 4);
+  await f.visibility(false); await f.advance(600_000); assert.equal(f.calls.length, 4);
+  await f.visibility(true); assert.equal(f.calls.length, 5); stop();
+  for (const reason of ['invalid_release', 'release_not_available', 'gate_required', 'status_429']) {
+    const final = releaseWatchFixture(async () => ({ kind: 'unavailable', reason }));
+    const leave = final.watch(() => {}); await drainRelease(); await final.advance(600_000);
+    assert.equal(final.calls.length, 1, reason); leave();
+  }
+});
+
+test('release unmount aborts the actual read and effect restart ignores its late result', async () => {
+  const resolve = [], answers = [];
+  const f = releaseWatchFixture(() => new Promise(done => resolve.push(done)));
+  const stop = f.watch(value => answers.push(value));
+  stop(); assert.equal(f.calls[0].aborted, true);
+  const again = f.watch(value => answers.push(value));
+  resolve[1]({ kind: 'unavailable', reason: 'release_not_available' }); await drainRelease();
+  resolve[0]({ kind: 'available', deployment: {} }); await drainRelease();
+  assert.deepEqual(answers, [{ kind: 'unavailable', reason: 'release_not_available' }]);
+  again();
+});
+
+test('release GET forwards consumer cancellation to fetch, rather than just ignoring the reply', async () => {
+  const owner = new AbortController(); let fetchSignal;
+  const result = readRelease('/api/setup/v1/sequence-release', () => ({}), async (_, init) => {
+    fetchSignal = init.signal;
+    return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
+  }, 10_000, owner.signal);
+  owner.abort();
+  assert.equal(fetchSignal.aborted, true);
+  assert.equal((await result).kind, 'unavailable');
+});
 
 const OWNER = `0x${'aa'.repeat(20)}`;
 const OTHER = `0x${'bb'.repeat(20)}`;

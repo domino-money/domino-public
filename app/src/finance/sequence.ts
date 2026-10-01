@@ -229,6 +229,10 @@ export function sequenceProviderReadError(error: unknown): Error {
 export function sequenceReadError(error: unknown): Error {
   return error instanceof SequenceFault ? error : new SequenceFault('sequence_read_unexpected')
 }
+/** Only transport failures from the read-only receipt lane may be polled again. */
+export function sequenceReceiptReadRetryable(error: unknown): boolean {
+  return error instanceof SequenceFault && error.message === 'sequence_receipt_rpc'
+}
 /** A closed contract/function label for a rejected owner eth_call. No address,
  * calldata, provider message or provider error data leaves this client. */
 export function sequenceReadStage(error: unknown): string | null {
@@ -352,9 +356,10 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
     }
   }
   async function bounded<T>(work: (c: Context) => Promise<T>, diagnoseRead = false,
-    fallbackTokenId?: bigint | null): Promise<T> {
+    fallbackTokenId?: bigint | null, receiptRead = false): Promise<T> {
     if (busy) return fail('wallet_action_busy')
     busy = true; const started = now(); let end = started + 30; let calls = 0, readCallLimit = 100
+    let timedOutContractRead = false
     const rpc: Rpc = async (method, params, rejected) => {
       // Keep the wallet transaction lane exactly as it was. Diagnostic
       // normalization is for owner reads only and never wraps a send result.
@@ -364,10 +369,17 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
         try {
           const original = wallet.request(method, params).catch(async error => {
             if (rejected) { try { await rejected(error) } catch { /* A failed release keeps the nonce protected. */ } }
+            if (receiptRead) {
+              if (!wallet.current()) return fail('wallet_identity_changed')
+              const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : null
+              if ([4001, 4100, 4200, 4901].includes(Number(code))) return fail('sequence_receipt_refused')
+              return fail('sequence_receipt_rpc')
+            }
             throw error
           })
-          const value = await Promise.race([original, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), Math.max(1, (end - now()) * 1000)) })])
-          if (!wallet.current() || now() >= end) return fail('wallet_identity_changed')
+          const value = await Promise.race([original, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(receiptRead ? new SequenceFault('sequence_receipt_rpc') : new Error('wallet_timeout')), Math.max(1, (end - now()) * 1000)) })])
+          if (!wallet.current()) return fail('wallet_identity_changed')
+          if (now() >= end) return fail(receiptRead ? 'sequence_receipt_rpc' : 'wallet_identity_changed')
           return value
         } finally { clearTimeout(timer) }
       }
@@ -376,10 +388,12 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       // only these owner reads, with the exact same pinned block and calldata.
       // Every attempt still counts toward this action's deadline and RPC cap.
       const retryable = method === 'eth_call' || method === 'eth_getCode'
+      // Reads already in flight keep the first phase's deadline when a snapshot is tried.
+      const rpcEnd = end
       const failure = READ_RPC_FAILURE[method] ?? 'sequence_read_rpc'
       for (let attempt = 0; attempt < (retryable ? 3 : 1); attempt++) {
         if (!wallet.current()) return fail('wallet_identity_changed')
-        if (now() >= end) return fail('sequence_read_timeout')
+        if (now() >= rpcEnd) return fail('sequence_read_timeout')
         if (++calls > readCallLimit) return fail('sequence_read_limit')
         let timer: ReturnType<typeof setTimeout> | undefined
         try {
@@ -387,14 +401,15 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
           try { reply = Promise.resolve(wallet.request(method, params)) }
           catch { return fail(failure) }
           const original = reply.catch(() => fail(failure))
-          const value = await Promise.race([original, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new SequenceFault('sequence_read_timeout')), Math.max(1, (end - now()) * 1000)) })])
+          const value = await Promise.race([original, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new SequenceFault('sequence_read_timeout')), Math.max(1, (rpcEnd - now()) * 1000)) })])
           if (!wallet.current()) return fail('wallet_identity_changed')
-          if (now() >= end) return fail('sequence_read_timeout')
+          if (now() >= rpcEnd) return fail('sequence_read_timeout')
           return value
         } catch (error) {
+          if (retryable && error instanceof SequenceFault && error.message === 'sequence_read_timeout') timedOutContractRead = true
           if (!retryable || attempt === 2 || !(error instanceof SequenceFault) || error.message !== failure) throw error
           if (!wallet.current()) return fail('wallet_identity_changed')
-          const remaining = Math.floor((end - now()) * 1000)
+          const remaining = Math.floor((rpcEnd - now()) * 1000)
           if (remaining <= 0) return fail('sequence_read_timeout')
           await new Promise<void>(resolve => setTimeout(resolve, Math.min(attempt === 0 ? 200 : 500, remaining)))
         } finally { clearTimeout(timer) }
@@ -418,8 +433,9 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       try { return await execute() }
       catch (error) {
         if (!diagnoseRead || !snapshotRead || fallbackTokenId === undefined || !(error instanceof SequenceFault)
-            || !['sequence_read_call','sequence_read_code'].includes(error.message)) throw error
-        if (!wallet.current() || now() >= end) return fail('sequence_read_timeout')
+            || !(['sequence_read_call','sequence_read_code'].includes(error.message)
+              || error.message === 'sequence_read_timeout' && timedOutContractRead)) throw error
+        if (!wallet.current() || now() >= started + 55) return fail('sequence_read_timeout')
         // One read-only replay gets its own allowance after a late wallet
         // rejection. The first phase still has its original 30s/100-call cap;
         // the entire action cannot exceed 55s/160 fixed reads.
@@ -922,6 +938,6 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       const isFinal = quantity(finalized.number) >= quantity(r.blockNumber)
       if (!withinBudget) return {state:isFinal?'over_budget_finalized' as const:'over_budget' as const}
       return {state:isFinal?'finalized' as const:'confirming' as const}
-    }),
+    }, false, undefined, true),
   }
 }

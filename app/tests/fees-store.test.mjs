@@ -1028,26 +1028,99 @@ test('a page’s own /state read, offered to the store: its card starts from it 
   stop();
 });
 
-// 2026-09-28 (speed wave B, item 15: the minute's /state read, landing while a chart was being drawn, held its run 2 s
-// more): the read waits while a page's run is on its way and goes as soon as it is over; with nothing drawn, at once.
-test('the minute’s /state read waits while a page’s run is on its way, and goes as soon as the run is over', async () => {
+test('the minute’s state read stays current during replay without changing its pinned snapshot or duplicating reads', async () => {
   const worker = { posted: [], onmessage: null, onerror: null, onmessageerror: null, postMessage(message) { this.posted.push(message); }, terminate() {} };
   const service = stateService();
   const time = clock();
   const store = createFeesStore({ spawn: () => worker, postState: (ids) => service.postState(ids), later: time.later, timer: time.timer });
   const stop = store.subscribeHistory(['3136705'], 'page', () => {});
   await until(() => worker.posted.length === 1, 'the run');
+  const original = worker.posted[0];
   assert.equal(service.asked.length, 1);
   service.bump = 10;
   assert.equal(time.fire('later', STATE_REFRESH_MS), 1, 'the minute is up');
   await settle();
-  assert.equal(service.asked.length, 1, 'held: the run is on its way');
-  worker.onmessage({ data: { type: 'done', id: '3136705', runId: worker.posted[0].runId, result: { ok: false, reason: 'rpc_unavailable', prices: null, checkpoint: null, bytes: 0 }, wait: 0 } });
-  await until(() => service.asked.length === 2, 'the read once the run is over');
+  assert.equal(service.asked.length, 2, 'current state does not wait for the history');
+  assert.equal(worker.posted.length, 1, 'no concurrent replay');
+  assert.equal(store.position('3136705').block, original.state.block + 10);
+  const relay = fixtureRelay(loadCase('3136705'));
+  const result = await runPipeline({ logs: relay.logs, sleep: async () => {}, cancelled: () => false }, original);
+  assert.equal(result.ok, true);
+  worker.onmessage({ data: { type: 'done', id: '3136705', runId: original.runId, result, wait: 0 } });
+  assert.equal(store.view('3136705').phase, 'verified');
+  assert.equal(store.view('3136705').state.block, original.state.block, 'verification belongs to the run snapshot, not the newer header');
+  assert.equal(worker.posted.length, 2);
+  assert.equal(worker.posted[1].state.block, original.state.block + 10);
+  assert.deepEqual(worker.posted[1].checkpoint, result.checkpoint);
+  await settle();
+  assert.equal(service.asked.length, 2, 'finishing replay does not trigger an extra state read');
   assert.deepEqual(service.asked[1], ['3136705']);
   // And its next minute is set again.
   assert.ok(time.pending.some((entry) => !entry.cancelled && entry.kind === 'later' && entry.ms === STATE_REFRESH_MS));
   stop();
+});
+
+test('state batches cancel only after their last consumer leaves; remount ignores the abandoned answer', async () => {
+  const jobs = [];
+  const time = clock();
+  const store = createFeesStore({
+    spawn: () => { throw new Error('state-only'); }, later: time.later, timer: time.timer,
+    postState: (ids, signal) => new Promise((resolve) => jobs.push({ ids: [...ids], signal, resolve })),
+  });
+  const a = store.subscribeStates(['3136705'], () => {});
+  const b = store.subscribeStates(['3136705', '3135288'], () => {});
+  await settle();
+  assert.equal(jobs.length, 1);
+  assert.ok(jobs[0].signal instanceof AbortSignal);
+  a();
+  assert.equal(jobs[0].signal.aborted, false, 'another consumer still needs the batch');
+  b();
+  assert.equal(jobs[0].signal.aborted, true);
+  const c = store.subscribeStates(['3136705'], () => {});
+  await settle();
+  assert.equal(jobs.length, 2);
+  jobs[0].resolve({ ok: false, failure: 'unavailable', retryAfterMs: 0 });
+  await settle();
+  const d = store.subscribeStates(['3136705'], () => {});
+  await settle();
+  assert.equal(jobs.length, 2, 'the old answer did not clear the new in-flight marker');
+  assert.equal(store.states(['3136705']), null, 'the abandoned answer is not applied');
+  c();
+  assert.equal(jobs[1].signal.aborted, false);
+  d();
+  assert.equal(jobs[1].signal.aborted, true);
+  jobs[1].resolve({ ok: false, failure: 'unavailable', retryAfterMs: 0 });
+});
+
+test('a state read queued by a subscription is not sent after that subscription leaves', async () => {
+  let reads = 0;
+  const time = clock();
+  const store = createFeesStore({ spawn: () => { throw new Error('state-only'); }, postState: async () => { reads++; return { ok: false, failure: 'unavailable', retryAfterMs: 0 }; }, later: time.later, timer: time.timer });
+  const stop = store.subscribeStates(['3136705'], () => {});
+  stop();
+  await settle();
+  assert.equal(reads, 0);
+});
+
+test('an explicit refresh retains its bounded read when the last screen leaves', async () => {
+  const jobs = [];
+  const time = clock();
+  const fixture = loadCase('3136705');
+  const store = createFeesStore({
+    spawn: () => { throw new Error('state-only'); }, later: time.later, timer: time.timer,
+    postState: (ids, signal) => new Promise((resolve) => jobs.push({ ids: [...ids], signal, resolve })),
+  });
+  store.offer({ ok: true, value: fixture.state, bytes: 100 });
+  const stop = store.subscribeStates(['3136705'], () => {});
+  store.refresh(['3136705']);
+  stop();
+  await settle();
+  assert.equal(jobs.length, 1, 'the explicit refresh was not withdrawn with its screen');
+  assert.equal(jobs[0].signal.aborted, false);
+  assert.deepEqual(jobs[0].ids, ['3136705']);
+  jobs[0].resolve({ ok: true, value: { ...fixture.state, block: fixture.state.block + 10, timestamp: fixture.state.timestamp + 10 }, bytes: 100 });
+  await settle();
+  assert.equal(store.position('3136705').block, fixture.state.block + 10);
 });
 
 // 2026-09-28 (speed wave B, item 37): Positions creates the worker as it opens, so its file is in before the first run.

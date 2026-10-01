@@ -734,7 +734,9 @@ function projectRow(input: RowInput): Market {
 export function projectMarketRow({ market, metrics, tokens }: RowReads): Market {
   const d = market.data
   // Candles the answer itself carried: none from the table's lean reads, and none from a stored overview until the collector keeps them.
-  const carried = carriedHistory(d, market.provenance)
+  const storedMs = (market.servedAgeSeconds ?? 0) * 1000
+  const carried = carriedHistory(d, { ...market.provenance, receivedAt: market.provenance.receivedAt - storedMs,
+    ...(market.provenance.receivedMonotonic === undefined ? {} : { receivedMonotonic: market.provenance.receivedMonotonic - storedMs }) })
   const row = projectRow({
     poolId: d.poolId,
     pool: d.pool,
@@ -746,6 +748,7 @@ export function projectMarketRow({ market, metrics, tokens }: RowReads): Market 
     metrics,
     tokens,
     origin: 'pool-market',
+    servedAgeSeconds: market.servedAgeSeconds,
   })
   return carried ? { ...row, providerHistory: carried } : row
 }

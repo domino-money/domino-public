@@ -3,7 +3,7 @@ import { setupWallet } from '../finance/wallet'
 import { atomicStatus } from '../finance/batch'
 import type { ReleaseRead } from '../finance/release'
 import type { SequenceDeployment } from '../finance/sequence'
-import { connectSequence, readSequenceRelease } from '../finance/sequenceLive'
+import { connectSequence, watchSequenceRelease } from '../finance/sequenceLive'
 import { switchToRobinhood } from '../wallet/port'
 import { Button, Display, EmptyState, LinkButton, Skeleton } from '../components/ui'
 import { IconAutomate, IconPlus, IconWallet } from '../components/icons'
@@ -52,15 +52,7 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
   const [lab] = useState(() => (__DOMINO_TEST_HOOKS__ && labText ? labSpec(labText) : null))
   // What the link asked for (#/sequence/<mode>/<nft>): the mode is chosen, and the position is chosen when it is one of the wallet's.
   const [intent] = useState<SequenceIntent>(() => lab?.intent ?? sequenceIntent(hashParts(window.location.hash).segments))
-  useEffect(() => {
-    let live = true
-    void readSequenceRelease().then((result) => {
-      if (live) setRelease(result)
-    })
-    return () => {
-      live = false
-    }
-  }, [])
+  useEffect(() => watchSequenceRelease(setRelease), [])
   const identity = useWalletIdentity()
   const key = walletKey(identity)
   const owner = key === null ? null : key.slice(key.indexOf('|') + 1)

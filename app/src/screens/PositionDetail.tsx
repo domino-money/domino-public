@@ -118,9 +118,9 @@ function useStoredPosition(tokenId: string): Readonly<{ position: StatePositionO
  * 2026-09-28 (speed wave B, item 26): the vault record of a position a sequence holds is read as soon as the page's read
  * names its vault (item 17), beside its chart rather than after it.
  */
-function vaultOf(answer: RelayAnswer<StateResponse>, found: StatePositionOk): void {
+function vaultOf(answer: RelayAnswer<StateResponse>, found: StatePositionOk, signal: AbortSignal): void {
   const feature = answer.ok ? answer.value.automation?.find((one) => one.tokenId === found.tokenId) : undefined
-  if (answer.ok && feature && 'vault' in feature) warmVault(feature.vault, found.tokenId, [found.poolKey.currency0, found.poolKey.currency1], answer.value.block)
+  if (answer.ok && feature && 'vault' in feature) warmVault(feature.vault, found.tokenId, [found.poolKey.currency0, found.poolKey.currency1], answer.value.block, signal)
 }
 
 /** A token as the actions take it: its address and what the chain said about it. */
@@ -361,7 +361,7 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
           // An answer from an older block than the one on screen (the relay's cache, right after an action) changes nothing;
           // the list's row gives way to the page's own read whatever its block (its read is at head − 2, the list's at the head).
           setDetail((before) => (before.phase === 'ready' && !before.row && before.block > block ? before : ready(found, block)))
-          vaultOf(answer, found)
+          vaultOf(answer, found, controller.signal)
           attempts = empties = 0
           shown = true
           return

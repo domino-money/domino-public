@@ -22,7 +22,7 @@
  * and the gateway refuses a provider start within 1 s of the last. */
 import type * as V2 from 'api-contracts/read-v2/runtime.mjs'
 import type { PoolMarketEstimateResponse } from 'api-contracts/read-v2/types'
-import { createBridgeSource, type BridgeOptions, type BridgeSource } from './bridgeSource'
+import { CAPABILITIES_REUSE_MS, createBridgeSource, type BridgeOptions, type BridgeSource } from './bridgeSource'
 import { BRIDGE_RETRY, realClock } from './pipeline'
 import type { ReadOptions, ReadOutcome, ReadRequests, ReadResponses, ReadRoute, ReadValidators } from './types'
 
@@ -82,6 +82,7 @@ export function createEstimateSource(options: BridgeOptions, runtime: typeof V2)
   const v2 = createBridgeSource({ ...options, namespace: 'v2', validators: estimateValidators(runtime, options.validators) })
   const clock = options.clock ?? realClock
   let fallback: 'estimate_not_enabled' | 'estimate_transport_unavailable' | null = null
+  let fallbackUntil = 0
 
   async function read<R extends ReadRoute>(route: R, request: ReadRequests[R], opts: ReadOptions = {}): Promise<ReadOutcome<R>> {
     if (!options.validators.validateRequest(route, request)) return v1.read(route, request, opts)
@@ -93,6 +94,7 @@ export function createEstimateSource(options: BridgeOptions, runtime: typeof V2)
       const stored = await v1.read('pool-market', market, budget)
       return (stored.state === 'ok' ? { ...stored, estimateReason: 'estimate_not_in_snapshot' } : stored) as ReadOutcome<R>
     }
+    if (fallback && clock.monotonic() >= fallbackUntil) fallback = null
     if (!fallback) {
       let dispatched = false
       const result = await v2.read('pool-market', { poolId: market.poolId.toLowerCase() }, {
@@ -104,9 +106,10 @@ export function createEstimateSource(options: BridgeOptions, runtime: typeof V2)
         (result.state === 'disabled' && result.reason === 'live_data_disabled') ||
         (result.state === 'unavailable' && result.cause.kind === 'read_deadline')) return result as ReadOutcome<R>
       fallback = result.state === 'disabled' ? 'estimate_not_enabled' : 'estimate_transport_unavailable'
+      fallbackUntil = clock.monotonic() + CAPABILITIES_REUSE_MS
     }
-    // One optional namespace probe per page when absent. Reload can discover
-    // a newly enabled deployment; transient data failures never trigger v1.
+    // At most one optional namespace probe a minute when absent. A later read
+    // discovers an enabled deployment without reload; data failures never trigger v1.
     const result = await v1.read(route, request, budget)
     return result.state === 'ok' ? { ...result, estimateReason: fallback } : result
   }

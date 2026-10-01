@@ -172,7 +172,9 @@ export type EstimateReason = 'estimate_not_enabled' | 'estimate_transport_unavai
  * carries nothing a screen could partly render.
  */
 export type ReadOutcome<R extends ReadKey = ReadRoute> = { route: R; provenance: Provenance } & (
-  | { state: 'ok'; data: ReadResponses[R]; observation: Observation; estimate?: PoolAprEstimate; estimateReason?: EstimateReason }
+  | { state: 'ok'; data: ReadResponses[R]; observation: Observation; estimate?: PoolAprEstimate; estimateReason?: EstimateReason;
+      /** Stored pool state age at envelope generation; market/APR ages already include storage time. */
+      servedAgeSeconds?: number }
   /** 401 `{"error":"beta_access_required"}`: the invitation cookie is missing or expired. */
   | { state: 'gate_required' }
   /** 503 access page: the gate's own configuration is broken. */

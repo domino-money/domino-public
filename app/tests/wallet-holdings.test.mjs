@@ -179,6 +179,74 @@ test('prices: an ask naming addresses already on the wire waits for their GET an
   assert.equal(asked.length, 2, 'answered: kept, nothing asked again');
 });
 
+test('prices publish each completed batch without waiting for the slow batch or fabricating its prices', async () => {
+  const pending = [];
+  const seen = [];
+  const addresses = Array.from({ length: 45 }, (_, n) => addr(n + 3000));
+  const prices = createWalletPrices({
+    get: (list) => new Promise((resolve) => pending.push({ list, resolve })),
+    seed: () => {}, now: () => 1000,
+  });
+  let finished = false;
+  const result = prices.price(addresses, { onProgress: (answer) => seen.push(answer) }).then((answer) => { finished = true; return answer; });
+  assert.equal(pending.length, 2);
+  pending[1].resolve(pending[1].list.map((a) => pair(a, '2', 1e6)));
+  await new Promise(setImmediate);
+  assert.equal(finished, false);
+  assert.equal(seen.at(-1).quotes.size, 15);
+  assert.equal(seen.at(-1).quotes.has(addresses[0]), false, 'unanswered is not zero');
+  pending[0].resolve(pending[0].list.map((a) => pair(a, '1', 1e6)));
+  assert.equal((await result).quotes.size, 45);
+  assert.equal(pending.length, 2, 'progress adds no provider calls');
+});
+
+test('prices abort only when the last joined consumer leaves and reject late cancelled answers', async () => {
+  const pending = [];
+  const prices = createWalletPrices({
+    get: (list, signal) => new Promise((resolve) => pending.push({ list, signal, resolve })),
+    seed: () => {}, now: () => 1000,
+  });
+  const a = new AbortController();
+  const b = new AbortController();
+  const progress = [];
+  const first = prices.price([UFG], { signal: a.signal, onProgress: (answer) => progress.push(answer.quotes.size) });
+  const second = prices.price([UFG], { signal: b.signal });
+  assert.equal(pending.length, 1);
+  a.abort();
+  await first;
+  await new Promise(setImmediate);
+  assert.equal(pending[0].signal.aborted, false, 'the second consumer still needs the request');
+  b.abort();
+  await second;
+  await new Promise(setImmediate);
+  assert.equal(pending[0].signal.aborted, true);
+  const third = prices.price([UFG]);
+  assert.equal(pending.length, 2, 'cancelled read is not joined again');
+  pending[0].resolve([pair(UFG, '99', 1e6)]);
+  await new Promise(setImmediate);
+  assert.deepEqual(progress, [0], 'no notification after leaving');
+  pending[1].resolve([pair(UFG, '2', 1e6)]);
+  assert.equal((await third).quotes.get(UFG).usd, '2');
+  assert.equal((await prices.price([UFG])).quotes.get(UFG).usd, '2', 'late cancelled data did not populate cache');
+});
+
+test('provider price transport receives cancellation and does not fetch for an already cancelled consumer', async () => {
+  let received;
+  let count = 0;
+  const resolver = createTokenArtworkResolver({ fetch: async (_url, init) => {
+    count++;
+    received = init.signal;
+    return new Promise((resolve) => init.signal.addEventListener('abort', () => resolve(new Response(null, { status: 503 })), { once: true }));
+  } });
+  const controller = new AbortController();
+  const pending = resolver.tokenPrices([UFG], controller.signal);
+  controller.abort();
+  assert.equal(received.aborted, true);
+  assert.equal(await pending, null);
+  assert.equal(await resolver.tokenPrices([UFG], controller.signal), null);
+  assert.equal(count, 1);
+});
+
 test('values: raw × price in exact 10^-18 dollars, rounded down', () => {
   // 1,161,237.362251642889718091 UFG at $0.002975 = $3,454.681152698637596911 (the last digits dropped, never rounded up).
   assert.equal(usdValue('1161237362251642889718091', 18, { usd: '0.002975', liquidityUsd: 1 }), 3454681152698637596911n);

@@ -3,7 +3,7 @@ import { watchConnection } from 'wagmi/actions'
 import { zeroAddress, type Address, type Hex } from 'viem'
 import { walletConfig } from '../wallet/config'
 import { confirmDelegate, setupWallet } from '../finance/wallet'
-import { readRelease, type ReleaseRead } from '../finance/release'
+import { createReleaseWatch, readRelease, type ReleaseRead } from '../finance/release'
 import { createSetupClient, deploymentFrom, raw, type PreparedSetup, type SetupOperation, type SetupDeployment } from '../finance/setup'
 import { saveSetupProfile, savedSetupProfile } from '../finance/recoveryProfile'
 import { RECEIPT_TEXT, SETUP_STEP_TEXT, errorCode, financeErrorText } from '../finance/words'
@@ -25,7 +25,8 @@ const labels: Record<keyof typeof defaults, string> = { currency0: 'Token 0 addr
 type Client = ReturnType<typeof createSetupClient>
 type Release = { kind: 'loading' } | ReleaseRead<SetupDeployment>
 type Notice = { text: string; code: string | null }
-const readSetupRelease = () => readRelease('/api/setup/v1/release', value => deploymentFrom(value))
+const readSetupRelease = (signal?: AbortSignal) => readRelease('/api/setup/v1/release', value => deploymentFrom(value), undefined, undefined, signal)
+const watchSetupRelease = createReleaseWatch(readSetupRelease)
 /** For a loaded client: the published profile now, or null when it is no longer published. */
 const currentSetupDeployment = async () => { const release = await readSetupRelease(); return release.kind === 'available' ? release.deployment : null }
 
@@ -61,7 +62,7 @@ export default function AdvancedSetup({ slippageBps }: { slippageBps?: string } 
   const [unrecognized, setUnrecognized] = useState<{ owner: Address; delegate: Address } | null>(null)
   const generation = useRef(0), running = useRef(false)
   const say = (text: string, code: string | null = null) => setNotice({ text, code })
-  useEffect(() => { let live = true; void readSetupRelease().then(result => { if (live) setRelease(result) }); return () => { live = false } }, [])
+  useEffect(() => watchSetupRelease(setRelease), [])
   useEffect(() => watchConnection(walletConfig, { onChange: () => { generation.current++; running.current = false; setClient(null); setRecovery(false); setOperation(null); setRecent([]); setPrepared(null); setAck(false); setBusy(false); setForm(defaults); setOwnSwapSlippage(null); setNotice(null); setUnrecognized(null) } }), [])
   useEffect(() => () => { generation.current++ }, [])
   // A swap reviewed at one limit is not the swap at another: a limit that moves under a prepared step drops that review, as any edit does.

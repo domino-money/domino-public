@@ -820,6 +820,11 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // are unchanged. Initial entry review disclosure adds 950 / 922 B, separately from these lazy budgets.
   // Round only the two exceeded ceilings to the next 0.1 kB: financial 190,000 B and all lazy 212,000 B
   // (98 / 64 B above the larger build). Keep all graph classifications and public/worker/chain ceilings intact.
+  // 2026-10-01: data recovery stays below every production ceiling (financial 189,428 B, all lazy 211,263 B,
+  // chain 19,987 B after removing redundant cancellation/cache fields). Wallet-test also carries PositionLab and
+  // session probes, which never ship: measure that overhead separately, capped at 1.5 kB over the SAME production
+  // tree. Do not charge that instrumentation to users or raise the production, public-read, worker or chain limits.
+  const productionBytes = new Map();
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
@@ -866,8 +871,12 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
     assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, budget] of [['session/public reads', base, 90_000], ['financial', financial, 190_000], ['all lazy', allLazy, 212_000], ['fees worker', worker, 27_000], ['chain code', chain, 20_000]]) {
+    for (const [family, files, productionBudget] of [['session/public reads', base, 90_000], ['financial', financial, 190_000], ['all lazy', allLazy, 212_000], ['fees worker', worker, 27_000], ['chain code', chain, 20_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
+      const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
+      const budget = productionBudget + (testOnly ? 1_500 : 0);
+      if (dir === DIST) productionBytes.set(family, total);
+      if (testOnly) assert.ok(total - productionBytes.get(family) <= 1_500, `${family}: wallet test-only overhead exceeds 1.5 kB`);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);
       assert.ok(total <= budget, `${label} ${family} is ${total} bytes gzip, over the ${budget} budget`);

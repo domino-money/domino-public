@@ -1,7 +1,7 @@
-import type { Hex } from 'viem'
+export { settleStep, RECEIPT_WAIT_MS, RECEIPT_EVERY_MS } from './receiptWait'
 import { setupWallet } from './wallet'
 import { suggestGasBudget } from './gas'
-import { readRelease } from './release'
+import { createReleaseWatch, readRelease } from './release'
 import { createSequenceClient, sequenceDeploymentFrom, sequenceProviderReadError, type SequenceDeployment } from './sequence'
 import { readSequenceSnapshot } from './sequenceSnapshot'
 import type { GasBudget } from './setup'
@@ -26,7 +26,8 @@ export interface Connected {
 /** Kept after a verified creation, for Start tracking's reads when no release is published (screens/Performance.tsx). It never holds owner data or a key. */
 const cacheKey = 'domino.sequence.public-recovery.v1'
 
-export const readSequenceRelease = () => readRelease('/api/setup/v1/sequence-release', (value) => sequenceDeploymentFrom(value))
+export const readSequenceRelease = (signal?: AbortSignal) => readRelease('/api/setup/v1/sequence-release', (value) => sequenceDeploymentFrom(value), undefined, undefined, signal)
+export const watchSequenceRelease = createReleaseWatch(readSequenceRelease)
 
 /** For a loaded client: the published profile now, or null when it is no longer published. */
 export const currentSequenceDeployment = async (): Promise<SequenceDeployment | null> => {
@@ -58,31 +59,4 @@ export async function connectSequence(): Promise<Connected> {
     }
   }
   return { client, gas, verified }
-}
-
-type Receipt = Awaited<ReturnType<SequenceClient['receipt']>>['state']
-/** How long a sent step's receipt is read, and how often. */
-export const RECEIPT_WAIT_MS = 240_000
-export const RECEIPT_EVERY_MS = 3_000
-/** In a block and settled: succeeded (within its budget or past it), reverted, or its block gone. */
-const SETTLED: readonly Receipt[] = ['confirming', 'finalized', 'reverted', 'reorged', 'over_budget', 'over_budget_finalized']
-
-/**
- * Reads a sent step's receipt every few seconds until it settles. 'landed': it is in a block and succeeded. 'left':
- * `here()` said the page moved on, and nothing reads it any more. Throws sequence_receipt_waiting when it is still
- * not in a block after RECEIPT_WAIT_MS, sequence_step_reverted or sequence_step_reorged; a read that fails throws its
- * own error. Nothing is ever sent again from here.
- */
-export async function settleStep(client: SequenceClient, hash: Hex, here: () => boolean): Promise<'landed' | 'left'> {
-  let state: Receipt = 'pending'
-  const until = Date.now() + RECEIPT_WAIT_MS
-  while (Date.now() < until && !SETTLED.includes(state)) {
-    await new Promise((resolve) => setTimeout(resolve, RECEIPT_EVERY_MS))
-    if (!here()) return 'left'
-    state = (await client.receipt(hash)).state
-  }
-  if (!SETTLED.includes(state)) throw new Error('sequence_receipt_waiting')
-  if (state === 'reverted') throw new Error('sequence_step_reverted')
-  if (state === 'reorged') throw new Error('sequence_step_reorged')
-  return 'landed'
 }

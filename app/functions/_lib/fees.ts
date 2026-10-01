@@ -1082,9 +1082,23 @@ async function readLogs(rt: FeesRuntime, budget: Budget, origin: string, asked: 
       // USDG/UFG pool: 2 reads, not the 8 windows of the whole chain, a burst the RPC refused the next call after).
       const logs = await shared(url, async () => {
         const filter = poolFilter(asked.poolId, [TOPIC.Initialize])
-        for (let top = head; top >= 0; top -= LOG_BLOCKS_ONE) {
-          const found = await rangeLogs(rt, budget, filter, Math.max(0, top - LOG_BLOCKS_ONE + 1), top)
+        // A later refusal must not discard completed empty coverage. Keep only its final prefix, separately from
+        // the event result: absence in this interval is not proof that the pool never initialized. The recent tail
+        // is always read again, including after a reorg or an advancing head; the original RPC window cap is unchanged.
+        const emptyUrl = cacheUrl(origin, 'initializeEmpty', asked.poolId, 0)
+        let empty = (await kept<{ from: number; to: number }>(rt, emptyUrl))?.value
+        for (let top = head; top >= 0;) {
+          if (empty && top >= empty.from && top <= empty.to) { top = empty.from - 1; continue }
+          const from = Math.max(0, top - LOG_BLOCKS_ONE + 1, empty && top > empty.to ? empty.to + 1 : 0)
+          const found = await rangeLogs(rt, budget, filter, from, top)
           if (found.length > 0) return found
+          const finalTo = Math.min(top, head - SAFE_DEPTH)
+          // Never bridge an unread gap (a much newer head may be several windows past the saved interval).
+          if (from <= finalTo && (!empty || (from <= empty.to + 1 && finalTo >= empty.from - 1))) {
+            empty = { from: Math.min(from, empty?.from ?? from), to: Math.max(finalTo, empty?.to ?? finalTo) }
+            await keep(rt, emptyUrl, empty, FINAL_SECONDS)
+          }
+          top = from - 1
         }
         return []
       })

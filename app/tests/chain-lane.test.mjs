@@ -58,6 +58,42 @@ async function call(deps, init = {}) {
   return response;
 }
 
+test('page chainDeps propagates either cancellation to the actual in-flight fetch and its response body', async () => {
+  for (const [duringBody, abortRequest] of [[false, false], [true, false], [false, true], [true, true]]) {
+    resetChainCooldown();
+    const consumer = new AbortController();
+    const timeout = new AbortController();
+    let began;
+    const started = new Promise((resolve) => { began = resolve; });
+    let finish;
+    await withFetch((_url, init) => {
+      began(init.signal);
+      if (!duringBody) return new Promise((resolve, reject) => {
+        finish = () => resolve(new Response('{}'));
+        init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+      });
+      return new Response(new ReadableStream({ start(controller) {
+        finish = () => { try { controller.close(); } catch {} };
+        init.signal.addEventListener('abort', () => controller.error(init.signal.reason), { once: true });
+      } }));
+    }, async () => {
+      const pending = chainDeps(consumer.signal).fetch(RPC, { method: 'POST', body: '{}', signal: timeout.signal });
+      const transport = await started;
+      const response = duringBody ? await pending : null;
+      // Attach the rejection handler before aborting the transport.
+      const outcome = (response ? response.text() : pending).then(() => 'completed', () => 'aborted');
+      try {
+        const reason = new DOMException(abortRequest ? 'request timed out' : 'left the page', abortRequest ? 'TimeoutError' : 'AbortError');
+        (abortRequest ? timeout : consumer).abort(reason);
+        assert.equal(transport.aborted, true, 'either source reaches the transport, not only the next RPC call');
+        assert.equal(transport.reason, reason, 'the original reason is preserved');
+        assert.equal((abortRequest ? consumer : timeout).signal.aborted, false, 'the other source keeps its own lifetime');
+        assert.equal(await outcome, 'aborted');
+      } finally { finish?.(); await outcome; }
+    });
+  }
+});
+
 // Changed on purpose 2026-09-28 (speed wave B, items 19 and 20): the byte pace is the one measured, unchanged; one quiet
 // period after a log read is at most a second, and the rest after a refusal is staged, up to the 30 s it was.
 // Changed on purpose 2026-09-29 (speed wave B merged with hotfix/charts): the heavy reply's quiet was measured live on

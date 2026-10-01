@@ -2172,12 +2172,12 @@ test('G2: a failed snapshot is never shown or said: the same load reads the pool
     let mark = wire().length;
     clock.advance(60_000);
     await settled(provider, () => provider.refresh());
-    assert.deepEqual(wire().slice(mark), ['POST pool-market', 'POST pool-market'], `${label}: a minute on, no snapshot is asked, and no token either`);
+    assert.deepEqual(wire().slice(mark), ['GET capabilities', 'POST pool-market', 'POST pool-market'], `${label}: a minute on, availability is revalidated, but no snapshot or token is asked`);
 
     mark = wire().length;
     clock.advance(SNAPSHOT_RETRY_MS);
     const back = await settled(provider, () => provider.refresh());
-    assert.deepEqual(wire().slice(mark), ['POST markets-snapshot', 'POST token', 'POST token', 'POST token'], `${label}: five minutes on the snapshot is asked again and token metadata past its own TTL is revalidated`);
+    assert.deepEqual(wire().slice(mark), ['GET capabilities', 'POST markets-snapshot', 'POST token', 'POST token', 'POST token'], `${label}: five minutes on availability, the snapshot and token metadata past its own TTL are revalidated`);
     assert.deepEqual(back.result.markets.map((m) => m.provenance.origin), ['markets-snapshot', 'markets-snapshot'], label);
   }
 });

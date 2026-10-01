@@ -27,6 +27,22 @@ const PAGE = constants.BUDGET_BYTES.page;
 const quiet = { sleep: async () => {} };
 const own = (log, id) => log[2] === 1 && BigInt(`0x${log[5].slice(2 + 3 * 64, 2 + 4 * 64)}`) === BigInt(id);
 
+test('a refused settlements prerequisite does not spend requests on timeline headers', async () => {
+  const fixture = loadPath('path-delta');
+  const id = '3203538';
+  const relay = pathRelay(fixture, id);
+  const { state, growth } = pathState(fixture, id);
+  const asked = [];
+  const result = await runPipeline({ ...quiet, logs: async (request) => {
+    asked.push(request.kind);
+    return request.kind === 'settlements' ? { ok: false, failure: 'unavailable', retryAfterMs: 0 } : relay.logs(request);
+  } }, { id, state, growth, budgetBytes: PAGE, checkpoint: null });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'rpc_unavailable');
+  assert.ok(asked.includes('settlements'));
+  assert.equal(asked.includes('headers'), false, 'timestamps are needed only after the position events can be reconciled');
+});
+
 function monotonic(history, label) {
   for (let i = 1; i < history.hourly.length; i++) {
     const [a, b] = [history.hourly[i - 1], history.hourly[i]];
@@ -133,7 +149,7 @@ test('NFT 3325113 (the owner’s Auto-compound, a day old): its own life on the 
   const result = await runPipeline({ logs: path.logs, ...quiet }, run);
   assert.equal(result?.ok, true, result?.reason);
   const kinds = relay.requests.map((request) => request.kind);
-  assert.deepEqual(kinds, ['transfer', 'initialize', 'probe', 'probe', 'probe', 'headers', 'settlements', 'modifies', 'swapBefore', 'span', 'span']);
+  assert.deepEqual(kinds, ['transfer', 'initialize', 'probe', 'probe', 'probe', 'settlements', 'modifies', 'headers', 'swapBefore', 'span', 'span']);
   assert.ok(relay.requests.filter((request) => request.kind === 'probe').every((probe) => probe.to - probe.from + 1 <= 25_200 && probe.to > state.block - 36_000), 'the pool’s last hour only: it showed Swaps, and a young position’s path needs no more');
   const { history } = result;
   // Every settlement the exact replay found, in its block, and what each collected to the path's rounding.

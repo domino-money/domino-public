@@ -3,7 +3,7 @@
  *
  * Off unless the build enables live data: a disabled source answers every read
  * with `disabled` and never calls fetch. When on, it asks the bridge's
- * capabilities once, sends only routes the deployment lists, and sends each
+ * capabilities at most once a minute while reads continue, sends only routes the deployment lists, and sends each
  * request as a same-origin JSON POST. A screen may also ask whether a route is
  * listed at all (`routeEnabled`), from that same answer and without a POST,
  * before it spends a place in the queue on it. The app adds no credential of its own:
@@ -48,6 +48,8 @@ export const READ_PREFIX = '/api/read/v1/'
 export const CONTRACT_HEADER = 'X-Domino-Read-Contract'
 /** `hit` from a Pages Function that answered from its edge cache (functions/_lib/featuredEdge.ts, publicEdge.ts). */
 export const EDGE_CACHE_HEADER = 'X-Domino-Edge-Cache'
+/** Revalidate on the next read, with no polling timer or provider/RPC read. */
+export const CAPABILITIES_REUSE_MS = 60_000
 
 /** The only headers a read sends. Cookies are the browser's business, not ours. */
 export const READ_HEADERS: Readonly<Record<string, string>> = {
@@ -181,6 +183,7 @@ interface SharedCheck {
   controller: AbortController
   waiters: number
   settled: boolean
+  expiresAt: number
 }
 
 /** A bridge source always answers the capabilities question. */
@@ -210,7 +213,7 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
   /**
    * GET capabilities through the same pipeline, validated as the capabilities
    * response. A refusal here, the gate's included, is reported against the
-   * read that needed it. A good answer is kept; a failed one is asked again.
+   * read that needed it. A good answer is kept for one minute; a failed one is asked again.
    * The Worker answers it itself, so it is not paced and the POST follows at
    * once. Like any attempt it has 20 s.
    */
@@ -228,13 +231,14 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
     }).then((outcome): CapabilityCheck => {
       check.settled = true
       if (outcome.state === 'ok') {
+        check.expiresAt = clock.monotonic() + CAPABILITIES_REUSE_MS
         const reads = outcome.data.dataMode === 'live_read_only' ? outcome.data.enabledReads : []
         return { ok: true, enabledReads: new Set(reads) }
       }
       if (capabilities === check) capabilities = null
       return { ok: false, failure: outcome }
     })
-    const check: SharedCheck = { result, controller, waiters: 0, settled: false }
+    const check: SharedCheck = { result, controller, waiters: 0, settled: false, expiresAt: 0 }
     return check
   }
 
@@ -245,6 +249,7 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
    * forgotten, so the next read asks afresh instead of joining a cancelled one.
    */
   async function capabilitiesFor(signal: AbortSignal | undefined, deadlineAt: number): Promise<Settled<CapabilityCheck>> {
+    if (capabilities?.settled && clock.monotonic() >= capabilities.expiresAt) capabilities = null
     capabilities ??= startCheck()
     const check = capabilities
     check.waiters += 1
