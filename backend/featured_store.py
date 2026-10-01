@@ -242,16 +242,20 @@ class FeaturedStore:
               ON CONFLICT(singleton) DO UPDATE SET revision=EXCLUDED.revision''', (revision,))
         return revision
 
-    def observe_health(self, seen, now):
+    def observe_health(self, seen, now, unknown=None):
         """Record the conditions seen now per pool; clear the ones that went away.
 
-        `seen` maps each served pool to the set of conditions it shows now.
+        `seen` maps each served pool to the set of conditions it shows now;
+        `unknown`, to those its data could not judge now (#278): their rows stay
+        as they are, neither seen again nor gone.
         Returns {(poolId, condition): (first_seen_at, checks)} after the update.
         """
+        unknown = unknown or {}
         with self.connection() as conn:
             for pool_id, conditions in seen.items():
+                kept = set(conditions) | set(unknown.get(pool_id, ()))
                 conn.execute('''DELETE FROM domino_public.featured_health WHERE pool_id=%s
-                  AND NOT (condition=ANY(%s))''', (pool_id, sorted(conditions)))
+                  AND NOT (condition=ANY(%s))''', (pool_id, sorted(kept)))
                 for condition in sorted(conditions):
                     conn.execute('''INSERT INTO domino_public.featured_health(pool_id,condition,first_seen_at,last_seen_at)
                       VALUES(%s,%s,%s,%s) ON CONFLICT(pool_id,condition) DO UPDATE

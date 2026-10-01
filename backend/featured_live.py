@@ -16,7 +16,10 @@ Each tick of the service, in this order:
   auto` takes effect at the next selection (featured-pools v1 §8.2);
 - health, all day: a served pool that breaks a safety rule leaves at once, or
   once the condition has held for its window, and the list is repaired from
-  the day's ranked pools and the embedded list (featured-pools v1 §6.5).
+  the day's ranked pools and the embedded list (featured-pools v1 §6.5). A
+  list left short because no replacement was ready then takes one as soon as
+  one is (#278): its next candidates are kept warm and looked at again every
+  few minutes, without waiting for another pool to leave.
 """
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -43,6 +46,23 @@ CONFIRM = {'tvl_collapse': (600, True), 'price_fall': (600, True),
            'apr_or_turnover_above_ceiling': (1800, True),
            'estimate_unavailable': (3 * 3600, False), 'volume_collapse': (3 * 3600, False)}
 PRICE_FALL = Fraction(3, 10)
+# A pool whose estimate is missing only because its data is late or the
+# provider is busy is not judged on that: it is unknown, not a fault of the
+# pool (#278). The collector starved the listed pools for an hour and the
+# provider rate-limited it all day, and every listed pool left within hours.
+# Data last good longer ago than this counts again, so a pool the provider has
+# stopped answering for still leaves. Nor does an answer that did not come
+# clear a condition: what the market figures show is unknown, and a condition's
+# window neither restarts nor is confirmed until a check sees it again.
+TRANSIENT_DATA_SECONDS = 6 * 3600
+LATE_DATA = frozenset(('snapshot_expired', 'market_data_expired', 'market_age_unknown'))
+BUSY_PROVIDER = frozenset(('provider_rate_limited', 'provider_capacity_busy', 'provider_unavailable'))
+# A short list looks for ready replacements at most this often, and keeps this
+# many candidates beyond its vacancies warm for this long, so that one is
+# refreshed often enough to be ready when it is looked at (#278).
+VACANCY_SECONDS = 120
+SPARE_CANDIDATES = 2
+CANDIDATE_WARM_SECONDS = 3600
 
 
 def window(policy, now):
@@ -50,6 +70,16 @@ def window(policy, now):
     at = int(datetime.fromtimestamp(now, timezone.utc).replace(
         hour=policy['selectionHourUtc'], minute=0, second=0, microsecond=0).timestamp())
     return at - policy['selectionLeadMinutes'] * 60, at - policy['selectionRetryUntilMinutes'] * 60, at
+
+
+def transient(estimate):
+    """An unavailable estimate whose only causes are late data or a busy provider, within the horizon."""
+    reasons, provenance = set(estimate['reasons']), estimate['provenance']
+    if 'market_unavailable' in reasons and provenance['marketReason'] in BUSY_PROVIDER:
+        # With no answer from the provider there is no TVL or volume to read either.
+        reasons -= {'market_unavailable', 'missing_reported_tvl', 'missing_volume24h'}
+    ages = [age for age in (provenance['effectiveMarketAgeSeconds'], provenance['snapshotAgeSeconds']) if age is not None]
+    return reasons <= LATE_DATA and all(age <= TRANSIENT_DATA_SECONDS for age in ages)
 
 
 def _decimal(value):
@@ -66,6 +96,8 @@ class Live:
         self.embedded = list(embedded)
         self.tokens_checked_at = None
         self.manual_checked = None
+        self.vacancies_checked_at = None
+        self.candidates_read = None   # (served revision, read at, pool ids)
 
     # ------------------------------------------------------------ reading
     def _in_catalogue(self, pool_id):
@@ -153,11 +185,18 @@ class Live:
         for revision in (served, draft):
             if revision is not None:
                 pool_ids |= {entry['poolId'] for entry in revision['payload']['pools']}
+        # A short list's next candidates, for an hour: refreshed with the listed
+        # pools, one of them is ready when the list looks for a replacement.
+        candidates = set(self._candidates(served, overrides, now)) - pool_ids if self._fillable(served) else set()
         with self.public.connection(write=True) as conn:
-            return conn.execute('''UPDATE domino_public.entities SET keep_warm_until=to_timestamp(%s)
-              WHERE kind='pool' AND entity_id=ANY(%s)
-                AND (keep_warm_until IS NULL OR keep_warm_until<to_timestamp(%s))''',
-              (now + WARM_SECONDS, sorted(pool_ids), now + WARM_REFRESH_SECONDS)).rowcount
+            kept = 0
+            for ids, until, refresh in ((pool_ids, WARM_SECONDS, WARM_REFRESH_SECONDS),
+                                        (candidates, CANDIDATE_WARM_SECONDS, CANDIDATE_WARM_SECONDS // 2)):
+                kept += conn.execute('''UPDATE domino_public.entities SET keep_warm_until=to_timestamp(%s)
+                  WHERE kind='pool' AND entity_id=ANY(%s)
+                    AND (keep_warm_until IS NULL OR keep_warm_until<to_timestamp(%s))''',
+                  (now + until, sorted(ids), now + refresh)).rowcount
+            return kept
 
     def _warm_up(self, draft, served, now):
         """Seed the newcomers' identity once, then ask for them as a visitor would."""
@@ -241,15 +280,16 @@ class Live:
 
     # ------------------------------------------------------------ health
     def _pool_health(self, entry, overrides, now):
-        """(reasons that remove the pool at once, conditions it shows now)."""
-        pool_id, reasons, seen = entry['poolId'], [], set()
+        """(reasons that remove the pool at once, conditions it shows now, conditions its data
+        cannot judge now)."""
+        pool_id, reasons, seen, unknown = entry['poolId'], [], set(), set()
         tokens = [token['address'] for token in entry.get('tokens') or ()]
         if pool_id in overrides['excludedPools'] or any(token in overrides['excludedTokens'] for token in tokens):
             reasons.append('excluded_by_owner')
         row = self.public.get('pool', pool_id)
         if row is None or row['payload'] is None:
             seen.add('estimate_unavailable')
-            return reasons, seen
+            return reasons, seen, unknown
         aged = aged_market(row['payload'], row['observed_at'], now)
         pool, thresholds = aged['pool'], self.policy['thresholds']
         if pool['integrationClass'] != 'hookless_fixed_fee':
@@ -265,9 +305,13 @@ class Live:
             estimate = estimate_pool_apr(aged, now=now)
         except ValueError:
             estimate = None
-        if estimate is None or estimate['status'] == 'unavailable':
+        if estimate is not None and estimate['status'] == 'unavailable' and transient(estimate):
+            unknown.add('estimate_unavailable')
+        elif estimate is None or estimate['status'] == 'unavailable':
             seen.add('estimate_unavailable')
         data = aged['market'].get('data')
+        if data is None and aged['market'].get('reason') in BUSY_PROVIDER:
+            unknown |= {'tvl_collapse', 'volume_collapse', 'apr_or_turnover_above_ceiling'}
         if data is not None:
             tvl, volume = _decimal(data['reportedLiquidityUsd']), _decimal(data['volume24hUsd'])
             apr = _decimal(estimate['feeAprEstimate24hPercent']) if estimate else None
@@ -286,7 +330,7 @@ class Live:
             other = ratio if reference == pool['currencies'][1] else 1 / ratio
             if other < PRICE_FALL:
                 seen.add('price_fall')
-        return reasons, seen
+        return reasons, seen, unknown
 
     def _token_checks(self, entries, now):
         """TA-5 once an hour: listed tokens whose code differs from when first listed."""
@@ -306,56 +350,109 @@ class Live:
     def _health(self, served, overrides, now):
         if served is None or not served['payload']['pools']:
             self.store.observe_health({}, now)
-            return {'status': 'idle'}
+            # A list every pool has left still takes replacements once they are ready.
+            return self._fill_vacancies(served, overrides, now) if self._fillable(served) else {'status': 'idle'}
         entries = {entry['poolId']: entry for entry in served['payload']['pools']}
-        immediate, seen = {}, {}
+        immediate, seen, unknown = {}, {}, {}
         for pool_id, entry in entries.items():
-            reasons, conditions = self._pool_health(entry, overrides, now)
+            reasons, conditions, unjudged = self._pool_health(entry, overrides, now)
             if reasons:
                 immediate[pool_id] = reasons[0]
-            seen[pool_id] = conditions
+            seen[pool_id], unknown[pool_id] = conditions, unjudged
         changed = self._token_checks(list(entries.values()), now)
         for pool_id, entry in entries.items():
             if any(token['address'] in changed for token in entry.get('tokens') or ()):
                 immediate.setdefault(pool_id, 'token_code_changed')
-        state = self.store.observe_health(seen, now)
+        state = self.store.observe_health(seen, now, unknown)
         confirmed = {}
         for (pool_id, condition), (first_seen, checks) in sorted(state.items()):
+            # Only a check that sees the condition confirms it; unknown data only keeps its window.
+            if condition not in seen.get(pool_id, ()):
+                continue
             hold, owners_too = CONFIRM[condition]
             if checks >= 2 and now - first_seen >= hold and (owners_too or entries[pool_id]['source'] not in ('pinned', 'manual')):
                 confirmed.setdefault(pool_id, condition)
         removed = {**confirmed, **immediate}
         for token in sorted(changed):
             self.store.add_override('exclude_token', token, reason='token_code_changed: code differs from when first listed')
-        if not removed:
-            return {'status': 'healthy'}
-        return self._repair(served, removed, overrides, now)
+        if removed:
+            return self._repair(served, removed, overrides, now)
+        if len(entries) < self.policy['size'] and self._fillable(served):
+            return self._fill_vacancies(served, overrides, now)
+        return {'status': 'healthy'}
+
+    def _fillable(self, served):
+        """A list the day's ranked pools complete: not the owner's, not none."""
+        return served is not None and served['status'] not in ('manual', 'none')
+
+    def _evaluations(self, withdrawn, overrides, now):
+        """The latest selection's evaluations, without the pools withdrawn this week; none from a
+        selection the owner vetoed, whose pools must not be served."""
+        run = self.store.latest_run(within_hours=self.policy['persistenceLookbackHours'], now=now)
+        if run is None or (run['selection_date'] is not None and run['selection_date'].isoformat() in overrides['vetoes']):
+            return []
+        # A pool withdrawn this week comes back only when a selection chooses it again.
+        gone = {item['poolId'] for item in withdrawn}
+        return [item for item in run['evaluation']['evaluations'] if item['poolId'] not in gone]
+
+    def _candidates(self, served, overrides, now):
+        """The pools that would complete a short list were they ready, and a few beyond, in order.
+        Read again when the served list changes, and otherwise at most every VACANCY_SECONDS."""
+        kept = [entry['poolId'] for entry in served['payload']['pools']]
+        if len(kept) >= self.policy['size']:
+            return []
+        cached = self.candidates_read
+        if cached is not None and cached[0] == served['revision'] and now - cached[1] < VACANCY_SECONDS:
+            return cached[2]
+        evaluations = self._evaluations(served['payload'].get('withdrawn', []), overrides, now)
+        wider = {**self.policy, 'size': self.policy['size'] + SPARE_CANDIDATES}
+        ids = [item['poolId'] for item in rules.refill(kept, evaluations, wider, embedded=self.embedded)]
+        self.candidates_read = (served['revision'], now, ids)
+        return ids
+
+    def _replacements(self, kept, withdrawn, overrides, now):
+        """Ranked pools, then the embedded list's, that complete the list and are ready now."""
+        evaluations = self._evaluations(withdrawn, overrides, now)
+        by_id = {item['poolId']: item for item in evaluations}
+
+        def entry_of(pool_id, source):
+            return list_entry({'slot': 0, 'source': source, 'poolId': pool_id}, by_id[pool_id])
+
+        def fit(pool_id):
+            """The site can show it now, and it shows no condition that would remove it."""
+            if self.readiness([pool_id], now)[pool_id] is not None:
+                return False
+            reasons, seen, unknown = self._pool_health(entry_of(pool_id, 'ranked'), overrides, now)
+            return not reasons and not seen and not unknown
+        return [entry_of(item['poolId'], item['source'])
+                for item in rules.refill([entry['poolId'] for entry in kept], evaluations, self.policy,
+                                         embedded=self.embedded, ready=fit)]
+
+    def _fill_vacancies(self, served, overrides, now):
+        """A short list takes the replacements ready now, looked for at most every VACANCY_SECONDS."""
+        kept = served['payload']['pools']
+        # Nothing left the list: `healthy`, or `idle` when it is empty, with its vacancies.
+        quiet = {'status': 'healthy' if kept else 'idle', 'vacant': self.policy['size'] - len(kept)}
+        if self.vacancies_checked_at is not None and now - self.vacancies_checked_at < VACANCY_SECONDS:
+            return quiet
+        self.vacancies_checked_at = now
+        withdrawn = served['payload'].get('withdrawn', [])
+        added = self._replacements(kept, withdrawn, overrides, now)
+        if not added:
+            return quiet
+        revision = self._serve('repaired', {**served['payload'], 'pools': kept + added,
+                                            'withdrawn': prune_withdrawn(withdrawn, now)},
+                               day=served['selection_date'], run_id=served['run_id'], now=now,
+                               valid_until=served['valid_until'])
+        return {'status': 'refilled', 'revision': revision, 'added': [entry['poolId'] for entry in added]}
 
     def _repair(self, served, removed, overrides, now):
         kept = [entry for entry in served['payload']['pools'] if entry['poolId'] not in removed]
         withdrawn = served['payload'].get('withdrawn', []) + [
             {'poolId': pool_id, 'reason': reason, 'at': now} for pool_id, reason in sorted(removed.items())]
-        added = []
-        if served['status'] != 'manual':
-            run = self.store.latest_run(within_hours=self.policy['persistenceLookbackHours'], now=now)
-            # A pool withdrawn this week comes back only when a selection chooses it again.
-            gone = {item['poolId'] for item in withdrawn}
-            evaluations = [item for item in (run['evaluation']['evaluations'] if run else [])
-                           if item['poolId'] not in gone]
-            by_id = {item['poolId']: item for item in evaluations}
-
-            def entry_of(pool_id, source):
-                return list_entry({'slot': 0, 'source': source, 'poolId': pool_id}, by_id[pool_id])
-
-            def fit(pool_id):
-                """The site can show it now, and it shows no condition that would remove it."""
-                if self.readiness([pool_id], now)[pool_id] is not None:
-                    return False
-                reasons, seen = self._pool_health(entry_of(pool_id, 'ranked'), overrides, now)
-                return not reasons and not seen
-            added = [entry_of(item['poolId'], item['source'])
-                     for item in rules.refill([entry['poolId'] for entry in kept], evaluations, self.policy,
-                                              embedded=self.embedded, ready=fit)]
+        added = self._replacements(kept, withdrawn, overrides, now) if served['status'] != 'manual' else []
+        # The search just ran: a list still short looks again only after VACANCY_SECONDS.
+        self.vacancies_checked_at = now
         status = 'manual' if served['status'] == 'manual' else 'repaired'
         revision = self._serve(status, {**served['payload'], 'pools': kept + added,
                                         'withdrawn': prune_withdrawn(withdrawn, now)},

@@ -1,4 +1,4 @@
-"""The release drop-ins as the runner's own systemd reads them, not as a model does.
+"""The release drop-ins, and the public-data timers, as the runner's own systemd reads them, not as a model does.
 
 The installers' offline tests fold a drop-in over a unit with a model of
 systemd. On 24 September that model was wrong: it kept BindPaths and
@@ -147,6 +147,46 @@ class RealSystemdTests(unittest.TestCase):
         self.assertIn(f'/var/lib/domino-financial/automation:{root}/backend/runtime', binds['BindPaths'])
         self.assertEqual(self.show('domino-automation-keyed'), self.show('domino-automation-keyed-expected'))
 
+
+    def install_timer(self, name, dropin):
+        """A minute's timer as the VM's base unit has it, under a public-data drop-in; never started."""
+        service, timer = RUNTIME_UNITS / f'{name}.service', RUNTIME_UNITS / f'{name}.timer'
+        directory = RUNTIME_UNITS / f'{name}.timer.d'
+        for path in (service, timer, directory):
+            self.assertFalse(os.path.lexists(path), path)
+            self.written.append(path)
+        service.write_text('[Service]\nType=oneshot\nExecStart=/bin/true\n')
+        timer.write_text(f'[Timer]\nOnBootSec=2min\nOnUnitActiveSec=60s\nUnit={name}.service\n')
+        directory.mkdir()
+        (directory / '90-public-data.conf').write_text(dropin)
+
+    def test_the_public_data_timers_load_a_minute_calendar_and_no_chain_a_reboot_leaves_elapsed(self):
+        # #278: an empty OnUnitActiveSec= after OnBootSec=30s and OnActiveSec=30s reset every
+        # trigger; systemd kept only OnUnitInactiveSec=60s, which never fires after a reboot.
+        ops = Path(__file__).resolve().parents[3] / 'ops/systemd'
+        timers = ('domino-queue-worker', 'domino-catalogue-follower')
+        for name in timers:
+            self.install_timer(f'{name}-under-test', (ops / f'{name}.timer.d/90-public-data.conf').read_text())
+        self.install_timer('domino-timer-reset-under-test',
+                           '[Timer]\nOnBootSec=\nOnBootSec=30s\nOnActiveSec=30s\nOnUnitActiveSec=\nOnUnitInactiveSec=60s\n')
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+
+        def show(name):
+            raw = subprocess.run(['systemctl', 'show', '--all', f'{name}.timer',
+                                  '--property=LoadState,TimersMonotonic,TimersCalendar'],
+                                 check=True, capture_output=True, text=True).stdout
+            return dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+        for name in timers:
+            with self.subTest(timer=name):
+                shown = show(f'{name}-under-test')
+                self.assertEqual(shown['LoadState'], 'loaded')
+                self.assertEqual(shown.get('TimersMonotonic', ''), '')
+                self.assertIn('OnCalendar=*-*-* *:*:00', shown.get('TimersCalendar', ''))
+        # The drop-in this replaces: what one empty assignment leaves of the triggers before it.
+        lost = show('domino-timer-reset-under-test')
+        self.assertIn('OnUnitInactiveUSec=1min', lost.get('TimersMonotonic', ''))
+        for erased in ('OnBootUSec', 'OnActiveUSec', 'OnUnitActiveUSec'):
+            self.assertNotIn(erased, lost.get('TimersMonotonic', ''))
 
     def test_the_automation_target_is_wanted_at_boot_and_wants_its_three_units(self):
         target = RUNTIME_UNITS / boot.TARGET

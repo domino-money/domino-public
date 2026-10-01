@@ -67,7 +67,8 @@ PACKAGED_MIGRATIONS = ('backend/migrations/015_unsigned_execution.sql',
                        'backend/migrations/043_featured_pools.sql',
                        'backend/migrations/044_demand_horizon.sql',
                        'backend/migrations/045_featured_live.sql',
-                       'backend/migrations/046_gas_answer_heartbeat.sql')
+                       'backend/migrations/046_gas_answer_heartbeat.sql',
+                       'backend/migrations/047_provider_ceiling.sql')
 
 
 def packaged_records(files):

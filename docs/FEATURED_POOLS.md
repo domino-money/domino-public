@@ -105,8 +105,10 @@ Each tick (every 30 s), in this order:
    one is dropped and reported). `auto` serves the day's selection.
 2. **Keep warm.** The served list, today's draft, the manual list and the
    embedded list get `keep_warm_until` = now + 26 h (written again once less
-   than 25 h remain), so the collector never lets them fall below the week
-   tier (044).
+   than 25 h remain). A short list's next candidates (the pools that would
+   complete it, in refill order, and two beyond) get it for 1 h. The collector
+   claims these pools ahead of its background backlog and refreshes them every
+   240 s with the whole provider allowance (the featured tier, #278).
 3. **Warm-up, 11:30-12:25 UTC.** The draft's newcomers get their verified
    identity into the catalogue once (a hint at the verified block), then are
    asked for as a visitor would ask (`request_many`): the collector refreshes
@@ -132,17 +134,29 @@ Each tick (every 30 s), in this order:
    | reported TVL is below half the floor | 10 min | yes |
    | the listed token fell below 30% of its price at selection | 10 min | yes |
    | the APR or the turnover is above its ceiling | 30 min | yes |
-   | the estimate is unavailable | 3 h | no |
+   | the estimate is unavailable for a reason of its own (below) | 3 h | no |
    | 24 h volume is below a tenth of the floor | 3 h | no |
 
    A condition must be seen on at least two checks; one that clears starts
-   its window again.
+   its window again. An estimate missing only because the data is late
+   (snapshot or market past five minutes) or the provider refused (rate
+   limited, busy or unavailable, with the TVL and volume it leaves missing) is
+   unknown, not a fault of the pool, and does not count while the last good
+   data is at most 6 h old (#278). Beyond that it counts again. Nor does an
+   answer that did not come clear a condition: when the provider is busy and
+   the market figures are missing, their conditions (and a late estimate's)
+   keep their window as it is, no check is counted, and none is confirmed
+   until a check sees the condition again.
 
    The others keep their order. The list is completed from the day's ranked
    pools, then from the embedded list, with pools that are ready and show no
-   condition now, never with a pool withdrawn this week; a manual list is not
-   completed. It becomes a new revision (`repaired`; a manual list stays
-   `manual`). The pool is listed in `withdrawn` for 7 days (at most 24), so a
+   condition now, never with a pool withdrawn this week nor from a selection
+   the owner vetoed; a manual list is not completed. It becomes a new revision
+   (`repaired`; a manual list stays `manual`). A list still short, even an
+   empty one, looks for ready replacements again every 2 minutes and takes
+   them as soon as they are ready, without another pool having to leave
+   (#278): health reports `healthy` (or `idle` when empty) with its `vacant`
+   slots, or `refilled` with the pools it added. The pool is listed in `withdrawn` for 7 days (at most 24), so a
    link to it can be refused, until a selection or the owner lists it again.
 
 Back in shadow, a list served while live gives way to `none`: nothing would
@@ -244,15 +258,20 @@ then stays as it was, unrepaired: when it should go too, set `mode --set off`
 and wait for a tick (30 s) first. Disable the unit before rolling public data back to a release without
 `manage_featured.py`.
 
-## Provider priority (042)
+## Provider priority (042, 047)
 
-Every GeckoTerminal call spends the one allowance of 024 (25 a minute). A pool
-someone asked for once stays explicit and is refreshed for good; while nobody
-reads it, the collector now spends a call only while 8 of the minute's calls
-remain (`IDLE_PROVIDER_HEADROOM`), the selection only while 2 remain, and a pool
-a visitor is reading keeps the whole allowance. Recalibrate the ceiling in
-042 and the two headrooms together, from a day of samples of what the
-collector's publications record:
+Every GeckoTerminal call spends the one allowance of 024, **8 a minute** since
+047 (#278): GeckoTerminal's free API allows 10 a minute per address, and the
+VM shares its address with the rest of the house. 042's 25 hid that while the
+collector called little; once the listed pools were refreshed on time it
+reached 11 a minute and most answers were 429s. A pool someone asked for once
+stays explicit and is refreshed for good; while nobody reads it, the collector
+spends a call only while 3 of the minute's calls remain
+(`IDLE_PROVIDER_HEADROOM`), the selection only while 2 remain, and a pool a
+visitor is reading or the featured list keeps warm keeps the whole allowance.
+Recalibrate the ceiling (047, `PROVIDER_CALLS_PER_MINUTE`) and the two
+headrooms together, from a day of samples of what the collector's
+publications record:
 
 ```sql
 SELECT payload->'market'->'cache'->>'status' AS cache,
@@ -277,10 +296,14 @@ follows how long ago it was last asked for:
 | within 24 h | 120 s | yes | yes | yes |
 | within 7 days | 900 s | yes | no | yes |
 | earlier (cold) | 3600 s | no | no | no |
+| kept warm by the featured list, when the above is slower | 240 s | yes, the whole allowance | no | yes |
 
 A new request makes the pool hot again. A pool with `keep_warm_until` in the
-future (the featured lists' pools, written by the live service) never falls
-below the week tier.
+future (the featured lists' pools and a short list's next candidates, written
+by the live service) is refreshed at least every 240 s, and the collector
+claims it, like a pool on screen, ahead of the backlog of due pools (#278:
+8,842 pools and 10,800 tokens were overdue, and the listed pools waited 76
+minutes behind them).
 
 ## Known limits
 

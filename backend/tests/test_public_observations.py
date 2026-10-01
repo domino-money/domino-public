@@ -17,7 +17,7 @@ from discovery import DataError, KEY_TYPES
 from market_cache import MarketCache
 from public_data_contract import validate_response, validate_request_response, RatioCandle
 from public_data_service import PublicDataService
-from public_observations import PgPublicData, aged_market
+from public_observations import PgPublicData, aged_market, PROVIDER_CALLS_PER_MINUTE
 from read_service import ReadService
 from read_api import ReadGate
 from test_discovery import FakeRpc, KEY, TOKEN, ZERO, POOL
@@ -176,14 +176,15 @@ class PublicObservationStorageTests(unittest.TestCase):
             validate_response('search',{**response,'tokens':response['tokens']*2})
 
     def test_shared_provider_budget_applies_across_repository_instances(self):
-        self.assertTrue(all(self.writer.reserve_provider() for _ in range(24)))
+        self.assertTrue(all(self.writer.reserve_provider() for _ in range(PROVIDER_CALLS_PER_MINUTE-1)))
         self.assertTrue(self.reader.reserve_provider())
         self.assertFalse(PgPublicData(self.catalogue).reserve_provider())
 
     def test_a_deferred_reservation_leaves_the_minute_s_last_calls_to_higher_priorities(self):
-        self.assertTrue(all(self.writer.reserve_provider_if_headroom(8) for _ in range(17)))
-        self.assertFalse(self.writer.reserve_provider_if_headroom(8))
-        self.assertTrue(all(self.writer.reserve_provider_if_headroom(2) for _ in range(6)))
+        # 047: eight a minute. An idle refresh leaves three, the featured listing two.
+        self.assertTrue(all(self.writer.reserve_provider_if_headroom(3) for _ in range(PROVIDER_CALLS_PER_MINUTE-3)))
+        self.assertFalse(self.writer.reserve_provider_if_headroom(3))
+        self.assertTrue(self.writer.reserve_provider_if_headroom(2))
         self.assertFalse(self.writer.reserve_provider_if_headroom(2))
         self.assertTrue(self.reader.reserve_provider())
         self.assertTrue(self.writer.reserve_provider())

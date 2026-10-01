@@ -39,6 +39,10 @@ class DeadlineConnection:
         return result
 
 
+# The provider calls the whole VM may make in a minute: the ceiling in
+# migrations/047_provider_ceiling.sql (GeckoTerminal's free API allows 10 per address).
+PROVIDER_CALLS_PER_MINUTE = 8
+
 class PgPublicData:
     def __init__(self, catalogue, *, writer=False, clock=time.time):
         self.catalogue, self.writer, self.clock = catalogue, writer, clock
@@ -99,7 +103,7 @@ class PgPublicData:
 
     def reserve_provider_if_headroom(self, min_free):
         """Spend the shared allowance only while `min_free` of the minute's calls remain."""
-        if type(min_free) is not int or not 0<=min_free<25:
+        if type(min_free) is not int or not 0<=min_free<PROVIDER_CALLS_PER_MINUTE:
             raise DataError('invalid_request')
         with self.connection(write=True) as conn:
             return conn.execute('SELECT domino_public.reserve_provider_if_headroom(%s) AS allowed',
@@ -177,6 +181,8 @@ class PgPublicData:
         lease = secrets.token_hex(16)
         with self.connection(write=True) as conn:
             preferred=None
+            # 'hot': a pool on screen in the last minute, or one the featured list keeps
+            # warm (#278): both go ahead of the background backlog in three turns of four.
             if demand=='scheduled':
                 # Count persisted claims rather than invocations: a deadline,
                 # spent RPC budget or restart must not erase background's turn.
@@ -194,9 +200,11 @@ class PgPublicData:
                    AND (lease_until IS NULL OR lease_until<clock_timestamp())
                    AND NOT(entity_id=ANY(%s))
                    AND (%s::text IS NULL OR
-                     (last_requested_at>=clock_timestamp()-interval '60 seconds')=(%s='hot'))
+                     (last_requested_at>=clock_timestamp()-interval '60 seconds'
+                      OR keep_warm_until>clock_timestamp())=(%s='hot'))
                  ORDER BY CASE WHEN %s::text IS NULL OR
-                   (last_requested_at>=clock_timestamp()-interval '60 seconds')=(%s='hot') THEN 0 ELSE 1 END,
+                   (last_requested_at>=clock_timestamp()-interval '60 seconds'
+                    OR keep_warm_until>clock_timestamp())=(%s='hot') THEN 0 ELSE 1 END,
                    next_due,entity_id FOR UPDATE SKIP LOCKED LIMIT %s)
               RETURNING *""", (lease, lease_seconds, kind,exclude,demand,demand,preferred,preferred,limit)).fetchall()
 

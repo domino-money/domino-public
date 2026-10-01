@@ -17,7 +17,8 @@ from discovery import Block, DataError, ZERO
 from eth_abi import encode
 from eth_hash.auto import keccak
 from discovery import POOL_MANAGER
-from manage_public_data import IDLE_PROVIDER_HEADROOM, PublicCollector, TIERS, interest_tier
+from manage_public_data import FEATURED, IDLE_PROVIDER_HEADROOM, PublicCollector, TIERS, interest_tier
+from public_observations import PROVIDER_CALLS_PER_MINUTE
 from market_cache import MarketCache
 from public_observations import PgPublicData
 from public_data_service import PublicDataService
@@ -43,7 +44,7 @@ class PublicCollectorTests(unittest.TestCase):
         with psycopg.connect(**cls.settings,user=ADMIN) as conn:
             for name in ('001_catalogue','002_activity','020_pool_requests','023_pool_request_scheduling',
                          '024_public_observations','025_public_history','026_public_demand',
-                         '042_provider_priority','044_demand_horizon'):
+                         '042_provider_priority','044_demand_horizon','047_provider_ceiling'):
                 conn.execute((migrations/(name+'.sql')).read_text())
 
     def setUp(self):
@@ -182,7 +183,7 @@ class PublicCollectorTests(unittest.TestCase):
         self.service.market_cache=replacement
         PublicCollector(self.writer,self.service)
         results=[replacement.get('pool','0x'+f'{index+100:064x}') for index in range(15)]
-        self.assertEqual(len(self.provider.calls),25)
+        self.assertEqual(len(self.provider.calls),PROVIDER_CALLS_PER_MINUTE)
         self.assertEqual([row['cache']['status'] for row in results[-5:]],['rate_limited']*5)
 
     def test_shared_rpc_budget_stops_discovery_but_retains_completed_metadata(self):
@@ -391,6 +392,26 @@ class PublicCollectorTests(unittest.TestCase):
         self.assertEqual(set(collected[:3]),set(hot))
         self.assertEqual(collected[3],'0x'+f'{1:064x}')
 
+    def test_a_large_background_backlog_does_not_delay_a_listed_pool(self):
+        # #278: 8,842 pools and 10,800 tokens were overdue, and a listed pool waited 76 minutes
+        # behind them in due order.
+        with self.writer.connection(write=True) as conn:
+            conn.execute("""INSERT INTO domino_public.entities(kind,entity_id,last_requested_at,next_due)
+              SELECT 'pool','0x'||lpad(to_hex(n),64,'0'),'epoch'::timestamptz,clock_timestamp()-interval '1 day'
+              FROM generate_series(1,1000) AS numbers(n)""")
+            listed='0x'+f'{3000:064x}'
+            conn.execute("""INSERT INTO domino_public.entities(kind,entity_id,last_requested_at,next_due,keep_warm_until)
+              VALUES('pool',%s,'epoch'::timestamptz,clock_timestamp()-interval '1 second',clock_timestamp()+interval '1 day')""",
+              (listed,))
+        collected=[]
+        def collect(claim):
+            collected.append(claim['entity_id'])
+            self.writer.fail(claim,'fixture_finished',delay=120)
+        collector=PublicCollector(self.writer,self.service)
+        with patch.object(collector,'collect',side_effect=collect):
+            collector.tick(token_limit=0,pool_limit=1)
+        self.assertEqual(collected,[listed])
+
     def test_background_capacity_does_not_reject_first_explicit_search(self):
         with self.writer.connection(write=True) as conn:
             conn.execute("""INSERT INTO domino_public.entities(kind,entity_id,last_requested_at)
@@ -456,7 +477,7 @@ class PublicCollectorTests(unittest.TestCase):
     def test_cold_restart_keeps_persisted_market_original_age_when_quota_is_full(self):
         _,market=fixtures();self.writer.request('pool',POOL)
         self.writer.publish(self.writer.claim('pool')[0],market)
-        self.assertTrue(all(self.writer.reserve_provider() for _ in range(25)))
+        self.assertTrue(all(self.writer.reserve_provider() for _ in range(PROVIDER_CALLS_PER_MINUTE)))
         self.restart_at(1040);self.due('pool',POOL)
         self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
         first=self.row('pool',POOL)
@@ -491,29 +512,29 @@ class PublicCollectorTests(unittest.TestCase):
         the pools on screen and the featured listing need."""
         _,market=fixtures();self.writer.request('pool',POOL)
         self.writer.publish(self.writer.claim('pool')[0],market)
-        self.spend_provider_calls(25-IDLE_PROVIDER_HEADROOM)
+        self.spend_provider_calls(PROVIDER_CALLS_PER_MINUTE-IDLE_PROVIDER_HEADROOM)
         self.read_at(900);self.restart_at(1080);self.due('pool',POOL)
         self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
         value=self.row('pool',POOL)['payload']['market']
         self.assertEqual((value['status'],value['reason']),('stale','provider_capacity_busy'))
         self.assertEqual(self.provider.calls,[])
-        self.assertEqual(self.provider_calls_spent(),25-IDLE_PROVIDER_HEADROOM)
+        self.assertEqual(self.provider_calls_spent(),PROVIDER_CALLS_PER_MINUTE-IDLE_PROVIDER_HEADROOM)
         self.assertEqual(self.service.market_cache.reserve_provider,self.writer.reserve_provider)
         with psycopg.connect(**self.settings,user=ADMIN) as conn:
             conn.execute('DELETE FROM domino_public.provider_requests WHERE ctid=(SELECT min(ctid) FROM domino_public.provider_requests)')
         self.restart_at(1080);self.due('pool',POOL)
         self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
         self.assertEqual(self.provider.calls,['pool'])
-        self.assertEqual(self.provider_calls_spent(),25-IDLE_PROVIDER_HEADROOM)
+        self.assertEqual(self.provider_calls_spent(),PROVIDER_CALLS_PER_MINUTE-IDLE_PROVIDER_HEADROOM)
 
     def test_a_pool_on_screen_still_takes_a_call_idle_refreshes_leave(self):
         _,market=fixtures();self.writer.request('pool',POOL)
         self.writer.publish(self.writer.claim('pool')[0],market)
-        self.spend_provider_calls(24)
+        self.spend_provider_calls(PROVIDER_CALLS_PER_MINUTE-1)
         self.read_at(1070);self.restart_at(1080);self.due('pool',POOL)
         self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
         self.assertEqual(self.provider.calls,['pool'])
-        self.assertEqual(self.provider_calls_spent(),25)
+        self.assertEqual(self.provider_calls_spent(),PROVIDER_CALLS_PER_MINUTE)
 
     def horizon(self,age,warm=None):
         """One refresh of POOL, last asked for `age` seconds before the collector's clock."""
@@ -541,11 +562,52 @@ class PublicCollectorTests(unittest.TestCase):
         self.assertEqual(self.horizon(8*86400),(3600,False,False,False))
         self.assertEqual(self.horizon(None),(3600,False,False,False))
 
-    def test_a_pool_kept_warm_never_falls_below_the_week_tier(self):
-        self.assertEqual(self.horizon(8*86400,warm='2999-01-01T00:00:00Z'),(900,True,False,True))
-        self.assertEqual(self.horizon(None,warm='2999-01-01T00:00:00Z'),(900,True,False,True))
+    def test_a_pool_kept_warm_is_refreshed_in_the_featured_tier(self):
+        # #278: a listed pool in the week tier went 15 min between refreshes, three times the five
+        # minutes its APR estimate allows.
+        self.assertEqual(self.horizon(8*86400,warm='2999-01-01T00:00:00Z'),(240,True,False,True))
+        self.assertEqual(self.horizon(2*86400,warm='2999-01-01T00:00:00Z'),(240,True,False,True))
+        self.assertEqual(self.horizon(None,warm='2999-01-01T00:00:00Z'),(240,True,False,True))
+        # A visitor's faster tier still wins.
+        self.assertEqual(self.horizon(2*3600,warm='2999-01-01T00:00:00Z'),(120,True,True,True))
         # Expired before the collector's clock (3,000,000 s): the pool is cold again.
         self.assertEqual(self.horizon(8*86400,warm='1970-01-01T00:00:10Z'),(3600,False,False,False))
+
+    def test_with_five_calls_spent_an_idle_refresh_waits_and_a_listed_one_does_not(self):
+        # 047: eight calls a minute. An idle refresh leaves three, for the pools on screen and listed.
+        for listed,expected in ((False,[]),(True,['pool'])):
+            with self.subTest(listed=listed):
+                with psycopg.connect(**self.settings,user=ADMIN) as conn:
+                    conn.execute('TRUNCATE domino_public.entities,domino_public.provider_requests')
+                self.provider.calls.clear()
+                self.writer.clock=lambda:1010
+                _,market=fixtures();self.writer.request('pool',POOL)
+                self.writer.publish(self.writer.claim('pool')[0],market)
+                with psycopg.connect(**self.settings,user=ADMIN) as conn:
+                    conn.execute("UPDATE domino_public.entities SET last_requested_at=to_timestamp(480),keep_warm_until=%s::timestamptz WHERE entity_id=%s",
+                                 ('2999-01-01T00:00:00Z' if listed else None,POOL))
+                self.spend_provider_calls(5)
+                self.restart_at(1080);self.due('pool',POOL)
+                self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+                self.assertEqual(self.provider.calls,expected)
+
+    def test_a_listed_pool_still_takes_a_call_idle_refreshes_leave(self):
+        # In the featured tier, and in a visitor's recent tier too: listed is what keeps the call (#278).
+        for asked in ("'epoch'", "to_timestamp(1080-600)"):
+            with self.subTest(asked=asked):
+                with psycopg.connect(**self.settings,user=ADMIN) as conn:
+                    conn.execute('TRUNCATE domino_public.entities,domino_public.provider_requests')
+                self.provider.calls.clear()
+                self.writer.clock=lambda:1010                   # published 70 s before the refresh
+                _,market=fixtures();self.writer.request('pool',POOL)
+                self.writer.publish(self.writer.claim('pool')[0],market)
+                with psycopg.connect(**self.settings,user=ADMIN) as conn:
+                    conn.execute(f"UPDATE domino_public.entities SET last_requested_at={asked},keep_warm_until='2999-01-01T00:00:00Z' WHERE entity_id=%s",(POOL,))
+                self.spend_provider_calls(PROVIDER_CALLS_PER_MINUTE-1)
+                self.restart_at(1080);self.due('pool',POOL)
+                self.assertEqual(self.collector.tick(token_limit=0,pool_limit=1)[0]['status'],'published')
+                self.assertEqual(self.provider.calls,['pool'])
+                self.assertEqual(self.provider_calls_spent(),PROVIDER_CALLS_PER_MINUTE)
 
     def test_tier_boundaries(self):
         from datetime import datetime,timezone
@@ -554,10 +616,13 @@ class PublicCollectorTests(unittest.TestCase):
         names=[interest_tier(now,at(now-age))['name'] for age in (60,61,86400,86401,7*86400,7*86400+1)]
         self.assertEqual(names,['hot','recent','recent','week','week','cold'])
         self.assertEqual(interest_tier(now,at(0))['name'],'cold')
-        self.assertEqual(interest_tier(now,at(0),at(now+1))['name'],'week')
+        self.assertEqual(interest_tier(now,at(0),at(now+1))['name'],'featured')
+        self.assertEqual(interest_tier(now,at(now-2*86400),at(now+1))['name'],'featured')
+        self.assertEqual(interest_tier(now,at(now-3600),at(now+1))['name'],'recent')
         self.assertEqual(interest_tier(now,at(now-10),at(now+1))['name'],'hot')
         self.assertEqual(interest_tier(now,at(0),at(now))['name'],'cold')
         self.assertEqual([tier['delay'] for tier in TIERS],[5,120,900,3600])
+        self.assertEqual(FEATURED['delay'],240)
 
     def test_background_pool_keeps_onchain_state_without_consuming_provider_quota(self):
         self.writer.ensure('pool',POOL)
@@ -566,7 +631,7 @@ class PublicCollectorTests(unittest.TestCase):
         self.assertEqual(value['pool']['identityStatus'],'verified_at_block')
         self.assertEqual(value['market']['status'],'unavailable')
         self.assertEqual(self.provider.calls,[])
-        self.assertTrue(all(self.writer.reserve_provider() for _ in range(25)))
+        self.assertTrue(all(self.writer.reserve_provider() for _ in range(PROVIDER_CALLS_PER_MINUTE)))
 
     def test_background_pool_reuses_valid_stale_market_without_provider_attempt(self):
         _,market=fixtures();self.writer.import_market(market,1010)
@@ -576,7 +641,7 @@ class PublicCollectorTests(unittest.TestCase):
         self.assertEqual((value['status'],value['cache']['ageSeconds']),('stale',70))
         self.assertEqual(value['data'],market['market']['data'])
         self.assertEqual(self.provider.calls,[])
-        self.assertTrue(all(self.writer.reserve_provider() for _ in range(25)))
+        self.assertTrue(all(self.writer.reserve_provider() for _ in range(PROVIDER_CALLS_PER_MINUTE)))
 
     def test_restored_market_still_rejects_reorganized_current_snapshot(self):
         _,market=fixtures();self.writer.request('pool',POOL)

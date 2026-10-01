@@ -21,9 +21,10 @@ from read_service import ReadService
 from rpc_config import configured_rpc_urls, configured_history_rpc_urls
 
 # Provider calls an idle refresh leaves in the minute's shared allowance: room
-# for the pools a visitor is reading and for the daily featured-pools listing.
-# Recalibrate together with the ceiling in 042_provider_priority.sql.
-IDLE_PROVIDER_HEADROOM = 8
+# for the pools a visitor is reading, the featured list's pools and the daily
+# featured-pools listing. Recalibrate together with the ceiling in
+# 047_provider_ceiling.sql (8 a minute; PROVIDER_CALLS_PER_MINUTE).
+IDLE_PROVIDER_HEADROOM = 3
 
 # The demand horizon (044_demand_horizon.sql): seconds since a visitor last
 # asked for a pool, up to which each tier holds, then its refresh period and
@@ -37,21 +38,28 @@ TIERS = (
     {'name': 'cold', 'upTo': None, 'delay': 3600, 'provider': False, 'activity': False, 'history': False},
 )
 WEEK = TIERS[2]
+# A pool the featured list shows, will show or may be completed with
+# (keep_warm_until, set by featured_live): refreshed every 240 s with the whole
+# provider allowance, as a pool on screen is, so its APR estimate stays inside
+# the five minutes it allows (#278). Its claims go ahead of the background
+# backlog too (public_observations.claim). A visitor's faster tier still wins.
+FEATURED = {'name': 'featured', 'upTo': None, 'delay': 240, 'provider': True, 'activity': False, 'history': True}
 
 
 def interest_tier(now, last_requested_at, keep_warm_until=None):
     """The tier of a pool last asked for at `last_requested_at`.
 
     The epoch means never asked for: a background prerequisite, cold. A pool
-    the featured-pools selection keeps warm never falls below the week tier.
+    the featured-pools selection keeps warm is refreshed at least as often as
+    the featured tier.
     """
     requested = last_requested_at.timestamp()
     tier = TIERS[-1]
     if requested > 0:
         age = now - requested
         tier = next(item for item in TIERS if item['upTo'] is None or age <= item['upTo'])
-    if keep_warm_until is not None and keep_warm_until.timestamp() > now and tier['name'] == 'cold':
-        tier = WEEK
+    if keep_warm_until is not None and keep_warm_until.timestamp() > now and tier['delay'] > FEATURED['delay']:
+        tier = FEATURED
     return tier
 
 
@@ -162,10 +170,13 @@ class PublicCollector:
                 self.service.market_cache.restore_pool(entity_id,previous['market'],
                     elapsed_seconds=max(0,int(self.clock())-claim['observed_at']))
             tier = interest_tier(self.clock(), claim['last_requested_at'], claim.get('keep_warm_until'))
-            # Only a pool on screen keeps the whole provider allowance. The others
-            # spend a call only when enough is left for it (042_provider_priority.sql).
+            # Only a pool on screen or one the featured list keeps warm, whatever its
+            # tier, keeps the whole provider allowance. The others spend a call only
+            # when enough is left for it (042_provider_priority.sql).
+            warm = claim.get('keep_warm_until')
+            listed = warm is not None and warm.timestamp() > self.clock()
             cache=self.service.market_cache
-            if tier['name'] != 'hot':
+            if tier['name'] != 'hot' and not listed:
                 cache.reserve_provider=lambda:self.repository.reserve_provider_if_headroom(IDLE_PROVIDER_HEADROOM)
             try:
                 payload = self.service.pool_market(entity_id,allow_provider=tier['provider'])
