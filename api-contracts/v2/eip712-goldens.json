@@ -1,0 +1,122 @@
+{
+  "domain": {
+    "name": "Domino",
+    "version": "2",
+    "chainId": 4663,
+    "verifyingContract": "0x000000000000000000000000000000000000d0d0"
+  },
+  "domainSeparator": "0x839e33bbca391df1ab01e20ee0479a1158c742e3e0afeca8a39660fc07fc4fc4",
+  "fixtures": {
+    "PoolRef": {
+      "dex": 4,
+      "currency0": "0x0000000000000000000000000000000000000000",
+      "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "fee": 3000,
+      "tickSpacing": 60,
+      "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "PriceObservation": {
+      "pool": {
+        "dex": 4,
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "fee": 3000,
+        "tickSpacing": 60,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "sqrtPriceX96": 4339505179874779672736325173248,
+      "observedAt": 1790870000,
+      "validUntil": 1790870060,
+      "nonce": 7
+    },
+    "PositionIntent": {
+      "action": 1,
+      "pool": {
+        "dex": 4,
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "fee": 3000,
+        "tickSpacing": 60,
+        "hooks": "0x0000000000000000000000000000000000000000"
+      },
+      "tokenId": 0,
+      "tickLower": -201060,
+      "tickUpper": -198060,
+      "minLiquidity": 123456789012345678,
+      "feeBps": 65,
+      "feeToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "routesHash": "0x3f539f7e015f09a9c197e20e2d9f3e45d8b4fc875714d48227f082b93fcf8dc7",
+      "recipient": "0x0000000000000000000000000000000000000b0b",
+      "nonce": 42,
+      "deadline": 1790871000
+    },
+    "ExitMandate": {
+      "owner": "0x0000000000000000000000000000000000000b0b",
+      "vault": "0x000000000000000000000000000000000000cafe",
+      "tokenId": 3409682,
+      "triggerBelowSqrtPriceX96": 79228162514264337593543950336,
+      "triggerAboveSqrtPriceX96": 0,
+      "receiveMode": 1,
+      "convertTo": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "maxSlippageBps": 100,
+      "validUntil": 1798646400,
+      "nonce": 1
+    },
+    "SwapLeg": [
+      {
+        "kind": 1,
+        "router": "0x00000000000000000000000000000000000000aa",
+        "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "tokenOut": "0x0000000000000000000000000000000000000000",
+        "amountIn": 500000000,
+        "minAmountOut": 123,
+        "data": "0xdeadbeef"
+      }
+    ],
+    "Permit2": {
+      "permitted": [
+        {
+          "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "amount": 1000000000
+        }
+      ],
+      "nonce": 99,
+      "deadline": 1790871000,
+      "spender": "0x000000000000000000000000000000000000d0d0",
+      "witness": {
+        "action": 1,
+        "pool": {
+          "dex": 4,
+          "currency0": "0x0000000000000000000000000000000000000000",
+          "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "fee": 3000,
+          "tickSpacing": 60,
+          "hooks": "0x0000000000000000000000000000000000000000"
+        },
+        "tokenId": 0,
+        "tickLower": -201060,
+        "tickUpper": -198060,
+        "minLiquidity": 123456789012345678,
+        "feeBps": 65,
+        "feeToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "routesHash": "0x3f539f7e015f09a9c197e20e2d9f3e45d8b4fc875714d48227f082b93fcf8dc7",
+        "recipient": "0x0000000000000000000000000000000000000b0b",
+        "nonce": 42,
+        "deadline": 1790871000
+      }
+    }
+  },
+  "routesHash": "0x3f539f7e015f09a9c197e20e2d9f3e45d8b4fc875714d48227f082b93fcf8dc7",
+  "structHashes": {
+    "PoolRef": "0x6bdd4256dc6c21b3c0eb16b0b093253eae52bf8ba1975906b693d94e518b3f59",
+    "PriceObservation": "0x6413c0512311bcea5702e47e6e15aeea4ffc7ba8866d643306b9d9b4bb443fa0",
+    "PositionIntent": "0xcc0c4822ade686a714ab71c045646f5f12a28df0c7746667425f4b6cd7ca2cef",
+    "ExitMandate": "0x9e9e81446114b3d191bec32453583427ce0931f2021588367c86505e91213025"
+  },
+  "digests": {
+    "PriceObservation": "0xa6b70d6667c97fccf9dd6a109ed8ddf6012d43f47a528158931d52db0900789c",
+    "PositionIntent": "0x642f715eea2ecb377a9d3adbda7e0051399a89ec5c1f8bc2e4921f3bdc068df3",
+    "ExitMandate": "0x2a3403aaa791d63d81c9cd4f5a2865e7178fb19bc7e6a781712b9c05d45cf1bb",
+    "Permit2BatchWitness": "0x6aa9acf7bc27a72ca98abcccc7fc59d5ac5b110b504a4846b9d0ca02d1cc20ae"
+  }
+}

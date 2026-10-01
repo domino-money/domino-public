@@ -1,0 +1,53 @@
+{
+  "source": "contracts/src/v2/interfaces/IDominoVault.sol",
+  "interfaceId": "0x09c5eabe",
+  "functions": {
+    "execute(bytes)": "0x09c5eabe"
+  },
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "planHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "action",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "Executed",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes",
+          "name": "plan",
+          "type": "bytes"
+        }
+      ],
+      "name": "execute",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "planHash",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ]
+}

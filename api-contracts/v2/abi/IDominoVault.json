@@ -1,0 +1,900 @@
+{
+  "source": "contracts/src/v2/interfaces/IDominoVault.sol",
+  "interfaceId": "0x4e0b5b84",
+  "functions": {
+    "executeExit(uint256,bytes)": "0xa1da458d",
+    "exitAll()": "0x5b6c508c",
+    "exitModule()": "0x97073538",
+    "factory()": "0xc45a0155",
+    "limits()": "0x860aefcf",
+    "owner()": "0x8da5cb5b",
+    "pause()": "0x8456cb59",
+    "paused()": "0x5c975abb",
+    "policy()": "0x0505c8c9",
+    "pool()": "0x16f0115b",
+    "positions()": "0xba5b7982",
+    "rearm(bool)": "0xf6fa162e",
+    "recoverToken(address,uint256)": "0xb29a8140",
+    "registry()": "0x7b103999",
+    "reserves(address)": "0xd66bd524",
+    "resume()": "0x046f7da2",
+    "root()": "0xebf0c717",
+    "rootArmed()": "0x19edb7b8",
+    "setExitModule(address)": "0x325be671",
+    "setLimits((uint16,uint16,uint32,uint32))": "0x2853449f",
+    "setPolicy((uint8,uint16,uint16,uint32,uint8))": "0x740b167b",
+    "stateNonce()": "0x7e25850b",
+    "withdrawChild(uint256)": "0x76175193",
+    "withdrawReserves(address,uint256)": "0xe478795d"
+  },
+  "abi": [
+    {
+      "inputs": [],
+      "name": "AutomationUnavailable",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidLimits",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidPolicy",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Unauthorized",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "actor",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "AutomationPaused",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "AutomationResumed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "ChildWithdrawn",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint128",
+          "name": "liquidityAdded",
+          "type": "uint128"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "fees0",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "fees1",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "serviceFee0",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "serviceFee1",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "Compounded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "module",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount0",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount1",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "ExitExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "module",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "ExitModuleSet",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "dex",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "rootTokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "mode",
+          "type": "uint8"
+        }
+      ],
+      "name": "Initialized",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint16",
+              "name": "maxSlippageBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint16",
+              "name": "maxPriceImpactBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint32",
+              "name": "maxObservationAgeSeconds",
+              "type": "uint32"
+            },
+            {
+              "internalType": "uint32",
+              "name": "upsideBps",
+              "type": "uint32"
+            }
+          ],
+          "indexed": false,
+          "internalType": "struct IDominoVault.Limits",
+          "name": "limits",
+          "type": "tuple"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "LimitsChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint8",
+              "name": "mode",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint16",
+              "name": "triggerDistanceBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint16",
+              "name": "maxOverlapBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint32",
+              "name": "minimumIntervalSeconds",
+              "type": "uint32"
+            },
+            {
+              "internalType": "uint8",
+              "name": "maxPositions",
+              "type": "uint8"
+            }
+          ],
+          "indexed": false,
+          "internalType": "struct IDominoVault.Policy",
+          "name": "policy",
+          "type": "tuple"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "PolicyChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "ReservesWithdrawn",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "reason",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "RootDisarmed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "RootRearmed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "parentTokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "stateNonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "SuccessorCreated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "TokenRecovered",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "instruction",
+          "type": "bytes"
+        }
+      ],
+      "name": "executeExit",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount0",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount1",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "exitAll",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "exitModule",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "factory",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "limits",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint16",
+              "name": "maxSlippageBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint16",
+              "name": "maxPriceImpactBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint32",
+              "name": "maxObservationAgeSeconds",
+              "type": "uint32"
+            },
+            {
+              "internalType": "uint32",
+              "name": "upsideBps",
+              "type": "uint32"
+            }
+          ],
+          "internalType": "struct IDominoVault.Limits",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "owner",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "pause",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "paused",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "policy",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint8",
+              "name": "mode",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint16",
+              "name": "triggerDistanceBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint16",
+              "name": "maxOverlapBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint32",
+              "name": "minimumIntervalSeconds",
+              "type": "uint32"
+            },
+            {
+              "internalType": "uint8",
+              "name": "maxPositions",
+              "type": "uint8"
+            }
+          ],
+          "internalType": "struct IDominoVault.Policy",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "pool",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint8",
+              "name": "dex",
+              "type": "uint8"
+            },
+            {
+              "internalType": "address",
+              "name": "currency0",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "currency1",
+              "type": "address"
+            },
+            {
+              "internalType": "uint24",
+              "name": "fee",
+              "type": "uint24"
+            },
+            {
+              "internalType": "int24",
+              "name": "tickSpacing",
+              "type": "int24"
+            },
+            {
+              "internalType": "address",
+              "name": "hooks",
+              "type": "address"
+            }
+          ],
+          "internalType": "struct DominoV2Types.PoolRef",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "positions",
+      "outputs": [
+        {
+          "internalType": "uint256[]",
+          "name": "tokenIds",
+          "type": "uint256[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bool",
+          "name": "consentToUncollectedFees",
+          "type": "bool"
+        }
+      ],
+      "name": "rearm",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "recoverToken",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "registry",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "reserves",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "resume",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "root",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint8",
+              "name": "dex",
+              "type": "uint8"
+            },
+            {
+              "internalType": "address",
+              "name": "positionManager",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct DominoV2Types.PositionRef",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "rootArmed",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "module",
+          "type": "address"
+        }
+      ],
+      "name": "setExitModule",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint16",
+              "name": "maxSlippageBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint16",
+              "name": "maxPriceImpactBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint32",
+              "name": "maxObservationAgeSeconds",
+              "type": "uint32"
+            },
+            {
+              "internalType": "uint32",
+              "name": "upsideBps",
+              "type": "uint32"
+            }
+          ],
+          "internalType": "struct IDominoVault.Limits",
+          "name": "next",
+          "type": "tuple"
+        }
+      ],
+      "name": "setLimits",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint8",
+              "name": "mode",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint16",
+              "name": "triggerDistanceBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint16",
+              "name": "maxOverlapBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint32",
+              "name": "minimumIntervalSeconds",
+              "type": "uint32"
+            },
+            {
+              "internalType": "uint8",
+              "name": "maxPositions",
+              "type": "uint8"
+            }
+          ],
+          "internalType": "struct IDominoVault.Policy",
+          "name": "next",
+          "type": "tuple"
+        }
+      ],
+      "name": "setPolicy",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "stateNonce",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "withdrawChild",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "withdrawReserves",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ]
+}

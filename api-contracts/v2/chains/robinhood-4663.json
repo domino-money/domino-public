@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 1,
+  "chainId": 4663,
+  "slug": "robinhood",
+  "name": "Robinhood Chain",
+  "enabled": true,
+  "nativeSymbol": "ETH",
+  "stack": "arbitrum-nitro",
+  "blockTimeSeconds": 0.1,
+  "uniswap": {
+    "v3": {
+      "factory": "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA",
+      "positionManager": "0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3",
+      "quoterV2": "0x33e885eD0Ec9bF04EcfB19341582aADCb4c8A9E7",
+      "swapRouter02": "0xCaf681a66D020601342297493863E78C959E5cb2",
+      "poolInitCodeHash": "0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54",
+      "tickSpacingByFee": {
+        "100": 1,
+        "500": 10,
+        "3000": 60,
+        "10000": 200
+      }
+    },
+    "v4": {
+      "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+      "positionManager": "0x58daec3116aae6D93017bAAea7749052E8a04fA7",
+      "stateView": "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b",
+      "quoter": "0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94"
+    },
+    "universalRouter": {
+      "address": "0x204FAca1764B154221e35c0d20aBb3c525710498",
+      "version": "2.1.2"
+    }
+  },
+  "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+  "multicall3": "0xcA11bde05977b3631167028862bE2a173976CA11",
+  "deployer": {
+    "kind": "createx",
+    "address": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+    "codehash": "0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f"
+  },
+  "wrappedNative": {
+    "symbol": "WETH",
+    "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "decimals": 18
+  },
+  "chargeCurrencies": [
+    {
+      "rank": 1,
+      "symbol": "USDG",
+      "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "decimals": 6
+    },
+    {
+      "rank": 2,
+      "symbol": "ETH",
+      "address": "0x0000000000000000000000000000000000000000",
+      "decimals": 18,
+      "native": true
+    },
+    {
+      "rank": 2,
+      "symbol": "WETH",
+      "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "decimals": 18
+    }
+  ],
+  "gasPrice": {
+    "chainlinkEthUsd": {
+      "proxy": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+      "aggregator": "0x6091E64eb7138EEF066a80FD3A0d7427B91f2721",
+      "decimals": 8,
+      "heartbeatSeconds": 86400,
+      "deviationBps": 50,
+      "sequencerUptimeFeed": null
+    }
+  },
+  "bridge": {
+    "providers": [
+      "relay",
+      "across"
+    ],
+    "appFeeBps": 35
+  },
+  "finality": "Soft confirmation sub-second (FCFS sequencer); batch posted to Ethereum (blobs) within minutes; hard finality when that L1 block finalizes (~13 min after posting per docs). Withdrawals to L1: 7-day challenge period.",
+  "verification": {
+    "block": 77637295,
+    "checkedAt": "2026-10-01",
+    "contracts": [
+      {
+        "name": "UniswapV3Factory",
+        "address": "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA",
+        "codehash": "0xec72b1abd1f2faee020cfea9c646bd8994f9fb389054f6e574f103a895091739"
+      },
+      {
+        "name": "NonfungiblePositionManager",
+        "address": "0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3",
+        "codehash": "0x0a493d1af3d0f25fed8efa205244ebee14114267a08647fc38c515c7cd6ead4f"
+      },
+      {
+        "name": "QuoterV2",
+        "address": "0x33e885eD0Ec9bF04EcfB19341582aADCb4c8A9E7",
+        "codehash": "0x3db0868d945e9304c9bc6a8b2181948109ea617647142f3c4083e14393496a28"
+      },
+      {
+        "name": "SwapRouter02",
+        "address": "0xCaf681a66D020601342297493863E78C959E5cb2",
+        "codehash": "0x6f36c378e272c6324c48f045182bcb54bd8ad654cf9ebd42e8893d52c4cb25dc"
+      },
+      {
+        "name": "PoolManager",
+        "address": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+        "codehash": "0xbd3881180b547f5fe817545743cfb4343e96b1bc6640dcd70c106b0066e95626"
+      },
+      {
+        "name": "PositionManager",
+        "address": "0x58daec3116aae6D93017bAAea7749052E8a04fA7",
+        "codehash": "0xc873e135dc9aaec88489cfbad146b4cb49d6a32e0d80326377784b7ba17670b2"
+      },
+      {
+        "name": "StateView",
+        "address": "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b",
+        "codehash": "0x7d9c591e0956fd89d98feb4ffcfe8bf1f7a62bd485edd979fa21d104b49878a6"
+      },
+      {
+        "name": "V4Quoter",
+        "address": "0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94",
+        "codehash": "0xd707b1da8cb165e5ea35a3b4450d971eb562ec171e23492aa117036b78a868f6"
+      },
+      {
+        "name": "UniversalRouter 2.1.2",
+        "address": "0x204FAca1764B154221e35c0d20aBb3c525710498",
+        "codehash": "0x76b92a5bba2dd32019a64eb421f1750e78c6ba044dbfa6840b722eb5ac63d296"
+      },
+      {
+        "name": "Permit2",
+        "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "codehash": "0x5208783f52488f7d3493e5e38311ab707c1d75457fe472a19b0b4d57d66a7fca"
+      },
+      {
+        "name": "Multicall3",
+        "address": "0xcA11bde05977b3631167028862bE2a173976CA11",
+        "codehash": "0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891"
+      },
+      {
+        "name": "CreateX",
+        "address": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+        "codehash": "0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f"
+      },
+      {
+        "name": "Arachnid deterministic deployment proxy",
+        "address": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+        "codehash": "0x2fa86add0aed31f33a762c9d88e807c475bd51d0f52bd0955754b2608f7e4989"
+      },
+      {
+        "name": "WETH",
+        "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+        "codehash": "0x5706be52f64875fee65a2cec0d80e47a23d8793cbe85d214b48445e2d05f5353"
+      },
+      {
+        "name": "USDG",
+        "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+        "codehash": "0x864cc9ad53b338b82da1f7cab85ab0b3d5c8861acb422b6fec63cf36234f36a6"
+      },
+      {
+        "name": "Chainlink ETHUSD_proxy",
+        "address": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+        "codehash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2"
+      },
+      {
+        "name": "Chainlink ETHUSD_secondaryProxy",
+        "address": "0x5058aDee53b04e374d8bEDbAD634Bc4778F50b22",
+        "codehash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2"
+      },
+      {
+        "name": "ArbSys",
+        "address": "0x0000000000000000000000000000000000000064",
+        "codehash": "0xbcc90f2d6dada5b18e155c17a1c0a55920aae94f39857d39d0d8ed07ae8f228b"
+      },
+      {
+        "name": "urV211",
+        "address": "0x8876789976dEcBfCbBbe364623C63652db8C0904",
+        "codehash": "0x2ce6aaaf9f4151f5e1cbf774668772f17f532ae11b15e9284fd0a072a8b0fbde"
+      },
+      {
+        "name": "urUnversioned_deploymentsJson",
+        "address": "0x06AfBA43Fd06227fA663b0DAecF536f6EaA6bf99",
+        "codehash": "0xbe8e8191bb42d843c2e948a5a55772eaab864ce01e54dcd47c9d089170b302d5"
+      },
+      {
+        "name": "erc2470SingletonFactory",
+        "address": "0xce0042B868300000d44A59004Da54A005ffdcf9f",
+        "codehash": "0xc4d5542b53a8b779595a20a8ddd60e58a6c49d3c3decc2df83ced1c69c8ca807"
+      },
+      {
+        "name": "zoltuDeployer",
+        "address": "0x7A0D94F55792C434d74a40883C6ed8545E406D12",
+        "codehash": "0x5acaad953250bec20933f7c72a25bb03bfa54767ebd3a750396276512c46a79c"
+      },
+      {
+        "name": "safeSingletonFactory",
+        "address": "0x914d7Fec6aaC8cd542e72Bca78B30650d45643d7",
+        "codehash": "0x2fa86add0aed31f33a762c9d88e807c475bd51d0f52bd0955754b2608f7e4989"
+      },
+      {
+        "name": "v3 pool WETH/USDG fee 100 (getPool == CREATE2(initCodeHash): True)",
+        "address": "0x52e65B17fB6E5BA00Ed806f37Afcd2DaA50271Ca",
+        "codehash": "0x3298b5dd4e6f115074c526a55ad05a36fd73a0034ac22ec6cbaab32cc9c1e8d2"
+      },
+      {
+        "name": "v3 pool WETH/USDG fee 500 (getPool == CREATE2(initCodeHash): True)",
+        "address": "0x69BfaF19C9f377BB306a89aEd9F6B07e2c1a8d9a",
+        "codehash": "0x74a16c3b1b4ac8903c54a9edad666d4c87512cb78ed0723538acd84d1b56c5b5"
+      },
+      {
+        "name": "v3 pool WETH/USDG fee 3000 (getPool == CREATE2(initCodeHash): True)",
+        "address": "0xa9188730Fe85Be88ad499D7d52B099e800fB0334",
+        "codehash": "0x0fc31cfc533a5922261eaa33ff62c43ffd3839dc5204fb6dbbe6effd7bd9d63d"
+      },
+      {
+        "name": "v3 pool WETH/USDG fee 10000 (getPool == CREATE2(initCodeHash): True)",
+        "address": "0x5f009E071F07e92B6C624e83F52F17bBDa34680D",
+        "codehash": "0xe20600974a722992eb4622b85b2a77ccac5e4aaa2f781bd93cae4334ca18d686"
+      }
+    ]
+  },
+  "notes": [
+    "Universal Router row labelled plain \"UniversalRouter\" in Uniswap v3/v4 docs (0x8876789976dEcBfCbBbe364623C63652db8C0904) is 2.1.1 per the SDK and is sunset 21 Oct 2026; deployments.json instead lists unversioned UniversalRouter 0x06AfBA43Fd06227fA663b0DAecF536f6EaA6bf99 (code present, version not stated). Use only the 2.1.2 address.",
+    "V4Quoter runtime is 6118 bytes vs 5820 on Base/Arbitrum (different v4-periphery build, deployments.json sourceRef 56928a9); ABI compatibility not checked here.",
+    "Chainlink directory has no L2 Sequencer Uptime feed for Robinhood although Robinhood docs tell integrators to check one.",
+    "ETH/USD feed is a DualAggregator (Shared SVR): primary proxy 0x78F3... gives the standard view, secondaryProxy 0x5058... gives the SVR view. Both read aggregator 0x6091... (verified on-chain).",
+    "Multicall3.getBlockNumber() returns the L1 block estimate on Nitro (26,099,656 at L2 block 77,637,295); use ArbSys.arbBlockNumber() for the L2 number.",
+    "Robinhood docs list an \"L2 Multicall\" 0x2cAC2D899eCC914d704FeaAE33ac1bF36277DaD1: a different contract from Multicall3.",
+    "Mds1 multicall3 deployments.json does not list 4663, but the canonical Multicall3 runtime is present (codehash identical to Base/Arbitrum)."
+  ],
+  "sources": [
+    "https://developers.uniswap.org/llms.mdx/docs/protocols/v4/deployments",
+    "https://developers.uniswap.org/llms.mdx/docs/trading/swapping-api/supported-chains",
+    "https://developers.uniswap.org/llms.mdx/docs/changelog/active-notifications/sunset-of-universal-router-2-0-and-2-1-1",
+    "https://developers.uniswap.org/deployments.json (generatedAt 2026-09-22, Uniswap/contracts a677c0d)",
+    "https://github.com/Uniswap/sdks/blob/main/sdks/universal-router-sdk/src/utils/constants.ts",
+    "https://github.com/Uniswap/sdks/blob/main/sdks/sdk-core/src/addresses.ts",
+    "https://github.com/Uniswap/sdks/blob/main/sdks/v3-sdk/src/constants.ts (POOL_INIT_CODE_HASH)",
+    "https://github.com/pcaversaccio/createx (README: runtime keccak 0xbd8a7ea8...; deployments/deployments.json)",
+    "https://github.com/Arachnid/deterministic-deployment-proxy (README)",
+    "https://github.com/mds1/multicall3 (README, deployments.json)",
+    "https://docs.chain.link/data-feeds/svr-feeds",
+    "https://developers.uniswap.org/llms.mdx/docs/protocols/v3/deployments/v3-robinhood-chain-deployments",
+    "https://docs.robinhood.com/chain/contracts/ (WETH, USDG)",
+    "https://docs.robinhood.com/chain/protocol-contracts/ (ArbSys, Permit2, L1 contracts)",
+    "https://docs.robinhood.com/chain/connecting/ (Ethereum blobs DA)",
+    "https://docs.robinhood.com/chain/transaction-finality/",
+    "https://docs.robinhood.com/chain/differences-from-ethereum/ (FCFS ordering, block.number = L1 estimate)",
+    "https://reference-data-directory.vercel.app/feeds-robinhood-mainnet.json (Chainlink docs data source, path eth-usd-shared-svr)"
+  ]
+}

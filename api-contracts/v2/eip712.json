@@ -1,0 +1,249 @@
+{
+  "version": 1,
+  "source": "contracts/src/v2/DominoV2Types.sol",
+  "domain": {
+    "name": "Domino",
+    "version": "2",
+    "fields": [
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "version",
+        "type": "string"
+      },
+      {
+        "name": "chainId",
+        "type": "uint256"
+      },
+      {
+        "name": "verifyingContract",
+        "type": "address"
+      }
+    ],
+    "verifyingContract": "each signing contract on its own chain"
+  },
+  "types": {
+    "PoolRef": [
+      {
+        "name": "dex",
+        "type": "uint8"
+      },
+      {
+        "name": "currency0",
+        "type": "address"
+      },
+      {
+        "name": "currency1",
+        "type": "address"
+      },
+      {
+        "name": "fee",
+        "type": "uint24"
+      },
+      {
+        "name": "tickSpacing",
+        "type": "int24"
+      },
+      {
+        "name": "hooks",
+        "type": "address"
+      }
+    ],
+    "PriceObservation": [
+      {
+        "name": "pool",
+        "type": "PoolRef"
+      },
+      {
+        "name": "sqrtPriceX96",
+        "type": "uint160"
+      },
+      {
+        "name": "observedAt",
+        "type": "uint64"
+      },
+      {
+        "name": "validUntil",
+        "type": "uint64"
+      },
+      {
+        "name": "nonce",
+        "type": "uint64"
+      }
+    ],
+    "PositionIntent": [
+      {
+        "name": "action",
+        "type": "uint8"
+      },
+      {
+        "name": "pool",
+        "type": "PoolRef"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "name": "tickLower",
+        "type": "int24"
+      },
+      {
+        "name": "tickUpper",
+        "type": "int24"
+      },
+      {
+        "name": "minLiquidity",
+        "type": "uint128"
+      },
+      {
+        "name": "feeBps",
+        "type": "uint16"
+      },
+      {
+        "name": "feeToken",
+        "type": "address"
+      },
+      {
+        "name": "routesHash",
+        "type": "bytes32"
+      },
+      {
+        "name": "recipient",
+        "type": "address"
+      },
+      {
+        "name": "nonce",
+        "type": "uint256"
+      },
+      {
+        "name": "deadline",
+        "type": "uint64"
+      }
+    ],
+    "ExitMandate": [
+      {
+        "name": "owner",
+        "type": "address"
+      },
+      {
+        "name": "vault",
+        "type": "address"
+      },
+      {
+        "name": "tokenId",
+        "type": "uint256"
+      },
+      {
+        "name": "triggerBelowSqrtPriceX96",
+        "type": "uint160"
+      },
+      {
+        "name": "triggerAboveSqrtPriceX96",
+        "type": "uint160"
+      },
+      {
+        "name": "receiveMode",
+        "type": "uint8"
+      },
+      {
+        "name": "convertTo",
+        "type": "address"
+      },
+      {
+        "name": "maxSlippageBps",
+        "type": "uint16"
+      },
+      {
+        "name": "validUntil",
+        "type": "uint64"
+      },
+      {
+        "name": "nonce",
+        "type": "uint256"
+      }
+    ]
+  },
+  "typeStrings": {
+    "PoolRef": "PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)",
+    "PriceObservation": "PriceObservation(PoolRef pool,uint160 sqrtPriceX96,uint64 observedAt,uint64 validUntil,uint64 nonce)",
+    "PositionIntent": "PositionIntent(uint8 action,PoolRef pool,uint256 tokenId,int24 tickLower,int24 tickUpper,uint128 minLiquidity,uint16 feeBps,address feeToken,bytes32 routesHash,address recipient,uint256 nonce,uint64 deadline)",
+    "ExitMandate": "ExitMandate(address owner,address vault,uint256 tokenId,uint160 triggerBelowSqrtPriceX96,uint160 triggerAboveSqrtPriceX96,uint8 receiveMode,address convertTo,uint16 maxSlippageBps,uint64 validUntil,uint256 nonce)"
+  },
+  "encodedTypes": {
+    "PoolRef": "PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)",
+    "PriceObservation": "PriceObservation(PoolRef pool,uint160 sqrtPriceX96,uint64 observedAt,uint64 validUntil,uint64 nonce)PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)",
+    "PositionIntent": "PositionIntent(uint8 action,PoolRef pool,uint256 tokenId,int24 tickLower,int24 tickUpper,uint128 minLiquidity,uint16 feeBps,address feeToken,bytes32 routesHash,address recipient,uint256 nonce,uint64 deadline)PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)",
+    "ExitMandate": "ExitMandate(address owner,address vault,uint256 tokenId,uint160 triggerBelowSqrtPriceX96,uint160 triggerAboveSqrtPriceX96,uint8 receiveMode,address convertTo,uint16 maxSlippageBps,uint64 validUntil,uint256 nonce)"
+  },
+  "typehashes": {
+    "PoolRef": "0x75d570ed598cbb0140dde1b6a5894a691cc4cbcc57d9e615cfb8737dd88e80c3",
+    "PriceObservation": "0x0a6a7c8d2621f26a9097e916f74d025db44c8a1099270c89087a0910b68b271f",
+    "PositionIntent": "0xe2ffc6568be9b02968c1458defcf36c93344902196b67e85b52317854254f79c",
+    "ExitMandate": "0x47e80548d88c56375483748a3a1f81c590010d1aba1fda210e5d840f3ef22e29"
+  },
+  "permit2": {
+    "domain": {
+      "name": "Permit2",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "chainId",
+          "type": "uint256"
+        },
+        {
+          "name": "verifyingContract",
+          "type": "address"
+        }
+      ],
+      "verifyingContract": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+    },
+    "witnessType": "PositionIntent",
+    "witnessTypeString": "PositionIntent witness)PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)PositionIntent(uint8 action,PoolRef pool,uint256 tokenId,int24 tickLower,int24 tickUpper,uint128 minLiquidity,uint16 feeBps,address feeToken,bytes32 routesHash,address recipient,uint256 nonce,uint64 deadline)TokenPermissions(address token,uint256 amount)",
+    "fullType": "PermitBatchWitnessTransferFrom(TokenPermissions[] permitted,address spender,uint256 nonce,uint256 deadline,PositionIntent witness)PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)PositionIntent(uint8 action,PoolRef pool,uint256 tokenId,int24 tickLower,int24 tickUpper,uint128 minLiquidity,uint16 feeBps,address feeToken,bytes32 routesHash,address recipient,uint256 nonce,uint64 deadline)TokenPermissions(address token,uint256 amount)",
+    "fullTypehash": "0xa3cafa799cface9e636684cf61c4599e221bf24c1a896ac81042ebc46be32515",
+    "types": {
+      "PermitBatchWitnessTransferFrom": [
+        {
+          "name": "permitted",
+          "type": "TokenPermissions[]"
+        },
+        {
+          "name": "spender",
+          "type": "address"
+        },
+        {
+          "name": "nonce",
+          "type": "uint256"
+        },
+        {
+          "name": "deadline",
+          "type": "uint256"
+        },
+        {
+          "name": "witness",
+          "type": "PositionIntent"
+        }
+      ],
+      "TokenPermissions": [
+        {
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256"
+        }
+      ]
+    }
+  },
+  "routesHash": {
+    "abi": "(uint8,address,address,address,uint128,uint128,bytes)[]",
+    "rule": "keccak256(abi.encode(SwapLeg[] legs))"
+  }
+}

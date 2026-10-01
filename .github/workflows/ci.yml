@@ -173,8 +173,11 @@ jobs:
     name: Backend
     runs-on: ubuntu-24.04
     # The artifact build for the EVM tests (issue #144) adds a full Forge
-    # compilation; 15 minutes no longer leaves safe headroom.
-    timeout-minutes: 20
+    # compilation, and the key below hashes contracts/**/*.sol, so every .sol
+    # change runs it cold. Last 60 runs: 13-19 minutes warm (backend tests
+    # 11.5-16); cold, the three builds take 8 more, about 26 in all. Run
+    # 36922285682 (#284) was cancelled at 20 minutes with its tests half done.
+    timeout-minutes: 30
     env:
       DOMINO_TEST_POSTGRES: '1'
       DOMINO_TEST_EVM: '1'
@@ -286,6 +289,10 @@ jobs:
             node scripts/test-contracts.mjs --match-path "${suite#contracts/}"
             echo "::endgroup::"
           done
+      # The V2 interface freeze (docs/v2/F0_INTERFACES.md): the committed ABIs,
+      # selectors and the generated interface-id pins must match the sources.
+      - name: Check the V2 interface exports
+        run: node scripts/v2/export-abi.mjs --check
       # Deterministic gas per test against the committed baseline; a regression
       # fails here instead of surfacing in a report months later.
       - name: Check the gas baseline

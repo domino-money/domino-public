@@ -1,0 +1,28 @@
+{
+  "source": "contracts/src/v2/external/IUniswapV4Minimal.sol",
+  "interfaceId": "0x91dd7346",
+  "functions": {
+    "unlockCallback(bytes)": "0x91dd7346"
+  },
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "bytes",
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "name": "unlockCallback",
+      "outputs": [
+        {
+          "internalType": "bytes",
+          "name": "",
+          "type": "bytes"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ]
+}

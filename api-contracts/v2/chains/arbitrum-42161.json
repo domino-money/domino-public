@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 1,
+  "chainId": 42161,
+  "slug": "arbitrum",
+  "name": "Arbitrum One",
+  "enabled": true,
+  "nativeSymbol": "ETH",
+  "stack": "arbitrum-nitro",
+  "blockTimeSeconds": 0.25,
+  "uniswap": {
+    "v3": {
+      "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+      "positionManager": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+      "quoterV2": "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+      "swapRouter02": "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+      "poolInitCodeHash": "0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54",
+      "tickSpacingByFee": {
+        "100": 1,
+        "500": 10,
+        "3000": 60,
+        "10000": 200
+      }
+    },
+    "v4": {
+      "poolManager": "0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32",
+      "positionManager": "0xd88F38F930b7952f2DB2432Cb002E7abbF3dD869",
+      "stateView": "0x76Fd297e2D437cd7f76d50F01AfE6160f86e9990",
+      "quoter": "0x3972C00f7ed4885e145823eb7C655375d275A1C5"
+    },
+    "universalRouter": {
+      "address": "0x2d01411773c8C24805306E89A41F7855C3c4Fe65",
+      "version": "2.1.2"
+    }
+  },
+  "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+  "multicall3": "0xcA11bde05977b3631167028862bE2a173976CA11",
+  "deployer": {
+    "kind": "createx",
+    "address": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+    "codehash": "0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f"
+  },
+  "wrappedNative": {
+    "symbol": "WETH",
+    "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    "decimals": 18
+  },
+  "chargeCurrencies": [
+    {
+      "rank": 1,
+      "symbol": "USDC",
+      "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "decimals": 6
+    },
+    {
+      "rank": 2,
+      "symbol": "ETH",
+      "address": "0x0000000000000000000000000000000000000000",
+      "decimals": 18,
+      "native": true
+    },
+    {
+      "rank": 2,
+      "symbol": "WETH",
+      "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      "decimals": 18
+    }
+  ],
+  "gasPrice": {
+    "chainlinkEthUsd": {
+      "proxy": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+      "aggregator": "0xD827123D014578C965F6c9d87A641ec05FaA5501",
+      "decimals": 8,
+      "heartbeatSeconds": 1755,
+      "deviationBps": 5,
+      "sequencerUptimeFeed": "0xFdB631F5EE196F0ed6FAa767959853A9F217697D"
+    }
+  },
+  "bridge": {
+    "providers": [
+      "relay",
+      "across"
+    ],
+    "appFeeBps": 35
+  },
+  "finality": "Soft confirmation sub-second ('latest'); 'safe'/'finalized' follow the Ethereum block carrying the batch (~13 min Ethereum finality after posting). Withdrawals: 45818 L1 blocks (~6.4 days) dispute window.",
+  "verification": {
+    "block": 510761638,
+    "checkedAt": "2026-10-01",
+    "contracts": [
+      {
+        "name": "UniswapV3Factory",
+        "address": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        "codehash": "0x4d7b8525cd5d14343fa67a732fba5b24cddba11620ca88392f4ec6c52f91fd69"
+      },
+      {
+        "name": "NonfungiblePositionManager",
+        "address": "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+        "codehash": "0x45b4bff8136324d175c01151fd0fb715c82bcc8923019a4faba3eafb0cc3a20b"
+      },
+      {
+        "name": "QuoterV2",
+        "address": "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+        "codehash": "0xd8162b13ba57ce21a146063b10658bda0a3fd15c99f768c86283fce6640858a5"
+      },
+      {
+        "name": "SwapRouter02",
+        "address": "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+        "codehash": "0x209f9820ed7257d51c2f96ee837e8ec057b44774899f4be16fc45bd30cbb16f6"
+      },
+      {
+        "name": "PoolManager",
+        "address": "0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32",
+        "codehash": "0xe4b2759e456c9c4ef763e3b4e257c5105e1ba283d7de8b131dd321197de794a4"
+      },
+      {
+        "name": "PositionManager",
+        "address": "0xd88F38F930b7952f2DB2432Cb002E7abbF3dD869",
+        "codehash": "0x6156ddaa1c8cd2c26d37455a5dc57b1761dc2848856426c0ac261ae0c7fecd68"
+      },
+      {
+        "name": "StateView",
+        "address": "0x76Fd297e2D437cd7f76d50F01AfE6160f86e9990",
+        "codehash": "0x4c0e823a0cd44b6b2d9485e774c421cf929db3996096d9b84ee6b23525184b9e"
+      },
+      {
+        "name": "V4Quoter",
+        "address": "0x3972C00f7ed4885e145823eb7C655375d275A1C5",
+        "codehash": "0x98305ebcd33e8989a8e941072ffe9bc6dac7912ccb9d097befa2d17696da37ff"
+      },
+      {
+        "name": "UniversalRouter 2.1.2",
+        "address": "0x2d01411773c8C24805306E89A41F7855C3c4Fe65",
+        "codehash": "0x51536ca9d25ebbc535351834b75115ba1843fb402c003d65ead6c760be6cc1c0"
+      },
+      {
+        "name": "Permit2",
+        "address": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "codehash": "0x9e51dcb64cf56fc09a82cb41edbc17c6a2250f18dbd1b91e884c0aca02acd57c"
+      },
+      {
+        "name": "Multicall3",
+        "address": "0xcA11bde05977b3631167028862bE2a173976CA11",
+        "codehash": "0xd5c15df687b16f2ff992fc8d767b4216323184a2bbc6ee2f9c398c318e770891"
+      },
+      {
+        "name": "CreateX",
+        "address": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+        "codehash": "0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f"
+      },
+      {
+        "name": "Arachnid deterministic deployment proxy",
+        "address": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+        "codehash": "0x2fa86add0aed31f33a762c9d88e807c475bd51d0f52bd0955754b2608f7e4989"
+      },
+      {
+        "name": "WETH",
+        "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+        "codehash": "0x2d240bb4510ed1acfeaba905eb4bcc4524d63c8ae66e48fcccac55ea714db7a7"
+      },
+      {
+        "name": "USDC",
+        "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "codehash": "0xad30d819dbc47814b7e6cb837fd7cc57fcb591479a38596ee93de4fc52e8c435"
+      },
+      {
+        "name": "Chainlink ETHUSD_proxy_standard",
+        "address": "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+        "codehash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2"
+      },
+      {
+        "name": "Chainlink ETHUSD_proxy_sharedSVR",
+        "address": "0xe4D040128CFdF03eC221832251caC9b6f0515E3f",
+        "codehash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2"
+      },
+      {
+        "name": "Chainlink ETHUSD_secondaryProxy_sharedSVR",
+        "address": "0xe4dF63Bf89fD868A899F2422B030709FD79Be921",
+        "codehash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2"
+      },
+      {
+        "name": "Chainlink L2SequencerUptime",
+        "address": "0xFdB631F5EE196F0ed6FAa767959853A9F217697D",
+        "codehash": "0xbd6f524cdc4268b6bd1bb6f77a8821faeea9c52ee9e0afa0b6d948ce82c966c2"
+      },
+      {
+        "name": "ArbSys",
+        "address": "0x0000000000000000000000000000000000000064",
+        "codehash": "0xbcc90f2d6dada5b18e155c17a1c0a55920aae94f39857d39d0d8ed07ae8f228b"
+      },
+      {
+        "name": "urV211",
+        "address": "0x8B844f885672f333Bc0042cB669255f93a4C1E6b",
+        "codehash": "0x044f2b705121c45ed323e44121bf020ce429925e4fd3d8e659a43974d86569ee"
+      },
+      {
+        "name": "urUnversioned_deploymentsJson",
+        "address": "0x96b2FD2F80e9428Daa65d859653117D453981AB4",
+        "codehash": "0x767dfc709f10207bf61076e1738ba3f2207f9207e36d9f33a0ea81e38f6be091"
+      },
+      {
+        "name": "urV20_docs",
+        "address": "0xA51afAFe0263b40EdaEf0Df8781eA9aa03E381a3",
+        "codehash": "0xc15e8e18812f640245cac34716a18270e3d3288e99b328a410401888ff484720"
+      },
+      {
+        "name": "v3 pool WETH/USDC fee 500 (getPool == CREATE2(initCodeHash): True)",
+        "address": "0xC6962004f452bE9203591991D15f6b388e09E8D0",
+        "codehash": "0xb9d899dac136c1f5179e1987328abb4c9f1ac0abf027ca0ad81750300996af6c"
+      },
+      {
+        "name": "v3 pool WETH/USDC fee 3000 (getPool == CREATE2(initCodeHash): True)",
+        "address": "0xc473e2aEE3441BF9240Be85eb122aBB059A3B57c",
+        "codehash": "0xcbe8d056c494677dacc0a73b03e961fb696b53ac915e9b278fa2c47da921f418"
+      }
+    ]
+  },
+  "notes": [
+    "Chainlink directory publishes heartbeat 1755 s for the classic eth-usd feed (0x639F...), an unusual value; taken as published. Alternative Shared SVR feed: primary 0xe4D040128CFdF03eC221832251caC9b6f0515E3f / secondary 0xe4dF63Bf89fD868A899F2422B030709FD79Be921, 18 decimals, 86400 s, 0.05%.",
+    "deployments.json lists unversioned UniversalRouter 0x96b2FD2F80e9428Daa65d859653117D453981AB4 while the docs list 0xa51afafe... (2.0 per SDK, sunset). Use only the 2.1.2 address.",
+    "Multicall3.getBlockNumber() returns the L1 block estimate on Nitro; use ArbSys.arbBlockNumber()."
+  ],
+  "sources": [
+    "https://developers.uniswap.org/llms.mdx/docs/protocols/v4/deployments",
+    "https://developers.uniswap.org/llms.mdx/docs/trading/swapping-api/supported-chains",
+    "https://developers.uniswap.org/llms.mdx/docs/changelog/active-notifications/sunset-of-universal-router-2-0-and-2-1-1",
+    "https://developers.uniswap.org/deployments.json (generatedAt 2026-09-22, Uniswap/contracts a677c0d)",
+    "https://github.com/Uniswap/sdks/blob/main/sdks/universal-router-sdk/src/utils/constants.ts",
+    "https://github.com/Uniswap/sdks/blob/main/sdks/sdk-core/src/addresses.ts",
+    "https://github.com/Uniswap/sdks/blob/main/sdks/v3-sdk/src/constants.ts (POOL_INIT_CODE_HASH)",
+    "https://github.com/pcaversaccio/createx (README: runtime keccak 0xbd8a7ea8...; deployments/deployments.json)",
+    "https://github.com/Arachnid/deterministic-deployment-proxy (README)",
+    "https://github.com/mds1/multicall3 (README, deployments.json)",
+    "https://docs.chain.link/data-feeds/svr-feeds",
+    "https://developers.uniswap.org/llms.mdx/docs/protocols/v3/deployments/v3-arbitrum-deployments",
+    "https://developers.circle.com/stablecoins/usdc-contract-addresses.md",
+    "https://docs.arbitrum.io/arbitrum-essentials/reference/chain-params.md",
+    "https://docs.arbitrum.io/how-arbitrum-works/reference/finality-and-reorgs.md",
+    "https://docs.arbitrum.io/arbitrum-essentials/precompiles/reference.md (ArbSys 0x64)",
+    "https://reference-data-directory.vercel.app/feeds-ethereum-mainnet-arbitrum-1.json (path eth-usd)"
+  ]
+}

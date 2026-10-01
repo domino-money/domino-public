@@ -1,0 +1,99 @@
+{
+  "source": "contracts/src/v2/external/IUniswapV4Minimal.sol",
+  "interfaceId": "0x4b3d66ee",
+  "functions": {
+    "notifyBurn(uint256,address,uint256,uint256,int256)": "0xb1a9116f",
+    "notifyModifyLiquidity(uint256,int256,int256)": "0xd8865c27",
+    "notifySubscribe(uint256,bytes)": "0x8d57f6b2",
+    "notifyUnsubscribe(uint256)": "0xaf45dd14"
+  },
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "info",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "liquidity",
+          "type": "uint256"
+        },
+        {
+          "internalType": "int256",
+          "name": "feesAccrued",
+          "type": "int256"
+        }
+      ],
+      "name": "notifyBurn",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "int256",
+          "name": "liquidityChange",
+          "type": "int256"
+        },
+        {
+          "internalType": "int256",
+          "name": "feesAccrued",
+          "type": "int256"
+        }
+      ],
+      "name": "notifyModifyLiquidity",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "name": "notifySubscribe",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "notifyUnsubscribe",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ]
+}

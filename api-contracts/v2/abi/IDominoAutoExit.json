@@ -1,0 +1,343 @@
+{
+  "source": "contracts/src/v2/interfaces/IDominoAutoExit.sol",
+  "interfaceId": "0x871e6484",
+  "functions": {
+    "domainSeparator()": "0xf698da25",
+    "execute(bytes32,(bytes,(uint8,address,address,address,uint128,uint128,bytes)[],uint128,uint128))": "0xb1228186",
+    "mandateStatus(bytes32)": "0x0a6cdf56",
+    "registerMandate((address,address,uint256,uint160,uint160,uint8,address,uint16,uint64,uint256),bytes)": "0x68c665c2",
+    "registry()": "0x7b103999",
+    "revokeMandate(bytes32)": "0xd91ebc2a"
+  },
+  "abi": [
+    {
+      "inputs": [],
+      "name": "InvalidMandate",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "MandateNotActive",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TriggerNotReached",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Unauthorized",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint160",
+          "name": "anchorSqrtPriceX96",
+          "type": "uint160"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount0",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount1",
+          "type": "uint256"
+        }
+      ],
+      "name": "MandateExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "validUntil",
+          "type": "uint64"
+        }
+      ],
+      "name": "MandateRegistered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "MandateRevoked",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "domainSeparator",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        },
+        {
+          "components": [
+            {
+              "internalType": "bytes",
+              "name": "anchorEvidence",
+              "type": "bytes"
+            },
+            {
+              "components": [
+                {
+                  "internalType": "uint8",
+                  "name": "kind",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "address",
+                  "name": "router",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "tokenIn",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "tokenOut",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint128",
+                  "name": "amountIn",
+                  "type": "uint128"
+                },
+                {
+                  "internalType": "uint128",
+                  "name": "minAmountOut",
+                  "type": "uint128"
+                },
+                {
+                  "internalType": "bytes",
+                  "name": "data",
+                  "type": "bytes"
+                }
+              ],
+              "internalType": "struct DominoV2Types.SwapLeg[]",
+              "name": "legs",
+              "type": "tuple[]"
+            },
+            {
+              "internalType": "uint128",
+              "name": "amount0MinRemoved",
+              "type": "uint128"
+            },
+            {
+              "internalType": "uint128",
+              "name": "amount1MinRemoved",
+              "type": "uint128"
+            }
+          ],
+          "internalType": "struct IDominoAutoExit.Execution",
+          "name": "execution",
+          "type": "tuple"
+        }
+      ],
+      "name": "execute",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount0",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "amount1",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "mandateStatus",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "status",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "owner",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "vault",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint160",
+              "name": "triggerBelowSqrtPriceX96",
+              "type": "uint160"
+            },
+            {
+              "internalType": "uint160",
+              "name": "triggerAboveSqrtPriceX96",
+              "type": "uint160"
+            },
+            {
+              "internalType": "uint8",
+              "name": "receiveMode",
+              "type": "uint8"
+            },
+            {
+              "internalType": "address",
+              "name": "convertTo",
+              "type": "address"
+            },
+            {
+              "internalType": "uint16",
+              "name": "maxSlippageBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint64",
+              "name": "validUntil",
+              "type": "uint64"
+            },
+            {
+              "internalType": "uint256",
+              "name": "nonce",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct DominoV2Types.ExitMandate",
+          "name": "mandate",
+          "type": "tuple"
+        },
+        {
+          "internalType": "bytes",
+          "name": "signature",
+          "type": "bytes"
+        }
+      ],
+      "name": "registerMandate",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "registry",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "revokeMandate",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ]
+}
