@@ -496,6 +496,36 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(check(6*HOUR)['status'],'healthy')
         self.assertEqual(self.served_ids(),[pool_of(a),pool_of(b)])
 
+    def test_a_busy_provider_neither_clears_nor_confirms_a_condition(self):
+        # #278, once the data was fresh: a 429 left a dead pool's figures empty, health took its
+        # collapse (TVL $17) for gone, the window restarted, and the pool stayed listed.
+        a=TOKENS[0]
+        self.serve_today([a])
+        start,live=AT+2*HOUR,self.live()
+
+        def check(offset,**figures):
+            self.figures(a,at=start+offset-5,**figures)
+            return live.tick(start+offset)['health']
+        self.assertEqual(check(0,tvl='1')['status'],'healthy')                    # the collapse is seen
+        self.assertEqual(check(60,tvl='1')['status'],'healthy')
+        self.assertEqual(check(300,rate_limited_for=60)['status'],'healthy')      # unknown: the window stays
+        self.assertEqual(check(600,rate_limited_for=60)['status'],'healthy')      # unknown: nothing confirms
+        self.assertEqual(check(660,tvl='1')['removed'],{pool_of(a):'tvl_collapse'})   # seen past its window
+
+    def test_a_busy_provider_keeps_an_estimate_window_it_cannot_judge(self):
+        # The same for an estimate missing for a reason of the pool's own: no 24 h volume reported.
+        a=TOKENS[0]
+        self.serve_today([a])
+        start,live=AT+2*HOUR,self.live()
+
+        def check(offset,**figures):
+            self.figures(a,at=start+offset-5,**figures)
+            return live.tick(start+offset)['health']
+        self.assertEqual(check(0,volume=None)['status'],'healthy')
+        self.assertEqual(check(60,volume=None)['status'],'healthy')
+        self.assertEqual(check(HOUR,rate_limited_for=60)['status'],'healthy')    # unknown: the window stays
+        self.assertEqual(check(3*HOUR,volume=None)['removed'],{pool_of(a):'estimate_unavailable'})
+
     def test_a_short_list_takes_a_replacement_once_it_is_ready_without_another_pool_leaving(self):
         # #278: a list repaired while no replacement was ready stayed short for the rest of the day.
         a,b,c=TOKENS[:3]

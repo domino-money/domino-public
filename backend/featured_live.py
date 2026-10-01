@@ -51,7 +51,9 @@ PRICE_FALL = Fraction(3, 10)
 # pool (#278). The collector starved the listed pools for an hour and the
 # provider rate-limited it all day, and every listed pool left within hours.
 # Data last good longer ago than this counts again, so a pool the provider has
-# stopped answering for still leaves.
+# stopped answering for still leaves. Nor does an answer that did not come
+# clear a condition: what the market figures show is unknown, and a condition's
+# window neither restarts nor is confirmed until a check sees it again.
 TRANSIENT_DATA_SECONDS = 6 * 3600
 LATE_DATA = frozenset(('snapshot_expired', 'market_data_expired', 'market_age_unknown'))
 BUSY_PROVIDER = frozenset(('provider_rate_limited', 'provider_capacity_busy', 'provider_unavailable'))
@@ -278,15 +280,16 @@ class Live:
 
     # ------------------------------------------------------------ health
     def _pool_health(self, entry, overrides, now):
-        """(reasons that remove the pool at once, conditions it shows now)."""
-        pool_id, reasons, seen = entry['poolId'], [], set()
+        """(reasons that remove the pool at once, conditions it shows now, conditions its data
+        cannot judge now)."""
+        pool_id, reasons, seen, unknown = entry['poolId'], [], set(), set()
         tokens = [token['address'] for token in entry.get('tokens') or ()]
         if pool_id in overrides['excludedPools'] or any(token in overrides['excludedTokens'] for token in tokens):
             reasons.append('excluded_by_owner')
         row = self.public.get('pool', pool_id)
         if row is None or row['payload'] is None:
             seen.add('estimate_unavailable')
-            return reasons, seen
+            return reasons, seen, unknown
         aged = aged_market(row['payload'], row['observed_at'], now)
         pool, thresholds = aged['pool'], self.policy['thresholds']
         if pool['integrationClass'] != 'hookless_fixed_fee':
@@ -302,9 +305,13 @@ class Live:
             estimate = estimate_pool_apr(aged, now=now)
         except ValueError:
             estimate = None
-        if estimate is None or (estimate['status'] == 'unavailable' and not transient(estimate)):
+        if estimate is not None and estimate['status'] == 'unavailable' and transient(estimate):
+            unknown.add('estimate_unavailable')
+        elif estimate is None or estimate['status'] == 'unavailable':
             seen.add('estimate_unavailable')
         data = aged['market'].get('data')
+        if data is None and aged['market'].get('reason') in BUSY_PROVIDER:
+            unknown |= {'tvl_collapse', 'volume_collapse', 'apr_or_turnover_above_ceiling'}
         if data is not None:
             tvl, volume = _decimal(data['reportedLiquidityUsd']), _decimal(data['volume24hUsd'])
             apr = _decimal(estimate['feeAprEstimate24hPercent']) if estimate else None
@@ -323,7 +330,7 @@ class Live:
             other = ratio if reference == pool['currencies'][1] else 1 / ratio
             if other < PRICE_FALL:
                 seen.add('price_fall')
-        return reasons, seen
+        return reasons, seen, unknown
 
     def _token_checks(self, entries, now):
         """TA-5 once an hour: listed tokens whose code differs from when first listed."""
@@ -346,19 +353,22 @@ class Live:
             # A list every pool has left still takes replacements once they are ready.
             return self._fill_vacancies(served, overrides, now) if self._fillable(served) else {'status': 'idle'}
         entries = {entry['poolId']: entry for entry in served['payload']['pools']}
-        immediate, seen = {}, {}
+        immediate, seen, unknown = {}, {}, {}
         for pool_id, entry in entries.items():
-            reasons, conditions = self._pool_health(entry, overrides, now)
+            reasons, conditions, unjudged = self._pool_health(entry, overrides, now)
             if reasons:
                 immediate[pool_id] = reasons[0]
-            seen[pool_id] = conditions
+            seen[pool_id], unknown[pool_id] = conditions, unjudged
         changed = self._token_checks(list(entries.values()), now)
         for pool_id, entry in entries.items():
             if any(token['address'] in changed for token in entry.get('tokens') or ()):
                 immediate.setdefault(pool_id, 'token_code_changed')
-        state = self.store.observe_health(seen, now)
+        state = self.store.observe_health(seen, now, unknown)
         confirmed = {}
         for (pool_id, condition), (first_seen, checks) in sorted(state.items()):
+            # Only a check that sees the condition confirms it; unknown data only keeps its window.
+            if condition not in seen.get(pool_id, ()):
+                continue
             hold, owners_too = CONFIRM[condition]
             if checks >= 2 and now - first_seen >= hold and (owners_too or entries[pool_id]['source'] not in ('pinned', 'manual')):
                 confirmed.setdefault(pool_id, condition)
@@ -412,8 +422,8 @@ class Live:
             """The site can show it now, and it shows no condition that would remove it."""
             if self.readiness([pool_id], now)[pool_id] is not None:
                 return False
-            reasons, seen = self._pool_health(entry_of(pool_id, 'ranked'), overrides, now)
-            return not reasons and not seen
+            reasons, seen, unknown = self._pool_health(entry_of(pool_id, 'ranked'), overrides, now)
+            return not reasons and not seen and not unknown
         return [entry_of(item['poolId'], item['source'])
                 for item in rules.refill([entry['poolId'] for entry in kept], evaluations, self.policy,
                                          embedded=self.embedded, ready=fit)]

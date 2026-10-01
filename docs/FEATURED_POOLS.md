@@ -116,7 +116,11 @@ Each tick (every 30 s), in this order:
    (snapshot or market past five minutes) or the provider refused (rate
    limited, busy or unavailable, with the TVL and volume it leaves missing) is
    unknown, not a fault of the pool, and does not count while the last good
-   data is at most 6 h old (#278). Beyond that it counts again.
+   data is at most 6 h old (#278). Beyond that it counts again. Nor does an
+   answer that did not come clear a condition: when the provider is busy and
+   the market figures are missing, their conditions (and a late estimate's)
+   keep their window as it is, no check is counted, and none is confirmed
+   until a check sees the condition again.
 
    The others keep their order. The list is completed from the day's ranked
    pools, then from the embedded list, with pools that are ready and show no
