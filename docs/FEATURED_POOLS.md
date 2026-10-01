@@ -227,15 +227,20 @@ then stays as it was, unrepaired: when it should go too, set `mode --set off`
 and wait for a tick (30 s) first. Disable the unit before rolling public data back to a release without
 `manage_featured.py`.
 
-## Provider priority (042)
+## Provider priority (042, 047)
 
-Every GeckoTerminal call spends the one allowance of 024 (25 a minute). A pool
-someone asked for once stays explicit and is refreshed for good; while nobody
-reads it, the collector now spends a call only while 8 of the minute's calls
-remain (`IDLE_PROVIDER_HEADROOM`), the selection only while 2 remain, and a pool
-a visitor is reading keeps the whole allowance. Recalibrate the ceiling in
-042 and the two headrooms together, from a day of samples of what the
-collector's publications record:
+Every GeckoTerminal call spends the one allowance of 024, **8 a minute** since
+047 (#278): GeckoTerminal's free API allows 10 a minute per address, and the
+VM shares its address with the rest of the house. 042's 25 hid that while the
+collector called little; once the listed pools were refreshed on time it
+reached 11 a minute and most answers were 429s. A pool someone asked for once
+stays explicit and is refreshed for good; while nobody reads it, the collector
+spends a call only while 3 of the minute's calls remain
+(`IDLE_PROVIDER_HEADROOM`), the selection only while 2 remain, and a pool a
+visitor is reading or the featured list keeps warm keeps the whole allowance.
+Recalibrate the ceiling (047, `PROVIDER_CALLS_PER_MINUTE`) and the two
+headrooms together, from a day of samples of what the collector's
+publications record:
 
 ```sql
 SELECT payload->'market'->'cache'->>'status' AS cache,

@@ -39,6 +39,10 @@ class DeadlineConnection:
         return result
 
 
+# The provider calls the whole VM may make in a minute: the ceiling in
+# migrations/047_provider_ceiling.sql (GeckoTerminal's free API allows 10 per address).
+PROVIDER_CALLS_PER_MINUTE = 8
+
 class PgPublicData:
     def __init__(self, catalogue, *, writer=False, clock=time.time):
         self.catalogue, self.writer, self.clock = catalogue, writer, clock
@@ -99,7 +103,7 @@ class PgPublicData:
 
     def reserve_provider_if_headroom(self, min_free):
         """Spend the shared allowance only while `min_free` of the minute's calls remain."""
-        if type(min_free) is not int or not 0<=min_free<25:
+        if type(min_free) is not int or not 0<=min_free<PROVIDER_CALLS_PER_MINUTE:
             raise DataError('invalid_request')
         with self.connection(write=True) as conn:
             return conn.execute('SELECT domino_public.reserve_provider_if_headroom(%s) AS allowed',

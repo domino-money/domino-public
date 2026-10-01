@@ -174,6 +174,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     # The gas cap accepts an ETH/USD answer as old as the feed's heartbeat; same
     # vehicle as 032 (the automation installer and its readiness upgrade).
     'backend/migrations/046_gas_answer_heartbeat.sql',
+    # The provider allowance at the provider's real limit; same vehicle as 042.
+    'backend/migrations/047_provider_ceiling.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

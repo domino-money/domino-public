@@ -247,6 +247,8 @@ def create_database(name):
         conn.execute((ROOT/'migrations/044_demand_horizon.sql').read_text())
         # 045 creates its table if absent and replaces two checks, so it applies again safely.
         conn.execute((ROOT/'migrations/045_featured_live.sql').read_text())
+        # 047 only replaces 042's reservation with a lower ceiling, so it applies again safely.
+        conn.execute((ROOT/'migrations/047_provider_ceiling.sql').read_text())
         # Development mirrors the production split: callable NOLOGIN privilege
         # roles, each inherited by exactly one unprivileged LOGIN bridge.
         for login, privilege in (

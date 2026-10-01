@@ -56,7 +56,7 @@ Apply migrations in order through the existing privileged deployment path:
 | Migration | Purpose |
 | --- | --- |
 | `023_pool_request_scheduling.sql` | Recurring due times, backoff, leases/generations and adaptive span state on the existing activity request queue. It preserves acquired checkpoints. |
-| `024_public_observations.sql` | Public entity observations, token/pool links, revisioned lookup, narrow interest admission and a shared 25/minute external-provider allowance. |
+| `024_public_observations.sql` | Public entity observations, token/pool links, revisioned lookup, narrow interest admission and a shared external-provider allowance (25 a minute; 8 since 047, the provider's real limit). |
 | `025_public_history.sql` | Recent-history jobs, canonical coverage, Swap observations and ratio candles. |
 | `026_public_demand.sql` | Explicit token-discovery demand separated from metadata prerequisites, plus durable history span recovery. |
 | `042_provider_priority.sql` | Provider calls by priority from the same allowance: an idle refresh spends one only while enough of the minute is left for the pools on screen. Apply as the owner of 024's functions. |

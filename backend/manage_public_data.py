@@ -21,9 +21,10 @@ from read_service import ReadService
 from rpc_config import configured_rpc_urls, configured_history_rpc_urls
 
 # Provider calls an idle refresh leaves in the minute's shared allowance: room
-# for the pools a visitor is reading and for the daily featured-pools listing.
-# Recalibrate together with the ceiling in 042_provider_priority.sql.
-IDLE_PROVIDER_HEADROOM = 8
+# for the pools a visitor is reading, the featured list's pools and the daily
+# featured-pools listing. Recalibrate together with the ceiling in
+# 047_provider_ceiling.sql (8 a minute; PROVIDER_CALLS_PER_MINUTE).
+IDLE_PROVIDER_HEADROOM = 3
 
 # The demand horizon (044_demand_horizon.sql): seconds since a visitor last
 # asked for a pool, up to which each tier holds, then its refresh period and
@@ -169,10 +170,13 @@ class PublicCollector:
                 self.service.market_cache.restore_pool(entity_id,previous['market'],
                     elapsed_seconds=max(0,int(self.clock())-claim['observed_at']))
             tier = interest_tier(self.clock(), claim['last_requested_at'], claim.get('keep_warm_until'))
-            # Only a pool on screen or listed keeps the whole provider allowance. The
-            # others spend a call only when enough is left for it (042_provider_priority.sql).
+            # Only a pool on screen or one the featured list keeps warm, whatever its
+            # tier, keeps the whole provider allowance. The others spend a call only
+            # when enough is left for it (042_provider_priority.sql).
+            warm = claim.get('keep_warm_until')
+            listed = warm is not None and warm.timestamp() > self.clock()
             cache=self.service.market_cache
-            if tier['name'] not in ('hot', 'featured'):
+            if tier['name'] != 'hot' and not listed:
                 cache.reserve_provider=lambda:self.repository.reserve_provider_if_headroom(IDLE_PROVIDER_HEADROOM)
             try:
                 payload = self.service.pool_market(entity_id,allow_provider=tier['provider'])
