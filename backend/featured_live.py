@@ -43,6 +43,15 @@ CONFIRM = {'tvl_collapse': (600, True), 'price_fall': (600, True),
            'apr_or_turnover_above_ceiling': (1800, True),
            'estimate_unavailable': (3 * 3600, False), 'volume_collapse': (3 * 3600, False)}
 PRICE_FALL = Fraction(3, 10)
+# A pool whose estimate is missing only because its data is late or the
+# provider is busy is not judged on that: it is unknown, not a fault of the
+# pool (#278). The collector starved the listed pools for an hour and the
+# provider rate-limited it all day, and every listed pool left within hours.
+# Data last good longer ago than this counts again, so a pool the provider has
+# stopped answering for still leaves.
+TRANSIENT_DATA_SECONDS = 6 * 3600
+LATE_DATA = frozenset(('snapshot_expired', 'market_data_expired', 'market_age_unknown'))
+BUSY_PROVIDER = frozenset(('provider_rate_limited', 'provider_capacity_busy', 'provider_unavailable'))
 
 
 def window(policy, now):
@@ -50,6 +59,16 @@ def window(policy, now):
     at = int(datetime.fromtimestamp(now, timezone.utc).replace(
         hour=policy['selectionHourUtc'], minute=0, second=0, microsecond=0).timestamp())
     return at - policy['selectionLeadMinutes'] * 60, at - policy['selectionRetryUntilMinutes'] * 60, at
+
+
+def transient(estimate):
+    """An unavailable estimate whose only causes are late data or a busy provider, within the horizon."""
+    reasons, provenance = set(estimate['reasons']), estimate['provenance']
+    if 'market_unavailable' in reasons and provenance['marketReason'] in BUSY_PROVIDER:
+        # With no answer from the provider there is no TVL or volume to read either.
+        reasons -= {'market_unavailable', 'missing_reported_tvl', 'missing_volume24h'}
+    ages = [age for age in (provenance['effectiveMarketAgeSeconds'], provenance['snapshotAgeSeconds']) if age is not None]
+    return reasons <= LATE_DATA and all(age <= TRANSIENT_DATA_SECONDS for age in ages)
 
 
 def _decimal(value):
@@ -265,7 +284,7 @@ class Live:
             estimate = estimate_pool_apr(aged, now=now)
         except ValueError:
             estimate = None
-        if estimate is None or estimate['status'] == 'unavailable':
+        if estimate is None or (estimate['status'] == 'unavailable' and not transient(estimate)):
             seen.add('estimate_unavailable')
         data = aged['market'].get('data')
         if data is not None:

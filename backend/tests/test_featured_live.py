@@ -52,8 +52,9 @@ def pool_of(token,fee=3000):
 
 
 def payload(token,*,at,tvl='2000000',volume='1000000',sqrt=2**96,fee=3000,lp_fee=None,protocol=0,
-            integration='hookless_fixed_fee'):
-    """The collector's pool-market payload for the ETH/token pool, observed at `at`."""
+            integration='hookless_fixed_fee',rate_limited_for=None):
+    """The collector's pool-market payload for the ETH/token pool, observed at `at`; with
+    `rate_limited_for`, the provider refused it and its last answer is that many seconds old."""
     result=copy.deepcopy(BASE);pool_id=pool_of(token,fee)
     result['poolId']=result['pool']['poolId']=pool_id
     result['pool'].update(currencies=[ZERO,token],poolKey=key_of(token,fee),currentLpFeePips=fee if lp_fee is None else lp_fee,
@@ -63,6 +64,9 @@ def payload(token,*,at,tvl='2000000',volume='1000000',sqrt=2**96,fee=3000,lp_fee
                                     retrievedAt=at,reportedLiquidityUsd=tvl,volume24hUsd=volume,
                                     sourceUrl='https://www.geckoterminal.com/robinhood/pools/'+pool_id)
     result['market']['cache']['ageSeconds']=0
+    if rate_limited_for is not None:
+        result['market'].update(status='unavailable',reason='provider_rate_limited',data=None)
+        result['market']['cache'].update(status='rate_limited',ageSeconds=rate_limited_for)
     return result
 
 
@@ -400,7 +404,7 @@ class LiveTests(unittest.TestCase):
             self.figures(b,at=start+offset-5,tvl='1000000',volume='10000000')    # turnover 10, APR 1095%
             self.figures(c,at=start+offset-5,tvl='1000000',volume='30000000',fee=500)   # turnover 30, APR 547%
             self.figures(d,at=start+offset-5)
-            self.figures(e,at=start+offset-400)                                  # too old to estimate
+            self.figures(e,at=start+offset-7*HOUR)                               # last good longer ago than the horizon
             return self.live().tick(start+offset)['health']
         self.assertEqual(check(0)['status'],'healthy')
         self.assertEqual(check(1800-1)['status'],'healthy')
@@ -470,6 +474,23 @@ class LiveTests(unittest.TestCase):
         health=live.tick(start+700)['health']
         self.assertEqual((health['removed'],health['added']),({pool_of(c):'excluded_by_owner'},[]))
         self.assertEqual(self.served_ids(),[pool_of(a)])
+
+    def test_late_data_and_a_busy_provider_are_unknown_not_a_reason_to_leave(self):
+        # #278: the collector starved the listed pools and the provider rate-limited it, and every
+        # listed pool left within hours. Within the horizon that is unknown, not the pool's fault.
+        a,b,c=TOKENS[:3]
+        self.serve_today([a,b,c])
+        start=AT+2*HOUR
+
+        def check(offset):
+            self.figures(a,at=start+offset-400)                                   # snapshot and market late
+            self.figures(b,at=start+offset-5,rate_limited_for=2*HOUR)             # refused; last answer 2 h ago
+            self.figures(c,at=start+offset-5,rate_limited_for=7*HOUR)             # refused; last answer 7 h ago
+            return self.live().tick(start+offset)['health']
+        self.assertEqual(check(0)['status'],'healthy')
+        self.assertEqual(check(3*HOUR)['removed'],{pool_of(c):'estimate_unavailable'})
+        self.assertEqual(check(6*HOUR)['status'],'healthy')
+        self.assertEqual(self.served_ids(),[pool_of(a),pool_of(b)])
 
     def test_a_recovered_condition_starts_its_window_again(self):
         a=TOKENS[0]
