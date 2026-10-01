@@ -173,10 +173,10 @@ jobs:
     name: Backend
     runs-on: ubuntu-24.04
     # The artifact build for the EVM tests (issue #144) adds a full Forge
-    # compilation, and the key below hashes contracts/**/*.sol, so every .sol
-    # change runs it cold. Last 60 runs: 13-19 minutes warm (backend tests
-    # 11.5-16); cold, the three builds take 8 more, about 26 in all. Run
-    # 36922285682 (#284) was cancelled at 20 minutes with its tests half done.
+    # compilation. Last 60 runs: 13-19 minutes warm (backend tests 11.5-16).
+    # Cold, the three builds add about 8: 25 minutes on run 36927967030 (#284).
+    # The cache below now survives .sol changes, so a cold build only follows
+    # a compiler change or a missing cache.
     timeout-minutes: 30
     env:
       DOMINO_TEST_POSTGRES: '1'
@@ -190,7 +190,11 @@ jobs:
           path: |
             contracts/cache
             contracts/out
-          key: forge-${{ runner.os }}-${{ hashFiles('contracts/**/*.sol', 'contracts/foundry.toml', 'package-lock.json') }}
+          # Exact source tree first; otherwise the newest cache from the same
+          # compiler and settings, which scripts/forge-cache.mjs prunes below.
+          key: forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
+          restore-keys: |
+            forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
@@ -203,6 +207,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm --prefix app ci --no-audit --no-fund
       - run: python -m pip install -r backend/requirements-api.lock
+      - name: Drop cached Forge artifacts this checkout invalidates
+        run: node scripts/forge-cache.mjs prune
       # Compile the artifact tree the backend EVM tests load: the DominoSetup
       # test pulls PoolManager, PositionManager, StateView and SetupToken.
       # A whole-tree forge build OOMs soljson; the positional path compiles
@@ -250,19 +256,21 @@ jobs:
       - run: python -m unittest discover -s backend/tests -v
       - name: Verify unsigned financial deployment tooling on disposable EVM
         run: node --test scripts/prepare-financial-release.test.mjs scripts/prepare-financial-release-rpc.test.mjs scripts/release-artifact-manifest.test.mjs scripts/build-public-release.test.mjs
+      - name: Record the sources of the cached Forge artifacts
+        run: node scripts/forge-cache.mjs record
       - name: Stop isolated database
         if: always()
         run: python backend/dev_postgres.py stop
   contracts:
     name: Contracts
     runs-on: ubuntu-24.04
-    # Every .sol change misses the artifact cache, because the key hashes
-    # contracts/**/*.sol - so a cold full Forge compilation of the vendored v4
-    # reference tree is the normal case here, not the exception. Measured on run
-    # 35466837442: about 23 minutes of solc across the per-suite closures, which
-    # cancelled a 20-minute job whose every suite had passed. Give headroom so
-    # the job is not spuriously cancelled (issue #145).
-    timeout-minutes: 35
+    # A cold run compiles every per-suite closure. It took 23 minutes when a
+    # 20-minute limit cancelled it (issue #145). Run 36927967030 (#284) spent
+    # 35 minutes on the 22 V1 suites alone and hit the 35-minute limit before
+    # the V2 suites and the gas baseline. A .sol change now restores the newest
+    # cache and rebuilds only what it invalidates; a cold run remains when the
+    # compiler inputs change or no cache exists, hence the headroom.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -275,8 +283,14 @@ jobs:
           path: |
             contracts/cache
             contracts/out
-          key: forge-${{ runner.os }}-${{ hashFiles('contracts/**/*.sol', 'contracts/foundry.toml', 'package-lock.json') }}
+          # Exact source tree first; otherwise the newest cache from the same
+          # compiler and settings, which scripts/forge-cache.mjs prunes below.
+          key: forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
+          restore-keys: |
+            forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
       - run: npm ci --no-audit --no-fund
+      - name: Drop cached Forge artifacts this checkout invalidates
+        run: node --test scripts/forge-cache.test.mjs && node scripts/forge-cache.mjs prune
       # One suite at a time: a single forge invocation compiles every source in
       # one soljson payload and aborts (OOM) on the whole vendored v4 tree, so
       # the job must build each suite's dependency closure separately with a
@@ -297,6 +311,8 @@ jobs:
       # fails here instead of surfacing in a report months later.
       - name: Check the gas baseline
         run: node --test scripts/gas-baseline.test.mjs scripts/mutate-contracts.test.mjs && node scripts/gas-baseline.mjs --check
+      - name: Record the sources of the cached Forge artifacts
+        run: node scripts/forge-cache.mjs record
   preview:
     name: Deploy gated preview
     needs: [hygiene, frontend, frontend_browser, backend, contracts]
