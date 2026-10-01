@@ -275,6 +275,8 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
   let ownSource: OwnSource | undefined = checkpoint?.path?.own
   /** The probe's samples so far (step 3). */
   let probing: Probing | null = null
+  // A closed-set breadcrumb lets a published page identify the failed step without exposing RPC payloads.
+  let readStage: LogsRequest['kind'] | undefined
   /**
    * Where the run is. `spentBytes`: what a later run counts from, the bytes so far for a budget stop (a larger budget goes
    * on from them), none for a verified run (2026-09-25, review: each later run reads only the new logs, under a budget of
@@ -299,6 +301,7 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     let behind = 0
     for (let attempt = 1; ; attempt++) {
       if (deps.cancelled?.()) throw new Cancelled()
+      readStage = request.kind
       const answer = await deps.logs(request)
       if (deps.cancelled?.()) throw new Cancelled()
       if (answer.ok) {
@@ -942,6 +945,6 @@ export async function runPipeline(deps: PipelineDeps, run: PipelineRun): Promise
     // bad replies, replay errors and accounting mismatches must not turn into an accepted partial history.
     const retryable = reason === 'rpc_unavailable' && error instanceof Stop && error.keepPlace
     const kept = retryable ? completed : reason === 'too_much_history' && error instanceof Stop && error.keepPlace && coherent() ? keep() : null
-    return { ok: false, reason, prices: null, checkpoint: kept, bytes, ...(kept && (onPath || retryable) ? { later: true as const } : {}) }
+    return { ok: false, reason, prices: null, checkpoint: kept, bytes, ...(kept && (onPath || retryable) ? { later: true as const } : {}), ...(reason === 'rpc_unavailable' && readStage ? { readStage } : {}) }
   }
 }

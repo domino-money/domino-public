@@ -352,6 +352,20 @@ test('a run that could not reach the chain is asked again once the lane’s wait
   stop();
 });
 
+test('a failed header read identifies only its stage and clears the diagnostic after recovery', async () => {
+  const fixture = loadCase('3136705');
+  const relay = fixtureRelay(fixture, { script: { headers: [{ ok: false, failure: 'unavailable', retryAfterMs: 0 }] } });
+  const { store, time } = storeWith({ relays: { 3136705: relay }, service: stateService() });
+  const stop = store.subscribeHistory(['3136705'], 'page', () => {});
+  await until(() => store.view('3136705').phase === 'unclaimed-only', 'header read unavailable');
+  assert.equal(store.view('3136705').reason, 'rpc_unavailable');
+  assert.equal(store.view('3136705').readStage, 'headers');
+  assert.equal(time.fire('later', RETRY_MS[0]), 1);
+  await until(() => store.view('3136705').phase === 'verified', 'history recovered');
+  assert.equal(store.view('3136705').readStage, undefined);
+  stop();
+});
+
 // ---------------------------------------------------------------------------
 // 2026-09-27 (the owner: the Fees earned chart took far too long; traced live on his 3325113 at the integration of round
 // 5): the public RPC refused the replay's 28-header batch (a 429 behind a CORS error), the run stopped, the worker's lane

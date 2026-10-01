@@ -263,10 +263,11 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
   const saved = first?.phase === 'cached' ? first : null
   const savedTitle = saved ? `Saved public-chain replay on Robinhood Chain; block ${saved.state.block}, ${new Date(saved.state.timestamp * 1000).toISOString()}. Not revalidated on this visit.` : undefined
   const reason = first && (first.phase === 'unclaimed-only' || first.phase === 'unavailable') ? first.reason : undefined
+  const readStage = first?.phase === 'unclaimed-only' ? first.readStage : undefined
   // A currency with unknown decimals: no guessed formatting, no card (§15.6).
   if (state && (state.currencies[0].decimals === null || state.currencies[1].decimals === null)) return null
   const root = (state_: string, children: ReactNode, className?: string) => (
-    <section className={cx('dm-card dm-fees', className)} aria-labelledby={titleId} data-fees-card="" data-fees-state={state_} data-fees-reason={reason} data-fees-source={saved?.source} data-fees-block={state?.block} data-fees-timestamp={state?.timestamp}>
+    <section className={cx('dm-card dm-fees', className)} aria-labelledby={titleId} data-fees-card="" data-fees-state={state_} data-fees-reason={reason} data-fees-read-stage={readStage} data-fees-source={saved?.source} data-fees-block={state?.block} data-fees-timestamp={state?.timestamp}>
       {children}
     </section>
   )

@@ -238,6 +238,56 @@ test('a cheap call renews an expired round trip after the network slows, without
   } finally { lane.close(); }
 });
 
+test('a slow batch of headers does not renew the round trip or suppress the next log read’s heavy-work guard', async () => {
+  let at = 100_000;
+  const lane = chainLane(LANE_PACE, () => at);
+  const reply = (ms) => () => { at += ms; return new Response('{}'); };
+  const head = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] });
+  const headers = JSON.stringify(Array.from({ length: 50 }, (_, id) => ({ jsonrpc: '2.0', id, method: 'eth_getBlockByNumber', params: [`0x${(73_000_000 + id * 36_000).toString(16)}`, false] })));
+  try {
+    const deps = lane.deps();
+    await withFetch(reply(150), () => call(deps, { body: head }));
+    at += ROUND_TRIP_WINDOW_MS + 1;
+    const batch = await withFetch(reply(900), () => call(deps, { body: headers }));
+    assert.equal(batch.sent.length, 1, 'no calibration or other extra request');
+    assert.equal(lane.wait(), LANE_PACE.heavyQuietMs, 'the batch’s work gets the existing heavy-work quiet period');
+    at += lane.wait();
+    await withFetch(reply(600), () => call(deps, { body: LOGS }));
+    assert.equal(lane.wait(), LANE_PACE.heavyQuietMs, '600 ms is still work above the 150 ms round trip, not below a false 900 ms floor');
+  } finally { lane.close(); }
+});
+
+test('a fast header batch adds no artificial pause and cannot teach an unlearned round trip', async () => {
+  let at = 100_000;
+  const lane = chainLane(LANE_PACE, () => at);
+  const headers = JSON.stringify([1, 2].map((id) => ({ jsonrpc: '2.0', id, method: 'eth_getBlockByNumber', params: [`0x${id}`, false] })));
+  try {
+    const deps = lane.deps();
+    const batch = await withFetch(() => { at += 150; return new Response('{}'); }, () => call(deps, { body: headers }));
+    assert.equal(batch.sent.length, 1);
+    assert.equal(lane.wait(), 0, 'no excess above the initial round trip');
+    assert.equal(lane.learned(), false, 'a batch is not a cheap network calibration');
+  } finally { lane.close(); }
+});
+
+test('one header, standalone or in a one-item batch, keeps the existing cheap-read calibration', async () => {
+  for (const batched of [false, true]) {
+    let at = 100_000;
+    const lane = chainLane(LANE_PACE, () => at);
+    const reply = (ms) => () => { at += ms; return new Response('{}'); };
+    const header = { jsonrpc: '2.0', id: 1, method: 'eth_getBlockByNumber', params: ['0x1', false] };
+    try {
+      const deps = lane.deps();
+      await withFetch(reply(150), () => call(deps));
+      at += ROUND_TRIP_WINDOW_MS + 1;
+      await withFetch(reply(900), () => call(deps, { body: JSON.stringify(batched ? [header] : header) }));
+      assert.equal(lane.wait(), 0);
+      await withFetch(reply(900), () => call(deps, { body: LOGS }));
+      assert.equal(lane.wait(), 0, 'single-header latency may still renew the network floor');
+    } finally { lane.close(); }
+  }
+});
+
 test('a genuine refusal gates page reads and a newly-created lane, without renewing the cooldown on local refusals', async () => {
   const lane = chainLane({ ...PACE, firstRestMs: 150, restMs: 150 });
   let later;

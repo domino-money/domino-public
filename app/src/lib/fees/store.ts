@@ -464,7 +464,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     if (e.view.phase === 'cached' && result.reason !== 'replay_mismatch') return
     if (e.view.phase === 'estimated' && result.reason !== 'replay_mismatch') return carry(e)
     const state = e.state ?? run.state
-    setView(e, { phase: 'unclaimed-only', state, reason: result.reason, prices: result.prices })
+    setView(e, { phase: 'unclaimed-only', state, reason: result.reason, prices: result.prices, ...(result.readStage ? { readStage: result.readStage } : {}) })
   }
 
   /** Starts the run `e` needs now, if any. */

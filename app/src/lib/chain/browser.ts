@@ -204,11 +204,13 @@ interface Floor {
 export const ROUND_TRIP_WINDOW_MS = 15_000
 /**
  * 2026-09-28 (speed wave B, items 14, 15 and 20): the work a reply cost the RPC, measured to its headers (which the RPC
- * sends once its work is done): for a log read, its time above the quickest reply seen; any other call costs it nothing,
- * and teaches the round trip (`floor`), above or below ROUND_TRIP_MS, which is the floor until one has.
+ * sends once its work is done): for a log read or a batch of block headers, its time above the quickest reply seen.
+ * Other calls teach the round trip (`floor`), above or below ROUND_TRIP_MS, which is the floor until one has.
+ * A multi-header batch can include node work: it must not renew an expired floor with its whole elapsed time and
+ * thereby hide the work of the next log read. Single-header reads keep their existing cheap-read behavior.
  */
 function workOf(floor: Floor, body: unknown, took: number, at = Date.now()): number {
-  if (!logRead(body)) {
+  if (!workRead(body)) {
     const renew = !floor.learned || at - floor.learnedAt >= ROUND_TRIP_WINDOW_MS
     floor.ms = renew ? took : Math.min(floor.ms, took)
     if (renew) floor.learnedAt = at
@@ -218,8 +220,18 @@ function workOf(floor: Floor, body: unknown, took: number, at = Date.now()): num
   floor.ms = Math.min(floor.ms, took)
   return took - floor.ms
 }
-/** Whether a request's body asks for logs (a batch with one log read in it counts). */
-const logRead = (body: unknown) => typeof body === 'string' && body.includes('"eth_getLogs"')
+/** Reads whose elapsed time may include node work, not just one cheap round trip. */
+function workRead(body: unknown): boolean {
+  if (typeof body !== 'string') return false
+  if (body.includes('"eth_getLogs"')) return true
+  if (!body.includes('"eth_getBlockByNumber"')) return false
+  try {
+    const calls: unknown = JSON.parse(body)
+    return Array.isArray(calls) && calls.filter((call: unknown) => call !== null && typeof call === 'object' && 'method' in call && call.method === 'eth_getBlockByNumber').length > 1
+  } catch {
+    return false
+  }
+}
 /**
  * 2026-09-28 (speed wave B, item 15): a page call that cost the RPC this much work or more is heavy: the lanes wait
  * `graceMs` after the page's reads it was among. The others (its state reads, the head, a log read the RPC answered at
@@ -412,7 +424,7 @@ export async function simulateOnChain(params: unknown[]): Promise<unknown> {
  * work is measured to the reply's headers, which the RPC sends once its work is done (live that day: a 5.6-million-block
  * log read's headers and its last byte came 0.5 ms apart, both a round trip after the call), so the visitor's own
  * download is the byte pace's alone; and the quickest reply is learned from the replies of calls that cost the RPC
- * nothing (every call but a log read): the visitor's own round trip, above or below ROUND_TRIP_MS, where it used to start
+ * nothing (now excluding multi-header batches too): the visitor's own round trip, above or below ROUND_TRIP_MS, where it used to start
  * at ROUND_TRIP_MS and only go down, so a phone 300 ms away paid 4 × 100 ms of quiet after every call. The byte pace is
  * the one measured, unchanged.
  *
@@ -677,11 +689,11 @@ export function chainLane(pace: LanePace = LANE_PACE, now: () => number = Date.n
             await response.body?.cancel().catch(() => undefined)
             return new Response(null, { status: 429, statusText: response.statusText })
           }
-          // The work: to the reply's headers, and a log read's only (items 14 and 20 above); the round trip learned from the
-          // chain's own RPC's replies only (`own`). A log read that came heavyMs past it or more while the calls go to that
+          // The work: to the reply's headers, for log reads and multi-header batches; the round trip learned from the
+          // chain's own RPC's cheap replies only (`own`). A read that came heavyMs past it or more while the calls go to that
           // RPC: the node worked on it, heavyQuietMs of quiet at least, uncapped (see LANE_PACE, 2026-09-29).
           const took = now() - sent
-          const work = own ? workOf(floor, init.body, took, now()) : logRead(init.body) ? Math.max(0, took - floor.ms) : 0
+          const work = own ? workOf(floor, init.body, took, now()) : workRead(init.body) ? Math.max(0, took - floor.ms) : 0
           const quiet = pace.workFactor * work
           quietUntil = now() + (up && work >= pace.heavyMs ? Math.max(pace.heavyQuietMs, quiet) : Math.min(pace.maxQuietMs, quiet))
           return counted(

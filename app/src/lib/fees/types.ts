@@ -20,6 +20,8 @@ import type { PositionAutomation } from '../automationState'
 
 /** Why the history is not drawn. A closed set: it goes into data-fees-reason, never into visible text. */
 export type FeesReason = 'rpc_unavailable' | 'too_much_history' | 'replay_mismatch' | 'hooked_pool' | 'not_found' | 'worker_failed'
+/** Last attempted public read, for diagnostics only. Never a payload, wallet or endpoint. */
+export type FeesReadStage = LogsRequest['kind']
 
 /**
  * One position's fees, as the hooks give them.
@@ -38,7 +40,7 @@ export type FeesReason = 'rpc_unavailable' | 'too_much_history' | 'replay_mismat
 export type FeeHistoryView =
   | { phase: 'idle' }
   | { phase: 'loading'; state: PositionState | null }
-  | { phase: 'unclaimed-only'; state: PositionState; reason: FeesReason; prices: HourlyPrices | null }
+  | { phase: 'unclaimed-only'; state: PositionState; reason: FeesReason; prices: HourlyPrices | null; readStage?: FeesReadStage }
   | { phase: 'verified'; state: PositionState; history: FeeHistory; prices: HourlyPrices }
   | { phase: 'estimated'; state: PositionState; history: FeeHistory; prices: HourlyPrices }
   /** A previous visit's public replay, presentation only; never an authoritative current state. */
@@ -319,7 +321,7 @@ export type ToWorker =
  */
 export type WorkerResult =
   | { ok: true; history: FeeHistory; prices: HourlyPrices; checkpoint: Checkpoint }
-  | { ok: false; reason: FeesReason; prices: HourlyPrices | null; checkpoint: Checkpoint | null; bytes: number; later?: true }
+  | { ok: false; reason: FeesReason; prices: HourlyPrices | null; checkpoint: Checkpoint | null; bytes: number; later?: true; readStage?: FeesReadStage }
 
 /** runId identifies the attempt, not just the NFT: queued replies from a cancelled run must never finish its successor. */
 export type FromWorker =
