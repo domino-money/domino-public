@@ -75,7 +75,7 @@ export const NON_CUSTODIAL: DocPage = {
           ],
         },
         // 2026-10-01 (audit E18): which has a screen. What signing in grants is on Wallet and sign-in.
-        p('Each is a transaction your wallet signs on your sequence vault, even while paused or without the operator. Only Pause has a button here; your wallet makes the others, for example on the block explorer. None carries a service fee.'),
+        p('Each is a transaction your wallet signs on your sequence vault, even while paused or without the operator. Pause and fee withdrawals have buttons here; your wallet makes the rest on the block explorer. None carries a service fee.'),
         p(doc('Signing in', 'wallet', 'sign-in'), ' grants none of them.'),
       ],
     },
@@ -173,8 +173,8 @@ export const PRIVACY: DocPage = {
       title: 'Who sees your address',
       blocks: [
         // RPC-SPEC §7.6 (2026-10-01): no public node is asked.
-        p('Your positions, their fees and their history are read by Domino’s own servers, from Domino’s own Robinhood Chain node. Your browser asks only Domino, so no other node sees your address. Your wallet signs and sends through its own connection to the chain.'),
-        p('A moment over half an hour old comes from Domino’s read service, which asks an archive node for it by the position’s number, never your address.'),
+        p('Your positions, their fees and their history, as the chain has them now, are read by Domino’s own servers, from Domino’s own Robinhood Chain node. Your browser asks only Domino, so no other node sees your address. Your wallet signs and sends through its own connection to the chain.'),
+        p('A position’s fees at a past moment, for its chart, are read by Domino’s read service through an archive provider outside Domino. It is given only the position’s number and the block, never your address.'),
         p('Token pictures and prices come from a public market data provider. Like any site it sees your internet address, never your wallet’s.'),
         p('The Wallet card asks Domino’s read service for a wallet’s tokens by its address. ', doc('Signing in', 'wallet', 'sign-in'), ' tells Domino’s sign-in service your address, for the session.'),
       ],

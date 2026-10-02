@@ -18,7 +18,7 @@ import { chainRead } from '../lib/fees/answers'
 import { warmState } from '../lib/fees/client'
 import { parseAddressInput, shortAddress } from '../lib/read/screens/identity'
 import { portfolioRoute, positionDetailId } from '../lib/read/screens/positions'
-import { useWalletIdentity, type WalletIdentityView } from '../lib/walletIdentity'
+import { useWalletIdentity, walletKey, type WalletIdentityView } from '../lib/walletIdentity'
 import { RoadmapPill } from '../components/automate/RoadmapPill'
 import { FEATURES } from '../lib/automate/features'
 import { useRouteTitle } from '../lib/routeTitle'
@@ -39,6 +39,10 @@ const Execution = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ limit?: numbe
 // The deposits the wallet has not turned into a position, each with its refund: its own chunk, in wallet builds only.
 // Typed from the slot's own props, so this screen names nothing of that chunk but its lazy import.
 const HeldDeposits = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<Parameters<DepositsSlot>[0]>>(recovering(() => import('../components/positions/HeldDeposits'), couldNotLoad)) : null
+// 2026-10-02 (the V1 incident of rugged97's spec rev3 §2.13): the fees waiting in the connected wallet's vaults, each with
+// Withdraw to wallet, whatever became of the vault's root position. Its own chunk, in wallet builds only; it shows nothing
+// while there is nothing to withdraw, and nothing in place of a chunk that cannot load.
+const FeeReserves = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ owner: string; placement: 'positions' | 'position' }>>(recovering(() => import('../components/positions/FeeReserves'), () => ({ default: () => null }))) : null
 
 // Your positions and a position's own page: chunks of their own, loaded only on Positions, so no other page pays for
 // them. The list exists only where a wallet can connect; the page is public chain data and opens in every build.
@@ -370,6 +374,14 @@ function PositionsList() {
               <NoWalletHere />
             )}
           </div>
+
+          {/* The fees waiting in the wallet's vaults, right under its positions (2026-10-02): only while there is something to
+              withdraw, and never while another address is viewed. Connected is enough: withdrawing needs no sign-in. */}
+          {FeeReserves && !viewing && walletKey(identity) !== null && identity.kind === 'connected' && (
+            <Suspense fallback={null}>
+              <FeeReserves owner={identity.address.toLowerCase()} placement="positions" />
+            </Suspense>
+          )}
 
           {/* Side by side from 1024px; stacked, after the rail's cards, below; one line for both while neither has anything.
               Not while another address is viewed (fix round 1): they are the signed-in wallet's, never that address's. */}

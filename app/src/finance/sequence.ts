@@ -1,8 +1,8 @@
 import { concatHex, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, stringToHex, zeroAddress, type Abi, type Address, type ContractFunctionName, type ContractFunctionReturnType, type Hex } from 'viem'
-import { POSITION_MANAGER, SEQUENCE_FACTORY, pinned, unpinned } from './pin.js'
+import { POSITION_MANAGER, SEQUENCE_FACTORY, SEQUENCE_RECOVERY_RECORD, pinned, unpinned } from './pin.js'
 import { NONCE_LATCH_EXPIRY_S, SIGN_WINDOW_S, acceptsNativeEth, type GasBudget, type WalletRpc } from './setup.js'
 import { definiteRefusal } from './nonce.js'
-import { BATCH_FRAME_GAS, batchCallsStatus, offerBatch, simulateBatch, type BatchCall, type BatchSimulator } from './batch.js'
+import { BATCH_FRAME_GAS, batchCallsState, batchCallsStatus, offerBatch, simulateBatch, type BatchCall, type BatchSimulator } from './batch.js'
 import { sequenceSnapshotFrom, snapshotCalls, type SequenceSnapshot } from './sequenceSnapshot.js'
 
 /*
@@ -158,6 +158,8 @@ export const sequenceAbi = [
 ] as const
 /** sequenceIdParameters signature: bytes32,uint256,address,address,uint256 */
 export const sequenceIdParameters = [{ type: 'bytes32' }, { type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'uint256' }] as const
+/** withdrawalKeyParameters signature: bytes32,address,uint64 (a fee withdrawal batch's latch key: its type hash, the vault and its state nonce) */
+const withdrawalKeyParameters = [{ type: 'bytes32' }, { type: 'address' }, { type: 'uint64' }] as const
 /** poolKeyParameters signature: (address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) */
 export const poolKeyParameters = [{ type: 'tuple', components: poolKeyComponents }] as const
 export type AutomationMode = 'compound' | 'domino'
@@ -207,6 +209,73 @@ export interface PreparedSequenceBatch {
 }
 /** Where a creation batch stands, read from the wallet and then from the factory and the vault it was made to create. */
 export type SequenceBatchState = { state: 'pending' } | { state: 'created'; vault: Address } | { state: 'dropped' | 'reverted' | 'unknown' }
+/**
+ * Fees waiting in an owner's vault (2026-10-02, the incident of rugged97's spec rev3 §2.13: an owner closed a vault's root
+ * position, and the fees its automation had collected and not reinvested stayed in the vault with no screen to withdraw
+ * them). One balance of `withdrawFeeReserves(sourceId, currency, original, charged)`, as the vault books it: each position
+ * the vault ever registered has two fee sources (contracts/src/DominoVaultV4.sol _register), and each source a balance in
+ * each of the pool's two currencies (a swap's output is booked to its source in the other currency, already charged).
+ */
+export interface FeeReserve { tokenId: bigint; sourceId: Hex; currency: Address; original: bigint; charged: bigint }
+/**
+ * A vault this wallet owns, with every fee reserve of the positions it registered that this read walked, zero ones
+ * included, root first. One read walks SEQUENCE_MEMBER_STEPS + 1 members at most (2026-10-02, review finding 3: the
+ * contract caps a chain at no length, since a withdrawn successor stays in it): `next` is the member a further read
+ * starts from (`feeReserves(vault, { tokenId: next, parent: last })`), 0 once the walk reached the end.
+ */
+export interface VaultReserves {
+  vault: Address; sequenceId: Hex; rootTokenId: bigint; paused: boolean; rootPermissionValid: boolean
+  baseCurrency: Address; quoteCurrency: Address; stateNonce: bigint; reserves: readonly FeeReserve[]
+  /** The block the read was pinned to: a withdrawal's own record is looked for from it on (withdrawalRecord). */
+  blockNumber: bigint
+  /** The last member this read walked, and the next one to read (0 when there is none). */
+  last: bigint; next: bigint
+}
+/** One withdrawal of a fee reserve: exactly the amounts the owner reviewed, which the vault pays to its owner, no fee taken. */
+export interface FeeWithdrawal { sourceId: Hex; currency: Address; original: bigint; charged: bigint }
+/**
+ * A withdrawal as the vault itself recorded it (its FeeReservesWithdrawn log), found for one reviewed row: the
+ * transaction that paid it, its block, and the state nonce the withdrawal moved the vault to.
+ */
+export interface FeeWithdrawalRecord { transactionHash: Hex; blockNumber: bigint; stateNonce: bigint }
+/**
+ * contracts/src/DominoVaultV4.sol: FeeReservesWithdrawn(bytes32 indexed sourceId, address indexed currency, address indexed
+ * owner, uint128 originalAmount, uint128 chargedAmount, uint64 stateNonce), emitted by withdrawFeeReserves alone.
+ */
+export const FEE_RESERVES_WITHDRAWN = keccak256(stringToHex('FeeReservesWithdrawn(bytes32,address,address,uint128,uint128,uint64)'))
+/**
+ * The most blocks one look for a withdrawal's record spans, from the block read before it was sent: far more than the
+ * receipt watch lasts, and under the chain RPC's limit for any filter shape (100,000 blocks; see
+ * src/config/chainRobinhood.ts LOG_BLOCKS_MANY), though the filter holds one value in each place.
+ */
+export const RECORD_SPAN_BLOCKS = 90_000n
+/** How many of an owner's vaults one read of their reserves takes; the rest follow, a page at a time (reservesLive.ts). */
+export const RESERVE_VAULT_PAGE = 16
+/**
+ * The most vaults the factory's nonce is turned into addresses for, newest first (each address is worked out here, with
+ * no read); `older` past it. 2026-10-02 (review findings 2 and 6): it was 16, and older vaults were never looked in.
+ */
+export const RESERVE_VAULT_CAP = 1024
+/** The most fee withdrawals one batch carries: a root and SEQUENCE_MEMBER_STEPS successors, four balances each, is far more than a vault holds in practice. */
+export const FEE_WITHDRAWAL_BATCH_LIMIT = 16
+/**
+ * A vault's fee withdrawals as one batch (EIP-5792), for a wallet that executes batches atomically: one signature, and
+ * every withdrawal or none. Latched by the vault and its state nonce, which every withdrawal moves on.
+ */
+export interface PreparedWithdrawBatch {
+  kind: 'withdraw-batch'; owner: Address; vault: Address; key: Hex; stateNonce: bigint; expiresAt: number
+  rows: readonly FeeWithdrawal[]
+  /** The block the preparation read: the vault's record of the batch is looked for from it on (withdrawBatchStatus). */
+  block: bigint
+  calls: readonly BatchCall[]
+  gasUsed: bigint; gasLimit: bigint
+  summary: readonly string[]
+}
+/**
+ * Where a withdrawal batch stands: the wallet's status for what it knows, then the vault's own record for what happened.
+ * `hash`: the transaction that carried it, when the wallet or the vault names one.
+ */
+export type WithdrawBatchState = { state: 'pending' } | { state: 'withdrawn'; hash: Hex | null } | { state: 'dropped' | 'reverted' | 'unknown' }
 const components: Component[] = ['factory','implementation','poolManager','positionManager','stateView','readHelper','engine','routing','priceGuard']
 const addressPattern = /^0x[0-9a-f]{40}$/, hashPattern = /^0x[0-9a-f]{64}$/
 // A closed failure raised by this client, distinct from an untrusted wallet
@@ -287,6 +356,20 @@ export function sequenceDeploymentFrom(value: unknown, now = Date.now() / 1000):
   return Object.freeze({ ...out, codeHashes: Object.freeze({ ...out.codeHashes }) })
 }
 
+/**
+ * A deployment for owner recovery only: `value` (a saved profile, or ./pin.ts SEQUENCE_RECOVERY_RECORD when `value` is
+ * left out) parsed as strictly as the release at any age, then marked expired, so a client built on it reads and
+ * recovers and can never prepare an approval, a creation or a Turn on. Null when it is not one.
+ */
+export function recoveryDeployment(value: unknown = SEQUENCE_RECOVERY_RECORD): SequenceDeployment | null {
+  try {
+    const parsed = sequenceDeploymentFrom(value, 0)
+    return parsed ? Object.freeze({ ...parsed, expiresAt: 0 }) : null
+  } catch {
+    return null
+  }
+}
+
 /** Closed owner-only calls: no backend calldata, signer, router or nonce is
  * accepted. Every logical action has one deadline and a fixed read ceiling. */
 export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDeployment, now = () => Date.now() / 1000,
@@ -299,6 +382,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
   type Read = () => Promise<unknown>
   const issued = new WeakMap<PreparedSequence, (c: Context) => Promise<void>>()
   const issuedBatches = new WeakMap<PreparedSequenceBatch, (c: Context) => Promise<void>>()
+  const issuedWithdrawals = new WeakMap<PreparedWithdrawBatch, (c: Context) => Promise<void>>()
   const sent = new Map<Hex, PreparedSequence>()
   let busy = false
   /** The snapshot has a closed, server-selected set of view results. Its source
@@ -362,15 +446,15 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
    * confirming on a Ledger took longer than 30 s, and the page gave up while the signature could still go through.
    */
   async function bounded<T>(work: (c: Context) => Promise<T>, diagnoseRead = false,
-    fallbackTokenId?: bigint | null, receiptRead = false, seconds = 30): Promise<T> {
+    fallbackTokenId?: bigint | null, receiptRead = false, seconds = 30, reads = 100): Promise<T> {
     if (busy) return fail('wallet_action_busy')
-    busy = true; const started = now(); let end = started + seconds; let calls = 0, readCallLimit = 100
+    busy = true; const started = now(); let end = started + seconds; let calls = 0, readCallLimit = reads
     let timedOutContractRead = false
     const rpc: Rpc = async (method, params, rejected) => {
       // Keep the wallet transaction lane exactly as it was. Diagnostic
       // normalization is for owner reads only and never wraps a send result.
       if (!diagnoseRead) {
-        if (!wallet.current() || now() >= end || ++calls > 100) return fail('wallet_action_expired')
+        if (!wallet.current() || now() >= end || ++calls > reads) return fail('wallet_action_expired')
         let timer: ReturnType<typeof setTimeout> | undefined
         try {
           const original = wallet.request(method, params).catch(async error => {
@@ -446,7 +530,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
         // rejection. The first phase still has its original 30s/100-call cap;
         // the entire action cannot exceed 55s/160 fixed reads.
         end = Math.min(now() + 25, started + 55)
-        readCallLimit = 160
+        readCallLimit = Math.max(160, reads)
         let snapshot: SequenceSnapshot
         try { snapshot = sequenceSnapshotFrom(await snapshotRead(wallet.owner,fallbackTokenId),wallet.owner,fallbackTokenId) }
         catch (failure) {
@@ -650,6 +734,52 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       transaction: Object.freeze({ ...tx, nonce:numberToHex(pending),gas:numberToHex(limit),maxFeePerGas:numberToHex(gas.maxFeePerGas),maxPriorityFeePerGas:numberToHex(gas.maxPriorityFeePerGas),chainId:'0x1237',type:'0x2' }),
       summary:Object.freeze([...summary,`Owner: ${wallet.owner}`,`Sequence: ${vault}`,`Maximum network cost: ${limit * gas.maxFeePerGas} wei. Native reserve: ${gas.reserveWei} wei.`]) })
     issued.set(out,guard); return out
+  }
+  /**
+   * The vault's own record of each row's withdrawal (2026-10-02, review of the fee withdrawal, finding 1): its
+   * FeeReservesWithdrawn logs for this owner, from `since.block` (a block read before anything was sent) to the block
+   * pinned now, at most RECORD_SPAN_BLOCKS, in one eth_getLogs whose filter holds one value in each place. A row's record
+   * names its source and currency, exactly its amounts, and a state nonce past `since.stateNonce` (every withdrawal moves
+   * it on); its block must still be the chain's at that height. Null for a row with none.
+   *
+   * Balances cannot say this: an automation run (executionApply) lowers a source's balance, and a fee credited raises it,
+   * with no withdrawal, and every execution moves the state nonce too. Only withdrawFeeReserves writes this record.
+   */
+  async function withdrawalRecords(c: Context, vault: Address, rows: readonly FeeWithdrawal[], since: { block: bigint; stateNonce: bigint }): Promise<(FeeWithdrawalRecord | null)[]> {
+    const found: ((FeeWithdrawalRecord & { blockHash: Hex }) | undefined)[] = [], out: (FeeWithdrawalRecord | null)[] = rows.map(() => null)
+    const head = quantity(c.block)
+    if (head < since.block) return out
+    const to = head - since.block > RECORD_SPAN_BLOCKS ? since.block + RECORD_SPAN_BLOCKS : head
+    const word = (value: string) => `0x${value.slice(2).toLowerCase().padStart(64, '0')}`
+    const owner = word(wallet.owner)
+    const logs = await c.rpc('eth_getLogs', [{ address: vault, topics: [FEE_RESERVES_WITHDRAWN, null, null, owner], fromBlock: numberToHex(since.block), toBlock: numberToHex(to) }])
+    if (!Array.isArray(logs)) return fail('invalid_wallet_reply')
+    const at = (value: unknown) => typeof value === 'string' && /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]{0,15})$/.test(value) ? BigInt(value) : null
+    for (const entry of logs) {
+      const log = entry && typeof entry === 'object' ? entry as Record<string, unknown> : null
+      if (!log || log.removed === true || String(log.address).toLowerCase() !== vault) continue
+      const topics = Array.isArray(log.topics) ? log.topics.map(topic => String(topic).toLowerCase()) : []
+      const data = typeof log.data === 'string' ? log.data.toLowerCase() : ''
+      const hash = typeof log.transactionHash === 'string' ? log.transactionHash.toLowerCase() : '', blockHash = typeof log.blockHash === 'string' ? log.blockHash.toLowerCase() : ''
+      const block = at(log.blockNumber)
+      if (topics.length !== 4 || topics[0] !== FEE_RESERVES_WITHDRAWN || topics[3] !== owner || !/^0x[0-9a-f]{192}$/.test(data)
+        || !hashPattern.test(hash) || !hashPattern.test(blockHash) || block === null || block < since.block || block > to) continue
+      const [original, charged, stateNonce] = [0, 1, 2].map(index => BigInt(`0x${data.slice(2 + 64 * index, 66 + 64 * index)}`))
+      if (original >= 2n ** 128n || charged >= 2n ** 128n || stateNonce >= 2n ** 64n || stateNonce <= since.stateNonce) continue
+      const index = rows.findIndex((row, i) => out[i] === null && topics[1] === row.sourceId.toLowerCase() && topics[2] === word(row.currency)
+        && row.original === original && row.charged === charged)
+      if (index === -1) continue
+      out[index] = { transactionHash: hash as Hex, blockNumber: block, stateNonce }
+      found[index] = { ...out[index]!, blockHash: blockHash as Hex }
+    }
+    // A record in a block that left the chain is no record.
+    const chainHashes = new Map<bigint, string>()
+    for (const [index, entry] of found.entries()) {
+      if (!entry) continue
+      if (!chainHashes.has(entry.blockNumber)) chainHashes.set(entry.blockNumber, String(record(await c.rpc('eth_getBlockByNumber', [numberToHex(entry.blockNumber), false])).hash).toLowerCase())
+      if (chainHashes.get(entry.blockNumber) !== entry.blockHash) out[index] = null
+    }
+    return out
   }
   return {
     deployment:d,
@@ -904,6 +1034,164 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       const successor = await call(c,vault,'successorOf',[tokenId]) as bigint
       await canonical(c); return {tokenId,active:p.active,isRoot:p.isRoot,successor,balances}
     }),
+    /**
+     * Read-only: the vaults this wallet created, newest first, by the factory's nonce (every one up to RESERVE_VAULT_CAP;
+     * `older` when it created more). Each address is the factory's own CREATE2 of the sequence id, worked out here with no
+     * read, never taken from a reply; whether a vault stands there, and is this wallet's, is what `feeReserves` checks.
+     * Checked only as recovery checks a deployment, so an expired profile still finds them. A wallet that rejects the reads
+     * falls back to the trusted read snapshot (read-v4 sequence-snapshot), which carries the factory's nonce. Prepares
+     * nothing.
+     *
+     * The nonce is read first, from the factory this build pins (./pin.ts): a wallet that created no vault, most wallets,
+     * costs that one read and is shown nothing, and the deployment's checks run only when there is a vault to look in.
+     * Changed on purpose 2026-10-02 (review findings 2 and 6): it listed the 16 newest only, and an older vault's fees had
+     * no screen; the caller now reads them a page (RESERVE_VAULT_PAGE) at a time.
+     */
+    ownedVaults: () => bounded(async c => {
+      const nonce = await call(c,d.factory,'nextOwnerNonce',[wallet.owner]) as bigint
+      if (nonce > 0n) await verify(c,true)
+      const vaults: Address[] = []
+      for (let n = nonce; n > 0n && n > nonce - BigInt(RESERVE_VAULT_CAP); n--) vaults.push(sequenceIdentity(d,wallet.owner,n-1n).vault)
+      await canonical(c); return { vaults, older: nonce > BigInt(RESERVE_VAULT_CAP) }
+    }, true, null),
+    /**
+     * Read-only: every fee reserve of a vault this wallet owns, whatever its root's state: armed, disarmed, closed (no
+     * liquidity), burned or transferred, and with the vault paused. Every position the vault ever registered is walked
+     * from the root along `successorOf` (a parent has one successor at most, ever: executionMint), withdrawn ones
+     * included, since a withdrawn successor's fees stay booked to it; each has two sources, each a balance in each of the
+     * pool's two currencies. One pinned block; nothing here reads the root NFT itself. Prepares nothing.
+     *
+     * One read walks SEQUENCE_MEMBER_STEPS + 1 members at most, and says where it stopped (`last`, `next`); `after` starts a
+     * further read there, each member's parent checked against the one before it. Changed on purpose 2026-10-02 (review
+     * finding 3): a longer chain failed the whole vault (sequence_members_unbounded), even its root's own reserves.
+     */
+    feeReserves: (vault: Address, after?: { tokenId: bigint; parent: bigint }) => bounded(async (c): Promise<VaultReserves> => {
+      await verify(c,true); const s = await owned(c,vault)
+      type Member = ContractFunctionReturnType<typeof sequenceAbi, 'view', 'position'>
+      type Balance = ContractFunctionReturnType<typeof sequenceAbi, 'view', 'feeBalance'>
+      if (after && (uint(after.tokenId,256) === 0n || uint(after.parent,256) === 0n)) fail('invalid_position_identity')
+      const members: { tokenId: bigint; sources: readonly [Hex, Hex] }[] = []
+      let tokenId = after ? after.tokenId : s.rootTokenId, parent = after ? after.parent : 0n
+      for (let steps = 0; tokenId !== 0n && steps <= SEQUENCE_MEMBER_STEPS; steps++) {
+        const isRoot = !after && steps === 0
+        const [p, next] = await inOrder([() => call(c,vault,'position',[tokenId]), () => call(c,vault,'successorOf',[tokenId])]) as [Member, bigint]
+        if (!p.known || p.isRoot !== isRoot || (!isRoot && p.parentTokenId !== parent)) fail('invalid_position_identity')
+        members.push({ tokenId, sources: [String(p.source0).toLowerCase() as Hex, String(p.source1).toLowerCase() as Hex] })
+        parent = tokenId; tokenId = next
+      }
+      const pairs = members.flatMap(member => member.sources.flatMap(sourceId => [s.baseCurrency,s.quoteCurrency].map(currency => ({ tokenId: member.tokenId, sourceId, currency }))))
+      const balances = await inOrder(pairs.map(pair => () => call(c,vault,'feeBalance',[pair.sourceId,pair.currency]))) as Balance[]
+      await canonical(c)
+      return { vault, sequenceId: s.sequenceId, rootTokenId: s.rootTokenId, paused: s.paused, rootPermissionValid: s.rootPermissionValid,
+        baseCurrency: s.baseCurrency, quoteCurrency: s.quoteCurrency, stateNonce: s.stateNonce, blockNumber: quantity(c.block), last: parent, next: tokenId,
+        reserves: Object.freeze(pairs.map((pair, index) => Object.freeze({ ...pair, original: balances[index].original, charged: balances[index].charged }))) }
+    }, true, undefined, false, 30, 60 + 6 * (SEQUENCE_MEMBER_STEPS + 1)),
+    /**
+     * Read-only: the vault's own record of each row's withdrawal since `since` (its block and state nonce, read before
+     * anything was sent), or null for a row it has none of (see `withdrawalRecords`). What tells a withdrawal the wallet
+     * replaced ("Speed up") from one it cancelled. Prepares nothing.
+     */
+    withdrawalRecord: (vault: Address, supplied: readonly FeeWithdrawal[], since: { block: bigint; stateNonce: bigint }) => bounded(async c => {
+      address(vault)
+      const rows = Object.freeze(supplied.map(row => Object.freeze({ ...row })))
+      const found = await withdrawalRecords(c, vault, rows, since)
+      await canonical(c); return found
+    }, true),
+    /**
+     * A vault's fee withdrawals as one batch (EIP-5792): each row exactly as the owner reviewed it, checked as a single
+     * `recover(vault, 'withdraw-fees', ...)` checks it (a currency of the pool, a known source, no more than its balance,
+     * ETH the account can receive), two rows never the same balance, then the batch simulated whole. Latched by the vault
+     * and its state nonce: a batch this page or another tab offered for that state is asked about first, and holds the
+     * press unless the wallet says it cannot execute.
+     */
+    prepareWithdrawBatch: (vault: Address, supplied: readonly FeeWithdrawal[], gas: GasBudget) => bounded(async c => {
+      address(vault)
+      // Captured before an await: caller mutation cannot change a review.
+      const rows = Object.freeze(supplied.map(row => Object.freeze({ ...row })))
+      if (gas.maxGas < 21000n || gas.maxGas > 15_000_000n || uint(gas.maxFeePerGas) === 0n || uint(gas.maxPriorityFeePerGas) > gas.maxFeePerGas || uint(gas.reserveWei,256) < 0n) fail('invalid_gas_budget')
+      if (rows.length < 2 || rows.length > FEE_WITHDRAWAL_BATCH_LIMIT || new Set(rows.map(row => `${row.sourceId}|${row.currency}`)).size !== rows.length) fail('invalid_fee_withdrawal')
+      type Balance = ContractFunctionReturnType<typeof sequenceAbi, 'view', 'feeBalance'>
+      async function check(next: Context) {
+        await verify(next,true); const state = await owned(next,vault)
+        for (const v of rows) {
+          if (typeof v.sourceId !== 'string' || !hashPattern.test(v.sourceId) || typeof v.currency !== 'string' || !addressPattern.test(v.currency)
+            || ![state.baseCurrency,state.quoteCurrency].includes(v.currency) || uint(v.original)+uint(v.charged) === 0n) fail('invalid_fee_withdrawal')
+        }
+        const read = await inOrder(rows.flatMap(v => [() => call(next,vault,'source',[v.sourceId]), () => call(next,vault,'feeBalance',[v.sourceId,v.currency])]))
+        for (const [index, v] of rows.entries()) {
+          const source = read[2 * index] as ContractFunctionReturnType<typeof sequenceAbi, 'view', 'source'>, balance = read[2 * index + 1] as Balance
+          if (!source.known || v.original > balance.original || v.charged > balance.charged) fail('fee_reserve_insufficient')
+        }
+        // The vault pays native ETH with a plain call, which an EIP-7702 account that refuses ETH reverts (as `recover`).
+        if (rows.some(v => v.currency === zeroAddress) && !await acceptsNativeEth(next.rpc, wallet.owner, next.block)) fail('native_eth_refused')
+        return { state }
+      }
+      const { state } = await check(c)
+      const key = keccak256(encodeAbiParameters(withdrawalKeyParameters, [keccak256(stringToHex('DominoFeeWithdrawal(address vault,uint64 stateNonce)')), vault, state.stateNonce]))
+      const latched = wallet.batchOffered?.(key) ?? null
+      if (latched !== null) {
+        const status = latched === '' ? undefined : await batchCallsStatus(c.rpc, latched).catch(() => undefined)
+        if (status !== 400 && status !== 500 && status !== null) fail('batch_already_offered')
+        await wallet.releaseBatch?.(key, latched)
+      }
+      await freeNonce(c)
+      const calls: BatchCall[] = rows.map(v => ({ to: vault, data: encode('withdrawFeeReserves',[v.sourceId,v.currency,v.original,v.charged]), value: '0x0' as Hex }))
+      const gasUsed = await simulateBatch(c.rpc, wallet.owner, calls, batch.simulate)
+      const limit = ((gasUsed + BATCH_FRAME_GAS) * 120n + 99n) / 100n
+      if (limit > gas.maxGas) fail('gas_budget_exceeded')
+      if (quantity(await c.rpc('eth_getBalance',[wallet.owner,'latest'])) < limit * gas.maxFeePerGas + gas.reserveWei) fail('native_gas_reserve_insufficient')
+      await canonical(c)
+      const out: PreparedWithdrawBatch = Object.freeze({ kind: 'withdraw-batch' as const, owner: wallet.owner, vault, key, stateNonce: state.stateNonce, expiresAt: now() + 120,
+        rows, block: quantity(c.block), calls: Object.freeze(calls.map(call => Object.freeze(call))), gasUsed, gasLimit: limit,
+        summary: Object.freeze([...rows.map(v => `Return ${v.original} original + ${v.charged} already charged fee units of ${v.currency}, source ${v.sourceId}, to your wallet.`),
+          'One signature for every withdrawal: they execute together or not at all.', 'Owner recovery: no Domino service fee. Network gas still applies.',
+          `Owner: ${wallet.owner}`, `Sequence: ${vault}`, `Maximum network cost: about ${limit * gas.maxFeePerGas} wei; your wallet sets the final gas. Native reserve: ${gas.reserveWei} wei.`]) })
+      issuedWithdrawals.set(out, async next => { const current = await check(next); if (current.state.stateNonce !== state.stateNonce) fail('sequence_preparation_changed') })
+      return out
+    }),
+    /** Offers a prepared withdrawal batch to the wallet once (./batch.ts offerBatch), after its checks run again on a vault whose state has not moved. */
+    sendWithdrawBatch: (prepared: PreparedWithdrawBatch, acknowledged: boolean) => bounded(async c => {
+      const guard = issuedWithdrawals.get(prepared)
+      if (!acknowledged || !guard || prepared.owner !== wallet.owner || now() >= prepared.expiresAt) fail('review_required')
+      await guard!(c); await canonical(c)
+      await freeNonce(c)
+      issuedWithdrawals.delete(prepared)
+      return offerBatch(c.rpc, wallet, prepared.key, prepared.calls, () => wallet.current() && now() < prepared.expiresAt)
+    }, false, undefined, false, SIGN_WINDOW_S),
+    /**
+     * Where a withdrawal batch stands: the wallet's status, then the vault. Confirmed by the wallet (200, every call
+     * executed) once the vault's state nonce has moved past the one prepared, with the transaction the wallet's receipt
+     * names. With no word from the wallet, only by the vault's own record (`withdrawalRecords`): every row withdrawn,
+     * exactly, by one transaction, as an atomic batch does it. Not included (400) or reverted (500), nothing of it
+     * executed and the latch is freed. Nothing is sent from here.
+     *
+     * Changed on purpose 2026-10-02 (review of the fee withdrawal, finding 1): with no word from the wallet, a moved state
+     * nonce and balances lower by at least each row were taken as the batch; an automation run moves the one and can
+     * lower the other, so fees it reinvested read as paid to the wallet.
+     */
+    withdrawBatchStatus: (id: string, prepared: PreparedWithdrawBatch) => bounded(async (c): Promise<WithdrawBatchState> => {
+      address(prepared.vault)
+      const reply = await batchCallsState(c.rpc, id)
+      const status = reply?.status ?? null
+      if (status !== null && status >= 100 && status < 200) return { state: 'pending' }
+      if (status === 400 || status === 500) {
+        if (id !== '') await wallet.releaseBatch?.(prepared.key, id)
+        return { state: status === 400 ? 'dropped' : 'reverted' }
+      }
+      const moved = (await call(c,prepared.vault,'stateNonce') as bigint) > prepared.stateNonce
+      // A confirmation the vault does not show yet is a node behind.
+      if (status === 200 && !moved) return { state: 'pending' }
+      let taken = status === 200, hash = status === 200 ? reply?.transactionHash ?? null : null
+      if (moved && hash === null) {
+        const found = await withdrawalRecords(c, prepared.vault, prepared.rows, { block: prepared.block, stateNonce: prepared.stateNonce })
+        const one = found.every(entry => entry !== null) && new Set(found.map(entry => entry!.transactionHash)).size === 1 ? found[0]!.transactionHash : null
+        if (status !== 200) taken = one !== null
+        hash = one
+      }
+      if (id !== '') await wallet.releaseBatch?.(prepared.key, id)
+      await canonical(c)
+      return taken ? { state: 'withdrawn', hash } : { state: 'unknown' }
+    }),
     send: (prepared: PreparedSequence, acknowledged: boolean) => bounded(async c => {
       const guard = issued.get(prepared)
       if (!acknowledged || !guard || prepared.owner !== wallet.owner || now() >= prepared.expiresAt) fail('review_required')
@@ -965,4 +1253,25 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       return {state:isFinal?'finalized' as const:'confirming' as const}
     }, false, undefined, true),
   }
+}
+
+/** The most pages of members (SEQUENCE_MEMBER_STEPS + 1 each) one read of a vault's reserves walks: 496 members. */
+export const RESERVE_MEMBER_PAGES = 16
+/**
+ * Every fee reserve of a vault as one read, its members a page at a time (`feeReserves`, then `after` where the page
+ * before stopped; 2026-10-02, review finding 3): the first page's block, state nonce and automation state, and every
+ * member's balances. Each page is checked as its own read is, and names the same sequence. `next` is not 0 only when the
+ * walk stopped at `pages`; what was read is still exactly what the members it lists hold.
+ */
+export async function walkFeeReserves(client: { feeReserves: (vault: Address, after?: { tokenId: bigint; parent: bigint }) => Promise<VaultReserves> },
+  vault: Address, pages = RESERVE_MEMBER_PAGES): Promise<VaultReserves> {
+  const first = await client.feeReserves(vault)
+  const reserves = [...first.reserves]
+  let read = first
+  for (let page = 1; read.next !== 0n && page < pages; page++) {
+    read = await client.feeReserves(vault, { tokenId: read.next, parent: read.last })
+    if (read.sequenceId !== first.sequenceId || read.rootTokenId !== first.rootTokenId || read.baseCurrency !== first.baseCurrency || read.quoteCurrency !== first.quoteCurrency) fail('invalid_position_identity')
+    reserves.push(...read.reserves)
+  }
+  return Object.freeze({ ...first, reserves: Object.freeze(reserves), last: read.last, next: read.next })
 }

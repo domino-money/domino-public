@@ -139,6 +139,7 @@
     "src/finance/automationAvailability.ts",
     "src/finance/privateCards.ts",
     "src/lib/automate/switchGate.ts",
+    "src/lib/automate/reserves.ts",
     "src/lib/create/slippage.ts",
     "src/lib/create/plain.ts",
     "src/lib/read/screens/rowApr.ts",

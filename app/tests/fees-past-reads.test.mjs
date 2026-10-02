@@ -445,3 +445,57 @@ test('an answer that comes while the history is not verified (a fresh ledger on 
   assert.equal(s.reads.length, 2);
   assert.equal(s.runner.status(ID, '7d'), 'drawn');
 });
+
+// 2026-10-02 (review of the chart's tabs, finding 3): a view's counts end PAST_RELEASE_MS after its last screen leaves, so
+// a block refused (not this position as the ledger has it) or failed was asked again on every return to the page: list,
+// page, list, page. Both are the visit's now: a refused block is never asked again, a failed start goes on with its
+// ladder where it was (and not before its wait), and a fill is not asked again.
+test('a block refused or failed is the visit’s: going list, page, list, page asks it again only as its ladder says, never once refused', async () => {
+  const world = chainWorld({ days: 10, settledAt: [9] });
+  const leave = async (s, stop) => {
+    stop();
+    await s.time.run(PAST_RELEASE_MS + 1);
+  };
+  // Refused: one read for the visit, however often the page is opened.
+  const wrong = runnerFor(world, { answer: (block) => world.answer(block, { liquidityRaw: '1' }) });
+  for (let i = 0; i < 3; i++) {
+    const stop = wrong.runner.subscribe(ID, '7d', () => {});
+    await wrong.time.run(5 * 60_000);
+    assert.equal(wrong.runner.status(ID, '7d'), 'unavailable');
+    await leave(wrong, stop);
+  }
+  assert.equal(wrong.reads.length, 1, `one read for the visit: ${wrong.reads.length}`);
+  // Failed: a return within its wait says so at once and asks only once the wait is over; past the ladder, never again.
+  const down = runnerFor(world, { answer: () => ({ state: 'unavailable' }) });
+  let stop = down.runner.subscribe(ID, '7d', () => {});
+  await down.time.run(1_000);
+  assert.equal(down.reads.length, 1);
+  await leave(down, stop);
+  stop = down.runner.subscribe(ID, '7d', () => {});
+  assert.equal(down.runner.status(ID, '7d'), 'unavailable', 'said at once');
+  await down.time.run(5_000);
+  assert.equal(down.reads.length, 1, 'not before its 10 s');
+  await down.time.run(20 * 60_000);
+  assert.equal(down.reads.length, 1 + START_RETRY_MS.length, 'the ladder goes on where it was');
+  await leave(down, stop);
+  stop = down.runner.subscribe(ID, '7d', () => {});
+  await down.time.run(20 * 60_000);
+  assert.equal(down.reads.length, 1 + START_RETRY_MS.length, 'its ladder is over for the visit');
+  assert.equal(down.runner.status(ID, '7d'), 'unavailable');
+  await leave(down, stop);
+  // A refused fill: not asked again by the next view (the starts are kept points by then).
+  const fills = runnerFor(world, { answer: (block, n) => (n <= 2 ? world.answer(block) : world.answer(block, { liquidityRaw: '1' })) });
+  stop = fills.runner.subscribe(ID, '7d', () => {});
+  let apr = fills.runner.subscribe(ID, '24h', () => {}, false);
+  await fills.time.run(5 * 60_000);
+  assert.equal(fills.reads.length, 3, `2 starts and a fill: ${fills.reads.map((read) => ageOf(world, read.block).toFixed(2))}`);
+  apr();
+  await leave(fills, stop);
+  stop = fills.runner.subscribe(ID, '7d', () => {});
+  apr = fills.runner.subscribe(ID, '24h', () => {}, false);
+  await fills.time.run(5 * 60_000);
+  assert.equal(fills.reads.length, 3, 'the refused fill is not asked again');
+  assert.equal(fills.runner.status(ID, '7d'), 'drawn');
+  apr();
+  stop();
+});

@@ -14,7 +14,7 @@ import { TokenMarkPair } from '../components/TokenIcon'
 import { Button, Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, PageShell } from '../components/ui'
 import { chainState, freshState, takeWarmState } from '../lib/fees/client'
 import { feesStore } from '../lib/fees/spawn'
-import { refreshFeeStates, useFeeHistory } from '../lib/fees/useFeeHistory'
+import { refreshFeeStates, useFeeHistory, useLedgerTraces } from '../lib/fees/useFeeHistory'
 import { readKept } from '../finance/privateCards'
 import { KEPT_MAX_AGE_MS } from '../lib/browserCopies'
 import { createdHere } from '../lib/create/createProgress'
@@ -69,6 +69,19 @@ const couldNotLoad = () => ({
   ),
 })
 const PositionActions = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ActionsProps>>(recovering(() => import('../components/positions/PositionActions'), couldNotLoad)) : null
+/**
+ * 2026-10-02 (the V1 incident of rugged97's spec rev3 §2.13): the fees waiting in this position's vault, with Withdraw to
+ * wallet, for the vault's owner: on the page of a position its read names a vault for (on, paused, stopped or closed), and
+ * on the page of an NFT that no longer exists, the vault whose root it was. Its own chunk, in wallet builds only; nothing
+ * while there is nothing to withdraw, and nothing in place of a chunk that cannot load.
+ */
+interface ReservesProps {
+  owner: string
+  placement: 'positions' | 'position'
+  vault?: string
+  root?: string
+}
+const FeeReserves = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ReservesProps>>(recovering(() => import('../components/positions/FeeReserves'), () => ({ default: () => null }))) : null
 
 /**
  * The page's own chain read: the fees relay's /state read of this NFT, from the chain, at one block. 2026-09-28 (speed
@@ -202,6 +215,9 @@ const WHY_WORDS: Readonly<Record<string, string>> = {
  */
 function HistorySource({ tokenId }: { tokenId: string }) {
   const fees = useFeeHistory(tokenId)
+  // 2026-10-02 (review of the chart's tabs, finding 1): the ledger requests this visit made and how the last ended, as data
+  // attributes only (for a tester's devtools and the browser suites; the line's words stay).
+  const trace = useLedgerTraces([tokenId]).get(tokenId)
   let text: string
   if (fees.phase === 'verified') {
     text = `Every settlement of this position from its own events, through block ${fees.history.through}, and the fees ready to collect at block ${fees.state.block}. Measured at each compound or collect and when this browser read it; the line between points is a guide, not a measurement.`
@@ -211,7 +227,7 @@ function HistorySource({ tokenId }: { tokenId: string }) {
   else text = 'Reading…'
   return (
     <KeyValue label="Fees history">
-      <span data-history-source={fees.phase === 'verified' ? 'ledger' : fees.phase} data-history-why={fees.phase === 'unclaimed-only' ? fees.why : undefined}>
+      <span data-history-source={fees.phase === 'verified' ? 'ledger' : fees.phase} data-history-why={fees.phase === 'unclaimed-only' ? fees.why : undefined} data-ledger-asks={trace?.asks ?? 0} data-ledger-last={trace?.last ?? undefined}>
         {text}
       </span>
     </KeyValue>
@@ -317,6 +333,14 @@ function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, chang
       </div>
 
       <KeyFigures card={card} state={state && usdgIndex !== null ? state : null} price={price} block={block} cached={cached} />
+
+      {/* The fees its vault collected and has not reinvested, while any is above zero (2026-10-02): the owner's, from its own
+          read through the wallet, so never on a copy or the gateway's row. */}
+      {FeeReserves && mine && copy === undefined && !gateway && automation.phase === 'ready' && 'vault' in automation.state && (
+        <Suspense fallback={null}>
+          <FeeReserves owner={card.owner.address} vault={automation.state.vault} placement="position" />
+        </Suspense>
+      )}
 
       {/* The fees card's own settlements move to Activity, after Price range (2026-09-27). */}
       {/* The quote of a pair without USDG is the app's one way round's (visual/value.ts basisOf, 2026-09-28). */}
@@ -552,19 +576,27 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
     )
   } else if (current.phase === 'gone') {
     body = (
-      <EmptyState
-        icon={<IconSearch />}
-        title="This position NFT no longer exists"
-        body={`NFT #${tokenId} was not found at block ${current.block}.`}
-        plate
-        className="dm-pos-empty"
-        action={
-          <LinkButton href={positionsHref} variant="outline" size="sm">
-            Positions
-          </LinkButton>
-        }
-        data-empty="position-gone"
-      />
+      <>
+        <EmptyState
+          icon={<IconSearch />}
+          title="This position NFT no longer exists"
+          body={`NFT #${tokenId} was not found at block ${current.block}.`}
+          plate
+          className="dm-pos-empty"
+          action={
+            <LinkButton href={positionsHref} variant="outline" size="sm">
+              Positions
+            </LinkButton>
+          }
+          data-empty="position-gone"
+        />
+        {/* A vault's root that was burned keeps the fees its automation collected (2026-10-02): its owner withdraws them here too. */}
+        {FeeReserves && connected && walletKey(identity) !== null && (
+          <Suspense fallback={null}>
+            <FeeReserves owner={connected} root={tokenId} placement="position" />
+          </Suspense>
+        )}
+      </>
     )
   } else if (current.phase === 'missing') {
     body = (

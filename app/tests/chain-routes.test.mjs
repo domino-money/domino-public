@@ -42,6 +42,8 @@ const PLAIN = new Set(['owned', 'automation']);
 const VAULT = `0x${'5a'.repeat(20)}`;
 const ZERO = '0x0000000000000000000000000000000000000000';
 const LOG_KEYS = ['cache', 'items', 'ms', 'nodeMs', 'outcome', 'posts', 'route', 'service', 'status'];
+/** A ledger line's verdicts (chainRoutes.ts ledgerVerdicts): fixed codes and counts only. */
+const VERDICTS_LINE = /^(?:(?:exact|inexact|other|reading|before_floor|manual|shared|native|liquidity|unseen|too_many|not_found|rpc_unavailable|hooked_pool):\d+(?:,|$))+$|^(?:large|unparsed|none)$/;
 const BODIES = {
   owned: { owner: OWNER },
   state: { tokenIds: ['11'] },
@@ -441,15 +443,37 @@ test('ledger: a position’s ledger and its state at one block, what the page’
   const value = await response.json();
   assert.ok(isLedgerResponse(value), 'the page’s own check');
   assert.equal(value.positions[0].tokenId, '3325113');
+  // 2026-10-02 (review of the chart's tabs, finding 1): its log line says what it answered, never the id.
+  assert.equal(routeLines().at(-1).verdicts, 'exact:1');
+  assert.equal(JSON.stringify(routeLines()).includes('3325113'), false);
   assert.ok(asked.length > 0);
   const posts = asked.length;
   clock.time += 20_000;
   assert.equal((await ask('ledger', question)).status, 200);
   assert.equal(asked.length, posts, 'the same ids within half a minute: kept');
   assert.equal(routeLines().at(-1).cache, 'hit');
+  assert.equal(routeLines().at(-1).verdicts, 'exact:1', 'a kept answer’s verdicts too');
   clock.time += 5_000;
   assert.equal((await ask('ledger', { ...question, fresh: true })).status, 200);
   assert.ok(asked.length > posts, 'a fresh question takes no answer older than two seconds');
+});
+
+test('ledgerVerdicts: each position exact, its why, or its reason, counted and sorted; nothing else from the answer, never an id', () => {
+  const { ledgerVerdicts } = routes;
+  const answer = (positions) => JSON.stringify({ v: 1, block: 1, timestamp: 1, positions });
+  assert.equal(ledgerVerdicts(answer([
+    { tokenId: '3325113', ok: true, exact: true },
+    { tokenId: '12', ok: true, exact: false, why: 'manual', entries: [{ why: 'native' }] },
+    { tokenId: '13', ok: true, exact: false, why: 'manual' },
+    { tokenId: '14', ok: true, exact: false, why: 'reading' },
+    { tokenId: '15', ok: false, reason: 'not_found' },
+  ])), 'exact:1,manual:2,not_found:1,reading:1');
+  // A code it does not know is never logged as it came.
+  assert.equal(ledgerVerdicts(answer([{ tokenId: '3325113', ok: true, exact: false, why: '0xabc' }, { tokenId: '9', ok: false, reason: '3325113' }])), 'inexact:1,other:1');
+  assert.equal(ledgerVerdicts(answer([])), 'none');
+  assert.equal(ledgerVerdicts('<!doctype html>'), 'unparsed');
+  assert.equal(ledgerVerdicts(JSON.stringify({ v: 1 })), 'unparsed');
+  assert.equal(ledgerVerdicts(`${answer([])}${' '.repeat(1_048_577)}`), 'large');
 });
 
 
@@ -618,7 +642,12 @@ test('one log line per invocation, of fixed keys and codes; the token, the addre
     texts.push(String(response.status), ...[...response.headers].flat(), await response.text());
   }
   for (const line of lines.filter((one) => one.route)) {
-    assert.deepEqual(Object.keys(line).sort(), LOG_KEYS);
+    // 2026-10-02 (review of the chart's tabs, finding 1): a ledger answer's line also counts its verdicts, codes only.
+    assert.deepEqual(Object.keys(line).filter((key) => key !== 'verdicts').sort(), LOG_KEYS);
+    if ('verdicts' in line) {
+      assert.equal(line.route, 'ledger');
+      assert.match(line.verdicts, VERDICTS_LINE);
+    }
     assert.match(line.outcome, /^(?:answer|busy|unavailable|source_off|bad_request|limited)$/);
     assert.match(line.cache, /^(?:hit|miss|coalesced|none)$/);
   }

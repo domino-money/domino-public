@@ -1003,8 +1003,13 @@ test('what every visitor downloads first, the route screens, the session/read cl
     const positionRoots = js.filter((file) => /^(PositionActions|HeldDeposits|PositionLab)-/.test(file)).map((file) => file.split('-')[0]).sort();
     if (dir === WALLET) assert.deepEqual(positionRoots, ['HeldDeposits', 'PositionActions', 'PositionLab'], 'the lab and the two actions it opens');
     else assert.ok(['', 'HeldDeposits,PositionActions'].includes(positionRoots.join()), `dist carries both position actions or neither, and never the lab: ${positionRoots.join(', ')}`);
-    const financialRoots = js.filter((file) => /^(Setup|Sequence|Execution|Performance|DepositAmounts|PositionActions|HeldDeposits|PositionLab)-/.test(file));
-    assert.equal(financialRoots.length, 5 + positionRoots.length, 'the four P2 financial screens, New position\'s Create position and the position actions are explicit lazy roots');
+    // 2026-10-02 (rugged97's spec rev3 §2.13, the V1 incident): the fees waiting in a vault and their withdrawal
+    // (components/positions/FeeReserves.tsx), a lazy root of its own that Positions and a position's page open in every
+    // wallet build: a financial root like the position actions, in a build that carries them.
+    const reserveRoots = js.filter((file) => /^FeeReserves-/.test(file));
+    assert.equal(reserveRoots.length, positionRoots.includes('HeldDeposits') ? 1 : 0, 'the fees waiting in a vault come with the position actions, or not at all');
+    const financialRoots = js.filter((file) => /^(Setup|Sequence|Execution|Performance|DepositAmounts|PositionActions|HeldDeposits|PositionLab|FeeReserves)-/.test(file));
+    assert.equal(financialRoots.length, 5 + positionRoots.length + reserveRoots.length, 'the four P2 financial screens, New position\'s Create position, the position actions and the fees waiting in a vault are explicit lazy roots');
     assert.equal(readRoots.filter((file) => file.startsWith('index-')).length, 1, 'include the public read screen, even though Vite calls it index');
     const base = new Set([...staticClosure(dir, [...island, ...readRoots])].filter((file) => !initial.has(file)));
     const financial = new Set([...staticClosure(dir, financialRoots)].filter((file) => !initial.has(file)));
@@ -1063,7 +1068,20 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // 37.5 kB before). Both ceilings come down to keep them meaningful: chain code 22,000 -> 4,000, fees worker
     // 40,000 -> 28,000. Every other family is within its budget unchanged (initial entry 205,897 B; route screens 172,655 B;
     // session/public reads 156,227 B; financial 309,027 B; all lazy 344,252 B; elysium section 41,389 B, dist).
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 177_000], ['session/public reads', base, 161_000], ['financial', financial, 320_000], ['all lazy', allLazy, 356_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000]]) {
+    // 2026-10-02 (rugged97's spec rev3 §2.13, the V1 incident: the fees waiting in a vault, with Withdraw to wallet): a
+    // financial root of its own (components/positions/FeeReserves.tsx, 8,023 B with what it reads and withdraws with), and
+    // the money client's reserves reads and withdrawal batch (finance/sequence.ts). Clean Windows builds, gzip level 9,
+    // dist / .wallet-test-dist, on release/rpc-local-2026-10 (ebd563f8) then with the feature: financial 315,980 / 316,614
+    // -> 325,333 / 325,936 B, all lazy 349,679 / 350,540 -> 359,261 / 360,053 B; every other family unchanged within a
+    // few hundred bytes. Raised minimally, to the next kB above the deployable build: financial 320,000 -> 326,000, all
+    // lazy 356,000 -> 360,000; the 3 kB wallet-test allowance stays.
+    // 2026-10-02 (the review of that change, its eight findings): the vault's own record of a withdrawal (finance/sequence.ts
+    // withdrawalRecords), every vault read a page at a time and each kept through failed reads (lib/automate/reserves.ts),
+    // a long chain of members walked in pages, and the V1 release shipped for recovery (finance/pin.ts
+    // SEQUENCE_RECOVERY_RECORD, about 0.7 kB of it). Clean Windows build, gzip level 9, dist / .wallet-test-dist: financial
+    // 325,333 -> 328,545 / 329,147 B, all lazy 359,261 -> 362,466 / 363,253 B; every other family unchanged. Raised
+    // minimally, to the next kB above the deployable build: financial 326,000 -> 329,000, all lazy 360,000 -> 363,000.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 177_000], ['session/public reads', base, 161_000], ['financial', financial, 329_000], ['all lazy', allLazy, 363_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

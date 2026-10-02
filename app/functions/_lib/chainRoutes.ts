@@ -17,8 +17,9 @@
  * digest of the address Cloudflare names, never the address itself); the node's secret (none, or not the node's exact
  * shape: a calm 503 at once, nothing read); the edge cache and the questions in flight; and only then the node, through
  * a transport made for this one invocation. A source that is away (the wrong chain, a refused token, the node out of
- * reach) is the same calm 503. One log line per invocation names the route, the outcome and what the node cost; never
- * the visitor, the address, the ids, the body or the node.
+ * reach) is the same calm 503. One log line per invocation names the route, the outcome and what the node cost (and,
+ * since 2026-10-02, a ledger answer's verdicts as fixed codes and counts); never the visitor, the address, the ids, the
+ * body or the node.
  */
 import { answerOwnerAsked, bodyWithin, ownerFrom, refuse, type AnswerCache, type EdgeDeps, type OwnedDeps, type OwnerScan } from './owned'
 import { scanWallet } from './walletPositions'
@@ -32,6 +33,7 @@ import { RECORD_BODY_BYTES, recordAnswer, recordRequestOf } from './vaultRecord'
 import { SIMULATE_BODY_BYTES, simulateEnabled, simulateOnNode, simulateRequestOf } from './simulate'
 import { resetSiteGate, siteGateOf } from './wideGate'
 import type { AutomationAnswer } from '../../src/lib/automationState'
+import type { LedgerWhy } from '../../src/lib/fees/types'
 
 export interface ChainRouteEnv {
   LOCAL_RPC_URL?: string
@@ -428,6 +430,37 @@ interface Handled {
   outcome?: Outcome
   cache: CacheTag
   rpc: LocalRpc | null
+  /** A ledger answer's verdicts, for its log line (ledgerVerdicts). */
+  verdicts?: string
+}
+
+/** The codes a ledger answer's verdicts may log (a `why` or a position's reason): nothing else from the answer is. */
+const VERDICT_CODES: ReadonlySet<string> = new Set<string>(['reading', 'before_floor', 'manual', 'shared', 'native', 'liquidity', 'unseen', 'too_many', 'not_found', 'rpc_unavailable', 'hooked_pool'] satisfies Array<LedgerWhy | 'not_found' | 'rpc_unavailable' | 'hooked_pool'>)
+/** Past this many characters a ledger answer's verdicts are not counted: its log line says `large`. */
+const VERDICT_TEXT_MAX = 1_048_576
+
+/**
+ * 2026-10-02 (review of the chart's tabs, finding 1: a tail of the preview showed the ledger's requests, never what they
+ * answered): a ledger answer's verdicts for its log line, as fixed codes and counts, sorted, e.g. "exact:1,manual:1".
+ * Each position is `exact`, its `why` when it is not, or the reason it was not read; never its id.
+ */
+export function ledgerVerdicts(text: string): string {
+  if (text.length > VERDICT_TEXT_MAX) return 'large'
+  let positions: unknown
+  try {
+    positions = (JSON.parse(text) as { positions?: unknown } | null)?.positions
+  } catch {
+    return 'unparsed'
+  }
+  if (!Array.isArray(positions)) return 'unparsed'
+  const counts = new Map<string, number>()
+  for (const one of positions as unknown[]) {
+    const p = (one && typeof one === 'object' ? one : {}) as { ok?: unknown; exact?: unknown; why?: unknown; reason?: unknown }
+    const named = (code: unknown, otherwise: string) => (typeof code === 'string' && VERDICT_CODES.has(code) ? code : otherwise)
+    const code = p.ok === true ? (p.exact === true ? 'exact' : named(p.why, 'inexact')) : named(p.reason, 'other')
+    counts.set(code, (counts.get(code) ?? 0) + 1)
+  }
+  return [...counts.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([code, n]) => `${code}:${n}`).join(',') || 'none'
 }
 
 /** The route's checks of method, origin, type, size and shape (in that order): the question, or the refusal. */
@@ -588,7 +621,8 @@ async function handle(name: ChainRouteName, context: ChainRouteContext, runtime:
       return { response: failed(name, 'rate_limited', 429, Math.max(1, short / NODE_RATE / 1000)), outcome: 'limited', cache: 'none', rpc: transport }
     }
     const response = new Response(done.text, { status: done.status, headers: done.headers })
-    return { response, cache: joined ? 'coalesced' : name === 'simulate' ? 'none' : transport.spent().posts > 0 ? 'miss' : 'hit', rpc: transport }
+    const verdicts = name === 'ledger' && done.status === 200 ? ledgerVerdicts(done.text) : undefined
+    return { response, cache: joined ? 'coalesced' : name === 'simulate' ? 'none' : transport.spent().posts > 0 ? 'miss' : 'hit', rpc: transport, ...(verdicts ? { verdicts } : {}) }
   } finally {
     settleIfIdle()
   }
@@ -625,6 +659,6 @@ export async function answerChainRoute(name: ChainRouteName, context: ChainRoute
   out.headers.set('Content-Type', JSON_TYPE)
   out.headers.set('Cache-Control', 'no-store')
   out.headers.set('Server-Timing', `edge;desc="${cache}", node;dur=${Math.round(spent.ms)};desc="${spent.posts} posts"`)
-  logLine(runtime, { route: name, status: out.status, outcome, cache, posts: spent.posts, items: spent.items, nodeMs: Math.round(spent.ms), ms: Math.max(0, Math.round(now() - started)) })
+  logLine(runtime, { route: name, status: out.status, outcome, cache, posts: spent.posts, items: spent.items, nodeMs: Math.round(spent.ms), ms: Math.max(0, Math.round(now() - started)), ...(handled.verdicts ? { verdicts: handled.verdicts } : {}) })
   return out
 }

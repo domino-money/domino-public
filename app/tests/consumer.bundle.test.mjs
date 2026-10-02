@@ -162,7 +162,9 @@ function productionClosures() {
   // ceiling, and keeps it out of the entry and the island's static closure).
   // 2026-10-01 (the chain2 workstream, part B): the second chain's section, a chunk of its own that only its route opens
   // (tests/session.bundle.test.mjs measures it, with its own ceiling).
-  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|feesReplay\.worker|chainCode|Explore|PoolDetail|Positions|NewPosition|Automate|Docs|walletConnectProvider|ElysiumEntry)-/.test(file));
+  // 2026-10-02 (rugged97's spec rev3 §2.13): the fees waiting in a vault (FeeReserves), a lazy root Positions and a
+  // position's page open, like the position actions (tests/session.bundle.test.mjs measures it with the financial screens).
+  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|FeeReserves|feesReplay\.worker|chainCode|Explore|PoolDetail|Positions|NewPosition|Automate|Docs|walletConnectProvider|ElysiumEntry)-/.test(file));
   const shared = reach([...entry, ...otherRoots]);
   const setupClosure = reach(setup);
   assert.ok(!shared.has(setup[0]), 'Setup must not be loaded statically by the entry or another screen');

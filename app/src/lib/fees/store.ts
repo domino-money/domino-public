@@ -13,8 +13,11 @@
  *   again after 2, 10, 30, 60 and 120 s (RETRY_MS), only while the page is visible, the card keeping what it shows.
  * - The Positions list asks the ledgers alone ('list'): its rows' Your APR from each ledger's own state, no /state read.
  * - A position's page records the state reads it gets (readings.ts, at most hourly): measured points of its chart; since
- *   2026-10-02 every ledger answer records its own state too (the list's included), and the chart's period starts read at
- *   past blocks (pastReads.ts) are folded in with them (`redraw`; `pastReadings` for those too old to keep).
+ *   2026-10-02 every ledger answer records its own state too (the list's only for a position whose page this browser
+ *   keeps readings of), and the chart's period starts read at past blocks (pastReads.ts) are folded in with them
+ *   (`redraw`; `pastReadings` for those too old to keep).
+ * - 2026-10-02 (review of the chart's tabs, finding 1): each id's ledger requests this visit and how the last ended
+ *   (`traces`), for the screens' data attributes.
  * - 2026-09-28 (speed wave B, item 16): a position's page hands the store its own /state read (`offer`), so its cards
  *   start from it rather than reading it again, and follows the store's minute read (`position`).
  * - A verified public history may be saved for display on a later visit; it is restored as `cached`, never as a current
@@ -80,7 +83,23 @@ export interface FeesStore {
    * they are now (a read at a past block was just kept, lib/fees/pastReads.ts). Asks nothing.
    */
   redraw(id: string): void
+  /** Several ids' ledger traces (LedgerTrace), the same Map object while none of them changed; `watch` tells of changes. */
+  traces(ids: readonly string[]): ReadonlyMap<string, LedgerTrace>
 }
+
+/**
+ * 2026-10-02 (review of the chart's tabs, finding 1: the preview's log showed visits that asked no ledger, and a log line
+ * says nothing of what a ledger answered): what this visit did with one id's ledger, for the page's data attributes
+ * (data-ledger-asks, data-ledger-last). `asks`: the ledger requests sent for it. `last`: how the last one ended: `exact`;
+ * the ledger's `why` when it is not exact (`reading` among them); the route's reason for the id (not_found, hooked_pool,
+ * rpc_unavailable); the request's failure (unavailable, rate_limited, too_large, bad_request); or `unanswered` (dropped
+ * after LEDGER_WAIT_MS). Null before any answered.
+ */
+export interface LedgerTrace {
+  asks: number
+  last: string | null
+}
+const NO_TRACE: LedgerTrace = Object.freeze({ asks: 0, last: null })
 
 const IDLE: FeeHistoryView = { phase: 'idle' }
 const U256 = (1n << 256n) - 1n
@@ -137,6 +156,8 @@ interface Entry {
   /** The state block a fresh ledger was last asked for (one fresh read per newer state that disagrees). */
   freshFor: number
   release: (() => void) | null
+  /** This visit's ledger requests for the id and how the last ended (LedgerTrace), replaced on change. */
+  trace: LedgerTrace
 }
 
 /** A /state position as a PositionState. */
@@ -166,6 +187,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const entries = new Map<string, Entry>()
   const viewMaps = new Map<string, { views: FeeHistoryView[]; map: ReadonlyMap<string, FeeHistoryView> }>()
   const stateMaps = new Map<string, { parts: Array<PositionState | null | undefined>; map: ReadonlyMap<string, PositionState | null> | null }>()
+  const traceMaps = new Map<string, { parts: LedgerTrace[]; map: ReadonlyMap<string, LedgerTrace> }>()
   let refresh: (() => void) | null = null
   const asking = new Set<string>()
   const stateReads = new Map<string, { ids: readonly string[]; stop: AbortController; retained: boolean }>()
@@ -179,7 +201,7 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   const entry = (id: string): Entry => {
     let found = entries.get(id)
     if (!found) {
-      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, restored: false, state: null, read: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, view: IDLE, ledger: null, asking: false, settled: null, failures: 0, retry: null, reading: 0, freshFor: 0, release: null }
+      found = { id, listeners: new Set(), pageRefs: 0, listRefs: 0, stateRefs: 0, restored: false, state: null, read: null, stateReason: null, answered: false, stateFailures: 0, stateRetry: null, view: IDLE, ledger: null, asking: false, settled: null, failures: 0, retry: null, reading: 0, freshFor: 0, release: null, trace: NO_TRACE }
       entries.set(id, found)
     }
     return found
@@ -284,6 +306,12 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
         const ids = batch.filter(([, isFresh]) => isFresh === fresh).map(([id]) => id)
         for (let i = 0; i < ids.length; i += MAX_LEDGER_IDS) {
           const part = ids.slice(i, i + MAX_LEDGER_IDS)
+          for (const id of part) {
+            const one = entries.get(id)
+            if (!one) continue
+            one.trace = { asks: one.trace.asks + 1, last: one.trace.last }
+            notify(one)
+          }
           const stop = new AbortController()
           const late = new Promise<RelayAnswer<LedgerResponse>>((done) => stop.signal.addEventListener('abort', () => done(UNANSWERED), { once: true }))
           const cancel = deps.timer(LEDGER_WAIT_MS, () => stop.abort())
@@ -304,6 +332,9 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
   function ledgerAnswered(e: Entry, answer: RelayAnswer<LedgerResponse>): void {
     e.asking = false
     const position = answer.ok ? answer.value.positions.find((one) => one.tokenId === e.id) : undefined
+    const last = answer === UNANSWERED ? 'unanswered' : !answer.ok ? answer.failure : !position ? 'unavailable' : !position.ok ? position.reason : position.exact ? 'exact' : (position.why ?? 'inexact')
+    e.trace = { asks: e.trace.asks, last }
+    notify(e)
     if (answer.ok && position && position.ok) {
       e.failures = 0
       const read: LedgerRead = { position, block: answer.value.block, timestamp: answer.value.timestamp }
@@ -311,8 +342,10 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
       if (!e.ledger || read.block >= e.ledger.block) e.ledger = read
       // Its own state is a chain read too: it is the store's when newer than the one it has (the list's only state).
       // 2026-10-02 (the chart's periods): and a measured point of the chart, kept as this browser's reading (at most
-      // hourly, readings.ts), from the list as from a position's page; it costs no read.
-      deps.readings?.note(e.id, { block: read.block, t: read.timestamp, unclaimed: [BigInt(position.state.unclaimed0), BigInt(position.state.unclaimed1)] })
+      // hourly, readings.ts); it costs no read. Changed on purpose 2026-10-02 (review of the chart's tabs, finding 4): from
+      // the list only for a position this browser already keeps readings of (its page was opened): readings keep the
+      // MAX_NFTS positions read last, so a list of more than that pushed out the points its pages had kept.
+      if (e.pageRefs > 0 || (deps.readings?.get(e.id).length ?? 0) > 0) deps.readings?.note(e.id, { block: read.block, t: read.timestamp, unclaimed: [BigInt(position.state.unclaimed0), BigInt(position.state.unclaimed1)] })
       if (!e.read || read.block > e.read.block) {
         e.read = { position: position.state, block: read.block }
         e.state = stateOf(position.state, read.block, read.timestamp)
@@ -573,6 +606,15 @@ export function createFeesStore(deps: StoreDeps): FeesStore {
     redraw(id) {
       const e = entries.get(id)
       if (e) draw(e)
+    },
+    traces(ids) {
+      const key = ids.join(',')
+      const parts = ids.map((id) => entries.get(id)?.trace ?? NO_TRACE)
+      const kept = traceMaps.get(key)
+      if (kept && kept.parts.length === parts.length && kept.parts.every((part, i) => part === parts[i])) return kept.map
+      const map: ReadonlyMap<string, LedgerTrace> = new Map(ids.map((id, i) => [id, parts[i]]))
+      traceMaps.set(key, { parts, map })
+      return map
     },
     views(ids) {
       const key = ids.join(',')

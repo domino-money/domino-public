@@ -130,6 +130,9 @@ execFileSync(
     'tests/automation-availability.test.mjs',
     // 2026-09-25 (owner): a sequence's Turn on and Pause, offered only on the automation service's fresh word.
     'tests/sequence-switch.test.mjs',
+    // 2026-10-02 (rugged97's spec rev3 §2.13, the V1 incident): the fees waiting in a vault, what a withdrawal takes, and the
+    // money client's reads and withdrawals of them over the finance suite's fake chain.
+    'tests/fee-reserves.test.mjs',
     'tests/receipt-recovery.test.mjs',
     'tests/nonce.test.mjs',
     'tests/setup-recovery.test.mjs',

@@ -28,9 +28,11 @@
  * MAX_READS_PER_VIEW per NFT while a screen shows it, and only while the page is visible (`later`). Only for a `verified`
  * view: never for a saved copy (`cached`) or a position whose fees earned are not exact. One id per read. A start read
  * that fails is asked again after START_RETRY_MS (never sooner than a busy answer's Retry-After); an answer that is not
- * this position as the ledger has it at B is let go and ends that period's start for the view (asking the same final
- * block again would get the same answer). Every good answer is kept: this browser's readings (readings.ts insert), or,
- * past the 30 days they keep (a 30D start), in memory for the visit (`held`).
+ * this position as the ledger has it at B is let go, and B is not asked again for the visit (the same block would get
+ * the same answer). Changed on purpose 2026-10-02 (review of the chart's tabs, finding 3): a block's failures and its
+ * refusals are the visit's, not the view's, so going list, page, list, page asks neither again (a view's own counts end
+ * PAST_RELEASE_MS after its last screen leaves). Every good answer is kept: this browser's readings (readings.ts
+ * insert), or, past the 30 days they keep (a 30D start), in memory for the visit (`held`).
  *
  * Pure apart from its dependencies; no storage, clock or network of its own. Node-safe.
  */
@@ -256,6 +258,12 @@ interface Nft {
   /** The visit's: headers the answers gave, and reads too old to keep. */
   learned: Anchor[]
   holds: Reading[]
+  /**
+   * The visit's too (review of the chart's tabs, finding 3): blocks whose answer was not this position as the ledger has
+   * it, and each block's failed reads with when it may be asked again (a start's ladder; a fill is never asked again).
+   */
+  rejected: Set<number>
+  failed: Map<number, { n: number; at: number }>
 }
 
 interface Job {
@@ -283,7 +291,7 @@ export function createPastReads(deps: PastReadsDeps): PastReads {
   const nftOf = (id: string): Nft => {
     let found = nfts.get(id)
     if (!found) {
-      found = { id, refs: new Map(), listeners: new Set(), unwatch: null, release: null, reads: 0, starts: new Map(), fills: new Map(), tried: new Set(), learned: [], holds: [] }
+      found = { id, refs: new Map(), listeners: new Set(), unwatch: null, release: null, reads: 0, starts: new Map(), fills: new Map(), tried: new Set(), learned: [], holds: [], rejected: new Set(), failed: new Map() }
       nfts.set(id, found)
     }
     return found
@@ -343,8 +351,20 @@ export function createPastReads(deps: PastReadsDeps): PastReads {
           const s = startOf(nft, period)
           if (s.done || s.wait) continue
           const block = nft.reads >= MAX_READS_PER_VIEW ? null : startTarget(view.history, period, nft.learned)
-          if (block === null || block === s.missed) {
+          const failed = block === null ? undefined : nft.failed.get(block)
+          if (block === null || block === s.missed || nft.rejected.has(block) || (failed && failed.n > START_RETRY_MS.length)) {
             s.done = true
+            ended.push(nft)
+            continue
+          }
+          // Failed in an earlier view of this visit: said so, and asked again only once its wait is over.
+          s.failures = failed?.n ?? 0
+          if (failed && failed.at > deps.now()) {
+            s.wait = deps.later(failed.at - deps.now(), () => {
+              s.wait = null
+              notify(nft)
+              pump()
+            })
             ended.push(nft)
             continue
           }
@@ -353,7 +373,7 @@ export function createPastReads(deps: PastReadsDeps): PastReads {
         }
         if (fill || (nft.refs.get(period)?.drawn ?? 0) === 0 || nft.reads >= MAX_READS_PER_VIEW || (nft.fills.get(period) ?? 0) >= MAX_FILLS) continue
         const block = fillTarget(view.history, period, start, nft.learned)
-        if (block !== null && !nft.tried.has(block)) fill = { nft, period, kind: 'fill', block }
+        if (block !== null && !nft.tried.has(block) && !nft.rejected.has(block) && !nft.failed.has(block)) fill = { nft, period, kind: 'fill', block }
       }
     }
     for (const one of ended) notify(one)
@@ -409,13 +429,25 @@ export function createPastReads(deps: PastReadsDeps): PastReads {
     const view = verified(nft.id)
     const reading = view ? parsePastRead(outcome, nft.id, job.block, view.history, view.state) : null
     if (view && reading) {
+      nft.failed.delete(job.block)
       nft.learned.push({ block: reading.block, t: reading.t })
       if (!deps.keep(nft.id, reading, view.state.timestamp) && !nft.holds.some((one) => one.block === reading.block)) nft.holds = [...nft.holds, reading].sort((a, b) => a.block - b.block).slice(-MAX_HELD)
       deps.redraw(nft.id)
     }
     // No verified history to check it against just now (a fresh ledger asked after a settlement, say): the start is
     // asked again once there is one, as if this read had not been made.
-    if (job.kind !== 'start' || job.period === 'all' || !view) return
+    if (!view) return
+    // An answer that is not this position at that block, as the ledger has it: the same block would answer the same, for
+    // the rest of the visit.
+    if (!reading && outcome.state === 'ok') nft.rejected.add(job.block)
+    // A read that failed: counted for the visit (a start's ladder below; a fill is not asked again).
+    let failures = 0
+    if (!reading && outcome.state !== 'ok') {
+      failures = (nft.failed.get(job.block)?.n ?? 0) + 1
+      const wait = failures > START_RETRY_MS.length ? Number.POSITIVE_INFINITY : Math.max(START_RETRY_MS[failures - 1], busy)
+      nft.failed.set(job.block, { n: failures, at: deps.now() + wait })
+    }
+    if (job.kind !== 'start' || job.period === 'all') return
     const s = startOf(nft, job.period)
     if (reading) {
       s.failures = 0
@@ -430,24 +462,26 @@ export function createPastReads(deps: PastReadsDeps): PastReads {
       }
       return
     }
-    // An answer that is not this position at that block, as the ledger has it: the same final block would answer the same.
     if (outcome.state === 'ok') {
       s.done = true
       return
     }
-    s.failures += 1
-    if (s.failures > START_RETRY_MS.length) {
+    s.failures = failures
+    if (failures > START_RETRY_MS.length) {
       s.done = true
       return
     }
-    s.wait = deps.later(Math.max(START_RETRY_MS[s.failures - 1], busy), () => {
+    s.wait = deps.later(Math.max(START_RETRY_MS[failures - 1], busy), () => {
       s.wait = null
       notify(nft)
       pump()
     })
   }
 
-  /** The last screen of `nft` left a moment ago: its view ends (its counts, its waits); what it learned stays. */
+  /**
+   * The last screen of `nft` left a moment ago: its view ends (its counts, its waits); what it learned stays, and so do
+   * the blocks refused or failed this visit.
+   */
   function endView(nft: Nft): void {
     nft.release = null
     if (nft.refs.size > 0) return

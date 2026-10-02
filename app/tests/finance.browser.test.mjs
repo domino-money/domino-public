@@ -4899,6 +4899,9 @@ const chainAbi = parseAbi([
   'function rearmRoot(bool consentToUncollectedFees)', 'function recoverUnmanagedPosition(uint256 tokenId)', 'function recoverUntrackedCurrency(address currency, uint256 amount)',
   // 2026-09-25 (owner): a sequence's Turn on and Pause, the owner's one transaction each on the vault.
   'function resume()', 'function pause()',
+  // 2026-10-02 (rugged97's spec rev3 §2.13): the fees waiting in a vault, read per source and withdrawn by its owner.
+  'struct Source { bool known; uint256 tokenId; address originalCurrency; bytes32 positionIdentity; }',
+  'function source(bytes32) view returns(Source)', 'function withdrawFeeReserves(bytes32,address,uint128,uint128)',
 ]);
 
 /**
@@ -4919,10 +4922,26 @@ const chainAbi = parseAbi([
  * Four more are for what Set up automation refuses or survives (added 2026-09-24 with the audit's fixes): `subscribed` lists the
  * NFTs whose PositionInfo carries the position manager's hasSubscriber flag, `holder` is who holds every NFT when it is not the
  * owner, `lostApproval` includes a sent `approve` without recording it, and `balance` is the owner's ETH.
+ *
+ * Added 2026-10-02 (the fees waiting in a vault, rugged97's spec rev3 §2.13): each position a vault registered has two fee
+ * sources of its own (sourceOf), and `reserves` books balances on them, per vault (by its nonce): [{ tokenId, source: 0 or
+ * 1, currency: 'base' or 'quote', original, charged }]. A sent or batched `withdrawFeeReserves` pays them out as the vault
+ * does (and refuses more than is booked), moving the vault's state nonce on; `rootPermissionValid` may be a list, one per
+ * vault. `refuseNextSend()` makes the wallet refuse the next transaction (4001, the person declined), and `dropNextSend()`
+ * makes it lose its answer to the next one (-32603), which it never sent.
+ *
+ * Added with the review of the fee withdrawal (2026-10-02): each withdrawal is recorded as the vault records it, a
+ * FeeReservesWithdrawn log under the transaction that paid it (eth_getLogs answers them, refused past the chain RPC's
+ * limits, tests/support/log-limits.mjs), and a batch the wallet confirmed names that transaction in its receipts.
+ * `automationRun(nonce, lines)` is an operator execution: it sets the balances `lines` name ({ tokenId, source, currency,
+ * original, charged }), spending or crediting fees with no withdrawal, and moves the vault's state nonce on, as
+ * executionApply and _credit do. `cancelNextInWallet(name, effect)` runs `effect` when the cancel takes the nonce, and
+ * `failVaultReads(nonce, on)` makes every read of that vault fail (-32000) while on.
  */
 function fakeSequenceChain(owner, { roots, chains = {}, operator = null, serviceFeeBps = 400, maxPositions = 3,
   policyVersion = 1n, paused = false, limitsVersion = 1n, rootPermissionValid = true, vaultHeld = [], accounted = 0n, approved = true, settled = false,
-  subscribed = [], holder = null, lostApproval = false, balance = '0xde0b6b3a7640000', atomic = null, batchError = null, holdBatch = false, simulation = 'wallet' }) {
+  subscribed = [], holder = null, lostApproval = false, balance = '0xde0b6b3a7640000', atomic = null, batchError = null, holdBatch = false, simulation = 'wallet',
+  reserves = {} }) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`, zero = at(0, 32);
   const cloneOf = implementation => concatHex(['0x363d3d373d3d3d363d73', implementation, '0x5af43d82803e903d91602b57fd5bf3']);
   const implementation = at(0x42), factoryCode = '0x6001', implementationCode = '0x6002';
@@ -4947,7 +4966,23 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
   };
   const predict = nonce => identity(nonce).vault;
   // The sequences this owner created, by address: the ones `roots` names, then any a sent `createVault` adds.
-  const vaults = new Map(roots.map((root, nonce) => [identity(nonce).vault, { id: identity(nonce).id, root, chain: chains[nonce] ?? [] }]));
+  const vaults = new Map(roots.map((root, nonce) => [identity(nonce).vault, { id: identity(nonce).id, root, chain: chains[nonce] ?? [], nonce: 1n,
+    valid: Array.isArray(rootPermissionValid) ? rootPermissionValid[nonce] : rootPermissionValid, balances: new Map() }]));
+  // Each registered position's two fee sources, its own; and the balances `reserves` books on them, by source and currency.
+  const sourceOf = (tokenId, index) => keccak256(stringToHex(`domino-fee-source:${tokenId}:${index}`));
+  const balanceKey = (sourceId, currency) => `${String(sourceId).toLowerCase()}|${String(currency).toLowerCase()}`;
+  for (const [nonce, list] of Object.entries(reserves)) {
+    const vault = vaults.get(identity(Number(nonce)).vault);
+    for (const line of list) vault.balances.set(balanceKey(sourceOf(BigInt(line.tokenId), line.source), line.currency === 'base' ? at(0x61) : at(0x62)), { original: BigInt(line.original), charged: BigInt(line.charged ?? 0n) });
+  }
+  const memberIds = vault => [vault.root, ...vault.chain.map(member => member.id)];
+  /** What a withdrawal of `amounts` from `vault` leaves, or null when the vault refuses it (an unknown source, a currency outside the pool, more than is booked). */
+  function withdrawn(vault, [sourceId, currency, original, charged], balances = vault.balances) {
+    const known = memberIds(vault).some(id => [0, 1].some(index => sourceOf(id, index) === String(sourceId).toLowerCase()));
+    const booked = balances.get(balanceKey(sourceId, currency)) ?? { original: 0n, charged: 0n };
+    if (!known || ![at(0x61), at(0x62)].includes(String(currency).toLowerCase()) || original + charged === 0n || original > booked.original || charged > booked.charged) return null;
+    return { key: balanceKey(sourceId, currency), left: { original: booked.original - original, charged: booked.charged - charged } };
+  }
   // With `approved: false`, which NFT is approved to whom: what a sent `approve` records.
   const approvals = new Map();
   // The position manager reports these NFTs as held by the first vault: what an unmanaged-position recovery checks before it builds.
@@ -4956,8 +4991,10 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
   const limits = { version: limitsVersion, upsideBps: 5000, maxSlippageBps: 100, maxPriceImpactBps: 100, maxGasCostWei: 1_000_000_000_000_000n, maxObservationAgeSeconds: 60, forecastHorizonSeconds: 3600 };
   // The owner steps the vault can be asked to sign; each is simulated before it is offered, and none of them answers anything.
   const WRITES = ['setOperator', 'setPolicy', 'setExecutionLimits', 'rearmRoot', 'recoverUnmanagedPosition', 'recoverUntrackedCurrency', 'resume', 'pause'];
-  // Two distinct fee sources, so a position's four reserve balances are four distinct source-and-currency pairs.
-  const position = (known, active, isRoot, parentTokenId) => ({ known, active, isRoot, parentTokenId, generation: 0n, tickLower: -60, tickUpper: 60, registrationBaselineId: zero, identity: zero, source0: at(0x71, 32), source1: at(0x72, 32) });
+  // Two distinct fee sources, so a position's four reserve balances are four distinct source-and-currency pairs; each
+  // position's own (2026-10-02: they were the same two for every position).
+  const position = (known, active, isRoot, parentTokenId, tokenId) => ({ known, active, isRoot, parentTokenId, generation: 0n, tickLower: -60, tickUpper: 60, registrationBaselineId: zero, identity: zero,
+    source0: known ? sourceOf(tokenId, 0) : zero, source1: known ? sourceOf(tokenId, 1) : zero });
   function answer(to, name, args) {
     const shared = { poolManager: deployment.poolManager, positionManager: deployment.positionManager, stateView: deployment.stateView, serviceFeeRecipient: deployment.serviceFeeRecipient };
     if ((to === deployment.factory || to === implementation) && name in shared) return shared[name];
@@ -4999,14 +5036,21 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     const vault = vaults.get(to);
     if (vault) {
       const index = id => vault.chain.findIndex(member => member.id === id);
-      const answers = { owner, sequenceId: vault.id, rootTokenId: vault.root, operator: operator ?? deployment.operator, rootPermissionValid, baseCurrency: at(0x61), quoteCurrency: at(0x62), stateNonce: 1n,
+      const answers = { owner, sequenceId: vault.id, rootTokenId: vault.root, operator: operator ?? deployment.operator, rootPermissionValid: vault.valid, baseCurrency: at(0x61), quoteCurrency: at(0x62), stateNonce: vault.nonce,
         policy: vault.policy ?? policy, executionLimits: vault.limits ?? limits, accountedCurrency: accounted,
         activePositions: BigInt(1 + vault.chain.filter(member => member.active).length) };
       if (name in answers) return answers[name];
-      if (name === 'position') return args[0] === vault.root ? position(true, true, true, 0n) : index(args[0]) === -1 ? position(false, false, false, 0n)
-        : position(true, vault.chain[index(args[0])].active, false, index(args[0]) === 0 ? vault.root : vault.chain[index(args[0]) - 1].id);
+      if (name === 'position') return args[0] === vault.root ? position(true, true, true, 0n, args[0]) : index(args[0]) === -1 ? position(false, false, false, 0n, args[0])
+        : position(true, vault.chain[index(args[0])].active, false, index(args[0]) === 0 ? vault.root : vault.chain[index(args[0]) - 1].id, args[0]);
       if (name === 'successorOf') return args[0] === vault.root ? vault.chain[0]?.id ?? 0n : index(args[0]) === -1 ? 0n : vault.chain[index(args[0]) + 1]?.id ?? 0n;
-      if (name === 'feeBalance') return { original: 0n, charged: 0n };
+      if (name === 'feeBalance') return vault.balances.get(balanceKey(args[0], args[1])) ?? { original: 0n, charged: 0n };
+      if (name === 'source') {
+        const tokenId = memberIds(vault).find(id => [0, 1].some(i => sourceOf(id, i) === String(args[0]).toLowerCase()));
+        return tokenId === undefined ? { known: false, tokenId: 0n, originalCurrency: zeroAddress, positionIdentity: zero }
+          : { known: true, tokenId, originalCurrency: sourceOf(tokenId, 0) === String(args[0]).toLowerCase() ? at(0x61) : at(0x62), positionIdentity: zero };
+      }
+      // Simulated before it is offered, and refused as the vault refuses it.
+      if (name === 'withdrawFeeReserves') { if (!withdrawn(vault, args)) throw new Error('InsufficientReserve'); return undefined; }
       if (WRITES.includes(name)) return undefined;
     }
     throw new Error(`unexpected ${name} on ${to}`);
@@ -5022,18 +5066,28 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
   // 2026-10-01 (audit C14): the next send (of the function named, or any) replaced in the wallet. "Speed up": the same call
   // mined under another hash than the one the page is given. "Cancel": a 0-ETH transfer to the account itself takes the
   // nonce (`burned`), and the call never happens.
-  let speedNext = null, cancelNext = null, burned = 0;
+  let speedNext = null, cancelNext = null, cancelEffect = null, burned = 0, refuseNext = false, dropNext = false;
   const replacing = (wanted, tx) => wanted === true || (wanted !== null && decodeFunctionData({ abi: chainAbi, data: tx.data }).functionName === wanted);
   /**
    * What the contracts make of a sent transaction: an approval is recorded against its NFT, a creation registers the vault
    * it predicted, and a vault's resume or pause (2026-09-25) flips its policy's paused flag.
    */
-  function apply(tx) {
+  function apply(tx, transactionHash = null) {
     const to = String(tx.to).toLowerCase();
     const vault = vaults.get(to);
     if (vault) {
-      const { functionName } = decodeFunctionData({ abi: chainAbi, data: tx.data });
-      if (functionName === 'resume' || functionName === 'pause') vault.policy = { ...(vault.policy ?? policy), paused: functionName === 'pause' };
+      const { functionName, args } = decodeFunctionData({ abi: chainAbi, data: tx.data });
+      if (functionName === 'resume' || functionName === 'pause') { vault.policy = { ...(vault.policy ?? policy), paused: functionName === 'pause' }; vault.nonce += 1n; }
+      // 2026-10-02: the vault pays a fee reserve to its owner (contracts/src/DominoVaultV4.sol withdrawFeeReserves), and
+      // records it: FeeReservesWithdrawn(sourceId, currency, owner, original, charged, the state nonce it moved to).
+      if (functionName === 'withdrawFeeReserves') {
+        const out = withdrawn(vault, args);
+        if (!out) throw new Error('a withdrawal the vault refuses was sent');
+        vault.balances.set(out.key, out.left); vault.nonce += 1n; withdrawals.push({ vault: to, args });
+        vaultLogs.push({ address: to, topics: [RESERVES_WITHDRAWN, String(args[0]).toLowerCase(), padded(args[1]), padded(owner)],
+          data: `0x${[args[2], args[3], vault.nonce].map((value) => word(value).slice(2)).join('')}`, blockNumber: '0x10', blockHash: at(0xbb, 32),
+          transactionHash: transactionHash ?? at(0xfe, 32), logIndex: numberToHex(vaultLogs.length), removed: false });
+      }
       return;
     }
     if (to !== deployment.positionManager && to !== deployment.factory) return;
@@ -5041,7 +5095,7 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     if (to === deployment.positionManager && functionName === 'approve' && !lostApproval) approvals.set(args[1], String(args[0]).toLowerCase());
     if (to === deployment.factory && functionName === 'createVault') {
       const [params, nonce] = args, { id, vault } = identity(nonce);
-      vaults.set(vault, { id, root: params.rootTokenId, chain: [], policy: params.policy, limits: params.limits });
+      vaults.set(vault, { id, root: params.rootTokenId, chain: [], policy: params.policy, limits: params.limits, nonce: 1n, valid: Array.isArray(rootPermissionValid) ? true : rootPermissionValid, balances: new Map() });
     }
   }
   /**
@@ -5051,14 +5105,27 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
    * eth_simulateV1. The factory creates only at the owner's next nonce, and only a vault its root NFT is approved to; each
    * call is checked in turn, and one that fails undoes them all.
    */
-  const batches = [];
+  const batches = [], withdrawals = [], vaultLogs = [];
   let capability = atomic, refuseBatch = batchError, hold = holdBatch;
+  // 2026-10-02 (review of the fee withdrawal): the vault's own record of each withdrawal, and the vaults whose reads fail.
+  const RESERVES_WITHDRAWN = keccak256(stringToHex('FeeReservesWithdrawn(bytes32,address,address,uint128,uint128,uint64)'));
+  const word = (value) => `0x${BigInt(value).toString(16).padStart(64, '0')}`;
+  const padded = (address) => `0x${String(address).slice(2).toLowerCase().padStart(64, '0')}`;
+  const failing = new Set();
   function batchResults(calls) {
-    const created = new Map(), approvedHere = new Map();
+    const created = new Map(), approvedHere = new Map(), paidHere = new Map();
     let failed = false;
     const results = calls.map(call => {
       if (failed) return { status: '0x0', gasUsed: '0x0' };
       const to = String(call.to).toLowerCase(), { functionName, args } = decodeFunctionData({ abi: chainAbi, data: call.data });
+      // 2026-10-02: a vault's fee withdrawals, each against what the earlier ones of the batch left.
+      const vault = vaults.get(to);
+      if (vault && functionName === 'withdrawFeeReserves') {
+        const out = withdrawn(vault, args, new Map([...vault.balances, ...(paidHere.get(to) ?? new Map())]));
+        if (!out) { failed = true; return { status: '0x0', gasUsed: '0x0' }; }
+        paidHere.set(to, new Map([...(paidHere.get(to) ?? new Map()), [out.key, out.left]]));
+        return { status: '0x1', gasUsed: '0xea60' };
+      }
       const ok = to === deployment.positionManager && functionName === 'approve' ? true
         : to === deployment.factory && functionName === 'createVault'
           ? args[1] === BigInt(vaults.size + created.size) && (approved || approvedHere.get(args[0].rootTokenId) === predict(args[1]) || approvals.get(args[0].rootTokenId) === predict(args[1]))
@@ -5088,14 +5155,17 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
           return { result: { id } };
         }
         const { ok } = batchResults(calls);
-        if (ok) for (const call of calls) apply({ to: call.to, data: call.data });
-        batches.push({ id, version, chainId, from, atomicRequired, calls, status: ok ? 200 : 500 });
+        // The one transaction the wallet carried the batch in (2026-10-02): its receipts name it, and so does the vault's record.
+        const transactionHash = at(0xf0 + batches.length, 32);
+        if (ok) for (const call of calls) apply({ to: call.to, data: call.data }, transactionHash);
+        batches.push({ id, version, chainId, from, atomicRequired, calls, status: ok ? 200 : 500, transactionHash });
         if (ok && capability === 'ready') capability = 'supported';
         return { result: { id } };
       }
       if (method === 'wallet_getCallsStatus') {
         const batch = batches.find(entry => entry.id === params[0] && !entry.forgotten);
-        return batch ? { result: { version: '2.0.0', id: batch.id, chainId: '0x1237', status: batch.status, atomic: true, receipts: [] } } : { error: { code: 5730, message: 'Unknown bundle id' } };
+        const receipts = batch?.status === 200 && batch.transactionHash && !batch.unnamed ? [{ transactionHash: batch.transactionHash, status: '0x1', blockNumber: '0x10', blockHash: at(0xbb, 32) }] : [];
+        return batch ? { result: { version: '2.0.0', id: batch.id, chainId: '0x1237', status: batch.status, atomic: true, receipts } } : { error: { code: 5730, message: 'Unknown bundle id' } };
       }
       if (method === 'eth_getBlockByNumber') return { result: { number: '0x10', hash: at(0xbb, 32) } };
       // A suite that routes these here keeps them off the mock wallet, which
@@ -5105,8 +5175,10 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
       if (method === 'eth_getBalance') return { result: balance };
       if (method === 'eth_gasPrice') return { result: '0x5f5e100' };
       if (method === 'eth_sendTransaction') {
-        if (replacing(cancelNext, params[0])) { cancelNext = null; burned += 1; return { result: at(0xd0 + burned, 32) }; }
-        const index = sends.length; sends.push(params[0]); apply(params[0]);
+        if (refuseNext) { refuseNext = false; return { error: { code: 4001, message: 'User rejected the request.' } }; }
+        if (dropNext) { dropNext = false; return { error: { code: -32603, message: 'The wallet connection ended before it answered.' } }; }
+        if (replacing(cancelNext, params[0])) { cancelNext = null; burned += 1; const effect = cancelEffect; cancelEffect = null; effect?.(); return { result: at(0xd0 + burned, 32) }; }
+        const index = sends.length; sends.push(params[0]); apply(params[0], hashOf(index));
         if (replacing(speedNext, params[0])) { speedNext = null; return { result: at(0xe0 + index, 32) }; }
         return { result: hashOf(index) };
       }
@@ -5128,6 +5200,16 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
         const target = String(params[0]).toLowerCase();
         return { result: codeOf.get(target) ?? (vaults.has(target) ? cloneOf(implementation) : [poolKey.currency0, poolKey.currency1].includes(target) ? '0x6000' : '0x') };
       }
+      // 2026-10-02 (review of the fee withdrawal): the vaults' own records, as the chain RPC answers a log filter.
+      if (method === 'eth_getLogs') {
+        const [filter] = params, refusal = logLimitError(filter);
+        if (refusal) return { error: refusal };
+        const from = BigInt(filter.fromBlock), to = BigInt(filter.toBlock);
+        const fits = (value, wanted) => wanted === null || wanted === undefined || (Array.isArray(wanted) ? wanted.map((one) => String(one).toLowerCase()).includes(value) : String(wanted).toLowerCase() === value);
+        return { result: vaultLogs.filter((log) => fits(log.address, filter.address) && BigInt(log.blockNumber) >= from && BigInt(log.blockNumber) <= to
+          && (filter.topics ?? []).every((wanted, place) => fits(log.topics[place], wanted))) };
+      }
+      if (method === 'eth_call' && failing.has(String(params[0].to).toLowerCase())) return { error: { code: -32000, message: 'header not found' } };
       if (method === 'eth_call') {
         const { functionName, args = [] } = decodeFunctionData({ abi: chainAbi, data: params[0].data });
         if (['createVault', 'setPolicy'].includes(functionName)) simulations.push({ functionName, args });
@@ -5140,9 +5222,20 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
       return { error: { code: -32000, message: String(error) } };
     }
   }
-  return { log, missing, refused, sends, simulations, batches, request, include, predict, poolKey, poolId, policy, limits, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
+  return { log, missing, refused, sends, simulations, batches, withdrawals, request, include, predict, poolKey, poolId, policy, limits, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
+    // 2026-10-02: the fees booked on a vault's sources now, a fee source's id, and the wallet refusing or losing the next send.
+    balanceOf: (nonce, tokenId, source, currency) => vaults.get(identity(nonce).vault).balances.get(balanceKey(sourceOf(BigInt(tokenId), source), currency === 'base' ? at(0x61) : at(0x62))) ?? { original: 0n, charged: 0n },
+    sourceOf, refuseNextSend: () => { refuseNext = true; }, dropNextSend: () => { dropNext = true; },
     // 2026-10-01 (audit C14): the person speeds the next send (of `name`) up, or cancels it, in the wallet; the nonces cancels took.
-    speedUpNext: (name = true) => { speedNext = name; }, cancelNextInWallet: (name = true) => { cancelNext = name; }, burned: () => burned,
+    speedUpNext: (name = true) => { speedNext = name; }, cancelNextInWallet: (name = true, effect = null) => { cancelNext = name; cancelEffect = effect; }, burned: () => burned,
+    // 2026-10-02 (review of the fee withdrawal): an operator execution that spends or credits fees, with no withdrawal; the
+    // vaults' own records; a vault whose reads fail.
+    automationRun: (nonce, lines) => {
+      const vault = vaults.get(identity(nonce).vault);
+      for (const line of lines) vault.balances.set(balanceKey(sourceOf(BigInt(line.tokenId), line.source), line.currency === 'base' ? at(0x61) : at(0x62)), { original: BigInt(line.original), charged: BigInt(line.charged ?? 0n) });
+      vault.nonce += 1n;
+    },
+    vaultLogs, failVaultReads: (nonce, on = true) => { const vault = identity(nonce).vault; if (on) failing.add(vault); else failing.delete(vault); },
     holdNext: () => { hold = true; }, simulate: calls => batchResults(calls).results };
 }
 
@@ -6358,7 +6451,14 @@ const rowFees = (page) => page.locator(`a[data-position-row="${OWNED_OPEN}"] [da
  * From now on, whether the list card ever shows its loading rows, a skeleton, its quiet line or a reason, and whether the
  * open row and the card are still the elements they were (a refresh changes them in place).
  */
-const watchInPlace = (page) =>
+// Changed on purpose 2026-10-02 (CI, PR #312): the watch starts once the card has settled. A row's Your APR is a skeleton
+// while its first ledger is read; on a slow runner that first read could still be on its way when the watch began, and
+// the skeleton of the first paint was then counted as a refresh's. The refresh itself must still show none.
+const watchInPlace = async (page) => {
+  await page.waitForFunction(() => !document.querySelector('[data-owned] .dm-skel, [data-owned] [data-owned-loading]'), undefined, { timeout: 15_000 });
+  return watchInPlaceNow(page);
+};
+const watchInPlaceNow = (page) =>
   page.evaluate((id) => {
     const card = document.querySelector('[data-owned]');
     const row = document.querySelector(`a[data-position-row="${id}"]`);
@@ -7417,6 +7517,9 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     assert.equal(await apr.getAttribute('title'), 'Since the position opened');
     assert.ok(ledgers.some((body) => [...body.tokenIds].sort().join() === [OWNED_OPEN, '3325113'].sort().join()), `one request for both rows: ${JSON.stringify(ledgers)}`);
     assert.ok(ledgers.every((body) => body.tokenIds.length <= 8));
+    // 2026-10-02 (review of the chart's tabs, finding 1): the cell says, in data attributes, how many ledger requests this
+    // visit made for the row and how the last ended.
+    assert.deepEqual([await apr.getAttribute('data-ledger-asks'), await apr.getAttribute('data-ledger-last')], ['1', 'exact']);
     assert.equal(await s.page.locator('[data-position-detail]').count(), 0, 'no page was opened for it');
     assert.deepEqual(pastAsked, [], 'the list reads no position at a past block');
     // A row whose ledger cannot measure its fees (here: none of its events on the node) keeps a dash and says why; its
@@ -7425,6 +7528,8 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     await dash.waitFor({ timeout: 10_000 });
     assert.equal((await dash.innerText()).replace(/\s+/g, ' ').trim(), 'Your APR not measured');
     assert.equal(await dash.getAttribute('title'), 'Not measured for this position');
+    assert.equal(await dash.getAttribute('data-ledger-asks'), '1');
+    assert.match(await dash.getAttribute('data-ledger-last'), /^(?!exact$)[a-z_]+$/, 'its ledger’s why');
     assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /\best\./, 'no estimate');
     // Nothing moved: the figures stand where they were first drawn, now that the APR is in.
     const drawn = await s.page.evaluate(() => window.__drawn);
@@ -7437,6 +7542,9 @@ test('Your positions: each open row’s Your APR is its own ledger’s, asked wi
     const pageApr = detail.locator('[data-cell="apr"][data-apr="ready"]');
     await pageApr.waitFor({ timeout: 15_000 });
     const figure = (await pageApr.locator('.dm-pos-apr').innerText()).trim().split(/\s/)[0];
+    // Its Details: the list's one request served the page too (finding 1's data attributes).
+    const source = detail.locator('[data-history-source="ledger"]');
+    assert.deepEqual([await source.getAttribute('data-ledger-asks'), await source.getAttribute('data-ledger-last')], ['1', 'exact']);
     // The other position's page says plainly that its fees earned can't be measured, its fees ready to collect exact.
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     const quiet = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="not_exact"]');
@@ -8351,5 +8459,522 @@ test('signing out or letting the wallet go on any page forgets every private cop
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
     await s.page.keyboard.press('Escape');
     await keptIs(['domino.kept.v1.tokens'], 'let go: only the public token details stay');
+  } finally { await s.close(); }
+});
+
+// ---- Fees waiting in a vault (2026-10-02; rugged97's spec rev3 §2.13, the V1 incident of that day) -------------------
+part('automation');
+// An owner closed his vault's root position, and the fees its automation had collected and not yet reinvested (the vault's
+// fee reserves) stayed in the vault with no screen offering them back. They are shown now whenever any is above zero,
+// whatever became of the root, on Positions (every vault the wallet created) and on the root's own page, with Withdraw to
+// wallet: one transaction per balance, as the contract takes them, or one batch for a wallet that batches atomically. The
+// wallet's chain is fakeSequenceChain (its `reserves`); the site's routes read browserChain, whose roots say what became
+// of each position.
+
+const RESERVE_BASE = `0x${'61'.repeat(20)}`, RESERVE_QUOTE = `0x${'62'.repeat(20)}`;
+const RESERVE_TOKENS = { [RESERVE_BASE]: { symbol: 'AAA', decimals: 18 }, [RESERVE_QUOTE]: { symbol: 'BBB', decimals: 6 } };
+/** The owner's words (the spec's §5.6), on the card and in the review. */
+const RESERVES_LEDE = 'Fees the automation collected and had not reinvested yet. They’re yours: withdrawing charges no Domino fee.';
+const OTHER_HOLDER = `0x${'0b'.repeat(20)}`;
+
+/**
+ * A connected wallet (Test Wallet A, not signed in) whose vaults hold fees: the wallet's chain is `seq`, and the site's
+ * routes read `positions` and `vaults` (each given `seq`, whose vault addresses they need). Batches are answered by the
+ * wallet's chain when `batch` is set.
+ *
+ * Added with the review of the fee withdrawal (2026-10-02): the wallet's chain answers the vaults' own records
+ * (eth_getLogs); `release` is what the release Worker answers (the published one by default), and `shipped` stands in
+ * for the V1 release a deployable build ships for recovery (src/finance/pin.ts SEQUENCE_RECOVERY_RECORD), which a test
+ * build has none of unless a test gives one.
+ */
+async function reservesScenario({ seq, positions = () => [], vaults = () => ({}), batch = false, release = { status: 200, body: seq.release }, shipped = null }) {
+  const chain = browserChain({ positions: positions(seq), tokens: TOKENS, vaults: vaults(seq) });
+  const s = await scenario({ chain });
+  await routeChain(s, seq, [...CHAIN_METHODS, 'eth_getLogs', ...(batch ? BATCH_METHODS : [])]);
+  const tokenReads = await answerTokenReads(s.context, RESERVE_TOKENS);
+  await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  if (shipped) await s.context.addInitScript((record) => { window.__dominoRecoveryRecord = record; }, shipped);
+  s.set({ sequenceRelease: release });
+  await s.page.reload();
+  await connectOnly(s.page);
+  return { s, chain, tokenReads };
+}
+const goTo = (s, hash) => s.page.evaluate((next) => { location.hash = next; }, hash);
+/** The withdrawals the wallet sent, decoded: where each went, its value, and its exact arguments. */
+const sentWithdrawals = (seq) => seq.sends.map((tx) => {
+  const { functionName, args } = decodeFunctionData({ abi: chainAbi, data: tx.data });
+  return { to: String(tx.to).toLowerCase(), value: tx.value, functionName, args };
+});
+const reservesDialog = (s) => s.page.locator('[role="dialog"][aria-labelledby="reserves-dialog-title"]');
+
+test('fees waiting in the vault of an armed root: Positions shows them per token, exactly, and Withdraw to wallet sends one withdrawal per balance, each once, then the card goes', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [BigInt(OWNED_OPEN)], settled: true, reserves: { 0: [
+    { tokenId: BigInt(OWNED_OPEN), source: 0, currency: 'base', original: 1_250_000_000_000_000_000n },
+    { tokenId: BigInt(OWNED_OPEN), source: 1, currency: 'quote', original: 2_500_000n },
+  ] } });
+  const { s, chain } = await reservesScenario({ seq,
+    positions: (q) => [onChain(OWNED_OPEN, { subscriber: q.vaults[0] })],
+    vaults: (q) => ({ [q.vaults[0]]: { root: OWNED_OPEN, feeBps: 400, paused: false, valid: true } }) });
+  try {
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    await card.waitFor({ timeout: 30_000 });
+    assert.equal(await card.getByRole('heading').innerText(), 'Fees waiting in your vault');
+    assert.equal(await card.locator('.dm-reserves-lede').innerText(), RESERVES_LEDE);
+    const row = card.locator(`[data-reserve-vault="${seq.vaults[0]}"]`);
+    await row.locator(`[data-reserve-currency="${RESERVE_QUOTE}"]`).getByText('2.5 BBB', { exact: true }).waitFor({ timeout: 30_000 });
+    assert.equal(await row.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).innerText(), '1.25 AAA', 'every digit, in the token’s own units');
+    assert.equal(await row.locator('a').getAttribute('href'), `#/positions/${OWNED_OPEN}`);
+    assert.equal(await row.locator('[data-reserve-status]').innerText(), 'Automation on');
+    const text = await card.innerText();
+    assert.doesNotMatch(text, /\$|USD/, 'no price is made up for them');
+    assert.doesNotMatch(text, /0x[0-9a-f]{4}/, 'no address in sight');
+    assert.doesNotMatch(text, FORBIDDEN);
+    await noManualReads(card);
+    assert.equal(seq.sends.length, 0, 'opening the page sends nothing');
+    await s.page.screenshot({ path: join(shots(), 'p2-fee-reserves-card.png'), fullPage: true });
+    await s.page.setViewportSize({ width: 390, height: 844 });
+    await card.screenshot({ path: join(shots(), 'p2-fee-reserves-card-phone.png') });
+    await s.page.setViewportSize({ width: 1320, height: 1000 });
+
+    // The review: read again through the wallet, exactly what comes back, no Domino fee, the network fee, two transactions.
+    await row.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    const dialog = reservesDialog(s);
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const review = dialog.locator('[data-reserves-review]');
+    assert.equal(await dialog.locator('.dm-receipt-lede').innerText(), RESERVES_LEDE);
+    assert.deepEqual(await review.locator('[data-reserve-currency]').allInnerTexts(), ['1.25 AAA', '2.5 BBB']);
+    assert.match(await review.innerText(), /Domino fee\s+None/);
+    assert.match(await dialog.locator('[data-reserves-network-fee]').innerText(), /^Network fee\s+Up to [0-9.]+ ETH each$/);
+    assert.equal(await dialog.locator('[data-reserves-steps]').innerText(), 'Your wallet asks you to confirm 2 transactions, one after the other: the vault pays each balance on its own.');
+    assert.equal(seq.sends.length, 0, 'the review sends nothing');
+    assert.equal(await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).isEnabled(), true);
+    await s.page.screenshot({ path: join(shots(), 'p2-fee-reserves-review.png') });
+
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="done"]').waitFor({ timeout: 60_000 });
+    assert.equal(await dialog.getByRole('heading').innerText(), 'Returned to your wallet');
+    const receipt = dialog.locator('[data-reserves-receipt]');
+    assert.deepEqual(await receipt.locator('[data-reserve-currency]').allInnerTexts(), ['1.25 AAA', '2.5 BBB']);
+    assert.equal(await receipt.locator('[data-reserves-transaction]').count(), 2, 'each transaction, its hash copyable');
+    assert.deepEqual(sentWithdrawals(seq), [
+      { to: seq.vaults[0], value: '0x0', functionName: 'withdrawFeeReserves', args: [seq.sourceOf(BigInt(OWNED_OPEN), 0), RESERVE_BASE, 1_250_000_000_000_000_000n, 0n] },
+      { to: seq.vaults[0], value: '0x0', functionName: 'withdrawFeeReserves', args: [seq.sourceOf(BigInt(OWNED_OPEN), 1), RESERVE_QUOTE, 2_500_000n, 0n] },
+    ], 'one exact withdrawal per balance, each sent once, to the vault, with no value');
+    assert.deepEqual([seq.balanceOf(0, OWNED_OPEN, 0, 'base'), seq.balanceOf(0, OWNED_OPEN, 1, 'quote')], [{ original: 0n, charged: 0n }, { original: 0n, charged: 0n }]);
+    await s.page.screenshot({ path: join(shots(), 'p2-fee-reserves-returned.png') });
+
+    // Done: the vault holds nothing now, and the card is gone.
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await s.page.locator('[data-fee-reserves-read="positions"][data-fee-reserves-state="ready"][hidden]').waitFor({ state: 'attached', timeout: 30_000 });
+    assert.equal(await s.page.locator('section[data-fee-reserves]').count(), 0);
+    assert.equal(seq.sends.length, 2, 'nothing more was sent');
+    assert.deepEqual([seq.missing, seq.refused], [[], []]);
+    assert.equal(s.wallet.state.signed.length, 0, 'no sign-in: withdrawing needs only the connected wallet');
+    assert.deepEqual(chain.publicAsked, [], 'no public RPC');
+  } finally { await s.close(); }
+});
+
+test('a closed root (no liquidity) keeps its vault’s fees on its page: a refusal in the wallet sends nothing and says so, and the next press withdraws them once', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [BigInt(OWNED_OPEN)], settled: true, rootPermissionValid: false, reserves: { 0: [
+    { tokenId: BigInt(OWNED_OPEN), source: 0, currency: 'base', original: 300_000_000_000_000_000n, charged: 25n },
+  ] } });
+  const { s } = await reservesScenario({ seq,
+    positions: (q) => [closedOnChain(OWNED_OPEN, { subscriber: q.vaults[0] })],
+    vaults: (q) => ({ [q.vaults[0]]: { root: OWNED_OPEN, feeBps: 200, paused: false, valid: false } }) });
+  try {
+    await goTo(s, `#/positions/${OWNED_OPEN}`);
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
+    await detail.waitFor({ timeout: 30_000 });
+    const card = detail.locator('section[data-fee-reserves="position"]');
+    await card.waitFor({ timeout: 30_000 });
+    assert.equal(await card.getByRole('heading').innerText(), 'Fees waiting in your vault');
+    assert.equal(await card.locator('.dm-reserves-lede').innerText(), RESERVES_LEDE);
+    // Its own fees and their already charged units together: 0.3 AAA and 25 of its smallest units.
+    await card.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).getByText('0.300000000000000025 AAA', { exact: true }).waitFor({ timeout: 30_000 });
+    assert.equal(await card.locator('a').count(), 0, 'on its own page, no link to itself');
+    await s.page.screenshot({ path: join(shots(), 'p2-fee-reserves-position.png'), fullPage: true });
+
+    await card.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const dialog = reservesDialog(s);
+    assert.match(await dialog.locator('[data-reserves-network-fee]').innerText(), /^Network fee\s+Up to [0-9.]+ ETH$/);
+    assert.equal(await dialog.locator('[data-reserves-steps], [data-reserves-batch]').count(), 0, 'one transaction');
+
+    // Declined in the wallet: nothing sent, said so, and the review stays to press again.
+    seq.refuseNextSend();
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    const notice = dialog.locator('[data-reserves-notice="declined"]');
+    await notice.waitFor({ timeout: 30_000 });
+    assert.equal(await notice.innerText(), 'You declined in your wallet. Nothing was sent.');
+    assert.equal(seq.sends.length, 0);
+    assert.equal(seq.log.filter((method) => method === 'eth_sendTransaction').length, 1, 'the wallet was asked once');
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="done"]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(sentWithdrawals(seq), [{ to: seq.vaults[0], value: '0x0', functionName: 'withdrawFeeReserves', args: [seq.sourceOf(BigInt(OWNED_OPEN), 0), RESERVE_BASE, 300_000_000_000_000_000n, 25n] }]);
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await detail.locator('[data-fee-reserves-read="position"][data-fee-reserves-state="ready"][hidden]').waitFor({ state: 'attached', timeout: 30_000 });
+    assert.equal(await detail.locator('section[data-fee-reserves]').count(), 0, 'nothing is left to withdraw');
+    assert.equal(seq.sends.length, 1, 'sent once');
+  } finally { await s.close(); }
+});
+
+test('roots burned and moved to another wallet: Positions lists both vaults, the burned NFT’s page offers its vault’s fees, the moved one’s page none, and a batch wallet withdraws a vault in one signature', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [100n, 200n], settled: true, atomic: 'supported', rootPermissionValid: false, reserves: {
+    0: [{ tokenId: 100n, source: 0, currency: 'base', original: 1_000_000_000_000_000_000n }, { tokenId: 100n, source: 1, currency: 'quote', original: 5_000_000n }],
+    1: [{ tokenId: 200n, source: 0, currency: 'base', original: 2_000_000_000_000_000_000n }],
+  } });
+  const { s } = await reservesScenario({ seq, batch: true,
+    positions: () => [onChain('100', { burned: true }), onChain('200', { holder: OTHER_HOLDER })] });
+  try {
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    await card.waitFor({ timeout: 30_000 });
+    const rows = card.locator('[data-reserve-vault]');
+    await card.locator(`[data-reserve-vault="${seq.vaults[0]}"] [data-reserve-currency="${RESERVE_QUOTE}"]`).getByText('5 BBB', { exact: true }).waitFor({ timeout: 30_000 });
+    assert.deepEqual(await rows.evaluateAll((all) => all.map((row) => row.getAttribute('data-reserve-root'))), ['200', '100'], 'every vault the wallet created, newest first');
+    assert.deepEqual(await rows.locator('[data-reserve-status]').allInnerTexts(), ['Automation stopped', 'Automation stopped']);
+
+    // The burned root's page: the NFT no longer exists, and its vault's fees are offered under it.
+    await goTo(s, '#/positions/100');
+    await s.page.locator('[data-empty="position-gone"]').waitFor({ timeout: 30_000 });
+    const gone = s.page.locator('section[data-fee-reserves="position"]');
+    await gone.waitFor({ timeout: 30_000 });
+    assert.deepEqual(await gone.locator('[data-reserve-vault]').evaluateAll((all) => all.map((row) => row.getAttribute('data-reserve-vault'))), [seq.vaults[0]], 'only the vault whose root it was');
+    // The moved root's page: another wallet's position, and nothing of this wallet's vault on it.
+    await goTo(s, '#/positions/200');
+    await s.page.locator('[data-position-detail][data-position-id="200"]').waitFor({ timeout: 30_000 });
+    assert.equal(await s.page.locator('section[data-fee-reserves]').count(), 0);
+
+    await goTo(s, '#/positions');
+    await card.waitFor({ timeout: 30_000 });
+    await card.locator(`[data-reserve-vault="${seq.vaults[0]}"]`).getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const dialog = reservesDialog(s);
+    assert.equal(await dialog.locator('[data-reserves-batch]').innerText(), 'One signature in your wallet: everything comes back together, or nothing does.');
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="done"]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(await dialog.locator('[data-reserves-receipt] [data-reserve-currency]').allInnerTexts(), ['1 AAA', '5 BBB']);
+    // 2026-10-02 (review finding 4): the receipt names the one transaction that carried the batch, as the wallet's receipt does.
+    assert.deepEqual(await dialog.locator('[data-reserves-transaction]').evaluateAll((all) => all.map((row) => row.getAttribute('data-reserves-transaction'))), [seq.batches[0].transactionHash]);
+    assert.equal(seq.sends.length, 0, 'no transaction of its own');
+    assert.equal(seq.batches.length, 1, 'one batch, offered once');
+    const [offered] = seq.batches;
+    assert.deepEqual([offered.version, offered.chainId, offered.from, offered.atomicRequired], ['2.0.0', '0x1237', OWNER, true]);
+    assert.deepEqual(offered.calls.map((call) => [String(call.to).toLowerCase(), call.value, decodeFunctionData({ abi: chainAbi, data: call.data }).args]), [
+      [seq.vaults[0], '0x0', [seq.sourceOf(100n, 0), RESERVE_BASE, 1_000_000_000_000_000_000n, 0n]],
+      [seq.vaults[0], '0x0', [seq.sourceOf(100n, 1), RESERVE_QUOTE, 5_000_000n, 0n]],
+    ]);
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    // The other vault still holds its fees, and is still offered.
+    await s.page.waitForFunction((vault) => !document.querySelector(`[data-reserve-vault="${vault}"]`), seq.vaults[0], { timeout: 30_000 });
+    assert.deepEqual(await card.locator('[data-reserve-vault]').evaluateAll((all) => all.map((row) => row.getAttribute('data-reserve-root'))), ['200']);
+    assert.deepEqual([seq.missing, seq.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
+test('with every reserve at zero nothing is shown, on Positions or on the root’s page, after the vault was read', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [BigInt(OWNED_OPEN)], settled: true });
+  const { s } = await reservesScenario({ seq,
+    positions: (q) => [onChain(OWNED_OPEN, { subscriber: q.vaults[0] })],
+    vaults: (q) => ({ [q.vaults[0]]: { root: OWNED_OPEN, feeBps: 400, paused: true, valid: true } }) });
+  try {
+    await goTo(s, '#/positions');
+    await s.page.locator('[data-fee-reserves-read="positions"][data-fee-reserves-state="ready"][hidden]').waitFor({ state: 'attached', timeout: 30_000 });
+    assert.equal(await s.page.locator('section[data-fee-reserves]').count(), 0);
+    await goTo(s, `#/positions/${OWNED_OPEN}`);
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
+    await detail.locator('[data-fee-reserves-read="position"][data-fee-reserves-state="ready"][hidden]').waitFor({ state: 'attached', timeout: 30_000 });
+    assert.equal(await s.page.locator('section[data-fee-reserves]').count(), 0);
+    assert.ok(seq.log.includes('eth_call'), 'the vault was read');
+    assert.equal(seq.sends.length, 0);
+  } finally { await s.close(); }
+});
+
+test('a withdrawal whose wallet answer was lost is never offered again: the next press stops before the wallet, and nothing is sent twice', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [BigInt(OWNED_OPEN)], settled: true, reserves: { 0: [
+    { tokenId: BigInt(OWNED_OPEN), source: 1, currency: 'quote', original: 7_000_000n },
+  ] } });
+  const { s } = await reservesScenario({ seq,
+    positions: (q) => [onChain(OWNED_OPEN, { subscriber: q.vaults[0] })],
+    vaults: (q) => ({ [q.vaults[0]]: { root: OWNED_OPEN, feeBps: 400, paused: false, valid: true } }) });
+  try {
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    await card.waitFor({ timeout: 30_000 });
+    await card.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const dialog = reservesDialog(s);
+    seq.dropNextSend();
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    const notice = dialog.locator('[data-reserves-notice]');
+    await notice.waitFor({ timeout: 30_000 });
+    assert.equal(await notice.innerText(), 'Your wallet may or may not have sent it. Check your wallet activity before trying again. This step won’t be offered twice, even after a reload.');
+    const asked = () => seq.log.filter((method) => method === 'eth_sendTransaction').length;
+    assert.equal(asked(), 1);
+    // Pressed again: the same step is held by the page's latch on its nonce, before the wallet is asked.
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    await dialog.locator('[data-reserves-notice="wallet_request_open"]').waitFor({ timeout: 30_000 });
+    assert.equal(await dialog.locator('[data-reserves-notice]').innerText(), 'Your wallet may still be showing an earlier request from this site. Approve or reject it there. If you already rejected or closed it, reload this page.');
+    assert.equal(asked(), 1, 'the wallet was not asked again');
+    // Closed and opened again: the review stops at the same place, and still nothing is sent.
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await card.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await reservesDialog(s).locator('[data-reserves-notice="wallet_request_open"]').waitFor({ timeout: 30_000 });
+    assert.equal(asked(), 1);
+    assert.equal(seq.sends.length, 0, 'nothing was sent');
+    assert.deepEqual(seq.balanceOf(0, OWNED_OPEN, 1, 'quote'), { original: 7_000_000n, charged: 0n }, 'the fees are still in the vault');
+  } finally { await s.close(); }
+});
+
+// ---- The review of the fee withdrawal (2026-10-02): its eight findings, in the page ----------------------------------
+// A withdrawal is proved by the vault's own record of it (finding 1), and the receipt names the transaction that paid
+// (finding 4); every vault the wallet created is looked in (findings 2 and 6), with a quiet line while some are still to
+// be, a vault whose read fails keeps its row and is asked again on its own (finding 8); a chain of members longer than one
+// read is walked in pages (finding 3); the fees are found and withdrawn with no release and nothing saved in the browser
+// (finding 5); and an amount is never a skeleton for good, nor sent while unnamed (finding 7).
+
+const transactionsOf = (dialog) => dialog.locator('[data-reserves-transaction]').evaluateAll((all) => all.map((row) => row.getAttribute('data-reserves-transaction')));
+const ARMED = (q) => ({ [q.vaults[0]]: { root: OWNED_OPEN, feeBps: 400, paused: false, valid: true } });
+
+test('review findings 1 and 4: a withdrawal the wallet sped up counts by the vault’s own record, though new fees were credited meanwhile, and the receipt names the transaction that paid', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [BigInt(OWNED_OPEN)], settled: true, reserves: { 0: [
+    { tokenId: BigInt(OWNED_OPEN), source: 0, currency: 'base', original: 1_250_000_000_000_000_000n },
+  ] } });
+  const { s } = await reservesScenario({ seq, positions: (q) => [onChain(OWNED_OPEN, { subscriber: q.vaults[0] })], vaults: ARMED });
+  try {
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    await card.waitFor({ timeout: 30_000 });
+    await card.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const dialog = reservesDialog(s);
+    // "Speed up": mined under another hash than the one the page was given.
+    seq.speedUpNext('withdrawFeeReserves');
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    await until(() => seq.sends.length === 1, 'the withdrawal sent', 30_000);
+    // The automation's next run credits new fees to the same balance before the page reads the vault again: the balance
+    // is above zero, which the old rule took for a withdrawal that did not happen.
+    seq.automationRun(0, [{ tokenId: OWNED_OPEN, source: 0, currency: 'base', original: 4_000_000_000_000_000n }]);
+    await s.page.locator('[data-reserves-dialog="done"]').waitFor({ timeout: 60_000 });
+    assert.equal(await dialog.getByRole('heading').innerText(), 'Returned to your wallet');
+    assert.deepEqual(await dialog.locator('[data-reserves-receipt] [data-reserve-currency]').allInnerTexts(), ['1.25 AAA']);
+    assert.deepEqual(await transactionsOf(dialog), [seq.vaultLogs[0].transactionHash], 'the transaction that took its place, never the replaced one');
+    assert.equal(seq.log.filter((method) => method === 'eth_sendTransaction').length, 1, 'sent once');
+    assert.ok(seq.log.includes('eth_getLogs'), 'found by the vault’s own record');
+    // The fees credited since are offered next.
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await card.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).getByText('0.004 AAA', { exact: true }).waitFor({ timeout: 30_000 });
+    assert.deepEqual([seq.missing, seq.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
+test('review finding 1: a withdrawal the wallet cancelled while the automation reinvested those fees is never said to have reached the wallet', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [BigInt(OWNED_OPEN)], settled: true, reserves: { 0: [
+    { tokenId: BigInt(OWNED_OPEN), source: 0, currency: 'base', original: 1_250_000_000_000_000_000n },
+  ] } });
+  const { s } = await reservesScenario({ seq, positions: (q) => [onChain(OWNED_OPEN, { subscriber: q.vaults[0] })], vaults: ARMED });
+  try {
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    await card.waitFor({ timeout: 30_000 });
+    await card.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const dialog = reservesDialog(s);
+    // "Cancel" takes the nonce, and in that window an operator execution spends the whole reserve on liquidity: the balance
+    // is zero and the state nonce moved, as a withdrawal would leave them, but nothing reached the wallet.
+    seq.cancelNextInWallet('withdrawFeeReserves', () => seq.automationRun(0, [{ tokenId: OWNED_OPEN, source: 0, currency: 'base', original: 0n }]));
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    const notice = dialog.locator('[data-reserves-notice="reserve_withdrawal_replaced"]');
+    await notice.waitFor({ timeout: 60_000 });
+    assert.equal(await notice.innerText(), 'Your wallet replaced the withdrawal with another transaction. Your vault shows no record of paying these fees, so the outcome is unknown. Check your wallet activity before trying again: your vault is read first, and nothing is sent twice.');
+    assert.equal(await dialog.getByRole('heading').innerText(), 'Withdraw to wallet', 'never “Returned to your wallet”');
+    assert.equal(await dialog.locator('[data-reserves-receipt], [data-reserves-transaction]').count(), 0, 'no receipt, no transaction named');
+    assert.deepEqual([seq.sends.length, seq.burned(), seq.withdrawals.length], [0, 1, 0]);
+    // The card reads the vault again: nothing waits there now, and it goes.
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await s.page.locator('[data-fee-reserves-read="positions"][data-fee-reserves-state="ready"][hidden]').waitFor({ state: 'attached', timeout: 30_000 });
+    assert.equal(seq.log.filter((method) => method === 'eth_sendTransaction').length, 1, 'nothing offered again');
+  } finally { await s.close(); }
+});
+
+test('review findings 2, 6 and 8: the fees in a vault older than the sixteen newest are found and offered, a quiet line says while it cannot be read, and its burned root’s page offers them too', async () => {
+  const roots = Array.from({ length: 17 }, (_, i) => BigInt(300 + i));
+  const seq = fakeSequenceChain(OWNER, { roots, settled: true, rootPermissionValid: false, reserves: {
+    0: [{ tokenId: 300n, source: 1, currency: 'quote', original: 3_000_000n }],
+    16: [{ tokenId: 316n, source: 0, currency: 'base', original: 1_000_000_000_000_000_000n }],
+  } });
+  // The oldest vault cannot be read at first.
+  seq.failVaultReads(0, true);
+  const { s } = await reservesScenario({ seq, positions: () => [onChain('300', { burned: true })] });
+  try {
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    await card.locator(`[data-reserve-vault="${seq.vaults[16]}"]`).waitFor({ timeout: 60_000 });
+    const line = card.locator('[data-reserves-checking]');
+    // While the oldest vault is still to be read, a page after the first: one quiet line. Once its read failed, another,
+    // and it is asked again on its own.
+    await line.filter({ hasText: 'Your older vaults are still being checked…' }).waitFor({ timeout: 30_000 });
+    await line.filter({ hasText: 'Some of your vaults couldn’t be checked just now. This page asks again on its own.' }).waitFor({ timeout: 60_000 });
+    assert.equal(await line.count(), 1, 'one line at a time');
+    assert.equal(await card.getAttribute('data-fee-reserves-state'), 'checking');
+    await card.screenshot({ path: join(shots(), 'p2-fee-reserves-checking.png') });
+    assert.doesNotMatch(await card.innerText(), /Retry|Try again/);
+    // Readable again: asked again on its own, and its row joins the newest one's.
+    seq.failVaultReads(0, false);
+    const oldest = card.locator(`[data-reserve-vault="${seq.vaults[0]}"]`);
+    await oldest.locator(`[data-reserve-currency="${RESERVE_QUOTE}"]`).getByText('3 BBB', { exact: true }).waitFor({ timeout: 60_000 });
+    assert.deepEqual(await card.locator('[data-reserve-vault]').evaluateAll((all) => all.map((row) => row.getAttribute('data-reserve-root'))), ['316', '300'], 'newest first');
+    await s.page.locator('section[data-fee-reserves="positions"][data-fee-reserves-state="ready"]').waitFor({ timeout: 30_000 });
+    assert.equal(await line.count(), 0, 'every vault looked in');
+
+    // The burned root's page: the vault whose root it was, seventeenth from the newest.
+    await goTo(s, '#/positions/300');
+    await s.page.locator('[data-empty="position-gone"]').waitFor({ timeout: 30_000 });
+    const gone = s.page.locator('section[data-fee-reserves="position"]');
+    await gone.locator(`[data-reserve-vault="${seq.vaults[0]}"]`).waitFor({ timeout: 60_000 });
+    await gone.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const dialog = reservesDialog(s);
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="done"]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(sentWithdrawals(seq), [{ to: seq.vaults[0], value: '0x0', functionName: 'withdrawFeeReserves', args: [seq.sourceOf(300n, 1), RESERVE_QUOTE, 3_000_000n, 0n] }]);
+    assert.deepEqual(await transactionsOf(dialog), [seq.vaultLogs[0].transactionHash]);
+    assert.deepEqual([seq.missing, seq.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
+test('review finding 8: a vault already on screen keeps its row when a later read of it fails, and one never read says so quietly until it can be', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [100n, 200n], settled: true, rootPermissionValid: false, reserves: {
+    0: [{ tokenId: 100n, source: 0, currency: 'base', original: 1_000_000_000_000_000_000n }],
+    1: [{ tokenId: 200n, source: 0, currency: 'base', original: 2_000_000_000_000_000_000n }],
+  } });
+  const { s } = await reservesScenario({ seq, positions: () => [onChain('100', { burned: true }), onChain('200', { burned: true })] });
+  try {
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    const first = card.locator(`[data-reserve-vault="${seq.vaults[0]}"]`), second = card.locator(`[data-reserve-vault="${seq.vaults[1]}"]`);
+    await first.waitFor({ timeout: 30_000 });
+    await second.waitFor({ timeout: 30_000 });
+    // The first vault's reads fail from now on; the second's fees are withdrawn, and the card reads both again.
+    seq.failVaultReads(0, true);
+    await second.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const dialog = reservesDialog(s);
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="done"]').waitFor({ timeout: 60_000 });
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+    await second.waitFor({ state: 'detached', timeout: 30_000 });
+    assert.equal(await first.count(), 1, 'the vault whose read failed keeps its row');
+    assert.equal(await first.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).innerText(), '1 AAA');
+    assert.equal(await card.locator('[data-reserves-checking]').count(), 0, 'nothing unseen: no line');
+  } finally { await s.close(); }
+
+  // A vault never read whose reads keep failing: a quiet card says so, and it is asked again on its own until it can be.
+  const lone = fakeSequenceChain(OWNER, { roots: [100n], settled: true, rootPermissionValid: false, reserves: {
+    0: [{ tokenId: 100n, source: 0, currency: 'base', original: 1_000_000_000_000_000_000n }],
+  } });
+  lone.failVaultReads(0, true);
+  const { s: t } = await reservesScenario({ seq: lone, positions: () => [onChain('100', { burned: true })] });
+  try {
+    await goTo(t, '#/positions');
+    const trouble = t.page.locator('section[data-fee-reserves-trouble="positions"]');
+    await trouble.waitFor({ timeout: 60_000 });
+    assert.equal(await trouble.getByRole('heading').innerText(), 'Fees waiting in your vault');
+    assert.equal(await trouble.locator('[role="status"]').innerText(), 'Your vault couldn’t be checked for fees just now. This page asks again on its own.');
+    assert.equal(await trouble.getByRole('button').count(), 0, 'no Retry');
+    await trouble.screenshot({ path: join(shots(), 'p2-fee-reserves-unchecked.png') });
+    lone.failVaultReads(0, false);
+    const card = t.page.locator('section[data-fee-reserves="positions"]');
+    await card.locator(`[data-reserve-vault="${lone.vaults[0]}"]`).waitFor({ timeout: 60_000 });
+    assert.equal(await trouble.count(), 0);
+  } finally { await t.close(); }
+});
+
+test('review finding 3: a vault whose chain of positions is longer than one read is read in pages, and the fees of a position far down it are withdrawn', async () => {
+  const members = Array.from({ length: 40 }, (_, i) => ({ id: BigInt(1000 + i), active: i % 4 === 0 }));
+  const seq = fakeSequenceChain(OWNER, { roots: [100n], chains: { 0: members }, settled: true, rootPermissionValid: false, reserves: {
+    0: [{ tokenId: 1035n, source: 1, currency: 'quote', original: 77n, charged: 3n }],
+  } });
+  const { s } = await reservesScenario({ seq, positions: () => [onChain('100', { burned: true })] });
+  try {
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    const row = card.locator(`[data-reserve-vault="${seq.vaults[0]}"]`);
+    await row.locator(`[data-reserve-currency="${RESERVE_QUOTE}"]`).getByText('0.00008 BBB', { exact: true }).waitFor({ timeout: 60_000 });
+    await row.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 60_000 });
+    const dialog = reservesDialog(s);
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="done"]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(sentWithdrawals(seq), [{ to: seq.vaults[0], value: '0x0', functionName: 'withdrawFeeReserves', args: [seq.sourceOf(1035n, 1), RESERVE_QUOTE, 77n, 3n] }]);
+    assert.deepEqual([seq.missing, seq.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
+test('review finding 5: with the release refused or switched off and nothing saved in this browser, the fees are still found and withdrawn with the V1 release the build ships', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [100n], settled: true, rootPermissionValid: false, reserves: {
+    0: [{ tokenId: 100n, source: 0, currency: 'base', original: 2_000_000_000_000_000_000n }],
+  } });
+  // The release Worker refuses the expired profile (bridge/src/sequence-release.mjs: 503 setup_configuration_unavailable).
+  const { s } = await reservesScenario({ seq, positions: () => [onChain('100', { burned: true })], release: { status: 503, body: { error: 'setup_configuration_unavailable' } }, shipped: seq.release });
+  try {
+    const saved = () => s.page.evaluate(() => localStorage.getItem('domino.sequence.public-recovery.v1'));
+    assert.equal(await saved(), null, 'nothing saved in this browser: it never set up automation');
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    await card.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).getByText('2 AAA', { exact: true }).waitFor({ timeout: 30_000 });
+    // Switched off (available: false): the page opened again still finds them, and withdraws them.
+    s.set({ sequenceRelease: RELEASE_OFF });
+    await s.page.reload();
+    // The wallet connects again by itself (connected, not signed in).
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out', null, { timeout: 30_000 });
+    await goTo(s, '#/positions');
+    await card.locator(`[data-reserve-currency="${RESERVE_BASE}"]`).getByText('2 AAA', { exact: true }).waitFor({ timeout: 30_000 });
+    assert.ok(s.releases.filter((asked) => asked.path === '/api/setup/v1/sequence-release').length >= 2, 'the release was asked again, and is off');
+    await card.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const dialog = reservesDialog(s);
+    await dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="done"]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(sentWithdrawals(seq), [{ to: seq.vaults[0], value: '0x0', functionName: 'withdrawFeeReserves', args: [seq.sourceOf(100n, 0), RESERVE_BASE, 2_000_000_000_000_000_000n, 0n] }]);
+    assert.equal(await saved(), null, 'only a published release is ever kept');
+    assert.deepEqual([seq.missing, seq.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
+test('review finding 7: a token the read path cannot name yet shows every digit in its smallest units, never a skeleton for good, and the review cannot be sent while an amount is unnamed', async () => {
+  const seq = fakeSequenceChain(OWNER, { roots: [100n], settled: true, rootPermissionValid: false, reserves: {
+    0: [{ tokenId: 100n, source: 1, currency: 'quote', original: 2_500_000n }],
+  } });
+  const { s } = await reservesScenario({ seq, positions: () => [onChain('100', { burned: true })] });
+  try {
+    // The read path cannot name BBB for now (503, upstream unavailable): a failure that may pass, asked again.
+    const headers = { 'X-Domino-Read-Contract': readGateway('capabilities.live_read_only').contractVersion };
+    let refusals = 0;
+    await s.context.route(/\/api\/read\/v1\/token$/, async (route) => {
+      if (route.request().postDataJSON().token.toLowerCase() !== RESERVE_QUOTE) return route.fallback();
+      refusals += 1;
+      return route.fulfill({ status: 503, contentType: 'application/json', headers, body: JSON.stringify({ error: 'upstream_unavailable' }) });
+    });
+    await goTo(s, '#/positions');
+    const card = s.page.locator('section[data-fee-reserves="positions"]');
+    await card.waitFor({ timeout: 30_000 });
+    await card.getByRole('button', { name: 'Withdraw to wallet', exact: true }).click();
+    await s.page.locator('[data-reserves-dialog="ready"]').waitFor({ timeout: 30_000 });
+    const dialog = reservesDialog(s);
+    const send = dialog.getByRole('button', { name: 'Withdraw in wallet', exact: true });
+    assert.equal(await dialog.locator('[data-reserves-review] .dm-reserves-skel').count(), 1, 'the amount, not named yet');
+    assert.equal(await send.isEnabled(), false, 'not while the amount is unnamed');
+    // After the third try: every digit, in its smallest units, and the review can be sent.
+    const raw = dialog.locator(`[data-reserves-review] [data-reserve-currency="${RESERVE_QUOTE}"][data-amount="raw"]`);
+    await raw.waitFor({ timeout: 40_000 });
+    assert.equal(await raw.innerText(), '2,500,000 units of 0x6262…6262');
+    assert.ok(refusals >= 3, `asked ${refusals} times`);
+    assert.equal(await send.isEnabled(), true);
+    assert.equal(await card.locator(`[data-reserve-currency="${RESERVE_QUOTE}"]`).innerText(), '2,500,000 units of 0x6262…6262', 'the card’s row too');
+    await send.click();
+    await s.page.locator('[data-reserves-dialog="done"]').waitFor({ timeout: 60_000 });
+    assert.deepEqual(sentWithdrawals(seq).map((sent) => sent.args), [[seq.sourceOf(100n, 1), RESERVE_QUOTE, 2_500_000n, 0n]]);
   } finally { await s.close(); }
 });

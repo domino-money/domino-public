@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { LedgerTrace } from '../../lib/fees/store'
 import type { PositionState } from '../../lib/fees/types'
 import { formatUsdFloor } from '../../lib/format/usd'
 import type { LiveCard } from '../../lib/walletCards'
@@ -71,7 +72,7 @@ function Money({ card, state, which, label }: { card: LiveCard; state: PositionS
  * a request), a skeleton while one is read, and a dash with a short visible word otherwise (a title alone is not read on
  * a phone).
  */
-function Apr({ apr, quality }: { apr: RowApr | null; quality: LoadQuality | null }) {
+function Apr({ apr, quality, ledger }: { apr: RowApr | null; quality: LoadQuality | null; ledger?: LedgerTrace | null }) {
   useLoadMilestone('positions', 'apr', apr?.kind === 'rate' ? quality : null)
   let figure: ReactNode = (
     <>
@@ -100,7 +101,7 @@ function Apr({ apr, quality }: { apr: RowApr | null; quality: LoadQuality | null
     if (apr.short) figure = <span className="dm-own-est">{apr.short}</span>
   }
   return (
-    <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : (apr?.kind ?? 'none')} data-apr-source={apr?.kind === 'rate' && apr.saved ? 'saved-public-history' : undefined} title={title}>
+    <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : (apr?.kind ?? 'none')} data-apr-source={apr?.kind === 'rate' && apr.saved ? 'saved-public-history' : undefined} data-ledger-asks={ledger ? ledger.asks : undefined} data-ledger-last={ledger?.last ?? undefined} title={title}>
       <span className="dm-own-label">Your APR</span>
       <span className="dm-own-aprs">{figure}</span>
     </span>
@@ -113,7 +114,7 @@ function Apr({ apr, quality }: { apr: RowApr | null; quality: LoadQuality | null
  * shows their token amounts); `state` (the same read) values a pair with USDG. `automation`: its badge or
  * Automate, drawn over the row's Automation column as the row's sibling (a link holds no link).
  */
-export function PositionRow({ card, block, state = null, apr = null, aprQuality = null, automation }: { card: LiveCard; block: number; state?: PositionState | null; apr?: RowApr | null; aprQuality?: LoadQuality | null; automation?: ReactNode }) {
+export function PositionRow({ card, block, state = null, apr = null, aprQuality = null, ledger = null, automation }: { card: LiveCard; block: number; state?: PositionState | null; apr?: RowApr | null; aprQuality?: LoadQuality | null; ledger?: LedgerTrace | null; automation?: ReactNode }) {
   const [base, quote] = card.currencies
   return (
     <div className="dm-own-item" data-position-item={card.tokenId}>
@@ -138,7 +139,7 @@ export function PositionRow({ card, block, state = null, apr = null, aprQuality 
         <span className="dm-own-figs">
           <Money card={card} state={state} which="principal" label="Value" />
           <Money card={card} state={state} which="unsettledFees" label="Fees ready to collect" />
-          {card.hasLiquidity && <Apr apr={apr} quality={aprQuality} />}
+          {card.hasLiquidity && <Apr apr={apr} quality={aprQuality} ledger={ledger} />}
         </span>
         <span className="dm-own-chev">
           <IconChevronRight size={16} />

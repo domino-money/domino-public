@@ -188,7 +188,8 @@ test('DF-11: prepare has exactly one call site, inside issueWalletStep; create a
   assert.deepEqual(hits(ALL, /\.create\(/), ['screens/SequenceCreate.tsx', 'screens/Setup.tsx']);
   // 2026-09-24: the owner's Collect fees / Close position and the refund of a held setup deposit send one reviewed step each, on purpose.
   // 2026-09-25 (owner): and a sequence's Turn on or Pause, the one owner transaction its vault takes (components/positions/SequenceSwitch.tsx).
-  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['components/create/CreatePosition.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/PositionActions.tsx', 'components/positions/SequenceSwitch.tsx', 'screens/AdvancedSetup.tsx', 'screens/SequenceCreate.tsx']);
+  // 2026-10-02 (rugged97's spec rev3 §2.13): and the withdrawal of the fees waiting in a vault, one reviewed step per balance (FeeReserves.tsx).
+  assert.deepEqual(hits(ALL, /\bhandoff\.send\(|HANDOFF\.send\(|\.send\(\s*(step|walletStep)/), ['components/create/CreatePosition.tsx', 'components/positions/FeeReserves.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/PositionActions.tsx', 'components/positions/SequenceSwitch.tsx', 'screens/AdvancedSetup.tsx', 'screens/SequenceCreate.tsx']);
   assert.deepEqual(hits(MINE, /available:\s*true/), [], 'no handoff says it is available');
   assert.deepEqual(hits(MINE, /executionAvailable:\s*true|automationAvailable:\s*true|serverBroadcastAvailable:\s*true/), []);
 });

@@ -3,6 +3,7 @@ import { drop, keep, readKept } from '../../finance/privateCards'
 import { feesStore } from '../../lib/fees/spawn'
 import { historyLoadQuality } from '../../lib/fees/freshness'
 import type { FeeHistoryView } from '../../lib/fees/types'
+import { useLedgerTraces } from '../../lib/fees/useFeeHistory'
 import { CHAIN_ID, shortAddress } from '../../lib/read/screens/identity'
 import { walletCard, walletState } from '../../lib/walletCards'
 import { REFRESH_MS, parseWalletAnswer, useWalletAnswer, walletChanged, type WalletDeposit } from '../../lib/walletPositions'
@@ -256,6 +257,9 @@ function YourPositions({ owner, deposits, onEmptyAction, readOnly = false }: Omi
   const fresh = ready !== null
   // Another address's list reads no history ahead (audit V7): its rows show an APR only once their own page drew it.
   const aprs = useRowAprs(measured, !readOnly && fresh && tab === 'open' && !refunding)
+  // 2026-10-02 (review of the chart's tabs, finding 1): each row's ledger requests this visit and how the last ended, as
+  // its APR cell's data attributes only.
+  const traces = useLedgerTraces(measured)
   const shownValues = shown.map((row) => visibleAmountQuality(row.card.principal))
   const valueQuality = shownValues.includes('current') ? 'current' : shownValues.includes('partial') ? 'partial' : null
   useLoadMilestone('positions', 'value', readOnly ? null : valueQuality && !fresh ? 'cached' : valueQuality)
@@ -314,6 +318,7 @@ function YourPositions({ owner, deposits, onEmptyAction, readOnly = false }: Omi
             state={row.state}
             apr={aprs.get(row.card.tokenId) ?? null}
             aprQuality={historyLoadQuality(feesStore.view(row.card.tokenId))}
+            ledger={traces.get(row.card.tokenId) ?? null}
             automation={fresh && !readOnly && <AutomateEntry tokenId={row.card.tokenId} open={automatable(row.position)} />}
           />
         ))}

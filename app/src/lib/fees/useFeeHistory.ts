@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { freshState } from './client'
 import { feesStore } from './spawn'
+import type { LedgerTrace } from './store'
 import type { FeeHistoryView, FeesScope } from './types'
 
 const IDLE: FeeHistoryView = { phase: 'idle' }
@@ -42,6 +43,20 @@ const quiet = () => undefined
 export function refreshFeeStates(tokenIds: readonly string[]): void {
   freshState(tokenIds)
   feesStore.refresh(tokenIds)
+}
+
+const NO_TRACES: ReadonlyMap<string, LedgerTrace> = new Map()
+const noTraces = () => NO_TRACES
+
+/**
+ * 2026-10-02 (review of the chart's tabs, finding 1): each id's ledger requests this visit and how the last ended
+ * (store.ts LedgerTrace), for the screens' data attributes. Asks nothing.
+ */
+export function useLedgerTraces(tokenIds: readonly string[]): ReadonlyMap<string, LedgerTrace> {
+  const key = tokenIds.join(',')
+  const watch = useCallback((listener: () => void) => (key === '' ? quiet : feesStore.watch(key.split(','), listener)), [key])
+  const snapshot = useCallback(() => (key === '' ? NO_TRACES : feesStore.traces(key.split(','))), [key])
+  return useSyncExternalStore(watch, snapshot, noTraces)
 }
 
 /** Several positions' views, keyed by token id, from one hook call. `null` or no ids asks nothing. */

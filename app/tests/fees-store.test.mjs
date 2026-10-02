@@ -489,15 +489,33 @@ test('a `reading` ledger that answers after the last screen left is asked again 
 });
 
 // 2026-10-02 (the chart's periods back, lib/fees/pastReads.ts): every ledger answer keeps its own state as one of this
-// browser's readings (the list's too: a measured point at no cost), and the store folds a position's view again when a
-// read at a past block was kept (`redraw`), with the reads too old to keep that the runner holds (`pastReadings`).
-test('a ledger answer’s own state is kept as a reading, from the list too; redraw folds the view again with a past read; held reads are folded in', async () => {
+// browser's readings (a measured point at no cost), and the store folds a position's view again when a read at a past
+// block was kept (`redraw`), with the reads too old to keep that the runner holds (`pastReadings`). Changed on purpose
+// the same day (review of the chart's tabs, finding 4): the list's answers only for a position this browser already keeps
+// readings of; readings keep the MAX_NFTS positions read last, and a list of more pushed out what its pages had kept.
+test('a ledger answer’s own state is kept as a reading: a page’s, and the list’s only for a position whose page this browser keeps; redraw folds the view again with a past read; held reads are folded in', async () => {
   const storage = memoryStorage();
   const held = [];
-  const { store, readings } = storeWith({ storage, pastReadings: () => held });
+  // The list alone, for a position this browser keeps no reading of: nothing kept.
+  const cold = storeWith({ storage });
+  const listed = cold.store.subscribeHistory([ID], 'list', () => {});
+  await until(() => cold.store.view(ID).phase === 'verified', 'verified');
+  assert.deepEqual(cold.readings.get(ID), [], 'the list’s answer is not kept for a position never opened here');
+  listed();
+  // Its page: its reads are kept (the /state read and the ledger's own, at most one an hour).
+  const visit = storeWith({ storage });
+  const page = visit.store.subscribeHistory([ID], 'page', () => {});
+  await until(() => visit.store.view(ID).phase === 'verified', 'verified');
+  assert.equal(visit.readings.get(ID).length, 1, 'the page’s read, kept');
+  page();
+  // A later visit's list, two hours on: kept, its page having kept readings.
+  const later = { ...ANSWERS.ledger, block: ANSWERS.ledger.block + 72_000, timestamp: ANSWERS.ledger.timestamp + 7_200 };
+  const svc = service({ ...ANSWERS, ledger: later });
+  const { store, readings } = storeWith({ storage, svc, pastReadings: () => held });
   const stop = store.subscribeHistory([ID], 'list', () => {});
   await until(() => store.view(ID).phase === 'verified', 'verified');
-  assert.deepEqual(readings.get(ID).map((one) => one.block), [ANSWERS.ledger.block], 'the list’s ledger answer, kept');
+  assert.equal(readings.get(ID).at(-1).block, later.block, 'the list’s ledger answer, kept');
+  assert.equal(readings.get(ID).length, 2);
   const first = store.view(ID);
   // A read a little after the mint: before the first compound, a fraction of what it settled.
   const timeOf = (block) => ANSWERS.ledger.timestamp + Math.floor((block - ANSWERS.ledger.block) / 10);
@@ -546,4 +564,41 @@ test('a ledger request that hangs is dropped after its wait and asked again on t
   assert.equal(svc.ledgers.length, 2, 'asked again');
   assert.ok(time.pending.filter((entry) => entry.kind === 'timer' && entry.ms === LEDGER_WAIT_MS).every((entry) => entry.cancelled), 'the answered request’s wait is stopped');
   stop();
+});
+
+// 2026-10-02 (review of the chart's tabs, finding 1: the preview's log showed visits that asked no ledger, and a log line
+// says nothing of what a ledger answered): each id's ledger requests this visit and how the last one ended, for the
+// screens' data attributes (data-ledger-asks, data-ledger-last); the same Map while nothing changed.
+test('traces: each id’s ledger requests this visit and how the last ended (exact, a why, a failure, unanswered); the same Map while nothing changed', async () => {
+  const { store, svc, time } = storeWith();
+  const none = store.traces([ID]);
+  assert.deepEqual([...none], [[ID, { asks: 0, last: null }]], 'nothing asked yet');
+  assert.equal(store.traces([ID]), none, 'the same Map');
+  // A first request that fails, then the ladder's: the failure, then exact.
+  svc.scripted.push({ ok: false, failure: 'rate_limited', retryAfterMs: 0 });
+  const heard = [];
+  const stop = store.subscribeHistory([ID], 'page', () => heard.push(store.traces([ID]).get(ID)));
+  await until(() => store.traces([ID]).get(ID).last === 'rate_limited', 'the failure');
+  assert.deepEqual(store.traces([ID]).get(ID), { asks: 1, last: 'rate_limited' });
+  assert.ok(heard.some((trace) => trace.asks === 1 && trace.last === null), 'told as it is sent');
+  assert.equal(time.fire('later', RETRY_MS[0]), 1);
+  await until(() => store.view(ID).phase === 'verified', 'verified');
+  const exact = store.traces([ID]);
+  assert.deepEqual(exact.get(ID), { asks: 2, last: 'exact' });
+  assert.equal(store.traces([ID]), exact, 'the same Map while nothing changed');
+  stop();
+  // A ledger that cannot measure this position: its why. A request that never answers: unanswered.
+  const other = storeWith();
+  other.svc.scripted.push({ ok: true, value: { ...ANSWERS.ledger, positions: ANSWERS.ledger.positions.map((one) => ({ ...one, exact: false, why: 'manual' })) }, bytes: 10 });
+  const page = other.store.subscribeHistory([ID], 'page', () => {});
+  await until(() => other.store.traces([ID]).get(ID).last === 'manual', 'its why');
+  page();
+  const hung = storeWith();
+  hung.svc.postLedger = () => new Promise(() => {});
+  const shown = hung.store.subscribeHistory([ID], 'list', () => {});
+  await settle();
+  assert.equal(hung.time.fire('timer', LEDGER_WAIT_MS), 1);
+  await until(() => hung.store.traces([ID]).get(ID).last === 'unanswered', 'unanswered');
+  assert.deepEqual(hung.store.traces([ID]).get(ID), { asks: 1, last: 'unanswered' });
+  shown();
 });

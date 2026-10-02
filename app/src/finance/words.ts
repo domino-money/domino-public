@@ -5,9 +5,10 @@
 
 /**
  * The button each owner screen reads its deployment and the wallet with: Setup's owner recovery, the automation page's
- * one action (2026-09-24), New position's, and a sequence's Turn on and Pause (2026-09-25).
+ * one action (2026-09-24), New position's, a sequence's Turn on and Pause (2026-09-25), and the withdrawal of the fees
+ * waiting in a vault (2026-10-02, components/positions/FeeReserves.tsx).
  */
-export type ReadControl = 'Read my operations' | 'Set up automation' | 'Create position' | 'Turn on' | 'Pause'
+export type ReadControl = 'Read my operations' | 'Set up automation' | 'Create position' | 'Turn on' | 'Pause' | 'Withdraw to wallet'
 
 /** A sentence, or one that names the screen's own read button, since each screen names it differently. */
 const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> = {

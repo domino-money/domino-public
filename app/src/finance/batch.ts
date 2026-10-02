@@ -172,12 +172,28 @@ export async function offerBatch(request: Request, wallet: BatchWallet, key: Hex
  * (5730): the chain decides then.
  */
 export async function batchCallsStatus(request: Request, id: string): Promise<number | null> {
+  return (await batchCallsState(request, id))?.status ?? null
+}
+
+/**
+ * The wallet's status code for a batch, as batchCallsStatus reads it, with the transaction that carried it (2026-10-02,
+ * review of the fee withdrawal, finding 4: a receipt names its transaction): the hash every receipt the wallet lists
+ * names; null when it lists none, or receipts that name different ones. From the same one request.
+ */
+export async function batchCallsState(request: Request, id: string): Promise<{ status: number; transactionHash: Hex | null } | null> {
   if (id === '') return null
+  let reply: { status?: unknown; receipts?: unknown } | null
   try {
-    const reply = await request('wallet_getCallsStatus', [id]) as { status?: unknown } | null
-    return reply && typeof reply.status === 'number' ? reply.status : fail('invalid_wallet_reply')
+    reply = await request('wallet_getCallsStatus', [id]) as { status?: unknown; receipts?: unknown } | null
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code !== 5730) throw error
     return null
   }
+  if (!reply || typeof reply.status !== 'number') return fail('invalid_wallet_reply')
+  const hashes = Array.isArray(reply.receipts)
+    ? reply.receipts.map(receipt => (receipt && typeof receipt === 'object' ? (receipt as { transactionHash?: unknown }).transactionHash : null))
+    : []
+  const named = hashes.length > 0 && hashes.every(hash => typeof hash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(hash))
+    && new Set(hashes.map(hash => String(hash).toLowerCase())).size === 1
+  return { status: reply.status, transactionHash: named ? String(hashes[0]).toLowerCase() as Hex : null }
 }

@@ -286,7 +286,9 @@ test('the custody page opens with the approved sentence, word for word, then say
   // 2026-10-01 (audit E18): a stoppable receipt's How to pause lands here, so the section says where Pause is, and that the
   // others have no button on this site.
   assert.match(control('Pause').note, /Your position’s page has the button, no sign-in needed\./);
-  assert.match(sectionText(custody, 'pause-revoke-withdraw'), /Only Pause has a button here; your wallet makes the others, for example on the block explorer\./);
+  // Changed on purpose 2026-10-02 (rugged97's spec rev3 §2.13): the fees waiting in a vault have Withdraw to wallet, on
+  // Positions and on the position's page, so fee withdrawals have a button too. One word fewer (the page is at its 480).
+  assert.match(sectionText(custody, 'pause-revoke-withdraw'), /Pause and fee withdrawals have buttons here; your wallet makes the rest on the block explorer\./);
   assert.match(sectionText(page('wallet'), 'sign-in'), /This request does not authorize transactions or automation\./);
 
   // The owner kept the lead; the operator section opens by squaring it with an operator that can act and pause.
@@ -773,7 +775,8 @@ test('the docs source stays inside its budget in the entry bundle', (t) => {
   const text = files.map((file) => readFileSync(join(dir, file), 'utf8')).join('\n');
   const size = gzipSync(text, { level: 9 }).length;
   // Changed on purpose 2026-10-02 (the fee chart's periods back): 24,000 -> 24,100 for Privacy's sentence on who reads a
-  // past moment (an archive node, by the position's number); measured at 24,040 bytes.
+  // past moment (an archive node, by the position's number); measured at 24,040 bytes. 24,059 after the tabs review's
+  // finding 2 (2026-10-02: the past moment's archive provider is outside Domino), within the same budget.
   t.diagnostic(`src/lib/docs: ${files.length} files, ${Buffer.byteLength(text)} bytes, ${size} bytes gzip (budget 24100)`);
   assert.ok(size <= 24_100, `the docs source is ${size} bytes gzip, over the 24,100 byte budget: move the docs to a lazy chunk (docs-design.md 9.3)`);
 });
@@ -930,11 +933,16 @@ test('the 2026-10 package: one-sided ranges, the history read at chosen blocks, 
   // (components/positions/useAprPrefetch.ts, off for a viewed address), so "only once that page is open" was wrong.
   // Changed on purpose 2026-10-01 (RPC-SPEC §7.6, the owner's rule: nothing is read from a public RPC): the chain is read by
   // Domino's own servers from Domino's own node; the browser asks only Domino, and no public node sees the address.
-  assert.match(sectionText(privacy, 'who-sees'), /Your positions, their fees and their history are read by Domino’s own servers, from Domino’s own Robinhood Chain node\. Your browser asks only Domino, so no other node sees your address\. Your wallet signs and sends through its own connection to the chain\./);
+  // Changed on purpose 2026-10-02 (review of the chart's tabs, finding 2): "as the chain has them now", so it does not read
+  // as covering the past moments below.
+  assert.match(sectionText(privacy, 'who-sees'), /Your positions, their fees and their history, as the chain has them now, are read by Domino’s own servers, from Domino’s own Robinhood Chain node\. Your browser asks only Domino, so no other node sees your address\. Your wallet signs and sends through its own connection to the chain\./);
   assert.match(sectionText(privacy, 'who-sees'), /Token pictures and prices come from a public market data provider\. Like any site it sees your internet address, never your wallet’s\./);
   // 2026-10-02 (the fee chart's periods back): a moment past the node's ~25 minutes of state is read through Domino's read
-  // service (read-v1 nft-positions at a block), whose gateway asks its archive node by the position's number alone.
-  assert.match(sectionText(privacy, 'who-sees'), /A moment over half an hour old comes from Domino’s read service, which asks an archive node for it by the position’s number, never your address\./);
+  // service (read-v1 nft-positions at a block). Changed on purpose the same day (review of the chart's tabs, finding 2):
+  // rugged97's VM reads state older than ~25 minutes from Alchemy (RUGGED_RPC_SITE_2026-10-02.md §4), a provider outside
+  // Domino, which is given the position's number and the block alone.
+  assert.match(sectionText(privacy, 'who-sees'), /A position’s fees at a past moment, for its chart, are read by Domino’s read service through an archive provider outside Domino\. It is given only the position’s number and the block, never your address\./);
+  assert.doesNotMatch(sectionText(privacy, 'who-sees'), /archive node|half an hour/);
   assert.match(readFileSync(join(APP, 'src/lib/fees/spawn.ts'), 'utf8'), /readWithin\(source, 'nft-positions', \{ tokenIds: \[id\], blockNumber: block \}/, 'one position, by its number, at one block');
   assert.doesNotMatch(textOf(privacy), /public nodes?|only once that page is open/);
   // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the rows' ledgers, still for your own wallet only.

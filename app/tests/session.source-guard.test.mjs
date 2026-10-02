@@ -184,7 +184,9 @@ test('the wallet feature is reached only through the build flag', () => {
   // Changed on purpose (owner, 2026-09-25): a sequence's Turn on and Pause (components/positions/SequenceSwitch.tsx) sign
   // through the wallet and ask the automation service through the session; only the owner's actions and the automation
   // page's success, both wallet feature code already, show it.
-  const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits|SequenceSwitch)(\.tsx)?$/;
+  // Changed on purpose (2026-10-02, rugged97's spec rev3 §2.13): the fees waiting in a vault and their withdrawal
+  // (components/positions/FeeReserves.tsx) sign through the wallet too; Positions and a position's page open it lazily.
+  const feature = /^(session|wallet|finance|components\/wallet)\/|^screens\/(Setup|AdvancedSetup|WalletDeposit|Performance|Execution|Sequence|SequenceCreate|PositionLab)\.tsx$|^components\/create\/(DepositAmounts|CreatePosition)(\.tsx)?$|^components\/positions\/(PositionActions|HeldDeposits|SequenceSwitch|FeeReserves)(\.tsx)?$/;
   // The onboarding previews and the deposit consumer (#38, #40/#44) read the
   // session through session/port.ts, and the preview screen also through
   // session/livePort.ts. Their lab screens live in chunks of the consumer-test
@@ -199,8 +201,9 @@ test('the wallet feature is reached only through the build flag', () => {
   // Changed on purpose (owner, 2026-09-24): a position's page opens the owner's Collect fees and Close position, and
   // Positions opens the held deposits with their refund, each as a lazy chunk behind the flag (asserted below). Named
   // here so that the importer check admits them once the position-actions branch makes the two files wallet feature code.
-  const POSITION_CHUNKS = { 'screens/PositionDetail.tsx': '../components/positions/PositionActions', 'screens/Positions.tsx': '../components/positions/HeldDeposits' };
-  const positionsOpens = (path, spec) => POSITION_CHUNKS[path] === spec;
+  // Changed on purpose 2026-10-02: both also open the fees waiting in a vault (FeeReserves), the same way.
+  const POSITION_CHUNKS = { 'screens/PositionDetail.tsx': ['../components/positions/PositionActions', '../components/positions/FeeReserves'], 'screens/Positions.tsx': ['../components/positions/HeldDeposits', '../components/positions/FeeReserves'] };
+  const positionsOpens = (path, spec) => POSITION_CHUNKS[path]?.includes(spec) ?? false;
   // Changed on purpose (2026-09-28, the owner's phone: Your positions stayed on its loading rows while the RPC refused his
   // address): the list, itself opened only behind the flag (Positions.tsx), keeps its display copy with the private
   // cards' keep, readKept and drop (finance/privateCards.ts), a module that names no wallet code (asserted here).
@@ -234,7 +237,7 @@ test('the wallet feature is reached only through the build flag', () => {
     assert.match(code, /export const preloadCreateControl = __DOMINO_WALLET_SESSION__\s*\?\s*\(\)\s*=>\s*void import\('\.\/DepositAmounts'\)/, `${path} asks Create position's chunk ahead only behind the flag`);
     assert.deepEqual([mentions, lazy], [2, 2], `${path} names Create position's chunk only in its two import() calls`);
   }
-  for (const [path, spec] of Object.entries(POSITION_CHUNKS)) {
+  for (const [path, spec] of Object.entries(POSITION_CHUNKS).flatMap(([path, specs]) => specs.map((spec) => [path, spec]))) {
     const { code } = ALL.find((file) => file.path === path);
     const quoted = spec.replaceAll('.', '\\.').replaceAll('/', '\\/');
     // 2026-10-01 (D1): the loader may be wrapped in recovering() (lib/staleRelease.ts); the same import, behind the same flag.
@@ -249,10 +252,11 @@ test('the wallet feature is reached only through the build flag', () => {
 // chunk, whichever screen opens them does it lazily behind the wallet flag, naming each once, so a build without the
 // wallet never loads them. Type-only imports are erased and are not an opening. Their lab screen is test-only.
 test('the position actions are opened only lazily behind the wallet flag, and their lab only in test builds', () => {
-  const target = /^components\/positions\/(PositionActions|HeldDeposits)$/;
+  // Changed on purpose 2026-10-02: and the fees waiting in a vault, with their withdrawal (FeeReserves).
+  const target = /^components\/positions\/(PositionActions|HeldDeposits|FeeReserves)$/;
   const openers = [];
   for (const { path, code } of ALL) {
-    if (/^components\/positions\/(PositionActions|HeldDeposits)\.tsx$/.test(path)) continue;
+    if (/^components\/positions\/(PositionActions|HeldDeposits|FeeReserves)\.tsx$/.test(path)) continue;
     const values = code.replace(/^import\s+type\s[^;]*?from\s*'[^']+';?$/gm, '');
     for (const spec of new Set(specifiers(values))) {
       if (!spec.startsWith('.') || !target.test(posix.normalize(posix.join(posix.dirname(path), spec)).replace(/\.tsx?$/, ''))) continue;

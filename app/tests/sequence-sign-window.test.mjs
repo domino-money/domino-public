@@ -23,7 +23,10 @@ async function loadFakeChain() {
   const marker = 'holdNext: () => { hold = true; }, simulate: calls => batchResults(calls).results };\n}';
   const end = source.indexOf(marker, start);
   assert.ok(start >= 0 && end > start, 'the finance suite still defines fakeSequenceChain between the audit harness markers');
-  const header = "import { parseAbi, concatHex, keccak256, encodeAbiParameters, parseAbiParameters, stringToHex, zeroAddress, decodeFunctionData, encodeFunctionResult, numberToHex } from 'viem';\n";
+  // 2026-10-02 (review of the fee withdrawal): the fake chain also answers the vaults' own records (eth_getLogs), refused
+  // past the chain RPC's limits as the suite's other fakes are.
+  const header = "import { parseAbi, concatHex, keccak256, encodeAbiParameters, parseAbiParameters, stringToHex, zeroAddress, decodeFunctionData, encodeFunctionResult, numberToHex } from 'viem';\n"
+    + `import { logLimitError } from ${JSON.stringify(pathToFileURL(join(APP, 'tests/support/log-limits.mjs')).href)};\n`;
   const body = source.slice(start, end + marker.length).replace('function fakeSequenceChain', 'export function fakeSequenceChain');
   const file = join(APP, '.test-build', 'fake-sequence-chain.mjs');
   mkdirSync(join(APP, '.test-build'), { recursive: true });
