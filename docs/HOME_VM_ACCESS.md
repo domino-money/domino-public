@@ -62,7 +62,7 @@ ssh -F ~/.ssh/<operator>_vm_config <vm-alias> 'id -un; hostname; sudo -n whoami'
 # 3. The units that are supposed to be running.
 ssh -F ~/.ssh/<operator>_vm_config <vm-alias> \
   'systemctl is-active domino-read domino-gateway domino-continuous-egress \
-   domino-queue-worker.timer domino-catalogue-follower.timer'
+   domino-queue-worker.timer domino-catalogue-follower.timer domino-activity-follow.timer'
 ```
 
 `sudo -n whoami` answering `root` is expected: the installer grants the operator
@@ -78,7 +78,7 @@ account against the provisioning record before changing anything.
 | Provider credential | `<release>/backend/runtime/providers.json`, mode 600, owned by the indexer account |
 | Database descriptor | `<release>/backend/runtime/catalogue-db.json`, mode 600, owned by the account that reads it |
 | Continuous egress policy | `/etc/domino/continuous-reads/policy.nft` (and its dated backup); rendered whole, with each unit's activation drop-in, by `scripts/staging/continuous_egress_policy.py` — see [continuous egress](CONTINUOUS_EGRESS.md) |
-| Followers and workers | `domino-queue-worker.timer`, `domino-catalogue-follower.timer` |
+| Followers and workers | `domino-queue-worker.timer`, `domino-catalogue-follower.timer`, `domino-activity-follow.timer` (pools holding a Domino position) |
 | Database | Unix socket only, private port, database `domino_catalogue`; administrative role reached with `sudo -u <db-admin-os-user> psql -h <socket> -p <port> -U <db-admin-role> -d domino_catalogue` |
 
 Read-only checks that answer most questions:

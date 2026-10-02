@@ -31,6 +31,9 @@ UNITS=tuple(f'domino-public-{lane}.service' for lane in ('current','history','ac
     'domino-public-data.target',
     # Installed, never enabled here: the featured-pools shadow starts only on `systemctl enable`.
     'domino-featured.service',
+    # Pool activity for every pool holding a Domino position; the target wants its timer.
+    'domino-activity-follow.service',
+    'domino-activity-follow.timer',
     'domino-queue-worker.service.d/90-public-data.conf',
     'domino-catalogue-follower.service.d/90-public-data.conf',
     'domino-queue-worker.timer.d/90-public-data.conf',

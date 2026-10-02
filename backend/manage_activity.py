@@ -12,7 +12,9 @@ holds the pool's Initialize event, or `--initialization-anchor POOLID=BLOCK`
 supplies the block of a pool the catalogue only knows as a seeded hint.
 `--follow` keeps the stored head `--lag` blocks behind the chain head; the
 pool-activity read calls coverage older than 120 s stale, so the default lag is
-100 blocks on a one-second chain.
+100 blocks on a one-second chain. `--follow --domino-positions` adds every pool
+holding a Domino position (the Setup contract's SetupMinted events) on each run
+and registers those the catalogue can anchor (domino-activity-follow.timer).
 """
 import argparse
 from dataclasses import asdict
@@ -26,6 +28,7 @@ from activity_store import PgActivity
 from catalogue import configured_writer_catalogue
 from catalogue_indexer import INITIALIZE_TOPIC, IndexRpc, decode_initialize
 from discovery import POOL_MANAGER, DataError, DiscoveryReader, bytes32
+from domino_positions import MAX_POSITIONS, position_pools
 from followers import follow_many
 from indexer_io import MAX_INDEXER_SPAN, AdaptiveSpan, HeaderBudget, RequestBudget, indexer_transport
 from local_config import load_config
@@ -142,6 +145,27 @@ def ensure_anchor(catalogue,rpc,url,pool_id,*,search_from,span,max_spans,head_nu
     return anchor,'initialize_log'
 
 
+def domino_position_targets(store,worker,positions):
+    """Which pools holding a Domino position to follow, registering any the catalogue can anchor.
+
+    A pool already registered is followed. One whose Initialize event the
+    catalogue holds is registered now. One it knows only as a hint, or not at
+    all, is reported until an operator registers it with its Initialize block
+    (backend/README.md), as is a registration the writer lock deferred.
+    """
+    followed,registered_now,not_registered=[],[],[]
+    for pool_id in sorted(positions):
+        if store.anchor(pool_id) is None:
+            try:
+                worker().register(pool_id)
+            except DataError as error:
+                not_registered.append({'poolId':pool_id,'reason':str(error)})
+                continue
+            registered_now.append(pool_id)
+        followed.append(pool_id)
+    return followed,registered_now,not_registered
+
+
 def write_report(path,report):
     path.parent.mkdir(parents=True,exist_ok=True)
     with path.open('x') as stream:
@@ -207,6 +231,11 @@ def main():
     parser.add_argument('--search-direction',choices=('reverse','forward'),default='reverse',
                         help='scan the anchor window from the head (default) or from its start')
     parser.add_argument('--follow',action='store_true')
+    parser.add_argument('--domino-positions',action='store_true',dest='domino_positions',
+                        help='with --follow: also every pool holding a Domino position (the Setup '
+                             "contract's SetupMinted events), registering those the catalogue can anchor")
+    parser.add_argument('--quiet',action='store_true',
+                        help='with --follow: print only the final report, not every pass')
     parser.add_argument('--status',action='store_true',
                         help='Read persisted operator status from PostgreSQL only; no RPC or current-data claim')
     parser.add_argument('--output',type=Path)
@@ -406,7 +435,21 @@ def main():
                               'financialTransaction':False}))
             return 0 if all(item['status']!='not_registered' for item in results) else 1
         if args.follow:
+            positions=None
+            if args.domino_positions:
+                # The head, the Setup contract's logs and one key read per position.
+                rpc=IndexRpc(url,transport=indexer_transport(60,budget=rpc_budget),max_requests=MAX_POSITIONS+16)
+                positions=position_pools(rpc,DiscoveryReader(rpc).snapshot())
+                followed,registered_now,not_registered=domino_position_targets(store,worker,positions)
+                pool_ids=sorted(set(pool_ids)|set(followed))
+                positions={'pools':len(positions),'positions':sum(len(ids) for ids in positions.values()),
+                           'followed':len(followed),'registeredNow':registered_now,
+                           'notRegistered':not_registered}
             if not pool_ids:
+                if positions is not None:
+                    print(json.dumps({'schemaVersion':1,'mode':'core_pool_activity_follower','chainId':4663,
+                                      'dominoPositions':positions,'follow':None,'financialTransaction':False}))
+                    return 0
                 raise DataError('pool_id_required')
             if not 1<=args.max_steps<=50 or not 1<=args.span<=MAX_INDEXER_SPAN:
                 raise DataError('invalid_activity_bounds')
@@ -441,12 +484,14 @@ def main():
                                 lag=args.lag,max_passes=args.max_passes,poll_seconds=args.poll_seconds,
                                 max_seconds=args.max_seconds,
                                 max_consecutive_failures=args.max_consecutive_failures,
-                                should_stop=stop,on_pass=lambda step: print(json.dumps(step),flush=True))
+                                should_stop=stop,
+                                on_pass=None if args.quiet else lambda step: print(json.dumps(step),flush=True))
             report={'schemaVersion':1,'mode':'core_pool_activity_follower','chainId':4663,
                     'capacityProfile':args.capacity_profile,'readFreshnessSeconds':READ_FRESHNESS_SECONDS,
                     'span':span.as_dict(),'parallelWalks':args.parallel_walks,
                     'headerCalls':header_budget.calls,'headerBudget':args.max_header_calls,
                     'follow':summary,'financialTransaction':False}
+            if positions is not None:report['dominoPositions']=positions
             if args.output is not None:write_report(args.output,report)
             else:print(json.dumps(report))
             return 0

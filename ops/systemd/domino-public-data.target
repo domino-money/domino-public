@@ -1,7 +1,7 @@
 [Unit]
 Description=Domino persistent public data collectors
 Requires=domino-public-current.service domino-public-history.service domino-public-accounting.service
-Wants=domino-queue-worker.timer domino-catalogue-follower.timer
+Wants=domino-queue-worker.timer domino-catalogue-follower.timer domino-activity-follow.timer
 After=network-online.target domino-continuous-egress.service
 BindsTo=domino-continuous-egress.service
 

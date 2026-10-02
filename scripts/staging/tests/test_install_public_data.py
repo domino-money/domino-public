@@ -49,7 +49,7 @@ class PublicInstallTests(unittest.TestCase):
         planned=self.plan()
         self.assertEqual(planned['runtime'],str(self.queue/'release/backend/runtime'))
         self.assertEqual(planned['previousCurrent'],None)
-        self.assertEqual(len(planned['units']),9)
+        self.assertEqual(len(planned['units']),11)
         for name,value in planned['units'].items():
             self.assertNotIn('@PUBLIC_ROOT@',value)
             self.assertNotIn('@QUEUE_ROOT@',value)
@@ -67,6 +67,34 @@ class PublicInstallTests(unittest.TestCase):
             self.assertIn(field,unit)
         target=self.plan()['units']['domino-public-data.target']
         self.assertNotIn('domino-featured',target)
+
+    def test_the_domino_pool_follower_runs_every_minute_under_the_public_data_target(self):
+        units=self.plan()['units']
+        service=units['domino-activity-follow.service']
+        for field in ('Type=oneshot','User=domino-write','SupplementaryGroups=domino-db','ProtectSystem=strict',
+                      'BindsTo=domino-continuous-egress.service','PartOf=domino-public-data.target',
+                      'manage_activity.py --follow --domino-positions --quiet','--max-seconds 35',
+                      'TimeoutStartSec=90',f'WorkingDirectory={self.base}/current/backend',
+                      f'ExecStart={self.queue}/venv/bin/python -B manage_activity.py'):
+            self.assertIn(field,service)
+        timer=units['domino-activity-follow.timer']
+        self.assertEqual([line for line in timer.splitlines() if line.startswith(('On','Unit='))],
+                         ['OnCalendar=minutely','Unit=domino-activity-follow.service'])
+        self.assertIn('PartOf=domino-public-data.target',timer)
+        wants=[line for line in units['domino-public-data.target'].splitlines() if line.startswith('Wants=')]
+        self.assertEqual(wants,['Wants=domino-queue-worker.timer domino-catalogue-follower.timer '
+                                'domino-activity-follow.timer'])
+
+    def test_a_hand_installed_follower_is_replaced_and_restored_by_rollback(self):
+        # 2 Oct 2026: the follower ran from hand-installed units before this release carried them.
+        manual={name:f'hand-installed {name}\n'.encode() for name in
+                ('domino-activity-follow.service','domino-activity-follow.timer')}
+        for name,value in manual.items():(self.systemd/name).write_bytes(value)
+        planned=self.plan()
+        installer.apply(self.files,planned)
+        for name in manual:self.assertEqual((self.systemd/name).read_text(),planned['units'][name])
+        installer.rollback(COMMIT)
+        for name,value in manual.items():self.assertEqual((self.systemd/name).read_bytes(),value)
 
     def test_apply_preserves_rollback_and_only_repoints_named_files(self):
         old=self.systemd/'domino-queue-worker.service.d/90-public-data.conf'

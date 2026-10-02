@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Domino pool activity follower every minute
+PartOf=domino-public-data.target
+
+[Timer]
+# A calendar trigger always has a next elapse, whatever happened to the last
+# run or to a reboot (#278). The public-data target wants this timer.
+OnCalendar=minutely
+AccuracySec=1s
+RandomizedDelaySec=2s
+Unit=domino-activity-follow.service
