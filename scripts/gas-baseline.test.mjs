@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { compare, formatComparison, formatSnapshot, listSuites, parseSnapshot } from './gas-baseline.mjs';
+import { compare, declaredContracts, formatComparison, formatSnapshot, inPart, listSuites, mergeUpdate, ownedContracts, parseSnapshot, restrictTo } from './gas-baseline.mjs';
 
 const SNAPSHOT = `DominoPriceGuardV4Test:testOnlyThePublisherPublishesOrRevokes() (gas: 61234)
 DominoPriceGuardV4Test:testAnExpiredObservationIsRefusedEvenInsideItsBlockWindow() (gas: 40100)
@@ -57,4 +57,25 @@ test('suites are every test file under contracts/test except the vendored offici
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
+});
+
+test('a part is the V2 suites or everything else, and an unknown part is refused', () => {
+  const suites = ['test/A.t.sol', 'test/reference/R.t.sol', 'test/v2/zap/Z.t.sol', 'test/v2/DominoV2Types.t.sol', 'test/v2x/X.t.sol'];
+  assert.deepEqual(suites.filter((suite) => inPart(suite, 'v2')), ['test/v2/zap/Z.t.sol', 'test/v2/DominoV2Types.t.sol']);
+  assert.deepEqual(suites.filter((suite) => inPart(suite, 'v1')), ['test/A.t.sol', 'test/reference/R.t.sol', 'test/v2x/X.t.sol']);
+  assert.equal(suites.every((suite) => inPart(suite, undefined)), true);
+  assert.throws(() => inPart('test/A.t.sol', 'v3'), /unknown part v3/);
+});
+
+test('a part compares and updates only the test contracts its suites declare', () => {
+  const source = 'pragma solidity 0.8.26;\nabstract contract Base {}\ncontract ZapTest is Base {\n  function testA() public {}\n}\n// contract NotDeclared\n';
+  assert.deepEqual(declaredContracts(source), ['Base', 'ZapTest']);
+  const owned = ownedContracts(['test/v2/Z.t.sol'], () => source);
+  const baseline = { 'ZapTest:testA()': 100, 'ZapTest:testGone()': 50, 'VaultV1Test:testB()': 70 };
+  const restricted = restrictTo(baseline, owned);
+  assert.deepEqual(restricted, { 'ZapTest:testA()': 100, 'ZapTest:testGone()': 50 });
+  // The V1 entry is neither reported gone nor compared; this part's gone test still is.
+  assert.deepEqual(compare(restricted, { 'ZapTest:testA()': 100 }).removed, ['ZapTest:testGone()']);
+  assert.deepEqual(mergeUpdate(baseline, { 'ZapTest:testA()': 90, 'ZapTest:testNew()': 10 }, owned),
+    { 'VaultV1Test:testB()': 70, 'ZapTest:testA()': 90, 'ZapTest:testNew()': 10 });
 });

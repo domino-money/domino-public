@@ -9,6 +9,11 @@
 // line. `--check` fails on any test whose gas rose above its baseline; tests
 // that are new, gone, or cheaper are reported and pass, so adding a test does
 // not need a baseline update but a regression does need a deliberate one.
+//
+// `--part v1|v2` limits a run to one half of the suites, as CI's two Contracts
+// jobs do: v2 is everything under contracts/test/v2, v1 the rest. A part only
+// compares, and only updates, the entries of the test contracts its own suites
+// declare, so the other half's entries are neither reported gone nor dropped.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -31,6 +36,37 @@ export function listSuites(directory = path.join(root, 'contracts', 'test')) {
   };
   walk(directory);
   return found;
+}
+
+export const PARTS = Object.freeze(['v1', 'v2']);
+
+/** Whether a suite path (relative to contracts/) belongs to a part; no part means every suite. */
+export function inPart(suite, part) {
+  if (part === undefined) return true;
+  if (!PARTS.includes(part)) throw new Error(`unknown part ${part}; use ${PARTS.join(' or ')}`);
+  const v2 = suite.split(path.sep).join('/').startsWith('test/v2/');
+  return part === 'v2' ? v2 : !v2;
+}
+
+/** The contract names a Solidity source declares; snapshot keys start with the test contract's name. */
+export function declaredContracts(source) {
+  return [...source.matchAll(/^\s*(?:abstract\s+)?contract\s+([A-Za-z0-9_]+)/gm)].map((match) => match[1]);
+}
+
+/** Every contract name the given suites declare. */
+export function ownedContracts(suites, read = (suite) => readFileSync(path.join(root, 'contracts', suite), 'utf8')) {
+  return new Set(suites.flatMap((suite) => declaredContracts(read(suite))));
+}
+
+/** The entries whose test contract is in `owned`. */
+export function restrictTo(entries, owned) {
+  return Object.fromEntries(Object.entries(entries).filter(([key]) => owned.has(key.split(':')[0])));
+}
+
+/** A part's update: the other part's entries stay, this part's are replaced by the run. */
+export function mergeUpdate(existing, current, owned) {
+  const kept = Object.fromEntries(Object.entries(existing).filter(([key]) => !owned.has(key.split(':')[0])));
+  return { ...kept, ...current };
 }
 
 /** Parse a snapshot file into {'Suite:test()': gas}; fuzz and invariant lines have no `(gas: N)` and are skipped. */
@@ -87,15 +123,21 @@ async function main(argv) {
   const update = argv.includes('--update');
   const check = argv.includes('--check');
   if (update === check) throw new Error('pass exactly one of --check or --update');
+  const at = argv.indexOf('--part');
+  const part = at === -1 ? undefined : argv[at + 1];
+  const suites = listSuites().filter((suite) => inPart(suite, part));
+  const owned = part === undefined ? undefined : ownedContracts(suites);
   const binary = await resolveForge();
   const current = {};
-  for (const suite of listSuites()) Object.assign(current, snapshotSuite(binary, suite));
+  for (const suite of suites) Object.assign(current, snapshotSuite(binary, suite));
   if (update) {
-    writeFileSync(BASELINE, formatSnapshot(current));
-    console.log(`Gas baseline written: ${Object.keys(current).length} deterministic tests in ${path.relative(root, BASELINE)}.`);
+    const next = owned ? mergeUpdate(parseSnapshot(readFileSync(BASELINE, 'utf8')), current, owned) : current;
+    writeFileSync(BASELINE, formatSnapshot(next));
+    console.log(`Gas baseline written: ${Object.keys(current).length} deterministic tests${part ? ` (part ${part})` : ''} in ${path.relative(root, BASELINE)}.`);
     return 0;
   }
-  const baseline = parseSnapshot(readFileSync(BASELINE, 'utf8'));
+  const recorded = parseSnapshot(readFileSync(BASELINE, 'utf8'));
+  const baseline = owned ? restrictTo(recorded, owned) : recorded;
   const result = compare(baseline, current);
   console.log(formatComparison(result));
   return result.ok ? 0 : 1;

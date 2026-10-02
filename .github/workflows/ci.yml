@@ -270,22 +270,25 @@ jobs:
         if: always()
         run: python backend/dev_postgres.py stop
   contracts:
-    name: Contracts
+    name: Contracts (${{ matrix.part }})
     runs-on: ubuntu-24.04
-    # A cold run compiles every per-suite closure. It took 23 minutes when a
-    # 20-minute limit cancelled it (issue #145). Run 36927967030 (#284) spent
-    # 35 minutes on the 22 V1 suites alone and hit the 35-minute limit before
-    # the V2 suites and the gas baseline. A .sol change now restores the newest
-    # cache and rebuilds only what it invalidates; a cold run remains when the
-    # compiler inputs change or no cache exists, hence the headroom.
-    # Cold, the 38 suites of 3b1af26 need 45.7-47.4 min on CI: the 22 V1 suites
-    # took 33.4-35.1 min in cold runs 36937969488, 36934135396 and 36927967030,
-    # and the 13 V2 F1 suites 12.2 min on their first compile (runs 36961431939
-    # and 36959460671). A local cold run of all 38 (23.1 min) agrees: CI took
-    # 1.94-2.07 times as long per suite. With setup and the gas baseline the job
-    # needs 46.5-48.2 min, too close to 50. The F2 zap (#294) and F3 vault (#295)
-    # suites add about 9 min each, measured the same way: 75 minutes.
+    # Two jobs in parallel, each with its own Forge cache: v1 runs every suite
+    # outside contracts/test/v2, v2 the V2 suites and the V2 export check. One
+    # job no longer fit a cold run: the 22 V1 suites alone took 33.4-35.1 min
+    # cold on CI (runs 36937969488, 36934135396, 36927967030), and the V2
+    # suites since F1-F4 add about 35 min more (F1b 6.8, F1c 5.4, F2 and F3
+    # about 9 each, measured on their first compiles), so the single job was
+    # near its 75-minute limit before any integration suite. Split, each half
+    # stays near 35-40 minutes cold; a cold run follows a compiler change or a
+    # missing cache. The limit stays at 75 per half (issue #145 for the
+    # original one-closure-per-suite layout).
     timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [v1, v2]
+    env:
+      PART: ${{ matrix.part }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -300,12 +303,12 @@ jobs:
             contracts/out
           # Exact source tree first; otherwise the newest cache from the same
           # compiler and settings, which scripts/forge-cache.mjs prunes below.
-          # Each job keeps its own cache: with one shared key the Backend, which
-          # builds three closures and finishes first, saved its subset and the
-          # Contracts job could not save its full set (run 36934135396, #285).
-          # The last fallback is that shared cache.
-          key: forge-contracts-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
+          # Each half keeps its own cache (one shared key lets the job that
+          # finishes first save its subset, run 36934135396, #285). The
+          # fallbacks are the single Contracts job's cache and the shared one.
+          key: forge-contracts-${{ matrix.part }}-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
           restore-keys: |
+            forge-contracts-${{ matrix.part }}-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
             forge-contracts-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
             forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
       - run: npm ci --no-audit --no-fund
@@ -318,7 +321,12 @@ jobs:
       - name: Run the contract suites, one dependency closure at a time
         run: |
           set -e
-          for suite in $(find contracts/test -name '*.t.sol' | sort); do
+          if [ "$PART" = v2 ]; then
+            suites=$(find contracts/test/v2 -name '*.t.sol' | sort)
+          else
+            suites=$(find contracts/test -name '*.t.sol' -not -path 'contracts/test/v2/*' | sort)
+          fi
+          for suite in $suites; do
             echo "::group::${suite}"
             node scripts/test-contracts.mjs --match-path "${suite#contracts/}"
             echo "::endgroup::"
@@ -326,11 +334,13 @@ jobs:
       # The V2 interface freeze (docs/v2/F0_INTERFACES.md): the committed ABIs,
       # selectors and the generated interface-id pins must match the sources.
       - name: Check the V2 interface exports
+        if: matrix.part == 'v2'
         run: node scripts/v2/export-abi.mjs --check
       # Deterministic gas per test against the committed baseline; a regression
-      # fails here instead of surfacing in a report months later.
+      # fails here instead of surfacing in a report months later. Each half
+      # checks the entries of the test contracts its own suites declare.
       - name: Check the gas baseline
-        run: node --test scripts/gas-baseline.test.mjs scripts/mutate-contracts.test.mjs && node scripts/gas-baseline.mjs --check
+        run: node --test scripts/gas-baseline.test.mjs scripts/mutate-contracts.test.mjs && node scripts/gas-baseline.mjs --check --part "$PART"
       - name: Record the sources of the cached Forge artifacts
         run: node scripts/forge-cache.mjs record
   preview:
