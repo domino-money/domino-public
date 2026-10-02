@@ -4,7 +4,7 @@ pragma solidity 0.8.26;
 import {DominoV2Types} from "../DominoV2Types.sol";
 import {IUniswapV3PoolMinimal} from "../external/IUniswapV3Minimal.sol";
 import {IV4PoolManagerMinimal} from "../external/IUniswapV4Minimal.sol";
-import {DominoFullMath} from "./DominoFullMath.sol";
+import {FullMath} from "../positions/uniswap/FullMath.sol";
 
 /// @notice The fee-aware swap floor (#282, the #3409682 fix).
 /// @dev V1 required minAmountOut >= quote × (1 − maxSlippageBps), so the
@@ -32,13 +32,13 @@ library DominoSwapFloor {
         if (sqrtPriceX96 <= type(uint128).max) {
             uint256 ratioX192 = uint256(sqrtPriceX96) * sqrtPriceX96;
             return zeroForOne
-                ? DominoFullMath.mulDiv(ratioX192, amountIn, 1 << 192)
-                : DominoFullMath.mulDiv(1 << 192, amountIn, ratioX192);
+                ? FullMath.mulDiv(ratioX192, amountIn, 1 << 192)
+                : FullMath.mulDiv(1 << 192, amountIn, ratioX192);
         }
-        uint256 ratioX128 = DominoFullMath.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 64);
+        uint256 ratioX128 = FullMath.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 64);
         return zeroForOne
-            ? DominoFullMath.mulDiv(ratioX128, amountIn, 1 << 128)
-            : DominoFullMath.mulDiv(1 << 128, amountIn, ratioX128);
+            ? FullMath.mulDiv(ratioX128, amountIn, 1 << 128)
+            : FullMath.mulDiv(1 << 128, amountIn, ratioX128);
     }
 
     /// @notice The least output a swap of amountIn may deliver: the quote
@@ -52,7 +52,7 @@ library DominoSwapFloor {
         uint16 maxSlippageBps
     ) internal pure returns (uint256) {
         if (poolFeePips >= PIPS || maxSlippageBps >= BPS) revert InvalidFloor();
-        return DominoFullMath.mulDiv(
+        return FullMath.mulDiv(
             quote(amountIn, sqrtPriceX96, zeroForOne), (PIPS - poolFeePips) * (BPS - maxSlippageBps), PIPS * BPS
         );
     }

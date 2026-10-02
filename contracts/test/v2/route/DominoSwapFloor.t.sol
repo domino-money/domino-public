@@ -5,7 +5,7 @@ import {DominoV2Types} from "../../../src/v2/DominoV2Types.sol";
 import {IDominoPositionActions} from "../../../src/v2/interfaces/IDominoPositionActions.sol";
 import {IDominoRegistry} from "../../../src/v2/interfaces/IDominoRegistry.sol";
 import {IV4PoolManagerMinimal} from "../../../src/v2/external/IUniswapV4Minimal.sol";
-import {DominoFullMath} from "../../../src/v2/route/DominoFullMath.sol";
+import {FullMath as V2FullMath} from "../../../src/v2/positions/uniswap/FullMath.sol";
 import {DominoSwapExecutor} from "../../../src/v2/route/DominoSwapExecutor.sol";
 import {DominoSwapFloor} from "../../../src/v2/route/DominoSwapFloor.sol";
 import {FullMath} from "../../reference/official-v4/v4-core/src/libraries/FullMath.sol";
@@ -55,8 +55,9 @@ contract SwapFloorProbe {
         return DominoSwapFloor.v3SpotAndFee(pool);
     }
 
+    /// The mulDiv the floor uses: the one vendored FullMath of src/v2.
     function mulDiv(uint256 a, uint256 b, uint256 d) external pure returns (uint256) {
-        return DominoFullMath.mulDiv(a, b, d);
+        return V2FullMath.mulDiv(a, b, d);
     }
 }
 
@@ -249,5 +250,25 @@ contract DominoSwapFloorTest is V2TestBase {
         _eq(v2Floor, 24.255e6, "25 x 98% x 99%");
         uint256 out = host.executeLegs(_leg(ref, amountIn, v2Floor), new address[](0))[0];
         _check(out >= 24.49e6 && out < v1Floor, "about 98% of spot, accepted");
+    }
+}
+
+/// The quote's rounding: each of its five mulDivs rounds down. Every division
+/// below is inexact, so a mulDiv that rounded up would add one unit.
+contract DominoSwapFloorRoundingTest is V2TestBase {
+    SwapFloorProbe internal probe;
+
+    function setUp() public {
+        probe = new SwapFloorProbe();
+    }
+
+    function testTheQuoteRoundsDownOnEveryBranch() public view {
+        uint160 low = uint160((1 << 96) + 1); // ratioX192 = 2^192 + 2^97 + 1
+        _eq(probe.quote(1, low, true), 1, "low price, token0 in");
+        _eq(probe.quote(1, low, false), 0, "low price, token1 in");
+        uint160 high = uint160((1 << 140) + 1); // ratioX128 = 2^216 + 2^77, remainder 1
+        _eq(probe.quote(1 << 128, high, true), (1 << 216) + (1 << 77), "high price: the Q128 ratio");
+        _eq(probe.quote(1, high, true), 1 << 88, "high price, token0 in");
+        _eq(probe.quote(1 << 88, high, false), 0, "high price, token1 in");
     }
 }

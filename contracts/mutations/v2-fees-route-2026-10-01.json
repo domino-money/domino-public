@@ -1,6 +1,6 @@
 {
   "description": "V2 F1 fee module and swap-leg executor (#283): every guard of contracts/src/v2/fees and contracts/src/v2/route, deleted or weakened one at a time against the suite meant to catch it.",
-  "provenance": "Authored 2026-10-01 with the F1 fees/route change (claude/v2-f1-fees-route).",
+  "provenance": "Authored 2026-10-01 with the F1 fees/route change (claude/v2-f1-fees-route). Revised 2026-10-02 (#283 item 5): the floor's mulDiv is now the vendored FullMath under src/v2/positions/uniswap, and six mutants pin its rounding: one for each of the quote's five mulDivs and one for the floor's own.",
   "mutations": [
     {
       "label": "executor runs only inside a locked action",
@@ -668,6 +668,48 @@
       "suite": "test/v2/route/DominoSwapFloor.t.sol",
       "old": "lpFee = uint24(word >> 208);",
       "new": "lpFee = uint24(word >> 184);"
+    },
+    {
+      "label": "the quote rounds down: low price, token0 in",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "? FullMath.mulDiv(ratioX192, amountIn, 1 << 192)",
+      "new": "? FullMath.mulDivRoundingUp(ratioX192, amountIn, 1 << 192)"
+    },
+    {
+      "label": "the quote rounds down: low price, token1 in",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": ": FullMath.mulDiv(1 << 192, amountIn, ratioX192);",
+      "new": ": FullMath.mulDivRoundingUp(1 << 192, amountIn, ratioX192);"
+    },
+    {
+      "label": "the quote rounds down: the Q128 ratio",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "uint256 ratioX128 = FullMath.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 64);",
+      "new": "uint256 ratioX128 = FullMath.mulDivRoundingUp(sqrtPriceX96, sqrtPriceX96, 1 << 64);"
+    },
+    {
+      "label": "the quote rounds down: high price, token0 in",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "? FullMath.mulDiv(ratioX128, amountIn, 1 << 128)",
+      "new": "? FullMath.mulDivRoundingUp(ratioX128, amountIn, 1 << 128)"
+    },
+    {
+      "label": "the quote rounds down: high price, token1 in",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": ": FullMath.mulDiv(1 << 128, amountIn, ratioX128);",
+      "new": ": FullMath.mulDivRoundingUp(1 << 128, amountIn, ratioX128);"
+    },
+    {
+      "label": "the floor rounds down once",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "return FullMath.mulDiv(\n            quote(",
+      "new": "return FullMath.mulDivRoundingUp(\n            quote("
     },
     {
       "label": "a balance needs a full answer",

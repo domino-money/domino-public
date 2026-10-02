@@ -8,10 +8,9 @@ This is the fee module and the swap-leg executor of workstream F1 ("Contratos: f
 | `contracts/src/v2/fees/DominoFeeLedger.sol` | Abstract contract: charges a fee to the registry's recipient, keeps what could not be paid as owed, and implements `owedFees`/`flushOwedFees`. | F2, F3, F4 |
 | `contracts/src/v2/route/DominoSwapExecutor.sol` | Abstract contract: executes `SwapLeg[]` and accepts each leg by its effect. Holds the v3 swap callback and the v4 unlock callback. | F2, F3 |
 | `contracts/src/v2/route/DominoAssistedSwap.sol` | Abstract contract: executor + ledger. The manual action's assisted swap: terms, legs, then the 65 bps fee. | F2, F3 (owner actions) |
-| `contracts/src/v2/route/DominoSwapFloor.sol` | Library: the fee-aware swap floor and the pool-fee readers (the #3409682 fix). | F3, F4 |
+| `contracts/src/v2/route/DominoSwapFloor.sol` | Library: the fee-aware swap floor and the pool-fee readers (the #3409682 fix). Its `mulDiv` is the `FullMath` F1c vendors under `contracts/src/v2/positions/uniswap`, the only copy in `src/v2` (V1 audit D5: never imported from the test tree). | F3, F4 |
 | `contracts/src/v2/route/DominoActionLock.sol` | The one transient lock every entry point shares. | all hosts |
 | `contracts/src/v2/route/DominoTokenOps.sol` | Token calls (native = `address(0)`) that copy at most one word of return data. | all hosts |
-| `contracts/src/v2/route/DominoFullMath.sol` | `mulDiv` from Uniswap's FullMath, kept outside the test tree (V1 audit D5). | floor |
 
 ## The owner's decisions this implements (1 Oct 2026)
 
@@ -242,7 +241,7 @@ _chargeFee(DominoV2Types.FEE_KIND_AUTOMATION, token1, owner, DominoFeeRules.feeO
 
 ## Evidence
 
-Nine suites, 132 tests, run one suite at a time with `node scripts/test-contracts.mjs --match-path …`:
+Nine suites, 133 tests, run one suite at a time with `node scripts/test-contracts.mjs --match-path …`:
 
 | Suite | Tests | What it pins |
 | --- | ---: | --- |
@@ -252,13 +251,13 @@ Nine suites, 132 tests, run one suite at a time with `node scripts/test-contract
 | `test/v2/route/DominoSwapExecutorUniversalRouter.t.sol` | 7 | The deployed Universal Router 2.1.2, Permit2 and v4 PoolManager runtimes from Robinhood. A V4_SWAP leg (ERC-20 and native both ways) is accepted. Calldata that over-pulls, under-swaps or diverts the output is refused. |
 | `test/v2/route/DominoSwapExecutorV3.t.sol` | 10 | The deployed Robinhood WETH/USDG 0.05% pool runtime at its CREATE2 address. Scripted pools for paths and failures. Forged, forwarded and repeated callbacks. Wrong amounts or token. Malformed paths. |
 | `test/v2/route/DominoSwapExecutorV4.t.sol` | 16 | The vendored PoolManager: single, multi-hop, native, an exact minimum, a hooked pool that keeps 1% of the output, a partial fill, a taxed input, forged and forwarded callbacks, replay, malformed paths, and the netting entry point. |
-| `test/v2/route/DominoSwapFloor.t.sol` | 12 | Quotes on both branches, fuzzed against v4-core's FullMath and ProtocolFeeLibrary. Slot0 read through `extsload`. The protocol fee counting in the floor (A7). The #3409682 case. |
+| `test/v2/route/DominoSwapFloor.t.sol` | 13 | Quotes on both branches, fuzzed against v4-core's FullMath and ProtocolFeeLibrary; each of the quote's five `mulDiv`s rounds down. Slot0 read through `extsload`. The protocol fee counting in the floor (A7). The #3409682 case. |
 | `test/v2/route/DominoAssistedSwap.t.sol` | 10 | End to end on the vendored PoolManager: the fee in the input, output, hop, fallback and native ETH; terms checked before anything moves; no swap, no fee; a frozen or 7702 recipient never blocks the swap; the fee must be funded. |
 | `test/v2/route/DominoTokenOps.t.sol` | 5 | Reads that refuse silent or failing tokens, the transfer and approve return semantics, and the gas cap. |
 
 **Deployed-bytecode fixtures.** `contracts/test/v2/route/fixtures/` holds four Robinhood runtimes read with `eth_getCode` on 1 Oct 2026 through the operator's node: Universal Router 2.1.2, Permit2, the v4 PoolManager, and the v3 WETH/USDG 0.05% pool. The suites check `keccak256(RUNTIME)` against the constant, and `backend/tests/test_v2_route_fixtures.py` checks the constant against `api-contracts/v2/chains/robinhood-4663.json`. The vendored PoolManager is deployed from its compiled artifact (`V2VendoredFixtures`), never `new`ed in a suite, so editing a test does not recompile it through IR.
 
-**Mutation.** `contracts/mutations/v2-fees-route-2026-10-01.json` deletes or weakens every guard of these sources, one at a time, against the suite meant to catch it: **111 of 111 are caught**. Checks that can never be the deciding one were removed rather than kept unpinned: a v3 callback without a swap, a zero factory, and a v4 path without hops are all refused by the check that follows. Running the batch needs a sandbox seeded with an existing Forge cache. A fully cold sandbox sends every source to one solc-js job, which crashes (issue #145).
+**Mutation.** `contracts/mutations/v2-fees-route-2026-10-01.json` deletes or weakens every guard of these sources, one at a time, against the suite meant to catch it: **111 of 111 are caught**. On 2 October (#283, item 5) six mutants were added for the floor's rounding, one for each of the quote's five `mulDiv`s and one for the floor's own, and all six are caught. Checks that can never be the deciding one were removed rather than kept unpinned: a v3 callback without a swap, a zero factory, and a v4 path without hops are all refused by the check that follows. Running the batch needs a sandbox seeded with an existing Forge cache. A fully cold sandbox sends every source to one solc-js job, which crashes (issue #145).
 
 ## F0 changes
 

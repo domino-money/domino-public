@@ -11,7 +11,7 @@ The adapters are internal libraries: their code is compiled into the consumer, w
 | `contracts/src/v2/positions/DominoV4Positions.sol` | v4 adapter: actions (inside the caller's PoolManager unlock), pool set-up, reads. |
 | `contracts/src/v2/positions/DominoV3Positions.sol` | v3 adapter with the same shape: actions, pool set-up, reads. |
 | `contracts/src/v2/positions/DominoPositionMath.sol` | Range checks, amounts ↔ liquidity with stated rounding, fee growth. |
-| `contracts/src/v2/positions/uniswap/` | Uniswap math vendored from v4-core and v4-periphery (below). |
+| `contracts/src/v2/positions/uniswap/` | Uniswap math vendored from v4-core and v4-periphery (below), the only copy in `src/v2`. |
 | `contracts/test/v2/positions/` | Suites, harnesses (consumers wired as F2/F3 would wire them), test kit. |
 | `contracts/test/v2/positions/fixtures/` | Deployed Uniswap bytecode from Base, with provenance (below). |
 | `scripts/v2/position-fixtures.mjs` | Captures the fixtures; `check` verifies them and the vendored math offline. |
@@ -253,7 +253,14 @@ Two kinds of edit were made:
 - the pragma is pinned to `0.8.26` (the hygiene rule);
 - `LiquidityAmounts` imports its three dependencies by relative path, because `export-abi.mjs` compiles `src/v2` without remappings.
 
-`position-fixtures.mjs check` fails on any other difference. This moves the Uniswap math out of the test tree for V2 (#282 D5). F1a (anchor) and F1b (route) can import it from here rather than vendor a second copy.
+`position-fixtures.mjs check` fails on any other difference. This moves the Uniswap math out of the test tree for V2 (#282 D5).
+
+It is the only copy of that math in `src/v2`. Besides the adapters (and F2's zaps through them), these sources import it directly:
+- F1a: `AnchorMath` (`TickMath`);
+- F1b: `DominoSwapFloor` (`FullMath`), which F3's executor and F4's auto-exit use;
+- F3: the vault (`TickMath`, `FullMath`).
+
+F1b's own `mulDiv` copy, `route/DominoFullMath.sol`, was removed when the copies were consolidated (#283, item 5).
 
 ## Running the checks
 
