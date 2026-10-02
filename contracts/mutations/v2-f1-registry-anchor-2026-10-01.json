@@ -1,0 +1,684 @@
+{
+  "description": "Domino V2 F1a: every guard of DominoRegistry, DominoPriceAnchor and AnchorMath, deleted or weakened one at a time. Each must fail its suite. Revised 2026-10-02: router versions 212 or later (owner decision), and the tick conversion now comes from the shared vendored TickMath (F1c), whose guard is not F1a's to mutate.",
+  "provenance": "Authored 2026-10-01 with the F1a implementation (branch claude/v2-f1-registry-anchor). The suites do not build the V1 contracts, and test-contracts.mjs runs the V1 size gate after every suite, so the sandbox must hold the V1 artifacts: run it with contracts/out and contracts/cache copied into the sandbox (docs/v2/F1_REGISTRY_ANCHOR.md, Verification).",
+  "mutations": [
+    {
+      "label": "only governance schedules, executes and transfers",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (msg.sender != governance) revert Unauthorized();",
+      "new": ""
+    },
+    {
+      "label": "narrowing needs the guardian or governance",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (msg.sender != guardian && msg.sender != governance) revert Unauthorized();",
+      "new": ""
+    },
+    {
+      "label": "the guardian keeps its narrowing powers",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "msg.sender != guardian && msg.sender != governance",
+      "new": "msg.sender != governance"
+    },
+    {
+      "label": "only the pending governance accepts",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (msg.sender != pendingGovernance) revert Unauthorized();",
+      "new": ""
+    },
+    {
+      "label": "a change waits for its timelock",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "uint64 executableAt = scheduledAt + timelockSeconds;",
+      "new": "uint64 executableAt = scheduledAt;"
+    },
+    {
+      "label": "execution waits for executableAt",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (block.timestamp < change.executableAt) revert ChangeNotReady();",
+      "new": ""
+    },
+    {
+      "label": "execution needs a pending change",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (change.executableAt == 0) revert InvalidChange();",
+      "new": "",
+      "index": 0
+    },
+    {
+      "label": "cancellation needs a pending change",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (change.executableAt == 0) revert InvalidChange();",
+      "new": "",
+      "index": 1
+    },
+    {
+      "label": "an executed change is spent",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "delete _changes[id];\n        _apply",
+      "new": "_apply"
+    },
+    {
+      "label": "the guardian cannot cancel a guardian change",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (msg.sender != governance && change.kind == DominoV2Types.REGISTRY_GUARDIAN) revert Unauthorized();",
+      "new": ""
+    },
+    {
+      "label": "a narrowing is undone only by a later change",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (scheduledAt <= removed) revert InvalidChange();",
+      "new": ""
+    },
+    {
+      "label": "a same-second change does not undo a narrowing",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (scheduledAt <= removed)",
+      "new": "if (scheduledAt < removed)"
+    },
+    {
+      "label": "removal records its time",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "member.removedAt = uint64(block.timestamp);",
+      "new": ""
+    },
+    {
+      "label": "guardian router removal records its time",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "_routers[router] = RouterEntry({version: 0, removedAt: uint64(block.timestamp)});",
+      "new": "_routers[router] = RouterEntry({version: 0, removedAt: 0});",
+      "index": 0
+    },
+    {
+      "label": "scheduled router removal records its time",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "_routers[router] = RouterEntry({version: 0, removedAt: uint64(block.timestamp)});",
+      "new": "_routers[router] = RouterEntry({version: 0, removedAt: 0});",
+      "index": 1
+    },
+    {
+      "label": "a halt records its time",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "haltedAt = uint64(block.timestamp);",
+      "new": ""
+    },
+    {
+      "label": "a resume must follow the latest halt",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "_readmit(haltedAt, scheduledAt);",
+      "new": ""
+    },
+    {
+      "label": "operator re-admission must follow its removal",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "_readmit(_operators[operator].removedAt, scheduledAt);",
+      "new": ""
+    },
+    {
+      "label": "publisher re-admission must follow its removal",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "_readmit(_publishers[publisher].removedAt, scheduledAt);",
+      "new": ""
+    },
+    {
+      "label": "router re-admission must follow its removal",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "_readmit(_routers[router].removedAt, scheduledAt);",
+      "new": ""
+    },
+    {
+      "label": "an operator cannot be a publisher",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (_publishers[operator].admitted) revert InvalidChange();",
+      "new": ""
+    },
+    {
+      "label": "deployment keeps publishers off operators",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (_operators[publisher].admitted) revert InvalidChange();",
+      "new": "",
+      "index": 0
+    },
+    {
+      "label": "a publisher cannot be an operator",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (_operators[publisher].admitted) revert InvalidChange();",
+      "new": "",
+      "index": 1
+    },
+    {
+      "label": "the epoch only rises",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "epoch <= observationEpoch || ",
+      "new": ""
+    },
+    {
+      "label": "the epoch never passes now",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": " || epoch > block.timestamp",
+      "new": ""
+    },
+    {
+      "label": "unknown kinds are refused",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "        } else {\n            revert InvalidChange();\n        }\n    }\n\n    function _words",
+      "new": "        }\n    }\n\n    function _words"
+    },
+    {
+      "label": "data has the exact length",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (data.length != count * 32) revert InvalidChange();",
+      "new": ""
+    },
+    {
+      "label": "words have no dirty bits",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (value > max) revert InvalidChange();",
+      "new": ""
+    },
+    {
+      "label": "role flags are booleans",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "_uint(data, 1, 1);",
+      "new": ""
+    },
+    {
+      "label": "addresses are nonzero",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (account == address(0)) revert InvalidChange();",
+      "new": ""
+    },
+    {
+      "label": "router versions below 212 are refused",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "version < MIN_UNIVERSAL_ROUTER_VERSION || ",
+      "new": ""
+    },
+    {
+      "label": "router version 212 itself is admitted",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "version < MIN_UNIVERSAL_ROUTER_VERSION",
+      "new": "version <= MIN_UNIVERSAL_ROUTER_VERSION"
+    },
+    {
+      "label": "router versions after 212 are admitted",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "version < MIN_UNIVERSAL_ROUTER_VERSION",
+      "new": "version != MIN_UNIVERSAL_ROUTER_VERSION"
+    },
+    {
+      "label": "a router has code",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": " || router.code.length == 0",
+      "new": ""
+    },
+    {
+      "label": "a charge token has code",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (token != address(0) && token.code.length == 0) revert InvalidChange();",
+      "new": ""
+    },
+    {
+      "label": "deployment ranks start at 1",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "if (currency.rank == 0) revert InvalidChange();",
+      "new": ""
+    },
+    {
+      "label": "timelock floor",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": "secondsValue < MIN_TIMELOCK_SECONDS || ",
+      "new": ""
+    },
+    {
+      "label": "timelock ceiling",
+      "file": "contracts/src/v2/registry/DominoRegistry.sol",
+      "suite": "test/v2/registry/DominoRegistry.t.sol",
+      "old": " || secondsValue > MAX_TIMELOCK_SECONDS",
+      "new": ""
+    },
+    {
+      "label": "observation price at or above the minimum",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "point.sqrtPriceX96 < AnchorMath.MIN_SQRT_PRICE || ",
+      "new": ""
+    },
+    {
+      "label": "observation price at or below the maximum",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " || point.sqrtPriceX96 > AnchorMath.MAX_SQRT_PRICE",
+      "new": ""
+    },
+    {
+      "label": "observation not dated in the future",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "\n            || point.observedAt > block.timestamp) revert InvalidObservation();",
+      "new": ") revert InvalidObservation();"
+    },
+    {
+      "label": "observation not past validUntil",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "block.timestamp > point.validUntil || ",
+      "new": ""
+    },
+    {
+      "label": "observation window within max age",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " || point.validUntil - point.observedAt > maxAgeSeconds",
+      "new": ""
+    },
+    {
+      "label": "a signature recovering no one is refused",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "signer == address(0) || ",
+      "new": ""
+    },
+    {
+      "label": "the signer is an admitted publisher",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " || !roles.isPublisher(signer)",
+      "new": ""
+    },
+    {
+      "label": "a revoked observation is void",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "_revoked[digest] || ",
+      "new": ""
+    },
+    {
+      "label": "the epoch voids earlier observations",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " || point.observedAt < roles.observationEpoch()",
+      "new": ""
+    },
+    {
+      "label": "signatures are 65 bytes",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "if (signature.length != 65) return address(0);",
+      "new": ""
+    },
+    {
+      "label": "the malleated twin is refused",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "if (uint256(s) > HALF_CURVE_ORDER) return address(0);",
+      "new": ""
+    },
+    {
+      "label": "the domain follows the contract address",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "address(this) == _cachedThis && ",
+      "new": ""
+    },
+    {
+      "label": "the domain follows the chain",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " && block.chainid == _cachedChainId",
+      "new": ""
+    },
+    {
+      "label": "the observation names the requested pool",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "if (!_samePool(point.pool, pool)) revert InvalidObservation();",
+      "new": ""
+    },
+    {
+      "label": "same pool: dex",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "a.dex == b.dex && ",
+      "new": ""
+    },
+    {
+      "label": "same pool: currency0",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "a.currency0 == b.currency0 && ",
+      "new": ""
+    },
+    {
+      "label": "same pool: currency1",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "a.currency1 == b.currency1 && ",
+      "new": ""
+    },
+    {
+      "label": "same pool: fee",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " && a.fee == b.fee",
+      "new": ""
+    },
+    {
+      "label": "same pool: tick spacing",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "a.tickSpacing == b.tickSpacing && ",
+      "new": ""
+    },
+    {
+      "label": "same pool: hooks",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " && a.hooks == b.hooks",
+      "new": ""
+    },
+    {
+      "label": "the spot is within the band",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "if (!AnchorMath.withinBand(anchorSqrtPriceX96, spotSqrtPriceX96, maxDeviationBps)) revert SpotOutsideBand();",
+      "new": ""
+    },
+    {
+      "label": "TWAP window at least the floor",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "secondsAgo < minTwapSeconds || ",
+      "new": ""
+    },
+    {
+      "label": "TWAP window at most max age",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " || secondsAgo > maxAgeSeconds",
+      "new": ""
+    },
+    {
+      "label": "revocation is authorized",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "if (msg.sender != roles.guardian() && msg.sender != roles.governance() && !roles.isPublisher(msg.sender)) {\n            revert Unauthorized();\n        }",
+      "new": ""
+    },
+    {
+      "label": "the guardian may revoke",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "msg.sender != roles.guardian() && ",
+      "new": ""
+    },
+    {
+      "label": "governance may revoke",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "msg.sender != roles.governance() && ",
+      "new": ""
+    },
+    {
+      "label": "a publisher may revoke",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " && !roles.isPublisher(msg.sender)",
+      "new": ""
+    },
+    {
+      "label": "an observation is revoked once",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "if (_revoked[observationHash]) revert ObservationRevoked();",
+      "new": ""
+    },
+    {
+      "label": "a disabled v4 is refused",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "if (v4StateView == address(0)) revert PoolUnavailable();",
+      "new": ""
+    },
+    {
+      "label": "an uninitialized v4 pool is refused",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "if (sqrtPriceX96 == 0) revert PoolUnavailable();",
+      "new": ""
+    },
+    {
+      "label": "a failed slot0 read is refused",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "!ok || slot0.length < 224",
+      "new": "slot0.length < 224"
+    },
+    {
+      "label": "a short slot0 answer is refused",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "!ok || slot0.length < 224",
+      "new": "!ok"
+    },
+    {
+      "label": "an uninitialized v3 pool is refused",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "sqrtPriceX96 == 0 || !unlocked",
+      "new": "!unlocked"
+    },
+    {
+      "label": "a locked v3 pool is refused",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "sqrtPriceX96 == 0 || !unlocked",
+      "new": "sqrtPriceX96 == 0"
+    },
+    {
+      "label": "the v3 tick spacing matches",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "if (IUniswapV3PoolMinimal(pair).tickSpacing() != pool.tickSpacing) revert PoolUnavailable();",
+      "new": ""
+    },
+    {
+      "label": "a TWAP needs a v3 pool",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "pool.dex != DominoV2Types.DEX_V3 || secondsAgo == 0",
+      "new": "secondsAgo == 0"
+    },
+    {
+      "label": "a TWAP needs a window",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "pool.dex != DominoV2Types.DEX_V3 || secondsAgo == 0",
+      "new": "pool.dex != DominoV2Types.DEX_V3"
+    },
+    {
+      "label": "a reverted observe is unavailable",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "!ok || observed.length == 0",
+      "new": "observed.length == 0"
+    },
+    {
+      "label": "an empty observe is unavailable",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "!ok || observed.length == 0",
+      "new": "!ok"
+    },
+    {
+      "label": "mean tick at or above MIN_TICK",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "mean < AnchorMath.MIN_TICK || ",
+      "new": ""
+    },
+    {
+      "label": "mean tick at or below MAX_TICK",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " || mean > AnchorMath.MAX_TICK",
+      "new": ""
+    },
+    {
+      "label": "the v3 path needs dex 3",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "pool.dex != DominoV2Types.DEX_V3 || v3Factory == address(0) || pool.hooks != address(0)",
+      "new": "v3Factory == address(0) || pool.hooks != address(0)"
+    },
+    {
+      "label": "a disabled v3 is refused",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "pool.dex != DominoV2Types.DEX_V3 || v3Factory == address(0) || pool.hooks != address(0)",
+      "new": "pool.dex != DominoV2Types.DEX_V3 || pool.hooks != address(0)"
+    },
+    {
+      "label": "a v3 reference has no hook",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "pool.dex != DominoV2Types.DEX_V3 || v3Factory == address(0) || pool.hooks != address(0)",
+      "new": "pool.dex != DominoV2Types.DEX_V3 || v3Factory == address(0)"
+    },
+    {
+      "label": "the registry has code",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "registry_.code.length == 0 || ",
+      "new": ""
+    },
+    {
+      "label": "factory and init code hash go together",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "(v3Factory_ == address(0)) != (v3PoolInitCodeHash_ == bytes32(0))\n            || ",
+      "new": ""
+    },
+    {
+      "label": "at least one Uniswap version",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "\n            || (v3Factory_ == address(0) && v4StateView_ == address(0))",
+      "new": ""
+    },
+    {
+      "label": "the factory has code",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "\n            || (v3Factory_ != address(0) && v3Factory_.code.length == 0)",
+      "new": ""
+    },
+    {
+      "label": "the state view has code",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "\n            || (v4StateView_ != address(0) && v4StateView_.code.length == 0)",
+      "new": ""
+    },
+    {
+      "label": "the TWAP floor is nonzero",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": " || minTwapSeconds_ == 0",
+      "new": ""
+    },
+    {
+      "label": "the TWAP floor is at most a day",
+      "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "suite": "test/v2/anchor/DominoPriceAnchor.t.sol",
+      "old": "\n            || minTwapSeconds_ > MAX_MIN_TWAP_SECONDS",
+      "new": ""
+    },
+    {
+      "label": "a zero price is outside every band",
+      "file": "contracts/src/v2/anchor/AnchorMath.sol",
+      "suite": "test/v2/anchor/AnchorMath.t.sol",
+      "old": "if (a == 0 || b == 0) return false;",
+      "new": ""
+    },
+    {
+      "label": "the band edge is inclusive",
+      "file": "contracts/src/v2/anchor/AnchorMath.sol",
+      "suite": "test/v2/anchor/AnchorMath.t.sol",
+      "old": "(highHi == lowHi && highLo <= lowLo)",
+      "new": "(highHi == lowHi && highLo < lowLo)"
+    },
+    {
+      "label": "the band compares the high words",
+      "file": "contracts/src/v2/anchor/AnchorMath.sol",
+      "suite": "test/v2/anchor/AnchorMath.t.sol",
+      "old": "return highHi < lowHi || (highHi == lowHi && highLo <= lowLo);",
+      "new": "return highLo <= lowLo;"
+    },
+    {
+      "label": "the band width is 10000 + d",
+      "file": "contracts/src/v2/anchor/AnchorMath.sol",
+      "suite": "test/v2/anchor/AnchorMath.t.sol",
+      "old": "low * (BPS + maxDeviationBps)",
+      "new": "low * (BPS + maxDeviationBps + 1)"
+    },
+    {
+      "label": "the mean tick rounds down",
+      "file": "contracts/src/v2/anchor/AnchorMath.sol",
+      "suite": "test/v2/anchor/AnchorMath.t.sol",
+      "old": "if (delta < 0 && delta % period != 0) mean--;",
+      "new": ""
+    },
+    {
+      "label": "only a negative mean rounds down",
+      "file": "contracts/src/v2/anchor/AnchorMath.sol",
+      "suite": "test/v2/anchor/AnchorMath.t.sol",
+      "old": "if (delta < 0 && delta % period != 0) mean--;",
+      "new": "if (delta % period != 0) mean--;"
+    },
+    {
+      "label": "the cumulative difference wraps",
+      "file": "contracts/src/v2/anchor/AnchorMath.sol",
+      "suite": "test/v2/anchor/AnchorMath.t.sol",
+      "old": "unchecked {\n            delta = endCumulative - startCumulative;\n        }",
+      "new": "delta = endCumulative - startCumulative;"
+    }
+  ]
+}
