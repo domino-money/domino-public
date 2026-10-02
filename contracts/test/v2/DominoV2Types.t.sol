@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
+import {DominoV2RelayTypes} from "../../src/v2/DominoV2RelayTypes.sol";
 import {DominoV2Types} from "../../src/v2/DominoV2Types.sol";
 import {DominoV2Goldens} from "./DominoV2Goldens.sol";
 
@@ -79,11 +80,48 @@ contract DominoV2TypesTest {
         });
     }
 
+    /// F2: a relayed exit with conversion, as the exporter's fixture.
+    function _relayed() private pure returns (DominoV2RelayTypes.RelayedPositionAction memory action) {
+        DominoV2Types.PositionIntent memory intent = _intent();
+        (intent.action, intent.tokenId, intent.minLiquidity, intent.nonce) =
+            (DominoV2Types.ACTION_EXIT, 3409682, 0, 77);
+        action = DominoV2RelayTypes.RelayedPositionAction({
+            intent: intent,
+            liquidityToRemove: 123456789012345678,
+            amount0MinRemoved: 4200000000000000,
+            amount1MinRemoved: 9100000,
+            amount0Max: 0,
+            amount1Max: 0,
+            burn: true
+        });
+    }
+
     function testTypehashesMatchTheExportedTypes() public pure {
         _eq(DominoV2Types.POOL_REF_TYPEHASH, DominoV2Goldens.POOL_REF_TYPEHASH, "PoolRef");
         _eq(DominoV2Types.PRICE_OBSERVATION_TYPEHASH, DominoV2Goldens.PRICE_OBSERVATION_TYPEHASH, "PriceObservation");
         _eq(DominoV2Types.POSITION_INTENT_TYPEHASH, DominoV2Goldens.POSITION_INTENT_TYPEHASH, "PositionIntent");
         _eq(DominoV2Types.EXIT_MANDATE_TYPEHASH, DominoV2Goldens.EXIT_MANDATE_TYPEHASH, "ExitMandate");
+        _eq(
+            DominoV2RelayTypes.RELAYED_POSITION_ACTION_TYPEHASH,
+            DominoV2Goldens.RELAYED_POSITION_ACTION_TYPEHASH,
+            "RelayedPositionAction"
+        );
+    }
+
+    /// The relayed typehash is a literal (it saves the zap the concatenation):
+    /// it must be the hash of its type string and the referenced types.
+    function testRelayedTypehashIsItsTypeString() public pure {
+        _eq(
+            DominoV2RelayTypes.RELAYED_POSITION_ACTION_TYPEHASH,
+            keccak256(
+                abi.encodePacked(
+                    DominoV2RelayTypes.RELAYED_POSITION_ACTION_TYPE,
+                    DominoV2Types.POOL_REF_TYPE,
+                    DominoV2Types.POSITION_INTENT_TYPE
+                )
+            ),
+            "RelayedPositionAction from strings"
+        );
     }
 
     function testDomainSeparatorMatches() public pure {
@@ -111,6 +149,11 @@ contract DominoV2TypesTest {
             DominoV2Types.digest(separator, DominoV2Types.hashExitMandate(_mandate())),
             DominoV2Goldens.EXIT_MANDATE_DIGEST,
             "ExitMandate digest"
+        );
+        _eq(
+            DominoV2Types.digest(separator, DominoV2RelayTypes.hashRelayedPositionAction(_relayed())),
+            DominoV2Goldens.RELAYED_POSITION_ACTION_DIGEST,
+            "RelayedPositionAction digest"
         );
     }
 

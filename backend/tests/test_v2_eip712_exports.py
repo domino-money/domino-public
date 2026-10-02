@@ -39,9 +39,15 @@ class V2Eip712ExportsTests(unittest.TestCase):
 
     def test_every_signed_type_is_exported_with_its_nested_types(self):
         encoded = self.exports['encodedTypes']
-        self.assertEqual(set(encoded), {'PoolRef', 'PriceObservation', 'PositionIntent', 'ExitMandate'})
+        self.assertEqual(
+            set(encoded), {'PoolRef', 'PriceObservation', 'PositionIntent', 'ExitMandate', 'RelayedPositionAction'})
         self.assertTrue(encoded['PositionIntent'].endswith(self.exports['typeStrings']['PoolRef']))
         self.assertTrue(encoded['PriceObservation'].endswith(self.exports['typeStrings']['PoolRef']))
+        # F2: a relayed action nests the whole intent, referenced types in alphabetical order.
+        strings = self.exports['typeStrings']
+        self.assertEqual(
+            encoded['RelayedPositionAction'],
+            strings['RelayedPositionAction'] + strings['PoolRef'] + strings['PositionIntent'])
 
     def test_permit2_witness_is_the_position_intent(self):
         permit2 = self.exports['permit2']

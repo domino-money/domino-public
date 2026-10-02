@@ -1,5 +1,47 @@
 # Domino — revenue and fee boundaries
 
+This file holds two policies:
+
+- **V2**: multi-chain, Uniswap v3 and v4 (domino-money/domino#283). The owner decided it on 1–2 October 2026. The V2 contracts and the bridge integration implement it (`docs/v2/F1_FEES_ROUTE.md`, `docs/v2/F2_ZAP.md`, `docs/v2/F5_BRIDGE.md`).
+- **V1**: the Robinhood alpha, still in production, kept below unchanged. V1 keeps its rates and formulas until V2 automation replaces it. Existing receipts keep their original rates and policy versions.
+
+## V2 (owner decisions, 1–2 October 2026)
+
+| Charge | Rate and basis | Currency | Collected by |
+|---|---|---|---|
+| Assisted swap in a manual action (create, increase, change range, exit with conversion) | 0.65% (65 bps) of the swapped amount, charged on it (on top, not inclusive), once per action. No swap, no fee. | The rank rule below: one currency per action | The V2 zap or vault, on-chain, in the same transaction |
+| Auto-exit | 0.2% (20 bps) of the position at exit: the only exit charge, even with conversion (no 0.65% on top) | The charge currency, if the owner receives one. Otherwise the position's own tokens, without converting (a position entirely in an illiquid token pays in that token) | The auto-exit module, on-chain |
+| Deposit from another chain | 0.35% (35 bps), the bridge provider's own app fee (Relay `appFees`, Across `appFee`) | The provider's (Relay accrues in USDC; Across pays in the output token on the destination chain) | The bridge provider. A convenience fee: no Domino contract and nothing on-chain enforces it, and anyone may bridge by other means and use Domino with the balance already in the wallet |
+| Automation: Auto-compound / Domino-compound | 2% / 4% (200 / 400 bps) of consumed earned fees, once. Never on principal, and no extra swap fee for internal balancing. Unchanged from V1 | Proportional in both pool tokens | The vault, on-chain |
+
+Discovering pools, connecting a wallet, and creating or increasing a position without an assisted swap carry no Domino charge. The owner pays the disclosed chain costs. An exit without conversion carries no Domino charge.
+
+### Assisted swap: the rank rule
+
+- **Charge currencies.** Each chain has a short ordered list, read on-chain from the registry: Robinhood USDG, then ETH and WETH; Base and Arbitrum USDC, then ETH and WETH. The list only chooses the token the fee is paid in. It does not restrict tokens or pools.
+- **The rule.** The fee is charged in the best-ranked listed currency that appears anywhere in the route: as the input, the output, or a hop between two legs. On equal ranks (ETH and WETH), the input wins, then the output, then a hop. If no listed currency appears, the fee is charged in the first leg's input.
+  - Example: whoever holds only TSLA and creates a TSLA/MANY position pays in the USDG of the route TSLA → USDG → MANY.
+  - Example: WETH → USDG pays in USDG, because the better rank wins over the earlier place.
+  - A hop inside one router call or one pool path is not visible to the contract and does not count. A planner that wants the fee in that hop's currency splits the route at it.
+- **One fee token per action.** With several swaps that touch no listed currency, only those spending the first leg's input pay.
+
+### Assisted swap: the basis
+
+- **V2.** `fee = floor(swapped amount × 65 / 10,000)` in the fee token, where the swapped amount is the larger of what the legs spent in that token (signed) and what they delivered in it (measured). The fee comes:
+  - on top of the swapped amount for an input fee;
+  - out of what the swap delivered for an output fee;
+  - out of the hop's remainder for a hop fee.
+  A converted exit's unconverted remainder goes back to the owner, uncharged.
+- **V1** charges 0.65% of a gross budget that includes the fee, about 0.6542% of what reaches the DEX (see below). The two formulas are not mixed: a V1 receipt keeps the V1 basis.
+- **The owner's signature binds the rate and token.** The signed intent carries the rate (65 bps, or 0 without a swap) and the fee token. The contract refuses a plan whose terms differ from the rule. Each swap's minimum output is signed, so the owner's net minimum is that minimum less the 65 bps when the output pays.
+- **A fee recipient that cannot receive never blocks the action.** The fee is then owed, and anyone can pay it to the recipient later.
+
+### Receipts
+
+V2 receipts follow the V1 principles below: the Domino fee (rate, token, basis and amount), pool and route costs, network gas, and what moved, without inventing USD values. The on-chain events of each action carry all of these (`docs/v2/F2_ZAP.md`, "The receipt").
+
+## V1 — Robinhood alpha (in production)
+
 Updated **21 September 2026**, following the owner's explicit mode decision:
 **Auto-compound: 2%; Domino-compound: 4%**, both on newly charged consumed earned
 fees, once. The rate follows the selected automation mode for every recipe,
@@ -24,7 +66,7 @@ A policy document or successful test does not activate a real deployment or
 replace an owner's reviewed signature. Earlier receipts retain their original
 rates and policy versions.
 
-## Alpha revenue lines
+### Alpha revenue lines
 
 | Operation | Approved pricing boundary | Status |
 |---|---|---|
@@ -39,7 +81,7 @@ Neither automation rate applies to initial principal. Conversely, the assisted-s
 
 Do not add the assisted-swap service fee on top of the mode’s 2% or 4% for internal automated balancing, successor funding or successor creation. Real DEX fees and price impact still affect swap output and must be included in economics. An owner clicking a button that invokes the existing automation path does not silently turn it into a differently priced product.
 
-## Selected first-release rate
+### Selected first-release rate
 
 Use `setupFeeBps: 65` and `tariffVersion: "1"` in the first release's public preparation inputs. The approved 0.65% rate applies to admitted owner-requested assisted swaps; no pair-specific discount schedule is selected for this release. Verify the deployed Setup tariff and version against these inputs before publishing a profile.
 
@@ -47,7 +89,7 @@ Earlier comparisons of 0.01% stablecoin routes and 0.30% volatile-pair tariffs a
 
 Do not automatically set the service fee equal to an arbitrarily high LP fee chosen by a user. Avoid pricing that changes with the user's wallet wealth or route splitting. Freeze the selected rate and exact token fee in the review quote; a changed rate requires renewed review. A token's stablecoin label alone cannot select a discounted/safe classification.
 
-## Explicit basis and receipt
+### Explicit basis and receipt
 
 For Domino's approved first-release tariff, use exact-input assisted swaps. The owner selects a gross input budget that includes the Domino fee. For a fully consumed budget, `fee = floor(gross swap budget × rate)` in input-token base units; the remaining input goes to the DEX. Quote the output on that remaining amount. No charge applies to tokens deposited directly, unrelated wallet assets, or returned unconsumed budget. Do not charge again for intermediate hops.
 
@@ -65,7 +107,7 @@ Review and receipts distinguish:
 
 Create/continue buttons must refer to the actual reviewed action, not hide an initial token sale or describe paid setup as free. Existing practice receipts retain their original rate/policy and must not be repriced.
 
-## Revenue sensitivity
+### Revenue sensitivity
 
 These are hypothetical volume calculations, not Revert receipts or a profitability forecast. The 0.65% case uses the approved first-release tariff; 0.01% and 0.30% remain historical comparison alternatives. A $1,000 funding budget that uses $400 for a swap would generate $2.60 at 0.65%, or $1.20 at 0.30%. At the 0.65% example, $397.40 reaches the DEX before its own fees/impact; $600 is not subject to the swap service fee. A correctly balanced deposit needing no swap produces no assisted-swap revenue.
 
@@ -81,14 +123,14 @@ If only half those operations require a swap, these revenues halve. The same $50
 
 Track revenue by token and at realizable value. Contribution equals assisted-swap revenue plus automation revenue, less project-funded gas including failed/replaced attempts, route/provider charges borne by Domino, conversion losses and operating costs. Setup revenue helps fund acquisition/support but cannot guarantee ongoing execution economics. Keep the owner's net-benefit check separate from the operator cost/margin check; do not manufacture swaps or extra transactions to earn more fees.
 
-## Implementation and release work
+### Implementation and release work
 
 Maintain owner-bound quotes, exact amount caps and receipt fields for Setup collection. The 65-bps Setup ceiling is unchanged; a 200-bps swap tariff would require a separately selected policy, changed contract ceiling and new qualification. Test fee-free direct deposit, charged exact-input swap, rate changes, rounding/dust, gas headroom, multiple hops, reverted swaps, swap-success/mint-cancel recovery, replacements/reorgs, recipient substitution and conservation. Verify that automated internal swaps never acquire an extra assisted-swap service charge.
 
 Before activation, prepare and verify the selected `setupFeeBps: 65` / `tariffVersion: "1"` inputs, qualify the collection path and route costs on Robinhood, and show the rate and basis before every owner signature. Record applicable policy versions and preserve owner exits. The pricing decision does not modify deployment artifacts, the personal bot, existing approved wallets or live contracts.
 
 
-## Automation mode, consent and accounting
+### Automation mode, consent and accounting
 
 For this predeployment V4 release, the existing policy tuple retains its ABI.
 Its exact `serviceFeeBps` is also the canonical mode discriminator: 200 is simple

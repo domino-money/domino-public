@@ -164,25 +164,58 @@
         "name": "nonce",
         "type": "uint256"
       }
+    ],
+    "RelayedPositionAction": [
+      {
+        "name": "intent",
+        "type": "PositionIntent"
+      },
+      {
+        "name": "liquidityToRemove",
+        "type": "uint128"
+      },
+      {
+        "name": "amount0MinRemoved",
+        "type": "uint128"
+      },
+      {
+        "name": "amount1MinRemoved",
+        "type": "uint128"
+      },
+      {
+        "name": "amount0Max",
+        "type": "uint128"
+      },
+      {
+        "name": "amount1Max",
+        "type": "uint128"
+      },
+      {
+        "name": "burn",
+        "type": "bool"
+      }
     ]
   },
   "typeStrings": {
     "PoolRef": "PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)",
     "PriceObservation": "PriceObservation(PoolRef pool,uint160 sqrtPriceX96,uint64 observedAt,uint64 validUntil,uint64 nonce)",
     "PositionIntent": "PositionIntent(uint8 action,PoolRef pool,uint256 tokenId,int24 tickLower,int24 tickUpper,uint128 minLiquidity,uint16 feeBps,address feeToken,bytes32 routesHash,address recipient,uint256 nonce,uint64 deadline)",
-    "ExitMandate": "ExitMandate(address owner,address vault,uint256 tokenId,uint160 triggerBelowSqrtPriceX96,uint160 triggerAboveSqrtPriceX96,uint8 receiveMode,address convertTo,uint16 maxSlippageBps,uint64 validUntil,uint256 nonce)"
+    "ExitMandate": "ExitMandate(address owner,address vault,uint256 tokenId,uint160 triggerBelowSqrtPriceX96,uint160 triggerAboveSqrtPriceX96,uint8 receiveMode,address convertTo,uint16 maxSlippageBps,uint64 validUntil,uint256 nonce)",
+    "RelayedPositionAction": "RelayedPositionAction(PositionIntent intent,uint128 liquidityToRemove,uint128 amount0MinRemoved,uint128 amount1MinRemoved,uint128 amount0Max,uint128 amount1Max,bool burn)"
   },
   "encodedTypes": {
     "PoolRef": "PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)",
     "PriceObservation": "PriceObservation(PoolRef pool,uint160 sqrtPriceX96,uint64 observedAt,uint64 validUntil,uint64 nonce)PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)",
     "PositionIntent": "PositionIntent(uint8 action,PoolRef pool,uint256 tokenId,int24 tickLower,int24 tickUpper,uint128 minLiquidity,uint16 feeBps,address feeToken,bytes32 routesHash,address recipient,uint256 nonce,uint64 deadline)PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)",
-    "ExitMandate": "ExitMandate(address owner,address vault,uint256 tokenId,uint160 triggerBelowSqrtPriceX96,uint160 triggerAboveSqrtPriceX96,uint8 receiveMode,address convertTo,uint16 maxSlippageBps,uint64 validUntil,uint256 nonce)"
+    "ExitMandate": "ExitMandate(address owner,address vault,uint256 tokenId,uint160 triggerBelowSqrtPriceX96,uint160 triggerAboveSqrtPriceX96,uint8 receiveMode,address convertTo,uint16 maxSlippageBps,uint64 validUntil,uint256 nonce)",
+    "RelayedPositionAction": "RelayedPositionAction(PositionIntent intent,uint128 liquidityToRemove,uint128 amount0MinRemoved,uint128 amount1MinRemoved,uint128 amount0Max,uint128 amount1Max,bool burn)PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)PositionIntent(uint8 action,PoolRef pool,uint256 tokenId,int24 tickLower,int24 tickUpper,uint128 minLiquidity,uint16 feeBps,address feeToken,bytes32 routesHash,address recipient,uint256 nonce,uint64 deadline)"
   },
   "typehashes": {
     "PoolRef": "0x75d570ed598cbb0140dde1b6a5894a691cc4cbcc57d9e615cfb8737dd88e80c3",
     "PriceObservation": "0x0a6a7c8d2621f26a9097e916f74d025db44c8a1099270c89087a0910b68b271f",
     "PositionIntent": "0xe2ffc6568be9b02968c1458defcf36c93344902196b67e85b52317854254f79c",
-    "ExitMandate": "0x47e80548d88c56375483748a3a1f81c590010d1aba1fda210e5d840f3ef22e29"
+    "ExitMandate": "0x47e80548d88c56375483748a3a1f81c590010d1aba1fda210e5d840f3ef22e29",
+    "RelayedPositionAction": "0x6e8b248d462b87dd2bd6c5013dca851bce24d5cab8794bf2842ffe0fa7f33bde"
   },
   "permit2": {
     "domain": {

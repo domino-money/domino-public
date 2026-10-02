@@ -127,6 +127,18 @@
       "registry()": "0x7b103999"
     }
   },
+  "IDominoZap": {
+    "source": "contracts/src/v2/interfaces/IDominoZap.sol",
+    "interfaceId": "0x8281f2f6",
+    "functions": {
+      "changeRangeWithSignature(((uint8,(uint8,address,address,uint24,int24,address),uint256,int24,int24,uint128,uint16,address,bytes32,address,uint256,uint64),uint128,uint128,uint128,(uint8,address,address,address,uint128,uint128,bytes)[],uint128,uint128,bool),bytes)": "0xf6b7af55",
+      "exitWithSignature(((uint8,(uint8,address,address,uint24,int24,address),uint256,int24,int24,uint128,uint16,address,bytes32,address,uint256,uint64),uint128,uint128,uint128,(uint8,address,address,address,uint128,uint128,bytes)[],bool),bytes)": "0x2573777b",
+      "hookedPoolsAllowed()": "0x4c70f1f2",
+      "invalidateNonces(uint256,uint256)": "0x2bce68d2",
+      "nonceBitmap(address,uint256)": "0x4fe02b44",
+      "positionManager()": "0x791b98bc"
+    }
+  },
   "IPermit2Signature": {
     "source": "contracts/src/v2/external/IPermit2Signature.sol",
     "interfaceId": "0xb16eeae3",

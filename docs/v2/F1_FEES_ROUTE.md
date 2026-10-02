@@ -266,6 +266,8 @@ None. No frozen type, interface, event or error changed, and the ABI exports (`n
 
 ## Decisions for the owner
 
+The owner accepted all three on 2 October 2026, as implemented: rank first; one fee token per action; 0.65% on the swapped amount, not V1's inclusive formula. They are recorded in PRICING_POLICY.md, section V2.
+
 1. **Rank first, or place first?** This implementation picks the best-ranked charge currency anywhere in the route: "a primeira moeda da lista que aparecer na operação". The other reading takes the input whenever it is any charge currency, then the output, then a hop. The two differ only when a rank-2 token (ETH/WETH) and the rank-1 stable both appear. For example, ETH → USDG charges USDG here and ETH under the other reading. Changing it is one comparison in `assistedSwapFeeToken`, plus the table above.
 2. **Fallback with several non-charge inputs.** With TSLA → MANY and NVDA → MANY in one plan, only the TSLA legs pay: the fee has one token, the first leg's input. Domino's planner can route through a charge currency to charge everything. A third-party plan cannot avoid more than it could by swapping elsewhere first.
 3. **The fee is 0.65% of the swapped amount, on top.** V1 charged 0.65% of a gross budget that included the fee, so 0.6542% of what was swapped. PRICING_POLICY.md still describes the V1 formula and changes with the V2 policies (#283).

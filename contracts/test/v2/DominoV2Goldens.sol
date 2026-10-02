@@ -8,6 +8,7 @@ library DominoV2Goldens {
     bytes32 internal constant PRICE_OBSERVATION_TYPEHASH = 0x0a6a7c8d2621f26a9097e916f74d025db44c8a1099270c89087a0910b68b271f;
     bytes32 internal constant POSITION_INTENT_TYPEHASH = 0xe2ffc6568be9b02968c1458defcf36c93344902196b67e85b52317854254f79c;
     bytes32 internal constant EXIT_MANDATE_TYPEHASH = 0x47e80548d88c56375483748a3a1f81c590010d1aba1fda210e5d840f3ef22e29;
+    bytes32 internal constant RELAYED_POSITION_ACTION_TYPEHASH = 0x6e8b248d462b87dd2bd6c5013dca851bce24d5cab8794bf2842ffe0fa7f33bde;
     bytes32 internal constant PERMIT2_BATCH_WITNESS_TYPEHASH = 0xa3cafa799cface9e636684cf61c4599e221bf24c1a896ac81042ebc46be32515;
     bytes32 internal constant DOMAIN_SEPARATOR = 0x839e33bbca391df1ab01e20ee0479a1158c742e3e0afeca8a39660fc07fc4fc4;
     bytes32 internal constant ROUTES_HASH = 0x3f539f7e015f09a9c197e20e2d9f3e45d8b4fc875714d48227f082b93fcf8dc7;
@@ -15,5 +16,6 @@ library DominoV2Goldens {
     bytes32 internal constant PRICE_OBSERVATION_DIGEST = 0xa6b70d6667c97fccf9dd6a109ed8ddf6012d43f47a528158931d52db0900789c;
     bytes32 internal constant POSITION_INTENT_DIGEST = 0x642f715eea2ecb377a9d3adbda7e0051399a89ec5c1f8bc2e4921f3bdc068df3;
     bytes32 internal constant EXIT_MANDATE_DIGEST = 0x2a3403aaa791d63d81c9cd4f5a2865e7178fb19bc7e6a781712b9c05d45cf1bb;
+    bytes32 internal constant RELAYED_POSITION_ACTION_DIGEST = 0xa3be36f3170f4a3d96db8f1e453afb016434929e707fb1d409d48ca9c83026cf;
     bytes32 internal constant PERMIT2_BATCH_WITNESS_DIGEST = 0x6aa9acf7bc27a72ca98abcccc7fc59d5ac5b110b504a4846b9d0ca02d1cc20ae;
 }

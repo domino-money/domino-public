@@ -1,0 +1,688 @@
+{
+  "source": "contracts/src/v2/interfaces/IDominoZap.sol",
+  "interfaceId": "0x8281f2f6",
+  "functions": {
+    "changeRangeWithSignature(((uint8,(uint8,address,address,uint24,int24,address),uint256,int24,int24,uint128,uint16,address,bytes32,address,uint256,uint64),uint128,uint128,uint128,(uint8,address,address,address,uint128,uint128,bytes)[],uint128,uint128,bool),bytes)": "0xf6b7af55",
+    "exitWithSignature(((uint8,(uint8,address,address,uint24,int24,address),uint256,int24,int24,uint128,uint16,address,bytes32,address,uint256,uint64),uint128,uint128,uint128,(uint8,address,address,address,uint128,uint128,bytes)[],bool),bytes)": "0x2573777b",
+    "hookedPoolsAllowed()": "0x4c70f1f2",
+    "invalidateNonces(uint256,uint256)": "0x2bce68d2",
+    "nonceBitmap(address,uint256)": "0x4fe02b44",
+    "positionManager()": "0x791b98bc"
+  },
+  "abi": [
+    {
+      "inputs": [],
+      "name": "InvalidSignature",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        }
+      ],
+      "name": "NonceUsed",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "intentHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "InputPulled",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "word",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "mask",
+          "type": "uint256"
+        }
+      ],
+      "name": "NoncesInvalidated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "intentHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "components": [
+            {
+              "internalType": "uint8",
+              "name": "dex",
+              "type": "uint8"
+            },
+            {
+              "internalType": "address",
+              "name": "currency0",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "currency1",
+              "type": "address"
+            },
+            {
+              "internalType": "uint24",
+              "name": "fee",
+              "type": "uint24"
+            },
+            {
+              "internalType": "int24",
+              "name": "tickSpacing",
+              "type": "int24"
+            },
+            {
+              "internalType": "address",
+              "name": "hooks",
+              "type": "address"
+            }
+          ],
+          "indexed": false,
+          "internalType": "struct DominoV2Types.PoolRef",
+          "name": "pool",
+          "type": "tuple"
+        },
+        {
+          "indexed": false,
+          "internalType": "int256",
+          "name": "liquidityDelta",
+          "type": "int256"
+        },
+        {
+          "indexed": false,
+          "internalType": "int256",
+          "name": "amount0",
+          "type": "int256"
+        },
+        {
+          "indexed": false,
+          "internalType": "int256",
+          "name": "amount1",
+          "type": "int256"
+        }
+      ],
+      "name": "PositionLiquidityChanged",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "components": [
+                {
+                  "internalType": "uint8",
+                  "name": "action",
+                  "type": "uint8"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "uint8",
+                      "name": "dex",
+                      "type": "uint8"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "currency0",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "currency1",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "uint24",
+                      "name": "fee",
+                      "type": "uint24"
+                    },
+                    {
+                      "internalType": "int24",
+                      "name": "tickSpacing",
+                      "type": "int24"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "hooks",
+                      "type": "address"
+                    }
+                  ],
+                  "internalType": "struct DominoV2Types.PoolRef",
+                  "name": "pool",
+                  "type": "tuple"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "tokenId",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "int24",
+                  "name": "tickLower",
+                  "type": "int24"
+                },
+                {
+                  "internalType": "int24",
+                  "name": "tickUpper",
+                  "type": "int24"
+                },
+                {
+                  "internalType": "uint128",
+                  "name": "minLiquidity",
+                  "type": "uint128"
+                },
+                {
+                  "internalType": "uint16",
+                  "name": "feeBps",
+                  "type": "uint16"
+                },
+                {
+                  "internalType": "address",
+                  "name": "feeToken",
+                  "type": "address"
+                },
+                {
+                  "internalType": "bytes32",
+                  "name": "routesHash",
+                  "type": "bytes32"
+                },
+                {
+                  "internalType": "address",
+                  "name": "recipient",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "uint64",
+                  "name": "deadline",
+                  "type": "uint64"
+                }
+              ],
+              "internalType": "struct DominoV2Types.PositionIntent",
+              "name": "intent",
+              "type": "tuple"
+            },
+            {
+              "internalType": "uint128",
+              "name": "liquidityToRemove",
+              "type": "uint128"
+            },
+            {
+              "internalType": "uint128",
+              "name": "amount0MinRemoved",
+              "type": "uint128"
+            },
+            {
+              "internalType": "uint128",
+              "name": "amount1MinRemoved",
+              "type": "uint128"
+            },
+            {
+              "components": [
+                {
+                  "internalType": "uint8",
+                  "name": "kind",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "address",
+                  "name": "router",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "tokenIn",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "tokenOut",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint128",
+                  "name": "amountIn",
+                  "type": "uint128"
+                },
+                {
+                  "internalType": "uint128",
+                  "name": "minAmountOut",
+                  "type": "uint128"
+                },
+                {
+                  "internalType": "bytes",
+                  "name": "data",
+                  "type": "bytes"
+                }
+              ],
+              "internalType": "struct DominoV2Types.SwapLeg[]",
+              "name": "legs",
+              "type": "tuple[]"
+            },
+            {
+              "internalType": "uint128",
+              "name": "amount0Max",
+              "type": "uint128"
+            },
+            {
+              "internalType": "uint128",
+              "name": "amount1Max",
+              "type": "uint128"
+            },
+            {
+              "internalType": "bool",
+              "name": "burnOld",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct IDominoPositionActions.ChangeRangePlan",
+          "name": "plan",
+          "type": "tuple"
+        },
+        {
+          "internalType": "bytes",
+          "name": "signature",
+          "type": "bytes"
+        }
+      ],
+      "name": "changeRangeWithSignature",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint128",
+              "name": "liquidity",
+              "type": "uint128"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amount0",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amount1",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "feeToken",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct IDominoPositionActions.ActionResult",
+          "name": "result",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "components": [
+                {
+                  "internalType": "uint8",
+                  "name": "action",
+                  "type": "uint8"
+                },
+                {
+                  "components": [
+                    {
+                      "internalType": "uint8",
+                      "name": "dex",
+                      "type": "uint8"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "currency0",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "currency1",
+                      "type": "address"
+                    },
+                    {
+                      "internalType": "uint24",
+                      "name": "fee",
+                      "type": "uint24"
+                    },
+                    {
+                      "internalType": "int24",
+                      "name": "tickSpacing",
+                      "type": "int24"
+                    },
+                    {
+                      "internalType": "address",
+                      "name": "hooks",
+                      "type": "address"
+                    }
+                  ],
+                  "internalType": "struct DominoV2Types.PoolRef",
+                  "name": "pool",
+                  "type": "tuple"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "tokenId",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "int24",
+                  "name": "tickLower",
+                  "type": "int24"
+                },
+                {
+                  "internalType": "int24",
+                  "name": "tickUpper",
+                  "type": "int24"
+                },
+                {
+                  "internalType": "uint128",
+                  "name": "minLiquidity",
+                  "type": "uint128"
+                },
+                {
+                  "internalType": "uint16",
+                  "name": "feeBps",
+                  "type": "uint16"
+                },
+                {
+                  "internalType": "address",
+                  "name": "feeToken",
+                  "type": "address"
+                },
+                {
+                  "internalType": "bytes32",
+                  "name": "routesHash",
+                  "type": "bytes32"
+                },
+                {
+                  "internalType": "address",
+                  "name": "recipient",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint256",
+                  "name": "nonce",
+                  "type": "uint256"
+                },
+                {
+                  "internalType": "uint64",
+                  "name": "deadline",
+                  "type": "uint64"
+                }
+              ],
+              "internalType": "struct DominoV2Types.PositionIntent",
+              "name": "intent",
+              "type": "tuple"
+            },
+            {
+              "internalType": "uint128",
+              "name": "liquidityToRemove",
+              "type": "uint128"
+            },
+            {
+              "internalType": "uint128",
+              "name": "amount0MinRemoved",
+              "type": "uint128"
+            },
+            {
+              "internalType": "uint128",
+              "name": "amount1MinRemoved",
+              "type": "uint128"
+            },
+            {
+              "components": [
+                {
+                  "internalType": "uint8",
+                  "name": "kind",
+                  "type": "uint8"
+                },
+                {
+                  "internalType": "address",
+                  "name": "router",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "tokenIn",
+                  "type": "address"
+                },
+                {
+                  "internalType": "address",
+                  "name": "tokenOut",
+                  "type": "address"
+                },
+                {
+                  "internalType": "uint128",
+                  "name": "amountIn",
+                  "type": "uint128"
+                },
+                {
+                  "internalType": "uint128",
+                  "name": "minAmountOut",
+                  "type": "uint128"
+                },
+                {
+                  "internalType": "bytes",
+                  "name": "data",
+                  "type": "bytes"
+                }
+              ],
+              "internalType": "struct DominoV2Types.SwapLeg[]",
+              "name": "legs",
+              "type": "tuple[]"
+            },
+            {
+              "internalType": "bool",
+              "name": "burn",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct IDominoPositionActions.ExitPlan",
+          "name": "plan",
+          "type": "tuple"
+        },
+        {
+          "internalType": "bytes",
+          "name": "signature",
+          "type": "bytes"
+        }
+      ],
+      "name": "exitWithSignature",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint128",
+              "name": "liquidity",
+              "type": "uint128"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amount0",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amount1",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "feeToken",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "feeAmount",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct IDominoPositionActions.ActionResult",
+          "name": "result",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "hookedPoolsAllowed",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "word",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "mask",
+          "type": "uint256"
+        }
+      ],
+      "name": "invalidateNonces",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "word",
+          "type": "uint256"
+        }
+      ],
+      "name": "nonceBitmap",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "positionManager",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ]
+}

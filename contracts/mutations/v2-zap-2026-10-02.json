@@ -1,0 +1,540 @@
+{
+  "description": "V2 F2 zap (#283 S1): every guard of contracts/src/v2/zap deleted or weakened one at a time against the suite meant to catch it.",
+  "provenance": "Authored 2026-10-02 with the F2 zap change (claude/v2-f2-zap).",
+  "mutations": [
+    {
+      "label": "stray ETH is refused outside an action",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "if (!_actionLocked()) revert Unauthorized();",
+      "new": "if (false) revert Unauthorized();"
+    },
+    {
+      "label": "the intent names the action",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (intent.action != action) revert InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "an expired plan is refused",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (block.timestamp > intent.deadline) revert PlanExpired();\n",
+      "new": ""
+    },
+    {
+      "label": "the deadline second itself is valid",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "block.timestamp > intent.deadline",
+      "new": "block.timestamp >= intent.deadline"
+    },
+    {
+      "label": "a recipient is required",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "intent.recipient == address(0) || intent.recipient == address(this)",
+      "new": "intent.recipient == address(this)"
+    },
+    {
+      "label": "the zap is never the recipient",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "intent.recipient == address(0) || intent.recipient == address(this)",
+      "new": "intent.recipient == address(0)"
+    },
+    {
+      "label": "the pool policy is applied",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        _checkPool(intent.pool);\n",
+      "new": ""
+    },
+    {
+      "label": "the legs are the signed routes",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (intent.routesHash != DominoV2Types.routesHash(legs)) revert InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "a create names no position",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            if (intent.tokenId != 0) revert InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "increase and exit name the range: lower tick",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "tickLower != intent.tickLower || tickUpper != intent.tickUpper",
+      "new": "tickUpper != intent.tickUpper"
+    },
+    {
+      "label": "increase and exit name the range: upper tick",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "tickLower != intent.tickLower || tickUpper != intent.tickUpper",
+      "new": "tickLower != intent.tickLower"
+    },
+    {
+      "label": "change range names the new range",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "action != DominoV2Types.ACTION_CHANGE_RANGE\n                    && ",
+      "new": ""
+    },
+    {
+      "label": "a relayed action is the holder's",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "                owner = holder;\n",
+      "new": ""
+    },
+    {
+      "label": "a relayed action carries the holder's signature",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "                _verifyRelayed(a, owner, signature);\n",
+      "new": ""
+    },
+    {
+      "label": "an existing position needs its owner",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            if (holder != owner) revert Unauthorized();\n",
+      "new": ""
+    },
+    {
+      "label": "the permit path pulls through Permit2",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (by == BY_PERMIT) _pullWithPermit(a, permit, signature, owner, ref);\n        else _pullFromCaller(a.inputs, ref);",
+      "new": "        _pullFromCaller(a.inputs, ref);"
+    },
+    {
+      "label": "an exit removes at least the intent's liquidity",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "if (action == DominoV2Types.ACTION_EXIT && a.liquidityToRemove < intent.minLiquidity) {",
+      "new": "if (false) {"
+    },
+    {
+      "label": "an exit may remove exactly the intent's liquidity",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "a.liquidityToRemove < intent.minLiquidity",
+      "new": "a.liquidityToRemove <= intent.minLiquidity"
+    },
+    {
+      "label": "an exit without conversion pays the recipient",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "action == DominoV2Types.ACTION_EXIT && a.legs.length == 0 ? recipient : address(this)",
+      "new": "address(this)"
+    },
+    {
+      "label": "a conversion withdraws to the zap",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "action == DominoV2Types.ACTION_EXIT && a.legs.length == 0 ? recipient : address(this)",
+      "new": "recipient"
+    },
+    {
+      "label": "a withdrawal is recorded",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            _record(ref, owner, pool, step, false);\n",
+      "new": ""
+    },
+    {
+      "label": "an addition is recorded as an addition",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            _record(ref, owner, pool, step, true);\n",
+      "new": "            _record(ref, owner, pool, step, false);\n"
+    },
+    {
+      "label": "the removal is recorded as negative liquidity",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "added ? liquidity : -liquidity",
+      "new": "liquidity"
+    },
+    {
+      "label": "the action's tokens are refunded",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (action != DominoV2Types.ACTION_EXIT || a.legs.length != 0) _refund(tokens, recipient);\n",
+      "new": ""
+    },
+    {
+      "label": "an increase adds to the position",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "step = action == DominoV2Types.ACTION_INCREASE",
+      "new": "step = action == DominoV2Types.ACTION_CHANGE_RANGE"
+    },
+    {
+      "label": "a create may initialize the pool",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            if (a.initSqrtPriceX96 != 0) _initialize(pool, a.initSqrtPriceX96);\n",
+      "new": ""
+    },
+    {
+      "label": "the result reports the fee token",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        r.feeToken = intent.feeToken;\n",
+      "new": ""
+    },
+    {
+      "label": "the result reports magnitudes",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "return delta < 0 ? uint256(-delta) : uint256(delta);",
+      "new": "return delta < 0 ? uint256(delta) : uint256(delta);"
+    },
+    {
+      "label": "the action event names the previous position",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "step.tokenId, intent.tokenId, step.liquidity, ref);",
+      "new": "step.tokenId, step.tokenId, step.liquidity, ref);"
+    },
+    {
+      "label": "a relayed signature is 65 bytes",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (signature.length != 65) revert InvalidSignature();\n",
+      "new": ""
+    },
+    {
+      "label": "a relayed signature has a low s",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (uint256(s) > MAX_S) revert InvalidSignature();\n",
+      "new": ""
+    },
+    {
+      "label": "a relayed signature recovers to the owner",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (ecrecover(hash, v, r, s) != owner) revert InvalidSignature();\n",
+      "new": ""
+    },
+    {
+      "label": "a relayed nonce is used once",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (bits & bit != 0) revert NonceUsed(owner, nonce);\n",
+      "new": ""
+    },
+    {
+      "label": "a relayed nonce is recorded",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        _relayNonces[owner][nonce >> 8] = bits | bit;\n",
+      "new": ""
+    },
+    {
+      "label": "invalidation keeps earlier bits",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "_relayNonces[msg.sender][word] |= mask;",
+      "new": "_relayNonces[msg.sender][word] = mask;"
+    },
+    {
+      "label": "invalidation is recorded",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        _relayNonces[msg.sender][word] |= mask;\n",
+      "new": ""
+    },
+    {
+      "label": "msg.value is exactly the native inputs",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (native != msg.value) revert InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "native inputs are counted",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            if (token == address(0)) native += amount;\n            else _transferIn(token, amount);",
+      "new": "            if (token != address(0)) _transferIn(token, amount);"
+    },
+    {
+      "label": "ERC-20 inputs are pulled",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            else _transferIn(token, amount);\n",
+      "new": ""
+    },
+    {
+      "label": "a failed pull reverts",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (!ok) revert DominoTokenOps.TokenCallFailed(token);\n",
+      "new": ""
+    },
+    {
+      "label": "the permit carries the intent's nonce",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (permit.nonce != a.intent.nonce) revert InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "a permit never lists native",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "token == address(0) || permit.permitted[i].token != token || permit.permitted[i].amount != amount",
+      "new": "permit.permitted[i].token != token || permit.permitted[i].amount != amount"
+    },
+    {
+      "label": "the permit lists the plan's tokens",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "token == address(0) || permit.permitted[i].token != token || permit.permitted[i].amount != amount",
+      "new": "token == address(0) || permit.permitted[i].amount != amount"
+    },
+    {
+      "label": "the permit lists the plan's amounts",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "token == address(0) || permit.permitted[i].token != token || permit.permitted[i].amount != amount",
+      "new": "token == address(0) || permit.permitted[i].token != token"
+    },
+    {
+      "label": "the action tracks native",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapRouters.t.sol",
+      "old": "uint256 count = _addToken(set, 0, address(0));",
+      "new": "uint256 count;"
+    },
+    {
+      "label": "the action's tokens include the pool currencies",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        count = _addToken(set, count, pool.currency0);\n        count = _addToken(set, count, pool.currency1);\n",
+      "new": ""
+    },
+    {
+      "label": "the action's tokens include the inputs",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            count = _addToken(set, count, inputs[i].token);\n",
+      "new": ""
+    },
+    {
+      "label": "the action's tokens include the legs' outputs",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            count = _addToken(set, count, legs[i].tokenOut);\n",
+      "new": ""
+    },
+    {
+      "label": "a token is listed once",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            if (set[i] == token) return count;\n",
+      "new": "",
+      "expected": "NOT CAUGHT",
+      "reason": "Equivalent: a repeated token only costs a second zero-amount refund read, and the executor de-duplicates its tracked set itself (F1b). Kept for gas."
+    },
+    {
+      "label": "an addition is capped by the plan",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "return held < cap ? uint128(held) : cap;",
+      "new": "return uint128(held);"
+    },
+    {
+      "label": "an addition never exceeds what is held",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "return held < cap ? uint128(held) : cap;",
+      "new": "return cap;"
+    },
+    {
+      "label": "owed fees are never refunded",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            uint256 amount = _unowedBalance(token);",
+      "new": "            uint256 amount = DominoTokenOps.selfBalance(token);"
+    },
+    {
+      "label": "the receipt lists each refund",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "                emit Refunded(recipient, token, amount);\n",
+      "new": ""
+    },
+    {
+      "label": "the receipt lists each input",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            emit InputPulled(ref, msg.sender, token, amount);\n",
+      "new": ""
+    },
+    {
+      "label": "the v4 managers belong together",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        DominoV4Positions.checkManagers(\n            DominoV4Positions.Managers(IV4PoolManagerMinimal(route.v4PoolManager), positionManager_)\n        );\n",
+      "new": ""
+    },
+    {
+      "label": "the steps contract has code",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (steps.code.length == 0) revert InvalidZapConfig();\n",
+      "new": ""
+    },
+    {
+      "label": "a pending v4 leg gets its callback",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (_v4LegPending()) return _v4LegCallback(data);\n",
+      "new": ""
+    },
+    {
+      "label": "a position step is called back by the PoolManager",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapRouters.t.sol",
+      "old": "if (msg.sender != V4_POOL_MANAGER || pending != keccak256(data)) revert Unauthorized();",
+      "new": "if (pending != keccak256(data)) revert Unauthorized();"
+    },
+    {
+      "label": "a position step is the pending one",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "if (msg.sender != V4_POOL_MANAGER || pending != keccak256(data)) revert Unauthorized();",
+      "new": "if (msg.sender != V4_POOL_MANAGER) revert Unauthorized();"
+    },
+    {
+      "label": "a failed step reverts with its reason",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (!ok) {\n            assembly (\"memory-safe\") {\n                revert(add(result, 0x20), mload(result))\n            }\n        }\n",
+      "new": ""
+    },
+    {
+      "label": "a step is registered before the unlock",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "            tstore(UNLOCK_SLOT, pending)\n",
+      "new": ""
+    },
+    {
+      "label": "v4 positions only on the v4 zap",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "pool.dex != DominoV2Types.DEX_V4 || (pool.hooks != address(0) && !HOOKED_POOLS_ALLOWED)",
+      "new": "(pool.hooks != address(0) && !HOOKED_POOLS_ALLOWED)"
+    },
+    {
+      "label": "hooked pools are refused by default",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "pool.dex != DominoV2Types.DEX_V4 || (pool.hooks != address(0) && !HOOKED_POOLS_ALLOWED)",
+      "new": "pool.dex != DominoV2Types.DEX_V4"
+    },
+    {
+      "label": "the v4 range is read from the position",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        tickLower = int24(uint24(info >> 8));\n",
+      "new": ""
+    },
+    {
+      "label": "the v4 pool is initialized when asked",
+      "file": "contracts/src/v2/zap/DominoZapV4.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        DominoV4Positions.initialize(IV4PoolManagerMinimal(V4_POOL_MANAGER), pool, sqrtPriceX96);\n",
+      "new": ""
+    },
+    {
+      "label": "the steps refuse a direct call",
+      "file": "contracts/src/v2/zap/DominoZapV4Steps.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (address(this) == SELF) revert DirectCall();\n",
+      "new": ""
+    },
+    {
+      "label": "the steps dispatch an increase",
+      "file": "contracts/src/v2/zap/DominoZapV4Steps.sol",
+      "suite": "test/v2/zap/ZapV4Vendored.t.sol",
+      "old": "        if (c.op == OP_INCREASE) return",
+      "new": "        if (c.op == OP_WITHDRAW) return"
+    },
+    {
+      "label": "the v3 managers belong together",
+      "file": "contracts/src/v2/zap/DominoZapV3.sol",
+      "suite": "test/v2/zap/ZapV3.t.sol",
+      "old": "        DominoV3Positions.checkManagers(\n            DominoV3Positions.Managers(positionManager_, IUniswapV3FactoryMinimal(route.v3Factory))\n        );\n",
+      "new": ""
+    },
+    {
+      "label": "v3 positions only on the v3 zap",
+      "file": "contracts/src/v2/zap/DominoZapV3.sol",
+      "suite": "test/v2/zap/ZapV3.t.sol",
+      "old": "if (pool.dex != DominoV2Types.DEX_V3 || pool.hooks != address(0)) revert InvalidPlan();",
+      "new": "if (pool.hooks != address(0)) revert InvalidPlan();"
+    },
+    {
+      "label": "a v3 pool has no hooks",
+      "file": "contracts/src/v2/zap/DominoZapV3.sol",
+      "suite": "test/v2/zap/ZapV3.t.sol",
+      "old": "if (pool.dex != DominoV2Types.DEX_V3 || pool.hooks != address(0)) revert InvalidPlan();",
+      "new": "if (pool.dex != DominoV2Types.DEX_V3) revert InvalidPlan();"
+    },
+    {
+      "label": "native is wrapped only for a WETH pool",
+      "file": "contracts/src/v2/zap/DominoZapV3.sol",
+      "suite": "test/v2/zap/ZapV3.t.sol",
+      "old": "        if (pool.currency0 != WRAPPED_NATIVE && pool.currency1 != WRAPPED_NATIVE) return;\n",
+      "new": ""
+    },
+    {
+      "label": "native is wrapped for a WETH pool",
+      "file": "contracts/src/v2/zap/DominoZapV3.sol",
+      "suite": "test/v2/zap/ZapV3.t.sol",
+      "old": "        if (native != 0) IWrappedNativeMinimal(WRAPPED_NATIVE).deposit{value: native}();\n",
+      "new": ""
+    },
+    {
+      "label": "owed native fees are never wrapped",
+      "file": "contracts/src/v2/zap/DominoZapV3.sol",
+      "suite": "test/v2/zap/ZapV3.t.sol",
+      "old": "        uint256 native = _unowedBalance(address(0));",
+      "new": "        uint256 native = address(this).balance;"
+    },
+    {
+      "label": "the v3 range is read from the position",
+      "file": "contracts/src/v2/zap/DominoZapV3.sol",
+      "suite": "test/v2/zap/ZapV3.t.sol",
+      "old": "(,,,,, tickLower, tickUpper,,,,,)",
+      "new": "(,,,,, tickUpper, tickLower,,,,,)"
+    },
+    {
+      "label": "the v3 pool is initialized when asked",
+      "file": "contracts/src/v2/zap/DominoZapV3.sol",
+      "suite": "test/v2/zap/ZapV3.t.sol",
+      "old": "        DominoV3Positions.initialize(_managers(), pool, sqrtPriceX96);\n",
+      "new": ""
+    },
+    {
+      "label": "stray ETH is refused by the v3 zap",
+      "file": "contracts/src/v2/zap/DominoZapBase.sol",
+      "suite": "test/v2/zap/ZapV3.t.sol",
+      "old": "if (!_actionLocked()) revert Unauthorized();",
+      "new": "if (false) revert Unauthorized();"
+    }
+  ]
+}

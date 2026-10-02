@@ -27,16 +27,20 @@ from eth_hash.auto import keccak
 
 ROOT = Path(__file__).resolve().parents[2]
 TYPES_SOL = ROOT / 'contracts/src/v2/DominoV2Types.sol'
+# F2 (docs/v2/F2_ZAP.md): RelayedPositionAction lives beside the F0 types, so no F0 source changes.
+RELAY_TYPES_SOL = ROOT / 'contracts/src/v2/DominoV2RelayTypes.sol'
 OUT_TYPES = ROOT / 'api-contracts/v2/eip712.json'
 OUT_GOLDENS = ROOT / 'api-contracts/v2/eip712-goldens.json'
 OUT_SOL = ROOT / 'contracts/test/v2/DominoV2Goldens.sol'
 
-PRIMARY = ('PoolRef', 'PriceObservation', 'PositionIntent', 'ExitMandate')
+PRIMARY = ('PoolRef', 'PriceObservation', 'PositionIntent', 'ExitMandate', 'RelayedPositionAction')
 CONSTANT_NAMES = {
     'PoolRef': 'POOL_REF_TYPE',
     'PriceObservation': 'PRICE_OBSERVATION_TYPE',
     'PositionIntent': 'POSITION_INTENT_TYPE',
     'ExitMandate': 'EXIT_MANDATE_TYPE',
+    # F2 (docs/v2/F2_ZAP.md): what the owner signs for a relayed change of range or exit.
+    'RelayedPositionAction': 'RELAYED_POSITION_ACTION_TYPE',
 }
 PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
 PERMIT2_BATCH_STUB = (
@@ -129,7 +133,7 @@ def routes_hash(legs: list[dict]) -> str:
 
 
 def build() -> tuple[dict, dict, str]:
-    source = TYPES_SOL.read_text()
+    source = TYPES_SOL.read_text() + RELAY_TYPES_SOL.read_text()
     strings = read_type_strings(source)
     types = {name: fields(text) for name, text in strings.items()}
     for name, text in strings.items():
@@ -160,6 +164,14 @@ def build() -> tuple[dict, dict, str]:
 
     def struct_hash(primary: str, message: dict) -> str:
         return hexed(signable(primary, message).body)
+
+    # A relayed exit with conversion: the intent names the position's range,
+    # the bounds are the removal minima, and an exit signs its caps as zero.
+    exit_intent = {'action': 4, 'pool': POOL, 'tokenId': 3409682, 'tickLower': -201060, 'tickUpper': -198060,
+                   'minLiquidity': 0, 'feeBps': 65, 'feeToken': USDG, 'routesHash': routes_hash([LEG]),
+                   'recipient': OWNER, 'nonce': 77, 'deadline': 1790871000}
+    relayed = {'intent': exit_intent, 'liquidityToRemove': 123456789012345678, 'amount0MinRemoved': 4200000000000000,
+               'amount1MinRemoved': 9100000, 'amount0Max': 0, 'amount1Max': 0, 'burn': True}
 
     domain_separator = hexed(signable('PoolRef', POOL).header)
 
@@ -200,15 +212,18 @@ def build() -> tuple[dict, dict, str]:
         'domain': DOMAIN,
         'domainSeparator': domain_separator,
         'fixtures': {'PoolRef': POOL, 'PriceObservation': OBSERVATION, 'PositionIntent': intent,
-                     'ExitMandate': MANDATE, 'SwapLeg': [LEG], 'Permit2': permit_message},
+                     'ExitMandate': MANDATE, 'SwapLeg': [LEG], 'Permit2': permit_message,
+                     'RelayedPositionAction': relayed},
         'routesHash': intent['routesHash'],
         'structHashes': {'PoolRef': struct_hash('PoolRef', POOL),
                          'PriceObservation': struct_hash('PriceObservation', OBSERVATION),
                          'PositionIntent': struct_hash('PositionIntent', intent),
-                         'ExitMandate': struct_hash('ExitMandate', MANDATE)},
+                         'ExitMandate': struct_hash('ExitMandate', MANDATE),
+                         'RelayedPositionAction': struct_hash('RelayedPositionAction', relayed)},
         'digests': {'PriceObservation': digest('PriceObservation', OBSERVATION),
                     'PositionIntent': digest('PositionIntent', intent),
                     'ExitMandate': digest('ExitMandate', MANDATE),
+                    'RelayedPositionAction': digest('RelayedPositionAction', relayed),
                     'Permit2BatchWitness': digest('PermitBatchWitnessTransferFrom', permit_message,
                                                   permit2_types, permit2_domain, permit2_domain_fields)},
     }
@@ -228,6 +243,7 @@ def solidity(exports: dict, goldens: dict) -> str:
         const('PRICE_OBSERVATION_TYPEHASH', exports['typehashes']['PriceObservation']),
         const('POSITION_INTENT_TYPEHASH', exports['typehashes']['PositionIntent']),
         const('EXIT_MANDATE_TYPEHASH', exports['typehashes']['ExitMandate']),
+        const('RELAYED_POSITION_ACTION_TYPEHASH', exports['typehashes']['RelayedPositionAction']),
         const('PERMIT2_BATCH_WITNESS_TYPEHASH', exports['permit2']['fullTypehash']),
         const('DOMAIN_SEPARATOR', goldens['domainSeparator']),
         const('ROUTES_HASH', goldens['routesHash']),
@@ -235,6 +251,7 @@ def solidity(exports: dict, goldens: dict) -> str:
         const('PRICE_OBSERVATION_DIGEST', goldens['digests']['PriceObservation']),
         const('POSITION_INTENT_DIGEST', goldens['digests']['PositionIntent']),
         const('EXIT_MANDATE_DIGEST', goldens['digests']['ExitMandate']),
+        const('RELAYED_POSITION_ACTION_DIGEST', goldens['digests']['RelayedPositionAction']),
         const('PERMIT2_BATCH_WITNESS_DIGEST', goldens['digests']['Permit2BatchWitness']),
         '}\n',
     ]

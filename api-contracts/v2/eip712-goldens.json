@@ -104,6 +104,35 @@
         "nonce": 42,
         "deadline": 1790871000
       }
+    },
+    "RelayedPositionAction": {
+      "intent": {
+        "action": 4,
+        "pool": {
+          "dex": 4,
+          "currency0": "0x0000000000000000000000000000000000000000",
+          "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "fee": 3000,
+          "tickSpacing": 60,
+          "hooks": "0x0000000000000000000000000000000000000000"
+        },
+        "tokenId": 3409682,
+        "tickLower": -201060,
+        "tickUpper": -198060,
+        "minLiquidity": 0,
+        "feeBps": 65,
+        "feeToken": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+        "routesHash": "0x3f539f7e015f09a9c197e20e2d9f3e45d8b4fc875714d48227f082b93fcf8dc7",
+        "recipient": "0x0000000000000000000000000000000000000b0b",
+        "nonce": 77,
+        "deadline": 1790871000
+      },
+      "liquidityToRemove": 123456789012345678,
+      "amount0MinRemoved": 4200000000000000,
+      "amount1MinRemoved": 9100000,
+      "amount0Max": 0,
+      "amount1Max": 0,
+      "burn": true
     }
   },
   "routesHash": "0x3f539f7e015f09a9c197e20e2d9f3e45d8b4fc875714d48227f082b93fcf8dc7",
@@ -111,12 +140,14 @@
     "PoolRef": "0x6bdd4256dc6c21b3c0eb16b0b093253eae52bf8ba1975906b693d94e518b3f59",
     "PriceObservation": "0x6413c0512311bcea5702e47e6e15aeea4ffc7ba8866d643306b9d9b4bb443fa0",
     "PositionIntent": "0xcc0c4822ade686a714ab71c045646f5f12a28df0c7746667425f4b6cd7ca2cef",
-    "ExitMandate": "0x9e9e81446114b3d191bec32453583427ce0931f2021588367c86505e91213025"
+    "ExitMandate": "0x9e9e81446114b3d191bec32453583427ce0931f2021588367c86505e91213025",
+    "RelayedPositionAction": "0xa01b7576e65fb4a0ecc9aec7532a519f3443f676c344d63c7ff44e031386bbca"
   },
   "digests": {
     "PriceObservation": "0xa6b70d6667c97fccf9dd6a109ed8ddf6012d43f47a528158931d52db0900789c",
     "PositionIntent": "0x642f715eea2ecb377a9d3adbda7e0051399a89ec5c1f8bc2e4921f3bdc068df3",
     "ExitMandate": "0x2a3403aaa791d63d81c9cd4f5a2865e7178fb19bc7e6a781712b9c05d45cf1bb",
+    "RelayedPositionAction": "0xa3be36f3170f4a3d96db8f1e453afb016434929e707fb1d409d48ca9c83026cf",
     "Permit2BatchWitness": "0x6aa9acf7bc27a72ca98abcccc7fc59d5ac5b110b504a4846b9d0ca02d1cc20ae"
   }
 }

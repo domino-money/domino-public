@@ -70,6 +70,7 @@ The backend and the app consume the JSON exports; they do not re-declare the int
 | `PriceObservation(PoolRef pool,uint160 sqrtPriceX96,uint64 observedAt,uint64 validUntil,uint64 nonce)` | An admitted publisher | `IDominoPriceAnchor` | The anchor for v4 pools. On v3 it is optional, since the pool's TWAP can serve instead. It replaces V1's on-chain publication transaction, which cost 157k gas per cycle. |
 | `PositionIntent(uint8 action,PoolRef pool,uint256 tokenId,int24 tickLower,int24 tickUpper,uint128 minLiquidity,uint16 feeBps,address feeToken,bytes32 routesHash,address recipient,uint256 nonce,uint64 deadline)` | The owner | The zap or vault | The readable core of a manual action. It is the Permit2 witness in `createWithPermit` and `increaseWithPermit`. `routesHash = keccak256(abi.encode(SwapLeg[]))`. |
 | `ExitMandate(address owner,address vault,uint256 tokenId,uint160 triggerBelowSqrtPriceX96,uint160 triggerAboveSqrtPriceX96,uint8 receiveMode,address convertTo,uint16 maxSlippageBps,uint64 validUntil,uint256 nonce)` | The owner (EOA, EIP-7702 account or EIP-1271 wallet) | `IDominoAutoExit` | One-shot exit order. A zero trigger is disabled; both triggers may be set. |
+| `RelayedPositionAction(PositionIntent intent,uint128 liquidityToRemove,uint128 amount0MinRemoved,uint128 amount1MinRemoved,uint128 amount0Max,uint128 amount1Max,bool burn)` | The position's owner | The zap (`IDominoZap`) | Added in F2, in `contracts/src/v2/DominoV2RelayTypes.sol`. A relayed change of range or exit: the intent plus the removal bounds it does not bind. See docs/v2/F2_ZAP.md. |
 
 `PoolRef(uint8 dex,address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks)` is the nested type of the first two.
 
@@ -109,6 +110,11 @@ Anything that widens trust is scheduled by governance (`scheduleChange` with a `
   - no allowance survives.
 - The fee is checked against the charge-currency rule: `intent.feeToken` must equal the selection.
 - Nothing stays in the contract after an action.
+
+**`IDominoZap`** (added in F2, docs/v2/F2_ZAP.md) — what the stateless zap adds:
+- `changeRangeWithSignature` and `exitWithSignature`, which a relayer submits with the owner's `RelayedPositionAction`;
+- `nonceBitmap` and `invalidateNonces` for those signatures;
+- the receipt events `InputPulled` and `PositionLiquidityChanged`.
 
 **`IDominoVault` / `IDominoVaultFactory`** — the owner, app and indexer surface of automation:
 - policy and limits, pause and resume, rearm;
@@ -158,7 +164,7 @@ Consent takes two explicit acts: the vault's `setExitModule` and the mandate sig
 
 **Components:**
 - `registry`, `priceAnchor`, `autoExit`;
-- `zap.v3` and `zap.v4`;
+- `zap.v3` and `zap.v4`, and `zap.v4.steps` (added in F2: the v4 zap's position steps, reached by DELEGATECALL);
 - `vault.v3` and `vault.v4` (implementations);
 - `vaultFactory.v3` and `vaultFactory.v4`.
 
