@@ -28,7 +28,7 @@ Those parts come later, on top of this slice (see [What the next slices need](#w
 | Base and Arbitrum use hosted RPC: Chainstack first, dRPC as the alternative, Alchemy pay-as-you-go as the fallback, public endpoints only as a last resort. | 2 Oct | Ordered, named endpoints per chain, each with its own limits. A client uses the first three that are not cooling down, so the fourth (public) is used only when one of the first three is cooling. |
 | Hosted RPC bills every call, each call inside a batch included. Cut billable calls. | 2 Oct | No `eth_chainId` is ever requested by a client. The head is shared across services. Code hashes are cached per process. Every call is counted per endpoint. |
 | Respect each endpoint's limits: log range, batch size, rate. Back off on 429 and move to the next endpoint. | 2 Oct | Per-endpoint `maxLogBlocks`, `maxBatchItems` and `requestsPerSecond`. A 429, 5xx or network failure cools the endpoint down with exponential backoff, and the client fails over. |
-| Endpoint URLs carry API keys: read them from configuration or the environment under documented names, and never print them. | 2 Oct | The URL comes from the private file or from `DOMINO_V2_RPC_<CHAIN>_<NAME>`, exactly one of the two. Errors, logs and reprs name the endpoint, never its URL. |
+| Endpoint URLs carry API keys: read them from configuration or the environment under documented names, and never print them. | 2 Oct | The URL comes from the private file, from the unit's sealed systemd credential `v2-rpc-<chain>-<name>`, or from `DOMINO_V2_RPC_<CHAIN>_<NAME>`: exactly one of the three. Errors, logs and reprs name the endpoint, never its URL. |
 
 ## What exists now
 
@@ -84,7 +84,7 @@ All modules are in `backend/`. Tests are in `backend/tests/test_v2_*.py`.
   - It is JSON, mode `0600`, in a `0700` directory outside any checkout. These are the same private-file rules as the automation configuration.
   - It is passed with `--chain-rpc-file`. There is no default path.
 
-**Example file.** Keyed URLs stay in the environment. Only the public endpoint, which has no key, sits in the file.
+**Example file.** Keyed URLs stay out of it, sealed as systemd credentials (or in the environment). Only the public endpoint, which has no key, sits in the file.
 
 ```json
 {
@@ -123,20 +123,20 @@ The numbers above are placeholders for the plan the owner contracts. Measured or
 | --- | --- |
 | `name` | `[a-z][a-z0-9-]*`, unique per chain. It is what logs and reports show. |
 | `host` | The only host the URL may use. The URL must be HTTPS with no userinfo, port or fragment. A query is admitted, because some providers take the key there. |
-| `url` | Optional. If absent, the URL is read from `DOMINO_V2_RPC_<CHAIN>_<NAME>`. Exactly one of the two must exist, or the configuration is refused (`v2_rpc_url_missing`, `v2_rpc_url_ambiguous`). |
+| `url` | Optional. If absent, the URL is read from the unit's systemd credential `v2-rpc-<chain>-<name>` or from `DOMINO_V2_RPC_<CHAIN>_<NAME>`. Exactly one of the three must exist, or the configuration is refused (`v2_rpc_url_missing`, `v2_rpc_url_ambiguous`). A credential that is not a plain regular file of at most 2,048 ASCII bytes is refused (`v2_rpc_credential_unreadable`). |
 | `archive` | `true` if the endpoint serves state at any block. A non-archive endpoint is assumed to keep `RECENT_STATE_BLOCKS` (128) below the head, the geth and Nitro default. History reads older than that start at the first archive endpoint. |
 | `maxBatchItems` | A JSON-RPC batch goes out in envelopes of at most this many calls. |
 | `maxLogBlocks` | An `eth_getLogs` range wider than this is split into windows and merged in order (`null`: no split). |
 | `requestsPerSecond` | Calls are paced to this rate, each call of a batch counted (`null`: not paced). A call that would wait more than 2 s, or past the read's own deadline, is refused locally as `http_429`, and the client moves on. |
 
-**Documented variable names.** The URL lives in one of these variables or in the file's `url`:
+**Documented names.** The URL lives in one of these systemd credentials, in one of these variables, or in the file's `url`:
 
-| Chain | Variables |
-| --- | --- |
-| Base | `DOMINO_V2_RPC_BASE_8453_CHAINSTACK`, `DOMINO_V2_RPC_BASE_8453_DRPC`, `DOMINO_V2_RPC_BASE_8453_ALCHEMY`, `DOMINO_V2_RPC_BASE_8453_PUBLIC` |
-| Arbitrum One | `DOMINO_V2_RPC_ARBITRUM_42161_CHAINSTACK`, `DOMINO_V2_RPC_ARBITRUM_42161_DRPC`, `DOMINO_V2_RPC_ARBITRUM_42161_ALCHEMY`, `DOMINO_V2_RPC_ARBITRUM_42161_PUBLIC` |
+| Chain | Credentials (`LoadCredentialEncrypted=`) | Variables |
+| --- | --- | --- |
+| Base | `v2-rpc-base-8453-chainstack`, `v2-rpc-base-8453-drpc`, `v2-rpc-base-8453-alchemy`, `v2-rpc-base-8453-public` | `DOMINO_V2_RPC_BASE_8453_CHAINSTACK`, `DOMINO_V2_RPC_BASE_8453_DRPC`, `DOMINO_V2_RPC_BASE_8453_ALCHEMY`, `DOMINO_V2_RPC_BASE_8453_PUBLIC` |
+| Arbitrum One | `v2-rpc-arbitrum-42161-chainstack`, `v2-rpc-arbitrum-42161-drpc`, `v2-rpc-arbitrum-42161-alchemy`, `v2-rpc-arbitrum-42161-public` | `DOMINO_V2_RPC_ARBITRUM_42161_CHAINSTACK`, `DOMINO_V2_RPC_ARBITRUM_42161_DRPC`, `DOMINO_V2_RPC_ARBITRUM_42161_ALCHEMY`, `DOMINO_V2_RPC_ARBITRUM_42161_PUBLIC` |
 
-The names follow `DOMINO_V2_RPC_` + the profile name + `_` + the endpoint name, upper case with `-` as `_`. Prefer a systemd `EnvironmentFile=` (0600) or the private file over `Environment=`, which `systemctl show` prints.
+The credential names are `v2-rpc-` + the profile name + `-` + the endpoint name; the variables `DOMINO_V2_RPC_` + the profile name + `_` + the endpoint name, upper case with `-` as `_`. **Prefer the credential** on the VM: systemd decrypts it for the unit alone at each start (`LoadCredentialEncrypted=v2-rpc-base-8453-chainstack:/etc/credstore.encrypted/v2-rpc-base-8453-chainstack`), sealed with the host's key like the automation's keystore passwords (docs/AUTOMATION_PILOT_CONFIGURATION.md, "The signers' keys"), so a copy of the configuration or a backup reveals no key. The variables remain for other hosts; there, prefer a systemd `EnvironmentFile=` (0600) or the private file over `Environment=`, which `systemctl show` prints. The V2 automation's credentials are listed in [V2_AUTOMATION_BACKEND.md](V2_AUTOMATION_BACKEND.md).
 
 **Failover and backoff:**
 
@@ -172,7 +172,13 @@ All three are the V1 read path's failover clients (`rpc_failover`): one deadline
    - Alchemy, the fallback: add Base and Arbitrum to the existing pay-as-you-go account.
 
    The public endpoints need no contract.
-2. **Write the private V2 chain RPC file** above, with each endpoint's host and its plan's limits. Put each URL in the file's `url` or in its `DOMINO_V2_RPC_*` variable.
+2. **Write the private V2 chain RPC file** above, with each endpoint's host and its plan's limits. Seal each keyed URL as its `v2-rpc-<chain>-<name>` credential, typed once at the prompt and never written in plain:
+
+   ```sh
+   sudo systemd-ask-password -n "Chainstack Base URL:" | sudo systemd-creds encrypt --with-key=host --name=v2-rpc-base-8453-chainstack - /etc/credstore.encrypted/v2-rpc-base-8453-chainstack
+   ```
+
+   or put it in the file's `url` or its `DOMINO_V2_RPC_*` variable. `validate` and `check` below read the credential when they run with it, for example under `systemd-run --pipe --property=LoadCredentialEncrypted=v2-rpc-base-8453-chainstack:/etc/credstore.encrypted/v2-rpc-base-8453-chainstack …`.
 3. **Admit each provider host** in the VM's egress policy (see `docs/CONTINUOUS_EGRESS.md`).
 4. **Check each chain:**
 

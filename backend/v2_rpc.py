@@ -22,11 +22,14 @@ Where a chain's endpoints come from. A V2 service serves one chain (v2_chains):
             "maxBatchItems": 100, "maxLogBlocks": 10000, "requestsPerSecond": 25},
            ...]}}}
 
-  An endpoint's URL, which carries the provider's key, is either the entry's
-  `url` or the environment variable DOMINO_V2_RPC_<CHAIN>_<NAME>, for example
-  DOMINO_V2_RPC_BASE_8453_CHAINSTACK; exactly one of the two. It must be HTTPS
-  on exactly the entry's host. A chain the file does not name has no endpoint,
-  and its services refuse to start instead of falling back to anything.
+  An endpoint's URL, which carries the provider's key, is exactly one of:
+  the entry's `url`; the unit's systemd credential v2-rpc-<chain>-<name>
+  ($CREDENTIALS_DIRECTORY, LoadCredentialEncrypted=), for example
+  v2-rpc-base-8453-chainstack, so the key is sealed on the VM like every other
+  secret; or the environment variable DOMINO_V2_RPC_<CHAIN>_<NAME>, for
+  example DOMINO_V2_RPC_BASE_8453_CHAINSTACK. It must be HTTPS on exactly the
+  entry's host. A chain the file does not name has no endpoint, and its
+  services refuse to start instead of falling back to anything.
 
 Limits, enforced per endpoint by the chain's shared transport:
 - maxBatchItems: a JSON-RPC batch goes out in envelopes of at most this many calls;
@@ -61,7 +64,9 @@ from dataclasses import dataclass, field
 import json
 import logging
 import os
+from pathlib import Path
 import re
+import stat
 import sys
 import threading
 import time
@@ -80,6 +85,9 @@ from v2_chains import ChainProfile, default_registry
 
 KIND = 'domino-v2-chain-rpc'
 ENV_PREFIX = 'DOMINO_V2_RPC_'
+CREDENTIAL_PREFIX = 'v2-rpc-'
+CREDENTIAL_NAME = re.compile(r'[a-z0-9][a-z0-9-]{0,62}')
+MAX_CREDENTIAL_BYTES = 2048
 MAX_CHAIN_RPC_BYTES = 65536
 MAX_ENDPOINTS = 6
 # A hosted full node keeps recent state only: the geth and Nitro default of 128
@@ -118,6 +126,43 @@ def env_name(chain, name):
     return ENV_PREFIX + re.sub(r'[^A-Z0-9]', '_', f'{chain.key}_{name}'.upper())
 
 
+def credential_name(chain, name):
+    """The systemd credential that may hold an endpoint's URL: v2-rpc-<profile>-<endpoint>."""
+    return f'{CREDENTIAL_PREFIX}{chain.key}-{name}'
+
+
+def _credential(name, environ):
+    """One systemd credential of this unit (LoadCredentialEncrypted=, decrypted
+    by systemd under $CREDENTIALS_DIRECTORY for this process alone), or None
+    when the unit has none of that name. A regular file only, never a link; one
+    trailing newline is dropped. Its value is never part of an error."""
+    directory = environ.get('CREDENTIALS_DIRECTORY')
+    if not directory:
+        return None
+    if not CREDENTIAL_NAME.fullmatch(name) or not Path(directory).is_absolute():
+        raise DataError('v2_rpc_credential_unreadable')
+    try:
+        fd = os.open(Path(directory) / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    except OSError:
+        raise DataError('v2_rpc_credential_unreadable') from None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise DataError('v2_rpc_credential_unreadable')
+        raw = os.read(fd, MAX_CREDENTIAL_BYTES + 1)
+    finally:
+        os.close(fd)
+    if len(raw) > MAX_CREDENTIAL_BYTES:
+        raise DataError('v2_rpc_credential_unreadable')
+    try:
+        value = raw.decode('ascii')
+    except UnicodeError:
+        raise DataError('v2_rpc_credential_unreadable') from None
+    return value[:-1] if value.endswith('\n') else value
+
+
 def _bounded(value, low, high):
     return type(value) is int and low <= value <= high
 
@@ -145,12 +190,14 @@ def _checked_endpoint(chain, entry, environ):
             or not (entry['requestsPerSecond'] is None or _bounded(entry['requestsPerSecond'], 1, 10**5))):
         raise DataError('invalid_v2_chain_rpc_config')
     host, = rpc_hosts([entry['host']])
-    from_file, from_environment = entry.get('url'), environ.get(env_name(chain, entry['name']))
-    if from_file is not None and from_environment is not None:
+    # Exactly one source: the file, the unit's sealed credential, or the environment.
+    sources = [value for value in (entry.get('url'), _credential(credential_name(chain, entry['name']), environ),
+                                   environ.get(env_name(chain, entry['name']))) if value is not None]
+    if len(sources) > 1:
         raise DataError('v2_rpc_url_ambiguous')
-    if from_file is None and from_environment is None:
+    if not sources:
         raise DataError('v2_rpc_url_missing')
-    url = endpoint_url(from_file if from_file is not None else from_environment, host)
+    url = endpoint_url(sources[0], host)
     return Endpoint(entry['name'], host, url, None if entry['archive'] else RECENT_STATE_BLOCKS,
                     entry['maxBatchItems'], entry['maxLogBlocks'], entry['requestsPerSecond'])
 

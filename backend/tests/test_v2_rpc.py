@@ -21,8 +21,8 @@ from rpc_config import LOCAL_STATE_BLOCKS
 import v2_rpc
 from v2_chains import load_registry
 from v2_rpc import (RECENT_STATE_BLOCKS, ChainEndpoints, ChainIndexRpc, ChainReadRpc, CodeCache, Endpoint,
-                    check_endpoint, checked_chain_rpc_config, configured_endpoints, env_name, load_chain_rpc_config,
-                    provider_file_endpoints)
+                    check_endpoint, checked_chain_rpc_config, configured_endpoints, credential_name, env_name,
+                    load_chain_rpc_config, provider_file_endpoints)
 from v2_fixtures import HEAD, FakeChain, documents, synthetic_code, with_synthetic_code, write_registry
 
 ALCHEMY = 'https://robinhood-mainnet.g.alchemy.com/v2/SYNTHETIC'
@@ -107,6 +107,63 @@ class ConfigTests(unittest.TestCase):
             checked_chain_rpc_config(document, environ={'DOMINO_V2_RPC_ARBITRUM_42161_STACK': URLS['stack']})
         with patch.dict(os.environ, environ, clear=False):
             self.assertEqual(checked_chain_rpc_config(document).chains['base-8453'][0].url, URLS['stack'])
+
+    def test_a_url_can_be_a_sealed_systemd_credential_and_only_one_source_counts(self):
+        """LoadCredentialEncrypted= decrypts v2-rpc-<chain>-<endpoint> under $CREDENTIALS_DIRECTORY."""
+        self.assertEqual(credential_name(BASE, 'chainstack'), 'v2-rpc-base-8453-chainstack')
+        self.assertEqual(credential_name(ARBITRUM, 'alchemy-payg'), 'v2-rpc-arbitrum-42161-alchemy-payg')
+        directory = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, directory)
+        (directory / 'v2-rpc-base-8453-stack').write_text(URLS['stack'] + '\n')
+        document = chain_rpc_document(**{'base-8453': {'endpoints': [entry('stack', url=False), entry('public')]}})
+        environ = {'CREDENTIALS_DIRECTORY': str(directory)}
+        config = checked_chain_rpc_config(document, environ=environ)
+        self.assertEqual([e.url for e in config.chains['base-8453']], [URLS['stack'], URLS['public']])
+        self.assertNotIn('SYNTHETIC', repr(config) + repr(config.chains['base-8453']))
+        # The credential and the variable, or the credential and the file: ambiguous.
+        with self.assertRaisesRegex(DataError, '^v2_rpc_url_ambiguous$'):
+            checked_chain_rpc_config(document, environ={**environ, 'DOMINO_V2_RPC_BASE_8453_STACK': URLS['stack']})
+        (directory / 'v2-rpc-base-8453-public').write_text(URLS['public'])
+        with self.assertRaisesRegex(DataError, '^v2_rpc_url_ambiguous$'):
+            checked_chain_rpc_config(document, environ=environ)
+        (directory / 'v2-rpc-base-8453-public').unlink()
+        # Another chain's credential is not this chain's; no directory, no credential.
+        (directory / 'v2-rpc-base-8453-stack').rename(directory / 'v2-rpc-arbitrum-42161-stack')
+        with self.assertRaisesRegex(DataError, '^v2_rpc_url_missing$'):
+            checked_chain_rpc_config(document, environ=environ)
+        with self.assertRaisesRegex(DataError, '^v2_rpc_url_missing$'):
+            checked_chain_rpc_config(document, environ={})
+
+    def test_a_credential_that_is_not_a_plain_readable_file_is_refused_without_its_value(self):
+        directory = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, directory)
+        document = chain_rpc_document(**{'base-8453': {'endpoints': [entry('stack', url=False)]}})
+        environ = {'CREDENTIALS_DIRECTORY': str(directory)}
+        name = directory / 'v2-rpc-base-8453-stack'
+        target = directory / 'elsewhere'
+        target.write_text(URLS['stack'])
+        cases = {
+            'link': lambda: name.symlink_to(target),
+            'directory': lambda: name.mkdir(),
+            'oversized': lambda: name.write_text('https://stack.example.invalid/' + 'k' * 2048),
+            'not ascii': lambda: name.write_bytes('https://stack.example.invalid/\u00e9'.encode()),
+        }
+        for label, make in cases.items():
+            with self.subTest(label):
+                make()
+                with self.assertRaisesRegex(DataError, '^v2_rpc_credential_unreadable$'):
+                    checked_chain_rpc_config(document, environ=environ)
+                if name.is_dir() and not name.is_symlink():
+                    name.rmdir()
+                else:
+                    name.unlink()
+        with self.assertRaisesRegex(DataError, '^v2_rpc_credential_unreadable$'):
+            checked_chain_rpc_config(document, environ={'CREDENTIALS_DIRECTORY': 'relative/credentials'})
+        # A credential on another host than the entry's is refused like any URL.
+        name.write_text('https://other.example.invalid/SYNTHETIC')
+        with self.assertRaisesRegex(DataError, '^invalid_v2_rpc_url$') as caught:
+            checked_chain_rpc_config(document, environ=environ)
+        self.assertNotIn('SYNTHETIC', str(caught.exception))
 
     def test_a_chain_without_endpoints_has_no_fallback(self):
         config = checked_chain_rpc_config({'schemaVersion': 1, 'kind': 'domino-v2-chain-rpc', 'chains': {}})

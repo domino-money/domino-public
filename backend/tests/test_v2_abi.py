@@ -12,7 +12,7 @@ from eth_hash.auto import keccak
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from discovery import DataError
 import v2_abi
-from v2_abi import ABI_DIRECTORY, function, interface
+from v2_abi import ABI_DIRECTORY, event, events, function, interface
 
 
 class ExportTests(unittest.TestCase):
@@ -101,6 +101,40 @@ class StaleExportTests(unittest.TestCase):
         self.path.write_text((ABI_DIRECTORY / 'IV4StateViewMinimal.json').read_text() + ' ' * v2_abi.MAX_EXPORT_BYTES)
         with self.assertRaisesRegex(DataError, '^v2_abi_export_invalid$'):
             interface('IV4StateViewMinimal', self.directory)
+
+
+
+class EventTests(unittest.TestCase):
+    def test_every_exported_event_loads_with_its_topic(self):
+        index = json.loads((ABI_DIRECTORY / 'index.json').read_text())
+        total = 0
+        for name in index:
+            for item in events(name).values():
+                self.assertEqual(item.topic, '0x' + keccak(item.signature.encode()).hex())
+                total += 1
+        self.assertGreater(total, 30)
+        # The signatures the automation reads, rebuilt by hand.
+        self.assertEqual(event('IDominoVaultExecution', 'Executed').topic,
+                         '0x' + keccak(b'Executed(bytes32,uint8,uint64)').hex())
+        self.assertEqual(event('IDominoFeeEvents', 'FeeCharged').signature,
+                         'FeeCharged(uint8,address,address,uint256,bytes32)')
+
+    def test_a_log_decodes_by_name_and_only_against_its_own_shape(self):
+        created = event('IDominoVaultFactory', 'VaultCreated')
+        owner, vault = '0x' + '11' * 20, '0x' + '22' * 20
+        log = {'topics': [created.topic, '0x' + encode(['address'], [owner]).hex(),
+                          '0x' + encode(['address'], [vault]).hex(), '0x' + encode(['uint256'], [77]).hex()],
+               'data': '0x' + encode(['uint8', 'uint256'], [4, 3]).hex()}
+        self.assertEqual(created.decode(log), {'owner': owner, 'vault': vault, 'rootTokenId': 77, 'dex': 4,
+                                               'ownerNonce': 3})
+        bad = [dict(log, topics=log['topics'][:3]), dict(log, topics=[event('IDominoVault', 'RootRearmed').topic]
+                                                            + log['topics'][1:]),
+               dict(log, data=log['data'] + '00' * 32), dict(log, data='0xzz')]
+        for item in bad:
+            with self.assertRaisesRegex(DataError, '^v2_abi_event_mismatch$'):
+                created.decode(item)
+        with self.assertRaisesRegex(DataError, '^v2_abi_event_unknown$'):
+            event('IDominoVaultFactory', 'Created')
 
 
 if __name__ == '__main__':

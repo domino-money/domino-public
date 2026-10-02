@@ -57,6 +57,10 @@ npm --prefix app ci
 node scripts/test-contracts.mjs --match-path test/setup/DominoSetup.t.sol
 node scripts/test-contracts.mjs --match-path test/reference/OfficialDominoExecutionV4.t.sol
 node scripts/test-contracts.mjs --match-path test/audit_engine/SwapReinvestment.t.sol
+(cd contracts && node ../scripts/test-contracts.mjs build src/v2/registry/DominoRegistry.sol \
+  src/v2/anchor/DominoPriceAnchor.sol src/v2/autoexit/DominoAutoExit.sol src/v2/vault/DominoV2VaultSwapModule.sol \
+  src/v2/vault/DominoV2VaultV3.sol src/v2/vault/DominoV2VaultV4.sol src/v2/vault/DominoV2VaultFactory.sol \
+  src/v2/zap/DominoZapV3.sol src/v2/zap/DominoZapV4.sol src/v2/zap/DominoZapV4Steps.sol)
 backend/.venv/bin/python backend/dev_postgres.py prepare-tests
 DOMINO_TEST_POSTGRES=1 DOMINO_TEST_EVM=1 backend/.venv/bin/python -m unittest discover -s backend/tests -v
 backend/.venv/bin/python backend/dev_postgres.py stop

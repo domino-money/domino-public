@@ -239,6 +239,18 @@ jobs:
         run: node scripts/build-public-release.mjs
       - name: Independently reproduce the reviewed release artifact manifest
         run: node scripts/release-artifact-manifest.mjs --check
+      # The V2 automation's EVM tests (backend/tests/test_v2_automation_evm.py)
+      # deploy every V2 component from contracts/out. Cold, these 10 contracts
+      # (53 sources) compiled in 83 s on a Mac on 2 Oct 2026; a warm cache
+      # rebuilds nothing.
+      - name: Build the V2 contracts the automation EVM tests deploy
+        working-directory: contracts
+        run: >-
+          node ../scripts/test-contracts.mjs build
+          src/v2/registry/DominoRegistry.sol src/v2/anchor/DominoPriceAnchor.sol
+          src/v2/autoexit/DominoAutoExit.sol src/v2/vault/DominoV2VaultSwapModule.sol
+          src/v2/vault/DominoV2VaultV3.sol src/v2/vault/DominoV2VaultV4.sol src/v2/vault/DominoV2VaultFactory.sol
+          src/v2/zap/DominoZapV3.sol src/v2/zap/DominoZapV4.sol src/v2/zap/DominoZapV4Steps.sol
       - run: python scripts/export-read-contract.py --check
       - run: python scripts/export-read-v2-contract.py --check
       - run: python scripts/export-read-v3-contract.py --check
