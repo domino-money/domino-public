@@ -1,6 +1,7 @@
-"""The V2 automation service's configuration and command line."""
+"""The V2 automation service's configuration and command line, and its return of a closed vault's reserves."""
 import contextlib
 import copy
+from dataclasses import replace
 import io
 import json
 import os
@@ -12,9 +13,19 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from discovery import DataError
-from v2_automation import build, checked_config, load_automation_config, main
+from eth_abi import encode
+from eth_hash.auto import keccak
+
+from discovery import DataError, parse_block
+from v2_automation import ChainAutomation, build, checked_config, load_automation_config, main
+from v2_chains import chain as profile
+from v2_executor import CallReverted
+from v2_manifest import checked_deployment
+from v2_observation import PublisherPolicy
+from v2_plan import return_reserves_calldata, return_subject
+from v2_planner import PlannerConfig
 from test_v2_manifest import manifest_document
+from test_v2_planner import member, vault_state
 
 OPERATOR, PUBLISHER = '0x' + '04' * 20, '0x' + '05' * 20
 
@@ -171,6 +182,118 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertEqual(json.loads(out.getvalue()), {'error': 'v2_invalid_gas_policy'})
         self.assertNotIn('SYNTHETIC', out.getvalue())
+
+
+class ReturnTests(unittest.TestCase):
+    """The pass's return of a closed vault's reserves (ChainAutomation._return):
+    what it reads, what it presimulates and what it hands the executor."""
+
+    BLOCK = parse_block({'number': '0x64', 'hash': '0x' + 'ab' * 32, 'timestamp': '0x6500'})
+    PAID = '0x' + encode(['uint256', 'uint256'], [1000, 3]).hex()
+
+    class Executor:
+        def __init__(self, result):
+            self.result, self.calls = result, []
+            self.policy = type('Policy', (), {'priority_fee_per_gas': 10**6})()
+
+        def presimulate(self, target, data, head, *, output=False):
+            self.calls.append((target, data, head, output))
+            if isinstance(self.result, CallReverted):
+                raise self.result
+            return 480_000, 400_000, self.result
+
+    class Reader:
+        def __init__(self, reserves):
+            self.amounts, self.reads = reserves, 0
+
+        def reserves(self, vault, block):
+            self.reads += 1
+            return self.amounts
+
+    class Rpc:
+        call_gas_limit = 10**7
+
+        def request(self, method, params):  # the OP Stack L1 fee bound, 1 gwei
+            return '0x' + encode(['uint256'], [10**9]).hex()
+
+    def service(self, executor, **changes):
+        base = profile('base-8453')
+        options = dict(chain=base, deployment=checked_deployment(manifest_document(), base), endpoints=None,
+                       follower=None, planner=PlannerConfig(), observations=PublisherPolicy(), price_references=(),
+                       earnings_window_seconds=600, twap_seconds=600, exit_twap_seconds=600, deadline_seconds=120,
+                       executor=executor)
+        options.update(changes)
+        return ChainAutomation(**options)
+
+    def returned(self, executor, reserves=(1000, 3), **changes):
+        head = type('Head', (), {'block': self.BLOCK, 'base_fee_per_gas': 10**8})()
+        vault = vault_state(member(liquidity=0), root_armed=False)
+        return self.service(executor, **changes)._return(vault, self.Reader(reserves), self.Rpc(), head), vault
+
+    def test_a_closed_vault_with_reserves_gets_one_presimulated_call(self):
+        executor = self.Executor(self.PAID)
+        entry, vault = self.returned(executor)
+        self.assertEqual({k: entry[k] for k in ('act', 'reason', 'action', 'simulation', 'reserves', 'paid')},
+                         {'act': True, 'reason': 'reserves_returnable', 'action': 'return_reserves',
+                          'simulation': 'passed', 'reserves': ['1000', '3'], 'paid': ['1000', '3']})
+        self.assertEqual(entry['plan'], {'calldata': return_reserves_calldata(),
+                                         'deadline': self.BLOCK.timestamp + 120, 'gas': 480_000})
+        self.assertEqual(entry['subject'], return_subject(8453, vault.vault, vault.state_nonce, self.BLOCK.number))
+        self.assertEqual(executor.calls, [(vault.vault, return_reserves_calldata(), self.BLOCK, True)])
+
+    def test_nothing_to_return_leaves_the_vault_to_the_planner(self):
+        executor = self.Executor(self.PAID)
+        entry, _ = self.returned(executor, reserves=(0, 0))
+        self.assertIsNone(entry)
+        self.assertEqual(executor.calls, [])
+
+    def test_an_empty_closed_vault_is_read_again_only_once_its_state_moves(self):
+        # Every change to a vault's reserves advances its state nonce.
+        service = self.service(self.Executor(self.PAID))
+        head = type('Head', (), {'block': self.BLOCK, 'base_fee_per_gas': 10**8})()
+        vault, reader = vault_state(member(liquidity=0), root_armed=False), self.Reader((0, 0))
+        self.assertIsNone(service._return(vault, reader, self.Rpc(), head))
+        self.assertIsNone(service._return(vault, reader, self.Rpc(), head))
+        self.assertEqual(reader.reads, 1)
+        reader.amounts = (1000, 3)
+        self.assertIsNone(service._return(vault, reader, self.Rpc(), head))
+        moved = service._return(replace(vault, state_nonce=vault.state_nonce + 1), reader, self.Rpc(), head)
+        self.assertEqual((reader.reads, moved['reason']), (2, 'reserves_returnable'))
+
+    def test_the_registrys_halt_holds_it_and_a_pause_does_not(self):
+        executor = self.Executor(self.PAID)
+        head = type('Head', (), {'block': self.BLOCK, 'base_fee_per_gas': 10**8})()
+        closed = vault_state(member(liquidity=0), root_armed=False)
+        service = self.service(executor)
+        self.assertIsNone(service._return(replace(closed, halted=True), self.Reader((1000, 3)), self.Rpc(), head))
+        self.assertEqual(executor.calls, [])
+        entry = service._return(replace(closed, paused=True), self.Reader((1000, 3)), self.Rpc(), head)
+        self.assertEqual((entry['act'], entry['reason']), (True, 'reserves_returnable'))
+
+    def test_a_return_that_would_pay_nothing_is_not_sent(self):
+        # Every reserve is in a token the owner cannot receive (A8): it would stay idle.
+        entry, _ = self.returned(self.Executor('0x' + encode(['uint256', 'uint256'], [0, 0]).hex()))
+        self.assertEqual((entry['act'], entry['reason'], entry['simulation']), (False, 'reserves_unpayable', 'passed'))
+        self.assertNotIn('plan', entry)
+
+    def test_the_contracts_refusal_reaches_the_pass(self):
+        refusal = CallReverted('0x' + keccak(b'RootOpen()')[:4].hex())
+        with self.assertRaisesRegex(CallReverted, '^reverted_root_open$'):
+            self.returned(self.Executor(refusal))
+
+    def test_without_keys_it_is_reported_and_never_simulated(self):
+        entry, _ = self.returned(None)
+        self.assertEqual((entry['act'], entry['reason'], entry['action']),
+                         (True, 'eligible_keyless', 'return_reserves'))
+        self.assertNotIn('plan', entry)
+
+    def test_the_vaults_gas_ceiling_holds(self):
+        # 400,000 gas at 1.01e8 plus the 1 gwei L1 bound: 4.04e13 + 1e9 wei.
+        entry, _ = self.returned(self.Executor(self.PAID), vault_gas_ceiling_wei=4 * 10**13)
+        self.assertEqual((entry['act'], entry['reason']), (False, 'vault_gas_ceiling'))
+        entry, _ = self.returned(self.Executor(self.PAID), vault_gas_ceiling_wei=4 * 10**13,
+                                 vault_gas_ceilings_wei={'0x' + 'aa' * 20: 5 * 10**13})
+        self.assertEqual((entry['act'], entry['reason']), (True, 'reserves_returnable'))
 
 
 if __name__ == '__main__':

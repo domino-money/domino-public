@@ -304,6 +304,28 @@ abstract contract DominoV2VaultBase is DominoV2VaultStorage, DominoFeeLedger, ID
         _markDisarmed(DISARM_EXIT_ALL);
     }
 
+    /// See IDominoVaultLedger.returnReserves. Anyone may call it: whoever
+    /// calls, the owner is paid. The root's closure is read live from its
+    /// position manager (_rootClosed), never from a stored flag, and only the
+    /// owner can close a root: decreasing a position needs its owner or an
+    /// approval the owner gave, and the vault's own approval decreases the
+    /// root only for the owner's exit mandate. Like exitAll it never reads the
+    /// registry, so neither a pause nor the global halt holds the owner's
+    /// money back. It changes nothing but the reserves: no policy, arming or
+    /// custody.
+    function returnReserves() external nonReentrant returns (uint256 amount0, uint256 amount1) {
+        if (_members.length != 1) revert SuccessorActive();
+        if (!_rootClosed()) revert RootOpen();
+        uint64 nonce = _stateNonce + 1;
+        uint256 rootId = _rootTokenId;
+        bool moved0;
+        bool moved1;
+        (amount0, moved0) = _returnReserve(rootId, _currency0, nonce);
+        (amount1, moved1) = _returnReserve(rootId, _currency1, nonce);
+        // Every state change advances the nonce (B8); nothing to pay changes nothing.
+        if (moved0 || moved1) _stateNonce = nonce;
+    }
+
     /// Enables the auto-exit module this implementation was deployed with, or
     /// disables auto-exit with address(0). No other module can be enabled.
     function setExitModule(address module) external nonReentrant onlyOwner {
@@ -373,6 +395,29 @@ abstract contract DominoV2VaultBase is DominoV2VaultStorage, DominoFeeLedger, ID
         _maxObservationAgeSeconds = next.maxObservationAgeSeconds;
         _upsideBps = next.upsideBps;
     }
+
+    /// The root's lot in `token` becomes idle, then the whole idle reserve goes
+    /// to the owner, or stays idle when the owner cannot receive it (exitAll's
+    /// A8). The ledger is settled before the transfer. Returns what was paid
+    /// and whether anything moved.
+    function _returnReserve(uint256 rootId, address token, uint64 nonce) private returns (uint256, bool) {
+        IDominoVaultLedger.Lot memory entry = _lots[rootId][token];
+        uint256 lots = uint256(entry.uncharged) + entry.charged;
+        uint256 amount = _idle[token] + lots;
+        if (amount == 0) return (0, false);
+        delete _lots[rootId][token];
+        _idle[token] = 0;
+        if (DominoTokenOps.tryTransfer(token, _owner, amount, gasleft())) {
+            emit ReservesWithdrawn(token, amount, nonce);
+            return (amount, true);
+        }
+        _idle[token] = amount;
+        return (0, lots != 0);
+    }
+
+    /// Whether the root has no liquidity left, or no longer exists (burned),
+    /// read live from its position manager. Only the implementation needs it.
+    function _rootClosed() internal view virtual returns (bool);
 
     function _payIdle(address token, address to, uint64 nonce) private {
         uint256 amount = _idle[token];

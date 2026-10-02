@@ -250,6 +250,13 @@ contract DominoV2VaultV4 is DominoV2VaultBase, DominoV2VaultV4Hooks {
         _notified(tokenId, DISARM_BURNED, false);
     }
 
+    /// No liquidity left. A burn clears the token's position info, and the
+    /// PositionManager then reads its liquidity as zero, so a burned root and
+    /// one decreased to zero are both closed.
+    function _rootClosed() internal view override returns (bool) {
+        return _liquidity(_rootTokenId) == 0;
+    }
+
     /// Never reverts for the position manager, whose notification would then
     /// block the owner's own change; only another caller is refused.
     function _notified(uint256 tokenId, uint8 reason, bool ownStep) private {

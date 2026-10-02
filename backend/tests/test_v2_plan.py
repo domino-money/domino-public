@@ -11,7 +11,8 @@ from eth_hash.auto import keccak
 from discovery import DataError
 from v2_plan import (ACTION_COMPOUND, ACTION_MINT, LEG_UNIVERSAL_ROUTER, LEG_V3_POOL, LEG_V4_POOL, PLAN_V1_TYPE,
                      U128, Budget, ExitExecution, PlanV1, Swap, SwapLeg, decode_plan, execute_calldata,
-                     exit_calldata, plan_hash, pool_leg, twap_evidence, v3_path, v4_path)
+                     exit_calldata, plan_hash, pool_leg, return_reserves_calldata, return_subject, returned_amounts,
+                     twap_evidence, v3_path, v4_path)
 from v2_uniswap import PoolRef
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -133,6 +134,29 @@ class ExitExecutionTests(unittest.TestCase):
         self.assertEqual(hash_.hex(), '5a' * 32)
         self.assertEqual((value[0], value[2], value[3]), ((600).to_bytes(32, 'big'), 7, 8))
         self.assertEqual(value[1][0][4], 0)
+
+
+
+class ReturnReservesTests(unittest.TestCase):
+    def test_the_call_and_its_result_are_the_frozen_ledgers(self):
+        self.assertEqual(return_reserves_calldata(), '0x' + keccak(b'returnReserves()')[:4].hex())
+        self.assertEqual(returned_amounts('0x' + encode(['uint256', 'uint256'], [12, 0]).hex()), (12, 0))
+        with self.assertRaisesRegex(DataError, '^invalid_abi_response$'):
+            returned_amounts('0x' + '00' * 32)
+
+    def test_the_subject_is_the_vault_its_state_and_the_pass(self):
+        vault = '0x' + 'a4' * 20
+        subject = return_subject(8453, vault, 7, 123)
+        self.assertEqual(subject, '0x' + keccak(encode(['uint256', 'address', 'uint64', 'uint256'],
+                                                       [8453, vault, 7, 123])).hex())
+        self.assertEqual(return_subject(8453, vault.upper().replace('0X', '0x'), 7, 123), subject)
+        others = {return_subject(4663, vault, 7, 123), return_subject(8453, '0x' + 'a5' * 20, 7, 123),
+                  return_subject(8453, vault, 8, 123), return_subject(8453, vault, 7, 124)}
+        self.assertEqual(len(others | {subject}), 5)
+        for arguments in ((8453, vault, -1, 123), (8453, vault, 2**64, 123), (8453, vault, 7, True),
+                          ('1', vault, 7, 1)):
+            with self.subTest(arguments), self.assertRaisesRegex(DataError, '^v2_invalid_return$'):
+                return_subject(*arguments)
 
 
 if __name__ == '__main__':

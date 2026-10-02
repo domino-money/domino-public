@@ -11,7 +11,10 @@ and the deployment manifest's addresses (v2_manifest):
 - a vault's state for the planner (v2_planner.VaultState): owner, pool, root,
   members, lots, policy, limits, pause, the root's live arming, the state
   nonce, the last execution, the registry's halt, and each member's position
-  as its manager reports it (v2_uniswap);
+  as its manager reports it (v2_uniswap). A root its owner burned no longer
+  exists; it reads as a closed root (no liquidity, nothing owed), so a closed
+  vault's reserves can still go back to the owner (returnReserves);
+- a closed vault's reserves (reserves(token) of both pool tokens);
 - the anchor the vault will use: on v4 the spot a publisher signs at this
   block (v2_observation), on v3 the pool's TWAP through the price anchor
   itself (twapSqrtPrice, the same arithmetic the vault's anchor() runs);
@@ -45,6 +48,9 @@ V4_STATE = 'IV4StateViewMinimal'
 WIRING_SELECTOR = '0x' + keccak(b'wiring()')[:4].hex()
 WIRING_TYPES = ['(address,address,address,address,address,address)']
 MAX_MEMBERS = 64
+# How a position that no longer exists answers: no position info on v4
+# (v2_uniswap), a reverted positions() on v3 (the manager's "Invalid token ID").
+GONE = frozenset({'v2_position_not_found', 'rpc_call_reverted'})
 
 
 def clone_code(implementation):
@@ -165,12 +171,22 @@ class VaultReader:
             active, parent, successor, lower, upper = member
             if not active:
                 continue
-            position = self.uniswap.position(PositionRef(record.dex, manager, token_id), block)
+            lots = ((lot0[0], lot0[1]), (lot1[0], lot1[1]))
+            try:
+                position = self.uniswap.position(PositionRef(record.dex, manager, token_id), block)
+            except DataError as error:
+                # Only the root can be gone while the vault lists it: the owner
+                # burned it. It is closed; the contract confirms it before any
+                # return (IDominoVaultLedger.returnReserves). Anything else refuses.
+                if token_id != root[2] or str(error) not in GONE:
+                    raise
+                states.append(MemberState(token_id, lower, upper, 0, (0, 0), lots, parent, successor))
+                continue
             if position.pool.pool != pool or (position.tick_lower, position.tick_upper) != (lower, upper):
                 raise DataError('v2_vault_member_mismatch')
             pool_state = position.pool
-            states.append(MemberState(token_id, lower, upper, position.liquidity, tuple(position.fees_owed),
-                                      ((lot0[0], lot0[1]), (lot1[0], lot1[1])), parent, successor))
+            states.append(MemberState(token_id, lower, upper, position.liquidity, tuple(position.fees_owed), lots,
+                                      parent, successor))
         if pool_state is None:
             pool_state = self.uniswap.pool(pool, block)
         planner_pool = PlannerPool(pool, pool_state.sqrt_price_x96, pool_state.liquidity,
@@ -180,6 +196,14 @@ class VaultReader:
             policy=Policy(*policy), limits=Limits(*limits), pool=planner_pool, state_nonce=nonce,
             last_execution_at=last, paused=paused, root_armed=armed, halted=halted, swap_available=True,
             block_number=block.number, block_timestamp=block.timestamp)
+
+    def reserves(self, vault, block):
+        """reserves(token) of both pool tokens (IDominoVault): idle plus every
+        member's lots, everything returnReserves would pay the owner."""
+        pool = vault.pool.pool
+        (amount0,), (amount1,) = calls(self.rpc, block, [(vault.vault, function(VAULT, 'reserves'), (pool.currency0,)),
+                                                         (vault.vault, function(VAULT, 'reserves'), (pool.currency1,))])
+        return amount0, amount1
 
 
 # ------------------------------------------------------------------ anchor

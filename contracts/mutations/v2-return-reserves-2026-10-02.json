@@ -1,0 +1,135 @@
+{
+ "description": "returnReserves (V2 vault): every guard and effect of the permissionless return of a closed vault's reserves, each deleted or weakened alone, against the suite that pins it on the v3 unit model and on the v3 and v4 bytecode deployed on Base.",
+ "provenance": "Authored 2026-10-02 with returnReserves, after the V1 incident of 2 Oct 2026 (an owner closed an automated position on Uniswap and the collected fees stayed in the vault). Run: node scripts/mutate-contracts.mjs contracts/mutations/v2-return-reserves-2026-10-02.json --with-artifacts",
+ "suite": "test/v2/vault/DominoV2VaultReturn.t.sol",
+ "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+ "mutations": [
+  {
+   "label": "returnReserves takes the one lock",
+   "old": "function returnReserves() external nonReentrant returns",
+   "new": "function returnReserves() external returns"
+  },
+  {
+   "label": "no return while a successor is active",
+   "old": "        if (_members.length != 1) revert SuccessorActive();\n",
+   "new": ""
+  },
+  {
+   "label": "no return while the root is open",
+   "old": "        if (!_rootClosed()) revert RootOpen();\n",
+   "new": ""
+  },
+  {
+   "label": "the payout event carries the next nonce",
+   "old": "uint64 nonce = _stateNonce + 1;\n        uint256 rootId = _rootTokenId;\n        bool moved0;",
+   "new": "uint64 nonce = _stateNonce + 2;\n        uint256 rootId = _rootTokenId;\n        bool moved0;"
+  },
+  {
+   "label": "the nonce advances only on a change",
+   "old": "if (moved0 || moved1) _stateNonce = nonce;",
+   "new": "_stateNonce = nonce;"
+  },
+  {
+   "label": "a payment in token0 alone advances the nonce",
+   "old": "if (moved0 || moved1) _stateNonce = nonce;",
+   "new": "if (moved1) _stateNonce = nonce;"
+  },
+  {
+   "label": "a move in token1 alone advances the nonce",
+   "old": "if (moved0 || moved1) _stateNonce = nonce;",
+   "new": "if (moved0) _stateNonce = nonce;"
+  },
+  {
+   "label": "a change advances the nonce at all",
+   "old": "        if (moved0 || moved1) _stateNonce = nonce;\n",
+   "new": ""
+  },
+  {
+   "label": "nothing to pay changes nothing",
+   "old": "        if (amount == 0) return (0, false);\n",
+   "new": ""
+  },
+  {
+   "label": "the root's lot is emptied",
+   "old": "        delete _lots[rootId][token];\n        _idle[token] = 0;\n",
+   "new": "        _idle[token] = 0;\n"
+  },
+  {
+   "label": "the idle reserve is emptied with the payment",
+   "old": "        delete _lots[rootId][token];\n        _idle[token] = 0;\n",
+   "new": "        delete _lots[rootId][token];\n"
+  },
+  {
+   "label": "what the owner cannot receive stays idle",
+   "old": "        _idle[token] = amount;\n        return (0, lots != 0);",
+   "new": "        return (0, lots != 0);"
+  },
+  {
+   "label": "lots moved to idle are a change",
+   "old": "return (0, lots != 0);",
+   "new": "return (0, false);"
+  },
+  {
+   "label": "a failed payment of idle alone is no change",
+   "old": "return (0, lots != 0);",
+   "new": "return (0, true);"
+  },
+  {
+   "label": "the owner is the payee, whoever calls",
+   "old": "DominoTokenOps.tryTransfer(token, _owner, amount, gasleft())",
+   "new": "DominoTokenOps.tryTransfer(token, msg.sender, amount, gasleft())"
+  },
+  {
+   "label": "each payment is emitted",
+   "old": "            emit ReservesWithdrawn(token, amount, nonce);\n            return (amount, true);",
+   "new": "            return (amount, true);"
+  },
+  {
+   "label": "the amount paid is returned",
+   "old": "return (amount, true);",
+   "new": "return (0, true);"
+  },
+  {
+   "label": "v3: only the manager's refusal of an unknown token is a burn",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "old": "if (!ok) return keccak256(data) == NO_SUCH_TOKEN;",
+   "new": "if (!ok) return true;"
+  },
+  {
+   "label": "v3: a burned root is closed",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "old": "if (!ok) return keccak256(data) == NO_SUCH_TOKEN;",
+   "new": "if (!ok) return false;"
+  },
+  {
+   "label": "v3: the refusal is matched byte for byte",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "old": "0x0c8d4288bb9236adbada2de6e0bf1807631966685254b486e230ac9d8f0a9426",
+   "new": "0x0c8d4288bb9236adbada2de6e0bf1807631966685254b486e230ac9d8f0a9427"
+  },
+  {
+   "label": "v3: liquidity left keeps the root open",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "old": "return liquidity == 0;",
+   "new": "return true;"
+  },
+  {
+   "label": "v3: a root decreased to zero is closed",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "old": "return liquidity == 0;",
+   "new": "return false;"
+  },
+  {
+   "label": "v4: liquidity left keeps the root open",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "old": "return _liquidity(_rootTokenId) == 0;",
+   "new": "return true;"
+  },
+  {
+   "label": "v4: a root decreased to zero or burned is closed",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "old": "return _liquidity(_rootTokenId) == 0;",
+   "new": "return false;"
+  }
+ ]
+}

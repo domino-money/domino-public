@@ -13,12 +13,12 @@ from discovery import DataError, parse_block
 from v2_abi import event, function
 from v2_chains import chain as profile
 from v2_manifest import checked_deployment
-from v2_planner import Limits
+from v2_planner import Limits, returnable
 from v2_rpc import ChainEndpoints, Endpoint
 from v2_uniswap import PoolRef, v3_fee_growth_inside, v3_pool_address
 from v2_vaults import (L1_UPPER_BOUND, OP_GAS_PRICE_ORACLE, TX_OVERHEAD_BYTES, WIRING_SELECTOR, PriceReference,
-                       VaultDiscovery, VaultReader, clone_code, fee_growth_inside, l1_fee, reference_prices,
-                       twap_price, twap_window)
+                       VaultDiscovery, VaultRecord, VaultReader, clone_code, fee_growth_inside, l1_fee,
+                       reference_prices, twap_price, twap_window)
 from v2_fixtures import HEAD, FakeChain
 from test_v2_manifest import manifest_document
 
@@ -202,6 +202,73 @@ class ProofTests(unittest.TestCase):
         fake.on(deployment.factory(4), function('IDominoVaultFactory', 'isVault'), lambda account: (True,))
         reader.prove(vault, 4, BLOCK)
         self.assertIn((vault, 4), reader._proven)
+
+
+
+class ClosedRootTests(unittest.TestCase):
+    """A root its owner burned no longer exists: the reader sees a closed root,
+    so the vault's reserves can still go back to the owner (returnReserves)."""
+
+    VAULT, OWNER, ROOT_ID, CHILD_ID = '0x' + 'a4' * 20, '0x' + 'b0' * 20, 7, 9
+
+    class Positions:
+        """v2_uniswap.UniswapReader's two reads: the root's fails with `error`."""
+
+        def __init__(self, error, pool, *, gone=(7,)):
+            self.error, self.ref, self.gone = error, PoolRef(*pool), gone
+
+        def position(self, ref, block):
+            if ref.token_id in self.gone:
+                raise DataError(self.error)
+            return type('Position', (), {'pool': self.pool(self.ref, block), 'tick_lower': -600, 'tick_upper': 600,
+                                         'liquidity': 10**18, 'fees_owed': (0, 0)})()
+
+        def pool(self, ref, block):
+            return type('State', (), {'pool': self.ref, 'sqrt_price_x96': 2**96, 'liquidity': 10**18,
+                                      'swap_fee_pips': lambda self, zero_for_one: 3000})()
+
+    def reader(self, dex, error, *, members=(7,), gone=(7,)):
+        deployment = checked_deployment(manifest_document(), BASE)
+        fake = FakeChain(8453)
+        manager = BASE.uniswap.v3.positionManager if dex == 3 else BASE.uniswap.v4.positionManager
+        pool = (dex, WETH, USDC, 3000, 60, ZERO) if dex == 3 else (dex, ZERO, USDC, 3000, 60, ZERO)
+        views = {'owner': (self.OWNER,), 'pool': (pool,), 'root': ((dex, manager, self.ROOT_ID),),
+                 'positions': (list(members),), 'policy': ((2, 500, 2000, 600, 3),),
+                 'limits': ((100, 100, 300, 5000),), 'paused': (False,), 'rootArmed': (False,), 'stateNonce': (9,)}
+        for name, value in views.items():
+            fake.on(self.VAULT, function('IDominoVault', name), lambda value=value: value)
+        fake.on(self.VAULT, function('IDominoVault', 'reserves'),
+                lambda token: (1000 if token == pool[1] else 3,))
+        fake.on(self.VAULT, function('IDominoVaultLedger', 'lastExecutionAt'), lambda: (0,))
+        fake.on(self.VAULT, function('IDominoVaultLedger', 'member'),
+                lambda token_id: ((True, 0, 0, -600, 600) if token_id == self.ROOT_ID
+                                  else (True, self.ROOT_ID, 0, 600, 4200),))
+        fake.on(self.VAULT, function('IDominoVaultLedger', 'lot'), lambda token_id, token: ((5, 6),))
+        fake.on(deployment.registry, function('IDominoRegistry', 'automationHalted'), lambda: (False,))
+        reader = VaultReader(BASE, deployment, client(fake), self.Positions(error, pool, gone=gone),
+                             proven={(self.VAULT, dex)})
+        return reader, VaultRecord(self.VAULT, self.OWNER, self.ROOT_ID, dex, 1)
+
+    def test_a_burned_root_reads_as_closed_on_both_dexes(self):
+        for dex, error in ((4, 'v2_position_not_found'), (3, 'rpc_call_reverted')):
+            with self.subTest(dex=dex):
+                reader, record = self.reader(dex, error)
+                state = reader.read(record, BLOCK)
+                root, = state.members
+                self.assertEqual((root.token_id, root.liquidity, root.fees_owed, root.lots),
+                                 (self.ROOT_ID, 0, (0, 0), ((5, 6), (5, 6))))
+                self.assertEqual((root.tick_lower, root.tick_upper), (-600, 600))
+                self.assertTrue(returnable(state))
+                self.assertEqual(reader.reserves(state, BLOCK), (1000, 3))
+
+    def test_any_other_failure_still_refuses_the_read(self):
+        reader, record = self.reader(4, 'v4_position_pool_mismatch')
+        with self.assertRaisesRegex(DataError, '^v4_position_pool_mismatch$'):
+            reader.read(record, BLOCK)
+        # Only the root can be gone: a successor the vault holds cannot.
+        reader, record = self.reader(4, 'v2_position_not_found', members=(7, 9), gone=(9,))
+        with self.assertRaisesRegex(DataError, '^v2_position_not_found$'):
+            reader.read(record, BLOCK)
 
 
 if __name__ == '__main__':

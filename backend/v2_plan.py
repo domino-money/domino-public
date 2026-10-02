@@ -1,4 +1,5 @@
-"""The wire formats the V2 operator sends: the vault's PlanV1 and the auto-exit's Execution.
+"""The wire formats the V2 operator sends: the vault's PlanV1, the auto-exit's
+Execution and a closed vault's returnReserves.
 
 IDominoVaultExecution.execute takes `plan = 0x01 ‖ abi.encode(PlanV1)`: one
 version byte, then the ABI encoding of the one-element parameter list
@@ -10,6 +11,11 @@ IDominoAutoExit.execute takes `(bytes32 mandateHash, Execution)`, with
 Execution = (bytes anchorEvidence, SwapLeg[] legs, uint128 amount0MinRemoved,
 uint128 amount1MinRemoved); its calldata is built from the frozen ABI export
 (v2_abi), never re-declared here.
+
+IDominoVaultLedger.returnReserves() takes nothing and returns (amount0,
+amount1), what it paid the owner; its calldata and result come from the same
+export. It has no plan to hash, so its journal subject (return_subject) names
+the vault, the state nonce and the pass's block instead.
 
 Anchor evidence (docs/v2/F1_REGISTRY_ANCHOR.md): exactly 32 bytes is
 abi.encode(uint32 secondsAgo), a v3 TWAP window; anything else is
@@ -255,3 +261,25 @@ def exit_calldata(mandate_hash, execution):
     if type(mandate_hash) is not str or len(mandate_hash) != 66 or not isinstance(execution, ExitExecution):
         raise DataError('v2_invalid_exit_execution')
     return function('IDominoAutoExit', 'execute').calldata(bytes.fromhex(mandate_hash[2:]), execution.as_tuple())
+
+
+# ------------------------------------------------------------ returnReserves
+def return_reserves_calldata():
+    """IDominoVaultLedger.returnReserves() calldata, from the frozen export."""
+    return function('IDominoVaultLedger', 'returnReserves').calldata()
+
+
+def returned_amounts(raw):
+    """(amount0, amount1) a returnReserves call paid the owner, from its raw result."""
+    return tuple(function('IDominoVaultLedger', 'returnReserves').decode(raw))
+
+
+def return_subject(chain_id, vault, state_nonce, block_number):
+    """A returnReserves intent's journal subject: keccak256(abi.encode(uint256
+    chainId, address vault, uint64 stateNonce, uint256 block)). The calldata is
+    the same on every pass, so the pass's block keeps each pass's call its own
+    intent; whether one is due at all is the presimulation's answer."""
+    if not _uint(chain_id, U256) or not _uint(state_nonce, U64) or not _uint(block_number, U256):
+        raise DataError('v2_invalid_return')
+    return '0x' + keccak(encode(['uint256', 'address', 'uint64', 'uint256'],
+                                [chain_id, address(vault), state_nonce, block_number])).hex()

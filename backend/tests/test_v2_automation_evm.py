@@ -21,6 +21,7 @@ import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from eth_abi import encode
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 from eth_hash.auto import keccak
@@ -170,6 +171,38 @@ class AutomationEvmTests(unittest.TestCase):
     def liquidity(self, token_id):
         return self.local.call(self.v4.positionManager, 'getPositionLiquidity(uint256)', ['uint128'], ['uint256'],
                                [token_id])[0]
+
+    def reserves(self, vault):
+        return tuple(self.local.call(vault, 'reserves(address)', ['uint256'], ['address'], [token])[0]
+                     for token in (self.pool.currency0, self.pool.currency1))
+
+    def close(self, token_id, *, burn=False):
+        """The owner closes its position on Uniswap itself, as the Uniswap app
+        does: all its liquidity out (DECREASE_LIQUIDITY) or the NFT burned
+        (BURN_POSITION), then TAKE_PAIR of everything to the owner."""
+        if burn:
+            actions, first = bytes([0x03, 0x11]), encode(['uint256', 'uint128', 'uint128', 'bytes'], [token_id, 0, 0, b''])
+        else:
+            actions = bytes([0x01, 0x11])
+            first = encode(['uint256', 'uint256', 'uint128', 'uint128', 'bytes'],
+                           [token_id, self.liquidity(token_id), 0, 0, b''])
+        pair = encode(['address', 'address', 'address'], [self.pool.currency0, self.pool.currency1, self.owner])
+        unlock = encode(['bytes', 'bytes[]'], [actions, [first, pair]])
+        self.local.send(self.owner, self.v4.positionManager,
+                        calldata('modifyLiquidities(bytes,uint256)', ['bytes', 'uint256'],
+                                 [unlock, self.chain_time() + 600]), impersonate=True)
+
+    def compounded(self, service, vault):
+        """One pass that compounds `vault`, and the next one, which confirms it.
+        The follower serves its head while the chain has moved at most 1 s:
+        2 s later, each pass reads the chain as it is."""
+        report = service.run_once()
+        submitted = report['submitted']
+        self.assertEqual((submitted['kind'], submitted['target'], submitted['state']), ('compound', vault, 'submitted'),
+                         report)
+        self.local.mine(1, 2)
+        service.run_once()
+        self.assertEqual(service.executor.journal.intent(submitted['intent'])['state'], 'confirmed')
 
     def balance(self, token, holder):
         return self.local.call(token, 'balanceOf(address)', ['uint256'], ['address'], [holder])[0]
@@ -433,6 +466,88 @@ class AutomationEvmTests(unittest.TestCase):
         self.local.send(self.deployer, self.driver, calldata('swap(' + KEY_TYPE + ',bool,uint256)',
                                                              [KEY_TYPE, 'bool', 'uint256'],
                                                              [self.key, False, 7 * 10**18]))
+
+    def test_a_vault_whose_owner_closed_the_root_returns_its_reserves_before_any_compound(self):
+        # The V1 incident of 2 Oct 2026: the owner closes the automated position
+        # on Uniswap itself, and the fees the automation collected stay in the vault.
+        first = self.position(self.owner, 10**20)
+        closed = self.vault(first)
+        self.swaps(30)
+        self.local.mine(35, 2)
+        service = self.service()
+        self.compounded(service, closed)
+        reserves = self.reserves(closed)
+        self.assertGreater(sum(reserves), 0, 'the compound left reserves')
+        self.close(first)
+        self.local.mine(1, 2)
+        self.assertEqual(self.liquidity(first), 0)
+        armed, = self.local.call(closed, 'rootArmed()', ['bool'])
+        self.assertFalse(armed)
+        self.assertEqual(self.reserves(closed), reserves, 'the close itself returns nothing')
+        # Another vault becomes eligible to compound in the same pass.
+        second = self.position(self.owner, 10**20)
+        other = self.vault(second)
+        self.swaps(30)
+        self.local.mine(35, 2)
+        owner_before = tuple(self.balance(token, self.owner) for token in (self.pool.currency0, self.pool.currency1))
+        report = service.run_once()
+        entries = {v['vault']: v for v in report['vaults']}
+        entry = entries[closed]
+        self.assertEqual((entry['act'], entry['reason'], entry['action'], entry['simulation']),
+                         (True, 'reserves_returnable', 'return_reserves', 'passed'), entry)
+        self.assertEqual(entry['paid'], [str(amount) for amount in reserves])
+        self.assertTrue(entries[other]['act'], entries[other])
+        submitted = report['submitted']
+        self.assertEqual((submitted['kind'], submitted['target'], submitted['state']), ('return', closed, 'submitted'),
+                         report)
+        journal = service.executor.journal
+        self.assertEqual(journal.waiting()['vaults'][closed]['reason'], 'reserves_returnable')
+        self.local.mine(1, 2)
+        report = service.run_once()  # confirms the return, then compounds the other vault
+        intent = journal.intent(submitted['intent'])
+        self.assertEqual((intent['state'], intent['kind']), ('confirmed', 'return'), intent)
+        effect = json.loads(intent['effect'])
+        paid = {log['token'].lower(): log['amount'] for log in self.logs(effect, 'IDominoVault', 'ReservesWithdrawn',
+                                                                          closed)}
+        self.assertEqual(paid, {token: amount for token, amount in zip((self.pool.currency0, self.pool.currency1),
+                                                                        reserves) if amount})
+        self.assertEqual(tuple(self.balance(token, self.owner) - before for token, before in
+                               zip((self.pool.currency0, self.pool.currency1), owner_before)), reserves)
+        self.assertEqual(self.reserves(closed), (0, 0))
+        self.assertEqual((report['submitted']['kind'], report['submitted']['target']), ('compound', other), report)
+        # Nothing is left to return: the closed vault waits for nothing more.
+        self.assertEqual({v['vault']: v for v in report['vaults']}[closed]['reason'], 'root_disarmed')
+        self.local.mine(1, 2)
+        service.run_once()
+        self.local.send(self.owner, other, calldata('pause()'), impersonate=True)
+
+    def test_a_burned_root_returns_its_reserves_too(self):
+        token_id = self.position(self.owner, 10**20)
+        vault = self.vault(token_id)
+        self.swaps(30)
+        self.local.mine(35, 2)
+        service = self.service()
+        self.compounded(service, vault)
+        reserves = self.reserves(vault)
+        self.assertGreater(sum(reserves), 0, 'the compound left reserves')
+        self.close(token_id, burn=True)
+        self.local.mine(1, 2)
+        exists = self.local.raw({'jsonrpc': '2.0', 'id': 1, 'method': 'eth_call', 'params': [
+            {'to': self.v4.positionManager, 'data': calldata('ownerOf(uint256)', ['uint256'], [token_id])}, 'latest']})
+        self.assertIn('error', exists, 'burned')
+        owner_before = tuple(self.balance(token, self.owner) for token in (self.pool.currency0, self.pool.currency1))
+        report = service.run_once()
+        entry = {v['vault']: v for v in report['vaults']}[vault]
+        self.assertEqual((entry['act'], entry['reason']), (True, 'reserves_returnable'), entry)
+        submitted = report['submitted']
+        self.assertEqual((submitted['kind'], submitted['target']), ('return', vault), report)
+        self.local.mine(1, 2)
+        report = service.run_once()
+        self.assertEqual(service.executor.journal.intent(submitted['intent'])['state'], 'confirmed')
+        self.assertEqual(tuple(self.balance(token, self.owner) - before for token, before in
+                               zip((self.pool.currency0, self.pool.currency1), owner_before)), reserves)
+        self.assertEqual(self.reserves(vault), (0, 0))
+        self.assertIsNone(report['submitted'])
 
     # ------------------------------------------------------------ mandates
     def register_mandate(self, vault, token_id, *, below, convert_to, nonce):

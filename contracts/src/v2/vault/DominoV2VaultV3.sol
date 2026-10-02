@@ -184,9 +184,26 @@ contract DominoV2VaultExecutorV3 is DominoV2VaultExecutor, DominoV2VaultV3Hooks 
 
 /// @notice The Uniswap v3 vault implementation (component vault.v3).
 contract DominoV2VaultV3 is DominoV2VaultBase, DominoV2VaultV3Hooks {
+    /// keccak256 of the NonfungiblePositionManager's refusal of a token that
+    /// does not exist, Error("Invalid token ID"): positions() of v3-periphery
+    /// 1.0.0, the build deployed on Robinhood, Base and Arbitrum.
+    bytes32 private constant NO_SUCH_TOKEN = 0x0c8d4288bb9236adbada2de6e0bf1807631966685254b486e230ac9d8f0a9426;
+
     constructor(Deployment memory deployment)
         DominoV2VaultStorage(DominoV2Types.DEX_V3, deployment)
         DominoFeeLedger(IDominoRegistry(deployment.registry))
         DominoV2VaultBase(address(new DominoV2VaultExecutorV3(deployment)))
     {}
+
+    /// No liquidity left, or the NFT no longer exists: a burn deletes the
+    /// position, and positions() then refuses the token by name. Any other
+    /// failure of the read (out of gas, say) leaves the root open.
+    function _rootClosed() internal view override returns (bool) {
+        (bool ok, bytes memory data) =
+            POSITION_MANAGER.staticcall(abi.encodeCall(IUniswapV3PositionManagerMinimal.positions, (_rootTokenId)));
+        if (!ok) return keccak256(data) == NO_SUCH_TOKEN;
+        (,,,,,,, uint128 liquidity) =
+            abi.decode(data, (uint96, address, address, address, uint24, int24, int24, uint128));
+        return liquidity == 0;
+    }
 }

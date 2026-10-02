@@ -146,7 +146,7 @@
   },
   "IDominoVaultLedger": {
     "source": "contracts/src/v2/interfaces/IDominoVaultLedger.sol",
-    "interfaceId": "0x322d3aeb",
+    "interfaceId": "0xb3bfc5d0",
     "functions": {
       "idleReserves(address)": "0x8d137367",
       "lastExecutionAt()": "0xda3f1b44",
@@ -154,7 +154,8 @@
       "member(uint256)": "0x956d113b",
       "operatorRearm((uint128,uint256,uint256,uint128,uint128))": "0xf3f6f433",
       "quoteCurrency()": "0x82564bca",
-      "recoverPosition(uint256)": "0xf578affa"
+      "recoverPosition(uint256)": "0xf578affa",
+      "returnReserves()": "0x8192ff3b"
     }
   },
   "IDominoZap": {

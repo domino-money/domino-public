@@ -89,6 +89,10 @@
  * gateway and the bridge client those manifests hash, off in the gateway. No
  * read-v1 or read-v2 route, schema or version changed, and no OpenAPI
  * component of theirs did.
+ * The OpenAPI below moved again when the V2 vault gained returnReserves, which
+ * anyone may call to pay a closed vault's reserves to its owner: read-v6's
+ * contract error names (a waiting reason's `error`) list its two refusals,
+ * RootOpen and SuccessorActive. No other route, schema or version changed.
  * onboarding-v1 is 1.1.0 with swap-route, an additive route: Setup's assisted
  * swap routed through Uniswap when that returns more than 0.5% above the pool,
  * with unsigned transactions for the wallet. The two previews are unchanged
@@ -162,7 +166,7 @@ export const READ_V5_PIN = {
 export const BACKEND_OPENAPI_PIN = {
   path: 'backend/openapi-read.json',
   infoVersion: '0.8.0',
-  sha256: 'f1b293ad0d776c8f675f35adefa7649ebc7bea932ea8f5c79e6a64dc10a22e21',
+  sha256: '43ad1f729f49d85127de3055e9b3733286fefe961b01733b26f112da23669df6',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

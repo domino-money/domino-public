@@ -50,6 +50,7 @@ class FakeChain:
         self.code = '0x'
         self.call_revert = None
         self.pinned_revert = None  # a revert at the pinned block only (eth_call), not at estimateGas
+        self.call_result = '0x'  # what an eth_call of the operator's call returns
         self.estimate = 400_000
         self.receipt_from = None
         self.send_fails = False
@@ -118,7 +119,7 @@ class FakeChain:
                 return error(3, 'execution reverted', self.call_revert)
             if self.pinned_revert is not None:
                 return error(3, 'execution reverted', self.pinned_revert)
-            return reply('0x')
+            return reply(self.call_result)
         if method == 'eth_estimateGas':
             if self.call_revert is not None:
                 return error(3, 'execution reverted', self.call_revert)
@@ -175,10 +176,10 @@ class ExecutorTestCase(unittest.TestCase):
         raw = self.fake.block()
         return Block(int(raw['number'], 16), raw['hash'], int(raw['timestamp'], 16))
 
-    def submit(self, *, kind='compound', target=VAULT, data=DATA, deadline=None):
+    def submit(self, *, kind='compound', target=VAULT, data=DATA, deadline=None, subject='0x' + '12' * 32):
         head = self.head()
         gas, _ = self.executor.presimulate(target, data, head)
-        return self.executor.submit(kind=kind, target=target, subject='0x' + '12' * 32, data=data,
+        return self.executor.submit(kind=kind, target=target, subject=subject, data=data,
                                     deadline=deadline or head.timestamp + 120, head=head, base_fee=self.fake.base_fee,
                                     gas=gas)
 
@@ -244,6 +245,43 @@ class SubmissionTests(ExecutorTestCase):
         with self.assertRaisesRegex(DataError, '^v2_target_not_admitted$'):
             self.submit(kind='exit', target=VAULT)
         self.assertEqual(self.submit(kind='exit', target=self.deployment.auto_exit).state, 'submitted')
+
+    def test_a_closed_vaults_return_goes_to_a_factory_vault_only(self):
+        returning = '0x' + keccak(b'returnReserves()')[:4].hex()
+        with self.assertRaisesRegex(DataError, '^v2_target_not_admitted$'):
+            self.submit(kind='return', target='0x' + 'ab' * 20, data=returning)
+        with self.assertRaisesRegex(DataError, '^v2_target_not_admitted$'):
+            self.submit(kind='return', target=self.deployment.auto_exit, data=returning)
+        with self.assertRaisesRegex(DataError, '^v2_invalid_intent$'):
+            self.submit(kind='sweep', data=returning)
+        outcome = self.submit(kind='return', data=returning)
+        self.assertEqual(outcome.state, 'submitted')
+        intent = self.executor.journal.intent(outcome.intent)
+        self.assertEqual((intent['kind'], intent['target'], intent['data']), ('return', VAULT, returning))
+
+    def test_the_same_call_on_another_pass_is_another_intent(self):
+        # returnReserves() has the same calldata on every pass: the subject (the
+        # vault, its state nonce and the pass's block) tells the intents apart.
+        returning = '0x' + keccak(b'returnReserves()')[:4].hex()
+        first = self.submit(kind='return', data=returning, subject='0x' + '01' * 32)
+        self.fake.mine()
+        self.fake.advance(2)
+        self.assertEqual(self.executor.reconcile(first.intent).state, 'confirmed')
+        with self.assertRaisesRegex(DataError, '^v2_intent_exists$'):
+            self.submit(kind='return', data=returning, subject='0x' + '01' * 32)
+        second = self.submit(kind='return', data=returning, subject='0x' + '02' * 32)
+        self.assertNotEqual(second.intent, first.intent)
+        self.assertEqual(self.executor.journal.intent(second.intent)['nonce'], 1)
+
+    def test_the_presimulation_can_return_what_the_call_returned(self):
+        head = self.head()
+        returned = '0x' + encode(['uint256', 'uint256'], [0xabc, 0xdef]).hex()
+        self.fake.call_result = '0x' + returned[2:].upper()  # some nodes answer in upper case
+        self.assertEqual(self.executor.presimulate(VAULT, DATA, head), (480_000, 400_000))
+        self.assertEqual(self.executor.presimulate(VAULT, DATA, head, output=True), (480_000, 400_000, returned))
+        self.fake.call_result = 'not hex'
+        with self.assertRaisesRegex(DataError, '^invalid_abi_response$'):
+            self.executor.presimulate(VAULT, DATA, head, output=True)
 
     def test_the_caps_hold_before_anything_is_signed(self):
         self.fake.estimate = 900_000  # 1.08M with the margin, above the 1M cap
@@ -563,6 +601,8 @@ class RevertCodeTests(unittest.TestCase):
         for code in [*ERROR_NAMES.values()]:
             self.assertRegex('reverted_' + code, r'^[a-z0-9_]{1,100}$')
         self.assertEqual(revert_code(selector('TooSoon()')), 'reverted_too_soon')
+        self.assertEqual(revert_code(selector('RootOpen()')), 'reverted_root_open')
+        self.assertEqual(revert_code(selector('SuccessorActive()')), 'reverted_successor_active')
         self.assertEqual(revert_code(selector('InsufficientLiquidity(uint128,uint128)') + '00' * 64),
                          'reverted_insufficient_liquidity')
         self.assertEqual(revert_code('0x08c379a0' + '00' * 96), 'reverted_error_string')

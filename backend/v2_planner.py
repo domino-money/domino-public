@@ -448,6 +448,17 @@ def in_range(member, sqrt_price):
     return sqrt_at_tick(member.tick_lower) <= sqrt_price < sqrt_at_tick(member.tick_upper)
 
 
+def returnable(vault):
+    """Whether IDominoVaultLedger.returnReserves accepts a call for this vault
+    now: its root has no liquidity left (decreased to zero, or burned: v2_vaults
+    reads a root that no longer exists as empty) and no successor is active. A
+    vault's `members` are its active members, the root always among them.
+    Whether there is anything to pay, and whether the owner can receive it, is
+    the presimulation's answer, and the contract reads the root itself."""
+    root = vault.member(vault.root_token_id)
+    return len(vault.members) == 1 and root.liquidity == 0
+
+
 def preconditions(vault, now):
     """Why the vault refuses any execution now, or None."""
     if vault.halted:

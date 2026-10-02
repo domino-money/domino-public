@@ -3,7 +3,8 @@
 One executor serves one chain with one operator key (v2_chains, v2_rpc,
 v2_head). It never signs bytes a caller hands it as a transaction: it is given
 a target among the deployment's contracts (a factory vault or the auto-exit
-module) and calldata the planners built, and it
+module) and calldata the planners built (a compound, an exit, or a closed
+vault's returnReserves), and it
 
 1. presimulates the exact call from the operator with eth_call at a pinned
    head, then eth_estimateGas, and refuses a revert with the contract's error
@@ -59,6 +60,9 @@ METHODS = frozenset({'eth_getBlockByNumber', 'eth_getTransactionCount', 'eth_get
                      'eth_getTransactionByHash', 'eth_getLogs'})
 MAX_REVERT_BYTES = 4096
 U64 = 2**64 - 1
+# What the operator sends: a vault's compound, an auto-exit mandate's exit, and
+# a closed vault's returnReserves (IDominoVaultLedger), which pays its owner.
+KINDS = ('compound', 'exit', 'return')
 # Every custom error a V2 call the operator makes can raise: the frozen
 # interfaces' and the implementations' (contracts/src/v2, DominoAutoExit).
 # tests/test_v2_executor.py checks each against the Solidity sources.
@@ -72,9 +76,9 @@ CONTRACT_ERRORS = (
     'InvalidRange(int24,int24,int24)', 'InvalidRecipient(address)', 'InvalidRoute()', 'MandateAlreadyRegistered()',
     'MandateNotActive()', 'NonceAlreadyUsed()', 'ObservationExpired()', 'ObservationRevoked()',
     'OpenDelta(int256,int256)', 'PartialBurn(uint256,uint128,uint128)', 'PlanExpired()', 'PoolNotInitialized()',
-    'PoolUnavailable()', 'PositionPoolMismatch(uint256)', 'ReentrantCall()',
+    'PoolUnavailable()', 'PositionPoolMismatch(uint256)', 'ReentrantCall()', 'RootOpen()',
     'SettlementMismatch(address,uint256,uint256)', 'SpotOutsideBand()', 'StaleNonce()', 'StepUnavailable()',
-    'SwapEffectMismatch()', 'TokenCallFailed(address)', 'TooSoon()', 'TransferFailed(address)',
+    'SuccessorActive()', 'SwapEffectMismatch()', 'TokenCallFailed(address)', 'TooSoon()', 'TransferFailed(address)',
     'TriggerNotReached()', 'TwapUnavailable()', 'TwapWindowTooShort()', 'Unauthorized()', 'UnexpectedCallback()',
     'VaultOwnerChanged()', 'WrappedError(address,bytes4,bytes,bytes)',
 )
@@ -270,8 +274,12 @@ STATES = UNRESOLVED + FINAL
 DAY = 86400
 
 
-def intent_id(chain_id, kind, target, data):
-    return '0x' + keccak(f'{chain_id}:{kind}:{address(target)}:{data}'.encode()).hex()
+def intent_id(chain_id, kind, target, data, subject):
+    """One intent per call and subject. A compound's subject is its plan hash and an
+    exit's its mandate hash, both bound to the calldata already; a returnReserves
+    call has the same calldata on every pass, and its subject (v2_plan.return_subject)
+    tells one pass's return from the next."""
+    return '0x' + keccak(f'{chain_id}:{kind}:{address(target)}:{data}:{subject}'.encode()).hex()
 
 
 class Journal:
@@ -365,7 +373,7 @@ class Journal:
     def claim(self, *, kind, target, subject, data, deadline, gas, max_fee, priority, chain_counts, daily_cap):
         """A new intent with the next nonce, or a refusal. One unresolved intent
         per signer: a new nonce is never claimed behind an ambiguous one."""
-        identifier = intent_id(self.chain_id, kind, target, data)
+        identifier = intent_id(self.chain_id, kind, target, data, subject)
         now = self.clock()
         reserved = gas * max_fee
         with self._tx():
@@ -556,14 +564,20 @@ class ChainExecutor:
         return decode(list(outputs), bytes.fromhex(raw[2:]))[0]
 
     # ------------------------------------------------------- presimulation
-    def presimulate(self, target, data, head):
-        """The exact call from the operator at `head`: its gas estimate, or the
-        contract's refusal (CallReverted with the error's code)."""
+    def presimulate(self, target, data, head, *, output=False):
+        """The exact call from the operator at `head`: its gas limit and estimate,
+        and with `output` what the call returned (raw hex), or the contract's
+        refusal (CallReverted with the error's code)."""
         call = {'from': self.key.address, 'to': address(target), 'data': data, 'gas': hex(self.policy.max_gas)}
-        self.rpc.request('eth_call', [call, {'blockHash': head.hash}])
+        result = self.rpc.request('eth_call', [call, {'blockHash': head.hash}])
         estimate = quantity(self.rpc.request('eth_estimateGas', [{k: v for k, v in call.items() if k != 'gas'},
                                                                  head.tag]))
-        return self.policy.gas_limit(estimate), estimate
+        limits = (self.policy.gas_limit(estimate), estimate)
+        if not output:
+            return limits
+        if type(result) is not str or not re.fullmatch(r'0x(?:[0-9a-fA-F]{2})*', result):
+            raise DataError('invalid_abi_response')
+        return (*limits, result.lower())
 
     # ---------------------------------------------------------- submission
     def submit(self, *, kind, target, subject, data, deadline, head, base_fee, gas):
@@ -571,13 +585,13 @@ class ChainExecutor:
         presimulated gas limit."""
         if not self.policy.enabled:
             raise DataError('v2_executor_disabled')
-        if kind not in ('compound', 'exit') or not re.fullmatch(r'0x(?:[0-9a-f]{2})+', data):
+        if kind not in KINDS or not re.fullmatch(r'0x(?:[0-9a-f]{2})+', data):
             raise DataError('v2_invalid_intent')
         # Only the deployment's own targets: the auto-exit module, or a vault its factories created.
         target = address(target)
         if kind == 'exit' and target != self.deployment.auto_exit:
             raise DataError('v2_target_not_admitted')
-        if kind == 'compound' and not any(
+        if kind in ('compound', 'return') and not any(
                 self._view(self.deployment.factory(dex), 'isVault(address)', ['address'], [target], head)
                 for dex in (3, 4)):
             raise DataError('v2_target_not_admitted')

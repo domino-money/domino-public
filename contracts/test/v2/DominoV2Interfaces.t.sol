@@ -36,7 +36,7 @@ contract DominoV2InterfacesTest {
         _pin(type(IDominoVault).interfaceId, 0x4e0b5b84, "IDominoVault");
         _pin(type(IDominoVaultExecution).interfaceId, 0x09c5eabe, "IDominoVaultExecution");
         _pin(type(IDominoVaultFactory).interfaceId, 0x7f517144, "IDominoVaultFactory");
-        _pin(type(IDominoVaultLedger).interfaceId, 0x322d3aeb, "IDominoVaultLedger");
+        _pin(type(IDominoVaultLedger).interfaceId, 0xb3bfc5d0, "IDominoVaultLedger");
         _pin(type(IDominoZap).interfaceId, 0x8281f2f6, "IDominoZap");
         _pin(type(IPermit2Signature).interfaceId, 0xb16eeae3, "IPermit2Signature");
         _pin(type(IUniswapV3CallbacksMinimal).interfaceId, 0x290e67a4, "IUniswapV3CallbacksMinimal");

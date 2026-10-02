@@ -20,7 +20,7 @@ The vault keeps no copy of either: what it owns is custody, the plan, the fee le
 | `DominoV2VaultPlan` | library | The plan encoding (below) |
 | `DominoV2VaultMath` | library | The tariff's gross/net split and the exact price ratios of the geometry |
 | `IDominoVaultSwapSteps` | `contracts/src/v2/vault/IDominoVaultSteps.sol` | The swap port the module fills |
-| `IDominoVaultLedger` | `contracts/src/v2/interfaces/IDominoVaultLedger.sol` | Additive F0 interface: the per-position ledger for F6 and F7, and the v3 operator rearm (`RootCheckpoint`, `RootCheckpointed`, `operatorRearm`) |
+| `IDominoVaultLedger` | `contracts/src/v2/interfaces/IDominoVaultLedger.sol` | Additive F0 interface: the per-position ledger for F6 and F7, the v3 operator rearm (`RootCheckpoint`, `RootCheckpointed`, `operatorRearm`) and the return of a closed vault's reserves (`returnReserves`, `RootOpen`, `SuccessorActive`) |
 
 The vault implements `IDominoVault`, `IDominoVaultExecution`, `IDominoFeeSettlement` (F1b's ledger) and `IDominoVaultLedger`. The factory implements `IDominoVaultFactory`.
 
@@ -35,16 +35,18 @@ The vault implements `IDominoVault`, `IDominoVaultExecution`, `IDominoFeeSettlem
   - Called directly, the executor refuses everything.
 - The swap module is F1b's executor, which does not fit in either contract: about 7 KB of runtime. Its immutables are the chain's route profile (registry, Permit2, v3 factory and pool init code hash, v4 PoolManager), the same for both implementations. Called directly, outside a vault's lock, it refuses to run.
 
-**Sizes** (solc 0.8.26, via-IR, optimizer 200, Cancun; `DominoV2VaultSize.t.sol` enforces both limits for every deployable contract):
+**Sizes** (solc 0.8.26, via-IR, optimizer 200, Cancun; `DominoV2VaultSize.t.sol` enforces both limits for every deployable contract). Measured 2 Oct 2026 with `returnReserves`, from the compiled artifacts; the initcode is the creation bytecode without constructor arguments (the vaults and executors add 192 B, the module 160, the factory 32):
 
 | Contract | Runtime | Headroom | Initcode |
 | --- | ---: | ---: | ---: |
-| `DominoV2VaultV3` | 14,828 | 9,748 | 36,165 (includes the executor's) |
-| `DominoV2VaultV4` | 14,974 | 9,602 | 40,114 (includes the executor's) |
-| `DominoV2VaultExecutorV3` | 19,635 | 4,941 | 20,382 |
-| `DominoV2VaultExecutorV4` | 23,389 | 1,187 | 24,150 |
+| `DominoV2VaultV3` | 15,713 | 8,863 | 37,055 (includes the executor's) |
+| `DominoV2VaultV4` | 15,731 | 8,845 | 40,876 (includes the executor's) |
+| `DominoV2VaultExecutorV3` | 19,633 | 4,943 | 20,380 |
+| `DominoV2VaultExecutorV4` | 23,387 | 1,189 | 24,148 |
 | `DominoV2VaultSwapModule` | 7,182 | 17,394 | 7,705 |
 | `DominoV2VaultFactory` | 1,470 | 23,106 | 2,141 |
+
+`returnReserves` added 862 B to the v3 implementation (14,851 before) and 729 B to the v4 one (15,002 before), measured against a clean build of main; the executors, the swap module and the factory are byte-identical. (The table this replaces predated F3's last changes.)
 
 - A single contract would not fit: before F1 the vault with execution inside measured 24,121 B (v4) and 26,090 B (v3).
 - F1c's v4 library (the four actions with their settlement) is about 6 KB of the v4 executor, which leaves it 1.2 KB of headroom. The next v4 change that needs room should move `executeExit` or the Domino geometry into the implementation, which has 10 KB.
@@ -61,8 +63,9 @@ The vault implements `IDominoVault`, `IDominoVaultExecution`, `IDominoFeeSettlem
 | `executeExit`: root / successor | 342,422 / 349,524 | — |
 | `notifyUnsubscribe`, cold (the manager gives 300,000) | 15,772 | — |
 | `notifyModifyLiquidity`, an owner's change, cold | 16,103 | — |
+| `returnReserves`, cold, both tokens / one / nothing to pay | 89,179 / 63,913 / 35,590 | — (no such path: the owner's `withdrawReserves` only) |
 
-Every account the call touches was cooled first (`vm.cool`), so these are first-touch figures, measured with a probe test that is not committed. A disarm also records its reason (one more storage write, about 5k gas cold). On v3, each checkpoint is also emitted for the operator rearm (about 2k gas per execution that touches the root).
+Every account the call touches was cooled first (`vm.cool`), so these are first-touch figures, measured with a probe test that is not committed. `returnReserves` pays an owner who already holds both tokens (the close sent them the principal); on the v3 NonfungiblePositionManager deployed on Base, with an owner holding neither token (two new balance slots), it measured 128,227 / 85,861 / 40,438. As a transaction on the Base Anvil of the automation's EVM tests (WETH and the fixture token, both paid), it used 77,583 gas, the intrinsic 21,000 included (`eth_estimateGas` 88,148). A disarm also records its reason (one more storage write, about 5k gas cold). On v3, each checkpoint is also emitted for the operator rearm (about 2k gas per execution that touches the root).
 
 A clone costs about 2,700 gas per call over a direct contract (the DELEGATECALL to the implementation). Executions pay one more DELEGATECALL into the executor, and a swap a third into the module.
 
@@ -120,6 +123,8 @@ The root NFT stays in the owner's wallet, with an individual approval (`getAppro
 | 5 | v3 checkpoint mismatch |
 | 6 | Exited by the auto-exit module |
 | 7 | `exitAll` |
+
+`returnReserves` records no reason and changes no arming: a closed root was disarmed by its own notification (v4) or is seen as changed by the next execution (v3).
 
 **What a disarmed root affects.** Only executions that collect from the root, or increase it, are refused. Successors keep compounding, and the root's leftover fees can still fund them under the routing rules (A14: the root is no longer the anchor of all authority). `rearm(true)` takes custody again, with the owner's explicit consent that uncollected fees become automation fees; on v3, after a checkpoint mismatch that is only someone's addition, an operator's `operatorRearm` does it instead. That consent is the same as `consentToUncollectedFees` at creation; `false` reverts.
 
@@ -235,6 +240,12 @@ Each member has, per pool token, a lot of `uncharged` earned fees and `charged` 
 
 ## Owner surface
 
+- **Anyone: `returnReserves()`** (additive, `IDominoVaultLedger`), after the V1 incident of 2 Oct 2026: an owner closed an automated position on Uniswap itself (liquidity 0, the NFT kept), the vault, its subscriber, only disarmed, and the fees the automation had collected and not reinvested stayed in its ledger, withdrawable only by the owner through a function no screen calls. V2 has the same custody, and a close outside the vault (Uniswap's own app, or S1's zap exit) disarms the root (reasons 1 to 5) and leaves the root's lots and the idle reserves where they are. `returnReserves` is the way out that needs only a caller:
+  - **When:** the root is closed, read live from its position manager and never from a stored flag (v4: `getPositionLiquidity(root) == 0`, which a burn also gives, since the PositionManager clears a burned token's info; v3: `positions(root).liquidity == 0`, or the NonfungiblePositionManager refusing the token by name, `Error("Invalid token ID")`, as it does once a token is burned; any other failure of that read leaves the root open), and no successor is active (`positions()` holds the root alone). Otherwise `RootOpen()` or `SuccessorActive()`. While a successor is active, the sequence's reserves can still fund it (A14), so they stay; once the owner withdraws it (or it exits), its leftovers are idle and the closed vault returns everything.
+  - **Who can call:** anyone, and it takes F1b's one transient lock, as every entry point does. No one but the owner can make it apply: closing the root needs its owner or an approval the owner gave (an app it approved on v4, say), and the vault's own approval removes the root's liquidity only for the owner's exit mandate (`executeExit`). A third party can only add to a v3 root, never remove from it.
+  - **What it pays:** all of `reserves(token)` for both pool tokens (idle and the root's lots, the only member left), to `owner()` and to no one else, without any charge (owner withdrawals are never charged). The root's lots become idle first, then the whole idle reserve is paid, exactly as `exitAll` pays reserves (A8): a token the owner cannot receive, native currency included, stays idle, and the call never reverts for it; a later call, or the owner's `withdrawReserves`, pays it. The ledger is settled before each transfer.
+  - **Events and state:** one `ReservesWithdrawn(token, amount, nonce)` per token paid (the event `withdrawReserves` and `exitAll` emit, so the backend's event catalog, read-v6 and the exports need no new event), and the state nonce advances once when anything was paid or moved; with nothing to pay it changes nothing and emits nothing. It returns `(amount0, amount1)`, what it paid. No policy, pause, arming or custody changes, and it never reads the registry: like the owner's exits, neither a pause nor the global halt holds the owner's money back.
+  - **The automation** sends it for every vault that qualifies, once per pass at most and before any compound ([V2_AUTOMATION_BACKEND.md](V2_AUTOMATION_BACKEND.md), "Returning a closed vault's reserves").
 - **Owner only:**
   - `setPolicy`, `setLimits`, `resume`, `rearm(consent)`;
   - `withdrawReserves(token, amount)`, `withdrawChild(tokenId)`;
@@ -297,11 +308,11 @@ interface IDominoVaultSwapSteps {
 | A5 unnecessary swaps | One direction per plan; the output must fund the add (≤ 1% may remain). |
 | A6 decisions on the spot | Routing, trigger, geometry and the floor use the anchor. |
 | A7 floor nuance | F1b's floor: anchor quote × (1 − pool fee incl. protocol) × (1 − slippage). |
-| A8 fragmented exits | `exitAll`; `recoverToken` for any token; inexact owner exits keep what cannot be paid as idle instead of reverting. |
+| A8 fragmented exits | `exitAll`; `recoverToken` for any token; inexact owner exits keep what cannot be paid as idle instead of reverting; once the root is closed, anyone's `returnReserves` pays the owner every reserve, with the same rule: what the owner cannot receive stays idle. |
 | A9 pause cancels setPolicy | `paused` is not in the policy. |
 | A14 root as authority anchor | Successors keep working while the root is disarmed; a root sent to the vault is recoverable. |
 | A15 limits stored, not enforced | Only enforced limits remain (F0's `Limits`). |
-| A16 event gaps | Creation emits policy and limits; `FeesCollected`, `Swapped` (and F1b's `SwapLegExecuted` per leg), `Compounded` with amounts and tariff; `ReservesWithdrawn` with what was paid. |
+| A16 event gaps | Creation emits policy and limits; `FeesCollected`, `Swapped` (and F1b's `SwapLegExecuted` per leg), `Compounded` with amounts and tariff; `ReservesWithdrawn` with what was paid, by the owner's withdrawals, `exitAll` and `returnReserves` alike. |
 | A17 mutation coverage | `contracts/mutations/v2-vault-2026-10-02.json`: every guard the vault owns, one mutant each. |
 | B1 signed observations | Consumed through `IDominoPriceAnchor` (F1a). |
 | B3/B4 netting, multi-leg swaps | Multi-leg swaps through F1b. v4 netting is left for later (above). |
@@ -315,7 +326,7 @@ interface IDominoVaultSwapSteps {
 
 ## Tests and checks
 
-`contracts/test/v2/vault/`, 11 suites, 194 tests. The executor is the same code on both DEXes: its exact-number cases run on the v3 unit model (`HarnessV3`, a faithful NonfungiblePositionManager mock, with F1c's library on top) and a swap-port double with a fixed rate. Everything v4-specific runs on the PoolManager and PositionManager bytecode deployed on Base (`HarnessV4`, F1c's fixtures), and the production swap module on the same PoolManager.
+`contracts/test/v2/vault/`, 12 suites, 249 tests. The executor is the same code on both DEXes: its exact-number cases run on the v3 unit model (`HarnessV3`, a faithful NonfungiblePositionManager mock, with F1c's library on top) and a swap-port double with a fixed rate. Everything v4-specific runs on the PoolManager and PositionManager bytecode deployed on Base (`HarnessV4`, F1c's fixtures), and the production swap module on the same PoolManager.
 
 | Suite | Covers |
 | --- | --- |
@@ -330,8 +341,11 @@ interface IDominoVaultSwapSteps {
 | `DominoV2VaultMath.t.sol` | Least-gross and split-rounding properties (fuzzed); exact ratios. |
 | `DominoV2VaultPlan.t.sol` | The golden vector and the round trip. |
 | `DominoV2VaultSize.t.sol` | Runtime and initcode limits for every deployable contract. |
+| `DominoV2VaultReturn.t.sol` | `returnReserves`, one suite on three worlds: the v3 unit model, the factory, NonfungiblePositionManager and pool deployed on Base (`HarnessV3Base`, `VaultHarnessV3Base.sol`: real fees from real swaps) and the v4 managers deployed on Base. Every reserve to the owner after a close or a burn, and only to the owner, whoever calls; refused while the root has liquidity (a partial decrease included) or while a successor is active (and everything returned once the owner withdraws it); A8 (a token, or native currency, the owner cannot receive stays idle and a later call pays it; neither receivable still makes the root's lots idle, once); the nonce only on a change, each token alone; a second call changes nothing; the lock against a token's and a wallet's callback; the ledger against `reserves()` and `recoverToken` with an owed tariff and a donation; neither pause nor halt holds it; nothing else changes; what `exitAll` or an auto-exit could not pay comes back. v3: only the manager's own refusal of a token is a burn, matched byte for byte on the deployed bytecode; a closed root with principal still owed is closed. v4: a failed liquidity read is never a closure. |
 
 Run a suite with `node scripts/test-contracts.mjs --match-path test/v2/vault/<Suite>.t.sol`. Run the mutants with `node scripts/mutate-contracts.mjs contracts/mutations/v2-vault-2026-10-02.json` (see the next section for a cold sandbox).
+
+**`returnReserves` batch** (`contracts/mutations/v2-return-reserves-2026-10-02.json`, run with `--with-artifacts`): 24 mutants, every guard and effect of the new path deleted or weakened alone (the lock, both refusals, the payee, A8's idle, the ledger moves, the nonce in each token, the event, the amounts returned, and each DEX's closure read, the v3 refusal's exact bytes included): **24 caught**, none expected to survive. The DEX mutants are caught too, so the tool's sandbox rebuilds the implementations a suite deploys from their artifacts.
 
 **Mutation batch** (`contracts/mutations/v2-vault-2026-10-02.json`, run in the tool's sandbox seeded with a warm cache): 192 mutants, one per guard the vault owns: **190 caught**; 2 intended survivors, each with its reason in the batch (an owner change inside an execution, which nothing an execution calls can make; the allocation backstop, unreachable since F1c spends at most the maxima). The 24 mutants of the operator rearm and of the code it touched ran on the final tree; the other 168 ran before it, on code it did not change. Guards the first run left uncaught were either pinned by a new test (the root's owner, the v3 individual approval, a retired successor as parent, the trigger whatever funds a mint, an in-range source near its ceiling) or removed as redundant (`notifySubscribe`'s caller and token checks, implied by the vault's own subscription flag; a compound target's `active`, implied by `collect`).
 

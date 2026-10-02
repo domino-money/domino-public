@@ -13,6 +13,11 @@ pragma solidity 0.8.26;
 /// leftovers): withdrawable, never spent by automation. reserves(token) of
 /// IDominoVault is idle plus every member's lots.
 interface IDominoVaultLedger {
+    /// returnReserves: the root still has liquidity.
+    error RootOpen();
+    /// returnReserves: a successor is still active.
+    error SuccessorActive();
+
     /// One member of the sequence: the root (parent 0) or a successor the
     /// vault holds. successor is the member this one funds near its ceiling.
     struct Member {
@@ -69,4 +74,15 @@ interface IDominoVaultLedger {
     /// anyone may add liquidity to a position. Anything else waits for the
     /// owner's rearm.
     function operatorRearm(RootCheckpoint calldata previous) external;
+
+    /// Anyone: once the root is closed and no successor is active, every
+    /// reserve of both pool tokens (idle and the root's lots, all of
+    /// reserves(token)) goes to the owner and to no one else, without any
+    /// charge, as exitAll pays it: a token the owner cannot receive stays
+    /// idle (A8). Closed means read live from the position manager: no
+    /// liquidity left, or the NFT no longer exists. Only the owner can close
+    /// the root: directly, through an operator the owner approved, or through
+    /// the exit mandate the owner signed. Emits ReservesWithdrawn per token
+    /// paid and returns what was paid; with nothing to pay it changes nothing.
+    function returnReserves() external returns (uint256 amount0, uint256 amount1);
 }

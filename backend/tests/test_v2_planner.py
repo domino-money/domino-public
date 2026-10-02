@@ -14,7 +14,8 @@ from v2_planner import (BPS, MODE_DOMINO, MODE_SIMPLE, Budgeted, FeeGrowth, GasQ
                         PlannerConfig, Policy, PoolQuoter, PoolState, PriceBook, SwapQuote, VaultState,
                         amounts_for_liquidity,
                         build_candidate, decide, economics, fee_of, gross_for, incremental_earnings,
-                        liquidity_for_amounts, minimum_output, net_of, price_book, quote, remeasured, simulate_swap)
+                        liquidity_for_amounts, minimum_output, net_of, price_book, quote, remeasured, returnable,
+                        simulate_swap)
 from v2_uniswap import PoolRef
 from v4_math import Q96, Q128, sqrt_at_tick
 
@@ -474,6 +475,24 @@ class SeamTests(unittest.TestCase):
         self.assertTrue(decision.act)
         again = remeasured(decision, vault, FLAT, gas, self.config, 800_000, growth=RICH, max_gas_cost_wei=5 * 10**13)
         self.assertEqual((again.act, again.reason), (False, 'vault_gas_ceiling'))
+
+
+class ReturnTests(unittest.TestCase):
+    """IDominoVaultLedger.returnReserves: a closed root alone in its vault."""
+
+    def test_a_root_with_no_liquidity_and_no_successor_is_returnable(self):
+        closed = member(liquidity=0, fees=(0, 0), lots=((5, 0), (0, 3)))
+        self.assertTrue(returnable(vault_state(closed, root_armed=False)))
+        # Paused or armed, it does not matter: the contract reads the root itself.
+        self.assertTrue(returnable(vault_state(closed, paused=True)))
+
+    def test_liquidity_left_or_an_active_successor_is_not(self):
+        self.assertFalse(returnable(vault_state(member(liquidity=1))))
+        closed = member(liquidity=0)
+        successor = member(ROOT + 1, lower=600, upper=4200, liquidity=10**18, parent=ROOT)
+        self.assertFalse(returnable(vault_state(closed, successor, mode=MODE_DOMINO)))
+        self.assertFalse(returnable(vault_state(member(liquidity=0), member(ROOT + 1, liquidity=0, parent=ROOT),
+                                                mode=MODE_DOMINO)))
 
 
 class ConfigTests(unittest.TestCase):

@@ -14,11 +14,16 @@ pattern, never a plain key on the VM). Each pass:
    the operator's journal: nothing new is claimed while one is unresolved;
 2. auto-exits first (a stop-loss is time-sensitive): every active mandate
    whose anchor crossed a trigger is presimulated and sent (v2_autoexit);
-3. compounds: every factory vault (v2_vaults discovery, proven at the head)
+3. returns: a vault whose owner closed the root (no liquidity left, or
+   burned), with no active successor and reserves left, gets one
+   returnReserves() (IDominoVaultLedger), which pays the owner alone, for no
+   fee; the first such vault, presimulated, goes before any compound;
+4. compounds: every factory vault (v2_vaults discovery, proven at the head)
    is read and planned (v2_planner); the best one that clears both gates
    with the presimulated gas is sent. A v4 vault's anchor is the publisher's
    observation of the spot at the head the plan was made at; a v3 vault's,
    the pool's TWAP through the price anchor.
+One transaction at most per pass, in that order.
 Output is one JSON object per command, with decisions and fixed codes; no
 key, password, keyed URL or raw provider message ever reaches it.
 
@@ -45,8 +50,10 @@ from v2_manifest import load_deployment
 from v2_executor import CallReverted, ChainExecutor, GasPolicy, Journal, OperatorKey, OperatorRpc
 from v2_head import HeadFollower
 from v2_observation import HistoricalPrices, ObservationSigner, Publisher, PublisherPolicy
-from v2_plan import execute_calldata, plan_hash, twap_evidence
-from v2_planner import FeeGrowth, GasQuote, PlannerConfig, decide, preconditions, price_book, remeasured
+from v2_plan import (execute_calldata, plan_hash, return_reserves_calldata, return_subject, returned_amounts,
+                     twap_evidence)
+from v2_planner import (FeeGrowth, GasQuote, PlannerConfig, decide, preconditions, price_book, remeasured,
+                        returnable)
 from v2_rpc import ChainIndexRpc, configured_endpoints, load_chain_rpc_config
 from v2_uniswap import UniswapReader
 from v2_vaults import (VaultDiscovery, VaultReader, anchor_min_twap, checked_references, earlier_block,
@@ -252,6 +259,10 @@ class ChainAutomation:
         self.discovery = VaultDiscovery(deployment)
         self.mandates = MandateWatcher(deployment)
         self.proven = set()  # vaults proven to be the manifest's clones, once per process
+        # Closed vaults found with nothing to return, by the state nonce they had:
+        # every change to a vault's reserves advances its nonce, so one is read
+        # again only once its nonce moves.
+        self.empty = {}
 
     # ------------------------------------------------------------ clients
     def _clients(self, head):
@@ -294,7 +305,7 @@ class ChainAutomation:
                     report['submitted'] = self._submit('exit', self.deployment.auto_exit, entry, head)
                     busy = True
                 entry.pop('plan', None)
-        candidates = []
+        candidates, returns = [], []
         for record in self.discovery.scan(self.index, block):
             entry = {'vault': record.vault, 'dex': record.dex}
             try:
@@ -305,7 +316,11 @@ class ChainAutomation:
                 entry.update(act=False, reason=str(error))
             report['vaults'].append(entry)
             if entry.get('act'):
-                candidates.append(entry)
+                (returns if entry.get('action') == 'return_reserves' else candidates).append(entry)
+        # The owner's own money first: a closed vault's reserves, oldest vault first.
+        if act and not busy and returns:
+            report['submitted'] = self._submit('return', returns[0]['vault'], returns[0], head)
+            busy = True
         if act and not busy and candidates:
             best = max(candidates, key=lambda e: e['netOwnerWei'])
             report['submitted'] = self._submit('compound', best['vault'], best, head)
@@ -356,6 +371,10 @@ class ChainAutomation:
         block = head.block
         reader = VaultReader(self.chain, self.deployment, rpc, uniswap, proven=self.proven)
         vault = reader.read(record, block)
+        if returnable(vault):
+            returned = self._return(vault, reader, rpc, head)
+            if returned is not None:
+                return returned
         blocked = preconditions(vault, block.timestamp)
         if blocked is not None:  # nothing to price while the vault would refuse any plan
             return {'act': False, 'reason': blocked, 'stateNonce': vault.state_nonce}
@@ -416,6 +435,42 @@ class ChainAutomation:
                       subject=plan_hash(self.chain.chainId, record.vault, raw),
                       plan={'calldata': calldata, 'deadline': deadline, 'gas': gas_limit})
         return result
+
+    def _return(self, vault, reader, rpc, head):
+        """A closed vault with no active successor gives every reserve back to
+        its owner: one returnReserves() from the operator, presimulated, capped
+        and journaled like a compound, paid by the operator, charged to no one.
+        The contract reads the root's closure itself and pays only the owner;
+        what the owner cannot receive stays idle (A8), so a presimulation that
+        pays nothing sends nothing (`reserves_unpayable`). A vault's pause does
+        not hold it back (exitAll pauses); the registry's halt does, as it holds
+        every action of the operator's. None (halted, or nothing left to
+        return): the planner reports the vault as before."""
+        block = head.block
+        if vault.halted or self.empty.get(vault.vault) == vault.state_nonce:
+            return None
+        reserves = reader.reserves(vault, block)
+        if not any(reserves):
+            self.empty[vault.vault] = vault.state_nonce
+            return None
+        result = {'act': True, 'reason': 'reserves_returnable', 'action': 'return_reserves',
+                  'stateNonce': vault.state_nonce, 'reserves': [str(amount) for amount in reserves]}
+        if self.executor is None:
+            return {**result, 'reason': 'eligible_keyless'}
+        calldata = return_reserves_calldata()
+        gas_limit, estimate, raw = self.executor.presimulate(vault.vault, calldata, block, output=True)
+        paid = returned_amounts(raw)
+        result.update(simulation='passed', gasEstimate=estimate, paid=[str(amount) for amount in paid])
+        if not any(paid):
+            return {**result, 'act': False, 'reason': 'reserves_unpayable'}
+        ceiling = self.gas_ceilings.get(vault.vault, self.gas_ceiling)
+        if ceiling is not None:
+            gas = GasQuote((head.base_fee_per_gas or 0) + self.executor.policy.priority_fee_per_gas,
+                           l1_fee(self.chain, rpc, len(calldata) // 2 - 1, block))
+            if gas.cost(estimate) > ceiling:
+                return {**result, 'act': False, 'reason': 'vault_gas_ceiling'}
+        return {**result, 'subject': return_subject(self.chain.chainId, vault.vault, vault.state_nonce, block.number),
+                'plan': {'calldata': calldata, 'deadline': block.timestamp + self.deadline_seconds, 'gas': gas_limit}}
 
     def _growth(self, vault, rpc, history, block, targets):
         """Fee growth evidence for `targets` (member token ids) over the
