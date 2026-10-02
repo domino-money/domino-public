@@ -64,7 +64,7 @@
     "package-lock.json": "d4faf21b47a0e736672a435479af8da6779c3fe8c6197ac0a1556783cbdae1ff",
     "contracts/foundry.toml": "4dec157f6bb98d55ba149f9ce6925bc9cc575ad2384373556646576c3d3071de",
     "scripts/solc-wrapper.py": "f4f141d8a624dfea8ea732b718bad9fd858e3b5253f816e6b9d5ab0f0ef256e8",
-    "scripts/solc-compile.cjs": "ef628b3cb276507c89cc4362a0e608ac29f586f7f6d5ed2a1fd51a404ef68a0d",
+    "scripts/solc-compile.cjs": "139440bd5ba3dfd777ca8f6b8bd4d0367a1f67718b720adad9aeb133f4cba2d3",
     "scripts/test-contracts.mjs": "87a18f7a7a57e6aad5c59ffcff3a6292bff04d967148f99da500a5e4e8b059df",
     "scripts/prepare-financial-release.mjs": "8a5890f302f0f77038d07a89715a49484c1e365b97fd81a99ed59bf323b59049",
     "scripts/release-artifact-manifest.mjs": "eba3e810869fdfb7e655fe31c74598d5ef5754d89d3c8ed011d4e185257c04ec",

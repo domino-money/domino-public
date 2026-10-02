@@ -278,7 +278,14 @@ jobs:
     # the V2 suites and the gas baseline. A .sol change now restores the newest
     # cache and rebuilds only what it invalidates; a cold run remains when the
     # compiler inputs change or no cache exists, hence the headroom.
-    timeout-minutes: 50
+    # Cold, the 38 suites of 3b1af26 need 45.7-47.4 min on CI: the 22 V1 suites
+    # took 33.4-35.1 min in cold runs 36937969488, 36934135396 and 36927967030,
+    # and the 13 V2 F1 suites 12.2 min on their first compile (runs 36961431939
+    # and 36959460671). A local cold run of all 38 (23.1 min) agrees: CI took
+    # 1.94-2.07 times as long per suite. With setup and the gas baseline the job
+    # needs 46.5-48.2 min, too close to 50. The F2 zap (#294) and F3 vault (#295)
+    # suites add about 9 min each, measured the same way: 75 minutes.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
