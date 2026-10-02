@@ -19,7 +19,7 @@ F0 is the synchronization point of the V2 workstreams (domino-money/domino#283).
 
 - **Where a fee is collected.** Every v3/v4 pool is accepted; this rule only selects the token.
   - Each chain has an ordered list of charge currencies: Robinhood USDG then ETH; Base and Arbitrum USDC then ETH.
-  - **Manual swaps:** the first listed currency among the input, the output, then a route hop. Otherwise the input token.
+  - **Manual swaps:** the best-ranked listed currency anywhere in the route, so WETH → USDG pays in USDG. On equal ranks (ETH and WETH) the input wins, then the output, then a route hop. With no listed currency in the route, the first leg's input (decision of 2 Oct; `DominoFeeRules`, [PRICING_POLICY.md](../../PRICING_POLICY.md)).
   - **Automation:** proportional in both pool tokens (unchanged).
   - **Auto-exit:** the listed token if the owner receives one. Otherwise the position's own tokens.
 - **Deposit from another chain** is a plain bridge to the user's own wallet.
@@ -121,7 +121,9 @@ Anything that widens trust is scheduled by governance (`scheduleChange` with a `
 - reserve and child withdrawals, `recoverToken` for any unaccounted token;
 - `exitAll`, and the auto-exit module switch.
 
-`Limits.maxSlippageBps` excludes the pool's own fee: the swap floor is the spot quote, less the pool's total fee (LP plus protocol), less this slippage. This is the #3409682 fix.
+`Limits.maxSlippageBps` excludes the pool's own fee: the swap floor is the quote at the anchor price (never the bare spot), less the pool's total fee (LP plus protocol), less this slippage (`DominoSwapFloor.minimumOutput`). This is the #3409682 fix.
+
+`Limits.maxPriceImpactBps` is the anchor–spot band: the spot must lie within a factor (1 + band) above or below the anchor (`IDominoPriceAnchor.anchor`'s `maxDeviationBps`). The name is V1's; it does not bound how far a swap moves the pool's price.
 
 **`IDominoVaultExecution`** — the operator's entry point, `execute(bytes plan)`:
 - a draft owned by F3;
@@ -151,7 +153,7 @@ Consent takes two explicit acts: the vault's `setExitModule` and the mandate sig
 
 **Facts that differ by chain:**
 - **Stack:** Robinhood and Arbitrum are Nitro (`block.number` is the parent chain's; ArbSys gives the L2 number). Base is OP Stack, with 2 s blocks plus 200 ms Flashblocks. V2 uses timestamps, so none of this matters to its contracts.
-- **Fee tiers:** Base's v3 factory enables more than the four standard tiers (200/300/400 bps → spacing 4/6/8). The profiles list only 100/500/3000/10000; read `feeAmountTickSpacing` for anything else.
+- **Fee tiers:** Base's v3 factory enables more than the four standard tiers (`fee` 200/300/400, which is 0.02%/0.03%/0.04% because `fee` counts hundredths of a basis point, → spacing 4/6/8; checked on 2 Oct). The profiles list only 100/500/3000/10000; read `feeAmountTickSpacing` for anything else.
 - **Chainlink on Robinhood:** the ETH/USD heartbeat is 24 h with 0.5% deviation, and Chainlink publishes no sequencer-uptime feed for Robinhood.
 
 ## Deterministic deployment

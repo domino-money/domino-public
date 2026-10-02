@@ -13,8 +13,10 @@ import {IPermit2Signature} from "../external/IPermit2Signature.sol";
 ///   recipient and deadline bind the plan; routesHash covers every swap leg;
 /// - the assisted-swap fee is FEE_ASSISTED_SWAP_BPS of the swapped amount,
 ///   charged once per action in the token the charge-currency rule selects
-///   (input, then output, then a route hop; else the input token), and the
-///   intent's feeToken must equal that selection; no swap, no fee;
+///   (DominoFeeRules: the best-ranked charge currency anywhere in the route,
+///   a tie going to the input, then the output, then a route hop; with none
+///   in the route, the first leg's input), and the intent's feeToken must
+///   equal that selection; no swap, no fee;
 /// - a swap leg is accepted by its effect: exactly amountIn of tokenIn leaves,
 ///   at least minAmountOut of tokenOut arrives, no other balance moves and no
 ///   allowance survives the call;

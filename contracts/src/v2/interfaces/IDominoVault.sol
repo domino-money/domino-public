@@ -27,8 +27,14 @@ interface IDominoVault {
         uint8 maxPositions;
     }
 
-    /// maxSlippageBps excludes the pool's own fee: the swap floor is the spot
-    /// quote less the pool's total fee (LP plus protocol), less this slippage.
+    /// maxSlippageBps excludes the pool's own fee: the swap floor is the quote
+    /// at the anchor price (IDominoPriceAnchor), never the bare spot, less the
+    /// pool's total fee (LP plus protocol), less this slippage
+    /// (DominoSwapFloor.minimumOutput).
+    /// maxPriceImpactBps is the band the anchor enforces: the spot must lie
+    /// within a factor (1 + band) above or below the anchor price
+    /// (IDominoPriceAnchor.anchor's maxDeviationBps). The name is V1's; it
+    /// does not bound how far a swap moves the pool's price.
     struct Limits {
         uint16 maxSlippageBps;
         uint16 maxPriceImpactBps;

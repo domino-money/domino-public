@@ -1,8 +1,27 @@
 # Reinvestment objective — public product
 
+This file holds two policies:
+
+- **V2**: multi-chain, Uniswap v3 and v4 (domino-money/domino#283), decided by the owner on 1–2 October 2026. The objective and the two independent gates of the V1 policy (owner benefit, execution sustainability) apply to it unchanged. The V2 vault and planner implement them (`docs/v2/F3_VAULT.md`, `docs/v2/V2_AUTOMATION_BACKEND.md`, `backend/v2_planner.py`).
+- **V1**: the Robinhood alpha, still in production, kept below unchanged until V2 automation replaces it.
+
+## V2 (owner decisions, 1–2 October 2026)
+
+- **Tariff.** Auto-compound 2%, Domino-compound 4% of the earned fees an execution consumes, charged once, proportionally in both pool tokens, rounded down in the owner's favour. Never on principal. Internal balancing swaps carry no assisted-swap fee, and a swap's output is never charged again. Rates and currencies: [PRICING_POLICY.md](PRICING_POLICY.md).
+- **Mode.** No default: the owner chooses Auto-compound or Domino-compound. A new vault is offered unpaused.
+- **Cadence.** Economic, above a 10-minute floor that the vault enforces (`minimumIntervalSeconds` 600). A compound runs at the first pass where both gates hold, and waits otherwise:
+  1. **Execution sustainability:** the tariff covers the measured gas, the L1 data fee included, with the approved 15% buffer.
+  2. **Owner benefit:** the added liquidity's incremental fees over a bounded horizon (7 days by default), from the range's time-weighted mean fee growth after a 20% haircut, cover the tariff and the swap's pool cost. Missing evidence never justifies an action.
+- **Candidates.** Direct reinvestment, or a balancing swap of all or half of the excess; the greatest net owner outcome wins. There is no fixed idle reserve.
+- **Price bounds, enforced on-chain.** A swap's floor is the quote at the anchor price (a publisher's signed observation, at most 300 s old by default, or a v3 TWAP), less the pool's own fee, less the owner's slippage: 1% by default, up to 5% in the app. The spot must lie within the owner's anchor band around the anchor: 1% by default, up to 5%.
+- **Gas ceiling.** As in V1, a daily budget per chain (`gas.dailyCapWei`).
+- **What waits.** Fees not consumed stay in the vault's ledger, uncharged. A withdrawn or exited child's leftovers become idle reserves: the owner's, never spent by automation.
+
+## V1 — Robinhood alpha (in production)
+
 Updated 21 September 2026: simple Auto-compound is 2%, Domino-compound is 4%, per mode for every execution. Gas is initially funded manually by the company. The owner confirmed that internal swaps remain included in the mode fee; the additional 2% swap charge will not be implemented for this release. Supersedes the inherited 15% addition cap in the public-product scenario. This is a product requirement, not authority to change the personal deployment.
 
-## Objective and implementation boundary
+### Objective and implementation boundary
 
 Reinvest the maximum economically viable amount of earned fees. Do not maintain a standing percentage of idle fees. Optimize the owner's expected net outcome, rather than gross APR, transaction frequency, protocol revenue, or the amount swapped.
 
@@ -19,7 +38,7 @@ Gas is paid by the operator from its service revenue in this pricing proposal, s
 
 Old practice receipts retain their original amounts and policy. Their remaining balances can be evaluated under the new policy with zero new fees. Nothing runs automatically in the practice app.
 
-## Planner requirement: direct reinvestment, swap, or wait
+### Planner requirement: direct reinvestment, swap, or wait
 
 Bounded fee-balancing swaps are implemented in the V4 execution path and remain absent from the historical balanced-fee practice simulation. Their inclusion never waives price, amount, custody or owner-benefit checks; code qualification does not activate a live service.
 
@@ -32,7 +51,7 @@ Two independent gates apply:
 
 Slippage tolerance is an execution bound, not an extra fee to add again if already reflected in conservative minimum output. Measure price impact separately and bound it explicitly. Re-quote and re-evaluate when price, fees, gas, policy or destination changes; an old annualized rate must not force a currently unprofitable trade.
 
-## Funds and execution limits
+### Funds and execution limits
 
 These limits govern ongoing automation. Initial position creation separately permits an explicit owner-signed balancing swap using only the selected wallet deposit budget, as defined in [ONBOARDING_AND_POOL_DISCOVERY.md](ONBOARDING_AND_POOL_DISCOVERY.md). Initial capital, swap proceeds and unused deposit dust are not earned fees and incur no 2% or 4% automation service cut. That setup consent cannot grant future wallet-pull authority to the operator.
 
@@ -45,7 +64,7 @@ Owner-requested initial/manual assisted swaps have an approved first-release tar
 - The M1/M2/M3 candidate after the 21 September audit freeze requires every internal swap's actual output to be consumed by the same action's liquidity addition, under the same source and output currency. That amount is added to any pre-existing charged-consumption floor. A different source cannot satisfy it, and a token-denominated or percentage dust allowance is not inferred. Re-quote a smaller swap or a feasible addition, reinvest directly, or wait when this cannot be met. A positive output minimum alone does not establish full consumption of actual output, and this on-chain conservation bound does not by itself prove economic profit.
 - A personal/legacy contract's enforced cap remains binding until an explicitly authorized upgrade or migration. Do not bypass it. If batching is needed, reconcile each receipt, refresh remaining balances and compare total costs before another action; never restart a measurement timer solely to delay already eligible leftovers.
 
-## Waiting balances and release evidence
+### Waiting balances and release evidence
 
 Use the UI label **Fees awaiting reinvestment**. Every retained balance needs an amount, source and reason: cost, dust, token-ratio mismatch, unavailable/uneconomic swap, range restriction, stale data, pending transaction, pause, or an actual contract limit. It remains available for re-evaluation or owner withdrawal, without a new collection or duplicate charge. Re-evaluate dynamically when relevant observations change; preserve useful history through isolated failures.
 

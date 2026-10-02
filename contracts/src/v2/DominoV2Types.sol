@@ -85,8 +85,10 @@ library DominoV2Types {
     }
 
     /// The readable, owner-signed core of a manual position action. Used as
-    /// the Permit2 witness when tokens are pulled, and as a direct EIP-712
-    /// signature when a relayer submits an action that pulls nothing.
+    /// the Permit2 witness when tokens are pulled. A relayer submits a change
+    /// of range or an exit with the owner's signature of a
+    /// DominoV2RelayTypes.RelayedPositionAction, which nests it with the
+    /// removal bounds it does not bind.
     /// routesHash = keccak256(abi.encode(SwapLeg[])) of the plan's legs.
     struct PositionIntent {
         uint8 action;

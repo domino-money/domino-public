@@ -140,7 +140,7 @@ converted >= DominoSwapFloor.minimumOutput(source withdrawn, anchor, direction, 
 
 - "Source withdrawn" means after any fee taken before the conversion (see the fee rules). What was already in the target token is delivered as withdrawn.
 - **The pool fee** is the vault pool's, read as `DominoSwapFloor` reads it: on v4 the protocol plus LP fee for the direction, from the PoolManager's slot0; on v3 the fee tier (`PoolRef.fee`), which already contains the protocol share.
-- **Slippage excludes the pool fee** (owner decision, 2 Oct), as `Limits.maxSlippageBps` does (#282, the #3409682 fix): a 1% mandate converts on a 2% pool at 97.8% of the anchor. It covers price impact and the anchor-spot gap.
+- **Slippage excludes the pool fee** (owner decision, 2 Oct), as `Limits.maxSlippageBps` does (#282, the #3409682 fix): a 1% mandate on a 2% pool floors the conversion at 97.02% of the anchor value (0.98 × 0.99; the #3409682 swap filled at about 97.8% of spot). It covers price impact and the anchor-spot gap.
 - **Ceilings.** `maxSlippageBps` is at most 10% (`MAX_SLIPPAGE_BPS`). The pool fee counts at most 10% (`MAX_POOL_FEE_PIPS`), so a hook that raises a dynamic fee cannot drag the floor down. Worst case: 0.9 × 0.9 = 81% of the anchor value of what is converted.
 - **No price math of its own.** Every conversion at the anchor (this floor, and the fee's valuation) is `DominoSwapFloor.quote`, whose `mulDiv` is the one vendored `FullMath` in `src/v2` (`contracts/src/v2/positions/uniswap`, F1c; see [F1_POSITIONS.md](F1_POSITIONS.md#vendored-math)).
 
