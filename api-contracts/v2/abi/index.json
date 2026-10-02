@@ -11,6 +11,23 @@
       "revokeMandate(bytes32)": "0xd91ebc2a"
     }
   },
+  "IDominoAutoExitExtension": {
+    "source": "contracts/src/v2/interfaces/IDominoAutoExitExtension.sol",
+    "interfaceId": "0x3c903db1",
+    "functions": {
+      "cancelNonce(uint256)": "0xcfdd7aea",
+      "claim(address,address)": "0x21c0b342",
+      "INSTRUCTION_VERSION()": "0xb02fbfa4",
+      "mandateOf(bytes32)": "0x19eee827",
+      "MAX_POOL_FEE_PIPS()": "0x48620409",
+      "MAX_SLIPPAGE_BPS()": "0xe229cd76",
+      "maxObservationAgeSeconds()": "0x9c392d2c",
+      "minTwapSeconds()": "0x0036c27c",
+      "nonceUsed(address,uint256)": "0x1647795e",
+      "priceAnchor()": "0x1663cd9e",
+      "unclaimed(address,address)": "0x4d2c3175"
+    }
+  },
   "IDominoFeeEvents": {
     "source": "contracts/src/v2/interfaces/IDominoFees.sol",
     "interfaceId": "0x00000000",

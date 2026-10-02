@@ -5,6 +5,7 @@ import {IPermit2Signature} from "../../src/v2/external/IPermit2Signature.sol";
 import {IUniswapV3CallbacksMinimal, IUniswapV3FactoryMinimal, IUniswapV3PoolMinimal, IUniswapV3PositionManagerMinimal} from "../../src/v2/external/IUniswapV3Minimal.sol";
 import {IV4PoolManagerMinimal, IV4PositionManagerMinimal, IV4StateViewMinimal, IV4SubscriberMinimal, IV4UnlockCallbackMinimal} from "../../src/v2/external/IUniswapV4Minimal.sol";
 import {IDominoAutoExit} from "../../src/v2/interfaces/IDominoAutoExit.sol";
+import {IDominoAutoExitExtension} from "../../src/v2/interfaces/IDominoAutoExitExtension.sol";
 import {IDominoFeeSettlement} from "../../src/v2/interfaces/IDominoFees.sol";
 import {IDominoPositionActions} from "../../src/v2/interfaces/IDominoPositionActions.sol";
 import {IDominoPriceAnchor} from "../../src/v2/interfaces/IDominoPriceAnchor.sol";
@@ -27,6 +28,7 @@ contract DominoV2InterfacesTest {
 
     function testInterfaceIdsArePinned() public pure {
         _pin(type(IDominoAutoExit).interfaceId, 0x871e6484, "IDominoAutoExit");
+        _pin(type(IDominoAutoExitExtension).interfaceId, 0x3c903db1, "IDominoAutoExitExtension");
         _pin(type(IDominoFeeSettlement).interfaceId, 0x28cc3518, "IDominoFeeSettlement");
         _pin(type(IDominoPositionActions).interfaceId, 0x0c6d074a, "IDominoPositionActions");
         _pin(type(IDominoPriceAnchor).interfaceId, 0x8e179650, "IDominoPriceAnchor");

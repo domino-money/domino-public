@@ -162,7 +162,7 @@ Kinds, per host:
 
 - **Zap:** `FEE_KIND_ASSISTED_SWAP`, through `_assistedSwap`.
 - **Vault:** `FEE_KIND_AUTOMATION` on each token's consumed fees, `feeOf(consumed, automationFeeBps(mode))`. Owner-requested swaps through the vault use `_assistedSwap`. The vault counts `owedFees(token)` as backing, never as reserves, and `recoverToken` must exclude it.
-- **Auto-exit:** `FEE_KIND_AUTO_EXIT`, `feeOf(amount, FEE_AUTO_EXIT_BPS)` on each token withdrawn, or on the converted output when the owner converts into a charge currency (`chargeCurrencyRank(convertTo) ≠ 0`; F0 `IDominoAutoExit`).
+- **Auto-exit:** `FEE_KIND_AUTO_EXIT`, `feeOf(amount, FEE_AUTO_EXIT_BPS)`: on the converted output when the owner converts into a charge currency (`chargeCurrencyRank(convertTo) ≠ 0`); in the best-ranked charge currency received when the owner receives both tokens; otherwise on each token withdrawn ([F4_AUTO_EXIT.md](F4_AUTO_EXIT.md)).
 
 ### Rules (DominoFeeRules)
 

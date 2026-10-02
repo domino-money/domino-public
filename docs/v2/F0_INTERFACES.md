@@ -134,7 +134,7 @@ Anything that widens trust is scheduled by governance (`scheduleChange` with a `
 - `execute(mandateHash, execution)` (admitted operator, after the anchor crosses a trigger);
 - `mandateStatus`.
 
-Consent takes two explicit acts: the vault's `setExitModule` and the mandate signature. The fee is 20 bps of each token withdrawn, or of the converted output.
+Consent takes two explicit acts: the vault's `setExitModule` and the mandate signature. The fee is 20 bps of the position at exit: of the converted output when it is a charge currency; in the best-ranked charge currency received when the owner receives both tokens; otherwise of each token withdrawn ([F4_AUTO_EXIT.md](F4_AUTO_EXIT.md)).
 
 ## Chain profiles
 

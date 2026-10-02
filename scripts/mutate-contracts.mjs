@@ -12,7 +12,12 @@
 // noticed. And a mutation that does not apply is an error, never a pass: a
 // silently skipped edit reads exactly like a guard the tests already cover.
 //
-//   node scripts/mutate-contracts.mjs batch.json [--head] [--keep]
+//   node scripts/mutate-contracts.mjs batch.json [--head] [--keep] [--with-artifacts]
+//
+// `--with-artifacts` seeds the sandbox with this checkout's contracts/cache and
+// contracts/out. A V2 suite builds no V1 contract, and the size gate that
+// follows every passing suite reads the V1 artifacts; without them every
+// verdict, the baseline included, is NO BUILD. It also makes builds incremental.
 //
 // The batch is JSON: a default `suite` and `file`, then `mutations`, each with
 // a `label`, the `old` text to find and the `new` text to put in its place, and
@@ -28,7 +33,7 @@
 //   NOT APPLIED  the text was not found exactly once as asked - fix the batch
 //   NO BUILD     the mutation does not compile - it proves nothing
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,7 +43,7 @@ const RESULT = /^Suite result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) s
 const TOTAL = /^Ran (\d+) test suites? in .+: (\d+) tests? passed, (\d+) failed, (\d+) skipped \((\d+) total tests\)/m;
 
 /** A disposable copy of everything a contract suite needs. Caller removes it. */
-export function makeSandbox({ head = false, run = spawnSync } = {}) {
+export function makeSandbox({ head = false, artifacts = false, run = spawnSync } = {}) {
   const box = mkdtempSync(path.join(os.tmpdir(), 'domino-mutate-'));
   if (head) {
     const archive = run('git', ['-C', root, 'archive', 'HEAD', 'contracts', 'scripts', 'package.json'], { maxBuffer: 1 << 30 });
@@ -48,6 +53,11 @@ export function makeSandbox({ head = false, run = spawnSync } = {}) {
   } else {
     for (const entry of ['contracts/src', 'contracts/test', 'contracts/foundry.toml', 'scripts', 'package.json']) {
       cpSync(path.join(root, entry), path.join(box, entry), { recursive: true });
+    }
+  }
+  if (artifacts) {
+    for (const entry of ['contracts/cache', 'contracts/out']) {
+      if (existsSync(path.join(root, entry))) cpSync(path.join(root, entry), path.join(box, entry), { recursive: true });
     }
   }
   // The pinned Forge binary and the compiler wrapper resolve through node_modules.
@@ -169,7 +179,7 @@ export function runBatch(box, input, { suiteRunner = runSuite, log = console.log
 
 function main(argv) {
   const spec = validateSpec(JSON.parse(readFileSync(argv.find(value => !value.startsWith('--')), 'utf8')));
-  const box = makeSandbox({ head: argv.includes('--head') });
+  const box = makeSandbox({ head: argv.includes('--head'), artifacts: argv.includes('--with-artifacts') });
   try {
     return runBatch(box, spec).exitCode;
   } finally {

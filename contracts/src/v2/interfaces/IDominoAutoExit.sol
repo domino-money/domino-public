@@ -8,9 +8,11 @@ import {DominoV2Types} from "../DominoV2Types.sol";
 /// @dev Full consent takes two explicit acts: the vault's setExitModule and the
 /// EIP-712 mandate signature (EOA, EIP-7702 account or EIP-1271 wallet). The
 /// trigger is checked against the anchor price, never the bare spot, and the
-/// delivery has a floor against that anchor. Fee: FEE_AUTO_EXIT_BPS of each
-/// token withdrawn, or of the converted output when the owner asked for
-/// conversion into a charge currency; nothing else, even with conversion.
+/// delivery has a floor against that anchor. Fee: FEE_AUTO_EXIT_BPS of the
+/// position at exit, the only charge even with conversion: of the converted
+/// output when the owner converts into a charge currency; in the best-ranked
+/// charge currency the owner receives when receiving both tokens; otherwise
+/// of each token withdrawn (docs/v2/F4_AUTO_EXIT.md).
 interface IDominoAutoExit {
     error InvalidMandate();
     error MandateNotActive();

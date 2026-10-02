@@ -1,0 +1,405 @@
+{
+  "source": "contracts/src/v2/interfaces/IDominoAutoExitExtension.sol",
+  "interfaceId": "0x3c903db1",
+  "functions": {
+    "cancelNonce(uint256)": "0xcfdd7aea",
+    "claim(address,address)": "0x21c0b342",
+    "INSTRUCTION_VERSION()": "0xb02fbfa4",
+    "mandateOf(bytes32)": "0x19eee827",
+    "MAX_POOL_FEE_PIPS()": "0x48620409",
+    "MAX_SLIPPAGE_BPS()": "0xe229cd76",
+    "maxObservationAgeSeconds()": "0x9c392d2c",
+    "minTwapSeconds()": "0x0036c27c",
+    "nonceUsed(address,uint256)": "0x1647795e",
+    "priceAnchor()": "0x1663cd9e",
+    "unclaimed(address,address)": "0x4d2c3175"
+  },
+  "abi": [
+    {
+      "inputs": [],
+      "name": "AutomationHalted",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "BelowMinimum",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "DeliveryMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ExitModuleNotEnabled",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidAnchor",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidExecution",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidRecipient",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidSignature",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "MandateAlreadyRegistered",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NonceAlreadyUsed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NothingToClaim",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TwapWindowTooShort",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "VaultOwnerChanged",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "Claimed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "totalUnclaimed",
+          "type": "uint256"
+        }
+      ],
+      "name": "DeliveryDeferred",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        }
+      ],
+      "name": "NonceCancelled",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "INSTRUCTION_VERSION",
+      "outputs": [
+        {
+          "internalType": "uint8",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MAX_POOL_FEE_PIPS",
+      "outputs": [
+        {
+          "internalType": "uint24",
+          "name": "",
+          "type": "uint24"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MAX_SLIPPAGE_BPS",
+      "outputs": [
+        {
+          "internalType": "uint16",
+          "name": "",
+          "type": "uint16"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        }
+      ],
+      "name": "cancelNonce",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        }
+      ],
+      "name": "claim",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "mandateOf",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "owner",
+              "type": "address"
+            },
+            {
+              "internalType": "uint64",
+              "name": "validUntil",
+              "type": "uint64"
+            },
+            {
+              "internalType": "uint16",
+              "name": "maxSlippageBps",
+              "type": "uint16"
+            },
+            {
+              "internalType": "uint8",
+              "name": "receiveMode",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint8",
+              "name": "status",
+              "type": "uint8"
+            },
+            {
+              "internalType": "address",
+              "name": "vault",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "convertTo",
+              "type": "address"
+            },
+            {
+              "internalType": "uint160",
+              "name": "triggerBelowSqrtPriceX96",
+              "type": "uint160"
+            },
+            {
+              "internalType": "uint160",
+              "name": "triggerAboveSqrtPriceX96",
+              "type": "uint160"
+            },
+            {
+              "internalType": "uint256",
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct IDominoAutoExitExtension.MandateRecord",
+          "name": "record",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "maxObservationAgeSeconds",
+      "outputs": [
+        {
+          "internalType": "uint32",
+          "name": "",
+          "type": "uint32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "minTwapSeconds",
+      "outputs": [
+        {
+          "internalType": "uint32",
+          "name": "",
+          "type": "uint32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        }
+      ],
+      "name": "nonceUsed",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "used",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "priceAnchor",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "unclaimed",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ]
+}

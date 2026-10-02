@@ -1,0 +1,757 @@
+{
+  "description": "F4 auto-exit guards (contracts/src/v2/autoexit) on F1b's executor, fee ledger and swap floor: registration terms, signatures, revocation, nonces, the shared lock, operator, halt, consent, anchor, triggers, one shot, minimums, measured delivery and claims, conversion legs and the remainder, the fee-aware floor and pool fee, and the fee rules. Every mutation is expected CAUGHT.",
+  "provenance": "Authored 2026-10-01 with the F4 module (domino-money/domino#283); rebuilt 2026-10-02 on F1b (#292). Run with --with-artifacts after the contract suites have built contracts/out: the size gate after each passing suite reads V1 artifacts that no V2 suite builds.",
+  "mutations": [
+    {
+      "label": "registration refuses a known mandate",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (_mandates[mandateHash].status != 0) revert MandateAlreadyRegistered();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "terms: zero owner",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "mandate.owner == address(0) || ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "terms: zero vault",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "mandate.vault == address(0) || ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "terms: validity not ended",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": " || mandate.validUntil < block.timestamp",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "terms: at least one trigger",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "above == 0 ? below == 0 : below >= above",
+      "new": "above == 0 ? false : below >= above",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "terms: triggers do not cross",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "above == 0 ? below == 0 : below >= above",
+      "new": "above == 0 ? below == 0 : false",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "terms: slippage positive",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": " || mandate.maxSlippageBps == 0",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "terms: slippage capped",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "\n                || mandate.maxSlippageBps > MAX_SLIPPAGE_BPS",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "terms: both takes no target",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (mandate.convertTo != address(0)) revert InvalidMandate();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "terms: target is a pool token",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (mandate.convertTo != pool.currency0 && mandate.convertTo != pool.currency1) revert InvalidMandate();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "terms: unknown receive mode",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "        } else {\n            revert InvalidMandate();\n        }",
+      "new": "        }",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "nonce: single use at registration",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (nonceUsed[mandate.owner][mandate.nonce]) revert NonceAlreadyUsed();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "nonce: consumed by registration",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "nonceUsed[mandate.owner][mandate.nonce] = true;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "signature required",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "revert InvalidSignature();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "signature: low s only",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "uint256(s) <= HALF_CURVE_ORDER && ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "eip1271: the call must succeed",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "return ok && result.length >= 32",
+      "new": "return result.length >= 32",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "eip1271: a full word",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "result.length >= 32 && ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "eip1271: the magic value",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "abi.decode(result, (bytes32)) == bytes32(ERC1271_MAGIC)",
+      "new": "result.length != 0",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "owner owns the vault",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (IDominoVault(mandate.vault).owner() != mandate.owner) revert Unauthorized();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "domain binds the chain",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "DominoV2Types.domainSeparator(block.chainid, address(this))",
+      "new": "DominoV2Types.domainSeparator(4663, address(this))",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "domain binds the module",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "DominoV2Types.domainSeparator(block.chainid, address(this))",
+      "new": "DominoV2Types.domainSeparator(block.chainid, address(1))",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "revoke: active only",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (record.status != STATUS_ACTIVE) revert MandateNotActive();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "revoke: owner only",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (msg.sender != record.owner) revert Unauthorized();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "revoke: status set",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "record.status = STATUS_REVOKED;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "cancelNonce: refuses a used nonce",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (nonceUsed[msg.sender][nonce]) revert NonceAlreadyUsed();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "cancelNonce: marks the nonce",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "nonceUsed[msg.sender][nonce] = true;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "constructor: anchor",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "priceAnchor_ == address(0) || ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "constructor: observation age",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": " || maxObservationAgeSeconds_ == 0",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "constructor: twap window",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": " || minTwapSeconds_ == 0",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "erc165: own id",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "interfaceId == ERC165_ID || ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "erc165: IDominoAutoExit",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "interfaceId == type(IDominoAutoExit).interfaceId\n            || ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "erc165: extension",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "interfaceId == type(IDominoAutoExitExtension).interfaceId\n            || ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "erc165: fee settlement",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "\n            || interfaceId == type(IDominoFeeSettlement).interfaceId",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol"
+    },
+    {
+      "label": "lock: registerMandate",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "        external\n        nonReentrant\n        returns (bytes32 mandateHash)",
+      "new": "        external\n        returns (bytes32 mandateHash)",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "lock: revokeMandate",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "function revokeMandate(bytes32 mandateHash) external nonReentrant {",
+      "new": "function revokeMandate(bytes32 mandateHash) external {",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "lock: cancelNonce",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "function cancelNonce(uint256 nonce) external nonReentrant {",
+      "new": "function cancelNonce(uint256 nonce) external {",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "lock: execute",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "        nonReentrant\n        returns (uint256 amount0, uint256 amount1)",
+      "new": "        returns (uint256 amount0, uint256 amount1)",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "lock: claim",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "external nonReentrant returns (uint256 amount)",
+      "new": "external returns (uint256 amount)",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "execute: admitted operator",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (!ROUTE_REGISTRY.isOperator(msg.sender)) revert Unauthorized();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "execute: automation halt",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (ROUTE_REGISTRY.automationHalted()) revert AutomationHalted();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "execute: active mandate",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "record.status != STATUS_ACTIVE || block.timestamp",
+      "new": "block.timestamp",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "execute: unexpired mandate",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": " || block.timestamp > record.validUntil",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "execute: module still enabled",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (vault.exitModule() != address(this)) revert ExitModuleNotEnabled();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "execute: vault owner unchanged",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (vault.owner() != record.owner) revert VaultOwnerChanged();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "execute: two ordered tokens",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "pool.currency0 >= pool.currency1\n                || ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "execute: target still a pool token",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "\n                || (\n                    record.receiveMode != DominoV2Types.RECEIVE_BOTH && record.convertTo != pool.currency0\n                        && record.convertTo != pool.currency1\n                )",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "anchor: minimum twap window",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (window < minTwapSeconds) revert TwapWindowTooShort();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "anchor: twap window is the age bound",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "maxAge = window;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "anchor: observation age is the module bound",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "uint32 maxAge = maxObservationAgeSeconds;",
+      "new": "uint32 maxAge = type(uint32).max;",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "anchor: band is the mandate slippage",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "anchor(pool, evidence, maxAge, band)",
+      "new": "anchor(pool, evidence, maxAge, 10_000)",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "anchor: zero price refused",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (price == 0) revert InvalidAnchor();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "trigger: below fires",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "price > record.triggerBelowSqrtPriceX96 && ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "trigger: unset above never fires",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "above == 0 || price < above",
+      "new": "price < above",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "trigger: above fires",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "above == 0 || price < above",
+      "new": "above == 0 || true",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "one shot",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "record.status = STATUS_EXECUTED;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "removal minimum: token0",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "exit.received0 < execution.amount0MinRemoved || ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "removal minimum: token1",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": " || exit.received1 < execution.amount1MinRemoved",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "both: no legs",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (legs.length != 0) revert InvalidExecution();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "exiting: set for the execution",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "        _setExiting(true);\n",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "exiting: cleared after it",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "        _setExiting(false);\n",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "receive: only while exiting",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (!_exiting()) revert Unauthorized();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "delivery: zero is not pushed",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (amount == 0) return;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol",
+      "expected": "NOT CAUGHT",
+      "reason": "Gas only: delivery is measured, so a zero push moves nothing and credits nothing either way."
+    },
+    {
+      "label": "delivery: a shortfall is credited",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (debited < amount) {",
+      "new": "if (false) {",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "delivery: native push gas bound",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "token == address(0) ? NATIVE_SEND_GAS : gasleft()",
+      "new": "gasleft()",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "push: measured, not reported",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (remaining < balance) debited = balance - remaining;",
+      "new": "debited = amount;",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "push: no over-debit",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (debited > amount) revert DeliveryMismatch(token);",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "claim: a recipient",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (recipient == address(0)) revert InvalidRecipient();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "claim: something to claim",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (amount == 0) revert NothingToClaim();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "claim: clears the credit",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "unclaimed[msg.sender][token] = 0;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "claim: the exact credit moves",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (_push(token, recipient, amount, gasleft()) != amount) revert DeliveryMismatch(token);",
+      "new": "_push(token, recipient, amount, gasleft());",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "convert: nothing to convert calls nothing",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (amount == 0) return 0;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "leg: sells the source",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "leg.tokenIn != conversion.source || ",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "leg: buys the target",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": " || leg.tokenOut != exit.convertTo",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "leg: a router leg never takes the remainder",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (leg.kind == DominoV2Types.LEG_UNIVERSAL_ROUTER) revert InvalidExecution();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "leg: the remainder filled at execution",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "leg.amountIn = uint128(remaining);",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "leg: within what remains",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (leg.amountIn > remaining) revert InvalidExecution();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "legs: everything converted",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (remaining != 0) revert InvalidExecution();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "legs: native tracked",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "new address[](3)",
+      "new": "new address[](2)",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "floor: refuses less",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (converted < floor) revert BelowMinimum();",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "floor: the mandate slippage",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "_poolFee(exit.pool, conversion.toToken1), exit.maxSlippageBps",
+      "new": "_poolFee(exit.pool, conversion.toToken1), 0",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "floor: the pool fee",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "_poolFee(exit.pool, conversion.toToken1), exit.maxSlippageBps",
+      "new": "0, exit.maxSlippageBps",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "floor: the direction",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "amount, exit.anchorSqrtPriceX96, conversion.toToken1,",
+      "new": "amount, exit.anchorSqrtPriceX96, !conversion.toToken1,",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "pool fee: v4 from the PoolManager",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (pool.dex == DominoV2Types.DEX_V4) (, fee) = DominoSwapFloor.v4SpotAndFee(V4_POOL_MANAGER, pool, zeroForOne);\n        else fee = pool.fee;",
+      "new": "fee = pool.fee;",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "pool fee: v3 tier",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "else fee = pool.fee;",
+      "new": "else fee = 0;",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "pool fee: ceiling",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (fee > MAX_POOL_FEE_PIPS) fee = MAX_POOL_FEE_PIPS;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "fee: listed target charged on the output (never)",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "listed: ROUTE_REGISTRY.chargeCurrencyRank(exit.convertTo) != 0,",
+      "new": "listed: false,",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "fee: listed target charged on the output (always)",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "listed: ROUTE_REGISTRY.chargeCurrencyRank(exit.convertTo) != 0,",
+      "new": "listed: true,",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "unlisted: source fee charged",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "_charge(exit, conversion.source, sourceFee);",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "unlisted: target fee charged",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "_charge(exit, exit.convertTo, targetFee);",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "unlisted: source net of the fee",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "conversion.sourceAmount -= sourceFee;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "unlisted: target net of the fee",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "conversion.targetAmount -= targetFee;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "listed: output fee charged",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "_charge(exit, exit.convertTo, fee);",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "listed: output net of the fee",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "net -= fee;",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: token0 counts only if received",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "exit.received0 == 0 ? 0 : ROUTE_REGISTRY.chargeCurrencyRank(exit.pool.currency0)",
+      "new": "ROUTE_REGISTRY.chargeCurrencyRank(exit.pool.currency0)",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: token1 counts only if received",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "exit.received1 == 0 ? 0 : ROUTE_REGISTRY.chargeCurrencyRank(exit.pool.currency1)",
+      "new": "ROUTE_REGISTRY.chargeCurrencyRank(exit.pool.currency1)",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: no charge currency, each token",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "if (rank0 == 0 && rank1 == 0) return (_fee(exit.received0), _fee(exit.received1));",
+      "new": "",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: the better rank leads",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "rank0 != 0 && (rank1 == 0 || rank0 <= rank1)",
+      "new": "rank0 != 0 && rank1 == 0",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: a lone listed token0 leads",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "rank0 != 0 && (rank1 == 0 || rank0 <= rank1)",
+      "new": "rank0 != 0 && rank0 <= rank1",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: the leading fee is capped at what came",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "leadFee = due < lead ? due : lead;",
+      "new": "leadFee = due;",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: the rest is taken from the other token",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "otherFee = DominoSwapFloor.quote(due - leadFee, price, !leadIsToken1);",
+      "new": "otherFee = 0;",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: the rest converted the right way",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "price, !leadIsToken1)",
+      "new": "price, leadIsToken1)",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: the value includes the other token",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "_fee(lead + DominoSwapFloor.quote(other, price, leadIsToken1))",
+      "new": "_fee(lead)",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: the other token valued the right way",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "quote(other, price, leadIsToken1)",
+      "new": "quote(other, price, !leadIsToken1)",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: token0 leads in token0 terms",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "_ledFee(exit.received0, exit.received1, exit.anchorSqrtPriceX96, false)",
+      "new": "_ledFee(exit.received0, exit.received1, exit.anchorSqrtPriceX96, true)",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "both: token1 leads in token1 terms",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "_ledFee(exit.received1, exit.received0, exit.anchorSqrtPriceX96, true)",
+      "new": "_ledFee(exit.received1, exit.received0, exit.anchorSqrtPriceX96, false)",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    },
+    {
+      "label": "fee: the auto-exit kind",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "_chargeFee(DominoV2Types.FEE_KIND_AUTO_EXIT, token,",
+      "new": "_chargeFee(DominoV2Types.FEE_KIND_AUTOMATION, token,",
+      "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol"
+    },
+    {
+      "label": "tariff: FEE_AUTO_EXIT_BPS",
+      "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "old": "DominoFeeRules.feeOf(amount, DominoV2Types.FEE_AUTO_EXIT_BPS)",
+      "new": "DominoFeeRules.feeOf(amount, 30)",
+      "suite": "test/v2/autoexit/DominoAutoExitConversion.t.sol"
+    }
+  ]
+}
