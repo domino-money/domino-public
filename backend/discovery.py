@@ -21,7 +21,10 @@ from eth_hash.auto import keccak
 from read_deadline import check_read_deadline, current_read_deadline, read_deadline
 
 CHAIN_ID = 4663
-RPC_URL = 'https://rpc.mainnet.chain.robinhood.com'
+# Robinhood's official public RPC. Only tools that compare against it on purpose
+# name it (benchmarks, qualification forks): every service reads its private
+# provider file, and no client defaults to this endpoint.
+PUBLIC_RPC_URL = 'https://rpc.mainnet.chain.robinhood.com'
 POOL_MANAGER = '0x8366a39cc670b4001a1121b8f6a443a643e40951'
 POSITION_MANAGER = '0x58daec3116aae6d93017baaea7749052e8a04fa7'
 STATE_VIEW = '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b'
@@ -362,7 +365,7 @@ class ReadRpc:
     MAX_BATCH_ITEMS = 8
     MAX_BATCH_BYTES = 65_536
 
-    def __init__(self, url=RPC_URL, *, transport=json_http, max_requests=160,
+    def __init__(self, url, *, transport=json_http, max_requests=160,
                  call_gas_limit=DEFAULT_READ_CALL_GAS, batch_reads=False):
         if type(call_gas_limit) is not int or not 21_000 <= call_gas_limit <= MAX_READ_CALL_GAS:
             raise DataError('invalid_read_call_gas_limit')
@@ -871,7 +874,9 @@ def discover(token, *, rpc=None, transport=json_http, clock=time.time, max_pools
     pool_ids = list(dict.fromkeys(bytes32(pool) for pool in pool_ids))
     if not isinstance(catalogue_candidates,(list,tuple)) or len(catalogue_candidates)>100:
         raise DataError('invalid_catalogue_candidates')
-    reader = DiscoveryReader(rpc or ReadRpc(), clock=clock)
+    if rpc is None:
+        raise DataError('rpc_unconfigured')
+    reader = DiscoveryReader(rpc, clock=clock)
     block = reader.snapshot()
     report = {'mode': 'read_only_qualification', 'schemaVersion': 2, 'chainId': CHAIN_ID,
               'selectedToken': token, 'snapshot': asdict(block), 'tokens': [], 'pools': [],

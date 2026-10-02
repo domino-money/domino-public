@@ -15,7 +15,7 @@ import time
 
 from catalogue import PgCatalogue, checked_key, database_settings
 from catalogue_indexer import IndexRpc, INITIALIZE_TOPIC, decode_initialize
-from discovery import CHAIN_ID, POOL_MANAGER, RPC_URL, DataError, bytes32, parse_block, quantity
+from discovery import CHAIN_ID, POOL_MANAGER, PUBLIC_RPC_URL, DataError, bytes32, parse_block, quantity
 from fee_accounting import MAX_CHUNK_STEPS, MAX_STEPS, replay_fees, simulate, supported
 from historical_capacity import MAX_BATCH_EVENTS, replay_batch
 from local_config import load_config
@@ -256,7 +256,7 @@ def public_study(args):
             if len(raw) > MAX_INPUT_BYTES:raise DataError('fee_benchmark_input_budget')
             dataset = json.loads(raw)
         else:
-            rpc = StudyRpc(IndexRpc(RPC_URL, transport=bounded_transport(ACQUISITION_SECONDS), max_requests=STUDY_RPC_REQUESTS))
+            rpc = StudyRpc(IndexRpc(PUBLIC_RPC_URL, transport=bounded_transport(ACQUISITION_SECONDS), max_requests=STUDY_RPC_REQUESTS))
             dataset = recent_public_input(rpc, blocks=args.scan_blocks)
         result = measure(dataset)
         reconcile_study_result(dataset, result)
@@ -652,7 +652,7 @@ def dense_study(args):
                 config=load_config(args.provider_config)
                 if not config.get('rpcUrl'): raise DataError('configured_rpc_required')
                 url=configured_history_rpc_source(config)
-            else: url=RPC_URL
+            else: url=PUBLIC_RPC_URL
             rpc=StudyRpc(BatchIndexRpc(url,transport=paced_public_transport(DENSE_SECONDS),max_requests=DENSE_RPC_REQUESTS),
                          max_requests=DENSE_RPC_REQUESTS,seconds=DENSE_SECONDS)
             if args.selection_fixture:
@@ -977,8 +977,9 @@ def main(argv=None):
             config = load_config(args.provider_config) if args.source == 'configured-rpc' and args.provider_config else {}
             if args.source == 'configured-rpc' and not config:
                 raise DataError('configured_rpc_required')
-            rpc = IndexRpc(configured_history_rpc_source(config), transport=bounded_transport(ACQUISITION_SECONDS),
-                           max_requests=MAX_RPC_REQUESTS)
+            # `public-rpc` compares against Robinhood's public RPC on purpose; it is named, never a default.
+            source = PUBLIC_RPC_URL if args.source == 'public-rpc' else configured_history_rpc_source(config)
+            rpc = IndexRpc(source, transport=bounded_transport(ACQUISITION_SECONDS), max_requests=MAX_RPC_REQUESTS)
             dataset = rpc_input(rpc, spec)
         if (dataset['poolId'] != spec['poolId'] or dataset['poolKey'] != spec['poolKey'] or
                 [(c['fromBlock'], c['throughBlock']) for c in dataset['chunks']] !=

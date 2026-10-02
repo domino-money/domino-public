@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints, model_validator
 from typing import Annotated, Literal
 
-from discovery import CHAIN_ID, RPC_URL, DataError
+from discovery import CHAIN_ID, DataError
 from local_config import load_config, configured_rpc_urls
 from rpc_config import configured_history_rpc_urls
 from catalogue import configured_catalogue

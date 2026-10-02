@@ -143,7 +143,7 @@ class ActivityCapacityUnitTests(unittest.TestCase):
                     factory.return_value.step.return_value={'status':'caught_up_to_activity' if module!=manage_activity else 'caught_up_to_target'}
                     with patch('sys.argv',[module.__name__,'--pool-id',POOL,flag,'extended','--output',str(output),'--max-steps','1']), \
                          patch.object(module,'configured_writer_catalogue',return_value=MagicMock()), \
-                         patch.object(module,'load_config',return_value={'rpcUrl':'https://rpc.mainnet.chain.robinhood.com'}), \
+                         patch.object(module,'load_config',return_value={'rpcUrl':'https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'}), \
                          patch.object(module,'DiscoveryReader') as reader, \
                          patch.object(module,'PgActivity') as store, \
                          patch.object(module,name,factory), patch.dict(os.environ,{},clear=True),redirect_stdout(io.StringIO()):

@@ -54,9 +54,8 @@ class DevEgressPolicyTests(unittest.TestCase):
         self.data = snapshot()
 
     def test_domino_rpc_uses_exact_pins_with_existing_rpc_and_inventory(self):
-        self.data['rpcHosts'] += ['rpc.domino.money', 'rpc.mainnet.chain.robinhood.com']
-        for host, address in (('rpc.domino.money', '11.0.0.1'),
-                              ('rpc.mainnet.chain.robinhood.com', '11.0.0.2')):
+        self.data['rpcHosts'] += ['rpc.domino.money']
+        for host, address in (('rpc.domino.money', '11.0.0.1'),):
             self.data['hosts'].append({'hostname': host, 'addresses': [address],
                                       'observedAt': self.data['observedAt'],
                                       'expiresAt': self.data['expiresAt']})
@@ -243,19 +242,28 @@ class DevEgressPolicyTests(unittest.TestCase):
         self.assertEqual(rollback['removeArtifacts'], {p: v for p, v in result['artifactSha256'].items() if p != policy.NFT_TARGET})
         self.assertEqual(len(rollback['removeArtifacts']), 6)
 
-    def test_reader_inventory_is_explicit_and_exact_with_both_rpc_hosts(self):
+    def test_the_public_rpc_is_not_an_rpc_host(self):
+        # The same snapshot rendered while Robinhood's public RPC was a default; now it is refused.
         self.data['rpcHosts'].append('rpc.mainnet.chain.robinhood.com')
-        self.data['hosts'].append({**self.data['hosts'][0], 'hostname': 'rpc.mainnet.chain.robinhood.com', 'addresses': ['8.8.4.4']})
-        self.assertIn('8.8.4.4 rpc.mainnet.chain.robinhood.com', self.hosts('reader'))
+        self.data['hosts'].append({**self.data['hosts'][0], 'hostname': 'rpc.mainnet.chain.robinhood.com',
+                                   'addresses': ['8.8.4.4']})
+        with self.assertRaises(policy.InvalidSnapshot) as raised:
+            self.render()
+        self.assertEqual(str(raised.exception), 'invalid_rpc_hosts')
+
+    def test_reader_inventory_is_explicit_and_exact_with_both_rpc_hosts(self):
+        self.data['rpcHosts'].append('rpc.domino.money')
+        self.data['hosts'].append({**self.data['hosts'][0], 'hostname': 'rpc.domino.money', 'addresses': ['8.8.4.4']})
+        self.assertIn('8.8.4.4 rpc.domino.money', self.hosts('reader'))
         self.data['inventoryHost'] = None
         self.render()
-        self.data['rpcHosts'] = ['rpc.mainnet.chain.robinhood.com']
+        self.data['rpcHosts'] = ['rpc.domino.money']
         self.data['hosts'] = [x for x in self.data['hosts'] if x['hostname'] != 'robinhood-mainnet.g.alchemy.com']
         self.assertNotIn('alchemy', self.hosts('reader'))
 
     def test_unknown_fields_ids_ports_urls_and_false_types_are_rejected(self):
         cases = [('version', True), ('offManifestSha256', 'main'), ('offManifestSha256', 'a'*64+'\n'),
-                 ('rpcHosts', []), ('rpcHosts', ['rpc.example.com']), ('rpcHosts', ['robinhood-mainnet.g.alchemy.com']*2),
+                 ('rpcHosts', []), ('rpcHosts', ['rpc.example.com']), ('rpcHosts', ['rpc.mainnet.chain.robinhood.com']), ('rpcHosts', ['robinhood-mainnet.g.alchemy.com']*2),
                  ('rpcHosts', [{'hostname': 'secret'}]), ('inventoryHost', False),
                  ('inventoryHost', 'https://robinhood-mainnet.g.alchemy.com/v2/secret'),
                  ('accessIssuer', 'https://example.cloudflareaccess.com'), ('accessIssuer', 'example.cloudflareaccess.com/path'),

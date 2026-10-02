@@ -3,6 +3,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from discovery import PUBLIC_RPC_URL
 from eth_abi import encode
 from eth_hash.auto import keccak
 from fastapi.testclient import TestClient
@@ -152,7 +153,7 @@ class TokenGeneralityTests(unittest.TestCase):
             def transport(url, body):
                 requests.append(body)
                 return {'jsonrpc': '2.0', 'id': body['id'], 'result': '0x' + output.hex()}
-            rpc = ReadRpc(transport=transport)
+            rpc = ReadRpc(PUBLIC_RPC_URL, transport=transport)
             self.assertEqual(rpc.symbol(TOKEN, block='0x2bc'), 'LEGACY')
             self.assertEqual(len(requests), 1)
             self.assertEqual(requests[0]['params'][1], '0x2bc')

@@ -107,12 +107,13 @@ class ContinuousEgressTests(unittest.TestCase):
         self.assertEqual(str(raised.exception), code)
 
     def test_domino_rpc_and_existing_providers_have_only_pinned_https_egress(self):
-        pins = {**PINS, 'rpc.domino.money': ['16.0.0.1'],
-                'rpc.mainnet.chain.robinhood.com': ['16.0.0.2']}
+        pins = {**PINS, 'rpc.domino.money': ['16.0.0.1']}
         result = policy.render(snapshot(pins=pins))
         for role in ('read', 'write'):
-            self.assertTrue({'rpc.domino.money', 'rpc.mainnet.chain.robinhood.com',
-                             'robinhood-mainnet.g.alchemy.com'} <= set(result['roleHosts'][role]))
+            self.assertTrue({'rpc.domino.money', 'robinhood-mainnet.g.alchemy.com'} <= set(result['roleHosts'][role]))
+            self.assertNotIn('rpc.mainnet.chain.robinhood.com', result['roleHosts'][role])
+        # Robinhood's public RPC is no egress destination: pinning it is refused.
+        self.reject(snapshot(pins={**pins, 'rpc.mainnet.chain.robinhood.com': ['16.0.0.2']}), 'unapproved_hostname')
         self.assertIn('16.0.0.1 rpc.domino.money\n', result['artifacts'][policy.ROOT + '/read.hosts'])
         self.assertIn('IPAddressAllow=16.0.0.1/32\n', dropin(result, 'read'))
         self.assertIn('IPAddressDeny=any\n', dropin(result, 'read'))

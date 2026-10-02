@@ -27,8 +27,9 @@ MAX_AUTHORIZATION_SECONDS = 7 * 24 * 60 * 60
 SHORT_PROFILE = 'dns_expiring_qualification'
 CONTINUOUS_PROFILE = 'continuous_operator_pins'
 EDGE_ADDRESSES = shared.EDGE_ADDRESSES
-RPC_HOSTS = frozenset(('rpc.mainnet.chain.robinhood.com', 'robinhood-mainnet.g.alchemy.com',
-                       'rpc.domino.money'))
+# Robinhood's public RPC is not an egress destination: reads go to our node
+# (rpc.domino.money), with Alchemy as the verified fallback for old state.
+RPC_HOSTS = frozenset(('robinhood-mainnet.g.alchemy.com', 'rpc.domino.money'))
 INVENTORY_HOST = 'robinhood-mainnet.g.alchemy.com'
 ANALYTICS_HOSTS = frozenset(('api.geckoterminal.com', 'api.dexscreener.com'))
 ISSUER = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com')

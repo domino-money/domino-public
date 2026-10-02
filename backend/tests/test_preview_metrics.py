@@ -29,7 +29,8 @@ class MetricsPreviewTests(unittest.TestCase):
             self.assertLessEqual(current_read_deadline().remaining(), 30)
             return {'synthetic': 'market'}
         service.pool_market.side_effect = read
-        with patch.object(preview_metrics, 'load_config', return_value={}), \
+        with patch.object(preview_metrics, 'load_config',
+                          return_value={'rpcUrl': 'https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'}), \
                 patch.object(preview_metrics, 'ReadService', return_value=service), \
                 patch.object(preview_metrics, 'estimate_pool_apr', return_value={'status': 'estimate'}) as calculate:
             code, output, errors = self.invoke(['pool', '--pool-id', POOL])

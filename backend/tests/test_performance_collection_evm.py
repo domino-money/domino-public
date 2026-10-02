@@ -30,7 +30,8 @@ IMPLEMENTATION = '0x'+'45'*20
 FACTORY = '0x'+'46'*20
 TOKEN = '0x'+'77'*20
 OUTSIDER = '0x'+'88'*20
-RPC_LABEL = 'https://rpc.mainnet.chain.robinhood.com'
+# A label for the synthetic transport: our node, the default host a collector may name.
+RPC_LABEL = 'https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'
 # Addresses interpolated as bytes20 literals to avoid checksum-literal ambiguity.
 SOURCE = '''// SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;

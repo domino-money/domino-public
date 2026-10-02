@@ -262,11 +262,11 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "c8449c712a349aa29aa86951198f77355457cd63cc5b4267581199b216970fe0"
+      "sha256": "a9056a2d89b4c823867d5fbf7c5cdf0a950730e1e3ea86c235044c724950388f"
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "338bacdc420c98805fb29cd149269b9f01d6af4b0e1a86357fb293941a914a23"
+      "sha256": "36f5101cf178584966ff02cbee677cb806acec83011ab186287f5f474f74f947"
     },
     {
       "path": "backend/market_cache.py",
@@ -282,7 +282,7 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "c747301e24136d382e3b3e2a3bc17d5f3f3eb7844dfd8add78f8b0fd254ee65b"
+      "sha256": "a051e3b9ef6ab7f14c8513ec36cd7f0aadc0b18c44d42d97e85260fe89daeba9"
     },
     {
       "path": "backend/bridge_http.py",
@@ -350,7 +350,7 @@
     },
     {
       "path": "backend/tests/test_discovery.py",
-      "sha256": "3ffc1db907f8c29d7a168b4412de25a329f1d3bb315ece83025fd108c191b665"
+      "sha256": "2610c7a873e8aaed3fecfe4dc4e849e8ecb90eea0bc04d1185f163986829e3f8"
     },
     {
       "path": "scripts/export-read-contract.py",

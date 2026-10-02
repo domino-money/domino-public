@@ -19,7 +19,7 @@ from catalogue import PgCatalogue
 from chainlink_history import ChainlinkHistorical, USDG
 from chainlink_reference import reference_series
 from dev_postgres import ADMIN, PORT, SOCKET
-from discovery import Block, CHAIN_ID, DataError, ReadRpc, ZERO
+from discovery import Block, CHAIN_ID, DataError, ReadRpc, ZERO, PUBLIC_RPC_URL
 from price_history import SOURCE, store_observations
 import qualify_chainlink as cli
 from test_chainlink_history import Archive
@@ -105,7 +105,7 @@ class QualifyChainlinkStorageTests(unittest.TestCase):
     def rpc(self, *args, **kwargs):
         archive = ControlledArchive(self.control)
         self.archives.append(archive)
-        rpc = ReadRpc(transport=archive, max_requests=kwargs.get('max_requests', 1600))
+        rpc = ReadRpc(PUBLIC_RPC_URL, transport=archive, max_requests=kwargs.get('max_requests', 1600))
         rpc.test_archive = archive
         return rpc
 
@@ -130,7 +130,9 @@ class QualifyChainlinkStorageTests(unittest.TestCase):
             pool=lambda query, snapshot: {'currencies': [ZERO, USDG], 'poolKey': POOL_KEY,
                                          'identityStatus': 'verified'},
             assert_canonical=lambda snapshot: None)
-        with patch.object(cli, 'ReadRpc', side_effect=self.rpc), \
+        # The probe reads the operator's provider file; it never falls back to a public default.
+        with patch.object(cli, 'load_config', return_value={'rpcUrl': 'https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'}), \
+             patch.object(cli, 'ReadRpc', side_effect=self.rpc), \
              patch.object(cli, 'DiscoveryReader', return_value=reader), \
              patch.object(cli, 'ChainlinkHistorical', side_effect=self.historical), \
              patch.object(cli, 'reference_series', side_effect=self.verify), \
@@ -264,7 +266,7 @@ class QualifyChainlinkStorageTests(unittest.TestCase):
 
     def test_conflict_in_last_asset_rolls_back_first_asset_and_preserves_stored_revision(self):
         archive = ControlledArchive({})
-        rpc = ReadRpc(transport=archive, max_requests=1600)
+        rpc = ReadRpc(PUBLIC_RPC_URL, transport=archive, max_requests=1600)
         bundle = ChainlinkHistorical(rpc, clock=lambda: NOW).fetch(USDG, NOW-3600, NOW, block_number=120)
         row = bundle['observations'][-1]
         store_observations(self.catalogue, [row])
@@ -279,7 +281,7 @@ class QualifyChainlinkStorageTests(unittest.TestCase):
 
     def test_no_storage_guard_is_emitted_until_full_reference_coverage_succeeds(self):
         archive = Archive()
-        rpc = ReadRpc(transport=archive, max_requests=2000)
+        rpc = ReadRpc(PUBLIC_RPC_URL, transport=archive, max_requests=2000)
         bundle = ChainlinkHistorical(rpc, clock=lambda: 1060).fetch(ZERO, 1020, 1055)
         bundle['observations'].pop()
         guards = []
@@ -294,7 +296,7 @@ class QualifyChainlinkStorageTests(unittest.TestCase):
         for number in (51, 50, 111, 112, 120):
             with self.subTest(number=number):
                 archive = Archive()
-                rpc = ReadRpc(transport=archive, max_requests=2000)
+                rpc = ReadRpc(PUBLIC_RPC_URL, transport=archive, max_requests=2000)
                 bundle = ChainlinkHistorical(rpc, clock=lambda: 1060).fetch(ZERO, 1020, 1055)
                 self.assertEqual(bundle['coverage']['endBlock']['number'], 111)
                 guards = []
@@ -310,7 +312,7 @@ class QualifyChainlinkStorageTests(unittest.TestCase):
 
     def test_storage_guard_rejects_changed_chain_without_committing_valid_rows(self):
         archive = Archive()
-        rpc = ReadRpc(transport=archive, max_requests=2000)
+        rpc = ReadRpc(PUBLIC_RPC_URL, transport=archive, max_requests=2000)
         bundle = ChainlinkHistorical(rpc, clock=lambda: 1060).fetch(ZERO, 1020, 1055)
         guards = []
         reference_series(bundle, POOL, rpc, pool_key=POOL_KEY, on_verified=guards.append)
@@ -330,7 +332,7 @@ class QualifyChainlinkStorageTests(unittest.TestCase):
                         armed.clear()
                         bundle['feed']['description'] = 'changed during storage recheck'
                     return result
-                rpc = ReadRpc(transport=transport, max_requests=2000)
+                rpc = ReadRpc(PUBLIC_RPC_URL, transport=transport, max_requests=2000)
                 bundle = ChainlinkHistorical(rpc, clock=lambda: 1060).fetch(ZERO, 1020, 1055)
                 guards = []
                 reference_series(bundle, POOL, rpc, pool_key=POOL_KEY, on_verified=guards.append)

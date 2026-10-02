@@ -45,8 +45,9 @@ LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
              'deposit': 8881, 'performance': 8900, 'execution-status': 8901,
              'tunnel': 20241}
 SNAPSHOT_RPC_PORT = 18547
-RPC_HOSTS = frozenset(('rpc.mainnet.chain.robinhood.com', 'robinhood-mainnet.g.alchemy.com',
-                       'rpc.domino.money'))
+# Robinhood's public RPC is not an egress destination: reads go to our node
+# (rpc.domino.money), with Alchemy as the verified fallback for old state.
+RPC_HOSTS = frozenset(('robinhood-mainnet.g.alchemy.com', 'rpc.domino.money'))
 ANALYTICS_HOSTS = frozenset(('api.geckoterminal.com', 'api.dexscreener.com'))
 # The quote gateway (onboarding and deposit quotes) and the liquidity API the
 # position preview and pool-info reads post to (backend/uniswap_position.py,

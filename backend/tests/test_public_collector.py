@@ -13,7 +13,7 @@ from psycopg import sql
 
 from catalogue import PgCatalogue
 from dev_postgres import ADMIN, PORT, SOCKET
-from discovery import Block, DataError, ZERO
+from discovery import Block, DataError, ZERO, PUBLIC_RPC_URL
 from eth_abi import encode
 from eth_hash.auto import keccak
 from discovery import POOL_MANAGER
@@ -204,7 +204,8 @@ class PublicCollectorTests(unittest.TestCase):
                 else:raise AssertionError(selector)
             else:raise AssertionError(method)
             return {'jsonrpc':'2.0','id':body['id'],'result':value}
-        self.service.rpc_factory=None;self.service.transport_factory=lambda:transport
+        # The service's own route: a label for the synthetic transport, never a default.
+        self.service.rpc_factory=None;self.service.rpc_url=PUBLIC_RPC_URL;self.service.transport_factory=lambda:transport
         self.writer.request('token',TOKEN)
         result=self.collector.tick(token_limit=1,pool_limit=0,max_rpc_calls=16)
         self.assertLessEqual(len(calls),16);self.assertEqual(self.collector.rpc_calls,len(calls))

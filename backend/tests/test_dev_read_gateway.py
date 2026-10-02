@@ -587,7 +587,7 @@ class DevGatewayTests(IdentityFixtures, unittest.TestCase):
         runtime = self.directory / 'development-runtime'
         runtime.mkdir(mode=0o700)
         reader_profile = {'version': 1, 'kind': 'domino-development-reader', 'enabled': True,
-                          'runtimeDirectory': str(runtime), 'rpcUrls': ['https://rpc.mainnet.chain.robinhood.com'],
+                          'runtimeDirectory': str(runtime), 'rpcUrls': ['https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'],
                           'inventoryUrl': None, 'catalogue': None,
                           'quotaQualification': {'approved': True, 'expiresAt': 2000, 'receiptSha256': 'd'*64}}
         now, wall, provider = [0.], [1010], Provider()

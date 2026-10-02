@@ -8,7 +8,9 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from discovery import CHAIN_ID, DataError, RPC_URL, SNAPSHOT_LOOPBACK_RPC
+from discovery import CHAIN_ID, DataError, PUBLIC_RPC_URL, SNAPSHOT_LOOPBACK_RPC
+# Our node, which a session's private file names first.
+LOCAL_URL='https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'
 from read_deadline import read_deadline
 from rpc_config import DEFAULT_RPC_HOSTS
 from session_chain import EoaChecker
@@ -42,7 +44,7 @@ class Provider:
 class EoaTests(unittest.TestCase):
     def setUp(self):
         self.provider=Provider()
-        self.checker=EoaChecker((RPC_URL,),transport=self.provider,clock=lambda:1010)
+        self.checker=EoaChecker((LOCAL_URL,),transport=self.provider,clock=lambda:1010)
 
     def unavailable(self):
         with self.assertRaisesRegex(SessionError, '^account_check_unavailable$'):
@@ -95,7 +97,7 @@ class EoaTests(unittest.TestCase):
             self.setUp(); self.provider.code=code; self.unavailable()
         for error in (DataError('rpc_error'),DataError('http_503'),DataError('network_unavailable'),
                       RuntimeError('SYNTHETIC private provider detail')):
-            self.setUp(); self.provider.fail[(RPC_URL,'eth_getCode')]=error; self.unavailable()
+            self.setUp(); self.provider.fail[(LOCAL_URL,'eth_getCode')]=error; self.unavailable()
 
     def test_chain_snapshot_and_freshness_failure_prevent_support_decision(self):
         for code in ('0x','0xef0100'+'ab'*20):
@@ -127,9 +129,9 @@ class EoaTests(unittest.TestCase):
         self.assertEqual(self.provider.code_reads,count)
 
     def test_fallback_must_prove_same_chain_and_existing_block(self):
-        self.checker=EoaChecker((RPC_URL,SECOND),transport=self.provider,clock=lambda:1010,
+        self.checker=EoaChecker((LOCAL_URL,SECOND),transport=self.provider,clock=lambda:1010,
                                     allowed_hosts=(*DEFAULT_RPC_HOSTS,'secondary.example.invalid'))
-        self.provider.fail[(RPC_URL,'eth_getCode')]=DataError('http_503')
+        self.provider.fail[(LOCAL_URL,'eth_getCode')]=DataError('http_503')
         self.assertEqual(self.checker.check(ADDRESS)['blockHash'],BLOCK['hash'])
         methods=[method for url,method,_ in self.provider.calls if url==SECOND]
         self.assertEqual(methods[:3],['eth_chainId','eth_getBlockByNumber','eth_getCode'])
@@ -140,15 +142,16 @@ class EoaTests(unittest.TestCase):
         elapsed=[0.0]; real=self.provider
         def slow(url,body):
             result=real(url,body); elapsed[0]+=2; return result
-        self.checker=EoaChecker((RPC_URL,),transport=slow,clock=lambda:1010)
+        self.checker=EoaChecker((LOCAL_URL,),transport=slow,clock=lambda:1010)
         with read_deadline(1,clock=lambda:elapsed[0]):
             self.unavailable()
             self.assertEqual(len(self.provider.calls),1)
             elapsed[0]=0
 
     def test_invalid_operator_endpoints_fail_before_any_network(self):
-        for urls in ([],[RPC_URL]*2,[RPC_URL]*4,['http://rpc.mainnet.chain.robinhood.com'],
-                     ['https://unlisted.example.invalid'],['https://127.0.0.1'],RPC_URL):
+        # Robinhood's public RPC is not a default host: a session file must name it to use it.
+        for urls in ([],[LOCAL_URL]*2,[LOCAL_URL]*4,['http://rpc.mainnet.chain.robinhood.com'],[PUBLIC_RPC_URL],
+                     ['https://unlisted.example.invalid'],['https://127.0.0.1'],LOCAL_URL):
             with self.assertRaisesRegex(ValueError,'^invalid_session_rpc_config$'):
                 EoaChecker(urls,transport=self.provider)
         self.assertEqual(self.provider.calls,[])
@@ -194,9 +197,9 @@ class EoaTests(unittest.TestCase):
                 with self.subTest(url=url,enabled=enabled), self.assertRaisesRegex(
                         ValueError,'^invalid_session_rpc_config$'):
                     EoaChecker((url,),execution_status_loopback=enabled)
-        for urls,kwargs in (((SNAPSHOT_LOOPBACK_RPC,RPC_URL),{}),
+        for urls,kwargs in (((SNAPSHOT_LOOPBACK_RPC,LOCAL_URL),{}),
                             ((SNAPSHOT_LOOPBACK_RPC,),{'transport':self.provider}),
-                            ((RPC_URL,),{})):
+                            ((LOCAL_URL,),{})):
             with self.subTest(urls=urls,kwargs=kwargs), self.assertRaisesRegex(
                     ValueError,'^invalid_session_rpc_config$'):
                 EoaChecker(urls,execution_status_loopback=True,**kwargs)

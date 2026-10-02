@@ -45,9 +45,9 @@ Source checks: [RPC host/path validation](../backend/rpc_config.py),
 [inventory](../backend/inventory.py), [public market host](../backend/market_data.py),
 [Access verifier](../backend/bridge_identity.py),
 [quote](../backend/uniswap_quote.py), [LP preview](../backend/uniswap_position.py).
-The default RPC candidates are `rpc.mainnet.chain.robinhood.com` and
-`robinhood-mainnet.g.alchemy.com`. This document does not assert which are currently
-configured. `api.g.alchemy.com` historical-price reads and Blockscout's legacy
+The default RPC candidates are `rpc.domino.money` and
+`robinhood-mainnet.g.alchemy.com`; Robinhood's public RPC is not a default. This
+document does not assert which are currently configured. `api.g.alchemy.com` historical-price reads and Blockscout's legacy
 qualification CLI are outside the first public token/pool path.
 
 Cloudflare's [current firewall documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/)

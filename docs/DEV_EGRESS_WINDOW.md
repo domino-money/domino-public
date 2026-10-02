@@ -24,7 +24,7 @@ are rejected with fixed error codes. No field accepts a provider URL or key.
 | `observedAt`, `expiresAt` | UTC `YYYY-MM-DDTHH:MM:SSZ`; permission expiry is bounded by the selected profile |
 | `operatorAuthorization` | Required only for `continuous_operator_pins`, with the exact fields described below |
 | `offManifestSha256` | Exact lowercase SHA256 of the separately reviewed installed OFF manifest |
-| `rpcHosts` | Nonempty unique list selecting only `robinhood-mainnet.g.alchemy.com` and/or `rpc.mainnet.chain.robinhood.com`, matching the actual private dev configuration |
+| `rpcHosts` | Nonempty unique list selecting only `robinhood-mainnet.g.alchemy.com` and/or `rpc.domino.money`, matching the actual private dev configuration; Robinhood's public RPC is not admitted |
 | `inventoryHost` | `robinhood-mainnet.g.alchemy.com` or `null`, matching that configuration |
 | `accessIssuer` | Dedicated dev issuer hostname, such as `example.cloudflareaccess.com`; no scheme/path |
 | `tunnel` | Object with optional boolean `dnsStub` and `accessJwks`; both default to `false` |

@@ -16,7 +16,7 @@ from chainlink_collection import (BudgetRpc, DEFAULT_SLICE_SECONDS, MAX_SLICES, 
 from chainlink_history import ChainlinkHistorical, MAX_ROUNDS
 from chainlink_reference import MAX_AGE_SECONDS, reference_series, reference_series_from_slices
 from collect_chainlink import collect
-from discovery import ZERO, DataError, ReadRpc
+from discovery import ZERO, DataError, ReadRpc, PUBLIC_RPC_URL
 from price_history import MAX_PRICE_ROWS, PRODUCTION_QUALIFICATIONS, PriceQualification, PriceSeries
 from test_chainlink_history import Archive, PHASE
 from test_chainlink_reference import POOL, POOL_KEY
@@ -35,7 +35,7 @@ def archive_at(publications, *, height=None):
 
 
 def rpc_for(archive):
-    return ReadRpc(transport=archive, max_requests=50000)
+    return ReadRpc(PUBLIC_RPC_URL, transport=archive, max_requests=50000)
 
 
 def finish(collection, archive, *, seconds=DEFAULT_SLICE_SECONDS):

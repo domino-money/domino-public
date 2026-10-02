@@ -32,7 +32,7 @@ class DevelopmentReaderTests(unittest.TestCase):
         self.profile = {
             'version': 1, 'kind': 'domino-development-reader', 'enabled': True,
             'runtimeDirectory': str(runtime),
-            'rpcUrls': ['https://rpc.mainnet.chain.robinhood.com'],
+            'rpcUrls': ['https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'],
             'inventoryUrl': None, 'catalogue': None,
             'quotaQualification': {'approved': True, 'expiresAt': 2000, 'receiptSha256': 'a' * 64},
         }
@@ -100,7 +100,7 @@ class DevelopmentReaderTests(unittest.TestCase):
     def test_domino_rpc_uses_shared_endpoint_validation_and_preserves_inventory(self):
         profile = deepcopy(self.profile)
         profile['rpcUrls'] = ['https://rpc.domino.money/SYNTHETIC_ONLY_0123456789/',
-                              'https://rpc.mainnet.chain.robinhood.com',
+                              'https://robinhood-mainnet.g.alchemy.com/v2/offline-second',
                               'https://robinhood-mainnet.g.alchemy.com/v2/offline-fixture']
         profile['inventoryUrl'] = 'https://robinhood-mainnet.g.alchemy.com/v2/offline-inventory'
         self.assertEqual(checked_profile(profile), profile)

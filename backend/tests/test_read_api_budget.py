@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
-from discovery import DataError, ReadRpc
+from discovery import DataError, ReadRpc, PUBLIC_RPC_URL
 from read_api import create_app, ReadGate, PROBE_BUDGET_SECONDS
 from read_contract import CONTRACT_VERSION
 from read_deadline import current_read_deadline, read_deadline, read_timeout
@@ -120,7 +120,7 @@ class ReadApiBudgetTests(unittest.TestCase):
             return {'jsonrpc': '2.0', 'id': body['id'], 'result': '0x1237'}
 
         def lookup(token):
-            rpc = ReadRpc(transport=transport)
+            rpc = ReadRpc(PUBLIC_RPC_URL, transport=transport)
             try:
                 rpc.request('eth_chainId')
             except DataError:

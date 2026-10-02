@@ -28,7 +28,7 @@ from test_position_accounting import PositionFixtureRpc, reference
 # ReadRpc is patched in the operator-CLI test, so nothing is dialled; the URL
 # only has to clear rpc_endpoint's host allow-list, which those CLIs now apply
 # through configured_history_rpc_url.
-OFFLINE_CONFIG = {'rpcUrl': 'https://rpc.mainnet.chain.robinhood.com'}
+OFFLINE_CONFIG = {'rpcUrl': 'https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'}
 
 
 @unittest.skipUnless(os.environ.get('DOMINO_TEST_POSTGRES') == '1', 'requires disposable PostgreSQL databases')

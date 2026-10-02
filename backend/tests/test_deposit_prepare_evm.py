@@ -131,7 +131,7 @@ class DepositEvmTests(unittest.TestCase):
 
     @classmethod
     def transport(cls, url, body, **options):
-        if url != 'https://rpc.mainnet.chain.robinhood.com':
+        if url != 'https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/':
             raise AssertionError('synthetic transport identity')
         return {'jsonrpc': '2.0', 'id': body['id'], 'result': cls.rpc(body['method'], body['params'])}
 
@@ -175,7 +175,7 @@ class DepositEvmTests(unittest.TestCase):
         selected.update(maxFeePerGasRaw=str(10**11), maxPriorityFeePerGasRaw=str(10**9))
         provider = Provider()
         prepare = DirectDepositPreparer(UniswapPosition(KEY, transport=provider),
-            lambda: DepositRpc('https://rpc.mainnet.chain.robinhood.com', transport=self.transport), admission=m)
+            lambda: DepositRpc('https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/', transport=self.transport), admission=m)
         kinds, nonces = [], []
         for _ in range(6):
             artifact = prepare.prepare(OWNER, selected)

@@ -3,14 +3,17 @@ import ipaddress
 import re
 from urllib.parse import urlsplit
 
-from discovery import DataError, RPC_URL
+from discovery import DataError, PUBLIC_RPC_URL
 
 LOCAL_RPC_HOST = 'rpc.domino.money'
 # That node keeps state for its 30-minute block-age window, about 18,000 blocks
 # at ten blocks per second. A historical state read further below the highest
 # verified header starts at the next route instead of a certain refusal.
 LOCAL_STATE_BLOCKS = 15_000
-DEFAULT_RPC_HOSTS = ('rpc.mainnet.chain.robinhood.com', 'robinhood-mainnet.g.alchemy.com', LOCAL_RPC_HOST)
+# Robinhood's public RPC is not a default: a tool that compares against it allows
+# it explicitly, and a provider file without `rpcUrl` is refused, never sent there.
+PUBLIC_RPC_HOST = urlsplit(PUBLIC_RPC_URL).hostname
+DEFAULT_RPC_HOSTS = ('robinhood-mainnet.g.alchemy.com', LOCAL_RPC_HOST)
 MAX_RPC_ENDPOINTS = 3
 MAX_RPC_HOSTS = 8
 
@@ -47,7 +50,7 @@ def rpc_endpoint(url, allowed_hosts=DEFAULT_RPC_HOSTS, *, field='rpc_url'):
         # separately admitted providers may use their own credential path.
         if valid and parsed.hostname == 'robinhood-mainnet.g.alchemy.com':
             valid = re.fullmatch(r'/v2/[A-Za-z0-9_-]{1,128}', parsed.path) is not None
-        if valid and parsed.hostname == 'rpc.mainnet.chain.robinhood.com':
+        if valid and parsed.hostname == PUBLIC_RPC_HOST:
             valid = parsed.path in ('', '/')
         if valid and parsed.hostname == LOCAL_RPC_HOST:
             valid = re.fullmatch(r'/[A-Za-z0-9_-]{16,256}/', parsed.path) is not None
@@ -63,7 +66,9 @@ def configured_rpc_urls(config, override=None):
     hosts = config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS)
     if override:
         return (rpc_endpoint(override, hosts),)
-    primary = config.get('rpcUrl', RPC_URL)
+    primary = config.get('rpcUrl')
+    if primary is None:
+        raise DataError('rpc_url_unconfigured')
     return (rpc_endpoint(primary, hosts), *(
         rpc_endpoint(url, hosts, field='rpc_fallback_url') for url in config.get('rpcFallbackUrls', [])))
 

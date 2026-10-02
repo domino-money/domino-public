@@ -15,7 +15,7 @@ from read_service import public_response
 from read_history_fixtures import history_service, Rows
 from historical_capacity import diagnostic, PROFILES
 from catalogue_indexer import IndexRpc
-from discovery import DataError, STATE_VIEW
+from discovery import DataError, STATE_VIEW, PUBLIC_RPC_URL
 from test_discovery import POOL
 from test_historical_read_projection import pending
 
@@ -37,7 +37,7 @@ class ReadReconciliationTests(unittest.TestCase):
             def transport(url, body):
                 return {'jsonrpc': '2.0', 'id': body['id'],
                         'error': {'code': code, 'message': message}}
-            rpc = IndexRpc(transport=transport)
+            rpc = IndexRpc(PUBLIC_RPC_URL, transport=transport)
             with self.assertRaises(DataError) as failure:
                 rpc.call(STATE_VIEW, 'getLiquidity(bytes32)', ['bytes32'],
                          [bytes.fromhex(POOL[2:])], ['uint128'], block=hex(700))

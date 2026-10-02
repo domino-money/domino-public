@@ -281,9 +281,9 @@ class ReviewedProfileTests(unittest.TestCase):
     def test_deposit_rpc_request_budget_stops_identity_checks_without_retry(self):
         p=profile();fake=ProfileRpc(p)
         def transport(url,body,**options):
-            self.assertEqual(url,'https://rpc.mainnet.chain.robinhood.com')
+            self.assertEqual(url,'https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/')
             return {'jsonrpc':'2.0','id':body['id'],'result':fake.request(body['method'],body['params'])}
-        rpc=DepositRpc('https://rpc.mainnet.chain.robinhood.com',transport=transport,max_requests=3)
+        rpc=DepositRpc('https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/',transport=transport,max_requests=3)
         self.denied(lambda:check_profile(rpc.request,p,owner=OWNER,block=BLOCK),'deposit_token_check_unavailable')
         self.assertEqual((rpc.count,len(fake.calls)),(3,3))
 

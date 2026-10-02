@@ -16,7 +16,7 @@ from rpc_config import (DEFAULT_RPC_HOSTS, configured_history_rpc_url, configure
                         configured_inventory_url, configured_rpc_urls, rpc_endpoint)
 from rpc_failover import FailoverReadRpc
 from read_service import ReadService
-from test_rpc_providers import ALCHEMY, BLOCK, Provider, RPC_URL, SECOND, TOKEN
+from test_rpc_providers import ALCHEMY, BLOCK, Provider, SECOND, TOKEN
 
 LOCAL = 'https://rpc.domino.money/SYNTHETIC_LOCAL_TOKEN_123/'
 MISSING = {'code': -32000, 'message': 'missing trie node ' + 'a' * 64 +
@@ -84,7 +84,7 @@ class LocalConfigTests(unittest.TestCase):
 
     def test_override_does_not_replace_history_or_inventory(self):
         data = self.config()
-        self.assertEqual(configured_rpc_urls(data, RPC_URL), (RPC_URL,))
+        self.assertEqual(configured_rpc_urls(data, ALCHEMY), (ALCHEMY,))
         self.assertEqual(configured_history_rpc_urls(data), (LOCAL, ALCHEMY))
         self.assertEqual(configured_inventory_url(data), ALCHEMY)
         for missing in ({}, {'rpcUrl': ALCHEMY}, {'rpcUrl': LOCAL, 'inventoryUrl': None}):

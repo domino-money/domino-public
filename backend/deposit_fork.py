@@ -15,8 +15,9 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-from discovery import CHAIN_ID, RPC_URL, DataError
+from discovery import CHAIN_ID, PUBLIC_RPC_URL, DataError
 from deposit_rpc import DepositRpc
+from rpc_config import PUBLIC_RPC_HOST
 import local_anvil
 
 READ_METHODS = DepositRpc.METHODS | {'web3_clientVersion', 'eth_getStorageAt',
@@ -146,13 +147,15 @@ class DepositFork:
         return self._request(method, list(params))
 
     def transport(self, url, body, **options):
-        if url != RPC_URL or body['method'] not in DepositRpc.METHODS:
+        if url != PUBLIC_RPC_URL or body['method'] not in DepositRpc.METHODS:
             raise DataError('fork_transport_identity')
         return {'jsonrpc': '2.0', 'id': body['id'],
             'result': self.request(body['method'], body['params'])}
 
     def deposit_rpc(self):
-        return DepositRpc(RPC_URL, transport=self.transport, max_requests=160)
+        # The official URL only names the fork's transport here; no request leaves the fork.
+        return DepositRpc(PUBLIC_RPC_URL, allowed_hosts=(PUBLIC_RPC_HOST,), transport=self.transport,
+                          max_requests=160)
 
     def mine(self, count=1):
         if type(count) is not int or not 1 <= count <= 16:

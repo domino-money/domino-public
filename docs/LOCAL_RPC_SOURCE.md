@@ -21,8 +21,11 @@ Ethereum execution and Beacon upstreams remain separate and unchanged.
 | Explicit external price-reference tools | Separate provider capability; no credentials extracted from the local `rpcUrl` |
 | Browser product data | Existing same-origin read bridge and backend; inherits their source |
 
-Public-provider benchmark modes remain explicit comparisons with the official
-RPC. GeckoTerminal, CoinGecko and Uniswap APIs keep their distinct capabilities
+Robinhood's public RPC is not a default anywhere: a provider file without
+`rpcUrl` is refused (`rpc_url_unconfigured`), its host is not among the default
+allowed hosts, and neither egress policy admits it. Public-provider benchmark
+modes and qualification forks remain explicit comparisons that name
+`PUBLIC_RPC_URL`. GeckoTerminal, CoinGecko and Uniswap APIs keep their distinct capabilities
 and attribution. Historical source admission is not proof of archive coverage:
 qualify the actual blocks needed by each job.
 
@@ -133,11 +136,22 @@ has its own private provider/profile file and network policy. The VM's
    authorization expiry. Roll back the private config and release through the same target, retaining
    prior egress pins until verification completes.
 
-The edge limits HTTP to 25 requests/second per IP (burst 50), with five WebSocket
-connections per IP; sustained capacity was measured at 20 requests/second for the
-qualified workload. This change increases neither concurrency nor existing
-request budgets. VM roles may share one egress IP: the infrastructure limit is
-aggregate, not an allocation per process. A local node is not unlimited capacity.
+The edge limits the backend's token to 100 requests/second per IP (burst 200) and
+20 concurrent HTTP connections, with five WebSocket connections per IP (D19 in the
+node's repository, 24 Sep 2026). VM roles may share one egress IP: the
+infrastructure limit is aggregate, not an allocation per process. The site's
+server-side routes on Cloudflare have their own token, limited per token rather
+than per IP, because a Worker's request does not carry the visitor's address:
+1,000 requests/second (burst 2,000) and 64 connections (D21, 2 Oct 2026).
+
+The node's rated capacity (2 Oct 2026, guarded loopback ramps; PERFORMANCE.md in
+the node's repository) is a CPU budget of about four cores for RPC work; above it,
+block execution slows. Per call: about 0.36 ms for `eth_call`-class reads, 1.2 ms
+for a 20-read multicall, 0.58 ms for `eth_simulateV1`, 0.56 ms for `eth_getLogs`
+over the last 10,000 blocks, and about 95 ms for `eth_getLogs` over everything
+since the Domino deployment (block 69,249,061), a cost that grows with the range.
+The node cuts any call at 30 seconds and accepts batches of up to 1,000 calls. A
+local node is not unlimited capacity.
 
 The persistent history and accounting lanes pause five seconds between ticks.
 Queue/catalogue timers wait sixty seconds after a run finishes. The current

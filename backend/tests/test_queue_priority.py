@@ -123,7 +123,7 @@ class QueuePriorityTests(previous.PoolRequestStoreTests):
         with ExitStack() as stack:
             for name,value in (
                 ('configured_writer_catalogue',self.catalogue),
-                ('load_config',{'rpcUrl':'https://rpc.mainnet.chain.robinhood.com'}),
+                ('load_config',{'rpcUrl':'https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'}),
                 ('IndexRpc',Mock()),('ReadRpc',Mock()),
                 ('DiscoveryReader',Mock(snapshot=lambda:Block(111,'0x'+'ab'*32,111))),
                 ('ensure_anchor',(10,'stored_registration')),('ActivityIndexer',indexer)):

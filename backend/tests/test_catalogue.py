@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from discovery import PUBLIC_RPC_URL
 import psycopg
 from eth_abi import encode
 from eth_hash.auto import keccak
@@ -111,7 +112,7 @@ class CatalogueCodecTests(unittest.TestCase):
 
     def test_index_rpc_keeps_signing_and_broadcast_disabled(self):
         transport = Mock()
-        rpc = IndexRpc(transport=transport)
+        rpc = IndexRpc(PUBLIC_RPC_URL, transport=transport)
         for method in ['eth_sendRawTransaction','eth_sendTransaction','personal_sign','eth_sign']:
             with self.assertRaisesRegex(DataError,'method_not_read_only'):
                 rpc.request(method)

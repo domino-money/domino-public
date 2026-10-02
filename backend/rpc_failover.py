@@ -8,7 +8,7 @@ caller catches its first exception.
 import logging
 from urllib.parse import urlsplit
 
-from discovery import RPC_URL, CHAIN_ID, DataError, ReadRpc, RpcStateUnavailable, parse_block, quantity
+from discovery import CHAIN_ID, DataError, ReadRpc, RpcStateUnavailable, parse_block, quantity
 from read_deadline import check_read_deadline
 from rpc_config import LOCAL_RPC_HOST, LOCAL_STATE_BLOCKS, MAX_RPC_ENDPOINTS
 
@@ -178,7 +178,7 @@ class HistoricalReadRpc(FailoverReadRpc):
     String endpoints retain the previous single-provider behavior for explicit
     tools and old configurations. An ordered tuple opts into verified failover.
     """
-    def __init__(self, urls=RPC_URL, **kwargs):
+    def __init__(self, urls, **kwargs):
         self.legacy_single_source = isinstance(urls, str)
         self._operation_depth = 0
         self._identity_verified = set()

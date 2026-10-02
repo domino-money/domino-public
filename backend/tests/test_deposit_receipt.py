@@ -475,7 +475,7 @@ class DepositReceiptTests(unittest.TestCase):
                     result=responses[params[0]['to'],params[0]['data']];identity_reads.append(method)
                 else:result=rpc.request(method,params)
                 return {'jsonrpc':'2.0','id':body['id'],'result':result}
-            adapter=DepositRpc('https://rpc.mainnet.chain.robinhood.com',transport=transport,max_requests=160)
+            adapter=DepositRpc('https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/',transport=transport,max_requests=160)
             engine=ReceiptReconciler(adapter,token_guard=TokenAdmission(profiles).receipt)
             outcome=engine.reconcile(OWNER,rpc.selection,rpc.artifact,known_hashes=hints,
                 previous_receipt=previous,scan_cursor=cursor)
@@ -494,7 +494,7 @@ class DepositReceiptTests(unittest.TestCase):
         def excessive_guard(*,request,**context):
             for _ in range(MAX_RPC_REQUESTS+1):request('eth_chainId',[])
             self.fail('The shared receipt request budget was not enforced')
-        adapter=DepositRpc('https://rpc.mainnet.chain.robinhood.com',transport=transport,max_requests=160)
+        adapter=DepositRpc('https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/',transport=transport,max_requests=160)
         engine=ReceiptReconciler(adapter,token_guard=excessive_guard)
         with self.assertRaisesRegex(DataError,'^deposit_receipt_request_budget$'):
             engine.reconcile(OWNER,rpc.selection,rpc.artifact,known_hashes=[HASH])

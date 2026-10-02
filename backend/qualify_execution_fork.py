@@ -43,10 +43,10 @@ from eth_hash.auto import keccak
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deposit_fork import DepositFork
-from discovery import CHAIN_ID, RPC_URL, POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ZERO, DataError
+from discovery import CHAIN_ID, PUBLIC_RPC_URL, POOL_MANAGER, POSITION_MANAGER, STATE_VIEW, ZERO, DataError
 from fork_read_gateway import ForkReadGateway
 from local_config import load_config
-from rpc_config import DEFAULT_RPC_HOSTS, configured_history_rpc_source
+from rpc_config import DEFAULT_RPC_HOSTS, PUBLIC_RPC_HOST, configured_history_rpc_source
 import execution_models as m
 import execution_v4 as v
 import general_compound_receipts as g
@@ -971,8 +971,9 @@ def main(argv=None):
             source = Loopback(args.source_url)
             report['upstream'] = 'loopback source'
         elif args.public_rpc:
-            source = ForkReadGateway(RPC_URL, max_requests=40_000, total_seconds=1800)
-            report['upstream'] = urlsplit(RPC_URL).hostname
+            source = ForkReadGateway(PUBLIC_RPC_URL, allowed_hosts=(PUBLIC_RPC_HOST,), max_requests=40_000,
+                                     total_seconds=1800)
+            report['upstream'] = urlsplit(PUBLIC_RPC_URL).hostname
         else:
             config = load_config(args.rpc_config) if args.rpc_config else load_config()
             history = configured_history_rpc_source(config)

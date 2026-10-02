@@ -11,7 +11,7 @@ from eth_hash.auto import keccak
 
 from chainlink_history import (ChainlinkHistorical, ETH_FEED, MANIFEST_SHA256, MAX_ROUNDS,
                                ROUND_TYPES, SOURCE, USDG, USDG_FEED, WETH)
-from discovery import CHAIN_ID, ZERO, DataError, ReadRpc
+from discovery import CHAIN_ID, ZERO, DataError, ReadRpc, PUBLIC_RPC_URL
 
 
 PHASE = 1 << 64
@@ -111,7 +111,7 @@ class Archive:
 class ChainlinkHistoryTests(unittest.TestCase):
     def setUp(self):
         self.archive = Archive()
-        self.rpc = ReadRpc(transport=self.archive, max_requests=1000)
+        self.rpc = ReadRpc(PUBLIC_RPC_URL, transport=self.archive, max_requests=1000)
         self.reader = ChainlinkHistorical(self.rpc, clock=lambda: 1060)
 
     def fetch(self, currency=ZERO, start=1020, end=1055, **kwargs):

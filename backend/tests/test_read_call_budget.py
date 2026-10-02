@@ -10,6 +10,7 @@ import unittest
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from discovery import PUBLIC_RPC_URL
 from discovery import (DEFAULT_READ_CALL_GAS, MAX_READ_CALL_GAS, DataError,
                        ReadRpc, ZERO, rpc_error_code)
 import local_anvil
@@ -17,7 +18,7 @@ from read_contract import sanitize_error, validate_response
 from rpc_failover import FailoverReadRpc
 from test_discovery import TOKEN, OTHER, OWNER
 from test_read_contract import MetadataRpc, service
-from test_rpc_providers import Provider, RPC_URL, SECOND
+from test_rpc_providers import Provider, LOCAL_URL as RPC_URL, SECOND
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -47,7 +48,7 @@ class CallBudgetTests(unittest.TestCase):
             calls.append(body)
             return {'jsonrpc': '2.0', 'id': body['id'],
                     'error': {'code': -32000, 'message': 'out of gas'}}
-        rpc = ReadRpc(transport=transport)
+        rpc = ReadRpc(PUBLIC_RPC_URL, transport=transport)
         with self.assertRaisesRegex(DataError, '^rpc_call_gas_limit$'):
             rpc.call_raw(TOKEN, 'decimals()', block='0x1')
         self.assertEqual(len(calls), 1)
@@ -55,7 +56,7 @@ class CallBudgetTests(unittest.TestCase):
         self.assertEqual(sanitize_error('rpc_call_gas_limit'), (503, {'error': 'rpc_call_gas_limit'}))
         for value in (True, None, '500000', 0, 20_999, MAX_READ_CALL_GAS+1):
             with self.assertRaisesRegex(DataError, '^invalid_read_call_gas_limit$'):
-                ReadRpc(call_gas_limit=value)
+                ReadRpc(PUBLIC_RPC_URL, call_gas_limit=value)
 
     def test_unavailable_read_is_not_invalid_metadata_and_other_assets_survive(self):
         rpc = MetadataRpc(decimals=DataError('rpc_call_gas_limit'))

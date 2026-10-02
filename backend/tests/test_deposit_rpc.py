@@ -8,7 +8,7 @@ from deposit_rpc import DepositRpc
 from discovery import DataError, ReadRpc
 from read_deadline import read_deadline
 
-URL = 'https://rpc.mainnet.chain.robinhood.com'
+URL = 'https://rpc.domino.money/TEST_LOCAL_TOKEN_0123456/'
 
 
 class DepositRpcTests(unittest.TestCase):

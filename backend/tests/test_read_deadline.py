@@ -11,6 +11,7 @@ import urllib.request
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from discovery import PUBLIC_RPC_URL
 from discovery import (DataError, MAX_RESPONSE_BYTES, ReadRpc, _DeadlineHTTPResponse,
                        _deadline_connect, current_read_deadline, json_http,
                        SNAPSHOT_LOOPBACK_RPC, snapshot_loopback_http)
@@ -158,7 +159,7 @@ class DeadlineTests(unittest.TestCase):
             return {'jsonrpc': '2.0', 'id': body['id'], 'result': '0x1237'}
 
         transport = Mock(side_effect=transport)
-        rpc = ReadRpc(transport=transport, max_requests=2)
+        rpc = ReadRpc(PUBLIC_RPC_URL, transport=transport, max_requests=2)
         with self.assertRaisesRegex(DataError, 'read_deadline_exceeded'):
             with read_deadline(15, clock=clock):
                 try:
@@ -172,7 +173,7 @@ class DeadlineTests(unittest.TestCase):
     def test_existing_request_count_budget_is_preserved(self):
         transport = Mock(return_value={'jsonrpc': '2.0', 'id': 1, 'result': '0x1237'})
         with read_deadline(15):
-            rpc = ReadRpc(transport=transport, max_requests=1)
+            rpc = ReadRpc(PUBLIC_RPC_URL, transport=transport, max_requests=1)
             rpc.request('eth_chainId')
             with self.assertRaisesRegex(DataError, 'request_budget_exhausted'):
                 rpc.request('eth_chainId')
@@ -237,7 +238,7 @@ class DeadlineTests(unittest.TestCase):
             self.assertTrue(gate.enter())
             try:
                 with read_deadline(.03):
-                    ReadRpc(transport=transport).request('eth_chainId')
+                    ReadRpc(PUBLIC_RPC_URL, transport=transport).request('eth_chainId')
             except DataError as error:
                 failures.append(str(error))
             finally:

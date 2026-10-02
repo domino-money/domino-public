@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from discovery import PUBLIC_RPC_URL
 from eth_abi import encode
 from eth_hash.auto import keccak
 from fastapi.testclient import TestClient
@@ -106,7 +107,7 @@ class Provider:
 
 class ReadRpcBatchTests(unittest.TestCase):
     def test_out_of_order_results_are_mapped_by_exact_ids_and_each_item_counts(self):
-        provider=Provider();rpc=ReadRpc(transport=provider)
+        provider=Provider();rpc=ReadRpc(PUBLIC_RPC_URL, transport=provider)
         rpc.request('eth_chainId')
         self.assertEqual(rpc.batch(HEAD),[hex(CHAIN_ID),BLOCK])
         self.assertEqual(rpc.count,3)
@@ -130,7 +131,7 @@ class ReadRpcBatchTests(unittest.TestCase):
             return rows
         for kind in ('duplicate','missing','foreign','boolean','float','string','version','extra','both','neither','object','invalid_member'):
             provider=Provider();provider.mutate=lambda rows:mutate(kind,rows)
-            rpc=ReadRpc(transport=provider)
+            rpc=ReadRpc(PUBLIC_RPC_URL, transport=provider)
             with self.subTest(kind=kind),self.assertRaisesRegex(DataError,'^invalid_rpc_envelope$'):rpc.batch(HEAD)
             self.assertEqual(rpc.count,2)
             self.assertEqual(len(provider.envelopes),1)
@@ -138,22 +139,22 @@ class ReadRpcBatchTests(unittest.TestCase):
     def test_rpc_error_rejects_whole_batch_without_exporting_provider_text(self):
         provider=Provider()
         provider.mutate=lambda rows:[{**rows[0],'result':BLOCK},{'jsonrpc':'2.0','id':rows[1]['id'],'error':{'code':-32000,'message':'private URL credential'}}]
-        with self.assertRaisesRegex(DataError,'^rpc_error$'):ReadRpc(transport=provider).batch(HEAD)
+        with self.assertRaisesRegex(DataError,'^rpc_error$'):ReadRpc(PUBLIC_RPC_URL, transport=provider).batch(HEAD)
         self.assertEqual(len(provider.envelopes),1)
 
     def test_item_count_request_size_and_remaining_budget_are_checked_before_dispatch(self):
         cases=[([],160),([HEAD[0]]*9,160),(HEAD,1)]
         for calls,budget in cases:
-            provider=Provider();rpc=ReadRpc(transport=provider,max_requests=budget)
+            provider=Provider();rpc=ReadRpc(PUBLIC_RPC_URL, transport=provider,max_requests=budget)
             with self.assertRaises(DataError):rpc.batch(calls)
             self.assertEqual(provider.envelopes,[])
             self.assertEqual(rpc.count,0)
-        provider=Provider();rpc=ReadRpc(transport=provider)
+        provider=Provider();rpc=ReadRpc(PUBLIC_RPC_URL, transport=provider)
         data='0x'+'00'*7500
         calls=[('eth_call',[{'to':TOKEN,'data':data,'gas':hex(DEFAULT_READ_CALL_GAS)},BLOCK['number']])]*8
         with self.assertRaisesRegex(DataError,'invalid_rpc_batch'):rpc.batch(calls)
         self.assertEqual(provider.envelopes,[])
-        self.assertEqual(len(ReadRpc(transport=Provider()).batch([HEAD[0]]*8)),8)
+        self.assertEqual(len(ReadRpc(PUBLIC_RPC_URL, transport=Provider()).batch([HEAD[0]]*8)),8)
 
     def test_failed_attempt_spends_every_item_and_cannot_retry_over_budget(self):
         provider=Provider();provider.fail[(PRIMARY,True)]='network_unavailable'
@@ -165,13 +166,13 @@ class ReadRpcBatchTests(unittest.TestCase):
 
     def test_batch_rejects_writes_even_when_a_subclass_expands_individual_methods(self):
         class Expanded(ReadRpc):METHODS=ReadRpc.METHODS|{'eth_sendRawTransaction'}
-        provider=Provider();rpc=Expanded(transport=provider)
+        provider=Provider();rpc=Expanded(PUBLIC_RPC_URL, transport=provider)
         for name in ('eth_sendRawTransaction','eth_sendTransaction','eth_sign','personal_sign'):
             with self.assertRaisesRegex(DataError,'method_not_read_only'):rpc.batch([(name,[])])
         self.assertEqual(provider.envelopes,[])
 
     def test_call_gas_numeric_block_and_override_bounds_are_preserved(self):
-        provider=Provider();rpc=ReadRpc(transport=provider)
+        provider=Provider();rpc=ReadRpc(PUBLIC_RPC_URL, transport=provider)
         call=rpc.call_params(POSITION_MANAGER,'poolManager()',block=BLOCK['number'])
         for kind in ('over_gas','no_gas','latest','override','to','odd_data','extra_tx','full_block'):
             params=deepcopy(call);method='eth_call'
@@ -190,7 +191,7 @@ class ReadRpcBatchTests(unittest.TestCase):
 
     def test_shared_deadline_checked_after_noncooperative_batch_transport(self):
         now=[0.];provider=Provider();provider.clock=now
-        rpc=ReadRpc(transport=provider)
+        rpc=ReadRpc(PUBLIC_RPC_URL, transport=provider)
         with self.assertRaisesRegex(DataError,'read_deadline_exceeded'):
             with read_deadline(0.1,clock=lambda:now[0]):rpc.batch(HEAD)
         self.assertEqual(rpc.count,2)
@@ -595,11 +596,11 @@ class DiscoveryBatchTests(unittest.TestCase):
     def test_service_enables_batching_but_injected_rpc_retains_its_contract(self):
         service=ReadService(rpc_urls=(PRIMARY,),transport_factory=lambda:Provider())
         self.assertTrue(service._rpc(Provider()).batch_reads)
-        legacy=ReadRpc(transport=Provider())
+        legacy=ReadRpc(PUBLIC_RPC_URL, transport=Provider())
         service=ReadService(rpc_factory=lambda:legacy)
         self.assertIs(service._rpc(Provider()),legacy)
         self.assertFalse(legacy.batch_reads)
-        with self.assertRaisesRegex(DataError,'invalid_rpc_batch'):ReadRpc(batch_reads=1)
+        with self.assertRaisesRegex(DataError,'invalid_rpc_batch'):ReadRpc(PUBLIC_RPC_URL, batch_reads=1)
 
 
 if __name__=='__main__':unittest.main()

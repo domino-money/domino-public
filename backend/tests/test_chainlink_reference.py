@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from chainlink_history import ChainlinkHistorical, SOURCE, USDG
 from chainlink_reference import (MAX_AGE_SECONDS, _ReferenceQualification, _ReferenceSeries,
                                  reference_series, validate_observation)
-from discovery import ZERO, DataError, ReadRpc, KEY_TYPES
+from discovery import ZERO, DataError, ReadRpc, KEY_TYPES, PUBLIC_RPC_URL
 from eth_abi import encode
 from eth_hash.auto import keccak
 from price_history import PriceQualification, PRODUCTION_QUALIFICATIONS
@@ -23,7 +23,7 @@ POOL = '0x'+keccak(encode(KEY_TYPES, tuple(POOL_KEY.values()))).hex()
 class ChainlinkReferenceTests(unittest.TestCase):
     def setUp(self):
         self.archive = Archive()
-        self.rpc = ReadRpc(transport=self.archive, max_requests=2000)
+        self.rpc = ReadRpc(PUBLIC_RPC_URL, transport=self.archive, max_requests=2000)
         self.bundle = ChainlinkHistorical(self.rpc, clock=lambda: 1060).fetch(ZERO, 1020, 1055)
 
     def make(self, bundle=None):

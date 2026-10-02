@@ -1084,19 +1084,19 @@
     },
     {
       "path": "backend/read_api.py",
-      "sha256": "c747301e24136d382e3b3e2a3bc17d5f3f3eb7844dfd8add78f8b0fd254ee65b"
+      "sha256": "a051e3b9ef6ab7f14c8513ec36cd7f0aadc0b18c44d42d97e85260fe89daeba9"
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "338bacdc420c98805fb29cd149269b9f01d6af4b0e1a86357fb293941a914a23"
+      "sha256": "36f5101cf178584966ff02cbee677cb806acec83011ab186287f5f474f74f947"
     },
     {
       "path": "backend/rpc_failover.py",
-      "sha256": "9856b775a9e36e1daceec8c60494ac3669364a381b2233284e5faf4ed5eec129"
+      "sha256": "3218eddf3ac4a52df6f48e93820cc3c0de874dba0b469a0b01b21d21a06582d8"
     },
     {
       "path": "backend/rpc_config.py",
-      "sha256": "10dce4e9466c6c3855181429a539c3d2aa29e7981d584482d3ea41ece84b3026"
+      "sha256": "eb1d90b2346f38e06c06ed0bd0b357a5465a83ed86caff22e256c76f90351c3b"
     },
     {
       "path": "backend/local_config.py",
@@ -1160,7 +1160,7 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "c8449c712a349aa29aa86951198f77355457cd63cc5b4267581199b216970fe0"
+      "sha256": "a9056a2d89b4c823867d5fbf7c5cdf0a950730e1e3ea86c235044c724950388f"
     },
     {
       "path": "backend/nft_ownership.py",
@@ -1220,7 +1220,7 @@
     },
     {
       "path": "backend/tests/test_read_reconciliation.py",
-      "sha256": "e09b9558d0db39540cd59dde1186b23d93ba9a3b030fbd7b134c0bcafc2ee62e"
+      "sha256": "115523aa7871d05db928e1aa93bb910112973ce534e75d399eb5e510dc25a0f7"
     },
     {
       "path": "scripts/export-read-contract.py",

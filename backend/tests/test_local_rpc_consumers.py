@@ -16,9 +16,9 @@ from unittest.mock import MagicMock, Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from discovery import Block, DataError, RPC_URL, ZERO
+from discovery import Block, DataError, PUBLIC_RPC_URL, ZERO
 from price_history import iso
-from rpc_config import DEFAULT_RPC_HOSTS
+from rpc_config import DEFAULT_RPC_HOSTS, PUBLIC_RPC_HOST
 
 LOCAL_TOKEN = 'SYNTHETIC_LOCAL_CREDENTIAL_0123456789'
 LOCAL = 'https://rpc.domino.money/' + LOCAL_TOKEN + '/'
@@ -31,8 +31,9 @@ HEAD = Block(1000, '0x' + 'cd' * 32, 2000)
 
 
 def provider_config():
-    return {'version': 3, 'rpcUrl': LOCAL, 'rpcFallbackUrls': [RPC_URL],
-            'rpcAllowedHosts': list(dict.fromkeys([*DEFAULT_RPC_HOSTS, 'rpc.domino.money'])),
+    return {'version': 3, 'rpcUrl': LOCAL, 'rpcFallbackUrls': [PUBLIC_RPC_URL],
+            # An older file that kept the public RPC as its fallback names its host itself.
+            'rpcAllowedHosts': list(dict.fromkeys([*DEFAULT_RPC_HOSTS, PUBLIC_RPC_HOST])),
             'inventoryUrl': ALCHEMY, 'historicalRpcUrl': ARCHIVE}
 
 
@@ -60,7 +61,7 @@ class ConsumerRoutingTests(unittest.TestCase):
              patch.object(sys, 'argv', ['probe', '--token', ZERO, '--output', str(output)]), \
              redirect_stdout(io.StringIO()) as printed:
             self.assertEqual(module.main(), 0)
-        self.assertEqual(discover.call_args.kwargs['rpc'].urls, (LOCAL, RPC_URL))
+        self.assertEqual(discover.call_args.kwargs['rpc'].urls, (LOCAL, PUBLIC_RPC_URL))
         self.assert_private(output.read_text())
         self.assert_private(printed.getvalue())
 
@@ -225,7 +226,7 @@ class ConsumerRoutingTests(unittest.TestCase):
              patch.object(sys, 'argv', ['probe', '--position-id', '1', '--output', str(self.root / 'read.json')]), \
              redirect_stdout(io.StringIO()) as printed:
             self.assertEqual(module.main(), 1)
-        self.assertEqual(reader.call_args.args[0].urls, (LOCAL, RPC_URL))
+        self.assertEqual(reader.call_args.args[0].urls, (LOCAL, PUBLIC_RPC_URL))
         self.assert_private(printed.getvalue())
 
     def test_fork_qualification_pins_source_on_archive_not_pruned_primary(self):
@@ -246,7 +247,7 @@ class ConsumerRoutingTests(unittest.TestCase):
         import benchmark_fee_steps as module
         for source, name, expected in [('configured-rpc', 'IndexRpc', ARCHIVE),
                                        ('configured-dense', 'BatchIndexRpc', ARCHIVE),
-                                       ('public-rpc', 'IndexRpc', RPC_URL)]:
+                                       ('public-rpc', 'IndexRpc', PUBLIC_RPC_URL)]:
             with self.subTest(source=source):
                 output = self.root / (source + '.json')
                 with patch.object(module, 'load_config', return_value=provider_config()), \
@@ -305,7 +306,7 @@ class LocalFirstConsumerRoutingTests(unittest.TestCase):
                  patch.object(module, 'load_config', return_value=config), \
                  patch.object(module, 'configured_writer_catalogue', return_value=MagicMock()), \
                  patch.object(module, 'ReadRpc', side_effect=DataError('offline_stop')) as rpc, \
-                 patch.dict(os.environ, {'DOMINO_DISCOVERY_RPC_URL': RPC_URL}), \
+                 patch.dict(os.environ, {'DOMINO_DISCOVERY_RPC_URL': PUBLIC_RPC_URL}), \
                  patch.object(sys, 'argv', ['manage', *arguments, '--max-steps', '1',
                                             '--output', str(self.root / module.__name__)]), \
                  redirect_stdout(io.StringIO()) as printed:

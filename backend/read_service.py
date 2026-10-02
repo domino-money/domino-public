@@ -7,7 +7,7 @@ from threading import BoundedSemaphore, Lock
 import time
 import re
 
-from discovery import (CHAIN_ID, RPC_URL, ZERO, DataError, DiscoveryReader,
+from discovery import (CHAIN_ID, ZERO, DataError, DiscoveryReader,
                        ReadRpc, Block, address, bytes32, decode_result, discover,
                        json_http, parse_block, prefetched, SNAPSHOT_LOOPBACK_RPC,
                        snapshot_loopback_http)
@@ -105,7 +105,7 @@ INVENTORY_WAIT_SECONDS = 2
 
 
 class ReadService:
-    def __init__(self, *, rpc_url=RPC_URL, rpc_urls=None, inventory_url=None, historical_rpc_url=None,
+    def __init__(self, *, rpc_url=None, rpc_urls=None, inventory_url=None, historical_rpc_url=None,
                  historical_rpc_urls=None, clock=time.time,
                  rpc_factory=None, inventory=None, cursor_codec=None, transport_factory=bounded_transport,
                  catalogue=None, market_cache=None, snapshot=None, requests=None, public_data=None,
@@ -155,7 +155,15 @@ class ReadService:
                                      transport=transport, batch_reads=True)
         if self.rpc_urls is not None:
             return FailoverReadRpc(self.rpc_urls, transport=transport, batch_reads=True)
-        return ReadRpc(self.rpc_url, transport=transport, batch_reads=True)
+        return ReadRpc(self._endpoints(), transport=transport, batch_reads=True)
+
+    def _endpoints(self):
+        """The configured route; a service with none is refused, never sent to a default."""
+        if self.rpc_urls:
+            return self.rpc_urls
+        if not self.rpc_url:
+            raise DataError('rpc_unconfigured')
+        return self.rpc_url
 
     def sequence_snapshot(self, owner, token_id=None):
         """Use only the configured primary Domino node; never public failover."""
@@ -303,7 +311,7 @@ class ReadService:
         # The window needs `eth_getLogs`, which the browser-facing read clients
         # deliberately lack; an injected factory (tests, alternate lanes) wins.
         rpc=self.rpc_factory() if self.rpc_factory else IndexRpc(
-            self.rpc_urls if self.rpc_urls else self.rpc_url,
+            self._endpoints(),
             transport=self.transport_factory(),max_requests=4096)
         reader=DiscoveryReader(rpc,clock=self.clock)
         block=reader.snapshot()
@@ -389,7 +397,7 @@ class ReadService:
             # The cache either has no entry or an entry that is not this pool.
             if str(error) not in ('invalid_pool_key','pool_id_mismatch'):
                 raise
-        identity,_=initialize_identity(self.rpc_urls if self.rpc_urls else self.rpc_url,
+        identity,_=initialize_identity(self._endpoints(),
                                        pool_id,anchor['startBlock'],rpc=rpc)
         key=checked_key(identity['poolKey'],bytes32(pool_id))
         sqrt,tick,protocol,lp_fee=rpc.call(STATE_VIEW,'getSlot0(bytes32)',['bytes32'],

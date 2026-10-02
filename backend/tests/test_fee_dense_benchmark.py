@@ -13,7 +13,7 @@ from benchmark_fee_steps import (BatchIndexRpc,StudyRpc,study_batch,dense_select
     detailed_crossing_work,empirical_distribution,paced_public_transport,measure,main,digest,
     WorkLimit,BenchmarkLimit,DENSE_BATCH,validate_dense_checkpoints,selected_dense_input)
 from catalogue_indexer import IndexRpc,decode_initialize
-from discovery import DataError,parse_block
+from discovery import DataError,parse_block, PUBLIC_RPC_URL
 from pool_activity import INITIALIZE_TOPIC,MODIFY,SWAP
 from test_catalogue import FakeIndexRpc,log
 from test_discovery import KEY,POOL
@@ -52,7 +52,7 @@ class DenseFeeBenchmarkTests(unittest.TestCase):
     def test_batch_counts_methods_and_reorders_only_exact_expected_ids(self):
         def transport(url,body):
             return [{'jsonrpc':'2.0','id':item['id'],'result':item['params'][0]} for item in reversed(body)]
-        raw=BatchIndexRpc(transport=transport,max_requests=3)
+        raw=BatchIndexRpc(PUBLIC_RPC_URL, transport=transport,max_requests=3)
         rpc=StudyRpc(raw,max_requests=3,clock=lambda:0)
         self.assertEqual(study_batch(rpc,[('eth_getBlockByNumber',['0xa',False]),
                                        ('eth_getBlockByNumber',['0xb',False])]),['0xa','0xb'])
@@ -71,7 +71,7 @@ class DenseFeeBenchmarkTests(unittest.TestCase):
                      [{**good[0],'id':True},good[1]],[good[0],{**good[1],'id':3}],
                      [{**good[0],'debug':'private'},good[1]],
                      [{'jsonrpc':'2.0','id':1,'error':{'code':-1}},good[1]]]:
-            rpc=BatchIndexRpc(transport=lambda *args:rows)
+            rpc=BatchIndexRpc(PUBLIC_RPC_URL, transport=lambda *args:rows)
             with self.subTest(rows=rows),self.assertRaises(DataError):
                 rpc.batch([('eth_chainId',[])]*2)
         raw=Mock();rpc=StudyRpc(raw,max_requests=9,clock=Mock(side_effect=[0,0,61]))

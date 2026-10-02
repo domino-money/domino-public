@@ -8,6 +8,7 @@ from unittest.mock import Mock
 import urllib.error
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from discovery import PUBLIC_RPC_URL
 from discovery import (CHAIN_ID, ZERO, POOL_MANAGER, POSITION_MANAGER, STATE_VIEW,
                        Block, DataError, DiscoveryReader, PoolKey, ReadRpc, KEY_TYPES,
                        decimal_metric, discover, json_http, provider_candidates)
@@ -200,21 +201,21 @@ class DiscoveryTests(unittest.TestCase):
 
     def test_transport_never_sends_signing_or_broadcast_methods(self):
         transport = Mock()
-        rpc = ReadRpc(transport=transport)
+        rpc = ReadRpc(PUBLIC_RPC_URL, transport=transport)
         for method in ['eth_sendRawTransaction', 'eth_sendTransaction', 'eth_sign', 'personal_sign']:
             with self.assertRaisesRegex(DataError, 'method_not_read_only'):
                 rpc.request(method)
         transport.assert_not_called()
 
     def test_rpc_envelope_budget_and_error_redaction(self):
-        bad = ReadRpc(transport=lambda *args: {'jsonrpc': '2.0', 'id': 9, 'result': '0x1'})
+        bad = ReadRpc(PUBLIC_RPC_URL, transport=lambda *args: {'jsonrpc': '2.0', 'id': 9, 'result': '0x1'})
         with self.assertRaisesRegex(DataError, 'invalid_rpc_envelope'):
             bad.request('eth_chainId')
-        rpc = ReadRpc(max_requests=1, transport=lambda *args: {'jsonrpc': '2.0', 'id': 1, 'result': '0x1237'})
+        rpc = ReadRpc(PUBLIC_RPC_URL, max_requests=1, transport=lambda *args: {'jsonrpc': '2.0', 'id': 1, 'result': '0x1237'})
         self.assertEqual(rpc.request('eth_chainId'), '0x1237')
         with self.assertRaisesRegex(DataError, 'request_budget_exhausted'):
             rpc.request('eth_chainId')
-        broken = ReadRpc(transport=lambda *args: {'jsonrpc': '2.0', 'id': 1,
+        broken = ReadRpc(PUBLIC_RPC_URL, transport=lambda *args: {'jsonrpc': '2.0', 'id': 1,
                                                 'error': {'message': 'private URL secret'}})
         with self.assertRaises(DataError) as caught:
             broken.request('eth_chainId')

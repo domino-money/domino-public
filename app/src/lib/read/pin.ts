@@ -95,7 +95,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '53b74f4c1da5723e610325cfd75a654ca1327e1e8d83e850065036f1120fea87',
+      manifestSha256: '745a443e8af6f3319c79ecc24b308273805a401318f94537b4a08c48e5634869',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -107,7 +107,7 @@ export const PRODUCER_PIN = {
     },
     'deposit-v1': {
       version: '1.1.0-rc.4',
-      manifestSha256: '616d430fed52a9c37ffd0e38968622fd82d196cbd34075bddb4f1ac59f257f39',
+      manifestSha256: '676e2b56ffcfeca6ea9e501c57e6d92914112a3438a78f202a1609bb522aede1',
     },
   },
 } as const
@@ -115,7 +115,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '346207ed1b7f069b29776c745f721144e32f346dae92626dac2e461b185e75e4',
+  manifestSha256: '5aa926e56ec51a5852d7b98d74e4f371702010723c6232ef6df3529e761c915e',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
