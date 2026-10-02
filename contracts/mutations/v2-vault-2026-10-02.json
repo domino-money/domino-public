@@ -1,0 +1,1354 @@
+{
+ "description": "Domino V2 vault (F3) guards: every check in contracts/src/v2/vault, each deleted or weakened alone, against the suite that pins it. Intentional survivors carry their reason.",
+ "provenance": "Authored 2026-10-02 with the F3 vault (domino-money/domino#283, #282). Run: node scripts/mutate-contracts.mjs contracts/mutations/v2-vault-2026-10-02.json",
+ "mutations": [
+  {
+   "label": "implementation needs a factory",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "deployment.factory == address(0) || deployment.registry == address(0)",
+   "new": "deployment.registry == address(0)"
+  },
+  {
+   "label": "implementation needs a registry",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "deployment.factory == address(0) || deployment.registry == address(0)",
+   "new": "deployment.factory == address(0)"
+  },
+  {
+   "label": "implementation needs an anchor",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "|| deployment.priceAnchor == address(0) || deployment.positionManager == address(0)",
+   "new": "|| deployment.positionManager == address(0)"
+  },
+  {
+   "label": "implementation needs a position manager",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "|| deployment.priceAnchor == address(0) || deployment.positionManager == address(0)",
+   "new": "|| deployment.priceAnchor == address(0)"
+  },
+  {
+   "label": "an implementation is never initialized",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "        // An implementation or an executor is never itself a vault.\n        _initialized = true;",
+   "new": ""
+  },
+  {
+   "label": "root custody needs the owner to hold it",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "if (!ok || abi.decode(data, (address)) != _owner) return false;",
+   "new": "if (!ok) return false;"
+  },
+  {
+   "label": "a burned root is not held",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "if (!ok || abi.decode(data, (address)) != _owner) return false;",
+   "new": "if (abi.decode(data, (address)) != _owner) return false;"
+  },
+  {
+   "label": "root custody needs the individual approval",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "return IERC721Minimal(POSITION_MANAGER).getApproved(tokenId) == address(this);",
+   "new": "return true;"
+  },
+  {
+   "label": "the vault marks its own collection of the root",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        _rootStep(isRoot, true);\n        _stepCollect(pool, tokenId);",
+   "new": "        _stepCollect(pool, tokenId);"
+  },
+  {
+   "label": "ledger amounts fit 128 bits",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (value > type(uint128).max) revert InvalidAmount();",
+   "new": ""
+  },
+  {
+   "label": "a retired successor frees its parent",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "if (_member[parent].successor == tokenId) _member[parent].successor = 0;",
+   "new": ""
+  },
+  {
+   "label": "a retired successor is inactive",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "        retired.active = false;\n",
+   "new": ""
+  },
+  {
+   "label": "a retired member's lots stay idle",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "if (pay && DominoTokenOps.tryTransfer(token, _owner, amount, gasleft())) {",
+   "new": "if (DominoTokenOps.tryTransfer(token, _owner, amount, gasleft())) {"
+  },
+  {
+   "label": "swaps need a module",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        if (module.code.length == 0) revert StepUnavailable();\n",
+   "new": ""
+  },
+  {
+   "label": "only the factory initializes",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "if (msg.sender != FACTORY || _initialized) revert Unauthorized();",
+   "new": "if (_initialized) revert Unauthorized();"
+  },
+  {
+   "label": "a vault initializes once",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "if (msg.sender != FACTORY || _initialized) revert Unauthorized();",
+   "new": "if (msg.sender != FACTORY) revert Unauthorized();"
+  },
+  {
+   "label": "creation needs consent",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "!init.consentToUncollectedFees || init.root.dex != DEX",
+   "new": "init.root.dex != DEX"
+  },
+  {
+   "label": "creation needs the dex",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "!init.consentToUncollectedFees || init.root.dex != DEX",
+   "new": "!init.consentToUncollectedFees"
+  },
+  {
+   "label": "creation needs the position manager",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "|| init.root.positionManager != POSITION_MANAGER",
+   "new": ""
+  },
+  {
+   "label": "creation needs a token id",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "                || rootId == 0 || rootId > type(uint96).max",
+   "new": "                || rootId > type(uint96).max"
+  },
+  {
+   "label": "creation needs a 96-bit token id",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "                || rootId == 0 || rootId > type(uint96).max",
+   "new": "                || rootId == 0"
+  },
+  {
+   "label": "quote: an unranked currency0 is never the quote",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "_inverse = rank0 != 0 && (rank1 == 0 || rank0 < rank1);",
+   "new": "_inverse = (rank1 == 0 || rank0 < rank1);"
+  },
+  {
+   "label": "quote: a ranked currency0 beats an unranked currency1",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "_inverse = rank0 != 0 && (rank1 == 0 || rank0 < rank1);",
+   "new": "_inverse = rank0 != 0 && rank0 < rank1;"
+  },
+  {
+   "label": "quote: the better rank wins",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "_inverse = rank0 != 0 && (rank1 == 0 || rank0 < rank1);",
+   "new": "_inverse = rank0 != 0 && (rank1 == 0 || rank0 > rank1);"
+  },
+  {
+   "label": "creation can start paused",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        _paused = init.startPaused;\n",
+   "new": ""
+  },
+  {
+   "label": "creation takes custody",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        _storeLimits(init.limits);\n        _paused = init.startPaused;\n        _arm();",
+   "new": "        _storeLimits(init.limits);\n        _paused = init.startPaused;"
+  },
+  {
+   "label": "owner flows are owner only",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        if (msg.sender != _owner) revert Unauthorized();\n        _;",
+   "new": "        _;"
+  },
+  {
+   "label": "pause: owner or operator only",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "if (msg.sender != _owner && !REGISTRY.isOperator(msg.sender)) revert Unauthorized();",
+   "new": "if (msg.sender != _owner || !REGISTRY.isOperator(msg.sender)) revert Unauthorized();"
+  },
+  {
+   "label": "pause: a second pause changes nothing",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        if (!_paused) {\n            _paused = true;",
+   "new": "        {\n            _paused = true;"
+  },
+  {
+   "label": "resume: a second resume changes nothing",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        if (_paused) {\n            _paused = false;",
+   "new": "        {\n            _paused = false;"
+  },
+  {
+   "label": "rearm needs consent",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        if (!consentToUncollectedFees) revert InvalidInit();\n",
+   "new": ""
+  },
+  {
+   "label": "rearm takes custody again",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        if (!consentToUncollectedFees) revert InvalidInit();\n        _arm();",
+   "new": "        if (!consentToUncollectedFees) revert InvalidInit();"
+  },
+  {
+   "label": "withdrawal needs an amount",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        if (amount == 0) revert InvalidAmount();\n        uint256 left = amount;",
+   "new": "        uint256 left = amount;"
+  },
+  {
+   "label": "withdrawal needs the reserves",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        if (left != 0) revert InsufficientReserves();\n        _pay(token, _owner, amount);",
+   "new": "        _pay(token, _owner, amount);"
+  },
+  {
+   "label": "withdrawal spends uncharged first",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "            take = entry.uncharged < left ? entry.uncharged : left;\n            entry.uncharged -= uint128(take);\n            left -= take;\n",
+   "new": ""
+  },
+  {
+   "label": "the root is not a child",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "if (tokenId == _rootTokenId || !_member[tokenId].active) revert InvalidPosition();",
+   "new": "if (!_member[tokenId].active) revert InvalidPosition();"
+  },
+  {
+   "label": "only an active child is withdrawn",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "if (tokenId == _rootTokenId || !_member[tokenId].active) revert InvalidPosition();",
+   "new": "if (tokenId == _rootTokenId) revert InvalidPosition();"
+  },
+  {
+   "label": "recovery protects the owed fees",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "uint256 held = _unowedBalance(token);",
+   "new": "uint256 held = _balance(token);"
+  },
+  {
+   "label": "recovery protects the reserves",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "uint256 accounted = reserves(token);",
+   "new": "uint256 accounted = 0;"
+  },
+  {
+   "label": "recovery needs an amount",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "if (amount == 0 || held < accounted || amount > held - accounted) revert InsufficientReserves();",
+   "new": "if (held < accounted || amount > held - accounted) revert InsufficientReserves();"
+  },
+  {
+   "label": "an unbacked ledger recovers nothing",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "if (amount == 0 || held < accounted || amount > held - accounted) revert InsufficientReserves();",
+   "new": "if (amount == 0 || amount > held - accounted) revert InsufficientReserves();"
+  },
+  {
+   "label": "recovery takes only the surplus",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "if (amount == 0 || held < accounted || amount > held - accounted) revert InsufficientReserves();",
+   "new": "if (amount == 0 || held < accounted) revert InsufficientReserves();"
+  },
+  {
+   "label": "recoverPosition refuses an active child",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "if (!isRoot && _member[tokenId].active) revert InvalidPosition();",
+   "new": ""
+  },
+  {
+   "label": "a recovered root is disarmed",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "            if (_rootArmed) _disarm(DISARM_CUSTODY);",
+   "new": "            if (false) _disarm(DISARM_CUSTODY);"
+  },
+  {
+   "label": "a recovered root is no operator's to rearm",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "            else _markDisarmed(DISARM_CUSTODY);\n",
+   "new": ""
+  },
+  {
+   "label": "exitAll returns the children",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "        while (_members.length > 1) {",
+   "new": "        while (_members.length > 99) {"
+  },
+  {
+   "label": "exitAll releases the root lots",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        _release(rootId, currency0, false);\n",
+   "new": ""
+  },
+  {
+   "label": "exitAll pauses",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        _paused = true;\n        // Recorded even when already disarmed",
+   "new": "        // Recorded even when already disarmed"
+  },
+  {
+   "label": "exitAll disarms the root",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        _markDisarmed(DISARM_EXIT_ALL);\n",
+   "new": ""
+  },
+  {
+   "label": "only the deployed exit module",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "if (module != address(0) && module != AUTO_EXIT) revert Unauthorized();",
+   "new": ""
+  },
+  {
+   "label": "the vault's own unlock reaches the executor",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultUniswapV4.t.sol",
+   "old": "_delegate(_unlocking() ? EXECUTOR : _swapModule());",
+   "new": "_delegate(_swapModule());"
+  },
+  {
+   "label": "any other unlock reaches the swap module",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "_delegate(_unlocking() ? EXECUTOR : _swapModule());",
+   "new": "_delegate(EXECUTOR);"
+  },
+  {
+   "label": "v3 swap callbacks reach the swap module",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultSwapModule.t.sol",
+   "old": "    function uniswapV3SwapCallback(int256, int256, bytes calldata) external {\n        _delegate(_swapModule());",
+   "new": "    function uniswapV3SwapCallback(int256, int256, bytes calldata) external {\n        _delegate(EXECUTOR);"
+  },
+  {
+   "label": "policy: known mode",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "(!simple && next.mode != DominoV2Types.MODE_DOMINO) || next.triggerDistanceBps > MAX_TRIGGER_DISTANCE_BPS",
+   "new": "next.triggerDistanceBps > MAX_TRIGGER_DISTANCE_BPS"
+  },
+  {
+   "label": "policy: trigger cap",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "(!simple && next.mode != DominoV2Types.MODE_DOMINO) || next.triggerDistanceBps > MAX_TRIGGER_DISTANCE_BPS",
+   "new": "(!simple && next.mode != DominoV2Types.MODE_DOMINO)"
+  },
+  {
+   "label": "policy: overlap cap",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "|| next.maxOverlapBps > MAX_OVERLAP_BPS || next.minimumIntervalSeconds == 0",
+   "new": "|| next.minimumIntervalSeconds == 0"
+  },
+  {
+   "label": "policy: an interval",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "|| next.maxOverlapBps > MAX_OVERLAP_BPS || next.minimumIntervalSeconds == 0",
+   "new": "|| next.maxOverlapBps > MAX_OVERLAP_BPS"
+  },
+  {
+   "label": "policy: cap covers the members",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "|| next.maxPositions < _members.length || (simple && next.maxPositions != 1)",
+   "new": "|| (simple && next.maxPositions != 1)"
+  },
+  {
+   "label": "policy: simple is the root alone",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "|| next.maxPositions < _members.length || (simple && next.maxPositions != 1)",
+   "new": "|| next.maxPositions < _members.length"
+  },
+  {
+   "label": "limits: slippage below 100%",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "next.maxSlippageBps >= 10_000 || next.maxPriceImpactBps >= 10_000",
+   "new": "next.maxPriceImpactBps >= 10_000"
+  },
+  {
+   "label": "limits: band below 100%",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "next.maxSlippageBps >= 10_000 || next.maxPriceImpactBps >= 10_000",
+   "new": "next.maxSlippageBps >= 10_000"
+  },
+  {
+   "label": "limits: an observation age",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "|| next.maxObservationAgeSeconds == 0\n",
+   "new": "\n"
+  },
+  {
+   "label": "limits: an upside",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "|| next.upsideBps == 0 || next.upsideBps > MAX_UPSIDE_BPS",
+   "new": "|| next.upsideBps > MAX_UPSIDE_BPS"
+  },
+  {
+   "label": "limits: upside cap",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "|| next.upsideBps == 0 || next.upsideBps > MAX_UPSIDE_BPS",
+   "new": "|| next.upsideBps == 0"
+  },
+  {
+   "label": "exitAll clears what it paid",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "            _idle[token] = 0;\n",
+   "new": ""
+  },
+  {
+   "label": "the executor refuses direct calls",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "        if (address(this) == SELF) revert IDominoVault.Unauthorized();\n",
+   "new": ""
+  },
+  {
+   "label": "execute: admitted operators only",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        if (!REGISTRY.isOperator(msg.sender)) revert IDominoVault.Unauthorized();\n",
+   "new": ""
+  },
+  {
+   "label": "execute: not while paused",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (_paused || REGISTRY.automationHalted()) revert IDominoVault.AutomationUnavailable();",
+   "new": "if (REGISTRY.automationHalted()) revert IDominoVault.AutomationUnavailable();"
+  },
+  {
+   "label": "execute: not under the global halt",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (_paused || REGISTRY.automationHalted()) revert IDominoVault.AutomationUnavailable();",
+   "new": "if (_paused) revert IDominoVault.AutomationUnavailable();"
+  },
+  {
+   "label": "execute: the plan binds the nonce",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        if (p.stateNonce != _stateNonce) revert StaleNonce();\n",
+   "new": ""
+  },
+  {
+   "label": "execute: the plan has a deadline",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        if (block.timestamp > p.deadline) revert PlanExpired();\n",
+   "new": ""
+  },
+  {
+   "label": "execute: the minimum interval",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (last != 0 && block.timestamp < uint256(last) + _minimumIntervalSeconds) revert TooSoon();",
+   "new": ""
+  },
+  {
+   "label": "execute: a disarmed root stays out",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "            if (!_rootArmed) revert IDominoVault.AutomationUnavailable();\n            uint8 reason = _rootLive();",
+   "new": "            uint8 reason = _rootLive();"
+  },
+  {
+   "label": "execute: the root is re-verified",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "            if (reason != 0) {\n                _disarm(reason);\n                return bytes32(0);\n            }",
+   "new": ""
+  },
+  {
+   "label": "execute: the Domino tariff in Domino mode",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "r.tariffBps = DominoFeeRules.automationFeeBps(_mode);",
+   "new": "r.tariffBps = DominoV2Types.FEE_AUTOMATION_SIMPLE_BPS;"
+  },
+  {
+   "label": "execute: the swap output funds the add",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (_lots[p.swap.source][tokenOut].charged > swapOut / SWAP_LEFTOVER_DIVISOR) revert InvalidAmount();",
+   "new": ""
+  },
+  {
+   "label": "execute: an owner change mid-execution aborts",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "            // An owner change inside this transaction would have disarmed the root.\n            if (!_rootArmed) revert IDominoVault.AutomationUnavailable();\n",
+   "new": "",
+   "expected": "NOT CAUGHT",
+   "reason": "No owner change can happen inside an execution: every external call the vault makes there goes to the position manager, the pool manager, the swap module or a token, none of which acts for the owner. Kept as a backstop."
+  },
+  {
+   "label": "execute: the v3 checkpoint follows the vault",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "            _afterRootStep();\n",
+   "new": ""
+  },
+  {
+   "label": "execute: the tariff is charged",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        _chargeFee(DominoV2Types.FEE_KIND_AUTOMATION, r.pool.currency0, _owner, r.fee0, planHash);\n",
+   "new": ""
+  },
+  {
+   "label": "collect: ascending",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (tokenId <= previous || !_member[tokenId].active) revert InvalidPlan();\n            previous = tokenId;",
+   "new": "if (!_member[tokenId].active) revert InvalidPlan();\n            previous = tokenId;"
+  },
+  {
+   "label": "collect: active members",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (tokenId <= previous || !_member[tokenId].active) revert InvalidPlan();\n            previous = tokenId;",
+   "new": "if (tokenId <= previous) revert InvalidPlan();\n            previous = tokenId;"
+  },
+  {
+   "label": "compound: the target is collected first",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (!_contains(p.collect, p.target) || p.tickLower != 0",
+   "new": "if (p.tickLower != 0"
+  },
+  {
+   "label": "compound: no ticks",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "|| p.tickLower != 0 || p.tickUpper != 0) {",
+   "new": "|| p.tickUpper != 0) {"
+  },
+  {
+   "label": "compound: no upper tick",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "|| p.tickLower != 0 || p.tickUpper != 0) {",
+   "new": "|| p.tickLower != 0) {"
+  },
+  {
+   "label": "mint: an active parent",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "if (!parent.active || parent.successor != 0 || _members.length >= _maxPositions) revert InvalidRoute();",
+   "new": "if (parent.successor != 0 || _members.length >= _maxPositions) revert InvalidRoute();"
+  },
+  {
+   "label": "mint: one successor per parent",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "if (!parent.active || parent.successor != 0 || _members.length >= _maxPositions) revert InvalidRoute();",
+   "new": "if (!parent.active || _members.length >= _maxPositions) revert InvalidRoute();"
+  },
+  {
+   "label": "mint: the sequence cap",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "if (!parent.active || parent.successor != 0 || _members.length >= _maxPositions) revert InvalidRoute();",
+   "new": "if (!parent.active || parent.successor != 0) revert InvalidRoute();"
+  },
+  {
+   "label": "mint: the successor geometry",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "            _checkSuccessor(parent, p.tickLower, p.tickUpper, r.anchor);\n",
+   "new": ""
+  },
+  {
+   "label": "plan: a known action",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        } else {\n            revert InvalidPlan();\n        }\n        if (p.minLiquidity",
+   "new": "        }\n        if (p.minLiquidity"
+  },
+  {
+   "label": "plan: a liquidity floor",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (p.minLiquidity == 0 || p.budgets.length == 0) revert InvalidPlan();",
+   "new": "if (p.budgets.length == 0) revert InvalidPlan();"
+  },
+  {
+   "label": "plan: a budget",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (p.minLiquidity == 0 || p.budgets.length == 0) revert InvalidPlan();",
+   "new": "if (p.minLiquidity == 0) revert InvalidPlan();"
+  },
+  {
+   "label": "budgets: ascending",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (source <= previous || !from.active) revert InvalidPlan();",
+   "new": "if (!from.active) revert InvalidPlan();"
+  },
+  {
+   "label": "budgets: active members",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (source <= previous || !from.active) revert InvalidPlan();",
+   "new": "if (source <= previous) revert InvalidPlan();"
+  },
+  {
+   "label": "budgets: routing",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "if (!_routable(source, from, p, destination, r.anchor)) revert InvalidRoute();",
+   "new": ""
+  },
+  {
+   "label": "no swap: no source",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (s.source != 0 || s.zeroForOne || s.amountIn != 0 || s.minAmountOut != 0) revert InvalidPlan();",
+   "new": "if (s.zeroForOne || s.amountIn != 0 || s.minAmountOut != 0) revert InvalidPlan();"
+  },
+  {
+   "label": "no swap: no direction",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (s.source != 0 || s.zeroForOne || s.amountIn != 0 || s.minAmountOut != 0) revert InvalidPlan();",
+   "new": "if (s.source != 0 || s.amountIn != 0 || s.minAmountOut != 0) revert InvalidPlan();"
+  },
+  {
+   "label": "no swap: no input",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (s.source != 0 || s.zeroForOne || s.amountIn != 0 || s.minAmountOut != 0) revert InvalidPlan();",
+   "new": "if (s.source != 0 || s.zeroForOne || s.minAmountOut != 0) revert InvalidPlan();"
+  },
+  {
+   "label": "no swap: no minimum",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (s.source != 0 || s.zeroForOne || s.amountIn != 0 || s.minAmountOut != 0) revert InvalidPlan();",
+   "new": "if (s.source != 0 || s.zeroForOne || s.amountIn != 0) revert InvalidPlan();"
+  },
+  {
+   "label": "swap: a budgeted source",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "} else if (!swapFunded || s.amountIn == 0) {",
+   "new": "} else if (s.amountIn == 0) {"
+  },
+  {
+   "label": "swap: an input",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "} else if (!swapFunded || s.amountIn == 0) {",
+   "new": "} else if (!swapFunded) {"
+  },
+  {
+   "label": "routing: fees return to their position",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        if (!mint && source == p.target) return true;\n",
+   "new": ""
+  },
+  {
+   "label": "routing: an in-range source funds only its successor",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "return (mint ? source == p.target : from.successor == p.target) && _nearCeiling(from, anchor);",
+   "new": "return _nearCeiling(from, anchor);"
+  },
+  {
+   "label": "routing: ... and only near its ceiling",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "return (mint ? source == p.target : from.successor == p.target) && _nearCeiling(from, anchor);",
+   "new": "return (mint ? source == p.target : from.successor == p.target);"
+  },
+  {
+   "label": "routing: an out-of-range source funds only an in-range position",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "        return _inRange(to, anchor);\n    }",
+   "new": "        return true;\n    }"
+  },
+  {
+   "label": "routing: an in-range source is not an out-of-range one",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "        if (_inRange(from, anchor)) {",
+   "new": "        if (false) {"
+  },
+  {
+   "label": "geometry: the trigger",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "        if (!_nearCeiling(parent, anchor)) revert InvalidRoute();\n        int24 spacing",
+   "new": "        int24 spacing"
+  },
+  {
+   "label": "geometry: measured from a price past the ceiling",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "uint160 basis = _orientedAtLeast(anchor, ceiling, M.BPS) ? anchor : ceiling;",
+   "new": "uint160 basis = ceiling;"
+  },
+  {
+   "label": "geometry: floor at or below the basis",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "!_orientedAtLeast(basis, floor, M.BPS) || !_orientedAtLeast(floor, basis, M.BPS - _maxOverlapBps)",
+   "new": "!_orientedAtLeast(floor, basis, M.BPS - _maxOverlapBps)"
+  },
+  {
+   "label": "geometry: overlap",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "!_orientedAtLeast(basis, floor, M.BPS) || !_orientedAtLeast(floor, basis, M.BPS - _maxOverlapBps)",
+   "new": "!_orientedAtLeast(basis, floor, M.BPS)"
+  },
+  {
+   "label": "geometry: upside",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "                || !_orientedAtLeast(TickMath.getSqrtPriceAtTick(inverse ? tickLower : tickUpper), basis, upside)\n",
+   "new": ""
+  },
+  {
+   "label": "geometry: the first tick past the upside",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "                || _orientedAtLeast(TickMath.getSqrtPriceAtTick(inverse ? tickLower + spacing : tickUpper - spacing), basis, upside)\n",
+   "new": ""
+  },
+  {
+   "label": "trigger distance",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "return _orientedAtLeast(anchor, ceiling, M.BPS - _triggerDistanceBps);",
+   "new": "return _orientedAtLeast(anchor, ceiling, M.BPS);"
+  },
+  {
+   "label": "orientation: quote in currency0",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "return _inverse ? M.ratioAtLeast(y, x, num) : M.ratioAtLeast(x, y, num);",
+   "new": "return M.ratioAtLeast(x, y, num);"
+  },
+  {
+   "label": "swap: the fee-aware floor",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        if (\n            s.minAmountOut\n                < DominoSwapFloor.minimumOutput(",
+   "new": "        if (\n            false && s.minAmountOut\n                < DominoSwapFloor.minimumOutput("
+  },
+  {
+   "label": "swap: the pool fee counts",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "s.amountIn, r.anchor, s.zeroForOne, _swapFeePips(s.zeroForOne), _maxSlippageBps",
+   "new": "s.amountIn, r.anchor, s.zeroForOne, 0, _maxSlippageBps"
+  },
+  {
+   "label": "swap: the floor is at the anchor",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "s.amountIn, r.anchor, s.zeroForOne, _swapFeePips(s.zeroForOne), _maxSlippageBps",
+   "new": "s.amountIn, uint160(1 << 96), s.zeroForOne, _swapFeePips(s.zeroForOne), _maxSlippageBps"
+  },
+  {
+   "label": "swap: the source holds the input",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (_spend(r, index, s.source, tokenIn, s.zeroForOne, s.amountIn) != s.amountIn) revert InsufficientReserves();",
+   "new": "_spend(r, index, s.source, tokenIn, s.zeroForOne, s.amountIn);"
+  },
+  {
+   "label": "swap: exactly the input leaves",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultSwapModule.t.sol",
+   "old": "if (beforeIn - _balance(tokenIn) != s.amountIn || amountOut < s.minAmountOut) revert InvalidAmount();",
+   "new": "if (amountOut < s.minAmountOut) revert InvalidAmount();"
+  },
+  {
+   "label": "swap: at least the minimum arrives",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultSwapModule.t.sol",
+   "old": "if (beforeIn - _balance(tokenIn) != s.amountIn || amountOut < s.minAmountOut) revert InvalidAmount();",
+   "new": "if (beforeIn - _balance(tokenIn) != s.amountIn) revert InvalidAmount();"
+  },
+  {
+   "label": "swap: output is charged units",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "_lots[s.source][tokenOut].charged += _u128(amountOut);",
+   "new": "_lots[s.source][tokenOut].uncharged += _u128(amountOut);"
+  },
+  {
+   "label": "swap: the band is checked again",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        PRICE_ANCHOR.anchor(r.pool, p.anchorEvidence, _maxObservationAgeSeconds, _maxPriceImpactBps);\n        // On v4",
+   "new": "        // On v4"
+  },
+  {
+   "label": "swap: v4 re-collects the destination",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultUniswapV4.t.sol",
+   "old": "if (p.action == Plan.ACTION_COMPOUND && _feesSettleOnModify()) {",
+   "new": "if (false) {"
+  },
+  {
+   "label": "swap: the module failure surfaces",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultSwapModule.t.sol",
+   "old": "        if (!ok) {\n            assembly (\"memory-safe\") {\n                revert(add(reason, 32), mload(reason))\n            }\n        }\n        amountOut",
+   "new": "        amountOut"
+  },
+  {
+   "label": "add: token0 maximum",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        if (max0 > p.amount0Max) max0 = p.amount0Max;\n",
+   "new": ""
+  },
+  {
+   "label": "add: token1 maximum",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        if (max1 > p.amount1Max) max1 = p.amount1Max;\n",
+   "new": ""
+  },
+  {
+   "label": "add: the vault marks its own increase of the root",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "            _rootStep(isRoot, true);\n            liquidity = _stepIncrease(",
+   "new": "            liquidity = _stepIncrease("
+  },
+  {
+   "label": "mint: a 96-bit id",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "            if (destination > type(uint96).max) revert InvalidPosition();\n",
+   "new": ""
+  },
+  {
+   "label": "mint: the parent links its successor",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "            _member[p.target].successor = uint96(destination);\n",
+   "new": ""
+  },
+  {
+   "label": "allocation covers the spend",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        if (amount != 0) revert InsufficientReserves();\n    }\n\n    /// What budget",
+   "new": "    }\n\n    /// What budget",
+   "expected": "NOT CAUGHT",
+   "reason": "Unreachable by construction: what an add spends is at most its maxima, which are at most the budgets' summed capacity. Kept as the ledger's backstop against a future change."
+  },
+  {
+   "label": "tariff: charged units first",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "        uint256 charged = entry.charged < cap ? entry.charged : cap;\n        if (charged > provided) charged = provided;",
+   "new": "        uint256 charged = 0;"
+  },
+  {
+   "label": "exit: only the enabled module",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "        if (msg.sender != _exitModule) revert IDominoVault.Unauthorized();\n",
+   "new": ""
+  },
+  {
+   "label": "exit: not under the global halt",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "        if (REGISTRY.automationHalted()) revert IDominoVault.AutomationUnavailable();\n        if (!_member[tokenId].active) revert InvalidPosition();",
+   "new": "        if (!_member[tokenId].active) revert InvalidPosition();"
+  },
+  {
+   "label": "exit: only a member",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "        if (!_member[tokenId].active) revert InvalidPosition();\n        (uint8 version",
+   "new": "        (uint8 version"
+  },
+  {
+   "label": "exit: version one only",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "if (version != EXIT_INSTRUCTION_VERSION || recipient != msg.sender) revert InvalidInstruction();",
+   "new": "if (recipient != msg.sender) revert InvalidInstruction();"
+  },
+  {
+   "label": "exit: the calling module is the recipient",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "if (version != EXIT_INSTRUCTION_VERSION || recipient != msg.sender) revert InvalidInstruction();",
+   "new": "if (version != EXIT_INSTRUCTION_VERSION) revert InvalidInstruction();"
+  },
+  {
+   "label": "exit: the root needs its approval",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "        if (isRoot && !_rootApproved()) revert IDominoVault.AutomationUnavailable();\n",
+   "new": ""
+  },
+  {
+   "label": "exit: the vault marks its own decrease of the root",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultUniswapV4.t.sol",
+   "old": "        _rootStep(isRoot, true);\n        _stepWithdraw(",
+   "new": "        _stepWithdraw("
+  },
+  {
+   "label": "exit: the position to the module",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "        _pay(pool.currency0, recipient, amount0);\n",
+   "new": ""
+  },
+  {
+   "label": "exit: the position's reserves to the owner",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "        _release(tokenId, pool.currency0, true);\n",
+   "new": "        _release(tokenId, pool.currency0, false);\n"
+  },
+  {
+   "label": "exit: a child goes to the owner",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultDomino.t.sol",
+   "old": "            _retire(tokenId);\n            _transferPosition(tokenId, _owner);\n            emit IDominoVault.ChildWithdrawn(tokenId, nonce);",
+   "new": "            _retire(tokenId);\n            emit IDominoVault.ChildWithdrawn(tokenId, nonce);"
+  },
+  {
+   "label": "exit: the root is disarmed",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "            _markDisarmed(DISARM_EXITED);\n",
+   "new": ""
+  },
+  {
+   "label": "v4: a subscription only while the vault subscribes",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        if (!subscribing) revert UnexpectedCallback();\n",
+   "new": ""
+  },
+  {
+   "label": "v4: notifications from the manager only",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        if (msg.sender != POSITION_MANAGER) revert UnexpectedCallback();\n        if (tokenId != _rootTokenId",
+   "new": "        if (tokenId != _rootTokenId"
+  },
+  {
+   "label": "v4: notifications about the root only",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "if (tokenId != _rootTokenId || ownStep || !_rootArmed) return;",
+   "new": "if (ownStep || !_rootArmed) return;"
+  },
+  {
+   "label": "v4: own steps are not the owner's",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "if (tokenId != _rootTokenId || ownStep || !_rootArmed) return;",
+   "new": "if (tokenId != _rootTokenId || !_rootArmed) return;"
+  },
+  {
+   "label": "v4: a disarmed root stays quiet",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "if (tokenId != _rootTokenId || ownStep || !_rootArmed) return;",
+   "new": "if (tokenId != _rootTokenId || ownStep) return;"
+  },
+  {
+   "label": "v4: a modification disarms",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        _notified(tokenId, DISARM_MODIFIED, _inRootStep());",
+   "new": "        _notified(tokenId, DISARM_MODIFIED, true);"
+  },
+  {
+   "label": "v4: a burn disarms",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        _notified(tokenId, DISARM_BURNED, false);",
+   "new": "        _notified(tokenId, DISARM_BURNED, true);"
+  },
+  {
+   "label": "v4: an unsubscription disarms",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        _notified(tokenId, DISARM_UNSUBSCRIBED, false);",
+   "new": "        _notified(tokenId, DISARM_UNSUBSCRIBED, true);"
+  },
+  {
+   "label": "v4: hooked pools are refused",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultUniswapV4.t.sol",
+   "old": "        if (!ACCEPT_HOOKED_POOLS && root.pool.hooks != address(0)) revert HookedPool(root.pool.hooks);\n",
+   "new": ""
+  },
+  {
+   "label": "v4: arming needs custody",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        if (!_rootApproved()) revert IDominoVault.AutomationUnavailable();\n        uint256 tokenId = _rootTokenId;\n        IV4PositionManagerMinimal manager",
+   "new": "        uint256 tokenId = _rootTokenId;\n        IV4PositionManagerMinimal manager"
+  },
+  {
+   "label": "v4: rearming keeps its own subscription",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        if (current == address(this)) return;\n",
+   "new": ""
+  },
+  {
+   "label": "v4: a foreign subscriber blocks arming",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        if (current != address(0)) revert ForeignSubscriber(current);\n",
+   "new": ""
+  },
+  {
+   "label": "v4: live custody needs the subscription",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "!_rootApproved() || IV4PositionManagerMinimal(POSITION_MANAGER).subscriber(_rootTokenId) != address(this)",
+   "new": "!_rootApproved()"
+  },
+  {
+   "label": "v4: live custody needs the approval",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "!_rootApproved() || IV4PositionManagerMinimal(POSITION_MANAGER).subscriber(_rootTokenId) != address(this)",
+   "new": "IV4PositionManagerMinimal(POSITION_MANAGER).subscriber(_rootTokenId) != address(this)"
+  },
+  {
+   "label": "v4: the swap fee per direction",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultUniswapV4.t.sol",
+   "old": "(, fee) = DominoSwapFloor.v4SpotAndFee(address(POOL_MANAGER), _pool(), zeroForOne);",
+   "new": "(, fee) = DominoSwapFloor.v4SpotAndFee(address(POOL_MANAGER), _pool(), !zeroForOne);"
+  },
+  {
+   "label": "v4: fees settle on modify",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultUniswapV4.t.sol",
+   "old": "    function _feesSettleOnModify() internal pure override returns (bool) {\n        return true;",
+   "new": "    function _feesSettleOnModify() internal pure override returns (bool) {\n        return false;"
+  },
+  {
+   "label": "v4: a step runs only for the PoolManager",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultUniswapV4.t.sol",
+   "old": "if (msg.sender != address(POOL_MANAGER) || !_unlocking()) revert UnexpectedCallback();",
+   "new": "if (!_unlocking()) revert UnexpectedCallback();"
+  },
+  {
+   "label": "v4: a step runs only inside the vault's unlock",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultUniswapV4.t.sol",
+   "old": "if (msg.sender != address(POOL_MANAGER) || !_unlocking()) revert UnexpectedCallback();",
+   "new": "if (msg.sender != address(POOL_MANAGER)) revert UnexpectedCallback();"
+  },
+  {
+   "label": "v4: the vault flags its own unlock",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultUniswapV4.t.sol",
+   "old": "        assembly (\"memory-safe\") {\n            tstore(slot, 1)\n        }\n        bytes memory result = POOL_MANAGER.unlock",
+   "new": "        bytes memory result = POOL_MANAGER.unlock"
+  },
+  {
+   "label": "v3: arming needs custody",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        if (!_rootApproved()) revert IDominoVault.AutomationUnavailable();\n",
+   "new": ""
+  },
+  {
+   "label": "v3: what was owed goes to the owner",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "if (root.tokensOwed0 != 0 || root.tokensOwed1 != 0) DominoV3Positions.collect(",
+   "new": "if (false) DominoV3Positions.collect("
+  },
+  {
+   "label": "v3: nothing owed, nothing collected at arming",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "if (root.tokensOwed0 != 0 || root.tokensOwed1 != 0) DominoV3Positions.collect(",
+   "new": "if (true) DominoV3Positions.collect("
+  },
+  {
+   "label": "v3: live custody needs the approval",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        if (!_rootApproved()) return DISARM_CUSTODY;\n",
+   "new": ""
+  },
+  {
+   "label": "v3: live custody needs the checkpoint",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        if (keccak256(abi.encode(_checkpoint())) != _rootCheckpoint) return DISARM_CHECKPOINT;\n",
+   "new": ""
+  },
+  {
+   "label": "v3: the checkpoint follows the vault's steps",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "    function _afterRootStep() internal override {\n        _record();\n    }",
+   "new": "    function _afterRootStep() internal override {}"
+  },
+  {
+   "label": "v3: the checkpoint covers liquidity",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "(,,,,,,, c.liquidity, c.feeGrowthInside0LastX128",
+   "new": "(,,,,,,,, c.feeGrowthInside0LastX128"
+  },
+  {
+   "label": "v3: the checkpoint covers what is owed",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "c.feeGrowthInside1LastX128, c.tokensOwed0, c.tokensOwed1) =",
+   "new": "c.feeGrowthInside1LastX128,,) ="
+  },
+  {
+   "label": "rearm: the disarm reason is recorded",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        _disarmReason = reason;\n",
+   "new": ""
+  },
+  {
+   "label": "rearm: operators only",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        if (!REGISTRY.isOperator(msg.sender)) revert Unauthorized();\n        if (\n            REGISTRY.automationHalted()",
+   "new": "        if (\n            REGISTRY.automationHalted()"
+  },
+  {
+   "label": "rearm: not under the halt",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "REGISTRY.automationHalted() || !(_rootArmed || _disarmReason == DISARM_CHECKPOINT)",
+   "new": "!(_rootArmed || _disarmReason == DISARM_CHECKPOINT)"
+  },
+  {
+   "label": "rearm: an armed root may be refreshed",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "!(_rootArmed || _disarmReason == DISARM_CHECKPOINT)",
+   "new": "!(_disarmReason == DISARM_CHECKPOINT)"
+  },
+  {
+   "label": "rearm: only after a checkpoint mismatch",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "!(_rootArmed || _disarmReason == DISARM_CHECKPOINT)",
+   "new": "!(_rootArmed || true)"
+  },
+  {
+   "label": "rearm: only liquidity added",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "                || !_onlyLiquidityAdded(previous)\n",
+   "new": "\n"
+  },
+  {
+   "label": "rearm: the new checkpoint is recorded",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        _afterRootStep();\n        _rootArmed = true;\n        emit RootRearmed(++_stateNonce);\n    }",
+   "new": "        _rootArmed = true;\n        emit RootRearmed(++_stateNonce);\n    }"
+  },
+  {
+   "label": "rearm: the root is armed",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        _afterRootStep();\n        _rootArmed = true;\n",
+   "new": "        _afterRootStep();\n"
+  },
+  {
+   "label": "v3 rearm: the recorded checkpoint",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "if (keccak256(abi.encode(previous)) != _rootCheckpoint || !_rootApproved()) return false;",
+   "new": "if (!_rootApproved()) return false;"
+  },
+  {
+   "label": "v3 rearm: custody",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "if (keccak256(abi.encode(previous)) != _rootCheckpoint || !_rootApproved()) return false;",
+   "new": "if (keccak256(abi.encode(previous)) != _rootCheckpoint) return false;"
+  },
+  {
+   "label": "v3 rearm: more liquidity",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "return current.liquidity > previous.liquidity\n",
+   "new": "return true\n"
+  },
+  {
+   "label": "v3 rearm: nothing collected",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "return poked >= FullMath.mulDiv(growth, liquidityBefore, 1 << 128)\n            && poked <= FullMath.mulDiv(growth, liquidityNow, 1 << 128);",
+   "new": "return poked <= FullMath.mulDiv(growth, liquidityNow, 1 << 128);"
+  },
+  {
+   "label": "v3 rearm: no principal from a decrease",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "return poked >= FullMath.mulDiv(growth, liquidityBefore, 1 << 128)\n            && poked <= FullMath.mulDiv(growth, liquidityNow, 1 << 128);",
+   "new": "return poked >= FullMath.mulDiv(growth, liquidityBefore, 1 << 128);"
+  },
+  {
+   "label": "v3 rearm: what is owed never shrinks",
+   "file": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "        if (owedNow < owedBefore) return false;\n",
+   "new": ""
+  },
+  {
+   "label": "v4: no operator rearm",
+   "file": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+   "suite": "test/v2/vault/DominoV2VaultCustody.t.sol",
+   "old": "    {\n        return false;\n    }",
+   "new": "    {\n        return true;\n    }"
+  },
+  {
+   "label": "factory: bound to its implementation",
+   "file": "contracts/src/v2/vault/DominoV2VaultFactory.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "if (wiring.factory != address(this) || (dex_ != DominoV2Types.DEX_V3 && dex_ != DominoV2Types.DEX_V4)) {",
+   "new": "if (dex_ != DominoV2Types.DEX_V3 && dex_ != DominoV2Types.DEX_V4) {"
+  },
+  {
+   "label": "factory: a known dex",
+   "file": "contracts/src/v2/vault/DominoV2VaultFactory.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "if (wiring.factory != address(this) || (dex_ != DominoV2Types.DEX_V3 && dex_ != DominoV2Types.DEX_V4)) {",
+   "new": "if (wiring.factory != address(this)) {"
+  },
+  {
+   "label": "factory: the expected nonce",
+   "file": "contracts/src/v2/vault/DominoV2VaultFactory.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "        if (nonce != expectedNonce) revert UnexpectedNonce(nonce, expectedNonce);\n",
+   "new": ""
+  },
+  {
+   "label": "factory: the nonce advances",
+   "file": "contracts/src/v2/vault/DominoV2VaultFactory.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "        nextNonce[msg.sender] = nonce + 1;\n",
+   "new": ""
+  },
+  {
+   "label": "factory: vaults are registered",
+   "file": "contracts/src/v2/vault/DominoV2VaultFactory.sol",
+   "suite": "test/v2/vault/DominoV2VaultFactory.t.sol",
+   "old": "        isVault[vault] = true;\n",
+   "new": ""
+  },
+  {
+   "label": "plan: not empty",
+   "file": "contracts/src/v2/vault/DominoV2VaultPlan.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (plan.length == 0 || uint8(plan[0]) != VERSION_1) revert InvalidPlan();",
+   "new": "if (uint8(plan[0]) != VERSION_1) revert InvalidPlan();"
+  },
+  {
+   "label": "plan: version one only",
+   "file": "contracts/src/v2/vault/DominoV2VaultPlan.sol",
+   "suite": "test/v2/vault/DominoV2VaultExecution.t.sol",
+   "old": "if (plan.length == 0 || uint8(plan[0]) != VERSION_1) revert InvalidPlan();",
+   "new": "if (plan.length == 0) revert InvalidPlan();"
+  },
+  {
+   "label": "math: far-apart prices",
+   "file": "contracts/src/v2/vault/DominoV2VaultMath.sol",
+   "suite": "test/v2/vault/DominoV2VaultMath.t.sol",
+   "old": "        if (a / b >= 1 << 32) return true;\n",
+   "new": ""
+  },
+  {
+   "label": "math: the least gross",
+   "file": "contracts/src/v2/vault/DominoV2VaultMath.sol",
+   "suite": "test/v2/vault/DominoV2VaultMath.t.sol",
+   "old": "        return (target - 1) * BPS / (BPS - bps) + 1;",
+   "new": "        return target * BPS / (BPS - bps) + 1;"
+  }
+ ]
+}

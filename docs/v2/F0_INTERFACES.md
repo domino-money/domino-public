@@ -166,7 +166,8 @@ Consent takes two explicit acts: the vault's `setExitModule` and the mandate sig
 - `registry`, `priceAnchor`, `autoExit`;
 - `zap.v3` and `zap.v4`, and `zap.v4.steps` (added in F2: the v4 zap's position steps, reached by DELEGATECALL);
 - `vault.v3` and `vault.v4` (implementations);
-- `vaultFactory.v3` and `vaultFactory.v4`.
+- `vaultFactory.v3` and `vaultFactory.v4`;
+- `vaultSwap`, the vaults' swap module (added by F3, [F3_VAULT.md](F3_VAULT.md)).
 
 **Deployer key.** The owner holds it; it never passes through an agent.
 
