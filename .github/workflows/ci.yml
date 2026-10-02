@@ -192,8 +192,13 @@ jobs:
             contracts/out
           # Exact source tree first; otherwise the newest cache from the same
           # compiler and settings, which scripts/forge-cache.mjs prunes below.
-          key: forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
+          # Each job keeps its own cache: with one shared key the Backend, which
+          # builds three closures and finishes first, saved its subset and the
+          # Contracts job could not save its full set (run 36934135396, #285).
+          # The last fallback is that shared cache.
+          key: forge-backend-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
           restore-keys: |
+            forge-backend-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
             forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -285,8 +290,13 @@ jobs:
             contracts/out
           # Exact source tree first; otherwise the newest cache from the same
           # compiler and settings, which scripts/forge-cache.mjs prunes below.
-          key: forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
+          # Each job keeps its own cache: with one shared key the Backend, which
+          # builds three closures and finishes first, saved its subset and the
+          # Contracts job could not save its full set (run 36934135396, #285).
+          # The last fallback is that shared cache.
+          key: forge-contracts-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
           restore-keys: |
+            forge-contracts-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
             forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
       - run: npm ci --no-audit --no-fund
       - name: Drop cached Forge artifacts this checkout invalidates
