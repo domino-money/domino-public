@@ -478,11 +478,13 @@ class WaitingTests(ExecutorTestCase):
         journal.record_waiting([('vault', vault, 'reverted_spot_outside_band', 'reverted'),
                                 ('mandate', mandate, 'trigger_not_reached', None)], at=200, block=20)
         waiting = journal.waiting()
-        self.assertEqual(waiting['vaults'][vault], {'reason': 'reverted_spot_outside_band', 'at': 200, 'block': 20,
+        self.assertEqual(waiting['vaults'][vault], {'reason': 'reverted_spot_outside_band', 'since': 200,
+                                                    'sinceBlock': 20, 'at': 200, 'block': 20,
                                                     'lastRevert': {'code': 'reverted_spot_outside_band', 'at': 200,
                                                                    'block': 20}})
         # The mandate's revert is still the last one, with its own time.
-        self.assertEqual(waiting['mandates'][mandate], {'reason': 'trigger_not_reached', 'at': 200, 'block': 20,
+        self.assertEqual(waiting['mandates'][mandate], {'reason': 'trigger_not_reached', 'since': 200,
+                                                        'sinceBlock': 20, 'at': 200, 'block': 20,
                                                         'lastRevert': {'code': 'reverted_automation_unavailable',
                                                                        'at': 100, 'block': 10}})
         journal.record_waiting([('vault', vault, 'eligible', 'passed')], at=300, block=30)
@@ -491,6 +493,49 @@ class WaitingTests(ExecutorTestCase):
         self.assertEqual(journal.waiting()['vaults'][vault]['reason'], 'unrecognized_reason')
         with self.assertRaisesRegex(DataError, '^v2_waiting_invalid$'):
             journal.record_waiting([('pool', vault, 'eligible', None)], at=1, block=1)
+
+
+    def test_since_is_the_first_pass_of_the_current_reason(self):
+        journal = self.executor.journal
+        vault = '0x' + 'a1' * 20
+
+        def since():
+            entry = journal.waiting()['vaults'][vault]
+            return entry['since'], entry['sinceBlock'], entry['at'], entry['block']
+        journal.record_waiting([('vault', vault, 'gas_not_covered', None)], at=100, block=10)
+        journal.record_waiting([('vault', vault, 'gas_not_covered', None)], at=160, block=16)
+        self.assertEqual(since(), (100, 10, 160, 16))
+        # Another reason restarts it; so does the reason clearing (the vault is eligible).
+        journal.record_waiting([('vault', vault, 'too_soon', None)], at=220, block=22)
+        self.assertEqual(since(), (220, 22, 220, 22))
+        journal.record_waiting([('vault', vault, 'eligible', 'passed')], at=280, block=28)
+        journal.record_waiting([('vault', vault, 'too_soon', None)], at=340, block=34)
+        self.assertEqual(since(), (340, 34, 340, 34))
+        # The same reason at an earlier head (a reorganization), by time or by block,
+        # restarts it rather than run backwards.
+        journal.record_waiting([('vault', vault, 'too_soon', None)], at=335, block=35)
+        self.assertEqual(since(), (335, 35, 335, 35))
+        journal.record_waiting([('vault', vault, 'too_soon', None)], at=400, block=32)
+        self.assertEqual(since(), (400, 32, 400, 32))
+
+    def test_a_journal_from_before_since_gets_it(self):
+        import sqlite3
+        path = self.directory / 'old.sqlite'
+        db = sqlite3.connect(str(path))
+        db.execute("CREATE TABLE waiting (chain_id INTEGER NOT NULL, kind TEXT NOT NULL CHECK (kind IN"
+                   " ('vault', 'mandate')), subject TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL,"
+                   ' block INTEGER NOT NULL, revert TEXT, revert_at INTEGER, revert_block INTEGER,'
+                   ' PRIMARY KEY (chain_id, kind, subject))')
+        db.execute("INSERT INTO waiting (chain_id, kind, subject, reason, at, block) VALUES (8453, 'vault', ?,"
+                   " 'gas_not_covered', 500, 50)", ('0x' + 'a1' * 20,))
+        db.commit()
+        db.close()
+        journal = Journal(path, 8453, OPERATOR)
+        self.addCleanup(journal.close)
+        self.assertEqual({k: v for k, v in journal.waiting()['vaults']['0x' + 'a1' * 20].items()
+                          if k in ('since', 'sinceBlock')}, {'since': 500, 'sinceBlock': 50})
+        journal.record_waiting([('vault', '0x' + 'a1' * 20, 'gas_not_covered', None)], at=560, block=56)
+        self.assertEqual(journal.waiting()['vaults']['0x' + 'a1' * 20]['since'], 500)
 
 
 class PolicyTests(unittest.TestCase):

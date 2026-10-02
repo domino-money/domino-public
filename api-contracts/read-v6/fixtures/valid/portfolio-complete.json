@@ -1,0 +1,122 @@
+{
+  "chains": [
+    {
+      "automationHalted": false,
+      "chainId": 4663,
+      "deployment": {
+        "manifestSha256": "0000000000000000000000000000000000000000000000000000000000001237",
+        "startBlock": 100
+      },
+      "finalizedThrough": null,
+      "head": {
+        "number": 4768,
+        "observedAt": 1790431232,
+        "timestamp": 1790431233
+      },
+      "indexedThrough": {
+        "hash": "0xa6cdad30068a4457bcab2f655629ee1093ddf7cb0890810fe676006fb49f3bcf",
+        "number": 4763,
+        "timestamp": 1790431229
+      },
+      "lagBlocks": 5,
+      "lagSeconds": 4,
+      "lastError": null,
+      "operatorsAdmitted": 1,
+      "reason": null,
+      "status": "current",
+      "waitingReasons": {
+        "ageSeconds": 40,
+        "block": 73400090,
+        "status": "reporting",
+        "timestamp": 1790431194
+      }
+    },
+    {
+      "automationHalted": false,
+      "chainId": 8453,
+      "deployment": {
+        "manifestSha256": "0000000000000000000000000000000000000000000000000000000000002105",
+        "startBlock": 100
+      },
+      "finalizedThrough": null,
+      "head": {
+        "number": 8558,
+        "observedAt": 1790431232,
+        "timestamp": 1790431233
+      },
+      "indexedThrough": {
+        "hash": "0xb55c87edaa08a5a76f79d577907f5dad6ca72ab2756ca17bcf5d6cc6e4dc53cc",
+        "number": 8553,
+        "timestamp": 1790431229
+      },
+      "lagBlocks": 5,
+      "lagSeconds": 4,
+      "lastError": null,
+      "operatorsAdmitted": 1,
+      "reason": null,
+      "status": "current",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "unavailable",
+        "timestamp": null
+      }
+    },
+    {
+      "automationHalted": false,
+      "chainId": 42161,
+      "deployment": {
+        "manifestSha256": "000000000000000000000000000000000000000000000000000000000000a4b1",
+        "startBlock": 100
+      },
+      "finalizedThrough": null,
+      "head": {
+        "number": 42266,
+        "observedAt": 1790431232,
+        "timestamp": 1790431233
+      },
+      "indexedThrough": {
+        "hash": "0xe08aae755e6939af779d27e3725eb953c99cf899f79a805d26bbd2a8a08a5bdb",
+        "number": 42261,
+        "timestamp": 1790431229
+      },
+      "lagBlocks": 5,
+      "lagSeconds": 4,
+      "lastError": null,
+      "operatorsAdmitted": 1,
+      "reason": null,
+      "status": "current",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "not_configured",
+        "timestamp": null
+      }
+    }
+  ],
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "complete",
+  "credits": [],
+  "executionAvailable": false,
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "positions_known_to_domino_only",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mandates": [],
+  "mode": "stored_v2_portfolio",
+  "positions": [],
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "suggested": false,
+  "tokens": [],
+  "truncated": {
+    "mandates": false,
+    "positions": false,
+    "vaults": false
+  },
+  "vaults": [],
+  "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+}

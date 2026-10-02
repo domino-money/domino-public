@@ -26,6 +26,9 @@ from sequence_snapshot import (CONTRACT_VERSION as V4_CONTRACT_VERSION,
 from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, validate_response, sanitize_error, unsigned_string_pattern
 from featured_contract import (CONTRACT_VERSION as V5_CONTRACT_VERSION, FeaturedPoolsRequest,
                                FeaturedPoolsResponse, FeaturedReader, validate_featured_response)
+from v2_read_contract import (CONTRACT_VERSION as V6_CONTRACT_VERSION, ActivityPageRequest as V6ActivityRequest,
+                              PortfolioRequest as V6PortfolioRequest, RESPONSE_MODELS as V6_RESPONSE_MODELS,
+                              validate_v6_request_response, validate_v6_response)
 from public_data_contract import (CONTRACT_VERSION as V3_CONTRACT_VERSION,
                                   REQUEST_MODELS as V3_REQUEST_MODELS,
                                   RESPONSE_MODELS as V3_RESPONSE_MODELS,
@@ -136,7 +139,8 @@ class ReadGate:
     """
 
     PROVIDER, STORED = 'provider', 'stored'
-    STORED_ROUTES = frozenset({'catalogue', 'markets-snapshot', *V3_REQUEST_MODELS, 'featured-pools'})
+    STORED_ROUTES = frozenset({'catalogue', 'markets-snapshot', *V3_REQUEST_MODELS, 'featured-pools',
+                               *V6_RESPONSE_MODELS})
     # Admission stays fail-fast with a client backoff, the reviewed design of
     # #157. What it never did was tell the truth about the wait: a constant one
     # second against a slot a six-second read owns sent three visitors opening
@@ -329,7 +333,7 @@ def checked_refresh_interval(value):
 
 
 def create_app(service=None, *, gate=None, read_budget_seconds=60,
-               snapshot_refresh_seconds=None):
+               snapshot_refresh_seconds=None, v2_reader=None):
     from markets_snapshot import DEFAULT_REFRESH_SECONDS, MarketsSnapshot, SnapshotRefresher
     if type(read_budget_seconds) not in (int, float) or not 0 < read_budget_seconds <= 60:
         raise ValueError('invalid_read_budget')
@@ -359,6 +363,11 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
                                                        path=SNAPSHOT_STORE))
         if public_data is not None:
             service.market_cache.reserve_provider = public_data.repository.reserve_provider
+        if catalogue is not None and os.environ.get('DOMINO_V2_READ') == '1':
+            # The V2 index (read-v6), through the same catalogue reader role.
+            from v2_index_store import V2Store
+            from v2_read_service import V2ReadService
+            v2_reader = V2ReadService(V2Store(catalogue.settings))
     # The featured list lives beside the public observations, read through the same reader role.
     repository = getattr(getattr(service, 'public_data', None), 'repository', None)
     featured = FeaturedReader(repository) if repository is not None else None
@@ -397,8 +406,9 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         v3 = request.url.path.startswith('/v3/read/')
         v4 = request.url.path.startswith('/v4/read/')
         v5 = request.url.path.startswith('/v5/read/')
-        contract_version = (V5_CONTRACT_VERSION if v5 else V4_CONTRACT_VERSION if v4 else
-                            V3_CONTRACT_VERSION if v3 else CONTRACT_VERSION)
+        v6 = request.url.path.startswith('/v6/read/')
+        contract_version = (V6_CONTRACT_VERSION if v6 else V5_CONTRACT_VERSION if v5 else
+                            V4_CONTRACT_VERSION if v4 else V3_CONTRACT_VERSION if v3 else CONTRACT_VERSION)
         # Bounding a liveness answer by the read budget lets a reader that is
         # only slow to warm up report 504, which the gateway reads as the whole
         # upstream being unavailable. A probe answers on its own bound.
@@ -436,7 +446,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
         route = (tail if (request.url.path == '/v1/read/' + tail and tail in RESPONSE_MODELS
                          or request.url.path == '/v3/read/' + tail and tail in V3_RESPONSE_MODELS
                          or request.url.path == '/v4/read/sequence-snapshot' and tail == 'sequence-snapshot'
-                         or request.url.path == '/v5/read/featured-pools' and tail == 'featured-pools')
+                         or request.url.path == '/v5/read/featured-pools' and tail == 'featured-pools'
+                         or request.url.path == '/v6/read/' + tail and tail in V6_RESPONSE_MODELS)
                  else {'/health': 'health', '/v1/capabilities': 'capabilities'}.get(
                      request.url.path, 'unmatched'))
         hop_log.emit(service='read-api', requestId=request_id, route=route,
@@ -594,6 +605,31 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
                 raise DataError('upstream_unavailable')
             return featured.read()
         return run_read(operation, 'featured-pools', body.model_dump(), validator=validate_featured_response)
+
+    def stored_v6(route, body):
+        # The V2 index only: one read-only snapshot, no RPC, the same answer for
+        # the same wallet and index state.
+        request = body.model_dump()
+
+        def operation():
+            if v2_reader is None:
+                raise DataError('upstream_unavailable')
+            result = (v2_reader.portfolio(request['wallet']) if route == 'portfolio' else
+                      v2_reader.activity(request['wallet'], request['limit'], request['cursor']))
+            try:
+                validate_v6_request_response(route, request, result)
+            except (ValueError, TypeError):
+                raise DataError('upstream_contract_mismatch') from None
+            return result
+        return run_read(operation, route, request, validator=validate_v6_response)
+
+    @app.post('/v6/read/portfolio', responses={200: {'model': V6_RESPONSE_MODELS['portfolio']}, **error_responses})
+    def v2_portfolio(body: V6PortfolioRequest):
+        return stored_v6('portfolio', body)
+
+    @app.post('/v6/read/activity', responses={200: {'model': V6_RESPONSE_MODELS['activity']}, **error_responses})
+    def v2_activity(body: V6ActivityRequest):
+        return stored_v6('activity', body)
 
     @app.post('/v4/read/sequence-snapshot')
     def owner_sequence_snapshot(body: SequenceSnapshotRequest):

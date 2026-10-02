@@ -16,8 +16,8 @@ from eth_utils import to_checksum_address
 from discovery import Block, DataError
 from v2_chains import chain
 from v2_manifest import (BUILD, COMPONENTS, CONTRACT_NAMES, CREATE_X, CREATE_X_CODE_HASH, DEPLOY_ORDER,
-                         MAX_MANIFEST_BYTES, POLICIES, canonical, checked_deployment, checked_manifest,
-                         component_salt, create3_address, create_address, load_deployment, predict,
+                         MAX_MANIFEST_BYTES, POLICIES, PUBLIC_TEST_ACCOUNTS, canonical, checked_deployment,
+                         checked_manifest, component_salt, create3_address, create_address, load_deployment, predict,
                          profile_dependencies)
 from v2_rpc import CodeCache
 
@@ -100,10 +100,15 @@ class Pr302Tests(unittest.TestCase):
         for other in ('robinhood-4663', 'arbitrum-42161'):
             with self.subTest(other), self.assertRaisesRegex(DataError, '^v2_deployment_chain_mismatch$'):
                 checked_deployment(document, chain(other), admission='fork-rehearsal')
-        # Published from committed sources and verified at `finalized`, the same record is production's.
+        # Published from committed sources and verified at `finalized`, the same record is production's
+        # once its roles are the owner's: a rehearsal's are keys of the public test mnemonic.
         public = mutated(lambda d: (d.update(environment='public-chain-preparation'),
                                     d['verification'].update(blockTag='finalized')), document)
-        self.assertEqual(checked_deployment(public, BASE).registry, deployment.registry)
+        with self.assertRaisesRegex(DataError, '^v2_deployment_not_admitted$'):
+            checked_deployment(public, BASE)
+        owned = mutated(lambda d: d['roles'].update({name: role(name) for name in d['roles'] if name != 'deployer'}),
+                        public)
+        self.assertEqual(checked_deployment(owned, BASE).registry, deployment.registry)
 
     def test_the_local_fixture_is_a_local_test_on_its_own_chain_id(self):
         document = fixture('v2-deployment-local-fixture.json')
@@ -250,6 +255,17 @@ class ManifestTests(unittest.TestCase):
             'a check time that is no time': lambda d: d['verification'].update(checkedAt='yesterday'),
             'a numeric check time': lambda d: d['verification'].update(checkedAt=0),
             'a numeric block tag': lambda d: d['verification'].update(blockTag=5),
+            # The indexer's rules beyond #302's validator.
+            'a receipt in the genesis block': receipt(lambda r: r.update(blockNumber=0)),
+            'a zero transaction hash': receipt(lambda r: r.update(transactionHash='0x' + '00' * 32)),
+            'a zero block hash': receipt(lambda r: r.update(blockHash='0x' + '00' * 32)),
+            'two hashes for one block': lambda d: d['deploymentReceipts']['zap.v3'].update(
+                blockNumber=d['deploymentReceipts']['zap.v4']['blockNumber']),
+            'a verification before the receipts': lambda d: d['verification'].update(blockNumber=999),
+            "a verification that disagrees with its block's receipt": lambda d: d['verification'].update(
+                blockNumber=1010),
+            'a zero verification hash': lambda d: d['verification'].update(blockHash='0x' + '00' * 32),
+            'a check time without a zone': lambda d: d['verification'].update(checkedAt='2026-10-02T12:00:00'),
         }
         for label, change in cases.items():
             with self.subTest(label), self.assertRaisesRegex(DataError, '^v2_deployment_invalid$'):
@@ -289,6 +305,46 @@ class ManifestTests(unittest.TestCase):
                        lambda d: d['dependencies'].update(permit2='0x' + '99' * 20)):
             with self.assertRaisesRegex(DataError, '^v2_deployment_(chain|dependency)_mismatch$'):
                 checked_deployment(mutated(change, local), BASE, admission='local-test')
+
+    def test_receipts_may_share_a_block_and_its_hash_with_the_verification(self):
+        def shared(d):
+            receipts = d['deploymentReceipts']
+            for name in ('zap.v3', 'zap.v4'):
+                receipts[name].update(blockNumber=1011, blockHash=d['verification']['blockHash'])
+        self.assertEqual(checked_deployment(mutated(shared), BASE).start_block('zap.v4'), 1011)
+
+    def test_the_profile_s_createx_is_the_one_the_deployment_went_through(self):
+        elsewhere = BASE.model_copy(update={'deployer': BASE.deployer.model_copy(update={'address': '0x' + '42' * 20})})
+        other_code = BASE.model_copy(update={'deployer': BASE.deployer.model_copy(
+            update={'codehash': '0x' + '42' * 32})})
+        local = manifest_document(environment='local-test')
+        for profile, document, admission in ((elsewhere, manifest_document(), 'production'),
+                                             (elsewhere, local, 'local-test'),
+                                             (other_code, manifest_document(), 'production')):
+            with self.subTest(admission), self.assertRaisesRegex(DataError, '^v2_deployment_dependency_mismatch$'):
+                checked_deployment(document, profile, admission=admission)
+        # A local test runs synthetic code, CreateX's too.
+        self.assertEqual(checked_deployment(local, other_code, admission='local-test').chain, other_code)
+
+    def test_production_refuses_a_role_held_by_a_public_test_key(self):
+        from eth_account import Account
+        Account.enable_unaudited_hdwallet_features()
+        mnemonic = 'test test test test test test test test test test test junk'
+        self.assertEqual(PUBLIC_TEST_ACCOUNTS, {
+            Account.from_mnemonic(mnemonic, account_path=f"m/44'/60'/0'/0/{i}").address.lower() for i in range(10)})
+        keys = sorted(PUBLIC_TEST_ACCOUNTS)
+        for index, name in enumerate(('governance', 'guardian', 'feeRecipient', 'operator', 'publisher')):
+            document = mutated(lambda d: d['roles'].update({name: keys[index]}))
+            with self.subTest(name), self.assertRaisesRegex(DataError, '^v2_deployment_not_admitted$'):
+                checked_deployment(document, BASE)
+            for environment in ('fork-rehearsal', 'local-test'):
+                checked_deployment(mutated(lambda d: d.update(environment=environment), document), BASE,
+                                   admission=environment)
+        # The deployer too: its key places every address on every chain.
+        deployer = keys[0]
+        public = manifest_document(deployer=deployer)
+        with self.assertRaisesRegex(DataError, '^v2_deployment_not_admitted$'):
+            checked_deployment(public, BASE)
 
     def test_production_admits_only_a_finalized_public_deployment_of_committed_sources(self):
         self.assertEqual(checked_deployment(manifest_document(), BASE).chain, BASE)

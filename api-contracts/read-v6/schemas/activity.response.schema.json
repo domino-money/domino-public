@@ -1,0 +1,2516 @@
+{
+  "$defs": {
+    "Amount": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amount",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "amount"
+      ],
+      "title": "Amount",
+      "type": "object"
+    },
+    "AutoExit": {
+      "additionalProperties": false,
+      "properties": {
+        "anchorSqrtPriceX96": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Anchorsqrtpricex96",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "deferred": {
+          "items": {
+            "$ref": "#/$defs/Amount"
+          },
+          "maxItems": 2,
+          "title": "Deferred",
+          "type": "array"
+        },
+        "delivered": {
+          "items": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Delivered",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 52,
+          "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "auto_exit",
+          "title": "Kind",
+          "type": "string"
+        },
+        "legs": {
+          "items": {
+            "$ref": "#/$defs/Leg"
+          },
+          "maxItems": 8,
+          "title": "Legs",
+          "type": "array"
+        },
+        "mandateHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Mandatehash",
+          "type": "string"
+        },
+        "member": {
+          "enum": [
+            "root",
+            "successor"
+          ],
+          "title": "Member",
+          "type": "string"
+        },
+        "module": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Module",
+          "type": "string"
+        },
+        "recipient": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Recipient",
+          "type": "string"
+        },
+        "reservesReturned": {
+          "items": {
+            "$ref": "#/$defs/Amount"
+          },
+          "maxItems": 2,
+          "title": "Reservesreturned",
+          "type": "array"
+        },
+        "tariffs": {
+          "items": {
+            "$ref": "#/$defs/Tariff"
+          },
+          "maxItems": 2,
+          "title": "Tariffs",
+          "type": "array"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "tx": {
+          "$ref": "#/$defs/Tx"
+        },
+        "vault": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Vault",
+          "type": "string"
+        },
+        "withdrawn": {
+          "items": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Withdrawn",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "chainId",
+        "tx",
+        "kind",
+        "module",
+        "mandateHash",
+        "vault",
+        "tokenId",
+        "member",
+        "anchorSqrtPriceX96",
+        "recipient",
+        "withdrawn",
+        "delivered",
+        "deferred",
+        "reservesReturned",
+        "legs",
+        "tariffs"
+      ],
+      "title": "AutoExit",
+      "type": "object"
+    },
+    "AutoExitEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Amount"
+        },
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "event": {
+          "enum": [
+            "MandateRegistered",
+            "MandateRevoked",
+            "NonceCancelled",
+            "Claimed"
+          ],
+          "title": "Event",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 52,
+          "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "auto_exit_event",
+          "title": "Kind",
+          "type": "string"
+        },
+        "mandateHash": {
+          "anyOf": [
+            {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Mandatehash"
+        },
+        "module": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Module",
+          "type": "string"
+        },
+        "nonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Nonce"
+        },
+        "recipient": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Recipient"
+        },
+        "token": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Token"
+        },
+        "tokenId": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Tokenid"
+        },
+        "tx": {
+          "$ref": "#/$defs/Tx"
+        },
+        "validUntil": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Validuntil"
+        },
+        "vault": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Vault"
+        }
+      },
+      "required": [
+        "id",
+        "chainId",
+        "tx",
+        "kind",
+        "module",
+        "event",
+        "mandateHash",
+        "vault",
+        "tokenId",
+        "validUntil",
+        "nonce",
+        "token",
+        "recipient",
+        "amount"
+      ],
+      "title": "AutoExitEvent",
+      "type": "object"
+    },
+    "AutomationPaused": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Actor",
+          "type": "string"
+        },
+        "event": {
+          "const": "AutomationPaused",
+          "title": "Event",
+          "type": "string"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event",
+        "actor"
+      ],
+      "title": "AutomationPaused",
+      "type": "object"
+    },
+    "AutomationResumed": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "const": "AutomationResumed",
+          "title": "Event",
+          "type": "string"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event"
+      ],
+      "title": "AutomationResumed",
+      "type": "object"
+    },
+    "BlockRef": {
+      "additionalProperties": false,
+      "description": "A block, shaped as read-v1's snapshot: what a read or an event is true at.",
+      "properties": {
+        "hash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Hash",
+          "type": "string"
+        },
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Number",
+          "type": "integer"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "hash",
+        "timestamp"
+      ],
+      "title": "BlockRef",
+      "type": "object"
+    },
+    "ChainStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "automationHalted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Automationhalted"
+        },
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "deployment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Deployment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finalizedThrough": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlockRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Head"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "indexedThrough": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlockRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lagBlocks": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Lagblocks"
+        },
+        "lagSeconds": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Lagseconds"
+        },
+        "lastError": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IndexFailure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operatorsAdmitted": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Operatorsadmitted"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "deployment_not_registered",
+                "never_indexed",
+                "head_not_observed_recently",
+                "indexer_behind_head"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "status": {
+          "enum": [
+            "current",
+            "stale",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "waitingReasons": {
+          "$ref": "#/$defs/WaitingReport"
+        }
+      },
+      "required": [
+        "chainId",
+        "status",
+        "reason",
+        "deployment",
+        "indexedThrough",
+        "finalizedThrough",
+        "head",
+        "lagBlocks",
+        "lagSeconds",
+        "lastError",
+        "automationHalted",
+        "operatorsAdmitted",
+        "waitingReasons"
+      ],
+      "title": "ChainStatus",
+      "type": "object"
+    },
+    "ChildWithdrawn": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "const": "ChildWithdrawn",
+          "title": "Event",
+          "type": "string"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event",
+        "tokenId"
+      ],
+      "title": "ChildWithdrawn",
+      "type": "object"
+    },
+    "Compounded": {
+      "additionalProperties": false,
+      "properties": {
+        "fees0": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Fees0",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "fees1": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Fees1",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "liquidityAdded": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Liquidityadded",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "serviceFee0": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Servicefee0",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "serviceFee1": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Servicefee1",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        }
+      },
+      "required": [
+        "tokenId",
+        "liquidityAdded",
+        "fees0",
+        "fees1",
+        "serviceFee0",
+        "serviceFee1"
+      ],
+      "title": "Compounded",
+      "type": "object"
+    },
+    "Deployment": {
+      "additionalProperties": false,
+      "properties": {
+        "manifestSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Manifestsha256",
+          "type": "string"
+        },
+        "startBlock": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Startblock",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "manifestSha256",
+        "startBlock"
+      ],
+      "title": "Deployment",
+      "type": "object"
+    },
+    "ExitModuleSet": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "const": "ExitModuleSet",
+          "title": "Event",
+          "type": "string"
+        },
+        "module": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Module"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event",
+        "module"
+      ],
+      "title": "ExitModuleSet",
+      "type": "object"
+    },
+    "FeesCollected": {
+      "additionalProperties": false,
+      "properties": {
+        "amount0": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amount0",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "amount1": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amount1",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        }
+      },
+      "required": [
+        "tokenId",
+        "amount0",
+        "amount1"
+      ],
+      "title": "FeesCollected",
+      "type": "object"
+    },
+    "Gas": {
+      "additionalProperties": false,
+      "description": "The receipt's own fields, as the chain reports them: gas used times the\neffective price is the execution fee; on OP Stack the receipt's L1 data\nfee is separate. No total is claimed: a stack may charge what the receipt\ndoes not state (an operator fee).",
+      "properties": {
+        "effectiveGasPriceWei": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Effectivegaspricewei",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "gasUsed": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Gasused",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "l1FeeWei": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "L1Feewei"
+        },
+        "sender": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Sender",
+          "type": "string"
+        },
+        "status": {
+          "const": "success",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sender",
+        "status",
+        "gasUsed",
+        "effectiveGasPriceWei",
+        "l1FeeWei"
+      ],
+      "title": "Gas",
+      "type": "object"
+    },
+    "Head": {
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Number",
+          "type": "integer"
+        },
+        "observedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Observedat",
+          "type": "integer"
+        },
+        "timestamp": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Timestamp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "timestamp",
+        "observedAt"
+      ],
+      "title": "Head",
+      "type": "object"
+    },
+    "IndexFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "At",
+          "type": "integer"
+        },
+        "code": {
+          "pattern": "^[a-z0-9_]{1,80}$",
+          "title": "Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "at"
+      ],
+      "title": "IndexFailure",
+      "type": "object"
+    },
+    "IndexedToken": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Address",
+          "type": "string"
+        },
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "decimals": {
+          "anyOf": [
+            {
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decimals"
+        },
+        "price": {
+          "title": "Price",
+          "type": "null"
+        },
+        "priceReason": {
+          "const": "no_qualified_price_source",
+          "title": "Pricereason",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "available",
+            "partial",
+            "unavailable",
+            "not_read"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "symbol": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Symbol"
+        }
+      },
+      "required": [
+        "chainId",
+        "address",
+        "status",
+        "decimals",
+        "symbol",
+        "price",
+        "priceReason"
+      ],
+      "title": "IndexedToken",
+      "type": "object"
+    },
+    "Leg": {
+      "additionalProperties": false,
+      "properties": {
+        "amountIn": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amountin",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "amountOut": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amountout",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "kind": {
+          "enum": [
+            "universal_router",
+            "v3_pool",
+            "v4_pool"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "tokenIn": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Tokenin",
+          "type": "string"
+        },
+        "tokenOut": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Tokenout",
+          "type": "string"
+        },
+        "venue": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Venue",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "tokenIn",
+        "tokenOut",
+        "venue",
+        "amountIn",
+        "amountOut"
+      ],
+      "title": "Leg",
+      "type": "object"
+    },
+    "Limits": {
+      "additionalProperties": false,
+      "properties": {
+        "maxObservationAgeSeconds": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Maxobservationageseconds",
+          "type": "integer"
+        },
+        "maxPriceImpactBps": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Maxpriceimpactbps",
+          "type": "integer"
+        },
+        "maxSlippageBps": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Maxslippagebps",
+          "type": "integer"
+        },
+        "upsideBps": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Upsidebps",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "maxSlippageBps",
+        "maxPriceImpactBps",
+        "maxObservationAgeSeconds",
+        "upsideBps"
+      ],
+      "title": "Limits",
+      "type": "object"
+    },
+    "LimitsChanged": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "const": "LimitsChanged",
+          "title": "Event",
+          "type": "string"
+        },
+        "limits": {
+          "$ref": "#/$defs/Limits"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event",
+        "limits"
+      ],
+      "title": "LimitsChanged",
+      "type": "object"
+    },
+    "Policy": {
+      "additionalProperties": false,
+      "properties": {
+        "maxOverlapBps": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Maxoverlapbps",
+          "type": "integer"
+        },
+        "maxPositions": {
+          "maximum": 255,
+          "minimum": 0,
+          "title": "Maxpositions",
+          "type": "integer"
+        },
+        "minimumIntervalSeconds": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "title": "Minimumintervalseconds",
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "simple",
+            "domino"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "triggerDistanceBps": {
+          "maximum": 10000,
+          "minimum": 0,
+          "title": "Triggerdistancebps",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode",
+        "triggerDistanceBps",
+        "maxOverlapBps",
+        "minimumIntervalSeconds",
+        "maxPositions"
+      ],
+      "title": "Policy",
+      "type": "object"
+    },
+    "PolicyChanged": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "const": "PolicyChanged",
+          "title": "Event",
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/Policy"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event",
+        "policy"
+      ],
+      "title": "PolicyChanged",
+      "type": "object"
+    },
+    "PoolRef": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "dex": {
+          "enum": [
+            3,
+            4
+          ],
+          "title": "Dex",
+          "type": "integer"
+        },
+        "fee": {
+          "maximum": 8388608,
+          "minimum": 0,
+          "title": "Fee",
+          "type": "integer"
+        },
+        "hooks": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tickSpacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tickspacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dex",
+        "currency0",
+        "currency1",
+        "fee",
+        "tickSpacing",
+        "hooks"
+      ],
+      "title": "PoolRef",
+      "type": "object"
+    },
+    "PositionRecovered": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "const": "PositionRecovered",
+          "title": "Event",
+          "type": "string"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event",
+        "tokenId"
+      ],
+      "title": "PositionRecovered",
+      "type": "object"
+    },
+    "Refund": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amount",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "recipient": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Recipient",
+          "type": "string"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "amount",
+        "recipient"
+      ],
+      "title": "Refund",
+      "type": "object"
+    },
+    "ReservesWithdrawn": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amount",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "event": {
+          "const": "ReservesWithdrawn",
+          "title": "Event",
+          "type": "string"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event",
+        "token",
+        "amount"
+      ],
+      "title": "ReservesWithdrawn",
+      "type": "object"
+    },
+    "RootCheckpointed": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "const": "RootCheckpointed",
+          "title": "Event",
+          "type": "string"
+        },
+        "liquidity": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Liquidity",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event",
+        "liquidity"
+      ],
+      "title": "RootCheckpointed",
+      "type": "object"
+    },
+    "RootDisarmed": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "const": "RootDisarmed",
+          "title": "Event",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "unsubscribed_or_transferred",
+            "changed_outside_domino",
+            "burned",
+            "custody_lost",
+            "v3_checkpoint_mismatch",
+            "auto_exit",
+            "exit_all"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event",
+        "reason"
+      ],
+      "title": "RootDisarmed",
+      "type": "object"
+    },
+    "RootRearmed": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "const": "RootRearmed",
+          "title": "Event",
+          "type": "string"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event"
+      ],
+      "title": "RootRearmed",
+      "type": "object"
+    },
+    "S1Action": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "create",
+            "increase",
+            "change_range",
+            "exit"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "id": {
+          "maxLength": 52,
+          "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/$defs/Amount"
+          },
+          "maxItems": 16,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "intentHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Intenthash",
+          "type": "string"
+        },
+        "kind": {
+          "const": "s1_action",
+          "title": "Kind",
+          "type": "string"
+        },
+        "legs": {
+          "items": {
+            "$ref": "#/$defs/Leg"
+          },
+          "maxItems": 8,
+          "title": "Legs",
+          "type": "array"
+        },
+        "liquidity": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Liquidity",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "owner": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Owner",
+          "type": "string"
+        },
+        "previousTokenId": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Previoustokenid"
+        },
+        "recipient": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Recipient",
+          "type": "string"
+        },
+        "refunds": {
+          "items": {
+            "$ref": "#/$defs/Refund"
+          },
+          "maxItems": 16,
+          "title": "Refunds",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        },
+        "tariffs": {
+          "items": {
+            "$ref": "#/$defs/Tariff"
+          },
+          "maxItems": 1,
+          "title": "Tariffs",
+          "type": "array"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "tx": {
+          "$ref": "#/$defs/Tx"
+        },
+        "zap": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Zap",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "chainId",
+        "tx",
+        "kind",
+        "zap",
+        "intentHash",
+        "action",
+        "owner",
+        "recipient",
+        "tokenId",
+        "previousTokenId",
+        "liquidity",
+        "inputs",
+        "legs",
+        "steps",
+        "refunds",
+        "tariffs"
+      ],
+      "title": "S1Action",
+      "type": "object"
+    },
+    "Step": {
+      "additionalProperties": false,
+      "properties": {
+        "amount0": {
+          "maxLength": 78,
+          "pattern": "^(0|-?[1-9][0-9]{0,76})$",
+          "title": "Amount0",
+          "type": "string"
+        },
+        "amount1": {
+          "maxLength": 78,
+          "pattern": "^(0|-?[1-9][0-9]{0,76})$",
+          "title": "Amount1",
+          "type": "string"
+        },
+        "liquidityDelta": {
+          "maxLength": 78,
+          "pattern": "^(0|-?[1-9][0-9]{0,76})$",
+          "title": "Liquiditydelta",
+          "type": "string"
+        },
+        "pool": {
+          "$ref": "#/$defs/PoolRef"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        }
+      },
+      "required": [
+        "tokenId",
+        "pool",
+        "liquidityDelta",
+        "amount0",
+        "amount1"
+      ],
+      "title": "Step",
+      "type": "object"
+    },
+    "Successor": {
+      "additionalProperties": false,
+      "properties": {
+        "parentTokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Parenttokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Tokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        }
+      },
+      "required": [
+        "parentTokenId",
+        "tokenId"
+      ],
+      "title": "Successor",
+      "type": "object"
+    },
+    "Swap": {
+      "additionalProperties": false,
+      "properties": {
+        "amountIn": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amountin",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "amountOut": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amountout",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "source": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Source",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "zeroForOne": {
+          "title": "Zeroforone",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source",
+        "zeroForOne",
+        "amountIn",
+        "amountOut"
+      ],
+      "title": "Swap",
+      "type": "object"
+    },
+    "Tariff": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amount",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "deferred": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Deferred",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "kind": {
+          "enum": [
+            "assisted_swap",
+            "automation",
+            "auto_exit"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "rateBps": {
+          "anyOf": [
+            {
+              "enum": [
+                20,
+                65,
+                200,
+                400
+              ],
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ratebps"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "rateBps",
+        "token",
+        "amount",
+        "deferred"
+      ],
+      "title": "Tariff",
+      "type": "object"
+    },
+    "TokenRecovered": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amount",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "event": {
+          "const": "TokenRecovered",
+          "title": "Event",
+          "type": "string"
+        },
+        "stateNonce": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Statenonce"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stateNonce",
+        "event",
+        "token",
+        "amount"
+      ],
+      "title": "TokenRecovered",
+      "type": "object"
+    },
+    "Tx": {
+      "additionalProperties": false,
+      "properties": {
+        "finality": {
+          "enum": [
+            "finalized",
+            "unfinalized"
+          ],
+          "title": "Finality",
+          "type": "string"
+        },
+        "gas": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Gas"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Hash",
+          "type": "string"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/BlockRef"
+        }
+      },
+      "required": [
+        "hash",
+        "snapshot",
+        "gas",
+        "finality"
+      ],
+      "title": "Tx",
+      "type": "object"
+    },
+    "VaultCreated": {
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "dex": {
+          "enum": [
+            3,
+            4
+          ],
+          "title": "Dex",
+          "type": "integer"
+        },
+        "factory": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Factory",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 52,
+          "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "vault_created",
+          "title": "Kind",
+          "type": "string"
+        },
+        "limits": {
+          "$ref": "#/$defs/Limits"
+        },
+        "owner": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Owner",
+          "type": "string"
+        },
+        "ownerNonce": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Ownernonce",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "policy": {
+          "$ref": "#/$defs/Policy"
+        },
+        "rootTokenId": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Roottokenid",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "tx": {
+          "$ref": "#/$defs/Tx"
+        },
+        "vault": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Vault",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "chainId",
+        "tx",
+        "kind",
+        "vault",
+        "factory",
+        "dex",
+        "owner",
+        "rootTokenId",
+        "ownerNonce",
+        "policy",
+        "limits"
+      ],
+      "title": "VaultCreated",
+      "type": "object"
+    },
+    "VaultEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "events": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "AutomationPaused": "#/$defs/AutomationPaused",
+                "AutomationResumed": "#/$defs/AutomationResumed",
+                "ChildWithdrawn": "#/$defs/ChildWithdrawn",
+                "ExitModuleSet": "#/$defs/ExitModuleSet",
+                "LimitsChanged": "#/$defs/LimitsChanged",
+                "PolicyChanged": "#/$defs/PolicyChanged",
+                "PositionRecovered": "#/$defs/PositionRecovered",
+                "ReservesWithdrawn": "#/$defs/ReservesWithdrawn",
+                "RootCheckpointed": "#/$defs/RootCheckpointed",
+                "RootDisarmed": "#/$defs/RootDisarmed",
+                "RootRearmed": "#/$defs/RootRearmed",
+                "TokenRecovered": "#/$defs/TokenRecovered"
+              },
+              "propertyName": "event"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/PolicyChanged"
+              },
+              {
+                "$ref": "#/$defs/LimitsChanged"
+              },
+              {
+                "$ref": "#/$defs/AutomationPaused"
+              },
+              {
+                "$ref": "#/$defs/AutomationResumed"
+              },
+              {
+                "$ref": "#/$defs/RootDisarmed"
+              },
+              {
+                "$ref": "#/$defs/RootRearmed"
+              },
+              {
+                "$ref": "#/$defs/RootCheckpointed"
+              },
+              {
+                "$ref": "#/$defs/ReservesWithdrawn"
+              },
+              {
+                "$ref": "#/$defs/ChildWithdrawn"
+              },
+              {
+                "$ref": "#/$defs/TokenRecovered"
+              },
+              {
+                "$ref": "#/$defs/PositionRecovered"
+              },
+              {
+                "$ref": "#/$defs/ExitModuleSet"
+              }
+            ]
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Events",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 52,
+          "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "vault_event",
+          "title": "Kind",
+          "type": "string"
+        },
+        "tx": {
+          "$ref": "#/$defs/Tx"
+        },
+        "vault": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Vault",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "chainId",
+        "tx",
+        "kind",
+        "vault",
+        "events"
+      ],
+      "title": "VaultEvent",
+      "type": "object"
+    },
+    "VaultExecution": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "compound",
+            "mint"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "compounded": {
+          "$ref": "#/$defs/Compounded"
+        },
+        "feesCollected": {
+          "items": {
+            "$ref": "#/$defs/FeesCollected"
+          },
+          "maxItems": 16,
+          "title": "Feescollected",
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 52,
+          "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "vault_execution",
+          "title": "Kind",
+          "type": "string"
+        },
+        "legs": {
+          "items": {
+            "$ref": "#/$defs/Leg"
+          },
+          "maxItems": 8,
+          "title": "Legs",
+          "type": "array"
+        },
+        "planHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Planhash",
+          "type": "string"
+        },
+        "stateNonce": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Statenonce",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "successor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Successor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "swaps": {
+          "items": {
+            "$ref": "#/$defs/Swap"
+          },
+          "maxItems": 16,
+          "title": "Swaps",
+          "type": "array"
+        },
+        "tariffs": {
+          "items": {
+            "$ref": "#/$defs/Tariff"
+          },
+          "maxItems": 2,
+          "title": "Tariffs",
+          "type": "array"
+        },
+        "tx": {
+          "$ref": "#/$defs/Tx"
+        },
+        "vault": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Vault",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "chainId",
+        "tx",
+        "kind",
+        "vault",
+        "planHash",
+        "action",
+        "stateNonce",
+        "feesCollected",
+        "swaps",
+        "legs",
+        "compounded",
+        "successor",
+        "tariffs"
+      ],
+      "title": "VaultExecution",
+      "type": "object"
+    },
+    "WaitingReport": {
+      "additionalProperties": false,
+      "description": "The chain's automation's last pass, as its waiting file says: the head\nit decided at. `not_configured`: the chain's indexer reads no automation\nfile; `unavailable`: its last read found the file missing or malformed.",
+      "properties": {
+        "ageSeconds": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ageseconds"
+        },
+        "block": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Block"
+        },
+        "status": {
+          "enum": [
+            "reporting",
+            "stale",
+            "unavailable",
+            "not_configured"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Timestamp"
+        }
+      },
+      "required": [
+        "status",
+        "block",
+        "timestamp",
+        "ageSeconds"
+      ],
+      "title": "WaitingReport",
+      "type": "object"
+    },
+    "ZapEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "event": {
+          "const": "NoncesInvalidated",
+          "title": "Event",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 52,
+          "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "zap_event",
+          "title": "Kind",
+          "type": "string"
+        },
+        "mask": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Mask",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "owner": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Owner",
+          "type": "string"
+        },
+        "tx": {
+          "$ref": "#/$defs/Tx"
+        },
+        "word": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Word",
+          "type": "string",
+          "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+        },
+        "zap": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Zap",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "chainId",
+        "tx",
+        "kind",
+        "zap",
+        "event",
+        "owner",
+        "word",
+        "mask"
+      ],
+      "title": "ZapEvent",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/read-v6/activity.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "chains": {
+      "items": {
+        "$ref": "#/$defs/ChainStatus"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Chains",
+      "type": "array"
+    },
+    "contractVersion": {
+      "const": "1.0.0-rc.1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "coverage": {
+      "enum": [
+        "complete",
+        "partial"
+      ],
+      "title": "Coverage",
+      "type": "string"
+    },
+    "executionAvailable": {
+      "const": false,
+      "title": "Executionavailable",
+      "type": "boolean"
+    },
+    "items": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "auto_exit": "#/$defs/AutoExit",
+            "auto_exit_event": "#/$defs/AutoExitEvent",
+            "s1_action": "#/$defs/S1Action",
+            "vault_created": "#/$defs/VaultCreated",
+            "vault_event": "#/$defs/VaultEvent",
+            "vault_execution": "#/$defs/VaultExecution",
+            "zap_event": "#/$defs/ZapEvent"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/S1Action"
+          },
+          {
+            "$ref": "#/$defs/VaultExecution"
+          },
+          {
+            "$ref": "#/$defs/AutoExit"
+          },
+          {
+            "$ref": "#/$defs/VaultCreated"
+          },
+          {
+            "$ref": "#/$defs/VaultEvent"
+          },
+          {
+            "$ref": "#/$defs/AutoExitEvent"
+          },
+          {
+            "$ref": "#/$defs/ZapEvent"
+          }
+        ]
+      },
+      "maxItems": 50,
+      "title": "Items",
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "enum": [
+          "raw_amounts_no_usd_valuation",
+          "token_metadata_untrusted",
+          "positions_known_to_domino_only",
+          "state_as_of_last_read",
+          "no_execution_or_signing"
+        ],
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 5,
+      "title": "Limitations",
+      "type": "array"
+    },
+    "mode": {
+      "const": "stored_v2_activity",
+      "title": "Mode",
+      "type": "string"
+    },
+    "nextCursor": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "pattern": "^[0-9]{1,19}\\.[1-9][0-9]{0,18}\\.[0-9]{1,19}\\.[0-9]{1,10}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Nextcursor"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "servedAt": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Servedat",
+      "type": "integer"
+    },
+    "suggested": {
+      "const": false,
+      "title": "Suggested",
+      "type": "boolean"
+    },
+    "tokens": {
+      "items": {
+        "$ref": "#/$defs/IndexedToken"
+      },
+      "maxItems": 300,
+      "title": "Tokens",
+      "type": "array"
+    },
+    "wallet": {
+      "maxLength": 42,
+      "minLength": 42,
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Wallet",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "contractVersion",
+    "wallet",
+    "servedAt",
+    "coverage",
+    "chains",
+    "tokens",
+    "limitations",
+    "suggested",
+    "executionAvailable",
+    "mode",
+    "items",
+    "nextCursor"
+  ],
+  "title": "ActivityResponse",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

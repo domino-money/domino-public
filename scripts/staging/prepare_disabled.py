@@ -176,6 +176,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/046_gas_answer_heartbeat.sql',
     # The provider allowance at the provider's real limit; same vehicle as 042.
     'backend/migrations/047_provider_ceiling.sql',
+    # The V2 index (read-v6): applied with the V2 indexer's installation, never by this upgrade.
+    'backend/migrations/052_v2_index.sql',
 )
 MAPPINGS = (
     ('domino', 'domino-admin', ADMIN),

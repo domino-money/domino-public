@@ -24,17 +24,24 @@ is both in Python, rule for rule:
   dependency, two or more charge currencies, the build's fixed compiler profile
   and its source-tree hash;
 - a verified manifest has one distinct receipt per deployed component and an
-  anchored verification record; a prepared one has neither.
+  anchored verification record; a prepared one has neither. Beyond #302's
+  validator (the indexer's rules, item 3b): a receipt is in a block after the
+  genesis, transaction and block hashes are never zero, receipts in one block
+  agree on its hash, the verification is at or after every receipt (and agrees
+  with one in its block), and its time carries a zone.
 
 `checked_deployment` binds the manifest to the chain profile the service
-serves (the chain id and the dependencies at the profile's addresses; outside
-local tests also the chain's name and native symbol, the dependencies' verified
-code hashes and the charge currencies, exactly as deploy.mjs derives them) and
+serves (the chain id, the profile's CreateX, and the dependencies at the
+profile's addresses; outside local tests also CreateX's verified code hash, the
+chain's name and native symbol, the dependencies' verified code hashes and the
+charge currencies, exactly as deploy.mjs derives them) and
 applies the backend's admission (DEPLOYMENT.md: "Backend production admission
 must additionally reject local-test and fork-rehearsal, unqualified source
 candidates, provisional verification and stale/changed on-chain state"):
 `production` admits only a verified public-chain manifest built from committed
-sources (`workingTreeSourceChanges` false) and verified at the `finalized` tag.
+sources (`workingTreeSourceChanges` false), verified at the `finalized` tag,
+whose roles are no key of the public test mnemonic (PUBLIC_TEST_ACCOUNTS,
+PR #302's review, item 2).
 `fork-rehearsal` and `local-test` exist for rehearsals and tests and are never
 reachable from the service's configuration. The on-chain half is
 `Deployment.verify_code`, run before a pass acts: the recorded runtime code
@@ -90,6 +97,14 @@ TOP_LEVEL = ('schemaVersion', 'kind', 'status', 'environment', 'chain', 'sourceC
              'build', 'deploymentReceipts', 'verification')
 RECEIPT_KEYS = ('transactionHash', 'blockNumber', 'blockHash', 'gasUsed', 'effectiveGasPrice')
 VERIFICATION_KEYS = ('blockNumber', 'blockHash', 'blockTag', 'codeHashes', 'wiring', 'checkedAt')
+# The first ten accounts of the public test mnemonic ("test test ... junk"),
+# whose keys every Anvil and Hardhat user holds: never a production role.
+PUBLIC_TEST_ACCOUNTS = frozenset({
+    '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266', '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+    '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc', '0x90f79bf6eb2c4f870365e785982e1f101e93b906',
+    '0x15d34aaf54267db7d7c367839aaf71a00a2c6a65', '0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc',
+    '0x976ea74026e726554db657fa54763abd0c3a0aa9', '0x14dc79964da2c08b23698b3d3cc7ca32193d9955',
+    '0x23618e81e3f5cdf7f54c3d65f7fbc0abf5b21e8f', '0xa0ee7a142d267c1f36714e4a8f75612f20a79720'})
 _ADDRESS = re.compile(r'0x[0-9a-f]{40}')
 _HASH = re.compile(r'0x[0-9a-f]{64}')
 _HEX64 = re.compile(r'[0-9a-f]{64}')
@@ -183,11 +198,13 @@ def _roles(roles):
 
 
 def _checked_at(value):
+    """An ISO 8601 time with its zone (deploy.mjs writes toISOString's `Z`)."""
     _ensure(type(value) is str)
     try:
-        datetime.fromisoformat(value)
+        moment = datetime.fromisoformat(value)
     except ValueError:
         raise DataError('v2_deployment_invalid') from None
+    _ensure(moment.tzinfo is not None)
 
 
 def checked_manifest(m):
@@ -243,18 +260,26 @@ def checked_manifest(m):
         _ensure(verification is None and not receipts)
         return m
     _keys(receipts, DEPLOY_ORDER)
+    blocks = {}
     for receipt in receipts.values():
         _keys(receipt, RECEIPT_KEYS)
         _ensure(_hash(receipt['transactionHash']) and _hash(receipt['blockHash']) and _integer(receipt['blockNumber'])
                 and type(receipt['gasUsed']) is str and _DECIMAL.fullmatch(receipt['gasUsed']) is not None
                 and type(receipt['effectiveGasPrice']) is str
                 and _DECIMAL.fullmatch(receipt['effectiveGasPrice']) is not None)
+        # No transaction is in the genesis block, no hash is zero, and a block has one hash.
+        _ensure(receipt['blockNumber'] >= 1 and int(receipt['transactionHash'], 16) != 0
+                and int(receipt['blockHash'], 16) != 0
+                and blocks.setdefault(receipt['blockNumber'], receipt['blockHash']) == receipt['blockHash'])
     _ensure(len({receipt['transactionHash'] for receipt in receipts.values()}) == len(DEPLOY_ORDER))
     _keys(verification, VERIFICATION_KEYS)
     _ensure(_integer(verification['blockNumber']) and _hash(verification['blockHash'])
             and type(verification['blockTag']) is str
             and verification['codeHashes'] == 'exact_precomputed_immutable_runtime'
             and verification['wiring'] == 'checked')
+    # Verified after the deployment, at a block whose hash the receipts agree with.
+    _ensure(verification['blockNumber'] >= max(blocks) and int(verification['blockHash'], 16) != 0
+            and blocks.get(verification['blockNumber'], verification['blockHash']) == verification['blockHash'])
     _checked_at(verification['checkedAt'])
     return m
 
@@ -352,7 +377,9 @@ def checked_deployment(document, chain, *, admission='production'):
             not local and (m['chain']['name'] != chain.name or m['chain']['nativeCurrency'] != chain.nativeSymbol)):
         raise DataError('v2_deployment_chain_mismatch')
     dependencies = profile_dependencies(chain)
-    if m['dependencies'] != dependencies:
+    # The deployment went through the profile's CreateX, and outside a local test its verified code.
+    if (m['dependencies'] != dependencies or chain.deployer.address != CREATE_X
+            or (not local and chain.deployer.codehash != CREATE_X_CODE_HASH)):
         raise DataError('v2_deployment_dependency_mismatch')
     if not local:
         listed = [{'token': currency.address, 'rank': currency.rank} for currency in chain.chargeCurrencies]
@@ -362,7 +389,8 @@ def checked_deployment(document, chain, *, admission='production'):
     if m['status'] != 'verified':
         raise DataError('v2_deployment_not_executed')
     if {'production': m['environment'] != 'public-chain-preparation' or m['build']['workingTreeSourceChanges']
-                      or m['verification']['blockTag'] != 'finalized',
+                      or m['verification']['blockTag'] != 'finalized'
+                      or not PUBLIC_TEST_ACCOUNTS.isdisjoint(m['roles'].values()),
             'fork-rehearsal': m['environment'] != 'fork-rehearsal',
             'local-test': not local}[admission]:
         raise DataError('v2_deployment_not_admitted')

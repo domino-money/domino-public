@@ -1,0 +1,89 @@
+{
+  "chains": [
+    {
+      "automationHalted": null,
+      "chainId": 4663,
+      "deployment": null,
+      "finalizedThrough": null,
+      "head": null,
+      "indexedThrough": null,
+      "lagBlocks": null,
+      "lagSeconds": null,
+      "lastError": null,
+      "operatorsAdmitted": null,
+      "reason": "deployment_not_registered",
+      "status": "unavailable",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "not_configured",
+        "timestamp": null
+      }
+    },
+    {
+      "automationHalted": null,
+      "chainId": 8453,
+      "deployment": null,
+      "finalizedThrough": null,
+      "head": null,
+      "indexedThrough": null,
+      "lagBlocks": null,
+      "lagSeconds": null,
+      "lastError": null,
+      "operatorsAdmitted": null,
+      "reason": "deployment_not_registered",
+      "status": "unavailable",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "not_configured",
+        "timestamp": null
+      }
+    },
+    {
+      "automationHalted": null,
+      "chainId": 42161,
+      "deployment": null,
+      "finalizedThrough": null,
+      "head": null,
+      "indexedThrough": null,
+      "lagBlocks": null,
+      "lagSeconds": null,
+      "lastError": null,
+      "operatorsAdmitted": null,
+      "reason": "deployment_not_registered",
+      "status": "unavailable",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "not_configured",
+        "timestamp": null
+      }
+    }
+  ],
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "partial",
+  "credits": [],
+  "executionAvailable": false,
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "positions_known_to_domino_only",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mandates": [],
+  "mode": "stored_v2_portfolio",
+  "positions": [],
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "suggested": false,
+  "tokens": [],
+  "truncated": {
+    "mandates": false,
+    "positions": false,
+    "vaults": false
+  },
+  "vaults": [],
+  "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+}

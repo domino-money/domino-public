@@ -43,6 +43,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/045_featured_live.sql',
     'backend/migrations/046_gas_answer_heartbeat.sql',
     'backend/migrations/047_provider_ceiling.sql',
+    # The V2 index (read-v6): applied with the V2 indexer's installation, never by this upgrade.
+    'backend/migrations/052_v2_index.sql',
 )
 
 

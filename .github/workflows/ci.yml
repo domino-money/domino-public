@@ -118,6 +118,8 @@ jobs:
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/performance-v1/types.ts api-contracts/performance-v1/runtime.d.mts api-contracts/performance-v1/consumer.typecheck.mts
       - name: Check cross-chain deposit types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/crosschain-v1/types.ts api-contracts/crosschain-v1/runtime.d.mts
+      - name: Check V2 wallet read types
+        run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v6/types.ts api-contracts/read-v6/runtime.d.mts
       - run: npm --prefix app ci --no-audit --no-fund
       # check:app up to its build, one step each; its browser suites follow in
       # frontend_browser (scripts/check-app-jobs.test.mjs holds the two lists
@@ -178,8 +180,9 @@ jobs:
     # compilation. Last 60 runs: 13-19 minutes warm (backend tests 11.5-16).
     # Cold, the three builds add about 8: 25 minutes on run 36927967030 (#284).
     # The cache below now survives .sol changes, so a cold build only follows
-    # a compiler change or a missing cache.
-    timeout-minutes: 30
+    # a compiler change or a missing cache. The V2 closure (a fourth build,
+    # 83 s cold on a Mac) leaves too little margin under 30 when cold.
+    timeout-minutes: 40
     env:
       DOMINO_TEST_POSTGRES: '1'
       DOMINO_TEST_EVM: '1'
@@ -198,8 +201,11 @@ jobs:
           # builds three closures and finishes first, saved its subset and the
           # Contracts job could not save its full set (run 36934135396, #285).
           # The last fallback is that shared cache.
-          key: forge-backend-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
+          # forge-backend-v2: the V2 closure joined the set this job builds; an
+          # exact hit on the old key would never save it (an exact hit saves nothing).
+          key: forge-backend-v2-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-${{ hashFiles('contracts/**/*.sol') }}
           restore-keys: |
+            forge-backend-v2-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
             forge-backend-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
             forge-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'package-lock.json', 'scripts/solc-wrapper.py', 'scripts/solc-compile.cjs') }}-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -239,11 +245,12 @@ jobs:
         run: node scripts/build-public-release.mjs
       - name: Independently reproduce the reviewed release artifact manifest
         run: node scripts/release-artifact-manifest.mjs --check
-      # The V2 automation's EVM tests (backend/tests/test_v2_automation_evm.py)
-      # deploy every V2 component from contracts/out. Cold, these 10 contracts
-      # (53 sources) compiled in 83 s on a Mac on 2 Oct 2026; a warm cache
-      # rebuilds nothing.
-      - name: Build the V2 contracts the automation EVM tests deploy
+      # The V2 EVM tests (backend/tests/test_v2_automation_evm.py and
+      # test_v2_indexer_evm.py) deploy every V2 component from contracts/out.
+      # Cold, these 10 contracts (53 sources) compiled in 83 s on a Mac on
+      # 2 Oct 2026; a warm cache rebuilds nothing. Uniswap's runtimes come from
+      # the fixture source, OfficialV4SwapDriver and SetupToken from the builds above.
+      - name: Build the V2 contracts the backend EVM tests deploy
         working-directory: contracts
         run: >-
           node ../scripts/test-contracts.mjs build
@@ -263,6 +270,7 @@ jobs:
       - run: python scripts/export-performance-v2-contract.py --check
       - run: python scripts/export-execution-contract.py --check
       - run: python scripts/export-crosschain-contract.py --check
+      - run: python scripts/export-read-v6-contract.py --check
       - run: npm run check:read-bridge
       - name: Check PostgreSQL tools
         run: test -x "$DOMINO_PG_BIN/initdb"

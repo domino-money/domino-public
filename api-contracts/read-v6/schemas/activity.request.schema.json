@@ -1,0 +1,41 @@
+{
+  "$id": "https://domino.invalid/contracts/read-v6/activity.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cursor": {
+      "anyOf": [
+        {
+          "maxLength": 64,
+          "pattern": "^[0-9]{1,19}\\.[1-9][0-9]{0,18}\\.[0-9]{1,19}\\.[0-9]{1,10}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cursor"
+    },
+    "limit": {
+      "default": 20,
+      "maximum": 50,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "wallet": {
+      "maxLength": 42,
+      "minLength": 42,
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Wallet",
+      "type": "string"
+    }
+  },
+  "required": [
+    "wallet"
+  ],
+  "title": "ActivityPageRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

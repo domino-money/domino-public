@@ -83,6 +83,12 @@
  * 21 October 2026: swap-preview's routerVersion const is "2.1.2" (a coordinated
  * change to a candidate never enabled), and read-v1 and read-v2 hash
  * backend/discovery.py, which holds the header. Their wire is unchanged.
+ * The read-v1 and read-v2 digests, and the OpenAPI below, moved with the
+ * Domino V2 wallet reads: a separate read-v6 (`POST /v6/read/portfolio` and
+ * `/v6/read/activity`, api-contracts/read-v6) was added to the reader, the
+ * gateway and the bridge client those manifests hash, off in the gateway. No
+ * read-v1 or read-v2 route, schema or version changed, and no OpenAPI
+ * component of theirs did.
  * onboarding-v1 is 1.1.0 with swap-route, an additive route: Setup's assisted
  * swap routed through Uniswap when that returns more than 0.5% above the pool,
  * with unsigned transactions for the wallet. The two previews are unchanged
@@ -95,7 +101,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '745a443e8af6f3319c79ecc24b308273805a401318f94537b4a08c48e5634869',
+      manifestSha256: '9f880062de132b25977c99d8ccb22041ebc1a1ab9bb1a85c4aadf203f54ec113',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -115,7 +121,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: '5aa926e56ec51a5852d7b98d74e4f371702010723c6232ef6df3529e761c915e',
+  manifestSha256: 'd8f33ae054a9ab27774dbf6c216d09a6c97c530847b4ddd3590f50dfb37243b3',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */
@@ -156,7 +162,7 @@ export const READ_V5_PIN = {
 export const BACKEND_OPENAPI_PIN = {
   path: 'backend/openapi-read.json',
   infoVersion: '0.8.0',
-  sha256: '17b70f5440aeb278d134d21bc40d4af46bbac450b98e866ff52168f4cc9c763a',
+  sha256: 'f1b293ad0d776c8f675f35adefa7649ebc7bea932ea8f5c79e6a64dc10a22e21',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

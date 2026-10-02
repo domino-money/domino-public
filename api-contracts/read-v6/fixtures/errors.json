@@ -1,0 +1,38 @@
+{
+  "catalogue_database_unavailable": {
+    "body": {
+      "error": "catalogue_database_unavailable"
+    },
+    "status": 503
+  },
+  "invalid_request": {
+    "body": {
+      "error": "invalid_request"
+    },
+    "status": 422
+  },
+  "read_capacity_busy": {
+    "body": {
+      "error": "read_capacity_busy"
+    },
+    "status": 429
+  },
+  "read_deadline_exceeded": {
+    "body": {
+      "error": "read_deadline_exceeded"
+    },
+    "status": 504
+  },
+  "upstream_contract_mismatch": {
+    "body": {
+      "error": "upstream_contract_mismatch"
+    },
+    "status": 502
+  },
+  "upstream_unavailable": {
+    "body": {
+      "error": "upstream_unavailable"
+    },
+    "status": 503
+  }
+}

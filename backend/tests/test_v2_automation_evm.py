@@ -390,6 +390,9 @@ class AutomationEvmTests(unittest.TestCase):
         waiting = snapshot['mandates'][mandate_hash]
         self.assertEqual(waiting['lastRevert'], {'code': 'reverted_automation_unavailable',
                                                  'at': int(head['timestamp'], 16), 'block': int(head['number'], 16)})
+        # The first pass that gave the reason: this one.
+        self.assertEqual((waiting['since'], waiting['sinceBlock']),
+                         (int(head['timestamp'], 16), int(head['number'], 16)))
         self.assertIn(vault, snapshot['vaults'])
         self.assertEqual(oct(os.stat(waiting_file).st_mode & 0o777), '0o644')
         # Keep this mandate from firing in later tests.

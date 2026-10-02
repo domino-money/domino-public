@@ -288,11 +288,13 @@ class Journal:
         'CREATE TABLE IF NOT EXISTS attempts (intent_id TEXT NOT NULL REFERENCES intents(id), ordinal INTEGER NOT NULL,'
         ' tx_hash TEXT NOT NULL UNIQUE, raw BLOB NOT NULL, envelope TEXT NOT NULL, sent_at REAL,'
         ' PRIMARY KEY (intent_id, ordinal))',
-        # Why each vault and mandate waits: the last decision, and the last
-        # presimulation that reverted (owner decision, 2 Oct: "Waiting: …").
+        # Why each vault and mandate waits: the last decision, since when it has
+        # held (the first pass that gave it), and the last presimulation that
+        # reverted (owner decision, 2 Oct: "Waiting: …").
         "CREATE TABLE IF NOT EXISTS waiting (chain_id INTEGER NOT NULL, kind TEXT NOT NULL CHECK (kind IN"
         " ('vault', 'mandate')), subject TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL,"
         ' block INTEGER NOT NULL, revert TEXT, revert_at INTEGER, revert_block INTEGER,'
+        ' since INTEGER NOT NULL, since_block INTEGER NOT NULL,'
         ' PRIMARY KEY (chain_id, kind, subject))',
     )
 
@@ -311,6 +313,14 @@ class Journal:
         self._db.execute('PRAGMA foreign_keys=ON')
         for statement in self.SCHEMA:
             self._db.execute(statement)
+        # A journal written before `since` was recorded: each row's reason has
+        # held since its last pass, at least.
+        columns = {row[1] for row in self._db.execute('PRAGMA table_info(waiting)').fetchall()}
+        if 'since' not in columns:
+            with self._tx():
+                self._db.execute('ALTER TABLE waiting ADD COLUMN since INTEGER NOT NULL DEFAULT 0')
+                self._db.execute('ALTER TABLE waiting ADD COLUMN since_block INTEGER NOT NULL DEFAULT 0')
+                self._db.execute('UPDATE waiting SET since=at, since_block=block')
         os.chmod(path, 0o600)
 
     def close(self):
@@ -418,7 +428,11 @@ class Journal:
 
     def record_waiting(self, entries, *, at, block):
         """One pass's decisions: (kind, subject, reason, simulation) with
-        simulation 'passed', 'reverted' or None (no presimulation ran). A revert
+        simulation 'passed', 'reverted' or None (no presimulation ran). `since`
+        and `since_block` are the time and block of the first pass that gave the
+        subject's current reason: kept while the reason is unchanged, reset to
+        this pass when it changes or clears (a pass whose head is earlier than
+        the recorded start, after a reorganization, restarts it too). A revert
         stays recorded, with its time and block, until a later presimulation of
         the same subject passes."""
         rows = []
@@ -431,10 +445,16 @@ class Journal:
                          else 'unrecognized_reason', simulation))
         with self._tx():
             for kind, subject, reason, simulation in rows:
-                self._db.execute('INSERT INTO waiting (chain_id, kind, subject, reason, at, block) VALUES (?,?,?,?,?,?)'
-                                 ' ON CONFLICT (chain_id, kind, subject) DO UPDATE SET reason=excluded.reason,'
-                                 ' at=excluded.at, block=excluded.block',
-                                 (self.chain_id, kind, subject, reason, at, block))
+                # SQLite evaluates every SET expression against the row as it was.
+                self._db.execute('INSERT INTO waiting (chain_id, kind, subject, reason, at, block, since, since_block)'
+                                 ' VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (chain_id, kind, subject) DO UPDATE SET'
+                                 ' since=CASE WHEN waiting.reason=excluded.reason AND waiting.since<=excluded.at'
+                                 ' AND waiting.since_block<=excluded.block THEN waiting.since ELSE excluded.at END,'
+                                 ' since_block=CASE WHEN waiting.reason=excluded.reason AND waiting.since<=excluded.at'
+                                 ' AND waiting.since_block<=excluded.block THEN waiting.since_block'
+                                 ' ELSE excluded.block END,'
+                                 ' reason=excluded.reason, at=excluded.at, block=excluded.block',
+                                 (self.chain_id, kind, subject, reason, at, block, at, block))
                 if simulation == 'reverted':
                     self._db.execute('UPDATE waiting SET revert=?, revert_at=?, revert_block=? WHERE chain_id=? AND'
                                      ' kind=? AND subject=?', (reason, at, block, self.chain_id, kind, subject))
@@ -444,12 +464,12 @@ class Journal:
 
     def waiting(self):
         """Every recorded subject, as the read API's waiting snapshot lists it."""
-        cursor = self._db.execute('SELECT kind, subject, reason, at, block, revert, revert_at, revert_block FROM waiting'
-                                  ' WHERE chain_id=? ORDER BY kind, subject', (self.chain_id,))
+        cursor = self._db.execute('SELECT kind, subject, reason, at, block, since, since_block, revert, revert_at,'
+                                  ' revert_block FROM waiting WHERE chain_id=? ORDER BY kind, subject', (self.chain_id,))
         result = {'vaults': {}, 'mandates': {}}
-        for kind, subject, reason, at, block, revert, revert_at, revert_block in cursor.fetchall():
+        for kind, subject, reason, at, block, since, since_block, revert, revert_at, revert_block in cursor.fetchall():
             result['vaults' if kind == 'vault' else 'mandates'][subject] = {
-                'reason': reason, 'at': at, 'block': block,
+                'reason': reason, 'since': since, 'sinceBlock': since_block, 'at': at, 'block': block,
                 'lastRevert': None if revert is None else {'code': revert, 'at': revert_at, 'block': revert_block}}
         return result
 

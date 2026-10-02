@@ -316,8 +316,10 @@ class ChainAutomation:
         return report
 
     def _record_waiting(self, report, block):
-        """Each vault's and mandate's reason and last presimulation revert, durable
-        in the journal and, when configured, in the read API's snapshot file."""
+        """Each vault's and mandate's reason, since when it has held (`since` and
+        `sinceBlock`: the journal keeps the first pass that gave the current
+        reason, Journal.record_waiting) and last presimulation revert, durable in
+        the journal and, when configured, in the read API's snapshot file."""
         journal = self.executor.journal
         entries = [('vault', e['vault'], e['reason'], e.get('simulation')) for e in report['vaults']]
         entries += [('mandate', e['mandate'], e['reason'], e.get('simulation')) for e in report['exits']]

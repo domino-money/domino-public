@@ -273,6 +273,43 @@
         "title": "ActivityLiquidity",
         "type": "object"
       },
+      "ActivityPageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[0-9]{1,19}\\.[1-9][0-9]{0,18}\\.[0-9]{1,19}\\.[0-9]{1,10}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "wallet": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Wallet",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wallet"
+        ],
+        "title": "ActivityPageRequest",
+        "type": "object"
+      },
       "ActivityRequest": {
         "additionalProperties": false,
         "properties": {
@@ -286,6 +323,162 @@
           "poolId"
         ],
         "title": "ActivityRequest",
+        "type": "object"
+      },
+      "ActivityResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "chains": {
+            "items": {
+              "$ref": "#/components/schemas/ChainStatus"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Chains",
+            "type": "array"
+          },
+          "contractVersion": {
+            "const": "1.0.0-rc.1",
+            "title": "Contractversion",
+            "type": "string"
+          },
+          "coverage": {
+            "enum": [
+              "complete",
+              "partial"
+            ],
+            "title": "Coverage",
+            "type": "string"
+          },
+          "executionAvailable": {
+            "const": false,
+            "title": "Executionavailable",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "auto_exit": "#/components/schemas/AutoExit",
+                  "auto_exit_event": "#/components/schemas/AutoExitEvent",
+                  "s1_action": "#/components/schemas/S1Action",
+                  "vault_created": "#/components/schemas/VaultCreated",
+                  "vault_event": "#/components/schemas/VaultEvent",
+                  "vault_execution": "#/components/schemas/VaultExecution",
+                  "zap_event": "#/components/schemas/ZapEvent"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/S1Action"
+                },
+                {
+                  "$ref": "#/components/schemas/VaultExecution"
+                },
+                {
+                  "$ref": "#/components/schemas/AutoExit"
+                },
+                {
+                  "$ref": "#/components/schemas/VaultCreated"
+                },
+                {
+                  "$ref": "#/components/schemas/VaultEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/AutoExitEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/ZapEvent"
+                }
+              ]
+            },
+            "maxItems": 50,
+            "title": "Items",
+            "type": "array"
+          },
+          "limitations": {
+            "items": {
+              "enum": [
+                "raw_amounts_no_usd_valuation",
+                "token_metadata_untrusted",
+                "positions_known_to_domino_only",
+                "state_as_of_last_read",
+                "no_execution_or_signing"
+              ],
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 5,
+            "title": "Limitations",
+            "type": "array"
+          },
+          "mode": {
+            "const": "stored_v2_activity",
+            "title": "Mode",
+            "type": "string"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[0-9]{1,19}\\.[1-9][0-9]{0,18}\\.[0-9]{1,19}\\.[0-9]{1,10}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "servedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Servedat",
+            "type": "integer"
+          },
+          "suggested": {
+            "const": false,
+            "title": "Suggested",
+            "type": "boolean"
+          },
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/IndexedToken"
+            },
+            "maxItems": 300,
+            "title": "Tokens",
+            "type": "array"
+          },
+          "wallet": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Wallet",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "wallet",
+          "servedAt",
+          "coverage",
+          "chains",
+          "tokens",
+          "limitations",
+          "suggested",
+          "executionAvailable",
+          "mode",
+          "items",
+          "nextCursor"
+        ],
+        "title": "ActivityResponse",
         "type": "object"
       },
       "ActivityWindow": {
@@ -463,6 +656,31 @@
           "usableAsCurrent24h"
         ],
         "title": "ActivityWindow",
+        "type": "object"
+      },
+      "Amount": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amount",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "token": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "amount"
+        ],
+        "title": "Amount",
         "type": "object"
       },
       "AprInputs": {
@@ -745,6 +963,403 @@
         "title": "AssetsRequest",
         "type": "object"
       },
+      "AutoExit": {
+        "additionalProperties": false,
+        "properties": {
+          "anchorSqrtPriceX96": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Anchorsqrtpricex96",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "deferred": {
+            "items": {
+              "$ref": "#/components/schemas/Amount"
+            },
+            "maxItems": 2,
+            "title": "Deferred",
+            "type": "array"
+          },
+          "delivered": {
+            "items": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Delivered",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 52,
+            "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "auto_exit",
+            "title": "Kind",
+            "type": "string"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/Leg"
+            },
+            "maxItems": 8,
+            "title": "Legs",
+            "type": "array"
+          },
+          "mandateHash": {
+            "maxLength": 66,
+            "minLength": 66,
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Mandatehash",
+            "type": "string"
+          },
+          "member": {
+            "enum": [
+              "root",
+              "successor"
+            ],
+            "title": "Member",
+            "type": "string"
+          },
+          "module": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Module",
+            "type": "string"
+          },
+          "recipient": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Recipient",
+            "type": "string"
+          },
+          "reservesReturned": {
+            "items": {
+              "$ref": "#/components/schemas/Amount"
+            },
+            "maxItems": 2,
+            "title": "Reservesreturned",
+            "type": "array"
+          },
+          "tariffs": {
+            "items": {
+              "$ref": "#/components/schemas/Tariff"
+            },
+            "maxItems": 2,
+            "title": "Tariffs",
+            "type": "array"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "tx": {
+            "$ref": "#/components/schemas/Tx"
+          },
+          "vault": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Vault",
+            "type": "string"
+          },
+          "withdrawn": {
+            "items": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Withdrawn",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "tx",
+          "kind",
+          "module",
+          "mandateHash",
+          "vault",
+          "tokenId",
+          "member",
+          "anchorSqrtPriceX96",
+          "recipient",
+          "withdrawn",
+          "delivered",
+          "deferred",
+          "reservesReturned",
+          "legs",
+          "tariffs"
+        ],
+        "title": "AutoExit",
+        "type": "object"
+      },
+      "AutoExitEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "event": {
+            "enum": [
+              "MandateRegistered",
+              "MandateRevoked",
+              "NonceCancelled",
+              "Claimed"
+            ],
+            "title": "Event",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 52,
+            "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "auto_exit_event",
+            "title": "Kind",
+            "type": "string"
+          },
+          "mandateHash": {
+            "anyOf": [
+              {
+                "maxLength": 66,
+                "minLength": 66,
+                "pattern": "^0x[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mandatehash"
+          },
+          "module": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Module",
+            "type": "string"
+          },
+          "nonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nonce"
+          },
+          "recipient": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          },
+          "tokenId": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokenid"
+          },
+          "tx": {
+            "$ref": "#/components/schemas/Tx"
+          },
+          "validUntil": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validuntil"
+          },
+          "vault": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vault"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "tx",
+          "kind",
+          "module",
+          "event",
+          "mandateHash",
+          "vault",
+          "tokenId",
+          "validUntil",
+          "nonce",
+          "token",
+          "recipient",
+          "amount"
+        ],
+        "title": "AutoExitEvent",
+        "type": "object"
+      },
+      "AutomationPaused": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Actor",
+            "type": "string"
+          },
+          "event": {
+            "const": "AutomationPaused",
+            "title": "Event",
+            "type": "string"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event",
+          "actor"
+        ],
+        "title": "AutomationPaused",
+        "type": "object"
+      },
+      "AutomationResumed": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "AutomationResumed",
+            "title": "Event",
+            "type": "string"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event"
+        ],
+        "title": "AutomationResumed",
+        "type": "object"
+      },
       "Block": {
         "additionalProperties": false,
         "properties": {
@@ -765,6 +1380,38 @@
           "hash"
         ],
         "title": "Block",
+        "type": "object"
+      },
+      "BlockRef": {
+        "additionalProperties": false,
+        "description": "A block, shaped as read-v1's snapshot: what a read or an event is true at.",
+        "properties": {
+          "hash": {
+            "maxLength": 66,
+            "minLength": 66,
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Hash",
+            "type": "string"
+          },
+          "number": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Number",
+            "type": "integer"
+          },
+          "timestamp": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Timestamp",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "number",
+          "hash",
+          "timestamp"
+        ],
+        "title": "BlockRef",
         "type": "object"
       },
       "CacheObservation": {
@@ -1797,6 +2444,261 @@
         "title": "CatalogueUnavailable",
         "type": "object"
       },
+      "ChainStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "automationHalted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Automationhalted"
+          },
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "deployment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Deployment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finalizedThrough": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "head": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Head"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "indexedThrough": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lagBlocks": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lagblocks"
+          },
+          "lagSeconds": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lagseconds"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IndexFailure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operatorsAdmitted": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operatorsadmitted"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "deployment_not_registered",
+                  "never_indexed",
+                  "head_not_observed_recently",
+                  "indexer_behind_head"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "current",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "waitingReasons": {
+            "$ref": "#/components/schemas/WaitingReport"
+          }
+        },
+        "required": [
+          "chainId",
+          "status",
+          "reason",
+          "deployment",
+          "indexedThrough",
+          "finalizedThrough",
+          "head",
+          "lagBlocks",
+          "lagSeconds",
+          "lastError",
+          "automationHalted",
+          "operatorsAdmitted",
+          "waitingReasons"
+        ],
+        "title": "ChainStatus",
+        "type": "object"
+      },
+      "ChildWithdrawn": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "ChildWithdrawn",
+            "title": "Event",
+            "type": "string"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event",
+          "tokenId"
+        ],
+        "title": "ChildWithdrawn",
+        "type": "object"
+      },
+      "Compounded": {
+        "additionalProperties": false,
+        "properties": {
+          "fees0": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Fees0",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "fees1": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Fees1",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "liquidityAdded": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Liquidityadded",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "serviceFee0": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Servicefee0",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "serviceFee1": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Servicefee1",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "tokenId",
+          "liquidityAdded",
+          "fees0",
+          "fees1",
+          "serviceFee0",
+          "serviceFee1"
+        ],
+        "title": "Compounded",
+        "type": "object"
+      },
       "CoreOwnerUnavailable": {
         "additionalProperties": false,
         "properties": {
@@ -1971,6 +2873,141 @@
           "truncated"
         ],
         "title": "Coverage",
+        "type": "object"
+      },
+      "Credit": {
+        "additionalProperties": false,
+        "properties": {
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "module": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Module",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Token",
+            "type": "string"
+          },
+          "unclaimed": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Unclaimed",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "chainId",
+          "module",
+          "token",
+          "unclaimed"
+        ],
+        "title": "Credit",
+        "type": "object"
+      },
+      "Custody": {
+        "additionalProperties": false,
+        "description": "The root's custody. `armed` is the vault's live rootArmed() as last read.\nA reason comes from the last RootDisarmed after the last RootRearmed\n(`event`), or, with no such event, from the live read alone (`live_read`:\nthe owner approved another app on v4, or moved it, without a notification).",
+        "properties": {
+          "armed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Armed"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unsubscribed_or_transferred",
+                  "changed_outside_domino",
+                  "burned",
+                  "custody_lost",
+                  "v3_checkpoint_mismatch",
+                  "auto_exit",
+                  "exit_all"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TxRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "event",
+                  "live_read"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "armed",
+          "reason",
+          "source",
+          "since"
+        ],
+        "title": "Custody",
+        "type": "object"
+      },
+      "Deployment": {
+        "additionalProperties": false,
+        "properties": {
+          "manifestSha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Manifestsha256",
+            "type": "string"
+          },
+          "startBlock": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Startblock",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "manifestSha256",
+          "startBlock"
+        ],
+        "title": "Deployment",
         "type": "object"
       },
       "DiscoveryPool": {
@@ -2553,6 +3590,51 @@
         "title": "Evaluation",
         "type": "object"
       },
+      "ExitModuleSet": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "ExitModuleSet",
+            "title": "Event",
+            "type": "string"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Module"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event",
+          "module"
+        ],
+        "title": "ExitModuleSet",
+        "type": "object"
+      },
       "FeaturedPoolsRequest": {
         "additionalProperties": false,
         "description": "The route takes no parameters: the list is the same for everyone.",
@@ -2800,6 +3882,39 @@
         "title": "FeaturedPoolsResponse",
         "type": "object"
       },
+      "FeesCollected": {
+        "additionalProperties": false,
+        "properties": {
+          "amount0": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amount0",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "amount1": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amount1",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "tokenId",
+          "amount0",
+          "amount1"
+        ],
+        "title": "FeesCollected",
+        "type": "object"
+      },
       "FeesReconciled": {
         "additionalProperties": false,
         "properties": {
@@ -3024,6 +4139,61 @@
         "title": "Freshness",
         "type": "object"
       },
+      "Gas": {
+        "additionalProperties": false,
+        "description": "The receipt's own fields, as the chain reports them: gas used times the\neffective price is the execution fee; on OP Stack the receipt's L1 data\nfee is separate. No total is claimed: a stack may charge what the receipt\ndoes not state (an operator fee).",
+        "properties": {
+          "effectiveGasPriceWei": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Effectivegaspricewei",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "gasUsed": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Gasused",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "l1FeeWei": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "L1Feewei"
+          },
+          "sender": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Sender",
+            "type": "string"
+          },
+          "status": {
+            "const": "success",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sender",
+          "status",
+          "gasUsed",
+          "effectiveGasPriceWei",
+          "l1FeeWei"
+        ],
+        "title": "Gas",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3035,6 +4205,36 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Head": {
+        "additionalProperties": false,
+        "properties": {
+          "number": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Number",
+            "type": "integer"
+          },
+          "observedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Observedat",
+            "type": "integer"
+          },
+          "timestamp": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Timestamp",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "number",
+          "timestamp",
+          "observedAt"
+        ],
+        "title": "Head",
         "type": "object"
       },
       "HistoryAvailable": {
@@ -3569,6 +4769,105 @@
         "title": "HistoryUnavailable",
         "type": "object"
       },
+      "IndexFailure": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "At",
+            "type": "integer"
+          },
+          "code": {
+            "pattern": "^[a-z0-9_]{1,80}$",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "at"
+        ],
+        "title": "IndexFailure",
+        "type": "object"
+      },
+      "IndexedToken": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Address",
+            "type": "string"
+          },
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "decimals": {
+            "anyOf": [
+              {
+                "maximum": 255.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimals"
+          },
+          "price": {
+            "title": "Price",
+            "type": "null"
+          },
+          "priceReason": {
+            "const": "no_qualified_price_source",
+            "title": "Pricereason",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "partial",
+              "unavailable",
+              "not_read"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          }
+        },
+        "required": [
+          "chainId",
+          "address",
+          "status",
+          "decimals",
+          "symbol",
+          "price",
+          "priceReason"
+        ],
+        "title": "IndexedToken",
+        "type": "object"
+      },
       "Interval": {
         "additionalProperties": false,
         "properties": {
@@ -3937,6 +5236,166 @@
         "title": "Key",
         "type": "object"
       },
+      "LastExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "compound",
+              "mint"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "planHash": {
+            "maxLength": 66,
+            "minLength": 66,
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Planhash",
+            "type": "string"
+          },
+          "tx": {
+            "$ref": "#/components/schemas/TxRef"
+          }
+        },
+        "required": [
+          "tx",
+          "planHash",
+          "action"
+        ],
+        "title": "LastExecution",
+        "type": "object"
+      },
+      "Leg": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amountin",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "amountOut": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amountout",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "kind": {
+            "enum": [
+              "universal_router",
+              "v3_pool",
+              "v4_pool"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "tokenIn": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Tokenin",
+            "type": "string"
+          },
+          "tokenOut": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Tokenout",
+            "type": "string"
+          },
+          "venue": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Venue",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "tokenIn",
+          "tokenOut",
+          "venue",
+          "amountIn",
+          "amountOut"
+        ],
+        "title": "Leg",
+        "type": "object"
+      },
+      "Limits": {
+        "additionalProperties": false,
+        "properties": {
+          "maxObservationAgeSeconds": {
+            "maximum": 4294967295.0,
+            "minimum": 0.0,
+            "title": "Maxobservationageseconds",
+            "type": "integer"
+          },
+          "maxPriceImpactBps": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Maxpriceimpactbps",
+            "type": "integer"
+          },
+          "maxSlippageBps": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Maxslippagebps",
+            "type": "integer"
+          },
+          "upsideBps": {
+            "maximum": 4294967295.0,
+            "minimum": 0.0,
+            "title": "Upsidebps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "maxSlippageBps",
+          "maxPriceImpactBps",
+          "maxObservationAgeSeconds",
+          "upsideBps"
+        ],
+        "title": "Limits",
+        "type": "object"
+      },
+      "LimitsChanged": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "LimitsChanged",
+            "title": "Event",
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/Limits"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event",
+          "limits"
+        ],
+        "title": "LimitsChanged",
+        "type": "object"
+      },
       "LiveNft": {
         "additionalProperties": false,
         "properties": {
@@ -4233,6 +5692,317 @@
           "positionAccounting"
         ],
         "title": "LiveWindowLiquidity",
+        "type": "object"
+      },
+      "Lot": {
+        "additionalProperties": false,
+        "properties": {
+          "charged": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Charged",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "token": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Token",
+            "type": "string"
+          },
+          "uncharged": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Uncharged",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "token",
+          "uncharged",
+          "charged"
+        ],
+        "title": "Lot",
+        "type": "object"
+      },
+      "Mandate": {
+        "additionalProperties": false,
+        "properties": {
+          "blockedBy": {
+            "items": {
+              "enum": [
+                "expired",
+                "vault_not_domino",
+                "module_disabled",
+                "automation_halted",
+                "custody_lost",
+                "custody_unread",
+                "not_in_vault"
+              ],
+              "type": "string"
+            },
+            "maxItems": 7,
+            "title": "Blockedby",
+            "type": "array"
+          },
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "executed": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MandateExecution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expired": {
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "mandateHash": {
+            "maxLength": 66,
+            "minLength": 66,
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Mandatehash",
+            "type": "string"
+          },
+          "module": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Module",
+            "type": "string"
+          },
+          "moduleEnabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moduleenabled"
+          },
+          "owner": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "position": {
+            "enum": [
+              "root",
+              "successor",
+              "unknown"
+            ],
+            "title": "Position",
+            "type": "string"
+          },
+          "registered": {
+            "$ref": "#/components/schemas/TxRef"
+          },
+          "revoked": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TxRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "active",
+              "revoked",
+              "executed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "terms": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MandateTerms"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "validUntil": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Validuntil",
+            "type": "integer"
+          },
+          "vault": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Vault",
+            "type": "string"
+          },
+          "vaultIsDomino": {
+            "title": "Vaultisdomino",
+            "type": "boolean"
+          },
+          "waiting": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Waiting"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "chainId",
+          "mandateHash",
+          "module",
+          "owner",
+          "vault",
+          "vaultIsDomino",
+          "tokenId",
+          "position",
+          "validUntil",
+          "registered",
+          "status",
+          "expired",
+          "moduleEnabled",
+          "blockedBy",
+          "terms",
+          "revoked",
+          "executed",
+          "waiting"
+        ],
+        "title": "Mandate",
+        "type": "object"
+      },
+      "MandateExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "anchorSqrtPriceX96": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Anchorsqrtpricex96",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "delivered": {
+            "items": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Delivered",
+            "type": "array"
+          },
+          "tx": {
+            "$ref": "#/components/schemas/TxRef"
+          }
+        },
+        "required": [
+          "tx",
+          "anchorSqrtPriceX96",
+          "delivered"
+        ],
+        "title": "MandateExecution",
+        "type": "object"
+      },
+      "MandateTerms": {
+        "additionalProperties": false,
+        "properties": {
+          "convertTo": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Convertto"
+          },
+          "maxSlippageBps": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Maxslippagebps",
+            "type": "integer"
+          },
+          "receive": {
+            "enum": [
+              "both",
+              "converted"
+            ],
+            "title": "Receive",
+            "type": "string"
+          },
+          "triggerAboveSqrtPriceX96": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggerabovesqrtpricex96"
+          },
+          "triggerBelowSqrtPriceX96": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Triggerbelowsqrtpricex96"
+          }
+        },
+        "required": [
+          "triggerBelowSqrtPriceX96",
+          "triggerAboveSqrtPriceX96",
+          "receive",
+          "convertTo",
+          "maxSlippageBps"
+        ],
+        "title": "MandateTerms",
         "type": "object"
       },
       "MarketAvailable": {
@@ -4568,6 +6338,158 @@
         "x-domino-constraints": [
           "requested pool ids are echoed exactly as sent; pools lists every stored entry; not_built is the explicit empty state"
         ]
+      },
+      "Member": {
+        "additionalProperties": false,
+        "description": "A member's life from the vault's events.",
+        "properties": {
+          "disarmReason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unsubscribed_or_transferred",
+                  "changed_outside_domino",
+                  "burned",
+                  "custody_lost",
+                  "v3_checkpoint_mismatch",
+                  "auto_exit",
+                  "exit_all"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disarmreason"
+          },
+          "parentTokenId": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parenttokenid"
+          },
+          "role": {
+            "enum": [
+              "root",
+              "successor"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "armed",
+              "disarmed",
+              "active",
+              "withdrawn",
+              "exited"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "tokenId",
+          "role",
+          "parentTokenId",
+          "status",
+          "disarmReason"
+        ],
+        "title": "Member",
+        "type": "object"
+      },
+      "MemberState": {
+        "additionalProperties": false,
+        "description": "IDominoVaultLedger.member and its two lots, as read.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "lots": {
+            "items": {
+              "$ref": "#/components/schemas/Lot"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Lots",
+            "type": "array"
+          },
+          "parentTokenId": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parenttokenid"
+          },
+          "successorTokenId": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Successortokenid"
+          },
+          "tickLower": {
+            "maximum": 887272.0,
+            "minimum": -887272.0,
+            "title": "Ticklower",
+            "type": "integer"
+          },
+          "tickUpper": {
+            "maximum": 887272.0,
+            "minimum": -887272.0,
+            "title": "Tickupper",
+            "type": "integer"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "tokenId",
+          "active",
+          "parentTokenId",
+          "successorTokenId",
+          "tickLower",
+          "tickUpper",
+          "lots"
+        ],
+        "title": "MemberState",
+        "type": "object"
       },
       "MetadataIssues": {
         "additionalProperties": false,
@@ -5103,6 +7025,86 @@
           "executionAvailable"
         ],
         "title": "OverviewResponse",
+        "type": "object"
+      },
+      "Policy": {
+        "additionalProperties": false,
+        "properties": {
+          "maxOverlapBps": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Maxoverlapbps",
+            "type": "integer"
+          },
+          "maxPositions": {
+            "maximum": 255.0,
+            "minimum": 0.0,
+            "title": "Maxpositions",
+            "type": "integer"
+          },
+          "minimumIntervalSeconds": {
+            "maximum": 4294967295.0,
+            "minimum": 0.0,
+            "title": "Minimumintervalseconds",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "simple",
+              "domino"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "triggerDistanceBps": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Triggerdistancebps",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mode",
+          "triggerDistanceBps",
+          "maxOverlapBps",
+          "minimumIntervalSeconds",
+          "maxPositions"
+        ],
+        "title": "Policy",
+        "type": "object"
+      },
+      "PolicyChanged": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "PolicyChanged",
+            "title": "Event",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/Policy"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event",
+          "policy"
+        ],
+        "title": "PolicyChanged",
         "type": "object"
       },
       "Pool": {
@@ -6058,6 +8060,62 @@
         "title": "PoolPositionsResponse",
         "type": "object"
       },
+      "PoolRef": {
+        "additionalProperties": false,
+        "properties": {
+          "currency0": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Currency0",
+            "type": "string"
+          },
+          "currency1": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Currency1",
+            "type": "string"
+          },
+          "dex": {
+            "enum": [
+              3,
+              4
+            ],
+            "title": "Dex",
+            "type": "integer"
+          },
+          "fee": {
+            "maximum": 8388608.0,
+            "minimum": 0.0,
+            "title": "Fee",
+            "type": "integer"
+          },
+          "hooks": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Hooks",
+            "type": "string"
+          },
+          "tickSpacing": {
+            "maximum": 32767.0,
+            "minimum": 1.0,
+            "title": "Tickspacing",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dex",
+          "currency0",
+          "currency1",
+          "fee",
+          "tickSpacing",
+          "hooks"
+        ],
+        "title": "PoolRef",
+        "type": "object"
+      },
       "PoolsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6277,6 +8335,393 @@
         "title": "PoolsResponse",
         "type": "object"
       },
+      "PortfolioRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "wallet": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Wallet",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wallet"
+        ],
+        "title": "PortfolioRequest",
+        "type": "object"
+      },
+      "PortfolioResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "chains": {
+            "items": {
+              "$ref": "#/components/schemas/ChainStatus"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Chains",
+            "type": "array"
+          },
+          "contractVersion": {
+            "const": "1.0.0-rc.1",
+            "title": "Contractversion",
+            "type": "string"
+          },
+          "coverage": {
+            "enum": [
+              "complete",
+              "partial"
+            ],
+            "title": "Coverage",
+            "type": "string"
+          },
+          "credits": {
+            "items": {
+              "$ref": "#/components/schemas/Credit"
+            },
+            "maxItems": 50,
+            "title": "Credits",
+            "type": "array"
+          },
+          "executionAvailable": {
+            "const": false,
+            "title": "Executionavailable",
+            "type": "boolean"
+          },
+          "limitations": {
+            "items": {
+              "enum": [
+                "raw_amounts_no_usd_valuation",
+                "token_metadata_untrusted",
+                "positions_known_to_domino_only",
+                "state_as_of_last_read",
+                "no_execution_or_signing"
+              ],
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 5,
+            "title": "Limitations",
+            "type": "array"
+          },
+          "mandates": {
+            "items": {
+              "$ref": "#/components/schemas/Mandate"
+            },
+            "maxItems": 100,
+            "title": "Mandates",
+            "type": "array"
+          },
+          "mode": {
+            "const": "stored_v2_portfolio",
+            "title": "Mode",
+            "type": "string"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/Position"
+            },
+            "maxItems": 100,
+            "title": "Positions",
+            "type": "array"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "servedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Servedat",
+            "type": "integer"
+          },
+          "suggested": {
+            "const": false,
+            "title": "Suggested",
+            "type": "boolean"
+          },
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/IndexedToken"
+            },
+            "maxItems": 300,
+            "title": "Tokens",
+            "type": "array"
+          },
+          "truncated": {
+            "$ref": "#/components/schemas/Truncated"
+          },
+          "vaults": {
+            "items": {
+              "$ref": "#/components/schemas/Vault"
+            },
+            "maxItems": 50,
+            "title": "Vaults",
+            "type": "array"
+          },
+          "wallet": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Wallet",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "wallet",
+          "servedAt",
+          "coverage",
+          "chains",
+          "tokens",
+          "limitations",
+          "suggested",
+          "executionAvailable",
+          "mode",
+          "vaults",
+          "positions",
+          "mandates",
+          "credits",
+          "truncated"
+        ],
+        "title": "PortfolioResponse",
+        "type": "object"
+      },
+      "Position": {
+        "additionalProperties": false,
+        "properties": {
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "dex": {
+            "enum": [
+              3,
+              4
+            ],
+            "title": "Dex",
+            "type": "integer"
+          },
+          "firstSeenBlock": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Firstseenblock",
+            "type": "integer"
+          },
+          "positionManager": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Positionmanager",
+            "type": "string"
+          },
+          "state": {
+            "discriminator": {
+              "mapping": {
+                "live": "#/components/schemas/PositionLive",
+                "not_read": "#/components/schemas/StateNotRead",
+                "unavailable": "#/components/schemas/StateUnavailable"
+              },
+              "propertyName": "status"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PositionLive"
+              },
+              {
+                "$ref": "#/components/schemas/StateUnavailable"
+              },
+              {
+                "$ref": "#/components/schemas/StateNotRead"
+              }
+            ],
+            "title": "State"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "vault": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VaultLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "chainId",
+          "dex",
+          "positionManager",
+          "tokenId",
+          "vault",
+          "firstSeenBlock",
+          "state"
+        ],
+        "title": "Position",
+        "type": "object"
+      },
+      "PositionCustody": {
+        "additionalProperties": false,
+        "properties": {
+          "approved": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved"
+          },
+          "subscriber": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subscriber"
+          }
+        },
+        "required": [
+          "approved",
+          "subscriber"
+        ],
+        "title": "PositionCustody",
+        "type": "object"
+      },
+      "PositionLive": {
+        "additionalProperties": false,
+        "properties": {
+          "custody": {
+            "$ref": "#/components/schemas/PositionCustody"
+          },
+          "feesOwed": {
+            "items": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Feesowed",
+            "type": "array"
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "inRange": {
+            "title": "Inrange",
+            "type": "boolean"
+          },
+          "liquidity": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Liquidity",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "owner": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/PoolRef"
+          },
+          "principalAtSpot": {
+            "items": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Principalatspot",
+            "type": "array"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/BlockRef"
+          },
+          "sqrtPriceX96": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Sqrtpricex96",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "status": {
+            "const": "live",
+            "title": "Status",
+            "type": "string"
+          },
+          "tick": {
+            "maximum": 887272.0,
+            "minimum": -887272.0,
+            "title": "Tick",
+            "type": "integer"
+          },
+          "tickLower": {
+            "maximum": 887272.0,
+            "minimum": -887272.0,
+            "title": "Ticklower",
+            "type": "integer"
+          },
+          "tickUpper": {
+            "maximum": 887272.0,
+            "minimum": -887272.0,
+            "title": "Tickupper",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "snapshot",
+          "freshness",
+          "owner",
+          "custody",
+          "pool",
+          "tickLower",
+          "tickUpper",
+          "liquidity",
+          "sqrtPriceX96",
+          "tick",
+          "inRange",
+          "feesOwed",
+          "principalAtSpot"
+        ],
+        "title": "PositionLive",
+        "type": "object"
+      },
       "PositionProof": {
         "additionalProperties": false,
         "properties": {
@@ -6324,6 +8769,44 @@
           "sourceFeeMethodology"
         ],
         "title": "PositionProof",
+        "type": "object"
+      },
+      "PositionRecovered": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "PositionRecovered",
+            "title": "Event",
+            "type": "string"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event",
+          "tokenId"
+        ],
+        "title": "PositionRecovered",
         "type": "object"
       },
       "PositionsReconciled": {
@@ -7184,6 +9667,39 @@
         "pattern": "^(?:0|[1-9][0-9]{0,76}|10[0-9]{76}|11[0-4][0-9]{75}|115[0-6][0-9]{74}|1157[0-8][0-9]{73}|11579[0-1][0-9]{72}|1157920[0-7][0-9]{70}|11579208[0-8][0-9]{69}|115792089[0-1][0-9]{68}|1157920892[0-2][0-9]{67}|11579208923[0-6][0-9]{66}|115792089237[0-2][0-9]{65}|11579208923730[0-9]{64}|11579208923731[0-5][0-9]{63}|1157920892373160[0-9]{62}|1157920892373161[0-8][0-9]{61}|11579208923731619[0-4][0-9]{60}|115792089237316195[0-3][0-9]{59}|1157920892373161954[0-1][0-9]{58}|11579208923731619542[0-2][0-9]{57}|115792089237316195423[0-4][0-9]{56}|1157920892373161954235[0-6][0-9]{55}|115792089237316195423570[0-8][0-9]{53}|1157920892373161954235709[0-7][0-9]{52}|11579208923731619542357098[0-4][0-9]{51}|11579208923731619542357098500[0-7][0-9]{48}|115792089237316195423570985008[0-5][0-9]{47}|1157920892373161954235709850086[0-7][0-9]{46}|11579208923731619542357098500868[0-6][0-9]{45}|115792089237316195423570985008687[0-8][0-9]{44}|11579208923731619542357098500868790[0-6][0-9]{42}|115792089237316195423570985008687907[0-7][0-9]{41}|1157920892373161954235709850086879078[0-4][0-9]{40}|11579208923731619542357098500868790785[0-2][0-9]{39}|115792089237316195423570985008687907853[0-1][0-9]{38}|1157920892373161954235709850086879078532[0-5][0-9]{37}|11579208923731619542357098500868790785326[0-8][0-9]{36}|115792089237316195423570985008687907853269[0-8][0-9]{35}|1157920892373161954235709850086879078532699[0-7][0-9]{34}|11579208923731619542357098500868790785326998[0-3][0-9]{33}|115792089237316195423570985008687907853269984[0-5][0-9]{32}|1157920892373161954235709850086879078532699846[0-5][0-9]{31}|11579208923731619542357098500868790785326998466[0-4][0-9]{30}|115792089237316195423570985008687907853269984665[0-5][0-9]{29}|1157920892373161954235709850086879078532699846656[0-3][0-9]{28}|115792089237316195423570985008687907853269984665640[0-4][0-9]{26}|1157920892373161954235709850086879078532699846656405[0-5][0-9]{25}|11579208923731619542357098500868790785326998466564056[0-3][0-9]{24}|1157920892373161954235709850086879078532699846656405640[0-2][0-9]{22}|11579208923731619542357098500868790785326998466564056403[0-8][0-9]{21}|115792089237316195423570985008687907853269984665640564039[0-3][0-9]{20}|1157920892373161954235709850086879078532699846656405640394[0-4][0-9]{19}|11579208923731619542357098500868790785326998466564056403945[0-6][0-9]{18}|115792089237316195423570985008687907853269984665640564039457[0-4][0-9]{17}|1157920892373161954235709850086879078532699846656405640394575[0-7][0-9]{16}|11579208923731619542357098500868790785326998466564056403945758[0-3][0-9]{15}|11579208923731619542357098500868790785326998466564056403945758400[0-6][0-9]{12}|115792089237316195423570985008687907853269984665640564039457584007[0-8][0-9]{11}|11579208923731619542357098500868790785326998466564056403945758400790[0-9]{10}|11579208923731619542357098500868790785326998466564056403945758400791[0-2][0-9]{9}|1157920892373161954235709850086879078532699846656405640394575840079130[0-9]{8}|1157920892373161954235709850086879078532699846656405640394575840079131[0-1][0-9]{7}|11579208923731619542357098500868790785326998466564056403945758400791312[0-8][0-9]{6}|115792089237316195423570985008687907853269984665640564039457584007913129[0-5][0-9]{5}|1157920892373161954235709850086879078532699846656405640394575840079131296[0-2][0-9]{4}|11579208923731619542357098500868790785326998466564056403945758400791312963[0-8][0-9]{3}|115792089237316195423570985008687907853269984665640564039457584007913129639[0-8][0-9]{2}|1157920892373161954235709850086879078532699846656405640394575840079131296399[0-2][0-9]{1}|11579208923731619542357098500868790785326998466564056403945758400791312963993[0-4][0-9]{0}|115792089237316195423570985008687907853269984665640564039457584007913129639935)$",
         "type": "string"
       },
+      "Refund": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amount",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "recipient": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Recipient",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "amount",
+          "recipient"
+        ],
+        "title": "Refund",
+        "type": "object"
+      },
       "RejectedCandidate": {
         "additionalProperties": false,
         "properties": {
@@ -7240,6 +9756,197 @@
           "reason"
         ],
         "title": "RejectedCandidate",
+        "type": "object"
+      },
+      "Reserve": {
+        "additionalProperties": false,
+        "properties": {
+          "idle": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Idle",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "token": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Token",
+            "type": "string"
+          },
+          "total": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Total",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "token",
+          "total",
+          "idle"
+        ],
+        "title": "Reserve",
+        "type": "object"
+      },
+      "ReservesWithdrawn": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amount",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "event": {
+            "const": "ReservesWithdrawn",
+            "title": "Event",
+            "type": "string"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          },
+          "token": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event",
+          "token",
+          "amount"
+        ],
+        "title": "ReservesWithdrawn",
+        "type": "object"
+      },
+      "RootCheckpointed": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "RootCheckpointed",
+            "title": "Event",
+            "type": "string"
+          },
+          "liquidity": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Liquidity",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event",
+          "liquidity"
+        ],
+        "title": "RootCheckpointed",
+        "type": "object"
+      },
+      "RootDisarmed": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "RootDisarmed",
+            "title": "Event",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "unsubscribed_or_transferred",
+              "changed_outside_domino",
+              "burned",
+              "custody_lost",
+              "v3_checkpoint_mismatch",
+              "auto_exit",
+              "exit_all"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event",
+          "reason"
+        ],
+        "title": "RootDisarmed",
+        "type": "object"
+      },
+      "RootRearmed": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "const": "RootRearmed",
+            "title": "Event",
+            "type": "string"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event"
+        ],
+        "title": "RootRearmed",
         "type": "object"
       },
       "Rules": {
@@ -7347,6 +10054,162 @@
           "size"
         ],
         "title": "Rules",
+        "type": "object"
+      },
+      "S1Action": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "create",
+              "increase",
+              "change_range",
+              "exit"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "id": {
+            "maxLength": 52,
+            "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/Amount"
+            },
+            "maxItems": 16,
+            "title": "Inputs",
+            "type": "array"
+          },
+          "intentHash": {
+            "maxLength": 66,
+            "minLength": 66,
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Intenthash",
+            "type": "string"
+          },
+          "kind": {
+            "const": "s1_action",
+            "title": "Kind",
+            "type": "string"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/Leg"
+            },
+            "maxItems": 8,
+            "title": "Legs",
+            "type": "array"
+          },
+          "liquidity": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Liquidity",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "owner": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "previousTokenId": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previoustokenid"
+          },
+          "recipient": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Recipient",
+            "type": "string"
+          },
+          "refunds": {
+            "items": {
+              "$ref": "#/components/schemas/Refund"
+            },
+            "maxItems": 16,
+            "title": "Refunds",
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Steps",
+            "type": "array"
+          },
+          "tariffs": {
+            "items": {
+              "$ref": "#/components/schemas/Tariff"
+            },
+            "maxItems": 1,
+            "title": "Tariffs",
+            "type": "array"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "tx": {
+            "$ref": "#/components/schemas/Tx"
+          },
+          "zap": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Zap",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "tx",
+          "kind",
+          "zap",
+          "intentHash",
+          "action",
+          "owner",
+          "recipient",
+          "tokenId",
+          "previousTokenId",
+          "liquidity",
+          "inputs",
+          "legs",
+          "steps",
+          "refunds",
+          "tariffs"
+        ],
+        "title": "S1Action",
         "type": "object"
       },
       "SearchRequest": {
@@ -7524,6 +10387,21 @@
         "title": "SnapshotPoolEntry",
         "type": "object"
       },
+      "StateNotRead": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "const": "not_read",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StateNotRead",
+        "type": "object"
+      },
       "StateSnapshot": {
         "additionalProperties": false,
         "properties": {
@@ -7590,6 +10468,77 @@
           "feeGrowthGlobalX128"
         ],
         "title": "StateSnapshot",
+        "type": "object"
+      },
+      "StateUnavailable": {
+        "additionalProperties": false,
+        "properties": {
+          "freshness": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "reason": {
+            "pattern": "^[a-z0-9_]{1,80}$",
+            "title": "Reason",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/BlockRef"
+          },
+          "status": {
+            "const": "unavailable",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "snapshot",
+          "freshness",
+          "reason"
+        ],
+        "title": "StateUnavailable",
+        "type": "object"
+      },
+      "Step": {
+        "additionalProperties": false,
+        "properties": {
+          "amount0": {
+            "maxLength": 78,
+            "pattern": "^(0|-?[1-9][0-9]{0,76})$",
+            "title": "Amount0",
+            "type": "string"
+          },
+          "amount1": {
+            "maxLength": 78,
+            "pattern": "^(0|-?[1-9][0-9]{0,76})$",
+            "title": "Amount1",
+            "type": "string"
+          },
+          "liquidityDelta": {
+            "maxLength": 78,
+            "pattern": "^(0|-?[1-9][0-9]{0,76})$",
+            "title": "Liquiditydelta",
+            "type": "string"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/PoolRef"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "tokenId",
+          "pool",
+          "liquidityDelta",
+          "amount0",
+          "amount1"
+        ],
+        "title": "Step",
         "type": "object"
       },
       "StoredPool": {
@@ -7680,6 +10629,69 @@
         "title": "StoredToken",
         "type": "object"
       },
+      "Successor": {
+        "additionalProperties": false,
+        "properties": {
+          "parentTokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Parenttokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "tokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Tokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          }
+        },
+        "required": [
+          "parentTokenId",
+          "tokenId"
+        ],
+        "title": "Successor",
+        "type": "object"
+      },
+      "Swap": {
+        "additionalProperties": false,
+        "properties": {
+          "amountIn": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amountin",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "amountOut": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amountout",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "source": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Source",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "zeroForOne": {
+            "title": "Zeroforone",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "zeroForOne",
+          "amountIn",
+          "amountOut"
+        ],
+        "title": "Swap",
+        "type": "object"
+      },
       "SwapLeg": {
         "additionalProperties": false,
         "properties": {
@@ -7714,6 +10726,67 @@
           "absoluteTurnover"
         ],
         "title": "SwapLeg",
+        "type": "object"
+      },
+      "Tariff": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amount",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "deferred": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Deferred",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "kind": {
+            "enum": [
+              "assisted_swap",
+              "automation",
+              "auto_exit"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "rateBps": {
+            "anyOf": [
+              {
+                "enum": [
+                  20,
+                  65,
+                  200,
+                  400
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ratebps"
+          },
+          "token": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "rateBps",
+          "token",
+          "amount",
+          "deferred"
+        ],
+        "title": "Tariff",
         "type": "object"
       },
       "Token": {
@@ -7821,6 +10894,52 @@
         "title": "TokenMetadata",
         "type": "object"
       },
+      "TokenRecovered": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Amount",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "event": {
+            "const": "TokenRecovered",
+            "title": "Event",
+            "type": "string"
+          },
+          "stateNonce": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statenonce"
+          },
+          "token": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stateNonce",
+          "event",
+          "token",
+          "amount"
+        ],
+        "title": "TokenRecovered",
+        "type": "object"
+      },
       "TokenRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7891,6 +11010,92 @@
           "liveExecution"
         ],
         "title": "TokenResponse",
+        "type": "object"
+      },
+      "Truncated": {
+        "additionalProperties": false,
+        "properties": {
+          "mandates": {
+            "title": "Mandates",
+            "type": "boolean"
+          },
+          "positions": {
+            "title": "Positions",
+            "type": "boolean"
+          },
+          "vaults": {
+            "title": "Vaults",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "vaults",
+          "positions",
+          "mandates"
+        ],
+        "title": "Truncated",
+        "type": "object"
+      },
+      "Tx": {
+        "additionalProperties": false,
+        "properties": {
+          "finality": {
+            "enum": [
+              "finalized",
+              "unfinalized"
+            ],
+            "title": "Finality",
+            "type": "string"
+          },
+          "gas": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Gas"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hash": {
+            "maxLength": 66,
+            "minLength": 66,
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Hash",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/BlockRef"
+          }
+        },
+        "required": [
+          "hash",
+          "snapshot",
+          "gas",
+          "finality"
+        ],
+        "title": "Tx",
+        "type": "object"
+      },
+      "TxRef": {
+        "additionalProperties": false,
+        "properties": {
+          "hash": {
+            "maxLength": 66,
+            "minLength": 66,
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Hash",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/BlockRef"
+          }
+        },
+        "required": [
+          "hash",
+          "snapshot"
+        ],
+        "title": "TxRef",
         "type": "object"
       },
       "UnavailableAsset": {
@@ -8304,6 +11509,663 @@
         "title": "ValuationUnavailable",
         "type": "object"
       },
+      "Vault": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Address",
+            "type": "string"
+          },
+          "autoExitEnabled": {
+            "title": "Autoexitenabled",
+            "type": "boolean"
+          },
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "created": {
+            "$ref": "#/components/schemas/TxRef"
+          },
+          "custody": {
+            "$ref": "#/components/schemas/Custody"
+          },
+          "dex": {
+            "enum": [
+              3,
+              4
+            ],
+            "title": "Dex",
+            "type": "integer"
+          },
+          "factory": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Factory",
+            "type": "string"
+          },
+          "lastExecution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastExecution"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            },
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Members",
+            "type": "array"
+          },
+          "owner": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "ownerNonce": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Ownernonce",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "pausedBy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "owner",
+                  "operator",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pausedby"
+          },
+          "rootTokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Roottokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "state": {
+            "discriminator": {
+              "mapping": {
+                "not_read": "#/components/schemas/StateNotRead",
+                "read": "#/components/schemas/VaultRead",
+                "unavailable": "#/components/schemas/StateUnavailable"
+              },
+              "propertyName": "status"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VaultRead"
+              },
+              {
+                "$ref": "#/components/schemas/StateUnavailable"
+              },
+              {
+                "$ref": "#/components/schemas/StateNotRead"
+              }
+            ],
+            "title": "State"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/VaultTotals"
+          },
+          "waiting": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Waiting"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "chainId",
+          "address",
+          "factory",
+          "dex",
+          "owner",
+          "rootTokenId",
+          "ownerNonce",
+          "created",
+          "state",
+          "custody",
+          "pausedBy",
+          "members",
+          "autoExitEnabled",
+          "lastExecution",
+          "totals",
+          "waiting"
+        ],
+        "title": "Vault",
+        "type": "object"
+      },
+      "VaultCreated": {
+        "additionalProperties": false,
+        "properties": {
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "dex": {
+            "enum": [
+              3,
+              4
+            ],
+            "title": "Dex",
+            "type": "integer"
+          },
+          "factory": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Factory",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 52,
+            "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "vault_created",
+            "title": "Kind",
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/Limits"
+          },
+          "owner": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "ownerNonce": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Ownernonce",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/Policy"
+          },
+          "rootTokenId": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Roottokenid",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "tx": {
+            "$ref": "#/components/schemas/Tx"
+          },
+          "vault": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Vault",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "tx",
+          "kind",
+          "vault",
+          "factory",
+          "dex",
+          "owner",
+          "rootTokenId",
+          "ownerNonce",
+          "policy",
+          "limits"
+        ],
+        "title": "VaultCreated",
+        "type": "object"
+      },
+      "VaultEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "AutomationPaused": "#/components/schemas/AutomationPaused",
+                  "AutomationResumed": "#/components/schemas/AutomationResumed",
+                  "ChildWithdrawn": "#/components/schemas/ChildWithdrawn",
+                  "ExitModuleSet": "#/components/schemas/ExitModuleSet",
+                  "LimitsChanged": "#/components/schemas/LimitsChanged",
+                  "PolicyChanged": "#/components/schemas/PolicyChanged",
+                  "PositionRecovered": "#/components/schemas/PositionRecovered",
+                  "ReservesWithdrawn": "#/components/schemas/ReservesWithdrawn",
+                  "RootCheckpointed": "#/components/schemas/RootCheckpointed",
+                  "RootDisarmed": "#/components/schemas/RootDisarmed",
+                  "RootRearmed": "#/components/schemas/RootRearmed",
+                  "TokenRecovered": "#/components/schemas/TokenRecovered"
+                },
+                "propertyName": "event"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/PolicyChanged"
+                },
+                {
+                  "$ref": "#/components/schemas/LimitsChanged"
+                },
+                {
+                  "$ref": "#/components/schemas/AutomationPaused"
+                },
+                {
+                  "$ref": "#/components/schemas/AutomationResumed"
+                },
+                {
+                  "$ref": "#/components/schemas/RootDisarmed"
+                },
+                {
+                  "$ref": "#/components/schemas/RootRearmed"
+                },
+                {
+                  "$ref": "#/components/schemas/RootCheckpointed"
+                },
+                {
+                  "$ref": "#/components/schemas/ReservesWithdrawn"
+                },
+                {
+                  "$ref": "#/components/schemas/ChildWithdrawn"
+                },
+                {
+                  "$ref": "#/components/schemas/TokenRecovered"
+                },
+                {
+                  "$ref": "#/components/schemas/PositionRecovered"
+                },
+                {
+                  "$ref": "#/components/schemas/ExitModuleSet"
+                }
+              ]
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 52,
+            "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "vault_event",
+            "title": "Kind",
+            "type": "string"
+          },
+          "tx": {
+            "$ref": "#/components/schemas/Tx"
+          },
+          "vault": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Vault",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "tx",
+          "kind",
+          "vault",
+          "events"
+        ],
+        "title": "VaultEvent",
+        "type": "object"
+      },
+      "VaultExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "compound",
+              "mint"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "compounded": {
+            "$ref": "#/components/schemas/Compounded"
+          },
+          "feesCollected": {
+            "items": {
+              "$ref": "#/components/schemas/FeesCollected"
+            },
+            "maxItems": 16,
+            "title": "Feescollected",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 52,
+            "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "vault_execution",
+            "title": "Kind",
+            "type": "string"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/Leg"
+            },
+            "maxItems": 8,
+            "title": "Legs",
+            "type": "array"
+          },
+          "planHash": {
+            "maxLength": 66,
+            "minLength": 66,
+            "pattern": "^0x[0-9a-f]{64}$",
+            "title": "Planhash",
+            "type": "string"
+          },
+          "stateNonce": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Statenonce",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "successor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Successor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "swaps": {
+            "items": {
+              "$ref": "#/components/schemas/Swap"
+            },
+            "maxItems": 16,
+            "title": "Swaps",
+            "type": "array"
+          },
+          "tariffs": {
+            "items": {
+              "$ref": "#/components/schemas/Tariff"
+            },
+            "maxItems": 2,
+            "title": "Tariffs",
+            "type": "array"
+          },
+          "tx": {
+            "$ref": "#/components/schemas/Tx"
+          },
+          "vault": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Vault",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "tx",
+          "kind",
+          "vault",
+          "planHash",
+          "action",
+          "stateNonce",
+          "feesCollected",
+          "swaps",
+          "legs",
+          "compounded",
+          "successor",
+          "tariffs"
+        ],
+        "title": "VaultExecution",
+        "type": "object"
+      },
+      "VaultLink": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Address",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "root",
+              "successor"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "role"
+        ],
+        "title": "VaultLink",
+        "type": "object"
+      },
+      "VaultRead": {
+        "additionalProperties": false,
+        "properties": {
+          "exitModule": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exitmodule"
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "lastExecutionAt": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Lastexecutionat",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/Limits"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/MemberState"
+            },
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Members",
+            "type": "array"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/Policy"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/PoolRef"
+          },
+          "quoteCurrency": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Quotecurrency",
+            "type": "string"
+          },
+          "reserves": {
+            "items": {
+              "$ref": "#/components/schemas/Reserve"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Reserves",
+            "type": "array"
+          },
+          "rootArmed": {
+            "title": "Rootarmed",
+            "type": "boolean"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/BlockRef"
+          },
+          "stateNonce": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Statenonce",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "status": {
+            "const": "read",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "snapshot",
+          "freshness",
+          "pool",
+          "quoteCurrency",
+          "policy",
+          "limits",
+          "paused",
+          "rootArmed",
+          "stateNonce",
+          "exitModule",
+          "lastExecutionAt",
+          "members",
+          "reserves"
+        ],
+        "title": "VaultRead",
+        "type": "object"
+      },
+      "VaultTotals": {
+        "additionalProperties": false,
+        "properties": {
+          "compounds": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Compounds",
+            "type": "integer"
+          },
+          "executions": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Executions",
+            "type": "integer"
+          },
+          "feesCompounded": {
+            "items": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Feescompounded",
+            "type": "array"
+          },
+          "serviceFees": {
+            "items": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Servicefees",
+            "type": "array"
+          }
+        },
+        "required": [
+          "executions",
+          "compounds",
+          "feesCompounded",
+          "serviceFees"
+        ],
+        "title": "VaultTotals",
+        "type": "object"
+      },
       "VerifiedPool": {
         "additionalProperties": false,
         "properties": {
@@ -8426,6 +12288,338 @@
           "executionReason"
         ],
         "title": "VerifiedPool",
+        "type": "object"
+      },
+      "Waiting": {
+        "additionalProperties": false,
+        "description": "Why the automation's last pass did not act on this vault or mandate, or\nthat it would (`eligible`, `triggered`): its fixed code (`too_soon`,\n`gas_not_covered`, `owner_benefit_insufficient`, `earnings_evidence_missing`,\n`vault_paused`, `root_disarmed`, `trigger_not_reached`,\n`v2_observation_unstable`, `reverted_<error>`, ...; any other code is shown\nas such), at the head of that pass (`checkedAt`, `checkedBlock`). `since`\nand `sinceBlock` are the time and block of the first pass that gave this\nreason, as the automation records them: kept while the reason holds, reset\nwhen it changes.",
+        "properties": {
+          "checkedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Checkedat",
+            "type": "integer"
+          },
+          "checkedBlock": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Checkedblock",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ApprovalFailed",
+                  "AutomationHalted",
+                  "AutomationUnavailable",
+                  "BelowMinimum",
+                  "ChangeNotReady",
+                  "DeliveryMismatch",
+                  "DirectCall",
+                  "ExitModuleNotEnabled",
+                  "FeeMismatch",
+                  "FeeNotBacked",
+                  "FeeRecipientUnavailable",
+                  "FeeTransferMismatch",
+                  "ForeignSubscriber",
+                  "HookedPool",
+                  "InsufficientLiquidity",
+                  "InsufficientReserves",
+                  "InvalidAmount",
+                  "InvalidAnchor",
+                  "InvalidChange",
+                  "InvalidConfig",
+                  "InvalidConfiguration",
+                  "InvalidExecution",
+                  "InvalidFeeConfig",
+                  "InvalidFeeMode",
+                  "InvalidFloor",
+                  "InvalidInit",
+                  "InvalidInstruction",
+                  "InvalidLimits",
+                  "InvalidMandate",
+                  "InvalidObservation",
+                  "InvalidPlan",
+                  "InvalidPolicy",
+                  "InvalidPool",
+                  "InvalidPosition",
+                  "InvalidPrice",
+                  "InvalidPriceOrLiquidity",
+                  "InvalidRange",
+                  "InvalidRecipient",
+                  "InvalidRoute",
+                  "InvalidRouteConfig",
+                  "InvalidSignature",
+                  "InvalidSqrtPrice",
+                  "InvalidTick",
+                  "InvalidZapConfig",
+                  "ManagerMismatch",
+                  "MandateAlreadyRegistered",
+                  "MandateNotActive",
+                  "NonceAlreadyUsed",
+                  "NonceUsed",
+                  "NotEnoughLiquidity",
+                  "NothingToClaim",
+                  "ObservationExpired",
+                  "ObservationRevoked",
+                  "OpenDelta",
+                  "PartialBurn",
+                  "PlanExpired",
+                  "PoolNotInitialized",
+                  "PoolUnavailable",
+                  "PositionPoolMismatch",
+                  "PriceOverflow",
+                  "ReentrantCall",
+                  "SafeCastOverflow",
+                  "SettlementMismatch",
+                  "SpotOutsideBand",
+                  "StaleNonce",
+                  "StepUnavailable",
+                  "SwapEffectMismatch",
+                  "TokenCallFailed",
+                  "TooSoon",
+                  "TransferFailed",
+                  "TriggerNotReached",
+                  "TwapUnavailable",
+                  "TwapWindowTooShort",
+                  "Unauthorized",
+                  "UnexpectedCallback",
+                  "UnexpectedNonce",
+                  "VaultOwnerChanged",
+                  "WrappedError"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "lastRevert": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WaitingRevert"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "pattern": "^[a-z0-9_]{1,100}$",
+            "title": "Reason",
+            "type": "string"
+          },
+          "since": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Since",
+            "type": "integer"
+          },
+          "sinceBlock": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Sinceblock",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reason",
+          "error",
+          "since",
+          "sinceBlock",
+          "checkedAt",
+          "checkedBlock",
+          "lastRevert"
+        ],
+        "title": "Waiting",
+        "type": "object"
+      },
+      "WaitingReport": {
+        "additionalProperties": false,
+        "description": "The chain's automation's last pass, as its waiting file says: the head\nit decided at. `not_configured`: the chain's indexer reads no automation\nfile; `unavailable`: its last read found the file missing or malformed.",
+        "properties": {
+          "ageSeconds": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ageseconds"
+          },
+          "block": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block"
+          },
+          "status": {
+            "enum": [
+              "reporting",
+              "stale",
+              "unavailable",
+              "not_configured"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          }
+        },
+        "required": [
+          "status",
+          "block",
+          "timestamp",
+          "ageSeconds"
+        ],
+        "title": "WaitingReport",
+        "type": "object"
+      },
+      "WaitingRevert": {
+        "additionalProperties": false,
+        "description": "The last presimulation that reverted, kept until one passes.",
+        "properties": {
+          "at": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "At",
+            "type": "integer"
+          },
+          "block": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Block",
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ApprovalFailed",
+                  "AutomationHalted",
+                  "AutomationUnavailable",
+                  "BelowMinimum",
+                  "ChangeNotReady",
+                  "DeliveryMismatch",
+                  "DirectCall",
+                  "ExitModuleNotEnabled",
+                  "FeeMismatch",
+                  "FeeNotBacked",
+                  "FeeRecipientUnavailable",
+                  "FeeTransferMismatch",
+                  "ForeignSubscriber",
+                  "HookedPool",
+                  "InsufficientLiquidity",
+                  "InsufficientReserves",
+                  "InvalidAmount",
+                  "InvalidAnchor",
+                  "InvalidChange",
+                  "InvalidConfig",
+                  "InvalidConfiguration",
+                  "InvalidExecution",
+                  "InvalidFeeConfig",
+                  "InvalidFeeMode",
+                  "InvalidFloor",
+                  "InvalidInit",
+                  "InvalidInstruction",
+                  "InvalidLimits",
+                  "InvalidMandate",
+                  "InvalidObservation",
+                  "InvalidPlan",
+                  "InvalidPolicy",
+                  "InvalidPool",
+                  "InvalidPosition",
+                  "InvalidPrice",
+                  "InvalidPriceOrLiquidity",
+                  "InvalidRange",
+                  "InvalidRecipient",
+                  "InvalidRoute",
+                  "InvalidRouteConfig",
+                  "InvalidSignature",
+                  "InvalidSqrtPrice",
+                  "InvalidTick",
+                  "InvalidZapConfig",
+                  "ManagerMismatch",
+                  "MandateAlreadyRegistered",
+                  "MandateNotActive",
+                  "NonceAlreadyUsed",
+                  "NonceUsed",
+                  "NotEnoughLiquidity",
+                  "NothingToClaim",
+                  "ObservationExpired",
+                  "ObservationRevoked",
+                  "OpenDelta",
+                  "PartialBurn",
+                  "PlanExpired",
+                  "PoolNotInitialized",
+                  "PoolUnavailable",
+                  "PositionPoolMismatch",
+                  "PriceOverflow",
+                  "ReentrantCall",
+                  "SafeCastOverflow",
+                  "SettlementMismatch",
+                  "SpotOutsideBand",
+                  "StaleNonce",
+                  "StepUnavailable",
+                  "SwapEffectMismatch",
+                  "TokenCallFailed",
+                  "TooSoon",
+                  "TransferFailed",
+                  "TriggerNotReached",
+                  "TwapUnavailable",
+                  "TwapWindowTooShort",
+                  "Unauthorized",
+                  "UnexpectedCallback",
+                  "UnexpectedNonce",
+                  "VaultOwnerChanged",
+                  "WrappedError"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "reason": {
+            "pattern": "^[a-z0-9_]{1,100}$",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "error",
+          "at",
+          "block"
+        ],
+        "title": "WaitingRevert",
         "type": "object"
       },
       "WalletAssetsResponse": {
@@ -8697,6 +12891,80 @@
           "at"
         ],
         "title": "Withdrawn",
+        "type": "object"
+      },
+      "ZapEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "event": {
+            "const": "NoncesInvalidated",
+            "title": "Event",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 52,
+            "pattern": "^[1-9][0-9]{0,18}:[0-9]{1,19}:[0-9]{1,10}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "zap_event",
+            "title": "Kind",
+            "type": "string"
+          },
+          "mask": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Mask",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "owner": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "tx": {
+            "$ref": "#/components/schemas/Tx"
+          },
+          "word": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Word",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "zap": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Zap",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chainId",
+          "tx",
+          "kind",
+          "zap",
+          "event",
+          "owner",
+          "word",
+          "mask"
+        ],
+        "title": "ZapEvent",
         "type": "object"
       }
     }
@@ -10720,6 +14988,282 @@
           }
         },
         "summary": "Featured Pools"
+      }
+    },
+    "/v6/read/activity": {
+      "post": {
+        "operationId": "v2_activity_v6_read_activity_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivityPageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "V2 Activity"
+      }
+    },
+    "/v6/read/portfolio": {
+      "post": {
+        "operationId": "v2_portfolio_v6_read_portfolio_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "V2 Portfolio"
       }
     }
   }

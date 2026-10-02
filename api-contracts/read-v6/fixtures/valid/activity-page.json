@@ -1,0 +1,200 @@
+{
+  "chains": [
+    {
+      "automationHalted": false,
+      "chainId": 4663,
+      "deployment": {
+        "manifestSha256": "0000000000000000000000000000000000000000000000000000000000001237",
+        "startBlock": 100
+      },
+      "finalizedThrough": {
+        "hash": "0x0dc9747d536bc0a71bf9d3baabb5c7950aa68a165a75aeb95cffdfa785f00127",
+        "number": 73395500,
+        "timestamp": 1790430774
+      },
+      "head": {
+        "number": 73400100,
+        "observedAt": 1790431231,
+        "timestamp": 1790431232
+      },
+      "indexedThrough": {
+        "hash": "0xf5b54cbd53f80b29161c8c1fc38942aec9d1fc02c413a6bf4ca84e25f922ebf8",
+        "number": 73400000,
+        "timestamp": 1790431222
+      },
+      "lagBlocks": 100,
+      "lagSeconds": 10,
+      "lastError": null,
+      "operatorsAdmitted": 1,
+      "reason": null,
+      "status": "current",
+      "waitingReasons": {
+        "ageSeconds": 40,
+        "block": 73400090,
+        "status": "reporting",
+        "timestamp": 1790431194
+      }
+    },
+    {
+      "automationHalted": true,
+      "chainId": 8453,
+      "deployment": {
+        "manifestSha256": "0000000000000000000000000000000000000000000000000000000000002105",
+        "startBlock": 100
+      },
+      "finalizedThrough": null,
+      "head": {
+        "number": 52100010,
+        "observedAt": 1790430874,
+        "timestamp": 1790430854
+      },
+      "indexedThrough": {
+        "hash": "0xc63a241be483d4020df726015f61704a08c19165a4f3e69c76c44f67cb72d20d",
+        "number": 52100000,
+        "timestamp": 1790430834
+      },
+      "lagBlocks": 10,
+      "lagSeconds": 20,
+      "lastError": {
+        "at": 1790431204,
+        "code": "http_429"
+      },
+      "operatorsAdmitted": 1,
+      "reason": "head_not_observed_recently",
+      "status": "stale",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "unavailable",
+        "timestamp": null
+      }
+    },
+    {
+      "automationHalted": null,
+      "chainId": 42161,
+      "deployment": null,
+      "finalizedThrough": null,
+      "head": null,
+      "indexedThrough": null,
+      "lagBlocks": null,
+      "lagSeconds": null,
+      "lastError": null,
+      "operatorsAdmitted": null,
+      "reason": "deployment_not_registered",
+      "status": "unavailable",
+      "waitingReasons": {
+        "ageSeconds": null,
+        "block": null,
+        "status": "not_configured",
+        "timestamp": null
+      }
+    }
+  ],
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "partial",
+  "executionAvailable": false,
+  "items": [
+    {
+      "chainId": 4663,
+      "event": "NoncesInvalidated",
+      "id": "4663:73401000:0",
+      "kind": "zap_event",
+      "mask": "6",
+      "owner": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": "150000000",
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x9ebe7d074305ddc5e73550c5d3ecf5793fc3d9b85fa5e0f2f49b892f63dde9fc",
+        "snapshot": {
+          "hash": "0xc5877c21ac77608e822740010c8ffcc6ecf99bd0c637223476e071cb5f391be9",
+          "number": 73401000,
+          "timestamp": 1790430734
+        }
+      },
+      "word": "0",
+      "zap": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+    },
+    {
+      "amount": null,
+      "chainId": 4663,
+      "event": "NonceCancelled",
+      "id": "4663:73400000:1",
+      "kind": "auto_exit_event",
+      "mandateHash": null,
+      "module": "0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+      "nonce": "77",
+      "recipient": null,
+      "token": null,
+      "tokenId": null,
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x4eaf4b44a9b7c0f49e6b2f7174ae7d4e25f21dcd3f80a3b5a0358485c5fa104f",
+        "snapshot": {
+          "hash": "0xf5b54cbd53f80b29161c8c1fc38942aec9d1fc02c413a6bf4ca84e25f922ebf8",
+          "number": 73400000,
+          "timestamp": 1790430234
+        }
+      },
+      "validUntil": null,
+      "vault": null
+    },
+    {
+      "amount": null,
+      "chainId": 4663,
+      "event": "MandateRevoked",
+      "id": "4663:73400000:0",
+      "kind": "auto_exit_event",
+      "mandateHash": "0xd2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2",
+      "module": "0xa4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+      "nonce": null,
+      "recipient": null,
+      "token": null,
+      "tokenId": null,
+      "tx": {
+        "finality": "unfinalized",
+        "gas": {
+          "effectiveGasPriceWei": "20000000",
+          "gasUsed": "412345",
+          "l1FeeWei": null,
+          "sender": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+          "status": "success"
+        },
+        "hash": "0x4eaf4b44a9b7c0f49e6b2f7174ae7d4e25f21dcd3f80a3b5a0358485c5fa104f",
+        "snapshot": {
+          "hash": "0xf5b54cbd53f80b29161c8c1fc38942aec9d1fc02c413a6bf4ca84e25f922ebf8",
+          "number": 73400000,
+          "timestamp": 1790430234
+        }
+      },
+      "validUntil": null,
+      "vault": "0xa2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2"
+    }
+  ],
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "positions_known_to_domino_only",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "stored_v2_activity",
+  "nextCursor": "1790430234.4663.73400000.0",
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "suggested": false,
+  "tokens": [],
+  "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+}
