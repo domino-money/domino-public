@@ -1,0 +1,169 @@
+{
+  "chain": "Base",
+  "chainId": 8453,
+  "block": 52058051,
+  "rpc": "https://mainnet.base.org",
+  "capturedAt": "2026-10-02",
+  "profile": "api-contracts/v2/chains/base-8453.json",
+  "method": "eth_getCode and eth_getStorageAt at the block; keccak256(code) checked against the profile. Storage: the slots each constructor writes, located on the live contract (liveValue); the tests write fixtureValue after etching, or their own value where none is given. feeAmountTickSpacing covers the fee tiers the profile lists.",
+  "contracts": [
+    {
+      "key": "V3_FACTORY",
+      "contract": "UniswapBase8453V3Factory",
+      "name": "UniswapV3Factory",
+      "address": "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
+      "codehash": "0x95707a4ac71f20181a63ef7d180e3c625be5d20fc8f6f980befa966bad568132",
+      "license": "BUSL-1.1, now GPL-2.0-or-later (v3-core 1.0.0)",
+      "runtimeBytes": 24535,
+      "storage": [
+        {
+          "slot": "0x3",
+          "note": "owner (tests replace it)",
+          "liveValue": "0x000000000000000000000000abea76658b205696d49b5f91b2a03536cb8a3be1"
+        },
+        {
+          "slot": "0x083fc81be30b6287dea23aa60f8ffaf268f507cdeac82ed9644e506b59c54ff0",
+          "note": "feeAmountTickSpacing[100]",
+          "liveValue": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "fixtureValue": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        },
+        {
+          "slot": "0xfb8cf1d12598d1a039dd1d106665851a96aadf67d0d9ed76fceea282119208b7",
+          "note": "feeAmountTickSpacing[500]",
+          "liveValue": "0x000000000000000000000000000000000000000000000000000000000000000a",
+          "fixtureValue": "0x000000000000000000000000000000000000000000000000000000000000000a"
+        },
+        {
+          "slot": "0x72dffa9b822156d9cf4b0090fa0b656bcb9cc2b2c60eb6acfc20a34f54b31743",
+          "note": "feeAmountTickSpacing[3000]",
+          "liveValue": "0x000000000000000000000000000000000000000000000000000000000000003c",
+          "fixtureValue": "0x000000000000000000000000000000000000000000000000000000000000003c"
+        },
+        {
+          "slot": "0x8cc740d51daa94ff54f33bd779c2d20149f524c340519b49181be5a08615f829",
+          "note": "feeAmountTickSpacing[10000]",
+          "liveValue": "0x00000000000000000000000000000000000000000000000000000000000000c8",
+          "fixtureValue": "0x00000000000000000000000000000000000000000000000000000000000000c8"
+        }
+      ]
+    },
+    {
+      "key": "V3_POSITION_MANAGER",
+      "contract": "UniswapBase8453V3PositionManager",
+      "name": "NonfungiblePositionManager",
+      "address": "0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1",
+      "codehash": "0x9177a11768996e8f951e0f0013d7165134178b15b21fb9916108f995e6c564bf",
+      "license": "GPL-2.0-or-later (v3-periphery 1.0.0)",
+      "runtimeBytes": 24384,
+      "storage": [
+        {
+          "slot": "0x6",
+          "note": "ERC721 name",
+          "liveValue": "0x556e697377617020563320506f736974696f6e73204e46542d56310000000036",
+          "fixtureValue": "0x556e697377617020563320506f736974696f6e73204e46542d56310000000036"
+        },
+        {
+          "slot": "0x7",
+          "note": "ERC721 symbol",
+          "liveValue": "0x554e492d56332d504f5300000000000000000000000000000000000000000014",
+          "fixtureValue": "0x554e492d56332d504f5300000000000000000000000000000000000000000014"
+        },
+        {
+          "slot": "0xd",
+          "note": "_nextId (low 176 bits) and _nextPoolId (high 80 bits); the constructor sets both to 1",
+          "liveValue": "0x00000000000000103acf000000000000000000000000000000000000005d62ed",
+          "fixtureValue": "0x0000000000000000000100000000000000000000000000000000000000000001"
+        }
+      ]
+    },
+    {
+      "key": "WETH9",
+      "contract": "UniswapBase8453Weth9",
+      "name": "WETH",
+      "address": "0x4200000000000000000000000000000000000006",
+      "codehash": "0x8a3a1f6a9f9dce633117adee5b458245835a8645a8c8726a26382a4622508b1c",
+      "license": "GPL-3.0-or-later (WETH9, DappHub; OP Stack predeploy)",
+      "runtimeBytes": 2041,
+      "storage": [
+        {
+          "slot": "0x0",
+          "note": "name",
+          "liveValue": "0x577261707065642045746865720000000000000000000000000000000000001a",
+          "fixtureValue": "0x577261707065642045746865720000000000000000000000000000000000001a"
+        },
+        {
+          "slot": "0x1",
+          "note": "symbol",
+          "liveValue": "0x5745544800000000000000000000000000000000000000000000000000000008",
+          "fixtureValue": "0x5745544800000000000000000000000000000000000000000000000000000008"
+        },
+        {
+          "slot": "0x2",
+          "note": "decimals",
+          "liveValue": "0x0000000000000000000000000000000000000000000000000000000000000012",
+          "fixtureValue": "0x0000000000000000000000000000000000000000000000000000000000000012"
+        }
+      ]
+    },
+    {
+      "key": "V4_POOL_MANAGER",
+      "contract": "UniswapBase8453V4PoolManager",
+      "name": "PoolManager",
+      "address": "0x498581fF718922c3f8e6A244956aF099B2652b2b",
+      "codehash": "0x83b2af6e9f3158defc2811cbcb0db71ecf8b2ba2abea39c39e370ac5c6f43eb6",
+      "license": "BUSL-1.1 (v4-core), test use only",
+      "runtimeBytes": 24009,
+      "storage": [
+        {
+          "slot": "0x0",
+          "note": "owner (tests replace it)",
+          "liveValue": "0x00000000000000000000000031fafd4889fa1269f7a13a66ee0fb458f27d72a9"
+        },
+        {
+          "slot": "0x2",
+          "note": "protocolFeeController (tests replace it)",
+          "liveValue": "0x000000000000000000000000c53dd825dedbe7814562528a1a30e8e5bcbb4b55"
+        }
+      ]
+    },
+    {
+      "key": "V4_POSITION_MANAGER",
+      "contract": "UniswapBase8453V4PositionManager",
+      "name": "PositionManager",
+      "address": "0x7C5f5A4bBd8fD63184577525326123B519429bDc",
+      "codehash": "0x243f9e091ddf11c7c04e28059fdbbf1bab82b72d414fafb8e096c097aaeb622a",
+      "license": "MIT (v4-periphery)",
+      "runtimeBytes": 23877,
+      "storage": [
+        {
+          "slot": "0x0",
+          "note": "ERC721 name",
+          "liveValue": "0x556e697377617020763420506f736974696f6e73204e46540000000000000030",
+          "fixtureValue": "0x556e697377617020763420506f736974696f6e73204e46540000000000000030"
+        },
+        {
+          "slot": "0x1",
+          "note": "ERC721 symbol",
+          "liveValue": "0x554e492d56342d504f534d000000000000000000000000000000000000000016",
+          "fixtureValue": "0x554e492d56342d504f534d000000000000000000000000000000000000000016"
+        },
+        {
+          "slot": "0x8",
+          "note": "nextTokenId; the constructor sets 1",
+          "liveValue": "0x00000000000000000000000000000000000000000000000000000000002f6099",
+          "fixtureValue": "0x0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ]
+    },
+    {
+      "key": "V4_STATE_VIEW",
+      "contract": "UniswapBase8453V4StateView",
+      "name": "StateView",
+      "address": "0xA3c0c9b65baD0b08107Aa264b0f3dB444b867A71",
+      "codehash": "0xbbd5859677ef5491143133e8ed2b8faa0272f6fc2cbae94c53e79cc8c0538545",
+      "license": "MIT (v4-periphery)",
+      "runtimeBytes": 3531,
+      "storage": []
+    }
+  ]
+}

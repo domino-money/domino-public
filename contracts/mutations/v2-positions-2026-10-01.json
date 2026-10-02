@@ -1,0 +1,623 @@
+{
+  "description": "F1c position adapters (DominoV4Positions, DominoV3Positions, DominoPositionMath): every guard and decoding the adapters own, each against the suite that should catch its removal. v4 runs against the bytecode deployed on Base; v3 against the Base v3 factory and position manager.",
+  "provenance": "Authored 2026-10-01 with the adapters (domino-money/domino#283 F1c). The v2 suites do not compile the V1 contracts whose sizes test-contracts.mjs checks after every run, so a cold sandbox fails that gate: run the batch in a sandbox that also holds contracts/cache and contracts/out (docs/v2/F1_POSITIONS.md, \"Mutation check\").",
+  "mutations": [
+    {
+      "label": "v4 reserved recipients include address(2)",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (uint160(recipient) <= 2) revert InvalidRecipient(recipient);",
+      "new": "if (uint160(recipient) < 2) revert InvalidRecipient(recipient);"
+    },
+    {
+      "label": "v4 withdraw checks its recipient",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "_recipient(recipient);",
+      "new": ""
+    },
+    {
+      "label": "v4 mint checks the owner",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "_recipient(owner);",
+      "new": ""
+    },
+    {
+      "label": "v4 zero liquidity is refused",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (liquidity == 0 || liquidity < minLiquidity) revert",
+      "new": "if (liquidity < minLiquidity) revert"
+    },
+    {
+      "label": "v4 minimum liquidity is enforced",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (liquidity == 0 || liquidity < minLiquidity) revert",
+      "new": "if (liquidity == 0) revert"
+    },
+    {
+      "label": "v4 mint applies the minimum",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "_minimum(liquidity, minLiquidity);",
+      "new": "",
+      "index": 0
+    },
+    {
+      "label": "v4 increase applies the minimum",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "_minimum(liquidity, minLiquidity);",
+      "new": "",
+      "index": 1
+    },
+    {
+      "label": "v4 open delta in currency0 is refused",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (delta0 != 0 || delta1 != 0) revert OpenDelta",
+      "new": "if (delta1 != 0) revert OpenDelta"
+    },
+    {
+      "label": "v4 open delta in currency1 is refused",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (delta0 != 0 || delta1 != 0) revert OpenDelta",
+      "new": "if (delta0 != 0) revert OpenDelta"
+    },
+    {
+      "label": "v4 withdraw starts from a closed account",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "_closed(m, pool);",
+      "new": "",
+      "index": 0
+    },
+    {
+      "label": "v4 mint starts from a closed account",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "_closed(m, pool);",
+      "new": "",
+      "index": 1
+    },
+    {
+      "label": "v4 increase starts from a closed account",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "_closed(m, pool);",
+      "new": "",
+      "index": 2
+    },
+    {
+      "label": "v4 position pool currency0 matches",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "key.currency0 != expected.currency0 || key.currency1",
+      "new": "key.currency1"
+    },
+    {
+      "label": "v4 position pool currency1 matches",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "|| key.currency1 != expected.currency1 || key.fee",
+      "new": "|| key.fee"
+    },
+    {
+      "label": "v4 position pool fee matches",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "key.fee != expected.fee\n                || ",
+      "new": ""
+    },
+    {
+      "label": "v4 position pool tick spacing matches",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "|| key.tickSpacing != expected.tickSpacing ",
+      "new": ""
+    },
+    {
+      "label": "v4 position pool hooks match",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": " || key.hooks != expected.hooks",
+      "new": ""
+    },
+    {
+      "label": "v4 increase checks the position pool",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "(int24 tickLower, int24 tickUpper) = _position(m, tokenId, pool);",
+      "new": "(int24 tickLower, int24 tickUpper) = (int24(-600), int24(600));"
+    },
+    {
+      "label": "v4 increaseLiquidity checks the position pool",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "        _position(m, tokenId, pool);\n        return _increase",
+      "new": "        return _increase"
+    },
+    {
+      "label": "v4 withdraw checks the position pool",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "        _position(m, tokenId, pool);\n        _closed(m, pool);",
+      "new": "        _closed(m, pool);"
+    },
+    {
+      "label": "v4 pools must be v4",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (pool.dex != DominoV2Types.DEX_V4) revert InvalidPool();",
+      "new": ""
+    },
+    {
+      "label": "v4 burn takes the whole position only",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (liquidity != current) revert PartialBurn(tokenId, liquidity, current);",
+      "new": ""
+    },
+    {
+      "label": "v4 collect on an empty position is skipped",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (m.positionManager.getPositionLiquidity(tokenId) == 0) return r;",
+      "new": ""
+    },
+    {
+      "label": "v4 collect ignores principal minimums",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "(amount0Min, amount1Min) = (0, 0);",
+      "new": ""
+    },
+    {
+      "label": "v4 a reverted transfer is refused",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (!ok || (data.length != 0 && !abi.decode(data, (bool)))) revert TransferFailed(currency);",
+      "new": "if (data.length != 0 && !abi.decode(data, (bool))) revert TransferFailed(currency);"
+    },
+    {
+      "label": "v4 a false transfer is refused",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (!ok || (data.length != 0 && !abi.decode(data, (bool)))) revert TransferFailed(currency);",
+      "new": "if (!ok) revert TransferFailed(currency);"
+    },
+    {
+      "label": "v4 settlement must equal the debt",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (paid != amount) revert SettlementMismatch(currency, amount, paid);",
+      "new": ""
+    },
+    {
+      "label": "v4 credits are taken before debts are paid",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "        uint256 credits = (delta0 > 0 ? 1 : 0) + (delta1 > 0 ? 1 : 0);\n        if (credits != 0) {\n            bytes memory actions = new bytes(credits);\n            bytes[] memory params = new bytes[](credits);\n            uint256 i;\n            if (delta0 > 0) {\n                actions[i] = bytes1(ACTION_TAKE);\n                params[i++] = abi.encode(pool.currency0, recipient, uint256(delta0));\n            }\n            if (delta1 > 0) {\n                actions[i] = bytes1(ACTION_TAKE);\n                params[i] = abi.encode(pool.currency1, recipient, uint256(delta1));\n            }\n            m.positionManager.modifyLiquiditiesWithoutUnlock(actions, params);\n        }\n        if (delta0 < 0) _pay(m, pool.currency0, uint256(-delta0));\n        if (delta1 < 0) _pay(m, pool.currency1, uint256(-delta1));\n",
+      "new": "        if (delta0 < 0) _pay(m, pool.currency0, uint256(-delta0));\n        if (delta1 < 0) _pay(m, pool.currency1, uint256(-delta1));\n        uint256 credits = (delta0 > 0 ? 1 : 0) + (delta1 > 0 ? 1 : 0);\n        if (credits != 0) {\n            bytes memory actions = new bytes(credits);\n            bytes[] memory params = new bytes[](credits);\n            uint256 i;\n            if (delta0 > 0) {\n                actions[i] = bytes1(ACTION_TAKE);\n                params[i++] = abi.encode(pool.currency0, recipient, uint256(delta0));\n            }\n            if (delta1 > 0) {\n                actions[i] = bytes1(ACTION_TAKE);\n                params[i] = abi.encode(pool.currency1, recipient, uint256(delta1));\n            }\n            m.positionManager.modifyLiquiditiesWithoutUnlock(actions, params);\n        }\n"
+    },
+    {
+      "label": "v4 an existing price is kept",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (currentSqrtPriceX96 != 0) return (currentSqrtPriceX96, false);",
+      "new": ""
+    },
+    {
+      "label": "v4 slot0 tick decoding",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "tick = int24(uint24(word >> 160));",
+      "new": "tick = int24(uint24(word >> 161));"
+    },
+    {
+      "label": "v4 slot0 protocol fee decoding",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "protocolFee = uint24(word >> 184);",
+      "new": "protocolFee = uint24(word >> 160);"
+    },
+    {
+      "label": "v4 subscriber is read when flagged",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (info & 0xFF != 0) p.subscriber",
+      "new": "if (info & 0xFF == 0) p.subscriber"
+    },
+    {
+      "label": "v4 tickUpper decoding",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "tickUpper = int24(uint24(info >> 32));",
+      "new": "tickUpper = int24(uint24(info >> 8));"
+    },
+    {
+      "label": "v4 fee growth reads the ticks outside growth",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "_load(manager, lower + 1), _load(manager, upper + 1)",
+      "new": "_load(manager, lower + 2), _load(manager, upper + 1)"
+    },
+    {
+      "label": "v4 position checkpoint slot",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "inside0LastX128 = _load(m.poolManager, slot + 1);",
+      "new": "inside0LastX128 = _load(m.poolManager, slot + 2);"
+    },
+    {
+      "label": "v4 an operator is authorized",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "\n            || m.positionManager.isApprovedForAll(owner, account);",
+      "new": ";"
+    },
+    {
+      "label": "v4 managers must match",
+      "file": "contracts/src/v2/positions/DominoV4Positions.sol",
+      "suite": "test/v2/positions/V4PositionsDeployed.t.sol",
+      "old": "if (m.positionManager.poolManager() != address(m.poolManager)) revert ManagerMismatch();",
+      "new": ""
+    },
+    {
+      "label": "v3 the zero recipient is refused",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "if (recipient == address(0)) revert InvalidRecipient(recipient);",
+      "new": ""
+    },
+    {
+      "label": "v3 mint checks the owner",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "_recipient(owner);",
+      "new": ""
+    },
+    {
+      "label": "v3 withdraw checks its recipient",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "_recipient(recipient);",
+      "new": ""
+    },
+    {
+      "label": "v3 pools must be v3",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "pool.dex != DominoV2Types.DEX_V3 || pool.hooks",
+      "new": "pool.hooks"
+    },
+    {
+      "label": "v3 pools have no hooks",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "|| pool.hooks != address(0) || pool.currency0 == address(0)",
+      "new": "|| pool.currency0 == address(0)"
+    },
+    {
+      "label": "v3 pools hold no native currency",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": " || pool.currency0 == address(0)\n",
+      "new": "\n"
+    },
+    {
+      "label": "v3 pool tokens are distinct",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "pool.currency0 >= pool.currency1",
+      "new": "pool.currency0 > pool.currency1"
+    },
+    {
+      "label": "v3 pool tokens are sorted",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "|| pool.currency0 >= pool.currency1 || ",
+      "new": "|| "
+    },
+    {
+      "label": "v3 a zero spacing never matches",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "|| pool.tickSpacing == 0\n",
+      "new": "\n"
+    },
+    {
+      "label": "v3 spacing is the factory spacing",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "\n                || m.factory.feeAmountTickSpacing(pool.fee) != pool.tickSpacing",
+      "new": ""
+    },
+    {
+      "label": "v3 mint validates the pool",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "        poolAddress(m, pool);\n        DominoPositionMath.checkRange",
+      "new": "        DominoPositionMath.checkRange"
+    },
+    {
+      "label": "v3 initialize validates the pool",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "        poolAddress(m, pool);\n        pool_ =",
+      "new": "        pool_ ="
+    },
+    {
+      "label": "v3 mint checks the range",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "DominoPositionMath.checkRange(tickLower, tickUpper, pool.tickSpacing);",
+      "new": ""
+    },
+    {
+      "label": "v3 mint resets the allowances",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "_approvePair(m, pool, 0, 0);",
+      "new": "",
+      "index": 0
+    },
+    {
+      "label": "v3 increase resets the allowances",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "_approvePair(m, pool, 0, 0);",
+      "new": "",
+      "index": 1
+    },
+    {
+      "label": "v3 a reverted approve is refused",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "if (!ok || (data.length != 0 && !abi.decode(data, (bool)))) revert ApprovalFailed(token);",
+      "new": "if (data.length != 0 && !abi.decode(data, (bool))) revert ApprovalFailed(token);"
+    },
+    {
+      "label": "v3 a false approve is refused",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "if (!ok || (data.length != 0 && !abi.decode(data, (bool)))) revert ApprovalFailed(token);",
+      "new": "if (!ok) revert ApprovalFailed(token);"
+    },
+    {
+      "label": "v3 minimum liquidity is enforced",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "if (liquidity < minLiquidity) revert InsufficientLiquidity(liquidity, minLiquidity);",
+      "new": ""
+    },
+    {
+      "label": "v3 mint applies the minimum",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "_minimum(r.liquidity, minLiquidity);",
+      "new": "",
+      "index": 0
+    },
+    {
+      "label": "v3 increase applies the minimum",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "_minimum(r.liquidity, minLiquidity);",
+      "new": "",
+      "index": 1
+    },
+    {
+      "label": "v3 positions must be v3",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "if (pool.dex != DominoV2Types.DEX_V3) revert InvalidPool();",
+      "new": ""
+    },
+    {
+      "label": "v3 position token0 matches",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "token0 != pool.currency0 || ",
+      "new": ""
+    },
+    {
+      "label": "v3 position token1 matches",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "token1 != pool.currency1 || ",
+      "new": ""
+    },
+    {
+      "label": "v3 position fee matches",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": " || fee != pool.fee",
+      "new": ""
+    },
+    {
+      "label": "v3 increase checks the position pool",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "        _position(m, tokenId, pool);\n        _approvePair(m, pool, amount0Desired, amount1Desired);",
+      "new": "        _approvePair(m, pool, amount0Desired, amount1Desired);"
+    },
+    {
+      "label": "v3 withdraw checks the position pool",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "uint128 current = _position(m, tokenId, pool);",
+      "new": "uint128 current = burnPosition ? liquidity : 0;"
+    },
+    {
+      "label": "v3 burn takes the whole position only",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "if (burnPosition && liquidity != current) revert PartialBurn(tokenId, liquidity, current);",
+      "new": ""
+    },
+    {
+      "label": "v3 zero liquidity skips the decrease",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "if (liquidity != 0) {",
+      "new": "if (true) {"
+    },
+    {
+      "label": "v3 the burn happens",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "if (burnPosition) m.positionManager.burn(tokenId);",
+      "new": ""
+    },
+    {
+      "label": "v3 collectable adds the accrued fees",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "if (p.liquidity != 0) {",
+      "new": "if (false) {"
+    },
+    {
+      "label": "v3 fee growth reads the upper tick",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "(,, uint256 upper0, uint256 upper1,,,,) = pool.ticks(tickUpper);",
+      "new": "(,, uint256 upper0, uint256 upper1,,,,) = pool.ticks(tickLower);"
+    },
+    {
+      "label": "v3 position spacing comes from the factory",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "p.pool.tickSpacing = m.factory.feeAmountTickSpacing(p.pool.fee);",
+      "new": ""
+    },
+    {
+      "label": "v3 an operator is authorized",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "\n            || m.positionManager.isApprovedForAll(owner, account);",
+      "new": ";"
+    },
+    {
+      "label": "v3 managers must match",
+      "file": "contracts/src/v2/positions/DominoV3Positions.sol",
+      "suite": "test/v2/positions/V3Positions.t.sol",
+      "old": "if (m.positionManager.factory() != address(m.factory)) revert ManagerMismatch();",
+      "new": ""
+    },
+    {
+      "label": "math spacing must be positive",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "tickSpacing <= 0 || ",
+      "new": ""
+    },
+    {
+      "label": "math spacing zero is refused",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "tickSpacing <= 0",
+      "new": "tickSpacing < 0"
+    },
+    {
+      "label": "math ticks must be ordered",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "tickLower >= tickUpper || ",
+      "new": ""
+    },
+    {
+      "label": "math empty ranges are refused",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "tickLower >= tickUpper",
+      "new": "tickLower > tickUpper"
+    },
+    {
+      "label": "math lower tick bound",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": " || tickLower < TickMath.MIN_TICK\n                || tickUpper",
+      "new": "\n                || tickUpper"
+    },
+    {
+      "label": "math upper tick bound",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "tickUpper > TickMath.MAX_TICK || ",
+      "new": ""
+    },
+    {
+      "label": "math lower tick alignment",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "tickLower % tickSpacing != 0 || ",
+      "new": ""
+    },
+    {
+      "label": "math upper tick alignment",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": " || tickUpper % tickSpacing != 0",
+      "new": ""
+    },
+    {
+      "label": "math sizing needs a price",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "if (sqrtPriceX96 == 0) revert PoolNotInitialized();",
+      "new": "",
+      "index": 0
+    },
+    {
+      "label": "math amounts need a price",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "if (sqrtPriceX96 == 0) revert PoolNotInitialized();",
+      "new": "",
+      "index": 1
+    },
+    {
+      "label": "math lower edge branch",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "if (sqrtPriceX96 <= lower) {",
+      "new": "if (sqrtPriceX96 < lower) {",
+      "expected": "NOT CAUGHT",
+      "reason": "Equivalent: at the lower edge the in-range branch computes the same amounts (amount1 over an empty interval is zero)."
+    },
+    {
+      "label": "math upper edge branch",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "} else if (sqrtPriceX96 < upper) {",
+      "new": "} else if (sqrtPriceX96 <= upper) {",
+      "expected": "NOT CAUGHT",
+      "reason": "Equivalent: at the upper edge the in-range branch computes the same amounts (amount0 over an empty interval is zero)."
+    },
+    {
+      "label": "math fee growth below the range",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "if (tickCurrent < tickLower) insideX128",
+      "new": "if (tickCurrent <= tickLower) insideX128"
+    },
+    {
+      "label": "math fee growth above the range",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "else if (tickCurrent >= tickUpper) insideX128",
+      "new": "else if (tickCurrent > tickUpper) insideX128"
+    },
+    {
+      "label": "math fees round down",
+      "file": "contracts/src/v2/positions/DominoPositionMath.sol",
+      "suite": "test/v2/positions/DominoPositionMath.t.sol",
+      "old": "return FullMath.mulDiv(insideX128 - insideLastX128, liquidity, FixedPoint128.Q128);",
+      "new": "return FullMath.mulDivRoundingUp(insideX128 - insideLastX128, liquidity, FixedPoint128.Q128);"
+    }
+  ]
+}
