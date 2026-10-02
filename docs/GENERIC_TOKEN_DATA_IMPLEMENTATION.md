@@ -133,6 +133,9 @@ introducing archival/compaction.
    `domino-public-accounting.service`. Their CLI equivalents are
    `manage_public_data.py --lane current|history|accounting`. Keep the existing
    queue worker and catalogue follower, with the new drop-ins and bounded passes.
+   The target also wants `domino-activity-follow.timer`, which keeps the
+   activity of every pool holding a Domino position current
+   ([backend README](../backend/README.md#core-pool-activity--api-040)).
    The accounting lane reuses the activity/fee/position/capital reducers; it
    does not sign transactions or enable financial execution.
 3. Point collectors and reader/gateway at the intended release. Import a useful

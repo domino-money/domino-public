@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import psycopg
+from psycopg.types.json import Jsonb
 
 import manage_activity
 import manage_catalogue
@@ -215,7 +216,10 @@ class ActivityFollowerCliTests(unittest.TestCase):
         finally:
             for item in running:item.stop()
         self.assertEqual(code,0)
-        report=json.loads(output.strip().splitlines()[-1])
+        lines=output.strip().splitlines()
+        # Without --quiet every pass is printed before the report.
+        self.assertEqual([json.loads(line)['target'] for line in lines[:-1]],[POOL])
+        report=json.loads(lines[-1])
         self.assertEqual(report['mode'],'core_pool_activity_follower')
         self.assertEqual(report['follow']['lagBlocks'],100)
         self.assertEqual(report['readFreshnessSeconds'],120)
@@ -225,6 +229,55 @@ class ActivityFollowerCliTests(unittest.TestCase):
         self.assertEqual(target['lastResult']['stateReconciled'],True)
         with self.catalogue.connection() as conn:
             self.assertEqual(self.store.pool(conn,POOL)['next_block'],12)
+
+    def catalogued(self,pool_id,block):
+        """The catalogue follower has stored the pool's Initialize event at `block`."""
+        key=stored_candidate()['poolKey']
+        with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+            conn.execute('INSERT INTO domino_catalogue.chunks(start_block,end_block,end_hash) VALUES(%s,%s,%s)',
+                         (block,block,block_hash(block)))
+            conn.execute('''INSERT INTO domino_catalogue.events(pool_id,currency0,currency1,pool_key,block_number,
+              block_hash,tx_hash,log_index,chunk_start) VALUES(%s,%s,%s,%s,%s,%s,%s,0,%s)''',
+              (pool_id,key['currency0'],key['currency1'],Jsonb(key),block,block_hash(block),'0x'+'cd'*32,block))
+        def forget():
+            with psycopg.connect(**self.catalogue.settings,user=ADMIN) as conn:
+                conn.execute('DELETE FROM domino_catalogue.chunks WHERE start_block=%s',(block,))
+        self.addCleanup(forget)
+
+    def test_domino_positions_follow_every_registered_pool_and_report_the_rest(self):
+        argv=['manage_activity.py','--follow','--domino-positions','--quiet','--lag','100','--max-passes','1',
+              '--poll-seconds','0']
+        running=self.patches(reader_factory(111))
+        running.append(patch.object(manage_activity,'position_pools',return_value={POOL:[7,9],ABSENT_POOL:[8]}))
+        for item in running:item.start()
+        try:
+            # POOL is a catalogue hint without its Initialize block; ABSENT_POOL is unknown.
+            code,first=run_main(manage_activity,argv)
+            self.catalogued(POOL,10)
+            again,second=run_main(manage_activity,argv)
+        finally:
+            for item in running:item.stop()
+        self.assertEqual(code,0)
+        report=json.loads(first.strip())
+        self.assertIsNone(report['follow'])
+        self.assertEqual({key:value for key,value in report['dominoPositions'].items() if key!='notRegistered'},
+                         {'pools':2,'positions':3,'followed':0,'registeredNow':[]})
+        self.assertEqual(sorted((item['poolId'],item['reason']) for item in report['dominoPositions']['notRegistered']),
+                         sorted([(POOL,'verified_initialization_block_required'),
+                                 (ABSENT_POOL,'pool_not_in_catalogue')]))
+        # Once the catalogue holds its Initialize event, the next run registers the pool and follows it.
+        self.assertEqual(again,0)
+        lines=second.strip().splitlines()
+        self.assertEqual(len(lines),1,'--quiet prints the final report only')
+        report=json.loads(lines[0])
+        self.assertEqual(report['dominoPositions'],
+                         {'pools':2,'positions':3,'followed':1,'registeredNow':[POOL],
+                          'notRegistered':[{'poolId':ABSENT_POOL,'reason':'pool_not_in_catalogue'}]})
+        self.assertEqual(list(report['follow']['targets']),[POOL])
+        self.assertEqual(report['follow']['targets'][POOL]['indexedPasses'],1)
+        with self.catalogue.connection() as conn:
+            self.assertEqual((self.store.pool(conn,POOL)['start_block'],self.store.pool(conn,POOL)['next_block']),
+                             (10,12))
 
     def test_follow_refuses_an_unbounded_run_without_a_stop_condition(self):
         running=self.patches(reader_factory(111))

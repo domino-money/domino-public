@@ -182,6 +182,20 @@ class RealSystemdTests(unittest.TestCase):
                 self.assertEqual(shown['LoadState'], 'loaded')
                 self.assertEqual(shown.get('TimersMonotonic', ''), '')
                 self.assertIn('OnCalendar=*-*-* *:*:00', shown.get('TimersCalendar', ''))
+        # The Domino pool follower ships its own timer, not a drop-in: the same calendar, alone.
+        service, timer = RUNTIME_UNITS / 'domino-activity-follow-under-test.service', \
+            RUNTIME_UNITS / 'domino-activity-follow-under-test.timer'
+        for path in (service, timer):
+            self.assertFalse(os.path.lexists(path), path)
+            self.written.append(path)
+        service.write_text('[Service]\nType=oneshot\nExecStart=/bin/true\n')
+        timer.write_text((ops / 'domino-activity-follow.timer').read_text().replace(
+            'Unit=domino-activity-follow.service', 'Unit=domino-activity-follow-under-test.service'))
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+        follower = show('domino-activity-follow-under-test')
+        self.assertEqual(follower['LoadState'], 'loaded')
+        self.assertEqual(follower.get('TimersMonotonic', ''), '')
+        self.assertIn('OnCalendar=*-*-* *:*:00', follower.get('TimersCalendar', ''))
         # The drop-in this replaces: what one empty assignment leaves of the triggers before it.
         lost = show('domino-timer-reset-under-test')
         self.assertIn('OnUnitInactiveUSec=1min', lost.get('TimersMonotonic', ''))
