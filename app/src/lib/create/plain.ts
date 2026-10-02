@@ -3,6 +3,7 @@
  * about liquidity pools). No "≈" on the steps, and a bound's distance from today's price as a side and a rounded
  * percentage ("30% below today") rather than a signed figure. Pure helpers: nothing here reads or renders.
  */
+import { numberFormat } from '../format/numberFormat'
 
 /** A price the read writes with a leading "≈" (every tick price is approximate), as the steps show it: the figure alone. */
 export const plainFigure = (text: string): string => text.replace(/^≈/, '')
@@ -18,7 +19,7 @@ export function awayFrom(tick: number, poolTick: number): Away {
   const change = (Math.pow(1.0001, tick - poolTick) - 1) * 100
   const size = Math.abs(change)
   if (size < 0.05) return { side: 'at', percent: '0%' }
-  const percent = `${new Intl.NumberFormat('en-US', { maximumFractionDigits: size < 10 ? 1 : 0 }).format(size)}%`
+  const percent = `${numberFormat({ maximumFractionDigits: size < 10 ? 1 : 0 }).format(size)}%`
   return { side: change < 0 ? 'below' : 'above', percent }
 }
 

@@ -578,7 +578,8 @@ test('pool-metrics enabled on the Worker: the row reads it after its market and 
       assert.deepEqual(upstream.map((call) => call.route), ['pool-market', 'token', 'token', 'pool-metrics']);
       assert.deepEqual(upstream.at(-1).body, { poolId: FIXTURE_POOL });
       const row = page.locator('#pools tbody tr');
-      assert.deepEqual(await row.locator('[data-metric]').evaluateAll((els) => els.map((el) => [el.innerText.trim(), el.getAttribute('data-metric')])), [['$0.000020', 'qualified'], ['$0.000029', 'qualified'], ['158.06%', 'qualified']]);
+      // Changed on purpose 2026-10-01 (integration pass 3, after audit E21): the APR as the one APR rule writes it, whole from 100%.
+      assert.deepEqual(await row.locator('[data-metric]').evaluateAll((els) => els.map((el) => [el.innerText.trim(), el.getAttribute('data-metric')])), [['$0.000020', 'qualified'], ['$0.000029', 'qualified'], ['158%', 'qualified']]);
       assert.match(await row.locator('[data-provenance]').getAttribute('data-provenance'), / · Domino history fresh, 10 s$/);
       assert.equal(await row.locator('[data-apr-estimate]').count(), 0, 'the qualified APR stands where the estimate would');
       assert.deepEqual(errors, []);

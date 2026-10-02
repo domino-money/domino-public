@@ -100,8 +100,9 @@ test('an EIP-7702 account that refuses plain ETH gets no native refund prepared;
   // Only the token side needs no probe, whatever the account's code.
   const token = fixture({ ownerCode: designator, receive: 'revert' });
   assert.equal((await token.client.recover(id, address(9), 2000n, gas)).kind, 'recover');
-  // A probe the wallet could not answer is not a refusal: it fails as a read.
-  await assert.rejects(fixture({ ownerCode: designator, receive: 'unavailable' }).client.cancel(id, gas), /Request failed/);
+  // A probe the wallet could not answer is not a refusal: it fails as a read, said as one its RPC could not answer
+  // (2026-10-01, audit C6), the wallet's own error kept beside it.
+  await assert.rejects(fixture({ ownerCode: designator, receive: 'unavailable' }).client.cancel(id, gas), (error) => error.message === 'wallet_rpc_unreachable' && /Request failed/.test(error.cause?.message));
 });
 
 test('refund refuses another owner, unrelated currency, zero and excessive debits before any wallet send', async () => {

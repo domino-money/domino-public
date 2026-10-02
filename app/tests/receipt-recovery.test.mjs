@@ -50,6 +50,16 @@ test('receipt timeout distinguishes an observed pending state from an unreadable
   }
 });
 
+// 2026-10-01 (audit C14): a step the wallet replaced ("Speed up" or "Cancel") is said at the read that finds it, not after
+// the whole wait; the caller reads the vault again. Nothing is sent from here.
+test('a replaced step ends the wait at once and is handed to the caller', async () => {
+  const clock = time(); let reads = 0;
+  const client = { receipt: async () => (++reads < 3 ? { state: 'pending' } : { state: 'replaced' }) };
+  assert.equal(await settleStep(client, hash, () => true, clock), 'replaced');
+  assert.equal(reads, 3);
+  assert.ok(clock.now() < RECEIPT_WAIT_MS / 10, 'well before the wait ran out');
+});
+
 test('identity, malformed responses, reorgs, reverts and untrusted error text never trigger retries', async () => {
   for (const code of [4001, 4100, 4200, 4901]) assert.equal(sequenceReceiptReadRetryable(await transportFailure(code)), false);
   for (const message of ['receipt_identity_changed', 'invalid_receipt', 'wallet_identity_changed', 'sequence_receipt_rpc', 'wallet_timeout']) {

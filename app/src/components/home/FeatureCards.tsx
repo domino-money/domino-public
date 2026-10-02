@@ -1,5 +1,5 @@
 import type { ComponentType, CSSProperties } from 'react'
-import { RoadmapPill } from '../../screens/Automate'
+import { RoadmapPill } from '../automate/RoadmapPill'
 import { IconChevronRight } from '../icons'
 import { cx } from '../ui'
 import { VignetteCompound, VignetteSequence, VignetteWallet, type VignetteProps } from './Vignettes'
@@ -17,7 +17,8 @@ const FEATURES: ReadonlyArray<{
   {
     key: 'compound',
     title: 'Auto-compound',
-    body: 'Earned fees go back into the same position. The range stays as it is, and the fees become more liquidity inside it. Your principal is never sold.',
+    // Changed on purpose 2026-10-01 (audit E3): no "principal" on Home; the tokens you put in are your deposit.
+    body: 'Earned fees go back into the same position. The range stays as it is, and the fees become more liquidity inside it. Your deposit is never sold.',
     href: '#/automate',
     link: 'Open Automate',
     roadmap: 'Compound',
@@ -26,7 +27,8 @@ const FEATURES: ReadonlyArray<{
   {
     key: 'domino',
     title: 'Domino-compound',
-    body: 'Near the top of a range, earned fees fund the next position one step higher in the same pool, new or already open, instead of returning to the position that earned them. Fees only, never principal, and the sequence stops at a cap you set.',
+    // Changed on purpose 2026-10-01 (audit E3): plain words for "never principal" and "the sequence stops at a cap".
+    body: 'Near the top of a range, earned fees fund the next position one step higher in the same pool, new or already open, instead of returning to the position that earned them. It uses fees only, never your deposit, and opens no more positions than the number you set.',
     href: '#/automate',
     link: 'Open Automate',
     roadmap: 'Domino',

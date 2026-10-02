@@ -23,6 +23,8 @@ export const ACCOUNTS = KEYS.map((key) => privateKeyToAccount(key));
 // Changed on purpose (2026-09-25): Review's Create position asks a connected wallet what it can batch (EIP-5792
 // wallet_getCapabilities; docs/plans/2026-09-25-eip5792-batches-design.md), to offer one signature beside the steps.
 // A read that opens nothing in the wallet; these wallets answer that they batch nothing, so every flow here is the steps.
+// Changed on purpose (2026-10-01, audit C1, the owner's OK): a wallet that does not know Robinhood Chain is asked to add
+// it (wallet_addEthereumChain), with the network's details fixed in src/wallet/chain.ts, before it switches.
 const ALLOWED = new Set([
   'wallet_getCapabilities',
   'eth_requestAccounts',
@@ -30,6 +32,7 @@ const ALLOWED = new Set([
   'eth_chainId',
   'personal_sign',
   'wallet_switchEthereumChain',
+  'wallet_addEthereumChain',
   'wallet_requestPermissions',
   'wallet_revokePermissions',
 ]);
@@ -39,7 +42,12 @@ const DEFAULT_WALLETS = [
   { id: 'b', name: 'Test Wallet B', rdns: 'test.wallet.b', uuid: '8f2a7d1c-0000-4000-8000-00000000000b' },
 ];
 
-/** Runs in the page before any of its scripts. Self-contained: no closures over Node. */
+/**
+ * Runs in the page before any of its scripts. Self-contained: no closures over Node.
+ *
+ * 2026-10-01 (the audit's wallet-compat scenarios, H5): a wallet may also be `legacy` (only window.ethereum, never
+ * announced through EIP-6963) or announce itself `lateMs` after the page loads.
+ */
 function inject(wallets) {
   const handlers = new Map();
   // A plausible EIP-6963 icon. The app must never use it as an image.
@@ -53,6 +61,7 @@ function inject(wallets) {
         if (reply.error) {
           const error = new Error(reply.error.message);
           error.code = reply.error.code;
+          if (reply.error.data !== undefined) error.data = reply.error.data;
           throw error;
         }
         return reply.result;
@@ -67,10 +76,18 @@ function inject(wallets) {
         return provider;
       },
     };
+    if (wallet.legacy) {
+      window.ethereum = provider;
+      continue;
+    }
     const detail = Object.freeze({ info: Object.freeze({ uuid: wallet.uuid, name: wallet.name, icon, rdns: wallet.rdns }), provider });
     const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
-    window.addEventListener('eip6963:requestProvider', announce);
-    announce();
+    const start = () => {
+      window.addEventListener('eip6963:requestProvider', announce);
+      announce();
+    };
+    if (wallet.lateMs) setTimeout(start, wallet.lateMs);
+    else start();
   }
   Object.defineProperty(window, '__dominoWalletEmit', {
     value: (id, event, payload) => {
@@ -86,7 +103,7 @@ function inject(wallets) {
 
 export async function installWallets(context, wallets = DEFAULT_WALLETS) {
   const state = {
-    wallets: new Map(wallets.map((wallet) => [wallet.id, { ...wallet, account: 0, chainId: 4663, permitted: false, chains: new Set([4663, 1]), reject: new Set() }])),
+    wallets: new Map(wallets.map((wallet) => [wallet.id, { account: 0, chainId: 4663, permitted: false, ...wallet, chains: new Set(wallet.chains ?? [4663, 1]), reject: new Set(), added: [] }])),
     log: [],
     refused: [],
     signed: [],
@@ -110,6 +127,21 @@ export async function installWallets(context, wallets = DEFAULT_WALLETS) {
     }
     if (wallet.reject.delete(method)) return fail(4001, 'User rejected the request.');
     const account = ACCOUNTS[wallet.account];
+    // A connection prompt the person never answers (hidden behind another window), or one already open (-32002).
+    const asking = method === 'eth_requestAccounts' || method === 'wallet_requestPermissions';
+    if (asking && wallet.connect === 'hang') return new Promise(() => {});
+    // A prompt the person finds and approves later (fix round 1, 2026-10-01): held until the test calls approveHeld.
+    if (asking && wallet.connect === 'held') {
+      return new Promise((done) => {
+        wallet.approve = () => {
+          wallet.connect = undefined;
+          done(request(id, method, params));
+        };
+      });
+    }
+    if (asking && wallet.connect === 'pending') return fail(-32002, `Request of type '${method}' already pending. Please wait.`);
+    // A wallet that fails the request for a reason of its own, and says nothing more (no refusal, nothing waiting).
+    if (asking && wallet.connect === 'broken') return fail(-32603, 'Internal JSON-RPC error.');
     switch (method) {
       case 'wallet_getCapabilities':
         return { result: {} };
@@ -120,17 +152,38 @@ export async function installWallets(context, wallets = DEFAULT_WALLETS) {
         wallet.permitted = true;
         return { result: [{ parentCapability: 'eth_accounts', caveats: [{ type: 'restrictReturnedAccounts', value: [account.address] }] }] };
       case 'wallet_revokePermissions':
+        if (wallet.revoke === 'unsupported') return fail(4200, 'The requested method is not supported by this Ethereum provider.');
         wallet.permitted = false;
         return { result: null };
+      case 'wallet_addEthereumChain': {
+        if (wallet.addError) return fail(wallet.addError, 'The wallet could not add the network.');
+        const chainId = Number.parseInt(params[0].chainId, 16);
+        wallet.added.push(params[0]);
+        wallet.chains.add(chainId);
+        // As MetaMask does: adding a network offers to switch to it, and the person accepts.
+        if (wallet.addSwitches !== false) {
+          wallet.chainId = chainId;
+          if (!wallet.silentSwitch) setTimeout(() => emit(id, 'chainChanged', params[0].chainId), 0);
+        }
+        return { result: null };
+      }
       case 'eth_accounts':
         return { result: wallet.permitted ? [account.address] : [] };
       case 'eth_chainId':
         return { result: `0x${wallet.chainId.toString(16)}` };
       case 'wallet_switchEthereumChain': {
         const chainId = Number.parseInt(params[0].chainId, 16);
-        if (!wallet.chains.has(chainId)) return fail(4902, 'Unrecognized chain ID');
+        // A switch request already open in the wallet (-32002), or one the wallet fails for a reason of its own.
+        if (wallet.switchError === 'pending') return fail(-32002, "Request of type 'wallet_switchEthereumChain' already pending. Please wait.");
+        if (wallet.switchError === 'broken') return fail(-32603, 'Internal JSON-RPC error.');
+        if (!wallet.chains.has(chainId)) {
+          // MetaMask Mobile wraps its 4902 in a -32603 (data.originalError), as wagmi documents.
+          if (wallet.switchError === 'wrapped') return { error: { code: -32603, message: 'Internal JSON-RPC error.', data: { originalError: { code: 4902, message: 'Unrecognized chain ID' } } } };
+          return fail(4902, 'Unrecognized chain ID');
+        }
         wallet.chainId = chainId;
-        setTimeout(() => emit(id, 'chainChanged', params[0].chainId), 0);
+        // Some wallets switch without saying so (no chainChanged event).
+        if (!wallet.silentSwitch) setTimeout(() => emit(id, 'chainChanged', params[0].chainId), 0);
         return { result: null };
       }
       case 'personal_sign': {
@@ -179,6 +232,17 @@ export async function installWallets(context, wallets = DEFAULT_WALLETS) {
     rejectNext(id, method) {
       walletOf(id).reject.add(method);
     },
+    /** The person approves, now, a connection prompt held open (`connect: 'held'`). */
+    approveHeld(id) {
+      const wallet = walletOf(id);
+      if (!wallet.approve) throw new Error(`${id} holds no prompt`);
+      const approve = wallet.approve;
+      wallet.approve = null;
+      approve();
+    },
+    /** What a wallet was asked to add, in order (wallet_addEthereumChain's parameters). */
+    added: (id) => walletOf(id).added,
+    wallet: walletOf,
     calls: (method) => state.log.filter((entry) => entry.method === method),
   };
 }

@@ -1,0 +1,60 @@
+{
+  "//": "rugged97's Uniswap v3 API contract runtimes, vendored byte for byte from his branch codex/elysium-v3-s8 (git show <commit>:<source>) so this site can validate his services' answers with his own closed-schema code before his branch is merged. Each file's SHA-256 equals the one his manifest records, and each manifest's SHA-256 equals its pin.json (tests/elysium-contracts.test.mjs). After his branch is merged, import api-contracts/uniswap-v3-*-v1 instead and delete this directory (part B of the chain2 workstream).",
+  "repository": "domino-money/domino",
+  "branch": "codex/elysium-v3-s8",
+  "commit": "7d1906907381c55e65d9b83ad1f3efafe1cabb36",
+  "files": {
+    "uniswap-v3-read-v1/manifest.json": {
+      "source": "api-contracts/uniswap-v3-read-v1/manifest.json",
+      "sha256": "fa44636e4316528fe8fab1a3a19229734dff05da4433fa59f6eb084957c9d9e8"
+    },
+    "uniswap-v3-read-v1/pin.json": {
+      "source": "api-contracts/uniswap-v3-read-v1/pin.json",
+      "sha256": "8065d39e14ec9939f48499c53fc06e9308fc54c18817a7ce2c7891abc76b5882"
+    },
+    "uniswap-v3-read-v1/runtime.d.mts": {
+      "source": "api-contracts/uniswap-v3-read-v1/runtime.d.mts",
+      "sha256": "677ba631f2e1ad10906bf23bb68b657b1d8bdc0a8f9326df70b1ad6937d1d876"
+    },
+    "uniswap-v3-read-v1/runtime.mjs": {
+      "source": "api-contracts/uniswap-v3-read-v1/runtime.mjs",
+      "sha256": "925a5e9cd6cad2b55238467387a46de21d1a0c3419ee2782fc637415cad95f2b"
+    },
+    "uniswap-v3-read-v1/schema-data.mjs": {
+      "source": "api-contracts/uniswap-v3-read-v1/schema-data.mjs",
+      "sha256": "7f5f4969779afd39c838b0a41f4099a2c0f97f93a87324955b227a644291e068"
+    },
+    "uniswap-v3-read-v1/types.ts": {
+      "source": "api-contracts/uniswap-v3-read-v1/types.ts",
+      "sha256": "ef28029ff3cc0cd2e2eb173e17e0186df8e59cddd228c148b4f6c18553d3d56a"
+    },
+    "uniswap-v3-actions-v1/manifest.json": {
+      "source": "api-contracts/uniswap-v3-actions-v1/manifest.json",
+      "sha256": "cfbce22eed8d7f096f85de10f3a5da59802be97217952b222218b893c551f3ef"
+    },
+    "uniswap-v3-actions-v1/pin.json": {
+      "source": "api-contracts/uniswap-v3-actions-v1/pin.json",
+      "sha256": "39d416f663b15b30e5b25f788ed901f7a8c942f4204624a9a8d371c7b9b2ece2"
+    },
+    "uniswap-v3-actions-v1/runtime.d.mts": {
+      "source": "api-contracts/uniswap-v3-actions-v1/runtime.d.mts",
+      "sha256": "0a666e46d42f001cdbc24d862e8f53afa78b329ea689b2f683f9e10b6f790d80"
+    },
+    "uniswap-v3-actions-v1/runtime.mjs": {
+      "source": "api-contracts/uniswap-v3-actions-v1/runtime.mjs",
+      "sha256": "9bf93ae14726ea6d369ba7678b755847998df266f672364844f004cb04616207"
+    },
+    "uniswap-v3-actions-v1/schema-data.mjs": {
+      "source": "api-contracts/uniswap-v3-actions-v1/schema-data.mjs",
+      "sha256": "5d6594bea06dcf2602da7d96aaad5db6d6508259cceadce45a43ecccb73f749f"
+    },
+    "uniswap-v3-actions-v1/types.ts": {
+      "source": "api-contracts/uniswap-v3-actions-v1/types.ts",
+      "sha256": "596107034197970e0ccd9e13b4e84a37fc0f5380db6321100b551eafcc9cca4a"
+    },
+    "shared/closed-schema.mjs": {
+      "source": "api-contracts/shared/closed-schema.mjs",
+      "sha256": "ee18602dbc0b43267170a74aa62200b1653c38be25204318f2c93abc513e7970"
+    }
+  }
+}

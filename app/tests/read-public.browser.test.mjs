@@ -74,7 +74,8 @@ test('a token outside the selected list opens from one stored overview and pool 
   await page.goto(`${origin}/#/markets/${TOKEN}`)
   const explorer = page.locator('[data-stored-token]')
   await explorer.getByRole('link', { name: /TOKEN/ }).first().waitFor()
-  assert.match(await explorer.innerText(), /10\.95/)
+  // Changed on purpose 2026-10-01 (integration pass 3, after audit E21): the APR as the one APR rule writes it, one decimal under 100%.
+  assert.match(await explorer.innerText(), /11\.0% est\./)
   assert.deepEqual(calls.map(call => call.route), ['overview'])
   assert.deepEqual(calls[0].request, { token: TOKEN, limit: 24 })
   const link = explorer.locator(`a[href="#/pool/${POOL}/${TOKEN}"]`).first()
@@ -82,7 +83,7 @@ test('a token outside the selected list opens from one stored overview and pool 
   await link.click()
   await page.locator('[data-pool-ratio-chart]').waitFor()
   await page.waitForFunction(() => document.querySelector('[data-pool-ratio-chart]')?.getAttribute('data-ratio-status') === 'reading')
-  assert.match(await page.locator('main').innerText(), /10\.95/)
+  assert.match(await page.locator('main').innerText(), /11\.0%/)
   assert.equal(calls.filter(call => call.route === 'overview').length, 2, 'verification and workspace share their identical overview')
   await page.waitForFunction(() => document.querySelector('[data-pool-ratio-chart]') !== null)
   // Wait on the request event, bounded by the test deadline, rather than a
@@ -193,7 +194,11 @@ test('Markets on the deployable build: all six cards draw a real chart within se
     // in ETH, lib/read/orientation.ts), where it asked ETH's.
     assert.deepEqual(reads.filter(read => read.route === 'history').map(read => read.request).sort((a, b) => a.poolId.localeCompare(b.poolId)),
       SELECTED.map(poolId => ({ poolId, currency: '0x1111111111111111111111111111111111111111', windowSeconds: 86400, resolutionSeconds: 3600 })).sort((a, b) => a.poolId.localeCompare(b.poolId)))
-    assert.deepEqual(edge.filter(read => read.method === 'GET').map(read => read.path), ['/api/read/v3/capabilities'], 'the cards decided from the capabilities the page already held')
+    // Changed on purpose 2026-10-01 (audit I3): the artwork of a token with none bundled (cbBTC, U) is asked through our
+    // own edge, one token a GET, never of DEX Screener by the visitor's browser; nothing else is asked.
+    const gets = edge.filter(read => read.method === 'GET').map(read => read.path)
+    assert.deepEqual(gets.filter(path => !path.startsWith('/api/read/dex/')), ['/api/read/v3/capabilities'], 'the cards decided from the capabilities the page already held')
+    assert.ok(gets.filter(path => path.startsWith('/api/read/dex/')).every(path => /^\/api\/read\/dex\/token-pairs\/0x[0-9a-f]{40}$/.test(path)), 'only token-pairs, one token each')
     assert.doesNotMatch(await page.locator('#market-rail').innerText(), /Reading|Retry|unavailable|\bv4\b|not enabled|read-only/i, 'no status words on the cards')
     assert.deepEqual(errors, [])
   } finally {
@@ -211,21 +216,23 @@ test('Markets on the deployable build: all six cards draw a real chart within se
 // tools/record-selected-overview.mjs): its figures, not the ones on the owner's screenshots. It holds main's six
 // selected pools and r4/featured's six, so this test reads whichever six the build selects. The first answer is the
 // store's before it caught up on the last two; a later visit meets a store whose collection of those two failed.
+// Changed on purpose 2026-10-01 (audit E21): the estimates as the one APR rule of every screen writes them (lib/format/apr.ts):
+// one decimal under 100%, whole percents from there. The recorded answers are unchanged.
 const RECORDED_FIGURES = {
   // main's six, 2026-09-23 to 2026-09-25
-  '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6': ['$375.1K', '$1.7M', '32.13% est.'],
-  '0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7': ['$13.4K', '$1.3K', '181.25% est.'],
-  '0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a': ['$1.0M', '$449.4K', '23.86% est.'],
-  '0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c': ['$3.0M', '$2.4M', '2.16% est.'],
-  '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e': ['$381.4K', '$7.5M', '71.93% est.'],
+  '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6': ['$375.1K', '$1.7M', '32.1% est.'],
+  '0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7': ['$13.4K', '$1.3K', '181% est.'],
+  '0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a': ['$1.0M', '$449.4K', '23.9% est.'],
+  '0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c': ['$3.0M', '$2.4M', '2.2% est.'],
+  '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e': ['$381.4K', '$7.5M', '71.9% est.'],
   // in both lists
-  '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a': ['$6.8M', '$6.2M', '100.35% est.'],
+  '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a': ['$6.8M', '$6.2M', '100% est.'],
   // r4/featured's other five (the owner's list of 2026-09-25)
-  '0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b': ['$2.5M', '$2.3M', '92.37% est.'],
-  '0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995': ['$1.8M', '$4.3M', '195.00% est.'],
-  '0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4': ['$1.7M', '$2.0M', '396.75% est.'],
-  '0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66': ['$204.5K', '$35.3K', '125.31% est.'],
-  '0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03': ['$70.9K', '$25.8K', '529.83% est.'],
+  '0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b': ['$2.5M', '$2.3M', '92.4% est.'],
+  '0x7aebd80541bfaaf23dbb6e99ce13d4d31c1a84c91414f971eadbff7db5f85995': ['$1.8M', '$4.3M', '195% est.'],
+  '0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4': ['$1.7M', '$2.0M', '397% est.'],
+  '0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66': ['$204.5K', '$35.3K', '125% est.'],
+  '0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03': ['$70.9K', '$25.8K', '530% est.'],
 }
 
 test('Home, its ticker, Markets and its cards show one set of figures for the six pools; pools the store is still collecting wait for theirs, and pools whose collection failed say Unavailable at once', { timeout: 90000 }, async () => {

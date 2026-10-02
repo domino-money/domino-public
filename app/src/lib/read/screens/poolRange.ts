@@ -22,6 +22,7 @@ import { priceInverted } from '../orientation'
 import type { TokenDisplay } from '../types'
 import type { PoolOption } from './poolsList'
 import { tickPriceText } from './positions'
+import { numberFormat } from '../../format/numberFormat'
 
 export const MIN_TICK = -887272
 export const MAX_TICK = 887272
@@ -286,6 +287,6 @@ export function presetFor(price: { tick: number; tickSpacing: number; inverted?:
 export function fromPoolPrice(tick: number, poolTick: number): string {
   const percent = (Math.pow(1.0001, tick - poolTick) - 1) * 100
   const rounded = Math.abs(percent) < 0.05 ? 0 : percent
-  const text = new Intl.NumberFormat('en-US', { maximumFractionDigits: Math.abs(rounded) >= 100 ? 0 : 1, minimumFractionDigits: 0 }).format(Math.abs(rounded))
+  const text = numberFormat({ maximumFractionDigits: Math.abs(rounded) >= 100 ? 0 : 1, minimumFractionDigits: 0 }).format(Math.abs(rounded))
   return rounded === 0 ? '0%' : `${rounded > 0 ? '+' : '−'}${text}%`
 }

@@ -38,6 +38,7 @@ import type { TokenDisplay } from './types'
 import { priceInverted } from './orientation'
 import { groupedRatioText } from './ratioSeries'
 import { PRICE_STALE_MS, tickAgrees, type PriceProblem } from './screens/poolRange'
+import { numberFormat } from '../format/numberFormat'
 
 export type MarketPrice =
   | {
@@ -81,7 +82,7 @@ function stateAgeMs(market: Market, now: Instant): number | null {
  */
 export function plainAmount(value: number): string | null {
   if (!(value >= 1e-15 && value < 1e15)) return null
-  return new Intl.NumberFormat('en-US', value >= 10_000 ? { maximumFractionDigits: 0 } : { maximumSignificantDigits: value >= 1 ? 6 : 4 }).format(value)
+  return numberFormat(value >= 10_000 ? { maximumFractionDigits: 0 } : { maximumSignificantDigits: value >= 1 ? 6 : 4 }).format(value)
 }
 
 /**

@@ -638,7 +638,7 @@ export function presentAllowances(report: AllowanceReport): { header: string; ro
     header: `Read at block ${report.snapshot.number} (${shortHex(report.snapshot.hash)}, ${utcTime(report.snapshot.timestamp)}). A snapshot, not a token safety check.`,
     rows,
     guidance:
-      'To remove these permissions, use your own wallet on Robinhood Chain (4663) to set two allowances to zero: the ERC-20 allowance each token gives Permit2 ' +
+      'To remove these permissions, use your own wallet on Robinhood Chain to set two allowances to zero: the ERC-20 allowance each token gives Permit2 ' +
       `(${PERMIT2}), and, separately, the Permit2 allowance for the PositionManager (${POSITION_MANAGER}) on that token. This can affect other apps that use Permit2. ` +
       'This page has no button for it and builds nothing. After your wallet confirms, press Check allowances. Cancelled or replaced deposits do not revoke anything.',
   }

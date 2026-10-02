@@ -76,6 +76,11 @@ export function watch(page, { ignore = () => false, console: withConsole = true,
     /** The /api requests of each document this page has loaded, in order. */
     api: [],
     /**
+     * DEX Screener asked through our own edge (functions/api/read/dex, audit I3, 2026-10-01): token artwork and figures,
+     * never a read of the read service, kept apart from `api` so the read trails stay what they were.
+     */
+    dex: [],
+    /**
      * `view` counts what the main frame has shown, a hash away within the same
      * document included, because leaving a screen cancels that screen's reads.
      * A request belongs to the view that was showing when it started.
@@ -111,7 +116,8 @@ export function watch(page, { ignore = () => false, console: withConsole = true,
     // While the test is tearing this view down, anything but the navigation
     // itself was started by the view that is going away.
     state.inFlight.set(request, state.leaving && !request.isNavigationRequest() ? state.view - 1 : state.view);
-    if (isApi(request)) {
+    if (isApi(request) && pathOf(request.url()).startsWith('/api/read/dex/')) state.dex.push(`${request.method()} ${pathOf(request.url())}`);
+    else if (isApi(request)) {
       if (state.api.length === 0) state.api.push([]);
       state.api.at(-1).push(`${request.method()} ${pathOf(request.url())}`);
     }
@@ -155,6 +161,8 @@ export const problemsOf = (page) => STATE.get(page).problems;
 
 /** The /api requests of each document `page` has loaded, in order. */
 export const apiOf = (page) => STATE.get(page).api;
+/** DEX Screener asked through our own edge, every document together (audit I3). */
+export const dexOf = (page) => STATE.get(page).dex;
 
 /** Nothing is in flight that the page would lose if it were torn down now. */
 export async function readsOffTheWire(page, timeout = 30_000) {

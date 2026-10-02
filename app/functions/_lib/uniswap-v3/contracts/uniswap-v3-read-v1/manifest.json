@@ -1,0 +1,182 @@
+{
+  "contract": "uniswap-v3-read-v1",
+  "contractVersion": "1.0.0-rc.2",
+  "files": [
+    {
+      "path": "fixtures/wire.json",
+      "sha256": "16121e9bc24d15f1ae7a783ae5315bb9d3043a3dff1d42abe8835ba8055cf6c2"
+    },
+    {
+      "path": "openapi.json",
+      "sha256": "aaa71b05f7837460a28e88e48bc9b02d70468083c2cdcb26b91900c62a7df5b8"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "677ba631f2e1ad10906bf23bb68b657b1d8bdc0a8f9326df70b1ad6937d1d876"
+    },
+    {
+      "path": "schema-data.mjs",
+      "sha256": "7f5f4969779afd39c838b0a41f4099a2c0f97f93a87324955b227a644291e068"
+    },
+    {
+      "path": "schemas/capabilities.request.schema.json",
+      "sha256": "779473ad7b628b74fb0d97808f75407e87630cac4012b7ba43467b4ec8b703d8"
+    },
+    {
+      "path": "schemas/capabilities.response.schema.json",
+      "sha256": "743e0727264806308879e48a5582e409a7cc7148bdbc827f9e91c4b8d7f92d69"
+    },
+    {
+      "path": "schemas/discover-pool.request.schema.json",
+      "sha256": "218a49f7d31cb6fccd9bfdc2f1996c445f031fd151dfae10e4361a7b04ba03bc"
+    },
+    {
+      "path": "schemas/discover-pool.response.schema.json",
+      "sha256": "880425b7c744fa6016157711a702f622b27543c18753c56bbc23da479beb8b75"
+    },
+    {
+      "path": "schemas/history.request.schema.json",
+      "sha256": "bfabd586a7e9e884c02c84297e757e6011c646c9455f220d63215feed69bf57e"
+    },
+    {
+      "path": "schemas/history.response.schema.json",
+      "sha256": "f76b72a39d02d6d6653d80bdce0ce70e501ed5e5ed7f3fbd8441af78b91b5b0e"
+    },
+    {
+      "path": "schemas/ledger.request.schema.json",
+      "sha256": "4f15ae9f3b8e41b548b7807c15d69395a8126aa4cf465319963255938b1a4794"
+    },
+    {
+      "path": "schemas/ledger.response.schema.json",
+      "sha256": "fd33ebb80fa65910549ef6c0147d4ffa6b5987cfe2624fd0582c7f9ee889c1bb"
+    },
+    {
+      "path": "schemas/pool.request.schema.json",
+      "sha256": "bc1441461ad57448d80863eef1c65a2c71beb0d151b95fcf585b473986a5ffab"
+    },
+    {
+      "path": "schemas/pool.response.schema.json",
+      "sha256": "ca896fd34d7aee41eadc857f24f81ba880b9a1311cf5e3202efae485f7f9938e"
+    },
+    {
+      "path": "schemas/position.request.schema.json",
+      "sha256": "6ea3e93c44a71e5a3ca9c323d29f091b345939e2e2a875e190f0e1b662d82a82"
+    },
+    {
+      "path": "schemas/position.response.schema.json",
+      "sha256": "1cc0900b8ec79f0696063176b19a5ed5fc9c39c0b8a606ec02882e9bc0741442"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "ef28029ff3cc0cd2e2eb173e17e0186df8e59cddd228c148b4f6c18553d3d56a"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "925a5e9cd6cad2b55238467387a46de21d1a0c3419ee2782fc637415cad95f2b"
+    },
+    {
+      "path": "../shared/closed-schema.mjs",
+      "sha256": "ee18602dbc0b43267170a74aa62200b1653c38be25204318f2c93abc513e7970"
+    },
+    {
+      "path": "README.md",
+      "sha256": "d30612c8d81612af615ad19daf11e7b8e062f39341d25664f891abc50ecc4a5c"
+    },
+    {
+      "path": "consumer.test.mjs",
+      "sha256": "ca5df7ddc55e3b7a372b7c2541777c9b7be3ddda5baa9e5463ce67a262bbd723"
+    },
+    {
+      "path": "consumer.typecheck.mts",
+      "sha256": "1957de82e3aa3c8bf7bf4133acb036e837698f6a056df04ca24ef2d911aaf278"
+    }
+  ],
+  "generator": "scripts/export-uniswap-v3-read-contract.py",
+  "sources": [
+    {
+      "path": "backend/migrations/047_uniswap_v3_ledger.sql",
+      "sha256": "9e4fdcffd13b933bdcf6f5889b85d13bf16d95a6073c0b6224617f39d02b0042"
+    },
+    {
+      "path": "backend/tests/fixtures/uniswap-v3/api-wire.json",
+      "sha256": "16121e9bc24d15f1ae7a783ae5315bb9d3043a3dff1d42abe8835ba8055cf6c2"
+    },
+    {
+      "path": "backend/uniswap_v3/api.py",
+      "sha256": "35385bcbca0af5728ff0ac5a7a9f5d1c56fa41f7bae78c02ea9dae910e05bde1"
+    },
+    {
+      "path": "backend/uniswap_v3/api_models.py",
+      "sha256": "34b494b64053600704e251407940c91bee4d37808711f2caf8025d689e6b9c47"
+    },
+    {
+      "path": "backend/uniswap_v3/batch.py",
+      "sha256": "4d57611db5d86a9478f40ac51150a4b61b1b03e8536f679044185a5a7cf310fb"
+    },
+    {
+      "path": "backend/uniswap_v3/bloom.py",
+      "sha256": "7a6c59dadd711396b4cab561532f021136cef0e4068c09504f71633082aaab87"
+    },
+    {
+      "path": "backend/uniswap_v3/event_range.py",
+      "sha256": "47b8f38c7dc5690f5e4aabdeac42cb625302c8eb169e4803765201d5a86e3e3d"
+    },
+    {
+      "path": "backend/uniswap_v3/indexer.py",
+      "sha256": "a01e0d71add5e3dc6f12cc8632de8c19556f3ad599bbb286f70a8a2e70d60095"
+    },
+    {
+      "path": "backend/uniswap_v3/ledger.py",
+      "sha256": "bad885c2b418fbdea04ff388aa102ef2f2645f7a7d4a0e9ad5768a1c1683a7de"
+    },
+    {
+      "path": "backend/uniswap_v3/read_aggregate.py",
+      "sha256": "f3b4efb19fac32f431dec686e3d4a23d696bf656fbcef240f58175f8f270a620"
+    },
+    {
+      "path": "backend/uniswap_v3/read_aggregate_artifact.py",
+      "sha256": "16b43b7de807d69beb3c27913344342afa74ba002efc04b6371ac4765474c8bd"
+    },
+    {
+      "path": "backend/uniswap_v3/read_service.py",
+      "sha256": "ece01f97af1ee0edd43a0cede02be4fbe133fbe68bc261a842155a45f2961fb8"
+    },
+    {
+      "path": "backend/uniswap_v3/reader.py",
+      "sha256": "5c962b7fda3396f51ea90043f586010e682d6616f6194ecbe13b15a95706cefa"
+    },
+    {
+      "path": "backend/uniswap_v3/store.py",
+      "sha256": "d1f174965c637fc4832609bea35c354fe7469e1085a5d1ac04b632f9be9deee5"
+    },
+    {
+      "path": "backend/uniswap_v3/transport.py",
+      "sha256": "a5fb69d4885f167b3ec09935c21d20f0988589fb3edfc55531f7125f87b9c0b6"
+    },
+    {
+      "path": "backend/uniswap_v3/types.py",
+      "sha256": "7ea4f4d6607cfc749bd0e8a5003deaca47f739595fc5865dfad1d171f6d70185"
+    },
+    {
+      "path": "backend/uniswap_v3/windows.py",
+      "sha256": "4b2808076d89900b883720e8f68782fff0b382d43a2fda9c654dfce0a2d15f42"
+    },
+    {
+      "path": "chains/deployments/elysium-v3-unqualified.json",
+      "sha256": "34921bf41707810a90c4c64e305471a3e374e105925944d3441f56df7be8d292"
+    },
+    {
+      "path": "chains/elysium-99801.json",
+      "sha256": "42bb401eabad9e504166b46b3d150e7c7ea9642514e74dd389bd611131fec8b9"
+    },
+    {
+      "path": "contracts-v3/candidate-manifest.json",
+      "sha256": "f3e5e462a25e1e2a3363130464ac53955edf8f7f988117887da2d92463d69d9c"
+    },
+    {
+      "path": "scripts/export-uniswap-v3-read-contract.py",
+      "sha256": "17f25b71a6c6756076c8308fe8b707569408c6efc0ca17c5ac789a74d6fcddaf"
+    }
+  ],
+  "status": "implemented_default_off"
+}

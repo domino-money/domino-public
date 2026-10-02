@@ -1,18 +1,15 @@
 @import 'tailwindcss';
 @import './fonts.css';    /* foundation: the three families, served from this site (was Google Fonts; 2026-09-28) */
+@import './font-fallbacks.css';  /* foundation: what text is drawn in until they load, at their widths (2026-10-01) */
 @import './shell.css';    /* foundation: header, menu, footer, ticker, primitives' component classes */
 @import './charts.css';   /* foundation: the shared charts kit */
 @import './art.css';      /* home: hero and feature vignettes, nav icon gestures */
 @import './home.css';     /* home: Home-only overrides */
 @import './markets.css';  /* markets: carousel, filter bar */
-@import './pool.css';     /* pool: chart card, stat strip specifics */
-@import './flow.css';     /* new position: step list */
-@import './account.css';  /* foundation: pieces shared by the account screens */
-@import './positions.css';        /* positions: list, position page, Performance, Execution */
-@import './automate.css';         /* automate: Automate and the sequence pages */
-@import './account-screens.css';  /* foundation: rugged97's screens */
-@import './docs.css';     /* docs: #/docs layout, sidebar, prose, on-this-page */
-@import './three.css';    /* the three features joined up: rows, a position's page, New position's success, Automate */
+@import './account.css';  /* foundation: pieces shared by the account screens (Home's feature pills use .dm-acct-status) */
+/* The screens' own partials (pool, flow, positions, automate, account-screens, docs, three) follow these in
+   screens.css, which each screen imports itself (2026-10-01, platform workstream, F8): Home's first paint waits for
+   none of them. */
 
 /* Domino design tokens, V2 (DESIGN-V2 §2). One palette, the dark one (owner, 2026-09-26: dark only): `:root`
    holds every colour, with nothing to switch between and no OS setting consulted. Tangerine (--primary,
@@ -23,6 +20,11 @@
 
 :root {
   color-scheme: dark;
+
+  /* How many times a decorative drawing's loop plays before it rests on its complete picture (2026-10-01, F6): the
+     hero, Home's three feature drawings, Automate's mode drawings and New position's preview. Spinners and busy bars
+     are not decoration: they keep moving while work goes on. Reduced motion and Pause motion still stop them all. */
+  --art-loops: 3;
 
   /* Surfaces: page, plate, (control), control, control hover. Hue 22 to 30 degrees, visibly warm; lightness
      4 / 8 / 11 / 16 / 21 % */
@@ -148,9 +150,9 @@
   --content-narrow: 1200px;
 
   /* Type families: unchanged */
-  --font-display: 'Instrument Serif', ui-serif, Georgia, 'Times New Roman', serif;
-  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'Geist Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --font-display: 'Instrument Serif', 'Instrument Serif Fallback', ui-serif, Georgia, 'Times New Roman', serif;
+  --font-sans: 'Geist', 'Geist Fallback', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
   /* Motion (DESIGN-V2 §2.9, §5): fast, small, transform and opacity. Every entrance delay is a multiple of --stagger. */
   --dur-instant: 80ms;    /* tooltip fade */
@@ -308,6 +310,10 @@
 
   html {
     background-color: var(--bg);
+    /* A control the keyboard moves to is scrolled into view below the sticky header, never under it (audit E12,
+       2026-10-01: a pool page's Estimate your earnings field hid there). Section links scroll by script
+       (lib/sectionScroll.ts), which this does not move. */
+    scroll-padding-top: calc(var(--header-h) + 12px);
   }
 
   /* The page ground: the warm light over the header is part of the body's own background, so nothing overflows. */
@@ -441,9 +447,12 @@
 }
 
 /* Keyframes (DESIGN-V2 §5.1). Art keyframes live in art.css, ModeArt's in automate.css. Entrances start from
-   their `from` frame and fill backwards only. */
+   their `from` frame and fill backwards only. The first-load rise and the page's fade-in start at opacity 0.01, not 0
+   (2026-10-01, the platform workstream's design call): the eye cannot tell them apart, but Chrome does not count a
+   paint at opacity 0 as contentful, so with 0 it dated the page's largest paint (LCP) at the end of the fade, about
+   300 ms after the heading was drawn. */
 @keyframes dm-rise {
-  from { opacity: 0; translate: 0 8px; }
+  from { opacity: 0.01; translate: 0 8px; }
   to { opacity: 1; translate: 0 0; }
 }
 
@@ -453,7 +462,7 @@
 }
 
 @keyframes dm-page-in {
-  from { opacity: 0; }
+  from { opacity: 0.01; }
 }
 
 @keyframes dm-pop {

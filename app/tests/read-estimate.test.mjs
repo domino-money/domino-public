@@ -58,13 +58,17 @@ test('v2 supplies one market+estimate; row keeps historical APR separate and tok
   assert.equal(calls.filter((c) => c.url.endsWith('/token')).length, 2);
 });
 
+// Changed on purpose 2026-10-01 (audit E21): every screen writes an APR by one rule (lib/format/apr.ts): one decimal under
+// 100%, whole percents from there, "<0.1" for a positive sliver. The exact figure is the payload's, untouched.
 test('available, exact zero, tiny positive and unavailable never replace one another', () => {
-  assert.equal(presentAprEstimate(observe(good.estimate), now(0)).text, '10.95');
-  assert.equal(presentAprEstimate(observe(fixture('zero-volume').estimate), now(0)).text, '0.00');
+  assert.equal(presentAprEstimate(observe(good.estimate), now(0)).text, '11.0', '10.95 to one decimal, half to even');
+  assert.equal(presentAprEstimate(observe(fixture('zero-volume').estimate), now(0)).text, '0.0');
   const tiny = { ...good.estimate, feeAprEstimate24hPercent: '0.000000000000000001' };
-  assert.equal(presentAprEstimate(observe(tiny), now(0)).text, '<0.01');
+  assert.equal(presentAprEstimate(observe(tiny), now(0)).text, '<0.1');
+  assert.equal(presentAprEstimate(observe({ ...good.estimate, feeAprEstimate24hPercent: '99.96' }), now(0)).text, '100', 'rounded first, then sized (audit E8)');
+  assert.equal(presentAprEstimate(observe({ ...good.estimate, feeAprEstimate24hPercent: '1428.4' }), now(0)).text, '1,428');
   // T1.4: the equal-fee protocol fixture is available now — its adjusted value shows.
-  assert.equal(presentAprEstimate(observe(fixture('protocol-fee').estimate), now(0)).text, '10.94');
+  assert.equal(presentAprEstimate(observe(fixture('protocol-fee').estimate), now(0)).text, '10.9');
   for (const name of ['zero-tvl', 'missing-tvl', 'invalid-protocol-fee', 'dynamic', 'expired']) assert.equal(presentAprEstimate(observe(fixture(name).estimate), now(0)).text, null, name);
 });
 

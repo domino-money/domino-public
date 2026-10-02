@@ -134,6 +134,13 @@ export function fixtureRelay(fixture, { maxDays = 7, script = {}, tamper, swapBy
         const own = Object.values(fixture.pool).flat().filter((log) => log[2] === 1 && log[0] >= request.from && log[0] <= request.to && `0x${log[4][1].slice(26)}` === '0x58daec3116aae6d93017baaea7749052e8a04fa7' && BigInt(`0x${log[5].slice(2 + 3 * 64, 2 + 4 * 64)}`) === salt);
         return answer({ v: 1, kind: 'settlements', head, units: [{ unit: null, from: request.from, to: request.to, final: false, logs: own.sort((a, b) => a[0] - b[0] || a[1] - b[1]) }], next: null });
       }
+      // 2026-10-01 (fees item A4): an automation vault's own record: the NFT's own ModifyLiquidity in its mint's block and in
+      // each block of the vault's executions for it (here, every block of its own: the recorded case's compounds).
+      case 'vault': {
+        const salt = BigInt(request.tokenId);
+        const own = Object.values(fixture.pool).flat().filter((log) => log[2] === 1 && log[0] >= request.from && log[0] <= request.to && `0x${log[4][1].slice(26)}` === '0x58daec3116aae6d93017baaea7749052e8a04fa7' && BigInt(`0x${log[5].slice(2 + 3 * 64, 2 + 4 * 64)}`) === salt);
+        return answer({ v: 1, kind: 'vault', head, units: [{ unit: null, from: request.from, to: request.to, final: false, logs: own.sort((a, b) => a[0] - b[0] || a[1] - b[1]) }], next: null });
+      }
       // 2026-09-27: the price path's own-settlements scan: every PositionManager ModifyLiquidity of the pool in each span
       // (the recorded epochs hold all of them), the NFT's own answered, what they all cost as the answer's bytes.
       case 'modifies': {

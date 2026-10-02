@@ -39,8 +39,23 @@ export async function settled(page, { timeout = 10_000, label = 'every page sett
   }
 }
 
+/**
+ * How far each context's installed clock has been jumped past the real one (2026-10-01, RPC-SPEC: the site's chain routes
+ * answer the browser suites from Node, tests/support/edge-routes.mjs, and keep their answers, their node's rests and its
+ * bucket by their own clock). tests/support/browser-chain.mjs runs the routes on `Date.now() + clockSkew(context)`, so a
+ * kept answer ages, and a rest ends, as the page's own time moves.
+ */
+const skews = new WeakMap();
+export const clockSkew = (context) => skews.get(context) ?? 0;
+
+/** Playwright's ticks (a number of ms, or "ss", "mm:ss", "hh:mm:ss") in ms. */
+const ticksMs = (ticks) => (typeof ticks === 'number' ? ticks : String(ticks).split(':').reduce((total, part) => total * 60 + Number(part), 0) * 1000);
+
 /** Settle every page of the context, then jump the shared clock once. */
 export async function jump(page, ticks, { pending = false, timeout = 10_000 } = {}) {
   if (!pending) await settled(page, { timeout, label: `every page settled before jumping ${ticks}` });
+  const context = page.context();
+  // The routes' clock moves first: a page's timer that fires inside the leap finds its routes already at the new time.
+  skews.set(context, clockSkew(context) + ticksMs(ticks));
   await page.clock.fastForward(ticks);
 }

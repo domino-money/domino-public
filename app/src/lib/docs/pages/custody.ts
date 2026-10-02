@@ -1,5 +1,5 @@
 import { COPY } from '../../read/screens/copy'
-import { b, doc, p } from '../blocks'
+import { doc, p } from '../blocks'
 import type { DocPage } from '../types'
 
 export const NON_CUSTODIAL: DocPage = {
@@ -12,7 +12,7 @@ export const NON_CUSTODIAL: DocPage = {
       id: 'your-wallet',
       title: 'The position you open stays in your wallet',
       blocks: [
-        p('A position you create is a standard Uniswap position NFT, minted to the wallet that signs.'),
+        p('A position you create is a standard Uniswap position NFT in the wallet that signs.'),
         p('When you start Auto-compound or Domino-compound from it, that NFT stays in your wallet. You approve that one NFT to your sequence vault, never all of your NFTs.'),
         // 2026-09-27: Create position deposits through Domino's Setup contract itself (since 2026-09-23), and Setup's own
         // screen is linked from nowhere, so the sentence says where a reader meets a setup operation.
@@ -25,7 +25,7 @@ export const NON_CUSTODIAL: DocPage = {
       blocks: [
         p('Positions the automation opens, and earned fees not yet added back, are held by your own sequence vault until you withdraw them. Positions it opens are standard Uniswap position NFTs too.'),
         p('Your permission covers earned fees only, including fees still uncollected on your starting position when you create the sequence. Principal is never used.'),
-        p('The vault is created for your wallet alone, and no function can change its owner. Only your wallet controls the vault: its withdrawals, its limits and its operator. Every withdrawal goes to your wallet.'),
+        p('The vault is created for your wallet alone, and no function can change its owner. Only your wallet controls the vault: its withdrawals, limits and operator. Every withdrawal goes to your wallet.'),
       ],
     },
     {
@@ -65,21 +65,18 @@ export const NON_CUSTODIAL: DocPage = {
         {
           kind: 'facts',
           rows: [
-            { label: 'Pause', value: 'You or the operator', note: 'Stops automation. Only you can resume it.' },
+            // 2026-10-01 (audit E18): where Pause is (a receipt's How to pause lands here).
+            { label: 'Pause', value: 'You or the operator', note: 'Stops automation. Only you can resume it. Your position’s page has the button, no sign-in needed.' },
             { label: 'Change your limits', value: 'You', note: 'The automation rules, and the limits every run is bound by. The paused state is unchanged.' },
-            { label: 'Revoke the operator', value: 'You', note: 'Removes the operator’s authority over your vault. Once revoked, you can authorise the same operator again.' },
-            { label: 'Revoke the NFT approval', value: 'You', note: 'Takes back the vault’s approval of your starting position, which stops automation.' },
+            // 2026-10-01 (audit E21): the app's spelling.
+            { label: 'Revoke the operator', value: 'You', note: 'Ends its authority over your vault. Once revoked, you can authorize the same operator again.' },
+            { label: 'Revoke the NFT approval', value: 'You', note: 'Takes back the vault’s approval of your starting position, stopping automation.' },
             { label: 'Withdraw', value: 'You', note: 'Returns a position or earned fees the vault holds to your wallet.' },
           ],
         },
-        p('Each is a transaction your wallet signs, and each works while automation is paused and without the operator. Withdrawals carry no Domino service fee.'),
-      ],
-    },
-    {
-      id: 'sign-in-grants-nothing',
-      title: 'Signing in grants nothing',
-      blocks: [
-        p(doc('Signing in', 'wallet', 'sign-in'), ' proves you control your address, and nothing more. Its message says: ', b('This request does not authorize transactions or automation.')),
+        // 2026-10-01 (audit E18): which has a screen. What signing in grants is on Wallet and sign-in.
+        p('Each is a transaction your wallet signs on your sequence vault, even while paused or without the operator. Only Pause has a button here; your wallet makes the others, for example on the block explorer. None carries a service fee.'),
+        p(doc('Signing in', 'wallet', 'sign-in'), ' grants none of them.'),
       ],
     },
   ],
@@ -99,7 +96,8 @@ export const RISKS: DocPage = {
       id: 'out-of-range',
       title: 'Ranges go idle',
       blocks: [
-        p('Outside its range a position holds only one of its two tokens: the one that lost value against the other. It earns nothing until the price comes back.'),
+        // Changed on purpose 2026-10-01 (audit E13): which token, by side.
+        p('Outside its range a position holds only one of its two tokens. In an ETH/USDG pool, below the range it holds only ETH, which fell; above it, only USDG, its ETH sold on the way up. It earns nothing until the price comes back.'),
         p('Positions that Domino-compound opens sit higher up the price. If the price turns back down, they can end up holding only the token, and a next position can start out of range.'),
       ],
     },
@@ -137,6 +135,48 @@ export const RISKS: DocPage = {
       blocks: [
         p('A token’s issuer may be able to upgrade, pause or freeze it.'),
         p('Positions and automation run on smart contracts, and a contract can have defects. Once your wallet has sent a transaction, Domino cannot cancel it.'),
+      ],
+    },
+  ],
+}
+
+/** 2026-10-01 (items I4, I6, A17): lib/browserCopies.ts and the fees history's ages; categories, never providers. */
+export const PRIVACY: DocPage = {
+  slug: 'privacy',
+  title: 'Privacy',
+  summary: 'What this browser keeps and for how long, and who sees your address when the site reads the chain.',
+  sections: [
+    {
+      id: 'this-browser',
+      title: 'What this browser keeps',
+      blocks: [
+        p('Connecting your wallet stores nothing about it on Domino’s servers. This browser keeps short-lived copies, so a page shows at once and then reads again:'),
+        {
+          kind: 'facts',
+          rows: [
+            // Fix round 1: a viewed address's tokens too (lib/walletMemory.ts).
+            { label: 'Your positions', value: 'A day' },
+            { label: 'Token balances', value: 'A day', note: 'Of your wallet and of an address you view.' },
+            { label: 'Managed positions', value: '6 hours', note: 'While you are signed in.' },
+            { label: 'Receipts', value: '30 days', note: 'While you are signed in.' },
+            { label: 'A position’s fee history', value: '7 days', note: 'Public chain data, no wallet in it.' },
+            { label: 'Token names', value: '30 days', note: 'Public chain data.' },
+          ],
+        },
+        p('An older copy is never shown, and is deleted the next time the site opens. Disconnecting your wallet here deletes its copies, and signing out deletes the signed-in ones. Clearing this site’s data deletes them all.'),
+        // 2026-10-01 (items A1, V7; fix round 1): a viewed address's positions are never kept (OwnedPositions.tsx readOnly).
+        p('To draw a position’s fee chart, it also keeps that position’s fees ready to collect each time this browser reads them, now or at a past moment, for 30 days: public chain data, no wallet address. The positions of an address you view are never kept.'),
+      ],
+    },
+    {
+      id: 'who-sees',
+      title: 'Who sees your address',
+      blocks: [
+        // RPC-SPEC §7.6 (2026-10-01): no public node is asked.
+        p('Your positions, their fees and their history are read by Domino’s own servers, from Domino’s own Robinhood Chain node. Your browser asks only Domino, so no other node sees your address. Your wallet signs and sends through its own connection to the chain.'),
+        p('A moment over half an hour old comes from Domino’s read service, which asks an archive node for it by the position’s number, never your address.'),
+        p('Token pictures and prices come from a public market data provider. Like any site it sees your internet address, never your wallet’s.'),
+        p('The Wallet card asks Domino’s read service for a wallet’s tokens by its address. ', doc('Signing in', 'wallet', 'sign-in'), ' tells Domino’s sign-in service your address, for the session.'),
       ],
     },
   ],

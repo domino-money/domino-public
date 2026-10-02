@@ -1,9 +1,13 @@
 /**
  * POST /api/owned/v2/positions: the positions one wallet created through
  * Domino's own contracts, and the DominoSetupV1 deposits it has not turned
- * into a position, read from the chain's public RPC (the owner's rule,
- * 2026-09-24: connecting the wallet shows its positions, nothing is typed,
- * nothing is kept in the browser, and the read service is not needed).
+ * into a position (the owner's rule, 2026-09-24: connecting the wallet shows
+ * its positions, nothing is typed, nothing is kept in the browser, and the
+ * read service is not needed). Read since 2026-10-01 (RPC-SPEC, the owner's
+ * rule: nothing is read from a public RPC) from Domino's own Robinhood Chain
+ * node, at the edge (functions/_lib/chainRoutes.ts, localRpc.ts): the ids from
+ * DominoSetupV1's state (D4, wideLogs false), the mint blocks from a log walk
+ * kept per owner (functions/_lib/ownedMints.ts).
  *
  *   1. The head every other answer is pinned to, and the owner's
  *      DominoSetupV1.ownerNonce at it: 2026-09-28 (speed wave B, item 23), one
@@ -17,8 +21,8 @@
  *      wallet whose nonce is 0 never opened a setup operation, so it has no
  *      SetupMinted log and no held deposit, and its empty answer is that one
  *      call (it paid the whole scan before, three calls in a row). The runtime
- *      is told the head (OwnedDeps.head: the page's router routes its
- *      fallbacks' numbered reads by it, src/lib/chain/failover.ts).
+ *      is told the head (OwnedDeps.head; the page's router of 2026-09-28,
+ *      retired 2026-10-01, routed its fallbacks' numbered reads by it).
  *   2. eth_getLogs of DominoSetupV1's SetupMinted events for the owner (topic
  *      2), newest first, from the head back to the contract's deployment
  *      block. A range the RPC refuses as too large or too slow is split in
@@ -27,10 +31,11 @@
  *      NFTs the wallet holds that were minted elsewhere are never named.
  *      The page's later scans of the same wallet (2026-09-25) start shortly
  *      before its last scan's block instead (MintedMemory).
- *      2026-09-28: while the runtime cannot read wide log ranges (the page's,
- *      when the chain's own RPC is unreachable and only its public fallbacks
- *      answer, OwnedDeps.wideLogs), the same ids come from DominoSetupV1's own
- *      state instead (operationIds): no log is read at all.
+ *      2026-09-28: while the runtime cannot read wide log ranges
+ *      (OwnedDeps.wideLogs false: then the page's, on the chain's public
+ *      fallbacks; since 2026-10-01 always the edge's, RPC-SPEC D4), the same
+ *      ids come from DominoSetupV1's own state instead (operationIds): no log
+ *      is read at all.
  *   3. One Multicall3 aggregate3 at the head (per IDS_PER_CALL ids): per id
  *      ownerOf, getPositionLiquidity and getPoolAndPositionInfo (2026-09-28,
  *      item 17, the page's scan: and its PositionManager subscriber, whose
@@ -52,12 +57,11 @@
  * nothing else; the endpoint, every method, contract, topic, block range and
  * calldata are fixed here, the ids come from the logs, and the RPC calls and
  * bytes one answer may cost are capped (functions/_lib/owned.ts). Per owner,
- * an answer is kept 30 seconds (5 for a fresh question) and a failure 12.
+ * an answer is kept 25 seconds (owned.ts CACHE_SECONDS; 5 for a fresh question) and a failure 12.
  */
 import {
   ChainError,
   HASH,
-  LOG_BLOCKS_ONE,
   MAX_LOG_BYTES,
   MIN_SPLIT_BLOCKS,
   POSITION_MANAGER,
@@ -73,6 +77,7 @@ import {
   asInt24,
   decodeOperation,
   hex,
+  limitsOf,
   operationId,
   paced,
   quantity,
@@ -115,10 +120,19 @@ export interface MintedMemory {
   block: number
   ids: readonly bigint[]
 }
-/** Positions per aggregate3 call in the first read (three sub-calls each). */
-export const IDS_PER_CALL = 50
-/** Sub-calls per aggregate3 call in the second read. */
-export const CALLS_PER_AGGREGATE = 150
+/** 2026-10-01 (fees item A1): an NFT's SetupMinted log, its mint's block and transaction. */
+export interface MintedAt {
+  id: string
+  block: number
+  tx: string
+}
+/**
+ * Positions per aggregate3 call in the first read (three sub-calls each, four with the feature). Changed on purpose
+ * 2026-10-02 (rugged97's rule 5: at most 50 calls in one multicall): 12, so 48 sub-calls at most; it was 50 (200).
+ */
+export const IDS_PER_CALL = 12
+/** Sub-calls per aggregate3 call in the second read. Changed on purpose 2026-10-02 (rule 5): 50, was 150. */
+export const CALLS_PER_AGGREGATE = 50
 
 const ZERO = '0x0000000000000000000000000000000000000000'
 const U256 = (1n << 256n) - 1n
@@ -202,25 +216,32 @@ function mintedId(log: unknown, ownerTopic: string): bigint | null {
  * MAX_POSITIONS. Ranges are asked newest first; one the RPC refuses as too
  * large or too slow is split in two, down to MIN_SPLIT_BLOCKS, its newer half
  * asked first. `capped` says the walk stopped before the deployment block.
+ * 2026-10-02 (review finding 13): `incomplete` says it stopped on its byte budget, before reading every window up to
+ * `head`: its ids may then leave out some within MAX_POSITIONS. A walk capped by MAX_POSITIONS alone is complete: newest
+ * first, its ids are exactly the newest MAX_POSITIONS up to `head`, and a later walk from `head` merges onto them.
  * 2026-09-28 (owned.ts LOG_BLOCKS_ONE, merged with speed wave B's scan): a walk
  * wider than the RPC serves for one filter at all is asked in windows of that
  * width, newest first, rather than refused first and halved.
  */
-export async function mintedIds(deps: OwnedDeps, budget: Budget, owner: string, head: number, known: MintedMemory | null = null): Promise<{ ids: bigint[]; capped: boolean }> {
+export async function mintedIds(deps: OwnedDeps, budget: Budget, owner: string, head: number, known: MintedMemory | null = null): Promise<{ ids: bigint[]; capped: boolean; mints: MintedAt[]; incomplete: boolean }> {
   const ownerTopic = `0x${addressWord(owner)}`
   const start = known ? Math.max(SETUP_DEPLOY_BLOCK, known.block - REREAD_BLOCKS + 1) : SETUP_DEPLOY_BLOCK
+  // 2026-10-01 (RPC-SPEC §2.6): in the runtime's windows (the edge's are wider: its node transport splits them).
+  const { one } = limitsOf(deps)
   const queue: [number, number][] = []
-  for (let top = head; top >= start; top -= LOG_BLOCKS_ONE) queue.push([Math.max(start, top - LOG_BLOCKS_ONE + 1), top])
+  for (let top = head; top >= start; top -= one) queue.push([Math.max(start, top - one + 1), top])
   const ids: bigint[] = []
   const seen = new Set<bigint>()
+  // 2026-10-01 (fees item A1): each SetupMinted log's block and transaction, the NFT's own mint: a hint for its history.
+  const mints: MintedAt[] = []
   while (queue.length > 0) {
-    if (budget.logBytes >= MAX_LOG_BYTES) return { ids, capped: true }
+    if (budget.logBytes >= MAX_LOG_BYTES) return { ids, capped: true, mints, incomplete: true }
     const [from, to] = queue.shift() as [number, number]
     let logs: unknown
     try {
       logs = await paced(deps, budget, 'eth_getLogs', [{ address: SETUP_CONTRACT, fromBlock: hex(from), toBlock: hex(to), topics: [SETUP_MINTED_TOPIC, null, ownerTopic] }])
     } catch (error) {
-      if (error instanceof ChainError && error.kind === 'bytes') return { ids, capped: true }
+      if (error instanceof ChainError && error.kind === 'bytes') return { ids, capped: true, mints, incomplete: true }
       if (error instanceof ChainError && error.kind === 'range' && to - from + 1 >= 2 * MIN_SPLIT_BLOCKS) {
         const middle = from + Math.floor((to - from) / 2)
         queue.unshift([middle + 1, to], [from, middle])
@@ -232,16 +253,18 @@ export async function mintedIds(deps: OwnedDeps, budget: Budget, owner: string, 
     for (let i = logs.length - 1; i >= 0; i--) {
       const id = mintedId(logs[i], ownerTopic)
       if (id === null || seen.has(id)) continue
-      if (ids.length === MAX_POSITIONS) return { ids, capped: true }
+      if (ids.length === MAX_POSITIONS) return { ids, capped: true, mints, incomplete: false }
       seen.add(id)
       ids.push(id)
+      const { blockNumber, transactionHash } = logs[i] as { blockNumber?: unknown; transactionHash?: unknown }
+      if (typeof blockNumber === 'string' && /^0x[0-9a-f]{1,16}$/i.test(blockNumber) && typeof transactionHash === 'string' && HASH.test(transactionHash)) mints.push({ id: id.toString(), block: Number(BigInt(blockNumber)), tx: transactionHash.toLowerCase() })
     }
-    if (ids.length === MAX_POSITIONS && queue.length > 0) return { ids, capped: true }
+    if (ids.length === MAX_POSITIONS && queue.length > 0) return { ids, capped: true, mints, incomplete: false }
   }
-  if (!known) return { ids, capped: false }
+  if (!known) return { ids, capped: false, mints, incomplete: false }
   // The newer logs' ids first, then the ones the earlier scan found and these did not name again.
   const merged = [...ids, ...known.ids.filter((id) => !seen.has(id))]
-  return { ids: merged.slice(0, MAX_POSITIONS), capped: merged.length > MAX_POSITIONS }
+  return { ids: merged.slice(0, MAX_POSITIONS), capped: merged.length > MAX_POSITIONS, mints, incomplete: false }
 }
 
 /**
@@ -252,9 +275,9 @@ export const MINTED_OPERATIONS = 2 * 150
 
 /**
  * The ids DominoSetupV1 minted to the owner, most recent operation first, at most MAX_POSITIONS, read from the
- * contract's own state at `head` rather than from its SetupMinted logs (2026-09-28). The page asks this while the chain's
- * own RPC cannot be reached: its public fallbacks read logs only a few thousand blocks at a time, and the log walk from
- * the deployment block covers millions (endpoints.ts).
+ * contract's own state at `head` rather than from its SetupMinted logs (2026-09-28: then while the chain's own RPC could
+ * not be reached and its public fallbacks read logs only a few thousand blocks at a time; since 2026-10-01, RPC-SPEC D4,
+ * always at the edge, the mint blocks coming from a log walk kept per owner, functions/_lib/ownedMints.ts).
  *
  * The same set as the log walk's, by the contract's own rules (contracts/src/DominoSetup.sol): every operation of an
  * owner is operationId(owner, n) for n below ownerNonce(owner), since open() takes only nextOperationId(msg.sender) and
@@ -325,7 +348,7 @@ interface Held {
  * null when this one stopped at a cap. `automation` (the page's, 2026-09-28, item 17): each listed position's feature,
  * read in the same calls (automation.ts), as `automation`.
  */
-export async function scanWallet(deps: OwnedDeps, owner: string, earlier: MintedMemory | null = null, automation = false): Promise<OwnerScan & { body: WalletAnswer; minted: MintedMemory | null; automation?: AutomationAnswer }> {
+export async function scanWallet(deps: OwnedDeps, owner: string, earlier: MintedMemory | null = null, automation = false): Promise<OwnerScan & { body: WalletAnswer; minted: MintedMemory | null; automation?: AutomationAnswer; mints?: MintedAt[] }> {
   const budget: Budget = { calls: 0, started: deps.now(), logBytes: 0 }
   // The head (ArbSys's L2 block, never Multicall3's parent-chain block.number) and the owner's setup nonce at it (item
   // 23 above): one aggregate3 at the RPC's own head. A head before DominoSetupV1 existed is not one.
@@ -340,9 +363,9 @@ export async function scanWallet(deps: OwnedDeps, owner: string, earlier: Minted
   // A node behind the earlier scan's block reads the logs from where it stands; the earlier ids are kept. 2026-09-28: a
   // runtime that cannot read wide log ranges now (the page's, on the chain's public fallbacks) reads the ids from
   // DominoSetupV1's state instead, whatever an earlier scan found: every one of them, at this head.
-  const { ids, capped } =
+  const { ids, capped, mints } =
     deps.wideLogs?.() === false
-      ? await operationIds(deps, budget, owner, head, nonce)
+      ? { ...(await operationIds(deps, budget, owner, head, nonce)), mints: [] as MintedAt[] }
       : await mintedIds(deps, budget, owner, head, earlier && earlier.block <= head ? earlier : earlier ? { block: head, ids: earlier.ids } : null)
 
   // First read: which ids the owner still holds, their pool keys, ranges and liquidity (and their subscribers).
@@ -494,6 +517,7 @@ export async function scanWallet(deps: OwnedDeps, owner: string, earlier: Minted
     capped,
     minted: capped ? null : { block: head, ids },
     automation: automation ? { block: head, positions: automationsOf(held.map((p) => p.id), subscribers, results.slice(vaultsAt)) } : undefined,
+    ...(mints.length ? { mints } : {}),
   }
 }
 

@@ -1,0 +1,22 @@
+# Reviewed-source candidate (2026-10-02, review of rugged97's rules, finding 2): the site-wide gate of wide log scans
+# (src/wide-gate-worker.mjs). This file does not provision a deployment: the owner deploys it, then binds its Durable
+# Object to the domino-app Pages project as WIDE_GATE (RPC-SPEC §11.5). Only those Pages Functions reach it, through that
+# binding: no Internet endpoint, no route, no scheduled trigger, no variable and no secret.
+name = "domino-wide-gate"
+main = "src/wide-gate-worker.mjs"
+compatibility_date = "2026-10-02"
+workers_dev = false
+preview_urls = false
+routes = []
+logpush = false
+
+[observability]
+enabled = false
+
+[[durable_objects.bindings]]
+name = "WIDE_GATE"
+class_name = "WideGate"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WideGate"]

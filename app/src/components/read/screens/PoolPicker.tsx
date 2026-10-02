@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { reasonText } from '../../../lib/read/describe'
+import { aprDigits } from '../../../lib/format/apr'
+import { feeWords } from '../../../lib/format/fee'
 import { COPY, failureText } from '../../../lib/read/screens/copy'
 import { cataloguePoolId, createCatalogueSession, verifyCandidate, type CatalogueSession, type CatalogueSnapshot } from '../../../lib/read/screens/catalogueSession'
 import { keptCreatePools, readCreatePools, type PoolsAnswer } from '../../../lib/create/poolsAhead'
 import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from '../../../lib/read/screens/identity'
+import { pricePair } from '../../../lib/read/orientation'
 import { neutralOrder, poolsRequest, projectPoolsView, type PoolOption, type PoolsView } from '../../../lib/read/screens/poolsList'
 import { failureCode } from '../../../lib/read/screens/quietRead'
 import { askAgainLater, readWithin } from '../../../lib/read/screens/screenRead'
@@ -35,16 +38,19 @@ const plainNotes = (option: PoolOption) =>
  */
 function PoolRow({ option, checked, onPick, name, compact = false, open = false, plain = false }: { option: PoolOption; checked: boolean; onPick: () => void; name: string; compact?: boolean; open?: boolean; plain?: boolean }) {
   // New position's plain rows sit flat on the card: 32px marks ringed in the card, the pair over its id, the fee right after them.
+  // The pair is named as its price is written, "TOKEN / USDG" (audit E21, lib/read/orientation.ts).
+  const pair = pricePair(option.currencies[0], option.currencies[1])
   const identity = (
     <>
-      <TokenMarkPair base={option.currencies[0]} quote={option.currencies[1]} size={plain || !compact ? 32 : 28} ring={plain ? 'var(--card)' : 'var(--surface-1)'} />
+      <TokenMarkPair base={pair.base} quote={pair.quote} size={plain || !compact ? 32 : 28} ring={plain ? 'var(--card)' : 'var(--surface-1)'} />
       <span className={plain ? 'dm-flow-pool-id' : 'grid min-w-0 flex-1 gap-0.5 text-left'}>
-        <span className={plain ? 'dm-flow-pool-pair' : 'text-body font-medium text-fg'}><SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} /></span>
+        <span className={plain ? 'dm-flow-pool-pair' : 'text-body font-medium text-fg'}><SymbolText token={pair.base} /> / <SymbolText token={pair.quote} /></span>
         {/* Changed on purpose (round 6, 2026-09-27, New position for beginners): a plain row names its pair and fee only;
             the pool id is on the row's data-pool-key. */}
         {!plain && <span className="text-caption text-fg-subtle">Uniswap · <Address value={option.key} short /></span>}
       </span>
-      <span className="dm-chip shrink-0" data-fee="">{option.fee}</span>
+      {/* The fee as every chip writes it (lib/format/fee.ts, audit E21): "0.30% fee". */}
+      <span className="dm-chip shrink-0" data-fee="">{feeWords(option.fee)}</span>
     </>
   )
   const head = open ? (
@@ -356,7 +362,8 @@ function RowAprFigure({ option, label = 'Pool APR' }: { option: PoolOption; labe
       <span className="text-fg-muted">{label}</span>
       {apr.kind === 'estimate' ? (
         <span className="tnum font-medium text-fg" title={ROW_APR_TITLE}>
-          {apr.text}% est.
+          {/* The one APR rule of every screen (lib/format/apr.ts, audit E21): "12.2% est.", "2,704% est.". */}
+          {aprDigits(apr.text) ?? apr.text}% est.
         </span>
       ) : (
         <span className="text-fg-subtle" title={rowAprReasonText(apr.reason)}>

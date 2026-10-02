@@ -37,7 +37,7 @@ import { MAIN_TOKENS } from '../config/mainTokens'
 import { catalogueTokens } from '../config/selectedPoolCatalogue'
 import type { WalletRow } from './read/pagers'
 import { parseScaled } from './format/decimal'
-import { symbolReading } from './symbolReading'
+import { symbolReading, unsafeSymbol } from './symbolReading'
 import { PRICE_BATCH } from './tokenArtwork'
 import { NATIVE, PRICE_GETS, USDG, USDG_QUOTE, WETH, type TokenQuote } from './walletPrices'
 
@@ -86,6 +86,8 @@ const MAIN_BY_READING: ReadonlyMap<string, string> = new Map([
 /** A token whose symbol reads as a main token's but lives at another address. */
 export function isLookAlike(row: WalletRow): boolean {
   if (row.token.symbol === null) return false
+  // A misleading name, or one with a format character that can reorder the text beside it, is left out too (audit I2).
+  if (unsafeSymbol(row.token.symbol)) return true
   const owner = MAIN_BY_READING.get(symbolReading(row.token.symbol))
   // Native ETH and WETH both read as ether: either address is the real one for either symbol.
   if (owner === undefined) return false

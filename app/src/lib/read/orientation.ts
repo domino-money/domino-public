@@ -41,3 +41,12 @@ export const baseIndex = (currency0: string, currency1: string): 0 | 1 => (price
 
 /** The index, in the pool's order, of the token a price is written in. */
 export const quoteIndex = (currency0: string, currency1: string): 0 | 1 => (priceInverted(currency0, currency1) ? 0 : 1)
+
+/**
+ * A pair's two sides in the order its price is written, "TOKEN/USDG" beside "1 TOKEN = X USDG" (audit E21, 2026-10-01):
+ * one name for a pool on every screen, the ticker, the tables, the cards and its page, whatever the pool's own order.
+ * `first` and `second` are in the pool's order.
+ */
+export function pricePair<T extends { address: string }>(first: T, second: T): { base: T; quote: T } {
+  return priceInverted(first.address, second.address) ? { base: second, quote: first } : { base: first, quote: second }
+}

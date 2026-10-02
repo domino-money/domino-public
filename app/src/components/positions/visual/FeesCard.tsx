@@ -2,28 +2,32 @@ import { useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Delta, LiveFigure, PeriodTabs, StackedBar, UsdText, type PeriodKey } from '../../figures'
 import { TokenMarkPair } from '../../TokenIcon'
-import { Badge, cx } from '../../ui'
-import { useFeeHistories } from '../../../lib/fees/useFeeHistory'
-import type { FeeHistoryView, FeeDisplayState as PositionState } from '../../../lib/fees/types'
+import { cx } from '../../ui'
+import { ChartSkeleton } from '../../charts/ChartSkeleton'
+import { useFeeHistory } from '../../../lib/fees/useFeeHistory'
+import { usePastReads, usePastReadsListed } from '../../../lib/fees/usePastReads'
+import { defaultPeriodFor, periodStart, periodsFor, type FeesPeriod } from '../../../lib/fees/periods'
+import type { FeeDisplayState as PositionState } from '../../../lib/fees/types'
 import { useLoadMilestone } from '../../../lib/useLoadMilestone'
+import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { historyLoadQuality } from '../../../lib/fees/freshness'
+import { shortDate, shortTime } from '../../../lib/format/time'
+import { spanText } from '../../../lib/positionApr'
 import type { TokenDisplay } from '../../../lib/read/types'
 import { automationImpact, useVaultRecord } from '../../../lib/automationImpact'
 import { useAutomation } from '../../../lib/automationState'
 import { AUTOMATION_NAME, AutomationImpact } from './AutomationImpact'
 import { AutomationFrame } from './AutomationFrame'
 import { FeesActivity, TokenFigure } from './FeesActivity'
-import { FeesChart, percentText } from './FeesChart'
+import { CHART_BOX, FeesChart } from './FeesChart'
 import { FeesSkeleton } from './FeesSkeleton'
-import { feesView, periodView, realisedApr, type FeesPeriod, type FeesSource, type FeesView } from './model'
+import { feesView, periodView, type FeesView } from './model'
 import { anyPositive, basisOf, type Basis, growth, positive, stateToken, unitsNumber, unitsText, valueFigure, valueUnits } from './value'
 
 export interface FeesCardProps {
   kind: 'plain' | 'compound' | 'domino'
-  /** One position, or the Positions list's aggregate (§13.7). */
-  source: { tokenId: string } | { tokenIds: readonly string[] }
-  /** The hooks' download budget: a position page, or the list. */
-  scope?: 'page' | 'list'
+  /** One position. */
+  source: { tokenId: string }
   /** The page already shows UNCLAIMED FEES (the value band): no compact card repeats it. */
   bandPresent: boolean
   /** Non-USDG pairs: the quote token of the page's price orientation. */
@@ -38,21 +42,18 @@ export interface FeesCardProps {
   activity?: boolean
 }
 
-/** The realised Fee APR row (§13.2-5) waits for the owner's yes (§21-3): built, and off. */
-const SHOW_REALISED_APR = false
-
 /** A symbol from /state as text (untrusted), or the short address when unreadable. */
 const symbolOf = (state: PositionState, i: 0 | 1) => state.currencies[i].symbol ?? `${state.currencies[i].address.slice(0, 6)}…${state.currencies[i].address.slice(-4)}`
 
-/** The token amounts under a legend value: at most six significant digits each, the full value in the title (`near`: "≈" before it). */
-function Amounts({ amounts, state, near = false }: { amounts: readonly [bigint, bigint] | null; state: PositionState; near?: boolean }) {
+/** The token amounts under a legend value: at most six significant digits each, the full value in the title. */
+function Amounts({ amounts, state }: { amounts: readonly [bigint, bigint] | null; state: PositionState }) {
   if (!amounts) return null
   return (
     <span className="dm-fees-amounts">
       {([0, 1] as const).map((i) =>
         state.currencies[i].decimals === null ? null : (
           <span key={i}>
-            <TokenFigure raw={amounts[i]} currency={state.currencies[i]} near={near} /> {symbolOf(state, i)}
+            <TokenFigure raw={amounts[i]} currency={state.currencies[i]} /> {symbolOf(state, i)}
           </span>
         ),
       )}
@@ -88,8 +89,8 @@ function LegendRow({ tone, label, value, amounts, title, money }: { tone: 'colle
   )
 }
 
-/** The head: the title, an optional mark (the estimate's "est."), an optional pair row (standalone) and the period tabs. */
-function Head({ titleId, state, tokens, standalone, tabs, mark }: { titleId: string; state: PositionState | null; tokens?: readonly [TokenDisplay, TokenDisplay]; standalone?: boolean; tabs?: ReactNode; mark?: ReactNode }) {
+/** The head: the title, an optional mark (a saved copy's), an optional pair row (standalone) and the period tabs. */
+function Head({ titleId, state, tokens, standalone, mark, tabs }: { titleId: string; state: PositionState | null; tokens?: readonly [TokenDisplay, TokenDisplay]; standalone?: boolean; mark?: ReactNode; tabs?: ReactNode }) {
   const marks = tokens ?? (state ? ([stateToken(state.currencies[0]), stateToken(state.currencies[1])] as const) : null)
   return (
     <div className="dm-fees-head">
@@ -149,197 +150,221 @@ function UnclaimedRow({ state, basis, large = false }: { state: PositionState; b
 
 /**
  * The chart's room when no history can be drawn (2026-09-25): the card keeps its place and its exact figures, and the
- * plot is a flat, quiet line along its foot, at the loaded chart's height (nothing moves when a later run draws one).
+ * plot is a flat, quiet line along its foot, at the loaded chart's height (nothing moves when a later read draws one).
+ * 2026-10-01 (item A13: an empty plot with no word read as broken, or as a position that earned nothing): one calm grey
+ * line over it says why, in plain words. No button: the page asks again itself.
  */
-function QuietPlot() {
+function QuietPlot({ note, why }: { note?: string; why?: string }) {
   return (
-    <div className="dm-fees-plot dm-fees-quiet" aria-hidden="true" data-fees-quiet="">
-      <svg className="dm-fees-quiet-line" viewBox="0 0 100 2" preserveAspectRatio="none" focusable="false">
+    <div className="dm-fees-plot dm-fees-quiet" data-fees-quiet={why ?? ''}>
+      {note && <p className="dm-fees-quiet-note">{note}</p>}
+      <svg className="dm-fees-quiet-line" viewBox="0 0 100 2" preserveAspectRatio="none" focusable="false" aria-hidden="true">
         <line x1="0" y1="1" x2="100" y2="1" className="dm-fees-flat" />
       </svg>
     </div>
   )
 }
 
-/** Fee APR: the realised rate over the history, when one can be worked out (off until the owner's yes). */
-function AprRow({ view }: { view: FeesView }) {
-  const apr = realisedApr(view)
-  if (apr === null) return null
-  return (
-    <div className="dm-fees-legend-row">
-      <span className="dm-fees-legend-label">Fee APR</span>
-      <span className="dm-fig-xs dm-fees-in">{`${(apr * 100).toFixed(2)}%`}</span>
-    </div>
-  )
+/**
+ * Why there is no history, in a person's words (item A13; the reason itself stays in data-fees-reason). Changed on purpose
+ * 2026-10-02 (RPC-SPEC §11.4): a position whose fees earned cannot be told apart from its own deposits and withdrawals
+ * says so; its Fees ready to collect is still exact.
+ */
+export function quietNote(reason: string | undefined): string {
+  if (reason === 'rpc_unavailable') return 'Your fee history can’t be read right now. Fees ready to collect is exact.'
+  if (reason === 'not_exact') return 'Fees earned can’t be measured for this position. Fees ready to collect is exact.'
+  return 'Your fee history isn’t available here. Fees ready to collect is exact.'
 }
 
-/** The phase of several views taken together: verified only when every one is. */
-function combined(views: ReadonlyArray<FeeHistoryView>): FeeHistoryView['phase'] {
-  if (views.length === 0) return 'idle'
-  if (views.every((view) => view.phase === 'verified')) return 'verified'
-  if (views.every((view) => view.phase === 'verified' || view.phase === 'estimated')) return 'estimated'
-  if (views.every((view) => view.phase === 'verified' || view.phase === 'estimated' || view.phase === 'cached')) return 'cached'
-  if (views.some((view) => view.phase === 'loading')) return 'loading'
-  if (views.some((view) => view.phase === 'idle')) return 'idle'
-  return views.find((view) => view.phase !== 'verified')?.phase ?? 'unavailable'
-}
-
-/** The drawn sources (verified, or estimated), each with its basis; null when any cannot be valued (an unknown decimals: nothing is guessed). */
-function sourcesOf(ids: readonly string[], views: ReadonlyMap<string, FeeHistoryView>, quoteIndex: 0 | 1 | undefined): FeesSource[] | null {
-  const out: FeesSource[] = []
-  for (const id of ids) {
-    const view = views.get(id)
-    if (view?.phase !== 'verified' && view?.phase !== 'estimated' && view?.phase !== 'cached') return null
-    const basis = basisOf(view.state, quoteIndex)
-    if (!basis) return null
-    out.push({ id, state: view.state, history: view.history, basis })
-  }
-  return out
-}
+/** The chart's place while it has fewer than three measured points (a new plain position, say): one calm line. */
+export const FEW_POINTS_NOTE = 'The chart fills in as this position’s fees are measured.'
 
 /**
- * Fees earned (DESIGN-V2 §13): a position's fees since its mint, rebuilt
- * from public chain logs and drawn only when the replay equals the chain bit
- * for bit (§15.5). The hero is everything earned (collected + unclaimed) at
- * the pool's price now; the chart is its growth in the chosen period, with
- * each bucket's earnings, the settlements and time in range; the activity
- * lists the settlements. Before the replay verifies only the on-chain
- * unclaimed figure may show.
- *
- * 2026-09-25 (the owner: the card loaded, then vanished, on his busy-pool
- * positions): once shown, the card stays. While the history is read it shows
- * its exact figures and a calm chart skeleton; a busy pool's history is drawn
- * estimated first (`estimated`: the chart and its shape marked "est.", the
- * figures the chain's own, Time in range left out), then exact; a history that
- * cannot be drawn leaves the card with the chain's unclaimed figure and a flat,
- * quiet plot, never an empty place where a card was.
+ * A period whose start could not be read (2026-10-02, the periods back): the plot says so in one calm line, and the page
+ * asks again by itself (lib/fees/pastReads.ts). All is always drawn.
  */
-export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex, tokens, standalone = false, empty, activity = true }: FeesCardProps) {
+export const PERIOD_NOTE = 'This period can’t be read right now. Fees earned above is exact.'
+
+const ALL_ONLY: readonly FeesPeriod[] = ['all']
+
+/** A saved copy's time, as every date on the page is written (UTC, item D4). */
+const savedWhen = (timestamp: number) => `${shortDate(timestamp)} ${shortTime(timestamp)}`
+
+/**
+ * Fees earned (DESIGN-V2 §13): a position's fees since its mint, exactly: every settlement's fees, from its own ledger
+ * (lib/fees/ledger.ts), plus the fees ready to collect now. The hero is everything earned at the pool's price now; the
+ * chart its measured points; the activity lists the settlements. Before the ledger answers, or when it cannot measure
+ * this position, only the on-chain unclaimed figure shows.
+ *
+ * 2026-09-25 (the owner: the card loaded, then vanished, on his busy-pool positions): once shown, the card stays. While
+ * the history is read it shows its exact figures and a calm chart skeleton; a history that cannot be drawn leaves the card
+ * with the chain's unclaimed figure and a flat, quiet plot, never an empty place where a card was.
+ *
+ * Changed on purpose 2026-10-02 (RPC-SPEC §11.4, rugged97's rule 2): no time in range and no estimate: the history is no
+ * longer replayed hour by hour from the pool's own logs.
+ *
+ * Changed on purpose 2026-10-02, later (the owner: "the chart had 24 hours, 7 days and all; that went missing"): the
+ * period tabs and the "+x" beside the hero are back, each period from a MEASURED start (lib/fees/periods.ts): a point
+ * the history has in the period's window, or one read of the position at a past block (lib/fees/pastReads.ts, through
+ * the page's read source). While a start is read the plot keeps its box with the chart's skeleton; one that cannot be
+ * read says so in one calm line (the page asks again by itself). The hero and the legend are exact all along. A history
+ * with nothing earned yet, a saved copy without the points, and a page where no past read can be made show All alone.
+ */
+export function FeesCard({ kind, source, bandPresent, quoteIndex, tokens, standalone = false, empty, activity = true }: FeesCardProps) {
   const titleId = useId()
-  const list = 'tokenIds' in source
-  // One string per id set, so a new array with the same ids is the same card.
-  const key = list ? source.tokenIds.join(',') : source.tokenId
-  const ids = useMemo(() => key.split(','), [key])
-  const views = useFeeHistories(kind === 'plain' ? ids : null, scope)
+  const id = source.tokenId
+  const first = useFeeHistory(kind === 'plain' ? id : null, 'page')
   const [chosen, setChosen] = useState<FeesPeriod | null>(null)
   const [inspected, setInspected] = useState<number | null>(null)
+  const listed = usePastReadsListed()
+  const phone = useMediaQuery('(max-width: 767px)')
 
-  const phase = combined(ids.map((id) => views.get(id) ?? { phase: 'idle' as const }))
-  const sources = useMemo(() => (phase === 'verified' || phase === 'estimated' || phase === 'cached' ? sourcesOf(ids, views, quoteIndex) : null), [phase, ids, views, quoteIndex])
-  const view = useMemo(() => (sources ? feesView(sources) : null), [sources])
-  const period: FeesPeriod = view && chosen && view.periods.includes(chosen) ? chosen : (view?.defaultPeriod ?? 'all')
-  const pv = useMemo(() => (view ? periodView(view, period) : null), [view, period])
-  const chartSource = views.get(ids[0])
-  useLoadMilestone('position', 'chart', kind === 'plain' && !list && view && pv && chartSource ? historyLoadQuality(chartSource) : null)
+  const drawn = first.phase === 'verified' || first.phase === 'cached' ? first : null
+  const basis = useMemo(() => (drawn ? basisOf(drawn.state, quoteIndex) : null), [drawn, quoteIndex])
+  const view = useMemo(() => (drawn && basis ? feesView({ id, state: drawn.state, history: drawn.history, basis }) : null), [drawn, basis, id])
+  // The periods offered, where a past read can be made (assumed while that is asked: the deployed read service lists it,
+  // and a card that loses its tabs once drawn would jump): a verified history's; a saved copy's, only those its kept
+  // points start (it reads nothing); none with nothing earned.
+  const offered = useMemo<readonly FeesPeriod[]>(() => {
+    if (!drawn || !view || view.zero) return ALL_ONLY
+    if (drawn.phase === 'cached') return periodsFor(view.span, listed !== false).filter((one) => one === 'all' || periodStart(drawn.history, one) !== null)
+    return periodsFor(view.span, listed !== false)
+  }, [drawn, view, listed])
+  const fallback = view ? defaultPeriodFor(view.span) : 'all'
+  const period: FeesPeriod = chosen && offered.includes(chosen) ? chosen : offered.includes(fallback) ? fallback : 'all'
+  const periodState = usePastReads(kind === 'plain' && drawn ? id : null, period)
+  const start = drawn ? periodStart(drawn.history, period) : null
+  const pv = useMemo(() => (view && start ? periodView(view, period, start) : null), [view, period, start])
+  useLoadMilestone('position', 'chart', kind === 'plain' && view && (pv || periodState === 'unavailable') ? historyLoadQuality(first) : null)
 
   // 2026-09-27 (the owner: show what Domino's automation did): one position's page reads its sequence (the chip's own
-  // read, shared) and, when a vault holds it, that vault's record up to the NFT's latest settlement; a new settlement
-  // is the only thing that can bring a new execution, so nothing more is read until the history shows one.
-  const single = kind === 'plain' && !list
-  const first = views.get(ids[0])
-  const state = first && (first.phase === 'loading' || first.phase === 'unclaimed-only' || first.phase === 'verified' || first.phase === 'estimated' || first.phase === 'cached') ? first.state : null
+  // read, shared) and, when a vault holds it, that vault's record up to the NFT's latest settlement.
+  const state = first.phase === 'loading' || first.phase === 'unclaimed-only' || first.phase === 'verified' || first.phase === 'cached' ? first.state : null
   // The early/saved card must not start a duplicate automation scan before the shared state read supplies it.
-  const automation = useAutomation(single && state && phase !== 'cached' ? ids[0] : null)
+  const automation = useAutomation(kind === 'plain' && state && first.phase !== 'cached' ? id : null)
   const sequence = automation.phase === 'ready' && automation.state.automation !== 'plain' && automation.state.automation !== 'other' ? automation.state : null
   // A saved chart never drives automation attribution or its additional reads.
-  const own = phase === 'cached' ? null : sources?.[0] ?? null
+  const own = first.phase === 'verified' && view ? view.sources[0] : null
   const from = own ? own.history.mintedAt.block : 0
   const to = own ? own.history.events.reduce((top, event) => Math.max(top, event.block), from) : 0
   const pair = own ? ([own.state.currencies[0].address, own.state.currencies[1].address] as const) : null
-  const vault = useVaultRecord(sequence && own ? sequence.vault : null, ids[0], pair, from, to)
+  const vault = useVaultRecord(sequence && own ? sequence.vault : null, id, pair, from, to)
   const record = vault.record
   const impact = useMemo(
-    () => (sequence && own && record ? automationImpact({ tokenId: ids[0], kind: sequence.automation, history: own.history, state: own.state, basis: own.basis, record }) : null),
-    [sequence, own, record, ids],
+    () => (sequence && own && record ? automationImpact({ tokenId: id, kind: sequence.automation, history: own.history, state: own.state, basis: own.basis, record }) : null),
+    [sequence, own, record, id],
   )
-  // The fees history is independently verified. Automation attribution adds
-  // its own facts once its reads answer; it must not hide an already drawn
-  // history while its feature or vault is still loading.
 
   if (kind !== 'plain') {
     return <AutomationFrame title="Fees earned" art={kind} empty={empty} />
   }
 
-  const saved = first?.phase === 'cached' ? first : null
-  const savedTitle = saved ? `Saved public-chain replay on Robinhood Chain; block ${saved.state.block}, ${new Date(saved.state.timestamp * 1000).toISOString()}. Not revalidated on this visit.` : undefined
-  const reason = first && (first.phase === 'unclaimed-only' || first.phase === 'unavailable') ? first.reason : undefined
-  const readStage = first?.phase === 'unclaimed-only' ? first.readStage : undefined
+  const saved = first.phase === 'cached' ? first : null
+  // Changed on purpose 2026-10-01 (items A13 and D4): plain words and the page's UTC time; the block is in Details.
+  const savedTitle = saved ? `A copy this browser saved of this position’s public history, through ${savedWhen(saved.state.timestamp)}. The chain is read again for the current one.` : undefined
+  const reason = first.phase === 'unclaimed-only' || first.phase === 'unavailable' ? first.reason : undefined
+  const why = first.phase === 'unclaimed-only' ? first.why : undefined
   // A currency with unknown decimals: no guessed formatting, no card (§15.6).
   if (state && (state.currencies[0].decimals === null || state.currencies[1].decimals === null)) return null
-  const root = (state_: string, children: ReactNode, className?: string) => (
-    <section className={cx('dm-card dm-fees', className)} aria-labelledby={titleId} data-fees-card="" data-fees-state={state_} data-fees-reason={reason} data-fees-read-stage={readStage} data-fees-source={saved?.source} data-fees-block={state?.block} data-fees-timestamp={state?.timestamp}>
+  // The period drawn (2026-10-02): which, whether its start is known, being read or unreadable, and the block it starts at.
+  const periodData = drawn ? { 'data-fees-period': period, 'data-fees-period-state': periodState, 'data-fees-period-from': start?.block } : {}
+  const root = (phase: string, children: ReactNode, className?: string) => (
+    <section className={cx('dm-card dm-fees', className)} aria-labelledby={titleId} data-fees-card="" data-fees-state={phase} data-fees-reason={reason} data-fees-why={why} data-fees-source={saved?.source} data-fees-block={state?.block} data-fees-timestamp={state?.timestamp} {...periodData}>
       {children}
     </section>
   )
 
-  // The list's aggregate shows only when every history verified: no skeleton that could vanish (§11.1-6).
-  if (list && (phase !== 'verified' || !view || !pv)) return null
-  if (phase === 'idle') return null
+  if (first.phase === 'idle') return null
   // Not even the unclaimed figure could be read: the store reaches this only before the card was ever shown (its first
   // /state read failed) or once the NFT is gone, so nothing that was on screen goes away.
-  if (phase === 'unavailable') return null
+  if (first.phase === 'unavailable') return null
 
-  if (phase === 'loading') {
-    const basis = state ? basisOf(state, quoteIndex) : null
+  if (first.phase === 'loading') {
+    const loadingBasis = state ? basisOf(state, quoteIndex) : null
     return root(
       'loading',
       <>
         <Head titleId={titleId} state={state} tokens={tokens} standalone={standalone} />
-        <FeesSkeleton unclaimed={state ? <UnclaimedRow state={state} basis={basis} /> : undefined} />
+        <FeesSkeleton unclaimed={state ? <UnclaimedRow state={state} basis={loadingBasis} /> : undefined} />
       </>,
     )
   }
 
-  if (phase === 'unclaimed-only') {
-    if (!state) return null
+  if (first.phase === 'unclaimed-only') {
     // No history to draw (2026-09-25: the card stays): the chain's unclaimed figure, and the plot flat and quiet.
     return root(
       'unclaimed-only',
       <>
-        <Head titleId={titleId} state={state} tokens={tokens} standalone={standalone} />
+        <Head titleId={titleId} state={first.state} tokens={tokens} standalone={standalone} />
         <div className="dm-fees-body">
           <div className="dm-fees-summary">
-            <UnclaimedRow state={state} basis={basisOf(state, quoteIndex)} large={!bandPresent} />
+            <UnclaimedRow state={first.state} basis={basisOf(first.state, quoteIndex)} large={!bandPresent} />
           </div>
-          <QuietPlot />
+          <QuietPlot note={quietNote(reason)} />
         </div>
       </>,
       bandPresent ? undefined : 'dm-fees--compact',
     )
   }
 
-  if (!view || !pv) return null
-  const estimated = phase === 'estimated'
-  const { basis } = view
+  if (!view || !basis) return null
   const lead = view.sources[0].state
   const blockTitle = savedTitle ?? `Pool price at block ${basis.block}`
-  const bucket = inspected === null ? null : (pv.buckets[inspected] ?? null)
-  // The hero: everything earned since the mint, or at the inspected bucket's end.
+  const bucket = inspected === null || !pv ? null : (pv.buckets[inspected] ?? null)
+  // The hero: everything earned since the mint, or at the inspected point.
   const heroUnits = bucket ? bucket.earned : view.earned
   const heroText = valueFigure(basis, heroUnits)
-  const periodGrowth = growth(pv.base, bucket ? bucket.earned : pv.last)
-  // Hidden for All, and for a period that reaches back to the mint (it would repeat the hero).
-  const showDelta = period !== 'all' && pv.start > view.mintedAt && positive(periodGrowth)
+  // The period's growth beside it: hidden for All, and for a period that starts at the mint (it would repeat the hero).
+  const periodGrowth = pv ? growth(pv.base, bucket ? bucket.earned : pv.last) : 0n
+  const showDelta = pv !== null && period !== 'all' && pv.from.kind !== 'opened' && positive(periodGrowth)
+  const deltaTitle = pv ? `Earned since ${shortDate(pv.start)} ${shortTime(pv.start)} (${spanText(pv.end - pv.start)}), measured at block ${pv.from.block}` : undefined
   const collectedShare = unitsNumber(view.collected)
   const unclaimedShare = unitsNumber(view.unclaimed)
   const split = positive(view.collected) && positive(view.unclaimed)
-  // An estimate's time in range is sampled too: left out (the chart's strip, marked "est." with it, shows its look).
-  const timeInRange = estimated ? null : view.timeInRange
-
-  const tabs = (
-    <PeriodTabs value={period as PeriodKey} onChange={(next) => { setChosen(next); setInspected(null) }} available={view.periods as PeriodKey[]} label="Fees earned" />
-  )
+  // The chart: from the mint, three measured points or more (a timeline with nothing earned yet: two); a period with a
+  // later start, its start and now.
+  const chart = pv !== null && (pv.from.kind === 'opened' ? view.measured >= 3 || (view.zero && view.measured >= 2) : pv.points.length >= 2)
+  const tabs =
+    offered.length > 1 ? (
+      <span className="dm-fees-tabs">
+        <PeriodTabs
+          value={period as PeriodKey}
+          onChange={(next) => {
+            setChosen(next)
+            setInspected(null)
+          }}
+          available={offered as PeriodKey[]}
+          label="Fees earned"
+        />
+      </span>
+    ) : undefined
+  let plot: ReactNode
+  if (pv && chart) {
+    plot = (
+      <div className="dm-fees-plot">
+        <FeesChart view={view} pv={pv} zero={view.zero} onInspect={setInspected} automation={impact ? { adds: impact.adds, by: AUTOMATION_NAME[impact.kind], exactFees: impact.exactFees } : undefined} />
+      </div>
+    )
+  } else if (pv) plot = <QuietPlot note={FEW_POINTS_NOTE} why="few_points" />
+  else if (periodState === 'reading') {
+    // The period's start is being read: the plot keeps the drawn chart's box; the figures above are exact already.
+    plot = (
+      <div className="dm-fees-plot" data-fees-plot="reading" aria-busy="true">
+        <ChartSkeleton height={phone ? CHART_BOX.phone : CHART_BOX.desktop} head={false} className="dm-fees-chart-skel" />
+      </div>
+    )
+  } else plot = <QuietPlot note={PERIOD_NOTE} why="period_unavailable" />
 
   return root(
-    saved ? 'cached' : estimated ? 'estimated' : 'verified',
+    saved ? 'cached' : 'verified',
     <>
-      <Head titleId={titleId} state={lead} tokens={tokens} standalone={standalone} tabs={<span className="dm-fees-tabs">{tabs}</span>} mark={saved ? <span className="dm-own-est" title={savedTitle} data-fees-saved="">Saved snapshot</span> : estimated ? <Badge kind="estimate" data-fees-estimate="" /> : undefined} />
-      {saved && <p className="dm-fees-amounts" title={savedTitle}>As of {new Date(saved.state.timestamp * 1000).toLocaleString()} · Checking for updates</p>}
+      <Head titleId={titleId} state={lead} tokens={tokens} standalone={standalone} tabs={tabs} mark={saved ? <span className="dm-own-est" title={savedTitle} data-fees-saved="">Saved copy</span> : undefined} />
+      {saved && <p className="dm-fees-amounts" title={savedTitle}>Saved {savedWhen(saved.state.timestamp)} · Checking for updates</p>}
       <div className="dm-fees-body" data-zero={view.zero ? '' : undefined}>
         <div className="dm-fees-summary">
           <p className="dm-fees-hero" title={blockTitle}>
             {bucket ? (
-              // Inspecting: the bucket's end value as plain text, instantly (no roll while scrubbing).
+              // Inspecting: the point's value as plain text, instantly (no roll while scrubbing).
               basis.kind === 'usd' ? (
                 <UsdText value={unitsText(heroUnits)} dimCents className="dm-fig-hero dm-tick-fig" />
               ) : (
@@ -350,11 +375,9 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
             )}
             {basis.kind === 'quote' && <span className="dm-fees-hero-sym">{symbolOf(lead, basis.into)}</span>}
             {showDelta && (
-              <Delta sign={1} size="md" className="dm-fees-delta">
+              <Delta sign={1} size="md" className="dm-fees-delta" title={deltaTitle}>
                 {valueFigure(basis, periodGrowth)}
                 {basis.kind === 'quote' ? ` ${symbolOf(lead, basis.into)}` : ''}
-                {/* 2026-09-25 (review): an estimate's growth in the period is sampled too. */}
-                {estimated ? ' est.' : ''}
               </Delta>
             )}
           </p>
@@ -372,7 +395,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
                 </span>
                 <span className="dm-fees-legend-label">
                   <span aria-hidden="true" className="dm-fees-dot" data-tone="unclaimed" />
-                  {saved ? 'Unclaimed at snapshot' : 'Ready to collect'}
+                  {saved ? 'Ready to collect (saved)' : 'Ready to collect'}
                   <span className="dm-fig-xs dm-fees-zero-fig">
                     <Value basis={basis} units={view.unclaimed} state={lead} />
                   </span>
@@ -382,7 +405,7 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
           ) : (
             <>
               {/* The split bar, then the two rows that name its colours, directly under it; only when there are two parts to
-                  split (one solid bar says nothing the rows do not, and would read as a second Time in range). */}
+                  split (one solid bar says nothing the rows do not). */}
               {split && (
                 <StackedBar
                   className="dm-fees-split"
@@ -396,42 +419,35 @@ export function FeesCard({ kind, source, scope = 'page', bandPresent, quoteIndex
                   label="Collected"
                   title={blockTitle}
                   value={<Value basis={basis} units={view.collected} state={lead} />}
-                  amounts={<Amounts amounts={view.collectedTokens} state={lead} near={view.near} />}
+                  amounts={<Amounts amounts={view.collectedTokens} state={lead} />}
                 />
                 <LegendRow
                   tone="unclaimed"
-                  label={saved ? 'Unclaimed at snapshot' : 'Ready to collect'}
+                  label={saved ? 'Ready to collect (saved)' : 'Ready to collect'}
                   title={blockTitle}
                   money={positive(view.unclaimed)}
                   value={<Value basis={basis} units={view.unclaimed} state={lead} />}
                   amounts={<Amounts amounts={view.unclaimedTokens} state={lead} />}
                 />
-                {SHOW_REALISED_APR && <AprRow view={view} />}
               </div>
-              {sequence && <div className="dm-fees-impact-slot" data-kind={sequence.automation}>
-                {impact && <AutomationImpact impact={impact} basis={basis} symbol={basis.kind === 'quote' ? symbolOf(lead, basis.into) : null} />}
-              </div>}
+              {/* The automation's lines keep their room while the vault's record is read; then they are there, or one quiet
+                  line says it has added nothing back yet (2026-10-01, item E22: an empty room read as a broken layout). */}
+              {sequence && (impact ? (
+                <div className="dm-fees-impact-slot" data-kind={sequence.automation}>
+                  <AutomationImpact impact={impact} basis={basis} symbol={basis.kind === 'quote' ? symbolOf(lead, basis.into) : null} />
+                </div>
+              ) : record ? (
+                <p className="dm-fees-impact-none" data-fees-impact="none">No fees added back yet</p>
+              ) : !vault.settled ? (
+                <div className="dm-fees-impact-slot" data-kind={sequence.automation} aria-hidden="true" />
+              ) : null)}
             </>
           )}
-
-          {/* Time in range last, under a hairline, with its own bar: never read as a second split. */}
-          {timeInRange !== null && (
-            <div className="dm-fees-tir">
-              <div className="dm-fees-tir-row">
-                <span className="dm-fees-tir-label">Time in range</span>
-                <span className="dm-fig-xs">{percentText(timeInRange)}</span>
-              </div>
-              <StackedBar parts={[{ share: timeInRange, tone: 'in' }, { share: 1 - timeInRange, tone: 'muted' }]} height={4} />
-            </div>
-          )}
         </div>
-        <div className="dm-fees-plot">
-          <FeesChart view={view} pv={pv} zero={view.zero} onInspect={setInspected} estimated={estimated} automation={impact ? { adds: impact.adds, by: AUTOMATION_NAME[impact.kind], exactFees: impact.exactFees } : undefined} />
-        </div>
+        {plot}
       </div>
-      {activity && <FeesActivity view={view} ids={list} automatic={impact ? { adds: impact.adds, by: AUTOMATION_NAME[impact.kind] } : undefined} />}
+      {activity && <FeesActivity events={view.events} automatic={impact ? { adds: impact.adds, by: AUTOMATION_NAME[impact.kind] } : undefined} />}
     </>,
-    list ? 'dm-arrive' : undefined,
   )
 }
 

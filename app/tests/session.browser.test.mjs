@@ -18,7 +18,7 @@ import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
-import { RPC_URL, routeChain } from './support/browser-chain.mjs';
+import { routeChain } from './support/browser-chain.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
 import { createWalletServer, WALLET_DIST } from './support/wallet-server.mjs';
 
@@ -74,7 +74,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * One isolated world: a fake service, a server, a browser context with two
  * wallets. `close()` tears it down and checks every invariant.
  */
-async function scenario({ gate = null, intercept, clockAt, allowConsoleErrors = false, wallets } = {}) {
+async function scenario({ gate = null, intercept, clockAt, allowConsoleErrors = false, wallets, contextOptions = {} } = {}) {
   const fake = createFakeSession();
   const server = createWalletServer({ fake, gate, intercept });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
@@ -82,7 +82,7 @@ async function scenario({ gate = null, intercept, clockAt, allowConsoleErrors = 
   const origin = `http://127.0.0.1:${server.address().port}`;
   fake.origin = origin;
 
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, ...contextOptions });
   // playwright-core has no default action timeout; a missing element would
   // otherwise hang the whole run instead of failing one test.
   context.setDefaultTimeout(WAIT_MS);
@@ -95,19 +95,18 @@ async function scenario({ gate = null, intercept, clockAt, allowConsoleErrors = 
   // refused here and left out of the external-request check. Anything else
   // leaving the origin still fails the run.
   await context.route(INJECTED, (route) => route.abort());
-  // 2026-09-25: the page reads Robinhood Chain's public RPC itself (the wallet's positions on Positions and on the
-  // automation page, a position's state, the fees history), since the RPC rate-limits Cloudflare's edge. That one host
-  // is answered here by an empty chain (tests/support/browser-chain.mjs): no position, no deposit, every NFT unknown,
-  // as the site's routes answered before; a request the CSP refused never reaches it.
+  // 2026-09-25: an empty chain (tests/support/browser-chain.mjs): no position, no deposit, every NFT unknown. Changed on
+  // purpose 2026-10-01 (RPC-SPEC, the owner's rule: nothing is read from a public RPC): the page asks the site's own chain
+  // routes, which answer from it; no RPC host is answered or admitted here any more.
   const chain = await routeChain(context);
   const wallet = await installWallets(context, wallets);
   const problems = [];
   const external = [];
-  // 2026-09-28, on purpose: the chain's three public fallbacks (src/lib/chain/endpoints.ts) are not admitted here. They are
-  // asked only while the chain's own RPC cannot be reached, and here it answers (routeChain): a request to one is a fault.
+  // Changed on purpose 2026-10-01 (RPC-SPEC): the chain's public RPC is no longer admitted either, nor its three public
+  // fallbacks: a request to any of them is a fault.
   context.on('request', (request) => {
     const url = request.url();
-    if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url) && url !== `${RPC_URL}/`) external.push(url);
+    if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url)) external.push(url);
   });
 
   const s = {
@@ -212,7 +211,8 @@ test('each announced wallet is listed by name, and no provider icon becomes an i
   await openDialog(page);
   const names = await dialog(page).getByRole('list', { name: 'Browser wallets' }).getByRole('button').allInnerTexts();
   assert.deepEqual(names.map((name) => name.replace(/\s+/g, ' ').trim()), ['Connect Test Wallet A', 'Connect Test Wallet B']);
-  assert.equal(await dialog(page).locator('img, image, [src], [href]').count(), 0, 'no provider icon may be rendered');
+  // Changed on purpose 2026-10-01 (audit C3): WalletConnect's row carries its bundled logo; no provider icon is ever drawn.
+  assert.deepEqual(await dialog(page).locator('img, image, [src], [href]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('src'))), ['/wallets/walletconnect.svg'], 'no provider icon may be rendered');
   assert.equal(await page.locator('[src^="data:image/svg+xml,%3Csvg"]').count(), 0);
   // Nothing is read from the service until a wallet is connected.
   assert.equal(s.fake.state.log.length, 0);
@@ -242,12 +242,12 @@ test('clean wallet picker uses only bundled brand icons; connection shows the ad
   await openDialog(page);
   assert.equal(await dialog(page).getByRole('heading', { name: 'Connect', exact: true }).count(), 1);
   assert.doesNotMatch(await dialog(page).innerText(), /Signing in is not a permission|Connect a browser wallet|Robinhood Chain · 4663|contract wallet/);
-  assert.deepEqual(await dialog(page).locator('img').evaluateAll((images) => images.map((image) => image.getAttribute('src'))), ['/wallets/rabby.svg']);
+  assert.deepEqual(await dialog(page).locator('img').evaluateAll((images) => images.map((image) => image.getAttribute('src'))), ['/wallets/rabby.svg', '/wallets/walletconnect.svg']);
   // 2026-09-25: the dialog can be on screen before Chrome has finished its icon (4 runs in 5 on macOS). Let the icon
   // either decode or fail before looking, so that a missing or broken file fails the check below at once, not after
   // WAIT_MS.
   await until(page, () => document.querySelector('[role="dialog"][aria-labelledby="wallet-dialog-title"] img')?.complete, null, 'the Rabby icon');
-  assert.equal(await dialog(page).locator('img').evaluate((image) => image.complete && image.naturalWidth > 0), true);
+  assert.equal(await dialog(page).getByRole('button', { name: 'Connect Rabby Wallet' }).locator('img').evaluate((image) => image.complete && image.naturalWidth > 0), true);
   await dialog(page).getByRole('button', { name: 'Connect Rabby Wallet' }).click();
   await viewIs(page, 'signed_out');
   assert.match(await trigger(page).innerText(), new RegExp(`${ADDR_A.slice(0, 6)}…${ADDR_A.slice(-4)}`));
@@ -494,7 +494,19 @@ test('switching network signs out once, reads nothing on the wrong chain, and sw
   await s.close();
 });
 
-test('a wallet that does not know Robinhood Chain is asked to add it by hand, never through the app', async () => {
+// ---- wallet compatibility (2026-10-01: the audit's C1, C4, C5, C7, C9, C11, C12, C15 and H5) -------------------------
+
+/** What src/wallet/chain.ts hands a wallet that does not know Robinhood Chain. */
+const ROBINHOOD_CHAIN = {
+  chainId: '0x1237',
+  chainName: 'Robinhood Chain',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  // RPC-SPEC §7.5: the chain's official RPC alone, the wallet's own; the site reads no RPC.
+  rpcUrls: ['https://rpc.mainnet.chain.robinhood.com'],
+  blockExplorerUrls: ['https://robinhoodchain.blockscout.com'],
+};
+
+test('a wallet that does not know Robinhood Chain is asked to add it, with the network’s fixed details, and is then on it', async () => {
   const s = await scenario();
   const page = await s.open();
   await connect(page);
@@ -503,8 +515,313 @@ test('a wallet that does not know Robinhood Chain is asked to add it by hand, ne
   s.wallet.forgetChain('a', 4663);
   await openDialog(page);
   await dialog(page).getByRole('button', { name: 'Switch to Robinhood Chain' }).click();
+  const back = await viewIs(page, 'signed_out');
+  assert.equal(back.reason, 'none');
+  assert.deepEqual(s.wallet.added('a'), [ROBINHOOD_CHAIN], 'the fixed details, and nothing a server or the wallet said');
+  assert.deepEqual(s.wallet.calls('wallet_switchEthereumChain').map((call) => call.params[0].chainId), ['0x1237']);
+  assert.equal(await dialog(page).getByRole('alert').count(), 0, 'nothing to say: it worked');
+  await s.close();
+});
+
+test('every way a switch ends is said in plain words: wrapped 4902, declined addition, declined switch, a wallet that cannot add, Phantom, a request already open, a wallet error', async () => {
+  const cases = [
+    [{ switchError: 'wrapped' }, null, null],
+    [{ addError: 4001 }, null, 'Your wallet declined adding Robinhood Chain.'],
+    [{}, 'wallet_switchEthereumChain', 'Your wallet declined the network switch.'],
+    [{ addError: 4200 }, null, 'Your wallet could not add Robinhood Chain. Add it in your wallet’s network settings, then try again.'],
+    [{ addError: 4200, rdns: 'app.phantom', name: 'Phantom' }, null, 'Phantom doesn’t support Robinhood Chain. Connect another wallet, such as MetaMask or Rabby.'],
+    [{ switchError: 'pending' }, null, 'A network request is already waiting in your wallet. Open it to approve or reject.'],
+    [{ switchError: 'broken' }, null, 'Your wallet could not switch networks.'],
+  ];
+  for (const [spec, reject, said] of cases) {
+    const wallet = { id: 'a', name: 'Test Wallet A', rdns: 'test.wallet.a', uuid: '8f2a7d1c-0000-4000-8000-00000000000a', chainId: 1, chains: [1], ...spec };
+    const s = await scenario({ wallets: [wallet] });
+    const page = await s.open();
+    await viewIs(page, 'no_wallet');
+    await openDialog(page);
+    await dialog(page).getByRole('button', { name: `Connect ${wallet.name}` }).click();
+    await viewIs(page, 'wrong_network');
+    if (reject) s.wallet.rejectNext('a', reject);
+    await dialog(page).getByRole('button', { name: 'Switch to Robinhood Chain' }).click();
+    if (said === null) {
+      // MetaMask Mobile's 4902 comes wrapped in a -32603 (data.originalError): still recognized, and the network added.
+      await viewIs(page, 'signed_out');
+      assert.deepEqual(s.wallet.added('a'), [ROBINHOOD_CHAIN]);
+    } else {
+      await dialog(page).getByRole('alert').waitFor();
+      assert.equal(await dialog(page).getByRole('alert').innerText(), said, JSON.stringify(spec));
+      assert.equal((await view(page)).status, 'wrong_network');
+    }
+    await s.close();
+  }
+});
+
+test('a wallet that switches without saying so is caught up at once: the page reads the network again', async () => {
+  const s = await scenario({ wallets: [{ id: 'a', name: 'Quiet Wallet', rdns: 'test.wallet.quiet', uuid: '8f2a7d1c-0000-4000-8000-0000000000c1', chainId: 1, chains: [1, 4663], silentSwitch: true }] });
+  const page = await s.open();
+  await viewIs(page, 'no_wallet');
+  await openDialog(page);
+  await dialog(page).getByRole('button', { name: 'Connect Quiet Wallet' }).click();
+  await viewIs(page, 'wrong_network');
+  await dialog(page).getByRole('button', { name: 'Switch to Robinhood Chain' }).click();
+  // No chainChanged ever comes: the page reads eth_chainId after the switch and catches up (it stayed "wrong network").
+  await viewIs(page, 'signed_out');
+  assert.ok(s.wallet.calls('eth_chainId').length >= 2);
+  await s.close();
+});
+
+test('a declined connection, and one already waiting in the wallet, are said in plain words', async () => {
+  const s = await scenario();
+  const page = await s.open();
+  await viewIs(page, 'no_wallet');
+  await openDialog(page);
+  s.wallet.rejectNext('a', 'wallet_requestPermissions');
+  await dialog(page).getByRole('button', { name: 'Connect Test Wallet A' }).click();
   await dialog(page).getByRole('alert').waitFor();
-  assert.match(await dialog(page).getByRole('alert').innerText(), /Add Robinhood Chain \(4663\) in your wallet/);
+  assert.equal(await dialog(page).getByRole('alert').innerText(), 'Your wallet declined the connection request.');
+  assert.equal((await view(page)).status, 'no_wallet');
+  await s.close();
+
+  const waiting = await scenario({ wallets: [{ id: 'a', name: 'Test Wallet A', rdns: 'test.wallet.a', uuid: '8f2a7d1c-0000-4000-8000-00000000000a', connect: 'pending' }] });
+  const second = await waiting.open();
+  await viewIs(second, 'no_wallet');
+  await openDialog(second);
+  await dialog(second).getByRole('button', { name: 'Connect Test Wallet A' }).click();
+  await dialog(second).getByRole('alert').waitFor();
+  assert.equal(await dialog(second).getByRole('alert').innerText(), 'A request is already waiting in Test Wallet A. Open it to approve or reject.');
+  await waiting.close();
+
+  // A wallet that fails the request for a reason of its own: said as such, and the list stays to try again.
+  const broken = await scenario({ wallets: [{ id: 'a', name: 'Test Wallet A', rdns: 'test.wallet.a', uuid: '8f2a7d1c-0000-4000-8000-00000000000a', connect: 'broken' }] });
+  const third = await broken.open();
+  await viewIs(third, 'no_wallet');
+  await openDialog(third);
+  await dialog(third).getByRole('button', { name: 'Connect Test Wallet A' }).click();
+  await dialog(third).getByRole('alert').waitFor();
+  assert.equal(await dialog(third).getByRole('alert').innerText(), 'Your wallet could not connect.');
+  assert.equal(await dialog(third).getByRole('button', { name: 'Connect Test Wallet A' }).isEnabled(), true);
+  await broken.close();
+});
+
+test('a connection prompt that never answers keeps the list, says which wallet to open, and Cancel lets go of it', async () => {
+  const s = await scenario({ wallets: [
+    { id: 'a', name: 'Test Wallet A', rdns: 'test.wallet.a', uuid: '8f2a7d1c-0000-4000-8000-00000000000a', connect: 'hang' },
+    { id: 'b', name: 'Test Wallet B', rdns: 'test.wallet.b', uuid: '8f2a7d1c-0000-4000-8000-00000000000b' },
+  ] });
+  const page = await s.open();
+  await viewIs(page, 'no_wallet');
+  await openDialog(page);
+  await dialog(page).getByRole('button', { name: 'Connect Test Wallet A' }).click();
+  await until(page, () => document.querySelector('#wallet-dialog-status')?.textContent === 'Open Test Wallet A to approve the connection.', null, 'the wallet to open');
+  // The audit's case: closed and opened again, 33 s later the dialog still lists both wallets.
+  await page.keyboard.press('Escape');
+  await openDialog(page);
+  const names = await dialog(page).getByRole('list', { name: 'Browser wallets' }).getByRole('button').allInnerTexts();
+  assert.equal(names.length, 2, names.join(' | '));
+  await dialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
+  await viewIs(page, 'no_wallet');
+  assert.equal(await dialog(page).locator('#wallet-dialog-status').count(), 0);
+  // Another wallet connects at once.
+  await dialog(page).getByRole('button', { name: 'Connect Test Wallet B' }).click();
+  await viewIs(page, 'signed_out');
+  assert.match(await dialog(page).innerText(), /Test Wallet B/);
+  await s.close();
+});
+
+// Fix round 1 (2026-10-01): a prompt the person approves late, after another wallet already connected, is let go: the
+// page stays on the wallet picked last. `attempt` used to be cleared when that later pick connected, so the late
+// approval took the page over and signed the other wallet's session out. The same after Cancel and another pick.
+test('a wallet approved late, after another wallet connected, is let go: the page stays on the wallet picked last', async () => {
+  for (const cancelFirst of [false, true]) {
+    const s = await scenario({ wallets: [
+      { id: 'a', name: 'Test Wallet A', rdns: 'test.wallet.a', uuid: '8f2a7d1c-0000-4000-8000-00000000000a', connect: 'held' },
+      { id: 'b', name: 'Test Wallet B', rdns: 'test.wallet.b', uuid: '8f2a7d1c-0000-4000-8000-00000000000b', account: 1 },
+    ] });
+    const page = await s.open();
+    await viewIs(page, 'no_wallet');
+    await openDialog(page);
+    await dialog(page).getByRole('button', { name: 'Connect Test Wallet A' }).click();
+    await until(page, () => document.querySelector('#wallet-dialog-status')?.textContent === 'Open Test Wallet A to approve the connection.', null, 'the wallet to open');
+    if (cancelFirst) await dialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
+    await dialog(page).getByRole('button', { name: 'Connect Test Wallet B' }).click();
+    await viewIs(page, 'signed_out');
+    assert.match(await dialog(page).innerText(), /Test Wallet B/);
+    const signedB = await signIn(s, page);
+    assert.equal(signedB.owner, s.wallet.address(1).toLowerCase(), 'signed in as B');
+    // Much later, the person finds Wallet A's prompt and approves it.
+    s.wallet.approveHeld('a');
+    await page.waitForTimeout(1_000);
+    const after = await view(page);
+    assert.equal(after.status, 'signed_in', `cancel first: ${cancelFirst}: still signed in`);
+    assert.equal(after.owner, s.wallet.address(1).toLowerCase(), `cancel first: ${cancelFirst}: still B's account`);
+    assert.equal(s.fake.count('logout'), 0, 'B’s session was not signed out');
+    assert.match(await dialog(page).innerText(), /Test Wallet B/, 'the dialog still names B');
+    await s.close();
+  }
+});
+
+// Fix round 1 (2026-10-01, audit C5): the first identity the session sees is "unknown" while a wallet may still
+// reconnect, never a false "disconnected", whether a wallet comes back or none does.
+test('the first identity the session sees is unknown, never a false disconnected, with a wallet to bring back or none', async () => {
+  const s = await scenario();
+  const page = await s.open();
+  await viewIs(page, 'no_wallet');
+  assert.equal(await page.evaluate(() => window.__dominoSessionProbe.firstIdentity()), 'unknown', 'no wallet authorized');
+  await connect(page);
+  await page.reload();
+  await viewIs(page, 'signed_out');
+  assert.equal(await page.evaluate(() => window.__dominoSessionProbe.firstIdentity()), 'unknown', 'a wallet brought back');
+  await s.close();
+});
+
+test('Disconnect lets go of every wallet and holds after a reload; a wallet connected again is the one a reload brings back', async () => {
+  const s = await scenario({ wallets: [
+    { id: 'a', name: 'Test Wallet A', rdns: 'test.wallet.a', uuid: '8f2a7d1c-0000-4000-8000-00000000000a', permitted: true },
+    { id: 'b', name: 'Test Wallet B', rdns: 'test.wallet.b', uuid: '8f2a7d1c-0000-4000-8000-00000000000b', permitted: true, account: 1, revoke: 'unsupported' },
+  ] });
+  const page = await s.open();
+  // Both authorize this site; one is reconnected, never both.
+  await viewIs(page, 'signed_out');
+  await openDialog(page);
+  await dialog(page).getByRole('button', { name: 'Disconnect wallet' }).click();
+  // The audit's case: wagmi moved the page to the other wallet's account here.
+  await viewIs(page, 'no_wallet');
+  assert.equal(await trigger(page).innerText(), 'Connect wallet');
+  await page.reload({ waitUntil: 'load' });
+  await viewIs(page, 'no_wallet');
+  await sleep(1000);
+  assert.equal((await view(page)).status, 'no_wallet', 'a reload does not undo Disconnect');
+  assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith('domino.wallet'))), ['domino.wallet.v1']);
+  assert.doesNotMatch(await page.evaluate(() => localStorage.getItem('domino.wallet.v1')), /0x[0-9a-fA-F]{6,}/, 'wallet ids only, never an address');
+  // The person connects B: B is the one a reload brings back.
+  await openDialog(page);
+  await dialog(page).getByRole('button', { name: 'Connect Test Wallet B' }).click();
+  await viewIs(page, 'signed_out');
+  await page.reload({ waitUntil: 'load' });
+  await viewIs(page, 'signed_out');
+  assert.equal(await trigger(page).getAttribute('title'), ADDR_B);
+  await s.close();
+});
+
+test('a wallet that announces itself late, already authorized, is reconnected', async () => {
+  const s = await scenario({ wallets: [{ id: 'a', name: 'Late Wallet', rdns: 'test.wallet.late', uuid: '8f2a7d1c-0000-4000-8000-0000000000d1', permitted: true, lateMs: 1500 }] });
+  const page = await s.open();
+  await viewIs(page, 'signed_out');
+  assert.equal(await trigger(page).getAttribute('title'), ADDR_A);
+  await s.close();
+});
+
+test('a browser wallet known only as window.ethereum is offered as Browser wallet, and connects', async () => {
+  const s = await scenario({ wallets: [{ id: 'a', name: 'Legacy', rdns: 'n/a', uuid: '8f2a7d1c-0000-4000-8000-0000000000e1', legacy: true }] });
+  const page = await s.open();
+  await viewIs(page, 'no_wallet');
+  await openDialog(page);
+  await dialog(page).getByRole('button', { name: 'Connect Browser wallet' }).waitFor();
+  assert.doesNotMatch(await dialog(page).innerText(), /No browser wallet found/);
+  await dialog(page).getByRole('button', { name: 'Connect Browser wallet' }).click();
+  await viewIs(page, 'signed_out');
+  assert.equal(await trigger(page).getAttribute('title'), ADDR_A);
+  await s.close();
+});
+
+test('a browser without String#isWellFormed connects its wallet and signs in (Safari before 16.4, Chrome before 111)', async () => {
+  const s = await scenario();
+  await s.context.addInitScript(() => {
+    delete String.prototype.isWellFormed;
+    delete String.prototype.toWellFormed;
+  });
+  const page = await s.open();
+  await connect(page);
+  assert.equal(await page.evaluate(() => typeof ''.isWellFormed), 'function', 'the wallet feature installs it before its identity feed starts');
+  assert.doesNotMatch(await dialog(page).innerText(), /too old/);
+  await signIn(s, page);
+  await s.close();
+});
+
+test('with no wallet, a phone is offered the wallet apps that open this site (domino.money here), and a computer where to get one', async () => {
+  const phone = await scenario({ wallets: [], contextOptions: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1' } });
+  const page = await phone.open();
+  await viewIs(page, 'no_wallet');
+  await openDialog(page);
+  const text = await dialog(page).innerText();
+  // Changed on purpose 2026-10-01 (fix round 1): "this site", which the links open (the preview alias opens the preview).
+  assert.match(text, /Open this site in your wallet app’s browser, then connect there\./);
+  assert.match(text, /access password again/);
+  assert.doesNotMatch(text, /extension/, 'nothing a phone cannot do');
+  assert.deepEqual(await dialog(page).getByRole('list', { name: 'Wallet apps' }).locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))), [
+    'https://metamask.app.link/dapp/domino.money/',
+    'https://go.cb-w.com/dapp?cb_url=https%3A%2F%2Fdomino.money%2F',
+    'https://link.trustwallet.com/open_url?coin_id=60&url=https%3A%2F%2Fdomino.money%2F',
+  ]);
+  await phone.close();
+
+  const computer = await scenario({ wallets: [] });
+  const desk = await computer.open();
+  await viewIs(desk, 'no_wallet');
+  await openDialog(desk);
+  assert.match(await dialog(desk).innerText(), /No browser wallet found\./);
+  assert.deepEqual(await dialog(desk).locator('a').evaluateAll((links) => links.map((link) => [link.getAttribute('href'), link.getAttribute('target'), link.getAttribute('rel')])), [
+    ['https://metamask.io/download/', '_blank', 'noopener noreferrer'],
+    ['https://rabby.io/', '_blank', 'noopener noreferrer'],
+  ]);
+  assert.equal(await dialog(desk).getByRole('list', { name: 'Wallet apps' }).count(), 0);
+  await computer.close();
+});
+
+test('a returning visitor whose wallet reconnects never sees "Connect a wallet" on Positions while it does', async () => {
+  const s = await scenario({ wallets: [{ id: 'a', name: 'Test Wallet A', rdns: 'test.wallet.a', uuid: '8f2a7d1c-0000-4000-8000-00000000000a', permitted: true }] });
+  await s.context.addInitScript(() => {
+    const seen = [];
+    new MutationObserver(() => {
+      const owned = document.querySelector('[data-owned]')?.getAttribute('data-owned') ?? null;
+      if (owned && seen.at(-1) !== owned) seen.push(owned);
+    }).observe(document, { subtree: true, childList: true, attributes: true });
+    Object.defineProperty(window, '__seenOwned', { value: seen });
+  });
+  const page = await s.open('/positions');
+  await viewIs(page, 'signed_out');
+  await until(page, () => window.__seenOwned.length > 0 && window.__seenOwned.at(-1) !== 'waiting', null, 'the list');
+  const seen = await page.evaluate(() => window.__seenOwned);
+  assert.ok(!seen.includes('no-wallet'), seen.join(' > '));
+  await s.close();
+});
+
+// ---- WalletConnect, for a wallet on a phone (2026-10-01, audit C3) ------------------------------------------------
+
+test('WalletConnect pairs through a code the page draws, connects the phone’s account, signs in through it, and lets go on Disconnect', async () => {
+  const s = await scenario();
+  // The phone's wallet: what the page forwards to it over WalletConnect's relay, answered here (src/wallet/walletConnectFake.ts).
+  const phone = ACCOUNTS[2];
+  const forwarded = [];
+  await s.context.exposeFunction('__dominoWalletConnectPhone', async (method, params) => {
+    forwarded.push(method);
+    if (method === 'personal_sign') return { result: await phone.signMessage({ message: { raw: params[0] } }) };
+    return { error: { code: 4200, message: `${method} is not answered by this phone` } };
+  });
+  const page = await s.open();
+  await viewIs(page, 'no_wallet');
+  await openDialog(page);
+  // Offered apart from the browser wallets, with its own logo.
+  assert.equal(await dialog(page).getByRole('list', { name: 'Phone wallets' }).getByRole('button', { name: /Connect WalletConnect/ }).count(), 1);
+  await dialog(page).getByRole('button', { name: /Connect WalletConnect/ }).click();
+  const qr = dialog(page).locator('[data-walletconnect-qr]');
+  await qr.waitFor();
+  assert.ok(Number(await qr.getAttribute('data-walletconnect-qr')) >= 21, 'a QR code of at least version 1');
+  assert.match(await dialog(page).innerText(), /Scan this code with your phone’s wallet app\./);
+  assert.equal(await dialog(page).getByRole('button', { name: 'Copy link' }).count(), 1);
+  assert.equal(await page.evaluate(() => window.__dominoWalletConnect.links.length), 1);
+  await page.evaluate((address) => window.__dominoWalletConnect.accept(address, 4663), phone.address);
+  await viewIs(page, 'signed_out');
+  assert.equal(await trigger(page).getAttribute('title'), phone.address);
+  assert.match(await dialog(page).innerText(), /WalletConnect/);
+  await signIn(s, page);
+  assert.deepEqual(forwarded, ['personal_sign'], 'the sign-in message, and nothing else, went to the phone');
+  await dialog(page).getByRole('button', { name: 'Sign out', exact: true }).click();
+  await viewIs(page, 'signed_out');
+  await dialog(page).getByRole('button', { name: 'Disconnect wallet' }).click();
+  await viewIs(page, 'no_wallet');
+  assert.equal(await page.evaluate(() => window.__dominoWalletConnect.disconnects), 1);
   await s.close();
 });
 
@@ -625,23 +942,29 @@ test('an idle expiry is found when the tab comes back into view', async () => {
   await s.close();
 });
 
-test('the latest account check names the account: a plain EOA, or an EIP-7702 smart account with its wallet, or its unrecognized contract', async () => {
+// Changed on purpose 2026-10-01 (audit E5): the dialog says the account in plain words ("Standard wallet", "Smart account
+// (MetaMask)"); "Plain EOA", "EIP-7702", the delegate's contract and the block of the check are the line's title.
+test('the latest account check names the account: a standard wallet, or a smart account with its wallet, or not recognized, with the technical facts in its title', async () => {
   const s = await scenario();
   const page = await s.open();
   await connect(page);
   await signIn(s, page);
   const details = page.locator('[data-testid="session-details"]');
+  const check = details.locator('[data-account-check]');
   await until(page, () => document.querySelector('[data-testid="session-details"]') !== null, null, 'session details');
-  assert.match(await details.innerText(), /Latest account check\s+Plain EOA · block 123/);
+  assert.match(await details.innerText(), /Account\s+Standard wallet/);
+  assert.equal(await check.getAttribute('title'), 'Plain EOA, checked at block 123');
+  assert.doesNotMatch(await details.innerText(), /EOA|EIP-7702|block \d/, 'no technical word on the dialog itself');
   // The service's check at a later refresh or reload is the one shown: a delegate named from its address.
-  for (const [delegate, said] of [['0x63c0c19a282a1b52b07dd5a65b58948a07dae32b', 'Smart account (EIP-7702), MetaMask EIP7702StatelessDeleGator 1.3.0 · block 124'],
-    ['0x1c08930b2d330447e6c05b5be8c4caf172b4a174', 'Smart account (EIP-7702), unrecognized contract 0x1c08930b2d330447e6c05b5be8c4caf172b4a174 · block 124']]) {
+  for (const [delegate, said, title] of [['0x63c0c19a282a1b52b07dd5a65b58948a07dae32b', 'Smart account (MetaMask)', 'EIP-7702 delegation to MetaMask EIP7702StatelessDeleGator 1.3.0, checked at block 124'],
+    ['0x1c08930b2d330447e6c05b5be8c4caf172b4a174', 'Smart account (not recognized)', 'EIP-7702 delegation to unrecognized contract 0x1c08930b2d330447e6c05b5be8c4caf172b4a174, checked at block 124']]) {
     s.fake.controls.validation = { method: 'eip7702_delegated', blockNumber: '124', blockHash: `0x${'cd'.repeat(32)}`, delegate };
     await page.reload({ waitUntil: 'load' });
     await viewIs(page, 'signed_in');
     await openDialog(page);
     await until(page, () => document.querySelector('[data-testid="session-details"]') !== null, null, 'session details');
-    assert.match(await details.innerText(), new RegExp(`Latest account check\\s+${said.replace(/[().]/g, '\\$&')}`));
+    assert.match(await details.innerText(), new RegExp(`Account\\s+${said.replace(/[().]/g, '\\$&')}`));
+    assert.equal(await check.getAttribute('title'), title);
   }
   await s.close();
 });
@@ -655,7 +978,8 @@ test('an idle expiry is noticed while the tab stays in view, and the end time is
   const details = await page.locator('[data-testid="session-details"]').innerText();
   assert.match(details, /Ends no later than/);
   assert.doesNotMatch(details, /Session ends/);
-  assert.match(await dialog(page).innerText(), /ends a session sooner after 30 minutes idle/);
+  // Changed on purpose 2026-10-01 (audit E5): one plain sentence instead of the paragraph on renewals and checks.
+  assert.match(await dialog(page).innerText(), /Signs you out after 30 minutes without use, and at the latest at the time above\./);
 
   // No visibility change, no other tab: the page's own checks find it.
   s.fake.advance(31 * 60_000);
@@ -967,6 +1291,15 @@ test('a switched-off or unrouted session service says sign-in is unavailable, in
     assert.equal(out.failure, 'service_disabled');
     assert.match(await dialog(page).innerText(), /Sign-in is unavailable right now\. Public pages keep working\./);
     assert.doesNotMatch(await dialog(page).innerText(), /enabled|deployment/i);
+    // 2026-10-01 (audit D2): Positions' two cards say the same in their own words, with nothing to press; they used to
+    // tell every visitor "Sign in with your wallet…" while the dialog said sign-in was unavailable.
+    // Changed on purpose 2026-10-01 (the D2 follow-up): with nothing to show for the same reason, one line for both cards.
+    await page.keyboard.press('Escape');
+    const merged = page.locator('[data-automation-empty="session_disabled"]');
+    await merged.waitFor();
+    assert.equal((await merged.locator('.dm-acct-merged-line').innerText()).trim(), 'Your automated positions and their receipts will show here once wallet sign-in is available.');
+    assert.equal(await merged.locator('button').count(), 0);
+    assert.doesNotMatch(await page.locator('main').innerText(), /Sign in with your wallet/);
     await s.close();
   }
 });

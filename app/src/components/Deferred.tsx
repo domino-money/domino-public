@@ -18,7 +18,14 @@ export function deferred<P extends object>(load: () => Promise<{ default: Compon
       (module) => void (loaded = module.default),
       (error: unknown) => void (failed = { error }),
     ))
-  return function Deferred({ fallback = null, ...props }: P & { fallback?: ReactNode }) {
+  /**
+   * Asks for the chunk now, before anything draws it (2026-10-01, platform workstream, F1): the page opened on this
+   * screen, so its first draw can be the screen itself, its chunk already in (the page's boot script asked for the file
+   * while the entry downloaded), rather than a frame of the fallback first.
+   */
+  Deferred.preload = () => void start()
+  return Deferred
+  function Deferred({ fallback = null, ...props }: P & { fallback?: ReactNode }) {
     const [, settled] = useState(false)
     // Asked as the component first draws (the chunk once), and drawn again once it is in, also when it came in between a
     // draw of the fallback and this effect: the effect goes by what that draw saw, not by the module now (a chunk in by

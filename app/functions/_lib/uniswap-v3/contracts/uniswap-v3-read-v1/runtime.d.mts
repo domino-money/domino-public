@@ -1,0 +1,9 @@
+import type {Route, Requests, Responses, Identity, ContractError, ErrorCode} from './types.js';
+export const CONTRACT_VERSION: '1.0.0-rc.2';
+export const ROUTES: readonly Route[];
+export const ERROR_STATUS_BY_CODE: Readonly<Record<ErrorCode, number>>;
+export function validateRequest(route: 'capabilities', value: unknown, expected?: Identity): value is Requests['capabilities'];
+export function validateRequest<R extends Exclude<Route, 'capabilities'>>(route: R, value: unknown, expected: Identity): value is Requests[R];
+export function validateResponse(route: 'capabilities', value: unknown, expected?: Identity): value is Responses['capabilities'];
+export function validateResponse<R extends Exclude<Route, 'capabilities'>>(route: R, value: unknown, expected: Identity): value is Responses[R];
+export function validateError(status: number, value: unknown): value is ContractError;

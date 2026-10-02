@@ -227,13 +227,14 @@ test('an address’s Wallet card: its pages are read on their own, then ONE pric
   // Changed on purpose (round 6, 2026-09-27; the owner: the Wallet card's tokens took far too long to appear): the card
   // keeps its last list per address in the browser, under one key (src/lib/walletMemory.ts), and draws it at once on the
   // next visit. Public chain and market data only: never the continuation handle.
-  assert.deepEqual(await keptKeys(page), ['domino-wallet-v1'], 'the card’s one key, and nothing else');
-  const kept = await page.evaluate(() => localStorage.getItem('domino-wallet-v1'));
+  // Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit G10): the key names its chain (domino-wallet-v2:4663).
+  assert.deepEqual(await keptKeys(page), ['domino-wallet-v2:4663'], 'the card’s one key, and nothing else');
+  const kept = await page.evaluate(() => localStorage.getItem('domino-wallet-v2:4663'));
   assert.ok(kept.includes(OWNER.toLowerCase()) && kept.includes(TOKEN.toLowerCase()), 'the address and the token it holds');
   assert.doesNotMatch(kept, /cursor|c0ffee/i, 'no continuation handle');
   // The tests after this one share its browser context and check that their own pages keep nothing: the card's list
   // is let go here, so what they find is theirs.
-  await page.evaluate(() => localStorage.removeItem('domino-wallet-v1'));
+  await page.evaluate(() => localStorage.removeItem('domino-wallet-v2:4663'));
   await quiet(page, errors);
   await page.close();
 });
@@ -255,13 +256,22 @@ test('a link that carries a list of ids is the list: nothing of it is read or ke
 // Changed on purpose (owner, 2026-09-24): a link with one NFT id is that position's own page (screens/PositionDetail.tsx),
 // where Create position lands. It reads the fees relay's /state, never the read service (which may be down); this build
 // has no relay, so the page says only, in a title and a data attribute, that the position could not be read.
+// Changed on purpose 2026-10-01 (RPC-SPEC P2): the read gateway's row of the NFT is that page's fallback (below).
 test('a link with one NFT id opens that position’s own page: no lookup, no read-service read, no Retry, nothing kept', async () => {
   const { page, errors } = await tracked();
   await page.goto(`${origin}/#/positions/${BIG}`, { waitUntil: 'networkidle' });
   await page.locator('[data-position-detail], [data-position-reason], [data-position-loading], [data-empty="position-gone"]').first().waitFor();
   assert.equal(await page.locator('#chain-lookup, [data-owned]').count(), 0, 'the position’s page, not the list');
   assert.equal(await page.locator('main').getByRole('link', { name: 'Positions', exact: true }).first().getAttribute('href'), '#/positions');
-  assert.deepEqual((await fixtureReads(page)).filter((r) => r.route === 'nft-positions' || r.route === 'pool-market'), [], 'the read service is not asked');
+  // Changed on purpose 2026-10-01 (RPC-SPEC D2, P2): while the page's own state cannot be read (this build reads no
+  // chain, so it answers unavailable), the read gateway's row of that one NFT is the page's fallback (lib/positions/
+  // gatewayRow.ts): its nft-positions read of the link's id, once, and the pool's price only for a live NFT. Never a
+  // lookup of the wallet, and nothing is drawn that the gateway did not give.
+  const gateway = (await fixtureReads(page)).filter((r) => r.route === 'nft-positions' || r.route === 'pool-market');
+  const nfts = gateway.filter((r) => r.route === 'nft-positions');
+  assert.ok(nfts.length <= 1, `the gateway's row is asked at most once (${nfts.length})`);
+  for (const read of nfts) assert.deepEqual(read.request, { tokenIds: [BIG], blockNumber: null }, 'the link’s id alone');
+  assert.ok(gateway.filter((r) => r.route === 'pool-market').length <= nfts.length, 'the pool only after its NFT');
   for (const label of await page.locator('main').getByRole('button').allInnerTexts()) assert.doesNotMatch(label, /^(Retry|Refresh|Read again|Look up positions)$/, label);
   assert.deepEqual(await keptKeys(page), [], 'nothing about the id is kept');
   await quiet(page, errors);
@@ -372,18 +382,13 @@ test('an HTML-like symbol is only text; unreadable tokens cannot be chosen and s
   await page.close();
 });
 
-// OPEN QUESTION for @rugged97: this case types into #amount, the draft field
-// of #72's create flow, before opening the picker. That flow is not on this
-// base — the lab frames the panel itself — so there is no draft to keep.
-// The focus, arrow-key and Escape behaviour it also covers belongs to the
-// panel and is worth restoring once #72 lands.
-test.skip('the picker is a keyboard dialog: contained focus, arrow keys, Escape back to Pair with the draft kept, filter keeps the choice', async () => {
+// Restored 2026-10-01 (audit H11, skipped since 2026-09-12): the case typed into #amount, the draft field of #72's
+// create flow, and expected Escape and a backdrop click to go back to Pair, as that flow's frame would have. The frame
+// never landed; the lab's shell is the shared dialog (lib/useDialog.ts), which closes on Escape and gives focus back to
+// what opened it, and Back to pair is the way back. Checked as they are.
+test('the picker is a keyboard dialog: contained focus, arrow keys, the filter keeps the choice, Back to pair from the keyboard, Escape closes and gives focus back', async () => {
   const { page, errors } = await openCase('create.tokens');
-  await page.getByRole('button', { name: 'New position' }).click();
-  const dialog = dialogOf(page);
-  await page.fill('#amount', '2500');
-  await dialog.getByRole('button', { name: 'Choose token' }).click();
-  await page.waitForFunction(() => document.activeElement?.textContent === 'Choose a token from chain data');
+  const dialog = await openPicker(page);
   assert.equal(await dialog.getByRole('button', { name: 'Use this token' }).isDisabled(), true, 'nothing chosen yet');
   for (const address of [NATIVE, TOKEN, at('4'), at('7')]) await check(page, address);
 
@@ -411,29 +416,32 @@ test.skip('the picker is a keyboard dialog: contained focus, arrow keys, Escape 
   assert.match(await dialog.innerText(), /No loaded token has that address\./, 'symbols are never searched');
   await page.fill('#token-filter', '');
 
-  await page.keyboard.press('Escape');
+  // Back to pair from the keyboard: the dialog stays, the choice not confirmed is let go, the tokens checked stay listed.
+  await dialog.getByRole('button', { name: 'Back to pair' }).focus();
+  await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.activeElement?.textContent === 'Start with a token you know.');
-  assert.equal(await page.inputValue('#amount'), '2500', 'Escape in a picker keeps the practice draft');
-  assert.equal(await dialog.count(), 1, 'Escape in a picker goes back to Pair, not out of the dialog');
-
+  assert.equal(await dialog.count(), 1, 'Back to pair goes back to Pair, not out of the dialog');
   await dialog.getByRole('button', { name: 'Choose token' }).click();
   await page.waitForFunction(() => document.activeElement?.textContent === 'Choose a token from chain data');
-  await page.mouse.click(5, 5);
-  await page.waitForFunction(() => document.activeElement?.textContent === 'Start with a token you know.');
-  assert.equal(await dialog.count(), 1, 'a backdrop click in a picker also goes back');
+  assert.equal(await radios.count(), 4, 'the tokens checked before are still listed');
+  assert.equal(await dialog.locator('input[name="token-candidate"]:checked').count(), 0, 'a choice never confirmed is not kept');
 
-  await dialog.getByRole('button', { name: 'Choose token' }).click();
-  await dialog.locator('input[name="token-candidate"]').nth(1).check();
+  await radios.nth(1).check();
   await dialog.getByRole('button', { name: 'Use this token' }).click();
   await page.waitForFunction(() => document.activeElement?.textContent === 'Start with a token you know.');
   const summary = await dialog.locator('[data-chain-selection]').innerText();
   assert.match(summary, /Token: TOKEN · ERC-20 candidate/);
   assert.match(summary, /Not saved/);
-  assert.match(summary, /Nothing chosen here is saved/);
 
+  // Escape closes the whole dialog, from Pair as from inside a picker, and gives focus back to what opened it.
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'detached' });
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'New position', 'Escape on Pair closes and returns focus');
+  await openPicker(page);
+  await page.locator('#token-address').focus();
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'detached' });
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'New position', 'Escape in a picker closes and returns focus');
   await quiet(page, errors);
   await page.close();
 });
@@ -448,7 +456,7 @@ test('the picker fits a 360 px screen without sideways scrolling', async () => {
   await page.fill('#wallet-address', OWNER);
   await dialog.getByRole('button', { name: 'List tokens', exact: true }).click();
   await dialog.locator('[data-wallet-count]').waitFor();
-  await dialog.getByText('Balance at snapshot:', { exact: false }).first().waitFor();
+  await dialog.getByText('Balance:', { exact: false }).first().waitFor();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 0, `the page scrolls sideways by ${overflow}px`);
   const dialogOverflow = await dialogOf(page).evaluate((el) => el.scrollWidth - el.clientWidth);
@@ -482,8 +490,8 @@ test('a public address lists tokens as a public lookup; Load more sends the hand
   assert.equal(await wallet.locator('[data-wallet-public-note]').innerText(), 'Find tokens held by a wallet address.');
   const count = wallet.locator('[data-wallet-count]');
   assert.equal(await count.innerText(), '2 tokens listed · page 1 of up to 5');
-  assert.match(await count.getAttribute('title'), /Balances at the snapshot block\. Not proof of wallet control\./);
-  assert.doesNotMatch(await wallet.innerText(), /Balances at the snapshot block|Not proof of wallet control|Block \d/, 'no footnote about the data');
+  assert.match(await count.getAttribute('title'), /Balances read from the chain at one block\. Anyone can see them; they don’t prove who controls the wallet\./);
+  assert.doesNotMatch(await wallet.innerText(), /Balances read from the chain|prove who controls|Block \d/, 'no footnote about the data');
   assert.doesNotMatch(await wallet.innerText(), /\byour wallet\b|you own|connected/i, 'a listed address is never called the viewer’s own');
   await wallet.getByRole('button', { name: 'Load more' }).click();
   await waitIdle(page);
@@ -494,7 +502,7 @@ test('a public address lists tokens as a public lookup; Load more sends the hand
   assert.deepEqual(walletReads.map((r) => r.request), [{ wallet: OWNER, autoDiscover: true }, { wallet: OWNER, autoDiscover: true, cursor: CURSOR }]);
   assert.deepEqual(await handlePlaces(page, CURSOR.slice(0, 12)), NOWHERE, 'the continuation handle is somewhere a person or a script can read it');
   assert.deepEqual(await handleSightings(page), [], 'the handle was written into the page at some moment');
-  assert.match(await dialog.innerText(), /Balance at snapshot: /);
+  assert.match(await dialog.innerText(), /Balance: /);
   await quiet(page, errors);
   await page.close();
 });
@@ -529,7 +537,7 @@ test('wallet restarts: once on its own, then left to the person; an empty list a
   // Zero balances hold nothing: the rows are listed, and the hint is there too.
   const zero = await openCase('create.walletZero');
   const d4 = await listWallet(zero.page);
-  assert.match(await d4.innerText(), /Balance at snapshot: 0\b/);
+  assert.match(await d4.innerText(), /Balance: 0\b/);
   assert.equal(await d4.locator('[data-wallet-hint]').count(), 1);
   await zero.page.close();
 
@@ -610,12 +618,9 @@ test('existing pools: fee, verification, provenance, attributed figures, no reco
   await page.close();
 });
 
-// OPEN QUESTION for @rugged97, the same one raised on screens.test.mjs: F3
-// leaves the pools `pairedToken` echo unbound on purpose (interpret.ts:83-85),
-// so a reply holding neither asked-for asset comes back 'ok' and the screen
-// shows it instead of refusing. Either the producer echoes the pair, or this
-// drops to what the contract guarantees today.
-test.skip('a pools reply whose pool does not hold the chosen token is a wrong answer: nothing to pick, nothing shown from it', async () => {
+// Restored 2026-10-01 (audit H11, skipped since 2026-09-12 on an open question about the pools reply's pair echo): the
+// screen now refuses a pool that does not hold the chosen token, so the case passes as written.
+test('a pools reply whose pool does not hold the chosen token is a wrong answer: nothing to pick, nothing shown from it', async () => {
   const { page, errors } = await openCase('create.poolsForeign');
   const dialog = await toPools(page);
   const text = await dialog.innerText();
@@ -971,72 +976,56 @@ test('provider figures carry their source and retrieval on the row; every cell w
   await page.close();
 });
 
-// OPEN QUESTION for @rugged97: two of the six market scenarios this walks,
-// 'qualified' and 'reference', are absent from F3's MARKET_CASES — both came
-// from the pool-metrics read F3 dropped from the table's path, so
-// marketScript() finds nothing and the table never gets a row. The other four
-// still exist. Skipped until pool-metrics returns or the case is split.
-test.skip('qualified, reference, stale, expired, missing and zero figures each read as themselves', async () => {
-  const qualified = await openCase('figures.qualified');
-  await table(qualified.page);
-  const q = await openFigures(qualified.page);
-  const qText = await q.innerText();
-  assert.match(qText, /Qualified 24h[\s\S]*158\.06%/);
-  assert.match(qText, /The 24h window is covered \(86400 s observed\)/);
-  await qualified.page.close();
-
-  const reference = await openCase('figures.reference');
-  await table(reference.page);
-  assert.doesNotMatch(await reference.page.locator('tbody').innerText(), /158\.06|0\.000020/, 'reference analytics never reach a cell');
-  const r = await openFigures(reference.page);
-  await r.locator('summary').click();
-  assert.match(await r.locator('[data-figures-reference]').innerText(), /Reference analytics, not current[\s\S]*Not current: 158\.06%/);
-  await reference.page.close();
+// Restored 2026-10-01 (audit H11, skipped since 2026-09-12): 'qualified' and 'reference' came from the pool-metrics read
+// F3 dropped from the table's path, so MARKET_CASES has neither and their lab cases draw no row; the qualified figures
+// are the pool page's (the pool page test below). The provider's own states, and a failed activity read, are each
+// checked here as they read today: the 30d volume column is gone with F3's contract, so a row has two provider cells.
+test('stale, expired, missing and zero provider figures, and an activity read that failed, each read as themselves', async () => {
+  const cellsOf = (page) => page.locator('tbody [data-metric]').evaluateAll((els) => els.map((e) => [e.getAttribute('data-metric'), e.innerText.replace(/\s+/g, ' ').trim()]));
 
   const stale = await openCase('figures.stale');
   await table(stale.page);
-  // Whoever revives this case: the 'absent' entry is the 30d volume column,
-  // which F3's read contract does not carry. Expect four cells here, not five.
-  assert.deepEqual(await stale.page.locator('tbody [data-metric]').evaluateAll((els) => els.map((e) => e.getAttribute('data-metric'))), ['stale', 'stale', 'absent', 'unavailable', 'stale']);
+  assert.deepEqual(await cellsOf(stale.page), [['stale', '$12.3K'], ['stale', '$0.00']], 'a stale figure is still shown, marked stale');
+  assert.match(await stale.page.locator('tbody [data-metric]').first().getAttribute('title'), /Stale, not current\.$/);
   const s = await openFigures(stale.page);
-  assert.match(await s.innerText(), /\$12\.3K · stale/);
+  assert.match(await s.innerText(), /Liquidity\s+\$12\.3K\s+Reported by a market data provider, retrieved [^.]*\. This observation is stale\./);
   await stale.page.close();
 
   const expired = await openCase('figures.expired');
   await table(expired.page);
-  assert.doesNotMatch(await expired.page.locator('#root').innerText(), /\$12\.3K/);
+  assert.deepEqual(await cellsOf(expired.page), [['unavailable', 'Unavailable'], ['unavailable', 'Unavailable']]);
+  assert.doesNotMatch(await expired.page.locator('#root').innerText(), /\$12\.3K/, 'an expired figure is never shown');
   await expired.page.close();
 
   const missing = await openCase('figures.missing');
   await table(missing.page);
-  assert.deepEqual((await missing.page.locator('tbody [data-metric]').allInnerTexts()).slice(0, 2), ['Not reported', 'Not reported']);
+  assert.deepEqual(await cellsOf(missing.page), [['absent', 'Not reported by the provider'], ['absent', 'Not reported by the provider']]);
+  assert.equal(await missing.page.locator('tbody [data-metric]').first().getAttribute('title'), 'Unavailable: the market data provider reported no value');
   await missing.page.close();
 
   const zero = await openCase('figures.zero');
   await table(zero.page);
-  assert.match((await zero.page.locator('tbody [data-metric]').allInnerTexts())[0], /^\$0\.00/);
+  assert.deepEqual(await cellsOf(zero.page), [['provider', '$0.00'], ['provider', '$0.00']], 'zero is a figure, not a missing one');
   await zero.page.close();
 
   const unavailable = await openCase('figures.activityUnavailable');
   await table(unavailable.page);
   const u = await openFigures(unavailable.page);
+  assert.equal(await u.locator('[data-figures-activity]').getAttribute('data-figures-activity'), 'failed');
   assert.match(await u.innerText(), /Pool activity data unavailable/);
   await unavailable.page.close();
 });
 
-// OPEN QUESTION for @rugged97, same root: this asserts the landing reads
-// ['pool-market','pool-metrics','token','token']. The table reads pool-metrics
-// only where the capabilities list it (marketsProvider.ts), after the tokens,
-// and the fixture build's source answers no capabilities question, so here the
-// sequence is three reads, not four. What it really guards — no pool-activity
-// read until a pool is opened — is worth keeping once the sequence is agreed.
-test.skip('the fixture landing reads no pool activity until a pool is opened', async () => {
+// Restored 2026-10-01 (audit H11, skipped since 2026-09-12 on the landing's read sequence): the fixture build's table
+// keeps its own fixture pipeline (lib/read/buildMode.ts), so the app's read log holds no table read to count. What the
+// case guards stands: nothing reads pool activity until a pool's figures are opened, and opening them reads it once.
+test('the fixture landing reads no pool activity until a pool is opened', async () => {
   const { page, errors } = await tracked();
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   await page.locator('#pools tbody tr').first().waitFor();
+  await page.waitForFunction(() => document.querySelector('#pools tbody tr [data-provenance]'));
   const routes = () => page.evaluate(() => (window.__DOMINO_FIXTURE_READS__ ?? []).map((r) => r.route));
-  await page.waitForFunction(() => (window.__DOMINO_FIXTURE_READS__ ?? []).length >= 4);
-  assert.deepEqual(await routes(), ['pool-market', 'pool-metrics', 'token', 'token'], 'the table reads one pool, at most 4 reads');
+  assert.deepEqual((await routes()).filter((r) => r === 'pool-activity'), [], 'no pool activity while the table is drawn');
   const button = page.locator('#pools [data-pool-figures]');
   assert.equal(await button.count(), 1);
   assert.match(await button.innerText(), /figures/);
@@ -1168,19 +1157,23 @@ test('the pool page reads its figures, Domino’s 24h history and its chain acti
   // Changed on purpose (2026-09-27, round 6): what the pool earns first, then how busy and how big it is, then its
   // price; the fee is in the chip and the sentence under the name.
   assert.deepEqual(stats.map(([label]) => label), ['APR', '24H VOLUME', 'TVL', '24H FEES', 'PRICE'], 'Domino’s 24h fees beside the figures, and its APR where the estimate would be');
-  assert.deepEqual(stats.slice(0, 4).map(([, value]) => value), ['158.06%', '$0.000029', '$0.000020', '<$0.000001'], 'the qualified figures take precedence over the provider’s');
+  // Changed on purpose 2026-10-01 (integration pass 3, after audit E21): the APR as the one APR rule writes it, whole from 100%.
+  assert.deepEqual(stats.slice(0, 4).map(([, value]) => value), ['158%', '$0.000029', '$0.000020', '<$0.000001'], 'the qualified figures take precedence over the provider’s');
   assert.match(await figures.innerText(), /Domino history/);
   assert.equal(await workspace.locator('[data-pool-positions]').count(), 0, 'no positions section where pool-positions is not listed');
 
   // The activity card: turnover, LP fees and LP assets in each token's units; no USD and no APR in it.
   const activity = await page.locator('[data-activity-amounts]').evaluate((table) => Array.from(table.querySelectorAll('tr'), (tr) => Array.from(tr.children, (cell) => cell.textContent.trim())));
-  assert.deepEqual(activity, [['Figure', 'ETH', 'TOKEN'], ['Turnover (24h)', '0.0000289269', '1,635,670'], ['LP fees (24h)', '0.0000000864129', '300'], ['LP assets', '0.00000000101254', '20,025,853']]);
+  // Changed on purpose 2026-10-01 (integration pass 3, after audit E7): an amount under a millionth of a token reads as one
+  // (lib/read/screens/figures.ts DUST), its every digit kept for the cell's title.
+  assert.deepEqual(activity, [['Figure', 'ETH', 'TOKEN'], ['Turnover (24h)', '0.0000289269', '1,635,670'], ['LP fees (24h)', '<0.000001', '300'], ['LP assets', '<0.000001', '20,025,853']]);
   assert.doesNotMatch(await page.locator('[data-pool-activity]').innerText(), /\$|APR/);
 
   // G14: the protocol fee per direction, and Domino's APR where the fixed "unavailable" line was.
   const details = workspace.locator('[data-pool-details]');
   assert.match(await details.locator('[data-protocol-fee]').innerText(), /Protocol fee\s+None/);
-  assert.match(await details.locator('[data-history-apr]').innerText(), /Pool APR, Domino history\s+158\.06%/);
+  // Changed on purpose 2026-10-01 (integration pass 3, after audit E21): the one APR rule, whole percents from 100%.
+  assert.match(await details.locator('[data-history-apr]').innerText(), /Pool APR, Domino history\s+158%/);
   assert.equal(await details.locator('[data-apr-estimate]').getAttribute('data-apr-estimate'), 'unavailable');
   assert.equal(await details.locator('[data-apr-estimate] [data-apr-figure]').innerText(), '—', 'no estimate here: a neutral dash');
   assert.match(await details.locator('[data-apr-estimate] [data-apr-figure]').getAttribute('title'), /^Pool estimate, not position APR, APY or a return forecast\. Estimated APR is (not enabled on this connection|unavailable; market figures use the supported read connection)\.$/);

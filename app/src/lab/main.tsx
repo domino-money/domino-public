@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '../styles/tokens.css'
+import '../styles/screens.css'
 
 /**
  * Entry of the read lab: every read-v1 fixture case, rendered by the real

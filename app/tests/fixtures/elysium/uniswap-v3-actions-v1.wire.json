@@ -1,0 +1,294 @@
+{
+  "identity": {
+    "chainId": 99801,
+    "deploymentId": "0x9c907e13d6406a2eeffa80e9eb187bc8156df48b016924c2dac7a07e1c921102",
+    "positionManager": "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+    "protocol": "uniswap-v3"
+  },
+  "requests": {
+    "capabilities": {
+      "chainId": 99801,
+      "protocol": "uniswap-v3"
+    },
+    "inspect": {
+      "chainId": 99801,
+      "deploymentId": "0x9c907e13d6406a2eeffa80e9eb187bc8156df48b016924c2dac7a07e1c921102",
+      "positionManager": "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+      "protocol": "uniswap-v3",
+      "vault": "0x3aa5ebb10dc797cac828524e59a333d0a371443c"
+    },
+    "prepare": {
+      "action": {
+        "kind": "pause",
+        "paused": false
+      },
+      "chainId": 99801,
+      "deploymentId": "0x9c907e13d6406a2eeffa80e9eb187bc8156df48b016924c2dac7a07e1c921102",
+      "owner": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "positionManager": "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+      "protocol": "uniswap-v3",
+      "vault": "0x3aa5ebb10dc797cac828524e59a333d0a371443c"
+    },
+    "receipt": {
+      "chainId": 99801,
+      "deploymentId": "0x9c907e13d6406a2eeffa80e9eb187bc8156df48b016924c2dac7a07e1c921102",
+      "owner": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "positionManager": "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+      "protocol": "uniswap-v3",
+      "transactionHash": "0xa6896863978b996e325d304f51279f635bfb2678e53052b45ec402fbf1e68265",
+      "vault": "0x3aa5ebb10dc797cac828524e59a333d0a371443c"
+    }
+  },
+  "responses": {
+    "capabilities": {
+      "chainId": 99801,
+      "contractVersion": "1.0.0-rc.2",
+      "deployment": {
+        "chainId": 99801,
+        "deploymentId": "0x9c907e13d6406a2eeffa80e9eb187bc8156df48b016924c2dac7a07e1c921102",
+        "positionManager": "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+        "protocol": "uniswap-v3"
+      },
+      "localWalletActionsAvailable": true,
+      "protocol": "uniswap-v3",
+      "publicFinancialExecutionAvailable": false,
+      "qualification": "local-fixture",
+      "rehearsalWalletActionsAvailable": false,
+      "vaults": [
+        "0x3aa5ebb10dc797cac828524e59a333d0a371443c",
+        "0x68b1d87f95878fe05b998f19b66f4baba5de1aed"
+      ],
+      "walletAuthenticationAvailable": false
+    },
+    "inspect": {
+      "anchor": {
+        "hash": "0x4f0ba72d2a978ffafe62f01d0e5261c57d65e441ee6ab647aa0789b015ccc21f",
+        "number": 38,
+        "timestamp": 1790685592
+      },
+      "capital": [
+        {
+          "amountRaw": "0",
+          "currency": "0x5fbdb2315678afecb367f032d93f642f64180aa3"
+        },
+        {
+          "amountRaw": "200000000000000000000",
+          "currency": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512"
+        }
+      ],
+      "chainId": 99801,
+      "contractPins": [
+        {
+          "address": "0x3aa5ebb10dc797cac828524e59a333d0a371443c",
+          "codeHash": "0xf603f2f94ad54a49a0ecaa0eae5868164cae3e486ffe8c64036a9f13a6f1a116"
+        },
+        {
+          "address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+          "codeHash": "0xee7614d368e9ac808751c0057269fb3abca1bcfd6f704f3b286e3a3da8eb5d94"
+        },
+        {
+          "address": "0x85d0a94fdf174f4ca0110419cc55e67b75952eeb",
+          "codeHash": "0xcf5da0afbd591f51cec29b375589dc751ee0f5c66231c7c167ebde4e710c839d"
+        },
+        {
+          "address": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+          "codeHash": "0x586b11a0a0c491d271b58c4027cfe09182d1f592934eaa1d2a323995900cdb8f"
+        },
+        {
+          "address": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+          "codeHash": "0x9cdca511d15086c60de783a1eeb78231ad1bd35729d6341fd5aeb38842af0790"
+        },
+        {
+          "address": "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+          "codeHash": "0x9832c2f617c06f48c7e3baef19926f5f684a79d82228119fb3c3269ded496717"
+        },
+        {
+          "address": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+          "codeHash": "0xee7614d368e9ac808751c0057269fb3abca1bcfd6f704f3b286e3a3da8eb5d94"
+        }
+      ],
+      "contractVersion": "1.0.0-rc.2",
+      "deploymentId": "0x9c907e13d6406a2eeffa80e9eb187bc8156df48b016924c2dac7a07e1c921102",
+      "feeBalances": [
+        {
+          "chargedRaw": "0",
+          "currency": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+          "originalRaw": "0",
+          "sourceId": "0x2c9ce3bf3fe6f86238e2474b9b8acc9aa655674cf1f0505e0838011ec8afe24c"
+        },
+        {
+          "chargedRaw": "0",
+          "currency": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+          "originalRaw": "0",
+          "sourceId": "0x2c9ce3bf3fe6f86238e2474b9b8acc9aa655674cf1f0505e0838011ec8afe24c"
+        },
+        {
+          "chargedRaw": "0",
+          "currency": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+          "originalRaw": "0",
+          "sourceId": "0x00ce70df7994221625e45fc785bd6c935cfe14a250378f11c43ce981802e389e"
+        },
+        {
+          "chargedRaw": "0",
+          "currency": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+          "originalRaw": "0",
+          "sourceId": "0x00ce70df7994221625e45fc785bd6c935cfe14a250378f11c43ce981802e389e"
+        }
+      ],
+      "operator": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+      "owner": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "paused": false,
+      "policy": {
+        "allowSuccessor": false,
+        "allowSwap": true,
+        "maxDeviationBps": 100,
+        "maxObservationAge": 1200,
+        "maxPositions": 1,
+        "maxSlippageBps": 100,
+        "minInterval": 0,
+        "serviceFeeBps": 400,
+        "successorTickLower": 0,
+        "successorTickUpper": 0,
+        "validUntil": 1790689192
+      },
+      "policyVersion": "1",
+      "pool": {
+        "address": "0x85d0a94fdf174f4ca0110419cc55e67b75952eeb",
+        "factory": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+        "fee": 3000,
+        "liquidityRaw": "67674999619476742855706",
+        "sqrtPriceX96Raw": "79228162514264337593543950336",
+        "tick": 0,
+        "tickSpacing": 60,
+        "token0": {
+          "address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+          "decimals": 18,
+          "symbol": "LOCAL-A"
+        },
+        "token1": {
+          "address": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+          "decimals": 18,
+          "symbol": "LOCAL-B"
+        },
+        "unlocked": true
+      },
+      "positionManager": "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+      "positions": [
+        {
+          "active": true,
+          "liquidityRaw": "33837499809738371427853",
+          "parentTokenId": "0",
+          "source0": "0x2c9ce3bf3fe6f86238e2474b9b8acc9aa655674cf1f0505e0838011ec8afe24c",
+          "source1": "0x00ce70df7994221625e45fc785bd6c935cfe14a250378f11c43ce981802e389e",
+          "tickLower": -600,
+          "tickUpper": 600,
+          "tokenId": "3"
+        }
+      ],
+      "protocol": "uniswap-v3",
+      "qualification": "local-fixture",
+      "stateHash": "0xacf9030cdd8fcb9298dfc0fb3c697e53618b323544d21c6b69e4cb07cebb145c",
+      "stateNonce": "3",
+      "vault": "0x3aa5ebb10dc797cac828524e59a333d0a371443c",
+      "vaultDeploymentId": "0xafd559bce15edd61a7d5c4d6fd9ba1ce5aad20c9be2512a5e93e156a10d0c4dd"
+    },
+    "prepare": {
+      "anchor": {
+        "hash": "0xb677e2ab53c2d07e2b4960275cbc12da7049310e8a78d6e7c1c2ad974a231b4b",
+        "number": 37,
+        "timestamp": 1790685592
+      },
+      "chainId": 99801,
+      "contractVersion": "1.0.0-rc.2",
+      "deploymentId": "0x9c907e13d6406a2eeffa80e9eb187bc8156df48b016924c2dac7a07e1c921102",
+      "draft": {
+        "action": {
+          "kind": "pause",
+          "paused": false
+        },
+        "contractPins": [
+          {
+            "address": "0x3aa5ebb10dc797cac828524e59a333d0a371443c",
+            "codeHash": "0xf603f2f94ad54a49a0ecaa0eae5868164cae3e486ffe8c64036a9f13a6f1a116"
+          },
+          {
+            "address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+            "codeHash": "0xee7614d368e9ac808751c0057269fb3abca1bcfd6f704f3b286e3a3da8eb5d94"
+          },
+          {
+            "address": "0x85d0a94fdf174f4ca0110419cc55e67b75952eeb",
+            "codeHash": "0xcf5da0afbd591f51cec29b375589dc751ee0f5c66231c7c167ebde4e710c839d"
+          },
+          {
+            "address": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+            "codeHash": "0x586b11a0a0c491d271b58c4027cfe09182d1f592934eaa1d2a323995900cdb8f"
+          },
+          {
+            "address": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+            "codeHash": "0x9cdca511d15086c60de783a1eeb78231ad1bd35729d6341fd5aeb38842af0790"
+          },
+          {
+            "address": "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+            "codeHash": "0x9832c2f617c06f48c7e3baef19926f5f684a79d82228119fb3c3269ded496717"
+          },
+          {
+            "address": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+            "codeHash": "0xee7614d368e9ac808751c0057269fb3abca1bcfd6f704f3b286e3a3da8eb5d94"
+          }
+        ],
+        "expiresAt": 1790685652,
+        "id": "0x0127a3b0b86c717ed5624522e34445294f4ac750796762c98d9dd729a14b6520",
+        "owner": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        "policyVersion": "1",
+        "readyForAction": true,
+        "stateHash": "0xfe5686a44cea18be1755b3187178a1d4881155fa151497234a77d1011ba14098",
+        "stateNonce": "2",
+        "step": "pause",
+        "transaction": {
+          "chainId": 99801,
+          "data": "0x16c38b3c0000000000000000000000000000000000000000000000000000000000000000",
+          "from": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+          "gasLimitRaw": "92549",
+          "maxFeePerGasWeiRaw": "25546839",
+          "maxPriorityFeePerGasWeiRaw": "1",
+          "nonce": 31,
+          "to": "0x3aa5ebb10dc797cac828524e59a333d0a371443c",
+          "valueRaw": "0"
+        },
+        "vault": "0x3aa5ebb10dc797cac828524e59a333d0a371443c"
+      },
+      "owner": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "positionManager": "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+      "protocol": "uniswap-v3",
+      "qualification": "local-fixture",
+      "vault": "0x3aa5ebb10dc797cac828524e59a333d0a371443c"
+    },
+    "receipt": {
+      "anchor": {
+        "hash": "0x4f0ba72d2a978ffafe62f01d0e5261c57d65e441ee6ab647aa0789b015ccc21f",
+        "number": 38,
+        "timestamp": 1790685592
+      },
+      "chainId": 99801,
+      "contractVersion": "1.0.0-rc.2",
+      "deploymentId": "0x9c907e13d6406a2eeffa80e9eb187bc8156df48b016924c2dac7a07e1c921102",
+      "gasUsedRaw": "47601",
+      "owner": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "positionManager": "0xdc64a140aa3e981100a9beca4e685f962f0cf6c9",
+      "protocol": "uniswap-v3",
+      "qualification": "local-fixture",
+      "state": "confirmed",
+      "transaction": {
+        "data": "0x16c38b3c0000000000000000000000000000000000000000000000000000000000000000",
+        "from": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        "nonce": 31,
+        "to": "0x3aa5ebb10dc797cac828524e59a333d0a371443c",
+        "valueRaw": "0"
+      },
+      "transactionHash": "0xa6896863978b996e325d304f51279f635bfb2678e53052b45ec402fbf1e68265",
+      "vault": "0x3aa5ebb10dc797cac828524e59a333d0a371443c"
+    }
+  },
+  "source": "S4-local-EVM-owner-actions",
+  "wireAdaptation": "Original local EVM evidence adapted to wire rc.2; qualification remains local-fixture, no new live claim."
+}

@@ -33,6 +33,13 @@ export const FORBIDDEN = [
   // Flags later changes (#70's wallet session, #72's deposit preview) must keep out of a deployable build.
   { name: 'test hooks', pattern: /testHooks|__DOMINO_TEST_HOOKS__/ },
   { name: 'deposit lab', pattern: /depositLab/ },
+  // 2026-10-01 (RPC-SPEC §2.8): Domino's own node is the server's alone; a deployable dist never names its token-bearing
+  // URL or the secret that holds it.
+  { name: 'local node secret', pattern: /rpc\.domino\.money\/[A-Za-z0-9_-]{16}|LOCAL_RPC_URL/ },
+  // 2026-10-01 (RPC-SPEC §7.9, the owner's rule: nothing is read from a public RPC): the chain's three public fallbacks
+  // the page read from since 2026-09-28. Not the chain's official RPC: the wallet's "add network" names it, for the
+  // wallet alone (src/wallet/chain.ts).
+  { name: 'public RPC fallback', pattern: /robinhood-rpc\.publicnode\.com|rpc\.ordofi\.network|robinhood\.drpc\.org/i },
 ]
 
 /** Files a build emits that are text, and so are scanned. Images and fonts are binary and carry no code. */

@@ -4,11 +4,13 @@ import { createExecutionController, EXECUTION_SETTLED, EXECUTION_STATE_NOTE, EXE
 import { financialFetch } from '../finance/http'
 import { keep, keepFirst, readKept, sharedStart, useKeptWhileChecking, walletName } from '../finance/privateCards'
 import { livePort } from '../session/livePort'
+import { openWalletDialog, signedOutLine } from '../finance/signedOut'
 import { realClock } from '../lib/clock'
+import { NOTHING_YET_BOTH, type CardShows } from '../lib/automationCards'
 import { shortAmount } from '../lib/format/amount'
 import { groupRaw, hundredthsToPercentText } from '../lib/raw'
 import { formatUnits } from '../lib/read/decimal'
-import { chainToken, noteTokens } from '../lib/chainTokens'
+import { chainToken } from '../lib/chainTokens'
 import { chainRead } from '../lib/fees/answers'
 import { useReadSource } from '../lib/read/screens/readContext'
 import { readWithin } from '../lib/read/screens/screenRead'
@@ -51,13 +53,12 @@ const keepKnown = () => keep('tokens', [...known].flatMap(([address, kept]) => k
 /**
  * 2026-09-28 (speed wave B, item 25: Receipts named its tokens one at a time through the read path, 1.1 s apart, about
  * 2.7 to 4.5 s on a first visit): the tokens asked of the chain this visit. Before the read path, a token is named from
- * this visit's chain reads (lib/chainTokens.ts), and every other one of the receipts' tokens from one read of the chain
- * (lib/chain/chainCode.ts tokenDetails); only one the chain gives no decimals for goes on to the read path.
+ * this visit's chain reads (lib/chainTokens.ts: the tokens the wallet's list and a position's state named). RPC-SPEC
+ * (2026-10-01, the owner's rule: nothing is read from a public RPC): no other read of the chain; every other token goes on
+ * to the read path (read-v1 `token`), as one the chain gave no decimals for always did.
  */
 const onChain = new Set<string>()
 async function fromChain(addresses: readonly string[]): Promise<Array<[string, TokenDetail]>> {
-  const rest = addresses.filter(address => !chainToken(address))
-  if (rest.length) noteTokens(await import('../lib/chain/chainCode').then(code => code.tokenDetails(code.chainDeps(), rest)).catch(() => []))
   return addresses.flatMap(address => {
     const token = chainToken(address)
     return token ? [[address, { state: 'read', symbol: token.symbol, decimals: token.decimals }]] : []
@@ -131,7 +132,8 @@ function Amount({ raw, detail }: { raw: bigint; detail: TokenDetail | undefined 
   const exact = `${groupRaw(String(raw))} in the token’s smallest units.`
   const units = detail?.state === 'read' && detail.decimals !== null ? formatUnits(String(raw), detail.decimals) : null
   if (detail?.state === 'read' && units?.kind === 'units') {
-    return <span title={`${units.text}. ${exact}`} data-amount="units">{shortAmount(units.text).short}{detail.symbol ? ` ${detail.symbol}` : ''}</span>
+    // The symbol isolated in <bdi> (audit I2): a right-to-left control in it can never reorder the amounts around it.
+    return <span title={`${units.text}. ${exact}`} data-amount="units">{shortAmount(units.text).short}{detail.symbol ? <> <bdi>{detail.symbol}</bdi></> : ''}</span>
   }
   const why = detail === undefined || detail.state === 'waiting' ? 'Reading token details.'
     : detail.state === 'failed' ? `Token details unavailable: ${words(detail.reason)}.` : 'Token decimals unavailable.'
@@ -209,8 +211,9 @@ function ReceiptRow({ item, refreshFailed, tokens }: { item: ExecutionItem; refr
           <dd className="tnum"><Amounts pairs={sums(receipt, fields)} tokens={tokens} /></dd>
         </div>)}</dl> : <p className="dm-rcpt-note">{EXECUTION_STATE_NOTE[item.state]}</p>}
         {item.canCancel && <div className="dm-rcpt-stop" data-execution-stop="">
-          <p className="dm-rcpt-note">It can still be stopped: pause your automation before it is signed.</p>
-          {/* 2026-09-24: the sequence page no longer manages sequences (the owner's simpler page); how to pause is on the docs. */}
+          <p className="dm-rcpt-note">It can still be stopped: press Pause on your position’s page before it is signed.</p>
+          {/* 2026-09-24: the sequence page no longer manages sequences (the owner's simpler page); how to pause is on the docs.
+              2026-10-01 (audit E18): the note says where Pause is; a receipt names no position to link to. */}
           <LinkButton href="#/docs/non-custodial#pause-revoke-withdraw" variant="outline" size="sm">How to pause</LinkButton>
         </div>}
         {/* The technical part, last and small: whole values are one copy away, never a link out of the app. */}
@@ -294,11 +297,22 @@ const PAGE_ROWS = 10
  * card links the full page); the full page shows ten rows, and ten more on
  * each Show more, reading on past the receipts read when it runs out.
  */
-export default function Execution({ limit }: { limit?: number }) {
+export default function Execution({ limit, onShows }: { limit?: number; onShows?: (shows: CardShows | null) => void }) {
   const view = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
+  // Why there is no session, said as itself (2026-10-01, audit D2): sign-in may be switched off, the wallet elsewhere.
+  const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
+  const out = signedOutLine(session.kind, 'receipts')
   useEffect(watch, [])
   const early = useKeptWhileChecking(view.state === 'checking', keptReceipts)
   const items = view.state === 'checking' ? early ?? [] : view.items
+  // What this card has to show, for Positions (2026-10-01, audit D2, lib/automationCards.ts): nothing while signed out or
+  // once read with none yet; a line of its own when the receipts could not be read; null while it is still being decided.
+  // Told after every render; the page keeps what it was told before when this says the same.
+  const showing: CardShows | null = view.state === 'signed_out' ? { kind: 'none', reason: session.kind, ...signedOutLine(session.kind, 'both') }
+    : items.length > 0 ? { kind: 'content' }
+      : view.state === 'checking' || view.state === 'loading' ? null
+        : view.state === 'ready' ? { kind: 'none', reason: 'empty', text: NOTHING_YET_BOTH, action: null } : { kind: 'other' }
+  useEffect(() => onShows?.(showing))
   const [shown, setShown] = useState(PAGE_ROWS)
   const all = rowsOf(items)
   const rows = all.slice(0, limit ?? shown)
@@ -310,7 +324,10 @@ export default function Execution({ limit }: { limit?: number }) {
     {/* One plain line; the rule for uncertain transactions is its title, and each receipt's chip says where it stands. */}
     <p className="dm-acct-desc" title="An uncertain or reorganized transaction is never shown as completed.">What automation did for your positions.</p>
     {/* While the session is checked with nothing kept, the plate says nothing yet: the check is a moment, and its outcome decides the line. */}
-    {view.state === 'signed_out' ? <p className="dm-acct-quiet">Sign in with your wallet to see your receipts.</p>
+    {view.state === 'signed_out' ? <div className="dm-acct-quiet" data-signed-out={session.kind}>
+      <p>{out.text}</p>
+      {out.action && <Button variant="outline" size="sm" onClick={openWalletDialog}>{out.action}</Button>}
+    </div>
       : items.length === 0 ? <p className="dm-acct-quiet" title={view.reason ? `Receipts could not be read: ${words(view.reason)}` : undefined}>{view.state === 'ready' ? 'Nothing yet. Each time automation adds your fees back, its receipt shows here.' : view.state !== 'checking' && 'Receipts for this wallet appear here.'}</p>
       : <>
         <ol className="dm-rcpt-list">{rows.map(row => row[0].state === 'cancelled'

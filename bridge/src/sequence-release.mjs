@@ -4,7 +4,7 @@ export function sequenceRelease(request, env) {
   const headers = {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store, no-transform','X-Domino-Setup-Contract':'1.0.0-rc.1','X-Content-Type-Options':'nosniff'};
   const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers});
   const url=new URL(request.url),origin=request.headers.get('Origin');
-  if ((origin!==null && origin!=='https://domino.money') || request.headers.get('Sec-Fetch-Site')!=='same-origin' || !['cors','same-origin'].includes(request.headers.get('Sec-Fetch-Mode')) || request.headers.get('Sec-Fetch-Dest')!=='empty' || request.headers.has('Sec-Fetch-User')) return reply({error:'origin_not_allowed'},403);
+  if ((origin!==null && origin!=='https://domino.money') || !fetchedByPage(request)) return reply({error:'origin_not_allowed'},403);
   if(url.origin!=='https://domino.money' || url.pathname!=='/api/setup/v1/sequence-release' || url.search || request.method!=='GET')return reply({error:'route_not_available'},404);
   if(env.SEQUENCE_WALLET_ENABLED!=='true')return reply({contractVersion:'1.0.0-rc.1',chainId:4663,available:false,deployment:null});
   try {
@@ -19,4 +19,16 @@ export function sequenceRelease(request, env) {
     if(d.serviceFeeBps!==200 || d.dominoServiceFeeBps!==400 || !Number.isSafeInteger(d.expiresAt) || d.expiresAt<=Date.now()/1000)throw new Error();
     return reply({contractVersion:'1.0.0-rc.1',chainId:4663,available:true,deployment:d});
   } catch{return reply({error:'setup_configuration_unavailable'},503);}
+}
+
+/**
+ * The page's own fetch, as far as the browser says (2026-10-01, audit C13). Safari and iOS WebViews before 16.4, wallet
+ * apps' browsers on those iPhones included, send no Fetch Metadata at all, so New position, held deposits and the
+ * automation page never got their profile there. A header the browser sent must still be exactly the page's fetch; one
+ * it did not send proves nothing either way, as the read Worker already takes it (worker.mjs checkBrowser). The Origin
+ * check and the exact URL, method and empty query still hold, and both answers are public deployment data.
+ */
+export function fetchedByPage(request) {
+  const allowed=(name,values)=>{const value=request.headers.get(name);return value===null || values.includes(value)};
+  return allowed('Sec-Fetch-Site',['same-origin']) && allowed('Sec-Fetch-Mode',['cors','same-origin']) && allowed('Sec-Fetch-Dest',['empty']) && !request.headers.has('Sec-Fetch-User');
 }

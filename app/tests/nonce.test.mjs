@@ -158,7 +158,9 @@ test('late unknown rejection or returned hash after timeout retains the reload-s
   else fixture.deferred.resolve('0x'+'b'.repeat(64));
   await new Promise(resolve=>setImmediate(resolve));
   assert(fixture.journal.offered(owner,0n));
-  await assert.rejects(fixture.fund(fixture.client()),/pending_wallet_transaction/);
+  // Changed on purpose 2026-10-01 (audit C2): nothing is pending on chain, so this is said as a request still open in the
+  // wallet (no longer as a pending transaction to cancel); the latch itself stays, and nothing is sent again.
+  await assert.rejects(fixture.fund(fixture.client()),/wallet_request_open/);
   assert.equal(fixture.walletCalls.filter(method=>method==='eth_sendTransaction').length,1);
  }
 });

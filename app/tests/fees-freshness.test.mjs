@@ -19,17 +19,15 @@ test('current history requires its original chain timestamp to be within two ref
   assert.equal(view.state.timestamp, timestamp);
 });
 
-test('a saved replay is never current, and a sampled replay keeps its estimate qualification while recent', () => {
+// Changed on purpose 2026-10-02 (RPC-SPEC §11.4): there is no estimate any more; a history is verified, or not drawn.
+test('a saved history is never current; nothing but a verified one is', () => {
   const timestamp = 1_800_000_000, now = timestamp * 1000 + 5_000;
   for (const savedAt of [now, now - 1]) {
     const cached = { phase: 'cached', state: { timestamp }, savedAt };
     assert.equal(historyIsCurrent(cached, now), false);
     assert.equal(historyLoadQuality(cached, now), 'cached');
   }
-  const estimated = { phase: 'estimated', state: { timestamp } };
-  assert.equal(historyLoadQuality(estimated, now), 'estimated');
-  assert.equal(historyLoadQuality(estimated, now + HISTORY_CURRENT_MS), 'cached');
-  for (const phase of ['loading', 'idle', 'unclaimed-only', 'unavailable']) {
+  for (const phase of ['loading', 'idle', 'unclaimed-only', 'unavailable', 'estimated']) {
     assert.equal(historyIsCurrent({ phase }, now), false);
     assert.equal(historyLoadQuality({ phase }, now), null);
   }

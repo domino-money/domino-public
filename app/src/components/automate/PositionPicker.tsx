@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from 'react'
 import { RangeBar } from '../ui'
 import { feeText, rangeView, tokenName } from '../../lib/automate/picker'
+import { feeWords } from '../../lib/format/fee'
 import { FEATURES } from '../../lib/automate/features'
 import { automationWord, useAutomation } from '../../lib/automationState'
 import type { WalletPosition } from '../../lib/walletPositions'
@@ -68,7 +69,7 @@ export function PositionPicker({ positions, selected, onSelect, disabled = false
             <span className="dm-seq-pick-name">
               <bdi className="dm-seq-pick-pair">{pair}</bdi>
               <span className="dm-seq-pick-meta">
-                <span className="dm-chip">{feeText(position.fee)}</span>
+                <span className="dm-chip">{feeWords(feeText(position.fee))}</span>
                 <span className="dm-seq-pick-id">#{position.tokenId}</span>
                 {note ? <span className="dm-seq-pick-note">{note}</span> : <PickAutomation tokenId={position.tokenId} />}
               </span>

@@ -1,5 +1,6 @@
 import { SELECTED_POOLS } from './selectedPools'
 import { MAIN_TOKENS, NATIVE_ETH, USDG, WETH as MAIN_WETH } from './mainTokens'
+import { priceInverted } from '../lib/read/orientation'
 import type { Market } from '../lib/markets'
 import type { ArtworkKey, TokenDisplay } from '../lib/read/types'
 
@@ -43,6 +44,12 @@ export interface PoolCatalogueEntry {
   pinned?: true
   /** The estimated 24h fee APR a featured list ranked this pool by, as the answer wrote it; never set on the embedded list. */
   rankApr?: string
+  /**
+   * The figures today's selection was made with (the answer's `rankInputs`), as it wrote them, with when they were
+   * evaluated: the last stand-in for figures the provider refused (lib/read/figureFallback.ts, audit V1, 2026-10-01).
+   * Never set on the embedded list.
+   */
+  selection?: { tvlUsd: string; volume24hUsd: string; apr: string; evaluatedAt: number }
   /** A featured list's pool key, lowercase, which the pool's own read must match (featuredList.ts `bindsToEntry`); never set on the embedded list. */
   poolKey?: { currency0: string; currency1: string; fee_pips: number; tick_spacing: number; hooks: string }
 }
@@ -125,6 +132,23 @@ export function inPoolOrder(entry: PoolCatalogueEntry): PoolCatalogueEntry {
 }
 
 /**
+ * An entry as a pair is named everywhere (audit E21, 2026-10-01): in the order its price is written, "TOKEN/USDG"
+ * (lib/read/orientation.ts), from its pool's order. Labels, artwork and addresses move together. Without both addresses
+ * the labels stay as inspected (the embedded ETH/USDG row, which already reads that way).
+ */
+export function inPriceOrder(entry: PoolCatalogueEntry): PoolCatalogueEntry {
+  const pool = inPoolOrder(entry)
+  const addresses = pool.addresses
+  if (!addresses || !priceInverted(addresses[0], addresses[1])) return pool
+  return {
+    ...pool,
+    labels: [pool.labels[1], pool.labels[0]],
+    artwork: [pool.artwork[1], pool.artwork[0]],
+    addresses: [addresses[1], addresses[0]],
+  }
+}
+
+/**
  * The tokens a wallet's list falls back to when its provider names none: the main tokens (config/mainTokens.ts,
  * native ETH aside, which has no contract to ask) and the embedded list's, by exact address, in that order. Never a
  * daily featured list's tokens (2026-09-26, featured pools v1 §11.4).
@@ -169,6 +193,6 @@ export function poolListings(markets: readonly Market[], entries: readonly PoolC
   const byId = new Map(markets.map((market) => [market.poolId.toLowerCase(), market]))
   return entries.map((catalogue) => {
     const market = byId.get(catalogue.poolId)
-    return { poolId: catalogue.poolId, catalogue: inPoolOrder(catalogue), market, token: market ? tokenOf(market) : entryToken(catalogue) }
+    return { poolId: catalogue.poolId, catalogue: inPriceOrder(catalogue), market, token: market ? tokenOf(market) : entryToken(catalogue) }
   })
 }

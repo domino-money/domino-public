@@ -12,7 +12,8 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { logLimitError } from './support/log-limits.mjs';
+import { nodeLogError } from './support/log-limits.mjs';
+import { factoryCall, isFactoryCall } from './support/vault-factory.mjs';
 
 const require = createRequire(import.meta.url);
 const impact = require('../.test-build/app/src/lib/automationImpact.js');
@@ -196,58 +197,99 @@ test('Domino-compound: the next positions it opened, and the fees it moved out o
   assert.equal(usd(result.moved), '6.94');
 });
 
-test('the vault is read from the chain by the page: its executions from the mint to the last settlement, then the fees in their blocks only', async () => {
+// Changed on purpose (RPC-SPEC §2.5.5, 2026-10-01, the owner's rule: nothing is read from a public RPC): the page asks the
+// site's own route, POST /api/automation/v1/record, which reads the vault's logs from Domino's own node in windows of its
+// own (tests/support/edge-routes.mjs answers it here, over a fake node); the page still parses every log itself. Until
+// then the page read the two eth_getLogs from the public RPC, splitting a range it refused.
+test('the vault is read through the site’s route: its executions from the mint to the last settlement, then the fees in their blocks only, each log checked by the page', async () => {
+  const { edgeFetch } = await import('./support/edge-routes.mjs');
+  const routes = require('../.test-build/app/src/lib/edge/chainRoutes.js');
   const flags = [globalThis.__DOMINO_DEPLOYABLE__, globalThis.__DOMINO_TEST_HOOKS__];
   globalThis.__DOMINO_DEPLOYABLE__ = true;
   globalThis.__DOMINO_TEST_HOOKS__ = false;
   try {
+    const HEAD = 74_126_505;
     const asked = [];
-    const deps = (answer) => ({
-      async fetch(url, init) {
-        const call = JSON.parse(init.body);
-        asked.push(call.params[0]);
-        const reply = answer(call.params[0]);
-        return new Response(JSON.stringify({ jsonrpc: '2.0', id: call.id, ...reply }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      },
-      sleep: async () => undefined,
-      now: () => Date.now(),
-    });
-    const chain = (filter) => {
-      // 2026-09-28: the RPC's gateway refuses a range past its limits (tests/support/log-limits.mjs), as it does live.
-      const limited = logLimitError(filter);
-      if (limited) return { error: limited };
-      if (filter.topics[0] === impact.EXECUTION_COMPLETED) {
-        // The RPC refuses the whole range once: the page asks it in two halves.
-        if (Number(filter.toBlock) - Number(filter.fromBlock) > 400_000) return { error: { code: -32005, message: 'block range is too wide' } };
-        return { result: LOGS.filter((log) => Number(log.blockNumber) >= Number(filter.fromBlock) && Number(log.blockNumber) <= Number(filter.toBlock)) };
-      }
-      const addresses = [filter.address].flat();
-      return { result: TRANSFERS.filter((log) => addresses.includes(log.address)) };
+    const sent = [];
+    /** A node over `answer` (a log filter → its logs), and the page's client over the route that reads it. */
+    const via = (answer, head = HEAD) => {
+      const deps = {
+        async fetch(url, init) {
+          const call = JSON.parse(init.body);
+          if (call.method === 'eth_blockNumber') return Response.json({ jsonrpc: '2.0', id: call.id, result: `0x${head.toString(16)}` });
+          // 2026-10-02 (review of the rules, finding 16): the route asks the factory whether it made the vault first.
+          if (isFactoryCall(call)) return Response.json({ jsonrpc: '2.0', id: call.id, ...factoryCall(call) });
+          asked.push(call.params[0]);
+          return Response.json({ jsonrpc: '2.0', id: call.id, ...answer(call.params[0]) });
+        },
+        sleep: async () => undefined,
+        now: () => Date.now(),
+      };
+      const fetch = edgeFetch(deps);
+      return (request, options = {}) => routes.postVaultRecord(request, { ...options, fetch: async (path, init) => (sent.push({ path, body: JSON.parse(init.body) }), fetch(path, init)) });
     };
-    const record = await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363, deps(chain));
+    const chain = (filter) => {
+      // Changed on purpose 2026-10-02: the node the route reads has no block ceiling; its rules are the transport's own.
+      const limited = nodeLogError(filter);
+      if (limited) return { error: limited };
+      const [from, to] = [Number(filter.fromBlock), Number(filter.toBlock)];
+      const within = (log) => Number(log.blockNumber) >= from && Number(log.blockNumber) <= to;
+      if (filter.topics[0] === impact.EXECUTION_COMPLETED) return { result: LOGS.filter(within) };
+      const addresses = [filter.address].flat();
+      return { result: TRANSFERS.filter((log) => addresses.includes(log.address) && within(log)) };
+    };
+    const record = await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363, via(chain));
     assert.deepEqual(record.executions.map((e) => e.tx), [TX.net, TX.second, TX.third]);
     assert.equal(record.paid.size, 3);
-    assert.deepEqual(asked.map((filter) => [filter.address, Number(filter.fromBlock), Number(filter.toBlock)]), [
-      [VAULT, 73_233_307, 73_705_363],
-      [VAULT, 73_233_307, 73_469_335],
-      [VAULT, 73_469_336, 73_705_363],
-      // Changed on purpose (2026-09-28: the RPC serves a filter with several addresses over 100,000 blocks at most): the
-      // fees paid over these 237,324 blocks are asked one currency at a time.
-      [USDG, 73_468_040, 73_705_363],
-      [UFG, 73_468_040, 73_705_363],
-    ]);
+    assert.deepEqual([...record.paid.values()].map(([a, b]) => [String(a), String(b)]), [['129309', '22420126936161376268'], ['146159', '26065475075194439631'], ['104226', '16775351647156747336']], 'the fees to the recipient, not the liquidity to the PoolManager');
+    // One POST of exactly what the route takes; the edge read the logs (its windows and filters are its own).
+    assert.deepEqual(sent, [{ path: '/api/automation/v1/record', body: { vault: VAULT, tokenId: TOKEN, currencies: [USDG, UFG], from: 73_233_307, to: 73_705_363 } }]);
+    assert.ok(asked.some((filter) => filter.address === VAULT && filter.topics[0] === impact.EXECUTION_COMPLETED), 'the executions');
+    assert.ok(asked.every((filter) => filter.address === VAULT || [filter.address].flat().every((address) => [USDG, UFG].includes(address))), 'and the pair’s transfers out of the vault, nothing else');
     // A native currency leaves no log: no transfer read, fees by the policy's rate.
     asked.length = 0;
-    const native = await impact.readVault(VAULT, TOKEN, ['0x0000000000000000000000000000000000000000', USDG], 73_600_000, 73_705_363, deps(chain));
-    assert.deepEqual([native.executions.length, native.paid, asked.length], [1, null, 1]);
-    // A reply that is not what was asked for, or a bad argument: no record.
-    assert.equal(await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_600_000, 73_705_363, deps(() => ({ result: [{ ...LOGS[2], address: USDG }] }))), null);
-    assert.equal(await impact.readVault('0xNOT', TOKEN, [USDG, UFG], 1, 2, deps(chain)), null);
+    sent.length = 0;
+    const native = await impact.readVault(VAULT, TOKEN, ['0x0000000000000000000000000000000000000000', USDG], 73_600_000, 73_705_363, via(chain));
+    assert.deepEqual([native.executions.length, native.paid], [1, null]);
+    assert.ok(asked.length > 0 && asked.every((filter) => filter.address === VAULT), 'the executions only, no transfer read');
+    // Currencies are sent lowercase, as the route takes them.
+    await impact.readVault(VAULT, TOKEN, [USDG.toUpperCase().replace('0X', '0x'), UFG], 73_600_000, 73_705_363, via(chain));
+    assert.deepEqual(sent.at(-1).body.currencies, [USDG, UFG]);
+    // No execution: an empty record, and no transfer read.
+    asked.length = 0;
+    const none = await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_000_000, 73_100_000, via(chain));
+    assert.deepEqual([none.executions, [...none.paid]], [[], []]);
+    assert.ok(asked.length > 0 && asked.every((filter) => filter.address === VAULT), 'no transfer read');
+    // An answer that is not what was asked for: no record. The page checks every log the route hands on.
+    const answering = (body, status = 200) => async () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+    const post = (body, status) => (request, options = {}) => routes.postVaultRecord(request, { ...options, fetch: answering(body, status) });
+    // The node behind the blocks asked (the route's `behind`, its own rule: tests/chain-routes.test.mjs): nothing yet, and
+    // the store asks again.
+    assert.equal(await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363, post({ v: 1, behind: true })), null);
+    const trim = ({ removed, ...log }) => log;
+    const good = { v: 1, head: HEAD, executions: LOGS.map(trim), transfers: TRANSFERS.map(trim) };
+    assert.equal((await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363, post(good))).paid.size, 3);
+    for (const [label, body] of [
+      ['an execution of another address', { ...good, executions: [{ ...good.executions[0], address: USDG }] }],
+      ['a transfer of another token', { ...good, transfers: [{ ...good.transfers[0], address: VAULT }] }],
+      ['a transfer not from the vault', { ...good, transfers: [{ ...good.transfers[0], topics: [good.transfers[0].topics[0], good.transfers[0].topics[2], good.transfers[0].topics[2]] }] }],
+      ['no transfers for an ERC-20 pair', { ...good, transfers: null }],
+      ['executions that are no list', { ...good, executions: {} }],
+      ['another version', { ...good, v: 2 }],
+    ]) assert.equal(await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363, post(body)), null, label);
+    for (const [status, error] of [[503, 'source_unavailable'], [429, 'rate_limited'], [502, 'rpc_unavailable'], [400, 'bad_request']]) assert.equal(await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363, post({ v: 1, error }, status)), null, error);
+    // A bad argument, or a read dropped before it went: nothing asked.
+    sent.length = 0;
+    assert.equal(await impact.readVault('0xNOT', TOKEN, [USDG, UFG], 1, 2, via(chain)), null);
+    assert.equal(await impact.readVault(VAULT, TOKEN, [USDG, UFG], 5, 2, via(chain)), null);
+    const stop = new AbortController();
+    stop.abort();
+    assert.equal(await impact.readVault(VAULT, TOKEN, [USDG, UFG], 1, 2, via(chain), stop.signal), null);
+    assert.equal(sent.length, 0);
     // A build that reads no chain asks nothing.
     globalThis.__DOMINO_DEPLOYABLE__ = false;
-    asked.length = 0;
-    assert.equal(await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363, deps(chain)), null);
-    assert.equal(asked.length, 0);
+    assert.equal(await impact.readVault(VAULT, TOKEN, [USDG, UFG], 73_233_307, 73_705_363, via(chain)), null);
+    assert.equal(sent.length, 0);
   } finally {
     [globalThis.__DOMINO_DEPLOYABLE__, globalThis.__DOMINO_TEST_HOOKS__] = flags;
   }

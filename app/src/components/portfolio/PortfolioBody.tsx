@@ -4,7 +4,7 @@ import { parseAddressInput, shortAddress, type AddressKey } from '../../lib/read
 import { portfolioHash, portfolioRoute } from '../../lib/read/screens/positions'
 import type { WalletIdentityView } from '../../lib/walletIdentity'
 import { CopyButton } from '../read/screens/CopyButton'
-import { Button, SearchField, cx } from '../ui'
+import { Button, SearchField, Skeleton, cx } from '../ui'
 import { PortfolioTokens } from './PortfolioTokens'
 
 /** Whose tokens the card shows: an address, and where it came from. Never a claim that anyone here controls it. */
@@ -81,8 +81,13 @@ function AddressForm({ id, onView, className }: { id: string; onView: (wire: str
  * tokens appear without a click; with none, nothing is read. On
  * `#/portfolio/<address>` this card owns the link; on `#/positions` it never
  * writes it.
+ *
+ * `onLinked` (2026-10-01, audit V7: View address showed the address's tokens
+ * only): told the address a link views (lowercase), or null while the card
+ * shows the connected wallet or nothing, so the page can list that address's
+ * positions beside its tokens.
  */
-export default function PortfolioBody({ identity }: { identity: WalletIdentityView }) {
+export default function PortfolioBody({ identity, onLinked }: { identity: WalletIdentityView; onLinked?: (address: string | null) => void }) {
   const [route, setRoute] = useState(() => portfolioRoute(window.location.hash))
   const [showForm, setShowForm] = useState(false)
 
@@ -106,6 +111,10 @@ export default function PortfolioBody({ identity }: { identity: WalletIdentityVi
     : identity.kind === 'connected'
       ? { wire: identity.address, key: identity.address.toLowerCase() as AddressKey, source: 'wallet', walletChainId: identity.chainId }
       : null
+  const linked = subject?.source === 'link' ? subject.key : null
+  useEffect(() => {
+    onLinked?.(linked)
+  }, [linked, onLinked])
 
   // "View address" and "View another address" go to that address's link.
   const view = (wire: string) => {
@@ -138,7 +147,13 @@ export default function PortfolioBody({ identity }: { identity: WalletIdentityVi
         )}
       </div>
 
-      {subject ? (
+      {!subject && !typed && identity.kind === 'unknown' ? (
+        // 2026-10-01 (audit C5): while the wallet control is still finding the wallet, nothing is offered: a returning
+        // visitor's wallet reconnects in a moment, and the address form flashed in its place.
+        <div className="dm-acct-rail-empty" data-empty="portfolio-waiting" aria-busy="true">
+          <Skeleton className="block h-4 w-48 max-w-full" />
+        </div>
+      ) : subject ? (
         <>
           <PortfolioTokens key={subject.key} address={subject.wire} />
           <div className="dm-acct-rail-actions">

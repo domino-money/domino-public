@@ -1,7 +1,8 @@
 import { decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, zeroAddress, type Address, type Hex } from 'viem'
 import { POSITION_MANAGER, STATE_VIEW, pinned } from './pin.js'
 import { SLIPPAGE_MAX_BPS, SLIPPAGE_MIN_BPS } from './slippage.js'
-import { SIGN_WINDOW_S, STEP_DEADLINE_S, acceptsNativeEth, type GasBudget, type WalletRpc } from './setup.js'
+import { NONCE_LATCH_EXPIRY_S, SIGN_WINDOW_S, STEP_DEADLINE_S, acceptsNativeEth, type GasBudget, type WalletRpc } from './setup.js'
+import { definiteRefusal } from './nonce.js'
 
 /*
  * The owner's own actions on a Uniswap v4 position NFT: collect its fees, or
@@ -221,6 +222,12 @@ export interface PositionState {
   tokenId: bigint; key: PoolKey; poolId: Hex; tickLower: number; tickUpper: number; liquidity: bigint
   sqrtPriceX96: bigint; tick: number; principal: readonly [bigint, bigint]; fees: readonly [bigint, bigint]
   hasSubscriber: boolean; blockNumber: bigint; blockTimestamp: bigint
+  /**
+   * The position's fee growth at its last settlement (StateView.getPositionInfo's feeGrowthInside{0,1}LastX128): every
+   * collect or close of it moves it, and nothing else does. 2026-10-01 (audit C14): read again after a step the wallet
+   * replaced, it says exactly whether that step collected.
+   */
+  lastFeeGrowth: readonly [bigint, bigint]
 }
 export interface PreparedPosition {
   kind: 'collect' | 'close'; tokenId: bigint; owner: Address; expiresAt: number; deadline: bigint; state: PositionState
@@ -234,7 +241,13 @@ export interface PreparedPosition {
   networkFeeWei: bigint
   transaction: Readonly<{ from: Address; to: Address; data: Hex; value: '0x0'; nonce: Hex; gas: Hex; maxFeePerGas: Hex; maxPriorityFeePerGas: Hex; chainId: '0x1237'; type: '0x2' }>
 }
-export type PositionReceipt = { state: 'pending' } | { state: 'reorged' } | { state: 'included' | 'finalized' | 'reverted'; blockHash: Hex }
+/**
+ * `replaced` (2026-10-01, audit C14): the wallet replaced the step ("Speed up" or "Cancel"): the chain does not know the
+ * hash this client was given, and the owner's account has mined past its nonce. The caller reads the position again to
+ * know whether the step happened (a sped-up step did, a cancelled one did not); nothing is sent again. `blockNumber`
+ * (2026-10-02, RPC fix round 2): the block the transaction was included in, so the page's list waits for a read past it.
+ */
+export type PositionReceipt = { state: 'pending' } | { state: 'replaced' } | { state: 'reorged' } | { state: 'included' | 'finalized' | 'reverted'; blockHash: Hex; blockNumber: bigint }
 
 const ADDRESS = /^0x[0-9a-f]{40}$/, HASH = /^0x[0-9a-f]{64}$/
 const fail = (code: string): never => { throw new Error(code) }
@@ -264,9 +277,10 @@ export function createPositionClient(wallet: WalletRpc, supplied: PositionDeploy
       if (!wallet.current() || now() >= end || ++calls > 32) return fail('wallet_action_expired')
       let timer: ReturnType<typeof setTimeout> | undefined
       try {
-        // A definite wallet rejection stays observable even after the deadline has won; an unknown outcome keeps its nonce quarantined.
+        // A definite wallet rejection stays observable even after the deadline has won; an unknown outcome keeps its nonce
+        // quarantined. 2026-10-01 (audit C2): every refusal that proves nothing was sent, not only 4001 (./nonce.ts).
         const request = wallet.request(method, params).catch(async (error) => {
-          if (error && typeof error === 'object' && 'code' in error && error.code === 4001) await onUserRejection?.()
+          if (definiteRefusal(error)) await onUserRejection?.()
           throw error
         })
         const result = await Promise.race([request, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), Math.max(1, (end - now()) * 1000)) })])
@@ -280,6 +294,18 @@ export function createPositionClient(wallet: WalletRpc, supplied: PositionDeploy
   async function identity(rpc: Rpc) {
     const accounts = await rpc('eth_accounts', []), chain = await rpc('eth_chainId', [])
     if (!Array.isArray(accounts) || typeof accounts[0] !== 'string' || accounts[0].toLowerCase() !== wallet.owner || quantity(chain) !== 4663n) return fail('wallet_identity_changed')
+  }
+  /**
+   * The owner's next nonce, when nothing holds it (2026-10-01, audit C2): a transaction pending on chain is said as such;
+   * an earlier offer of the same nonce with nothing pending on chain is let go when its page is gone or it is too old
+   * (wallet.settleNonce), and said otherwise as a request still open in the wallet.
+   */
+  async function freeNonce(rpc: Rpc): Promise<bigint> {
+    const [latest, pending] = (await Promise.all([rpc('eth_getTransactionCount', [wallet.owner, 'latest']), rpc('eth_getTransactionCount', [wallet.owner, 'pending'])])).map(quantity)
+    if (latest !== pending) return fail('pending_wallet_transaction')
+    if (offered.has(String(pending))) return fail('wallet_request_open')
+    if (wallet.nonceOffered(pending) && !(await wallet.settleNonce?.(pending, now(), NONCE_LATCH_EXPIRY_S))) return fail('wallet_request_open')
+    return pending
   }
   /** The pinned contracts, and their code, once per client: a different position manager is not this chain's Uniswap. */
   async function verify(rpc: Rpc) {
@@ -334,6 +360,7 @@ export function createPositionClient(wallet: WalletRpc, supplied: PositionDeploy
       principal: principalAt(sqrtPriceX96, tick, decoded.tickLower, decoded.tickUpper, liquidity),
       fees: [feesOwed(now0, last0, liquidity), feesOwed(now1, last1, liquidity)] as const,
       hasSubscriber: decoded.hasSubscriber, blockNumber, blockTimestamp,
+      lastFeeGrowth: [last0, last1] as const,
     })
   }
   /** A contract refusal said as this client's code; any other failure unchanged. */
@@ -345,8 +372,7 @@ export function createPositionClient(wallet: WalletRpc, supplied: PositionDeploy
   }
   async function prepare(rpc: Rpc, kind: PreparedPosition['kind'], state: PositionState, deadline: bigint, data: Hex, minimum: readonly [bigint, bigint], gas: GasBudget): Promise<PreparedPosition> {
     if (gas.maxGas < 21000n || gas.maxGas > 15_000_000n || gas.maxFeePerGas <= 0n || gas.maxFeePerGas >= 2n ** 128n || gas.maxPriorityFeePerGas < 0n || gas.maxPriorityFeePerGas > gas.maxFeePerGas || gas.reserveWei < 0n) return fail('invalid_gas_budget')
-    const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest'])), pending = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'pending']))
-    if (latest !== pending || offered.has(String(pending)) || wallet.nonceOffered(pending)) return fail('pending_wallet_transaction')
+    const pending = await freeNonce(rpc)
     const tx = { from: wallet.owner, to: deployment.positionManager, data, value: '0x0' as const }
     await simulated(rpc('eth_call', [tx, 'latest']))
     const estimate = quantity(await simulated(rpc('eth_estimateGas', [tx])))
@@ -390,8 +416,8 @@ export function createPositionClient(wallet: WalletRpc, supplied: PositionDeploy
     send: (prepared: PreparedPosition, acknowledged: boolean) => bounded(async (rpc) => {
       if (!acknowledged || !issued.has(prepared) || prepared.expiresAt <= now() || prepared.owner !== wallet.owner) return fail('wallet_review_required')
       await verify(rpc)
-      const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest'])), pending = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'pending']))
-      if (latest !== pending || numberToHex(pending) !== prepared.transaction.nonce || offered.has(String(pending)) || wallet.nonceOffered(pending)) return fail('pending_wallet_transaction')
+      const pending = await freeNonce(rpc)
+      if (numberToHex(pending) !== prepared.transaction.nonce) return fail('pending_wallet_transaction')
       // The chain may have moved since the review: the exact transaction is simulated again before the wallet sees it.
       await simulated(rpc('eth_call', [prepared.transaction, 'latest']))
       if (prepared.expiresAt <= now()) return fail('wallet_review_expired')
@@ -416,7 +442,17 @@ export function createPositionClient(wallet: WalletRpc, supplied: PositionDeploy
       await identity(rpc)
       const known = returned.get(hash)
       if (!HASH.test(hash) || !known) return fail('receipt_not_from_this_review')
-      const tx = await rpc('eth_getTransactionByHash', [hash]) as { hash?: string; from?: string; to?: string; input?: string; value?: string; nonce?: string } | null
+      let tx = await rpc('eth_getTransactionByHash', [hash]) as { hash?: string; from?: string; to?: string; input?: string; value?: string; nonce?: string } | null
+      if (tx === null) {
+        // A hash this client sent that the chain does not know, while the owner's mined nonce has passed it: the wallet
+        // replaced it ("Speed up" or "Cancel"; 2026-10-01, audit C14, the rule of ./setup.ts receipt). Asked once more
+        // after the nonce, so a node that had not seen it yet is not taken for a replacement.
+        const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest']))
+        if (latest > quantity(known.transaction.nonce)) {
+          tx = await rpc('eth_getTransactionByHash', [hash]) as typeof tx
+          if (tx === null) return { state: 'replaced' }
+        }
+      }
       if (tx === null) return { state: 'pending' }
       const sent = known.transaction
       if (!tx || tx.hash?.toLowerCase() !== hash || tx.from?.toLowerCase() !== wallet.owner || tx.to?.toLowerCase() !== sent.to || tx.input?.toLowerCase() !== sent.data.toLowerCase()
@@ -426,10 +462,10 @@ export function createPositionClient(wallet: WalletRpc, supplied: PositionDeploy
       if (!receipt || receipt.transactionHash?.toLowerCase() !== hash || receipt.from?.toLowerCase() !== wallet.owner || !receipt.blockNumber || !receipt.blockHash || !HASH.test(receipt.blockHash) || !['0x0', '0x1'].includes(receipt.status ?? '')) return fail('invalid_receipt')
       const block = await rpc('eth_getBlockByNumber', [receipt.blockNumber, false]) as { hash?: string } | null
       if (!block || block.hash !== receipt.blockHash) return { state: 'reorged' }
-      if (receipt.status === '0x0') return { state: 'reverted', blockHash: receipt.blockHash as Hex }
+      if (receipt.status === '0x0') return { state: 'reverted', blockHash: receipt.blockHash as Hex, blockNumber: quantity(receipt.blockNumber) }
       const final = await rpc('eth_getBlockByNumber', ['finalized', false]) as { number?: string } | null
-      if (!final?.number || quantity(final.number) < quantity(receipt.blockNumber)) return { state: 'included', blockHash: receipt.blockHash as Hex }
-      return { state: 'finalized', blockHash: receipt.blockHash as Hex }
+      if (!final?.number || quantity(final.number) < quantity(receipt.blockNumber)) return { state: 'included', blockHash: receipt.blockHash as Hex, blockNumber: quantity(receipt.blockNumber) }
+      return { state: 'finalized', blockHash: receipt.blockHash as Hex, blockNumber: quantity(receipt.blockNumber) }
     }),
   }
 }

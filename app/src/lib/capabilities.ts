@@ -1,3 +1,5 @@
+import { ROBINHOOD_ID } from '../config/chainIdentity'
+
 /** Build capabilities, and where each automation stands (the pill Automate, Home, Positions and the docs show).
  * Wallet transactions are prepared locally and require a separate wallet
  * review. Runtime activation comes from the verified deployment/services;
@@ -5,7 +7,8 @@
  */
 export const CAPABILITIES = {
   version: 1,
-  chainId: 4663,
+  // Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G3): the chain registry's id, the same 4663.
+  chainId: ROBINHOOD_ID,
   // What this build switches on by itself: nothing that spends. Domino V1 is
   // deployed on Robinhood Chain (docs/V1_MAINNET_FRONTEND_HANDOFF_0XDECIMAL.md),
   // and the owner funds, swaps and mints in Setup and creates or manages a
@@ -45,7 +48,14 @@ export type Availability = 'planned' | 'not-connected' | 'owner-scoped' | 'conne
  */
 export const ROADMAP_PILL: Partial<Record<Availability, string>> = {
   'not-connected': 'Not connected',
-  'owner-scoped': 'Per sequence',
+  // Changed on purpose 2026-10-01 (audit E3): "Per sequence" named an internal scope and explained nothing to a visitor.
+  'owner-scoped': 'Starts paused',
+}
+
+/** What a pill means, in a sentence: its title, for whoever hovers or focuses it (audit E3). */
+export const ROADMAP_PILL_TITLE: Partial<Record<Availability, string>> = {
+  'not-connected': 'Nothing of it reaches this site yet.',
+  'owner-scoped': 'Each automation starts paused. Once Domino’s automation service is ready for it, its position’s page offers Turn on.',
 }
 
 /**

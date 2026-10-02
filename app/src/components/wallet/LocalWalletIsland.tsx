@@ -8,7 +8,7 @@ import { useDialog } from '../../lib/useDialog'
 import { publishWalletIdentity, type WalletIdentityView } from '../../lib/walletIdentity'
 import { Button, Card } from '../ui'
 import { IconChevronDown, IconChevronRight, IconClose } from '../icons'
-import { shortAddress } from './copy'
+import { connectNotice, shortAddress } from './copy'
 import { tokenHue } from '../../lib/format/tokenHue'
 import { WalletLogo } from './WalletLogo'
 
@@ -22,7 +22,8 @@ export default function LocalWalletIsland() {
 }
 
 function LocalWalletControl() {
-  const connectors = useConnectors()
+  // Browser wallets only: WalletConnect needs the deployed site's project, which a local read-only server is not.
+  const connectors = useConnectors().filter((connector) => connector.type !== 'walletConnect')
   const [identity, setIdentity] = useState<WalletIdentity>({ kind: 'unknown' })
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -47,7 +48,7 @@ function LocalWalletControl() {
     pending.current = true; setBusy(true); setNotice(null)
     try {
       const result = await connectWallet(connector)
-      if (alive.current && result !== 'connected') setNotice(result === 'user_rejected' ? 'Your wallet declined the connection request.' : 'Your wallet could not connect.')
+      if (alive.current && (result === 'user_rejected' || result === 'pending' || result === 'error')) setNotice(connectNotice(result, name(connector.name)))
     } finally { pending.current = false; if (alive.current) setBusy(false) }
   }
   async function disconnect() {

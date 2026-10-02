@@ -13,11 +13,13 @@ import { getAddress } from 'viem';
 import { FIXTURES, runtime, siweMessage } from './support/session-fixtures.mjs';
 
 const require = createRequire(import.meta.url);
-const { reduce, initialMachine } = require('../.test-build/app/src/session/machine.js');
+const { reduce, initialMachine, sessionChains } = require('../.test-build/app/src/session/machine.js');
 const { ERROR_CLASS } = require('../.test-build/app/src/session/errors.js');
 
 const ORIGIN = 'https://app.example.invalid';
-const env = { origin: ORIGIN, checksum: getAddress };
+// `chains`: the registry's chains a session is kept across where the second chain's section is open (G11; the controller
+// sets it from the page's origin, sessionChains). The tests below that walk G11 run as on the preview alias.
+const env = { origin: ORIGIN, checksum: getAddress, chains: [4663, 99801] };
 const ADDR_A = FIXTURES.requests.challenge.address;
 const ADDR_B = getAddress('0x70997970c51812dc3a010c7d01b50e0d17dc79c8');
 const PREAUTH = 'p'.repeat(43);
@@ -648,4 +650,111 @@ test('a session that ended and a later one for the same owner never share an epo
   const back = then(ended, { type: 'recheck', cause: 'remote' }, result(ok('me', session(ADDR_A, 'c'.repeat(43)))));
   assert.equal(back.machine.view.status, 'signed_in');
   assert.ok(back.machine.epoch > start.machine.epoch);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-01, the chain2 workstream, part B, audit item G11: the session is the account's, not the network's. A signed-in
+// account whose wallet moves to the second chain's network (another chain of the registry, config/chainIdentity.ts
+// REGISTRY_CHAIN_IDS) keeps its session, and is signed in again on its way back without a signature. Anything else is an
+// identity change as it always was: another account or wallet, a chain outside the registry, or a flow in progress.
+// ---------------------------------------------------------------------------
+
+const ELYSIUM = 99801;
+
+test('a signed-in account whose wallet moves to the second chain keeps its session, asks nothing there, and comes back signed in without a signature', () => {
+  const start = signedIn();
+  const away = then(start, identity(wallet(ADDR_A, ELYSIUM)));
+  assert.deepEqual(away.machine.view, { status: 'wrong_network', chainId: ELYSIUM }, 'Robinhood Chain\'s screens say the wallet is elsewhere, as for any other chain');
+  assert.deepEqual(types(away.effects), ['abort_inflight', 'cancel_expiry', 'clear_private'], 'nothing asked, nothing closed; what was read for the chain left behind is dropped');
+  assert.deepEqual(away.machine.session, start.machine.session, 'the session is kept');
+  assert.equal(away.machine.epoch, start.machine.epoch + 1, 'a new epoch: nothing read before reaches the new chain');
+  // Nothing is read for the session while the wallet is away: no check, no renewal.
+  for (const event of [{ type: 'recheck', cause: 'expiry' }, { type: 'recheck', cause: 'visible' }, { type: 'recheck', cause: 'remote' }, { type: 'refresh' }, { type: 'sign_in' }]) {
+    assert.deepEqual(then(away, event).effects, [], event.type);
+  }
+  const back = then(away, identity(wallet(ADDR_A)));
+  assert.deepEqual(routes(back.effects), ['me'], 'back on Robinhood Chain: me, and nothing else');
+  assert.equal(back.machine.view.status, 'checking');
+  const landed = then(back, result(ok('me', session(ADDR_A))));
+  assert.equal(landed.machine.view.status, 'signed_in');
+  assert.equal(landed.machine.view.owner, ADDR_A.toLowerCase());
+  assert.deepEqual(signs([...away.effects, ...back.effects, ...landed.effects]), [], 'no signature at any point');
+  assert.deepEqual(routes([...away.effects, ...back.effects, ...landed.effects]).filter((route) => route !== 'me'), [], 'no logout, no bootstrap, no challenge');
+  assert.ok(types(landed.effects).includes('schedule_expiry'), 'its deadline is placed again');
+  // A session that ended while the wallet was away: signed out, as a check finds it.
+  const ended = then(back, result(code('me', 'session_required')));
+  assert.deepEqual([ended.machine.view, ended.machine.session], [{ status: 'signed_out', reason: 'session_ended' }, null]);
+});
+
+test('a sign-out while the wallet is away closes the kept session; a disconnect or another account there does too', () => {
+  const away = then(signedIn(), identity(wallet(ADDR_A, ELYSIUM)));
+  const out = then(away, { type: 'sign_out' });
+  assert.deepEqual(lastCall(out.effects), { route: 'logout', csrf: CSRF_A });
+  const landed = then(out, result(ok('logout', FIXTURES.responses.logout)));
+  assert.deepEqual([landed.machine.view, landed.machine.session], [{ status: 'wrong_network', chainId: ELYSIUM }, null]);
+  for (const next of [{ kind: 'disconnected' }, wallet(ADDR_B, ELYSIUM), wallet(ADDR_A, ELYSIUM, 'uid-b'), wallet(ADDR_A, 1)]) {
+    assert.deepEqual(lastCall(then(away, identity(next)).effects), { route: 'logout', csrf: CSRF_A }, JSON.stringify(next));
+  }
+});
+
+test('anything but the same account moving between the registry\'s chains is an identity change, exactly as before', () => {
+  // The same moves to a chain outside the registry and to the second chain give the same steps wherever a session is not
+  // at rest, and wherever there is none.
+  const same = (label, start) => {
+    const elsewhere = then(start, identity(wallet(ADDR_A, 1)));
+    const elysium = then(start, identity(wallet(ADDR_A, ELYSIUM)));
+    const view = (step) => (step.machine.view.status === 'wrong_network' ? { ...step.machine.view, chainId: 'x' } : step.machine.view);
+    assert.deepEqual([types(elysium.effects), routes(elysium.effects), view(elysium), elysium.machine.session], [types(elsewhere.effects), routes(elsewhere.effects), view(elsewhere), elsewhere.machine.session], label);
+  };
+  same('signed out', signedOut());
+  same('asking for the signature', awaitingSignature());
+  same('verify in flight', verifying());
+  same('signing out', then(signedIn(), { type: 'sign_out' }));
+  // Another account or wallet on the second chain, from signed in: closed, as before.
+  assert.deepEqual(lastCall(then(signedIn(), identity(wallet(ADDR_B, ELYSIUM))).effects), { route: 'logout', csrf: CSRF_A });
+  assert.deepEqual(lastCall(then(signedIn(), identity(wallet(ADDR_A, ELYSIUM, 'uid-b'))).effects), { route: 'logout', csrf: CSRF_A });
+  // And to a chain outside the registry, from signed in: closed, as before (the test above, 'switching network while
+  // signed in', walks it to the end).
+  assert.deepEqual(lastCall(then(signedIn(), identity(wallet(ADDR_A, 1))).effects), { route: 'logout', csrf: CSRF_A });
+});
+
+test('a background check in flight when the wallet moves is abandoned: its late answer changes nothing, the session stays', () => {
+  const checking = then(signedIn(), { type: 'recheck', cause: 'visible' });
+  assert.deepEqual(routes(checking.effects), ['me']);
+  const away = then(checking, identity(wallet(ADDR_A, ELYSIUM)));
+  assert.deepEqual([away.machine.view, away.machine.flow], [{ status: 'wrong_network', chainId: ELYSIUM }, { kind: 'idle' }]);
+  // The check's answer, sent for the epoch before the move, is stale.
+  const late = reduce(away.machine, { type: 'result', epoch: checking.machine.epoch, outcome: ok('me', session(ADDR_A)) }, env);
+  assert.equal(late.machine, away.machine);
+  assert.deepEqual(away.machine.session.csrf, CSRF_A);
+});
+
+test('the registry\'s chains are the ones the session keeps an account across', () => {
+  const { REGISTRY_CHAIN_IDS, ROBINHOOD_ID, ELYSIUM_ID } = require('../.test-build/app/src/config/chainIdentity.js');
+  const { CHAINS } = require('../.test-build/app/src/config/chains.js');
+  assert.deepEqual([...REGISTRY_CHAIN_IDS], CHAINS.map((chain) => chain.id));
+  assert.deepEqual([ROBINHOOD_ID, ELYSIUM_ID], [4663, ELYSIUM]);
+});
+
+// Fix round 1 (2026-10-01): where the second chain's section is off (domino.money until its deployment is qualified, and
+// any origin but the preview alias and the local development servers) its network is a chain outside the site, so a
+// signed-in account whose wallet moves there is an identity change, exactly as before the section existed.
+test('where the second chain’s section is off, a move to its network signs out like any other chain', () => {
+  assert.deepEqual([...sessionChains('https://domino.money')], [4663], 'production');
+  assert.deepEqual([...sessionChains('https://evil.example')], [4663]);
+  // Changed on purpose 2026-10-02 (review of the RPC switch, finding 1): the section is closed on the preview alias and
+  // the development server too while it could read its chain only from a public RPC (mode.ts SECTION_READS), so there
+  // as well a move to its network is a move to a chain outside the site.
+  assert.deepEqual([...sessionChains('https://preview.domino-app-e65.pages.dev')], [4663], 'the preview alias, today');
+  assert.deepEqual([...sessionChains('http://localhost:5273')], [4663], 'the development server, today');
+  for (const production of [{ origin: 'https://domino.money', checksum: getAddress, chains: sessionChains('https://domino.money') }, { origin: 'https://domino.money', checksum: getAddress }]) {
+    const start = signedIn();
+    const elysium = reduce(start.machine, { type: 'identity', identity: wallet(ADDR_A, ELYSIUM) }, production);
+    const elsewhere = reduce(start.machine, { type: 'identity', identity: wallet(ADDR_A, 1) }, production);
+    assert.deepEqual(lastCall(elysium.effects), { route: 'logout', csrf: CSRF_A }, 'closed, as before');
+    assert.deepEqual([types(elysium.effects), elysium.machine.view.status], [types(elsewhere.effects), elsewhere.machine.view.status]);
+  }
+  // A list naming a chain outside the registry is never trusted.
+  const odd = reduce(signedIn().machine, { type: 'identity', identity: wallet(ADDR_A, 1) }, { ...env, chains: [4663, 1] });
+  assert.deepEqual(lastCall(odd.effects), { route: 'logout', csrf: CSRF_A });
 });

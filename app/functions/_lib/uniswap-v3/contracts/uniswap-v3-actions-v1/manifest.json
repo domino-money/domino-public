@@ -1,0 +1,202 @@
+{
+  "contract": "uniswap-v3-actions-v1",
+  "contractVersion": "1.0.0-rc.2",
+  "files": [
+    {
+      "path": "fixtures/wire.json",
+      "sha256": "86c72e6d27fd08afe5985afad73bce8102b4fdb2cf21e15eab1f948fe9c232c9"
+    },
+    {
+      "path": "openapi.json",
+      "sha256": "37fd55e0e23b1870deef2c1f43d6de5d6eeab06b0009a14be8c6739ad468ab11"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "0a666e46d42f001cdbc24d862e8f53afa78b329ea689b2f683f9e10b6f790d80"
+    },
+    {
+      "path": "schema-data.mjs",
+      "sha256": "5d6594bea06dcf2602da7d96aaad5db6d6508259cceadce45a43ecccb73f749f"
+    },
+    {
+      "path": "schemas/capabilities.request.schema.json",
+      "sha256": "779473ad7b628b74fb0d97808f75407e87630cac4012b7ba43467b4ec8b703d8"
+    },
+    {
+      "path": "schemas/capabilities.response.schema.json",
+      "sha256": "f18506bb61aba528637c6be2becc2f63faccf9ad2109403e0c6508b6d76a098c"
+    },
+    {
+      "path": "schemas/inspect.request.schema.json",
+      "sha256": "4dcfaddcc52ff0935e40990e0833c37e865d35b3f0ffb1b2e93d7fd1f2f411ce"
+    },
+    {
+      "path": "schemas/inspect.response.schema.json",
+      "sha256": "b5eb050179214bf32edf8543799458e5fd9c4fb491a7691113e9fb292d6bd305"
+    },
+    {
+      "path": "schemas/prepare.request.schema.json",
+      "sha256": "9edc37c0994d114247b0196cb6f9a4273a3ecbf3732790582f6cc4612f6785cf"
+    },
+    {
+      "path": "schemas/prepare.response.schema.json",
+      "sha256": "d84c34edf4d863414fac052ebc79d556c0ba81aa20dea1685bd4060d967aca68"
+    },
+    {
+      "path": "schemas/receipt.request.schema.json",
+      "sha256": "f73a02ea8d8787c10641d33be7ab99ff335609cbce0f4d7d255b50231ee6172e"
+    },
+    {
+      "path": "schemas/receipt.response.schema.json",
+      "sha256": "31160e2cb522d226eb960207c87cbac4e3da1c7d314951ba9629b170bea43c8d"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "596107034197970e0ccd9e13b4e84a37fc0f5380db6321100b551eafcc9cca4a"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "9bf93ae14726ea6d369ba7678b755847998df266f672364844f004cb04616207"
+    },
+    {
+      "path": "../shared/closed-schema.mjs",
+      "sha256": "ee18602dbc0b43267170a74aa62200b1653c38be25204318f2c93abc513e7970"
+    },
+    {
+      "path": "README.md",
+      "sha256": "ef654bc22b1f02c9638d6ef818ab89becedfbc230d655fe7f0fcdab7d8e0b01f"
+    },
+    {
+      "path": "consumer.test.mjs",
+      "sha256": "ad7569f3975817e4ff430b8f4ba588d30b3e9ece233c75b92b89b2ea0e003da9"
+    },
+    {
+      "path": "consumer.typecheck.mts",
+      "sha256": "7eff018d7b850a5cbd0449a66f4ac31f380729ef94ad57bb0daa114b546e2dcc"
+    }
+  ],
+  "generator": "scripts/export-uniswap-v3-actions-contract.py",
+  "sources": [
+    {
+      "path": "backend/migrations/048_uniswap_v3_gas.sql",
+      "sha256": "eecdb180117ce4a0f03b736487bdc0780de63c38c2e0582fedcbcc95011bc9c7"
+    },
+    {
+      "path": "backend/migrations/049_uniswap_v3_execution.sql",
+      "sha256": "1cc8b7451a705da1784a4a23bc304150f09b41b41255bb1bfd7ee1d537356ecd"
+    },
+    {
+      "path": "backend/tests/fixtures/uniswap-v3/actions-wire.json",
+      "sha256": "86c72e6d27fd08afe5985afad73bce8102b4fdb2cf21e15eab1f948fe9c232c9"
+    },
+    {
+      "path": "backend/uniswap_v3/api_models.py",
+      "sha256": "34b494b64053600704e251407940c91bee4d37808711f2caf8025d689e6b9c47"
+    },
+    {
+      "path": "backend/uniswap_v3/types.py",
+      "sha256": "7ea4f4d6607cfc749bd0e8a5003deaca47f739595fc5865dfad1d171f6d70185"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/action_models.py",
+      "sha256": "3d7916bc4ddb6fa84846c684ee285f3b4b9e39421159ab1aab768505903a452e"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/api.py",
+      "sha256": "b06e4339396e29e551e9ab6211e2f6c087c6afade903612be3640ef1627037dd"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/cycle.py",
+      "sha256": "3a7b55caf722d3551449ec1b4e4435ca6982f95c9d45f246cd2be64447a55cf6"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/execution_admission.py",
+      "sha256": "f61b2db16f43b783523600454b31baa4328a91070b46af5cb7435e9004c883c4"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/execution_rpc.py",
+      "sha256": "6eeaa6e1b3d0e7f4ea01217b86d2f1e2e643de6e0961371d51e664d9242240e3"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/gas_budget.py",
+      "sha256": "1944fcb49383c63199c152639e8d19e2e845e5cb0e751c1e511346f398faec06"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/gas_price.py",
+      "sha256": "9c2bf3d9b2d1724fd3d4c43b277315ae75a3e6861f9dd79873c92958bfe6eb54"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/gas_profile.py",
+      "sha256": "19b0783ed607a31eff81abbf595e9ade8319500c2b8b3cec3be308b11795d22a"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/journal.py",
+      "sha256": "428448dc77f01517b967d312a2ff9b1f4cf2f0516f99563f745f656acf08e0e8"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/math.py",
+      "sha256": "31e5dead9e414ef16242d73ecb7301534c273ee7e4f55dd3c3535eb2f3d63fc5"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/native_gas_budget.py",
+      "sha256": "47951e82cfb6a304811ee7d1d23305c593566dfc5c2dc06d2f84b5db21d33cd0"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/native_receipts.py",
+      "sha256": "2890e27a1876cec409378653301544b12627c05a2dfda46d51234d4cb144607b"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/observer.py",
+      "sha256": "d7b14302899af1f99b7716932eb8f6f9c692f9ed7df7b3bb40c6ca60e6ae1df2"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/owner_actions.py",
+      "sha256": "6f3916454d4f6ca0aed680f97a25807f67fcbf7dc8a7b05952df5cfb9f604060"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/planner.py",
+      "sha256": "c27911cfe79904917c1f3cc548f99f2941224492609203a4079f55d85be0e269"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/presimulation.py",
+      "sha256": "407d1df3959c800bf77e4b8224f8ae6f71260abfe660983bd029d78a5996ad8a"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/reconcile.py",
+      "sha256": "14339e24b9adf449ebb8d0a337192bcbf20de2504dd02978408a5a8a5e297302"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/rehearsal_admission.py",
+      "sha256": "ac24a72817e1c8a7d55a5b9f9149072cc06fd62f42c62cf88b0987f15d2c69d3"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/rehearsal_economics.py",
+      "sha256": "4c521360f998d7d1fa886ea5a9c246133fd579e14e1e1e86152eb6e0ef26160f"
+    },
+    {
+      "path": "backend/uniswap_v3_execution/signer.py",
+      "sha256": "9dc89a5d7d4040c2f8366f99510b708deb29f4acc566518e0cdc16276087607c"
+    },
+    {
+      "path": "chains/deployments/elysium-v3-unqualified.json",
+      "sha256": "34921bf41707810a90c4c64e305471a3e374e105925944d3441f56df7be8d292"
+    },
+    {
+      "path": "chains/elysium-99801.json",
+      "sha256": "42bb401eabad9e504166b46b3d150e7c7ea9642514e74dd389bd611131fec8b9"
+    },
+    {
+      "path": "contracts-v3/candidate-manifest.json",
+      "sha256": "f3e5e462a25e1e2a3363130464ac53955edf8f7f988117887da2d92463d69d9c"
+    },
+    {
+      "path": "scripts/export-uniswap-v3-actions-contract.py",
+      "sha256": "ab0da9b2ea2c5f2cd26c477f3468f4ff06ddc92a45320d1740aa3dee2c65aa30"
+    },
+    {
+      "path": "scripts/export-uniswap-v3-read-contract.py",
+      "sha256": "17f25b71a6c6756076c8308fe8b707569408c6efc0ca17c5ac789a74d6fcddaf"
+    }
+  ],
+  "status": "private_owner_rehearsal_default_off"
+}

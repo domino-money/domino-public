@@ -1,5 +1,6 @@
 import type { Snapshot } from '../../session/controller'
 import type { FailureKind, SignedOutReason, SigningStep, View } from '../../session/machine'
+import { networkName } from '../../lib/networkName'
 
 /** English copy for every session state. Plain strings, rendered as text only. */
 
@@ -50,8 +51,36 @@ export const STEP: Record<SigningStep, string> = {
 export const REFRESH_UNAVAILABLE =
   'The service could not renew your session just now. This page will try again shortly; if it cannot, the session ends after 30 minutes idle.'
 
-/** The Connect dialog when no browser wallet has announced itself (through EIP-6963). */
+/** The Connect dialog on a computer when no browser wallet has announced itself (through EIP-6963 or window.ethereum). */
 export const NO_BROWSER_WALLET = 'No browser wallet found. Install or unlock a wallet extension, then open this again.'
+
+/**
+ * The Connect dialog on a phone with no wallet in its browser (2026-10-01, audit C4): an extension cannot be installed
+ * there, so the site is opened in a wallet app's own browser instead, where the beta's access password is asked again.
+ */
+// Changed on purpose 2026-10-01 (fix round 1): "this site", which the links open (wallet/appLinks.ts), the preview too.
+export const OPEN_IN_WALLET_APP = 'Open this site in your wallet app’s browser, then connect there.'
+export const OPEN_IN_WALLET_APP_NOTE = 'You’ll enter the site’s access password again there. Using Rabby or another wallet app? Open this site in its own browser.'
+/** WalletConnect's row and what its pairing says (wallet/walletConnect.ts, WalletConnectPanel.tsx). */
+export const WALLETCONNECT = {
+  rowHint: 'A wallet on your phone',
+  scan: 'Scan this code with your phone’s wallet app.',
+  open: 'Open your wallet app to approve the connection.',
+  starting: 'Starting WalletConnect…',
+} as const
+
+/** Outcomes of Connect, in words (wallet/port.ts ConnectOutcome). `name` is the wallet's own, shortened. */
+export function connectNotice(outcome: 'user_rejected' | 'pending' | 'error', name: string): string {
+  if (outcome === 'user_rejected') return 'Your wallet declined the connection request.'
+  if (outcome === 'pending') return `A request is already waiting in ${name}. Open it to approve or reject.`
+  return 'Your wallet could not connect.'
+}
+
+/** While a connection waits for the wallet (audit C7): which wallet to open. */
+export const approveIn = (name: string) => `Open ${name} to approve the connection.`
+
+/** Outcomes of "Switch to Robinhood Chain" in words: kept beside the switch itself (wallet/port.ts), shared with the money screens. */
+export { SWITCH_NOTICE } from '../../wallet/port'
 
 export function shortAddress(address: string): string {
   return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
@@ -65,7 +94,8 @@ export function describe(view: View): string {
     case 'no_wallet':
       return ''
     case 'wrong_network':
-      return `Your wallet is on network ${view.chainId}. Sign-in works on Robinhood Chain (4663) only.`
+      // Changed on purpose 2026-10-01 (audit E6): the network by its name, never its number, and what Domino needs.
+      return `Your wallet is on ${networkName(view.chainId)}. Domino works on Robinhood Chain. Switch to continue.`
     case 'checking':
       return 'Checking for an existing session…'
     case 'signed_out':

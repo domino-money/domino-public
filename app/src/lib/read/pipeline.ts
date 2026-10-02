@@ -150,8 +150,9 @@ export async function runRead<R extends ReadKey>(run: ReadRun<R>): Promise<ReadO
     // Filtered here too: fixture sources and tests build a RawReply directly.
     requestId: requestIdOf(reply?.requestIdHeader) ?? undefined,
     contract: reply?.contractHeader ?? null,
-    receivedAt: clock.now(),
-    receivedMonotonic: clock.monotonic(),
+    // An answer kept at the edge is dated by when the edge received it (2026-10-01): its figures age from then.
+    receivedAt: clock.now() - (reply?.edgeAgeMs ?? 0),
+    receivedMonotonic: clock.monotonic() - (reply?.edgeAgeMs ?? 0),
     attempts,
     deadlineAt,
     ...(reply?.edgeHit ? { edge: true as const } : {}),

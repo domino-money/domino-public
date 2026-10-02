@@ -36,7 +36,7 @@ export const BRIDGE_SPACING_MS = __DOMINO_LOCAL_LIVE__ ? 10_100 : 1100
 export const BUDGET_KEY = 'domino-read-budget:v1'
 
 export function createAppBridgeSource(): ReadSource {
-  // The deployable build's first reads take the replies public/early-list.js sent before the app started (item 10).
+  // The deployable build's first reads take the replies the page's boot script (functions/_lib/boot.ts) sent before the app started (item 10).
   const options = { enabled: CAPABILITIES.liveReadsBuilt, validators: READ_RUNTIME, ...(__DOMINO_POOL_SET__ === 'selected' && !__DOMINO_LOCAL_LIVE__ ? { first: takeEarly } : {}) }
   // read-v5's featured pools list rides the same queue and budget as every other read (featuredList.ts).
   const source = createFeaturedReadSource(createPublicSource(createEstimateSource(options, estimateRuntime), options, publicRuntime), options, featuredRuntime)

@@ -108,14 +108,20 @@
   .dm-mkt-card:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
   .dm-mkt-card-head { grid-row: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; height: 32px; }
-  /* The chip gives way before the TVL does; inside it the fee gives way before the pair's name. */
+  /* The chip gives way before the TVL does; inside it the fee is never cut in half (audit E2, 2026-10-01: at 768px it
+     read "· Uniswap 0.3…"). The chip says "· 0.30% fee", without the exchange; a card too narrow for the pair, its fee
+     and its TVL on one line (three a view at 1024px, a phone's) shows the pair whole and leaves the fee to the table
+     under the rail. */
+  .dm-mkt-card { container-type: inline-size; }
   .dm-mkt-pair { flex: 0 1 auto; min-width: 0; transition: box-shadow var(--dur-fast) var(--ease-std); }
   .dm-mkt-card:hover .dm-mkt-pair { box-shadow: inset 0 0 0 1px var(--border-strong); }
   .dm-mkt-pair > [aria-hidden="true"] { flex-shrink: 0; }
   .dm-mkt-pair-name { flex: 0 1 auto; min-width: 2.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-  .dm-mkt-pair-fee { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  .dm-mkt-pair-fee { flex: 0 0 auto; white-space: nowrap; color: var(--fg-subtle); font-variant-numeric: lining-nums tabular-nums; }
+  @container (max-width: 359px) {
+    .dm-mkt-pair-fee { display: none; }
+  }
   @media (max-width: 767px) {
-    .dm-mkt-pair-venue { display: none; }
     /* The phone's close is 24/28, 4px less above the plot, which keeps its 148px. */
     .dm-mkt-card.dm-plate { height: 296px; }
     .dm-mkt-card-head { gap: 12px; }
@@ -211,6 +217,8 @@
   .dm-mkt-marks { display: inline-flex; flex-shrink: 0; }
   .dm-mkt-ident { min-width: 0; }
   .dm-mkt-name { border-radius: 4px; color: var(--fg); text-decoration: none; font-size: 15px; line-height: 20px; letter-spacing: -0.2px; font-weight: 500; }
+  /* A row's flags (audit V2, 2026-10-01): a very high fee, or a pool Domino can't open positions in. Words, not colour alone. */
+  .dm-mkt-venue.dm-mkt-flag { background: var(--money-out-bg); color: var(--fg); }
   /* The fee-tier chip under the name (§3.4), read rows and catalogue rows alike. */
   .dm-mkt-venue, .dm-mkt-table [data-pool-catalogue] .dm-chip { display: flex; width: fit-content; min-height: 20px; margin-top: 4px; padding: 2px 6px; border-radius: var(--radius-sm); background: var(--surface-3); color: var(--fg-muted); font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: -0.12px; }
   /* Catalogue rows (F's PoolCatalogueIdentity) draw 30px marks ringed in the card colour: sized and ringed like a read row's here. */
@@ -229,13 +237,22 @@
   .dm-mkt-table .dm-table :is(th, td).dm-mkt-end { padding-left: 8px; }
   /* A tablet keeps all six columns, narrower, so the pool's name keeps its room. The price column holds a plain price
      with its symbol on one line ("2,500.09 USDG", about 114px at 16px, inside its 16px paddings; round 6 integration,
-     2026-09-28: at 140px it ran 3px past the column's right edge in an 820px window). */
+     2026-09-28: at 140px it ran 3px past the column's right edge in an 820px window). Changed 2026-10-01 (audit E2): the
+     APR column is narrower now that an estimate is written to one decimal ("181% est."), and under 800px (an iPad mini
+     held upright, 768px), where the pool column kept about 80px and every name broke over two lines with its fee chip
+     running into the price, the table keeps Pool · Price · TVL · APR, as a phone keeps Pool · TVL · APR: the 24h
+     volume is a row's figures dialog away, and on the pool's page. */
   @media (min-width: 768px) and (max-width: 1023px) {
-    .dm-mkt-col-price { width: 160px; }
+    .dm-mkt-col-price { width: 156px; }
     .dm-mkt-col-tvl { width: 96px; }
-    .dm-mkt-col-volume { width: 104px; }
-    .dm-mkt-col-apr { width: 124px; }
+    .dm-mkt-col-volume { width: 100px; }
+    .dm-mkt-col-apr { width: 108px; }
   }
+  @media (min-width: 768px) and (max-width: 799px) {
+    .dm-mkt-table :is(.dm-mkt-col-volume, .dm-mkt-volume) { display: none; }
+  }
+  /* The exchange's part of a fee chip gives way before anything else does (lib/format/fee.ts). */
+  .dm-fee-venue { white-space: nowrap; }
   .dm-mkt-num { font-size: 16px; line-height: 22px; letter-spacing: -0.2px; }
   .dm-mkt-price { display: inline-grid; justify-items: end; }
   .dm-mkt-price-unit { margin-bottom: 2px; font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: -0.12px; color: var(--fg-subtle); white-space: nowrap; }
@@ -247,8 +264,9 @@
   .dm-mkt-bubble--unit { width: 64px; height: 10px; }
   .dm-mkt-bubble--figure { width: 64px; }
   .dm-mkt-bubble--apr { width: 56px; }
-  /* A phone keeps Pool · TVL · APR · the info button (§8.4): fixed columns, so a long pair name ellipsises rather
-     than pushing the table sideways; the marks shrink to 24 and the row opens the pool without a chevron. */
+  /* A phone keeps Pool · TVL · APR · the info button (§8.4): fixed columns, and the marks shrink to 24 and the row
+     opens the pool without a chevron. Changed 2026-10-01 (audit E2): a long pair name breaks over two lines after its
+     "/" instead of being cut ("MARLIN/…" at 375px, every name at 360px), and the fee chip keeps only the fee. */
   @media (max-width: 767px) {
     .dm-mkt-col-tvl { width: 68px; }
     .dm-mkt-col-apr { width: 94px; }
@@ -261,8 +279,9 @@
     .dm-mkt-pool { gap: 8px; }
     a.dm-mkt-pool { width: auto; }
     .dm-mkt-name { font-size: 14px; line-height: 18px; }
-    .dm-mkt-ident > .dm-mkt-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dm-mkt-ident > .dm-mkt-name { display: block; overflow-wrap: anywhere; }
+    .dm-mkt-table [data-pool-catalogue] .dm-mkt-pool > span:nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
+    .dm-mkt-table .dm-fee-venue { display: none; }
     .dm-mkt-venue, .dm-mkt-table [data-pool-catalogue] .dm-chip { font-size: 11px; line-height: 14px; }
     .dm-mkt-num { font-size: 13px; line-height: 18px; letter-spacing: -0.16px; }
     .dm-mkt-end .i-chev-r { display: none; }

@@ -1,3 +1,5 @@
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../styles/screens.css'
 import { lazy, Suspense, useState } from 'react'
 import type { PositionActionsProps } from '../components/positions/PositionActions'
 import type { HeldDepositsProps } from '../components/positions/HeldDeposits'

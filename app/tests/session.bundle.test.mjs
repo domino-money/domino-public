@@ -8,6 +8,13 @@
  * build alone. Neither build may carry a connector SDK, a relay or any public
  * RPC endpoint: every wallet call goes through the wallet's own provider, and
  * the page may reach nothing but its own origin.
+ *
+ * Changed on purpose 2026-10-01 (audit C3, the owner's OK): the deployed build
+ * carries WalletConnect's own client (@walletconnect/sign-client) for a wallet
+ * on a phone, in one chunk of its own that only the wallet island opens, by a
+ * dynamic import, when the person picks WalletConnect. It is the one place a
+ * relay may be named, and it is measured as its own family. The wallet-test
+ * build carries a stand-in for it instead (src/wallet/walletConnectFake.ts).
  */
 import assert from 'node:assert/strict';
 import { parse } from '@babel/parser';
@@ -15,6 +22,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
+import { createRequire } from 'node:module';
 
 const APP = resolve(import.meta.dirname, '..');
 const DIST = join(APP, 'dist');
@@ -24,6 +32,13 @@ for (const dir of [DIST, WALLET]) {
   if (!existsSync(join(dir, 'index.html'))) throw new Error(`${dir} is missing. Run npm run build and npm run build:wallet-test first.`);
 }
 
+/**
+ * The hosts WalletConnect's client names in its chunk, exactly (a new one in an upgrade is reviewed here first). Only
+ * relay.walletconnect.org (its wss relay) and verify.walletconnect.org (the Verify API's frame) are in the page's CSP;
+ * the rest are wallet-side services (echo, the .com verify), its RPC and telemetry the page never uses (reads go to the
+ * chain's RPC, telemetry is off), and documentation or Telegram links in its error messages.
+ */
+const WALLETCONNECT_HOSTS = ['echo.walletconnect.com', 'oxlib.sh', 'pulse.walletconnect.org', 'rpc.walletconnect.org', 't.me', 'verify.walletconnect.com', 'verify.walletconnect.org'];
 const assets = (dir) => readdirSync(join(dir, 'assets')).sort();
 const scripts = (dir) => assets(dir).filter((file) => file.endsWith('.js'));
 const textFiles = (dir) =>
@@ -68,26 +83,36 @@ const closureText = (dir, files) => [...files].map((file) => readFileSync(join(d
 /**
  * The one entry script and the one wallet island root of a build.
  *
- * The entry is whichever script index.html loads, not whichever is named
- * index-*: a lazy chunk gets that name too when the module opening it is
- * called index.ts, which is how the read screens' chunk is named.
+ * The entry is whichever script index.html loads as its module script, not
+ * whichever is named index-*: a lazy chunk gets that name too when the module
+ * opening it is called index.ts, which is how the read screens' chunk is named.
+ * Changed on purpose 2026-10-01 (platform workstream, F1/F4): the page also names
+ * the entry's two stable chunks (modulepreload links) and every route's files
+ * (the boot script's table), so only the module script's src counts.
  */
 function shape(dir) {
   const js = scripts(dir);
   const html = readFileSync(join(dir, 'index.html'), 'utf8');
-  const entry = js.filter((file) => html.includes(file));
+  const entry = [...html.matchAll(/<script\b[^>]*\btype="module"[^>]*\bsrc="\/assets\/([^"]+)"/g)].map((match) => match[1]);
   const island = js.filter((file) => file.startsWith('WalletSessionIsland-'));
   return { js, entry, island };
 }
 
-test('the deployed build carries wallet sign-in as its own chunk, beside one entry and one stylesheet', () => {
+test('the deployed build carries wallet sign-in as its own chunk, beside one entry and the two stylesheets', () => {
   const { js, entry, island } = shape(DIST);
   assert.equal(entry.length, 1, js.join(', '));
   assert.equal(island.length, 1, js.join(', '));
   // The read screens and the shared read source are lazy chunks of their own,
   // so a visitor who opens neither the figures nor the position lookup never
   // downloads them. What must not appear is a second entry or a second island.
-  assert.equal(assets(DIST).filter((file) => file.endsWith('.css')).length, 1, assets(DIST).join(', '));
+  // Changed on purpose 2026-10-01 (platform workstream, F8): two stylesheets, the site's (the page links it) and the
+  // screens' (src/styles/screens.css, which each screen's chunk loads), and no third.
+  const css = assets(DIST).filter((file) => file.endsWith('.css'));
+  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['index', 'screens'], css.join(', '));
+  const html = readFileSync(join(DIST, 'index.html'), 'utf8');
+  assert.deepEqual([...html.matchAll(/<link rel="stylesheet"[^>]*href="\/assets\/([^"]+)"/g)].map((match) => match[1]), css.filter((file) => file.startsWith('index-')), 'the page links the site’s stylesheet alone');
+  // F4: React and the read contracts' runtimes are chunks of their own the page loads beside the entry, and nothing else is.
+  assert.deepEqual([...html.matchAll(/<link rel="modulepreload"[^>]*href="\/assets\/([^"]+)"/g)].map((match) => match[1].replace(/-[\w-]{8}\.js$/, '')).sort(), ['read-contracts', 'vendor-react']);
 });
 
 test('the feature is lazy: the entry closure holds no wallet code, and the island static closure holds the session client', (t) => {
@@ -101,6 +126,14 @@ test('the feature is lazy: the entry closure holds no wallet code, and the islan
   assert.ok(!initial.has(island[0]), 'the entry must not statically load the session island');
   assert.ok([...nodes(moduleTree(DIST, entry[0]))].some((node) => node.type === 'ImportExpression' && node.source.value === `./${island[0]}`), 'the entry opens the island through a dynamic import');
   const islandText = closureText(DIST, staticClosure(DIST, island));
+  // 2026-10-01 (audit C3): WalletConnect's client is a chunk of its own, opened only by the island's dynamic import.
+  const walletConnect = scripts(DIST).filter((file) => file.startsWith('walletConnectProvider-'));
+  assert.equal(walletConnect.length, 1, scripts(DIST).join(', '));
+  assert.ok(!initial.has(walletConnect[0]) && !staticClosure(DIST, island).has(walletConnect[0]), 'never loaded with the page or the wallet island');
+  for (const needle of ['relay.walletconnect', 'verify.walletconnect']) {
+    assert.ok(!entryText.includes(needle) && !islandText.includes(needle), `${needle} stays in WalletConnect's own chunk`);
+  }
+  assert.ok([...staticClosure(DIST, island)].some((file) => [...nodes(moduleTree(DIST, file))].some((node) => node.type === 'ImportExpression' && node.source.value === `./${walletConnect[0]}`)), 'the island opens it through a dynamic import');
   assert.ok(islandText.includes('/api/session/v1/'), 'the chunk speaks to the session family through the same-origin bridge');
   assert.ok(islandText.includes('wallet_switchEthereumChain'), 'the chunk asks the wallet to be on Robinhood Chain');
   t.diagnostic(`dist/assets/${entry[0]}: ${statSync(join(DIST, 'assets', entry[0])).size} bytes, ${gzip(join(DIST, 'assets', entry[0]))} gzip`);
@@ -131,10 +164,13 @@ test('the wallet-test build writes its own directory and loads the feature lazil
 
 // Changed on purpose (2026-09-28): and, while that RPC cannot be reached, its three public fallbacks (see allowedHosts).
 // Changed on purpose (2026-09-25): one public RPC endpoint is now reached, Robinhood Chain's own
-// (rpc.mainnet.chain.robinhood.com), for reads only, by the page's own chain reads (src/lib/chain/browser.ts): the RPC
+// (its official RPC), for reads only, by the page's own chain reads (src/lib/chain/browser.ts): the RPC
 // answers 429 to every call from Cloudflare's edge, so the site's routes that read it for the page failed. Wallet
 // calls still go through the wallet's own provider only; no connector SDK or relay is reached.
-test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s own for the page\u2019s reads, reached either build', () => {
+// Changed on purpose 2026-10-01 (RPC-SPEC, the owner's rule: nothing is read from a public RPC): no public RPC endpoint
+// is reached any more. The chain's official RPC is only named, for the wallet's "add network" and the docs' network
+// details; its three public fallbacks are named nowhere (see allowedHosts), and neither CSP names a chain RPC.
+test('no connector SDK or relay, and no public RPC endpoint reached; the chain\u2019s official RPC only named for the wallet, either build', () => {
   // Names alone are not evidence: viem has a WalletConnect error class and
   // wagmi's injected connector knows the Coinbase and MetaMask provider flags.
   // What must not be present is SDK code or anywhere to connect to.
@@ -162,11 +198,9 @@ test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s
   // 2026-09-24: the metadata endpoint's same GET also picks which pool ids New
   // position asks the read service to verify (src/lib/read/screens/poolHints.ts):
   // the host and path are unchanged, and none of its figures is shown.
-  // 2026-09-25: Robinhood Chain's public RPC, which the page reads the chain from itself (the wallet's positions, a
-  // position's state, the fees history's logs; src/lib/chain/browser.ts): named in the deployed CSP's connect-src, for
-  // the page and for the fees worker (functions/_middleware.ts APP_CSP and WORKER_CSP), because the RPC rate-limits
-  // Cloudflare's edge and the site's own routes could not read it for the page. Reads only (tests/read.test.mjs pins
-  // the one fetch and the methods it may carry).
+  // 2026-09-25: Robinhood Chain's public RPC, which the page read the chain from itself until 2026-10-01. Changed on
+  // purpose 2026-10-01 (RPC-SPEC §7.5): only named now, never fetched: the wallet is handed it when it adds the network
+  // (src/wallet/chain.ts) and the docs give it for adding the network by hand; no CSP directive names it.
   const allowedHosts = new Set([
     'viem.sh',
     'wagmi.sh',
@@ -182,13 +216,8 @@ test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s
     'cdn.dexscreener.com',
     'api.dexscreener.com',
     'rpc.mainnet.chain.robinhood.com',
-    // 2026-09-28: the chain's three public fallbacks (src/lib/chain/endpoints.ts), read with the same fixed calls while
-    // the chain's own RPC cannot be reached (the DNS of Vivo, a large Brazilian ISP, answers NXDOMAIN for every host under
-    // chain.robinhood.com), each checked to be chain 4663 first (src/lib/chain/failover.ts). Reads only, named in both
-    // connect-src directives below, and pinned in tests/read.test.mjs.
-    'robinhood-rpc.publicnode.com',
-    'rpc.ordofi.network',
-    'robinhood.drpc.org',
+    // 2026-09-28 to 2026-10-01: the chain's three public fallbacks were admitted here. Gone with the public RPC (RPC-SPEC):
+    // a build that named one would fail this check, and the deployable build's own marker check (scripts/deploy-markers.mjs).
     // The reviewed pool catalogue records where its labels were inspected
     // (src/config/selectedPoolCatalogue.ts, sourceUrl): a citation kept as
     // data, never rendered as a link and never fetched (tests/read.test.mjs
@@ -204,22 +233,57 @@ test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s
     // navigation target in a new tab, never fetched, so no CSP directive names it (tests/render.test.mjs pins the link).
     'x.com',
   ]);
-  // Exactly those, and only where the deployed CSP admits the two that are ever contacted.
-  const csp = readFileSync(join(APP, 'functions', '_middleware.ts'), 'utf8');
-  assert.ok(csp.includes("img-src 'self' data: https://cdn.dexscreener.com"), 'the CSP names the artwork CDN');
-  assert.ok(csp.includes("connect-src 'self' https://api.dexscreener.com"), 'the CSP names the artwork metadata endpoint');
-  // 2026-09-25: and the chain's RPC, for the page and for the fees worker, which loads nothing and reaches nothing else.
-  // 2026-09-28: and its three public fallbacks, exactly those, in both.
-  const chainHosts = 'https://rpc.mainnet.chain.robinhood.com https://robinhood-rpc.publicnode.com https://rpc.ordofi.network https://robinhood.drpc.org';
-  assert.ok(csp.includes(`"connect-src 'self' https://api.dexscreener.com ${chainHosts}",`), 'the page\u2019s CSP names the chain\u2019s RPC and its fallbacks');
-  assert.ok(csp.includes(`export const WORKER_CSP = "default-src 'none'; connect-src ${chainHosts}"`), 'the fees worker\u2019s own CSP names only the chain\u2019s RPC and its fallbacks');
-  assert.doesNotMatch(csp, /app\.uniswap\.org/, 'the catalogue citation is never a destination');
-  assert.doesNotMatch(csp, /gateway\.uniswap\.org/, 'the swap provenance label is never a destination');
+  // 2026-10-01 (audit C4, C1): the wallet dialog's fixed links, navigation targets in a phone's wallet app or a new
+  // tab, never fetched (no CSP directive names them): MetaMask's, Coinbase Wallet's and Trust Wallet's documented links
+  // that open domino.money in their own browsers, and where to get MetaMask or Rabby. And the explorer the wallet is
+  // handed with Robinhood Chain's details when it adds the network (src/wallet/chain.ts), never fetched by the page.
+  for (const host of ['metamask.app.link', 'go.cb-w.com', 'link.trustwallet.com', 'metamask.io', 'rabby.io', 'robinhoodchain.blockscout.com']) allowedHosts.add(host);
+  // 2026-10-01 (the chain2 workstream, part B): the site's own origins, which the second chain's section compares the
+  // page's location with to know whether it is open (src/chains/elysium/mode.ts: the site, the preview alias, the local
+  // development server); never fetched, and no CSP directive names them.
+  for (const host of ['domino.money', 'preview.domino-app-e65.pages.dev', 'localhost']) allowedHosts.add(host);
+  // And the second chain's public RPC and explorer, in the section's own files only (the 'elysium section' family): the
+  // RPC is named in the preview's page CSP alone (functions/_middleware.ts APP_CSP_CHAIN2), never in production's, so
+  // production's page cannot reach it; the explorer is a link, never fetched. Reads only, through the section's one
+  // network call (src/chains/elysium/transport.ts, pinned in tests/read.test.mjs).
+  const ELYSIUM_HOSTS = ['testnet-rpc.elysium.kinetiq.xyz', 'elysium.kinetiq.xyz'];
+  // Exactly those, and only where the deployed CSP admits the two that are ever contacted. Changed on purpose 2026-10-01
+  // (platform workstream): the CSPs are data (functions/_middleware.ts APP_CSP_SOURCES), so the headers they make are
+  // checked, from the compiled middleware.
+  const middleware = createRequire(import.meta.url)('../.test-build/app/functions/_middleware.js');
+  const { APP_CSP } = middleware;
+  const directive = (name) => APP_CSP.split('; ').find((part) => part.startsWith(`${name} `));
+  assert.equal(directive('img-src'), "img-src 'self' data: https://cdn.dexscreener.com", 'the CSP names the artwork CDN');
+  // 2026-09-25 to 2026-10-01: and the chain's RPC (2026-09-28: and its three public fallbacks), for the page and for the
+  // fees worker. Changed on purpose 2026-10-01 (RPC-SPEC \u00a77.4): no chain RPC in either; the worker reaches the site alone.
+  // 2026-10-01 (audit C3): and, for the page, WalletConnect's relay, with the page's own sources
+  // (src/lib/chain/csp.ts PAGE_CONNECT_BASE), and its Verify API's frame: no other WalletConnect host.
+  assert.equal(directive('connect-src'), "connect-src 'self' https://api.dexscreener.com wss://relay.walletconnect.org", 'the page\u2019s CSP names the artwork metadata endpoint and WalletConnect\u2019s relay, and no chain RPC');
+  assert.equal(directive('frame-src'), 'frame-src https://verify.walletconnect.org', 'and WalletConnect\u2019s Verify API frame, no other WalletConnect host');
+  // Changed on purpose 2026-10-02 (RPC-SPEC \u00a711.4): the fees worker is gone with the replay, and its CSP with it.
+  assert.equal(middleware.WORKER_CSP, undefined, 'no fees worker, no worker CSP');
+  assert.doesNotMatch(APP_CSP, /uniswap\.org/, 'the catalogue citation and the swap provenance label are never destinations');
   for (const [label, dir] of [
     ['dist', DIST],
     ['.wallet-test-dist', WALLET],
   ]) {
+    // 2026-10-01 (audit C3): WalletConnect's own chunk, and only it, names its relay and its hosts (the chunk's own
+    // allowance below); the CSP lets the page reach exactly two of them, the relay and the Verify API's frame.
+    const walletConnect = new Set(scripts(dir).filter((file) => file.startsWith('walletConnectProvider-')).map((file) => `assets${'/'}${file}`));
+    assert.equal(walletConnect.size, dir === DIST ? 1 : 0, `${label}: WalletConnect's client ships in the deployed build only (the wallet-test build carries its stand-in)`);
+    // 2026-10-01 (the chain2 workstream, part B): the second chain's section's own files (its chunk and what only it
+    // loads), the one place its hosts may be named.
+    const initial = staticClosure(dir, shape(dir).entry);
+    const elysiumFiles = new Set([...staticClosure(dir, scripts(dir).filter((file) => file.startsWith('ElysiumEntry-')))].filter((file) => !initial.has(file)).map((file) => `assets${'/'}${file}`));
+    assert.ok(elysiumFiles.size >= 1, `${label}: the second chain's section is a chunk of its own`);
     for (const { file, text } of textFiles(dir)) {
+      const name = file.replaceAll('\\', '/');
+      if (walletConnect.has(name)) {
+        const hosts = [...new Set([...text.matchAll(/https?:\/\/([a-z0-9.-]+)/gi)].map((match) => match[1].toLowerCase()))].sort();
+        assert.deepEqual(hosts, WALLETCONNECT_HOSTS, `${label}/${file}: the hosts WalletConnect's client names`);
+        assert.deepEqual([...new Set([...text.matchAll(/wss:\/\/([a-z0-9.-]+)/gi)].map((match) => match[1]))], ['relay.walletconnect.org']);
+        continue;
+      }
       for (const pattern of forbidden) assert.ok(!pattern.test(text), `${label}/${file} matches ${pattern}`);
       // viem/_esm/errors/abi.js puts this lookup link in the message of
       // AbiFunctionSignatureNotFoundError. Admit only that exact error-message
@@ -237,7 +301,7 @@ test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s
         }
       }
       const hosts = new Set([...endpointText.matchAll(/https?:\/\/([a-z0-9.-]+)/gi)].map((match) => match[1].toLowerCase()));
-      for (const host of hosts) assert.ok(allowedHosts.has(host) || file.endsWith('.css'), `${label}/${file} names ${host}`);
+      for (const host of hosts) assert.ok(allowedHosts.has(host) || (ELYSIUM_HOSTS.includes(host) && elysiumFiles.has(name)) || file.endsWith('.css'), `${label}/${file} names ${host}`);
       // The citation is the catalogue's source path, with the pool id interpolated into it, and nothing else.
       const citations = [...text.matchAll(/https:\/\/app\.uniswap\.org[^"'`\s]*/g)].map((match) => match[0]);
       for (const url of citations) assert.match(url, /^https:\/\/app\.uniswap\.org\/explore\/pools\/robinhood\/(?:\$\{[A-Za-z_$][\w$]*\}|0x[0-9a-f]{64})?$/, `${label}/${file} names app.uniswap.org for something else`);
@@ -245,16 +309,22 @@ test('no connector SDK or relay, and no public RPC endpoint but the chain\u2019s
   }
 });
 
-test('the lockfile holds no optional connector SDK', () => {
+test('the lockfile holds no optional connector SDK but WalletConnect\u2019s own client', () => {
   const lock = JSON.parse(readFileSync(join(APP, 'package-lock.json'), 'utf8'));
   const packages = Object.keys(lock.packages);
   const sdks = packages.filter((name) =>
-    /node_modules\/(@walletconnect|@coinbase|@metamask|@base-org|@safe-global|@reown|porto|accounts)(\/|$)/.test(name),
+    /node_modules\/(@coinbase|@metamask|@base-org|@safe-global|@reown|porto|accounts)(\/|$)/.test(name),
   );
   assert.deepEqual(sdks, []);
+  // Changed on purpose 2026-10-01 (audit C3, the owner's OK): @walletconnect/sign-client, pinned, and what it needs; no
+  // modal (AppKit is @reown's, refused above) and no wagmi connector package.
+  assert.equal(JSON.parse(readFileSync(join(APP, 'package.json'), 'utf8')).dependencies['@walletconnect/sign-client'], '2.25.0');
+  const walletConnect = packages.filter((name) => /node_modules\/@walletconnect\//.test(name)).map((name) => name.replace(/^.*node_modules\//, ''));
+  assert.ok(walletConnect.includes('@walletconnect/sign-client'));
+  assert.ok(!walletConnect.some((name) => /ethereum-provider|universal-provider|modal|appkit/.test(name)), walletConnect.join(', '));
 });
 
-test('session/read closures retain their 90 kB budget; financial screens have a separate measured budget', (t) => {
+test('what every visitor downloads first, the route screens, the session/read closures and the financial screens each keep a measured budget', (t) => {
   // Preserve the original session + public-read ceiling. P2 added four explicitly
   // lazy financial screens and their schema/ABI clients; wave 2 added New
   // position's deposit amounts and the onboarding client they share with Setup's
@@ -824,6 +894,92 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
   // chain 19,987 B after removing redundant cancellation/cache fields). Wallet-test also carries PositionLab and
   // session probes, which never ship: measure that overhead separately, capped at 1.5 kB over the SAME production
   // tree. Do not charge that instrumentation to users or raise the production, public-read, worker or chain limits.
+  // 2026-10-01, platform workstream (F1, F4, F8, H4): every screen but Home left the entry for a chunk of its own, React
+  // and the read contracts' runtimes became two stable chunks beside it, and the screens' styles a stylesheet of their
+  // own. Two new families: 'initial entry', what every visitor downloads before anything shows (the entry with the
+  // chunks it imports, and the stylesheet the page links), which until now had no budget at all and grew 33% in a week
+  // with no test failing; and 'route screens', the six screens' chunks with what they load beside them. Code that every
+  // screen shared sat in the entry and counted nowhere; it now sits in shared lazy chunks, which the lazy families'
+  // static closures reach, so those measure more for the same code: Rollup puts what only the Positions screen's own
+  // chunks use (Collect fees, the held deposits, Performance, Execution) inside the Positions chunk, which those
+  // closures then count whole (39 kB), although a visitor reaches them only through Positions, with it already loaded.
+  // In the wallet-test build the lab opens them too, so they split differently there. Measured on Windows, gzip
+  // level 9, both builds of this tree: initial entry 193,901 /
+  // 191,518 B (main f6df054's entry and stylesheet, measured the same way: 305,613 + 57,080 = 362,693 B), route
+  // screens 161,528 / 162,380 B, session/public reads 143,769 / 145,285 B, financial 293,371 / 256,024 B, all lazy
+  // 324,692 / 327,148 B, fees worker 26,603 B and chain code 19,987 B in both. Every ceiling is set about 5% over the larger build, real headroom for the
+  // next change instead of the 13 bytes chain code had left: initial entry 204 kB, route screens 171 kB,
+  // session/public reads 153 kB, financial 309 kB, all lazy 344 kB, fees worker 28 kB, chain code 21 kB. The
+  // wallet-test allowance becomes 3 kB: its builds split differently since the screens became chunks (+2,456 B on all
+  // lazy, -37 kB on financial). A ceiling raised from here is the owner's call, said in the change that raises it.
+  // 2026-10-01, the 2026-10 package, integration pass 1 (main aae87563 with pacote/ws-platform, ws-markets, ws-ci and
+  // ws-chain2 merged in that order; the owner approved the whole package, and the integrator re-measures and sets every
+  // ceiling about 5% over the larger build, rounded up to the next kB). Measured on Windows, gzip level 9, clean builds
+  // of the merged tree, dist / .wallet-test-dist: initial entry 203,225 / 200,451 B (platform alone 194,421 B: markets'
+  // stand-in figures, DEX Screener figures and a token's pools are Home's, so they ship in the entry), route screens
+  // 164,644 / 164,877 B, session/public reads 143,101 / 144,080 B, financial 294,101 / 256,138 B, all lazy 325,486 /
+  // 327,370 B, fees worker 26,603 B and chain code 19,962 B in both (chain2's part A is not wired into any build yet).
+  // Ceilings: initial entry 214 kB (was 204), route screens 174 kB (was 171), session/public reads 152 kB (was 153),
+  // financial 309 kB, all lazy 344 kB, fees worker 28 kB and chain code 21 kB (unchanged). The wallet-test allowance
+  // stays 3 kB (its all-lazy overhead measures 1,884 B).
+  // 2026-10-01, pacote/ws-wallets (the audit's wallet items C1-C16, D2, H5, the owner's OK): the wallet layer the money
+  // screens share with the wallet island (session chunk +3,905 B: the network add and its notices, Cancel and -32002,
+  // the legacy window.ethereum wallet, the wallet memory, WalletConnect's connector shell, the isWellFormed fallback),
+  // the setup client (+1,225 B: nonce settling, page-failover reads, parallel reads, replaced transactions), Create
+  // position (+705 B), the signed-out lines (+478 B new chunk), Automate (+164 B) and the dialog (+1,410 B, all lazy
+  // only). Clean Windows builds, gzip 9, against main f6df054e: dist financial 189,428 -> 196,212 B, all lazy
+  // 211,263 -> 219,448 B, chain code 19,987 -> 20,114 B (pure reads through the page's line, audit C6); wallet-test
+  // financial 196,319 B, all lazy 219,773 B. Session/public reads, which carries the island and that shared layer, is
+  // 70,448 B (wallet-test 69,866 B), inside its 90 kB ceiling; the fees worker is unchanged at 26,603 B.
+  // WalletConnect's client (@walletconnect/sign-client 2.25.0, pinned, and its QR encoder) is a new family of its own,
+  // 130,098 B, loaded only when the person picks WalletConnect (the wallet-test build's stand-in: 4,785 B). Only the
+  // exceeded ceilings move, each to the 0.1 kB above the larger build with at least 50 B to spare: financial 196.3 kB
+  // (88 B), all lazy 219.5 kB (52 B), chain 20.2 kB (86 B), and WalletConnect 130.2 kB (102 B). The 90 kB
+  // session/read and 27 kB worker ceilings are unchanged.
+  // 2026-10-01, the 2026-10 package, integration pass 2a (pacote/ws-wallets merged onto pass 1's tree; the integrator
+  // re-measures and sets every ceiling about 5% over the larger build, rounded up to the next kB, as in pass 1). The
+  // wallets branch measured and set its ceilings on main's layout, before the screens became chunks; these replace them
+  // (its named FINANCIAL, ALL_LAZY, CHAIN and WALLETCONNECT constants are gone, every ceiling sits in the list below).
+  // Clean Windows builds of the merged tree, gzip level 9, dist / .wallet-test-dist: initial entry 203,764 / 200,766 B
+  // (pass 1: 203,225 B), route screens 164,499 / 164,685 B, session/public reads 147,934 / 147,869 B (pass 1: 143,101 B;
+  // the wallet layer the island shares with the money screens), financial 300,323 / 261,235 B, all lazy 333,083 /
+  // 333,881 B, fees worker 26,603 B and chain code 20,089 B in both, and WalletConnect's client 130,132 B (the
+  // wallet-test build's stand-in: 4,785 B). Ceilings: initial entry 214 kB (unchanged), route screens 173 kB (was 174),
+  // session/public reads 156 kB (was 152), financial 316 kB (was 309), all lazy 351 kB (was 344), fees worker 28 kB
+  // (unchanged), chain code 22 kB (was 21) and WalletConnect 137 kB (new). The wallet-test allowance stays 3 kB (its
+  // all-lazy overhead measures 798 B).
+  // Changed on purpose (2026-10-01, the fees workstream, C:/dwt/pacote/fees): the worker reads a position's history at
+  // chosen blocks from two archive nodes first (lib/fees/points.ts, pointsRun.ts, lib/chain/archive.ts, the Multicall3
+  // coding from functions/_lib/owned.ts), with the replay kept as its fallback. Measured with esbuild's metafile against
+  // main f6df054e: worker 26,517 -> 37,478 B gzip (points engine +15.8 kB raw, archive client +4.4 kB, Multicall3
+  // coding +3.0 kB, the rest +8.1 kB). The chain code grew 19,987 -> 20,621 B (the page's state read through the
+  // fallbacks during a rest, the lanes' quiet, the archives' runtime). Each ceiling is raised to the next whole kB above
+  // the measured build: worker 38,000 B, chain 21,000 B. The position page's and the list's words (items A13, A15, A18,
+  // D4, D5, E22) took all lazy from 211,263 B (the note above) to 212,724 B, with the public reads at 66,583 B and
+  // financial at 189,735 B: all lazy is raised to 213,000 B; public reads (90,000) and financial (190,000) are unchanged.
+  // 2026-10-01, the 2026-10 package, integration pass 2a, second merge (pacote/ws-fees onto the wallets merge; the same
+  // rule: about 5% over the larger build, rounded up to the next kB). The fees branch's own ceilings above (worker 38 kB,
+  // chain 21 kB, all lazy 213 kB, its 1.6 kB wallet-test cap) were set on main's layout and give way to these; the 3 kB
+  // wallet-test allowance stays. Clean Windows builds of the merged tree, gzip level 9, dist / .wallet-test-dist: initial
+  // entry 203,755 / 200,774 B, route screens 167,691 / 168,070 B, session/public reads 152,412 / 152,559 B, financial
+  // 303,622 / 262,398 B, all lazy 337,527 / 338,584 B, fees worker 37,487 B and chain code 20,726 B in both, and
+  // WalletConnect's client 130,133 B (stand-in 4,785 B). Ceilings: initial entry 214 kB (unchanged), route screens 177 kB
+  // (was 173), session/public reads 161 kB (was 156), financial 319 kB (was 316), all lazy 356 kB (was 351), fees worker
+  // 40 kB (was 28), chain code 22 kB and WalletConnect 137 kB (unchanged). The wallet-test all-lazy overhead measures
+  // 1,057 B.
+  // 2026-10-01, the chain2 workstream, part B (pacote/ws-chain2b on pass 2's tree): the second chain's section wired (a
+  // route, a chunk of its own: the 'elysium section' family, new), the menu's link to it from the chain's identity and
+  // the section's mode alone (src/config/chainIdentity.ts, src/chains/elysium/mode.ts), the registry the chain code now
+  // reads (its identities in the entry, which the chain code and the fees screens import from it), the chain-scoped
+  // storage keys with their one-time move (src/lib/chainStorage.ts), and the session's move between the registry's chains.
+  // Clean Windows builds, gzip level 9, dist / .wallet-test-dist: initial entry 204,922 / 201,923 B (pass 2: 203,755 B),
+  // route screens 168,032 / 168,445 B, session/public reads 152,739 / 153,031 B, financial 304,600 / 263,452 B (the
+  // chunks that open the chain code name its files to preload, now that it imports the registry's identities from the
+  // entry), all lazy 338,521 / 339,717 B, fees worker 37,460 B, chain code 20,717 B, WalletConnect 130,132 B, and the
+  // section 40,929 / 40,938 B (with the concentrated-liquidity maths it shares with New position, a chunk of its own now,
+  // and the dialog hook). Ceilings, about 5% over the larger build rounded up to the next kB as in the passes: initial
+  // entry 216 kB (was 214), financial 320 kB (was 319), elysium section 43 kB (new); every other ceiling unchanged. The
+  // wallet-test all-lazy overhead measures 1,196 B.
   const productionBytes = new Map();
   for (const [label, dir] of [
     ['dist', DIST],
@@ -859,26 +1015,62 @@ test('session/read closures retain their 90 kB budget; financial screens have a 
     // not UI and loads only where a fees history is shown. A classic worker is one self-contained file: no import, no
     // export. It is emitted only once a screen uses the fees hooks (none may on a branch where no screen does yet).
     // Measured with a temporary opener on 2026-09-24: 16,419 B raw, 7,100 B gzip.
+    // Changed on purpose 2026-10-02 (RPC-SPEC \u00a711.4): the replay is gone; the page folds the ledger route's answer
+    // itself, so no worker is built at all.
     const worker = new Set(js.filter((file) => /^feesReplay\.worker-/.test(file)));
-    assert.ok(worker.size <= 1, `one fees worker at most: ${[...worker].join(', ')}`);
+    assert.equal(worker.size, 0, `no fees worker: ${[...worker].join(', ')}`);
     for (const file of worker) {
       assert.ok(!initial.has(file) && !allLazy.has(file), 'the worker is loaded by new Worker(), never imported');
       assert.ok(moduleTree(dir, file).program.body.every((node) => !['ImportDeclaration', 'ExportNamedDeclaration', 'ExportAllDeclaration', 'ExportDefaultDeclaration'].includes(node.type)), 'a classic worker: one file');
     }
     // 2026-09-25: the chain code the page runs (see above): one chunk, reached only by dynamic import, never in the entry.
+    // Since 2026-10-01 (RPC-SPEC §7.2) it is the wallet feature's reads only (lib/chain/chainCode.ts over lib/walletReads.ts).
     const chainRoots = js.filter((file) => /^chainCode-/.test(file));
     assert.equal(chainRoots.length, 1, `one chain code chunk: ${chainRoots.join(', ')}`);
     const chain = new Set([...staticClosure(dir, chainRoots)].filter((file) => !initial.has(file)));
     for (const file of chainRoots) assert.ok(!initial.has(file) && !allLazy.has(file), 'the chain code is loaded when a page reads the chain, never statically');
-    assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain])].sort(), js, 'every generated script belongs to a measured closure');
-    for (const [family, files, productionBudget] of [['session/public reads', base, 90_000], ['financial', financial, 190_000], ['all lazy', allLazy, 212_000], ['fees worker', worker, 27_000], ['chain code', chain, 20_000]]) {
+    // 2026-10-01 (platform workstream, F1): every screen but Home is a lazy root of its own, opened by its route (src/App.tsx),
+    // measured as one family: the route screens, with everything they load that the entry does not carry. Some of what
+    // the read and financial roots load moved out of the entry with them, so those families measure more than before
+    // for the same code (see the budgets below).
+    const routeRoots = js.filter((file) => /^(Explore|PoolDetail|Positions|NewPosition|Automate|Docs)-/.test(file) && !initial.has(file));
+    assert.deepEqual(routeRoots.map((file) => file.split('-')[0]).sort(), ['Automate', 'Docs', 'Explore', 'NewPosition', 'PoolDetail', 'Positions'], 'each screen but Home is a chunk of its own');
+    const routes = new Set([...staticClosure(dir, routeRoots)].filter((file) => !initial.has(file)));
+    // 2026-10-01 (audit C3): WalletConnect's client, a chunk of its own the island opens only when the person picks it,
+    // measured as its own family (the wallet-test build's stand-in in its place), outside every other.
+    const walletConnectRoots = js.filter((file) => /^walletConnect(Provider|Fake)-/.test(file));
+    assert.equal(walletConnectRoots.length, 1, `one WalletConnect chunk: ${walletConnectRoots.join(', ')}`);
+    const walletConnect = new Set([...staticClosure(dir, walletConnectRoots)].filter((file) => !initial.has(file) && !allLazy.has(file)));
+    for (const file of walletConnectRoots) assert.ok(!initial.has(file) && !allLazy.has(file) && !chain.has(file) && !routes.has(file), 'loaded only when the person picks WalletConnect');
+    // 2026-10-01 (the chain2 workstream, part B): the second chain's section, one lazy root of its own that only its route
+    // opens (#/elysium…, src/App.tsx), measured as its own family: its chunk and what it loads that the entry does not
+    // carry (the concentrated-liquidity maths it shares with New position, the dialog hook it shares with the wallet).
+    const elysiumRoots = js.filter((file) => /^ElysiumEntry-/.test(file));
+    assert.equal(elysiumRoots.length, 1, `one section chunk: ${elysiumRoots.join(', ')}`);
+    const elysium = new Set([...staticClosure(dir, elysiumRoots)].filter((file) => !initial.has(file)));
+    for (const file of elysiumRoots) assert.ok(!initial.has(file) && !allLazy.has(file) && !chain.has(file) && !routes.has(file) && !walletConnect.has(file), 'loaded only when its route opens');
+    assert.deepEqual([...new Set([...initial, ...allLazy, ...worker, ...chain, ...routes, ...walletConnect, ...elysium])].sort(), js, 'every generated script belongs to a measured closure');
+    // H4 (2026-10-01): what every visitor downloads before anything shows, the entry with the chunks it imports and the
+    // stylesheet the page links, has a budget of its own. Until then only lazily loaded families had one, and the entry
+    // grew 33% in a week with no test failing.
+    const html = readFileSync(join(dir, 'index.html'), 'utf8');
+    const linked = [...html.matchAll(/<link rel="stylesheet"[^>]*href="\/assets\/([^"]+)"/g)].map((match) => match[1]);
+    assert.equal(linked.length, 1, 'the page links one stylesheet');
+    const first = new Set([...initial, ...linked]);
+    // 2026-10-01 (RPC-SPEC, the switch to Domino's own node, re-measured at the integration): the chain code chunk is the
+    // wallet feature's two functions and the site's chain routes' client (2,041 B both builds; 22,238 B before, with the
+    // chain code itself, which now runs only at the edge), and the fees worker carries no chain code (24,164 B; about
+    // 37.5 kB before). Both ceilings come down to keep them meaningful: chain code 22,000 -> 4,000, fees worker
+    // 40,000 -> 28,000. Every other family is within its budget unchanged (initial entry 205,897 B; route screens 172,655 B;
+    // session/public reads 156,227 B; financial 309,027 B; all lazy 344,252 B; elysium section 41,389 B, dist).
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 177_000], ['session/public reads', base, 161_000], ['financial', financial, 320_000], ['all lazy', allLazy, 356_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
-      const budget = productionBudget + (testOnly ? 1_500 : 0);
+      const budget = productionBudget + (testOnly ? 3_000 : 0);
       if (dir === DIST) productionBytes.set(family, total);
-      if (testOnly) assert.ok(total - productionBytes.get(family) <= 1_500, `${family}: wallet test-only overhead exceeds 1.5 kB`);
       // The headroom is a diagnostic only, so the margin stays visible in every run; only the budget itself fails the test.
       t.diagnostic(`${label} ${family}: ${total} bytes gzip (${files.size} scripts; ${budget} budget; ${budget - total} bytes, ${((100 * (budget - total)) / budget).toFixed(1)}% headroom)`);
+      if (testOnly) assert.ok(total - productionBytes.get(family) <= 3_000, `${family}: wallet test-only overhead exceeds 3 kB`);
       assert.ok(total <= budget, `${label} ${family} is ${total} bytes gzip, over the ${budget} budget`);
     }
   }

@@ -40,9 +40,56 @@ test('only closed financial adapters offer wallet transactions; login cannot spe
   // Changed on purpose (2026-09-24): finance/position.ts is the owner's collect and close, sent from the wallet to
   // Uniswap's pinned PositionManager, simulated and estimated first, through the same bounded client as setup.ts.
   // Changed on purpose (2026-09-25): finance/batch.ts offers the owner clients' one batch (wallet_sendCalls), shared by setup.ts and sequence.ts.
-  assert.deepEqual(hits(ALL, methods), ['finance/batch.ts', 'finance/position.ts', 'finance/sequence.ts', 'finance/setup.ts', 'finance/wallet.ts']);
-  assert.deepEqual(hits(inside('session/', 'wallet/', 'components/wallet/'), methods), [], 'login still cannot spend');
+  // Changed on purpose (2026-10-01, the owner's OK on the audit's C1, C3 and C6):
+  // - wallet/port.ts asks a wallet that does not know Robinhood Chain to add it (wallet_addEthereumChain), with the
+  //   network's details fixed in wallet/chain.ts, before it switches: the only one of these methods it names;
+  // - wallet/walletConnectMethods.ts lists what WalletConnect's transport forwards to a phone's wallet (what the wallet
+  //   port and the money clients ask), and composes nothing;
+  // - lib/chain/browser.ts's readOnChain admitted reads only, eth_call and eth_estimateGas among them. Changed on purpose
+  //   2026-10-01 (RPC-SPEC D6 and §7.2): that file is gone; lib/walletReads.ts serves no read and names only
+  //   eth_simulateV1 (tests/wallet-reads.test.mjs), so it names none of these.
+  // Changed on purpose (2026-10-01, the chain2 workstream, part B): chains/elysium/signer.ts is the second chain's closed
+  // signer: it sends exactly the transaction of a draft rugged97's actions service prepared, once, from the wallet the
+  // person chose, and adds that chain to a wallet that does not know it (tests/elysium-signer.test.mjs). It is the only
+  // file under chains/ that names any of these methods (tests/elysium-guards.test.mjs).
+  // Changed on purpose (2026-10-01, fix round 3): finance/routedReplacement.ts reads Permit2's allowance for a replaced
+  // routed swap's input (eth_call through the wallet's own provider, never the site's): a read, and the only one of these
+  // methods it names. Merged 2026-10-02 with the RPC switch, which took lib/chain/browser.ts out of this list.
+  assert.deepEqual(hits(ALL, methods), ['chains/elysium/signer.ts', 'finance/batch.ts', 'finance/position.ts', 'finance/routedReplacement.ts', 'finance/sequence.ts', 'finance/setup.ts', 'finance/wallet.ts', 'wallet/port.ts', 'wallet/walletConnectMethods.ts']);
+  const named = (path) => [...new Set([...ALL.find((f) => f.path === path).code.matchAll(new RegExp(methods.source, 'g'))].map((m) => m[1]))].sort();
+  assert.deepEqual(named('chains/elysium/signer.ts'), ['eth_sendTransaction', 'wallet_addEthereumChain'], 'the draft\'s one transaction, and the chain\'s details');
+  const signer = ALL.find((f) => f.path === 'chains/elysium/signer.ts').code;
+  assert.deepEqual([...signer.matchAll(/method: '([^']+)'/g)].map((m) => m[1]), ['eth_accounts', 'eth_getCode', 'eth_sendTransaction', 'wallet_addEthereumChain'], 'what the signer itself asks the chosen wallet');
+  assert.deepEqual([...signer.matchAll(/quantity\(provider, '([^']+)'/g)].map((m) => m[1]), ['eth_getTransactionCount'], 'and the account\'s pending nonce, read before the send');
+  assert.match(signer, /method: 'wallet_addEthereumChain', params: \[addChainParameters\(chain\)\]/, 'the registry\'s network details only');
+  assert.deepEqual(hits(inside('chains/'), methods), ['chains/elysium/signer.ts'], 'nothing else of the second chain\'s section names a wallet transaction method');
+  assert.deepEqual(named('wallet/port.ts'), ['wallet_addEthereumChain'], 'the switch adds the network, and nothing else');
+  assert.deepEqual(hits(inside('lib/'), methods), [], 'the page’s own modules name none: the site serves the wallet no read (RPC-SPEC D6)');
+  assert.deepEqual(named('finance/routedReplacement.ts'), ['eth_call'], 'a read only: the allowance a replaced swap would spend');
+  assert.deepEqual(named('wallet/walletConnectMethods.ts'), ['eth_sendTransaction', 'wallet_addEthereumChain', 'wallet_sendCalls']);
+  assert.deepEqual(hits(inside('session/', 'components/wallet/'), methods), [], 'login still cannot spend');
+  assert.deepEqual(hits(inside('wallet/'), methods), ['wallet/port.ts', 'wallet/walletConnectMethods.ts'], 'the wallet layer adds the network and forwards; it composes nothing');
+  assert.match(ALL.find((f) => f.path === 'wallet/port.ts').code, /method: 'wallet_addEthereumChain', params: \[ADD_ROBINHOOD_CHAIN\]/, 'the fixed network details only');
   assert.deepEqual([...ALL.find(f => f.path === 'finance/wallet.ts').code.matchAll(/method: '([^']+)'/g)].map(m => m[1]), ['eth_accounts', 'eth_chainId', 'eth_sendTransaction']);
+});
+
+// 2026-10-01 (audit C3): what WalletConnect forwards to a phone's wallet is this list, and only its transport uses it.
+test('WalletConnect forwards exactly the wallet requests the app already makes, and reads go to the page', () => {
+  const list = ALL.find((f) => f.path === 'wallet/walletConnectMethods.ts').code;
+  assert.deepEqual([...list.matchAll(/'([a-z]+_[A-Za-z]+)'/g)].map((m) => m[1]),
+    ['personal_sign', 'eth_sendTransaction', 'wallet_switchEthereumChain', 'wallet_addEthereumChain', 'wallet_getCapabilities', 'wallet_sendCalls', 'wallet_getCallsStatus']);
+  const users = ALL.filter(({ code }) => /walletConnectMethods/.test(code)).map(({ path }) => path);
+  assert.deepEqual(users, ['wallet/walletConnectFake.ts', 'wallet/walletConnectProvider.ts']);
+  for (const path of users) {
+    const code = ALL.find((f) => f.path === path).code;
+    assert.match(code, /if \(!FORWARDED\.includes\(method\)\) return options\.read\(method, list\)/, `${path}: anything not forwarded is a read of the chain`);
+    assert.doesNotMatch(code, /\b(sendTransaction|writeContract|signTypedData|encodeFunctionData)\b/, `${path} composes nothing`);
+  }
+  // The real client is reached only through the connector's dynamic import, and the fake only in test builds.
+  const connector = ALL.find((f) => f.path === 'wallet/walletConnect.ts').code;
+  assert.match(connector, /__DOMINO_TEST_HOOKS__ \? import\('\.\/walletConnectFake'\) : import\('\.\/walletConnectProvider'\)/);
+  assert.deepEqual(ALL.filter(({ code }) => /['"]\.{1,2}\/(?:wallet\/)?walletConnectProvider['"]/.test(code.replace(/import type[^\n]*\n/g, ''))).map(({ path }) => path), ['wallet/walletConnect.ts']);
+  assert.match(ALL.find((f) => f.path === 'config/walletConnect.ts').code, /export const WALLETCONNECT_PROJECT_ID = '[0-9a-f]{0,32}'/);
 });
 
 test('batches (EIP-5792) are asked for, offered and read back only by the closed batch module the owner clients share', () => {
@@ -50,7 +97,8 @@ test('batches (EIP-5792) are asked for, offered and read back only by the closed
   // reads what the wallet can batch, offers one batch and reads its status. Since the sequence's creation batches too, both
   // clients (finance/setup.ts, finance/sequence.ts) go through finance/batch.ts; login and every screen name none of these.
   const batch = /['"`](wallet_sendCalls|wallet_getCallsStatus|wallet_getCapabilities|wallet_showCallsStatus)['"`]/;
-  assert.deepEqual(hits(ALL, batch), ['finance/batch.ts']);
+  // 2026-10-01 (audit C3): and WalletConnect's forward list, which passes finance/batch.ts's requests to a phone's wallet.
+  assert.deepEqual(hits(ALL, batch), ['finance/batch.ts', 'wallet/walletConnectMethods.ts']);
 });
 
 test('exact approvals are confined to the closed setup, Permit2 and sequence ABIs', () => {
@@ -67,8 +115,13 @@ test('exact approvals are confined to the closed setup, Permit2 and sequence ABI
 test('no connector SDK, public chain definition or network transport is used', () => {
   const packages = /^(viem\/chains|wagmi\/chains|wagmi\/connectors|@wagmi\/connectors|@walletconnect\/|@coinbase\/|@metamask\/|@base-org\/|@safe-global\/)/;
   const imported = ALL.flatMap(({ path, code }) => specifiers(code).filter((spec) => packages.test(spec)).map((spec) => `${path}: ${spec}`));
-  assert.deepEqual(imported, []);
-  assert.deepEqual(hits(ALL, /\b(walletConnect|coinbaseWallet|metaMask|baseAccount|injected)\s*\(/), []);
+  // Changed on purpose (2026-10-01, audit C3, the owner's OK): WalletConnect's own client, in the one module the
+  // connector loads on demand (wallet/walletConnect.ts); no wagmi connector package and no other SDK.
+  assert.deepEqual(imported, ['wallet/walletConnectProvider.ts: @walletconnect/sign-client']);
+  // Changed on purpose (2026-10-01, audit C9): one injected connector, aimed at window.ethereum alone, for a browser
+  // wallet that announces nothing through EIP-6963 (wallet/port.ts offerLegacy).
+  assert.deepEqual(hits(ALL, /\b(walletConnect|coinbaseWallet|metaMask|baseAccount|injected)\s*\(/), ['wallet/port.ts']);
+  assert.equal([...ALL.find((f) => f.path === 'wallet/port.ts').code.matchAll(/\binjected\s*\(/g)].length, 1);
   // viem's network transports. `custom` over the wallet's own provider is the only one allowed.
   assert.deepEqual(hits(inside('session/', 'wallet/', 'components/wallet/'), /\b(http|webSocket|fallback|createPublicClient)\s*\(/), []);
 });
@@ -77,10 +130,16 @@ test('nothing renders HTML from strings', () => {
   assert.deepEqual(hits(ALL, /dangerouslySetInnerHTML|innerHTML\s*=/), []);
 });
 
-test('session and wallet code never touches browser storage', () => {
+test('session and wallet code never touches browser storage, but for the wallet ids the owner allowed', () => {
   const files = inside('session/', 'wallet/', 'components/wallet/');
   assert.ok(files.length > 5);
-  assert.deepEqual(hits(files, /\b(localStorage|sessionStorage|indexedDB|document\.cookie)\b/), []);
+  // Changed on purpose (2026-10-01, audit C11, the owner's OK): wallet/memory.ts keeps which wallets the person
+  // disconnected here and which one connected last, as wallet ids under one key, never an address
+  // (tests/wallet-compat.test.mjs checks what it writes).
+  assert.deepEqual(hits(files, /\b(localStorage|sessionStorage|indexedDB|document\.cookie)\b/), ['wallet/memory.ts']);
+  const memory = ALL.find((f) => f.path === 'wallet/memory.ts').code;
+  assert.deepEqual([...memory.matchAll(/\b(localStorage|sessionStorage|indexedDB|document\.cookie)\b/g)].map((m) => m[1]), ['localStorage']);
+  assert.match(memory, /export const MEMORY_KEY = 'domino\.wallet\.v1'/);
 });
 
 test('wallet-provided names and icons never become a URL or an image', () => {
@@ -145,7 +204,9 @@ test('the wallet feature is reached only through the build flag', () => {
   // Changed on purpose (2026-09-28, the owner's phone: Your positions stayed on its loading rows while the RPC refused his
   // address): the list, itself opened only behind the flag (Positions.tsx), keeps its display copy with the private
   // cards' keep, readKept and drop (finance/privateCards.ts), a module that names no wallet code (asserted here).
-  const listKeeps = (path, spec) => path === 'components/positions/OwnedPositions.tsx' && spec === '../../finance/privateCards';
+  // Changed on purpose 2026-10-01 (fees item A15): a position's page reads that same copy (readKept only) to draw its
+  // header, dated and with no action, until its own chain read answers.
+  const listKeeps = (path, spec) => (path === 'components/positions/OwnedPositions.tsx' && spec === '../../finance/privateCards') || (path === 'screens/PositionDetail.tsx' && spec === '../finance/privateCards');
   const keeper = ALL.find(({ path }) => path === 'finance/privateCards.ts');
   assert.deepEqual(specifiers(keeper.code), ['react', '../lib/walletIdentity'], 'the copies’ module imports React and the wallet’s address, nothing of the wallet feature');
   const offenders = [];
@@ -176,7 +237,8 @@ test('the wallet feature is reached only through the build flag', () => {
   for (const [path, spec] of Object.entries(POSITION_CHUNKS)) {
     const { code } = ALL.find((file) => file.path === path);
     const quoted = spec.replaceAll('.', '\\.').replaceAll('/', '\\/');
-    assert.match(code, new RegExp(`__DOMINO_WALLET_SESSION__\\s*\\?\\s*lazy(?:<[^\\n]*?>)?\\(\\(\\)\\s*=>\\s*import\\('${quoted}'\\)`), `${path} opens ${spec} lazily, behind the flag`);
+    // 2026-10-01 (D1): the loader may be wrapped in recovering() (lib/staleRelease.ts); the same import, behind the same flag.
+    assert.match(code, new RegExp(`__DOMINO_WALLET_SESSION__\\s*\\?\\s*lazy(?:<[^\\n]*?>)?\\((?:recovering\\()?\\(\\)\\s*=>\\s*import\\('${quoted}'\\)`), `${path} opens ${spec} lazily, behind the flag`);
     const mentions = [...code.matchAll(new RegExp(`['"\`]${quoted}(?:\\.tsx?)?['"\`]`, 'g'))].length;
     assert.equal(mentions, 1, `${path} names ${spec} once, in its lazy import(), and imports nothing else from it, types included`);
   }
@@ -197,7 +259,8 @@ test('the position actions are opened only lazily behind the wallet flag, and th
       openers.push(path);
       const quoted = spec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       // 2026-09-24 (merge): an explicit type argument, lazy<ComponentType<Props>>(...), types the chunk from the opener's own props.
-      assert.match(values, new RegExp(`__DOMINO_WALLET_SESSION__\\s*\\?\\s*lazy(?:<[^\\n]*?>)?\\(\\(\\)\\s*=>\\s*import\\('${quoted}'\\)`), `${path} opens ${spec} lazily, behind the wallet flag`);
+      // 2026-10-01 (D1): the loader may be wrapped in recovering() (lib/staleRelease.ts); the same import, behind the same flag.
+      assert.match(values, new RegExp(`__DOMINO_WALLET_SESSION__\\s*\\?\\s*lazy(?:<[^\\n]*?>)?\\((?:recovering\\()?\\(\\)\\s*=>\\s*import\\('${quoted}'\\)`), `${path} opens ${spec} lazily, behind the wallet flag`);
       const mentions = [...values.matchAll(new RegExp(`['"\`]${quoted}['"\`]`, 'g'))].length;
       const lazy = [...values.matchAll(new RegExp(`import\\(\\s*['"\`]${quoted}['"\`]\\s*\\)`, 'g'))].length;
       assert.deepEqual([mentions, lazy], [1, 1], `${path} names ${spec} once, in its lazy import()`);
@@ -206,5 +269,19 @@ test('the position actions are opened only lazily behind the wallet flag, and th
   assert.ok(openers.includes('screens/PositionLab.tsx'), openers.join(', '));
   const labOpeners = ALL.filter(({ code }) => /['"`]\.\/screens\/PositionLab(?:\.tsx?)?['"`]/.test(code)).map(({ path }) => path);
   assert.deepEqual(labOpeners, ['App.tsx'], 'only the app routes to the lab');
-  assert.match(ALL.find(({ path }) => path === 'App.tsx').code, /const PositionLab = __DOMINO_TEST_HOOKS__\s*\?\s*lazy\(\(\)\s*=>\s*import\('\.\/screens\/PositionLab'\)/, 'the lab exists only where the test hooks do');
+  assert.match(ALL.find(({ path }) => path === 'App.tsx').code, /const PositionLab = __DOMINO_TEST_HOOKS__\s*\?\s*lazy\((?:recovering\()?\(\)\s*=>\s*import\('\.\/screens\/PositionLab'\)/, 'the lab exists only where the test hooks do');
+});
+
+// 2026-10-01 (audit C16): every wallet the logo names has its local artwork, inert SVG with its provenance recorded.
+test('each wallet logo is a local, inert SVG named in the provenance notes', () => {
+  const logo = ALL.find(({ path }) => path === 'components/wallet/WalletLogo.tsx').code;
+  const files = [...logo.matchAll(/src="\/wallets\/([a-z0-9-]+\.svg)"/g)].map((match) => match[1]);
+  for (const name of ['coinbase.svg', 'okx.svg', 'trust.svg', 'walletconnect.svg', 'metamask.svg', 'rabby.svg']) assert.ok(files.includes(name), name);
+  const provenance = readFileSync(resolve(SRC, '../public/wallets/PROVENANCE.md'), 'utf8');
+  for (const name of files) {
+    const svg = readFileSync(resolve(SRC, '../public/wallets', name), 'utf8');
+    assert.match(svg, /^<svg[\s>]/, name);
+    assert.doesNotMatch(svg, /<script|\son[a-z]+=|href=|<image|<foreignObject/i, name);
+    assert.ok(provenance.includes(name), `${name} has its source in PROVENANCE.md`);
+  }
 });

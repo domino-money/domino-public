@@ -865,6 +865,10 @@ test('decimal strings format without Number: compact USD, sub-cent, half-even, e
   assert.equal(decimal.formatUsdCompact('10.00'), '$10.00');
   assert.equal(decimal.formatUsdCompact('1234.56'), '$1.2K');
   assert.equal(decimal.formatUsdCompact('999.999'), '$1,000.00');
+  // Changed on purpose 2026-10-01 (audit E8): rounded first, then sized, so a unit's edge reads as the next unit.
+  assert.equal(decimal.formatUsdCompact('999950'), '$1.0M', 'not $1000.0K');
+  assert.equal(decimal.formatUsdCompact('999949'), '$999.9K');
+  assert.equal(decimal.formatUsdCompact('999950000'), '$1.00B', 'not $1000.0M');
   assert.equal(decimal.formatUsdCompact('10450000'), '$10.4M', 'half to even at the tie');
   assert.equal(decimal.formatUsdCompact('10550000'), '$10.6M');
   assert.equal(decimal.formatUsdCompact('1e6'), null);
@@ -978,7 +982,7 @@ test('a page that skipped candidates is counted, never called complete; an older
   assert.equal(partial.failure, null);
   assert.deepEqual([partial.view.skipped, partial.view.skippedReason, partial.view.probed, partial.view.hasMore], [7, 'request_budget_exhausted', 13, false]);
   assert.ok(!partial.view.notes.includes(ALL_LOADED), 'a list that skipped candidates is not complete, and no sentence says it is');
-  assert.deepEqual(partial.view.notes, ['Balances at the snapshot block. Not proof of wallet control.'], 'and nothing is said in its place');
+  assert.deepEqual(partial.view.notes, ['Balances read from the chain at one block. Anyone can see them; they don’t prove who controls the wallet.'], 'and nothing is said in its place');
 
   const whole = await pagers.createWalletPager(one('wallet-assets', gateway('wallet-assets.last-page')), WALLET_REQUEST()).first();
   assert.deepEqual([whole.view.skipped, whole.view.skippedReason, whole.view.probed], [0, null, 0]);
@@ -1009,7 +1013,7 @@ test('a page that skipped candidates is counted, never called complete; an older
 });
 
 test('no provider page calls the list complete: not a page of no provider rows, not a last page of rows', async () => {
-  const FOOTNOTE = 'Balances at the snapshot block. Not proof of wallet control.';
+  const FOOTNOTE = 'Balances read from the chain at one block. Anyone can see them; they don’t prove who controls the wallet.';
   // The live review's address (a PoolManager holding a pool's reserves): the provider returned no rows, and the reply listed native ETH at 0.
   const nothing = await pagers.createWalletPager(
     one('wallet-assets', gateway('wallet-assets.last-page'), {
@@ -1147,6 +1151,9 @@ test('#93: a provider figure is dated only by its retrieval age, counted on from
   assert.equal(markets.retrievedAgeSeconds({ ...observed, cacheAgeSeconds: null }, 1_005_900), null, 'an unknown age stays unknown');
   assert.equal(markets.retrievedText(12), 'retrieved 12 s ago');
   assert.equal(markets.retrievedText(150), 'retrieved 2 min ago');
+  // 2026-10-01 (audit E8): hours from two hours.
+  assert.equal(markets.retrievedText(7_199), 'retrieved 119 min ago');
+  assert.equal(markets.retrievedText(82_800), 'retrieved 23 h ago');
   assert.equal(markets.retrievedText(null), 'retrieval time unknown');
   for (const age of [0, 12, 150, null]) assert.doesNotMatch(markets.retrievedText(age), /as of|updated/i);
   assert.equal(markets.providerStale(observed, 1_048_000), false, '60 s after retrieval: still fresh');
@@ -1210,7 +1217,8 @@ test('qualified pool-metrics is the only current 24h and APR figure', async () =
   assert.equal(market.tvlUsd.value, '0.000020026865830513', 'point-in-time TVL, not the time-weighted APR basis');
   assert.equal(market.feeAprPercent.value, '158.060469175186043958');
 
-  assert.equal(markets.aprLabel(market.feeAprPercent).text, '158.06% APR');
+  // Changed on purpose 2026-10-01 (audit E21): one APR rule (lib/format/apr.ts): whole percents from 100%.
+  assert.equal(markets.aprLabel(market.feeAprPercent).text, '158% APR');
   assert.equal(markets.presentMetric(market.tvlUsd).text, '$0.000020');
   assert.equal(markets.turnover(market).kind, 'value');
 });
@@ -3032,16 +3040,19 @@ test('the display catalogue has six immediate rows and no invented financial obs
   assert.deepEqual(poolListings([], null), [], 'fixtures and unconfigured readers do not get catalogue rows');
 });
 
-test('a catalogue row names its pair in the pool’s own order of currencies, so the name does not flip when its read lands', async () => {
+// Changed on purpose 2026-10-01 (audit E21): a pair is named as its price is written, "TOKEN/USDG" beside "1 TOKEN = X
+// USDG" (lib/read/orientation.ts), whatever the pool's own order; the catalogue row and the read row still agree.
+test('a catalogue row names its pair as its price is written, so the name does not flip when its read lands', async () => {
   const { poolListings, inPoolOrder, catalogueTokenLabel, SELECTED_POOL_CATALOGUE } = require('../.test-build/app/src/config/selectedPoolCatalogue.js');
+  const { pricePair } = require('../.test-build/app/src/lib/read/orientation.js');
   const rows = poolListings([], SELECTED_POOL_CATALOGUE);
-  assert.deepEqual(rows.map(({ catalogue }) => catalogue.labels.join('/')), ['WETH/USDG', 'USDG/MARLIN', 'USDG/cbBTC', 'USDG/U', 'ETH/USDG', 'PONS/USDG']);
+  assert.deepEqual(rows.map(({ catalogue }) => catalogue.labels.join('/')), ['WETH/USDG', 'MARLIN/USDG', 'cbBTC/USDG', 'U/USDG', 'ETH/USDG', 'PONS/USDG']);
   for (const { poolId, catalogue } of rows) {
     if (!catalogue.addresses) continue;
-    assert.ok(catalogue.addresses[0] < catalogue.addresses[1], `${poolId}: currency0, the lower address, comes first`);
+    assert.equal(catalogue.addresses[1], '0x5fc5360d0400a0fd4f2af552add042d716f1d168', `${poolId}: USDG, the token prices are written in, comes second`);
     assert.deepEqual(catalogue.addresses.map((address) => catalogueTokenLabel(project.unreadToken(address))), [...catalogue.labels], `${poolId}: each label stays on its address`);
   }
-  assert.deepEqual(rows[2].catalogue.artwork, ['USDG', null], 'artwork moves with its token');
+  assert.deepEqual(rows[2].catalogue.artwork, [null, 'USDG'], 'artwork moves with its token');
   assert.deepEqual(SELECTED_POOL_CATALOGUE[2].labels, ['cbBTC', 'USDG'], 'the catalogue itself keeps the order it was inspected in');
 
   // The same pool once its market read lands: the row names currency0 first, exactly as the catalogue row did.
@@ -3059,7 +3070,8 @@ test('a catalogue row names its pair in the pool’s own order of currencies, so
   const market = await fixtures({ 'pool-market': [{ fixture: gateway('pool-market.not-requested'), mutate: rewrite }] }, { clock: fakeClock() }).read('pool-market', tableMarketRequest(entry.poolId));
   assert.equal(market.state, 'ok');
   const live = project.projectMarketRow({ market, metrics: null, tokens: new Map() });
-  assert.equal([live.tokens.base, live.tokens.quote].map((token) => catalogueTokenLabel(token)).join('/'), rows[2].catalogue.labels.join('/'));
+  const named = pricePair(live.tokens.base, live.tokens.quote);
+  assert.equal([named.base, named.quote].map((token) => catalogueTokenLabel(token)).join('/'), rows[2].catalogue.labels.join('/'));
 
   // Native ETH, the zero address, sorts first; without both addresses nothing moves.
   const ZERO = `0x${'0'.repeat(40)}`;
@@ -4109,7 +4121,11 @@ test('no private API path, no signing or value transfer, no markup injection, no
     ]) {
       // 2026-09-24: /finance/position.ts joins on purpose, the owner's collect and close sent to Uniswap's pinned PositionManager.
       // 2026-09-25: /finance/batch.ts joins on purpose, the one module that offers an owner's batch (wallet_sendCalls) for setup.ts and sequence.ts.
-      if (pattern.source.startsWith('eth_sendTransaction') && ['/finance/wallet.ts', '/finance/setup.ts', '/finance/sequence.ts', '/finance/position.ts', '/finance/batch.ts'].some(suffix => file.replace(/\\/g, '/').endsWith(suffix))) continue;
+      // 2026-10-01 (audit C3): /wallet/walletConnectMethods.ts names what WalletConnect's transport forwards to a phone's
+      // wallet, the requests the files above already make; it composes nothing (tests/session.source-guard.test.mjs).
+      // 2026-10-01 (the chain2 workstream, part B): /chains/elysium/signer.ts, the second chain's closed signer, which sends
+      // exactly the draft rugged97's actions service prepared, once (tests/elysium-signer.test.mjs).
+      if (pattern.source.startsWith('eth_sendTransaction') && ['/finance/wallet.ts', '/finance/setup.ts', '/finance/sequence.ts', '/finance/position.ts', '/finance/batch.ts', '/wallet/walletConnectMethods.ts', '/chains/elysium/signer.ts'].some(suffix => file.replace(/\\/g, '/').endsWith(suffix))) continue;
       if (pattern.test(code)) found.push(`${file.slice(SRC.length)}: ${pattern}`);
     }
   }
@@ -4122,7 +4138,8 @@ test('no private API path, no signing or value transfer, no markup injection, no
   const signers = sources()
     .filter((file) => /personal_sign/.test(readFileSync(file, 'utf8')))
     .map((file) => file.slice(SRC.length).replace(/\\/g, '/'));
-  assert.deepEqual(signers, ['/wallet/port.ts'], 'only the wallet port may name the login signature');
+  // 2026-10-01 (audit C3): and WalletConnect's forward list, which passes the port's request to a phone's wallet.
+  assert.deepEqual(signers, ['/wallet/port.ts', '/wallet/walletConnectMethods.ts'], 'only the wallet port may name the login signature');
 
   // The deployable app still has only its read and session clients. #132
   // adds one reviewed serve-only diagnostic fetch, not a general exception
@@ -4139,92 +4156,84 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // (the wallet's positions, replacing its same-origin POST) and /lib/fees/client.ts (a position's state and the fees
   // history's logs, replacing its two) no longer fetch at all. Their one fetcher is /lib/chain/browser.ts, pinned below
   // to the RPC's fixed URL, with no credentials and no referrer; the RPC is named in the page's and the fees worker's
-  // connect-src (functions/_middleware.ts). The routes stay, tested, and nothing on the page asks them.
-  const chainPath = '/lib/chain/browser.ts';
+  // connect-src (functions/_middleware.ts). The routes stayed, tested, and nothing on the page asked them; they were
+  // retired on 2026-10-01 (platform workstream, D8), and their code runs in the page alone.
+  // Changed on purpose 2026-10-01 (RPC-SPEC §7.7, the owner's rule: nothing is read from a public RPC): the routes are
+  // back (functions/api/**, over Domino's own node at the edge), the page asks them through /lib/edge/chainRoutes.ts
+  // (pinned below), and /lib/chain/browser.ts, its router and its endpoints are gone: the page reads no RPC.
   // 2026-09-25, later (the automation state off the edge): a position's feature, plain, Auto-compound or Domino-compound,
   // and whether its sequence is paused, no longer comes from the site's POST /api/automation/v1/state, which reads the
   // chain from Cloudflare's edge and so could never answer in production. /lib/automationState.ts runs that route's own
   // scan (functions/_lib/automation.ts) through the chain code, like the wallet's positions and a position's state, and
   // leaves this list: automationState no longer fetches (pinned below with the modules that do not).
-  assert.deepEqual(fetchers, [diagnosticPath, '/finance/http.ts', chainPath, '/lib/read/bridgeSource.ts', '/lib/tokenArtwork.ts', '/screens/LivePreview.tsx', '/wallet/session.ts'], 'product clients, the financial client, the page\'s own line to the chain, serve-only diagnostics, the consumer-test preview, and the explicitly authorized decorative token metadata client');
-  const chainClient = readFileSync(join(SRC, chainPath), 'utf8');
-  // Changed on purpose (2026-09-25, review of r3/chain): the module has two runtimes now, the page's own reads
-  // (chainDeps) and the fees worker's paced lane (chainLane, which keeps the logs from using up the RPC's per-address
-  // limit the page's reads need). Each defines its `fetch(input, init)`, refuses any URL but the RPC's before anything
-  // else, and sends through the module's one network call, rpcFetch. The lane hears from the page over a
-  // BroadcastChannel of the site's own that carries one flag (a read on its way or not), and nothing else.
-  assert.equal([...chainClient.matchAll(/\bfetch\s*\((?!input, init\))/g)].length, 1, 'exactly one chain fetch call');
-  // Changed on purpose (2026-09-28: the DNS of Vivo, a large Brazilian ISP, answers NXDOMAIN for every host under
-  // chain.robinhood.com, and the page read nothing there): the one fetch now takes its URL from the page's router
-  // (lib/chain/failover.ts), and refuses any URL but the chain's own RPC and its three public fallbacks
-  // (lib/chain/endpoints.ts, pinned below) before anything is sent; still no credentials and no referrer.
-  assert.match(chainClient, /function rpcFetch\(url: string, init: RequestInit\): Promise<Response> \{\n\s*if \(!ENDPOINT_URLS\.has\(url\)\) return elsewhere\(\)\n(?:\s*\/\/.*\n)*\s*return fetch\(url, \{ \.\.\.init, credentials: 'omit', referrerPolicy: 'no-referrer' \}\)\n\}/, 'the registry\'s endpoints only, with no credentials and no referrer');
-  assert.match(chainClient, /const ENDPOINT_URLS: ReadonlySet<string> = new Set\(\[PRIMARY, \.\.\.FALLBACKS\]\.map\(\(endpoint\) => endpoint\.url\)\)/, 'the endpoints are the registry\'s');
-  assert.match(chainClient, /import \{ FALLBACKS, PRIMARY \} from '\.\/endpoints'/);
-  assert.match(chainClient, /const router: Router = failover\(\{ send: rpcFetch, /, 'the router sends through the one fetch');
-  assert.match(chainClient, /const elsewhere = \(\) => Promise\.reject\(new TypeError\('not the chain RPC'\)\)/);
-  const runtimes = [...chainClient.matchAll(/fetch\(input, init\)/g)].length;
-  assert.deepEqual([runtimes, [...chainClient.matchAll(/async fetch\(input, init\) \{\n\s*if \(input !== RPC_URL\) return elsewhere\(\)\n/g)].length], [2, 2], 'both runtimes refuse any other URL first');
-  // Changed on purpose (2026-09-25, review of r4/fees): the fees lanes of other tabs' workers hear on the same channel
-  // what each lane read and each refusal it met (the RPC limits the visitor's address, not a tab): a byte count or the
-  // word 'rest', typed so, and nothing else. The channel is the site's own (same origin only) and names no one.
-  // Changed on purpose (2026-09-28, the owner's phone: Your positions stayed on its loading rows while the RPC refused
-  // his address): the page says on it too that the RPC refused one of its reads ('rest', which rests every lane), and
-  // hears there the lanes' refusals and the other tabs' reads, for the list's APR (quietIn): a flag or the word, nothing else.
-  // Changed on purpose (2026-09-28, hotfix: the list's APR queue replayed the fees histories from the list and is gone):
-  // the page no longer hears the lanes' refusals nor the other tabs' reads. Changed on purpose 2026-09-28 (speed wave B,
-  // item 15, merged after the hotfix): the page says too whether its reads that ended had a heavy call (false) or light
-  // ones only (null), and a lane asks who reads ('?') when it starts and when a tab says it is done, which a page with a
-  // read on its way answers (true): the question is all the page hears; a flag, null, the word or the question, nothing else.
-  // 2026-09-29: a separate same-origin channel shares the bounded cooldown with a newly opened page/worker.
-  // It carries only an expiry and refusal count, or the question: never a request, address, result or credential.
-  assert.deepEqual([...chainClient.matchAll(/\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['{ ...sharedRest }', "'?'", 'state', 'true', 'news', 'news'], 'only cooldown state and the existing page/lane news are broadcast');
-  assert.deepEqual([...chainClient.matchAll(/cooldownChannel\??\.postMessage\(([^)]*)\)/g)].map((m) => m[1]), ['{ ...sharedRest }', "'?'", 'state'], 'cooldown payloads stay on their own channel');
-  assert.match(chainClient, /const COOLDOWN_CHANNEL = 'domino-chain-cooldown-v1'/);
-  assert.match(chainClient, /new BroadcastChannel\(COOLDOWN_CHANNEL\)/, 'fixed same-origin channel, not a configurable destination');
-  assert.match(chainClient, /interface Rest \{\n\s*until: number\n\s*count: number\n\}/, 'state contains only numeric scheduling metadata');
-  assert.match(chainClient, /const sharedRest: Rest = \{ until: -Infinity, count: 0 \}/);
-  assert.match(chainClient, /const state = \{ until: Date\.now\(\) \+ Math\.max\(0, rest\.until - at\), count: rest\.count \}/, 'published state contains no request or response data');
-  assert.match(chainClient, /const \{ until, count \} = value as Partial<Rest>\n\s*if \(typeof until !== 'number' \|\| !Number\.isFinite\(until\) \|\| typeof count !== 'number' \|\| !Number\.isInteger\(count\) \|\| count < 0 \|\| count > 16\) return/, 'untrusted peer state is validated before use');
-  assert.match(chainClient, /const bounded = Math\.min\(until, Date\.now\(\) \+ LANE_PACE\.restMs\)/, 'a peer cannot lengthen a cooldown past the existing maximum');
-  assert.match(chainClient, /cooldownChannel\.onmessage = \(\{ data \}: MessageEvent<unknown>\) => \{\n\s*if \(data === '\?'\) \{\n\s*if \(sharedRest\.until > Date\.now\(\)\) cooldownChannel\?\.postMessage\(\{ \.\.\.sharedRest \}\)\n\s*\} else rememberRest\(data\)\n\s*\}/, 'only an active cooldown answers the question; all received state is validated');
-  assert.match(chainClient, /function tell\(news: boolean \| null \| 'rest'\): void \{/, 'the page’s news: a read on its way or not, or a refusal it met');
-  assert.deepEqual([...chainClient.matchAll(/\btell\(([^)]*)\)/g)].map((m) => m[1]).sort(), ["'rest'", "news: boolean | null | 'rest'", 'true', 'weighty ? false : null'], 'the page says nothing else');
-  assert.equal([...chainClient.matchAll(/\.onmessage = /g)].length, 3, 'the page, lanes and isolated cooldown receiver listen');
-  assert.match(chainClient, /channel\.onmessage = \(\{ data \}: MessageEvent<unknown>\) => \{\n\s*if \(data === '\?' && reading\) channel\?\.postMessage\(true\)\n\s*\}\n/, 'the page takes the question and nothing else from it');
-  assert.match(chainClient, /const share = \(news: number \| 'rest' \| '\?'\) => \{/, 'the lanes’ news: a byte count, a refusal or the question, nothing else');
-  assert.deepEqual([...chainClient.matchAll(/\bshare\(([^)]*)\)/g)].map((m) => m[1]).sort(), ["'?'", "'?'", "'rest'", 'bytes'], 'what each lane read, that it was refused, and who reads');
-  assert.match(chainClient, /import \{ MAX_RPC_CALLS, RPC_URL, type OwnedDeps \} from '\.\.\/\.\.\/\.\.\/functions\/_lib\/owned'/, 'the URL is the routes\' own pin');
-  assert.doesNotMatch(chainClient, /['"`]https?:\/\/|['"`]\/api\//, 'no other network route in the chain client');
-  // 2026-09-28: the registry. The chain's own RPC is the routes' pin and comes first; the three fallbacks are the ones
-  // measured from a Vivo line that day, as https origins with no path, and nothing else names a host.
-  const registry = readFileSync(join(SRC, 'lib/chain/endpoints.ts'), 'utf8');
-  assert.deepEqual([...registry.matchAll(/['"`](https?:\/\/[^'"`]*)['"`]/g)].map((m) => m[1]), ['https://robinhood-rpc.publicnode.com', 'https://rpc.ordofi.network', 'https://robinhood.drpc.org'], 'exactly the three fallbacks, and no other host');
-  assert.match(registry, /import \{ RPC_URL \} from '\.\.\/\.\.\/\.\.\/functions\/_lib\/owned'/);
-  assert.match(registry, /export const PRIMARY: Endpoint = \{\n\s*url: RPC_URL,/, 'the primary is the routes\' own pin');
-  assert.match(registry, /export const FALLBACKS: readonly Endpoint\[\] = \[PUBLICNODE, ORDOFI, DRPC\]/);
-  assert.doesNotMatch(registry, /\b(?:fetch|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB)\b(?!\s+TypeError)/, 'the registry is data');
-  // The router reaches the network only through what it is handed (browser.ts rpcFetch), to the endpoints it is handed,
-  // with the chain's reads and nothing else: its own calls are eth_chainId (a fallback's check) and eth_blockNumber
-  // (the primary's quiet probe); the others it only reads, to know where a call may go.
-  const route = readFileSync(join(SRC, 'lib/chain/failover.ts'), 'utf8');
-  assert.doesNotMatch(route, /\bfetch\s*\(|['"`]https?:\/\/|['"`]\/api\/|\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|localStorage|sessionStorage|indexedDB)\b/, 'no network of its own, no host, no storage');
-  assert.deepEqual([...route.matchAll(/runtime\s*\.send\(([^,]+),/g)].map((m) => m[1].trim()).sort(), ['endpoint.url', 'primary.url', 'primary.url', 'primary.url'], 'only to an endpoint it was handed');
-  const code = route.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  const routed = [...new Set([...code.matchAll(/\b((?:eth|net|web3|wallet|personal|debug|txpool)_[A-Za-z0-9]+)\b/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(routed, ['eth_blockNumber', 'eth_call', 'eth_chainId', 'eth_getBalance', 'eth_getBlockByNumber', 'eth_getCode', 'eth_getLogs', 'eth_simulateV1'], 'reads only');
-  assert.match(route, /BigInt\(result\) === BigInt\(CHAIN_ID\)/, 'a fallback is trusted only once it says it is chain 4663');
-  // The page's and the fees worker's connect-src name exactly these endpoints (and the site and the artwork host).
-  const hosts = ['https://rpc.mainnet.chain.robinhood.com', 'https://robinhood-rpc.publicnode.com', 'https://rpc.ordofi.network', 'https://robinhood.drpc.org'].join(' ');
-  const middleware = readFileSync(join(SRC, '../functions/_middleware.ts'), 'utf8');
-  assert.ok(middleware.includes(`"connect-src 'self' https://api.dexscreener.com ${hosts}",`), 'the page’s CSP');
-  assert.ok(middleware.includes(`export const WORKER_CSP = "default-src 'none'; connect-src ${hosts}"`), 'the fees worker’s CSP');
-  assert.doesNotMatch(chainClient, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|localStorage|sessionStorage|indexedDB)\b/, 'no other network client and no storage');
+  // 2026-10-01 (platform workstream, D1): /lib/staleRelease.ts asks the site's own page, once, after a file of the page
+  // failed to load, which release it serves now: a same-origin GET of `/`, the request a reload makes, with no body and
+  // nothing but the page read back (pinned below).
+  const releasePath = '/lib/staleRelease.ts';
+  // 2026-10-01 (the chain2 workstream, part B): /chains/elysium/transport.ts, the second chain's section's one network
+  // call: the registry's Elysium RPC (no credentials, no referrer) and this site's own /uniswap-v3/{read,actions}/v1/<route>
+  // (same-origin), and nothing else (pinned below, and in tests/elysium-transport.test.mjs).
+  const elysiumPath = '/chains/elysium/transport.ts';
+  assert.deepEqual(fetchers, [elysiumPath, diagnosticPath, '/finance/http.ts', '/lib/edge/chainRoutes.ts', '/lib/read/bridgeSource.ts', releasePath, '/lib/tokenArtwork.ts', '/screens/LivePreview.tsx', '/wallet/session.ts'], 'product clients, the financial client, the site\'s own chain routes, the second chain\'s section\'s, serve-only diagnostics, the release check, the consumer-test preview, and the explicitly authorized decorative token metadata client');
+  const elysiumClient = readFileSync(join(SRC, elysiumPath), 'utf8');
+  assert.deepEqual([...elysiumClient.matchAll(/\bfetch\(([^)]*)\)/g)].map((match) => match[1]), [
+    "url, { ...init, credentials: 'omit', referrerPolicy: 'no-referrer' }",
+    "path, { ...init, credentials: 'same-origin', redirect: 'error', cache: 'no-store' }",
+  ], 'the chain\'s RPC with no credentials and no referrer, and this site\'s own route');
+  assert.match(elysiumClient, /const RPC_URLS: ReadonlySet<string> = new Set\(\[ELYSIUM\.rpc\.primary\.url, \.\.\.ELYSIUM\.rpc\.fallbacks\.map\(\(endpoint\) => endpoint\.url\)\]\)/, 'the RPCs are the registry\'s');
+  assert.match(elysiumClient, /import \{ ELYSIUM \} from '\.\.\/\.\.\/config\/chainElysium'/);
+  assert.match(elysiumClient, /const API_PATH = \/\^\\\/uniswap-v3\\\/\(\?:read\|actions\)\\\/v1\\\/\[a-z\]\[a-z-\]\{0,63\}\$\//, 'only his two families, version 1, one route');
+  // Changed on purpose 2026-10-02 (review of the RPC switch, finding 1): and the registry's RPC too, a public node, while
+  // the section has no source of rugged97's (mode.ts SECTION_READS).
+  assert.match(elysiumClient, /rpc: \(url, init\) => \(SECTION_READS && RPC_URLS\.has\(url\) \? fetch\(/, 'the public RPC only once the section may read, and any other URL refused before anything is sent');
+  assert.match(elysiumClient, /import \{ SECTION_READS \} from '\.\/mode'/);
+  assert.match(elysiumClient, /api: \(path, init\) => \(API_PATH\.test\(path\) \? fetch\(/);
+  assert.doesNotMatch(elysiumClient, /['"`]https?:\/\/|\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|localStorage|sessionStorage|indexedDB)\b/, 'no host of its own and no other network client or storage');
+  const releaseClient = readFileSync(join(SRC, releasePath), 'utf8');
+  assert.deepEqual([...releaseClient.matchAll(/\bfetch\(([^)]*)/g)].map((match) => match[1]), [
+    "'/', { method: 'GET', cache: 'no-store', credentials: 'same-origin', redirect: 'manual', headers: { Accept: 'text/html' } }",
+    'input, init',
+  ], 'the site\'s own page, read for its entry, through the page\'s own fetch');
+  // RPC-SPEC Phase 0: /lib/edge/chainRoutes.ts, the page's and the fees worker's client for Domino's own chain routes:
+  // fixed same-origin paths, this site's cookies, and nothing else.
+  const routesClient = readFileSync(join(SRC, 'lib/edge/chainRoutes.ts'), 'utf8');
+  assert.deepEqual([...routesClient.matchAll(/\bfetch\(([^)]*)\)/g)].map((m) => m[1]), ['ROUTES[route], init', 'ROUTES[route], init'], 'one call, to a fixed path');
+  assert.match(routesClient, /credentials: 'same-origin'/, 'the beta cookie goes with it');
+  assert.doesNotMatch(routesClient, /['"`]https?:\/\/|\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts|localStorage|sessionStorage|indexedDB)\b|\beth_[A-Za-z]/, 'no host, no other network client, no storage, no JSON-RPC method');
+  // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the ledger route, in place of the fees replay's logs route.
+  assert.deepEqual([...routesClient.matchAll(/'(\/api\/[^']+)'/g)].map((m) => m[1]), ['/api/owned/v2/positions', '/api/fees/v1/state', '/api/fees/v2/ledger', '/api/automation/v1/state', '/api/automation/v1/record', '/api/chain/v1/simulate'], 'the six routes, and only them');
+  // Changed on purpose 2026-10-01 (RPC-SPEC §7.2): the page's router to the chain's public RPC (lib/chain/browser.ts,
+  // failover.ts, endpoints.ts) is gone, and with it its pins (one fetch, its channels, its fallbacks' trust check).
+  for (const gone of ['lib/chain/browser.ts', 'lib/chain/failover.ts', 'lib/chain/endpoints.ts']) assert.ok(!sources().some((file) => file.replace(/\\/g, '/').endsWith(`/src/${gone}`)), `${gone} is gone`);
+  assert.match(readFileSync(join(SRC, 'lib/chain/chainCode.ts'), 'utf8'), /^export \{ readOnChain, simulateOnChain \} from '\.\.\/walletReads'$/m, 'the chain code chunk is the wallet feature\'s two functions only');
+  // 2026-09-28: the registry. Changed on purpose 2026-10-01 (RPC-SPEC §7.1): the three public fallbacks are gone; the
+  // chain's official RPC stays, for the wallet's "add network" alone (src/wallet/chain.ts), and no CSP names it.
+  const identities = readFileSync(join(SRC, 'config/chainIdentity.ts'), 'utf8');
+  assert.deepEqual([...identities.matchAll(/['"`](https?:\/\/[^'"`]*)['"`]/g)].map((m) => m[1]), ['https://robinhoodchain.blockscout.com', 'https://rpc.mainnet.chain.robinhood.com'], 'the explorer and the chain\'s official RPC, each handed to a wallet and never fetched, and no other host');
+  assert.match(identities, /^export const ROBINHOOD_RPC_URL = 'https:\/\/rpc\.mainnet\.chain\.robinhood\.com'$/m);
+  const registry = readFileSync(join(SRC, 'config/chainRobinhood.ts'), 'utf8');
+  assert.doesNotMatch(registry, /['"`]https?:\/\//, 'the record takes its URL from the identities');
+  assert.match(registry, /export const PRIMARY: Endpoint = \{\n\s*url: ROBINHOOD_RPC_URL,/, 'the official RPC, for the wallet');
+  assert.doesNotMatch(registry, /\bexport const (?:PUBLICNODE|ORDOFI|DRPC|FALLBACKS|ORDER|LANE_PACE)\b/, 'no fallback, no order, no lane pace');
+  for (const text of [identities, registry]) assert.doesNotMatch(text, /\b(?:fetch|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB)\b(?!\s+TypeError)/, 'the registry is data');
+  // The page's and the fees worker's connect-src. Changed on purpose 2026-10-01 (RPC-SPEC §7.4): no chain RPC host; the
+  // page reaches the site, the artwork host and WalletConnect's relay, the fees worker the site alone.
+  // Changed on purpose 2026-10-01 (platform workstream): the CSPs are data (APP_CSP_SOURCES, CHAIN_RPC_HOSTS), so the
+  // headers they make are checked, from the compiled middleware, rather than the source's text.
+  // 2026-10-01 (audit C3): the page's also names WalletConnect's relay, for a phone's wallet (not a chain endpoint),
+  // with the page's own sources, before the chain's (src/lib/chain/csp.ts PAGE_CONNECT_BASE).
+  // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the fees worker is gone, and its CSP with it.
+  const middleware = require('../.test-build/app/functions/_middleware.js');
+  assert.ok(middleware.APP_CSP.split('; ').includes("connect-src 'self' https://api.dexscreener.com wss://relay.walletconnect.org"), 'the page’s CSP');
+  assert.equal(middleware.WORKER_CSP, undefined, 'no fees worker, no worker CSP');
   const owned = readFileSync(join(SRC, '../functions/_lib/owned.ts'), 'utf8');
-  assert.match(owned, /^export const RPC_URL = 'https:\/\/rpc\.mainnet\.chain\.robinhood\.com'$/m, 'the one endpoint, Robinhood Chain\'s public RPC');
+  // Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G3): the registry's (pinned above).
+  // Changed on purpose 2026-10-01 (RPC-SPEC §7.3): a sentinel, not a URL; only the edge's transport answers it.
+  assert.match(owned, /^export const RPC_URL = 'local-rpc:robinhood'$/m, 'the chain code\'s one name for its reads, which no browser can fetch');
   // What the page runs against it can only read: the methods the three modules name are the four reads, and never a
   // send, a signature or a subscription. 2026-09-25: the price path's reads (feesPath.ts, the replay worker's) join them.
-  for (const file of ['owned.ts', 'walletPositions.ts', 'fees.ts', 'automation.ts', 'feesPath.ts']) {
+  // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the price path is gone; the fees ledger's reads (feesLedger.ts) join.
+  for (const file of ['owned.ts', 'walletPositions.ts', 'fees.ts', 'automation.ts', 'feesLedger.ts', 'vaultRecord.ts']) {
     const code = readFileSync(join(SRC, '../functions/_lib', file), 'utf8');
     const methods = [...new Set([...code.matchAll(/['"`]((?:eth|net|web3|wallet|personal|debug|txpool)_[A-Za-z]+)['"`]/g)].map((match) => match[1]))].sort();
     assert.ok(methods.every((method) => ['eth_blockNumber', 'eth_call', 'eth_getBlockByNumber', 'eth_getLogs'].includes(method)), `${file} names ${methods.join(', ')}`);
@@ -4233,7 +4242,9 @@ test('no private API path, no signing or value transfer, no markup injection, no
   // 2026-09-25 (review of r3/chain): the fees client is split so the page loads the chain code lazily
   // (lib/chain/chainCode.ts) while the replay worker, a single classic file, carries its own: answers.ts holds the
   // build check and the answers' checks, logs.ts the log read both share. None of them fetches.
-  for (const path of ['lib/walletPositions.ts', 'lib/automationState.ts', 'lib/fees/client.ts', 'lib/fees/answers.ts', 'lib/fees/logs.ts', 'lib/chain/chainCode.ts', 'lib/fees/feesReplay.worker.ts', 'lib/fees/pipeline.ts', 'lib/fees/estimate.ts']) {
+  // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the replay worker, its pipeline, estimate and log read are gone; the
+  // ledger's fold (lib/fees/ledger.ts) and the store take their place, and fetch nothing either.
+  for (const path of ['lib/walletPositions.ts', 'lib/automationState.ts', 'lib/fees/client.ts', 'lib/fees/answers.ts', 'lib/chain/chainCode.ts', 'lib/fees/ledger.ts', 'lib/fees/store.ts']) {
     const code = readFileSync(join(SRC, path), 'utf8');
     assert.doesNotMatch(code, /fetch\(/, `${path} names no fetch of its own, not even in a comment`);
     assert.doesNotMatch(code, /['"`]\/api\/(?:owned|fees|automation)\//, `${path} asks no route of the site`);
@@ -4241,11 +4252,12 @@ test('no private API path, no signing or value transfer, no markup injection, no
   }
   const feesClient = readFileSync(join(SRC, 'lib/fees/answers.ts'), 'utf8');
   assert.match(feesClient, /function chainRead\(\): boolean \{\n  return __DOMINO_DEPLOYABLE__ \|\| __DOMINO_TEST_HOOKS__\n\}/, 'asked only in builds meant to reach the chain, decided inside the call');
-  for (const path of ['lib/fees/client.ts', 'lib/fees/logs.ts']) assert.match(readFileSync(join(SRC, path), 'utf8'), /if \(!chainRead\(\)\) return UNAVAILABLE/, `${path} asks nothing in a build not meant to reach the chain`);
+  // Changed on purpose 2026-10-02: both of the client's asks (its state and its ledger) decide it first.
+  assert.equal([...readFileSync(join(SRC, 'lib/fees/client.ts'), 'utf8').matchAll(/if \(!chainRead\(\) \|\| signal\?\.aborted\) return UNAVAILABLE/g)].length, 2, 'lib/fees/client.ts asks nothing in a build not meant to reach the chain');
   const automationClient = readFileSync(join(SRC, 'lib/automationState.ts'), 'utf8');
   assert.match(automationClient, /function chainRead\(\): boolean \{\n  return __DOMINO_DEPLOYABLE__ \|\| __DOMINO_TEST_HOOKS__\n\}/, 'the automation state is asked only in builds meant to reach the chain');
   assert.match(automationClient, /if \(!chainRead\(\) \|\| ids\.length === 0/, 'decided inside the call');
-  assert.match(automationClient, /await import\('\.\/chain\/chainCode'\)/, 'through the chain code chunk, loaded on the first read');
+  assert.match(automationClient, /= postAutomation\): Promise<AutomationAnswer \| null> \{/, 'RPC-SPEC D3: through the site\'s own route (lib/edge/chainRoutes.ts), no chain code of its own');
 
   const diagnostics = readFileSync(join(SRC, diagnosticPath), 'utf8');
   assert.equal([...diagnostics.matchAll(/\bfetch\s*\(/g)].length, 1, 'exactly one diagnostic fetch call');

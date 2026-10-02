@@ -128,6 +128,9 @@ await new Promise(resolve=>setTimeout(resolve,75));assert.equal(wallet.nonceOffe
 await assert.rejects(client.send(late,true),/wallet_review_required/);
 const uncertain=await client.fund(key,1n,0n,gas);unknownOnce=true;await assert.rejects(client.send(uncertain,true),/wallet_outcome_unknown/);
 client=createSetupClient(wallet,deployment,()=>now,currentAdmission);
-await assert.rejects(client.fund(key,1n,0n,gas),/pending_wallet_transaction/);
+// Changed on purpose 2026-10-02 (package C2 nonce latch): the unknown outcome's latch, with nothing pending on chain, is a
+// request still open in the wallet (setup.ts freeNonce); `pending_wallet_transaction` now means only one pending on chain.
+// The new SDK instance still offers nothing.
+await assert.rejects(client.fund(key,1n,0n,gas),/wallet_request_open/);
 current=false;await assert.rejects(client.recent(),/wallet_action_expired|wallet_identity_changed/);
 process.stdout.write(JSON.stringify({passed:true,admissionChecks,operationId:id,tokenId:op.tokenId.toString(),mintHash,cancelHash,afterSwap,calls:calls.length}));

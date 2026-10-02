@@ -20,6 +20,19 @@
  * figure or anything sent anywhere. The same reply's artwork is kept for the
  * addresses it names (`seed`), so the card's rows ask no token-pairs GET of
  * their own. Only token addresses leave the page, never the wallet's.
+ *
+ * Changed 2026-10-01 (audit I3, privacy): where the deployment has it, every one
+ * of these GETs goes to our own edge first (functions/api/read/dex/[[path]].ts,
+ * `edge`), which asks the provider one token at a time and keeps its answers,
+ * so neither the visitor's address nor a wallet's set of tokens reaches the
+ * provider. Only when our edge gives no answer (it may be refused by the
+ * provider, or not deployed yet) is the provider asked directly, as before, and
+ * then for EDGE_RETRY_MS before the edge is tried again.
+ *
+ * A third exception, since 2026-10-01 (audit V1, V2, V3): the markets read the
+ * liquidity and 24h volume in the same token-pairs body, as a second source
+ * beside the read service's, always attributed to DEX Screener and dated by when
+ * it was retrieved (lib/read/dexFigures.ts, `onPairs`). Nothing else of it is used.
  */
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
 const CDN_IMAGE = /^https:\/\/cdn\.dexscreener\.com\/cms\/images\/([A-Za-z0-9_-]{8,128})(?:\?[^#\s]*)?$/
@@ -60,12 +73,40 @@ export function artworkFromPairs(body: unknown, address: string): string | null 
   return urls.size === 1 ? [...urls][0] : null
 }
 
-type Options = { fetch?: typeof fetch; now?: () => number }
+/** Our own edge's route for these GETs (functions/api/read/dex/[[path]].ts, audit I3). */
+export const DEX_EDGE = '/api/read/dex/'
+/** After our edge gave no answer, the provider is asked directly for this long before the edge is tried again. */
+const EDGE_RETRY_MS = 300000
+/** Our edge's part of a read's time; the rest is the provider's, should the edge not answer. */
+const EDGE_TIMEOUT = 3000
+/**
+ * The most tokens one `tokens` GET to our edge names (functions/_lib/dexEdge.ts MAX_TOKENS): the edge asks the provider
+ * one token at a time and keeps each, about three subrequests a token, within a Function's own limit.
+ */
+const EDGE_BATCH = 10
+const EDGE_PATH = /^(token-pairs|tokens)\/v1\/robinhood\/([0-9a-fA-Fx,]+)$/
+
+type Options = {
+  fetch?: typeof fetch
+  /** The monotonic clock the caches count on. */
+  now?: () => number
+  /** The wall clock, ms, a body's retrieval is dated on (`onPairs`). */
+  wall?: () => number
+  /** Our own edge's route, asked first; null or absent: the provider only (the test builds, the node tests). */
+  edge?: string | null
+}
 type Entry = { value: string | null; expires: number }
+/** A token-pairs body as it was read: who it is about, and when it was retrieved (wall ms, the edge's own retrieval where it answered). */
+export type PairsListener = (address: string, body: unknown, retrievedAt: number) => void
 
 export function createTokenArtworkResolver(options: Options = {}) {
   const fetch = options.fetch ?? globalThis.fetch
   const now = options.now ?? (() => performance.now())
+  const wall = options.wall ?? (() => Date.now())
+  const edge = options.edge ?? null
+  /** Until when (on `now`) the provider is asked directly: our edge gave no answer lately. */
+  let edgeDownUntil = -Infinity
+  const pairsListeners = new Set<PairsListener>()
   const cache = new Map<string, Entry>()
   const pending = new Map<string, Promise<string | null>>()
   const queue: Array<() => void> = []
@@ -74,16 +115,37 @@ export function createTokenArtworkResolver(options: Options = {}) {
   /** Reads in flight, each with the time (on `now`) it gives up at. */
   const reading = new Map<string, { result: Promise<unknown>; deadline: number }>()
 
-  /** One guarded GET of a provider body (`token-pairs/…` or `tokens/…` on Robinhood): parsed JSON, or null for anything else. */
+  /**
+   * One guarded GET of a provider body (`token-pairs/…` or `tokens/…` on Robinhood), through our own edge first where
+   * the deployment has it (audit I3): the parsed JSON and when it was retrieved (wall ms), or null for anything else.
+   */
+  async function retrieveDated(path: string, remaining: number, signal?: AbortSignal): Promise<{ body: unknown; retrievedAt: number } | null> {
+    const viaEdge = edge !== null && now() >= edgeDownUntil ? EDGE_PATH.exec(path) : null
+    if (viaEdge && edge !== null) {
+      const started = now()
+      const answered = await get(`${edge}${viaEdge[1]}/${viaEdge[2]}`, Math.min(remaining, EDGE_TIMEOUT), signal, true)
+      if (answered !== null || signal?.aborted) return answered
+      edgeDownUntil = now() + EDGE_RETRY_MS
+      remaining -= now() - started
+      if (remaining <= 0) return null
+    }
+    return get(`https://api.dexscreener.com/${path}`, remaining, signal, false)
+  }
+
   async function retrieve(path: string, remaining: number, signal?: AbortSignal): Promise<unknown> {
+    return (await retrieveDated(path, remaining, signal))?.body ?? null
+  }
+
+  /** One bounded GET: our edge's (same origin, the beta cookie goes with it) or the provider's (no credentials, no referrer). */
+  async function get(url: string, remaining: number, signal: AbortSignal | undefined, own: boolean): Promise<{ body: unknown; retrievedAt: number } | null> {
     if (signal?.aborted) return null
     const controller = new AbortController()
     const cancel = () => controller.abort()
     signal?.addEventListener('abort', cancel, { once: true })
     const timer = setTimeout(() => controller.abort(), remaining)
     try {
-      const response = await fetch(`https://api.dexscreener.com/${path}`, {
-        signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
+      const response = await fetch(url, {
+        signal: controller.signal, credentials: own ? 'same-origin' : 'omit', referrerPolicy: 'no-referrer', redirect: 'error',
         headers: { Accept: 'application/json' },
       })
       if (!response.ok || response.redirected || !response.headers.get('content-type')?.startsWith('application/json') || !response.body) return null
@@ -103,7 +165,10 @@ export function createTokenArtworkResolver(options: Options = {}) {
       let offset = 0
       for (const part of parts) { bytes.set(part, offset); offset += part.byteLength }
       if (controller.signal.aborted) return null
-      return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+      const body: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+      // Our edge says how old its kept answer is (functions/_lib/dexEdge.ts): the body is dated by its own retrieval.
+      const age = own ? Number(response.headers.get('X-Domino-Edge-Age') ?? '0') : 0
+      return { body, retrievedAt: wall() - (Number.isSafeInteger(age) && age >= 0 && age <= 600000 ? age : 0) }
     } catch { return null }
     finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); controller.abort() }
   }
@@ -134,12 +199,20 @@ export function createTokenArtworkResolver(options: Options = {}) {
     }
     const entry: { result: Promise<unknown>; deadline: number } = {
       deadline,
-      result: retrieve(`token-pairs/v1/robinhood/${address}`, remaining).then((body) => {
+      result: retrieveDated(`token-pairs/v1/robinhood/${address}`, remaining).then((dated) => {
         if (reading.get(address) === entry) reading.delete(address)
-        if (body !== null) {
+        const body = dated?.body ?? null
+        if (dated !== null && body !== null) {
           bodies.delete(address)
           bodies.set(address, { body, expires: now() + BODY_TTL })
           while (bodies.size > 16) bodies.delete(bodies.keys().next().value!)
+          for (const listener of pairsListeners) {
+            try {
+              listener(address, body, dated.retrievedAt)
+            } catch {
+              // A listener's failure is its own: the artwork and the hints read the body as before.
+            }
+          }
         }
         return body
       }),
@@ -209,7 +282,21 @@ export function createTokenArtworkResolver(options: Options = {}) {
    */
   function tokenPrices(addresses: readonly string[], signal?: AbortSignal): Promise<unknown> {
     const list = [...new Set(addresses.map((address) => address.toLowerCase()))].filter((address) => ADDRESS.test(address)).sort().slice(0, PRICE_BATCH)
-    return list.length === 0 ? Promise.resolve(null) : retrieve(`tokens/v1/robinhood/${list.join(',')}`, TIMEOUT, signal)
+    if (list.length === 0) return Promise.resolve(null)
+    if (edge === null || now() < edgeDownUntil || list.length <= EDGE_BATCH) return retrieve(`tokens/v1/robinhood/${list.join(',')}`, TIMEOUT, signal)
+    // Through our edge, EDGE_BATCH tokens a GET, side by side, as one answer; any GET without one sends the whole list
+    // to the provider directly, as before (audit I3).
+    return (async () => {
+      const parts: string[][] = []
+      for (let i = 0; i < list.length; i += EDGE_BATCH) parts.push(list.slice(i, i + EDGE_BATCH))
+      const started = now()
+      const answers = await Promise.all(parts.map((part) => get(`${edge}tokens/${part.join(',')}`, Math.min(TIMEOUT, EDGE_TIMEOUT), signal, true)))
+      if (answers.every((answer) => answer !== null && Array.isArray(answer.body))) return answers.flatMap((answer) => answer?.body as unknown[])
+      if (signal?.aborted) return null
+      edgeDownUntil = now() + EDGE_RETRY_MS
+      const left = TIMEOUT - (now() - started)
+      return left > 0 ? get(`https://api.dexscreener.com/tokens/v1/robinhood/${list.join(',')}`, left, signal, false).then((answer) => answer?.body ?? null) : null
+    })()
   }
 
   /**
@@ -232,10 +319,17 @@ export function createTokenArtworkResolver(options: Options = {}) {
     return kept && kept.expires > now() ? kept.value : undefined
   }
 
-  return { resolve, pairs, tokenPrices, seed, peek, rejectImage: (chainId: number, address: string) => {
+  /** Told of every token-pairs body read from now on (lib/read/dexFigures.ts). Returns the unsubscribe. */
+  function onPairs(listener: PairsListener): () => void {
+    pairsListeners.add(listener)
+    return () => pairsListeners.delete(listener)
+  }
+
+  return { resolve, pairs, tokenPrices, seed, peek, onPairs, rejectImage: (chainId: number, address: string) => {
     const key = tokenArtworkKey(chainId, address)
     if (key) remember(key, null)
   } }
 }
 
-export const tokenArtwork = createTokenArtworkResolver()
+// Our edge is asked first in the deployable builds only (audit I3): the test builds' servers have no such route.
+export const tokenArtwork = createTokenArtworkResolver({ edge: typeof __DOMINO_POOL_SET__ !== 'undefined' && __DOMINO_POOL_SET__ === 'selected' ? DEX_EDGE : null })

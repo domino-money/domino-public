@@ -52,6 +52,17 @@ export function formatUsd(value: string): string {
   return `${sign}$${group(whole)}.${fraction}`
 }
 
+/**
+ * A position screen's dollar figure (audit E7, 2026-10-01): as formatUsd, but a positive amount under a cent reads
+ * "<$0.01" rather than "$0.000005", as the Wallet card writes it. The exact figure is formatUsd's, for the title.
+ */
+export function formatUsdFloor(value: string): string {
+  const parsed = parseScaled(value)
+  if (!parsed || parsed.units <= 0n) return formatUsd(value)
+  // A cent in the value's own units: 10^(scale − 2); a value with fewer than two places is a cent or more already.
+  return parsed.scale > 2 && parsed.units < 10n ** BigInt(parsed.scale - 2) ? '<$0.01' : formatUsd(value)
+}
+
 /** `units / 10^from` as a count of 10^-to, rounded half away from zero when digits are dropped. */
 function rescale(units: bigint, from: number, to: number): bigint {
   return to >= from ? units * 10n ** BigInt(to - from) : divRound(units, 10n ** BigInt(from - to))

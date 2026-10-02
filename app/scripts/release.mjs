@@ -3,6 +3,9 @@
  * preview, then, unchanged, to production.
  *
  *   npm run release:build          npm run build, then record
+ *   node scripts/release.mjs carry <previous dist>
+ *                                  between the build and record: the previous
+ *                                  release's own files, for tabs still open on it
  *   npm run release:verify         does dist still match the record?
  *   npm run deploy:preview         verify, then upload dist as a preview
  *   npm run deploy                 verify, then upload the same dist as production
@@ -124,9 +127,29 @@ function listFiles(root, dir) {
  * outside itself, so no uploaded byte escapes the digest. Added 2026-09-28
  * (speed wave, item 45): the stored history's route (functions/api/read/v3/
  * history.ts) checks each answer with read-v3's runtime, which takes read-v1's
- * and read-v2's.
+ * and read-v2's. Added 2026-10-01 (the chain2 workstream, part B, audit items
+ * G3 and G4): the chain registry's modules (src/config/chain*.ts) and the CSP
+ * lists generated from it (src/lib/chain/csp.ts): the middleware builds the
+ * page's connect-src from them, and functions/_lib/owned.ts and fees.ts read
+ * the chain's id, RPC and contracts there. Pure data and pure helpers. Added
+ * 2026-10-02 (review of the RPC switch, finding 1): the second chain's
+ * section's mode (src/chains/elysium/mode.ts), whose SECTION_READS decides
+ * whether the preview's page CSP names that chain's RPC; it imports nothing
+ * at run time.
  */
-export const BUNDLED = Object.freeze(['../api-contracts/read-v1/runtime.mjs', '../api-contracts/read-v2/runtime.mjs', '../api-contracts/read-v3/runtime.mjs', '../api-contracts/read-v5/runtime.mjs'])
+export const BUNDLED = Object.freeze([
+  '../api-contracts/read-v1/runtime.mjs',
+  '../api-contracts/read-v2/runtime.mjs',
+  '../api-contracts/read-v3/runtime.mjs',
+  '../api-contracts/read-v5/runtime.mjs',
+  'src/chains/elysium/mode.ts',
+  'src/config/chainElysium.ts',
+  'src/config/chainIdentity.ts',
+  'src/config/chainKit.ts',
+  'src/config/chainRobinhood.ts',
+  'src/config/chains.ts',
+  'src/lib/chain/csp.ts',
+])
 
 /**
  * What a deploy uploads: every file of dist, the Pages Functions wrangler
@@ -186,6 +209,56 @@ export function uncommitted(git) {
   if (tracked.status !== 0 || untracked.status !== 0) throw new Error('git status failed: record from a git checkout.')
   const lines = (text) => text.split(/\r?\n/).filter((line) => line.trim() !== '')
   return [...lines(tracked.stdout), ...lines(untracked.stdout).map((path) => `?? ${path}`)]
+}
+
+/**
+ * A tab opened before a release keeps running the old entry, which names the old release's files (2026-10-01, D1). Each
+ * file under assets/ is named by its content, so the old ones can sit beside the new ones without colliding, and an
+ * open tab finds them instead of a 404 (functions/_middleware.ts). `carry` copies them in: every file under
+ * `previous`/assets/ that the previous release itself reaches from its page (its entry, the chunks, styles, fonts and
+ * worker those name, at any depth), and nothing else, so a file the release before that carried is not carried again
+ * and dist grows by one release at most. Run it between the build and `record`, which then hashes the carried files
+ * with the rest:
+ *
+ *   npm run build && node scripts/release.mjs carry <previous release's dist> && node scripts/release.mjs record
+ *
+ * Refused: a previous dist without its page, an entry that is not a regular file, a carried name the new build also
+ * has with other bytes, and a carried text file that carries a forbidden marker. A file of the same name and bytes is
+ * already there and is left alone. The app reloads a tab once into the new release whenever a file is missing all the
+ * same (src/lib/staleRelease.ts), so a release built without this step is still safe, only less smooth.
+ */
+export function carry(previous, { root = APP } = {}) {
+  const from = resolve(previous)
+  const page = join(from, 'index.html')
+  if (!existsSync(page) || !entryStat(join(from, 'assets'))?.isDirectory()) throw new Error(`${from} is not a built dist: it has no index.html and assets/.`)
+  if (!existsSync(join(root, 'dist', 'index.html'))) throw new Error('dist/index.html is missing: run `npm run build` first.')
+  const names = listFiles(from, join(from, 'assets')).map((path) => path.slice('assets/'.length)).filter((name) => !name.includes('/'))
+  const reached = new Set()
+  const queue = [readFileSync(page, 'utf8')]
+  while (queue.length > 0) {
+    const text = queue.pop()
+    for (const name of names) {
+      if (reached.has(name) || !text.includes(name)) continue
+      reached.add(name)
+      if (TEXT_FILE.test(name)) queue.push(readFileSync(join(from, 'assets', name), 'utf8'))
+    }
+  }
+  const carried = []
+  const hits = []
+  for (const name of [...reached].sort()) {
+    const bytes = readFileSync(join(from, 'assets', name))
+    const target = join(root, 'dist', 'assets', name)
+    if (existsSync(target)) {
+      if (!readFileSync(target).equals(bytes)) throw new Error(`dist/assets/${name} exists with other bytes than the previous release's: refusing to replace it.`)
+      continue
+    }
+    if (TEXT_FILE.test(name)) for (const hit of findForbidden(bytes.toString('utf8'))) hits.push(`assets/${name}: ${hit.marker} in "${hit.context}"`)
+    carried.push({ name, bytes })
+  }
+  if (hits.length > 0) throw new Error(`the previous release carries what must never ship, so nothing is carried:\n${hits.join('\n')}`)
+  mkdirSync(join(root, 'dist', 'assets'), { recursive: true })
+  for (const { name, bytes } of carried) writeFileSync(join(root, 'dist', 'assets', name), bytes)
+  return { carried: carried.map(({ name }) => name), reached: reached.size }
 }
 
 /** Records dist as built. Refuses a missing or tainted dist, and a checkout whose commit is not what dist was built from. */
@@ -257,11 +330,15 @@ export function deploy(target, { root = APP, run = runNpx, now = () => new Date(
   return entry
 }
 
-// Run directly: node scripts/release.mjs record | verify | deploy <preview|production>
+// Run directly: node scripts/release.mjs carry <previous dist> | record | verify | deploy <preview|production>
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const [command, target] = process.argv.slice(2)
   try {
-    if (command === 'record') {
+    if (command === 'carry') {
+      if (!target) throw new Error("Usage: node scripts/release.mjs carry <previous release's dist>")
+      const { carried, reached } = carry(target)
+      console.log(`Carried ${carried.length} of the previous release's ${reached} files into dist/assets/.`)
+    } else if (command === 'record') {
       const manifest = record()
       console.log(`Recorded dist ${manifest.digest}: ${Object.keys(manifest.files).length} files at commit ${manifest.gitHead}.`)
     } else if (command === 'verify') {
@@ -275,7 +352,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       const entry = deploy(target)
       console.log(`Deployed ${entry.digest} to ${entry.target}.`)
     } else {
-      console.error('Usage: node scripts/release.mjs record | verify | deploy <preview|production>')
+      console.error('Usage: node scripts/release.mjs carry <previous dist> | record | verify | deploy <preview|production>')
       process.exit(2)
     }
   } catch (error) {

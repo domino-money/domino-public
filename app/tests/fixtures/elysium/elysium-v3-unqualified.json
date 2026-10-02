@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "elysium-v3-unqualified",
+  "chainId": 99801,
+  "protocol": "uniswap-v3",
+  "status": "unqualified",
+  "version": "local-reference-only",
+  "contracts": {
+    "factory": null,
+    "positionManager": null,
+    "router": null,
+    "quoter": null
+  },
+  "codeHashes": {
+    "factory": null,
+    "positionManager": null,
+    "router": null,
+    "quoter": null
+  },
+  "reference": {
+    "corePackage": "@uniswap/v3-core",
+    "coreVersion": "1.0.1",
+    "peripheryPackage": "@uniswap/v3-periphery",
+    "peripheryVersion": "1.4.4"
+  },
+  "evidencePath": "reports/elysium-v3-s0-2026-09-28/deployments.json"
+}

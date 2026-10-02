@@ -1,0 +1,46 @@
+/* The faces text is drawn in while the site's own fonts load (2026-10-01, platform workstream, F9). The page paints
+   before the woff2 files arrive (font-display: swap, fonts.css), and the system font it painted in was wider or
+   narrower than Geist and Instrument Serif, so lines re-wrapped and content moved as they came in (a layout shift of
+   0.012 on a phone's first visit). Each face below is a font every system has, scaled to the width of the site's own
+   (size-adjust) and given its height (ascent and descent), so the swap changes the letters' shapes and moves nothing.
+   Preloading the fonts instead was measured to make the first paint 268 ms later (the 2026-10-01 audit, F9).
+
+   Measured in Edge from src/fonts/ and the local fonts, on a typical English sentence at 100px
+   (C:/dwt/pacote/platform/measure/font-metrics.mjs): Geist 400 is 100.70% of Arial's width, Geist 500 102.94%,
+   Instrument Serif 80.95% of Times New Roman's, Geist Mono 99.98% of Courier New's. Where none of the local fonts
+   exists (Android has none of them), the next font in the stack is used, as before. */
+
+@font-face {
+  font-family: 'Geist Fallback';
+  font-weight: 100 450;
+  src: local('Arial'), local('Helvetica'), local('Liberation Sans');
+  size-adjust: 100.7%;
+  ascent-override: 100.3%;
+  descent-override: 29.79%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Geist Fallback';
+  font-weight: 451 900;
+  src: local('Arial'), local('Helvetica'), local('Liberation Sans');
+  size-adjust: 102.94%;
+  ascent-override: 98.12%;
+  descent-override: 29.14%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Instrument Serif Fallback';
+  src: local('Times New Roman'), local('Times'), local('Liberation Serif');
+  size-adjust: 80.95%;
+  ascent-override: 122.3%;
+  descent-override: 38.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Geist Mono Fallback';
+  src: local('Courier New'), local('Courier'), local('Liberation Mono');
+  size-adjust: 99.98%;
+  ascent-override: 101.02%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}

@@ -49,7 +49,7 @@ const RUNTIME = {
 };
 
 const require = createRequire(import.meta.url);
-const { onRequest: gate, LOGIN_PATH } = require('../.test-build/app/functions/_middleware.js');
+const { onRequest: gate, LOGIN_PATH, CHAIN_ROUTE } = require('../.test-build/app/functions/_middleware.js');
 const { onRequest: apiRoute } = require('../.test-build/app/functions/api/[[path]].js');
 const { forward, PREVIEW_ORIGIN } = require('../.test-build/app/functions/_lib/bridge.js');
 
@@ -664,6 +664,43 @@ test('an /api path no family owns gets a JSON 404 from the forwarder, never inde
   assert.equal(served, 0, 'an /api path was answered with the app');
 });
 
+// 2026-10-01 (RPC-SPEC §2.1, §2.7): Domino's own chain routes. Pages routes their six paths to their own functions
+// (functions/api/{owned,fees,automation,chain}/…, ahead of the catch-all: tests/owned.test.mjs pins wrangler's order),
+// which answer from Domino's own node (functions/_lib/chainRoutes.ts). No bridge family owns them: the forwarder alone
+// refuses them, and no binding is ever asked, whatever the request.
+test('Domino’s own chain routes are no bridge family’s: their own functions answer them past the gate, with no cookie and no binding', async () => {
+  const { env, calls } = recorders();
+  const files = {
+    '/api/owned/v2/positions': ['owned/v2/positions', 400, { error: 'invalid_request' }],
+    '/api/fees/v1/state': ['fees/v1/state', 400, { v: 1, error: 'bad_request' }],
+    // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the ledger route, in place of the fees replay's /logs.
+    '/api/fees/v2/ledger': ['fees/v2/ledger', 400, { v: 1, error: 'bad_request' }],
+    '/api/automation/v1/state': ['automation/v1/state', 400, { error: 'invalid_request' }],
+    '/api/automation/v1/record': ['automation/v1/record', 400, { v: 1, error: 'bad_request' }],
+    '/api/chain/v1/simulate': ['chain/v1/simulate', 404, { v: 1, error: 'not_enabled' }],
+  };
+  const log = console.log;
+  console.log = () => {};
+  try {
+    for (const [path, [file, status, body]] of Object.entries(files)) {
+      assert.equal(CHAIN_ROUTE.test(path), true, path);
+      await refused(await forward(call(path, { method: 'POST', body: '{}' }), env), 404, 'not_found');
+      const { onRequest } = require(`../.test-build/app/functions/api/${file}.js`);
+      const handed = [];
+      const answered = await gate({ request: call(path, { method: 'POST', body: '{}' }), env, next: async (passed) => (handed.push(passed), onRequest({ request: passed, env })) });
+      assert.equal(handed.length, 1, path);
+      assert.equal(handed[0].headers.get('Cookie'), null, `${path}: no cookie past the gate`);
+      assert.equal(answered.status, status, path);
+      assert.deepEqual(await answered.json(), body, path);
+      apiHeaders(answered, path, path);
+    }
+  } finally {
+    console.log = log;
+  }
+  assert.equal(calls(), 0, 'no binding was asked');
+  assert.deepEqual(upstream, []);
+});
+
 // ---------------------------------------------------------------------------
 // Bindings: missing, wrong, failing.
 // ---------------------------------------------------------------------------
@@ -964,7 +1001,8 @@ const { APP_CSP, API_CSP, LOGOUT_PATH } = require('../.test-build/app/functions/
  * keeps no-transform.
  */
 function apiHeaders(response, label, path = '') {
-  assert.equal(response.headers.get('Cache-Control'), path.startsWith('/api/read/') ? 'no-store' : 'no-store, no-transform', label);
+  // 2026-10-01 (RPC-SPEC §2.7): Domino's own chain routes leave as a public read does.
+  assert.equal(response.headers.get('Cache-Control'), path.startsWith('/api/read/') || CHAIN_ROUTE.test(path) ? 'no-store' : 'no-store, no-transform', label);
   assert.equal(response.headers.get('Content-Security-Policy'), "default-src 'none'; frame-ancestors 'none'", label);
   assert.equal(API_CSP, "default-src 'none'; frame-ancestors 'none'");
   assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff', label);
@@ -1007,12 +1045,17 @@ test("the gate's own answers and the app's pages keep the headers they had", asy
   assert.equal(locked.status, 401);
   assert.equal(locked.headers.get('Cache-Control'), 'no-store');
   assert.equal(locked.headers.get('Content-Security-Policy'), "default-src 'none'; frame-ancestors 'none'");
-  for (const path of ['/', '/apix', '/api.json', '//api/read/v1/capabilities']) {
+  for (const path of ['/', '/apix', '//api/read/v1/capabilities']) {
     const page = await pages(call(path, { headers: { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' } }), env);
     assert.equal(page.status, 200, path);
     assert.equal(page.headers.get('Content-Security-Policy'), APP_CSP, path);
     assert.equal(page.headers.get('Cache-Control'), 'private, no-cache', path);
   }
+  // Changed on purpose 2026-10-01 (platform workstream, D1): a path that names a file the deployment does not hold, which
+  // Pages answers with the app's page, is a 404 that no cache keeps; /api.json is such a file, not an API path.
+  const file = await pages(call('/api.json', { headers: { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' } }), env);
+  assert.equal(file.status, 404);
+  assert.equal(file.headers.get('Cache-Control'), 'no-store');
   assert.equal(served, 4);
 });
 
@@ -1130,7 +1173,7 @@ function wranglerToml() {
   return tables;
 }
 
-test('wrangler.toml: preview gets only its public-read opt-in and read binding; production keeps all seven', () => {
+test('wrangler.toml: preview gets its public-read opt-in, its setup release and their two bindings; production keeps all seven', () => {
   const tables = wranglerToml();
   // Each Pages environment declares its own vars/services. Nothing belongs
   // at the top level where an unrelated environment could inherit it.
@@ -1142,18 +1185,28 @@ test('wrangler.toml: preview gets only its public-read opt-in and read binding; 
   }
   const production = tables.filter(({ header }) => header === '[env.production.vars]');
   assert.equal(production.length, 1);
-  assert.deepEqual(production[0].keys, { CANONICAL_HOSTS_ONLY: '"true"' });
+  // Changed on purpose 2026-10-02 (RPC-SPEC §11.4, rugged97's answer Q4: his node answers eth_simulateV1): the simulate
+  // route is on in both environments, a value of the repository's (the owner deploys it), never a secret.
+  assert.deepEqual(production[0].keys, { CANONICAL_HOSTS_ONLY: '"true"', LOCAL_RPC_SIMULATE: '"true"' });
   // Service bindings: one table per family, each naming a binding and a
   // Worker and nothing else (no entrypoint, no environment).
   const services = tables.filter(({ header }) => header === '[[env.production.services]]');
   assert.equal(services.length, FAMILIES.length);
   for (const { keys } of services) assert.deepEqual(Object.keys(keys).sort(), ['binding', 'service']);
+  // Changed on purpose 2026-10-01 (platform workstream, H7): and the setup release, public deployment identities, named
+  // in PREVIEW_FAMILIES and bound to production's own setup Worker (reached like the reads, translated).
+  // Changed on purpose 2026-10-01 (the chain2 workstream, part B): and CHAIN2_PREVIEW, the middleware's own setting that
+  // opens the page's CSP to the second chain's RPC in the preview (functions/_middleware.ts APP_CSP_CHAIN2). No
+  // ELYSIUM_BRIDGE binding: rugged97's Worker for it is not deployed.
   assert.deepEqual(tables.filter(({ header }) => header === '[env.preview.vars]').map(({ keys }) => keys), [
-    { PREVIEW_PUBLIC_READS: '"true"' },
+    { PREVIEW_PUBLIC_READS: '"true"', PREVIEW_FAMILIES: '"setup"', CHAIN2_PREVIEW: '"true"', LOCAL_RPC_SIMULATE: '"true"' },
   ]);
   assert.deepEqual(tables.filter(({ header }) => header === '[[env.preview.services]]').map(({ keys }) => keys), [
     { binding: '"READ_BRIDGE"', service: '"domino-read-bridge"' },
+    { binding: '"SETUP_BRIDGE"', service: '"domino-setup-bridge"' },
   ]);
+  assert.ok(!Object.values(tables).some(({ keys }) => Object.values(keys).includes('"ELYSIUM_BRIDGE"')), 'no binding for a Worker that does not exist');
+  assert.ok(!tables.filter(({ header }) => header.startsWith('[env.production')).some(({ keys }) => 'CHAIN2_PREVIEW' in keys), 'production never gets it');
 });
 
 test('the deploy scripts pin wrangler 4.130.0, whose Pages router the stand-in and onward() follow', async () => {
@@ -1223,18 +1276,20 @@ function wrangler() {
   return wranglerRead;
 }
 
-test('wrangler 4.130.0 reads seven production Workers and only the explicitly enabled public read Worker for preview', () => {
+test('wrangler 4.130.0 reads seven production Workers, and for preview only the read and setup Workers it enables', () => {
   const read = wrangler();
   assert.equal(read.version, '4.130.0');
   assert.equal(read.production.targetEnvironment, 'production');
-  assert.deepEqual(read.production.vars, { CANONICAL_HOSTS_ONLY: 'true' });
+  // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): and the simulate route's switch, in both environments.
+  assert.deepEqual(read.production.vars, { CANONICAL_HOSTS_ONLY: 'true', LOCAL_RPC_SIMULATE: 'true' });
   assert.deepEqual(
     read.production.services,
     FAMILIES.map((family) => ({ binding: FAMILY[family].binding, service: FAMILY[family].service })),
   );
   assert.equal(read.preview.targetEnvironment, 'preview');
-  assert.deepEqual(read.preview.vars, { PREVIEW_PUBLIC_READS: 'true' });
-  assert.deepEqual(read.preview.services, [{ binding: 'READ_BRIDGE', service: 'domino-read-bridge' }]);
+  // Changed on purpose 2026-10-01 (the chain2 workstream, part B): and CHAIN2_PREVIEW, for the preview alone.
+  assert.deepEqual(read.preview.vars, { PREVIEW_PUBLIC_READS: 'true', PREVIEW_FAMILIES: 'setup', CHAIN2_PREVIEW: 'true', LOCAL_RPC_SIMULATE: 'true' });
+  assert.deepEqual(read.preview.services, [{ binding: 'READ_BRIDGE', service: 'domino-read-bridge' }, { binding: 'SETUP_BRIDGE', service: 'domino-setup-bridge' }]);
 });
 
 test("the binding names forward() looks up are exactly the names wrangler.toml binds, each to its family's Worker", async () => {
@@ -1336,17 +1391,22 @@ test('production as wrangler.toml binds it: every family reaches its own disable
   assert.deepEqual(upstream, []);
 });
 
-test('preview as wrangler.toml deploys it reaches only the read Worker from its exact named alias', async () => {
+test('preview as wrangler.toml deploys it reaches only the read and setup Workers, from its exact named alias', async () => {
   const { env, calls } = deployed('preview');
-  assert.deepEqual(Object.keys(env).filter((name) => name.endsWith('_BRIDGE')), ['READ_BRIDGE']);
+  assert.deepEqual(Object.keys(env).filter((name) => name.endsWith('_BRIDGE')), ['READ_BRIDGE', 'SETUP_BRIDGE']);
   assert.equal(env.PREVIEW_PUBLIC_READS, 'true');
+  assert.equal(env.PREVIEW_FAMILIES, 'setup');
   const capability = await pages(call('/api/read/v1/capabilities', { origin: PREVIEW }), env);
   assert.equal(capability.status, 200);
   assert.equal((await capability.json()).dataMode, 'disabled');
   await workerSaid(await pages(call(ROUTE.read.path, {
     method: 'POST', body: ROUTE.read.body, origin: PREVIEW,
   }), env), 'read', 'route_not_available');
-  for (const family of FAMILIES.filter(name => name !== 'read')) {
+  // 2026-10-01 (H7): the setup release, translated like the reads; the real setup Worker gives its disabled answer.
+  const release = await pages(call('/api/setup/v1/release', { origin: PREVIEW }), env);
+  assert.equal(release.status, 200);
+  assert.deepEqual(await release.json(), { contractVersion: '1.0.0-rc.1', chainId: 4663, available: false, deployment: null });
+  for (const family of FAMILIES.filter(name => name !== 'read' && name !== 'setup')) {
     const { path, body } = ROUTE[family];
     await refused(await pages(call(path, { method: 'POST', body, origin: PREVIEW }), env), 404, 'not_found');
   }
@@ -1360,6 +1420,7 @@ test('preview as wrangler.toml deploys it reaches only the read Worker from its 
   assert.deepEqual(calls, [
     `domino-read-bridge GET ${ORIGIN}/api/read/v1/capabilities`,
     `domino-read-bridge POST ${ORIGIN}${ROUTE.read.path}`,
+    `domino-setup-bridge GET ${ORIGIN}/api/setup/v1/release`,
   ]);
   assert.equal(served, 0);
   assert.deepEqual(upstream, []);
@@ -1699,4 +1760,78 @@ test('public setup identities remain explicitly unavailable until a real release
   assert.equal(result.status,200);
   assert.deepEqual(await result.json(),{contractVersion:'1.0.0-rc.1',chainId:4663,available:false,deployment:null});
   assert.equal(result.headers.get('Set-Cookie'),null);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-01, platform workstream (H7): the exact preview alias may use the other families, each named in
+// PREVIEW_FAMILIES. A public one (the setup release) is translated like the reads, after its browser is checked; a
+// private one goes on as the browser sent it, to a binding the preview environment names, which must be a Worker
+// deployed for the preview alias (docs/PREVIEW_PUBLIC_READS.md).
+// ---------------------------------------------------------------------------
+
+test('the preview alias uses another family only when PREVIEW_FAMILIES names it, exactly', async () => {
+  const { env, calls } = recorders();
+  env.PREVIEW_PUBLIC_READS = 'true';
+  for (const value of [undefined, '', 'Setup', 'setups', 'setup2', 'read', 'all', '*', 'setup;session', true, 1]) {
+    env.PREVIEW_FAMILIES = value;
+    await refused(await pages(call('/api/setup/v1/release', { origin: PREVIEW }), env), 404, 'not_found');
+    await refused(await pages(call(ROUTE.session.path, { method: 'POST', body: '{}', origin: PREVIEW }), env), 404, 'not_found');
+  }
+  assert.equal(calls(), 0);
+  // The reads keep their own opt-in: 'read' in PREVIEW_FAMILIES is not one.
+  env.PREVIEW_PUBLIC_READS = 'false';
+  env.PREVIEW_FAMILIES = 'read, setup';
+  await refused(await pages(call('/api/read/v1/capabilities', { origin: PREVIEW }), env), 404, 'not_found');
+  assert.equal(calls(), 0);
+  // Names around commas may carry spaces; every other host stays refused whatever the list says.
+  env.PREVIEW_FAMILIES = ' setup , session ';
+  assert.equal((await pages(call('/api/setup/v1/release', { origin: PREVIEW }), env)).status, 200);
+  for (const origin of ['https://abc123de.domino-app-e65.pages.dev', 'https://domino-app-e65.pages.dev', 'http://preview.domino-app-e65.pages.dev']) {
+    await refused(await pages(call('/api/setup/v1/release', { origin }), env), 404, 'not_found');
+  }
+});
+
+test('preview setup release: checked as a browser’s, translated like the reads, with no cookie, and the real Worker answers', async () => {
+  const { env, calls } = workers();
+  env.PREVIEW_FAMILIES = 'setup';
+  const response = await pages(call('/api/setup/v1/release', { origin: PREVIEW }), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-domino-setup-contract'), '1.0.0-rc.1');
+  assert.deepEqual(await response.json(), { contractVersion: '1.0.0-rc.1', chainId: 4663, available: false, deployment: null });
+  assert.deepEqual(calls, [`setup GET ${ORIGIN}/api/setup/v1/release`]);
+  for (const headers of [{ Origin: 'https://evil.example' }, { Origin: `${PREVIEW}.evil.example` }, { 'Sec-Fetch-Site': 'cross-site' }, { 'Sec-Fetch-Mode': 'navigate' }, { Host: 'domino.money' }]) {
+    await refused(await pages(call('/api/setup/v1/release', { origin: PREVIEW, headers }), env), 403, 'origin_not_allowed');
+  }
+  const { binding, calls: seen } = recorder();
+  const answered = await pages(call('/api/setup/v1/release', { origin: PREVIEW, cookie: `${BETA}; ${SESSION}` }), { ...GATE, PREVIEW_FAMILIES: 'setup', SETUP_BRIDGE: binding });
+  assert.equal(answered.status, 200);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].url, `${ORIGIN}/api/setup/v1/release`);
+  assert.equal(seen[0].headers.host, 'domino.money');
+  assert.equal(seen[0].headers.cookie, undefined, 'no cookie of any kind crosses the public alias');
+});
+
+test('preview private families go on exactly as the browser sent them, with their own cookies only, to the preview’s binding', async () => {
+  for (const family of ['session', 'onboarding', 'deposit', 'performance', 'execution']) {
+    const { binding, calls } = recorder();
+    const env = { ...GATE, PREVIEW_FAMILIES: family, [FAMILY[family].binding]: binding };
+    const { path, body } = ROUTE[family];
+    const response = await pages(call(path, { method: 'POST', body, origin: PREVIEW, cookie: JAR, headers: { 'X-Domino-CSRF': CSRF } }), env);
+    assert.equal(response.status, 200, family);
+    assert.equal(calls.length, 1, family);
+    assert.equal(calls[0].url, `${PREVIEW}${path}`, `${family}: the preview's own origin, not translated`);
+    assert.equal(calls[0].headers.origin, PREVIEW, family);
+    assert.equal(calls[0].headers.host, new URL(PREVIEW).host, family);
+    assert.equal(calls[0].headers.cookie, FAMILY[family].cookie, `${family}: its own cookies only, never the beta cookie`);
+    assert.equal(calls[0].headers['x-domino-csrf'], CSRF, family);
+    // Another family on the same list stays as shut as before.
+    const other = family === 'session' ? 'execution' : 'session';
+    await refused(await pages(call(ROUTE[other].path, { method: 'POST', body: '{}', origin: PREVIEW }), env), 404, 'not_found');
+  }
+  // Production's own Workers answer https://domino.money only: bound on the preview by mistake, they refuse its calls.
+  const { env } = workers();
+  env.PREVIEW_FAMILIES = 'session';
+  const refusedByWorker = await pages(call(ROUTE.session.path, { method: 'POST', body: '{}', origin: PREVIEW, cookie: JAR, headers: { 'X-Domino-CSRF': CSRF } }), env);
+  assert.ok([403, 404].includes(refusedByWorker.status), String(refusedByWorker.status));
+  assert.equal(refusedByWorker.headers.get(FAMILY.session.contract), RUNTIME.session.CONTRACT_VERSION, 'the Worker’s own refusal');
 });

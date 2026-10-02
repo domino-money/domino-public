@@ -205,6 +205,31 @@ test('a wallet’s refusal is said by the contract’s selector, whatever the wa
   assert.deepEqual(Object.keys(position.REVERT_CODES), ['MinimumAmountInsufficient(uint128,uint128)', 'DeadlinePassed(uint256)', 'NotApproved(address)', 'CannotUpdateEmptyPosition()'].map((e) => toFunctionSelector(e)));
 });
 
+// Fix round 1 (2026-10-01): every money screen reads a person's refusal as the nonce latch does (finance/nonce.ts
+// personRefused): a phone wallet's WalletConnect 5000 and a Ledger's 0x6985 are declines, not an outcome that may be
+// unknown. Collect/Close (PositionActions), Refund (HeldDeposits), Turn on/Pause (SequenceSwitch), Set up automation
+// (SequenceCreate) and the advanced setup all use it; none tests a bare 4001 any more.
+test('a refusal is the person declining on every money screen: 4001, WalletConnect 5000, a hardware wallet in words', () => {
+  const nonce = require('../.test-build/app/src/finance/nonce.js');
+  const declined = [
+    { code: 4001, message: 'User rejected the request.' },
+    { code: 5000, message: 'User rejected.' },
+    { code: -32603, message: 'Internal JSON-RPC error.', data: { message: 'Ledger device: Condition of use not satisfied (denied by the user?) (0x6985)' } },
+    { name: 'TransactionExecutionError', cause: { name: 'UserRejectedRequestError', cause: { code: 4001 } } },
+  ];
+  for (const error of declined) assert.equal(nonce.personRefused(error), true, JSON.stringify(error));
+  for (const error of [new Error('wallet_timeout'), { code: -32000, message: 'header not found' }, { code: 4100, message: 'Unauthorized' }, null, undefined, 'x'])
+    assert.equal(nonce.personRefused(error), false, String(error && JSON.stringify(error)));
+  assert.equal('isRejection' in steps, false, 'no second rule beside the latch’s');
+  const src = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
+  for (const path of ['components/positions/PositionActions.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/SequenceSwitch.tsx', 'screens/SequenceCreate.tsx', 'screens/AdvancedSetup.tsx']) {
+    assert.match(src(path), /import \{ personRefused(?: as isRejection)? \} from '(?:\.\.\/)+finance\/nonce'/, path);
+  }
+  for (const path of ['components/positions/walletSteps.ts', 'components/positions/PositionActions.tsx', 'components/positions/HeldDeposits.tsx', 'components/positions/SequenceSwitch.tsx', 'screens/SequenceCreate.tsx', 'screens/AdvancedSetup.tsx']) {
+    assert.doesNotMatch(src(path), /code === 4001/, `${path}: no bare 4001`);
+  }
+});
+
 test('an NFT id is a canonical decimal', () => {
   assert.equal(position.positionTokenId('3135288'), 3135288n);
   for (const text of ['', '0', '01', '-1', '1.0', ' 1', '0x10', `${1n << 256n}`]) assert.throws(() => position.positionTokenId(text), /invalid_position_id/, text);
@@ -309,7 +334,8 @@ test('send simulates again, claims the nonce, offers the step once; the receipt 
   assert.deepEqual(chain.sends.map((tx) => [tx.to, tx.value, tx.data]), [[POSITION_MANAGER, '0x0', prepared.transaction.data]]);
   assert.deepEqual(chain.paid, [{ to: OWNER.toLowerCase(), currencies: [USDG.toLowerCase(), UFG.toLowerCase()], amounts: fees }], 'the fees, to the owner');
   assert.equal(chain.nft(TOKEN_ID).liquidity, NFT.liquidity, 'a collect leaves the liquidity');
-  assert.deepEqual(await client.receipt(hash), { state: 'finalized', blockHash: `0x${'b0'.repeat(32)}` });
+  // 2026-10-02 (RPC fix round 2): with the block it was included in, so the wallet's list waits for a read past it.
+  assert.deepEqual(await client.receipt(hash), { state: 'finalized', blockHash: `0x${'b0'.repeat(32)}`, blockNumber: 0x1001n });
   await assert.rejects(client.send(prepared, true), /wallet_review_required/, 'a prepared step is offered once');
   await assert.rejects(client.receipt(`0x${'99'.repeat(32)}`), /receipt_not_from_this_review/);
 
@@ -363,6 +389,75 @@ test('a subscribed position is read as subscribed, so the page can say automatio
   assert.equal((await client.inspect(TOKEN_ID)).hasSubscriber, true);
 });
 
+// 2026-10-01 (audit C14): a step the person replaced in the wallet ("Speed up" or "Cancel") is said replaced as soon as the
+// chain does not know its hash and the account's mined nonce has passed it (the rule finance/setup.ts follows for Create
+// position); the position read again says whether it happened. It used to read as pending for the whole five-minute watch.
+test('a collect or close replaced in the wallet is said replaced, not pending; the position read again says whether it happened', async () => {
+  for (const [kind, act] of [['speedUp', 'collect'], ['cancelInWallet', 'collect'], ['speedUp', 'close'], ['cancelInWallet', 'close']]) {
+    const { chain, client, fees } = setupChain();
+    const before = await client.inspect(TOKEN_ID);
+    const prepared = act === 'collect' ? await client.prepareCollect(TOKEN_ID, gas) : await client.prepareClose(TOKEN_ID, 50, gas);
+    chain[kind]();
+    const hash = await client.send(prepared, true);
+    const sentAt = chain.log.length;
+    assert.deepEqual(await client.receipt(hash), { state: 'replaced' }, `${kind} ${act}`);
+    assert.deepEqual(chain.log.slice(sentAt).filter((m) => m.startsWith('eth_getTransaction')), ['eth_getTransactionByHash', 'eth_getTransactionCount', 'eth_getTransactionByHash'],
+      'the hash asked again after the nonce, so a node that had not seen it yet is not taken for a replacement');
+    const now = await client.inspect(TOKEN_ID);
+    if (kind === 'speedUp') {
+      assert.ok(act === 'close' ? now.liquidity === 0n : now.lastFeeGrowth.some((growth, i) => growth !== before.lastFeeGrowth[i]), `a sped-up ${act} happened`);
+      assert.equal(chain.paid.length, 1);
+      if (act === 'collect') assert.deepEqual(chain.paid[0].amounts, fees);
+    } else {
+      assert.deepEqual([now.liquidity, now.lastFeeGrowth], [before.liquidity, before.lastFeeGrowth], `a cancelled ${act} did not`);
+      assert.deepEqual([chain.paid, chain.sends, chain.burned()], [[], [], 1]);
+    }
+    assert.equal(chain.log.filter((m) => m === 'eth_sendTransaction').length, 1, 'nothing sent again');
+  }
+
+  // A node that has not seen the step yet: no such hash, and the account's mined nonce still the step's. Pending, as before.
+  const { chain } = setupChain();
+  const base = walletOf(chain);
+  let behind = false, asked = 0;
+  const lagging = { ...base, request: (method, params) => {
+    if (behind && method === 'eth_getTransactionByHash') return Promise.resolve(null);
+    if (behind && method === 'eth_getTransactionCount') return Promise.resolve('0x0');
+    return base.request(method, params);
+  } };
+  const client = position.createPositionClient(lagging, position.POSITION_DEPLOYMENT, () => 1000);
+  const hash = await client.send(await client.prepareCollect(TOKEN_ID, gas), true);
+  behind = true;
+  assert.deepEqual(await client.receipt(hash), { state: 'pending' }, 'a node behind is not a replacement');
+  // The nonce passed and the hash found on the second ask: the receipt is read on as usual.
+  const second = { ...base, request: (method, params) => (method === 'eth_getTransactionByHash' && ++asked === 1 ? Promise.resolve(null) : base.request(method, params)) };
+  const reread = position.createPositionClient(second, position.POSITION_DEPLOYMENT, () => 1000);
+  const next = await reread.send(await reread.prepareCollect(TOKEN_ID, gas), true);
+  assert.equal((await reread.receipt(next)).state, 'finalized');
+  assert.equal(asked, 2);
+});
+
+test('the receipt watch ends at once on a replaced step, and the state is read again until it shows the step or the reads run out', async () => {
+  const fast = { everyMs: 1, waitMs: 5_000 };
+  let reads = 0;
+  assert.equal(await steps.watchReceipt(() => { reads++; return Promise.resolve(reads < 3 ? { state: 'pending' } : { state: 'replaced' }); }, () => true, fast), 'replaced');
+  assert.equal(reads, 3, 'said at the read that found it, not after the watch');
+  // A node behind the replacement's block: the step shows at the third read.
+  let asks = 0;
+  assert.equal(await steps.readAfterReplaced(() => Promise.resolve(++asks), (n) => n >= 3, () => true, 1), true);
+  assert.equal(asks, 3);
+  // A cancel: never shows; said after REPLACED_READS reads.
+  asks = 0;
+  assert.equal(await steps.readAfterReplaced(() => Promise.resolve(++asks), () => false, () => true, 1), false);
+  assert.equal(asks, steps.REPLACED_READS);
+  // A read that fails once is read again; reads that all fail are thrown (the outcome is unknown).
+  asks = 0;
+  assert.equal(await steps.readAfterReplaced(() => (++asks === 1 ? Promise.reject(new Error('wallet_timeout')) : Promise.resolve(true)), (v) => v, () => true, 1), true);
+  await assert.rejects(steps.readAfterReplaced(() => Promise.reject(new Error('wallet_timeout')), () => true, () => true, 1), /wallet_timeout/);
+  // A page that left is told nothing.
+  let alive = true;
+  assert.equal(await steps.readAfterReplaced(() => { alive = false; return Promise.resolve(1); }, () => false, () => alive, 1), null);
+});
+
 test('the receipt watch reads again through a passing read failure and concludes when the receipt confirms', async () => {
   const { chain, client } = setupChain();
   const hash = await client.send(await client.prepareCollect(TOKEN_ID, gas), true);
@@ -405,6 +500,6 @@ test('amounts are written to six significant digits, cut rather than rounded, an
   assert.equal(steps.currencyName({ address: USDG, symbol: 'USDG' }), 'USDG');
   assert.equal(steps.currencyName({ address: '0x0000000000000000000000000000000000000000', symbol: null }), 'ETH');
   assert.equal(steps.currencyName({ address: UFG.toLowerCase(), symbol: null }), '0xefab…a0a3');
-  assert.equal(steps.isRejection({ code: 4001 }), true);
-  assert.equal(steps.isRejection(new Error('4001')), false);
+  // Changed on purpose 2026-10-01 (fix round 1): whether an error is the person declining is finance/nonce.ts
+  // personRefused, tested above, no longer a helper of this module.
 });

@@ -285,6 +285,18 @@ npm run deploy:preview   # verify, then upload that dist as a preview
 npm run deploy           # verify, then upload the same dist as production
 ```
 
+To let a tab opened before the release keep finding its files (each is named
+by its content, so old and new sit side by side), carry the previous
+release's own files into the new `dist` before recording it, from that
+release's built `dist` (2026-10-01; without this step a tab that misses a
+file reloads itself once into the new release instead):
+
+```sh
+npm run build
+node scripts/release.mjs carry <the previous release's dist>
+node scripts/release.mjs record
+```
+
 Deploy production from the same checkout that deployed the preview. The
 release record, `.release/manifest.json` and `.release/deployed.json`, is
 written in that checkout and ignored by git, so no other clone, worktree or

@@ -6,8 +6,11 @@
  *
  * Kept: only an answer read-v3's runtime accepts, for the question asked, whose history is `available`. One not built
  * yet, partial or stale is passed on and never kept, so a pool whose history is being built shows it as soon as it is.
- * Never served past 20 seconds (HISTORY_SECONDS), and never in the background: the chart counts a snapshot older than
- * two minutes as stale, and 20 seconds more than the store's own age keeps every chart as it was.
+ * Served as it is for 20 seconds (HISTORY_SECONDS). Changed 2026-10-01 (audit A14, the owner's OK on more edge caching):
+ * past that, and up to HISTORY_STALE_SECONDS (one minute in all), a kept answer is still served at once while the request
+ * that found it refreshes it behind, and says how old it is (X-Domino-Edge-Age), so the chart dates it by when the edge
+ * received it. The chart counts a snapshot older than two minutes as stale; a minute at the most keeps every chart as it
+ * was. Before, the fifth and sixth Markets cards waited 4 to 6 s for the per-visitor budget behind misses.
  *
  * The runtime comes in as `contract`, so this module compiles for node --test without it; functions/api/read/v3/
  * history.ts hands in the real one.
@@ -29,6 +32,8 @@ export interface HistoryRuntime extends EdgeRuntime {
 
 export const HISTORY_PATH = '/api/read/v3/history'
 export const HISTORY_SECONDS = 20
+/** How long a kept history is served at all, refreshed behind once HISTORY_SECONDS old (A14, 2026-10-01). Below the chart's two minutes. */
+export const HISTORY_STALE_SECONDS = 60
 
 interface Asked { poolId: string; currency: string; windowSeconds?: number; resolutionSeconds?: number }
 
@@ -59,5 +64,6 @@ export function answerHistory(request: Request, env: BridgeEnv, rt: HistoryRunti
       }
     },
     freshSeconds: HISTORY_SECONDS,
+    staleSeconds: HISTORY_STALE_SECONDS,
   })
 }

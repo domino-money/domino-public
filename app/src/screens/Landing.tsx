@@ -7,9 +7,10 @@ import { HeroArt } from '../components/home/HeroArt'
 import { useInView } from '../components/home/Vignettes'
 import { IconChartDown, IconCoins, IconKey, IconShield } from '../components/icons'
 import { Chip, Display, LinkButton, LiveDot, PageShell, Pill, cx } from '../components/ui'
-import { ROADMAP, ROADMAP_PILL } from '../lib/capabilities'
+import { ROADMAP, ROADMAP_PILL, ROADMAP_PILL_TITLE } from '../lib/capabilities'
 import type { MarketsState } from '../lib/read/marketsProvider'
 import { useMarkets } from '../lib/read/useMarkets'
+import { useRouteTitle } from '../lib/routeTitle'
 
 /*
  * Home (DESIGN-V2 §7). The headline and the two ways in, what automation does
@@ -32,7 +33,8 @@ const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSPropertie
 const STEPS: ReadonlyArray<{ n: string; title: string; body: string; roadmap?: ReadonlyArray<string> }> = [
   {
     n: '01',
-    title: 'Decide which tokens you want to pool, set your range',
+    // Changed on purpose 2026-10-01 (audit E25): one sentence, not two run together.
+    title: 'Choose a pool and set your range',
     body: 'Search for your token and pick one of the pools that already exists for it. The Range step draws the price band this position earns fees in, and the pool you pick carries the fee.',
   },
   {
@@ -51,7 +53,9 @@ const STEPS: ReadonlyArray<{ n: string; title: string; body: string; roadmap?: R
 const LIMITS: ReadonlyArray<{ title: string; body: string; icon: ReactNode }> = [
   {
     title: 'It does not remove market risk',
-    body: 'Prices move and your position moves with them. Outside its range a position holds only one of its two tokens: the one that lost value against the other.',
+    // Changed on purpose 2026-10-01 (audit E13): a range opened above or below the price on purpose holds one token from
+    // the start, so naming the token left as the one that fell was not always true; this is.
+    body: 'Prices move and your position moves with them. Outside its range a position holds only one of its two tokens, and earns no fees until the price comes back.',
     icon: <IconChartDown size={18} />,
   },
   {
@@ -72,7 +76,11 @@ const LIMITS: ReadonlyArray<{ title: string; body: string; icon: ReactNode }> = 
 ]
 
 /** The pill ROADMAP gives the first named capability that wears one, so Home says what Automate and the docs say. */
-const roadmapPill = (names: ReadonlyArray<string>): string | undefined => ROADMAP.filter((entry) => names.includes(entry.name)).map((entry) => ROADMAP_PILL[entry.status]).find((label) => label !== undefined)
+const roadmapPill = (names: ReadonlyArray<string>): { label: string; title?: string } | undefined => {
+  const entry = ROADMAP.find((one) => names.includes(one.name) && ROADMAP_PILL[one.status] !== undefined)
+  const label = entry && ROADMAP_PILL[entry.status]
+  return entry && label ? { label, title: ROADMAP_PILL_TITLE[entry.status] } : undefined
+}
 
 /**
  * The newest block a live pool row was read at, or null. Only a ready answer
@@ -153,7 +161,11 @@ function HowItWorks() {
                 {step.n}
               </span>
               <h3 className="dm-subtitle dm-learn-step-title">{step.title}</h3>
-              {pill && <Pill className="dm-learn-pill">{pill}</Pill>}
+              {pill && (
+                <Pill className="dm-learn-pill" title={pill.title}>
+                  {pill.label}
+                </Pill>
+              )}
               <p className="dm-learn-step-body">{step.body}</p>
             </li>
           )
@@ -187,6 +199,8 @@ function Limits() {
 }
 
 export function Landing() {
+  // Home's tab is the site's own name, given back on the way home from another screen (lib/routeTitle.ts, audit E11).
+  useRouteTitle(null)
   return (
     <PageShell className="dm-home">
       <Hero />

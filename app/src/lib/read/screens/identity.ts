@@ -8,6 +8,8 @@
  * always lowercase, so a typed mixed-case address and the reply about it meet.
  */
 
+import { ROBINHOOD_ID } from '../../../config/chainIdentity'
+
 declare const addressBrand: unique symbol
 declare const poolIdBrand: unique symbol
 
@@ -16,7 +18,8 @@ export type AddressKey = string & { readonly [addressBrand]: true }
 /** A lowercase 64-hex pool id on chain 4663. Only this module mints one. */
 export type PoolIdKey = string & { readonly [poolIdBrand]: true }
 
-export const CHAIN_ID = 4663 as const
+/** Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G3): the chain registry's id, the same 4663. */
+export const CHAIN_ID = ROBINHOOD_ID
 export const NATIVE_CURRENCY = '0x0000000000000000000000000000000000000000' as AddressKey
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/

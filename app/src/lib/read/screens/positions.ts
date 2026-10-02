@@ -19,6 +19,7 @@ import { NATIVE_CURRENCY, type AddressKey, type PoolIdKey } from './identity'
 // poolRange imports tickPriceText from here; the cycle is safe because
 // neither module calls the other while it loads, only from inside functions.
 import { shownPosition, shownRange, shownTick, tickAgrees, tickPriceIn, usableTicks, type PriceProblem } from './poolRange'
+import { numberFormat } from '../../format/numberFormat'
 
 const UINT256 = 2n ** 256n
 
@@ -85,7 +86,7 @@ export type ChainPositionCard =
 export function tickPriceText(tick: number, decimals0: number, decimals1: number): string | null {
   const value = Math.pow(1.0001, tick) * Math.pow(10, decimals0 - decimals1)
   if (!isFinite(value) || value < 1e-24 || value > 1e24) return null
-  return `≈${new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6 }).format(value)}`
+  return `≈${numberFormat({ maximumSignificantDigits: 6 }).format(value)}`
 }
 
 /** One end of a position's range as a card writes it. */

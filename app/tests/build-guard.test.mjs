@@ -265,10 +265,14 @@ test('findForbidden: the words and values of sample, practice, fixture and test 
     'testHooks',
     '__DOMINO_TEST_HOOKS__',
     'depositLab',
+    // 2026-10-01 (RPC-SPEC §2.8): Domino's own node's token-bearing URL, and the secret's name.
+    'https://rpc.domino.money/test-token-0123456789abcdef/',
+    'rpc.domino.money/AbCdEfGh01234567',
+    'LOCAL_RPC_URL',
   ]) {
     assert.ok(findForbidden(text).length > 0, text);
   }
-  for (const text of ['/api/read/v1/capabilities', 'X-Domino-Read-Contract', 'Live data unavailable', 'Selected pools', 'GeckoTerminal', 'provenance.fixture', 'Global Dollar', 'MEMEX', 'Not available in the alpha']) {
+  for (const text of ['/api/read/v1/capabilities', 'X-Domino-Read-Contract', 'Live data unavailable', 'Selected pools', 'GeckoTerminal', 'provenance.fixture', 'Global Dollar', 'MEMEX', 'Not available in the alpha', 'rpc.domino.money', 'https://rpc.domino.money/', '/api/owned/v2/positions', '/api/chain/v1/simulate']) {
     assert.deepEqual(findForbidden(text), [], text);
   }
   assert.equal(findForbidden('Sample sample SAMPLE sample', 2).length, 2, 'hits are capped per marker');
@@ -330,12 +334,20 @@ test('every browser suite closes its browsers through closeBrowser, never browse
 test('every node --test that runs a browser suite passes --test-force-exit', () => {
   const suites = [...BROWSER_SUITES.keys()].map((name) => `tests/${name}`);
   const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  // 2026-10-01 (audit H2): a suite run in parts (tests/support/parts.mjs) runs through its parts' entry files, each of
+  // which imports it: an entry file stands for the suite it imports.
+  const runs = (word) => {
+    if (suites.includes(word)) return [word];
+    if (!/^tests\/[\w.-]+\.mjs$/.test(word)) return [];
+    const text = readFileSync(new URL(`../${word}`, import.meta.url), 'utf8');
+    return [...text.matchAll(/\bimport\('\.\/([\w.-]+\.mjs)'\)/g)].map((match) => `tests/${match[1]}`).filter((file) => suites.includes(file));
+  };
   const run = new Set();
   const missing = [];
   for (const [name, script] of Object.entries(scripts)) {
     for (const command of script.split('&&').map((part) => part.trim().split(/\s+/))) {
       if (command[0] !== 'node' || !command.includes('--test')) continue;
-      const browsers = command.filter((word) => suites.includes(word));
+      const browsers = command.flatMap(runs);
       for (const file of browsers) run.add(file);
       if (browsers.length > 0 && !command.includes('--test-force-exit')) missing.push(`${name} (${browsers.join(', ')})`);
     }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { artworkFromPairs, createTokenArtworkResolver, safeTokenImage, tokenArtworkKey } from '../src/lib/tokenArtwork.ts';
 
@@ -279,9 +280,12 @@ test('metadata fetch aborts at the bounded deadline without retry', { timeout: 8
 });
 
 test('CSPs admit only explicit decoration hosts; component suppresses referrer and resets token lifecycle', () => {
-  const middleware = readFileSync(new URL('../functions/_middleware.ts', import.meta.url), 'utf8');
-  assert.ok(middleware.includes("img-src 'self' data: https://cdn.dexscreener.com"));
-  assert.ok(middleware.includes("connect-src 'self' https://api.dexscreener.com"));
+  // Changed on purpose 2026-10-01 (platform workstream): the page's CSP is data (APP_CSP_SOURCES, one source per line), so
+  // the header it makes is checked, from the compiled middleware, rather than the source's text.
+  const { APP_CSP } = createRequire(import.meta.url)('../.test-build/app/functions/_middleware.js');
+  const parts = APP_CSP.split('; ');
+  assert.ok(parts.some((part) => part.startsWith("img-src 'self' data: https://cdn.dexscreener.com")), APP_CSP);
+  assert.ok(parts.some((part) => part.startsWith("connect-src 'self' https://api.dexscreener.com")), APP_CSP);
   const local = readFileSync(new URL('../scripts/local-live-vite.mjs', import.meta.url), 'utf8');
   assert.ok(local.includes("img-src 'self' data: https://cdn.dexscreener.com"));
   const component = readFileSync(new URL('../src/components/TokenIcon.tsx', import.meta.url), 'utf8');

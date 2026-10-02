@@ -1,8 +1,11 @@
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../styles/screens.css'
 import { useEffect } from 'react'
 import { DocsLayout } from '../components/docs/DocsLayout'
 import { hashParts } from '../components/explore/routes'
 import { PageShell } from '../components/ui'
 import { findDocPage } from '../lib/docs/registry'
+import { useTabTitle } from '../lib/routeTitle'
 import { scrollToSection } from '../lib/sectionScroll'
 
 /** What stops the late re-scroll: the reader has started moving the page themselves. */
@@ -36,17 +39,6 @@ function useSectionAfterFonts() {
       for (const move of MOVES) window.removeEventListener(move, stop)
     }
   }, [])
-}
-
-/** The tab names the page while it is open, and gives the name back when it closes. */
-function useTabTitle(title: string) {
-  useEffect(() => {
-    const before = document.title
-    document.title = title
-    return () => {
-      document.title = before
-    }
-  }, [title])
 }
 
 /**

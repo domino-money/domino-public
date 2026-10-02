@@ -17,6 +17,21 @@ import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { closeContext, leaving, watch } from './page-watch.mjs';
 import { DIST, createGatedServer } from '../scripts/gated-server.mjs';
+import { createRequire } from 'node:module';
+import { request as httpRequest } from 'node:http';
+
+const { GATE_SCRIPT } = createRequire(import.meta.url)('../.test-build/app/functions/_lib/gate.js');
+
+/** The bytes the server sends for a navigation to `url`, exactly: no browser in between to inject or rewrite anything. */
+const pageBytes = (url) =>
+  new Promise((done, fail) => {
+    httpRequest(url, { headers: { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document', Accept: 'text/html' } }, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => (body += chunk));
+      response.on('end', () => done(body));
+    }).on('error', fail).end();
+  });
 
 const PASSWORD = 'browser-test-beta-password';
 const ENV = { BETA_PASSWORD: PASSWORD, BETA_COOKIE_KEY: 'Hk2mP9vQx4Lr7TbW1cNy6ZsJ3dGa8FeU5oViRtYqWeA' };
@@ -88,8 +103,42 @@ test('a visitor without the password sees only the access page', async () => {
   // Checked on the bytes the server sends, not on the DOM: desktop antivirus
   // suites inject their own <script> into every page, which says nothing
   // about ours. The CSP blocks such injections on the real site anyway.
-  const raw = await (await fetch(`${origin}/`, { headers: { 'Sec-Fetch-Mode': 'navigate' } })).text();
-  assert.doesNotMatch(raw, /<script/i, 'the access page must not ship script');
+  // Asked as a page, with node:http: Node's fetch adds its own Sec-Fetch-Mode, which makes any request a non-navigation.
+  const raw = await pageBytes(`${origin}/`);
+  assert.match(raw, /<title>Domino · Access<\/title>/, 'the access page itself, not the JSON refusal');
+  // Changed on purpose 2026-10-01 (platform workstream, D3): one script, which carries the opened link through the
+  // login, admitted by the page's CSP by its hash; nothing else.
+  assert.deepEqual([...raw.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((match) => match[1]), [GATE_SCRIPT], 'the access page ships its one script and no other');
+  assert.doesNotMatch(raw, /fonts\.googleapis|fonts\.gstatic/, 'and loads nothing from Google (I5)');
+  await closeContext(context);
+});
+
+// 2026-10-01 (platform workstream, D3): the link a visitor opened is where the password takes them, not Home.
+test('the link a visitor opened survives the password, and the access page’s own fonts come from this site', async () => {
+  const { context, page, log } = await visitor();
+  const fonts = [];
+  page.on('request', (request) => { if (request.resourceType() === 'font') fonts.push(request.url()); });
+  const response = await page.goto(`${origin}/#/docs/wallet`, { waitUntil: 'networkidle' });
+  assert.equal(response.status(), 401);
+  assert.deepEqual(fonts.sort(), [`${origin}/__beta/fonts/geist-latin.woff2`, `${origin}/__beta/fonts/instrument-serif-latin.woff2`]);
+  assert.equal(await page.locator('#next').inputValue(), '#/docs/wallet', 'the page put the link into the form');
+  await page.fill('#password', PASSWORD);
+  leaving(page);
+  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('button[type="submit"]')]);
+  assert.equal(new URL(page.url()).hash, '#/docs/wallet');
+  await page.locator('h1', { hasText: 'Wallet and sign-in' }).waitFor();
+  assert.deepEqual(log.errors.filter((e) => !/status of 401/.test(e)), []);
+  await closeContext(context);
+});
+
+// 2026-10-01 (platform workstream, V5): browsers ask for /favicon.ico on their own, and some without the cookie.
+test('the favicon is served to anyone, without the password, and kept a day', async () => {
+  const { context } = await visitor();
+  const response = await context.request.get(`${origin}/favicon.ico`);
+  assert.equal(response.status(), 200);
+  assert.equal(response.headers()['cache-control'], 'private, max-age=86400, stale-while-revalidate=604800');
+  const bytes = await response.body();
+  assert.deepEqual([...bytes.subarray(0, 4)], [0, 0, 1, 0], 'an ICO file');
   await closeContext(context);
 });
 

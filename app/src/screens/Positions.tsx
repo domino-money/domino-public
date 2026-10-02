@@ -1,5 +1,8 @@
-import { lazy, Suspense, useEffect, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../styles/screens.css'
+import { lazy, Suspense, useCallback, useEffect, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
 import { deferred } from '../components/Deferred'
+import { recovering } from '../lib/staleRelease'
 import PortfolioBody from '../components/portfolio/PortfolioBody'
 import { automateHref, marketsHref, newPositionHref } from '../components/explore/routes'
 import { IconTile } from '../components/figures'
@@ -9,14 +12,16 @@ import { PendingRows, PendingSummary } from '../components/positions/PositionRow
 import { AutomationFrame } from '../components/positions/visual/AutomationFrame'
 import { POSITION_KIT } from '../components/positions/visual/kit'
 import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
-import { Chip, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
+import { Button, Chip, Display, EmptyState, LinkButton, PageShell } from '../components/ui'
+import { NO_SIGN_IN_BOTH, automationLayout, sameShows, type CardShows } from '../lib/automationCards'
 import { chainRead } from '../lib/fees/answers'
 import { warmState } from '../lib/fees/client'
-import { feesStore } from '../lib/fees/spawn'
-import { shortAddress } from '../lib/read/screens/identity'
-import { positionDetailId } from '../lib/read/screens/positions'
+import { parseAddressInput, shortAddress } from '../lib/read/screens/identity'
+import { portfolioRoute, positionDetailId } from '../lib/read/screens/positions'
 import { useWalletIdentity, type WalletIdentityView } from '../lib/walletIdentity'
-import { RoadmapPill } from './Automate'
+import { RoadmapPill } from '../components/automate/RoadmapPill'
+import { FEATURES } from '../lib/automate/features'
+import { useRouteTitle } from '../lib/routeTitle'
 
 type Connected = Extract<WalletIdentityView, { kind: 'connected' }>
 
@@ -26,35 +31,33 @@ type Connected = Extract<WalletIdentityView, { kind: 'connected' }>
 // constant is null and nothing is imported. The stand-in takes any props, so
 // it can stand in for a chunk whose component takes some (HeldDeposits, and
 // Execution's preview limit).
-const couldNotLoad = () => ({ default: (_props: object) => <p role="alert" className="dm-acct-quiet">This section couldn’t load. Reload to try again.</p> })
-const Performance = __DOMINO_WALLET_SESSION__ ? lazy(() => import('./Performance').catch(couldNotLoad)) : null
-const Execution = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ limit?: number }>>(() => import('./Execution').catch(couldNotLoad)) : null
+const couldNotLoad = () => ({ default: CouldNotLoad })
+/** What a card tells the page it shows (lib/automationCards.ts): Managed positions and Receipts. */
+type TellShows = (shows: CardShows | null) => void
+const Performance = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ onShows?: TellShows }>>(recovering(() => import('./Performance'), couldNotLoad)) : null
+const Execution = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<{ limit?: number; onShows?: TellShows }>>(recovering(() => import('./Execution'), couldNotLoad)) : null
 // The deposits the wallet has not turned into a position, each with its refund: its own chunk, in wallet builds only.
 // Typed from the slot's own props, so this screen names nothing of that chunk but its lazy import.
-const HeldDeposits = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<Parameters<DepositsSlot>[0]>>(() => import('../components/positions/HeldDeposits').catch(couldNotLoad)) : null
+const HeldDeposits = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<Parameters<DepositsSlot>[0]>>(recovering(() => import('../components/positions/HeldDeposits'), couldNotLoad)) : null
 
 // Your positions and a position's own page: chunks of their own, loaded only on Positions, so no other page pays for
 // them. The list exists only where a wallet can connect; the page is public chain data and opens in every build.
 // 2026-09-28 (speed wave B, item 24): drawn as soon as their chunk is in (components/Deferred.tsx), not 300 ms after
 // their fallback as a Suspense boundary reveals them.
-const OwnedPositions = __DOMINO_WALLET_SESSION__ ? deferred<OwnedPositionsProps>(() => import('../components/positions/OwnedPositions').catch(couldNotLoad)) : null
-const PositionDetail = deferred<{ tokenId: string; kit?: unknown }>(() => import('./PositionDetail').catch(couldNotLoad))
+const OwnedPositions = __DOMINO_WALLET_SESSION__ ? deferred<OwnedPositionsProps>(recovering(() => import('../components/positions/OwnedPositions'), couldNotLoad)) : null
+const PositionDetail = deferred<{ tokenId: string; kit?: unknown }>(recovering(() => import('./PositionDetail'), couldNotLoad))
 
 /**
- * 2026-09-28 (speed wave B, items 24 and 37): what Positions reads, asked as soon as the route is known, outside the
- * chunk that draws it: a position's state (its page takes it, lib/fees/client.ts warmState); and the chain code and the
- * fees worker's file, fetched beside the page's chunk rather than after it. The wallet's list is read as its card's chunk
- * is in, which nothing holds back any more (components/Deferred.tsx; a dynamic import of it here split its module out of
- * the picker's chunk, for the few milliseconds the chunk takes from the cache).
+ * 2026-09-28 (speed wave B, item 24): what Positions reads, asked as soon as the route is known, outside the chunk that
+ * draws it: a position's state (its page takes it, lib/fees/client.ts warmState). The wallet's list is read as its card's
+ * chunk is in, which nothing holds back any more (components/Deferred.tsx). RPC-SPEC (2026-10-01): the list and a
+ * position's feature are the site's routes' now (lib/edge/chainRoutes.ts). Changed on purpose 2026-10-02 (RPC-SPEC §11.4):
+ * there is no fees worker to fetch ahead any more.
  */
 function useWarmPositions(detail: string | null): void {
   useEffect(() => {
-    if (!chainRead()) return
-    void import('../lib/chain/chainCode').catch(() => undefined)
-    feesStore.warm()
-  }, [])
-  useEffect(() => {
-    if (detail && chainRead()) warmState(detail)
+    if (!detail || !chainRead()) return
+    warmState(detail)
   }, [detail])
 }
 
@@ -66,6 +69,16 @@ const heldDeposits: DepositsSlot | null = HeldDeposits
       </Suspense>
     )
   : null
+
+/**
+ * A chunk that could not load, in its place: its one line. 2026-10-01 (audit D2): a card that cannot load says it has
+ * a line of its own (lib/automationCards.ts), so Managed positions and Receipts show it rather than one line for both.
+ */
+function CouldNotLoad(props: object) {
+  const onShows = (props as { onShows?: TellShows }).onShows
+  useEffect(() => onShows?.({ kind: 'other' }), [onShows])
+  return <p role="alert" className="dm-acct-quiet">This section couldn’t load. Reload to try again.</p>
+}
 
 /** The first four blocks of the page rise in on first load, 40 ms apart (one --stagger); nothing after them does. */
 const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
@@ -115,7 +128,7 @@ function Plot({ children }: { children: ReactNode }) {
  * dotted plate under the Domino-compound machine. Changed on purpose (owner,
  * 2026-09-27, round 5): the chip says the window in plain words.
  */
-function ManagedCard() {
+function ManagedCard({ hidden, onShows }: { hidden?: boolean; onShows?: TellShows }) {
   return (
     <AutomationFrame
       title="Managed positions"
@@ -124,11 +137,12 @@ function ManagedCard() {
       aside={<Chip>Last 24 hours</Chip>}
       className="dm-acct-card animate-rise"
       style={rise(2)}
+      hidden={hidden}
       data-managed-positions={Performance ? '' : undefined}
     >
       {Performance ? (
         <Suspense fallback={<Quiet line="How your automated positions did in the last 24 hours." />}>
-          <Performance />
+          <Performance onShows={onShows} />
         </Suspense>
       ) : (
         <Plot>Managed history needs wallet sign-in, which isn’t available here.</Plot>
@@ -149,13 +163,14 @@ const RECENT = 4
  * card is a short Recent list, one row per receipt, and its See all opens the
  * full list on a page of its own.
  */
-function ReceiptsCard({ limit, title = 'Receipts' }: { limit?: number; title?: string }) {
+function ReceiptsCard({ limit, title = 'Receipts', hidden, onShows }: { limit?: number; title?: string; hidden?: boolean; onShows?: TellShows }) {
   return (
     <AutomationFrame
       title={title}
       titleId="receipts-title"
       art="receipt"
       className="dm-acct-card"
+      hidden={hidden}
       aside={
         limit !== undefined &&
         Execution && (
@@ -167,12 +182,63 @@ function ReceiptsCard({ limit, title = 'Receipts' }: { limit?: number; title?: s
     >
       {Execution ? (
         <Suspense fallback={<Quiet line="What automation did for your positions." />}>
-          <Execution limit={limit} />
+          <Execution limit={limit} onShows={onShows} />
         </Suspense>
       ) : (
         <p className="dm-acct-quiet">Wallet sign-in isn’t available here, so automation receipts can’t be read.</p>
       )}
     </AutomationFrame>
+  )
+}
+
+/** Opens the header's wallet dialog, where a wallet is connected, signed in or signed out. */
+const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria-haspopup="dialog"]')?.click()
+
+/**
+ * Managed positions and Receipts with nothing to show, for the same reason (2026-10-01, audit D2): one calm line for
+ * both, as their own lines said it, with its one button (Sign in, or Open wallet for another account's session). While
+ * either card has not said yet (its chunk loading, the session checked), nothing under the title.
+ */
+function OneLine({ line }: { line: Extract<CardShows, { kind: 'none' }> | null }) {
+  return (
+    <section className="dm-card dm-acct-card dm-acct-merged animate-rise" style={rise(2)} aria-labelledby="automation-merged-title" data-automation-empty={line?.reason ?? ''}>
+      <div className="dm-acct-card-head">
+        <h2 id="automation-merged-title" className="dm-title">
+          Managed positions and receipts
+        </h2>
+      </div>
+      <div className="dm-acct-merged-body">
+        <p className="dm-acct-merged-line">{line?.text}</p>
+        {line?.action && (
+          <Button type="button" variant="outline" size="sm" onClick={openWallet}>
+            {line.action}
+          </Button>
+        )}
+      </div>
+    </section>
+  )
+}
+
+/**
+ * Managed positions and Receipts, side by side from 1024px (2026-10-01, audit D2: with nothing to show, they were two
+ * large empty plates saying the same thing twice). Each card tells this pair what it shows (lib/automationCards.ts);
+ * while neither has anything for the same reason, one line stands in their place, and both cards stay mounted, hidden,
+ * so they go on reading and come back the moment either has something. In a build that cannot sign in, always the line.
+ */
+function AutomationPair() {
+  const [managed, setManaged] = useState<CardShows | null>(null)
+  const [receipts, setReceipts] = useState<CardShows | null>(null)
+  // The cards tell after every render: what says the same as before changes nothing (the same object is kept).
+  const tellManaged = useCallback<TellShows>((next) => setManaged((old) => (sameShows(old, next) ? old : next)), [])
+  const tellReceipts = useCallback<TellShows>((next) => setReceipts((old) => (sameShows(old, next) ? old : next)), [])
+  const layout = Performance && Execution ? automationLayout(managed, receipts) : ({ kind: 'merged', line: { kind: 'none', reason: 'unavailable', text: NO_SIGN_IN_BOTH, action: null } } as const)
+  const merged = layout.kind === 'merged'
+  return (
+    <div className="dm-acct-pair" data-automation-cards={layout.kind}>
+      {merged && <OneLine line={layout.line} />}
+      <ManagedCard hidden={merged} onShows={tellManaged} />
+      <ReceiptsCard limit={RECENT} hidden={merged} onShows={tellReceipts} />
+    </div>
   )
 }
 
@@ -207,7 +273,7 @@ function AutomationCard() {
               <span>Auto-compound</span>
               <RoadmapPill name="Compound" />
             </p>
-            <p className="dm-acct-auto-text">Fees go back into the same position.</p>
+            <p className="dm-acct-auto-text">{FEATURES.compound.line}</p>
           </div>
         </li>
         <li>
@@ -217,7 +283,7 @@ function AutomationCard() {
               <span>Domino-compound</span>
               <RoadmapPill name="Domino" />
             </p>
-            <p className="dm-acct-auto-text">The next range opens one step higher.</p>
+            <p className="dm-acct-auto-text">{FEATURES.domino.line}</p>
           </div>
         </li>
       </ul>
@@ -245,6 +311,14 @@ function NoWalletHere() {
   )
 }
 
+/** The address a `#/portfolio/<address>` link names, lowercase, when it is one (audit V7); null otherwise. */
+function linkedAddress(): string | null {
+  const route = portfolioRoute(window.location.hash)
+  if (!route.onRoute || !route.address) return null
+  const parsed = parseAddressInput(route.address)
+  return parsed.ok ? parsed.key : null
+}
+
 /**
  * Positions: what a person holds and what Domino runs for them. With a wallet
  * connected on Robinhood Chain, Your positions lists the positions it created
@@ -256,10 +330,15 @@ function NoWalletHere() {
  */
 function PositionsList() {
   const identity = useWalletIdentity()
+  // 2026-10-01 (audit V7): the address a `#/portfolio/<address>` link views (the Wallet card's View address), whose
+  // positions the list shows read-only in place of the wallet's own; null on `#/positions`. Read from the link at once,
+  // then told by the Wallet card, which follows View address, Use the connected wallet and the browser's Back.
+  const [linked, setLinked] = useState<string | null>(linkedAddress)
+  const viewing = linked !== null && !(identity.kind === 'connected' && identity.address.toLowerCase() === linked)
   // Your positions shows its own filled action (Connect wallet, or New position when there is none yet): the title row's
   // New position steps back to secondary then, so one filled button leads the screen (§0.6).
   const [listEmpty, setListEmpty] = useState(false)
-  const quietNew = OwnedPositions !== null && (identity.kind === 'disconnected' || (identity.kind === 'connected' && listEmpty))
+  const quietNew = OwnedPositions !== null && !viewing && (identity.kind === 'disconnected' || (identity.kind === 'connected' && listEmpty))
   return (
     <PageShell>
       <div className="dm-acct-title animate-rise" style={rise(0)}>
@@ -285,23 +364,21 @@ function PositionsList() {
           <div className="dm-acct-slot dm-acct-o1 dm-own-slot animate-rise" style={rise(1)}>
             {OwnedPositions ? (
               <Suspense fallback={<ListWaiting />}>
-                <OwnedPositions fallback={<ListWaiting />} identity={identity} deposits={heldDeposits} onEmptyAction={setListEmpty} kit={POSITION_KIT} />
+                <OwnedPositions fallback={<ListWaiting />} identity={identity} deposits={heldDeposits} onEmptyAction={setListEmpty} viewed={viewing ? linked : null} kit={POSITION_KIT} />
               </Suspense>
             ) : (
               <NoWalletHere />
             )}
           </div>
 
-          {/* Side by side from 1024px; stacked, after the rail's cards, below. */}
-          <div className="dm-acct-pair">
-            <ManagedCard />
-            <ReceiptsCard limit={RECENT} />
-          </div>
+          {/* Side by side from 1024px; stacked, after the rail's cards, below; one line for both while neither has anything.
+              Not while another address is viewed (fix round 1): they are the signed-in wallet's, never that address's. */}
+          {!viewing && <AutomationPair />}
         </div>
 
         <div className="dm-acct-col">
           <div className="dm-acct-slot dm-acct-o4 animate-rise" style={rise(3)}>
-            <PortfolioBody identity={identity} />
+            <PortfolioBody identity={identity} onLinked={setLinked} />
           </div>
           <AutomationCard />
         </div>
@@ -319,6 +396,8 @@ function PositionsList() {
 export function Positions({ param = '' }: { param?: string }) {
   const detail = param === 'receipts' ? null : positionDetailId(param)
   useWarmPositions(detail)
+  // The tab's name (lib/routeTitle.ts, audit E11): the list, its receipts, or one position by its number.
+  useRouteTitle(param === 'receipts' ? 'Receipts' : detail ? `Position #${detail}` : 'Positions')
   if (param === 'receipts') return <ReceiptsPage />
   if (!detail) return <PositionsList />
   return (

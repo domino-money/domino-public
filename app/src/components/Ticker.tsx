@@ -1,11 +1,15 @@
-import { aprLabel, feeLabel, type Instant, type Metric } from '../lib/markets'
+import { aprLabel, feeLabel, type FallbackApr as Fallback, type Instant, type Market, type Metric } from '../lib/markets'
+import { feeWords } from '../lib/format/fee'
 import { estimateTitle, presentAprEstimate, type AprEstimateObservation } from '../lib/read/aprEstimate'
 import { describeFailure } from '../lib/read/describe'
 import { shownResult, useMarkets } from '../lib/read/useMarkets'
 import { TokenMarkPair } from './TokenIcon'
+import { FallbackApr } from './read/screens/FallbackApr'
 import { PoolAprEstimate } from './read/screens/PoolAprEstimate'
 import { useNow } from '../lib/read/useNow'
 import { useFeatured } from '../lib/read/featuredSource'
+import { pricePair } from '../lib/read/orientation'
+import { useFallbackRows } from '../lib/read/useFallback'
 import { poolListings } from '../config/selectedPoolCatalogue'
 import { poolHref } from './explore/routes'
 import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
@@ -20,9 +24,11 @@ const NO_APR = 'Est. APR —'
  * (`figuresPending`, marketsProvider.ts) is loading, as the table's cell says,
  * not unavailable (added 2026-09-25, r4/metrics).
  */
-function EstimateApr({ observation, now, pending = false }: { observation?: AprEstimateObservation; now: Instant; pending?: boolean }) {
+function EstimateApr({ observation, now, pending = false, fallback }: { observation?: AprEstimateObservation; now: Instant; pending?: boolean; fallback?: Fallback }) {
   const shown = presentAprEstimate(observation, now)
   if (shown.text !== null) return <PoolAprEstimate observation={observation} now={now} />
+  // An estimate standing in for the read service's when its provider did not answer (audit V1, lib/read/figureFallback.ts).
+  if (fallback) return <FallbackApr apr={fallback} />
   return (
     <span data-apr-estimate={pending ? 'pending' : shown.state}>
       <span className="tnum whitespace-nowrap text-fg-subtle" title={pending ? 'Est. APR loading' : estimateTitle(observation, now)}>
@@ -75,6 +81,21 @@ function Apr({ metric }: { metric: Metric }) {
   )
 }
 
+/** A row's pair as its price is written, "TOKEN/USDG" (audit E21, lib/read/orientation.ts). */
+function TickerPair({ m }: { m: Market }) {
+  const pair = pricePair(m.tokens.base, m.tokens.quote)
+  return (
+    <>
+      <TokenMarkPair base={pair.base} quote={pair.quote} size={16} ring="var(--bg)" />
+      <span className="dm-ticker-pair">
+        <PoolTokenLabel token={pair.base} />/<PoolTokenLabel token={pair.quote} />
+      </span>
+    </>
+  )
+}
+
+const NO_MARKETS: readonly Market[] = []
+
 /**
  * Scrolling strip of pools across the top of Home: pair, fee tier and pool
  * APR. It reads nothing of its own: it shows the result set of the Selected
@@ -90,11 +111,14 @@ function Apr({ metric }: { metric: Metric }) {
 export function Ticker() {
   const { state, provider } = useMarkets()
   const result = shownResult(state)
-  const markets = result?.markets ?? []
-  const now = useNow(markets.length > 0)
+  const read = result?.markets ?? NO_MARKETS
+  const now = useNow(read.length > 0)
   // The list on screen (lib/read/featuredSource.ts): the featured list, or the embedded one.
   const featured = useFeatured()
-  const listings = poolListings(markets, __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge' ? featured.entries : null)
+  const listed = __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge'
+  // Refused figures stood in for, as the table does (audit V1); nothing named until the list's first answer (B4).
+  const markets = useFallbackRows(read, listed ? featured.entries : null, now)
+  const listings = listed && !featured.settled ? [] : poolListings(markets, listed ? featured.entries : null)
 
   // Each item opens its pool page, by PoolId and the token to verify it with
   // (`#/pool/<id>/<token>`), so a link still opens once the pool has left the
@@ -103,12 +127,9 @@ export function Ticker() {
   // out of the tab order.
   const render = (copy: boolean) => listings.map(({ poolId, market: m, catalogue, token }) => m ? (
     <a href={poolHref(m.poolId, token)} key={m.key} tabIndex={copy ? -1 : undefined} className="dm-ticker-item">
-      <TokenMarkPair base={m.tokens.base} quote={m.tokens.quote} size={16} ring="var(--bg)" />
-      <span className="dm-ticker-pair">
-        <PoolTokenLabel token={m.tokens.base} />/<PoolTokenLabel token={m.tokens.quote} />
-      </span>
-      <span className="tnum">{feeLabel(m)}</span>
-      {historicalApr(m.feeAprPercent) ? <Apr metric={m.feeAprPercent} /> : <EstimateApr observation={m.feeAprEstimate} now={now} pending={m.figuresPending === true} />}
+      <TickerPair m={m} />
+      <span className="tnum">{feeWords(feeLabel(m))}</span>
+      {historicalApr(m.feeAprPercent) ? <Apr metric={m.feeAprPercent} /> : <EstimateApr observation={m.feeAprEstimate} now={now} pending={m.figuresPending === true} fallback={m.aprFallback} />}
     </a>
   ) : catalogue ? <a href={poolHref(poolId, token)} key={poolId} tabIndex={copy ? -1 : undefined} className="dm-ticker-item" data-pool-catalogue={poolId}>
     <PoolCatalogueIdentity entry={catalogue} compact />
@@ -116,7 +137,8 @@ export function Ticker() {
   </a> : null)
   const items = render(false)
 
-  const quiet = state.phase === 'failed' ? describeFailure(state.failure).title : state.phase === 'ready' ? 'No pools selected yet' : 'Loading pools…'
+  // Until the list's first answer is in there is nothing to name yet (audit B4): loading, whatever the rows' own state.
+  const quiet = listed && !featured.settled ? 'Loading pools…' : state.phase === 'failed' ? describeFailure(state.failure).title : state.phase === 'ready' ? 'No pools selected yet' : 'Loading pools…'
 
   return (
     <div className="dm-ticker" data-ticker="">

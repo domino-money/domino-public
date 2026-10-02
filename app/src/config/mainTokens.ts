@@ -11,14 +11,17 @@
  * built from another list, and nothing can add to it at run time.
  */
 import type { ArtworkKey } from '../lib/read/types'
-import { symbolReading } from '../lib/symbolReading'
+import { mixesInto, symbolReading } from '../lib/symbolReading'
+import { ROBINHOOD_NATIVE_ADDRESS, ROBINHOOD_USDG, ROBINHOOD_WETH } from './chainIdentity'
 
+// Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G3): the three addresses are the chain
+// registry's (config/chainIdentity.ts), read from there under the names this module always gave them; the same values.
 /** Native ETH: the zero address, as a Uniswap v4 pool key names it. */
-export const NATIVE_ETH = '0x0000000000000000000000000000000000000000'
+export const NATIVE_ETH = ROBINHOOD_NATIVE_ADDRESS
 /** Wrapped ether on Robinhood Chain. */
-export const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73'
+export const WETH = ROBINHOOD_WETH
 /** USDG, the dollar every selected pool trades against; $1 by definition across the app (DESIGN-V2 §22.8). */
-export const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168'
+export const USDG = ROBINHOOD_USDG
 
 export interface MainToken {
   /** Lowercase. */
@@ -44,10 +47,12 @@ const BY_READING: ReadonlyMap<string, string> = new Map(MAIN_TOKENS.map((token) 
 /**
  * Whether `symbol` reads as a main token's (symbolReading) while `address` is
  * not that token's: a look-alike. Native ETH and WETH both read as ether, so
- * either address is the real one for either symbol.
+ * either address is the real one for either symbol. Since 2026-10-01 (audit I2)
+ * a symbol that mixes scripts to pass for a main token's one letter at a time
+ * (symbolReading.ts `mixesInto`) reads as it too.
  */
 export function readsAsMainToken(symbol: string, address: string): boolean {
-  const owner = BY_READING.get(symbolReading(symbol))
+  const owner = BY_READING.get(symbolReading(symbol)) ?? MAIN_TOKENS.find((token) => mixesInto(symbol, token.symbol))?.address
   if (owner === undefined) return false
   const key = address.toLowerCase()
   if (owner === NATIVE_ETH || owner === WETH) return key !== NATIVE_ETH && key !== WETH

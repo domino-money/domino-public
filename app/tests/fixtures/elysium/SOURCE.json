@@ -1,0 +1,36 @@
+{
+  "//": "Copies of rugged97's files from his branch codex/elysium-v3-s8, byte for byte (git show <commit>:<source>), for the chain2 workstream's tests. tests/chain-registry.test.mjs checks every hash.",
+  "repository": "domino-money/domino",
+  "branch": "codex/elysium-v3-s8",
+  "commit": "7d1906907381c55e65d9b83ad1f3efafe1cabb36",
+  "files": {
+    "elysium-99801.json": {
+      "source": "chains/elysium-99801.json",
+      "sha256": "42bb401eabad9e504166b46b3d150e7c7ea9642514e74dd389bd611131fec8b9"
+    },
+    "elysium-v3-unqualified.json": {
+      "source": "chains/deployments/elysium-v3-unqualified.json",
+      "sha256": "34921bf41707810a90c4c64e305471a3e374e105925944d3441f56df7be8d292"
+    },
+    "robinhood-4663.json": {
+      "source": "chains/robinhood-4663.json",
+      "sha256": "cf6c52851485b0dd2f5cbf4bab07c06dbb15906d90481820bfcbe6ecebbe7b69"
+    },
+    "robinhood-v4.json": {
+      "source": "chains/deployments/robinhood-v4.json",
+      "sha256": "c59c45b5c8f70e055d4672891b33d1c3c8f1f4b924c96d249fb49470ad1309a4"
+    },
+    "uniswap-v3-read-v1.wire.json": {
+      "source": "api-contracts/uniswap-v3-read-v1/fixtures/wire.json",
+      "sha256": "16121e9bc24d15f1ae7a783ae5315bb9d3043a3dff1d42abe8835ba8055cf6c2"
+    },
+    "uniswap-v3-actions-v1.wire.json": {
+      "source": "api-contracts/uniswap-v3-actions-v1/fixtures/wire.json",
+      "sha256": "86c72e6d27fd08afe5985afad73bce8102b4fdb2cf21e15eab1f948fe9c232c9"
+    },
+    "s5-public-deployment.json": {
+      "source": "reports/elysium-v3-s5-2026-09-29/public-deployment.json",
+      "sha256": "ae776266ee6ac8f0785ea50c9c37f467117625d92acbb5150b61da0597e40799"
+    }
+  }
+}

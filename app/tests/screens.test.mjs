@@ -287,7 +287,9 @@ test('card amounts: six significant digits that never split a number, every digi
   assert.deepEqual(amountOf('3000000000000005', 18), ['0.003', '0.003000000000000005', 'units']);
   assert.deepEqual(amountOf('4553157887631', 18), ['0.00000455316', '0.000004553157887631', 'units']);
   assert.deepEqual(amountOf('39996793', 6), ['39.9968', '39.996793', 'units']);
-  assert.deepEqual(amountOf('1', 18), ['0.000000000000000001', '0.000000000000000001', 'units'], 'the smallest unit is still not zero');
+  // Changed on purpose 2026-10-01 (audit E7): a crumb under a millionth reads as one, every digit still in the title.
+  assert.deepEqual(amountOf('1', 18), ['<0.000001', '0.000000000000000001', 'units'], 'the smallest unit is still not zero');
+  assert.deepEqual(amountOf('1000000000000', 18), ['0.000001', '0.000001', 'units'], 'a millionth itself is written out');
   assert.deepEqual(amountOf('123456789', 0), ['123,456,789', '123,456,789', 'units'], 'never fewer digits than the whole part');
   assert.deepEqual(amountOf('0', 18), ['0', '0', 'zero']);
   for (const [text] of [amountOf('40003206592866332023', 18), amountOf('4553157887631', 18)]) assert.doesNotMatch(text, /e/i, 'never an exponent');

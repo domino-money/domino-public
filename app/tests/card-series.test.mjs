@@ -200,19 +200,23 @@ function memoryStorage() {
   return { items, getItem: (key) => items.get(key) ?? null, setItem: (key, value) => { items.set(key, String(value)) }, removeItem: (key) => { items.delete(key) } }
 }
 
+// Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G10): a series is kept under a name that names
+// its chain, domino-card-v2:4663:<series>; under domino-card:<series> before.
+const STORED = 'domino-card-v2:4663:'
+
 test('the tab keeps chain series across a reload, only as wall time, and never shows one past its limits as current', () => {
   const storage = memoryStorage()
   const first = createCardCache(() => storage)
   first.put(chain(history(), { receivedMonotonic: 12 }))
   first.put(provider(available()))
   first.put({ ...chain(), key: `${KEY}x`, data: null, failure: 'x', code: 'y' })
-  assert.deepEqual([...storage.items.keys()], [`domino-card:${KEY}`], 'one chain series stored; provider answers and failures are not')
-  assert.doesNotMatch(storage.items.get(`domino-card:${KEY}`), /receivedMonotonic/, 'another document’s monotonic clock means nothing')
+  assert.deepEqual([...storage.items.keys()], [`${STORED}${KEY}`], 'one chain series stored; provider answers and failures are not')
+  assert.doesNotMatch(storage.items.get(`${STORED}${KEY}`), /receivedMonotonic/, 'another document’s monotonic clock means nothing')
   assert.equal(first.get(PROVIDER_KEY, NOW).source, 'provider', 'provider candles are kept in memory for the document')
   assert.equal(first.get(`${KEY}x`, NOW).code, 'y', 'and so is a failure, for a card that comes back')
   first.put({ ...chain(), data: null, failure: 'Busy. Later', code: 'busy' })
   assert.deepEqual([first.get(KEY, NOW).data, first.get(KEY, NOW).code], [history(), 'busy'], 'a failed refresh keeps the last good series in memory too')
-  assert.doesNotMatch(storage.items.get(`domino-card:${KEY}`), /Busy/, 'failures never reach storage')
+  assert.doesNotMatch(storage.items.get(`${STORED}${KEY}`), /Busy/, 'failures never reach storage')
   const reloaded = createCardCache(() => storage)
   const revived = reloaded.get(KEY, NOW)
   assert.deepEqual(revived.data, history())
@@ -221,9 +225,29 @@ test('the tab keeps chain series across a reload, only as wall time, and never s
   assert.equal(createCardCache(() => storage).get(KEY, { wall: END * 1000 + CHAIN_KEEP_MS + 1 }), null, 'past an hour it is gone')
   assert.equal(storage.items.size, 0, 'and removed')
   for (const text of ['{', JSON.stringify({ v: 1, source: 'chain', key: 'other', receivedAt: END * 1000, data: history() }), JSON.stringify({ v: 1, source: 'chain', key: KEY, receivedAt: END * 1000, data: { ...history(), candles: [{ close: 1 }] } })]) {
-    storage.items.set(`domino-card:${KEY}`, text)
-    assert.equal(createCardCache(() => storage).get(KEY, NOW), null, 'anything not in the shape this page kept is dropped')
+    for (const name of [`${STORED}${KEY}`, `domino-card:${KEY}`]) {
+      storage.items.clear()
+      storage.items.set(name, text)
+      assert.equal(createCardCache(() => storage).get(KEY, NOW), null, 'anything not in the shape this page kept is dropped, under either name')
+    }
   }
+})
+
+// 2026-10-01 (the chain2 workstream, part B, audit item G10): a series kept under the old name is Robinhood Chain's, and
+// moves to its new name the first time a card asks for it, drawn the same.
+test('a series kept under the name before moves to the chain’s name when it is first asked for, and is drawn the same', () => {
+  assert.equal(built('cardSeries').STORED, STORED)
+  assert.equal(built('cardSeries').LEGACY_STORED, 'domino-card:')
+  const before = memoryStorage()
+  createCardCache(() => before).put(chain(history()))
+  const text = before.items.get(`${STORED}${KEY}`)
+  const old = memoryStorage()
+  old.items.set(`domino-card:${KEY}`, text)
+  const revived = createCardCache(() => old).get(KEY, NOW)
+  assert.deepEqual([revived.data, revived.receivedAt], [history(), END * 1000])
+  assert.deepEqual([...old.items.keys()], [`${STORED}${KEY}`], 'moved: the old name is gone')
+  assert.equal(old.items.get(`${STORED}${KEY}`), text, 'as it was')
+  assert.equal(createCardCache(() => old).get(`chain:${'0x'.padEnd(66, '1')}:x:3600`, NOW), null, 'a series kept under neither name is none')
 })
 
 // Added 2026-09-27 (r6/marketsdata): the cards' memory is the browser's localStorage, so a new tab draws the six cards at
@@ -241,7 +265,8 @@ test('the cards’ memory is the browser’s, shared by its tabs, and old series
   Object.assign(listed, { getItem: (key) => items.get(key) ?? null, setItem: (key, value) => { items.set(key, String(value)) }, removeItem: (key) => { items.delete(key) } })
   const cache = createCardCache(() => listed, () => NOW.wall)
   cache.put(chain())
-  assert.deepEqual([...items.keys()].sort(), ['domino-card:chain:recent', `domino-card:${KEY}`, 'domino-markets:v1'].sort(), 'past an hour, or not this page’s, is let go; other keys are not touched')
+  // Changed on purpose 2026-10-01 (part B, G10): the new series goes under its chain's name; the old names are swept alike.
+  assert.deepEqual([...items.keys()].sort(), ['domino-card:chain:recent', `${STORED}${KEY}`, 'domino-markets:v1'].sort(), 'past an hour, or not this page’s, is let go; other keys are not touched')
   items.set('domino-card:chain:old', JSON.stringify({ v: 1, receivedAt: 0 }))
   cache.put(chain())
   assert.ok(items.has('domino-card:chain:old'), 'once a document')
@@ -594,6 +619,8 @@ function cardModule() {
     ...require('../.test-build/app/src/lib/format/time.js'),
     // 2026-09-27 (r6/marketsdata): the card writes its closes as the table writes a price (marketPrice.ts plainClose).
     ...require('../.test-build/app/src/lib/read/marketPrice.js'),
+    // 2026-10-01 (audit E21): the card names its pair as its price is written, and its fee as every chip writes it.
+    ...require('../.test-build/app/src/lib/read/orientation.js'), ...require('../.test-build/app/src/lib/format/fee.js'),
     unreadToken: (address) => ({ address }), poolHref: (id) => `#/pool/${id}`,
     // 2026-09-25 (r3 charts): the stub also shows the tone the card gives its line, and whether it draws the level.
     PriceLineSvg: (props) => React.createElement('svg', { 'data-price-line': '', 'data-tone': props.tone, 'data-level': props.level ? '' : undefined, title: props.title }),

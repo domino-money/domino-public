@@ -8,12 +8,14 @@ import { createSetupClient, deploymentFrom, raw, type PreparedSetup, type SetupO
 import { saveSetupProfile, savedSetupProfile } from '../finance/recoveryProfile'
 import { RECEIPT_TEXT, SETUP_STEP_TEXT, errorCode, financeErrorText } from '../finance/words'
 import { financialFetch } from '../finance/http'
+import { personRefused } from '../finance/nonce'
 import { realClock } from '../lib/clock'
 import { livePort } from '../session/livePort'
 import { SwapQuote } from '../components/preview/SwapQuote'
 import { SlippageChoice } from '../components/create/SlippageChoice'
 import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom } from '../lib/create/slippage'
 import { Button, Card } from '../components/ui'
+import { walletChanged } from '../lib/walletPositions'
 
 const defaults = { currency0: '', currency1: '', fee: '3000', tickSpacing: '60', amount0: '', amount1: '', grossSwap: '', maxImpact: '100', sqrtLimit: '',
   tickLower: '', tickUpper: '', liquidity: '', maxAmount0: '', maxAmount1: '', minPrice: '', maxPrice: '', initialPrice: '0',
@@ -137,10 +139,12 @@ export default function AdvancedSetup({ slippageBps }: { slippageBps?: string } 
     running.current = true; setBusy(true); setPrepared(null); setAck(false)
     try {
       const hash = await client.send(step, true)
+      // RPC fix round 2: a setup step changes the wallet's list (a held deposit, a new position): its next reads ask fresh.
+      walletChanged()
       if (generation.current === gen) { setForm(old => ({ ...old, transactionHash: hash, operationId: step.operationId ?? old.operationId })); say('Transaction offered once. Check its receipt and the operation before the next stage.') }
     } catch (error) { if (generation.current === gen) say(error instanceof Error && ['setup_admission_unavailable','setup_release_unavailable','invalid_setup_release','setup_release_expired','deployment_code_changed','deployment_identity_changed'].includes(error.message)
       ? 'The deployment changed or could not be confirmed. No wallet transaction was requested. Read your operations again, then prepare and review again. Existing operations can still be read and refunded.'
-      : error && typeof error === 'object' && (error as { code?: unknown }).code === 4001
+      : personRefused(error)
         ? 'Wallet request rejected. Prepare and review again if you want to continue.'
         : 'The wallet outcome may be unknown. Check wallet activity and reload the operation before proceeding. This nonce remains protected against another offer, including after reload.', errorCode(error)) }
     finally { if (generation.current === gen) { running.current = false; setBusy(false) } }
@@ -180,7 +184,7 @@ export default function AdvancedSetup({ slippageBps }: { slippageBps?: string } 
       <Button className="justify-self-start" variant="outline" disabled={busy} onClick={() => { void action(() => prepare('cancel')) }}>Review refund of remaining funds</Button>
       {operation && !operation.closed && <section className="dm-inset" aria-label="Refund tokens separately"><h3 className="dm-acct-subtitle">Refund one token at a time</h3><p className="dm-acct-line">If one token cannot be transferred, refund the other independently. Starting recovery ends swap and mint for this operation.</p><div className="dm-acct-choices">{([[operation.key.currency0, operation.balance0, 'token 0'], [operation.key.currency1, operation.balance1, 'token 1']] as const).map(([currency, amount, label]) => <Button key={currency} variant="outline" disabled={busy || amount === 0n} onClick={() => { void action(() => prepareRecovery(currency, amount)) }}>Review {label} refund</Button>)}</div></section>}
       {prepared && <section className="dm-inset dm-acct-review" aria-label="Wallet transaction review"><h3 className="dm-acct-subtitle">Review {SETUP_STEP_TEXT[prepared.kind]}</h3>{prepared.summary.map(line => <p className="dm-acct-line dm-acct-wrap" key={line}>{line}</p>)}<label className="dm-acct-check"><input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} /> I reviewed the tokens, destination, amounts, fee and limits.</label><Button className="justify-self-start" variant="accent" disabled={!ack || busy} onClick={() => { void send() }}>Send this step in wallet</Button></section>}
-      {inputs(['transactionHash'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={() => { void action(async () => { const gen = generation.current, receipt = await client.receipt(form.transactionHash.toLowerCase() as Hex, form.operationId ? id() : undefined); if (generation.current === gen) say(`Receipt: ${RECEIPT_TEXT[receipt.state]}. ${receipt.state === 'finalized' ? 'Read the operation before continuing.' : 'Wait for canonical finality before considering the step complete.'}`) }) }}>Check canonical receipt</Button>
+      {inputs(['transactionHash'])}<Button className="justify-self-start" variant="outline" disabled={busy} onClick={() => { void action(async () => { const gen = generation.current, receipt = await client.receipt(form.transactionHash.toLowerCase() as Hex, form.operationId ? id() : undefined); if (receipt.state === 'included' || receipt.state === 'finalized') walletChanged(receipt.blockNumber); if (generation.current === gen) say(`Receipt: ${RECEIPT_TEXT[receipt.state]}. ${receipt.state === 'finalized' ? 'Read the operation before continuing.' : 'Wait for canonical finality before considering the step complete.'}`) }) }}>Check canonical receipt</Button>
     </>}
   </Card>
 }

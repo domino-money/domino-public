@@ -48,30 +48,30 @@
 
   /* The loops, only where offset-path can place what travels: 6 s compound, 9 s domino. */
   @supports (offset-path: path('M 0 0')) {
-    .dm-mode-art[data-play="loop"][data-mode="compound"] .band-fill { animation: dm-ma-c-fill 6s var(--ease-std) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="compound"] .band-lit { animation: dm-ma-c-lit 6s var(--ease-std) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="compound"] .ripple { animation: dm-ma-c-ripple 6s var(--ease-quick) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="compound"] .mark { animation: dm-ma-c-press 6s var(--ease-std) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="compound"] .stack-1 { animation: dm-ma-c-stack-1 6s var(--ease-pop) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="compound"] .stack-2 { animation: dm-ma-c-stack-2 6s var(--ease-pop) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="compound"] .stack-3 { animation: dm-ma-c-stack-3 6s var(--ease-pop) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="compound"] .drop-1 { animation: dm-ma-c-drop-1 6s linear infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="compound"] .drop-2 { animation: dm-ma-c-drop-2 6s linear infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="compound"] .drop-3 { animation: dm-ma-c-drop-3 6s linear infinite; }
+    .dm-mode-art[data-play="loop"][data-mode="compound"] .band-fill { animation: dm-ma-c-fill 6s var(--ease-std) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="compound"] .band-lit { animation: dm-ma-c-lit 6s var(--ease-std) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="compound"] .ripple { animation: dm-ma-c-ripple 6s var(--ease-quick) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="compound"] .mark { animation: dm-ma-c-press 6s var(--ease-std) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="compound"] .stack-1 { animation: dm-ma-c-stack-1 6s var(--ease-pop) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="compound"] .stack-2 { animation: dm-ma-c-stack-2 6s var(--ease-pop) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="compound"] .stack-3 { animation: dm-ma-c-stack-3 6s var(--ease-pop) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="compound"] .drop-1 { animation: dm-ma-c-drop-1 6s linear var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="compound"] .drop-2 { animation: dm-ma-c-drop-2 6s linear var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="compound"] .drop-3 { animation: dm-ma-c-drop-3 6s linear var(--art-loops); }
 
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .price { animation: dm-ma-d-price 9s linear infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .tip-rest { animation: dm-ma-d-rest 9s linear infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .tip { animation: dm-ma-d-tip 9s linear infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .tip .tip-ring { animation: dm-ma-d-pulse 9s var(--ease-std) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .trigger { animation: dm-ma-d-trigger 9s var(--ease-std) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .rb { animation: dm-ma-d-lit 9s var(--ease-std) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .rb-ghost { animation: dm-ma-d-ghost 9s var(--ease-std) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .tile-b { animation: dm-ma-d-rise 9s var(--ease-std) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .tile-a { animation: dm-ma-d-nudge 9s linear infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .ghost { animation: dm-ma-d-cap 9s var(--ease-std) infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .drop-1 { animation: dm-ma-d-drop-1 9s linear infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .drop-2 { animation: dm-ma-d-drop-2 9s linear infinite; }
-    .dm-mode-art[data-play="loop"][data-mode="domino"] .drop-3 { animation: dm-ma-d-drop-3 9s linear infinite; }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .price { animation: dm-ma-d-price 9s linear var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .tip-rest { animation: dm-ma-d-rest 9s linear var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .tip { animation: dm-ma-d-tip 9s linear var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .tip .tip-ring { animation: dm-ma-d-pulse 9s var(--ease-std) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .trigger { animation: dm-ma-d-trigger 9s var(--ease-std) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .rb { animation: dm-ma-d-lit 9s var(--ease-std) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .rb-ghost { animation: dm-ma-d-ghost 9s var(--ease-std) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .tile-b { animation: dm-ma-d-rise 9s var(--ease-std) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .tile-a { animation: dm-ma-d-nudge 9s linear var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .ghost { animation: dm-ma-d-cap 9s var(--ease-std) var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .drop-1 { animation: dm-ma-d-drop-1 9s linear var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .drop-2 { animation: dm-ma-d-drop-2 9s linear var(--art-loops); }
+    .dm-mode-art[data-play="loop"][data-mode="domino"] .drop-3 { animation: dm-ma-d-drop-3 9s linear var(--art-loops); }
 
     /* On the Automate stage the complete machine is seen first: its loop starts 1.2 s after the art has risen in. */
     .dm-mode-art[data-size="stage"][data-play="loop"][data-mode] * { animation-delay: 1.2s; }

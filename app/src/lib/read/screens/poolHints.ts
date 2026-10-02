@@ -24,8 +24,13 @@ import { MAX_POOL_HINTS } from './poolsList'
 
 const POOL_ID = /^0x[0-9a-fA-F]{64}$/
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/
-/** How long New position waits for the hints before it reads the pools without them. */
-export const HINT_WAIT_MS = 2500
+/**
+ * How long New position (and a token's Markets page) waits for the hints before it reads the pools without them.
+ * Changed 2026-10-01 (audit A16): 800 ms, from 2.5 s. The hints are a single GET, through our own edge where it keeps
+ * them, usually already in hand (asked when the token is pointed at in the search); a slow provider held the whole
+ * list for up to 2.5 s.
+ */
+export const HINT_WAIT_MS = 800
 
 /** One pair as the provider's token-pairs list gives it; every field is checked before use. */
 type Pair = {

@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { Skeleton } from '../ui'
 import { aboutPercent, earnings, parseAmount, usdShort, usdText } from './plain'
+import { numberFormat } from '../../lib/format/numberFormat'
 
 /** The amounts a person can pick with one press. */
 const PRESETS = [100, 1_000, 10_000] as const
-const presetText = (value: number) => `$${new Intl.NumberFormat('en-US').format(value)}`
+const presetText = (value: number) => `$${numberFormat().format(value)}`
 
 /**
  * "If you put in $1,000, you could earn about $X a month": an amount the person types, its share of the pool's fees
@@ -47,7 +48,7 @@ export function PoolEarnings({ apr, tvl, loading }: { apr: number | null; tvl: n
           </div>
           <div className="dm-pool-earn-presets" role="group" aria-label="Amounts">
             {PRESETS.map((value) => (
-              <button key={value} type="button" className="dm-pool-earn-preset" aria-pressed={amount === value} onClick={() => setTyped(new Intl.NumberFormat('en-US').format(value))}>
+              <button key={value} type="button" className="dm-pool-earn-preset" aria-pressed={amount === value} onClick={() => setTyped(numberFormat().format(value))}>
                 {presetText(value)}
               </button>
             ))}

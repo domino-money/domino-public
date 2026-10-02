@@ -29,8 +29,8 @@
  * forwarder from a Worker:
  *
  *   1. An origin other than production or the explicitly enabled exact
- *      preview alias's public reads → 404 not_found. Other Pages deployments
- *      and private preview families never reach a binding.
+ *      preview alias's families → 404 not_found. Other Pages deployments,
+ *      and a family the preview has not been given, never reach a binding.
  *   2. No family owns the path. None owns a path   → 404 not_found.
  *      with an empty segment, such as
  *      /api/read/v1//capabilities
@@ -43,10 +43,16 @@
  * as [[env.production.services]], one per family below, each naming its
  * bridge Worker (domino-read-bridge, domino-session-bridge,
  * domino-onboarding-bridge, domino-deposit-bridge), deployed with every flag
- * off in source defaults. The exact preview alias gets only READ_BRIDGE and
- * an explicit opt-in. Its browser boundary is checked before translating a
- * public-read request to the Worker's canonical origin. No private family
- * or beta cookie crosses that adapter. See docs/PREVIEW_PUBLIC_READS.md.
+ * off in source defaults. The exact preview alias gets its families by
+ * explicit opt-in only: the public reads (PREVIEW_PUBLIC_READS) and, since
+ * 2026-10-01 (H7), each other family named in PREVIEW_FAMILIES. A public
+ * family (the reads, the setup release) has its browser boundary checked here
+ * and is translated to the Worker's canonical origin, with no cookie. A
+ * private family (session, onboarding, deposit, performance, execution) goes
+ * on exactly as the browser sent it, its own cookies included, to the binding
+ * the preview environment names: that must be a Worker deployed for the
+ * preview alias (its APP_ORIGIN), never production's. The beta cookie never
+ * crosses. See docs/PREVIEW_PUBLIC_READS.md.
  * tests/forwarder.test.mjs checks that the names looked up here are the names
  * wrangler.toml binds.
  */
@@ -63,6 +69,11 @@ export interface Fetcher {
  */
 export interface BridgeEnv {
   PREVIEW_PUBLIC_READS?: string
+  /**
+   * The families other than the public reads the exact preview alias may use, by name, comma-separated: setup,
+   * session, onboarding, deposit, performance, execution (2026-10-01, H7). Unset or empty: none, as before.
+   */
+  PREVIEW_FAMILIES?: string
   READ_BRIDGE?: unknown
   SESSION_BRIDGE?: unknown
   ONBOARDING_BRIDGE?: unknown
@@ -78,47 +89,75 @@ export const APP_ORIGIN = 'https://domino.money'
 export const PREVIEW_ORIGIN = 'https://preview.domino-app-e65.pages.dev'
 
 interface Family {
+  /** Its name in PREVIEW_FAMILIES; the public reads are opted in by PREVIEW_PUBLIC_READS instead. */
+  name: string
   prefix: string
   binding: keyof BridgeEnv
   contract: string
   csrf: boolean
   /** The only cookies this family's Worker reads (session-worker.mjs, authenticated-worker.mjs). */
   cookies: readonly string[]
+  /**
+   * On the preview alias: `public` is translated to the canonical origin, as the reads always were (no cookie, public
+   * data, a Worker that answers only https://domino.money); `private` goes on as sent, to a preview Worker of its own.
+   */
+  preview: 'public' | 'private'
 }
 
 const FAMILIES: readonly Family[] = [
-  { prefix: '/api/setup/v1/', binding: 'SETUP_BRIDGE', contract: 'x-domino-setup-contract', csrf: false, cookies: [] },
-  { prefix: '/api/execution/v1/', binding: 'EXECUTION_BRIDGE', contract: 'x-domino-execution-contract', csrf: true, cookies: ['__Host-domino-session'] },
-  { prefix: '/api/performance/v2/', binding: 'PERFORMANCE_BRIDGE', contract: 'x-domino-performance-contract', csrf: true, cookies: ['__Host-domino-session'] },
-  { prefix: '/api/read/v1/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
-  { prefix: '/api/read/v2/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
-  { prefix: '/api/read/v3/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
-  { prefix: '/api/read/v4/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
+  // The setup release: public deployment identities (contract addresses and code hashes), GET only, no cookie.
+  { name: 'setup', prefix: '/api/setup/v1/', binding: 'SETUP_BRIDGE', contract: 'x-domino-setup-contract', csrf: false, cookies: [], preview: 'public' },
+  { name: 'execution', prefix: '/api/execution/v1/', binding: 'EXECUTION_BRIDGE', contract: 'x-domino-execution-contract', csrf: true, cookies: ['__Host-domino-session'], preview: 'private' },
+  { name: 'performance', prefix: '/api/performance/v2/', binding: 'PERFORMANCE_BRIDGE', contract: 'x-domino-performance-contract', csrf: true, cookies: ['__Host-domino-session'], preview: 'private' },
+  { name: 'read', prefix: '/api/read/v1/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [], preview: 'public' },
+  { name: 'read', prefix: '/api/read/v2/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [], preview: 'public' },
+  { name: 'read', prefix: '/api/read/v3/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [], preview: 'public' },
+  { name: 'read', prefix: '/api/read/v4/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [], preview: 'public' },
   // The featured pools list. Its one route, featured-pools, is answered by
   // functions/api/read/v5/featured-pools.ts, which calls forward() itself.
-  { prefix: '/api/read/v5/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [] },
+  { name: 'read', prefix: '/api/read/v5/', binding: 'READ_BRIDGE', contract: 'x-domino-read-contract', csrf: false, cookies: [], preview: 'public' },
   {
+    name: 'session',
     prefix: '/api/session/v1/',
     binding: 'SESSION_BRIDGE',
     contract: 'x-domino-session-contract',
     csrf: true,
     cookies: ['__Host-domino-preauth', '__Host-domino-session'],
+    preview: 'private',
   },
   {
+    name: 'onboarding',
     prefix: '/api/onboarding/v1/',
     binding: 'ONBOARDING_BRIDGE',
     contract: 'x-domino-onboarding-contract',
     csrf: true,
     cookies: ['__Host-domino-session'],
+    preview: 'private',
   },
   {
+    name: 'deposit',
     prefix: '/api/deposit/v1/',
     binding: 'DEPOSIT_BRIDGE',
     contract: 'x-domino-deposit-contract',
     csrf: true,
     cookies: ['__Host-domino-session'],
+    preview: 'private',
   },
 ]
+
+/** The family names PREVIEW_FAMILIES may list: every family but the public reads, which have their own opt-in. */
+export const PREVIEW_FAMILY_NAMES: readonly string[] = [...new Set(FAMILIES.map((family) => family.name).filter((name) => name !== 'read'))]
+
+/**
+ * Whether the exact preview alias may use `family` in `env`: the public reads by PREVIEW_PUBLIC_READS === "true", any
+ * other by its exact name in PREVIEW_FAMILIES (a comma-separated list; spaces around names are ignored, anything else
+ * in it names nothing).
+ */
+function previewAllows(env: BridgeEnv, family: Family): boolean {
+  if (family.name === 'read') return env.PREVIEW_PUBLIC_READS === 'true'
+  if (typeof env.PREVIEW_FAMILIES !== 'string') return false
+  return env.PREVIEW_FAMILIES.split(',').map((name) => name.trim()).includes(family.name)
+}
 
 /**
  * Request headers the Workers read, copied as they arrived. Everything else
@@ -198,14 +237,16 @@ function familyOf(pathname: string): Family | undefined {
   return FAMILIES.find((family) => pathname.startsWith(family.prefix))
 }
 
-/** Check the real browser BEFORE translating this fixed public-read alias.
- * Mirrors the read Worker's browser checks: a foreign Origin/Host or a
- * cross-site navigation must never become an admitted request by remapping.
+/** Check the real browser BEFORE translating this fixed public alias.
+ * Mirrors the read and setup Workers' browser checks: a foreign Origin/Host or
+ * a cross-site navigation must never become an admitted request by remapping.
+ * A GET may omit Origin where those Workers allow it (the read capabilities,
+ * the setup release); a POST must name the preview alias.
  */
-function isPreviewBrowserRead(request: Request, url: URL): boolean {
+function isPreviewBrowserRead(request: Request, url: URL, family: Family): boolean {
   const host = request.headers.get('host')
   if (host !== null && host !== url.host) return false
-  const capability = request.method === 'GET' && /^\/api\/read\/v[1-5]\/capabilities$/.test(url.pathname)
+  const capability = request.method === 'GET' && (/^\/api\/read\/v[1-5]\/capabilities$/.test(url.pathname) || family.binding === 'SETUP_BRIDGE')
   const origin = request.headers.get('origin')
   if ((!capability || origin !== null) && origin !== PREVIEW_ORIGIN) return false
   for (const [name, accepted] of [
@@ -221,12 +262,15 @@ function isPreviewBrowserRead(request: Request, url: URL): boolean {
 
 export async function forward(request: Request, env: BridgeEnv): Promise<Response> {
   const url = new URL(request.url)
-  const preview = url.origin === PREVIEW_ORIGIN && env.PREVIEW_PUBLIC_READS === 'true'
+  const preview = url.origin === PREVIEW_ORIGIN
   if (url.origin !== APP_ORIGIN && !preview) return refuse('not_found', 404)
   const family = familyOf(url.pathname)
   if (!family) return refuse('not_found', 404)
-  if (preview && family.binding !== 'READ_BRIDGE') return refuse('not_found', 404)
-  if (preview && !isPreviewBrowserRead(request, url)) return refuse('origin_not_allowed', 403)
+  if (preview && !previewAllows(env, family)) return refuse('not_found', 404)
+  // A public family is translated below, so its browser is checked first; a private one keeps its own origin, which
+  // its preview Worker checks itself, as production's do.
+  const translate = preview && family.preview === 'public'
+  if (translate && !isPreviewBrowserRead(request, url, family)) return refuse('origin_not_allowed', 403)
 
   // Cloudflare adds CF-Worker, naming the calling Worker's zone, to every
   // subrequest a Worker sends with fetch(). Such a request is not a browser's,
@@ -253,9 +297,9 @@ export async function forward(request: Request, env: BridgeEnv): Promise<Respons
   const cookie = familyCookies(request.headers.get('Cookie'), family.cookies)
   if (cookie !== null) headers.set('Cookie', cookie)
 
-  // Only a validated, fixed public-read alias is translated. There is no
+  // Only a validated, fixed public alias is translated. There is no
   // caller-supplied target, no credential forwarding and no private family.
-  if (preview) {
+  if (translate) {
     headers.set('host', new URL(APP_ORIGIN).host)
     if (headers.has('origin')) headers.set('origin', APP_ORIGIN)
   }
@@ -265,7 +309,7 @@ export async function forward(request: Request, env: BridgeEnv): Promise<Respons
     const forwarded = new Request(request, { headers })
     // Production stays on its existing path. Preview keeps its path, query,
     // method, body, signal and contract, changing only the vetted origin.
-    response = await bridge.fetch(preview
+    response = await bridge.fetch(translate
       ? new Request(`${APP_ORIGIN}${url.pathname}${url.search}`, forwarded)
       : forwarded)
   } catch {

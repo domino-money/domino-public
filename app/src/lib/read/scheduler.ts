@@ -114,9 +114,10 @@ export const STORED_LANE: ReadonlySet<ReadRoute> = new Set<ReadRoute>(['overview
 /**
  * Routes a Pages Function may answer from its edge cache (functions/_lib/featuredEdge.ts, publicEdge.ts), which the
  * gateway's per-client budget then never counts. Such a read takes its budget like any other and gives it back when
- * its answer says it came from that cache (provenance `edge`). Added 2026-09-28 (speed wave, items 4 and 45).
+ * its answer says it came from that cache (provenance `edge`). Added 2026-09-28 (speed wave, items 4 and 45); the
+ * stored overview since 2026-10-01 (audit A14, functions/_lib/overviewEdge.ts).
  */
-export const EDGE_CACHED: ReadonlySet<ReadRoute> = new Set<ReadRoute>(['featured-pools', 'history'])
+export const EDGE_CACHED: ReadonlySet<ReadRoute> = new Set<ReadRoute>(['featured-pools', 'history', 'overview'])
 
 /**
  * Routes the edge answers almost always (the featured list: one answer for everyone, kept for up to 15 minutes), which

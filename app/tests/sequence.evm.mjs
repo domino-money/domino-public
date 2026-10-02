@@ -6,6 +6,8 @@ import { decodeFunctionData, zeroAddress } from 'viem';
 const f=JSON.parse(readFileSync(0,'utf8'));
 assert.match(f.url,/^http:\/\/127\.0\.0\.1:[0-9]+$/);
 const {createSequenceClient:createClient,sequenceDeploymentFrom,sequenceIdentity,sequenceAbi}=await import(pathToFileURL(process.env.DOMINO_SEQUENCE_SDK_MODULE).href);
+// The send's signing window, from setup.js compiled beside sequence.js (sequence.ts imports it from there).
+const {SIGN_WINDOW_S}=await import(new URL('./setup.js',pathToFileURL(process.env.DOMINO_SEQUENCE_SDK_MODULE)).href);
 let now=f.now, current=true, admitted=true, mode='normal', checks=0;
 const createSequenceClient=(wallet,deployment,clock)=>createClient(wallet,deployment,clock,async()=>admitted?sequenceDeploymentFrom(f.release,clock()):null);
 const claims=new Map(), calls=[];
@@ -17,7 +19,10 @@ const wallet={owner:f.owner,current:()=>current,nonceOffered:n=>claims.has(Strin
   calls.push({method,params});
   if(method==='eth_sendTransaction'&&mode==='reject'){mode='normal';throw Object.assign(new Error('rejected'),{code:4001})}
   if(method==='eth_sendTransaction'&&mode==='unknown'){mode='normal';throw new Error('outcome_unknown')}
-  if(method==='eth_sendTransaction'&&mode==='late-reject'){mode='normal';now+=29.999;return new Promise((_,reject)=>setTimeout(()=>reject(Object.assign(new Error('late_rejected'),{code:4001})),50))}
+  // Changed on purpose 2026-10-02 (package C8, 180 s signing window): the clock moves to 1 ms before the send's window
+  // ends, whatever its length, as test-setup-sdk.evm.mjs does; with the old 29.999 s the 4001 below arrived inside the
+  // 180 s window and was a plain refusal, so the UI time-out this scenario is about never happened.
+  if(method==='eth_sendTransaction'&&mode==='late-reject'){mode='normal';now+=SIGN_WINDOW_S-0.001;return new Promise((_,reject)=>setTimeout(()=>reject(Object.assign(new Error('late_rejected'),{code:4001})),50))}
   if(method==='eth_getCode'&&mode==='wrongcode'&&params[0]===f.release.deployment.routing)return '0x6000';
   if(method==='eth_getTransactionCount'&&mode==='pending'&&params[1]==='pending')return `0x${(BigInt(await rpc(method,params))+1n).toString(16)}`;
   const value=await rpc(method,params);
@@ -117,7 +122,9 @@ await new Promise(resolve=>setTimeout(resolve,75));assert.equal(wallet.nonceOffe
 await assert.rejects(recovery.send(late,true),/review_required/);check();
 // Unknown wallet outcome must survive a new SDK instance (shared nonce guard).
 const revoke=await recovery.recover(f.oldVault,'revoke-operator',gas);mode='unknown';await assert.rejects(recovery.send(revoke,true),/outcome_unknown/);
-await assert.rejects(createSequenceClient(wallet,d,()=>now).recover(f.oldVault,'revoke-operator',gas),/pending_wallet_transaction/);check();
+// Changed on purpose 2026-10-02 (package C2 nonce latch): the latch, with nothing pending on chain, is a request still open
+// in the wallet (sequence.ts freeNonce); `pending_wallet_transaction` now means only one pending on chain. Nothing is offered.
+await assert.rejects(createSequenceClient(wallet,d,()=>now).recover(f.oldVault,'revoke-operator',gas),/wallet_request_open/);check();
 const other=(await rpc('eth_accounts',[]))[4],otherWallet={...wallet,owner:other,request:async(method,params)=>method==='eth_accounts'?[other]:rpc(method,params)};
 await assert.rejects(createSequenceClient(otherWallet,d,()=>now).inspect(f.oldVault),/deployment_identity_changed/);check();
 current=false;await assert.rejects(client.recent(),/wallet_action_expired/);check();

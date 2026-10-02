@@ -1,8 +1,9 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { WagmiProvider } from 'wagmi'
 import { publishWalletIdentity } from '../../lib/walletIdentity'
 import { forgetPrivate } from '../../finance/privateCards'
+import { forgetWallets } from '../../lib/browserCopies'
 import { privateQueryClient } from '../../session/privateQuery'
 import { walletConfig } from '../../wallet/config'
 import { useSession } from '../../wallet/session'
@@ -52,6 +53,20 @@ function WalletControl() {
   useEffect(() => {
     if (ended) forgetPrivate()
   }, [ended])
+
+  // A wallet disconnected here takes this browser's copies of every wallet with it: the positions lists, the Wallet
+  // card's balances, the private cards' (2026-10-01, I6: on a shared computer the next person saw which wallets were
+  // used and what they held, for a week). Only a disconnect after a connection in this page: a page that opens with no
+  // wallet, or before the wallet has said which account it has, forgets nothing, and a session that merely ends keeps
+  // the public copies, so the same wallet's next visit still paints at once.
+  const connected = useRef(false)
+  useEffect(() => {
+    if (identity.kind === 'connected') connected.current = true
+    else if (view.status === 'no_wallet' && connected.current) {
+      connected.current = false
+      forgetWallets()
+    }
+  }, [identity.kind, view.status])
 
   let label = <>Connect wallet</>
   if (identity.kind === 'connected') {

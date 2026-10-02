@@ -1,24 +1,26 @@
 /**
  * The wallet's Domino positions on the page (src/lib/walletPositions.ts and
  * src/lib/walletCards.ts, 2026-09-24): the scan's answer checked field by
- * field, the page's own read of the chain (2026-09-25: the scan of
- * functions/_lib/walletPositions.ts run by the page against the public RPC,
- * over the fake chain of tests/owned-chain.mjs, the same answer the route
- * gives), and the cards the rows and a position's page draw from chain data.
- * Replaces tests/owned-positions.test.mjs with the v1 list, its per-row
- * read-service reads and the browser's memory of created ids.
+ * field, the page's read of it, and the cards the rows and a position's page
+ * draw from chain data. Replaces tests/owned-positions.test.mjs with the v1
+ * list, its per-row read-service reads and the browser's memory of created ids.
+ *
+ * RPC-SPEC (2026-10-01, the owner's rule: nothing is read from a public RPC): the page asks the site's own route again,
+ * POST /api/owned/v2/positions (src/lib/edge/chainRoutes.ts), answered here by tests/support/edge-routes.mjs: the
+ * route's contract over the scan of functions/_lib/walletPositions.ts and the fake chain of tests/owned-chain.mjs.
+ * From 2026-09-25 to that day the page ran the scan itself against the public RPC.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { decodeFunctionData, toFunctionSelector } from 'viem';
-import { KEY, OWNER, POOL, TOKEN, USDG, ZERO, fakeChain, memoryCache, multicallAbi, nft, owned, wallet as endpoint } from './owned-chain.mjs';
-import { reachable } from './support/reach.mjs';
+import { KEY, OWNER, POOL, TOKEN, USDG, ZERO, fakeChain, multicallAbi, nft, owned, wallet as endpoint } from './owned-chain.mjs';
+import { edgeFetch } from './support/edge-routes.mjs';
 
 const require = createRequire(import.meta.url);
 const client = require('../.test-build/app/src/lib/walletPositions.js');
-const routingOf = () => require('../.test-build/app/src/lib/chain/browser.js').routing();
+const routes = require('../.test-build/app/src/lib/edge/chainRoutes.js');
 const cards = require('../.test-build/app/src/lib/walletCards.js');
 const positions = require('../.test-build/app/src/lib/read/screens/positions.js');
 
@@ -102,112 +104,155 @@ test('the endpoint’s answer is taken only when every field is exactly what the
   }
 });
 
-const RPC = 'https://rpc.mainnet.chain.robinhood.com';
 const never = () => new AbortController().signal;
-/** The route's answer for `owner` over `chain`: what POST /api/owned/v2/positions gives. */
+/** The route's answer for `owner` over `chain`, as the scan's own route gave it before (functions/_lib/walletPositions.ts). */
 const routeAnswer = async (chain, owner = OWNER) =>
   (await endpoint.answerWalletPositions(new Request('https://domino.money/api/owned/v2/positions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ owner }) }), chain.deps)).json();
 
-// Changed on purpose (2026-09-28, the page's fallbacks for an RPC it cannot reach): every stub here is the chain's own
-// RPC, there to be reached. The router's reach probe (a no-cors GET, src/lib/chain/failover.ts) is answered as a browser
-// answers it for such a server, and is not one of the requests counted; each stub starts with a router that knows
-// nothing. tests/rpc-failover.test.mjs has the RPC that cannot be reached.
+/**
+ * The site's route over `chain` (tests/support/edge-routes.mjs), as the page's client asks it: the `post` the read takes,
+ * and every request it sent (its path and init). `options` are edgeRoutes' own (source, log).
+ */
+function viaEdge(chain, options) {
+  const sent = [];
+  const answer = edgeFetch(chain.deps, options);
+  const fetch = async (path, init) => {
+    sent.push({ path, init });
+    return answer(path, init);
+  };
+  return { sent, post: (owner, fresh, options = {}) => routes.postOwnedPositions(owner, fresh, { ...options, fetch }) };
+}
+/** Runs `run` with the page's own network call answering `answer` (the default client's path); what it was asked. */
 async function withFetch(answer, run) {
   const sent = [];
   const original = globalThis.fetch;
-  routingOf().reset();
-  require('../.test-build/app/src/lib/chain/browser.js').resetChainCooldown();
-  globalThis.fetch = reachable(async (url, init) => {
+  globalThis.fetch = async (url, init) => {
     sent.push({ url, init });
     return answer(url, init);
-  });
+  };
   try {
     return { result: await run(), sent };
   } finally {
     globalThis.fetch = original;
   }
 }
+/** A `post` whose network call answers `response` (a Response, or a function of the request's body). */
+const answering = (response) => {
+  const sent = [];
+  return { sent, post: (owner, fresh, options = {}) => routes.postOwnedPositions(owner, fresh, { ...options, fetch: async (path, init) => (sent.push(JSON.parse(init.body)), typeof response === 'function' ? response(JSON.parse(init.body)) : response.clone()) }) };
+};
+const reply = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers } });
 
-// Changed on purpose (2026-09-25): the public RPC answers 429 to every call from Cloudflare's edge, so the page no
-// longer asks POST /api/owned/v2/positions: it runs the route's own scan against the RPC itself.
-test('the page reads the chain itself: the scan’s fixed calls, POSTed to the public RPC with no credentials and no referrer, and the same answer the route gives', async () => {
+// Changed on purpose (RPC-SPEC, 2026-10-01): the page asks the site's own route again, which reads Domino's own node at the
+// edge. From 2026-09-25 it ran the route's scan itself against the public RPC, which answered 429 to Cloudflare's edge.
+test('the page asks the site’s own route: one same-origin POST of the owner, the route’s envelope, the same answer the scan gives', async () => {
+  client.forgetWallet();
   const setup = { minted: [{ block: 69_300_000, id: 7 }, { block: 69_400_000, id: 8 }], nfts: { 7: nft(), 8: nft({ liquidity: 0n }) } };
   const chain = fakeChain(setup);
-  const { result, sent } = await withFetch((url, init) => chain.deps.fetch(url, init), () => client.readWalletPositions(OWNER.toUpperCase().replace('0X', '0x'), never()));
+  const edge = viaEdge(chain);
+  const result = await client.readWalletPositions(OWNER.toUpperCase().replace('0X', '0x'), never(), edge.post);
   assert.equal(result.ok, true);
   assert.deepEqual(result.answer.positions.map((p) => [p.tokenId, p.status]), [['7', 'open'], ['8', 'closed']], 'open first; a closed one (liquidity 0, NFT kept) is listed as closed');
   assert.deepEqual(result.answer.positions[0].currencies, [token(USDG, 'USDG', 6), token(TOKEN, 'UFG', 18)]);
-  assert.deepEqual(result.answer, await routeAnswer(fakeChain(setup)), 'the route’s answer, field for field');
-  // Changed on purpose 2026-09-28 (speed wave B, items 17 and 23): the head and the owner's nonce in one aggregate3 first (a
-  // nonce of 0 is the whole answer), and the page's own read carries each position's subscriber in its first read (the
-  // route's does not): still four calls.
-  assert.deepEqual(chain.log.map((call) => call.method), ['eth_call', 'eth_getLogs', 'eth_call', 'eth_call'], 'four calls for a wallet with two positions');
-  for (const { url, init } of sent) {
-    assert.equal(url, RPC);
-    assert.deepEqual({ ...init, body: undefined, signal: undefined }, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: undefined, signal: undefined, credentials: 'omit', referrerPolicy: 'no-referrer' });
-  }
+  assert.deepEqual(result.answer, await routeAnswer(fakeChain(setup)), 'the scan’s answer, field for field');
+  // One POST of the wallet, lowercase, to the route's fixed path: this site's cookies, no cache, no redirect.
+  assert.equal(edge.sent.length, 1);
+  assert.equal(edge.sent[0].path, '/api/owned/v2/positions');
+  assert.deepEqual(JSON.parse(edge.sent[0].init.body), { owner: OWNER });
+  assert.deepEqual({ ...edge.sent[0].init, body: undefined, signal: undefined }, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: undefined, credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: undefined });
+  // The edge's scan reads the chain; the page reads nothing of it itself.
+  // The route read the chain (its own calls and windows: tests/chain-routes.test.mjs); the page read nothing of it itself.
+  assert.ok(chain.log.length > 0 && chain.log.every((call) => ['eth_call', 'eth_getLogs', 'eth_blockNumber'].includes(call.method)), 'the route’s reads, and only reads');
   // No wallet to ask about: nothing is asked.
   for (const owner of ['0x1234', `0x${'0'.repeat(40)}`]) {
-    const refused = await withFetch(() => assert.fail('asked the chain'), () => client.readWalletPositions(owner, never()));
-    assert.deepEqual([refused.result, refused.sent.length], [{ ok: false, reason: 'invalid_owner' }, 0], owner);
+    const refused = answering(() => assert.fail('asked the route'));
+    assert.deepEqual([await client.readWalletPositions(owner, never(), refused.post), refused.sent.length], [{ ok: false, reason: 'invalid_owner' }, 0], owner);
   }
-  // A read the page dropped makes no call at all.
+  // A read the page dropped makes no call at all; one dropped on its way is `aborted`.
   const controller = new AbortController();
   controller.abort();
-  const dropped = await withFetch(() => assert.fail('asked the chain'), () => client.readWalletPositions(OWNER, controller.signal));
-  assert.deepEqual([dropped.result, dropped.sent.length], [{ ok: false, reason: 'aborted' }, 0]);
+  const dropped = answering(() => assert.fail('asked the route'));
+  assert.deepEqual([await client.readWalletPositions(OWNER, controller.signal, dropped.post), dropped.sent.length], [{ ok: false, reason: 'aborted' }, 0]);
+  const leaving = new AbortController();
+  const late = answering(() => (leaving.abort(), reply({})));
+  assert.deepEqual(await client.readWalletPositions(OWNER, leaving.signal, late.post), { ok: false, reason: 'aborted' });
+  client.forgetWallet();
 });
 
-// 2026-09-25: the RPC's own 429 carries `access-control-allow-origin: *,*`, which a browser refuses: the page sees a
-// TypeError, never the status. The page's runtime asks such a call once more after REASK_UNREADABLE_MS (the RPC lifts
-// a refusal within half a second once the address is quiet), and only a second unreadable reply is that rate limit, so
-// the scan waits and asks again.
-test('a reply the browser cannot read is asked once more at once, then taken as the RPC’s 429: waited out and asked again; a time-out stays a time-out', async () => {
-  const { chainDeps, REASK_UNREADABLE_MS } = require('../.test-build/app/src/lib/chain/browser.js');
-  assert.equal(REASK_UNREADABLE_MS, 400);
-  const deps = chainDeps();
-  const unreadable = await withFetch(() => Promise.reject(new TypeError('Failed to fetch')), () => deps.fetch(RPC, { method: 'POST', body: '{}' }));
-  assert.equal(unreadable.result.status, 429);
-  assert.equal(unreadable.sent.length, 2, 'asked once more before it counts as a 429');
-  let first = true;
-  const lifted = await withFetch(() => (first ? ((first = false), Promise.reject(new TypeError('Failed to fetch'))) : Promise.resolve(new Response('{}', { status: 200 }))), () => deps.fetch(RPC, { method: 'POST', body: '{}' }));
-  assert.deepEqual([lifted.result.status, lifted.sent.length], [200, 2], 'a refusal lifted by then is no 429 at all');
-  const timeout = new DOMException('The operation timed out.', 'TimeoutError');
-  await assert.rejects(withFetch(() => Promise.reject(timeout), () => deps.fetch(RPC, { method: 'POST', body: '{}' })), (error) => error === timeout);
-  await assert.rejects(deps.fetch('https://example.com', { method: 'POST' }), TypeError, 'no other URL, not even through the runtime');
-  // Through the scan: two unreadable replies (one call, asked twice), then the chain; the scan's own wait between them.
-  const chain = fakeChain({ minted: [{ block: 69_300_000, id: 7 }], nfts: { 7: nft() } });
-  let refused = 0;
-  const slept = [];
-  const realNow = Date.now;
-  let at = realNow();
-  let read;
-  Date.now = () => at;
-  try {
-    read = await withFetch((url, init) => (refused++ < 2 ? Promise.reject(new TypeError('Failed to fetch')) : chain.deps.fetch(url, init)), () => client.readWalletPositions(OWNER, never(), { ...chainDeps(), sleep: async (ms) => { slept.push(ms); at += ms; } }));
-  } finally { Date.now = realNow; }
-  assert.equal(read.result.ok, true, JSON.stringify(read.result));
-  assert.deepEqual(slept, [1500, 3000, 4500], 'the bounded retry ladder now respects the six-second shared pause');
-  assert.equal(refused, 6, 'only two refused network calls, then the four successful scan calls');
-});
+// The unreadable-reply-as-429 retry went with lib/chain/browser.ts (RPC-SPEC §3.5 and §7.2): the list reads no RPC.
 
-test('a failed read says why and is asked again: chain_busy while the RPC rate-limits (after its own waits), chain_unavailable otherwise, never an empty list', async () => {
-  // Changed on purpose 2026-09-28 (speed wave B, item 23): the scan's first call is the head and the nonce's aggregate3, and
-  // a wallet whose nonce is 0 reads no log.
+test('a failed read says why and is asked again: chain_busy while the route or the node rate-limits (with its wait), chain_unavailable otherwise (with the wait when the source is away), never an empty list', async (t) => {
+  const NOW = 1_800_000_000_000;
+  t.mock.method(Date, 'now', () => NOW);
+  // The node refuses the scan's calls: the route's own waits, then 502 chain_busy, Retry-After 12.
   const busy = fakeChain({ script: { eth_call: Array.from({ length: 4 }, () => new Response('', { status: 429 })) } });
-  assert.deepEqual(await client.readWalletPositions(OWNER, never(), busy.deps), { ok: false, reason: 'chain_busy' });
-  assert.deepEqual(busy.slept, [1500, 3000, 4500], 'the scan’s own waits between its four tries');
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), viaEdge(busy).post), { ok: false, reason: 'chain_busy', retryAt: NOW + 12_000 });
+  assert.deepEqual(busy.slept, [1500, 3000, 4500], 'the route’s scan waited between its four tries');
+  // The visitor's own limiter (429 with Retry-After), and one with none (the client's five seconds).
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), answering(reply({ error: 'rate_limited' }, 429, { 'Retry-After': '7' })).post), { ok: false, reason: 'chain_busy', retryAt: NOW + 7_000 });
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), answering(reply({ error: 'rate_limited' }, 429)).post), { ok: false, reason: 'chain_busy', retryAt: NOW + 5_000 });
+  // The node failing: 502 chain_unavailable with its short wait, asked again on the ladder (no deadline of its own).
   const down = fakeChain({ nonce: 1n, script: { eth_getLogs: [new Response('', { status: 500 })] } });
-  assert.deepEqual(await client.readWalletPositions(OWNER, never(), down.deps), { ok: false, reason: 'chain_unavailable' });
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), viaEdge(down).post), { ok: false, reason: 'chain_unavailable' });
   const odd = fakeChain({ script: { eth_call: [{ result: 'latest' }] } });
-  assert.deepEqual(await client.readWalletPositions(OWNER, never(), odd.deps), { ok: false, reason: 'chain_unavailable' }, 'a reply the scan cannot parse');
-  // Every failure of the chain is asked again, after 2, 5 and 10 s and then every 30 s; a dropped read and a bad address are not.
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), viaEdge(odd).post), { ok: false, reason: 'chain_unavailable' }, 'a reply the scan cannot parse');
+  // The source away (no node secret, or the node away): 503 with a wait of a minute or more, said with its deadline,
+  // bounded to five minutes.
+  const off = viaEdge(fakeChain(), { source: () => 'off' });
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), off.post), { ok: false, reason: 'chain_unavailable', retryAt: NOW + 300_000 });
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), answering(reply({ error: 'source_unavailable' }, 503, { 'Retry-After': '60' })).post), { ok: false, reason: 'chain_unavailable', retryAt: NOW + 60_000 });
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), answering(reply({ error: 'source_unavailable' }, 503, { 'Retry-After': '9999' })).post), { ok: false, reason: 'chain_unavailable', retryAt: NOW + client.MAX_REASK_MS });
+  // A connection that failed, a route that is not there (an older deployment), anything else: chain_unavailable.
+  const failing = { post: (owner, fresh, options = {}) => routes.postOwnedPositions(owner, fresh, { ...options, fetch: async () => { throw new TypeError('Failed to fetch'); } }) };
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), failing.post), { ok: false, reason: 'chain_unavailable' });
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), answering(reply({ error: 'not_found' }, 404)).post), { ok: false, reason: 'chain_unavailable' });
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), async () => { throw new Error('a client that throws'); }), { ok: false, reason: 'chain_unavailable' });
+  // Every failure is asked again, after 2, 5 and 10 s and then every 30 s; a dropped read and a bad address are not.
   for (const reason of ['chain_busy', 'chain_unavailable', 'invalid_reply']) assert.equal(client.passingWalletFailure(reason), true, reason);
   for (const reason of ['aborted', 'invalid_owner']) assert.equal(client.passingWalletFailure(reason), false, reason);
-  assert.deepEqual([[...client.REASK_MS], client.LATER_MS], [[2000, 5000, 10000], 30000]);
+  assert.deepEqual([[...client.REASK_MS], client.LATER_MS, client.MAX_REASK_MS], [[2000, 5000, 10000], 30000, 300000]);
   // The answer after a failure is the whole answer: a wallet with nothing is `ready` and empty, and only then.
-  const empty = fakeChain();
-  assert.deepEqual(await client.readWalletPositions(OWNER, never(), empty.deps), { ok: true, answer: { owner: OWNER, block: 71_700_000, positions: [], deposits: [] } });
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), viaEdge(fakeChain()).post), { ok: true, answer: { owner: OWNER, block: 71_700_000, positions: [], deposits: [] } });
+  client.forgetWallet();
+});
+
+test('the route’s envelope is taken only when every field is exactly what it sends: its answer for the owner asked about, a feature per listed position in order, and checked mint blocks', async () => {
+  client.forgetWallet();
+  const ENVELOPE = { v: 1, answer: clone(REPLY), automation: { block: REPLY.block, positions: [{ tokenId: '3135288', automation: 'plain' }, { tokenId: '3000000', automation: 'plain' }] }, mints: [{ id: '3135288', block: 70_000_000, tx: `0x${'ab'.repeat(32)}` }], capped: false };
+  assert.deepEqual(client.parseOwnedEnvelope(clone(ENVELOPE), OWNER), { answer: REPLY, automation: ENVELOPE.automation, mints: ENVELOPE.mints });
+  assert.deepEqual(client.parseOwnedEnvelope({ ...clone(ENVELOPE), automation: null }, OWNER).automation, null, 'no features: the screens ask their own');
+  // The features come in the scan's own order (its ids', newest first), not the list's (open first): any order of exactly the listed ids.
+  const reordered = clone(ENVELOPE);
+  reordered.automation.positions.reverse();
+  assert.deepEqual(client.parseOwnedEnvelope(reordered, OWNER).automation, reordered.automation);
+  // Mint hints that do not check out (not listed, a malformed id, block or hash) are let go; the list is not.
+  const hints = [{ id: '3000000', block: 69_000_000, tx: `0x${'cd'.repeat(32)}` }, { id: '9', block: 1, tx: `0x${'ab'.repeat(32)}` }, { id: '03135288', block: 1, tx: `0x${'ab'.repeat(32)}` }, { id: '3135288', block: 0, tx: `0x${'ab'.repeat(32)}` }, { id: '3135288', block: 1.5, tx: `0x${'ab'.repeat(32)}` }, { id: '3135288', block: 1, tx: '0xab' }, { id: '3135288', block: 1, tx: `0x${'ab'.repeat(32)}`, extra: 1 }];
+  assert.deepEqual(client.parseOwnedEnvelope({ ...clone(ENVELOPE), mints: hints }, OWNER).mints, [hints[0]]);
+  const broken = [
+    (e) => (e.v = 2),
+    (e) => delete e.capped,
+    (e) => (e.capped = 'no'),
+    (e) => (e.extra = 1),
+    (e) => (e.answer.owner = '0x3333333333333333333333333333333333333333'),
+    (e) => (e.answer.positions[0].status = 'burned'),
+    (e) => (e.automation.positions[0].tokenId = '9'),
+    (e) => (e.automation.positions[1] = e.automation.positions[0]),
+    (e) => e.automation.positions.pop(),
+    (e) => e.automation.positions.push({ tokenId: '9', automation: 'plain' }),
+    (e) => (e.automation.positions[0].automation = 'compound'),
+    (e) => (e.mints = {}),
+    (e) => (e.mints = Array.from({ length: 101 }, () => ENVELOPE.mints[0])),
+  ];
+  for (const [i, change] of broken.entries()) {
+    const envelope = clone(ENVELOPE);
+    change(envelope);
+    assert.equal(client.parseOwnedEnvelope(envelope, OWNER), null, `case ${i}: ${change}`);
+    // Through the read: an answer that is not the route's is `invalid_reply`, asked again.
+    assert.deepEqual(await client.readWalletPositions(OWNER, never(), answering(reply(envelope)).post), { ok: false, reason: 'invalid_reply' }, `read ${i}`);
+  }
+  // The scan's bare answer (the route before RPC-SPEC) is not the envelope.
+  assert.deepEqual(await client.readWalletPositions(OWNER, never(), answering(reply(clone(REPLY))).post), { ok: false, reason: 'invalid_reply' });
+  client.forgetWallet();
 });
 
 test('a row’s card comes straight from the chain read: pair, fee, range in prices, in range by v4’s rule, amounts in units, a dash where the chain gave nothing', () => {
@@ -298,7 +343,8 @@ test('nothing about positions is kept in the browser but the list’s display co
   const src = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
   const list = src('components/positions/OwnedPositions.tsx');
   assert.match(list, /const copyName = \(owner: string\) => `owned\.\$\{CHAIN_ID\}\.\$\{owner\}`/, 'one copy per wallet and chain');
-  assert.match(list, /readKept\(copyName\(owner\), 7 \* 86_400_000, \(data, at\) => \{\s+const answer = parseWalletAnswer\(data, owner\)\s+return answer\?\.positions\.length \? \{ answer, at \} : null/, 'at most a week old, checked as a chain answer, with a position in it, and dated');
+  // Changed on purpose 2026-10-01 (I6): a day, not a week (lib/browserCopies.ts KEPT_MAX_AGE_MS.owned).
+  assert.match(list, /readKept\(copyName\(owner\), KEPT_MAX_AGE_MS\.owned, \(data, at\) => \{\s+const answer = parseWalletAnswer\(data, owner\)\s+return answer\?\.positions\.length \? \{ answer, at \} : null/, 'at most a day old, checked as a chain answer, with a position in it, and dated');
   // 2026-09-28 (review): a copy's USD figures are its own pool prices, as old as it is. Past the Wallet card's own limit
   // for a price (lib/walletMemory.ts WALLET_PRICE_MAX_AGE_MS, an hour: "an older price gives no value and no total"), its
   // rows are valued at no state (their token amounts only) and the band waits for the chain, as while the list is read.
@@ -318,33 +364,6 @@ test('nothing about positions is kept in the browser but the list’s display co
   }
   assert.throws(() => src('lib/positionMemory.ts'), /ENOENT/);
   assert.throws(() => src('lib/ownedPositions.ts'), /ENOENT/);
-});
-
-// 2026-09-25: the public RPC refuses a visitor's next reads after a costly log scan (a scan of millions of blocks, from
-// the contract's deployment, measured that day: the next eth_call answered 429 and the list took 5.9 s). The page keeps,
-// per wallet and for the visit only, the ids DominoSetupV1 minted to it and the block it read them at: a later read of
-// the same wallet reads the logs only from shortly before that block, and every position's state again at its own head,
-// so a close and a new mint since both show at once.
-test('a later read of the same wallet reads the logs only since shortly before the earlier one, and every state again at its own head', async () => {
-  client.forgetMinted();
-  const FIRST = 71_700_000;
-  const NEXT = FIRST + 5_000;
-  const first = fakeChain({ head: FIRST, minted: [{ block: 69_300_000, id: 7 }], nfts: { 7: nft() } });
-  const one = await withFetch((url, init) => first.deps.fetch(url, init), () => client.readWalletPositions(OWNER, never()));
-  assert.deepEqual(one.result.answer.positions.map((p) => [p.tokenId, p.status]), [['7', 'open']]);
-  const ranges = (chain) => chain.log.filter((call) => call.method === 'eth_getLogs').map((call) => [Number(call.params[0].fromBlock), Number(call.params[0].toBlock)]);
-  assert.deepEqual(ranges(first), [[69_249_061, FIRST]], 'the first read scans from the contract’s deployment');
-  // Since then: 7 was closed, and 9 was minted.
-  const next = fakeChain({ head: NEXT, minted: [{ block: 69_300_000, id: 7 }, { block: FIRST + 100, id: 9 }], nfts: { 7: nft({ liquidity: 0n }), 9: nft() } });
-  const two = await withFetch((url, init) => next.deps.fetch(url, init), () => client.readWalletPositions(OWNER, never()));
-  assert.deepEqual(ranges(next), [[FIRST - endpoint.REREAD_BLOCKS + 1, NEXT]], 'only the logs since shortly before the first read’s block');
-  assert.deepEqual(two.result.answer.positions.map((p) => [p.tokenId, p.status]), [['9', 'open'], ['7', 'closed']], 'the new mint and the close, at once');
-  assert.equal(two.result.answer.block, NEXT);
-  // A read handed its own runtime (a test's, or the route's) keeps nothing and scans in full.
-  const full = fakeChain({ head: NEXT, minted: [{ block: 69_300_000, id: 7 }, { block: FIRST + 100, id: 9 }], nfts: { 7: nft({ liquidity: 0n }), 9: nft() } });
-  await client.readWalletPositions(OWNER, never(), full.deps);
-  assert.deepEqual(ranges(full), [[69_249_061, NEXT]]);
-  client.forgetMinted();
 });
 
 // 2026-09-27, the owner's OK ("pode fazer") on the study of 7074cbd: Your positions reads itself again every 30 s while
@@ -404,15 +423,12 @@ const answerAt = (block, patch = {}) => ({ ok: true, answer: { ...clone(REPLY), 
 
 /**
  * askWallet over reads a test answers (`answers`, one per read, in order; a function is called with the read's number),
- * a document it shows and hides, and node's mock setTimeout. `minted`: whether the page's memory holds the wallet's
- * minted ids (a real scan of a fake chain puts them there), which is what lets the list refresh at all.
+ * a document it shows and hides, and node's mock setTimeout. Changed on purpose (RPC-SPEC P1): no `minted` any more;
+ * every wallet's list refreshes (until then only one whose minted ids the page's memory held did).
  */
-async function loop(t, { every = client.REFRESH_MS, minted = true, paused, answers = [] } = {}) {
+async function loop(t, { every = client.REFRESH_MS, paused, answers = [], prepare = () => undefined } = {}) {
   client.forgetMinted();
-  if (minted) {
-    const chain = fakeChain({ minted: [{ block: 69_300_000, id: 7 }], nfts: { 7: nft() } });
-    await withFetch((url, init) => chain.deps.fetch(url, init), () => client.readWalletPositions(OWNER, never()));
-  }
+  prepare();
   const doc = fakeDocument();
   const before = globalThis.document;
   globalThis.document = doc;
@@ -424,8 +440,8 @@ async function loop(t, { every = client.REFRESH_MS, minted = true, paused, answe
   const reads = [];
   const puts = [];
   const shown = { current: null };
-  const read = async (owner, signal) => {
-    reads.push({ owner, signal });
+  const read = async (owner, signal, _post, options = {}) => {
+    reads.push({ owner, signal, fresh: options.fresh === true });
     const next = answers.shift();
     return typeof next === 'function' ? next(reads.length) : (next ?? { ok: false, reason: 'chain_unavailable' });
   };
@@ -438,6 +454,52 @@ async function loop(t, { every = client.REFRESH_MS, minted = true, paused, answe
   };
   return { doc, reads, puts, shown, cancel, pass, answers };
 }
+
+// Changed on purpose (RPC-SPEC P1, 2026-10-01): from 2026-09-25 the page kept, per wallet and for the visit, the ids
+// DominoSetupV1 minted to it and the block it read them at, and (2026-10-01, fees item A24) seeded them from the list's
+// own copy, so a later read walked the SetupMinted logs only since then. The route keeps that walk now, per owner, in the
+// edge's cache (RPC-SPEC §2.5.1 and D4), so the page keeps no ids: every read is the same POST of the owner, and the read
+// after an action asks past the route's answer cache once (`fresh`).
+test('the page keeps no minted ids: every read asks the route for the owner alone, and a read after an action asks past its cache once', async (t) => {
+  client.forgetWallet();
+  assert.equal(client.seedMinted, undefined, 'the list’s copy seeds nothing');
+  const chain = fakeChain({ minted: [{ block: 69_300_000, id: 7 }], nfts: { 7: nft() } });
+  const edge = viaEdge(chain);
+  await client.readWalletPositions(OWNER, never(), edge.post);
+  await client.readWalletPositions(OWNER, never(), edge.post, { fresh: true });
+  await client.readWalletPositions(OWNER, never(), edge.post, { fresh: false, hold: false, background: true, onRefused: () => assert.fail('no refusal is heard') });
+  // The owner alone: how the route finds the ids and keeps the wallet's walk is its own (tests/chain-routes.test.mjs).
+  assert.deepEqual(edge.sent.map((one) => JSON.parse(one.init.body)), [{ owner: OWNER }, { owner: OWNER, fresh: true }, { owner: OWNER }]);
+  // askWallet's first read is `fresh` when the hook was asked again after an action, and only that one.
+  const doc = fakeDocument();
+  const before = globalThis.document;
+  globalThis.document = doc;
+  t.after(() => {
+    globalThis.document = before;
+    client.forgetWallet();
+  });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const asked = [];
+  const read = async (owner, signal, post, options) => (asked.push(options.fresh), { ok: false, reason: 'chain_unavailable' });
+  const cancel = client.askWallet(OWNER, { current: null }, () => undefined, null, undefined, read, true, true);
+  await settle();
+  t.mock.timers.tick(2_000);
+  await settle();
+  t.mock.timers.tick(5_000);
+  await settle();
+  cancel();
+  assert.deepEqual(asked, [true, false, false]);
+  // A first read with no action before it is not fresh.
+  asked.length = 0;
+  const plain = client.askWallet(OWNER, { current: null }, () => undefined, null, undefined, read);
+  await settle();
+  plain();
+  assert.deepEqual(asked, [false]);
+  // The list no longer seeds anything from its copy.
+  const list = readFileSync(new URL('../src/components/positions/OwnedPositions.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(list, /seedMinted/);
+  assert.match(list, /const \[copy\] = useState\(\(\) => \(readOnly \? null : recall\(owner\)\)\)/);
+});
 
 test('the list refreshes every 30 s after its last read settled: an older block, fewer figures or the same answer draws nothing, and a new one is drawn in place', async (t) => {
   const first = answerAt(100);
@@ -504,7 +566,7 @@ test('a refresh that fails keeps the answer on screen and no line over it: asked
   s.cancel();
 });
 
-test('a hidden tab asks nothing: a refresh due while it is hidden waits and runs once when it is shown again; a paused list and a wallet at the scan’s cap are never refreshed; the pace is never under 15 s', async (t) => {
+test('a hidden tab asks nothing: a refresh due while it is hidden waits and runs once when it is shown again; a paused list is not refreshed, a wallet at the scan’s cap is; the pace is never under 15 s', async (t) => {
   const s = await loop(t, { answers: [answerAt(100), answerAt(200), answerAt(300)] });
   s.doc.show(false);
   await s.pass(30_000);
@@ -554,11 +616,11 @@ test('a hidden tab asks nothing: a refresh due while it is hidden waits and runs
   quick.cancel();
   t.mock.timers.reset();
 
-  // A wallet the scan stopped at its cap for has no minted ids in the page's memory: each read would scan from the
-  // contract's deployment, so it is never refreshed.
-  const capped = await loop(t, { minted: false, answers: [answerAt(100)] });
-  await capped.pass(600_000);
-  assert.deepEqual([capped.reads.length, capped.puts.length], [1, 1]);
+  // Changed on purpose (RPC-SPEC P1): a wallet the scan stopped at its cap for was never refreshed (each read would have
+  // walked its logs from the contract's deployment). The route keeps that walk in its own cache now: it is refreshed too.
+  const capped = await loop(t, { answers: [answerAt(100), answerAt(200, { positions: [] })] });
+  await capped.pass(30_000);
+  assert.deepEqual([capped.reads.length, capped.puts.length], [2, 2]);
   capped.cancel();
 });
 
@@ -578,8 +640,16 @@ test('a first read the RPC refused is asked again 2 s later twice, then after 10
     await busy.pass(1);
     assert.equal(busy.reads.length, count, `read ${count}, ${ms} ms after the one before`);
   }
-  assert.deepEqual(busy.puts.map((put) => put.phase), ['retrying', 'retrying', 'retrying', 'failed', 'failed', 'failed']);
-  assert.deepEqual(busy.puts.map((put) => put.reason), Array(6).fill('chain_busy'));
+  // Changed on purpose 2026-10-01 (fees items A8 and A9): each read asked again within the quick waits says it is on its
+  // way (a put of its own), and the line says "reading again" only while one is on its way or due within them (10 s at
+  // most); once they are spent, the calm line stays through the reads asked every 30 s.
+  assert.deepEqual(busy.puts.map((put) => [put.phase, put.reading]), [
+    ['retrying', true],
+    ['retrying', true], ['retrying', true],
+    ['retrying', true], ['retrying', true],
+    ['failed', undefined], ['failed', undefined], ['failed', undefined],
+  ]);
+  assert.deepEqual(busy.puts.map((put) => put.reason), Array(8).fill('chain_busy'));
   busy.answers.push(answerAt(100));
   await busy.pass(29_999);
   assert.equal(busy.reads.length, 6, 'no read sooner than every 30 s once the ladder is spent');
@@ -602,7 +672,7 @@ test('a first read the RPC refused is asked again 2 s later twice, then after 10
 test('an announced page cooldown schedules the next wallet scan at expiry, without spending the retry ladder on local refusals', async (t) => {
   let now = Date.now();
   t.mock.method(Date, 'now', () => now);
-  const s = await loop(t, { minted: false, every: null, answers: [
+  const s = await loop(t, { every: null, answers: [
     () => ({ ok: false, reason: 'chain_busy', retryAt: now + 24_000 }),
     () => ({ ok: false, reason: 'chain_busy', retryAt: now + 30_000 }),
     () => ({ ok: false, reason: 'chain_busy', retryAt: now + 1_000 }),
@@ -616,13 +686,15 @@ test('an announced page cooldown schedules the next wallet scan at expiry, witho
     await s.pass(1);
     assert.equal(s.reads.length, count, `scan ${count} at the announced deadline, not after the ladder’s later delay`);
   }
-  assert.deepEqual(s.puts.map((put) => put.phase), ['retrying', 'retrying', 'retrying', 'ready']);
+  // (2026-10-01, fees items A8 and A9: no "reading again" while a rest's deadline over 10 s away is waited out; said again
+  // once the read is asked, and over the quick wait after the third.)
+  assert.deepEqual(s.puts.map((put) => [put.phase, put.reading]), [['retrying', false], ['retrying', true], ['retrying', false], ['retrying', true], ['retrying', true], ['ready', undefined]]);
   assert.equal(s.shown.current.block, 100);
   s.cancel();
 });
 
 test('cancelling a wallet read during an announced cooldown never starts another scan', async (t) => {
-  const s = await loop(t, { minted: false, every: null, answers: [{ ok: false, reason: 'chain_busy', retryAt: Date.now() + 24_000 }, answerAt(100)] });
+  const s = await loop(t, { every: null, answers: [{ ok: false, reason: 'chain_busy', retryAt: Date.now() + 24_000 }, answerAt(100)] });
   await s.pass(1_000);
   s.cancel();
   await s.pass(30_000);
@@ -634,13 +706,58 @@ test('a shared failure read five seconds later keeps its original cooldown deadl
   const failedAt = Date.now();
   const sharedFailure = { ok: false, reason: 'chain_busy', retryAt: failedAt + 24_000 };
   t.mock.method(Date, 'now', () => failedAt + 5_000);
-  const s = await loop(t, { minted: false, every: null, answers: [sharedFailure, answerAt(100)] });
+  const s = await loop(t, { every: null, answers: [sharedFailure, answerAt(100)] });
   await s.pass(18_999);
   assert.equal(s.reads.length, 1, 'no scan before the original deadline');
   await s.pass(1);
   assert.equal(s.reads.length, 2, 'the five seconds already elapsed are not waited again');
   assert.equal(s.puts.at(-1).phase, 'ready');
   s.cancel();
+});
+
+// RPC-SPEC §3.4 and P1: while the site's chain routes cannot answer (no node secret yet, or the node away: a 503 with a
+// wait of a minute or more), the list says so at once with its calm line, over this browser's copy when there is one,
+// and asks again when the route's wait is over (at most five minutes), never on the 2/5/10 s ladder. Never "no positions".
+test('the source away: the calm line at once, and the next read when the route’s wait is over, at most five minutes; a refresh over an answer waits as long', async (t) => {
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  const away = () => ({ ok: false, reason: 'chain_unavailable', retryAt: now + 300_000 });
+  const s = await loop(t, { every: null, answers: [away, () => ({ ok: false, reason: 'chain_unavailable', retryAt: now + 3_600_000 }), away, answerAt(100)] });
+  assert.deepEqual(s.puts.map((put) => put.phase), ['failed'], 'the calm line at once, not the loading rows');
+  for (const ms of [2_000, 5_000, 10_000, 30_000]) {
+    now += ms;
+    await s.pass(ms);
+  }
+  assert.equal(s.reads.length, 1, 'nothing on the quick ladder, nor every 30 s');
+  now += 300_000 - 47_000;
+  await s.pass(300_000 - 47_000);
+  assert.equal(s.reads.length, 2, 'asked again when the route’s wait is over');
+  now += client.MAX_REASK_MS - 1;
+  await s.pass(client.MAX_REASK_MS - 1);
+  assert.equal(s.reads.length, 2);
+  now += 1;
+  await s.pass(1);
+  assert.equal(s.reads.length, 3, 'a longer wait is bounded to five minutes');
+  now += 300_000;
+  await s.pass(300_000);
+  assert.equal(s.reads.length, 4);
+  assert.equal(s.puts.at(-1).phase, 'ready', 'drawn once the route answers');
+  assert.ok(s.puts.every((put) => put.phase !== 'ready' || put.answer.positions.length > 0), 'never an empty list before the route answered');
+  s.cancel();
+  t.mock.timers.reset();
+  // With an answer on screen, a refresh that finds the source away keeps it, with no line over it, and waits as long.
+  const shown = await loop(t, { answers: [answerAt(100), away, answerAt(200, { deposits: [] })] });
+  now += 30_000;
+  await shown.pass(30_000);
+  assert.deepEqual([shown.reads.length, shown.puts.map((put) => put.phase)], [2, ['ready']]);
+  now += 299_999;
+  await shown.pass(299_999);
+  assert.equal(shown.reads.length, 2, 'not after 60 s: after the route’s own wait');
+  now += 1;
+  await shown.pass(1);
+  assert.equal(shown.reads.length, 3);
+  assert.equal(shown.puts.at(-1).answer.block, 200);
+  shown.cancel();
 });
 
 test('with the refresh off (the picker, the automation page, a position’s page) nothing is read again on its own; a first read that fails is still asked after 2, 5, 10 and then every 30 s', async (t) => {
@@ -657,8 +774,10 @@ test('with the refresh off (the picker, the automation page, a position’s page
     await failing.pass(1);
     assert.equal(failing.reads.length, count, `after ${ms} ms`);
   }
-  assert.deepEqual(failing.puts.map((put) => put.phase), ['retrying', 'retrying', 'retrying', 'failed', 'failed', 'failed']);
-  assert.deepEqual(failing.puts.map((put) => put.reason), Array(6).fill('chain_unavailable'));
+  // (2026-10-01, fees items A8 and A9: each read asked again within the quick waits also says it is on its way, a put of
+  // its own; the calm line then stays through the reads asked every 30 s.)
+  assert.deepEqual(failing.puts.map((put) => [put.phase, put.reading]), [['retrying', true], ['retrying', true], ['retrying', true], ['retrying', true], ['retrying', true], ['failed', undefined], ['failed', undefined], ['failed', undefined]]);
+  assert.deepEqual(failing.puts.map((put) => put.reason), Array(8).fill('chain_unavailable'));
   failing.cancel();
 });
 
@@ -699,8 +818,9 @@ test('a wallet answer the page read is kept for a minute: the next screen draws 
   client.forgetMinted();
   const setup = { minted: [{ block: 69_300_000, id: 7 }], nfts: { 7: nft() } };
   const chain = fakeChain(setup);
-  const first = await withFetch((url, init) => chain.deps.fetch(url, init), () => client.readWalletPositions(OWNER, never()));
+  const first = await withFetch(edgeFetch(chain.deps), () => client.readWalletPositions(OWNER, never()));
   assert.equal(first.result.ok, true);
+  assert.deepEqual(first.sent.map((one) => one.url), ['/api/owned/v2/positions'], 'the default client: the route’s fixed path');
   assert.equal(client.KEPT_MS, 60_000);
   // A position's page finds its row.
   assert.deepEqual([client.keptPosition('7')?.owner, client.keptPosition('7')?.position.tokenId], [OWNER, '7']);
@@ -717,10 +837,11 @@ test('a wallet answer the page read is kept for a minute: the next screen draws 
   // After an action (Close, Collect, a refund): forgotten, and read again.
   client.forgetWallet();
   assert.equal(client.keptPosition('7'), null);
-  await withFetch((url, init) => fakeChain(setup).deps.fetch(url, init), () => client.readWalletPositions(OWNER, never()));
+  await withFetch(edgeFetch(fakeChain(setup).deps), () => client.readWalletPositions(OWNER, never()));
   assert.ok(client.keptPosition('7'));
-  // A position Create position made since: not drawn from before it.
-  create.publishCreated('99');
+  // A position Create position made since: not drawn from before it. (Made by another wallet, RPC fix round 2: this
+  // wallet's reads are then not held fresh for it in the tests after this one.)
+  create.publishCreated('99', '0x00000000000000000000000000000000000000bb');
   assert.equal(client.keptPosition('7'), null);
   create.publishCreated(null);
   client.forgetMinted();
@@ -738,11 +859,12 @@ function callHook(use) {
   }
 }
 
-// 2026-09-28 (speed wave B review, item 17): the page's own read of a wallet (readWalletPositions with no runtime handed
-// in) asks the scan for each position's feature, and hands it to the automation view: the badges come with the rows,
-// with no read of their own (the automation's own scan: a head and an aggregate3, some 0.6 s later). The scan's half is
-// tests/owned.test.mjs; this is the page's wiring of it, which a read that no longer asked for it would leave green.
-test('the page’s own read of a wallet carries each position’s feature: its subscriber in the first read, and the automation view ready from it with nothing read', async () => {
+// 2026-09-28 (speed wave B review, item 17): the page's own read of a wallet asks the scan for each position's feature,
+// and hands it to the automation view: the badges come with the rows, with no read of their own (the automation's own
+// scan: a head and an aggregate3, some 0.6 s later). The scan's half is tests/owned.test.mjs; this is the page's wiring of
+// it, which a read that no longer asked for it would leave green. RPC-SPEC: the route's envelope carries them
+// (`automation`), from the same scan at the edge.
+test('the page’s own read of a wallet carries each position’s feature: its subscriber in the route’s first read, and the automation view ready from it with nothing read', async () => {
   const automation = require('../.test-build/app/src/lib/automationState.js');
   const flags = [globalThis.__DOMINO_DEPLOYABLE__, globalThis.__DOMINO_TEST_HOOKS__];
   // A build that reads the chain: a view with nothing noted would ask the automation's own scan.
@@ -752,14 +874,17 @@ test('the page’s own read of a wallet carries each position’s feature: its s
   client.forgetWallet();
   try {
     const chain = fakeChain({ minted: [{ block: 69_300_000, id: 41 }, { block: 69_400_000, id: 42 }], nfts: { 41: nft(), 42: nft({ liquidity: 0n }) } });
-    const read = await withFetch((url, init) => chain.deps.fetch(url, init), () => client.readWalletPositions(OWNER, never()));
+    const read = await withFetch(edgeFetch(chain.deps), () => client.readWalletPositions(OWNER, never()));
     assert.equal(read.result.ok, true);
-    assert.deepEqual(chain.log.map((call) => call.method), ['eth_call', 'eth_getLogs', 'eth_call', 'eth_call'], 'the list’s own four calls');
-    const first = decodeFunctionData({ abi: multicallAbi, data: chain.log[2].params[0].data }).args[0];
+    // The read of the positions (their ownerOf) asks each one's subscriber in the same aggregate3, at the route.
     const subscriber = toFunctionSelector('subscriber(uint256)');
+    const ownerOf = toFunctionSelector('ownerOf(uint256)');
+    const aggregates = chain.log.filter((call) => call.method === 'eth_call').map((call) => decodeFunctionData({ abi: multicallAbi, data: call.params[0].data }).args[0]);
     for (const id of [41n, 42n]) {
-      const asked = first.filter((call) => BigInt(`0x${call.callData.slice(10)}`) === id && call.target.toLowerCase() === owned.POSITION_MANAGER).map((call) => call.callData.slice(0, 10));
-      assert.ok(asked.includes(subscriber), `${id}: its subscriber in the first read (${asked.join()})`);
+      const mine = (calls) => calls.filter((call) => call.callData.length > 10 && BigInt(`0x${call.callData.slice(10, 74)}`) === id && call.target.toLowerCase() === owned.POSITION_MANAGER).map((call) => call.callData.slice(0, 10));
+      const first = aggregates.find((calls) => mine(calls).includes(ownerOf));
+      assert.ok(first, `${id}: read`);
+      assert.ok(mine(first).includes(subscriber), `${id}: its subscriber in the same read as its owner (${mine(first).join()})`);
     }
     // A screen that shows the positions' automation now: ready at once, from the list's read, and nothing asked.
     const shown = await withFetch(
@@ -777,4 +902,115 @@ test('the page’s own read of a wallet carries each position’s feature: its s
     client.forgetMinted();
     client.forgetWallet();
   }
+});
+
+// RPC fix round 2 (the recheck's findings 5 and 7): the ladder is askWallet's, for every screen and for a list from
+// before the owner's own action too, and each wait counts from the answer before it (the screens' timers counted from
+// the ask, so a slow scan's answer left the next ask inside the route's 5 s fresh window).
+test('a list from before the owner’s action is asked again, fresh, on the ladder, each wait counted from the answer before it; then the usual refresh', async (t) => {
+  let release;
+  const slow = new Promise((done) => (release = done));
+  const { reads, pass, puts, cancel } = await loop(t, {
+    // The madeIds of the test after this one are the visit's: this one runs first.
+    prepare: () => client.walletChanged(1_000),
+    answers: [answerAt(999), async () => (await slow, answerAt(999)), answerAt(1_000)],
+  });
+  assert.equal(reads.length, 1);
+  assert.equal(puts.at(-1).phase, 'ready', 'the answer on hand is drawn meanwhile');
+  await pass(5_999);
+  assert.equal(reads.length, 1, 'not before 6 s');
+  await pass(1);
+  assert.deepEqual([reads.length, reads[1].fresh], [2, true]);
+  // The second ask's scan takes 8 s: the next wait, 12 s, counts from its answer.
+  await pass(8_000);
+  release();
+  await settle();
+  await pass(11_999);
+  assert.equal(reads.length, 2, 'not 12 s after the ask, 12 s after its answer');
+  await pass(1);
+  assert.deepEqual([reads.length, reads[2].fresh], [3, true]);
+  // That one is past the action: no ladder step at 24 s, the usual refresh 30 s on, not fresh.
+  await pass(24_000);
+  assert.equal(reads.length, 3, 'the ladder is over');
+  await pass(5_999);
+  assert.equal(reads.length, 3);
+  await pass(1);
+  assert.deepEqual([reads.length, reads[3].fresh], [4, false]);
+  cancel();
+});
+
+test('the ladder stops after its last step; a reader without the refresh then asks no more', async (t) => {
+  const { reads, pass, cancel } = await loop(t, { every: null, prepare: () => client.walletChanged(1_000), answers: [answerAt(999), answerAt(999), answerAt(999), answerAt(999)] });
+  for (const ms of client.CREATED_REASK_MS) await pass(ms);
+  assert.equal(reads.length, 4, 'the first read and three asks again');
+  assert.ok(reads.slice(1).every((read) => read.fresh));
+  await pass(120_000);
+  assert.equal(reads.length, 4, 'and no more');
+  cancel();
+});
+
+// 2026-10-02 (review of the RPC switch, findings 8 and 15): the route keeps a wallet's answer at the edge, so the page's
+// forgetting its own copies is not enough after the owner's action: the next read, wherever it is asked, asks the route
+// fresh, after a Close or a Collect (walletChanged) and after a position Create position made (madeCount). Changed on
+// purpose 2026-10-02 (RPC fix round 2): until an answer is past the action (at or past its receipt's block) and lists
+// every position this wallet made here; one from a node behind the receipt left the list stale for a minute.
+test('the reads after the owner’s action or a position made here ask the route fresh, until an answer past it comes', async () => {
+  const create = require('../.test-build/app/src/lib/create/createProgress.js');
+  client.forgetMinted();
+  const nfts = { 7: nft() };
+  const behind = viaEdge(fakeChain({ minted: [{ block: 69_300_000, id: 7 }], nfts }));
+  const ahead = viaEdge(fakeChain({ head: 71_700_100, minted: [{ block: 69_300_000, id: 7 }], nfts }));
+  const fresh = (edge) => JSON.parse(edge.sent.at(-1).init.body).fresh === true;
+  const read = async (edge) => {
+    const result = await client.readWalletPositions(OWNER, never(), edge.post);
+    assert.equal(result.ok, true);
+    return { answer: result.answer, fresh: fresh(edge) };
+  };
+  assert.deepEqual([(await read(behind)).fresh, (await read(behind)).fresh], [false, false]);
+  // A Close or a Collect whose receipt named no block: the next read asks fresh, once.
+  client.walletChanged();
+  assert.equal(client.wantsFresh(OWNER), true);
+  assert.deepEqual([(await read(behind)).fresh, (await read(behind)).fresh], [true, false]);
+  // One included at block 71,700,050, past the node's head (71,700,000): its answer is from before the action, so every
+  // read asks fresh until one is at or past that block.
+  client.walletChanged(71_700_050n);
+  const stale = await read(behind);
+  assert.deepEqual([stale.fresh, stale.answer.block, client.behindOf(OWNER, stale.answer), client.wantsFresh(OWNER)], [true, 71_700_000, true, true]);
+  assert.equal((await read(behind)).fresh, true, 'still fresh');
+  const past = await read(ahead);
+  assert.deepEqual([past.fresh, past.answer.block, client.behindOf(OWNER, past.answer), client.wantsFresh(OWNER)], [true, 71_700_100, false, false]);
+  assert.equal((await read(ahead)).fresh, false, 'settled');
+  // A fresh read that fails leaves the next one fresh.
+  client.walletChanged();
+  const failing = answering(reply({ error: 'chain_unavailable' }, 502, { 'Retry-After': '5' }));
+  assert.equal((await client.readWalletPositions(OWNER, never(), failing.post)).ok, false);
+  assert.deepEqual(failing.sent, [{ owner: OWNER, fresh: true }]);
+  assert.equal((await read(ahead)).fresh, true);
+  assert.equal(client.wantsFresh(OWNER), false);
+  // A plain forgetting of the page's copies (a test's reset) asks nothing fresh.
+  client.forgetWallet();
+  assert.equal(client.wantsFresh(OWNER), false);
+  // A position this wallet made here: every read fresh while the answer lacks it; one another wallet made is not this
+  // list's to wait for (the recheck's finding 7: the ladder ran for any wallet's list).
+  const listed = past.answer;
+  const lacking = { ...listed, positions: listed.positions.filter((position) => position.tokenId !== '7') };
+  create.publishCreated('7', '0x00000000000000000000000000000000000000aa');
+  assert.equal(client.behindOf(OWNER, lacking), false, 'made by another wallet');
+  assert.deepEqual(create.madeIds(OWNER), []);
+  create.publishCreated('4242', OWNER.toUpperCase().replace('0X', '0x'));
+  assert.deepEqual(create.madeIds(OWNER), ['4242']);
+  assert.equal(client.behindOf(OWNER, listed), true, 'lacks a position it made');
+  assert.equal(client.behindOf(OWNER, { ...listed, positions: [...listed.positions, { ...listed.positions[0], tokenId: '4242' }] }), false);
+  assert.equal((await read(ahead)).fresh, true);
+  assert.equal((await read(ahead)).fresh, true, 'still lacking it: fresh again');
+  // The ladder is the read's own now (askWallet), for every screen: none of them runs one of its own.
+  for (const file of ['../src/screens/Sequence.tsx', '../src/components/positions/AutomateEntry.tsx', '../src/components/positions/OwnedPositions.tsx']) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /useCreatedReask|setAgain/, file);
+  }
+  assert.match(readFileSync(new URL('../src/screens/PositionDetail.tsx', import.meta.url), 'utf8'), /walletChanged\(included\)/, 'Close and Collect mark the wallet changed, with the receipt’s block');
+  assert.match(readFileSync(new URL('../src/components/positions/OwnedPositions.tsx', import.meta.url), 'utf8'), /walletChanged\(included\)/, 'and a held deposit’s refund');
+  assert.match(readFileSync(new URL('../src/screens/AdvancedSetup.tsx', import.meta.url), 'utf8'), /walletChanged\(receipt\.blockNumber\)/, 'and Advanced setup’s steps (the recheck’s finding 6)');
+  create.publishCreated(null);
+  client.forgetMinted();
 });

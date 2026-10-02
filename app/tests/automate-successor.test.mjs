@@ -94,6 +94,7 @@ test('each limit field is refused alone, in the creation’s own words', () => {
 test('the Automate fee meter draws the rates the review states (R-18)', () => {
   assert.deepEqual(FEE_BPS, { compound: 200, domino: 400 });
   for (const mode of ['compound', 'domino']) {
-    assert.equal(CREATE.review.serviceFeeValue(mode), `${FEE_BPS[mode] / 100}% of earned fees consumed`);
+    // Changed on purpose 2026-10-01 (audit E4): plain words.
+    assert.equal(CREATE.review.serviceFeeValue(mode), `${FEE_BPS[mode] / 100}% of the fees it uses`);
   }
 });

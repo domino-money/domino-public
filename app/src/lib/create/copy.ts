@@ -1,3 +1,5 @@
+import { feeChipText } from '../format/fee'
+
 /**
  * Every English sentence of the new-position flow, in one place. Plain
  * words, no promises: where a step cannot proceed, the sentence says exactly
@@ -23,9 +25,16 @@ export const CREATE = {
   },
   /** The four visual steps of the flow, over the five stages of the state machine. */
   step: {
-    pool: { title: 'Pool', lead: 'Pick the two tokens you want to earn fees on.' },
+    // Changed on purpose 2026-10-01 (audit E25): the step asks for a token, then one of its pools, not two tokens.
+    pool: { title: 'Pool', lead: 'Search a token, then pick one of its pools.' },
     range: { title: 'Range', lead: 'You earn fees only while the price stays in this range.' },
-    amount: { title: 'Amount', lead: 'Enter an amount in either token; the other fills in.' },
+    // Changed on purpose 2026-10-01 (audit E13, live note L11): a range above or below today's price takes one token
+    // alone, so "either token" is said only of a range around the price, and the one-token range has its own lead.
+    amount: {
+      title: 'Amount',
+      lead: 'Enter an amount in either token; the other fills in.',
+      leadOne: (symbol: string) => `This range takes only ${symbol}. Enter how much ${symbol} to put in.`,
+    },
     review: { title: 'Review', lead: 'Check your position, then confirm in your wallet.' },
   },
   /** The state machine's stages: `short` labels the plain-text summary lines. */
@@ -46,8 +55,10 @@ export const CREATE = {
     preselectVerified: (block: number) => `Verified at block ${block}.`,
     preselectNotFound: 'The linked pool id was not returned by the read service, so it is not preselected. Search for a token below to choose a pool.',
     preselectMalformed: 'The link does not carry a valid pool id, so nothing is preselected.',
-    // The owner's words (featured pools v1 §11.5): a pool the featured list withdrew by a safety rule, opened by a link.
-    preselectWithdrawn: 'This pool was removed from the featured list for safety. Choose another pool.',
+    // A pool the featured list withdrew by a safety rule (featured pools v1 §11.5), or one with a token that passes for a
+    // main token (audit I1), opened by a link. Since 2026-10-01 (audit B2) a pool that left the list only because its
+    // figures were unavailable is preselected as any other, so this line is said for safety reasons alone.
+    preselectWithdrawn: 'For safety, Domino doesn’t open positions in this pool. Choose another pool.',
     nativeNote: 'Native ETH is its own currency at address 0x0000…0000. Wrapped ETH is a separate contract at its own address. Their pools are different pools.',
   },
   pool: {
@@ -57,8 +68,8 @@ export const CREATE = {
     unsupportedHooks: 'This pool has hooks, and positions can only be created here in pools without hooks. Choose another pool.',
     unsupportedDynamic: 'This pool has a dynamic fee, and positions can only be created here in pools with a fixed fee. Choose another pool.',
     verifiedAt: (block: number) => `Verified at block ${block}`,
-    /** The chosen pool's fee, as its chip says it. */
-    fee: (fee: string) => `${fee} fee`,
+    /** The chosen pool's fee, as every fee chip says it (lib/format/fee.ts, audit E21): "Uniswap · 0.30% fee". */
+    fee: (fee: string) => feeChipText(fee),
     change: 'Change pool',
     keep: 'Keep this pool',
   },
@@ -137,6 +148,12 @@ export const CREATE = {
     pairReading: 'Checking your balance…',
     /** The wallet cannot fund the amounts either way (lib/create/depositPlan.ts): said under them, never blocked here. */
     short: 'Your wallet doesn’t have enough for this amount. Lower it, or add tokens to your wallet.',
+    /**
+     * The same under the amounts, naming both tokens (audit E9, 2026-10-01): the plan found that neither one alone nor
+     * both together cover the amount. With a symbol unread, the line above.
+     */
+    shortOf: (first: string, second: string) =>
+      first && second ? `Your wallet doesn’t have enough ${first} or ${second} for this amount. Lower it, or add tokens to your wallet.` : 'Your wallet doesn’t have enough for this amount. Lower it, or add tokens to your wallet.',
   },
   balance: {
     /** The one line under the deposit amount rows (the docs' New position page shows it too, lib/docs/pages/using.ts). */
@@ -164,7 +181,7 @@ export const CREATE = {
     compound: 'Auto-compound',
     compoundRules: [
       'Earned fees go back into this same root position. The position cap is one; no successors are created.',
-      'The service fee is 2% of the earned fees consumed, taken once. Never on principal.',
+      'The service fee is 2% of the earned fees it uses, taken once. Never on principal.',
       'Only proven earned fees are used. No wallet asset is pulled and no principal is sold.',
     ],
     domino: 'Domino-compound',
@@ -174,13 +191,16 @@ export const CREATE = {
       'A successor’s ceiling sits above the previous ceiling by the upside you set for the sequence, rounded up to the tick spacing; the next range below is drawn at 50%. Its floor may overlap downward by at most the configured share of that ceiling.',
       'The sequence has a cap, counted including the root. At the cap, fees fund an existing position or wait.',
       'Fees only, never principal. When an action is not justified, it waits with a reason.',
-      'The service fee is 4% of the earned fees consumed, once, for every Domino recipe, including fees added back to the source position. No extra swap fee for the automation’s own balancing.',
+      'The service fee is 4% of the earned fees it uses, once, for every automated step, including fees added back to the source position. No extra swap fee for the automation’s own balancing.',
     ],
-    /** The three choices as cards: a title and one line each. */
+    /**
+     * The three choices as cards: a title and one line each. Changed on purpose 2026-10-01 (audit E4): "of the fees it
+     * uses", not "of earned fees consumed".
+     */
     options: {
       none: { title: 'Plain position', line: 'Fees wait in the position until you collect them.' },
-      compound: { title: 'Auto-compound', line: 'Fees go back into the same position. 2% of earned fees consumed.' },
-      domino: { title: 'Domino-compound', line: 'Fees can fund the next range one step higher. 4% of earned fees consumed.' },
+      compound: { title: 'Auto-compound', line: 'Fees go back into the same position. 2% of the fees it uses.' },
+      domino: { title: 'Domino-compound', line: 'Fees can fund the next range one step higher. 4% of the fees it uses.' },
     },
     optionsLegend: 'What the earned fees do',
     compoundRulesHeading: 'How Auto-compound works',
@@ -213,8 +233,12 @@ export const CREATE = {
     choices: 'Your position',
     steps: 'In your wallet',
     stepsNote: 'Your wallet will ask you to confirm these, in order.',
-    /** The one charge Domino makes, on earned fees an automation consumes. Automate states it for the mode it applies (screens/Automate.tsx); a direct deposit carries none. */
-    serviceFeeValue: (mode: 'none' | 'compound' | 'domino') => mode === 'none' ? 'No automation service fee' : `${mode === 'domino' ? 4 : 2}% of earned fees consumed`,
+    /**
+     * The one charge Domino makes, on earned fees an automation uses. Automate states it for the mode it applies
+     * (screens/Automate.tsx: "2% of the fees it uses, once"); a direct deposit carries none. Changed on purpose
+     * 2026-10-01 (audit E4, live note L12): "consumed" said nothing to a beginner.
+     */
+    serviceFeeValue: (mode: 'none' | 'compound' | 'domino') => mode === 'none' ? 'No automation service fee' : `${mode === 'domino' ? 4 : 2}% of the fees it uses`,
     /** The slippage row of Review's Details (StageReview.tsx). */
     slippage: (percent: string) => `Slippage tolerance ${percent}`,
     /**
@@ -291,11 +315,41 @@ export const CREATE = {
     detailRows: { ticks: 'Range in ticks', pool: 'Pool id', contracts: 'Token contracts', native: 'native' },
     /** The fee bases side by side (feeBases in journey.ts). The service row is the docs' fees page's (lib/docs/pages/reference.ts), not Review's: a direct deposit carries no Domino fee. */
     feeLabels: { pool: 'Pool trading fee', service: 'Domino service fee', swap: 'Assisted swap fee', gas: 'Network gas' },
-    feeValues: { service: 'Auto-compound 2%; Domino-compound 4% of earned fees consumed', swap: '0.65% of the amount swapped', gas: 'Paid by you' },
+    feeValues: { service: 'Auto-compound 2%; Domino-compound 4% of the earned fees it uses', swap: '0.65% of the amount swapped', gas: 'Paid by you' },
     feeNotes: {
       pool: 'Paid by swappers through this pool to its liquidity providers, on each trade. Not a charge to you.',
       swap: 'Only when your wallet holds one of the two tokens and part of it is swapped for the other, simulated before you sign. Not added on top of the service fee.',
-      gas: 'Paid by you; each wallet step shows its gas limit before you sign.',
+      // Changed on purpose 2026-10-01 (audit E24): Review shows no gas figure; the wallet shows the network fee.
+      gas: 'Paid by you; your wallet shows the network fee before you sign.',
+    },
+    /**
+     * The swap through Uniswap's router instead of this pool (finance/routedSwap.ts), when the onboarding service offers
+     * a better one: what Review says of it (StageReview.tsx). Moved here 2026-10-01 (audit E20) from words written in the
+     * component, in plain words: no "router", no "price impact" on screen, and no "guaranteed".
+     */
+    routed: {
+      approveStep: 'Approve the exact swap amount',
+      approveDetail: 'Only if your allowance is short. A reset may ask you to confirm once more.',
+      permitStep: 'Allow this one swap through Uniswap',
+      permitDetail: 'The exact amount, until a deadline.',
+      swapStep: 'Swap through Uniswap',
+      swapDetail: (fee: string) => `${fee} fee on what you receive, once.`,
+      approveOnlyIfShort: 'Only if your allowance is short.',
+      batchStep: 'Approve, swap and create the position',
+      lead: 'Swap',
+      via: 'through Uniswap.',
+      unfilled: 'This pool can’t fill this swap.',
+      better: (percent: string) => `About ${percent}% more than in this pool.`,
+      atLeast: 'You receive at least',
+      afterFee: 'after the fee.',
+      feeLead: 'Fee:',
+      feeOnce: (fee: string) => `(${fee}, once).`,
+      keep: 'The position uses that least amount; anything more you receive stays in your wallet.',
+      sequential: 'Confirm each step separately. If you stop after the swap, what you received stays in your wallet; the swap and its fee are not undone. Creating the position adds no second swap fee.',
+      feeRow: (fee: string) => `${fee} of what you receive, once. No assisted-swap fee on the deposit as well.`,
+      /** For the closed Details only: how far the swap moves Uniswap's price, as the route reported it. */
+      impact: (percent: string | null) => (percent === null ? 'Not reported' : `${percent}%`),
+      impactLabel: 'Price change from the swap',
     },
     /** The words of the plain-text summary (summaryLines and serialiseSummary in journey.ts). */
     summary: {

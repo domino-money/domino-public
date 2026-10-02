@@ -1,0 +1,603 @@
+/**
+ * A position's own ledger of settlements at the edge (functions/_lib/feesLedger.ts, POST /api/fees/v2/ledger, RPC-SPEC
+ * §11.4; rugged97's rules for the site's token, C:/dwt/rpc-plan/RUGGED_RPC_SITE_2026-10-02.md): its pins against the
+ * contracts and the deployment profile; an automatic compound's exact fees and service fee from the engine's own events;
+ * an owner's collect from the transfers it paid; what cannot be told apart, said so; the vault's checkpoint; a first read
+ * from the floor and every later one from the kept block only; one-block PoolManager lookups and nothing of a pool's
+ * history; a long ledger read in steps; the answer kept and a fresh question; and the route's refusals. Over a fake node
+ * in front of a fake chain (tests/support/fees/ledger-world.mjs); nothing reaches the network.
+ */
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { test } from 'node:test';
+import { keccak256, toBytes } from 'viem';
+import { fakeNode } from './support/fake-node.mjs';
+import { RPC_URL } from './support/browser-chain.mjs';
+import { memoryCache } from './support/fees/fake-chain.mjs';
+import { HEAD, HOLDER, KEY, OWNER_MINT, OWNER_STATE, OWNER_STEPS, USDG, VAULT, ledgerWorld } from './support/fees/ledger-world.mjs';
+import { positionLogs, txOf } from './support/fees/ledger-chain.mjs';
+
+const require = createRequire(import.meta.url);
+const routes = require('../.test-build/app/functions/_lib/chainRoutes.js');
+const ledger = require('../.test-build/app/functions/_lib/feesLedger.js');
+const fees = require('../.test-build/app/functions/_lib/fees.js');
+const local = require('../.test-build/app/functions/_lib/localRpc.js');
+const owned = require('../.test-build/app/functions/_lib/owned.js');
+const { isLedgerResponse } = require('../.test-build/app/src/lib/fees/answers.js');
+const { foldLedger } = require('../.test-build/app/src/lib/fees/ledger.js');
+const { stateOf } = require('../.test-build/app/src/lib/fees/store.js');
+
+const ORIGIN = 'https://domino.money';
+const ENV = { LOCAL_RPC_URL: 'https://rpc.domino.money/test-token-0123456789abcdef/' };
+const FLOOR = 69_249_061;
+const ID = '3325113';
+
+/** The routes over `chain` as one isolate with one edge cache, on a clock of their own. */
+function edge(chain, clock = { time: 1_000_000 }) {
+  const lines = [];
+  const { cache, stored } = memoryCache();
+  const runtime = {
+    upstream: fakeNode({ fetch: (_url, init) => chain.fetch(RPC_URL, init) }),
+    cache,
+    now: () => clock.time,
+    sleep: async (ms) => {
+      clock.time += ms;
+    },
+    memory: routes.chainRouteMemory(),
+    log: (line) => lines.push(JSON.parse(line)),
+  };
+  const ask = async (body, headers = {}) => {
+    const request = new Request(`${ORIGIN}/api/fees/v2/ledger`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN, 'Sec-Fetch-Site': 'same-origin', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+    const response = await routes.answerChainRoute('ledger', { request, env: ENV }, runtime);
+    return { status: response.status, body: await response.json(), headers: response.headers };
+  };
+  return { ask, lines, stored, clock, runtime };
+}
+
+/** Every eth_getLogs the node got (after the transport's windows), and every one of the PoolManager's. */
+const logReads = (chain) => chain.log.filter((entry) => entry.method === 'eth_getLogs').map((entry) => entry.params[0]);
+
+/** The page's fold of one ledger answer with its own state (what Fees earned shows). */
+function folded(answer, id = ID) {
+  const position = answer.positions.find((one) => one.tokenId === id);
+  const read = { position, block: answer.block, timestamp: answer.timestamp };
+  return foldLedger(read, stateOf(position.state, answer.block, answer.timestamp));
+}
+
+test.beforeEach(() => routes.resetChainRouteMemory());
+
+// ---------------------------------------------------------------------------
+// Pins
+// ---------------------------------------------------------------------------
+
+test('the engine, its two events and the vault’s checkpoint are the deployment’s and the contracts’ own', () => {
+  const deployment = JSON.parse(readFileSync(new URL('../../docs/deployments/v1-robinhood-mainnet-2026-09-21/deployment.json', import.meta.url), 'utf8'));
+  assert.equal(ledger.ENGINE, deployment.contracts.engine);
+  const source = readFileSync(new URL('../../contracts/src/DominoExecutionEngineV4.sol', import.meta.url), 'utf8');
+  assert.match(source, /event FeesRealized\(address indexed vault, bytes32 indexed intentId, uint256 indexed tokenId,\s*bytes32 checkpointBefore, bytes32 checkpointAfter, uint128 amount0, uint128 amount1\);/);
+  assert.match(source, /event BudgetApplied\(address indexed vault, bytes32 indexed intentId, bytes32 indexed sourceId,\s*address currency, uint256 destinationTokenId, T\.CompoundAmounts amounts\);/);
+  const types = readFileSync(new URL('../../contracts/src/DominoVaultTypes.sol', import.meta.url), 'utf8');
+  const amounts = /struct CompoundAmounts \{([^}]*)\}/.exec(types)[1].split(';').map((field) => field.trim()).filter(Boolean);
+  assert.deepEqual(amounts, ['uint128 originalBefore', 'uint128 chargedBefore', 'uint128 realized', 'uint128 grossOriginalConsumed', 'uint128 chargedConsumed', 'uint128 serviceFee', 'uint128 liquidityAdded', 'uint128 originalAfter', 'uint128 chargedAfter']);
+  assert.equal(ledger.FEES_REALIZED, keccak256(toBytes('FeesRealized(address,bytes32,uint256,bytes32,bytes32,uint128,uint128)')));
+  assert.equal(ledger.BUDGET_APPLIED, keccak256(toBytes(`BudgetApplied(address,bytes32,bytes32,address,uint256,(${Array(9).fill('uint128').join(',')}))`)));
+  assert.equal(ledger.CHECKPOINT_SELECTOR, keccak256(toBytes('checkpoint(uint256)')).slice(2, 10));
+  const vault = readFileSync(new URL('../../contracts/src/DominoVaultV4.sol', import.meta.url), 'utf8');
+  assert.match(vault, /function checkpoint\(uint256 id\) external view returns \(T\.Checkpoint memory\)/);
+  assert.match(types, /struct Checkpoint \{\s*uint128 liquidity;\s*uint256 feeGrowthInside0LastX128;\s*uint256 feeGrowthInside1LastX128;/);
+  assert.equal(ledger.LEDGER_FLOOR, FLOOR);
+});
+
+// ---------------------------------------------------------------------------
+// What a ledger says
+// ---------------------------------------------------------------------------
+
+test('the owner’s Auto-compound position: every compound’s exact fees and service fee from the engine’s own events; Fees earned is what the replay verified', async () => {
+  const { chain } = ledgerWorld();
+  const e = edge(chain);
+  const { status, body } = await e.ask({ tokenIds: [ID] });
+  assert.equal(status, 200);
+  assert.ok(isLedgerResponse(body), 'the page’s own check passes');
+  const [position] = body.positions;
+  assert.equal(position.ok, true);
+  assert.equal(position.exact, true);
+  assert.equal(position.why, undefined);
+  assert.equal(position.through, HEAD);
+  assert.equal(position.vault, VAULT);
+  assert.deepEqual(position.mint, { block: OWNER_MINT.block, tx: txOf(OWNER_MINT.block), t: position.mint.t });
+  assert.deepEqual(position.entries.map((entry) => [entry.kind, entry.block, entry.delta, entry.fees, entry.auto === true]), [
+    ['mint', 73_233_307, '36560795792617752', ['0', '0'], false],
+    ['increase', 73_468_040, '330426593119223', ['13102257', '1126639544530725964113'], true],
+    ['collect', 73_564_797, '0', ['4902099', '1304189670377567194270'], true],
+    ['increase', 73_564_797, '377765874452623', ['0', '0'], true],
+    ['collect', 73_705_363, '0', ['4425004', '836433380491496904379'], true],
+    ['increase', 73_705_363, '258607619495802', ['0', '0'], true],
+  ]);
+  // The service fee rides the transaction's first settlement; each a 2 % of what the compound used, per currency.
+  assert.deepEqual(position.entries.filter((entry) => entry.service).map((entry) => entry.service), OWNER_STEPS.map((step) => step.service.map(String)));
+  assert.ok(position.entries.every((entry, i) => i === 0 || entry.t >= position.entries[i - 1].t), 'header times, oldest first');
+  // Folded with its state: the recording's own verified figures (expect.earned, expect.collected).
+  const view = folded(body);
+  assert.equal(view.phase, 'verified');
+  assert.deepEqual(view.history.collected, [22_429_360n, 3_267_262_595_399_790_062_762n]);
+  assert.deepEqual(view.history.earned, [22_523_160n, 6_935_401_632_110_906_894_871n]);
+  assert.deepEqual(view.history.points.map((point) => point.kind), ['opened', 'settlement', 'settlement', 'settlement', 'now']);
+});
+
+test('what the node was asked: nothing below the floor, the PoolManager one block at a time, no pool history, and a second read only from the kept block', async () => {
+  const { chain } = ledgerWorld();
+  const e = edge(chain);
+  await e.ask({ tokenIds: [ID] });
+  const first = logReads(chain);
+  assert.ok(first.length > 0);
+  for (const filter of first) {
+    assert.ok(Number(filter.fromBlock) >= FLOOR, `${filter.fromBlock}: nothing below block 69,249,061`);
+    const addresses = [filter.address].flat();
+    if (addresses.includes(fees.POOL_MANAGER)) assert.equal(filter.fromBlock, filter.toBlock, 'a PoolManager read is one block');
+    assert.ok([filter.topics[0]].flat().every((topic) => local.LOG_TOPICS.includes(topic)), 'only our own events and the NFT’s');
+  }
+  const topics = new Set(first.map((filter) => filter.topics[0]));
+  for (const pool of ['0xdd466e674ea557f56295e2d0218a125ea4b4f0f6f3307b95f85e6110838d6438', '0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f', '0x29ef05caaff9404b7cb6d1c0e9bbae9eaa7ab2541feba1a9c4248594c08156cb']) assert.ok(!topics.has(pool), 'no Initialize, Swap or Donate');
+  // The PoolManager's logs asked: the mint's block and the three compounds' blocks, each once.
+  const lookups = first.filter((filter) => [filter.address].flat().includes(fees.POOL_MANAGER)).map((filter) => Number(filter.fromBlock));
+  assert.deepEqual(lookups.sort((a, b) => a - b), [OWNER_MINT.block, ...OWNER_STEPS.map((step) => step.block)]);
+  // The NFT's own Transfer logs from the floor: one first scan since the deploy (with the engine's and DominoSetupV1's
+  // events for it, in the same read since the review of the rules, finding 7).
+  assert.equal(first.filter((filter) => [filter.address].flat().includes(owned.POSITION_MANAGER) && Number(filter.fromBlock) === FLOOR).length, 1);
+  // A minute later the head moved on: the kept ledger is read on from its last SAFE_DEPTH blocks only, and its kept
+  // blocks are not looked into again.
+  chain.log.length = 0;
+  chain.head += 600;
+  e.clock.time += 60_000;
+  const again = await e.ask({ tokenIds: [ID] });
+  assert.equal(again.body.positions[0].exact, true);
+  const second = logReads(chain);
+  assert.ok(second.length > 0);
+  for (const filter of second) assert.ok(Number(filter.fromBlock) >= HEAD + 1 - fees.SAFE_DEPTH, `${Number(filter.fromBlock)}: from the kept block on`);
+  assert.equal(second.filter((filter) => [filter.address].flat().includes(fees.POOL_MANAGER)).length, 0, 'no lookup again');
+  assert.ok(second.every((filter) => Number(filter.toBlock) - Number(filter.fromBlock) < local.LOCAL_RPC_WIDE.blocks), 'never a wide scan');
+});
+
+test('the answer is kept half a minute for the same ids; a fresh question takes one only two seconds old', async () => {
+  const { chain } = ledgerWorld();
+  const e = edge(chain);
+  await e.ask({ tokenIds: [ID] });
+  const posts = chain.log.length;
+  e.clock.time += 20_000;
+  assert.equal((await e.ask({ tokenIds: [ID] })).status, 200);
+  assert.equal(chain.log.length, posts, 'a kept answer: nothing asked of the node');
+  assert.equal((await e.ask({ tokenIds: [ID], fresh: true })).status, 200);
+  assert.ok(chain.log.length > posts, 'a fresh question past two seconds reads the node');
+  const fresh = chain.log.length;
+  e.clock.time += 1_000;
+  await e.ask({ tokenIds: [ID], fresh: true });
+  assert.equal(chain.log.length, fresh, 'a fresh question within two seconds of a read takes it');
+});
+
+test('an owner’s collect: its fees are the transfers the PoolManager paid the owner in it; the owner’s own swaps are not settlements', async () => {
+  const steps = [
+    { block: 73_300_000, kind: 'swap' },
+    { block: 73_400_000, kind: 'collect', fees: [7_000_000n, 5n * 10n ** 18n] },
+    { block: 73_500_000, kind: 'swap' },
+  ];
+  const { chain } = ledgerWorld({ vault: null, steps });
+  const { body } = await edge(chain).ask({ tokenIds: [ID] });
+  const [position] = body.positions;
+  assert.equal(position.exact, true, position.why);
+  assert.deepEqual(position.entries.map((entry) => [entry.kind, entry.fees, entry.auto === true]), [['mint', ['0', '0'], false], ['collect', ['7000000', '5000000000000000000'], false]]);
+  assert.equal(position.vault, undefined);
+  const view = folded(body);
+  assert.deepEqual(view.history.collected, [7_000_000n, 5n * 10n ** 18n]);
+  assert.deepEqual(view.history.earned, [7_000_000n + OWNER_STATE.unclaimed[0], 5n * 10n ** 18n + OWNER_STATE.unclaimed[1]]);
+});
+
+test('what cannot be told apart is said so, the settlements kept: an owner’s add, a collect that did more, ETH, a mint before the floor', async () => {
+  const cases = [
+    ['manual', { steps: [{ block: 73_400_000, kind: 'increase', delta: 10n ** 15n }], vault: null }],
+    ['shared', { steps: [{ block: 73_400_000, kind: 'collect', fees: [1n, 2n] }, { block: 73_400_000, kind: 'other' }], vault: null }],
+    ['native', { key: { ...KEY, currency0: '0x0000000000000000000000000000000000000000', currency1: USDG }, steps: [{ block: 73_400_000, kind: 'collect', fees: [1n, 2n] }], vault: null }],
+    ['before_floor', { mint: { block: 60_000_000, liquidity: OWNER_MINT.liquidity }, steps: [], vault: null }],
+    ['liquidity', { liquidity: 1n, steps: [] }],
+    ['unseen', { checkpoint: 'stale' }],
+  ];
+  for (const [why, options] of cases) {
+    routes.resetChainRouteMemory();
+    const { chain } = ledgerWorld(options);
+    const { status, body } = await edge(chain).ask({ tokenIds: [ID] });
+    assert.equal(status, 200, why);
+    assert.ok(isLedgerResponse(body), why);
+    const [position] = body.positions;
+    assert.equal(position.exact, false, why);
+    assert.equal(position.why, why);
+    const view = folded(body);
+    assert.equal(view.phase, 'unclaimed-only', why);
+    assert.equal(view.reason, 'not_exact');
+    assert.equal(view.why, why);
+    if (why === 'manual') assert.deepEqual(position.entries.map((entry) => [entry.kind, entry.fees]), [['mint', ['0', '0']], ['increase', null]], 'the add is listed, its fees not');
+    if (why === 'before_floor') assert.ok(logReads(chain).every((filter) => Number(filter.toBlock) >= FLOOR), 'nothing below the floor even for an old NFT');
+  }
+});
+
+test('an owner’s collect after the vault’s last compound is seen, and the vault’s stale checkpoint is then no surprise', async () => {
+  const steps = [...OWNER_STEPS, { block: 73_900_000, kind: 'collect', fees: [3n, 4n] }];
+  const { chain } = ledgerWorld({ steps, checkpoint: 'stale' });
+  const { body } = await edge(chain).ask({ tokenIds: [ID] });
+  assert.equal(body.positions[0].exact, true, body.positions[0].why);
+  assert.deepEqual(body.positions[0].entries.at(-1).fees, ['3', '4']);
+});
+
+test('a long ledger is read in steps: each read looks into at most LEDGER_STEP blocks, keeps how far it got and says `reading`, the next goes on', async () => {
+  // The owner traded in the pool's tokens in 450 blocks: each a block to look into.
+  const steps = Array.from({ length: 450 }, (_, i) => ({ block: 73_300_000 + 1_000 * i, kind: 'swap' }));
+  steps.push({ block: 73_800_000, kind: 'collect', fees: [9n, 9n] });
+  const { chain } = ledgerWorld({ vault: null, steps });
+  const e = edge(chain);
+  const throughs = [];
+  for (let round = 0; round < 6; round++) {
+    const { body } = await e.ask({ tokenIds: [ID] });
+    const [position] = body.positions;
+    throughs.push(position.through);
+    if (position.exact) break;
+    assert.equal(position.why, 'reading');
+    assert.ok(position.through < body.block);
+    e.clock.time += 3_000;
+  }
+  assert.equal(throughs.at(-1), HEAD, 'read through to the head in the end');
+  assert.ok(throughs.length >= 3, `${throughs.length} reads`);
+  assert.ok(throughs.every((through, i) => i === 0 || through > throughs[i - 1]), 'each read went further');
+  const lookups = logReads(chain).filter((filter) => [filter.address].flat().includes(fees.POOL_MANAGER));
+  assert.ok(lookups.length <= 452 + ledger.LEDGER_STEP, `${lookups.length} one-block lookups in all`);
+});
+
+test('the route’s refusals: a body not exactly {"tokenIds": [1..8]} with at most "fresh": true is a 400, nothing asked of the node', async () => {
+  const { chain } = ledgerWorld();
+  const e = edge(chain);
+  for (const body of [{}, { tokenIds: [] }, { tokenIds: ['1', '1'] }, { tokenIds: Array.from({ length: 9 }, (_, i) => String(i + 1)) }, { tokenIds: ['01'] }, { tokenIds: [ID], fresh: false }, { tokenIds: [ID], other: 1 }, 'nope']) {
+    const { status, body: answer } = await e.ask(body);
+    assert.equal(status, 400, JSON.stringify(body));
+    assert.deepEqual(answer, { v: 1, error: 'bad_request' });
+  }
+  assert.equal(chain.log.length, 0);
+  assert.deepEqual(ledger.ledgerRequestOf({ tokenIds: ['7', '3'], fresh: true }), { ids: [3n, 7n], fresh: true });
+});
+
+test('several positions in one answer, one of them unknown: each its own ledger, the unknown one not_found', async () => {
+  const { chain } = ledgerWorld();
+  const { body } = await edge(chain).ask({ tokenIds: [ID, '999'] });
+  assert.deepEqual(body.positions.map((one) => [one.tokenId, one.ok, one.ok ? one.exact : one.reason]), [['999', false, 'not_found'], [ID, true, true]]);
+});
+
+test('a second position of the same owner in the same transaction’s other pool is not this one’s: the transfers of a mixed transaction are never taken', () => {
+  // positionLogs' own shape, as the ledger reads it: a collect and another NFT's ModifyLiquidity in one transaction.
+  const { logs } = positionLogs({ tokenId: 5n, owner: HOLDER, key: KEY, poolId: `0x${'ab'.repeat(32)}`, tickLower: -60, tickUpper: 60, mint: { block: 70_000_000, liquidity: 1n }, steps: [{ block: 70_000_100, kind: 'collect', fees: [1n, 1n] }, { block: 70_000_100, kind: 'other' }] });
+  const modifies = logs.filter((log) => log.address === fees.POOL_MANAGER && Number(log.blockNumber) === 70_000_100);
+  assert.equal(new Set(modifies.map((log) => log.transactionHash)).size, 1);
+  assert.equal(modifies.length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-02: the review of rugged97's rules (findings 1, 4, 5, 7, 8, 9, 10 and 14)
+// ---------------------------------------------------------------------------
+
+const ROUTER = '0x66a9893cc07d91d95644aedd05d03f95e1dba8af';
+const HEAVY = '0x4ea0000000000000000000000000000000000004';
+const topicOf = (address) => `0x${address.slice(2).toLowerCase().padStart(64, '0')}`;
+/** The node's log reads that are not one-block PoolManager lookups. */
+const scans = (chain) => logReads(chain).filter((filter) => ![filter.address].flat().includes(fees.POOL_MANAGER));
+/** Whether a log read names `address` among its topics (a holder's transfers). */
+const names = (filter, address) => filter.topics.some((topic) => [topic].flat().includes(topicOf(address)));
+
+/** Positions 2.. beside the owner's own (each a plain one, its own mint and a collect), for a world of `count`. */
+function more(count, { owner = HOLDER, at = 73_300_000 } = {}) {
+  const logs = [];
+  const positions = [];
+  for (let i = 1; i < count; i++) {
+    const tokenId = 5_000_000n + BigInt(i);
+    const mint = { block: at + 1_000 * i, liquidity: 10n ** 15n };
+    const spec = { tokenId, owner, key: KEY, poolId: ledgerWorld().poolId, tickLower: OWNER_STATE.tickLower, tickUpper: OWNER_STATE.tickUpper, vault: null, mint, steps: [{ block: at + 1_000 * i + 500, kind: 'collect', fees: [BigInt(i), BigInt(2 * i)] }] };
+    const events = positionLogs(spec);
+    logs.push(...events.logs);
+    positions.push({ tokenId, holder: owner, minter: owner, key: KEY, tickLower: spec.tickLower, tickUpper: spec.tickUpper, liquidity: events.liquidity, unclaimed: [0n, 0n], mintBlock: mint.block });
+  }
+  return { extraLogs: logs, extraPositions: positions, ids: [ID, ...positions.map((p) => String(p.tokenId))] };
+}
+
+test('eight positions read cold: one log read for their own events and one for their owners’ transfers, from the floor and the mints, not two each', async () => {
+  const many = more(8);
+  const { chain } = ledgerWorld({ extraLogs: many.extraLogs, extraPositions: many.extraPositions });
+  const { status, body } = await edge(chain).ask({ tokenIds: many.ids });
+  assert.equal(status, 200);
+  assert.ok(body.positions.every((one) => one.ok && one.exact), JSON.stringify(body.positions.map((one) => one.why)));
+  const reads = scans(chain);
+  const own = reads.filter((filter) => [filter.address].flat().includes(owned.POSITION_MANAGER));
+  assert.equal(own.length, 1, 'round one: one read for the eight');
+  assert.deepEqual([own[0].address].flat().sort(), [owned.POSITION_MANAGER, ledger.ENGINE, owned.SETUP_CONTRACT].sort());
+  assert.equal(Number(own[0].fromBlock), FLOOR);
+  assert.equal(own[0].topics[3].length, 8, 'its eight ids in one place');
+  const paid = reads.filter((filter) => filter.topics[0] === owned.TRANSFER_TOPIC);
+  assert.equal(paid.length, 1, 'round two: one read of the owners’ transfers, both ways');
+  assert.equal(Number(paid[0].fromBlock), OWNER_MINT.block, 'from the earliest mint');
+  for (const filter of reads) assert.ok(Number(filter.toBlock) - Number(filter.fromBlock) + 1 <= local.LOCAL_RPC_LOG_BLOCKS);
+});
+
+test('an NFT sent to an address that is not Domino’s (a router): unseen, that address’s transfers never read, and nothing read for it again', async () => {
+  const { chain } = ledgerWorld({ vault: null, steps: [], transfers: [{ block: 73_400_000, to: ROUTER }] });
+  const e = edge(chain);
+  const { status, body } = await e.ask({ tokenIds: [ID] });
+  assert.equal(status, 200);
+  assert.ok(isLedgerResponse(body));
+  const [position] = body.positions;
+  assert.deepEqual([position.exact, position.why, position.entries, position.through], [false, 'unseen', [], HEAD]);
+  assert.ok(!logReads(chain).some((filter) => names(filter, ROUTER)), 'the router’s transfers are never asked');
+  assert.ok(!logReads(chain).some((filter) => filter.topics[0] === owned.TRANSFER_TOPIC && filter.topics.length === 3), 'no holder’s transfers at all');
+  assert.equal(folded(body).phase, 'unclaimed-only');
+  // Kept as its verdict: a later question, fresh, reads the state and no log.
+  chain.log.length = 0;
+  chain.head += 600;
+  e.clock.time += 60_000;
+  const again = await e.ask({ tokenIds: [ID], fresh: true });
+  assert.equal(again.body.positions[0].why, 'unseen');
+  assert.deepEqual(logReads(chain), [], 'no log read');
+  // Minted elsewhere, never through DominoSetupV1: the same.
+  routes.resetChainRouteMemory();
+  const elsewhere = ledgerWorld({ vault: null, setup: false, steps: [{ block: 73_400_000, kind: 'collect', fees: [1n, 1n] }] });
+  const other = await edge(elsewhere.chain).ask({ tokenIds: [ID] });
+  assert.equal(other.body.positions[0].why, 'unseen');
+  assert.ok(!logReads(elsewhere.chain).some((filter) => names(filter, HOLDER)), 'its holder is not followed');
+});
+
+test('a Domino-compound position minted to its vault and handed back to the vault’s owner: both followed, exact; to anyone else, unseen', async () => {
+  const handed = { setup: false, mintTo: VAULT, transfers: [{ block: 73_300_000, to: HOLDER }] };
+  const { chain } = ledgerWorld(handed);
+  const { body } = await edge(chain).ask({ tokenIds: [ID] });
+  assert.equal(body.positions[0].exact, true, body.positions[0].why);
+  routes.resetChainRouteMemory();
+  const stranger = ledgerWorld({ ...handed, vaultOwner: ROUTER });
+  const other = await edge(stranger.chain).ask({ tokenIds: [ID] });
+  assert.equal(other.body.positions[0].why, 'unseen');
+});
+
+test('more holders than MAX_HOLDERS: too_many, kept as its verdict, so a later question reads no log for it', async () => {
+  const transfers = Array.from({ length: ledger.MAX_HOLDERS }, (_, i) => ({ block: 73_300_000 + i, to: `0x${(0xb0b0 + i).toString(16).padStart(40, '0')}` }));
+  const { chain } = ledgerWorld({ vault: null, steps: [], transfers });
+  const e = edge(chain);
+  const { body } = await e.ask({ tokenIds: [ID] });
+  assert.equal(body.positions[0].why, 'too_many');
+  assert.ok(!logReads(chain).some((filter) => filter.topics[0] === owned.TRANSFER_TOPIC && filter.topics.length === 3), 'no holder’s transfers read');
+  chain.log.length = 0;
+  e.clock.time += 3_000;
+  assert.equal((await e.ask({ tokenIds: [ID], fresh: true })).body.positions[0].why, 'too_many');
+  assert.deepEqual(logReads(chain), []);
+});
+
+test('a holder whose transfers are past ROUND_BYTES: that NFT is too_many and kept, the other of the question exact; alone, the same, never a 413 that keeps nothing', async () => {
+  const heavyId = 7_777_777n;
+  const heavy = positionLogs({ tokenId: heavyId, owner: HEAVY, key: KEY, poolId: ledgerWorld().poolId, tickLower: OWNER_STATE.tickLower, tickUpper: OWNER_STATE.tickUpper, vault: null, mint: { block: 73_300_000, liquidity: 10n ** 15n }, steps: [] });
+  const world = ledgerWorld({ vault: null, steps: [{ block: 73_400_000, kind: 'collect', fees: [1n, 2n] }], extraLogs: heavy.logs, extraPositions: [{ tokenId: heavyId, holder: HEAVY, minter: HEAVY, key: KEY, tickLower: OWNER_STATE.tickLower, tickUpper: OWNER_STATE.tickUpper, liquidity: heavy.liquidity, unclaimed: [0n, 0n], mintBlock: 73_300_000 }] });
+  const big = 'f'.repeat(ledger.ROUND_BYTES + 1024);
+  let heavyReads = 0;
+  // The node's answer to any read of HEAVY's transfers is more than a round may take.
+  const node = {
+    fetch: async (url, init) => {
+      const body = JSON.parse(init.body);
+      if (body.method === 'eth_getLogs' && names(body.params[0], HEAVY)) {
+        heavyReads += 1;
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [{ data: big }] }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      return world.chain.fetch(url, init);
+    },
+  };
+  const e = edge(node);
+  const both = await e.ask({ tokenIds: [ID, String(heavyId)] });
+  assert.equal(both.status, 200);
+  const byId = new Map(both.body.positions.map((one) => [one.tokenId, one]));
+  assert.equal(byId.get(ID).exact, true, byId.get(ID).why);
+  assert.equal(byId.get(String(heavyId)).why, 'too_many');
+  assert.equal(heavyReads, 2, 'together, then alone');
+  // Alone, later: answered from its verdict, HEAVY's transfers never asked again.
+  e.clock.time += 3_000;
+  const alone = await e.ask({ tokenIds: [String(heavyId)], fresh: true });
+  assert.equal(alone.status, 200);
+  assert.equal(alone.body.positions[0].why, 'too_many');
+  assert.equal(heavyReads, 2);
+  // A first question of it alone: too_many at once (one read), never a 413.
+  routes.resetChainRouteMemory();
+  heavyReads = 0;
+  const first = await edge(node).ask({ tokenIds: [String(heavyId)] });
+  assert.deepEqual([first.status, first.body.positions[0].why, heavyReads], [200, 'too_many', 1]);
+});
+
+// 2026-10-02 (review of the rules, round 4): the question's byte budget running out was kept as a month's `too_many`.
+const idWord = (id) => `0x${BigInt(id).toString(16).padStart(64, '0')}`;
+const keptKeys = (stored) => [...stored.keys()].filter((url) => /\/cache\/c1\/ledger\d*\//.test(url)).map((url) => url.replace(`${ORIGIN}/api/fees/v1/cache/c1/`, ''));
+
+test('the question’s byte budget running out is never a verdict: the NFTs it did not reach are `reading`, nothing kept for them, and answered the next time', async () => {
+  // Three positions whose own round-one read is past ROUND_BYTES, and the owner's own position, last in the question.
+  const heavyIds = [1_000_001n, 1_000_002n, 1_000_003n];
+  const heavyPositions = heavyIds.map((tokenId) => ({ tokenId, holder: HEAVY, minter: HEAVY, key: KEY, tickLower: OWNER_STATE.tickLower, tickUpper: OWNER_STATE.tickUpper, liquidity: 10n ** 15n, unclaimed: [0n, 0n], mintBlock: 73_300_000 }));
+  const world = ledgerWorld({ extraPositions: heavyPositions });
+  const big = 'f'.repeat(ledger.ROUND_BYTES + 1024);
+  let heavyReads = 0;
+  const node = {
+    fetch: async (url, init) => {
+      const body = JSON.parse(init.body);
+      if (body.method === 'eth_getLogs' && heavyIds.some((id) => [body.params[0].topics[3]].flat().includes(idWord(id)))) {
+        heavyReads += 1;
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [{ data: big }] }), { headers: { 'Content-Type': 'application/json' } });
+      }
+      return world.chain.fetch(url, init);
+    },
+  };
+  const e = edge(node);
+  const ids = [...heavyIds.map(String), ID];
+  const first = await e.ask({ tokenIds: ids });
+  assert.equal(first.status, 200);
+  assert.ok(isLedgerResponse(first.body), 'the page’s own check passes');
+  const whys = (body) => Object.fromEntries(body.positions.map((one) => [one.tokenId, one.why ?? 'exact']));
+  // Together, then the first two alone: each its own read past its cap, a verdict. The budget then holds no further round
+  // read: the third and the owner's are not answered this time, never `too_many`.
+  assert.deepEqual(whys(first.body), { [ids[0]]: 'too_many', [ids[1]]: 'too_many', [ids[2]]: 'reading', [ID]: 'reading' });
+  assert.equal(heavyReads, 3);
+  const owner = first.body.positions.find((one) => one.tokenId === ID);
+  assert.deepEqual([owner.exact, owner.entries, owner.mint], [false, [], null]);
+  assert.ok(owner.through < first.body.block);
+  assert.deepEqual(keptKeys(e.stored).sort(), [`ledger2/${ids[0]}/0`, `ledger2/${ids[1]}/0`], 'only the two verdicts kept; no whole answer either');
+  // The next question: the third's own read is its verdict, and the owner's is answered, exact.
+  e.clock.time += 3_000;
+  const second = await e.ask({ tokenIds: ids });
+  assert.deepEqual(whys(second.body), { [ids[0]]: 'too_many', [ids[1]]: 'too_many', [ids[2]]: 'too_many', [ID]: 'exact' });
+  assert.equal(heavyReads, 5, 'together, then the third alone; the first two not read again');
+  // A `too_many` is kept an hour, then read again.
+  e.clock.time += ledger.TOO_MANY_SECONDS * 1000 - 60_000;
+  await e.ask({ tokenIds: [ids[0]] });
+  assert.equal(heavyReads, 5, 'within its hour: its verdict');
+  e.clock.time += 60_000;
+  const again = await e.ask({ tokenIds: [ids[0]] });
+  assert.equal(again.body.positions[0].why, 'too_many');
+  assert.equal(heavyReads, 6, 'past its hour: read again');
+});
+
+test('the ledger’s keys are version 2: a verdict a spent budget kept under the old keys is never read', async () => {
+  assert.equal(ledger.LEDGER_KEYS, 2);
+  const { poolId } = ledgerWorld();
+  const verdict = { v: 2, poolId, through: HEAD, scanned: HEAD, mint: null, holders: [], trusted: [], vaults: [], entries: [], final: 'too_many', pending: { candidates: [], realized: [], service: [], paidIn: [], paidOut: [] } };
+  const kept = (clock) => new Response(JSON.stringify(verdict), { headers: { 'Content-Type': 'application/json', 'X-Fees-Stored-At': String(clock.time) } });
+  // Under the old key (what the preview's edge cache may hold): ignored, the ledger read and exact.
+  const old = edge(ledgerWorld().chain);
+  old.stored.set(`${ORIGIN}/api/fees/v1/cache/c1/ledger/${ID}/0`, kept(old.clock));
+  const read = await old.ask({ tokenIds: [ID] });
+  assert.equal(read.body.positions[0].exact, true, read.body.positions[0].why);
+  assert.ok(keptKeys(old.stored).includes(`ledger2/${ID}/0`));
+  assert.ok([...old.stored.keys()].some((url) => url.includes('/cache/c1/ledgerAnswer2/')), 'the whole answer under its new key');
+  // The same verdict under the new key is the ledger's own (so the bump is what retires the old one).
+  routes.resetChainRouteMemory();
+  const current = edge(ledgerWorld().chain);
+  current.stored.set(`${ORIGIN}/api/fees/v1/cache/c1/ledger2/${ID}/0`, kept(current.clock));
+  assert.equal((await current.ask({ tokenIds: [ID] })).body.positions[0].why, 'too_many');
+});
+
+test('a reply cut by the question’s own budget is `budget_spent`, never the read’s own `attempt_cap`', async () => {
+  const big = JSON.stringify({ jsonrpc: '2.0', id: 1, result: ['x'.repeat(4096)] });
+  const rt = { deps: { fetch: async () => new Response(big, { headers: { 'Content-Type': 'application/json' } }), sleep: async () => {}, now: () => 0 }, cache: null };
+  const own = fees.newBudget(rt);
+  await assert.rejects(fees.post(rt, own, {}, true, 1024), (error) => error.message === 'attempt_cap');
+  const spent = fees.newBudget(rt);
+  spent.bytes = fees.MAX_BYTES - 512;
+  await assert.rejects(fees.post(rt, spent, {}, true, 1024), (error) => error.message === 'budget_spent');
+  const whole = fees.newBudget(rt);
+  whole.bytes = fees.MAX_BYTES - 512;
+  await assert.rejects(fees.post(rt, whole, {}, true), (error) => error.message === 'budget_spent');
+  // A reply past the whole budget at a fresh answer stays the call's own cap.
+  await assert.rejects(fees.post(rt, fees.newBudget(rt), {}, true, 1024), (error) => error.kind === 'bytes' && error.message === 'attempt_cap');
+});
+
+test('a ledger read in steps reads its logs once: each later step reads from where the last read ended, not from where its ledger ended', async () => {
+  const steps = Array.from({ length: 450 }, (_, i) => ({ block: 73_300_000 + 1_000 * i, kind: 'swap' }));
+  steps.push({ block: 73_800_000, kind: 'collect', fees: [9n, 9n] });
+  const { chain } = ledgerWorld({ vault: null, steps });
+  const e = edge(chain);
+  const first = await e.ask({ tokenIds: [ID] });
+  assert.equal(first.body.positions[0].why, 'reading');
+  for (let round = 0; round < 6; round++) {
+    chain.log.length = 0;
+    e.clock.time += 3_000;
+    const { body } = await e.ask({ tokenIds: [ID] });
+    for (const filter of scans(chain)) assert.ok(Number(filter.fromBlock) >= HEAD + 1 - fees.SAFE_DEPTH, `${Number(filter.fromBlock)}: only the last read's tail`);
+    if (body.positions[0].exact) break;
+  }
+  const { body } = await e.ask({ tokenIds: [ID] });
+  assert.equal(body.positions[0].exact, true, body.positions[0].why);
+  assert.deepEqual(body.positions[0].entries.map((entry) => entry.kind), ['mint', 'collect']);
+});
+
+test('a node behind the block a ledger was kept through: read on from where it stands, never from the floor', async () => {
+  const { chain } = ledgerWorld();
+  const e = edge(chain);
+  await e.ask({ tokenIds: [ID] });
+  chain.log.length = 0;
+  chain.head -= 50;
+  e.clock.time += 60_000;
+  const { body } = await e.ask({ tokenIds: [ID] });
+  assert.equal(body.positions[0].exact, true, body.positions[0].why);
+  assert.equal(body.block, HEAD - 50);
+  assert.ok(scans(chain).every((filter) => Number(filter.fromBlock) >= HEAD - 50 + 1 - fees.SAFE_DEPTH), 'nothing from the floor');
+});
+
+test('a pool in native ETH: a plain position is never exact (a collect paid only in ETH leaves no log); a vault’s, whose checkpoint vouches, is', async () => {
+  const native = { ...KEY, currency0: '0x0000000000000000000000000000000000000000', currency1: USDG };
+  // Its mint only, as far as any log shows (an ETH-only collect would look the same).
+  const plain = ledgerWorld({ key: native, vault: null, steps: [] });
+  const { body } = await edge(plain.chain).ask({ tokenIds: [ID] });
+  assert.deepEqual([body.positions[0].exact, body.positions[0].why], [false, 'native']);
+  routes.resetChainRouteMemory();
+  const vaulted = ledgerWorld({ key: native });
+  const held = await edge(vaulted.chain).ask({ tokenIds: [ID] });
+  assert.equal(held.body.positions[0].exact, true, held.body.positions[0].why);
+});
+
+test('one ledger whose settlements remove more than they add is `liquidity` for good; the other positions of the question are answered and kept', async () => {
+  const brokenId = 6_666_666n;
+  const broken = positionLogs({ tokenId: brokenId, owner: HOLDER, key: KEY, poolId: ledgerWorld().poolId, tickLower: OWNER_STATE.tickLower, tickUpper: OWNER_STATE.tickUpper, vault: null, mint: { block: 73_300_000, liquidity: 10n ** 15n }, steps: [{ block: 73_400_000, kind: 'decrease', delta: 3n * 10n ** 15n }] });
+  const { chain } = ledgerWorld({ extraLogs: broken.logs, extraPositions: [{ tokenId: brokenId, holder: HOLDER, minter: HOLDER, key: KEY, tickLower: OWNER_STATE.tickLower, tickUpper: OWNER_STATE.tickUpper, liquidity: 1n, unclaimed: [0n, 0n], mintBlock: 73_300_000 }] });
+  const e = edge(chain);
+  const { status, body } = await e.ask({ tokenIds: [ID, String(brokenId)] });
+  assert.equal(status, 200);
+  const byId = new Map(body.positions.map((one) => [one.tokenId, one]));
+  assert.equal(byId.get(ID).exact, true, byId.get(ID).why);
+  assert.equal(byId.get(String(brokenId)).why, 'liquidity');
+  // Both kept: a minute later, neither is read from the floor.
+  chain.log.length = 0;
+  chain.head += 600;
+  e.clock.time += 60_000;
+  await e.ask({ tokenIds: [ID, String(brokenId)] });
+  assert.ok(scans(chain).every((filter) => Number(filter.fromBlock) >= HEAD + 1 - fees.SAFE_DEPTH));
+});
+
+test('a question still too large is kept a while (413 at once, nothing asked); one our own time-out ended is kept a minute', async () => {
+  const { chain } = ledgerWorld();
+  const big = 'e'.repeat(ledger.ROUND_BYTES + 1024);
+  // Every one-block lookup of the PoolManager answers more than a round may take.
+  const node = {
+    fetch: async (url, init) => {
+      const body = JSON.parse(init.body);
+      if (body.method === 'eth_getLogs' && [body.params[0].address].flat().includes(fees.POOL_MANAGER)) return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [{ data: big }] }), { headers: { 'Content-Type': 'application/json' } });
+      return chain.fetch(url, init);
+    },
+  };
+  const e = edge(node);
+  assert.equal((await e.ask({ tokenIds: [ID] })).status, 413);
+  const posts = chain.log.length;
+  e.clock.time += 60_000;
+  const again = await e.ask({ tokenIds: [ID] });
+  assert.deepEqual([again.status, again.body], [413, { v: 1, error: 'too_large' }]);
+  assert.equal(chain.log.length, posts, 'nothing asked');
+  e.clock.time += ledger.TOO_LARGE_SECONDS * 1000;
+  await e.ask({ tokenIds: [ID] });
+  assert.ok(chain.log.length > posts, 'read again once its while is over');
+
+  // Our own time-out of a call (rpc_timeout): kept a minute, Retry-After 60.
+  assert.equal(fees.failureSeconds(new fees.RelayError('fatal', 'rpc_timeout')), 60);
+  assert.equal(fees.failureSeconds(new fees.RelayError('fatal', 'http_500')), fees.FAILURE_SECONDS);
+  const { cache } = memoryCache();
+  let calls = 0;
+  const clock = { time: 5_000_000 };
+  const rt = {
+    deps: {
+      fetch: async () => {
+        calls += 1;
+        throw new DOMException('The node took too long', 'TimeoutError');
+      },
+      sleep: async () => {},
+      now: () => clock.time,
+    },
+    cache,
+  };
+  const request = () => new Request(`${ORIGIN}/api/fees/v2/ledger`, { method: 'POST' });
+  const slow = await ledger.ledgerAnswer(request(), rt, { ids: [3_325_113n], fresh: false });
+  assert.deepEqual([slow.status, slow.headers.get('Retry-After')], [502, '60']);
+  clock.time += 30_000;
+  const kept = await ledger.ledgerAnswer(request(), rt, { ids: [3_325_113n], fresh: true });
+  assert.equal(kept.status, 502);
+  assert.equal(calls, 1, 'not sent again within the minute, fresh or not');
+});

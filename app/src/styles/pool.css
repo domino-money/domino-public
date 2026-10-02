@@ -5,6 +5,11 @@
    same element still wins. Tangerine lives in the charts and the range visuals only. */
 
 @layer components {
+  /* ---- What the page must say first (audit I1, B2, 2026-10-01): a token that passes for a main token, a pool off the
+     list. The warning in the money-out wash, as the automation page's notices; the off-list line in quiet text. ---- */
+  .dm-pool-warning { margin: 0; max-width: 72ch; padding: 10px 14px; border-radius: var(--radius); background: var(--money-out-bg); box-shadow: inset 2px 0 0 var(--money-out); color: var(--fg); font-size: 14px; line-height: 20px; letter-spacing: -0.16px; }
+  .dm-pool-offlist { margin: 0; max-width: 72ch; font-size: 13px; line-height: 18px; letter-spacing: -0.16px; color: var(--fg-muted); }
+
   /* ---- Page frame: breadcrumb and the one grid (§9.1) ------------------------------------------------------- */
   .dm-pool-breadcrumb { display: flex; align-items: center; min-height: 20px; }
   /* The same back link as every other screen: one chevron icon, 4px gap, no bolder weight. */

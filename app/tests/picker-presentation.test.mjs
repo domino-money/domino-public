@@ -85,7 +85,7 @@ test('pool cards preserve real zero, unavailable APR and provider attribution in
     // refuses only a POSITIVE estimate too small to show. A dash here said "we do
     // not know" about something we do know.
     assert.match(rendered, /data-row-apr="estimate"/)
-    assert.match(rendered, />Pool APR<\/span><span class="tnum font-medium text-fg"[^>]*>0% est\./)
+    assert.match(rendered, />Pool APR<\/span><span class="tnum font-medium text-fg"[^>]*>0\.0% est\./, "a real zero, by the one APR rule (audit E21)")
     assert.doesNotMatch(rendered, /data-row-apr-reason/, 'nothing was refused')
     // The caveat that used to sit under every row, contradicting the figure above
     // it on every pool, is gone for good.
@@ -116,7 +116,7 @@ test('on Explore a pool row is a way in, not a choice: a button named by its own
   assert.doesNotMatch(rendered, /GeckoTerminal|DexScreener/, 'the provider is never named on a screen')
   // The row works the estimate out from the figures this read already returned: no read per row.
   assert.match(rendered, /data-row-apr="estimate"/)
-  assert.match(rendered, />Pool APR<\/span><span class="tnum font-medium text-fg"[^>]*>[\d.]+% est\./)
+  assert.match(rendered, />Pool APR<\/span><span class="tnum font-medium text-fg"[^>]*>[\d.,]+% est\./)
 })
 
 test('the picker with onOpen and the catalogue left to the page renders no catalogue section and reads nothing on render', () => {
@@ -234,12 +234,14 @@ test('New position’s pool row: TVL, 24h volume and APR on every row, a dash fo
   // A real zero is a figure: $0.00 and 0% est., never a dash.
   const zero = html(PoolRow, { option: { ...option, volume: { state: 'attributed', value: '$0.00', raw: '0', zero: true, provider: 'dexscreener', retrievedAt: 1000, cacheAgeSeconds: null } }, checked: true, onPick() {}, name: 'pool-option', compact: true, plain: true })
   assert.match(zero, /\$0\.00/)
-  assert.match(zero, /data-row-apr="estimate"><span class="text-fg-muted">APR<\/span><span class="tnum font-medium text-fg"[^>]*>0% est\./)
+  assert.match(zero, /data-row-apr="estimate"><span class="text-fg-muted">APR<\/span><span class="tnum font-medium text-fg"[^>]*>0\.0% est\./)
   assert.match(zero, /checked=""/)
   // The fixture pool's own figures: $10.00 TVL and its estimate, like Markets ("12.34% est.").
   const full = html(PoolRow, { option, checked: false, onPick() {}, name: 'pool-option', compact: true, plain: true })
   assert.match(full, />\$10\.00</)
-  assert.match(full, />[\d.]+% est\.</)
+  assert.match(full, />[\d.,]+% est\.</)
+  // 2026-10-01 (audit E21): the fee as every chip writes it.
+  assert.match(full, /data-fee="">0\.30% fee</)
   assert.match(full, /data-token-metadata="available"/)
   // Changed on purpose (round 6, 2026-09-27, New position for beginners): the row names its pair and fee only; the
   // "Uniswap · <pool id>" line is gone from New position's rows, and the id is the row's data-pool-key.

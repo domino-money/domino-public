@@ -454,7 +454,9 @@ test('the simulation decides: a failing call, a garbled reply or no simulation a
   for (const code of [4200, -32601, -32004]) assert.equal((await fixture({ simulate: rpcError(code, 'nope'), fallback }).client.prepareBatch(both, gas)).gasUsed, 3n * 0x5208n, `${code}`);
   await assert.rejects(fixture({ simulate: rpcError(-32000, 'nope'), fallback }).client.prepareBatch(both, gas), /nope/);
   await assert.rejects(fixture({ simulate: 'unsupported', fallback: async () => { throw new Error('429'); } }).client.prepareBatch(both, gas), /batch_simulation_unavailable/);
-  await assert.rejects(fixture({ simulate: 'unsupported', fallback: async () => [{ calls: [{ status: '0x0', gasUsed: '0x1' }, { status: '0x1', gasUsed: '0x1' }, { status: '0x1', gasUsed: '0x1' }] }] }).client.prepareBatch(both, gas), /batch_simulation_reverted/);
+  // Changed on purpose 2026-10-02 (review of rugged97's rules, finding 17): a call that fails on the site's node, whose
+  // head may be behind the wallet's reads, is step by step (each step checked by the wallet), not a stop.
+  await assert.rejects(fixture({ simulate: 'unsupported', fallback: async () => [{ calls: [{ status: '0x0', gasUsed: '0x1' }, { status: '0x1', gasUsed: '0x1' }, { status: '0x1', gasUsed: '0x1' }] }] }).client.prepareBatch(both, gas), /batch_simulation_unavailable/);
   // The ETH the batch spends: its value, its gas at the ceiling and the reserve.
   await assert.rejects(fixture({ balance: 1000n }).client.prepareBatch(both, gas), /native_gas_reserve_insufficient/);
   await assert.rejects(fixture().client.prepareBatch(both, { ...gas, maxGas: 100_000n }), /gas_budget_exceeded/);
@@ -595,4 +597,20 @@ test('a batch’s outcome is the operation it opens: created is read back closed
   assert.equal(f.journal.batchOffered(owner, ID), '');
   f = await sent({ statusError: rpcError(-32603, 'Internal JSON-RPC error.') });
   await assert.rejects(f.client.batchStatus('0xba7c4', ID), /Internal JSON-RPC error/, 'any other failed read is read again later');
+});
+
+// 2026-10-02 (review of the RPC switch, finding 17): the largest batch Create position builds (a routed one-token deposit
+// with a Permit2 allowance and both pool tokens' allowances to reset: ten calls) fits the site's simulate route, which a
+// wallet without eth_simulateV1 is simulated through once the deployment turns it on (RPC-SPEC D7). It refused more
+// than eight, so such a wallet lost the one-signature batch and the Uniswap route.
+test('the largest routed batch (ten calls) fits the site’s simulate route, as lib/walletReads.ts sends it', async () => {
+  const simulate = require('../.test-build/app/functions/_lib/simulate.js');
+  const plan = routedPlan(), f = fixture({ feeRecipient: ROUTE_FEE_RECIPIENT, allowance: 5n });
+  const batch = await f.client.prepareBatch(plan, gas);
+  assert.equal(batch.calls.length, 10);
+  // lib/walletReads.ts simulationOf: the owner and the calls, in the one case the route takes.
+  const request = { owner: owner.toLowerCase(), calls: batch.calls.map(({ to, data, value }) => ({ to: to.toLowerCase(), data: data.toLowerCase(), value: value.toLowerCase() })) };
+  assert.deepEqual(simulate.simulateRequestOf(JSON.parse(JSON.stringify(request))), request);
+  assert.ok(JSON.stringify(request).length <= simulate.SIMULATE_BODY_BYTES, 'within the body limit');
+  assert.ok(batch.calls.length < simulate.SIMULATE_CALLS, 'with room to spare');
 });

@@ -14,7 +14,8 @@ import { CHAIN_ID } from './read/screens/identity'
  * ownership — it is the address the connected wallet reports, and no more.
  *
  * In a build without a wallet control nothing ever publishes, so every
- * subscriber sees "disconnected" and asks for an address instead.
+ * subscriber sees "disconnected" and asks for an address instead. In one with
+ * it, every subscriber sees "unknown" until the wallet island publishes.
  */
 export type WalletIdentityView =
   /** The wallet control has not settled yet. */
@@ -24,7 +25,16 @@ export type WalletIdentityView =
 
 const DISCONNECTED: WalletIdentityView = { kind: 'disconnected' }
 
-let current: WalletIdentityView = DISCONNECTED
+/**
+ * Changed on purpose 2026-10-01 (audit C5): in a build with a wallet control, the identity starts unknown, not
+ * disconnected, until the wallet island says what it found. A returning visitor whose wallet reconnects saw "Connect a
+ * wallet" for the 0.7 to 2 s the island took to load. If the island cannot load, its boundary publishes
+ * "disconnected" (components/wallet/WalletBoundary.tsx), so nothing waits for good. A build without one starts, and
+ * stays, disconnected. (The typeof guard is for the node tests, which compile this module without Vite's defines.)
+ */
+const withWallet =
+  (typeof __DOMINO_WALLET_SESSION__ !== 'undefined' && __DOMINO_WALLET_SESSION__) || (typeof __DOMINO_LOCAL_LIVE__ !== 'undefined' && __DOMINO_LOCAL_LIVE__)
+let current: WalletIdentityView = withWallet ? { kind: 'unknown' } : DISCONNECTED
 const listeners = new Set<() => void>()
 
 /** Called by the wallet islands on every connection change. Same-value publishes are dropped so subscribers do not re-render for nothing. */

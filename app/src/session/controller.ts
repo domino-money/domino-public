@@ -2,6 +2,7 @@ import { OutgoingContractError, type ApiOutcome, type SessionApi } from './api'
 import {
   initialMachine,
   reduce,
+  sessionChains,
   type Call,
   type Effect,
   type Env,
@@ -187,7 +188,7 @@ export interface SessionController {
 }
 
 export function createSessionController(ports: ControllerPorts): SessionController {
-  const env: Env = { origin: ports.origin, checksum: ports.checksum }
+  const env: Env = { origin: ports.origin, checksum: ports.checksum, chains: sessionChains(ports.origin) }
   let machine: Machine = initialMachine
   let snapshot = snapshotOf(machine)
   const listeners = new Set<() => void>()

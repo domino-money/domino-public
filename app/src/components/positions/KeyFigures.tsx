@@ -1,13 +1,15 @@
 import { useMemo, type ReactNode } from 'react'
 import { LiveFigure, StackedBar, UsdText } from '../figures'
-import { Badge, RangeBar, Skeleton, Stat, StatStrip, cx } from '../ui'
+import { RangeBar, Skeleton, Stat, StatStrip, cx } from '../ui'
 import { TokenLabel } from '../read/TokenLabel'
 import { useFeeHistory } from '../../lib/fees/useFeeHistory'
+import { usePastReads } from '../../lib/fees/usePastReads'
 import { useLoadMilestone } from '../../lib/useLoadMilestone'
 import { historyLoadQuality } from '../../lib/fees/freshness'
 import { visibleAmountQuality } from './valueReadiness'
 import type { PositionState } from '../../lib/fees/types'
-import { formatUsd } from '../../lib/format/usd'
+import { formatUsdFloor } from '../../lib/format/usd'
+import { shortDate, shortTime } from '../../lib/format/time'
 import { APR_MISSING, aprText, positionApr, spanText } from '../../lib/positionApr'
 import { shownCardRange, shownCardTick, type RangeEnd } from '../../lib/read/screens/positions'
 import type { LiveCard } from '../../lib/walletCards'
@@ -27,7 +29,6 @@ import { basisOf, positive, rawPair, unitsText, usdgSide, valueShares } from './
 /** A price or range end without its "≈": the page writes plain figures (six significant digits, every one in a title). */
 const plain = (text: string) => (text.startsWith('≈') ? text.slice(1) : text)
 const endText = (end: RangeEnd, tick: number) => (end.kind === 'tick' ? `Tick ${tick}` : plain(end.text))
-const HOURS_25 = 25 * 3_600
 
 /** Both amounts of the principal or the fees, one line each. */
 function Amounts({ card, which }: { card: LiveCard; which: 'principal' | 'unsettledFees' }) {
@@ -40,12 +41,18 @@ function Amounts({ card, which }: { card: LiveCard; which: 'principal' | 'unsett
 }
 
 /**
- * Your APR: the rate since the position opened, and over the last 24 hours once it is older than a day. A skeleton
- * while its history is read; a dash with a few plain words when no rate can be said (lib/positionApr.ts).
+ * Your APR: the rate since the position opened, at today's prices, and over the last 24 hours when its chart has a
+ * measured point about a day old (lib/positionApr.ts). A skeleton while its history is read; a dash with a few plain
+ * words when no rate can be said. Changed on purpose 2026-10-02 (RPC-SPEC §11.4): no estimate any more, and the last
+ * 24 hours only from a measured point. Since the chart's periods came back (the same day), that point is the card's 24H
+ * start, read at a past block when the history has none a day old (lib/fees/pastReads.ts); the line's title says from
+ * when and which block.
  */
 function YourApr({ tokenId }: { tokenId: string }) {
   const fees = useFeeHistory(tokenId)
-  const drawn = fees.phase === 'verified' || fees.phase === 'estimated' || fees.phase === 'cached' ? fees : null
+  // Asks for the 24H start while the tile is shown (no read when the history has one, or for a saved copy); no fills.
+  usePastReads(tokenId, '24h', false)
+  const drawn = fees.phase === 'verified' || fees.phase === 'cached' ? fees : null
   const rates = useMemo(() => {
     if (!drawn) return null
     const into = usdgSide(drawn.state.currencies) ?? 1
@@ -54,7 +61,9 @@ function YourApr({ tokenId }: { tokenId: string }) {
   const saved = fees.phase === 'cached' ? fees : null
   useLoadMilestone('position', 'apr', rates?.all.ok ? historyLoadQuality(fees) : null)
   let figure: ReactNode = <span className="text-fg-subtle">—</span>
-  let sub: ReactNode = 'Not measured yet'
+  // 2026-10-01 (item A13): a history the chain would not give says so, apart from one that cannot be measured.
+  const reason = fees.phase === 'unclaimed-only' || fees.phase === 'unavailable' ? fees.reason : null
+  let sub: ReactNode = reason === 'rpc_unavailable' ? 'Couldn’t load yet' : reason === 'not_exact' ? 'Not measured for this position' : 'Not measured yet'
   if (fees.phase === 'idle' || fees.phase === 'loading') {
     figure = <Skeleton className="dm-pos-skel-fig" />
     sub = null
@@ -64,27 +73,30 @@ function YourApr({ tokenId }: { tokenId: string }) {
     figure = (
       <>
         {aprText(all.rate)}
-        {fees.phase === 'estimated' && <Badge kind="estimate" className="dm-pos-est" />}
         {saved && <span className="text-caption text-fg-muted"> saved</span>}
       </>
     )
     sub = (
       <span className="dm-pos-lines">
         <span>{saved ? 'Saved history' : 'Since opened'} ({spanText(all.seconds)})</span>
-        {saved && <span>Through {new Date(saved.state.timestamp * 1000).toLocaleString('en-US')} · not current</span>}
-        {all.seconds > HOURS_25 && <span>Last 24 hours: {day.ok ? aprText(day.rate) : '—'}</span>}
+        {saved && <span>Through {shortDate(saved.state.timestamp)} {shortTime(saved.state.timestamp)} · not current</span>}
+        {day.ok && (
+          <span data-apr-day="" title={`Measured from ${shortDate(day.from.t)} ${shortTime(day.from.t)}, block ${day.from.block}, to now (${spanText(day.seconds)})`}>
+            Last 24 hours: {aprText(day.rate)}
+          </span>
+        )}
       </span>
     )
   }
   return (
     <Stat
       label="Your APR"
-      info="This position’s own fees, as a yearly rate on the money in it, from its history. Not a promise of future earnings."
+      info="This position’s own fees, as a yearly rate on the money in it, at today’s prices. Not a promise of future earnings."
       className="dm-pos-stat"
       data-cell="apr"
       data-apr={rates ? (rates.all.ok ? 'ready' : rates.all.reason) : fees.phase}
       data-apr-source={saved ? 'saved-public-history' : undefined}
-      title={saved ? `Saved public-chain replay at block ${saved.state.block}; saved ${new Date(saved.savedAt).toISOString()}. Historical, not a current rate.` : undefined}
+      title={saved ? 'A copy this browser saved of this position’s public history. Historical, not a current rate.' : undefined}
       sub={sub}
     >
       <span className="dm-fig-lg dm-pos-apr">{figure}</span>
@@ -179,7 +191,7 @@ export function KeyFigures({ card, state, price, block, cached = false }: { card
       >
         {principal ? (
           <span className="dm-arrive" title={`Pool price at block ${principal.block}`}>
-            <LiveFigure value={formatUsd(unitsText(principal.units))} mode="digits" dimCents className="dm-fig-lg" />
+            <LiveFigure value={formatUsdFloor(unitsText(principal.units))} mode="digits" dimCents className="dm-fig-lg" />
           </span>
         ) : (
           <Amounts card={card} which="principal" />
@@ -192,7 +204,7 @@ export function KeyFigures({ card, state, price, block, cached = false }: { card
         data-cell="fees"
         sub={fees && <Amounts card={card} which="unsettledFees" />}
       >
-        {fees ? <UsdText value={unitsText(fees.units)} block={fees.block} className={cx('dm-fig-lg dm-arrive', positive(fees.units) && 'dm-fees-in')} /> : <Amounts card={card} which="unsettledFees" />}
+        {fees ? <UsdText value={unitsText(fees.units)} block={fees.block} floor className={cx('dm-fig-lg dm-arrive', positive(fees.units) && 'dm-fees-in')} /> : <Amounts card={card} which="unsettledFees" />}
       </Stat>
       <YourApr tokenId={card.tokenId} />
       <Stat

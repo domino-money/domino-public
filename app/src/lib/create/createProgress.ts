@@ -84,14 +84,14 @@ const createdListeners = new Set<() => void>()
  * Every position Create position made during this visit, in memory only (never the browser's storage): a read of the
  * chain from a node still behind the mint lacks it (the owned endpoint's kept answer did, before the page read the
  * chain itself), so the pages a success leads to (screens/Sequence.tsx, a position's own page) ask that list once more
- * for these ids and for no other.
+ * for these ids and for no other. Each with the wallet that made it (lowercase; null when the caller did not name it).
  */
-const madeHere = new Set<string>()
+const madeHere = new Map<string, string | null>()
 
-/** The new position's NFT id, or null. */
-export function publishCreated(tokenId: string | null) {
+/** The new position's NFT id, or null; `owner`, the wallet that made it (RPC fix round 2: a list asks only for its own). */
+export function publishCreated(tokenId: string | null, owner: string | null = null) {
   created = tokenId
-  if (tokenId) madeHere.add(tokenId)
+  if (tokenId) madeHere.set(tokenId, owner && owner.toLowerCase())
   for (const listener of createdListeners) listener()
 }
 
@@ -99,6 +99,12 @@ export function publishCreated(tokenId: string | null) {
 export const createdHere = (tokenId: string) => madeHere.has(tokenId)
 /** 2026-09-28 (speed wave B, item 18): how many it made, so a wallet's list kept before the last is not drawn after it. */
 export const madeCount = () => madeHere.size
+/**
+ * 2026-10-02 (review of the RPC switch, finding 8): the positions it made, for a list that should name them
+ * (walletPositions.ts). Changed on purpose 2026-10-02 (RPC fix round 2): with `owner`, only that wallet's (and any whose
+ * wallet was not named), so another wallet's list is not asked again for them.
+ */
+export const madeIds = (owner?: string): readonly string[] => [...madeHere].filter(([, by]) => owner === undefined || by === null || by === owner.toLowerCase()).map(([id]) => id)
 
 function subscribeCreated(listener: () => void): () => void {
   createdListeners.add(listener)

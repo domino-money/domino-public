@@ -21,6 +21,8 @@ import { volumeGeometry } from './priceSeries'
 import { ratioGeometry, type RatioPad } from './ratioSeries'
 import { transientWaitSeconds, type TransientCandidate } from './screens/transient'
 import type { TokenDisplay } from './types'
+import { ROBINHOOD_ID } from '../../config/chainIdentity'
+import { chainKey, movedScoped } from '../chainStorage'
 
 export type Side = 'base' | 'quote'
 /** Which series a card asks for: the chain's stored ratio, or a provider's USD candles. */
@@ -332,7 +334,14 @@ export interface CardCache {
   put(answer: CardAnswer): void
 }
 
-const STORED = 'domino-card:'
+/**
+ * The prefix a series is kept under, which names its chain (2026-10-01, the chain2 workstream, part B, audit item G10):
+ * `domino-card-v2:4663:<series key>`. A series kept under LEGACY_STORED (until then) is Robinhood Chain's, and moves
+ * to its new name the first time it is asked for; the sweep ages both alike.
+ */
+export const STORED = `${chainKey('domino-card-v2', ROBINHOOD_ID)}:`
+/** The prefix until 2026-10-01, with no chain in it. */
+export const LEGACY_STORED = 'domino-card:'
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isInterval = (value: unknown) => isRecord(value) && typeof value.startTimestamp === 'number' && typeof value.endTimestamp === 'number'
 const isRatioCandle = (value: unknown) => isRecord(value) && typeof value.startTimestamp === 'number' && typeof value.swapCount === 'number' &&
@@ -395,6 +404,7 @@ export function createCardCache(storage: () => StorageLike | null, wall: () => n
     memory.delete(key)
     try {
       store()?.removeItem(STORED + key)
+      store()?.removeItem(LEGACY_STORED + key)
     } catch {
       // Nothing to do: the memory copy is gone either way.
     }
@@ -406,7 +416,7 @@ export function createCardCache(storage: () => StorageLike | null, wall: () => n
     const names: string[] = []
     for (let index = 0; index < (kept.length ?? 0); index++) {
       const name = kept.key?.(index)
-      if (name?.startsWith(STORED)) names.push(name)
+      if (name?.startsWith(STORED) || name?.startsWith(LEGACY_STORED)) names.push(name)
     }
     for (const name of names) {
       let at = Number.NaN
@@ -423,7 +433,8 @@ export function createCardCache(storage: () => StorageLike | null, wall: () => n
       let answer = memory.get(key) ?? null
       if (!answer && key.startsWith('chain:')) {
         try {
-          const text = store()?.getItem(STORED + key)
+          // A series still under its name from before (part B, G10) moves to its new name, as it is.
+          const text = movedScoped(store(), STORED + key, LEGACY_STORED + key)
           answer = text ? revive(JSON.parse(text), key) : null
           if (text && !answer) forget(key)
         } catch {

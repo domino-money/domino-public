@@ -2,6 +2,8 @@ import type { AccountValidation, SessionRequests, SessionResponses } from 'api-c
 import type { ApiOutcome, RouteOutcome, TransportFailure } from './api'
 import { classify } from './errors'
 import { checkChallengeMessage } from './siwe'
+import { ELYSIUM_ID, ELYSIUM_STATUS, REGISTRY_CHAIN_IDS, ROBINHOOD_ID } from '../config/chainIdentity'
+import { sectionLinked } from '../chains/elysium/mode'
 
 /**
  * The wallet-session state machine, as a pure function.
@@ -35,7 +37,8 @@ import { checkChallengeMessage } from './siwe'
  * only part React sees.
  */
 
-export const ROBINHOOD_CHAIN_ID = 4663
+/** Robinhood Chain's id. Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G3): the registry's. */
+export const ROBINHOOD_CHAIN_ID = ROBINHOOD_ID
 
 export type WalletIdentity =
   /** The wallet is still reconnecting; nothing is known yet. */
@@ -212,6 +215,21 @@ export type Event =
 export interface Env {
   origin: string
   checksum(address: string): string
+  /**
+   * The registry's chains a signed-in account keeps its session across (G11), as sessionChains(origin) gives them for
+   * the page's origin (session/controller.ts). Absent: Robinhood Chain alone, so every move is an identity change.
+   */
+  chains?: readonly number[]
+}
+
+/**
+ * The registry's chains whose screens exist at `origin` (2026-10-01, fix round 1): Robinhood Chain everywhere, and the
+ * second chain only where its section is open (chains/elysium/mode.ts sectionLinked, the menu's and the router's rule).
+ * On domino.money, while that section is off, a wallet that moves to the second chain's network is an identity change
+ * like any other chain outside the site, exactly as before the section existed.
+ */
+export function sessionChains(origin: string): readonly number[] {
+  return REGISTRY_CHAIN_IDS.filter((id) => id !== ELYSIUM_ID || sectionLinked(origin, ELYSIUM_STATUS))
 }
 
 export interface Step {
@@ -432,11 +450,48 @@ function failLogout(m: Machine, purpose: LogoutPurpose, after: Landing): Step {
 // Wallet identity
 // ---------------------------------------------------------------------------
 
-function onIdentity(m: Machine, identity: WalletIdentity): Step {
+function onIdentity(m: Machine, identity: WalletIdentity, chains: readonly number[]): Step {
   const before = m.identity
   if (before.kind === identity.kind && identityKey(before) === identityKey(identity)) return same(m)
-  if (before.kind === 'connected') return switchIdentity(m, before, identity)
+  if (before.kind === 'connected') return (movedWithinRegistry(before, identity, chains) && moveChain(m, identity)) || switchIdentity(m, before, identity)
   return settle({ ...m, identity, recheckPending: false })
+}
+
+/**
+ * The same wallet and the same account, moved from one chain of the registry to another (2026-10-01, the chain2
+ * workstream, part B, audit item G11): Robinhood Chain and the second chain's section (config/chainIdentity.ts
+ * REGISTRY_CHAIN_IDS), where that section is open at the page's origin (`chains`, sessionChains). Anything else (another
+ * account, another wallet, a chain outside them) is an identity change as it always was.
+ */
+function movedWithinRegistry(before: Connected, identity: WalletIdentity, chains: readonly number[]): identity is Connected {
+  return (
+    identity.kind === 'connected' &&
+    identity.connectorUid === before.connectorUid &&
+    lower(identity.address) === lower(before.address) &&
+    identity.chainId !== before.chainId &&
+    chains.includes(before.chainId) &&
+    chains.includes(identity.chainId)
+  )
+}
+
+/**
+ * A signed-in account's wallet moved between the registry's chains: the session is the account's, not the network's,
+ * so it is kept, where it used to be closed and a new signature asked on the way back. Only a session at rest is kept
+ * (no flow, or a background check, which is abandoned): a sign-in, a sign-out or a recovery in progress ends as any
+ * identity change ends it (null here: switchIdentity). Leaving Robinhood Chain rests on wrong_network with the session
+ * held, as a wallet on any other chain does, and asks nothing; coming back reads me, and is signed in again without a
+ * signature where the session still stands (or signed out where it ended meanwhile). What was read for the chain left
+ * behind is dropped (a new epoch, its private data cleared) and its deadline is checked again on the way back.
+ */
+function moveChain(m: Machine, identity: Connected): Step | null {
+  if ((m.flow.kind !== 'idle' && !backgroundCheck(m)) || !m.session || m.session.owner !== lower(identity.address)) return null
+  const base: Machine = { ...m, identity, epoch: m.epoch + 1, flow: IDLE, recheckPending: false }
+  const effects: Effect[] = [{ type: 'abort_inflight' }, { type: 'cancel_expiry' }, { type: 'clear_private' }]
+  if (identity.chainId === ROBINHOOD_CHAIN_ID) {
+    const step = checkSession(base, true, { status: 'checking' })
+    return { machine: step.machine, effects: [...effects, ...step.effects] }
+  }
+  return { machine: { ...base, view: { status: 'wrong_network', chainId: identity.chainId } }, effects }
 }
 
 /** First known identity after reconnecting, or a connect from no wallet. */
@@ -550,7 +605,8 @@ function signOut(m: Machine): Step {
 
 function signOutIdle(m: Machine): Step {
   const v = m.view.status
-  if (m.session && (v === 'signed_in' || v === 'other_session' || v === 'blocked')) {
+  // 2026-10-01 (part B, G11): and a session kept while the wallet is on another of the registry's chains (moveChain).
+  if (m.session && (v === 'signed_in' || v === 'other_session' || v === 'blocked' || v === 'wrong_network')) {
     const next: Machine = { ...m, epoch: m.epoch + 1 }
     const flow: LogoutFlow = {
       kind: 'logout',
@@ -964,7 +1020,7 @@ function runPendingRecheck(s: Step): Step {
 function step(m: Machine, e: Event, env: Env): Step {
   switch (e.type) {
     case 'identity':
-      return onIdentity(m, e.identity)
+      return onIdentity(m, e.identity, (env.chains ?? [ROBINHOOD_ID]).filter((id) => REGISTRY_CHAIN_IDS.includes(id)))
     case 'sign_in':
       return startSignIn(m)
     case 'cancel':

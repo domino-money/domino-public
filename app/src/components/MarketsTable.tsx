@@ -1,12 +1,17 @@
 import { Suspense, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { catalogueTokenLabel, poolListings, type PoolCatalogueEntry, type PoolListing } from '../config/selectedPoolCatalogue'
-import { agedMarket, feeLabel, presentMetric, providerStale, retrievedAgeSeconds, retrievedText, type Instant, type Market, type MarketProvenance, type Metric } from '../lib/markets'
+import { agedMarket, feeLabel, presentMetric, providerStale, retrievedAgeSeconds, retrievedText, type FallbackApr as Fallback, type Instant, type Market, type MarketProvenance, type Metric } from '../lib/markets'
 import { presentAprEstimate } from '../lib/read/aprEstimate'
-import { featuredTitle } from '../lib/read/featuredList'
+import { FEE_VENUE_PREFIX, feeWords } from '../lib/format/fee'
+import { featuredTitle, shortCount } from '../lib/read/featuredList'
 import { useFeatured } from '../lib/read/featuredSource'
+import { pricePair } from '../lib/read/orientation'
+import { READ_CURRENCIES } from '../lib/read/screens/featuredPools'
+import { HIGH_FEE_PIPS, openable } from '../lib/read/tokenPools'
+import { useCatalogueFallback, useFallbackRows } from '../lib/read/useFallback'
 import { reasonText } from '../lib/read/describe'
 import { marketPoolPrice } from '../lib/read/marketPrice'
-import type { MarketsProvider } from '../lib/read/marketsProvider'
+import { isPageWide, type MarketsProvider } from '../lib/read/marketsProvider'
 import { COPY } from '../lib/read/screens/copy'
 import { PoolFiguresSlot, SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 import type { TokenDisplay } from '../lib/read/types'
@@ -18,6 +23,7 @@ import { marketsHref, poolHref } from './explore/routes'
 import { IconChevronRight, IconInfo } from './icons'
 import { PoolCatalogueIdentity, PoolTokenLabel } from './PoolCatalogueIdentity'
 import { ReadStatus, marketsStatus } from './read/ReadStatus'
+import { FallbackApr } from './read/screens/FallbackApr'
 import { PoolAprEstimate } from './read/screens/PoolAprEstimate'
 import { TokenMarkPair } from './TokenIcon'
 import { Button, Chip, FigureDash, LinkButton, Pill, Skeleton, TableShell, Td, Th, cx } from './ui'
@@ -87,8 +93,10 @@ const squeeze = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,
 function holds(listing: PoolListing, asset: string) {
   const key = asset.toLowerCase()
   if (listing.market) return [listing.market.tokens.base, listing.market.tokens.quote].some((token) => token.address.toLowerCase() === key)
-  // A catalogue row names its tokens only where its labels are bound to addresses.
-  return listing.catalogue?.addresses?.some((address) => address.toLowerCase() === key) ?? false
+  // A catalogue row names its tokens only where its labels are bound to addresses, or where its pool's Initialize event
+  // named them (the embedded ETH/USDG row: lib/read/screens/featuredPools.ts READ_CURRENCIES; audit B9, 2026-10-01).
+  const addresses = listing.catalogue?.addresses ?? READ_CURRENCIES[listing.poolId.toLowerCase()]
+  return addresses?.some((address) => address.toLowerCase() === key) ?? false
 }
 
 /** Whether a listing passes the Markets filters. Nothing is read to decide. */
@@ -96,8 +104,19 @@ export function matchesFilter(listing: PoolListing, filter: MarketsFilter) {
   if (filter.asset !== null && !holds(listing, filter.asset)) return false
   const needle = squeeze(filter.query)
   if (needle === '') return true
-  const pair = listing.market ? `${nameOf(listing.market.tokens.base)}/${nameOf(listing.market.tokens.quote)}` : (listing.catalogue?.labels.join('/') ?? '')
-  return squeeze(pair).includes(needle)
+  const named = listing.market ? pricePair(listing.market.tokens.base, listing.market.tokens.quote) : null
+  const pair = named ? `${nameOf(named.base)}/${nameOf(named.quote)}` : (listing.catalogue?.labels.join('/') ?? '')
+  // Either way round: "usdg eth" finds ETH/USDG as it always did.
+  const reversed = named ? `${nameOf(named.quote)}/${nameOf(named.base)}` : [...(listing.catalogue?.labels ?? [])].reverse().join('/')
+  return squeeze(pair).includes(needle) || squeeze(reversed).includes(needle)
+}
+
+/** What a row's pool is flagged for, in words a beginner reads (audit V2): a very high fee, or no positions here. */
+export function rowFlags(m: Pick<Market, 'integration' | 'hooks' | 'feePips'>): Array<{ key: 'fee' | 'closed'; text: string; title: string }> {
+  const flags: Array<{ key: 'fee' | 'closed'; text: string; title: string }> = []
+  if (m.feePips !== null && m.feePips > HIGH_FEE_PIPS) flags.push({ key: 'fee', text: 'Very high fee', title: 'This pool takes more than 10% of every swap. That is unusual, and most pools with fees like this see little real trading.' })
+  if (!openable(m)) flags.push({ key: 'closed', text: 'Domino can’t open positions here', title: 'This pool runs extra code on every swap (hooks) or changes its fee over time. Domino opens positions only in standard pools.' })
+  return flags
 }
 
 /**
@@ -148,16 +167,21 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
   // Figures the store is about to collect (marketsProvider.ts, catch-up): a quiet placeholder where they will land,
   // never "Unavailable" while they are coming. Only a figure that would say unavailable waits.
   const coming = (metric: Metric) => read.figuresPending === true && presentMetric(metric).kind === 'unavailable'
-  const aprComing = read.figuresPending === true && !qualified && presentAprEstimate(m.feeAprEstimate, now).text === null
+  // An estimate standing in for the read service's (audit V1, lib/read/figureFallback.ts), where its own has no figure.
+  const standIn = !qualified && presentAprEstimate(m.feeAprEstimate, now).text === null ? (m.aprFallback ?? null) : null
+  const aprComing = read.figuresPending === true && !qualified && standIn === null && presentAprEstimate(m.feeAprEstimate, now).text === null
   const tvlFigure = presentMetric(m.tvlUsd)
   const volumeFigure = presentMetric(m.volume24hUsd)
   const estimateFigure = presentAprEstimate(m.feeAprEstimate, now)
   useLoadMilestone(['overview', 'markets'], 'tvl', tvlFigure.kind === 'value' ? tvlFigure.stale ? 'cached' : 'current' : null)
   useLoadMilestone(['overview', 'markets'], 'volume', volumeFigure.kind === 'value' ? volumeFigure.stale ? 'cached' : 'current' : null)
   useLoadMilestone(['overview', 'markets'], 'apr', qualified ? m.feeAprPercent.state === 'stale' ? 'cached' : 'current' : estimateFigure.text !== null ? estimateFigure.state === 'stale' ? 'cached' : 'estimated' : null)
+  // Named as its price is written, "TOKEN/USDG" beside "1 TOKEN = X USDG" (audit E21).
+  const pair = pricePair(m.tokens.base, m.tokens.quote)
+  const flags = rowFlags(m)
   const name = (
     <>
-      <PoolTokenLabel token={m.tokens.base} />/<PoolTokenLabel token={m.tokens.quote} />
+      <PoolTokenLabel token={pair.base} />/<PoolTokenLabel token={pair.quote} />
     </>
   )
   return (
@@ -167,7 +191,7 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
       <Td>
         <div className="dm-mkt-pool">
           <span className="dm-mkt-marks">
-            <TokenMarkPair base={m.tokens.base} quote={m.tokens.quote} size={32} ring="var(--dm-mkt-ring)" />
+            <TokenMarkPair base={pair.base} quote={pair.quote} size={32} ring="var(--dm-mkt-ring)" />
           </span>
           {/* Where the figures came from stays on the row, as its title and as data, never as a
               printed line under the name: one hover, or the figures dialog, away. */}
@@ -175,8 +199,17 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
             <a href={href} className="dm-mkt-name">
               <span className="font-medium">{name}</span>
             </a>
-            <Chip className="dm-mkt-venue">Uniswap · {feeLabel(m)}</Chip>
+            {/* The fee as every chip writes it (lib/format/fee.ts, audit E21); a phone keeps the fee and drops "Uniswap · ". */}
+            <Chip className="dm-mkt-venue">
+              <span className="dm-fee-venue">{FEE_VENUE_PREFIX}</span>
+              {feeWords(feeLabel(m))}
+            </Chip>
             {pinned && <PinnedChip />}
+            {flags.map((flag) => (
+              <Chip key={flag.key} className="dm-mkt-venue dm-mkt-flag" data-pool-flag={flag.key} title={flag.title}>
+                {flag.text}
+              </Chip>
+            ))}
           </div>
         </div>
       </Td>
@@ -186,7 +219,7 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
       <Td numeric className="dm-mkt-num">
         {coming(m.tvlUsd) ? <PendingFigure label="TVL" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.tvlUsd} retrieved={retrieved} />}
       </Td>
-      <Td numeric col="wide" className="dm-mkt-num">
+      <Td numeric col="wide" className="dm-mkt-num dm-mkt-volume">
         {coming(m.volume24hUsd) ? <PendingFigure label="24h volume" data={{ 'data-metric': 'pending' }} /> : <MetricCell metric={m.volume24hUsd} retrieved={retrieved} />}
       </Td>
       <Td numeric className="dm-mkt-num dm-mkt-apr">
@@ -194,6 +227,8 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
           <MetricCell metric={m.feeAprPercent} percent tone="in" />
         ) : aprComing ? (
           <PendingFigure label="APR" data={{ 'data-apr-estimate': 'pending' }} />
+        ) : standIn ? (
+          <FallbackApr apr={standIn} compact />
         ) : (
           <PoolAprEstimate observation={m.feeAprEstimate} now={now} compact />
         )}
@@ -222,28 +257,75 @@ function Row({ m: read, now, full, onFigures, poolToken, pinned }: { m: Market; 
   )
 }
 
+/** A row resting while the list's first answer is out (audit B4): no name, no figure, the height of a row. */
+function RestingRow() {
+  const bubble = (className: string) => <Skeleton className={cx('dm-mkt-bubble', className)} />
+  return (
+    <tr className="dm-mkt-row" data-row-loading="">
+      <Td>
+        <span className="dm-mkt-pool">
+          <Skeleton className="dm-mkt-bubble dm-mkt-bubble--marks h-8 w-12 rounded-full" />
+          {bubble('dm-mkt-bubble--figure')}
+        </span>
+      </Td>
+      <Td numeric col="wide">
+        <span className="dm-mkt-bubbles">{bubble('dm-mkt-bubble--price')}{bubble('dm-mkt-bubble--unit')}</span>
+      </Td>
+      <Td numeric>{bubble('dm-mkt-bubble--figure')}</Td>
+      <Td numeric col="wide" className="dm-mkt-volume">{bubble('dm-mkt-bubble--figure')}</Td>
+      <Td numeric>{bubble('dm-mkt-bubble--apr')}</Td>
+      <Td numeric className="dm-mkt-end" />
+    </tr>
+  )
+}
+
+const NO_MARKETS: readonly Market[] = []
+const NO_IDS: readonly string[] = []
+const NO_ENTRIES: readonly PoolCatalogueEntry[] = []
+
 /**
  * A featured list's pinned pool, under its criterion title only (§11.7, option B): pinned by the owner, not ranked.
  * A chip with words, never a colour alone.
  */
 function PinnedChip() {
-  return <Chip className="dm-mkt-venue" data-pinned="">Pinned</Chip>
+  // Its meaning in a title (audit E14, 2026-10-01): the chip alone did not say who pinned it, or why it is listed.
+  return (
+    <Chip className="dm-mkt-venue" data-pinned="" title="Chosen by Domino for today’s list, not ranked by the list’s rules.">
+      Pinned
+    </Chip>
+  )
 }
 
 /**
  * A pool from the list on screen whose live row has not arrived: its
  * labels only, every figure a dash. It still opens its pool page.
  */
-function CatalogueRow({ poolId, entry, full, loading, token, pinned }: { poolId: string; entry: PoolCatalogueEntry; full: boolean; loading: boolean; token: string | null; pinned: boolean }) {
+function CatalogueRow({ poolId, entry, full, loading, token, pinned, standIn }: {
+  poolId: string
+  entry: PoolCatalogueEntry
+  full: boolean
+  loading: boolean
+  token: string | null
+  pinned: boolean
+  /** Figures standing in for the ones the read service has not given (audit V1, lib/read/figureFallback.ts): dated, attributed. */
+  standIn?: { tvl: Metric | null; volume: Metric | null; apr: Fallback | null }
+}) {
   const href = poolHref(poolId, token)
   // While the first markets read is out, or briefly while the store is about to collect the pool for the first time
   // (2026-09-28), each figure rests as a bubble at its text line's size, so the row keeps its height and nothing reads
-  // as missing; once it has settled without a row, the dashes say what is unavailable.
+  // as missing; once it has settled without a row, the dashes say what is unavailable. A figure this browser or DEX
+  // Screener has for the pool, or today's selection's, stands in for either, dated and attributed in its title.
   const bubble = (className: string) => <Skeleton className={cx('dm-mkt-bubble', className)} />
+  const tvl = standIn?.tvl ?? null
+  const volume = standIn?.volume ?? null
+  const apr = standIn?.apr ?? null
+  // The name's title says figures are unavailable only when none stands in (fix round 1): beside stand-in figures it
+  // said the opposite of the row. Each stand-in names its source and time in its own title.
+  const standing = tvl !== null || volume !== null || apr !== null
   return (
     <tr className="dm-mkt-row" data-pool-catalogue={poolId} data-pool-row={full ? poolId : undefined} data-row-loading={loading ? '' : undefined} onClick={(event) => followRow(event, href)}>
       <Td>
-        <a href={href} className="dm-mkt-pool dm-mkt-name" title="Listed on Uniswap. Pool figures are unavailable.">
+        <a href={href} className="dm-mkt-pool dm-mkt-name" title={standing ? 'Listed on Uniswap. Its live figures are not in yet; each figure shown stands in, with its source and time.' : 'Listed on Uniswap. Pool figures are unavailable.'}>
           <PoolCatalogueIdentity entry={entry} />
         </a>
         {pinned && <PinnedChip />}
@@ -252,13 +334,13 @@ function CatalogueRow({ poolId, entry, full, loading, token, pinned }: { poolId:
         {loading ? <span className="dm-mkt-bubbles">{bubble('dm-mkt-bubble--price')}{bubble('dm-mkt-bubble--unit')}</span> : <FigureDash reason="Price unavailable" />}
       </Td>
       <Td numeric>
-        {loading ? bubble('dm-mkt-bubble--figure') : <FigureDash reason="TVL unavailable" />}
+        {tvl ? <MetricCell metric={tvl} /> : loading ? bubble('dm-mkt-bubble--figure') : <FigureDash reason="TVL unavailable" />}
       </Td>
-      <Td numeric col="wide">
-        {loading ? bubble('dm-mkt-bubble--figure') : <FigureDash reason="24h volume unavailable" />}
+      <Td numeric col="wide" className="dm-mkt-volume">
+        {volume ? <MetricCell metric={volume} /> : loading ? bubble('dm-mkt-bubble--figure') : <FigureDash reason="24h volume unavailable" />}
       </Td>
       <Td numeric>
-        {loading ? bubble('dm-mkt-bubble--apr') : <FigureDash reason="Pool APR unavailable" />}
+        {apr ? <FallbackApr apr={apr} compact /> : loading ? bubble('dm-mkt-bubble--apr') : <FigureDash reason="Pool APR unavailable" />}
       </Td>
       <Td numeric className="dm-mkt-end">
         <span className="dm-row-end">
@@ -310,15 +392,27 @@ export function MarketsTable({
   const { state, provider } = useMarkets()
   useQuietRecovery(provider, !diagnostics)
   const result = shownResult(state)
-  const markets = result?.markets ?? []
   // The list on screen (lib/read/featuredSource.ts): the featured list with its title, or the embedded one with today's.
   const featured = useFeatured()
   const listed = includeCatalogue && __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge'
-  const listings = poolListings(markets, listed ? featured.entries : null)
+  const read = result?.markets ?? NO_MARKETS
+  const now = useNow(read.length > 0)
+  // Refused figures stood in for: this browser's last ones, DEX Screener's, today's selection's (audit V1).
+  const markets = useFallbackRows(read, listed ? featured.entries : null, now)
+  // Until the list's first answer is in, the embedded list only holds its place: resting rows with no names, under a
+  // resting title, rather than six pools that are not today's (audit B4, 2026-10-01).
+  const unsettled = listed && !featured.settled
+  const listings = unsettled ? [] : poolListings(markets, listed ? featured.entries : null)
   const ranked = listed && featured.source === 'server'
   const title = featuredTitle(listed ? featured.source : 'bundled')
+  const short = listed && !unsettled ? shortCount(featured) : null
   const matches = full && filter ? listings.filter((listing) => matchesFilter(listing, filter)) : listings
-  const now = useNow(markets.length > 0)
+  // Pools still without a row once the markets read has settled (still being collected, or refused): their stand-ins.
+  // Not while the first read is out (every pool is rowless then, and nothing is wrong with any of them yet), nor when
+  // the page itself cannot read (the gate, live data not connected): no figure is shown where no read has answered.
+  const answered = state.phase === 'ready' || (state.phase === 'failed' && !isPageWide(state.failure))
+  const rowless = answered ? listings.flatMap((listing) => (!listing.market && listing.catalogue ? [listing.poolId] : [])) : NO_IDS
+  const standIns = useCatalogueFallback(listed ? featured.entries : NO_ENTRIES, rowless, now)
   // The pool whose figures are open, held by key rather than by value: the
   // projection is taken again on every tick, so an open dialog ages with the
   // row behind it instead of keeping the market as it was when it opened.
@@ -382,12 +476,18 @@ export function MarketsTable({
   const said = marketsStatus(state)
   const status = diagnostics ? <ReadStatus status={said} onRetry={retry} /> : <ReadStatus status={said} quiet />
 
+  // A short list says so (audit B1, the owner's OK): "4 of 6 today", from the list's own rules, never a number written here.
+  const count = short && (
+    <span className="tnum text-caption text-fg-subtle" data-featured-count={`${short.shown}/${short.size}`} title={`Today’s list has ${short.shown} of the ${short.size} pools its rules allow: a pool leaves the list when its figures can’t be checked.`}>
+      {short.shown} of {short.size} today
+    </span>
+  )
   const table = (
     <TableShell
       label={title}
       className="dm-mkt-table"
-      title={full ? undefined : title}
-      data={{ 'featured-source': listed ? featured.source : 'bundled', ...(nothingMatches ? { 'filter-empty': '' } : {}) }}
+      title={full ? undefined : unsettled ? <Skeleton className="dm-mkt-title-skel h-5 w-40" /> : title}
+      data={{ 'featured-source': unsettled ? 'pending' : listed ? featured.source : 'bundled', ...(nothingMatches ? { 'filter-empty': '' } : {}) }}
       titleRef={full ? undefined : heading}
       action={
         full ? undefined : (
@@ -397,6 +497,7 @@ export function MarketsTable({
                 {refreshing ? 'Refreshing…' : 'Refresh'}
               </Button>
             )}
+            {count}
             <LinkButton href={marketsHref()} variant="ghost" size="sm">
               Find more pools
               <IconChevronRight size={14} />
@@ -423,7 +524,9 @@ export function MarketsTable({
             Price
           </Th>
           <Th numeric className="dm-mkt-col-tvl">
-            TVL{lean && <span className="sr-only">{' reported by a market data provider'}</span>}
+            {/* What the letters stand for, in a title (audit E5, 2026-10-01): the pool page says it under its own TVL. */}
+            <span title="Total value locked: what all the money in the pool is worth now.">TVL</span>
+            {lean && <span className="sr-only">{' reported by a market data provider'}</span>}
           </Th>
           <Th numeric col="wide" className="dm-mkt-col-volume">
             24h volume{lean && <span className="sr-only">{' reported by a market data provider'}</span>}
@@ -444,9 +547,14 @@ export function MarketsTable({
               <Row key={poolId} m={market} now={now} full={full} onFigures={() => setFiguresKey(market.key)} poolToken={poolToken ?? token} pinned={ranked && catalogue?.pinned === true} />
             ) : catalogue ? (
               // A pool the store is about to collect for the first time keeps its placeholder briefly (marketsProvider.ts).
-              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} loading={state.phase === 'loading' || (state.phase === 'ready' && state.placeholders?.includes(poolId.toLowerCase()) === true)} token={token} pinned={ranked && catalogue.pinned === true} />
+              <CatalogueRow key={poolId} poolId={poolId} entry={catalogue} full={full} loading={state.phase === 'loading' || (state.phase === 'ready' && state.placeholders?.includes(poolId.toLowerCase()) === true)} token={token} pinned={ranked && catalogue.pinned === true} standIn={standIns.get(poolId)} />
             ) : null,
           )}
+        </tbody>
+      )}
+      {unsettled && (
+        <tbody aria-hidden="true" data-featured-pending="">
+          {Array.from({ length: Math.min(6, Math.max(read.length, 4)) }, (_, index) => <RestingRow key={index} />)}
         </tbody>
       )}
       {nothingMatches && (
@@ -456,7 +564,7 @@ export function MarketsTable({
           </tr>
         </tfoot>
       )}
-      {total === 0 && (
+      {total === 0 && !unsettled && (
         // Never a body row: a table with nothing read has no rows, and says so under the header.
         <tfoot>
           <tr>

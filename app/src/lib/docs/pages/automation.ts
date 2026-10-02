@@ -1,3 +1,4 @@
+import { ROADMAP_PILL } from '../../capabilities'
 import { b, doc, list, note, p, shot } from '../blocks'
 import type { DocPage } from '../types'
 
@@ -10,7 +11,8 @@ import type { DocPage } from '../types'
  */
 const SERVICE_SCOPE = note(
   ['Automation availability is checked for each owner and sequence. A new sequence starts paused. Activation, pause, revocation and withdrawal are transactions your wallet signs on your sequence vault. Your position’s page offers Turn on once the automation service confirms it is ready for your sequence, and Pause while it runs.'],
-  'Per sequence',
+  // The pill's own words (audit E3).
+  ROADMAP_PILL['owner-scoped'],
 )
 
 export const AUTO_COMPOUND: DocPage = {
@@ -68,7 +70,7 @@ export const AUTO_COMPOUND: DocPage = {
         p('On Automate, ', b('Set up Auto-compound'), ' opens the setup: choose the position, then one button asks your wallet for both transactions. ', b('Automate'), ' on a plain position in Positions opens it with that position chosen.'),
         SERVICE_SCOPE,
         p(
-          'Custody is the same as for Domino Compounder: the NFT stays in your wallet, and ',
+          'Custody is the same as for Domino-compound: the NFT stays in your wallet, and ',
           doc('your sequence vault', 'non-custodial', 'sequence-vault'),
           ' holds earned fees not yet added back until you withdraw them. You ',
           doc('pause, revoke and withdraw', 'non-custodial', 'pause-revoke-withdraw'),
@@ -80,9 +82,10 @@ export const AUTO_COMPOUND: DocPage = {
   ],
 }
 
+/** Changed on purpose 2026-10-01 (live note L12): the product's one name; the old slug is an alias (registry.ts). */
 export const DOMINO_COMPOUNDER: DocPage = {
-  slug: 'domino-compounder',
-  title: 'Domino Compounder',
+  slug: 'domino-compound',
+  title: 'Domino-compound',
   summary: 'As the price nears the top of a range, earned fees open the next position one step higher.',
   status: 'Domino',
   sections: [
@@ -90,7 +93,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
       id: 'how-it-works',
       title: 'How it works',
       blocks: [
-        p('Domino Compounder puts earned fees to work higher up the price. In the app you choose it as ', b('Domino-compound'), '.'),
+        p('Domino-compound puts earned fees to work higher up the price.'),
         p('Fees normally go back into the position that earned them. When the price nears the top of its range, they can instead open the next position one step higher in the same pool, or add to the one it already opened.'),
         p('A next position is funded only from earned fees inside your sequence vault, after the service fee. Automation never moves your principal; when a step is not justified, it waits.'),
       ],
@@ -104,8 +107,9 @@ export const DOMINO_COMPOUNDER: DocPage = {
           rows: [
             { label: 'Trigger distance', value: 'Up to 20%', note: 'How near the top of its range the price must be: 5% means the price is at 95% of the top.' },
             { label: 'Maximum overlap', value: 'Up to 20%', note: 'How far below the previous top the next position may start: with a top of 1 and 20%, no lower than 0.80.' },
-            { label: 'Upside', value: 'You set it; the app draws the next range at 50%', note: 'How far above the previous top the next position’s top sits, at least.' },
-            { label: 'Positions', value: 'A cap you set', note: 'Counts the position it starts from. At the cap, fees fund an existing position or wait.' },
+            // 2026-10-01 (audit E21): the setup's field names (screens/SequenceCreate.tsx).
+            { label: 'Next range higher by', value: 'You set it; the app draws the next range at 50%', note: 'How far above the previous top the next position’s top sits, at least.' },
+            { label: 'Positions in the sequence', value: 'A cap you set', note: 'Counts the position it starts from. At the cap, fees fund an existing position or wait.' },
           ],
         },
         p('Each position opens at most one next position. A trigger only lets a step be considered; it never orders one.'),
@@ -147,7 +151,7 @@ export const DOMINO_COMPOUNDER: DocPage = {
       id: 'service-fee',
       title: 'Service fee',
       blocks: [
-        p('4% of the earned fees it uses, once, for every recipe, including putting fees back into the same position. No extra fee for its own balancing swaps, and none on withdrawals. See ', doc('Fees', 'fees', 'service-fee'), '.'),
+        p('4% of the earned fees it uses, once, for every step it takes, including putting fees back into the same position. No extra fee for its own balancing swaps, and none on withdrawals. See ', doc('Fees', 'fees', 'service-fee'), '.'),
       ],
     },
   ],

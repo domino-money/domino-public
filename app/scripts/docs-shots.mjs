@@ -266,7 +266,7 @@ async function openScene(browser, scene, phone) {
   // A phone is a touch screen: no hover, as the site's (hover: none) rules expect.
   const context = await browser.newContext({ viewport, deviceScaleFactor: SCALE, colorScheme: 'dark', reducedMotion: 'reduce', ...(phone ? { isMobile: true, hasTouch: true } : {}) });
   // Nothing leaves this machine but the fonts: any other host (a token artwork provider, an extension's injected
-  // script) is refused. Routes registered later are asked first, so the chain's own route below answers the RPC.
+  // script) is refused. Routes registered later are asked first, so the routes below answer the site's chain routes.
   const refused = new Set();
   await context.route(/^https?:\/\/(?!127\.0\.0\.1[:/])/, (route) => {
     const url = route.request().url();
@@ -391,6 +391,8 @@ const SCENES = [
     async run({ page, go }) {
       await go('#/markets');
       await poolRowsRead(page, POOLS.length);
+      // 2026-10-01 (the copy workstream): and every row's price, whose token reads may settle after its APR.
+      await page.waitForFunction(() => !document.querySelector('section[aria-labelledby="markets-pools-title"] [data-pool-price="loading"]'), null, { timeout: 60_000, polling: 250 });
       await settle(page, 1200);
       // The pools section: its title, the filters and the table. Changed on purpose (2026-09-28, the owner: "Não
       // precisa ter essa descrição"): no line under the title says how the list is made, and a picture that would
@@ -460,6 +462,19 @@ const SCENES = [
     async run({ page, go }) {
       await go('#/positions');
       await connect(page);
+      // 2026-10-01 (the copy workstream): since the fees workstream's item A18 the list's own reads of Your APR stay within
+      // a small budget, which this made-up world's long history is past, so the row shows the figure its page draws this
+      // visit (components/positions/listApr.ts), as it does for anyone who opened it: open the page first, then come back.
+      await go(`#/positions/${IDS.compound}`);
+      await page.waitForFunction(
+        (cell) => {
+          const apr = document.querySelector(cell);
+          return apr?.getAttribute('data-apr') === 'ready' && !/\best\./.test(apr.textContent ?? '');
+        },
+        `[data-position-detail][data-position-id="${IDS.compound}"] [data-cell="apr"]`,
+        { timeout: 120_000, polling: 250 },
+      );
+      await go('#/positions');
       await page.locator(`[data-position-automation="${IDS.compound}"]`).waitFor({ timeout: 30_000 });
       // Round 6 (2026-09-27): the Auto-compound row's Your APR, from its fees history (the world's), and no row still
       // waiting its turn.
@@ -480,8 +495,8 @@ const SCENES = [
       const detail = `[data-position-detail][data-position-id="${IDS.compound}"]`;
       await page.locator(detail).waitFor({ timeout: 30_000 });
       await page.getByRole('button', { name: /^Collect fees$/ }).first().waitFor({ timeout: 30_000 });
-      // Your APR is worked out from the position's fees history, read from the chain after the page's own figures: an
-      // estimate first (a busy pool, lib/fees/pipeline.ts P2), then the history verified against the chain.
+      // Your APR is worked out from the position's fees ledger, read from the chain after the page's own figures (since
+      // 2026-10-02 never an estimate, RPC-SPEC §11.4; the check below stays harmless).
       await page.waitForFunction(
         (cell) => {
           const apr = document.querySelector(cell);

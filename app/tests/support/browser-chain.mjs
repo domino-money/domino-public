@@ -1,49 +1,46 @@
 /**
- * Robinhood Chain's public RPC as the browser suites answer it (2026-09-25).
+ * Robinhood Chain as the browser suites answer it (2026-09-25; changed on purpose 2026-10-01, RPC-SPEC, the owner's rule:
+ * nothing is read from a public RPC).
  *
- * Since the RPC rate-limits Cloudflare's edge, the page reads the chain
- * itself: the wallet's Domino positions (functions/_lib/walletPositions.ts
- * scanWallet), a position's state and the fees history's logs
- * (functions/_lib/fees.ts), all through src/lib/chain/browser.ts's one fetch
- * of https://rpc.mainnet.chain.robinhood.com. A browser context of a suite
- * gets that host answered here with routeChain(), so no suite reaches the
- * network, and the page's CSP (which must name the host) is exercised as in
- * production: a request the CSP refused never reaches the route.
+ * From 2026-09-25 to 2026-10-01 the page read the chain itself, from the chain's public RPC (and, from 2026-09-28, its
+ * three public fallbacks), and this module answered those hosts. Since the switch the page reads no RPC: the wallet's
+ * list, a position's state, its features, the fees history's logs, a vault's record and a batch's simulation are the
+ * site's own chain routes (src/lib/edge/chainRoutes.ts), which routeChain() answers here with the routes' real handler
+ * (functions/_lib/chainRoutes.ts, through tests/support/edge-routes.mjs) over this same chain. Any request to one of the
+ * old public hosts is refused at the network and listed in `publicAsked` (the page's CSP refuses them first; a suite
+ * asserts the list stays empty). `chain.edge = 'off'` answers the routes as a deployment without the node's secret
+ * does; `chain.simulate` (a function of eth_simulateV1's params) turns the simulate route on; `chain.edgeLog` lists
+ * each route asked.
  *
  * browserChain() is a small chain described the way the screens show it: the
  * wallet's positions (who holds each, its pool key, range, liquidity and the
  * unclaimed fees the chain must report), the pools' prices, the tokens, and
  * the deposits DominoSetupV1 holds for an owner. It answers only the methods
- * the page may ask (eth_blockNumber, eth_getLogs, eth_call to Multicall3 and
+ * the chain code may ask (eth_blockNumber, eth_getLogs, eth_call to Multicall3 and
  * batched eth_getBlockByNumber) and keeps what it was asked; a sub-call no
  * contract here answers reverts, and is listed in `missing`. With nothing
  * described it is an empty chain: no position, no deposit, every NFT
  * unknown. `outage` answers every request with that HTTP status while set (or,
- * a function of the request's first call, the status to answer it with, or null).
+ * a function of the request's first call, the status to answer it with, or null):
+ * the node's answer to the routes.
  *
  * Added with the review of 2026-09-25: `history(filter, from, to)` answers the
- * fees logs a position's replay asks (busyHistory() below: a pool whose
- * liquidity history is long, as PONS/USDG's is), and `limit` makes the chain
- * refuse as the public RPC does from one address: a budget of reply bytes
- * (`capacity`, refilled at `perSecond`) that a reply may overdraw; while it is
- * spent every request is refused with a 429 whose
- * `access-control-allow-origin: *,*` a browser cannot read, as the RPC sends
- * it. Refused requests are listed in `refusals`.
+ * log reads it is given (since 2026-10-02 a position's own events for the fees
+ * ledger, tests/support/fees/ledger-world.mjs), and `limit` makes the chain
+ * refuse as a node does past a budget of reply bytes (`capacity`, refilled at
+ * `perSecond`) that a reply may overdraw; while it is spent every request is
+ * refused with a 429. Refused requests are listed in `refusals`.
  *
- * 2026-09-28 (a large Brazilian ISP's DNS answers NXDOMAIN for chain.robinhood.com): routeChain also answers the
- * chain's three public fallbacks (src/lib/chain/endpoints.ts) from the same chain, each refusing what it refused when
- * it was measured (tests/support/fallbacks.mjs), and lists what they were asked in `fallbackLog`. `primary` is how the
- * chain's own RPC answers: 'up', or 'dns' (every request to it fails as a name that does not resolve does,
- * net::ERR_NAME_NOT_RESOLVED; `primaryAsked` lists them). A no-cors GET to it (the page's reach probe) is answered as
- * the RPC answers a GET, and counted in `probes`. `operations: true` makes each position minted by an owner one of its
- * DominoSetupV1 operations too (after its deposits), as the contract records it, so the list can be read from the
- * contract's state (functions/_lib/walletPositions.ts operationIds).
+ * `operations: true` (the default since 2026-10-01, RPC-SPEC §2.9) makes each position minted by an owner one of its
+ * DominoSetupV1 operations too (after its deposits), as the contract records it: the edge's list reads its ids from that
+ * state (functions/_lib/walletPositions.ts operationIds, RPC-SPEC D4).
  * Not a suite of its own.
  */
 import { createRequire } from 'node:module';
 import { decodeFunctionData, encodeAbiParameters, encodeFunctionResult, keccak256, numberToHex, pad, parseAbi } from 'viem';
-import { FALLBACK_ROUTE, fallbackReply } from './fallbacks.mjs';
-import { logLimitError } from './log-limits.mjs';
+import { logLimitError, nodeLogError } from './log-limits.mjs';
+import { routeEdge } from './edge-routes.mjs';
+import { clockSkew } from './clock.mjs';
 
 const require = createRequire(import.meta.url);
 const owned = require('../../.test-build/app/functions/_lib/owned.js');
@@ -53,8 +50,8 @@ const automation = require('../../.test-build/app/functions/_lib/automation.js')
 export const RPC_URL = owned.RPC_URL;
 /** DominoSetupV1's SetupMinted topic: the wallet's list is read from these logs. */
 export const SETUP_MINTED_TOPIC = owned.SETUP_MINTED_TOPIC;
-/** The RPC's URL as the page asks it, and nothing else. */
-const RPC_ROUTE = /^https:\/\/rpc\.mainnet\.chain\.robinhood\.com\/?$/;
+/** The public RPC hosts the page read from until 2026-10-01: none may be asked any more (publicAsked). */
+const PUBLIC_RPC_ROUTE = /^https:\/\/(?:rpc\.mainnet\.chain\.robinhood\.com|robinhood-rpc\.publicnode\.com|rpc\.ordofi\.network|robinhood\.drpc\.org)(?:\/|$)/;
 const ZERO = '0x0000000000000000000000000000000000000000';
 const PM = owned.POSITION_MANAGER;
 const SETUP = owned.SETUP_CONTRACT;
@@ -79,6 +76,8 @@ const pmAbi = parseAbi([
   'function getPositionLiquidity(uint256) view returns (uint128)',
   'function getPoolAndPositionInfo(uint256) view returns (PoolKey, uint256)',
   'function subscriber(uint256) view returns (address)',
+  // 2026-10-01 (fees item D5): the page's state read asks it, to tell an id never minted from a burned one.
+  'function nextTokenId() view returns (uint256)',
 ]);
 // 2026-09-25: a position's feature, read by the page itself (functions/_lib/automation.ts scanAutomation): the NFT's
 // subscriber, and when it is a vault, the factory's isVault and the vault's root, policy and permission.
@@ -86,9 +85,14 @@ const SEQUENCE_FACTORY = automation.SEQUENCE_FACTORY;
 const factoryAbi = parseAbi(['function isVault(address) view returns (bool)']);
 const vaultAbi = parseAbi([
   'struct Policy { uint16 serviceFeeBps; uint16 triggerDistanceBps; uint16 maxOverlapBps; uint32 minimumIntervalSeconds; uint8 maxPositions; uint64 version; bool paused; }',
+  'struct Checkpoint { uint128 liquidity; uint256 feeGrowthInside0LastX128; uint256 feeGrowthInside1LastX128; uint256 feeGrowthInside0X128; uint256 feeGrowthInside1X128; uint64 observedAtBlock; bytes32 commitment; }',
   'function rootTokenId() view returns (uint256)',
   'function policy() view returns (Policy)',
   'function rootPermissionValid() view returns (bool)',
+  // 2026-10-02 (RPC-SPEC §11.4): the fees ledger checks a vault's own checkpoint of its NFT (functions/_lib/feesLedger.ts).
+  'function checkpoint(uint256) view returns (Checkpoint)',
+  // 2026-10-02 (review of the rules, finding 1): a holder the ledger follows may be a vault's own owner.
+  'function owner() view returns (address)',
 ]);
 const stateViewAbi = parseAbi([
   'function getSlot0(bytes32) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)',
@@ -113,18 +117,31 @@ const GROWTH = 1n << 200n;
 const Q128 = 1n << 128n;
 /** The growth a position of liquidity `l` needs since its last settlement for v4 to owe it exactly `owed`. */
 const needed = (owed, l) => (l === 0n ? 0n : (BigInt(owed) * Q128 + l - 1n) / l);
+/** A position's fee growth settled to (its last), as the chain answers it: its own `growth`, or below GROWTH by its unclaimed fees. */
+const lastOf = (p) => {
+  if (p.growth) return p.growth.last;
+  const l = BigInt(p.liquidity);
+  const [a, b] = p.unclaimed ?? [0n, 0n];
+  return [GROWTH - needed(a, l), GROWTH - needed(b, l)];
+};
 
 /**
  * `positions`: [{ tokenId, holder, minter (holder unless said), key, tickLower, tickUpper, liquidity, unclaimed: [a, b],
- * burned, mintBlock, from, subscriber }] where `from` is how many times ownerOf must have been asked before the NFT
+ * burned, mintBlock, from, subscriber, growth }] where `from` is how many times ownerOf must have been asked before the NFT
  * exists (a mint the chain has not shown yet) and `subscriber` its PositionManager subscriber (none unless said).
+ * `growth` (2026-10-01, item H1): { inside: [a, b], last: [a, b] }, the range's fee growth and the position's last, as a
+ * modeled archive had them (the retired point reads); what they owe is the position's unclaimed fees then.
  * `pools`: per pool id { sqrtPriceX96, tick }; a position's pool not named sits at tick 0. `tokens`: per address
  * { symbol, decimals }. `deposits`: per owner [{ key, balance0, balance1, closed }], held by DominoSetupV1 (the n-th is
  * the owner's operation n). `vaults`: per lowercase address { root, feeBps, paused, valid, made }: a sequence vault
- * Domino's factory made (made: false, one it did not), for the automation read.
+ * Domino's factory made (made: false, one it did not), for the automation read; its `checkpoint` of its root (the fees
+ * ledger's check, 2026-10-02): the root's state now unless `checkpoint: 'stale'` (one from before an unseen settlement).
+ * `times(block)` (2026-10-02): a block's header time (the ledger's settlements); the chain's `timestamp` otherwise.
+ * `nodeRules` (2026-10-02, the default): its logs are answered as Domino's own node does, with the transport's own rules
+ * checked (log-limits.mjs nodeLogError); false: as the chain's public RPC does (logLimitError).
  */
-export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, positions = [], pools = {}, tokens = {}, deposits = {}, vaults = {}, history = null, limit = null, operations = false } = {}) {
-  const chain = { head, timestamp, positions, pools, tokens, deposits, vaults, history, limit, operations, outage: null, primary: 'up', primaryAsked: [], probes: 0, fallbackLog: [], log: [], missing: [], refused: [], refusals: [], asked: new Map() };
+export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, positions = [], pools = {}, tokens = {}, deposits = {}, vaults = {}, history = null, limit = null, operations = true, times = null, nodeRules = true } = {}) {
+  const chain = { head, timestamp, positions, pools, tokens, deposits, vaults, history, limit, operations, times, nodeRules, outage: null, publicAsked: [], log: [], missing: [], refused: [], refusals: [], asked: new Map() };
   const lower = (value) => String(value).toLowerCase();
   const position = (id) => chain.positions.find((p) => String(p.tokenId) === String(id));
   const ok = (abi, functionName, result) => ({ success: true, returnData: encodeFunctionResult({ abi, functionName, result }) });
@@ -132,12 +149,20 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
   const poolOf = (id) => chain.pools[id] ?? { sqrtPriceX96: 2n ** 96n, tick: 0 };
   const known = (p) => p && !p.burned && (chain.asked.get(String(p.tokenId)) ?? 0) > (p.from ?? 0);
   /** With `operations`: the positions `owner` minted, in the order their SetupMinted logs come (their operations' order). */
-  const mintBlock = (p) => p.mintBlock ?? chain.head - 1000 * (chain.positions.length - chain.positions.indexOf(p));
+  // By id, not by object: a suite may describe `positions` with a getter that makes new objects at each read.
+  const indexOf = (list, p) => list.findIndex((one) => String(one.tokenId) === String(p.tokenId));
+  const mintBlock = (p) => p.mintBlock ?? chain.head - 1000 * (chain.positions.length - indexOf(chain.positions, p));
   const mintedBy = (owner) => (chain.operations ? chain.positions.filter((p) => lower(p.minter ?? p.holder) === owner).sort((a, b) => mintBlock(a) - mintBlock(b)) : []);
 
   function view(target, data) {
     if (target === PM) {
       const { functionName, args } = decodeFunctionData({ abi: pmAbi, data });
+      // 2026-10-01 (fees item D5): the id the next mint gets (`nextTokenId` when given): a mint the chain does not show yet
+      // (`from`) is that next mint, as on the chain; else the id past every NFT described.
+      if (functionName === 'nextTokenId') {
+        const pending = chain.positions.filter((one) => !one.burned && !known(one)).map((one) => Number(one.tokenId));
+        return ok(pmAbi, functionName, BigInt(chain.nextTokenId ?? (pending.length ? Math.min(...pending) : 1 + Math.max(0, ...chain.positions.map((one) => Number(one.tokenId))))));
+      }
       const p = position(args[0]);
       // A mapping: any id answers, the zero address when nothing is subscribed.
       if (functionName === 'subscriber') return ok(pmAbi, functionName, (known(p) && p.subscriber) || ZERO);
@@ -154,12 +179,15 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
         const pool = poolOf(args[0]);
         return ok(stateViewAbi, functionName, [BigInt(pool.sqrtPriceX96), pool.tick, 0, 3000]);
       }
-      if (functionName === 'getFeeGrowthInside') return ok(stateViewAbi, functionName, [GROWTH, GROWTH]);
+      if (functionName === 'getFeeGrowthInside') {
+        // 2026-10-01 (item H1): a position described with its own fee growth (`growth`), as a modeled archive answers it.
+        const own = chain.positions.find((one) => one.growth && poolIdOf(one.key) === args[0] && one.tickLower === args[1] && one.tickUpper === args[2]);
+        return ok(stateViewAbi, functionName, own ? own.growth.inside : [GROWTH, GROWTH]);
+      }
       const p = position(BigInt(args[4]));
       if (!p || lower(args[1]) !== PM) return revert;
-      const l = BigInt(p.liquidity);
-      const [a, b] = p.unclaimed ?? [0n, 0n];
-      return ok(stateViewAbi, functionName, [l, GROWTH - needed(a, l), GROWTH - needed(b, l)]);
+      const [last0, last1] = lastOf(p);
+      return ok(stateViewAbi, functionName, [BigInt(p.liquidity), last0, last1]);
     }
     if (target === SETUP) {
       const { functionName, args } = decodeFunctionData({ abi: setupAbi, data });
@@ -174,7 +202,7 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
       // A minted position's operation (`operations`): closed, its NFT's id kept, after the owner's deposits.
       for (const p of chain.operations ? chain.positions : []) {
         const owner = lower(p.minter ?? p.holder);
-        const n = (chain.deposits[owner] ?? []).length + mintedBy(owner).indexOf(p);
+        const n = (chain.deposits[owner] ?? []).length + indexOf(mintedBy(owner), p);
         if (opIdOf(owner, n) === args[0]) return ok(setupAbi, functionName, { owner, key: p.key, balance0: 0n, balance1: 0n, swapped: false, closed: true, tokenId: BigInt(p.tokenId) });
       }
       return ok(setupAbi, functionName, { owner: ZERO, key: { currency0: ZERO, currency1: ZERO, fee: 0, tickSpacing: 0, hooks: ZERO }, balance0: 0n, balance1: 0n, swapped: false, closed: false, tokenId: 0n });
@@ -193,9 +221,16 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
     }
     const vault = chain.vaults[target];
     if (vault) {
-      const { functionName } = decodeFunctionData({ abi: vaultAbi, data });
+      const { functionName, args } = decodeFunctionData({ abi: vaultAbi, data });
       if (functionName === 'rootTokenId') return ok(vaultAbi, functionName, BigInt(vault.root));
+      if (functionName === 'checkpoint') {
+        const p = position(args[0]);
+        const [last0, last1] = p ? lastOf(p) : [0n, 0n];
+        const stale = vault.checkpoint === 'stale';
+        return ok(vaultAbi, functionName, { liquidity: p ? BigInt(p.liquidity) : 0n, feeGrowthInside0LastX128: stale ? last0 - 1n : last0, feeGrowthInside1LastX128: last1, feeGrowthInside0X128: 0n, feeGrowthInside1X128: 0n, observedAtBlock: 0n, commitment: `0x${'00'.repeat(32)}` });
+      }
       if (functionName === 'rootPermissionValid') return ok(vaultAbi, functionName, vault.valid !== false);
+      if (functionName === 'owner') return ok(vaultAbi, functionName, vault.owner ?? ZERO);
       return ok(vaultAbi, functionName, { serviceFeeBps: vault.feeBps, triggerDistanceBps: 500, maxOverlapBps: 2000, minimumIntervalSeconds: 3600, maxPositions: vault.feeBps === 200 ? 1 : 3, version: 1n, paused: vault.paused === true });
     }
     const token = chain.tokens[target];
@@ -211,8 +246,10 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
     if (method === 'eth_blockNumber') return { result: numberToHex(chain.head) };
     if (method === 'eth_getLogs') {
       const [filter] = params;
-      // 2026-09-28: the RPC's gateway refuses a range past its limits (tests/support/log-limits.mjs), as it does live.
-      const limited = logLimitError(filter);
+      // Changed on purpose 2026-10-02: Domino's own node, which the routes read, has no block ceiling; what the routes'
+      // transport must never send it fails the test (tests/support/log-limits.mjs nodeLogError). `nodeRules: false`: the
+      // chain RPC's own limits, for a test that runs the chain code directly, with its own windows (logLimitError).
+      const limited = chain.nodeRules ? nodeLogError(filter) : logLimitError(filter);
       if (limited) return { error: limited };
       const from = Number(filter.fromBlock);
       const to = Number(filter.toBlock);
@@ -236,7 +273,7 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
         })),
       };
     }
-    if (method === 'eth_getBlockByNumber') return { result: { number: params[0], timestamp: numberToHex(chain.timestamp), hash: `0x${'ab'.repeat(32)}` } };
+    if (method === 'eth_getBlockByNumber') return { result: { number: params[0], timestamp: numberToHex(chain.times ? chain.times(Number(params[0])) : chain.timestamp), hash: `0x${'ab'.repeat(32)}` } };
     // 2026-09-28 (speed wave B, item 23): the wallet scan's first read is an aggregate3 at 'latest' of ArbSys.arbBlockNumber
     // and the owner's nonce, taken here at the head.
     if (method === 'eth_call' && lower(params[0]?.to) === MULTICALL3 && (params[1] === 'latest' || Number(params[1]) <= chain.head)) {
@@ -287,111 +324,26 @@ export function browserChain({ head = 71_700_000, timestamp = 1_790_000_000, pos
 }
 
 /**
- * Answers the RPC for every page of `context` from `chain` (an empty chain unless one is given), CORS included, as the
- * public RPC does (any origin, POST, content-type). A reply that throws is a 500 and is kept in `chain.errors`.
+ * Answers the site's own chain routes for every page of `context` (and its fees worker) from `chain` (an empty chain
+ * unless one is given), and refuses at the network, listing each in `chain.publicAsked`, any request to a public RPC
+ * host the page read from until 2026-10-01. A route whose chain code threw answers as the route does (a 502).
  */
-export async function routeChain(context, chain = browserChain(), { primary = chain.primary ?? 'up' } = {}) {
+export async function routeChain(context, chain = browserChain()) {
   chain.errors ??= [];
-  chain.primary = primary;
-  chain.primaryAsked ??= [];
-  chain.fallbackLog ??= [];
-  chain.probes ??= 0;
-  const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
-  await context.route(RPC_ROUTE, async (route) => {
-    const request = route.request();
-    // 2026-09-28: a name that does not resolve fails every request, the preflight and the reach probe included.
-    if (chain.primary === 'dns') {
-      chain.primaryAsked.push(request.method());
-      return route.abort('namenotresolved');
-    }
-    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
-    // The page's reach probe (a no-cors GET, src/lib/chain/failover.ts): the RPC answers a GET as it answers anything
-    // it does not serve; the page learns only that it was reached.
-    if (request.method() === 'GET') {
-      chain.probes += 1;
-      return route.fulfill({ status: 405, headers: cors, body: '' });
-    }
-    try {
-      const reply = await chain.fetch(RPC_URL, { method: request.method(), body: request.postData() ?? '' });
-      // A reply may carry its own allow-origin (the RPC's refusal: `*,*`, which a browser refuses to read).
-      const origin = reply.headers.get('access-control-allow-origin');
-      return route.fulfill({ status: reply.status, headers: { ...cors, ...(origin ? { 'access-control-allow-origin': origin } : {}), 'content-type': reply.headers.get('content-type') ?? 'text/plain' }, body: await reply.text() });
-    } catch (error) {
-      chain.errors.push(String(error?.stack ?? error));
-      return route.fulfill({ status: 500, headers: cors, body: '' });
-    }
+  chain.publicAsked ??= [];
+  await context.route(PUBLIC_RPC_ROUTE, (route) => {
+    chain.publicAsked.push(route.request().url());
+    return route.abort('blockedbyclient');
   });
-  // The three public fallbacks, over the same chain, each as it was measured (tests/support/fallbacks.mjs).
-  await context.route(FALLBACK_ROUTE, async (route) => {
-    const request = route.request();
-    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
-    try {
-      const own = (body) => chain.fetch(RPC_URL, { method: 'POST', body });
-      const reply = await fallbackReply(request.url().replace(/\/$/, ''), request.postData() ?? '', { own, head: () => chain.head, log: chain.fallbackLog });
-      return route.fulfill({ status: reply.status, headers: { ...cors, 'content-type': 'application/json' }, body: await reply.text() });
-    } catch (error) {
-      chain.errors.push(String(error?.stack ?? error));
-      return route.fulfill({ status: 500, headers: cors, body: '' });
-    }
-  });
+  // RPC-SPEC Phase 0: the site's own chain routes (src/lib/edge/chainRoutes.ts), answered from this same chain by the
+  // routes' chain code (tests/support/edge-routes.mjs). `chain.edge = 'off'` answers them as a deployment without the
+  // node's secret does; `chain.simulate` (a function of eth_simulateV1's params) turns the simulate route on.
+  chain.edgeLog ??= [];
+  // The routes keep time by the scenario's clock: real time plus every jump of it (tests/support/clock.mjs), so a kept
+  // answer ages and a node's rest ends as the page's own time moves.
+  await routeEdge(context, { fetch: (_url, init) => chain.fetch(RPC_URL, init), now: () => Date.now() + clockSkew(context) }, { simulator: () => chain.simulate ?? null, source: () => chain.edge ?? 'up', log: chain.edgeLog });
   return chain;
 }
 
-/**
- * The fees logs of one position in a busy pool, for browserChain's `history`
- * (2026-09-25): the NFT's mint Transfer to `owner`, the pool's Initialize
- * `epochs` pool epochs back, and `perEpoch` ModifyLiquidity logs of other
- * accounts in every epoch since (about 700 bytes each as the RPC sends them),
- * so the replay reads the pool's epochs for a while. No Swap: the replay never
- * gets that far in the tests that use it. `recent` more ModifyLiquidity logs
- * in the pool's last few hundred blocks make it a pool busy now, whose
- * history the page's probe (functions/_lib/fees.ts PROBE_SPAN) projects far
- * past any budget. `quietProbe` hides the history from the probe (see below).
- */
-export function busyHistory({ tokenId, key, owner, head = 71_700_000, epochs = 12, perEpoch = 400, recent = 0, quietProbe = false }) {
-  const EPOCH = fees.EPOCH_SPAN;
-  const poolId = poolIdOf(key);
-  const word = (value) => pad(numberToHex(BigInt.asUintN(256, BigInt(value))), { size: 32 });
-  const mintBlock = head - 5_000;
-  const initBlock = (Math.floor(head / EPOCH) - epochs + 1) * EPOCH + 7;
-  const step = Math.floor(EPOCH / perEpoch);
-  const logOf = (address, topics, data, block) => ({
-    address,
-    topics,
-    data,
-    blockNumber: numberToHex(block),
-    logIndex: '0x0',
-    transactionHash: word(block),
-    blockHash: `0x${'ab'.repeat(32)}`,
-    transactionIndex: '0x0',
-    removed: false,
-  });
-  const someone = pad('0x7777777777777777777777777777777777777777');
-  const data = (...words) => `0x${words.map((w) => w.slice(2)).join('')}`;
-  const modify = (block) => logOf(fees.POOL_MANAGER, [fees.TOPIC.ModifyLiquidity, poolId, someone], data(word(-600), word(600), word(1000n), word(block)), block);
-  return (filter, from, to) => {
-    const address = String(filter.address).toLowerCase();
-    const topics = filter.topics ?? [];
-    const first = [topics[0]].flat();
-    if (address === PM && first.includes(fees.TOPIC.Transfer) && topics[3] === word(tokenId))
-      return mintBlock >= from && mintBlock <= to ? [logOf(PM, [fees.TOPIC.Transfer, word(0), pad(owner.toLowerCase()), word(tokenId)], '0x', mintBlock)] : [];
-    if (address !== fees.POOL_MANAGER || topics[1] !== poolId) return null;
-    const out = [];
-    if (first.includes(fees.TOPIC.Initialize) && initBlock >= from && initBlock <= to)
-      out.push(logOf(fees.POOL_MANAGER, [fees.TOPIC.Initialize, poolId, pad(key.currency0), pad(key.currency1)], data(word(key.fee), word(key.tickSpacing), word(0), word(2n ** 96n), word(0)), initBlock));
-    // `quietProbe` (2026-09-25): the page's probe (its five kinds of log) sees none of this history, a burst its samples
-    // miss, so the exact replay of the pool's history is the one chosen (any liquidity log in a sample leads to the
-    // price path, pipeline.ts) and the tests that pace a long read of epochs still read them.
-    if (first.includes(fees.TOPIC.ModifyLiquidity) && !(quietProbe && first.length === 5)) {
-      // Every `step` blocks from the Initialize on, within the range asked.
-      const start = Math.max(from, initBlock + 1);
-      for (let block = start + ((step - ((start - initBlock - 1) % step)) % step); block <= Math.min(to, head); block += step) out.push(modify(block));
-      for (let i = 0; i < recent; i++) {
-        const block = head - 1 - 7 * i;
-        if (block >= from && block <= to && (block - initBlock - 1) % step !== 0) out.push(modify(block));
-      }
-      out.sort((a, b) => Number(a.blockNumber) - Number(b.blockNumber));
-    }
-    return out;
-  };
-}
+// Changed on purpose 2026-10-02 (RPC-SPEC §11.4): busyHistory, a busy pool's history for the fees replay, is gone with it;
+// a position's own events are tests/support/fees/ledger-chain.mjs's.

@@ -15,7 +15,6 @@
  * link with it; Docs, under Guides, says what it said.
  */
 import type { ReactNode } from 'react'
-import { CAPABILITIES } from '../lib/capabilities'
 import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref } from './explore/routes'
 
 /** Domino's X account, confirmed by the owner on 2026-09-26. */
@@ -96,9 +95,9 @@ export function Footer({ motion }: { motion?: ReactNode }) {
 
             <div className="dm-footer-network">
               <h2 className="dm-footer-heading">Network</h2>
+              {/* Changed on purpose 2026-10-01 (audit E5): the chain's number is for the docs (Wallet and sign-in, Contracts). */}
               <div className="mt-4 grid gap-3">
                 <p className="dm-footer-note">Robinhood Chain</p>
-                <p className="dm-footer-note tnum">Chain ID {CAPABILITIES.chainId}</p>
               </div>
             </div>
           </div>

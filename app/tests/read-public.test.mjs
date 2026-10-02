@@ -1063,8 +1063,34 @@ function memoryStorage() {
 }
 const overviewOk = (receivedAt, data = fixture('overview')) => ({ data, provenance: { transport: 'bridge', contract: v3.CONTRACT_VERSION, receivedAt, attempts: 0 } });
 
+// 2026-10-01 (the chain2 workstream, part B, audit item G10): the copy's key names its chain; a copy kept under the old
+// name is Robinhood Chain's, and moves to the new one the first time it is read, drawn the same.
+test('the copy kept under the name before moves to the chain\'s name on its first read, and paints the same', () => {
+  const { LEGACY_PAINT_KEY } = built('marketsPaint');
+  assert.equal(LEGACY_PAINT_KEY, 'domino-markets:v1');
+  const wall = 5_000_000;
+  const before = memoryStorage();
+  createPaintMemory(() => before, v3, () => wall).save(overviewOk(wall - 1_000));
+  const text = before.map.get(PAINT_KEY);
+  const old = memoryStorage();
+  old.map.set(LEGACY_PAINT_KEY, text);
+  const paint = createPaintMemory(() => old, v3, () => wall);
+  assert.deepEqual(paint.load(), createPaintMemory(() => before, v3, () => wall).load(), 'painted as it was');
+  assert.deepEqual([...old.map.keys()], [PAINT_KEY], 'moved: the old name is gone');
+  assert.equal(old.map.get(PAINT_KEY), text);
+  old.map.set(LEGACY_PAINT_KEY, '{');
+  assert.ok(paint.load(), 'both kept: the chain\'s name wins');
+  assert.deepEqual([...old.map.keys()], [PAINT_KEY]);
+  // The prefetch (A7 a) reads through the same move.
+  const fresh = memoryStorage();
+  fresh.map.set(LEGACY_PAINT_KEY, text);
+  assert.ok(createPaintMemory(() => fresh, v3, () => wall).prefetch()?.length > 0);
+  assert.deepEqual([...fresh.map.keys()], [PAINT_KEY]);
+});
+
 test('this browser’s copy of the last overview: kept 15 minutes, only while read-v3’s runtime accepts it, never past a storage that refuses', () => {
-  assert.equal(PAINT_KEY, 'domino-markets:v1');
+  // Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G10): the key names its chain.
+  assert.equal(PAINT_KEY, 'domino-markets-v2:4663');
   assert.equal(PAINT_MAX_AGE_MS, 15 * 60_000);
   let wall = 5_000_000;
   const storage = memoryStorage();

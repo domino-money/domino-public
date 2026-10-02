@@ -5,9 +5,11 @@ import type { PoolCatalogueEntry, PoolListing } from '../../config/selectedPoolC
 import { agedMarket, feeLabel, presentMetric, retrievedAgeSeconds, retrievedText, type Instant, type Market } from '../../lib/markets'
 import type { CardSeries } from '../../lib/read/cardSeries'
 import { formatUsdCompact } from '../../lib/read/decimal'
+import { pricePair } from '../../lib/read/orientation'
 import { unreadToken } from '../../lib/read/project'
 import { plainClose } from '../../lib/read/marketPrice'
 import { percentChange } from '../../lib/format/change'
+import { feeWords } from '../../lib/format/fee'
 import { shortTime } from '../../lib/format/time'
 import { PriceLineSvg } from '../charts/PriceLine'
 import { VolumeBarsSvg } from '../charts/VolumeBars'
@@ -49,16 +51,17 @@ function CatalogueMarks({ entry }: { entry: PoolCatalogueEntry }) {
 function Pair({ market, catalogue }: { market: Market | null; catalogue?: PoolCatalogueEntry }) {
   if (market) {
     const fee = feeLabel(market)
+    // Named as its price is written, "TOKEN/USDG" (audit E21, lib/read/orientation.ts).
+    const pair = pricePair(market.tokens.base, market.tokens.quote)
     return (
       <span className="dm-chip dm-chip--plate dm-mkt-pair">
-        <TokenMarkPair base={market.tokens.base} quote={market.tokens.quote} size={20} ring="var(--surface-3)" />
+        <TokenMarkPair base={pair.base} quote={pair.quote} size={20} ring="var(--surface-3)" />
         <span className="dm-mkt-pair-name">
-          <PoolTokenLabel token={market.tokens.base} />/<PoolTokenLabel token={market.tokens.quote} />
+          <PoolTokenLabel token={pair.base} />/<PoolTokenLabel token={pair.quote} />
         </span>
-        <span className="dm-mkt-pair-fee">
-          · <span className="dm-mkt-pair-venue">{market.feePips === null ? 'Uniswap · ' : 'Uniswap '}</span>
-          {fee}
-        </span>
+        {/* The fee as every chip writes it (lib/format/fee.ts, audit E21), without "Uniswap · ": a card is narrow, and the
+            table under the rail names the exchange. */}
+        <span className="dm-mkt-pair-fee">· {feeWords(fee)}</span>
       </span>
     )
   }
@@ -69,10 +72,7 @@ function Pair({ market, catalogue }: { market: Market | null; catalogue?: PoolCa
       <span className="dm-mkt-pair-name">
         <CatalogueLabel text={catalogue.labels[0]} />/<CatalogueLabel text={catalogue.labels[1]} />
       </span>
-      <span className="dm-mkt-pair-fee">
-        · <span className="dm-mkt-pair-venue">Uniswap </span>
-        {catalogue.fee}
-      </span>
+      <span className="dm-mkt-pair-fee">· {feeWords(catalogue.fee)}</span>
     </span>
   )
 }

@@ -19,10 +19,10 @@ import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { createFakeOnboarding } from './support/fake-onboarding.mjs';
-import { RPC_URL, routeChain } from './support/browser-chain.mjs';
+import { routeChain } from './support/browser-chain.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
-import { ARTWORK, footerButton, walkToReview } from './support/new-position.mjs';
+import { ARTWORK, footerButton, pressContinue, walkToReview } from './support/new-position.mjs';
 import { createReadStub } from './support/read-stub.mjs';
 import { createWalletServer } from './support/wallet-server.mjs';
 
@@ -84,10 +84,9 @@ async function scenario({ clockAt, wallets, reads = false } = {}) {
   if (clockAt !== undefined) await context.clock.install({ time: clockAt });
   await context.route(FONTS, (route) => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   await context.route(INJECTED, (route) => route.abort());
-  // 2026-09-25: the page reads Robinhood Chain's public RPC itself (the wallet's positions on Positions and on the
-  // automation page, a position's state, the fees history), since the RPC rate-limits Cloudflare's edge. That one host
-  // is answered here by an empty chain (tests/support/browser-chain.mjs): no position, no deposit, every NFT unknown,
-  // as the site's routes answered before; a request the CSP refused never reaches it.
+  // 2026-09-25: an empty chain (tests/support/browser-chain.mjs): no position, no deposit, every NFT unknown. Changed on
+  // purpose 2026-10-01 (RPC-SPEC, the owner's rule: nothing is read from a public RPC): the page asks the site's own chain
+  // routes, which answer from it; no RPC host is answered or admitted here any more.
   const chain = await routeChain(context);
   // New position shows token marks, whose optional artwork lookup the CSP admits; it is answered here with nothing.
   if (reads) await context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
@@ -95,12 +94,12 @@ async function scenario({ clockAt, wallets, reads = false } = {}) {
   const problems = [];
   const external = [];
   const requests = [];
-  // 2026-09-28, on purpose: the chain's three public fallbacks (src/lib/chain/endpoints.ts) are not admitted here. They are
-  // asked only while the chain's own RPC cannot be reached, and here it answers (routeChain): a request to one is a fault.
+  // Changed on purpose 2026-10-01 (RPC-SPEC): the chain's public RPC is no longer admitted either, nor its three public
+  // fallbacks: a request to any of them is a fault.
   context.on('request', (request) => {
     const url = request.url();
     requests.push(url);
-    if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url) && !(reads && ARTWORK.test(url)) && url !== `${RPC_URL}/`) external.push(url);
+    if (!url.startsWith(origin) && !url.startsWith('data:') && !FONTS.test(url) && !INJECTED.test(url) && !(reads && ARTWORK.test(url))) external.push(url);
   });
 
   const s = {
@@ -436,7 +435,7 @@ test('New position’s Review keeps Your choices and Wallet steps, asks the onbo
   await jump(page, '05:00');
   await footerButton(page, 'Back').click();
   await page.locator('[data-stage-card="amount"] [data-pair-side="1"]').waitFor();
-  await footerButton(page, 'Continue').click();
+  await pressContinue(page);
   await page.locator('[data-stage-card="review"]').waitFor();
   await sleep(1_000);
   assert.equal(positionCalls(s).length, 0, 'no position preview, ever');

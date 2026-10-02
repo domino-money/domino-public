@@ -107,8 +107,13 @@ before a one-token deposit. It asks for at least its quote less the owner's
 slippage limit. The mint is sized for that least and returns the rest.
 
 **Simulation.** The whole batch is simulated with `eth_simulateV1` through the
-wallet. A wallet without the method is simulated on the chain's public RPC,
-the page's own chain client. With neither, no batch is offered.
+wallet. The site reads nothing from a public RPC (October 2026). A wallet
+without the method is simulated on Domino's own node instead, through the
+site's fixed route `/api/chain/v1/simulate`. That route is off unless the
+deployment sets `LOCAL_RPC_SIMULATE` to `"true"`, and it is off today. While
+it is off, or when the node lacks the method, `finance/batch.ts` gives
+`batch_simulation_unavailable`, and the deposit goes on step by step with one
+signature per step.
 
 **Sending and reading back.** `finance/batch.ts`, which Create position and
 sequences share, sends `wallet_sendCalls` (version 2.0.0,

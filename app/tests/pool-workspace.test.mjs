@@ -27,6 +27,8 @@ const parts = Object.fromEntries([
   'CopyButton', 'ProviderFigure', 'EmptyState', 'LinkButton', 'SelectedPoolsTable', 'MarketsTable', 'TokensTable', 'SearchField', 'PageHeader', 'PoolActivityCard', 'PoolPositionsCard',
   // 2026-09-27 (round 6, the pool page for beginners): its new cards (src/components/pool/), each checked for real below.
   'PoolEarnings', 'PoolRangeGuide', 'PoolAutomation', 'PoolActivitySummary',
+  // 2026-10-01 (audit V1): an estimate standing in for the read service's.
+  'FallbackApr',
 ].map((name) => [name, stub(name)]))
 
 // Deterministic effect harness around the actual component source. It models
@@ -95,6 +97,20 @@ function load(name, dependencies, expose = '') {
     // verified against the token every embedded pool holds, as config/selectedPoolCatalogue.ts entryToken says.
     useFeatured: () => ({ source: 'bundled', entries: [], listId: null, settled: true, withdrawn: new Set() }),
     entryToken: (entry) => entry.addresses ? entry.addresses[1] : addr('5'),
+    // 2026-10-01 (audit): pairs named as their price is written (E21), look-alike tokens (I1), failures that pass (A25),
+    // and the stand-in figures (V1): the real rules have their own tests; here the page's use of them.
+    inPriceOrder: (entry) => entry, poolWarning: () => null, warningText: () => '',
+    pricePair: require('../.test-build/app/src/lib/read/orientation.js').pricePair,
+    isTransient: (outcome) => outcome?.state === 'busy' || outcome?.state === 'unavailable',
+    useFallbackRow: (row) => row, usePoolStandIns: () => null, useFallbackRows: (rows) => rows,
+    // A token's page (audit V2): its own merge and flags are tested in token-pools.test.mjs; here, the overview pages.
+    featuredPoolIds: () => [], discoveryRows: () => [], mergeTokenPools: (stored, found) => [...stored, ...found], splitFlagged: (rows) => ({ shown: rows, hidden: [] }),
+    dexStore: { pool: () => null, token: () => null, ask() {}, subscribe: () => () => {}, version: () => 0 },
+    hintsWithin: async () => [], usablePoolsRequest: (token) => ({ token }), tokenWarning: () => null,
+    // 2026-10-01 (the copy workstream): the fee chip's and the APR's one format (audit E21), the real modules, and the
+    // tab's name (audit E11), which a page here sets nowhere.
+    ...real('src/lib/format/fee.ts'), ...real('src/lib/format/apr.ts'), useRouteTitle: () => undefined, useTabTitle: () => undefined,
+    quoteIndex: require('../.test-build/app/src/lib/read/orientation.js').quoteIndex,
     ...dependencies,
   }
   new Function('require', 'module', 'exports', code)((name) => name === 'react' ? hooks : name === 'react/jsx-runtime' ? require(name) : common, mod, mod.exports)
@@ -549,7 +565,9 @@ test('provider attribution is visible text rather than a hover-only title, and t
   assert.match(visible, /Market data provider/, 'the figures are attributed in visible text, the provider never named')
   assert.doesNotMatch(visible, /GeckoTerminal|DexScreener/)
   assert.match(visible, /retrieved 12 s ago/)
-  assert.match(visible, /Verified at block 700/)
+  // Changed on purpose 2026-10-01 (audit I1): the row says the pool was read on chain, never that its tokens are verified.
+  assert.match(visible, /On chain at block 700/)
+  assert.doesNotMatch(visible, /Verified at block/)
   // Changed on purpose (2026-09-27, round 6): the full pool id is a row of Details, drawn by Address (a stub here).
   assert.ok(elements(host.tree, (node) => node.type === parts.Address && node.props.value === id('a') && !node.props.short).length === 1, 'the full pool id is in the page')
   assert.equal(part(host, 'CopyButton').props.value, id('a'))
@@ -888,8 +906,10 @@ test('G11: the activity card shows the 24h turnover, the LP fees and the LP asse
   const html = renderToStaticMarkup(React.createElement(PoolActivityCard, { read: okRead('pool-activity', 'pool-activity.success'), option: fixturePool() }))
   assert.match(html, /data-pool-activity="ok"/)
   assert.deepEqual(rowCells(html, 'turnover'), ['<span class="tnum" title="0.000028926913445278">0.0000289269</span>', '<span class="tnum" title="1,635,670.293697">1,635,670</span>'])
-  assert.deepEqual(rowCells(html, 'lp-fees'), ['<span class="tnum" title="0.000000086412877935">0.0000000864129</span>', '<span class="tnum" title="300.000002">300</span>'])
-  assert.deepEqual(rowCells(html, 'lp-assets'), ['<span class="tnum" title="0.000000001012536287">0.00000000101254</span>', '<span class="tnum" title="20,025,853.294226">20,025,853</span>'])
+  // Changed on purpose 2026-10-01 (audit E7): an amount under a millionth of a token reads "<0.000001", every digit of it
+  // in its title, as the Wallet card and the position screens write it.
+  assert.deepEqual(rowCells(html, 'lp-fees'), ['<span class="tnum" title="0.000000086412877935">&lt;0.000001</span>', '<span class="tnum" title="300.000002">300</span>'])
+  assert.deepEqual(rowCells(html, 'lp-assets'), ['<span class="tnum" title="0.000000001012536287">&lt;0.000001</span>', '<span class="tnum" title="20,025,853.294226">20,025,853</span>'])
   const text = markupText(html)
   assert.match(text, /Swaps \(24h\) 4/)
   assert.match(text, /Pool age Older than 24 h/)
@@ -979,7 +999,7 @@ test('G12: positions in this pool: counts, LP assets in token units, and each po
   const text = markupText(html)
   assert.match(html, /data-pool-positions="ok"/)
   assert.match(text, /Positions 3 With liquidity 2 Block 700/)
-  assert.match(text, /LP assets 0\.00000000101254 20,025,853/)
+  assert.match(text, /LP assets &lt;0\.000001 20,025,853/)
   const rows = [...html.matchAll(/<tr data-pool-position="([^"]+)" data-position-liquidity="([^"]+)">(.*?)<\/tr>/gs)].map(([, key, liquidity, cells]) => [key.slice(0, 6), liquidity, markupText(cells)])
   assert.deepEqual(rows, [['0x09e7', 'some', '-60000 to 60000 — —'], ['0x9b7a', 'some', '-60 to 60 — —'], ['0xbb6a', 'none', '-60000 to 60000 — —']], 'no NFT or owner resolved: dashes that say so')
   assert.match(html, /title="Whoever held the position’s NFT at the snapshot block: public data, not proof of control">Owner at block 700/)
@@ -1023,7 +1043,9 @@ test('G14: the detailed estimate lists its inputs and takes its title from its o
   const html = renderToStaticMarkup(React.createElement(PoolAprEstimate, { observation: observed(producer('available').estimate), now, detailed: true }))
   const inputs = [...html.matchAll(/<dt>(.*?)<\/dt><dd[^>]*>(.*?)<\/dd>/g)].map(([, dt, dd]) => [dt, dd])
   assert.deepEqual(inputs.slice(0, 5), [['LP fee', '0.30%'], ['Protocol fee', 'None'], ['24h volume, provider-reported', '$1.0K'], ['TVL, provider-reported', '$10.0K'], ['Method', '365 × LP fee × (1 − protocol fee) × 24h volume ÷ TVL']])
-  assert.match(html, /title="From a market data provider’s reported 24h volume and TVL, not reconciled\. The provider’s update time is unknown\. Current TVL, not time-weighted\. Assumes the current fixed LP fee for the whole 24h volume\. The protocol fee’s effect is not reconciled\. Full-day coverage is not proven\. Excludes rewards, gas, service fees and price changes\. Pool estimate, not position APR or APY\. Not a return forecast or a recommendation\." data-apr-figure="">10\.95% est\. APR/)
+  assert.match(html, /title="From a market data provider’s reported 24h volume and TVL, not reconciled\. The provider’s update time is unknown\. Current TVL, not time-weighted\. Assumes the current fixed LP fee for the whole 24h volume\. The protocol fee’s effect is not reconciled\. Full-day coverage is not proven\. Excludes rewards, gas, service fees and price changes\. Pool estimate, not position APR or APY\. Not a return forecast or a recommendation\." data-apr-figure="">11\.0% est\. APR/)
+  // Changed on purpose 2026-10-01 (audit E21): the figure by the one APR rule; the exact estimate stays in the inputs.
+  assert.match(html, /<dt>Exact estimate<\/dt><dd class="tnum break-all text-fg-muted">10\.95%<\/dd>/)
 
   const protocolFee = producer('protocol-fee').estimate
   const protocol = renderToStaticMarkup(React.createElement(PoolAprEstimate, { observation: observed(protocolFee), now, detailed: true }))
@@ -1543,7 +1565,7 @@ test('a refused acquisition is said, and asked about less often, not more', asyn
     const markup = renderToStaticMarkup(host.tree);
     assert.match(markup, new RegExp(`data-acquisition="${state}"`), `accepted=${accepted} pending=${pending}`);
     if (state === 'at_capacity') {
-      assert.match(markup, /Data collection is at capacity/, 'the refusal is said in words, not left as "Collecting data"');
+      assert.match(markup, /Domino’s data service is busy, so only the pools already stored are shown\./, 'the refusal is said in plain words (audit E19), not left as "Collecting data"');
       assert.doesNotMatch(markup, /Collecting data/, 'nothing is being collected');
     }
     if (state === 'pending') assert.match(markup, /Collecting data/);
@@ -1580,7 +1602,9 @@ test('round 6: plain words: prices in USDG where the pool holds it, a yearly rat
   // Added 2026-09-28 (one-sided): ETH comes next, the app's one rule (lib/read/orientation.ts): ETH/MARLIN reads in ETH.
   assert.equal(plain.quoteSide([{ address: addr('0') }, { address: addr('9') }]), 0, 'ETH/MARLIN: ETH for 1 MARLIN')
   assert.equal(plain.quoteSide([{ address: addr('0') }, { address: USDG }]), 1, 'ETH/USDG: USDG for 1 ETH')
-  assert.deepEqual([100.35, 32.13, 2.16, 0.05, 1234.5, 0].map(plain.aboutPercent), ['100%', '32%', '2.2%', 'less than 0.1%', '1,235%', '0%'])
+  // Changed on purpose 2026-10-01 (audit E21): the one APR rule of every screen (lib/format/apr.ts), so the sentence says
+  // the figure its tile shows: one decimal under 100%, whole from there.
+  assert.deepEqual([100.35, 32.13, 2.16, 0.05, 1234.5, 0, 99.96].map(plain.aboutPercent), ['100%', '32.1%', '2.2%', 'less than 0.1%', '1,235%', '0%', '100%'])
   assert.deepEqual(['1,000', '$250.5', ' 10 000 ', '0', '-5', 'abc', '1e3', '10000000000'].map(plain.parseAmount), [1000, 250.5, 10000, null, null, null, null, null])
   const month = plain.earnings(1000, 100.35)
   assert.equal(plain.usdText(month.month), '$83.63')
@@ -1673,7 +1697,7 @@ test('round 6: what Domino can do in a pool: the three features with their fees 
   assert.match(text, /Plain position No service fee Fees wait in the position until you collect them\./)
   assert.match(text, /Auto-compound 2% of fees Fees go back into the same position\./)
   assert.match(text, /Domino-compound 4% of fees Fees can fund the next range one step higher\./)
-  assert.deepEqual([...yes.matchAll(/href="([^"]+)"/g)].map(([, href]) => href), ['#/docs/earned-fees', '#/docs/auto-compound', '#/docs/domino-compounder'])
+  assert.deepEqual([...yes.matchAll(/href="([^"]+)"/g)].map(([, href]) => href), ['#/docs/earned-fees', '#/docs/auto-compound', '#/docs/domino-compound'])
   const no = renderToStaticMarkup(React.createElement(PoolAutomation, { usable: false, why: 'it runs extra code on every swap (hooks)' }))
   assert.match(no, /data-pool-automation="unavailable"/)
   assert.match(no.replace(/<[^>]+>/g, ''), /Domino can’t open positions in this pool: it runs extra code on every swap \(hooks\)\./)
@@ -1687,7 +1711,8 @@ test('round 6: recent activity is the last day in words, from the chain where it
   const chain = draw({ read: okRead('pool-activity', 'pool-activity.success') })
   assert.match(chain, /data-pool-activity-summary="ready"/)
   assert.match(words(chain), /4 swaps in the last 24 hours, worth about \$6\.2M ?\./)
-  assert.match(words(chain), /People who provide the pool’s money earned 0\.0000000864129 ETH and 300 TOKEN in fees\./, 'in each token without USDG')
+  // Changed on purpose 2026-10-01 (audit E7): an amount under a millionth reads as one.
+  assert.match(words(chain), /People who provide the pool’s money earned &lt;0\.000001 ETH and 300 TOKEN in fees\./, 'in each token without USDG')
   // With USDG in the pool, its fees in dollars at the pool's own price: 300 TOKEN at $1 plus the ETH side at 2,000.
   assert.match(words(draw({ read: okRead('pool-activity', 'pool-activity.success'), usd: { usdgIndex: 1, price: 2000 } })), /earned about \$300\.00 in fees\./)
   const day = { base: NATIVE, low: '1', high: '2', first: '1.6', last: '1.2', whole: true }
@@ -1822,4 +1847,172 @@ test('round 6: the last day heard with the chart flipped the other way round lea
   assert.deepEqual(part(host, 'PoolRangeGuide').props.day, own, 'the flipped day is not kept over it')
   assert.deepEqual(part(host, 'PoolActivitySummary').props.day, own)
   host.unmount()
+})
+
+// --- the pool page, audit 2026-10-01: B8, A12, A25, I1, B2 ---
+
+/** A pool page over a source that lists the stored overview, its reads deferred. */
+function storedPoolPage(hash, dependencies = {}) {
+  const reads = []
+  const waits = []
+  const source = { transport: 'bridge', supportsStoredReads: true, routeEnabled: async () => ({ state: 'enabled' }) }
+  const page = poolPage(hash, {
+    useReadSource: () => source,
+    readWithin(_source, route, request) { const pending = deferred(); reads.push({ route, request, ...pending }); return pending.promise },
+    whenVisibleAfter(ms, run) { const wait = { ms, run, cancelled: false }; waits.push(wait); return () => { wait.cancelled = true } },
+    overviewPoolOption: (overview) => overview.data.option ?? null,
+    ...dependencies,
+  })
+  return { ...page, reads, waits }
+}
+const overviewOk = (data) => ({ state: 'ok', route: 'overview', data: { generatedAt: 1000, acquisitionAccepted: true, pools: [], ...data }, provenance: { receivedAt: 1 } })
+
+test('B8: a link that names no token rests until the list answers, then is verified by its id alone and opens with the pool’s own currencies', async () => {
+  const previous = globalThis.window
+  let featured = { source: 'bundled', entries: [], listId: null, settled: false, withdrawn: new Set() }
+  const { PoolDetail, reads, verifications } = storedPoolPage(`#/pool/${id('b')}`, { useFeatured: () => featured })
+  const host = mount(PoolDetail, { poolId: id('b') })
+  try {
+    await flush(); host.render()
+    assert.equal(elements(host.tree, (node) => node.type?.name === 'Pending').length, 1, 'the resting page, never a false message')
+    assert.equal(part(host, 'EmptyState'), undefined)
+    assert.equal(reads.length, 0, 'nothing read before the list answers')
+    featured = { ...featured, settled: true }
+    host.render(); await flush(); host.render()
+    assert.deepEqual(reads.map(({ route, request }) => [route, request]), [['overview', { poolIds: [id('b')] }]], 'by its id alone')
+    reads[0].resolve(overviewOk({ option: option('b') })); await flush(); host.render()
+    assert.equal(part(host, 'PoolWorkspace').props.option.key, id('b'))
+    assert.equal(verifications.length, 0)
+  } finally { host.unmount(); globalThis.window = previous }
+})
+
+test('B8: without the stored overview a link that names no token says so in plain words, with no hex id', async () => {
+  const previous = globalThis.window
+  const { PoolDetail } = poolPage(`#/pool/${id('b')}`)
+  const host = mount(PoolDetail, { poolId: id('b') })
+  try {
+    const empty = part(host, 'EmptyState')
+    assert.equal(empty.props.title, 'Open this pool from Markets')
+    assert.doesNotMatch(String(empty.props.body), /selected six|32-byte|0x/)
+    const bad = poolPage('#/pool/not-a-pool')
+    const junk = mount(bad.PoolDetail, { poolId: 'not-a-pool' })
+    assert.doesNotMatch(String(part(junk, 'EmptyState').props.body), /32-byte/)
+    junk.unmount()
+  } finally { host.unmount(); globalThis.window = previous }
+})
+
+test('A12: a pool still being collected says so, is checked on chain once so it can open, and is asked again at the store’s pace, a bounded number of times', async () => {
+  const previous = globalThis.window
+  const pendingPool = (nextAttemptAt) => ({ poolId: id('a'), acquisition: { status: 'pending', refreshing: false, reason: null, nextAttemptAt } })
+  // The pools route confirms it on the first pending answer: the page opens.
+  const opened = storedPoolPage(`#/pool/${id('a')}`)
+  let host = mount(opened.PoolDetail, { poolId: id('a') })
+  try {
+    await flush(); host.render()
+    opened.reads[0].resolve(overviewOk({ pools: [pendingPool(1010)] })); await flush(); host.render()
+    const pending = elements(host.tree, (node) => node.type?.name === 'Pending')[0]
+    assert.equal(pending.props.note, 'collecting', 'said in plain words')
+    assert.equal(opened.verifications.length, 1, 'checked on chain through the pools route')
+    opened.verifications[0].resolve({ failure: null, option: option('a'), restarted: false }); await flush(); host.render()
+    assert.equal(part(host, 'PoolWorkspace').props.option.key, id('a'), 'it opens while the store collects it')
+  } finally { host.unmount() }
+  // Not confirmed: asked again at the store's next attempt plus a margin, 5 s at the soonest, 30 s at the most; 30 s at capacity.
+  const waiting = storedPoolPage(`#/pool/${id('a')}`)
+  host = mount(waiting.PoolDetail, { poolId: id('a') })
+  try {
+    await flush(); host.render()
+    waiting.reads[0].resolve(overviewOk({ pools: [pendingPool(1010)] })); await flush(); host.render()
+    waiting.verifications[0].resolve({ failure: null, option: null, restarted: false }); await flush(); host.render()
+    assert.deepEqual(waiting.waits.map((wait) => wait.ms), [11_500], 'the store’s own next attempt, 10 s on, plus 1.5 s')
+    for (let attempt = 1; attempt < 12; attempt += 1) {
+      waiting.waits.at(-1).run(); host.render(); await flush(); host.render()
+      waiting.reads.at(-1).resolve(overviewOk({ acquisitionAccepted: attempt % 2 === 0, pools: [pendingPool(1500)] })); await flush(); host.render()
+    }
+    assert.equal(waiting.verifications.length, 1, 'checked on chain once, not at every ask')
+    assert.deepEqual(waiting.waits.slice(1).map((wait) => wait.ms), Array(10).fill(30_000), 'at capacity 30 s; a far collection 30 s at the most')
+    assert.equal(waiting.reads.length, 12, 'twelve asks at the most')
+    const last = elements(host.tree, (node) => node.type?.name === 'Pending')[0]
+    assert.equal(last.props.verifying, false)
+    assert.equal(last.props.reason.code, 'collecting')
+  } finally { host.unmount(); globalThis.window = previous }
+})
+
+test('A25: a copy already painted stays on screen through a failure that can clear by itself; one that cannot shows the dashes', async () => {
+  const previous = globalThis.window
+  const copied = { route: 'overview', state: 'ok', data: { pools: [] }, provenance: { receivedAt: 1 } }
+  for (const [failure, painted] of [[{ state: 'busy', retryAfterSeconds: 5 }, true], [{ state: 'invalid', reason: 'response_contract' }, false]]) {
+    const { PoolDetail, verifications } = poolPage(`#/pool/${id('a')}`, {
+      appPaint: { load: () => null },
+      paintedPool: () => ({ overview: copied, option: { ...option('a'), block: 600 } }),
+      isTransient: (outcome) => outcome.state === 'busy',
+    })
+    const host = mount(PoolDetail, { poolId: id('a') })
+    try {
+      verifications[0].resolve({ failure, option: null, restarted: false }); await flush(); host.render()
+      assert.equal(part(host, 'PoolWorkspace') !== undefined, painted, failure.state)
+      if (!painted) assert.equal(elements(host.tree, (node) => node.type?.name === 'Pending')[0].props.verifying, false)
+    } finally { host.unmount() }
+  }
+  globalThis.window = previous
+})
+
+test('I1 and B2: a pool with a token that passes for USDG, or one the list withdrew for safety, opens with a plain warning and no way into New position', async () => {
+  const previous = globalThis.window
+  const fake = { ...option('a'), currencies: [token('1'), { ...token('2'), symbol: 'USDG' }] }
+  const warnings = {
+    poolWarning: (tokens) => (tokens.some((t) => t.symbol === 'USDG') ? { kind: 'lookalike', address: addr('2'), main: 'USDG' } : null),
+    warningText: () => 'This isn’t the USDG Domino uses. Adding money to this pool can lose it.',
+  }
+  try {
+    const look = poolPage(`#/pool/${id('a')}`, warnings)
+    let host = mount(look.PoolDetail, { poolId: id('a') })
+    look.verifications[0].resolve({ failure: null, option: fake, restarted: false }); await flush(); host.render()
+    let workspace = part(host, 'PoolWorkspace')
+    assert.equal(workspace.props.actions, undefined, 'no Create a position')
+    assert.match(renderToStaticMarkup(workspace.props.notice), /data-pool-warning="lookalike"[^>]*>This isn’t the USDG Domino uses\. Adding money to this pool can lose it\./)
+    host.unmount()
+
+    const withdrawn = poolPage(`#/pool/${id('a')}`, { useFeatured: () => ({ source: 'server', entries: [], listId: 'x', settled: true, withdrawn: new Set([id('a')]) }) })
+    host = mount(withdrawn.PoolDetail, { poolId: id('a') })
+    withdrawn.verifications[0].resolve({ failure: null, option: option('a'), restarted: false }); await flush(); host.render()
+    workspace = part(host, 'PoolWorkspace')
+    assert.equal(workspace.props.actions, undefined, 'withdrawn for safety: no way into New position, as New position refuses its link')
+    assert.match(renderToStaticMarkup(workspace.props.notice), /data-pool-warning="withdrawn"/)
+    host.unmount()
+
+    // A pool on neither list: its page names both contracts in full, and keeps its way into New position.
+    const off = poolPage(`#/pool/${id('b')}/${addr('7')}`)
+    host = mount(off.PoolDetail, { poolId: id('b') })
+    off.verifications[0].resolve({ failure: null, option: option('b'), restarted: false }); await flush(); host.render()
+    workspace = part(host, 'PoolWorkspace')
+    const notice = renderToStaticMarkup(workspace.props.notice)
+    assert.match(notice, /Not on Domino’s list/)
+    assert.ok(notice.includes(addr('1')) && notice.includes(addr('2')), 'both contracts in full')
+    assert.notEqual(workspace.props.actions, undefined)
+    host.unmount()
+  } finally { globalThis.window = previous }
+})
+
+test('B8: a token-less link whose overview cannot be asked for good says how to open the pool; one that failed in passing is asked again', async () => {
+  const previous = globalThis.window
+  try {
+    for (const [outcome, says] of [[{ state: 'not_connected' }, true], [{ state: 'busy', retryAfterSeconds: 5 }, false]]) {
+      const asks = []
+      const source = { transport: 'bridge', supportsStoredReads: true, routeEnabled: async (route) => (route === 'overview' ? { state: 'failed', outcome } : { state: 'enabled' }) }
+      const { PoolDetail } = poolPage(`#/pool/${id('b')}`, {
+        useReadSource: () => source,
+        askAgainLater(failure, attempt, signal) { const pending = deferred(); asks.push({ failure, attempt, signal, ...pending }); return pending.promise },
+      })
+      const host = mount(PoolDetail, { poolId: id('b') })
+      await flush(); host.render()
+      if (says) {
+        assert.equal(part(host, 'EmptyState').props.title, 'Open this pool from Markets', outcome.state)
+        assert.equal(asks.length, 0)
+      } else {
+        assert.equal(elements(host.tree, (node) => node.type?.name === 'Pending')[0].props.verifying, false, outcome.state)
+        assert.equal(asks.length, 1, 'asked again on its own')
+      }
+      host.unmount()
+    }
+  } finally { globalThis.window = previous }
 })

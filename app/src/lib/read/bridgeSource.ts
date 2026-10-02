@@ -48,6 +48,17 @@ export const READ_PREFIX = '/api/read/v1/'
 export const CONTRACT_HEADER = 'X-Domino-Read-Contract'
 /** `hit` from a Pages Function that answered from its edge cache (functions/_lib/featuredEdge.ts, publicEdge.ts). */
 export const EDGE_CACHE_HEADER = 'X-Domino-Edge-Cache'
+/** How old, in ms, a kept answer was when it left the edge (functions/_lib/publicEdge.ts, 2026-10-01). */
+export const EDGE_AGE_HEADER = 'X-Domino-Edge-Age'
+/** The oldest an edge answer can honestly be (the featured list's 15 minutes): anything else is no age at all. */
+const EDGE_AGE_MAX_MS = 15 * 60_000
+
+/** The edge's age header as ms, when it is a plain whole number within EDGE_AGE_MAX_MS; undefined otherwise. */
+export function edgeAgeOf(value: string | null): number | undefined {
+  if (value === null || !/^\d{1,9}$/.test(value)) return undefined
+  const ms = Number(value)
+  return ms <= EDGE_AGE_MAX_MS ? ms : undefined
+}
 /** Revalidate on the next read, with no polling timer or provider/RPC read. */
 export const CAPABILITIES_REUSE_MS = 60_000
 
@@ -148,6 +159,7 @@ export async function rawReplyFrom(response: Response, signal?: AbortSignal): Pr
     requestIdHeader: requestIdOf(response.headers.get('X-Domino-Request-Id')),
     retryAfterHeader: response.headers.get('Retry-After'),
     ...(response.headers.get(EDGE_CACHE_HEADER) === 'hit' ? { edgeHit: true as const } : {}),
+    ...(edgeAgeOf(response.headers.get(EDGE_AGE_HEADER)) !== undefined ? { edgeAgeMs: edgeAgeOf(response.headers.get(EDGE_AGE_HEADER)) } : {}),
     body: opaqueRedirect ? { kind: 'text', text: '' } : await boundedBody(response, isJson(contentType) ? MAX_RESPONSE_BYTES : MAX_PAGE_BYTES, signal),
   }
 }
@@ -167,10 +179,11 @@ export interface BridgeOptions {
   fetch?: FetchLike
   /**
    * A reply already on its way for an attempt, taken instead of sending one: the featured list's and read-v3's
-   * capabilities, which public/early-list.js sent before the app started (lib/read/earlyList.ts, 2026-09-28). Null:
-   * the attempt is sent. One that fails to arrive sends the attempt after all.
+   * capabilities, which the page's boot script (functions/_lib/boot.ts) sent before the app started (lib/read/earlyList.ts, 2026-09-28),
+   * and since 2026-10-01 (audit A7 b) the stored overview of the list's pools, taken only by a request with that very
+   * body. Null: the attempt is sent. One that fails to arrive sends the attempt after all.
    */
-  first?: (path: string, method: string) => Promise<Response> | null
+  first?: (path: string, method: string, body?: string) => Promise<Response> | null
   clock?: Clock
   policy?: RetryPolicy
 }
@@ -184,6 +197,8 @@ interface SharedCheck {
   waiters: number
   settled: boolean
   expiresAt: number
+  /** The answer, once settled: what a read past its minute may still use for a route it lists (A22). */
+  value?: CapabilityCheck
 }
 
 /** A bridge source always answers the capabilities question. */
@@ -193,6 +208,8 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
   const { enabled, validators, policy = BRIDGE_RETRY, clock = realClock } = options
   const fetchImpl: FetchLike = options.fetch ?? ((input, init) => fetch(input, init))
   let capabilities: SharedCheck | null = null
+  /** A check asked behind a good answer past its minute (A22), until it settles. */
+  let renewing: SharedCheck | null = null
   const prefix = options.namespace ? `/api/read/${options.namespace}/` : READ_PREFIX
   const headers = { ...READ_HEADERS, [CONTRACT_HEADER]: validators.CONTRACT_VERSION }
 
@@ -200,7 +217,7 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
     (path: string, init: RequestInit): Transport =>
     async (_attempt, signal) => {
       const send = () => fetchImpl(path, { ...READ_INIT, ...init, signal })
-      const early = options.first?.(path, init.method ?? 'GET') ?? null
+      const early = options.first?.(path, init.method ?? 'GET', typeof init.body === 'string' ? init.body : undefined) ?? null
       const response = await (early ? early.catch(send) : send())
       // A fetch that answered after its attempt was given up: the body is closed unread.
       if (signal.aborted) {
@@ -233,7 +250,8 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
       if (outcome.state === 'ok') {
         check.expiresAt = clock.monotonic() + CAPABILITIES_REUSE_MS
         const reads = outcome.data.dataMode === 'live_read_only' ? outcome.data.enabledReads : []
-        return { ok: true, enabledReads: new Set(reads) }
+        check.value = { ok: true, enabledReads: new Set(reads) }
+        return check.value
       }
       if (capabilities === check) capabilities = null
       return { ok: false, failure: outcome }
@@ -248,8 +266,26 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
    * reads. When the last read waiting leaves, the check is cancelled and
    * forgotten, so the next read asks afresh instead of joining a cancelled one.
    */
-  async function capabilitiesFor(signal: AbortSignal | undefined, deadlineAt: number): Promise<Settled<CapabilityCheck>> {
-    if (capabilities?.settled && clock.monotonic() >= capabilities.expiresAt) capabilities = null
+  async function capabilitiesFor(signal: AbortSignal | undefined, deadlineAt: number, route?: ReadRoute): Promise<Settled<CapabilityCheck>> {
+    const stale = capabilities?.settled && clock.monotonic() >= capabilities.expiresAt ? capabilities : null
+    if (stale && route !== undefined && stale.value?.ok && stale.value.enabledReads.has(route)) {
+      // Changed 2026-10-01 (audit A22): an answer past its minute that lists the route asked for is used at once while a
+      // new check runs behind, instead of holding this read 100 to 200 ms for it; a route it lists that was switched off
+      // since answers route_not_available to the read itself, which says so as before. One that does not list it is
+      // asked again first, as before, so a route switched on is used at once. The check behind replaces the kept one
+      // when it is good, and a failure there leaves nothing kept: the next read asks afresh and waits, as before.
+      const kept = stale
+      if (renewing === null) {
+        const next = startCheck()
+        renewing = next
+        void next.result.then((check) => {
+          if (renewing === next) renewing = null
+          if (capabilities === kept) capabilities = check.ok ? next : null
+        })
+      }
+      return settleBy(clock, kept.result, deadlineAt, signal)
+    }
+    if (stale) capabilities = null
     capabilities ??= startCheck()
     const check = capabilities
     check.waiters += 1
@@ -275,7 +311,7 @@ export function createBridgeSource(options: BridgeOptions): BridgeSource {
     const late = (): FailedOutcome<R> => ({ route, provenance: stamp(deadlineAt), state: 'unavailable', cause: { kind: 'read_deadline', limit: 'read' }, retryable: true })
     if (signal?.aborted) return failed({ route, provenance: stamp(deadlineAt), state: 'aborted' })
     if (clock.monotonic() >= deadlineAt) return failed(late())
-    const waited = await capabilitiesFor(signal, deadlineAt)
+    const waited = await capabilitiesFor(signal, deadlineAt, route)
     if (waited.kind === 'aborted') return failed({ route, provenance: stamp(deadlineAt), state: 'aborted' })
     if (waited.kind === 'deadline') return failed(late())
     const check = waited.value

@@ -6,18 +6,18 @@
  */
 import { AUTO_COMPOUND, DOMINO_COMPOUNDER } from './pages/automation'
 import { EARNED_FEES, POOLS, RANGES } from './pages/basics'
-import { NON_CUSTODIAL, RISKS } from './pages/custody'
-import { WALLET, WHAT_IS_DOMINO } from './pages/introduction'
+import { NON_CUSTODIAL, PRIVACY, RISKS } from './pages/custody'
+import { WALLET, WALLET_REQUESTS, WHAT_IS_DOMINO } from './pages/introduction'
 import { CONTRACTS, FEES, FIGURES, GLOSSARY } from './pages/reference'
-import { MARKETS, NEW_POSITION, POSITIONS } from './pages/using'
+import { MARKETS, NEW_POSITION, POOL_PAGE, POSITIONS } from './pages/using'
 import type { DocGroup, DocPage, TocEntry } from './types'
 
 export const DOC_GROUPS: readonly DocGroup[] = [
-  { key: 'introduction', title: 'Introduction', pages: [WHAT_IS_DOMINO, WALLET] },
+  { key: 'introduction', title: 'Introduction', pages: [WHAT_IS_DOMINO, WALLET, WALLET_REQUESTS] },
   { key: 'basics', title: 'Liquidity basics', pages: [POOLS, RANGES, EARNED_FEES] },
-  { key: 'using', title: 'Using Domino', pages: [MARKETS, NEW_POSITION, POSITIONS] },
+  { key: 'using', title: 'Using Domino', pages: [MARKETS, POOL_PAGE, NEW_POSITION, POSITIONS] },
   { key: 'automation', title: 'Automation', pages: [AUTO_COMPOUND, DOMINO_COMPOUNDER] },
-  { key: 'custody', title: 'Custody and risk', pages: [NON_CUSTODIAL, RISKS] },
+  { key: 'custody', title: 'Custody and risk', pages: [NON_CUSTODIAL, RISKS, PRIVACY] },
   { key: 'reference', title: 'Reference', pages: [FEES, FIGURES, CONTRACTS, GLOSSARY] },
 ]
 
@@ -33,22 +33,31 @@ export const DOCS_HOME = {
 /** The three pages the index offers first. */
 export const DOC_START: readonly string[] = ['what-is-domino', 'ranges', 'non-custodial']
 
+/** Older slugs that still open their page (2026-10-01, live note L12). */
+export const DOC_ALIASES: Readonly<Record<string, string>> = Object.freeze({ 'domino-compounder': 'domino-compound' })
+
 const BY_SLUG: Readonly<Record<string, DocPage>> = Object.fromEntries(DOC_PAGES.map((page) => [page.slug, page]))
 const GROUP_OF: Readonly<Record<string, DocGroup>> = Object.fromEntries(DOC_GROUPS.flatMap((group) => group.pages.map((page) => [page.slug, group])))
 
-/** The page at `slug`, or null. Only a page's own slug counts: `constructor` is not a page. */
+/** A slug as the registry knows it: itself, or the page an older slug now names. */
+const canonical = (slug: string) => (Object.hasOwn(DOC_ALIASES, slug) ? DOC_ALIASES[slug] : slug)
+
+/** The page at `slug` (or at the page an older slug names), or null. Only a page's own slug counts: `constructor` is not a page. */
 export function findDocPage(slug: string): DocPage | null {
-  return Object.hasOwn(BY_SLUG, slug) ? BY_SLUG[slug] : null
+  const key = canonical(slug)
+  return Object.hasOwn(BY_SLUG, key) ? BY_SLUG[key] : null
 }
 
 /** The group a page belongs to, or null for a slug that is not a page. */
 export function docGroupOf(slug: string): DocGroup | null {
-  return Object.hasOwn(GROUP_OF, slug) ? GROUP_OF[slug] : null
+  const key = canonical(slug)
+  return Object.hasOwn(GROUP_OF, key) ? GROUP_OF[key] : null
 }
 
 /** The pages before and after `slug` in reading order. */
 export function docNeighbours(slug: string): { previous: DocPage | null; next: DocPage | null } {
-  const index = DOC_PAGES.findIndex((page) => page.slug === slug)
+  const key = canonical(slug)
+  const index = DOC_PAGES.findIndex((page) => page.slug === key)
   if (index === -1) return { previous: null, next: null }
   return { previous: DOC_PAGES[index - 1] ?? null, next: DOC_PAGES[index + 1] ?? null }
 }

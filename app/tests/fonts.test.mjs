@@ -73,3 +73,15 @@ test('the pages link no font or stylesheet from another host, and the app’s st
   const config = readFileSync(join(APP, 'vite.config.ts'), 'utf8');
   assert.match(config, /assetsInlineLimit: \(file: string\) => \(file\.endsWith\('\.woff2'\) \? false : undefined\)/, 'a font is never inlined as a data: URL, which the CSP refuses');
 });
+
+// 2026-10-01 (platform workstream, I5): the access page, which the gate serves before any cookie, loads its two fonts
+// from this site too, never from Google: public/__beta/fonts/ holds the same files as src/fonts/, byte for byte, and the
+// gate serves exactly those two without the cookie (functions/_lib/gate.ts GATE_FONTS, tests/gate.test.mjs).
+test('the access page’s two fonts are src/fonts/’s own files, byte for byte, and nothing else is there', () => {
+  const gateFonts = join(APP, 'public/__beta/fonts');
+  assert.deepEqual(readdirSync(gateFonts).sort(), ['geist-latin.woff2', 'instrument-serif-latin.woff2']);
+  for (const file of readdirSync(gateFonts)) assert.equal(sha256(readFileSync(join(gateFonts, file))), sha256(readFileSync(join(FONTS, file))), file);
+  const gate = readFileSync(join(APP, 'functions/_lib/gate.ts'), 'utf8');
+  assert.doesNotMatch(gate, /fonts\.googleapis\.com|fonts\.gstatic\.com/, 'the access page names no Google host');
+  assert.match(gate, /export const GATE_FONTS = Object\.freeze\(\['\/__beta\/fonts\/geist-latin\.woff2', '\/__beta\/fonts\/instrument-serif-latin\.woff2'\]\)/);
+});

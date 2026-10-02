@@ -237,7 +237,8 @@ test('the list is one POST of {} to read-v5 with its contract header, first in t
 });
 
 // Added 2026-09-28 (speed wave, item 10): the deployable page sends its first list read before the app starts
-// (public/early-list.js, loaded only by the deployable build, vite.config.ts earlyList); the app's first attempt takes
+// (public/early-list.js until 2026-10-01; since then the page's inline boot script, functions/_lib/boot.ts, in every
+// build but sending only where the build's table says `early`, vite.config.ts boot); the app's first attempt takes
 // that reply, through the same checks, instead of sending another. A reply that fails to arrive sends the attempt.
 test('the first reads take the replies the page sent before the app started, once each, through the same checks', async () => {
   const { takeEarly, EARLY_LIST_MS } = built('lib/read/earlyList');
@@ -278,25 +279,96 @@ test('the first reads take the replies the page sent before the app started, onc
   delete globalThis.__dominoEarly;
 
   // The page's script: the two same-origin requests the app itself sends first, on Home and Markets only, once.
-  const script = readFileSync(new URL('../public/early-list.js', import.meta.url), 'utf8');
+  // Changed on purpose 2026-10-01 (platform workstream, F1/F3): inline in the page (functions/_lib/boot.ts), reading
+  // the route table the build writes beside it; it also asks for the route's code (tests/platform.test.mjs).
+  const { BOOT_SCRIPT: script, MARKETS_COPY_KEY } = require('../.test-build/app/functions/_lib/boot.js');
+  const { ROUTES } = built('routeTable');
+  // 2026-10-01 (the chain2 workstream, part B, audit G10): the copy's key names its chain, and the script reads exactly
+  // the key the app keeps the copy under.
+  const { PAINT_KEY } = built('lib/read/marketsPaint');
+  assert.equal(PAINT_KEY, 'domino-markets-v2:4663');
+  assert.equal(MARKETS_COPY_KEY, PAINT_KEY);
+  assert.ok(script.includes(`localStorage.getItem('${PAINT_KEY}')`), 'the script reads that key');
   assert.equal([...script.matchAll(/\bfetch\s*\(/g)].length, 1, 'one call');
   assert.match(script, /var reply = fetch\(path, \{\n\s*method: method,\n\s*headers: body === undefined \? \{ Accept: 'application\/json' \} : \{ 'Content-Type': 'application\/json', Accept: 'application\/json' \},\n\s*body: body,\n\s*mode: 'same-origin',\n\s*credentials: 'same-origin',\n\s*redirect: 'manual',\n\s*cache: 'no-store',\n\s*referrerPolicy: 'same-origin',\n\s*\}\)/);
-  assert.deepEqual([...script.matchAll(/['"`](https?:\/\/[^'"`]*|\/[a-z][^'"`]*)['"`]/g)].map((match) => match[1]), ['/api/read/v5/featured-pools', '/api/read/v3/capabilities'], 'no other address');
-  assert.doesNotMatch(script, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|localStorage|sessionStorage|indexedDB|document\.cookie|eval)\b/);
-  assert.match(script, /if \(window\.__dominoEarly !== undefined\) return/, 'nothing once the app has read');
-  assert.match(script, /\['', 'markets', 'explore', 'pools'\]\.indexOf\(first\) === -1\) return/, 'Home and Markets only');
-  const run = (hash, slot) => {
+  // Changed on purpose 2026-10-01 (audit A7 b, the owner's OK): the stored overview of the list's pools too, the moment
+  // the list answers, on a first visit (no copy of the last overview kept in this browser, which it only reads). Inline
+  // in the boot script since the platform merge (functions/_lib/boot.ts), with the same steps public/early-list.js had.
+  assert.deepEqual([...script.matchAll(/['"`](https?:\/\/[^'"`]*|\/[a-z][^'"`]*)['"`]/g)].map((match) => match[1]), ['/api/read/v5/featured-pools', '/api/read/v3/capabilities', '/api/read/v3/overview'], 'no other address');
+  assert.doesNotMatch(script, /\b(?:XMLHttpRequest|WebSocket|EventSource|sendBeacon|sessionStorage|indexedDB|document\.cookie|eval)\b/);
+  assert.deepEqual([...script.matchAll(/localStorage\.(\w+)/g)].map((match) => match[1]), ['getItem'], 'the copy is only read');
+  assert.match(script, /if \(data\.early !== true \|\| window\.__dominoEarly !== undefined\) return/, 'nothing once the app has read, nor in a build that reads no live list');
+  assert.match(script, /if \(page !== 'overview' && \(page !== 'markets' \|\| second\)\) return/, 'Home and Markets only');
+  const run = (hash, slot, early = true) => {
     const sent = [];
+    const data = { early, pages: ROUTES, chunks: {} };
+    const document = { getElementById: (id) => (id === 'dm-boot' ? { textContent: JSON.stringify(data) } : null), createElement: () => ({ setAttribute() {} }), head: { appendChild() {} } };
     const context = { location: { hash }, performance, window: slot === undefined ? {} : { __dominoEarly: slot }, fetch: (path, init) => (sent.push([init.method, path, init.body ?? null]), new Promise(() => {})) };
-    new Function('window', 'location', 'performance', 'fetch', script)(context.window, context.location, context.performance, context.fetch);
+    new Function('window', 'document', 'location', 'performance', 'fetch', script)(context.window, document, context.location, context.performance, context.fetch);
     return [sent, Object.keys(context.window.__dominoEarly?.replies ?? {})];
   };
   const both = [[['POST', '/api/read/v5/featured-pools', '{}'], ['GET', '/api/read/v3/capabilities', null]], ['POST /api/read/v5/featured-pools', 'GET /api/read/v3/capabilities']];
-  assert.deepEqual(['', '#/', '#/#pools', '#/markets', '#/explore/0xab', '#/pools'].map((hash) => run(hash)), Array(6).fill(both));
+  assert.deepEqual(['', '#/', '#/#pools', '#/markets', '#/pools'].map((hash) => run(hash)), Array(5).fill(both));
   assert.deepEqual(['#/pool/0xab', '#/positions', '#/new', '#/docs'].map((hash) => run(hash)), Array(4).fill([[], []]));
-  // A token's own view shows no list (src/components/explore/routes.ts): nothing is sent there.
-  assert.deepEqual([`#/markets/0x${'1'.repeat(40)}`, `#/pools/0x${'aB'.repeat(20)}#x`].map((hash) => run(hash)), Array(2).fill([[], []]));
+  // A token's own view shows no list (src/components/explore/routes.ts), and since 2026-10-01 Markets with anything else
+  // after it is not found (src/App.tsx parseHash): nothing is sent there.
+  assert.deepEqual([`#/markets/0x${'1'.repeat(40)}`, `#/pools/0x${'aB'.repeat(20)}#x`, '#/explore/0xab', '#/nope'].map((hash) => run(hash)), Array(4).fill([[], []]));
   assert.deepEqual(run('#/', { at: -Infinity, replies: {} }), [[], []], 'the app read first');
+  assert.deepEqual(run('#/', undefined, false), [[], []], 'a build that reads no live list sends nothing');
+
+  // The overview after the list (A7 b): the list's pools in its order, lowercase, under the very question; none for an
+  // answer with no pools, a refusal, or a visitor with a copy of the last overview. Changed 2026-10-01 (release.browser
+  // (r) to (t)): only where the read-v3 capabilities list the overview, as the app asks it, and read through a copy at
+  // once, so an answer the app never takes does not stay open in the browser.
+  const CAPABILITIES_V3 = readFileSync(new URL('../../api-contracts/read-v3/fixtures/capabilities.json', import.meta.url), 'utf8');
+  const listed = async (status, body, kept = null, capabilities = { status: 200, body: CAPABILITIES_V3 }, overview = () => new Promise(() => {})) => {
+    const sent = [];
+    const window = {};
+    // Changed on purpose 2026-10-01 (the chain2 workstream, part B, G10): the copy's key names its chain, and the script
+    // reads the very key the app keeps it under.
+    const storage = { getItem: (key) => (key === PAINT_KEY ? kept : null) };
+    const fetch = (path, init) => {
+      sent.push([init.method, path, init.body ?? null]);
+      if (path === '/api/read/v5/featured-pools') return Promise.resolve(new Response(JSON.stringify(body), { status }));
+      if (path === '/api/read/v3/capabilities' && capabilities !== null) return Promise.resolve(new Response(capabilities.body, { status: capabilities.status }));
+      return path === '/api/read/v3/overview' ? overview() : new Promise(() => {});
+    };
+    const document = { getElementById: (id) => (id === 'dm-boot' ? { textContent: JSON.stringify({ early: true, pages: ROUTES, chunks: {} }) } : null), createElement: () => ({ setAttribute() {} }), head: { appendChild() {} } };
+    new Function('window', 'document', 'location', 'performance', 'fetch', 'localStorage', script)(window, document, { hash: '#/' }, performance, fetch, storage);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return [sent.slice(2), Object.keys(window.__dominoEarly.replies).slice(2), window.__dominoEarly.replies];
+  };
+  const question = JSON.stringify({ poolIds: [A.poolId.toLowerCase(), B.poolId.toLowerCase()] });
+  const two = { pools: [{ poolId: A.poolId.toUpperCase().replace('0X', '0x') }, { poolId: B.poolId }] };
+  assert.deepEqual((await listed(200, two)).slice(0, 2), [[['POST', '/api/read/v3/overview', question]], [`POST /api/read/v3/overview ${question}`]]);
+  assert.deepEqual((await listed(200, { pools: [] })).slice(0, 2), [[], []], 'none for a list with no pools');
+  assert.deepEqual((await listed(503, { error: 'upstream_unavailable' })).slice(0, 2), [[], []], 'none for a refusal');
+  assert.deepEqual((await listed(200, { pools: [{ poolId: A.poolId }] }, JSON.stringify({ receivedAt: Date.now() - 60_000 }))).slice(0, 2), [[], []], 'none with a copy: the app reads beside the list');
+  assert.deepEqual((await listed(200, { pools: [{ poolId: 'javascript:' }] })).slice(0, 2), [[], []], 'never a pool id that is not one');
+  const caps = (patch) => ({ status: 200, body: JSON.stringify({ ...JSON.parse(CAPABILITIES_V3), ...patch }) });
+  assert.deepEqual((await listed(200, two, null, caps({ enabledReads: ['history', 'search'] }))).slice(0, 2), [[], []], 'none where the capabilities do not list the overview');
+  assert.deepEqual((await listed(200, two, null, caps({ dataMode: 'disabled' }))).slice(0, 2), [[], []], 'none where the read-v3 data is switched off');
+  assert.deepEqual((await listed(200, two, null, { status: 503, body: '{"error":"upstream_unavailable"}' })).slice(0, 2), [[], []], 'none for a capabilities refusal');
+  assert.deepEqual((await listed(200, two, null, null)).slice(0, 2), [[], []], 'none while the capabilities have not answered');
+  // The overview's answer is read through to its end at once (a body in three parts, pulled only when read), and stays
+  // whole for the app.
+  let ended = false;
+  const parts = ['{"pools":', '[],', '"tokens":[]}'];
+  const streamed = () => {
+    let at = 0;
+    const body = new ReadableStream({ pull(controller) { if (at < parts.length) controller.enqueue(new TextEncoder().encode(parts[at++])); else { ended = true; controller.close(); } } }, { highWaterMark: 0 });
+    return Promise.resolve(new Response(body, { status: 200 }));
+  };
+  const drained = await listed(200, two, null, undefined, streamed);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(ended, true, 'read to its end through a copy, whether or not the app takes it');
+  assert.equal(await (await drained[2][`POST /api/read/v3/overview ${question}`]).text(), parts.join(''), 'the answer the app takes is whole');
+  // The app takes it only for that very question.
+  const earlyOverview = Promise.resolve(new Response("{}"));
+  globalThis.__dominoEarly = { at: performance.now(), replies: { [`POST /api/read/v3/overview ${question}`]: earlyOverview } };
+  assert.equal(takeEarly('/api/read/v3/overview', 'POST', JSON.stringify({ poolIds: [A.poolId.toLowerCase()] })), null, 'another question');
+  assert.equal(takeEarly('/api/read/v3/overview', 'POST', question), earlyOverview);
+  delete globalThis.__dominoEarly;
 });
 
 test('fallback on the wire: route_not_available, no forwarder, a 5xx, invalid JSON, another contract and a timeout all give the embedded list', async () => {
@@ -516,8 +588,11 @@ test('a first read that found no answer puts up the embedded list only until an 
   assert.deepEqual(timers.map((timer) => timer.ms), [3_000, 6_000], 'then 6 s on');
   timers[1].fire(); await settle();
   assert.deepEqual([store.getSnapshot().source, idsOf(store.getSnapshot())], ['server', [A.poolId, B.poolId]], 'the first answer takes the screen at once');
-  assert.deepEqual(firsts, [true, false, false], 'only the page’s first read is its first');
+  // Changed on purpose 2026-10-01 (audit B3): every read made while the embedded list only holds the place has the first
+  // read's longer deadline, the reads asked again included; a refresh of a served list keeps 1.5 s.
+  assert.deepEqual(firsts, [true, true, true], 'each read made while the embedded list holds the place');
   await store.refresh();
+  assert.equal(firsts.at(-1), false, 'a refresh of a served list keeps the short deadline');
   assert.deepEqual([store.getSnapshot().source, timers.length], ['server', 2], 'a later failure keeps the list, and nothing more is asked on the store’s own');
   // The markets' own refresh takes the first answer at once too.
   const refreshed = scripted({ kind: 'failed', passing: true }, first);

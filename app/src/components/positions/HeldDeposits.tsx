@@ -10,7 +10,9 @@ import { useWalletIdentity, walletKey } from '../../lib/walletIdentity'
 import { Button } from '../ui'
 import type { PositionCurrency } from './PositionActions'
 import { QuietMarkPair } from './visual/QuietMarks'
-import { amountText, currencyName, isRejection, outcomeUnknown, watchReceipt } from './walletSteps'
+import { amountText, currencyName, outcomeUnknown, readAfterReplaced, watchReceipt } from './walletSteps'
+// The person's own refusal, by the nonce latch's rule: 4001, WalletConnect's 5000, a hardware wallet's words (fix round 1).
+import { personRefused as isRejection } from '../../finance/nonce'
 
 /**
  * Deposits this wallet made into Domino's setup contract (DominoSetupV1) that
@@ -38,8 +40,11 @@ export interface HeldDeposit {
   balance1: string
   currencies: readonly [PositionCurrency, PositionCurrency]
 }
-/** `onBusy`: told true when a refund starts and false once it is over, whatever became of it (the list's refresh waits meanwhile). */
-export interface HeldDepositsProps { owner: string; deposits: readonly HeldDeposit[]; onChanged: () => void; onBusy?: (busy: boolean) => void }
+/**
+ * `onBusy`: told true when a refund starts and false once it is over, whatever became of it (the list's refresh waits
+ * meanwhile). `onChanged`: a refund was included on chain, with its block when the receipt named it (RPC fix round 2).
+ */
+export interface HeldDepositsProps { owner: string; deposits: readonly HeldDeposit[]; onChanged: (block?: bigint) => void; onBusy?: (busy: boolean) => void }
 
 type Stage = 'wallet' | 'chain' | 'done' | 'failed'
 /**
@@ -66,6 +71,8 @@ const WATCHED_TEXT = {
   reorged: 'The block that held the refund left the chain. Check your wallet activity before trying again.',
   waiting: 'The refund is still waiting to be included. Check your wallet activity: nothing is sent twice.',
   unknown: outcomeUnknown('refund'),
+  // 2026-10-01 (audit C14): "Cancel" in the wallet, read back from the chain: the deposit's operation is still open.
+  replaced: 'Your wallet replaced the refund with another transaction, and your deposit is still held. Try the refund again.',
 } as const
 const OWN_TEXT: Readonly<Record<string, string>> = {
   operation_already_closed: 'This deposit was already refunded or used.',
@@ -147,11 +154,24 @@ export default function HeldDeposits({ owner, deposits, onChanged, onBusy }: Hel
       sent = true
       if (!alive()) return
       mark(id, { stage: 'chain', notice: null })
-      const outcome = await watchReceipt(() => setup.receipt(hash, id as Hex), alive)
+      // RPC fix round 2: the block it was included in, so the wallet's list waits for a read at or past it (walletChanged).
+      let included: bigint | undefined
+      let outcome = await watchReceipt(async () => {
+        const receipt = await setup.receipt(hash, id as Hex)
+        if ('blockNumber' in receipt) included = receipt.blockNumber
+        return receipt
+      }, alive)
       if (outcome === 'stopped' || !alive()) return
+      if (outcome === 'replaced') {
+        // 2026-10-01 (audit C14): replaced in the wallet ("Speed up" or "Cancel"). Refunded only if the deposit's operation
+        // reads closed now: a sped-up refund closed it, a cancelled one did not. Nothing is sent again.
+        const refunded = await readAfterReplaced(() => setup.inspect(id as Hex), (operation) => operation.closed, alive)
+        if (refunded === null || !alive()) return
+        if (refunded) outcome = 'included'
+      }
       if (outcome === 'included') {
         mark(id, { stage: 'done', notice: null })
-        changed.current()
+        changed.current(included)
       } else mark(id, { stage: 'failed', notice: { text: WATCHED_TEXT[outcome], code: outcome } })
     } catch (error) {
       // Once sent, a failure is a watch that could not conclude, never a refund known to have failed.

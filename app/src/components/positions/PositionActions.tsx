@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { suggestGasBudget } from '../../finance/gas'
-import { closeMinimums, createPositionClient, positionTokenId, type PositionClient, type PreparedPosition } from '../../finance/position'
+import { closeMinimums, createPositionClient, positionTokenId, type PositionClient, type PositionState, type PreparedPosition } from '../../finance/position'
 import type { GasBudget } from '../../finance/setup'
 import { setupWallet } from '../../finance/wallet'
 import { errorCode, financeErrorText } from '../../finance/words'
+import { CREATE } from '../../lib/create/copy'
 import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom } from '../../lib/create/slippage'
 import { formatUsd, usdgValue } from '../../lib/format/usd'
 import type { TokenDisplay } from '../../lib/read/types'
@@ -15,7 +16,9 @@ import { IconClose } from '../icons'
 import { TokenMark } from '../TokenIcon'
 import { Button, IconButton, KeyValue, KeyValueList, Skeleton } from '../ui'
 import { SequenceSwitch } from './SequenceSwitch'
-import { amountText, currencyName, isRejection, outcomeUnknown, watchReceipt } from './walletSteps'
+import { amountText, currencyName, outcomeUnknown, readAfterReplaced, watchReceipt } from './walletSteps'
+// The person's own refusal, by the nonce latch's rule: 4001, WalletConnect's 5000, a hardware wallet's words (fix round 1).
+import { personRefused as isRejection } from '../../finance/nonce'
 
 /**
  * The owner's own actions on a position NFT, from the connected wallet
@@ -47,8 +50,8 @@ export interface PositionActionsProps {
   currencies: readonly [PositionCurrency, PositionCurrency]
   /** Pool hooks address, lowercase. */
   hooks: string
-  /** Called after a collect or close is included on chain, so the page reads again. */
-  onChanged: () => void
+  /** Called after a collect or close is included on chain, so the page reads again: with its block when the receipt named it. */
+  onChanged: (block?: bigint) => void
   /** The fees relay's pool price, for a pair with USDG: the dialog adds what it receives in USD beside the pinned amounts. */
   usd?: { usdgIndex: 0 | 1; sqrtPriceX96: bigint; block: number } | null
   /** The page's own token marks (already resolved there), drawn beside the dialog's amounts. */
@@ -108,6 +111,21 @@ const WATCHED_TEXT = {
   waiting: 'The transaction is still waiting to be included. Check your wallet activity: nothing is sent twice.',
   unknown: outcomeUnknown('transaction'),
 } as const
+/**
+ * 2026-10-01 (audit C14): "Cancel" in the wallet, read back from the chain: the step did not happen. Changed on purpose
+ * 2026-10-01 (integration pass 3, the copy review): "this step" for "the collect"/"the close", what is still true in plain
+ * words, and "Press … again", as Create position says it (components/create/CreatePosition.tsx REPLACED).
+ */
+const REPLACED: Readonly<Record<Action, string>> = {
+  collect: 'Your wallet replaced this step with another transaction, and no fees were collected. Press Collect in wallet again.',
+  close: 'Your wallet replaced this step with another transaction, and the position is still open. Press Close in wallet again.',
+}
+/**
+ * Whether a step the wallet replaced happened after all (audit C14), from the position read again: a close leaves no
+ * liquidity, and a collect moves the position's last fee growth (only a settlement of the position does).
+ */
+const happened = (action: Action, before: PositionState, now: PositionState) =>
+  action === 'close' ? now.liquidity === 0n : now.lastFeeGrowth[0] !== before.lastFeeGrowth[0] || now.lastFeeGrowth[1] !== before.lastFeeGrowth[1]
 /** The press read the position again and it pays less than what the dialog showed: the new figures, for a second press. */
 const CHANGED = 'The amounts changed since you opened this. Check them, then press again.'
 
@@ -252,11 +270,28 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
       sent = true
       if (!alive()) return
       setRun({ action, stage: 'chain', prepared, notice: null })
-      const outcome = await watchReceipt(() => positions.receipt(hash), alive)
+      // RPC fix round 2: the block it was included in, so the wallet's list waits for a read at or past it (walletChanged).
+      let included: bigint | undefined
+      let outcome = await watchReceipt(async () => {
+        const receipt = await positions.receipt(hash)
+        if ('blockNumber' in receipt) included = receipt.blockNumber
+        return receipt
+      }, alive)
       if (outcome === 'stopped' || !alive()) return
+      if (outcome === 'replaced') {
+        // 2026-10-01 (audit C14): replaced in the wallet ("Speed up" or "Cancel"). The position read again says whether the
+        // step happened: a sped-up one did, under another hash; a cancelled one did not. Nothing is sent again.
+        const done = await readAfterReplaced(() => positions.inspect(step.tokenId), (now) => happened(action, step.state, now), alive)
+        if (done === null || !alive()) return
+        if (!done) {
+          setRun({ action, stage: 'failed', prepared, notice: { text: REPLACED[action], code: 'replaced' } })
+          return
+        }
+        outcome = 'included'
+      }
       if (outcome === 'included') {
         setRun({ action, stage: 'done', prepared, notice: null })
-        changed.current()
+        changed.current(included)
       } else setRun({ action, stage: 'failed', prepared, notice: { text: WATCHED_TEXT[outcome], code: outcome } })
     } catch (error) {
       if (!alive()) return
@@ -337,9 +372,10 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
             }
           >
             <p className="dm-receipt-lede">
+              {/* Changed on purpose 2026-10-01 (audit E5): plain words, no "liquidity" and no "NFT" on the dialog. */}
               {open === 'collect'
                 ? 'The fees this position has earned go to your wallet. The position stays open.'
-                : 'All of the liquidity and its fees go to your wallet. The empty position NFT stays in your wallet.'}
+                : 'Your tokens and fees return to your wallet. The position, now empty, stays in your wallet.'}
             </p>
             <KeyValueList className="dm-receipt" data-position-receive={open}>
               <KeyValue label="You receive">
@@ -359,8 +395,15 @@ export default function PositionActions({ tokenId, owner, liquidityRaw, unsettle
                 {fee ? <span className="tnum" title={`${fee.exact} ETH at most`}>Up to {fee.text} ETH</span> : unread ? <Dash reason={unread} /> : <Skeleton className="ml-auto h-4 w-20" />}
               </KeyValue>
             </KeyValueList>
+            {/* The slippage tolerance under a closed Advanced, as New position has it (audit E5, 2026-10-01): At least, above,
+                already says what it allows. Its choices are New position's, under the same name. */}
             {open === 'close' && (
-              <SlippageChoice id="close-slippage" label="Slippage limit" bps={slippage} onChange={setSlippage} disabled={busy || shown?.stage === 'done'} />
+              <details className="dm-details dm-flow-advanced" data-close-advanced="">
+                <summary>
+                  <span>{CREATE.amount.advanced}</span>
+                </summary>
+                <SlippageChoice id="close-slippage" label={CREATE.amount.slippageLabel} bps={slippage} onChange={setSlippage} disabled={busy || shown?.stage === 'done'} />
+              </details>
             )}
             {prepared?.state.hasSubscriber && (
               <p className="text-body text-fg-muted" data-position-warning="automation">

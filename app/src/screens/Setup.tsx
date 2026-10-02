@@ -1,6 +1,9 @@
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../styles/screens.css'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { PoolExplorer } from '../components/read/screens/PoolExplorer'
 import { CREATE } from '../lib/create/copy'
+import { useRouteTitle } from '../lib/routeTitle'
 import type { SetupDraft } from '../lib/create/journey'
 import { carriedFor, clearSetupDraft, setupDraftFor } from '../lib/create/setupDraft'
 import { SLIPPAGE_DEFAULT_BPS, slippageBpsFrom } from '../lib/create/slippage'
@@ -116,6 +119,8 @@ function useTokenBook(addresses: readonly string[], known: ReadonlyMap<string, T
 const formFromDraft = (draft: SetupDraft | null): typeof initial => draft ? { ...initial, amountRaw: draft.amountRaw, tickLower: String(draft.tickLower), tickUpper: String(draft.tickUpper), slippageBps: String(draft.slippageBps) } : initial
 
 export default function Setup() {
+  // The tab's name (lib/routeTitle.ts, audit E11).
+  useRouteTitle('Setup')
   const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
   const scope = sessionKey(session)
   // New position's choices, when the owner continued here with a wallet connected: read once, for that wallet only, and sent nowhere.

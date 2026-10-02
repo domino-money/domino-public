@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
 import type { PositionState } from '../../lib/fees/types'
-import { formatUsd } from '../../lib/format/usd'
+import { formatUsdFloor } from '../../lib/format/usd'
 import type { LiveCard } from '../../lib/walletCards'
 import { positionHref } from '../explore/routes'
 import { TokenMarkPair } from '../TokenIcon'
 import { IconChevronRight } from '../icons'
 import { Skeleton, cx } from '../ui'
+import { shortDate, shortTime } from '../../lib/format/time'
 import type { RowApr } from './listApr'
 import { useLoadMilestone } from '../../lib/useLoadMilestone'
 import type { LoadQuality } from '../../lib/loadTiming'
@@ -54,7 +55,7 @@ function Money({ card, state, which, label }: { card: LiveCard; state: PositionS
       {usd ? (
         <>
           <span className={cx('dm-own-fig dm-arrive', which === 'unsettledFees' && positive(usd.units) && 'dm-fees-in')}>
-            {formatUsd(unitsText(usd.units))}
+            {formatUsdFloor(unitsText(usd.units))}
           </span>
           <span className="dm-own-split">{amounts}</span>
         </>
@@ -65,22 +66,39 @@ function Money({ card, state, which, label }: { card: LiveCard; state: PositionS
   )
 }
 
-/** Your APR (listApr.ts): the page's own figure once its page drew it this visit, a calm dash otherwise. */
+/**
+ * Your APR (listApr.ts): the page's own figure (2026-10-02, RPC-SPEC §11.4: each row's ledger is read with the list, eight
+ * a request), a skeleton while one is read, and a dash with a short visible word otherwise (a title alone is not read on
+ * a phone).
+ */
 function Apr({ apr, quality }: { apr: RowApr | null; quality: LoadQuality | null }) {
   useLoadMilestone('positions', 'apr', apr?.kind === 'rate' ? quality : null)
-  let figure: ReactNode = <span className="dm-own-dash">—</span>
+  let figure: ReactNode = (
+    <>
+      <span className="dm-own-dash">—</span>
+      <span className="dm-own-est">on its page</span>
+    </>
+  )
   let title: string | undefined = 'Shown on the position’s page'
-  if (apr?.kind === 'rate') {
-    title = apr.estimated ? 'An estimate for now: the position’s page reads it in full' : 'Since the position opened'
-    if (apr.saved) title = `Saved public-chain history through ${new Date(apr.saved.timestamp * 1000).toLocaleString('en-US')}, block ${apr.saved.block}; saved ${new Date(apr.saved.at).toISOString()}. Not current.`
+  if (apr?.kind === 'loading') {
+    figure = <Skeleton className="dm-own-skel-apr" />
+    title = undefined
+  } else if (apr?.kind === 'rate') {
+    title = 'Since the position opened'
+    // Changed on purpose 2026-10-01 (item D4): the page's UTC time, no block number.
+    if (apr.saved) title = `A copy this browser saved, through ${shortDate(apr.saved.timestamp)} ${shortTime(apr.saved.timestamp)}. Not current.`
     figure = (
       <>
         <span className="dm-own-fig">{apr.text}</span>
-        {apr.estimated && <span className="dm-own-est">est.</span>}
         {apr.saved && <span className="dm-own-est">saved</span>}
       </>
     )
-  } else if (apr?.kind === 'missing') title = apr.words
+  } else if (apr?.kind === 'missing') {
+    title = apr.words
+    // 2026-10-02 (review of the rules, finding 11): its page has no figure either, so the row does not point to it. No dash:
+    // the column keeps the width its band gives it from the first paint, so nothing beside it moves.
+    if (apr.short) figure = <span className="dm-own-est">{apr.short}</span>
+  }
   return (
     <span className="dm-own-cell" data-cell="apr" data-apr={apr?.kind === 'rate' ? 'ready' : (apr?.kind ?? 'none')} data-apr-source={apr?.kind === 'rate' && apr.saved ? 'saved-public-history' : undefined} title={title}>
       <span className="dm-own-label">Your APR</span>

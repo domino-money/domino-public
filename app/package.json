@@ -33,12 +33,17 @@
     "build:consumer-test": "vite build --mode consumer-test",
     "test:consumer": "npm run build:consumer-test && node --test --test-force-exit tests/consumer.bundle.test.mjs tests/consumer.browser.test.mjs",
     "check:producer-fixtures": "node scripts/check-producer-fixtures.mjs",
-    "test:finance": "npm run build:wallet-test && node --test --test-force-exit tests/finance.browser.test.mjs tests/position-actions.browser.test.mjs tests/charts.browser.test.mjs tests/fluidity.browser.test.mjs"
+    "test:finance": "npm run build:wallet-test && node --test --test-force-exit tests/finance-create.browser.test.mjs tests/finance-automation.browser.test.mjs tests/charts.browser.test.mjs tests/finance-positions.browser.test.mjs tests/position-actions.browser.test.mjs tests/fluidity.browser.test.mjs",
+    "test:finance-create": "npm run build:wallet-test && node --test --test-force-exit tests/finance-create.browser.test.mjs",
+    "test:finance-automation": "npm run build:wallet-test && node --test --test-force-exit tests/finance-automation.browser.test.mjs tests/charts.browser.test.mjs",
+    "test:finance-positions": "npm run build:wallet-test && node --test --test-force-exit tests/finance-positions.browser.test.mjs tests/position-actions.browser.test.mjs tests/fluidity.browser.test.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",
+    "@walletconnect/sign-client": "2.25.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "uqr": "0.1.3",
     "viem": "^2.56.3",
     "wagmi": "^3.7.7"
   },

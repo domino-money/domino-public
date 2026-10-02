@@ -1,6 +1,8 @@
 import { USDG } from '../../config/mainTokens'
 import { quoteIndex } from '../../lib/read/orientation'
 import { tickPriceText } from '../../lib/read/screens/positions'
+import { numberFormat } from '../../lib/format/numberFormat'
+import { APR_SLIVER, aprDigitsOf } from '../../lib/format/apr'
 
 /*
  * The pool page in plain words (round 6, the owner: "Domino is for people who know nothing about liquidity pools"):
@@ -38,12 +40,14 @@ export function numberOf(text: string | null | undefined): number | null {
   return Number.isFinite(value) ? value : null
 }
 
-/** A yearly rate as a person says it: "100%", "2.2%", "less than 0.1%". */
+/**
+ * A yearly rate as a person says it: "27.2%", "1,428%", "less than 0.1%". The one APR rule of every screen
+ * (lib/format/apr.ts, audit E21, 2026-10-01), so the sentence says the figure the APR tile beside it shows.
+ */
 export function aboutPercent(value: number): string {
   if (!(value > 0)) return '0%'
-  if (value < 0.1) return 'less than 0.1%'
-  const digits = value < 10 ? 1 : 0
-  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: digits }).format(value)}%`
+  const digits = aprDigitsOf(value)
+  return digits === APR_SLIVER ? 'less than 0.1%' : `${digits}%`
 }
 
 /** An amount typed in dollars ("1,000", "$250.5"), or null when it is not one. At most a billion. */
@@ -67,7 +71,7 @@ export function earnings(amount: number, aprPercent: number, tvl: number | null 
 /** Dollars as the estimate writes them: cents below $1,000, whole dollars above, "less than $0.01" for a crumb. */
 export function usdText(value: number): string {
   if (value > 0 && value < 0.01) return 'less than $0.01'
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: value >= 1000 ? 0 : 2, minimumFractionDigits: value >= 1000 ? 0 : 2 }).format(value)
+  return numberFormat({ style: 'currency', currency: 'USD', maximumFractionDigits: value >= 1000 ? 0 : 2, minimumFractionDigits: value >= 1000 ? 0 : 2 }).format(value)
 }
 
 /** A signed distance from the price now, "−30%" or "+50%", as the range guide says it. */
@@ -153,16 +157,16 @@ export function moveWords(from: number, to: number): string {
   if (!(from > 0 && to > 0)) return 'barely moved'
   const percent = ((to - from) / from) * 100
   if (Math.abs(percent) < 0.1) return 'barely moved'
-  const text = new Intl.NumberFormat('en-US', { maximumFractionDigits: Math.abs(percent) < 10 ? 1 : 0 }).format(Math.abs(percent))
+  const text = numberFormat({ maximumFractionDigits: Math.abs(percent) < 10 ? 1 : 0 }).format(Math.abs(percent))
   return `${percent > 0 ? 'rose' : 'fell'} ${text}%`
 }
 
 /** A count as words read it: "5,799". */
-export const countText = (value: number) => new Intl.NumberFormat('en-US').format(value)
+export const countText = (value: number) => numberFormat().format(value)
 
 /** A USD figure written short, "$18.8K", "$6.2M", for a sentence. */
 export function usdShort(value: number): string {
   if (!(value >= 0)) return '$0'
   if (value < 1000) return usdText(value)
-  return `$${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value)}`
+  return `$${numberFormat({ notation: 'compact', maximumFractionDigits: 1 }).format(value)}`
 }

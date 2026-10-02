@@ -9,7 +9,8 @@ export function setupRelease(request, env) {
   const reply = (value,status=200) => new Response(JSON.stringify(value),{status,headers});
   const url = new URL(request.url);
   const origin = request.headers.get('Origin');
-  if ((origin !== null && origin !== 'https://domino.money') || request.headers.get('Sec-Fetch-Site') !== 'same-origin' || !['cors','same-origin'].includes(request.headers.get('Sec-Fetch-Mode')) || request.headers.get('Sec-Fetch-Dest') !== 'empty' || request.headers.has('Sec-Fetch-User')) return reply({error:'origin_not_allowed'},403);
+  // Fetch Metadata only where the browser sends it (sequence-release.mjs fetchedByPage, 2026-10-01).
+  if ((origin !== null && origin !== 'https://domino.money') || !fetchedByPage(request)) return reply({error:'origin_not_allowed'},403);
   if (url.origin !== 'https://domino.money' || url.pathname !== '/api/setup/v1/release' || url.search || request.method !== 'GET') return reply({error:'route_not_available'},404);
   if (env.SETUP_WALLET_ENABLED !== 'true') return reply({contractVersion:'1.0.0-rc.1',chainId:4663,available:false,deployment:null});
   try {
@@ -25,4 +26,4 @@ export function setupRelease(request, env) {
 }
 
 export default { fetch: setupRelease };
-import { sequenceRelease } from './sequence-release.mjs';
+import { fetchedByPage, sequenceRelease } from './sequence-release.mjs';

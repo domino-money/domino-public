@@ -14,6 +14,7 @@ import {
   USDG,
   priceOf,
   stageIndex,
+  takesOnly,
   validateRange,
   verificationToken,
   withBudget,
@@ -33,6 +34,7 @@ import { verifyCandidate } from '../../lib/read/screens/catalogueSession'
 import { failureText } from '../../lib/read/screens/copy'
 import { DYNAMIC_FEE_PIPS } from '../../lib/read/screens/fee'
 import { NATIVE_CURRENCY, addressKey, type AddressKey } from '../../lib/read/screens/identity'
+import { poolWarning } from '../../lib/read/screens/lookalike'
 import { optionUsableForDomino, type PoolOption } from '../../lib/read/screens/poolsList'
 import { useReadSource } from '../../lib/read/screens/readContext'
 import { usePairBalances } from './usePairBalances'
@@ -186,6 +188,12 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
       // another: a link to one preselects nothing, and says why only in the step's live region and data.
       if (!optionUsableForDomino(option)) {
         setVerified({ poolId, attempt, outcome: { kind: 'unsupported', reason: option.hooks === NATIVE_CURRENCY && option.feePips === DYNAMIC_FEE_PIPS ? 'dynamic' : 'hooks' } })
+        return
+      }
+      // A pool with a token that passes for one of the site's main tokens, or a misleading name, is refused from a link
+      // as a withdrawn one is (audit I1, 2026-10-01): never preselected. Display only: nothing of the money path changes.
+      if (poolWarning(option.currencies)) {
+        setVerified({ poolId, attempt, outcome: { kind: 'withdrawn' } })
         return
       }
       const at = Date.now()
@@ -423,6 +431,12 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
     }
   }
 
+  // A range that takes one token alone asks for that token's amount only (2026-10-01, live note L11): the amount step
+  // says so, instead of "either token". Words only: the journey already moved the amount to that token (withRange).
+  const one = takesOnly(state)
+  const oneSymbol = one !== null && state.pool ? (state.pool.currencies[one].symbol ?? null) : null
+  const amountLead = oneSymbol ? CREATE.step.amount.leadOne(oneSymbol) : undefined
+
   // A step is done when it was reached, its inputs are complete, every step
   // before it is complete, and the machine would open it again.
   const steps: StepView[] = VISUAL_STEPS.map((step, index) => {
@@ -437,6 +451,7 @@ export function Journey({ poolId, linkToken = null }: { poolId: string; linkToke
       summary: done ? summaryOf(step) : null,
       body: mounted ? bodyOf(step) : null,
       footer: isCurrent ? footer : null,
+      lead: step === 'amount' ? amountLead : undefined,
     }
   })
 

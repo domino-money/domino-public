@@ -4,13 +4,16 @@ import { followCardMode, watchCard, type CardMode } from '../../lib/read/cardRea
 import { cardAsk, inAskOrder, mergeAnswer, pickSeries, type CardAnswer, type CardAsk } from '../../lib/read/cardSeries'
 import { useFeatured } from '../../lib/read/featuredSource'
 import { useReadSource } from '../../lib/read/screens/readContext'
+import { useFallbackRows } from '../../lib/read/useFallback'
 import { shownResult, useMarkets } from '../../lib/read/useMarkets'
 import { useNow } from '../../lib/read/useNow'
+import type { Market } from '../../lib/markets'
 import { IconChevronLeft, IconChevronRight } from '../icons'
 import { IconButton } from '../ui'
 import { MarketCard } from './MarketCard'
 
 const NO_ASKS: readonly CardAsk[] = []
+const NO_MARKETS: readonly Market[] = []
 
 type Rail = { start: boolean; end: boolean; perView: number; page: number }
 
@@ -59,10 +62,15 @@ function railEdges(node: HTMLElement, prev: Rail): Rail {
 export function MarketCarousel({ heading }: { heading: ReactNode }) {
   const source = useReadSource()
   const { state, provider } = useMarkets()
-  const markets = shownResult(state)?.markets ?? []
+  const read = shownResult(state)?.markets ?? NO_MARKETS
   // The list on screen (lib/read/featuredSource.ts): the featured list, or the embedded one.
   const featured = useFeatured()
-  const listings = poolListings(markets, __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge' ? featured.entries : null)
+  const listed = __DOMINO_POOL_SET__ === 'selected' && provider.kind === 'bridge'
+  // Refused figures stood in for, as the table does (audit V1); the clock only for choosing among stand-ins.
+  const markets = useFallbackRows(read, listed ? featured.entries : null, useNow(false))
+  // Until the list's first answer is in, resting cards with no names (audit B4, 2026-10-01).
+  const unsettled = listed && !featured.settled
+  const listings = unsettled ? [] : poolListings(markets, listed ? featured.entries : null)
   const settled = state.phase !== 'loading'
 
   const rail = useRef<HTMLDivElement>(null)
@@ -201,6 +209,23 @@ export function MarketCarousel({ heading }: { heading: ReactNode }) {
           </div>
         )}
       </div>
+      {unsettled && (
+        <div className="dm-mkt-rail" aria-hidden="true" data-featured-pending="">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="dm-plate dm-dots-chart dm-mkt-card">
+              <div className="dm-mkt-card-head">
+                <span className="dm-skel dm-mkt-skel-unit" />
+                <span className="dm-skel dm-mkt-skel-tvl" />
+              </div>
+              <div className="dm-mkt-card-price">
+                <span className="dm-skel dm-mkt-skel-close" />
+                <span className="dm-skel dm-mkt-skel-delta" />
+                <span className="dm-skel dm-mkt-skel-unit" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {railed && (
         <div id="market-rail" ref={rail} role="region" aria-label={featured.source === 'server' ? 'Top pools, last 24 hours' : 'Selected pools, last 24 hours'} className="dm-mkt-rail" onScroll={onScroll}>
           {listings.map((listing, index) => {

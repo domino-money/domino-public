@@ -20,6 +20,7 @@
  */
 import type { Candle } from 'api-contracts/read-v1/types'
 import { compare, formatUsdCompact, ratio, toFixed } from './read/decimal'
+import { aprDigits } from './format/apr'
 import type { TokenDisplay } from './read/types'
 import type { AprEstimateObservation } from './read/aprEstimate'
 
@@ -36,6 +37,15 @@ export type MetricState =
 /** Which provider reported a figure. Data only, like `data-provider`: the name never reaches a screen. Absent for Domino's own history. */
 export type MetricSource = 'GeckoTerminal' | 'DexScreener'
 
+/**
+ * Where a figure stands in from when the read service's own provider refused for the moment (audit V1, 2026-10-01;
+ * lib/read/figureFallback.ts): the last figure this browser saw (`kept`), DEX Screener's (`dexscreener`), or today's
+ * selection of Top pools (`selection`). `discovered`: DEX Screener's figure for a pool the read service does not
+ * collect yet, as its pools route carried it (lib/read/tokenPools.ts, audit V2). Always dated (`asOf`), and said in the
+ * figure's title.
+ */
+export type FigureFallback = 'kept' | 'dexscreener' | 'selection' | 'discovered'
+
 export interface Metric {
   /**
    * Decimal string, or null when the value is not established. A non-null
@@ -49,6 +59,8 @@ export interface Metric {
   /** Original observation time of a retained value, as a unix timestamp. */
   asOf?: number
   source?: MetricSource
+  /** Set when the figure stands in for one the provider refused (FigureFallback). */
+  fallback?: FigureFallback
 }
 
 export type Presented =
@@ -69,6 +81,8 @@ export type Presented =
        * provider never reported it, so it is never attributed to it as `source`.
        */
       calculatedFrom?: MetricSource
+      /** The figure stands in for one the provider refused (FigureFallback). */
+      fallback?: FigureFallback
     }
 
 /**
@@ -102,6 +116,7 @@ export function presentMetric(metric: Metric, format: (m: Metric) => string = co
     stale: metric.state === 'stale',
     asOf: metric.asOf,
     ...(metric.source ? { source: metric.source } : {}),
+    ...(metric.fallback ? { fallback: metric.fallback } : {}),
   }
 }
 
@@ -116,6 +131,20 @@ export interface Market {
   /** Fixed LP fee in pips, or null for a dynamic-fee pool. */
   feePips: number | null
   protocol: 'v4'
+  /**
+   * The verified pool's integration, hooks (lowercase) and packed protocol fee, as its read gave them: what decides
+   * whether Domino can open a position in it and whether an APR estimate describes it (2026-10-01). Absent on a row
+   * built without them.
+   */
+  integration?: 'hookless_fixed_fee' | 'requires_separate_adapter'
+  hooks?: string
+  protocolFeeRaw?: number
+  /**
+   * An APR estimate standing in for the read service's when its provider refused for the moment (audit V1,
+   * lib/read/figureFallback.ts): always labelled an estimate, dated, and said in its title. Never set beside a
+   * current read-service estimate.
+   */
+  aprFallback?: FallbackApr
   tvlUsd: Metric
   volume24hUsd: Metric
   feeAprPercent: Metric
@@ -155,6 +184,15 @@ export interface Market {
    * Never set on a row kept from an earlier read.
    */
   figuresPending?: true
+}
+
+/** An APR estimate standing in for the read service's (Market `aprFallback`). */
+export interface FallbackApr {
+  /** A decimal percent, as its source gave it or as the read service's own method works it out (figureFallback.ts). */
+  percent: string
+  /** Unix seconds: when its inputs were observed. */
+  asOf: number
+  basis: FigureFallback
 }
 
 /** A row's carried hourly candles, with the ages its answer reported and when that answer arrived on this page. */
@@ -242,8 +280,11 @@ export function compactUsd(metric: Metric): string {
   return formatUsdCompact(metric.value) ?? 'Unavailable'
 }
 
-/** A percentage to two places, from the decimal string. */
-export const percentText = (metric: Metric) => (metric.value === null ? null : toFixed(metric.value, 2))
+/**
+ * A pool's APR, from the decimal string, by the one APR rule of every screen (lib/format/apr.ts, audit E21,
+ * 2026-10-01): one decimal under 100%, whole from there. Only APR metrics are written with it.
+ */
+export const percentText = (metric: Metric) => (metric.value === null ? null : aprDigits(metric.value))
 
 const USABLE: ReadonlySet<MetricState> = new Set(['qualified', 'provider', 'stale'])
 
@@ -337,7 +378,9 @@ export function retrievedAgeSeconds(market: MarketProvenance['market'], now: num
  */
 export function retrievedText(ageSeconds: number | null): string {
   if (ageSeconds === null) return 'retrieval time unknown'
-  return ageSeconds < 120 ? `retrieved ${ageSeconds} s ago` : `retrieved ${Math.floor(ageSeconds / 60)} min ago`
+  if (ageSeconds < 120) return `retrieved ${ageSeconds} s ago`
+  // Hours from two hours (audit E8, 2026-10-01): "retrieved 1,380 min ago" read as a number to work out.
+  return ageSeconds < 7_200 ? `retrieved ${Math.floor(ageSeconds / 60)} min ago` : `retrieved ${Math.floor(ageSeconds / 3_600)} h ago`
 }
 
 /**

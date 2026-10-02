@@ -3,8 +3,10 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, type Plugin, type Rollup } from 'vite'
 import { TEXT_FILE, assertDeployable, findForbidden } from './scripts/deploy-markers.mjs'
+import { ROUTES } from './src/routeTable'
+import { bootTags, type BootData } from './functions/_lib/boot'
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
@@ -169,19 +171,98 @@ function deployableBundleCheck(mode: string, deployable: boolean): Plugin {
 }
 
 /**
- * The deployable build's page loads public/early-list.js before the app's own script (speed wave, item 10,
- * 2026-09-28): it sends Home's and Markets' first read, the featured pools list, while the app downloads, and the app
- * takes its answer (src/lib/read/earlyList.ts). No other build loads it: their pages read no list, or read it from a
- * test's own service, which counts every request.
+ * The modules each route's screen is drawn by, beyond the entry (2026-10-01, platform workstream, F1/F2): the screens
+ * are chunks of their own (src/App.tsx). `position` is a position's own page, #/positions/<id>. A module a build does not
+ * carry (the wallet's list and the money screens, in a build without the wallet) is passed over. Changed on purpose
+ * 2026-10-01 (RPC-SPEC): the wallet's list and a position's page no longer load the chain code (they ask the site's own
+ * chain routes, lib/edge/chainRoutes.ts), so its chunk is no longer preloaded for them.
  */
-export const EARLY_LIST_TAG = '<script async src="/early-list.js"></script>'
-function earlyList(enabled: boolean): Plugin {
+export const ROUTE_MODULES: Readonly<Record<string, readonly string[]>> = {
+  markets: ['src/screens/Explore.tsx'],
+  pool: ['src/screens/PoolDetail.tsx'],
+  positions: ['src/screens/Positions.tsx', 'src/components/positions/OwnedPositions.tsx'],
+  position: ['src/screens/Positions.tsx', 'src/screens/PositionDetail.tsx'],
+  new: ['src/screens/NewPosition.tsx'],
+  automate: ['src/screens/Automate.tsx'],
+  docs: ['src/screens/Docs.tsx'],
+  setup: ['src/screens/Setup.tsx'],
+  sequence: ['src/screens/Sequence.tsx'],
+  // The second chain's section, #/elysium…, has no row (2026-10-01, fix round 1): the same build is served on
+  // domino.money, where that route is not found (src/App.tsx ELYSIUM_OPEN), so the page never preloads its chunk there.
+  // On the preview alias the app's own loader asks for it when the route opens.
+}
+
+/** A module id as a path under app/, with forward slashes. */
+const appPath = (id: string | null | undefined) => (id ? relative(here('.'), id).split(sep).join('/') : '')
+
+/**
+ * Per route, the files its screen needs that the entry does not load (its chunk, the chunks those import, and the
+ * stylesheets of them all), as the page asks for them: `/assets/...`. Empty in the dev server, which has no bundle.
+ */
+export function routeChunks(bundle: Rollup.OutputBundle | undefined): Record<string, string[]> {
+  if (!bundle) return {}
+  const chunks = Object.values(bundle).filter((output): output is Rollup.OutputChunk => output.type === 'chunk')
+  const byName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]))
+  const closure = (roots: Rollup.OutputChunk[]) => {
+    const found: Rollup.OutputChunk[] = []
+    const seen = new Set<string>()
+    const visit = (chunk: Rollup.OutputChunk | undefined) => {
+      if (!chunk || seen.has(chunk.fileName)) return
+      seen.add(chunk.fileName)
+      found.push(chunk)
+      for (const name of chunk.imports) visit(byName.get(name))
+    }
+    roots.forEach(visit)
+    return found
+  }
+  const css = (list: Rollup.OutputChunk[]) => list.flatMap((chunk) => [...((chunk as Rollup.OutputChunk & { viteMetadata?: { importedCss: Set<string> } }).viteMetadata?.importedCss ?? [])])
+  const initial = closure(chunks.filter((chunk) => chunk.isEntry))
+  const loaded = new Set([...initial.map((chunk) => chunk.fileName), ...css(initial)])
+  const out: Record<string, string[]> = {}
+  for (const [route, modules] of Object.entries(ROUTE_MODULES)) {
+    // The chunk that holds the module: its facade, or, where Rollup merged it with modules it shares (no facade), the
+    // chunk among whose modules it is.
+    const roots = modules.flatMap((module) => chunks.filter((chunk) => chunk.moduleIds.some((id) => appPath(id) === module)))
+    const needed = closure(roots)
+    const files = [...new Set([...needed.map((chunk) => chunk.fileName), ...css(needed)])].filter((file) => !loaded.has(file))
+    if (files.length > 0) out[route] = files.map((file) => `/${file}`)
+  }
+  return out
+}
+
+/**
+ * The page's boot script and its table, before the app's own script (functions/_lib/boot.ts): the route's code asked
+ * for at once in every build, and, in the build that reads the live list only (`early`), Home's and Markets' first two
+ * reads (speed wave, item 10, 2026-09-28; until 2026-10-01 a file of its own, public/early-list.js), and on a first visit
+ * the overview of the list's pools once those two answer (audit A7 b, 2026-10-01). The other builds'
+ * pages read no list, or read it from a test's own service, which counts every request. The script is the same text in
+ * every build, so the page's CSP admits it by its hash; only the data block beside it differs.
+ */
+function boot(early: boolean): Plugin {
   return {
-    name: 'domino:early-list',
-    transformIndexHtml(html) {
-      return enabled ? html.replace('<script type="module"', `${EARLY_LIST_TAG}\n    <script type="module"`) : html
+    name: 'domino:boot',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, context) {
+        if (!/(^|[\\/])index\.html$/.test(context?.filename ?? 'index.html')) return html
+        const data: BootData = { early, pages: ROUTES, chunks: routeChunks(context?.bundle) }
+        return html.replace('<script type="module"', `${bootTags(data)}\n    <script type="module"`)
+      },
     },
   }
+}
+
+/**
+ * Two chunks that change far less often than the app (2026-10-01, platform workstream, F4), so a returning visitor keeps
+ * them across releases instead of downloading them again inside the entry, whose name changes with every app change:
+ * React, React DOM and their scheduler (they change only with the lockfile), and the read contracts' runtimes the entry
+ * validates every read with (read-v1, v2, v3 and v5; they change only with api-contracts/). Both were in the entry
+ * already, so a first visit downloads nothing more; read-v4's runtime, which only lazy screens use, stays out of them.
+ */
+export function vendorChunk(id: string): string | undefined {
+  if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'vendor-react'
+  if (/[\\/]api-contracts[\\/]read-v[1235][\\/]runtime\.mjs$/.test(id)) return 'read-contracts'
+  return undefined
 }
 
 export default defineConfig(({ mode, command }) => {
@@ -196,7 +277,7 @@ export default defineConfig(({ mode, command }) => {
     ? { ...MODES.development, deployable: false, wallet: false }
     : MODES[mode as keyof typeof MODES]
   return {
-    plugins: [react(), tailwindcss(), earlyList(!localLive && settings.deployable && settings.pools === 'selected'), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable)],
+    plugins: [react(), tailwindcss(), boot(!localLive && settings.deployable && settings.pools === 'selected'), ...(localLive ? [{ name: 'domino:local-live-launcher-only', configResolved(config: { server: { middlewareMode: unknown } }) { if (!config.server.middlewareMode) throw new Error('Use npm run dev:live; local-live requires the guarded launcher.') } }] : [deployableOnlyInDist(mode, settings.deployable)]), deployableBundleCheck(mode, settings.deployable)],
     define: {
       __DOMINO_READ_MODE__: JSON.stringify(settings.read),
       __DOMINO_POOL_SET__: JSON.stringify(settings.pools),
@@ -241,7 +322,10 @@ export default defineConfig(({ mode, command }) => {
       // URLs: the page's CSP admits fonts from 'self' only (functions/_middleware.ts APP_CSP). Every other asset keeps
       // Vite's default 4 KiB rule.
       assetsInlineLimit: (file: string) => (file.endsWith('.woff2') ? false : undefined),
-      rollupOptions: settings.lab ? { input: { main: here('./index.html'), lab: here('./read-lab.html') } } : undefined,
+      rollupOptions: {
+        ...(settings.lab ? { input: { main: here('./index.html'), lab: here('./read-lab.html') } } : {}),
+        output: { manualChunks: vendorChunk },
+      },
     },
   }
 })

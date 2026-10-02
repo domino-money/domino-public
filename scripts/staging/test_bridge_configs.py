@@ -8,7 +8,7 @@ import tomllib
 import unittest
 from unittest.mock import patch
 import check_bridge_configs
-from check_bridge_configs import ROOT, SERVICES, KNOWN_CONFIGS, inventory_errors, validate
+from check_bridge_configs import ROOT, SERVICES, KNOWN_CONFIGS, GATE_CONFIG, inventory_errors, validate, validate_gate
 
 
 class DisabledBridgeConfigs(unittest.TestCase):
@@ -17,6 +17,33 @@ class DisabledBridgeConfigs(unittest.TestCase):
         for service in SERVICES:
             with (ROOT / "bridge" / f"wrangler.{service}.toml").open("rb") as stream:
                 self.configs[service] = tomllib.load(stream)
+
+    def test_the_wide_scan_gate_is_its_reviewed_shape_and_nothing_more(self):
+        """2026-10-02: a Durable Object the Pages Functions bind; no ingress, no variable, one class."""
+        with (ROOT / "bridge" / GATE_CONFIG).open("rb") as stream:
+            gate = tomllib.load(stream)
+        self.assertEqual(validate_gate(gate), [])
+        mutations = [
+            ("workers_dev", True), ("preview_urls", True),
+            ("routes", [{"pattern": "domino.money/api/*"}]),
+            ("vars", {"X": "1"}),
+            ("services", [{"binding": "UNREVIEWED", "service": "other"}]),
+            ("triggers", {"crons": ["* * * * *"]}),
+            ("observability", {"enabled": True}), ("logpush", True),
+            ("durable_objects", {"bindings": [{"name": "WIDE_GATE", "class_name": "Other"}]}),
+            ("durable_objects", {"bindings": [{"name": "WIDE_GATE", "class_name": "WideGate", "script_name": "other"}]}),
+            ("migrations", [{"tag": "v1", "new_sqlite_classes": ["WideGate"]}, {"tag": "v2", "deleted_classes": ["WideGate"]}]),
+        ]
+        for key, value in mutations:
+            with self.subTest(key=key, value=value):
+                config = copy.deepcopy(gate)
+                config[key] = value
+                self.assertTrue(validate_gate(config))
+        for key in list(gate):
+            with self.subTest(missing=key):
+                config = copy.deepcopy(gate)
+                del config[key]
+                self.assertTrue(validate_gate(config))
 
     def test_committed_files_remain_disabled_without_secrets_or_public_routes(self):
         for service, config in self.configs.items():
@@ -146,8 +173,7 @@ class DisabledBridgeConfigs(unittest.TestCase):
             root = Path(temporary)
             directory = root / "bridge"
             directory.mkdir()
-            for service in SERVICES:
-                name = f"wrangler.{service}.toml"
+            for name in [f"wrangler.{service}.toml" for service in SERVICES] + [GATE_CONFIG]:
                 (directory / name).write_bytes((ROOT / "bridge" / name).read_bytes())
             for relative in ("bridge/wrangler.json", "bridge/Wrangler.TOML",
                              "bridge/wrangler.production.jsonc", "bridge/wrangler.read.json",

@@ -1,3 +1,5 @@
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../styles/screens.css'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
 import { SELECTED_POOL_CATALOGUE, catalogueTokens } from '../config/selectedPoolCatalogue'
@@ -16,9 +18,11 @@ import { StoredTokenExplorer } from '../components/read/screens/StoredTokenExplo
 import { SectionHead } from '../components/figures'
 import { Button, Card, Display, EmptyState, PageShell } from '../components/ui'
 import { parseAddressInput } from '../lib/read/screens/identity'
-import { featuredTitle } from '../lib/read/featuredList'
+import { featuredTitle, shortCount } from '../lib/read/featuredList'
 import { useFeatured } from '../lib/read/featuredSource'
+import { useRouteTitle } from '../lib/routeTitle'
 import { useReadSource } from '../lib/read/screens/readContext'
+import { askAgainLater } from '../lib/read/screens/screenRead'
 import { knownTokens } from '../lib/read/screens/tokenSearch'
 import { handoffFor, selectable, type TokenCandidate } from '../lib/read/screens/tokens'
 
@@ -43,15 +47,22 @@ function Title() {
  * with its two filters, and a way to any other token's pools. Filters live in
  * this page's state only. A token chosen in either search goes to the token
  * view by the address bar.
+ *
+ * Changed on purpose 2026-10-02 (owner: only today's list on Markets): one table, today's list. The second table audit
+ * B5 (2026-10-01) put under it, "Selected pools" with the embedded pools the list did not name, is gone, and the pools
+ * the list does not name are not read here (tests/release.browser.test.mjs (v)).
  */
 function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void }) {
   const source = useReadSource()
   const [asset, setAsset] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [count, setCount] = useState<{ shown: number; total: number } | null>(null)
-  const [catalogueOpen, setCatalogueOpen] = useState(false)
   // The list on screen (lib/read/featuredSource.ts) names the section and the tokens the search knows by name.
   const featured = useFeatured()
+  // A short list (fewer pools than its rules ask for) says so, and opens the way to every other pool (audit B1, B5).
+  const short = featured.settled ? shortCount(featured) : null
+  const [catalogueChoice, setCatalogueOpen] = useState<boolean | null>(null)
+  const catalogueOpen = catalogueChoice ?? short !== null
   // The embedded list's tokens stay known by name after the list's own, so a featured list never makes one unfindable.
   const known = knownTokens({ catalogue: catalogueTokens(featured.source === 'bundled' ? featured.entries : [...featured.entries, ...SELECTED_POOL_CATALOGUE]), candidates: [] })
   const ranked = __DOMINO_POOL_SET__ === 'selected' && featured.source === 'server'
@@ -94,6 +105,10 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
               <span className="tnum" role="status">
                 {count.shown} of {count.total}
               </span>
+            ) : short ? (
+              <span className="tnum text-fg-subtle" data-featured-count={`${short.shown}/${short.size}`} title={`Today’s list has ${short.shown} of the ${short.size} pools its rules allow: a pool leaves the list when its figures can’t be checked.`}>
+                {short.shown} of {short.size} today
+              </span>
             ) : undefined
           }
         />
@@ -133,17 +148,39 @@ function MarketsList({ onToken }: { onToken: (candidate: TokenCandidate) => void
 export function Explore() {
   const source = useReadSource()
   const location = parseExploreHash(useHash())
+  // The tab's name (lib/routeTitle.ts, audit E11): Markets, or a token's pools.
+  useRouteTitle(location.token ? 'Token pools' : 'Markets')
   const [storedReads, setStoredReads] = useState<'checking' | 'enabled' | 'legacy' | 'failed'>('checking')
+  // The quiet re-asks of the token view's capabilities check, by token (audit A11, 2026-10-01).
+  const [checked, setChecked] = useState<{ token: string; attempt: number } | null>(null)
+  const checkAttempt = location.token && checked?.token === location.token ? checked.attempt : 0
   useEffect(() => {
     // The selected table owns its capability check. Only a token detail
     // needs a separate choice between stored and legacy exploration.
     if (!location.token) return
+    const token = location.token
     const controller = new AbortController()
-    void (source?.supportsStoredReads ? source.routeEnabled?.('overview', { signal: controller.signal }) ?? Promise.resolve({ state: 'not_enabled' as const }) : Promise.resolve({ state: 'not_enabled' as const })).then((check) => {
-      if (!controller.signal.aborted) setStoredReads(check.state === 'enabled' ? 'enabled' : check.state === 'not_enabled' ? 'legacy' : 'failed')
-    })
+    void (async () => {
+      const check = source?.supportsStoredReads ? ((await source.routeEnabled?.('overview', { signal: controller.signal })) ?? { state: 'not_enabled' as const }) : { state: 'not_enabled' as const }
+      if (controller.signal.aborted) return
+      if (check.state !== 'failed') {
+        setStoredReads(check.state === 'enabled' ? 'enabled' : 'legacy')
+        return
+      }
+      // Changed 2026-10-01 (audit A11): a check that failed for the moment is asked again on its own, as a pool's page
+      // does, while the page says it is loading; past the quiet re-asks, or for a failure that cannot clear by itself,
+      // the token is explored the older way. Only the gate's own answers say to reload: they need the person.
+      const gate = check.outcome.state === 'gate_required' || check.outcome.state === 'gate_unavailable' || check.outcome.state === 'access_required'
+      if (gate) {
+        setStoredReads('failed')
+        return
+      }
+      setStoredReads('checking')
+      if (await askAgainLater(check.outcome, checkAttempt, controller.signal)) setChecked({ token, attempt: checkAttempt + 1 })
+      else if (!controller.signal.aborted) setStoredReads('legacy')
+    })()
     return () => controller.abort()
-  }, [source, location.token])
+  }, [source, location.token, checkAttempt])
   const [found, setFound] = useState<TokenCandidate | null>(null)
   const [finding, setFinding] = useState<string | null>(null)
   // The answer the token search read for the address it opens, handed to that token view once.

@@ -1,4 +1,5 @@
 import type { Address, Hex } from 'viem'
+import { definiteRefusal } from './nonce.js'
 
 /**
  * EIP-5792 batches, as the owner clients share them (./setup.ts for Create position, ./sequence.ts for a sequence's
@@ -106,15 +107,22 @@ export async function atomicStatus(wallet: { owner: Address; request: Request },
  * execution makes it, state carried from one to the next. Through the wallet, or through `fallback` when the wallet does
  * not carry the method (ten seconds at most); with neither, `batch_simulation_unavailable`. Any call that fails is
  * `batch_simulation_reverted`. The gas its calls used, together.
+ *
+ * Changed on purpose 2026-10-02 (review of rugged97's rules, finding 17): a call that fails in `fallback`'s simulation (the
+ * site's own node) is `batch_simulation_unavailable`, so the flow goes step by step, each step checked by the wallet: the
+ * batch's allowances and balances were read through the wallet, whose node may be a block or two ahead of the site's,
+ * so that failure may be no failure at all.
  */
 export async function simulateBatch(request: Request, owner: Address, calls: readonly BatchCall[], fallback?: BatchSimulator): Promise<bigint> {
   const params = [{ blockStateCalls: [{ calls: calls.map(call => ({ from: owner, to: call.to, data: call.data, value: call.value })) }], validation: false }, 'latest']
   let reply: unknown
+  let elsewhere = false
   try {
     reply = await request('eth_simulateV1', params)
   } catch (error) {
     if (!unsupportedMethod(error)) throw error
     if (!fallback) return fail('batch_simulation_unavailable')
+    elsewhere = true
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       reply = await Promise.race([fallback(params), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('wallet_timeout')), 10_000) })])
@@ -122,7 +130,7 @@ export async function simulateBatch(request: Request, owner: Address, calls: rea
   }
   const block = Array.isArray(reply) && reply.length === 1 ? reply[0] as { calls?: unknown } : null
   const results = block && Array.isArray(block.calls) && block.calls.length === calls.length ? block.calls as { status?: unknown; gasUsed?: unknown }[] : fail('invalid_simulation_reply')
-  if (results.some(result => result?.status !== '0x1')) return fail('batch_simulation_reverted')
+  if (results.some(result => result?.status !== '0x1')) return fail(elsewhere ? 'batch_simulation_unavailable' : 'batch_simulation_reverted')
   return results.reduce((sum, result) => sum + quantity(result.gasUsed), 0n)
 }
 
@@ -145,8 +153,9 @@ export async function offerBatch(request: Request, wallet: BatchWallet, key: Hex
     reply = await request('wallet_sendCalls', [{ version: '2.0.0', chainId: '0x1237', from: wallet.owner, atomicRequired: true, calls }])
   } catch (error) {
     const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined
-    // A definite refusal: nothing was sent, and nothing of it can execute.
-    if (code === 4001 || code === 5750 || BATCH_UNSUPPORTED.has(code as number)) await releaseBatch(key, claim)
+    // A definite refusal: nothing was sent, and nothing of it can execute (2026-10-01, audit C2: every refusal that
+    // proves it, ./nonce.ts definiteRefusal, not only 4001).
+    if (definiteRefusal(error) || code === 5750 || BATCH_UNSUPPORTED.has(code as number)) await releaseBatch(key, claim)
     if (code === 5750) return fail('batch_upgrade_declined')
     if (BATCH_UNSUPPORTED.has(code as number)) return fail('batch_unsupported')
     throw error

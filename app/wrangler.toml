@@ -22,20 +22,70 @@ compatibility_date = "2026-09-10"
 # hash URL of a production deployment is an entrance. It covers deployments
 # made from now on; older ones are closed by deleting them.
 #
-# The exact gated preview alias can use only the public read Worker, via the
-# validated fixed alias adapter in functions/_lib/bridge.ts. Hash deployments,
-# other preview hosts and all private/session/financial families stay denied.
-# Existing Worker flags, credentials and backend admission remain unchanged.
-# Preview rollback: set PREVIEW_PUBLIC_READS false and redeploy preview only.
+# The exact gated preview alias can use the public read Worker and, since
+# 2026-10-01 (H7), the setup release (public contract identities, GET only),
+# both via the validated fixed alias adapter in functions/_lib/bridge.ts.
+# PREVIEW_FAMILIES names every family the preview may use besides the reads;
+# a private one (session, onboarding, deposit, performance, execution) is
+# added there only together with a binding to a Worker deployed for the
+# preview alias, never production's (docs/PREVIEW_PUBLIC_READS.md).
+# Hash deployments and other preview hosts stay denied. Existing Worker
+# flags, credentials and backend admission remain unchanged.
+# Preview rollback: set PREVIEW_PUBLIC_READS false, PREVIEW_FAMILIES "", and
+# redeploy preview only.
+#
+# CHAIN2_PREVIEW (2026-10-01, the chain2 workstream, part B): "true" in the
+# preview only. The page's CSP there also names the second chain's RPC
+# (functions/_middleware.ts APP_CSP_CHAIN2), so the Elysium section, open on
+# the exact preview alias (src/chains/elysium/mode.ts), can read the chain; and
+# the /uniswap-v3/ route admits that alias (functions/_lib/uniswap-v3/edge.ts).
+# That route still answers not_enabled until rugged97's bridge Worker exists
+# and is bound here as ELYSIUM_BRIDGE: no such binding is declared, because no
+# such Worker is deployed. Production never gets this var.
+# 2026-10-02 (review of the RPC switch, finding 1; the owner's rule: the site
+# reads nothing from a public RPC, on the preview too): the second chain's RPC
+# is a public node, so the section is closed everywhere until rugged97 serves
+# its reads through /uniswap-v3/ (src/chains/elysium/mode.ts SECTION_READS),
+# and APP_CSP_CHAIN2 names no host of it meanwhile: with this var set, the
+# preview's page CSP is production's. The var itself is unchanged.
+#
+# LOCAL_RPC_URL (2026-10-01, RPC-SPEC §2.2): a Pages SECRET, never written
+# here. It is the full URL of Domino's own Robinhood Chain node, rugged97's
+# https://rpc.domino.money/<token>/, which the six chain routes read
+# (functions/_lib/localRpc.ts: fixed reads only, from the server only; the
+# token never reaches the browser, an answer or a log). Both environments need
+# it, and may hold different tokens: preview first, then production. The owner
+# types it once per environment:
+#   wrangler pages secret put LOCAL_RPC_URL --project-name domino-app --env preview
+#   wrangler pages secret put LOCAL_RPC_URL --project-name domino-app
+# (or in the dashboard: Settings, Variables and Secrets, type Secret). Without
+# it, or with anything but https://rpc.domino.money/ and one token-shaped path,
+# every chain route answers 503 source_unavailable at once and the page shows
+# its calm unavailable states; nothing else is affected. Removing it is the
+# quiet rollback.
+#
+# LOCAL_RPC_SIMULATE (RPC-SPEC §2.2, §11.4): a plain var. Exactly "true" turns
+# /api/chain/v1/simulate on (wallets without eth_simulateV1 sign a batch once);
+# anything else, or none, answers 404 not_enabled and such wallets go step by
+# step. On in both environments since rugged97 confirmed on 2026-10-02 that his
+# node serves eth_simulateV1 and accepted the fixed route.
 [env.preview.vars]
 PREVIEW_PUBLIC_READS = "true"
+PREVIEW_FAMILIES = "setup"
+CHAIN2_PREVIEW = "true"
+LOCAL_RPC_SIMULATE = "true"
 
 [[env.preview.services]]
 binding = "READ_BRIDGE"
 service = "domino-read-bridge"
 
+[[env.preview.services]]
+binding = "SETUP_BRIDGE"
+service = "domino-setup-bridge"
+
 [env.production.vars]
 CANONICAL_HOSTS_ONLY = "true"
+LOCAL_RPC_SIMULATE = "true"
 
 [[env.production.services]]
 binding = "READ_BRIDGE"

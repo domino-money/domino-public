@@ -5,6 +5,8 @@
  * sends a preview only when the user presses Get preview. It is not part of
  * the practice flow: practice numbers never prefill it (NF-9).
  */
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../styles/screens.css'
 import { useEffect, useId, useMemo, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
 import { realClock } from '../lib/clock'
 import { livePort } from '../session/livePort'

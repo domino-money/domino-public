@@ -19,7 +19,8 @@
  *
  * Every transaction handed over is included in its own block; `decline()` makes the wallet refuse the next one with
  * 4001, `revert()` includes the next one with status 0, `move()` moves a pool's price as a swap would, `failNext()`
- * fails the next ask of a method as a wallet's node does now and then.
+ * fails the next ask of a method as a wallet's node does now and then. `speedUp()` and `cancelInWallet()` (2026-10-01,
+ * audit C14) replace the next one in the wallet: mined under another hash, or its nonce taken by a 0-ETH self-transfer.
  */
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -84,6 +85,10 @@ export function createPositionChain(owner, { positions = [], deposits = [], eth 
   const NONE = { owner: zeroAddress, key: { currency0: zeroAddress, currency1: zeroAddress, fee: 0, tickSpacing: 0, hooks: zeroAddress }, balance0: 0n, balance1: 0n, swapped: false, closed: false, tokenId: 0n };
   const log = [], calls = [], refused = [], missing = [], sends = [], declined = [], paid = [];
   let refuseNext = false, revertNext = false, permitted = connected;
+  // 2026-10-01 (audit C14): the next send replaced in the wallet. "Speed up": the same call mined under another hash than
+  // the one the page is given. "Cancel": a 0-ETH transfer to the account itself takes the nonce (`burned`), and the call
+  // never happens.
+  let speedNext = false, cancelNext = false, burned = 0;
   const reverted = new Set();
   const latest = () => ({ number: numberToHex(0x1000 + sends.length), timestamp: numberToHex(timestamp + 2 * sends.length), hash: at(0xa0 + sends.length, 32) });
   const blockOf = (index) => ({ number: numberToHex(FIRST_SENT_BLOCK + index), hash: at(0xb0 + index, 32) });
@@ -214,12 +219,14 @@ export function createPositionChain(owner, { positions = [], deposits = [], eth 
         case 'wallet_switchEthereumChain': return { result: null };
         case 'eth_getCode': return { result: code[lower(params[0])] ?? '0x' };
         case 'eth_gasPrice': return { result: '0x5f5e100' };
-        case 'eth_getTransactionCount': return { result: numberToHex(sends.length) };
+        case 'eth_getTransactionCount': return { result: numberToHex(sends.length + burned) };
         case 'eth_estimateGas': view(lower(params[0].from ?? zeroAddress), lower(params[0].to), params[0].data); return { result: '0x30d40' };
         case 'eth_getBalance': return { result: numberToHex(eth) };
         case 'eth_call': return { result: view(lower(params[0].from ?? zeroAddress), lower(params[0].to), params[0].data) };
         case 'eth_sendTransaction': {
           if (refuseNext) { refuseNext = false; declined.push(params[0]); return { error: { code: 4001, message: 'User rejected the request.' } }; }
+          if (cancelNext) { cancelNext = false; burned += 1; return { result: at(0xd0 + burned, 32) }; }
+          if (speedNext) { speedNext = false; const index = sends.length; include(params[0]); sends.push(params[0]); return { result: at(0xe0 + index, 32) }; }
           const index = sends.length;
           if (revertNext) { revertNext = false; reverted.add(index); } else include(params[0]);
           sends.push(params[0]);
@@ -261,6 +268,12 @@ export function createPositionChain(owner, { positions = [], deposits = [], eth 
     latest,
     decline() { refuseNext = true; },
     revert() { revertNext = true; },
+    /** The person speeds the next send up in the wallet: it is mined, under another hash than the page was given. */
+    speedUp() { speedNext = true; },
+    /** The person cancels the next send in the wallet: a 0-ETH transfer to the account takes its nonce, and it never happens. */
+    cancelInWallet() { cancelNext = true; },
+    /** Nonces the cancels took. */
+    burned: () => burned,
     /** Runs `then` once, right after the wallet next answers `method`: a price that moves between two reads. */
     once(method, then) { hooks.set(method, then); },
     /** The next `times` asks of `method` fail as a wallet's node does now and then (-32603); later asks answer. */

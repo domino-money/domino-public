@@ -1,8 +1,18 @@
 import type { ComponentType } from 'react'
 import type { Page } from '../App'
 import { Menu, type MenuEntry } from './ui'
-import { IconAutomate, IconBook, IconClose, IconInfo, IconMarkets, IconMenu, IconMore, IconPlus, IconPositions, IconRange, IconShield, type IconProps } from './icons'
+import { IconAutomate, IconBook, IconClose, IconCoins, IconInfo, IconMarkets, IconMenu, IconMore, IconPlus, IconPositions, IconRange, IconShield, type IconProps } from './icons'
 import { automateHref, docsHref, marketsHref, newPositionHref, positionsHref } from './explore/routes'
+import { ELYSIUM_KEY, ELYSIUM_NAME, ELYSIUM_STATUS } from '../config/chainIdentity'
+import { sectionLinked } from '../chains/elysium/mode'
+
+/**
+ * The second chain's section (2026-10-01, the chain2 workstream, part B): linked from the menu only where its mode is
+ * not off (chains/elysium/mode.ts sectionMode: the preview alias and the local development server today; on
+ * domino.money not until the chain's deployment is qualified), under its name in the registry. Decided once, from the
+ * page's own origin. Only the chain's identity comes into the page for it (config/chainIdentity.ts), never its record.
+ */
+const ELYSIUM_LINKED = typeof location !== 'undefined' && sectionLinked(location.origin, ELYSIUM_STATUS)
 
 /**
  * The product's three places, in the header's nav pill and at the top of the
@@ -41,6 +51,7 @@ export function HeaderMenu({ page }: { page: Page }) {
     { kind: 'separator', mobileOnly: true },
     { kind: 'link', href: newPositionHref(), label: 'New position', icon: <IconPlus />, current: page === 'new' },
     { kind: 'link', href: docsHref(), label: 'Docs', icon: <IconBook />, current: page === 'docs' },
+    ...(ELYSIUM_LINKED ? [{ kind: 'link', href: `#/${ELYSIUM_KEY}`, label: ELYSIUM_NAME, icon: <IconCoins />, current: page === 'elysium' } as const] : []),
     { kind: 'separator' },
     { kind: 'heading', label: 'Guides' },
     { kind: 'link', href: '#/#learn', label: 'How it works', icon: <IconInfo /> },

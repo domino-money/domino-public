@@ -262,8 +262,14 @@ export function tokenAmount(raw: string, address: string, tokens: readonly Token
   const token = tokens.find((t) => t.address.toLowerCase() === address.toLowerCase())
   const units = formatUnits(raw, token?.decimals ?? null)
   if (!units || units.kind !== 'units') return { raw, text: null, exact: null }
-  return { raw, text: significant(units.text.replace(/,/g, '')), exact: units.text }
+  const text = significant(units.text.replace(/,/g, ''))
+  // A crumb under a millionth of a token reads as one (audit E7, 2026-10-01): "0.000000000000000003 WETH" was every
+  // digit of it. The Wallet card already wrote it so; every digit stays in `exact`, for the title.
+  return { raw, text: /^0\.0{6}/.test(text) ? DUST : text, exact: units.text }
 }
+
+/** A positive amount under a millionth of a token, as every screen writes it (audit E7). */
+export const DUST = '<0.000001'
 
 /** Two amounts in the pool's currency order, or why there are none. */
 export type AmountPair = { state: 'amounts'; amounts: [TokenAmount, TokenAmount] } | { state: 'unavailable'; reason: string }

@@ -4,6 +4,7 @@ import type { JourneyState, Stage, TickRange } from '../../lib/create/journey'
 import { boundPrice, shownPrice, shownRange, type PoolPrice } from '../../lib/read/screens/poolRange'
 import type { PoolOption } from '../../lib/read/screens/poolsList'
 import { plainFigure } from '../../lib/create/plain'
+import { feeWords } from '../../lib/format/fee'
 import { AmountText } from '../figures'
 import { SymbolText } from '../read/screens/SymbolText'
 import { StepMarker } from '../ui'
@@ -26,6 +27,11 @@ export interface StepView {
   body: ReactNode
   /** Back, Continue or the final control, for the open step only. */
   footer: ReactNode
+  /**
+   * The step's lead when it differs from CREATE's (2026-10-01, live note L11): the amount step of a range that takes one
+   * token alone, which asks for that token's amount only.
+   */
+  lead?: ReactNode
 }
 
 /* ---------------------------------------------------------------------------
@@ -34,11 +40,11 @@ export interface StepView {
 
 type Usable = Extract<PoolPrice, { state: 'usable' }>
 
-/** "WETH / USDG · 0.02%", symbols as untrusted text. */
+/** "WETH / USDG · 0.02% fee", symbols as untrusted text; the fee as every screen writes it (lib/format/fee.ts, audit E21). */
 export function PoolPair({ option }: { option: PoolOption }) {
   return (
     <>
-      <SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} /> · {option.fee}
+      <SymbolText token={option.currencies[0]} /> / <SymbolText token={option.currencies[1]} /> · {feeWords(option.fee)}
     </>
   )
 }
@@ -181,7 +187,7 @@ export function StepList({ steps, onOpen, locked = false }: { steps: readonly St
                         <h2 ref={open ? title : undefined} tabIndex={-1} className="dm-flow-title">
                           {words.title}
                         </h2>
-                        <p className="dm-flow-lead">{words.lead}</p>
+                        <p className="dm-flow-lead">{step.lead ?? words.lead}</p>
                       </div>
                     </div>
                     <div className="dm-flow-content">{step.body}</div>

@@ -339,7 +339,8 @@ test('Markets reads the searched token, then its pools and the catalogue only on
     // Changed on purpose (2026-09-27, round 6, the pool page for beginners): the verification is a row of Details, the
     // one closed card at the end of the page that holds everything technical.
     await workspace.locator('[data-pool-details] > summary').click();
-    assert.match(await workspace.innerText(), /Verified at block 700/);
+    // Changed on purpose 2026-10-01 (audit I1): the pool was read on chain; its tokens are not called verified.
+    assert.match(await workspace.innerText(), /On chain at block 700/);
     await page.waitForFunction(() => document.querySelectorAll('[data-pool-figures] [data-metric]').length > 0, null, { timeout: 30_000 });
     // Changed on purpose (2026-09-27, round 6): a typical range to read, drawn on the pool's price, replaces the planner.
     const range = page.locator('[data-pool-range-guide]');
@@ -1025,8 +1026,9 @@ test('a second visit draws the remembered list at once, then reads it again behi
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
       await list.getByRole('button', { name: 'Show all 4' }).click();
       const kept = await page.evaluate(() => Object.keys(localStorage));
-      assert.deepEqual(kept, ['domino-wallet-v1'], 'one key, the card’s');
-      const stored = await page.evaluate(() => localStorage.getItem('domino-wallet-v1'));
+      // Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit G10): the key names its chain.
+      assert.deepEqual(kept, ['domino-wallet-v2:4663'], 'one key, the card’s');
+      const stored = await page.evaluate(() => localStorage.getItem('domino-wallet-v2:4663'));
       assert.doesNotMatch(stored, new RegExp(HANDLE), 'the continuation handle is never kept');
       assert.ok(stored.includes(OWNER.toLowerCase()) && stored.includes(MANY), 'the address and its tokens');
 
@@ -1255,16 +1257,16 @@ test('a remembered list whose prices are more than an hour old: no total at old 
       await page.locator('[data-portfolio-tokens][data-wallet-prices="ok"] [data-wallet-total]').waitFor({ timeout: 30_000 });
       assert.equal(await list.locator('[data-wallet-total] .dm-fig-xl').textContent(), '$2,028.50');
       assert.deepEqual(await rowsOf(list), [MANY, NATIVE, SELECTED_TOKENS[1]]);
-      const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem('domino-wallet-v1')));
+      const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem('domino-wallet-v2:4663')));
       // Two hours pass (the kept list and every kept price made two hours older), and the provider is down.
       const TWO_HOURS = 2 * 3600_000;
       await page.evaluate((shift) => {
-        const all = JSON.parse(localStorage.getItem('domino-wallet-v1'));
+        const all = JSON.parse(localStorage.getItem('domino-wallet-v2:4663'));
         for (const wallet of Object.values(all.wallets)) {
           wallet.at -= shift;
           for (const price of wallet.quotes) price[3] -= shift;
         }
-        localStorage.setItem('domino-wallet-v1', JSON.stringify(all));
+        localStorage.setItem('domino-wallet-v2:4663', JSON.stringify(all));
       }, TWO_HOURS);
       const aged = (await stored()).wallets[OWNER.toLowerCase()].quotes.map((price) => [price[0], price[3]]);
       assert.equal(aged.length, 4, 'WETH, UFG, MANY and the airdrop (answered: no price)');

@@ -2,8 +2,8 @@
  * POST /api/automation/v1/state: which of Domino's three ways each position
  * NFT is held in (the owner's three features, 2026-09-24): a plain position,
  * Auto-compound or Domino-compound, and for the two automations whether the
- * sequence is paused or active. Read from the chain's public RPC in at most
- * two batched reads.
+ * sequence is paused or active. Read from Domino's own Robinhood Chain node
+ * (functions/_lib/localRpc.ts, since 2026-10-01) in at most two batched reads.
  *
  * How a sequence holds its position (contracts/src/DominoVaultV4.sol
  * _armRoot, DominoVaultReadHelper.rootCustody): the root NFT stays in the
@@ -30,13 +30,13 @@
  * loop is not a loop of RPC calls. No secret is involved: every answer is
  * public chain data, and it names no wallet.
  *
- * 2026-09-25: the public RPC answers 429 to every call from Cloudflare's
- * edge, so this route can never answer in production. The page runs
- * scanAutomation itself, in the visitor's browser (src/lib/automationState.ts,
- * through the chain code chunk src/lib/chain/chainCode.ts and the page's one
- * fetcher src/lib/chain/browser.ts), as it runs the wallet's scan and the fees
- * relay's reads: this module stays a pure one (no storage, no DOM, no build
- * flag). The route stays, tested; nothing on the page asks it.
+ * 2026-09-25 to 2026-10-01: the public RPC answered 429 to every call from
+ * Cloudflare's edge, so the page ran scanAutomation itself, in the visitor's
+ * browser. Changed on purpose 2026-10-01 (RPC-SPEC D3, the owner's rule:
+ * nothing is read from a public RPC): the route answers again, at the edge
+ * (functions/_lib/chainRoutes.ts), and the page asks it
+ * (src/lib/automationState.ts). This module stays a pure one (no storage, no
+ * DOM, no build flag).
  */
 import {
   ChainError,
@@ -73,8 +73,8 @@ const MODE_OF_FEE: Readonly<Record<string, 'compound' | 'domino'>> = { '200': 'c
 
 /** The most ids one question may name: Positions lists at most 100 (functions/_lib/walletPositions.ts MAX_POSITIONS). */
 export const MAX_IDS = 100
-/** Sub-calls per aggregate3 call. */
-const CALLS_PER_AGGREGATE = 150
+/** Sub-calls per aggregate3 call. Changed on purpose 2026-10-02 (rugged97's rule 5: at most 50 in one multicall): 50, was 150. */
+export const CALLS_PER_AGGREGATE = 50
 export const ANSWER_SECONDS = 15
 export const FAILURE_SECONDS = 5
 const MAX_BODY_BYTES = 8192

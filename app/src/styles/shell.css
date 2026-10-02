@@ -5,6 +5,10 @@
 @layer components {
   /* ---- Page frame (§2.7): one 1200px container; the width aliases stay in the DOM ------------------ */
   .dm-page { width: 100%; max-width: calc(var(--content) + 2 * var(--gutter)); margin-inline: auto; padding: 24px var(--gutter) 0; animation: dm-page-in var(--dur-page) var(--ease-std) backwards; }
+  /* The page is at least the screen under the header (2026-10-01, platform workstream, E1): while a screen's code or
+     first figures load, the footer stays below the fold instead of showing mid-screen and then jumping down, which
+     measured up to 0.67 of layout shift on tablets and desktops. */
+  .dm-page { min-height: calc(100vh - var(--header-h)); min-height: calc(100dvh - var(--header-h)); }
   .dm-page--pool { max-width: calc(var(--content-pool) + 2 * var(--gutter)); }
   .dm-page--flow { max-width: calc(var(--content-flow) + 2 * var(--gutter)); }
   .dm-page--narrow { max-width: calc(var(--content-narrow) + 2 * var(--gutter)); }
@@ -481,13 +485,24 @@
   .dm-wallet-disc { width: 16px; height: 16px; flex-shrink: 0; border-radius: var(--radius-pill); background: radial-gradient(120% 120% at 30% 25%, hsl(var(--mark-h, 0) var(--disc-s) calc(var(--disc-l) + 6%)), hsl(var(--mark-h, 0) var(--disc-s) var(--disc-l))); box-shadow: inset 0 0 0 1px var(--border-strong); }
   @media (min-width: 768px) {
     .dm-wordmark-text { font-size: 26px; line-height: 26px; }
-    .dm-nav { position: absolute; left: 50%; top: 50%; translate: -50% -50%; display: flex; align-items: center; gap: 0; height: 44px; padding: 4px; border-radius: var(--radius-pill); background: var(--card); box-shadow: var(--elev-pill); }
+    /* Three columns, the nav pill in the middle (2026-10-01, D6): the side columns share what is left equally, so the pill
+       sits in the centre as before, but neither is ever narrower than its own content. Between 768 and about 800 px,
+       with a wallet connected, the pill, placed absolutely at the centre, covered the wallet control's left edge (a
+       press there opened Automate); now it moves left by those few pixels instead. */
+    .dm-header-row { display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); }
+    .dm-wordmark { justify-self: start; }
+    .dm-header-actions { justify-self: end; }
+    .dm-nav { position: relative; justify-self: center; display: flex; align-items: center; gap: 0; height: 44px; padding: 4px; border-radius: var(--radius-pill); background: var(--card); box-shadow: var(--elev-pill); }
   }
   @media (max-width: 767px) {
-    /* The two header controls stay matched, and stay a touch target: 40px inside the 56px phone bar. */
-    .dm-header-actions .dm-btn { height: 40px; padding: 0 12px; font-size: 13px; line-height: 16px; letter-spacing: -0.16px; }
+    /* The two header controls stay matched, and stay a touch target: 44px inside the 56px phone bar (audit E23,
+       2026-10-01: 40px was under the 44px a thumb is given on phones). */
+    .dm-header-actions .dm-btn { height: 44px; padding: 0 12px; font-size: 13px; line-height: 16px; letter-spacing: -0.16px; }
     .dm-header-actions .dm-btn.dm-wallet-pill { padding-left: 8px; }
-    .dm-header-actions .dm-icon-btn--md { width: 40px; height: 40px; }
+    .dm-header-actions .dm-icon-btn--md { width: 44px; height: 44px; }
+    /* A small segmented control's items (the period tabs, 24px) answer a touch over 36px: the pill is drawn as before,
+       the area that takes the press reaches 6px above and below it (audit E23). */
+    .dm-seg--sm > .dm-seg-item::after { content: ''; position: absolute; inset: -6px 0; }
   }
 
   /* ---- Footer (§3.13) ------------------------------------------------------------------------------ */
@@ -572,6 +587,14 @@
   .dm-wallet-logo > img, .dm-wallet-logo > svg { width: 20px; height: 20px; }
   .dm-wallet-row .i-chev-r { margin-left: auto; color: var(--fg-subtle); opacity: 0; transition: opacity var(--dur-hover) ease, translate var(--dur-fade) var(--ease-std); }
   .dm-wallet-row:hover .i-chev-r, .dm-wallet-row:focus-visible .i-chev-r { opacity: 1; translate: 2px 0; }
+  /* 2026-10-01 (audit C3, C4, C7): a row's second line (WalletConnect's hint, the wallet still to approve), the wallet
+     apps a phone opens the site in, and WalletConnect's pairing code, dark on white as a phone's camera reads it. */
+  .dm-wallet-row-text { display: grid; min-width: 0; }
+  .dm-wallet-row-hint { font-size: 12px; line-height: 16px; font-weight: 400; color: var(--fg-subtle); }
+  a.dm-wallet-row { text-decoration: none; }
+  .dm-wallet-get a { color: var(--fg); text-decoration-line: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+  .dm-walletconnect { display: grid; justify-items: center; gap: 12px; text-align: center; }
+  .dm-walletconnect-qr { width: min(232px, 100%); height: auto; }
 
   /* ---- Token marks (§3.8): missing artwork is a calm disc from the address, never letters ---------- */
   .dm-token-disc { background: radial-gradient(120% 120% at 30% 25%, hsl(var(--mark-h, 0) var(--disc-s) calc(var(--disc-l) + 6%)), hsl(var(--mark-h, 0) var(--disc-s) var(--disc-l))); box-shadow: inset 0 0 0 1px var(--border-strong); }

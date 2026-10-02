@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react'
+import { publishWalletIdentity } from '../../lib/walletIdentity'
 
 /**
  * Keeps a failed wallet chunk from taking the page down with it.
@@ -13,6 +14,11 @@ export class WalletBoundary extends Component<{ children: ReactNode; fallback: R
 
   static getDerivedStateFromError() {
     return { failed: true }
+  }
+
+  // 2026-10-01 (audit C5): the screens wait while the identity is unknown; with no wallet feature, there is none to wait for.
+  componentDidCatch() {
+    publishWalletIdentity({ kind: 'disconnected' })
   }
 
   render() {

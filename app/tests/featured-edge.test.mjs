@@ -21,7 +21,7 @@ import * as runtime from '../../api-contracts/read-v5/runtime.mjs';
 import { createWorker } from '../../bridge/src/worker.mjs';
 
 const require = createRequire(import.meta.url);
-const { answerFeatured, cacheKey, FEATURED_PATH, LIST_SECONDS, STALE_SECONDS } = require('../.test-build/app/functions/_lib/featuredEdge.js');
+const { answerFeatured, cacheKey, FEATURED_PATH, LIST_SECONDS, STALE_SECONDS, WAIT_AFTER_SECONDS } = require('../.test-build/app/functions/_lib/featuredEdge.js');
 const { REFRESH_GUARD_MS } = require('../.test-build/app/functions/_lib/publicEdge.js');
 const { PREVIEW_ORIGIN } = require('../.test-build/app/functions/_lib/bridge.js');
 const { onRequest: gate, LOGIN_PATH, API_CSP } = require('../.test-build/app/functions/_middleware.js');
@@ -104,7 +104,8 @@ test('a ready featured refresh is returned to the same caller, with one binding 
   const worker = bridge(() => said(fresh ? NONE : CURRENT));
   const rt = () => runtimeWith(cache, time, { refreshing, waitUntil: work => later.push(work) });
   await answerFeatured(ask(), worker.env, rt()); await Promise.all(later.splice(0));
-  fresh = true; time.at.now += LIST_SECONDS * 1000;
+  // Changed on purpose 2026-10-01 (audit A6): only a list at least five minutes old waits for its refresh.
+  fresh = true; time.at.now += WAIT_AFTER_SECONDS * 1000;
   const result = await answerFeatured(ask(), worker.env, rt());
   assert.equal(await result.text(), NONE);
   assert.equal(result.headers.get('X-Domino-Edge-Cache'), null);
@@ -123,7 +124,7 @@ test('slow featured refresh waits at most one second, keeps the dated cache and 
   } });
   await answerFeatured(ask(), worker.env, rt()); await Promise.all(later.splice(0));
   const before = await cache.entries.get(cacheKey(VERSION)).clone().text();
-  slow = true; time.at.now += LIST_SECONDS * 1000;
+  slow = true; time.at.now += WAIT_AFTER_SECONDS * 1000;
   const first = answerFeatured(ask(), worker.env, rt()); await timerReady;
   const shared = await answerFeatured(ask(), worker.env, rt());
   assert.equal(shared.headers.get('X-Domino-Edge-Cache'), 'hit');
@@ -239,8 +240,10 @@ test('a valid list is passed on byte for byte and kept once; within 60 s the sam
   assert.equal(calls[0].url, `${ORIGIN}${FEATURED_PATH}`);
   assert.equal(calls[0].body, '{}', 'the request goes on untouched');
   await Promise.all(later.splice(0));
-  assert.deepEqual(cache.puts, [{ url: `${ORIGIN}/api/read/v5/cache/${VERSION}/featured-pools`, cacheControl: `max-age=${STALE_SECONDS}` }]);
+  // Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G10): the key names the chain the list is of.
+  assert.deepEqual(cache.puts, [{ url: `${ORIGIN}/api/read/v5/cache/4663/${VERSION}/featured-pools`, cacheControl: `max-age=${STALE_SECONDS}` }]);
   assert.equal(cacheKey(VERSION), cache.puts[0].url);
+  assert.equal(cacheKey(VERSION, ORIGIN, 99801), `${ORIGIN}/api/read/v5/cache/99801/${VERSION}/featured-pools`, 'another chain, another key');
   assert.equal(first.headers.get('X-Domino-Edge-Cache'), null, 'the Worker answered');
 
   time.at.now += LIST_SECONDS * 1000 - 1;
@@ -298,7 +301,9 @@ test('a list switched off is taken out of the edge by the background read that m
   await Promise.all(later.splice(0));
   assert.equal(cache.entries.size, 1, 'a failed refresh leaves the entry');
   broken = false; off = true;
-  time.at.now += REFRESH_GUARD_MS;
+  // Changed on purpose 2026-10-01 (audit A6): a list younger than five minutes is served at once while its refresh runs
+  // behind; past that the visitor waits for the refresh, and a ready refusal reaches them.
+  time.at.now += WAIT_AFTER_SECONDS * 1000;
   const disabled = await answerFeatured(ask(), env, runtime());
   assert.equal(disabled.status, 404, 'a ready definitive refusal reaches this visitor, not just the next one');
   assert.deepEqual(await disabled.json(), { error: 'route_not_available' });
@@ -595,7 +600,7 @@ test('with the real read Worker: the committed config answers route_not_availabl
 
 const v3 = await import('../../api-contracts/read-v3/runtime.mjs');
 const { historyFor } = await import('./markets-cards.fixtures.mjs');
-const { answerHistory, historyKey, HISTORY_PATH, HISTORY_SECONDS } = require('../.test-build/app/functions/_lib/historyEdge.js');
+const { answerHistory, historyKey, HISTORY_PATH, HISTORY_SECONDS, HISTORY_STALE_SECONDS } = require('../.test-build/app/functions/_lib/historyEdge.js');
 const HISTORY_CONTRACT = { CONTRACT_VERSION: v3.CONTRACT_VERSION, validateRequest: v3.validateRequest, validateResponse: v3.validateResponse, matchesRequest: v3.matchesRequest };
 const POOL = `0x${'ab'.repeat(32)}`;
 const ETH = '0x0000000000000000000000000000000000000000';
@@ -603,13 +608,15 @@ const question = { poolId: POOL, currency: ETH, windowSeconds: 86400, resolution
 const askHistory = (body = question, headers = {}) => ask({ url: `${ORIGIN}${HISTORY_PATH}`, body: JSON.stringify(body), headers: { 'X-Domino-Read-Contract': v3.CONTRACT_VERSION, ...headers } });
 const historySaid = (body, options = {}) => said(JSON.stringify(body), { version: v3.CONTRACT_VERSION, ...options });
 
-test('preview history cache is origin-scoped, expires at 20 s and never keeps incomplete or failed answers', async () => {
+test('preview history cache is origin-scoped, fresh for 20 s, stale to 60 s, and never keeps incomplete or failed answers', async () => {
   const built = historyFor(question, { built: true });
   const cache = memoryCache();
   const time = clock();
   const worker = bridge(() => historySaid(built));
   const env = { ...worker.env, PREVIEW_PUBLIC_READS: 'true' };
-  const rt = () => ({ contract: HISTORY_CONTRACT, cache, now: time.now });
+  const later = [];
+  const refreshing = new Map();
+  const rt = () => ({ contract: HISTORY_CONTRACT, cache, now: time.now, refreshing, waitUntil: (work) => later.push(work) });
   const request = () => previewAsk({ url: `${PREVIEW_ORIGIN}${HISTORY_PATH}`, body: JSON.stringify(question), headers: { 'X-Domino-Read-Contract': v3.CONTRACT_VERSION } });
   await answerHistory(askHistory(), env, rt());
   await answerHistory(request(), env, rt());
@@ -617,9 +624,16 @@ test('preview history cache is origin-scoped, expires at 20 s and never keeps in
   assert.deepEqual(cache.puts.map(({ url }) => url), [historyKey(v3.CONTRACT_VERSION, question), historyKey(v3.CONTRACT_VERSION, question, PREVIEW_ORIGIN)]);
   assert.equal((await answerHistory(request(), env, rt())).headers.get('X-Domino-Edge-Cache'), 'hit');
   assert.equal(worker.calls.length, 2);
+  // Changed on purpose 2026-10-01 (audit A14): past 20 s it is served at once, dated, while it is read again behind.
   time.at.now += HISTORY_SECONDS * 1000;
-  assert.equal((await answerHistory(request(), env, rt())).headers.get('X-Domino-Edge-Cache'), null);
+  const stale = await answerHistory(request(), env, rt());
+  assert.equal(stale.headers.get('X-Domino-Edge-Cache'), null, 'the request that sends the refresh is counted');
+  assert.equal(stale.headers.get('X-Domino-Edge-Age'), String(HISTORY_SECONDS * 1000));
+  await Promise.all(later.splice(0));
   assert.equal(worker.calls.length, 3);
+  time.at.now += HISTORY_STALE_SECONDS * 1000;
+  assert.equal((await answerHistory(request(), env, rt())).headers.get('X-Domino-Edge-Cache'), null);
+  assert.equal(worker.calls.length, 4, 'past a minute the Worker answers');
   for (const answer of [() => historySaid(historyFor(question, { built: false })), () => historySaid({ error: 'upstream_unavailable' }, { status: 503 })]) {
     const pending = memoryCache();
     const upstream = bridge(answer);
@@ -634,12 +648,14 @@ test('a built 24h history is kept 20 s for the identical question; one not built
   const cache = memoryCache();
   const time = clock();
   const { calls, env } = bridge(() => historySaid(built));
-  const runtime = () => ({ contract: HISTORY_CONTRACT, cache, now: time.now, refreshing: new Map() });
+  const later = [];
+  const runtime = () => ({ contract: HISTORY_CONTRACT, cache, now: time.now, refreshing: new Map(), waitUntil: (work) => later.push(work) });
   const first = await answerHistory(askHistory(), env, runtime());
   assert.equal(first.status, 200);
+  await Promise.all(later.splice(0));
   assert.equal(cache.puts.length, 1);
   assert.equal(cache.puts[0].url, historyKey(v3.CONTRACT_VERSION, question));
-  assert.equal(cache.puts[0].cacheControl, `max-age=${HISTORY_SECONDS}`);
+  assert.equal(cache.puts[0].cacheControl, `max-age=${HISTORY_STALE_SECONDS}`);
   time.at.now += HISTORY_SECONDS * 1000 - 1;
   const hit = await answerHistory(askHistory(), env, runtime());
   assert.equal(hit.headers.get('X-Domino-Edge-Cache'), 'hit');
@@ -648,10 +664,18 @@ test('a built 24h history is kept 20 s for the identical question; one not built
   // Another question, or past 20 s: the Worker.
   await answerHistory(askHistory({ ...question, windowSeconds: 604800 }), env, runtime());
   assert.equal(calls.length, 2);
+  // Changed on purpose 2026-10-01 (audit A14): from 20 s to a minute it is served at once while it is read again behind.
   time.at.now += 1;
   const late = await answerHistory(askHistory(), env, runtime());
-  assert.equal(late.headers.get('X-Domino-Edge-Cache'), null, 'never served stale');
+  assert.equal(late.headers.get('X-Domino-Edge-Cache'), null, 'served stale; the request that sends the refresh is counted');
+  assert.deepEqual(await late.json(), built);
+  await Promise.all(later.splice(0));
   assert.equal(calls.length, 3);
+  time.at.now += HISTORY_STALE_SECONDS * 1000;
+  const gone = await answerHistory(askHistory(), env, runtime());
+  assert.equal(gone.headers.get('X-Domino-Edge-Cache'), null, 'never served past a minute');
+  await Promise.all(later.splice(0));
+  assert.equal(calls.length, 4);
 
   // Not built yet: passed on, never kept, so it shows the moment it is built.
   const notBuilt = historyFor(question, { built: false });

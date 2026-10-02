@@ -13,6 +13,7 @@ const require = createRequire(import.meta.url);
 const { MIN_LIQUIDITY_USD, NATIVE, PRICE_GETS, PRICE_TTL_MS, USDG, WETH, createWalletPrices, quotesFromTokens } = require('../.test-build/app/src/lib/walletPrices.js');
 const { SHOWN_HOLDINGS, WHOLE_LIST, addressesToPrice, isLookAlike, listGap, symbolReading, totalWithheld, usdValue, walletHoldings } = require('../.test-build/app/src/lib/walletHoldings.js');
 const { NO_PRICES, WALLET_MEMORY_ADDRESSES, WALLET_MEMORY_KEY, WALLET_MEMORY_MAX_AGE_MS, WALLET_PRICE_MAX_AGE_MS, bookQuotes, recallWallet, rememberWallet, withAnswer } = require('../.test-build/app/src/lib/walletMemory.js');
+const copies = require('../.test-build/app/src/lib/browserCopies.js');
 const { PRICE_BATCH, createTokenArtworkResolver } = require('../.test-build/app/src/lib/tokenArtwork.js');
 
 const UFG = '0xefab538cf3c29237a47c6afb145d50ddf204a0a3';
@@ -445,7 +446,34 @@ test('the card asks its prices through the artwork client only; only walletMemor
     assert.doesNotMatch(code, /\bfetch\(|XMLHttpRequest|sessionStorage|indexedDB|document\.cookie/, file);
     if (file !== 'src/lib/walletMemory.ts') assert.doesNotMatch(code, /localStorage/, file);
   }
-  assert.equal(WALLET_MEMORY_KEY, 'domino-wallet-v1');
+  // Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G10): the key names its chain.
+  assert.equal(WALLET_MEMORY_KEY, 'domino-wallet-v2:4663');
+});
+
+// 2026-10-01 (the chain2 workstream, part B, audit item G10): a list kept under the old name is Robinhood Chain's and
+// moves to the new one the first time it is read, as it was; a browser that cannot let go of keys copies it.
+test('memory: a list kept under the name before moves to the chain\'s name on its first read, and is drawn the same', () => {
+  const { LEGACY_WALLET_MEMORY_KEY } = require('../.test-build/app/src/lib/walletMemory.js');
+  assert.equal(LEGACY_WALLET_MEMORY_KEY, 'domino-wallet-v1');
+  assert.equal(copies.LEGACY_WALLET_MEMORY, LEGACY_WALLET_MEMORY_KEY);
+  const rows = [row(UFG, 'UFG', '1')];
+  const before = memoryStorage();
+  rememberWallet(OWNER_A, { at: 1_000, whole: true, rows }, new Map(), before, 1_000);
+  const text = before.map.get(WALLET_MEMORY_KEY);
+  const map = new Map([[LEGACY_WALLET_MEMORY_KEY, text]]);
+  const old = { map, getItem: (k) => (map.has(k) ? map.get(k) : null), setItem: (k, v) => map.set(k, String(v)), removeItem: (k) => map.delete(k) };
+  assert.deepEqual(recallWallet(OWNER_A, 2_000, old), recallWallet(OWNER_A, 2_000, before), 'drawn as it was');
+  assert.deepEqual([...map.keys()], [WALLET_MEMORY_KEY], 'moved: the old name is gone');
+  assert.equal(map.get(WALLET_MEMORY_KEY), text, 'the same text');
+  // Both kept: the chain's name wins, the old one goes.
+  map.set(LEGACY_WALLET_MEMORY_KEY, JSON.stringify({ v: 1, wallets: {} }));
+  assert.ok(recallWallet(OWNER_A, 2_000, old));
+  assert.deepEqual([...map.keys()], [WALLET_MEMORY_KEY]);
+  // A stand-in that cannot remove: copied, drawn the same.
+  const copy = memoryStorage();
+  copy.map.set(LEGACY_WALLET_MEMORY_KEY, text);
+  assert.ok(recallWallet(OWNER_A, 2_000, copy));
+  assert.equal(copy.map.get(WALLET_MEMORY_KEY), text);
 });
 
 /** A Storage stand-in over a Map. */
@@ -522,16 +550,18 @@ test('memory: a price counts for an hour after its answer; writing the list back
   assert.equal(totalWithheld(WHOLE_LIST, view), 'unanswered_prices', 'no total at old prices');
   assert.deepEqual(walletHoldings(later.rows, quotes).all.slice(0, SHOWN_HOLDINGS).map((h) => h.row.token.symbol), ['USDG', 'ETH', 'AAA'], 'what the hints prevent: the airdrop among the top 3');
 
-  // A list read again twelve days on, while every price GET fails: it is written back under its new time, and each
-  // price keeps its own, so it stays too old to count.
-  const day12 = T + 12 * 86_400_000;
-  rememberWallet(OWNER_A, { at: T + 6 * 86_400_000, whole: true, rows }, recallWallet(OWNER_A, T + 6 * 86_400_000, storage).book.prices, storage, T + 6 * 86_400_000);
+  // A list read again twelve hours on, while every price GET fails: it is written back under its new time, and each
+  // price keeps its own, so it stays too old to count. Changed on purpose 2026-10-01 (I6): the memory keeps a day, not a
+  // week (lib/browserCopies.ts), so the reads are hours apart, not days.
+  const half = T + 12 * 3_600_000;
+  const later30 = T + 30 * 3_600_000;
+  rememberWallet(OWNER_A, { at: half, whole: true, rows }, recallWallet(OWNER_A, half, storage).book.prices, storage, half);
   const kept = JSON.parse(storage.map.get(WALLET_MEMORY_KEY)).wallets[OWNER_A];
-  assert.equal(kept.at, T + 6 * 86_400_000, 'the list is the newer read');
+  assert.equal(kept.at, half, 'the list is the newer read');
   assert.deepEqual(kept.quotes.map((q) => q[3]), [T, T, T, T, T], 'writing back does not refresh a price’s time');
-  rememberWallet(OWNER_A, { at: day12, whole: true, rows }, recallWallet(OWNER_A, day12, storage).book.prices, storage, day12);
-  assert.deepEqual(JSON.parse(storage.map.get(WALLET_MEMORY_KEY)).wallets[OWNER_A].quotes, [], 'past a week, a price is let go altogether');
-  assert.equal(recallWallet(OWNER_A, day12, storage).book.prices.size, 0);
+  rememberWallet(OWNER_A, { at: later30, whole: true, rows }, recallWallet(OWNER_A, later30, storage).book.prices, storage, later30);
+  assert.deepEqual(JSON.parse(storage.map.get(WALLET_MEMORY_KEY)).wallets[OWNER_A].quotes, [], 'past a day, a price is let go altogether');
+  assert.equal(recallWallet(OWNER_A, later30, storage).book.prices.size, 0);
 
   // A new answer counts from its own time: an answer reused from the visit's memory is not made newer by arriving later.
   const again = withAnswer(later.book, { quotes: new Map([[UFG, { usd: '0.004', liquidityUsd: 165_000 }]]), at: new Map([[UFG, T + HOUR + 500]]) }, T + HOUR + 900);
@@ -546,8 +576,12 @@ test('memory: too old, from the future, or not what was kept, it is never drawn;
   const storage = memoryStorage();
   const rows = [row(UFG, 'UFG', '1')];
   rememberWallet(OWNER_A, { at: 0, whole: true, rows }, new Map(), storage, 0);
-  assert.ok(recallWallet(OWNER_A, WALLET_MEMORY_MAX_AGE_MS, storage), 'a week old: still drawn');
-  assert.equal(recallWallet(OWNER_A, WALLET_MEMORY_MAX_AGE_MS + 1, storage), null, 'older than a week: never');
+  // Changed on purpose 2026-10-01 (I6): a day, not a week; lib/browserCopies.ts names the same key and the same age.
+  assert.equal(WALLET_MEMORY_MAX_AGE_MS, 86_400_000);
+  assert.equal(WALLET_MEMORY_KEY, copies.WALLET_MEMORY);
+  assert.equal(WALLET_MEMORY_MAX_AGE_MS, copies.WALLET_MEMORY_MAX_AGE_MS);
+  assert.ok(recallWallet(OWNER_A, WALLET_MEMORY_MAX_AGE_MS, storage), 'a day old: still drawn');
+  assert.equal(recallWallet(OWNER_A, WALLET_MEMORY_MAX_AGE_MS + 1, storage), null, 'older than a day: never');
   rememberWallet(OWNER_A, { at: 10_000_000, whole: true, rows }, new Map(), storage, 10_000_000);
   assert.equal(recallWallet(OWNER_A, 10_000_000 - 61_000, storage), null, 'written more than a minute in the future: never');
   const kept = () => ({ v: 1, wallets: { [OWNER_A]: { at: 10_000_000, whole: true, rows: [[UFG, 'UFG', 18, '1', 1]], quotes: [[UFG, '0.003', 165_000, 10_000_000]] } } });

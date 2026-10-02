@@ -43,7 +43,7 @@ export const PRESIGN_LABELS: Readonly<Record<PreSignRowId, string>> = {
   response: 'The prepare response passes the deposit-v1 contract check',
   wallet_step: 'The response carries a wallet step',
   wallet_step_valid: 'The wallet step matches your selection, owner, limits and budgets (validateWalletStep)',
-  chain: 'Your wallet is on Robinhood Chain (4663)',
+  chain: 'Your wallet is on Robinhood Chain',
   account: 'Your wallet account is the deposit owner, the transaction sender and your signed-in address',
   fresh: 'The wallet handoff is still within its validity window',
   summary: 'You reviewed the summary above',

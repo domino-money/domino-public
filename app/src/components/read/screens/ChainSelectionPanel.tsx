@@ -1,3 +1,4 @@
+import { pricePair } from '../../../lib/read/orientation'
 import { useCallback, useEffect, useState } from 'react'
 import { COPY } from '../../../lib/read/screens/copy'
 import type { ChainSelectionSlotProps, PickerChrome } from '../../../lib/read/screens/pickerChrome'
@@ -211,7 +212,8 @@ export function ChainSelectionPanel({ onChrome }: ChainSelectionSlotProps) {
         <div className="grid gap-0.5 text-[12px]" data-summary="Pool">
           <p>
             <span className="text-fg-muted">Pool: </span>
-            <SymbolText token={pool.currencies[0]} /> / <SymbolText token={pool.currencies[1]} />
+            {/* Named as its price is written (audit E21). */}
+            <SymbolText token={pricePair(pool.currencies[0], pool.currencies[1]).base} /> / <SymbolText token={pricePair(pool.currencies[0], pool.currencies[1]).quote} />
             <span className="font-mono"> · {pool.fee}</span>
             <span className="text-fg-subtle">
               {' '}

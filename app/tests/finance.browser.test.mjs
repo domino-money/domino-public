@@ -1,35 +1,35 @@
 import { jump } from './support/clock.mjs';
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
+import { after, before } from 'node:test';
+// 2026-10-01 (audit H2): CI runs this suite in parts, one job each; part() below names the part of the tests after it.
+import { keepOnFailure, part, test } from './support/parts.mjs';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
-import { concatHex, encodeAbiParameters, keccak256, toFunctionSelector } from 'viem';
+import { concatHex, encodeAbiParameters, keccak256, pad, toFunctionSelector } from 'viem';
+import { logLimitError } from './support/log-limits.mjs';
 import { createFakeOnboarding, routedSwapPreview } from './support/fake-onboarding.mjs';
 import { routePermitAbi, routeExecuteAbi } from '../.test-build/app/src/finance/routedSwap.js';
 import { ROUTE_PERMIT2, UNIVERSAL_ROUTER, ROUTE_FEE_RECIPIENT } from '../.test-build/app/src/finance/pin.js';
 import { createFakeSession } from './support/fake-session.mjs';
 import { createWalletServer } from './support/wallet-server.mjs';
 import { ACCOUNTS, installWallets } from './support/mock-wallet.mjs';
-import { ARTWORK, choosePool, footerButton, walkToReview } from './support/new-position.mjs';
+import { ARTWORK, choosePool, footerButton, pressContinue, walkToReview } from './support/new-position.mjs';
 import { FIXTURE_TOKEN, createReadStub, gatewayError } from './support/read-stub.mjs';
 // The mint's own sizing, from the unit build (npm test compiles it first, as check:app runs it first).
 import { bandFor, bandLiquidity, mintPlanFor } from '../.test-build/app/src/lib/create/mintPlan.js';
 // 2026-09-28 (one-sided, review): v4-core's tick maths, for what a one-sided mint takes and a price inside a range.
 import { sqrtPriceAtTick } from '../.test-build/app/src/lib/read/screens/poolRange.js';
-// 2026-09-25: the public RPC as the page reads it, answered by a fake chain (the page reads the chain itself since the RPC
-// rate-limits Cloudflare's edge), and a recorded fees case as the chain it was read from.
-import { SETUP_MINTED_TOPIC, browserChain, busyHistory, opIdOf, routeChain as routeRpc } from './support/browser-chain.mjs';
-import { FALLBACK_URLS, ORDOFI, PUBLICNODE } from './support/fallbacks.mjs';
+// 2026-09-25: a fake chain, and a recorded fees case as the chain it was read from. Since 2026-10-01 (RPC-SPEC) the page
+// asks the site's own chain routes, answered by the routes' handler over that chain (tests/support/browser-chain.mjs).
+import { SETUP_MINTED_TOPIC, browserChain, opIdOf, routeChain as routeRpc } from './support/browser-chain.mjs';
 // 2026-09-27: a wallet that refunds a held deposit, for the test that holds the list's refresh during a refund.
 import { createPositionChain } from './support/position-chain.mjs';
-import { caseChain } from './support/fees/case-chain.mjs';
-import { automatedChain } from './support/fees/automated-chain.mjs';
-import { pathChain } from './support/fees/path-chain.mjs';
-import { listChain } from './support/fees/list-chain.mjs';
-// 2026-09-25: the fees worker's lane to the RPC, whose pace the busy-history test holds it to.
-import { LANE_PACE } from '../.test-build/app/src/lib/chain/browser.js';
+// 2026-10-01 (item H1): the point reads over a fake archive, and the chain RPC's charge for one address.
+// 2026-10-02 (RPC-SPEC §11.4): a position and its own events, for the fees ledger's scenarios.
+import { OWNER_STEPS, TOKENS as LEDGER_TOKENS, ledgerWorld } from './support/fees/ledger-world.mjs';
+import { POOL_MANAGER as LEDGER_PM } from './support/fees/ledger-chain.mjs';
 // 2026-09-27: how far back a later scan of the same wallet reads its logs, for the refresh tests.
 import { REREAD_BLOCKS } from '../.test-build/app/functions/_lib/walletPositions.js';
 import * as runtime from '../../api-contracts/performance-v2/runtime.mjs';
@@ -58,7 +58,7 @@ const RELEASE_OFF = { status: 200, body: { contractVersion: '1.0.0-rc.1', chainI
  * (no position, no deposit, every NFT unknown), as the site's routes answered before 2026-09-25. `refresh` (2026-09-27):
  * Your positions and a position's page read themselves again on their own, as they do outside test builds.
  */
-async function scenario({ clock = false, routes = [], chain = browserChain(), refresh = false, prefetch = false } = {}) {
+async function scenario({ clock = false, routes = [], chain = browserChain(), refresh = false, prefetch = false, points = false } = {}) {
   const fake = createFakeSession();
   const calls = [], executions = [], releases = [], deposits = [], errors = [];
   const state = { performance: 'available', execution: 'on', setupRelease: RELEASE_OFF, sequenceRelease: RELEASE_OFF, deposit: null };
@@ -102,13 +102,15 @@ async function scenario({ clock = false, routes = [], chain = browserChain(), re
   if (clock) await context.clock.install({ time: Date.now() });
   if (refresh) await context.addInitScript(() => { window.__dominoRefresh = true; });
   if (prefetch) await context.addInitScript(() => { window.__dominoAprPrefetch = true; });
+  // 2026-10-01 (item H1): the fees history's point reads, on in a test build only when asked (src/lib/fees/spawn.ts).
+  if (points) await context.addInitScript(() => { window.__dominoPoints = true; });
   await context.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   const rpc = await routeRpc(context, chain);
   const wallet = await installWallets(context);
   const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
   await page.goto(`${origin}/#/app`);
   return { page, origin, fake, calls, executions, releases, deposits, wallet, context, rpc, set(patch) { Object.assign(state, patch); }, async close() {
-    await context.close(); await server.closeAll(); assert.deepEqual(errors, []); assert.deepEqual(wallet.state.csp, []); assert.deepEqual(wallet.state.refused, []); assert.deepEqual(rpc.errors, [], 'the public RPC was asked only what it answers');
+    await keepOnFailure(context); await context.close(); await server.closeAll(); assert.deepEqual(errors, []); assert.deepEqual(wallet.state.csp, []); assert.deepEqual(wallet.state.refused, []); assert.deepEqual(rpc.errors, [], 'the public RPC was asked only what it answers');
   } };
 }
 async function login(page) {
@@ -126,14 +128,18 @@ const noManualReads = async (root) => {
   for (const name of names) assert.doesNotMatch(name, /^(Refresh|Retry|First positions|Read execution receipts|Load deployment.*)$/, `a control named ${name}`);
 };
 
+part('automation');
+
 // Changed on purpose (owner, 2026-09-27, round 5, "Domino is for people who know nothing about pools"): the signed-out
 // sentences are plain, a managed position is one short row with three figures and the rest inside All figures, and a receipt
 // is one short row whose sentence is inside it.
 test('private history and receipts read themselves after login, format exact producer amounts, and disappear on account change', async () => {
   const s = await scenario();
   try {
-    await s.page.getByText('Sign in with your wallet to see your automated positions.', { exact: true }).waitFor();
-    await s.page.getByText('Sign in with your wallet to see your receipts.', { exact: true }).waitFor();
+    // Changed on purpose 2026-10-01 (audit D2): with no wallet connected yet, each card says to connect one (it said
+    // "Sign in" to every visitor); once connected and signed out, it says to sign in (below, after Sign out).
+    // Changed on purpose 2026-10-01 (the D2 follow-up): with nothing to show for the same reason, one line for both cards.
+    await s.page.getByText('Connect your wallet to see your automated positions and their receipts.', { exact: true }).waitFor();
     assert.deepEqual([s.calls.length, s.executions.length], [0, 0], 'nothing private is read while signed out');
     await login(s.page);
     const history = s.page.locator('section[aria-label="Private performance"]');
@@ -379,6 +385,7 @@ test('a refused or failing release (403, 404, 503) is treated like available:fal
 });
 
 // ---- Setup's assisted swap: a quote for the amount the owner types (G15) ----------------
+part('create');
 
 const hex = (n, bytes = 20) => `0x${n.toString(16).padStart(2, '0').repeat(bytes)}`;
 /** The pair of the one setup operation the chain below lists for the owner: not the pair typed into the funding fields. */
@@ -605,6 +612,8 @@ const quoterChainAbi = parseAbi([
 ]);
 /** The pinned quoter (src/finance/pin.ts V4_QUOTER) and its real runtime code, whose keccak256 is the pinned hash. */
 const QUOTER = JSON.parse(readFileSync(new URL('./support/v4-quoter.code.json', import.meta.url), 'utf8'));
+/** An ERC-20's Transfer(address,address,uint256) topic (fix round 3.1: the fake deposit chain's router swaps emit it). */
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 /** Two recognized EIP-7702 delegates' runtime code as read on Robinhood Chain (src/finance/delegates.ts). */
 const DELEGATES = JSON.parse(readFileSync(new URL('./support/eip7702-delegates.code.json', import.meta.url), 'utf8'));
 
@@ -643,8 +652,30 @@ const DELEGATES = JSON.parse(readFileSync(new URL('./support/eip7702-delegates.c
  *
  * Added 2026-09-28 (one-sided, review): after `moveOnOpen(price)`, an `open` included leaves the pool's square-root
  * price there, as if another trader's swap moved it between the deposit and the mint.
+ *
+ * Added in fix round 3 (2026-10-01): `keptBlocks`, the old state the node keeps, as the chain's RPC keeps about 2,000
+ * blocks and publicnode none: a nonce read at a height more than `keptBlocks` blocks under the newest one is refused
+ * ('missing trie node', kept in `pruned`), where it used to answer at any height like an archive node. `mine(n)` adds n
+ * blocks with nothing of this wallet's, so a replacement grows old. A router swap included takes its input through
+ * Permit2, as Uniswap's router does: the token's allowance to Permit2 and Permit2's allowance to the router go down by
+ * it. `holdInWallet(name)`: the wallet takes the next send that calls `name` and gives its hash, but mines nothing yet;
+ * `cancelHeld()` is the person cancelling it later. A send both sped up and `revert`ed is included reverted.
+ *
+ * Added in fix round 3.1 (2026-10-01): eth_getLogs answers the ERC-20 Transfer logs of each router swap included (its input
+ * from the owner, its output to the owner), refused past the chain RPC's limits (tests/support/log-limits.mjs), or not at
+ * all with `logs: false` (a wallet's RPC that does not serve logs). `later(s)`: the newest block's time runs `s` seconds
+ * ahead (an allowance's expiry passed). `stallInWallet(name)`: the wallet never answers the next send that calls `name`
+ * (a reload while it shows it, or a signer slower than the page waits); `approveStalled()` is the person approving it
+ * later: it is mined at the nonce the page prepared, and the page never hears its hash.
+ *
+ * Added in fix round 3.2 (2026-10-02): `profile(name)` makes the wallet's RPC answer as one measured on the chain
+ * (config/chainRobinhood.ts): 'drpc' refuses state at any numbered block, the head included ("Unknown state"), and logs
+ * spanning over 200 blocks; 'publicnode' refuses logs from further than 100 blocks under the head (its state depth is
+ * `keptBlocks`). `burnNonce()`: another transaction of the wallet's, shaped as a Cancel (0 ETH to itself), takes the next
+ * nonce in the newest block. `setPermit(token, amount, expiration)`: the router's Permit2 allowance set otherwise (the
+ * Uniswap app); `lockdown(token)`: Permit2's lockdown, its amount to 0 with the same expiry (a revoke tool).
  */
-function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0, ownerCode = '0x', delegateCode = null, atomic = null, capabilities = null, batchError = null, simulation = 'ok', routed = false } = {}) {
+function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 18n, liquidity = 5n * 10n ** 17n, liquidFrom = null, protocolFee = 0, clockSkew = 0, finality = 'final', quoteDelayMs = 0, ownerCode = '0x', delegateCode = null, atomic = null, capabilities = null, batchError = null, simulation = 'ok', routed = false, keptBlocks = null, logs = true } = {}) {
   const at = (byte, bytes = 20) => `0x${byte.toString(16).padStart(2, '0').repeat(bytes)}`;
   const setup = at(0x71), poolManager = at(0x72), positionManager = at(0x73), stateView = at(0x74), feeRecipient = routed ? ROUTE_FEE_RECIPIENT : at(0x75);
   const code = { [setup]: '0x6071', [poolManager]: '0x6072', [positionManager]: '0x6073', [stateView]: '0x6074', [QUOTER.address]: QUOTER.code };
@@ -710,6 +741,33 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     keccak256(encodeAbiParameters(parseAbiParameters('(address,address,uint24,int24,address)'), [[key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks]]))])])]);
   const refuse = new Set(), toRevert = new Set(), reverted = new Set();
   let permitted = false;
+  // 2026-10-01 (audit C1): the wallet's own network, Robinhood Chain unless a test moves it, the networks it knows, a
+  // switch or an add the person refuses once, and every network it was asked to add.
+  let walletChainId = 4663, refuseNetwork = null;
+  const knownChains = new Set([4663]), added = [];
+  // 2026-10-01 (audit C2): sends the wallet answers with an error that proves nothing either way, sending nothing.
+  const lose = new Set(), lost = [];
+  // 2026-10-01 (audit C14): sends the person replaces in the wallet. "Speed up": the same call included under another
+  // hash than the one the page was given. "Cancel": a 0-ETH transfer to the account itself takes the nonce, and the
+  // call never happens (`burned` nonces, beside `sends`).
+  const speedUp = new Set(), cancelInWallet = new Set();
+  let burned = 0;
+  // Fix round 2 (2026-10-01): each cancel as the chain has it, in the block the next send would be in (`at`), so the
+  // nonce read at a block height and that block's transactions tell it from a sped-up send, as on a real chain.
+  const cancels = [];
+  // Fix round 3 (2026-10-01): blocks with nothing of this wallet's (`mine`), the block each send is in (`minedAt`), the
+  // newest block (`head`, where the next send goes, as before), the heights a pruned nonce read was refused at, and the
+  // sends the wallet holds unmined (`holdInWallet`).
+  let idle = 0;
+  const minedAt = [], pruned = [], waiting = [], hold = new Set();
+  // Fix round 3.1: the newest block's time ahead by `later` seconds; sends the wallet never answers (`stallInWallet`).
+  let later = 0;
+  const stall = new Set(), stalled = [];
+  // Fix round 3.2: the wallet RPC's profile (null: the chain's own, as before).
+  let rpcProfile = null;
+  const head = () => sends.length + idle;
+  /** Includes `tx` in the newest block: its index among the sends. */
+  const mineSend = tx => { const index = sends.length; minedAt.push(head()); sends.push(tx); return index; };
   const blockOf = index => ({ number: numberToHex(0x10 + index), hash: at(0xb0 + index, 32) });
   const hashOf = index => at(0xc0 + index, 32);
   const decode = tx => decodeFunctionData({ abi: lower(tx.to) === setup ? setupChainAbi : routed && lower(tx.to) === ROUTE_PERMIT2 ? routePermitAbi : routed && lower(tx.to) === UNIVERSAL_ROUTER ? routeExecuteAbi : erc20Abi, data: tx.data });
@@ -827,7 +885,14 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     if (routed && lower(tx.to) === UNIVERSAL_ROUTER) {
       check(tx);
       const p = routerOutputs.get(tx.data), gross = BigInt(p.request.amountRaw), output = BigInt(p.uniswap.amountOutRaw);
-      if (p.request.tokenIn === zeroAddress) eth -= gross; else held.set(p.request.tokenIn, (held.get(p.request.tokenIn) ?? 0n) - gross);
+      if (p.request.tokenIn === zeroAddress) eth -= gross;
+      else {
+        held.set(p.request.tokenIn, (held.get(p.request.tokenIn) ?? 0n) - gross);
+        // Fix round 3: the input goes through Permit2, as Uniswap's router takes it: both allowances go down by it.
+        routeAllowances.set(p.request.tokenIn, (routeAllowances.get(p.request.tokenIn) ?? 0n) - gross);
+        const [amount, expiration] = permits.get(p.request.tokenIn);
+        permits.set(p.request.tokenIn, [amount - gross, expiration]);
+      }
       if (p.tokenOut === zeroAddress) eth += output; else held.set(p.tokenOut, (held.get(p.tokenOut) ?? 0n) + output);
       return;
     }
@@ -861,8 +926,22 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
         case 'wallet_requestPermissions': permitted = true; return { result: [{ parentCapability: 'eth_accounts', caveats: [{ type: 'restrictReturnedAccounts', value: [owner] }] }] };
         case 'wallet_revokePermissions': permitted = false; return { result: null };
         case 'eth_accounts': return { result: permitted ? [owner] : [] };
-        case 'eth_chainId': return { result: '0x1237' };
-        case 'wallet_switchEthereumChain': return { result: null };
+        case 'eth_chainId': return { result: numberToHex(walletChainId) };
+        case 'wallet_switchEthereumChain': {
+          if (refuseNetwork === 'switch') { refuseNetwork = null; return { error: { code: 4001, message: 'User rejected the request.' } }; }
+          const target = Number(BigInt(params[0].chainId));
+          if (!knownChains.has(target)) return { error: { code: 4902, message: `Unrecognized chain ID "${params[0].chainId}". Try adding the chain using wallet_addEthereumChain first.` } };
+          walletChainId = target;
+          return { result: null };
+        }
+        case 'wallet_addEthereumChain': {
+          added.push(params[0]);
+          if (refuseNetwork === 'add') { refuseNetwork = null; return { error: { code: 4001, message: 'User rejected the request.' } }; }
+          // As MetaMask does: the network is added, and the wallet switches to it.
+          walletChainId = Number(BigInt(params[0].chainId));
+          knownChains.add(walletChainId);
+          return { result: null };
+        }
         case 'eth_getCode': return { result: code[lower(params[0])] ?? '0x' };
         case 'wallet_getCapabilities':
           if (capabilities) return capabilities;
@@ -888,26 +967,73 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
           return { result: { version: '2.0.0', id: batch.id, chainId: '0x1237', status: batch.status, atomic: true, receipts: [] } };
         }
         case 'eth_gasPrice': return { result: '0x5f5e100' };
-        case 'eth_getTransactionCount': return { result: numberToHex(sends.length) };
+        case 'eth_getTransactionCount': {
+          // At a block height (fix round 2): the sends in the blocks up to it, and the cancels among them.
+          if (!/^0x[0-9a-f]+$/i.test(params[1] ?? '')) return { result: numberToHex(sends.length + burned) };
+          if (rpcProfile === 'drpc') return { error: { code: -32000, message: 'Unknown state' } };
+          const upTo = Number(BigInt(params[1])) - 0x10;
+          // State the node no longer keeps (fix round 3), refused as a pruned node refuses it.
+          if (keptBlocks !== null && upTo < head() - keptBlocks) { pruned.push(upTo); return { error: { code: -32000, message: 'missing trie node' } }; }
+          return { result: numberToHex(minedAt.filter(block => block <= upTo).length + cancels.filter(entry => entry.at <= upTo).length) };
+        }
         case 'eth_estimateGas': return { result: '0x186a0' };
         case 'eth_getBalance': return { result: numberToHex(eth) };
         case 'eth_call':
           // A slow wallet: each quoter question takes `quoteDelayMs` to answer.
           if (quoteDelayMs > 0 && lower(params[0].to) === QUOTER.address) await new Promise(resolve => setTimeout(resolve, quoteDelayMs));
+          if (rpcProfile === 'drpc' && params[1] !== 'latest') return { error: { code: -32000, message: 'Unknown state' } };
           return { result: view(lower(params[0].to), params[0].data, params[1]) };
         // The newest block's number, as eth_getBlockByNumber('latest') has it.
-        case 'eth_blockNumber': return { result: blockOf(sends.length).number };
+        case 'eth_blockNumber': return { result: blockOf(head()).number };
         case 'eth_sendTransaction': {
           const { functionName } = decode(params[0]);
           if (refuse.delete(functionName)) { declined.push(functionName); return { error: { code: 4001, message: 'User rejected the request.' } }; }
-          const index = sends.length; sends.push(params[0]);
+          if (lose.delete(functionName)) { lost.push(functionName); return { error: { code: -32603, message: 'Internal JSON-RPC error.' } }; }
+          if (cancelInWallet.delete(functionName)) {
+            burned += 1;
+            cancels.push({ at: head(), tx: { hash: at(0xf0 + burned, 32), from: owner, to: owner, input: '0x', value: '0x0', nonce: params[0].nonce } });
+            return { result: at(0xd0 + burned, 32) };
+          }
+          // Held in the wallet, unmined (fix round 3): what the person does with it comes later (cancelHeld).
+          if (hold.delete(functionName)) { waiting.push(params[0]); return { result: at(0xa0 + waiting.length, 32) }; }
+          // Never answered (fix round 3.1): what the person does with it comes later (approveStalled).
+          if (stall.delete(functionName)) { stalled.push(params[0]); return new Promise(() => {}); }
+          // A speed-up that reverts (fix round 3): included under the other hash, with status 0 and no effect.
+          if (speedUp.delete(functionName)) {
+            const index = mineSend(params[0]);
+            if (toRevert.delete(functionName)) reverted.add(index); else include(params[0]);
+            return { result: at(0xe0 + index, 32) };
+          }
+          const index = mineSend(params[0]);
           if (toRevert.delete(functionName)) reverted.add(index); else include(params[0]);
           return { result: hashOf(index) };
+        }
+        case 'eth_getLogs': {
+          // Fix round 3.1: the Transfer logs of the router swaps included, as an ERC-20 emits them.
+          if (!logs) return { error: { code: -32601, message: 'the method eth_getLogs does not exist/is not available' } };
+          const filter = params[0], refusal = logLimitError(filter);
+          if (refusal) return { error: refusal };
+          const from = Number(BigInt(filter.fromBlock)), to = Number(BigInt(filter.toBlock));
+          if (rpcProfile === 'drpc' && to - from > 200) return { error: { code: 35, message: 'ranges over 10000 blocks are not supported on free plan' } };
+          if (rpcProfile === 'publicnode' && from < 0x10 + head() - 100) return { error: { code: -32000, message: 'Archive requests require a personal token' } };
+          const fits = (value, wanted) => wanted === null || wanted === undefined || (Array.isArray(wanted) ? wanted.map(lower).includes(value) : lower(wanted) === value);
+          const found = [];
+          sends.forEach((tx, i) => {
+            if (!routed || lower(tx.to) !== UNIVERSAL_ROUTER || reverted.has(i)) return;
+            const number = 0x10 + minedAt[i], p = routerOutputs.get(tx.data);
+            if (number < from || number > to || !p) return;
+            const transfers = [[p.request.tokenIn, owner, poolManager], [p.tokenOut, poolManager, owner]].filter(([token]) => token !== zeroAddress);
+            for (const [token, source, target] of transfers) {
+              const log = { address: lower(token), topics: [TRANSFER_TOPIC, pad(lower(source)), pad(lower(target))], data: '0x', blockNumber: numberToHex(number), transactionHash: hashOf(i), logIndex: '0x0' };
+              if (fits(log.address, filter.address) && (filter.topics ?? []).every((wanted, place) => fits(log.topics[place], wanted))) found.push(log);
+            }
+          });
+          return { result: found };
         }
         case 'eth_getTransactionByHash': case 'eth_getTransactionReceipt': {
           const index = sends.findIndex((_, i) => hashOf(i) === lower(params[0]));
           if (index === -1) return { result: null };
-          const sent = sends[index], block = { blockHash: blockOf(index).hash, blockNumber: blockOf(index).number };
+          const sent = sends[index], block = { blockHash: blockOf(minedAt[index]).hash, blockNumber: blockOf(minedAt[index]).number };
           return { result: method === 'eth_getTransactionByHash'
             ? { hash: hashOf(index), from: sent.from, to: sent.to, input: sent.data, value: sent.value, nonce: sent.nonce, chainId: sent.chainId, type: sent.type, gas: sent.gas, maxFeePerGas: sent.maxFeePerGas, maxPriorityFeePerGas: sent.maxPriorityFeePerGas, ...block }
             : { transactionHash: hashOf(index), from: sent.from, to: sent.to, status: reverted.has(index) ? '0x0' : '0x1', gasUsed: '0xc350', effectiveGasPrice: sent.maxFeePerGas, ...block } };
@@ -915,9 +1041,15 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
         case 'eth_getBlockByNumber': {
           if (params[0] === 'finalized') return { result: FINALIZED };
           // The newest block, at this machine's time (`clockSkew` seconds on): the chain's clock, which Create position compares its own with.
-          if (params[0] === 'latest') return { result: { ...blockOf(sends.length), timestamp: numberToHex(Math.floor(Date.now() / 1000) + clockSkew) } };
+          if (params[0] === 'latest') return { result: { ...blockOf(head()), timestamp: numberToHex(Math.floor(Date.now() / 1000) + clockSkew + later) } };
           const index = Number(BigInt(params[0])) - 0x10;
-          return { result: index >= 0 && index < sends.length ? blockOf(index) : null };
+          const cancelled = cancels.filter(entry => entry.at === index).map(entry => entry.tx);
+          const sentHere = sends.map((_, i) => i).filter(i => minedAt[i] === index);
+          // Bodies are never pruned (fix round 3: only state is); the newest block, empty, is not there yet.
+          if (index < 0 || index > head() || (index === head() && !cancelled.length && !sentHere.length)) return { result: null };
+          // With its transactions when asked for them (fix round 2): a cancel first, then the send of that block.
+          const mined = sentHere.map(i => ({ hash: hashOf(i), from: sends[i].from, to: sends[i].to, input: sends[i].data, value: sends[i].value, nonce: sends[i].nonce }));
+          return { result: params[1] === true ? { ...blockOf(index), transactions: [...cancelled, ...mined] } : blockOf(index) };
         }
       }
     } catch (error) {
@@ -949,6 +1081,48 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
     /** An operation of this owner already on chain, under the owner's next id. */
     seed(operation) { const id = operationId(BigInt(operations.size)); operations.set(id, { owner, swapped: false, closed: false, tokenId: 0n, ...operation }); return id; },
     decline(functionName) { refuse.add(functionName); },
+    /** The wallet answers this send once with an error that proves nothing either way (-32603), and sends nothing. */
+    lose(functionName) { lose.add(functionName); },
+    /** The person speeds this send up in the wallet: it is included, under another hash than the page was given. */
+    speedUp(functionName) { speedUp.add(functionName); },
+    /** The person cancels this send in the wallet: a 0-ETH transfer to the account takes its nonce, and it never happens. */
+    cancelInWallet(functionName) { cancelInWallet.add(functionName); },
+    /** Fix round 3: `n` blocks with nothing of this wallet's; the heights a nonce read was refused at (`keptBlocks`). */
+    mine(n) { idle += n; }, pruned,
+    /** Fix round 3: the wallet gives a hash for the next send that calls `functionName` and mines nothing yet. */
+    holdInWallet(functionName) { hold.add(functionName); },
+    /** Fix round 3: the person cancels the send the wallet holds: a 0-ETH transfer to the account takes its nonce, in the newest block. */
+    cancelHeld() {
+      const tx = waiting.shift();
+      burned += 1;
+      cancels.push({ at: head(), tx: { hash: at(0xf0 + burned, 32), from: owner, to: owner, input: '0x', value: '0x0', nonce: tx.nonce } });
+    },
+    /** Fix round 3.1: the newest block's time runs `seconds` ahead of this machine's clock (0: as it is). */
+    later(seconds) { later = seconds; },
+    /** Fix round 3.1: the wallet never answers the next send that calls `functionName`. */
+    stallInWallet(functionName) { stall.add(functionName); },
+    /** Fix round 3.1: the person approves the send the wallet never answered: it is mined, at the nonce the page prepared. */
+    approveStalled() { const tx = stalled.shift(); mineSend(tx); include(tx); }, stalled,
+    /** Fix round 3.2: the wallet's RPC answers as dRPC or publicnode does from now on (null: the chain's own). */
+    profile(name) { rpcProfile = name; },
+    /** Fix round 3.2: another transaction of the wallet's, shaped as a Cancel, takes the next nonce in the newest block. */
+    burnNonce() {
+      const nonce = numberToHex(sends.length + burned);
+      burned += 1;
+      cancels.push({ at: head(), tx: { hash: at(0xf0 + burned, 32), from: owner, to: owner, input: '0x', value: '0x0', nonce } });
+    },
+    /** Fix round 3.2: the router's Permit2 allowance for `token` set otherwise (the Uniswap app). */
+    setPermit(token, amount, expiration) { permits.set(lower(token), [amount, expiration]); },
+    /** Fix round 3.2: Permit2's lockdown of the router for `token`: its amount to 0, its expiry kept. */
+    lockdown(token) { const [, expiration] = permits.get(lower(token)); permits.set(lower(token), [0n, expiration]); },
+    /** Fix round 3: Permit2's allowance to the router for `token`, as [amount, expiration], or undefined. */
+    permitOf: token => permits.get(lower(token)),
+    lost,
+    /** The wallet moves to another network (the page hears it through installDepositWallet's emit); `forget` drops Robinhood Chain from it. */
+    moveWallet(chainId, { forget = false } = {}) { walletChainId = chainId; knownChains.add(chainId); if (forget) knownChains.delete(4663); },
+    /** The person refuses the next network switch ('switch') or the next network add ('add') in the wallet. */
+    refuseNetworkOnce(kind) { refuseNetwork = kind; },
+    added, walletChain: () => walletChainId,
     moveOnOpen(price) { priceOnOpen = price; },
     revert(functionName) { toRevert.add(functionName); },
     /** Every transaction sent, decoded against the contract it went to. */
@@ -960,6 +1134,9 @@ function fakeDepositChain(owner, { tokenId = 4242n, balances = {}, eth = 10n ** 
 async function installDepositWallet(context, chain) {
   await context.exposeFunction('__dominoDepositWallet', (method, params) => chain.request(method, params));
   await context.addInitScript(() => {
+    // 2026-10-01 (audit C1): the wallet's events, as an EIP-1193 provider has them; a test says one with
+    // window.__depositWalletEmit (a network the wallet moved to, as chainChanged's hex id).
+    const listeners = new Map();
     const provider = {
       async request({ method, params }) {
         const reply = await window.__dominoDepositWallet(method, params ?? []);
@@ -967,9 +1144,10 @@ async function installDepositWallet(context, chain) {
         if (reply.error) throw Object.assign(new Error(reply.error.message), { code: reply.error.code }, reply.error.data ? { data: reply.error.data } : {});
         return reply.result;
       },
-      on() { return provider; },
-      removeListener() { return provider; },
+      on(event, listener) { listeners.set(event, [...(listeners.get(event) ?? []), listener]); return provider; },
+      removeListener(event, listener) { listeners.set(event, (listeners.get(event) ?? []).filter(other => other !== listener)); return provider; },
     };
+    window.__depositWalletEmit = (event, value) => { for (const listener of listeners.get(event) ?? []) listener(value); };
     const detail = Object.freeze({ info: Object.freeze({ uuid: '8f2a7d1c-0000-4000-8000-0000000000d1', name: 'Deposit Wallet', icon: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg"/%3E', rdns: 'test.wallet.deposit' }), provider });
     const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
     window.addEventListener('eip6963:requestProvider', announce);
@@ -1391,7 +1569,9 @@ for (const nativeInput of [false, true]) test(`routed Create position ${nativeIn
     assert.equal(request.tokenIn, nativeInput ? zeroAddress : FIXTURE_TOKEN);
     assert.equal('owner' in request, false, 'the session supplies the owner');
     await s.page.locator('[data-review-route="uniswap"]').waitFor();
-    assert.match(await s.page.locator('[data-review-route-minimum]').innerText(), /Receive at least[\s\S]*after the fee[\s\S]*0\.65%, once/);
+    // Changed on purpose 2026-10-01 (audit E20): CREATE's plain words, with no "guaranteed" and no "router".
+    assert.match(await s.page.locator('[data-review-route-minimum]').innerText(), /You receive at least[\s\S]*after the fee[\s\S]*0\.65%, once/);
+    assert.doesNotMatch(await s.page.locator('[data-stage="review"]').innerText(), /guaranteed|router|Price impact/i);
     assert.deepEqual([chain.sends, chain.batches], [[], []], 'the newly chosen route never signs before the person reviews it');
     await s.page.locator('[data-create-position="failed"]').click();
     await openCreated(s.page, '4242', 60_000);
@@ -1421,7 +1601,9 @@ test('routed Create position warns before sequential signing and never repeats a
   try {
     await s.page.locator('[data-create-position="idle"]').click();
     await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
-    assert.match(await s.page.locator('[data-review-route-risk]').innerText(), /stop after the swap[\s\S]*tokens stay in your wallet[\s\S]*fee are not undone/);
+    // Changed on purpose 2026-10-01 (integration pass 3): the copy workstream (lib/create/copy.ts ROUTED.sequential) says
+    // "what you received stays in your wallet" for "the received tokens stay in your wallet".
+    assert.match(await s.page.locator('[data-review-route-risk]').innerText(), /stop after the swap[\s\S]*what you received stays in your wallet[\s\S]*fee are not undone/);
     assert.deepEqual(chain.sends, []);
     chain.decline('open');
     await s.page.locator('[data-create-position="failed"]').click();
@@ -1434,6 +1616,1022 @@ test('routed Create position warns before sequential signing and never repeats a
     await s.page.locator('[data-create-position="failed"]').click();
     await openCreated(s.page, '4242', 60_000);
     assert.equal(routerCalls().length, 1);
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 1 (2026-10-01): a routed Uniswap swap the person replaces in the wallet ("Cancel" here) never gets a receipt
+// for its own hash. Its journal used to stay, holding Create position for that wallet in that browser for good; it is
+// now let go, settled by the chain (its nonce passed with no transaction under its hash), and the next press asks for a
+// fresh quote and review before anything is signed.
+test('a routed Uniswap swap cancelled in the wallet is said at once and lets go of its journal; the next press reviews again and swaps once', { timeout: 150_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed } });
+  chain.cancelInWallet('execute');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    const said = s.page.locator('[data-create-notice="route_replaced"]');
+    await said.waitFor({ timeout: 60_000 });
+    // Changed on purpose 2026-10-01 (fix round 2): the transaction that took the nonce is read, so a cancel is said as one.
+    // Changed on purpose in fix round 3: "this swap", since another transaction of the wallet's may have swapped something else.
+    assert.match(await said.innerText(), /^Your wallet replaced the Uniswap swap with another transaction, so this swap did not happen and no swap fee was collected for it\./);
+    assert.equal(routerCalls().length, 0, 'the swap never happened');
+    assert.deepEqual(await records(s.page), [], 'its journal and nonce are let go');
+    // The next press reads the balances again and asks for a fresh review before anything is signed.
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(routerCalls().length, 0, 'nothing is sent again on its own');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'one swap, after its review');
+    assert.deepEqual(await records(s.page), []);
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 2 (2026-10-01): "Speed up" sends the same router call under another hash, so the page's own hash is never
+// mined either. The transaction that took the nonce is read: the reviewed router call, included, is the swap, done. The
+// press goes on to the deposit as after any swap, and no fresh quote, second swap or second fee is ever offered.
+test('a routed Uniswap swap sped up in the wallet is the swap, done: the press goes on to the deposit and never offers a second swap', { timeout: 150_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed } });
+  chain.speedUp('execute');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'the sped-up swap, once');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no fresh quote');
+    assert.deepEqual(chain.decoded().filter(call => call.to === chain.release.deployment.setup).map(call => call.functionName), ['open', 'mint'], 'no second swap or fee in Setup');
+    assert.deepEqual(await records(s.page), [], 'its journal is let go once the position exists');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 2 (2026-10-01): the same speed-up found again after a reload, where only the hash and nonce survive. The
+// router call at that nonce swapped, so the journal stays: the next press says so and uses the wallet's balances, never a
+// fresh quote or a second swap (route_use_balances stops a deposit they cannot cover). Before, the journal was let go,
+// and a wallet holding enough of the first token was offered a second swap and fee.
+test('a sped-up routed Uniswap swap found again after a reload keeps its journal and never offers a second swap', { timeout: 180_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed } });
+  chain.speedUp('execute');
+  chain.decline('open');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice]', { hasText: 'The Uniswap swap completed and its fee was collected.' }).waitFor({ timeout: 60_000 });
+    assert.equal(routerCalls().length, 1);
+    assert.equal((await records(s.page)).length, 2, 'the journal keeps the hash and nonce of the swap');
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, { amount: '10000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_recovered"]').waitFor({ timeout: 60_000 });
+    assert.equal((await records(s.page)).length, 2, 'a swap that happened keeps its journal');
+    await s.page.locator('[data-create-position="failed"]').click();
+    // The wallet's balances cover both tokens now: the deposit is made from them, with no swap of any kind.
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'no second swap');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no fresh quote');
+    assert.deepEqual(chain.decoded().filter(call => call.to === chain.release.deployment.setup).map(call => call.functionName), ['open', 'mint'], 'no swap in Setup either');
+    assert.deepEqual(await records(s.page), [], 'its journal is let go once the position exists');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3 (2026-10-01): the wallet's RPC keeps little old state (about 2,000 blocks on the chain's own RPC, none on
+// publicnode), so a replacement found minutes later cannot be searched for in history. The fake chain now refuses a
+// nonce read more than `keptBlocks` blocks back.
+// Changed on purpose in fix round 3.1 (2026-10-01): the reviewed router call is found by the token it paid this wallet
+// (eth_getLogs through the wallet, from the block the swap was sent after), so the speed-up is said as completed, as it
+// is; the wallet's balances fund the deposit with no fresh quote and no second swap.
+test('a sped-up routed Uniswap swap found after a reload on a node that no longer keeps its state is found by the tokens it paid the wallet: said as completed, and the deposit is made from the wallet’s balances with no second swap', { timeout: 180_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed }, keptBlocks: 4 });
+  chain.speedUp('execute');
+  chain.decline('open');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    // In the same press the replacement is a block old: the history finds the reviewed call, and the press goes on.
+    await s.page.locator('[data-create-notice]', { hasText: 'The Uniswap swap completed and its fee was collected.' }).waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.pruned, [], 'only state the node keeps was asked for');
+    assert.equal(routerCalls().length, 1);
+    assert.equal(chain.permitOf(FIXTURE_TOKEN)[0], 0n, 'the swap spent its Permit2 allowance');
+    // Minutes later the node no longer keeps the state of the block the speed-up is in.
+    chain.mine(12);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, { amount: '10000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    const said = s.page.locator('[data-create-notice="route_recovered"]');
+    await said.waitFor({ timeout: 60_000 });
+    assert.match(await said.innerText(), /^Your earlier Uniswap swap completed\./);
+    assert.ok(chain.pruned.length > 0, 'the old state was refused');
+    assert.ok(chain.log.includes('eth_getLogs'), 'found by the tokens it paid the wallet');
+    assert.equal((await records(s.page)).length, 2, 'a swap that happened keeps its journal');
+    await s.page.locator('[data-create-position="failed"]').click();
+    // The wallet's balances cover both tokens: the deposit is made from them, with no swap of any kind.
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'no second swap');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no fresh quote');
+    assert.deepEqual(chain.decoded().filter(call => call.to === chain.release.deployment.setup).map(call => call.functionName), ['open', 'mint'], 'no swap in Setup either');
+    assert.deepEqual(await records(s.page), [], 'its journal is let go once the position exists');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.1 (2026-10-01), the recheck's high finding: the same speed-up on a wallet's RPC that serves no logs. Its
+// Permit2 allowance reads exactly as the reviewed swap leaves it, so the swap went through. A later one-token press that
+// the balances cannot cover used to say it could not confirm the swap and offer "It did not go through", whose one click
+// led to a fresh quote and a second swap and fee for the same deposit. It now says the swap went through, asks to use
+// both balances, and offers no way to a second swap.
+// Changed on purpose in fix round 3.2 (2026-10-02): a revoke of that allowance (Permit2's lockdown) leaves it the same, so
+// the page says what the chain shows and never that the swap went through; every guard of a completed swap stays.
+test('a sped-up routed Uniswap swap whose Permit2 allowance reads spent by it, with no logs and no old state, keeps every guard of a completed swap, never said as proof: a later one-token press the balances cannot cover offers no way to a second swap', { timeout: 180_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 4n * typed }, keptBlocks: 4, logs: false });
+  chain.speedUp('execute');
+  chain.decline('open');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  const release = s.page.locator('[data-create-route-release]');
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice]', { hasText: 'The Uniswap swap completed and its fee was collected.' }).waitFor({ timeout: 60_000 });
+    assert.equal(routerCalls().length, 1);
+    chain.mine(12);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    // Twice the amount: what the swap paid does not cover it, and the wallet holds enough TOKEN for a one-token deposit.
+    await walkToReview(s.page, { amount: '20000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    const said = s.page.locator('[data-create-notice="route_spent"]');
+    await said.waitFor({ timeout: 60_000 });
+    // Changed on purpose in fix round 3.2: a revoke leaves the same allowance, so it is never said as proof.
+    assert.match(await said.innerText(), /The chain shows Uniswap can no longer take the amount your earlier Uniswap swap was to spend, as after a swap that went through, so no new swap is offered for this deposit\./);
+    assert.doesNotMatch(await said.innerText(), /the swap went through|took from your wallet/);
+    assert.ok(chain.pruned.length > 0, 'the old state was refused');
+    assert.equal(await release.count(), 0);
+    await s.page.locator('[data-create-position="failed"]').click();
+    const balances = s.page.locator('[data-create-notice="route_use_balances"]');
+    await balances.waitFor({ timeout: 60_000 });
+    assert.match(await balances.innerText(), /^Your earlier Uniswap swap may have gone through: the chain shows Uniswap can no longer take what it was to spend\. Use both tokens now in your wallet[\s\S]*No second swap will be sent\./);
+    assert.equal(await release.count(), 0, 'no “It did not go through”');
+    assert.equal(await s.page.locator('[data-create-notice="route_unconfirmed"]').count(), 0);
+    assert.equal(routerCalls().length, 1, 'no second swap');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no fresh quote');
+    assert.equal((await records(s.page)).length, 2, 'the journal stays');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3 (2026-10-01): the high finding. The swap waits in the wallet, the page is reloaded, the person cancels it
+// in the wallet and comes back minutes later: the node no longer keeps the state of the cancel's block. It used to read
+// as `unknown`, keep the journal for good, and say on every later press that the swap completed.
+// Changed on purpose in fix round 3.1 (2026-10-01): the swap's Permit2 allowance, untouched, no longer lets the journal go
+// at once: a wallet may have signed the swap under a nonce of its own, still to come. The page says the swap has not taken
+// the tokens and when it never can; once that time is past (Permit2 refuses the expired allowance, and the router call's
+// deadline is the same), the journal is let go and the next press reviews a fresh quote before one swap is sent.
+test('a routed Uniswap swap cancelled in the wallet after a reload, found when the node no longer keeps that state: its Permit2 allowance is untouched, so the page says when it can never go through, then lets its journal go, and the next press reviews again and swaps once', { timeout: 180_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed }, keptBlocks: 4 });
+  chain.holdInWallet('execute');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    // The swap was handed to the wallet, which holds it: its hash is in the journal beside its nonce (kept with the claim
+    // since fix round 3.1), and the page waits.
+    await s.page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('domino.routed-offer.v1.') && /\|0x/.test(localStorage.getItem(key))), null, { timeout: 60_000 });
+    assert.equal((await records(s.page)).length, 2);
+    const permit = chain.permitOf(FIXTURE_TOKEN);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    chain.cancelHeld();
+    chain.mine(12);
+    await walkToReview(s.page, { amount: '10000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    const waiting = s.page.locator('[data-create-notice="route_untouched"]');
+    await waiting.waitFor({ timeout: 60_000 });
+    assert.match(await waiting.innerText(), /^Your wallet replaced the Uniswap swap with another transaction\. The swap has not taken your tokens, and after \d{1,2}:\d{2}\s?[AP]M it never can\./);
+    assert.ok(chain.pruned.length > 0, 'the old state was refused');
+    assert.deepEqual(chain.permitOf(FIXTURE_TOKEN), permit, 'the allowance the swap would spend, untouched');
+    assert.equal((await records(s.page)).length, 2, 'kept until nothing can take the input');
+    assert.equal(await s.page.locator('[data-create-route-release]').count(), 0);
+    // Pressed again before then: still nothing let go, nothing quoted.
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-position="failed"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-notice="route_untouched"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route').length, 1);
+    assert.equal((await records(s.page)).length, 2);
+    // Past the allowance's expiry on the chain's clock: the swap never happened and never can.
+    chain.later(1_900);
+    await s.page.locator('[data-create-position="failed"]').click();
+    const said = s.page.locator('[data-create-notice="route_replaced"]');
+    await said.waitFor({ timeout: 60_000 });
+    assert.match(await said.innerText(), /^Your wallet replaced the Uniswap swap with another transaction, so this swap did not happen and no swap fee was collected for it\./);
+    assert.deepEqual(await records(s.page), [], 'its journal and nonce are let go');
+    assert.equal(routerCalls().length, 0, 'the swap never happened');
+    chain.later(0);
+    // The next press reads the balances again and asks for a fresh review before anything is signed.
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'a fresh quote');
+    assert.equal(routerCalls().length, 0, 'nothing is sent again on its own');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'one swap, after its review');
+    assert.deepEqual(await records(s.page), []);
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3 (2026-10-01): an ETH input has no allowance to read, so a cancel found when the node no longer keeps its
+// state cannot be told apart, after a reload or on any later press. The page never says it completed. A later press on
+// the one-token deposit says it could not confirm the swap; only the person's word, after checking their wallet, lets the
+// journal go, and a fresh quote is reviewed before one swap is sent.
+// Changed on purpose in fix round 3.1: the sentence says what this deposit needs, never that the wallet holds none of it;
+// and the cancel is found after a reload (the search no longer gives up at a refused read, so a cancel in the newest block
+// is found in the same press: the case below).
+test('an ETH-input routed swap cancelled in the wallet after a reload, on a node that no longer keeps that state, cannot be told apart: the page never says it completed, and only the person’s word that it did not go through leads to a reviewed new quote and one swap', { timeout: 240_000 }, async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, keptBlocks: 4 });
+  chain.holdInWallet('execute');
+  const s = await atReview(chain, { routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  const release = s.page.locator('[data-create-route-release]');
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route')[0].body.tokenIn, zeroAddress, 'ETH in');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('domino.routed-offer.v1.') && /\|0x/.test(localStorage.getItem(key))), null, { timeout: 60_000 });
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    chain.cancelHeld();
+    chain.mine(12);
+    await walkToReview(s.page, {});
+    await s.page.locator('[data-create-position="idle"]').click();
+    const unknown = s.page.locator('[data-create-notice="route_replaced_unknown"]');
+    await unknown.waitFor({ timeout: 60_000 });
+    assert.doesNotMatch(await unknown.innerText(), /completed|fee was collected/);
+    assert.ok(chain.pruned.length > 0, 'the old state was refused');
+    assert.ok(chain.log.includes('eth_getLogs'), 'the logs were asked, and show no swap (a cancel pays nothing)');
+    assert.equal((await records(s.page)).length, 2, 'the journal stays');
+    assert.equal(await release.count(), 0, 'no way out before a press finds the wallet short of the other token');
+    // The next press: the wallet holds only ETH, so the deposit needs a swap. It used to say the swap completed.
+    await s.page.locator('[data-create-position="failed"]').click();
+    const unconfirmed = s.page.locator('[data-create-notice="route_unconfirmed"]');
+    await unconfirmed.waitFor({ timeout: 60_000 });
+    assert.match(await unconfirmed.innerText(), /^We could not confirm whether your earlier Uniswap swap went through\. Check your wallet activity\. If it went through, what you received is in your wallet, and this deposit needs more TOKEN than your wallet holds now/);
+    assert.doesNotMatch(await unconfirmed.innerText(), /completed|fee was collected|does not hold/);
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Check your wallet activity before you continue.');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'nothing quoted');
+    assert.equal((await records(s.page)).length, 2, 'the journal stays until the person says so');
+    await release.click();
+    await s.page.locator('[data-create-notice="route_released"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await records(s.page), [], 'let go on the person’s word');
+    assert.equal(routerCalls().length, 0, 'nothing sent');
+    assert.equal(await release.count(), 0);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'a fresh quote, reviewed before anything is signed');
+    assert.equal(routerCalls().length, 0);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'one swap, after its review');
+    assert.deepEqual(await records(s.page), []);
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.1 (2026-10-01), the recheck's low finding: the search for the transaction at the nonce gave up at its first
+// refused read. On a node that keeps the state of the newest block only, an ETH-input cancel there is now found in the
+// same press: the journal is let go, and nothing is sent again on its own.
+test('an ETH-input routed swap cancelled in the wallet, on a node that keeps only the newest block’s state, is found at once above the state refused: the journal is let go and nothing is sent again', { timeout: 150_000 }, async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, keptBlocks: 0 });
+  chain.cancelInWallet('execute');
+  const s = await atReview(chain, { routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    const said = s.page.locator('[data-create-notice="route_replaced"]');
+    await said.waitFor({ timeout: 60_000 });
+    assert.match(await said.innerText(), /^Your wallet replaced the Uniswap swap with another transaction, so this swap did not happen/);
+    assert.ok(chain.pruned.length > 0, 'a read under the newest block was refused, and the search went on above it');
+    assert.deepEqual(await records(s.page), [], 'its journal and nonce are let go');
+    assert.equal(routerCalls().length, 0, 'the swap never happened, and nothing is sent again on its own');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.1 (2026-10-01), the recheck's high finding (case B): an ETH-input speed-up found after old state is gone read
+// `unknown` (no allowance to read) and offered "It did not go through". The reviewed router call is found by the TOKEN it
+// paid the wallet: it completed, and no way to a second swap is offered.
+test('an ETH-input routed swap sped up in the wallet, on a node that keeps no old state, is found by the TOKEN it paid the wallet: completed in the same press and after a reload, with no second swap', { timeout: 180_000 }, async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, keptBlocks: 0 });
+  chain.speedUp('execute');
+  chain.decline('open');
+  const s = await atReview(chain, { routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route')[0].body.tokenIn, zeroAddress, 'ETH in');
+    await s.page.locator('[data-create-position="failed"]').click();
+    // Even in the same press the node keeps no state of the replacement's block: the TOKEN it paid tells it.
+    await s.page.locator('[data-create-notice]', { hasText: 'The Uniswap swap completed and its fee was collected.' }).waitFor({ timeout: 60_000 });
+    assert.ok(chain.pruned.length > 0, 'the old state was refused');
+    assert.equal(routerCalls().length, 1);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, {});
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_recovered"]').waitFor({ timeout: 60_000 });
+    assert.equal(await s.page.locator('[data-create-route-release]').count(), 0);
+    assert.equal((await records(s.page)).length, 2);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'no second swap');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no fresh quote');
+    assert.deepEqual(chain.decoded().filter(call => call.to === chain.release.deployment.setup).map(call => call.functionName), ['open', 'mint'], 'no swap in Setup either');
+    assert.deepEqual(await records(s.page), [], 'its journal is let go once the position exists');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.1 (2026-10-01), the recheck's high finding: a swap offered to the wallet whose hash never came back (here the
+// page is reloaded while the wallet shows it) was claimed with no nonce, and every later press of the wallet in this
+// browser, both-token deposits too, stopped for good with "Domino will not offer it again". Its nonce is now kept with
+// the claim. While it is still free, the page asks the person; once the swap is approved, what took the nonce is read:
+// the reviewed call, completed, and no second swap.
+test('a routed Uniswap swap the wallet never answered before a reload is never held for good: while its nonce is free the page asks, and approved later it is found as the swap, completed, with no second swap', { timeout: 180_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed } });
+  chain.stallInWallet('execute');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    // The claim and its nonce are kept before the wallet is asked; the wallet never answers.
+    await s.page.waitForFunction(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')).length === 2, null, { timeout: 60_000 });
+    await until(() => chain.stalled.length === 1, 'the wallet to hold the swap', 60_000);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, { amount: '10000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    const open = s.page.locator('[data-create-notice="wallet_request_open"]');
+    await open.waitFor({ timeout: 60_000 });
+    // Changed on purpose in fix round 3.2: it may be another tab's offer, and closing a dialog here rejects nothing.
+    assert.equal(await open.innerText(), 'Your wallet may still be showing a Uniswap swap that Domino offered, in this tab or another. Approve or reject it there. If you rejected it there, say so below.');
+    await s.page.locator('[data-create-forget-request]').waitFor();
+    assert.equal((await records(s.page)).length, 2, 'nothing let go while the swap may still be signed');
+    // The person approves it in the wallet after all: it is mined at the nonce kept, and the page never heard its hash.
+    chain.approveStalled();
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_recovered"]').waitFor({ timeout: 60_000 });
+    assert.equal(routerCalls().length, 1);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'no second swap');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no fresh quote');
+    assert.deepEqual(chain.decoded().filter(call => call.to === chain.release.deployment.setup).map(call => call.functionName), ['open', 'mint'], 'no swap in Setup either');
+    assert.deepEqual(await records(s.page), [], 'its journal is let go once the position exists');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.1 (2026-10-01): the same swap the wallet never answered, rejected there. The person says so; its nonce is
+// still free with nothing pending, so the journal is let go and nothing is sent.
+// Changed on purpose in fix round 3.2 (2026-10-02): the wallet may still show it after all (a phone wallet keeps a request
+// that a dialog closed here never rejected), and it can go through until its router deadline: for an ETH input a second
+// swap would then run too. A new Uniswap route waits until that time, said in the notice; the pool's own assisted swap
+// does not wait, and makes this position.
+test('a routed Uniswap swap the wallet never answered, rejected there: “I rejected it in my wallet” lets its journal go while its nonce is free; until its deadline no new Uniswap swap is offered, and the pool’s own assisted swap makes the position', { timeout: 180_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed } });
+  chain.stallInWallet('execute');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const holds = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-hold.v1.')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.waitForFunction(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')).length === 2, null, { timeout: 60_000 });
+    await until(() => chain.stalled.length === 1, 'the wallet to hold the swap', 60_000);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, { amount: '10000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="wallet_request_open"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-forget-request]').click();
+    const forgotten = s.page.locator('[data-create-notice="request_forgotten"]');
+    await forgotten.waitFor({ timeout: 30_000 });
+    assert.match(await forgotten.innerText(), /^Nothing was sent\. Press Create position to continue\. A new Uniswap swap can be offered after \d{1,2}:\d{2}\s?[AP]M, when the one you rejected can no longer go through\.$/);
+    assert.deepEqual(await records(s.page), [], 'let go on the person’s word, its nonce still free');
+    assert.equal((await holds(s.page)).length, 1, 'a new Uniswap route waits for the deadline');
+    assert.equal(routerCalls().length, 0, 'nothing sent');
+    // Before the deadline: the pool fills the swap itself, and no Uniswap route is asked for.
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 90_000);
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no new route before the deadline');
+    assert.equal(routerCalls().length, 0, 'no Uniswap swap');
+    assert.deepEqual(chain.decoded().filter(call => call.to === chain.release.deployment.setup).map(call => call.functionName), ['open', 'swap', 'mint'], 'the pool’s own assisted swap');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+/** Fix round 3.2: the hold on a new Uniswap route as if its time had passed a minute ago on the chain's clock. */
+const pastHold = page => page.evaluate(() => {
+  const key = Object.keys(localStorage).find(name => name.startsWith('domino.routed-hold.v1.'));
+  localStorage.setItem(key, String(Math.floor(Date.now() / 1000) - 60));
+});
+
+// Fix round 3.2 (2026-10-02): the same, in a pool that cannot fill the swap itself, so only the Uniswap route could serve
+// the deposit. Until the rejected swap's deadline the page says why none is offered, and when; after it, a fresh quote is
+// reviewed and one swap sent.
+test('a routed Uniswap swap rejected in the wallet after a reload, in a pool that cannot fill the swap itself: the page says no new Uniswap swap is offered until its deadline, then reviews a fresh quote and swaps once', { timeout: 240_000 }, async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, liquidity: 0n });
+  chain.stallInWallet('execute');
+  const s = await atReview(chain, { routedQuote: chosenRoute(chain) });
+  const holds = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-hold.v1.')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await until(() => chain.stalled.length === 1, 'the wallet to hold the swap', 60_000);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, {});
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="wallet_request_open"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-forget-request]').click();
+    await s.page.locator('[data-create-notice="request_forgotten"]').waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    const held = s.page.locator('[data-create-notice="pool_no_liquidity"]');
+    await held.waitFor({ timeout: 60_000 });
+    assert.match(await held.innerText(), /^This pool has no liquidity at its current price[\s\S]*The Uniswap swap you said you rejected could still go through until \d{1,2}:\d{2}\s?[AP]M if your wallet still shows it, so no new Uniswap swap is offered before then\.$/);
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no new route before the deadline');
+    // Past its deadline on the chain's clock: the hold goes, and a fresh quote is reviewed before one swap is sent. (The
+    // deadline is moved into the past rather than the chain's clock ahead: the pool's own check refuses a device clock
+    // far off the chain's, and this press reaches it.)
+    await pastHold(s.page);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'a fresh quote');
+    assert.deepEqual(await holds(s.page), [], 'the hold is let go once its time has passed');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'one swap, after its review');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+/** Fix round 3.1: the journal's record as if kept for a deposit in another pool (its pool digest another pool's). */
+const fromAnotherPool = page => page.evaluate(() => {
+  const key = Object.keys(localStorage).find(name => name.startsWith('domino.routed-offer-nonce.v1.'));
+  const parts = localStorage.getItem(key).split('|');
+  parts[6] = '0x' + '99'.repeat(32);
+  localStorage.setItem(key, parts.join('|'));
+});
+
+/** Fix round 3.2: the pool digest the journal kept for the swap, as written for this pool. */
+const keptPool = page => page.evaluate(() => {
+  const key = Object.keys(localStorage).find(name => name.startsWith('domino.routed-offer-nonce.v1.'));
+  return localStorage.getItem(key).split('|')[6];
+});
+/** Fix round 3.2: the record moved aside, as if for the pool of digest `pool` (this pool's, read with keptPool). */
+const parkedFor = (page, pool) => page.evaluate(digest => {
+  const key = Object.keys(localStorage).find(name => name.startsWith('domino.routed-parked.v1.'));
+  const parts = localStorage.getItem(key).split('|');
+  parts[7] = digest;
+  localStorage.setItem(key, parts.join('|'));
+}, pool);
+const parkedKeys = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-parked.v1.')));
+/** Fix round 3.2: the journal's record as if its router deadline had passed a minute ago on the chain's clock. */
+const pastDeadline = page => page.evaluate(() => {
+  const key = Object.keys(localStorage).find(name => name.startsWith('domino.routed-offer-nonce.v1.'));
+  const parts = localStorage.getItem(key).split('|');
+  parts[7] = String(Math.floor(Date.now() / 1000) - 60);
+  localStorage.setItem(key, parts.join('|'));
+});
+
+// Fix round 3.1 (2026-10-01), the recheck's medium finding: a routed swap known to have gone through, never followed by a
+// mint, stopped every one-token deposit in every pool for good, saying to use "both tokens now in your wallet" of a pool it
+// had nothing to do with. The record keeps the pool it was for: in another pool it is said once, and that deposit goes on
+// as with no earlier swap (a fresh quote, reviewed).
+// Changed on purpose in fix round 3.2 (2026-10-02), the recheck's finding: its record was let go there, and back in its own
+// pool the same one-token deposit could be offered a second swap and fee. It is now moved aside for its pool, never let
+// go: this deposit still goes on, and back in its own pool the record still holds that deposit to the wallet's balances.
+test('a routed Uniswap swap that went through for another pool’s deposit is said once and moved aside: this deposit goes on as with no earlier swap, and back in its own pool no second swap is offered', { timeout: 240_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 4n * typed } });
+  chain.speedUp('execute');
+  chain.decline('open');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice]', { hasText: 'The Uniswap swap completed and its fee was collected.' }).waitFor({ timeout: 60_000 });
+    const own = await keptPool(s.page);
+    await fromAnotherPool(s.page);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, { amount: '20000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    const said = s.page.locator('[data-create-notice="route_recovered_elsewhere"]');
+    await said.waitFor({ timeout: 60_000 });
+    assert.match(await said.innerText(), /^Your earlier Uniswap swap, for a deposit in another pool, went through: what you received is in your wallet, and that pool’s deposit uses it without another swap\./);
+    assert.doesNotMatch(await said.innerText(), /both wallet balances|both tokens/);
+    assert.deepEqual(await records(s.page), [], 'out of the slot');
+    assert.equal((await parkedKeys(s.page)).length, 1, 'moved aside for its own pool, never let go');
+    // This deposit needs a swap: it is quoted and reviewed as any, never stopped by the other pool's swap.
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'a fresh quote for this deposit');
+    // Back in its own pool, the same one-token deposit: the record moved aside still guards it.
+    await parkedFor(s.page, own);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, { amount: '20000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_recovered"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    const balances = s.page.locator('[data-create-notice="route_use_balances"]');
+    await balances.waitFor({ timeout: 60_000 });
+    assert.match(await balances.innerText(), /^Your earlier Uniswap swap completed\. Use both tokens now in your wallet[\s\S]*No second swap will be sent\./);
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'no fresh quote for the deposit the swap was for');
+    assert.equal(routerCalls().length, 1, 'no second swap');
+    assert.equal(await s.page.locator('[data-create-route-release]').count(), 0);
+    assert.equal((await parkedKeys(s.page)).length, 1, 'still held for its pool');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.1 (2026-10-01): a replaced swap nothing could tell apart, kept for another pool's deposit, guards that pool
+// only. Here it says nothing: this deposit is made with the pool's own assisted swap (the Uniswap route waits, since the
+// journal holds one routed swap at a time), and the record stays for its own pool, untouched by this mint.
+test('a replaced routed swap not told apart, kept for another pool’s deposit, holds up nothing here: the pool’s own assisted swap makes this position, and the record stays for its pool', { timeout: 240_000 }, async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, keptBlocks: 4 });
+  chain.holdInWallet('execute');
+  const s = await atReview(chain, { routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('domino.routed-offer.v1.') && /\|0x/.test(localStorage.getItem(key))), null, { timeout: 60_000 });
+    await fromAnotherPool(s.page);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    // Cancelled in the wallet, found when the node no longer keeps that state, with no allowance to read (ETH in): not told apart.
+    chain.cancelHeld();
+    chain.mine(12);
+    await walkToReview(s.page, {});
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 90_000);
+    assert.ok(chain.pruned.length > 0, 'the old state was refused');
+    assert.equal(routerCalls().length, 0, 'no Uniswap swap');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no new route asked');
+    assert.deepEqual(chain.decoded().filter(call => call.to === chain.release.deployment.setup).map(call => call.functionName), ['open', 'swap', 'mint'], 'the pool’s own assisted swap');
+    assert.equal(await s.page.locator('[data-create-notice="route_unconfirmed"]').count(), 0);
+    assert.equal((await records(s.page)).length, 2, 'the record stays for its own pool');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.2 (2026-10-02), the recheck's finding: a record for another pool's deposit that may still go through turned
+// off the Uniswap route here without a word; in a pool that cannot fill the swap itself the deposit failed on the pool's
+// reason alone, and the record was never settled from here. The page now says the route waits for it and until when;
+// once its deadline has passed on the chain's clock it is moved aside for its own pool, and a fresh quote is reviewed.
+test('a replaced routed swap not told apart, kept for another pool’s deposit, in a pool that cannot fill the swap itself: the page says the Uniswap route waits and until when; after its deadline it is moved aside and a fresh quote is reviewed here', { timeout: 240_000 }, async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, keptBlocks: 4, liquidity: 0n });
+  chain.holdInWallet('execute');
+  const s = await atReview(chain, { routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('domino.routed-offer.v1.') && /\|0x/.test(localStorage.getItem(key))), null, { timeout: 60_000 });
+    await fromAnotherPool(s.page);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    chain.cancelHeld();
+    chain.mine(12);
+    await walkToReview(s.page, {});
+    await s.page.locator('[data-create-position="idle"]').click();
+    const said = s.page.locator('[data-create-notice="pool_no_liquidity"]');
+    await said.waitFor({ timeout: 90_000 });
+    assert.match(await said.innerText(), /^This pool has no liquidity at its current price[\s\S]*An earlier Uniswap swap, for a deposit in another pool, could still go through until \d{1,2}:\d{2}\s?[AP]M, so no new Uniswap swap is offered here before then\.$/);
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no route asked while it may still go through');
+    assert.equal((await records(s.page)).length, 2, 'the record stays for its own pool');
+    // Past its deadline on the chain's clock: it can never go through, and it is moved aside for its pool. (Its deadline
+    // is moved into the past rather than the chain's clock ahead: the pool's own check refuses a device clock far off.)
+    await pastDeadline(s.page);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'a fresh quote here');
+    assert.deepEqual(await records(s.page), [], 'out of the slot');
+    assert.equal((await parkedKeys(s.page)).length, 1, 'still kept for its own pool');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.2 (2026-10-02), the recheck's high finding: a swap the wallet never answered, whose nonce another transaction
+// of the wallet's then took. Nothing proves it was replaced: the wallet may still show it, and sign it under the next nonce.
+// It used to be said as replaced, and "It did not go through" was offered; the old request could then still run, a second
+// swap and fee for one deposit. No new swap is offered until its router deadline; approved meanwhile, it is the swap.
+test('a routed Uniswap swap the wallet never answered, whose nonce another transaction took: never said replaced, no way to a new swap before its deadline, and approved late it is found as the swap', { timeout: 240_000 }, async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true });
+  chain.stallInWallet('execute');
+  const s = await atReview(chain, { routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  const release = s.page.locator('[data-create-route-release]');
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await until(() => chain.stalled.length === 1, 'the wallet to hold the swap', 60_000);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    // Another transaction of the wallet's, shaped as a Cancel, takes the nonce kept for the swap.
+    chain.burnNonce();
+    await walkToReview(s.page, {});
+    await s.page.locator('[data-create-position="idle"]').click();
+    const waiting = s.page.locator('[data-create-notice="route_waiting"]');
+    await waiting.waitFor({ timeout: 60_000 });
+    assert.match(await waiting.innerText(), /^Another transaction from your wallet went out in place of the Uniswap swap this page offered, and your wallet may still be showing that swap: reject it there if it is\. It can go through only until \d{1,2}:\d{2}\s?[AP]M/);
+    assert.doesNotMatch(await waiting.innerText(), /replaced/);
+    assert.equal((await records(s.page)).length, 2, 'nothing let go');
+    assert.equal(await release.count(), 0);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_waiting"]').waitFor({ timeout: 60_000 });
+    assert.equal(await release.count(), 0, 'no way to a new swap before its deadline');
+    assert.equal(s.onboarding.calls('swap-route').length, 1);
+    // The person approves it after all: the wallet signs it under the next nonce, and it pays the wallet its TOKEN.
+    chain.approveStalled();
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 90_000);
+    assert.equal(routerCalls().length, 1, 'no second swap');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no fresh quote');
+    assert.deepEqual(chain.decoded().filter(call => call.to === chain.release.deployment.setup).map(call => call.functionName), ['open', 'mint'], 'no swap in Setup either');
+    assert.deepEqual(await records(s.page), []);
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+test('a routed Uniswap swap the wallet never answered, whose nonce another transaction took, never approved: once its deadline has passed on the chain’s clock, the person’s word leads to a reviewed new quote and one swap', { timeout: 240_000 }, async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true });
+  chain.stallInWallet('execute');
+  const s = await atReview(chain, { routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  const release = s.page.locator('[data-create-route-release]');
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await until(() => chain.stalled.length === 1, 'the wallet to hold the swap', 60_000);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    chain.burnNonce();
+    await walkToReview(s.page, {});
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_waiting"]').waitFor({ timeout: 60_000 });
+    chain.later(1_900);
+    await s.page.locator('[data-create-position="failed"]').click();
+    const unconfirmed = s.page.locator('[data-create-notice="route_unconfirmed"]');
+    await unconfirmed.waitFor({ timeout: 60_000 });
+    assert.match(await unconfirmed.innerText(), /^We could not confirm whether your earlier Uniswap swap went through\./);
+    assert.equal((await records(s.page)).length, 2, 'kept until the person says so');
+    await release.click();
+    await s.page.locator('[data-create-notice="route_released"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await records(s.page), []);
+    chain.later(0);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'a fresh quote, reviewed before anything is signed');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'one swap, after its review');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.2 (2026-10-02), the recheck's finding: a swap the wallet signed, its hash back, that the chain never shows,
+// its nonce still free, stopped every press in every pool, both-token deposits too, with no way out. It may still reach
+// the network until its deadline: only this deposit's swap waits; after the deadline, the person's word.
+test('a routed Uniswap swap signed with its hash back that the chain never shows, its nonce still free: only this deposit’s swap waits until its deadline, then the person’s word leads to a reviewed new quote and one swap', { timeout: 240_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed } });
+  chain.holdInWallet('execute');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  const release = s.page.locator('[data-create-route-release]');
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('domino.routed-offer.v1.') && /\|0x/.test(localStorage.getItem(key))), null, { timeout: 60_000 });
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, { amount: '10000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    const unseen = s.page.locator('[data-create-notice="route_waiting"]');
+    await unseen.waitFor({ timeout: 60_000 });
+    assert.match(await unseen.innerText(), /^Your wallet signed the Uniswap swap, and the network does not show it yet\. It can still go through until \d{1,2}:\d{2}\s?[AP]M/);
+    assert.equal(await release.count(), 0);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_waiting"]').waitFor({ timeout: 60_000 });
+    assert.equal(await release.count(), 0, 'no way to a new swap before its deadline');
+    assert.equal(s.onboarding.calls('swap-route').length, 1);
+    assert.equal((await records(s.page)).length, 2);
+    chain.later(1_900);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_unconfirmed"]').waitFor({ timeout: 60_000 });
+    await release.click();
+    await s.page.locator('[data-create-notice="route_released"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await records(s.page), []);
+    chain.later(0);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'a fresh quote');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'one swap, after its review: the signed one never reached the chain');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.2 (2026-10-02), the recheck's finding: a replaced swap after which the wallet used Uniswap otherwise (its
+// Permit2 allowance set again) was `changed` for good: one-token deposits in its pool and the Uniswap route everywhere
+// stayed off. It holds only until the router call's deadline; then the person's word, after checking their wallet.
+test('a replaced routed swap after which the wallet used Uniswap otherwise holds only until its deadline: then the person’s word leads to a reviewed new quote and one swap', { timeout: 240_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed }, keptBlocks: 4 });
+  chain.holdInWallet('execute');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  const release = s.page.locator('[data-create-route-release]');
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('domino.routed-offer.v1.') && /\|0x/.test(localStorage.getItem(key))), null, { timeout: 60_000 });
+    const [amount, expiration] = chain.permitOf(FIXTURE_TOKEN);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    chain.cancelHeld();
+    // The Uniswap app sets the router's allowance again meanwhile, until another time.
+    chain.setPermit(FIXTURE_TOKEN, amount, expiration + 60);
+    chain.mine(12);
+    await walkToReview(s.page, { amount: '10000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_replaced_unknown"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    const changed = s.page.locator('[data-create-notice="route_changed"]');
+    await changed.waitFor({ timeout: 60_000 });
+    assert.match(await changed.innerText(), /the chain shows your wallet used Uniswap since\. It can go through only until \d{1,2}:\d{2}\s?[AP]M, so no new swap is offered for this deposit before then\./);
+    assert.equal(await release.count(), 0, 'never on the person’s word while it could still go through');
+    chain.later(1_900);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_unconfirmed"]').waitFor({ timeout: 60_000 });
+    assert.equal((await records(s.page)).length, 2);
+    await release.click();
+    await s.page.locator('[data-create-notice="route_released"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(await records(s.page), []);
+    chain.later(0);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'a fresh quote');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 1, 'one swap, after its review');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.2 (2026-10-02), the recheck's findings: a cancel, then Permit2's lockdown (what revoke tools call), leaves the
+// router's allowance exactly as the swap leaves it, and the page said "the swap went through". It now says what the chain
+// shows and never that; every guard of a completed swap stays.
+test('a routed Uniswap swap cancelled in the wallet, then its Permit2 allowance revoked: the allowance reads as a swap leaves it, so no second swap is offered, and the page never says the swap went through', { timeout: 240_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 4n * typed }, keptBlocks: 4 });
+  chain.holdInWallet('execute');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('domino.routed-offer.v1.') && /\|0x/.test(localStorage.getItem(key))), null, { timeout: 60_000 });
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    chain.cancelHeld();
+    chain.lockdown(FIXTURE_TOKEN);
+    chain.mine(12);
+    await walkToReview(s.page, { amount: '20000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    const said = s.page.locator('[data-create-notice="route_spent"]');
+    await said.waitFor({ timeout: 60_000 });
+    assert.match(await said.innerText(), /The chain shows Uniswap can no longer take the amount your earlier Uniswap swap was to spend, as after a swap that went through/);
+    assert.doesNotMatch(await said.innerText(), /the swap went through|took from your wallet/);
+    await s.page.locator('[data-create-position="failed"]').click();
+    const balances = s.page.locator('[data-create-notice="route_use_balances"]');
+    await balances.waitFor({ timeout: 60_000 });
+    assert.match(await balances.innerText(), /^Your earlier Uniswap swap may have gone through/);
+    assert.equal(await s.page.locator('[data-create-route-release]').count(), 0);
+    assert.equal(routerCalls().length, 0, 'nothing swapped');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no fresh quote');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(chain.refused, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.2 (2026-10-02), the recheck's high finding: the fix of 3.1 held only on a wallet RPC that serves numbered
+// state and logs at any depth. On dRPC (state at 'latest' only, logs over 200 blocks refused) a speed-up found after a
+// reload read `unknown`, and "It did not go through" was offered. Its allowance, read at 'latest', reads spent.
+test('a sped-up routed Uniswap swap found after a reload on a wallet RPC that answers state at latest only (dRPC): its allowance reads spent at latest, so a later one-token press offers no way to a second swap', { timeout: 240_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 4n * typed } });
+  chain.speedUp('execute');
+  chain.decline('open');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice]', { hasText: 'The Uniswap swap completed and its fee was collected.' }).waitFor({ timeout: 60_000 });
+    // The wallet now reads through dRPC, and the swap is 300 blocks old: past dRPC's log span.
+    chain.profile('drpc');
+    chain.mine(300);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await walkToReview(s.page, { amount: '20000000000' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_spent"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_use_balances"]').waitFor({ timeout: 60_000 });
+    assert.equal(await s.page.locator('[data-create-route-release]').count(), 0, 'no “It did not go through”');
+    assert.equal(await s.page.locator('[data-create-notice="route_unconfirmed"]').count(), 0);
+    assert.equal(routerCalls().length, 1, 'no second swap');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'no fresh quote');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3.2 (2026-10-02), the same finding, said plainly: an ETH input has no allowance to read, and publicnode serves
+// logs only about 100 blocks back and little state. A speed-up found after that cannot be told apart: the page never says
+// it completed or failed, asks the person to check their wallet, and only their word leads to a reviewed new quote.
+test('an ETH-input routed swap sped up, found after a reload on publicnode (logs about 100 blocks back, little state): it cannot be told apart, said plainly, and only the person’s word leads to a new quote', { timeout: 240_000 }, async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, keptBlocks: 30, eth: 10n ** 19n });
+  chain.speedUp('execute');
+  chain.decline('open');
+  const s = await atReview(chain, { routedQuote: chosenRoute(chain) });
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice]', { hasText: 'The Uniswap swap completed and its fee was collected.' }).waitFor({ timeout: 60_000 });
+    chain.profile('publicnode');
+    chain.mine(200);
+    await s.page.reload();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    // Twice the amount: what the swap paid does not cover it, so this deposit needs a swap.
+    await walkToReview(s.page, { amount: '2' });
+    await s.page.locator('[data-create-position="idle"]').click();
+    const unknown = s.page.locator('[data-create-notice="route_replaced_unknown"]');
+    await unknown.waitFor({ timeout: 60_000 });
+    assert.match(await unknown.innerText(), /we could not confirm what your wallet did\. Check your wallet activity/);
+    assert.doesNotMatch(await unknown.innerText(), /completed|did not happen/);
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_unconfirmed"]').waitFor({ timeout: 60_000 });
+    assert.match(await s.page.locator('[data-create-notice="route_unconfirmed"]').innerText(), /^We could not confirm whether your earlier Uniswap swap went through\. Check your wallet activity\. If it went through, what you received is in your wallet/);
+    assert.ok(chain.pruned.length > 0, 'the old state was refused');
+    assert.equal(routerCalls().length, 1, 'nothing sent again on its own');
+    assert.equal(s.onboarding.calls('swap-route').length, 1, 'nothing quoted before the person says so');
+    assert.deepEqual(chain.missing, []);
+    assert.deepEqual(s.onboarding.state.violations, []);
+  } finally { await s.close(); }
+});
+
+// Fix round 3 (2026-10-01): a speed-up whose replacement reverts, in the same press. The router call at the nonce is
+// read with its receipt: it reverted, so nothing was swapped and no fee collected; the journal is let go and the next
+// press reviews a fresh quote before one swap is sent.
+test('a routed Uniswap swap sped up in the wallet whose replacement reverts is said as reverted at once, lets go of its journal, and the next press reviews again and swaps once', { timeout: 150_000 }, async () => {
+  const typed = 10n ** 16n;
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { routed: true, eth: GAS_ONLY_ETH, balances: { [FIXTURE_TOKEN]: 2n * typed } });
+  chain.speedUp('execute');
+  chain.revert('execute');
+  const s = await atReview(chain, { amount: '10000000000', routedQuote: chosenRoute(chain) });
+  const records = page => page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.routed-offer')));
+  const routerCalls = () => chain.decoded().filter(call => call.to === UNIVERSAL_ROUTER);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    await s.page.locator('[data-create-position="failed"]').click();
+    const said = s.page.locator('[data-create-notice="route_reverted"]');
+    await said.waitFor({ timeout: 60_000 });
+    assert.match(await said.innerText(), /^Your wallet replaced the Uniswap swap, and the replacement reverted\. Nothing was swapped and no swap fee was collected; network gas was spent\./);
+    assert.equal(routerCalls().length, 1, 'the reverted replacement');
+    assert.equal(chain.permitOf(FIXTURE_TOKEN)[0], BigInt(s.onboarding.calls('swap-route')[0].body.amountRaw), 'nothing spent');
+    assert.deepEqual(await records(s.page), [], 'its journal and nonce are let go');
+    assert.deepEqual(chain.decoded().filter(call => call.to === chain.release.deployment.setup), [], 'nothing deposited');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await s.page.locator('[data-create-notice="route_review_required"]').waitFor({ timeout: 60_000 });
+    assert.equal(s.onboarding.calls('swap-route').length, 2, 'a fresh quote');
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.equal(routerCalls().length, 2, 'the reverted one, and one swap after its review');
+    assert.equal(chain.permitOf(FIXTURE_TOKEN)[0], 0n, 'one swap spent its allowance');
+    assert.deepEqual(chain.decoded().filter(call => call.to === chain.release.deployment.setup).map(call => call.functionName), ['open', 'mint'], 'no swap in Setup');
+    assert.deepEqual(await records(s.page), []);
     assert.deepEqual(chain.missing, []);
     assert.deepEqual(chain.refused, []);
     assert.deepEqual(s.onboarding.state.violations, []);
@@ -1667,28 +2865,52 @@ test('a wallet without batches (wallet_getCapabilities -32601, as Rabby answers)
 // 2026-09-28 (audit): a batch the wallet never answered (a closed tab, an error other than a refusal) left its latch in
 // the browser for good, and every later press of a wallet that batches ended "could not be read". Past the mint's latest
 // deadline the batch can execute nothing, and the latch is freed (finance/setup.ts BATCH_LATCH_EXPIRY_S).
-test('a batch the wallet never answered holds Create position while it could still execute, and no longer once it cannot: then one new batch makes the position', async () => {
-  // The latch as the journal keeps it (finance/nonce.ts): a claim with no wallet id, and when it was claimed.
+test('a batch the wallet never answered holds Create position while its page is open and it could still execute, and no longer once its page is gone or it cannot: then one new batch makes the position', async () => {
+  // The latch as the journal keeps it (finance/nonce.ts): a claim with no wallet id, and when it was claimed. Changed on
+  // purpose 2026-10-01 (fix round 1): the time carries the mark of a claim whose page holds its lock (LIVE_MARK); a latch
+  // without it (the release before) is let go by its age alone (tests/wallet-compat.test.mjs).
   const seed = (page, operationId, age) => page.evaluate(([hash, seconds]) => {
     localStorage.setItem(`domino.offered-batch.v1.${hash}`, crypto.randomUUID());
-    localStorage.setItem(`domino.offered-batch-at.v1.${hash}`, String(Math.floor(Date.now() / 1000) - seconds));
+    localStorage.setItem(`domino.offered-batch-at.v1.${hash}`, `${Math.floor(Date.now() / 1000) - seconds}L`);
   }, [keccak256(stringToHex(`4663|${OWNER}|${operationId}`)).slice(2), age]);
-  // Claimed a minute ago: it may still execute, so it is watched, and nothing is offered or sent.
+  // 2026-10-01 (audit C2): the page that offered a batch holds a lock while the batch may be open in the wallet
+  // (finance/nonce.ts); held here as an open tab of that page would hold it.
+  const holdOpen = (page, operationId) => page.evaluate((hash) => new Promise((granted) => {
+    void navigator.locks.request(`domino.offered-live.v1.b${hash}`, () => { granted(); return new Promise(() => {}); });
+  }), keccak256(stringToHex(`4663|${OWNER}|${operationId}`)).slice(2));
+  // Claimed a minute ago by a page still open: it may still execute, so it is watched, and nothing is offered or sent.
   let chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported' });
   let s = await atReview(chain);
   try {
     await seed(s.page, chain.operationId(0n), 60);
+    await holdOpen(s.page, chain.operationId(0n));
     await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
     await s.page.locator('[data-create-position="idle"]').click();
     await s.page.locator('[data-create-notice="batch_unknown"]').waitFor({ timeout: 30_000 });
     assert.deepEqual([chain.sends, chain.batches], [[], []]);
     assert.ok(!chain.log.includes('wallet_sendCalls'));
   } finally { await s.close(); }
-  // Claimed 26 minutes ago: past anything it could do. Freed, and one new batch makes the position.
+  // Changed on purpose 2026-10-01 (audit C2, the owner's OK): claimed a minute ago by a page that is gone (reloaded or
+  // closed during the prompt) and never answered by the wallet: freed at once, since the setup contract refuses a second
+  // batch for the operation, so one still open in the wallet cannot run twice. One new batch makes the position.
+  chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported' });
+  s = await atReview(chain);
+  try {
+    await seed(s.page, chain.operationId(0n), 60);
+    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.sends, []);
+    assert.equal(chain.batches.length, 1);
+    assert.deepEqual(await s.page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.offered-batch'))), [], 'the old latch and the new one, both done');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+  // Claimed 26 minutes ago, its page still open: past anything it could do. Freed, and one new batch makes the position.
   chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported' });
   s = await atReview(chain);
   try {
     await seed(s.page, chain.operationId(0n), 26 * 60);
+    await holdOpen(s.page, chain.operationId(0n));
     await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
     await s.page.locator('[data-create-position="idle"]').click();
     await openCreated(s.page, '4242', 60_000);
@@ -1699,34 +2921,20 @@ test('a batch the wallet never answered holds Create position while it could sti
   } finally { await s.close(); }
 });
 
-// 2026-09-28 (the chain's own RPC unreachable on Vivo's DNS): a wallet that does not simulate a batch has it simulated
-// at a public fallback that does (publicnode, else dRPC; ordofi has no simulation), checked to be chain 4663 first.
-test('with the chain’s own RPC behind a name that does not resolve, a batch the wallet cannot simulate is simulated at a public fallback, and signed once', async () => {
+// 2026-09-28 (the chain's own RPC unreachable on Vivo's DNS): a wallet that does not simulate a batch had it simulated
+// at a public fallback. Changed on purpose (RPC-SPEC D7, 2026-10-01, the owner's rule: nothing is read from a public RPC):
+// at the site's own fixed route, POST /api/chain/v1/simulate, once the deployment turns it on (off by default); no RPC
+// host is asked to simulate anything.
+test('a batch the wallet cannot simulate is simulated on the site’s own simulate route when it is on, and signed once; no RPC host is asked', async () => {
   const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', simulation: 'unsupported' });
   const s = await atReview(chain);
-  const asked = [];
-  const primary = [];
   try {
-    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
-    await s.context.route(/rpc\.mainnet\.chain\.robinhood\.com/, (route) => {
-      primary.push(route.request().method());
-      return route.abort('namenotresolved');
-    });
-    await s.context.route(/^https:\/\/(?:robinhood-rpc\.publicnode\.com|rpc\.ordofi\.network|robinhood\.drpc\.org)\/?$/, async (route) => {
-      const request = route.request();
-      if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
-      const body = JSON.parse(request.postData() ?? '{}');
-      asked.push(`${new URL(request.url()).hostname} ${body.method}`);
-      const reply = body.method === 'eth_chainId' ? { result: '0x1237' } : body.method === 'eth_simulateV1' ? { result: [{ calls: chain.simulate(body.params[0].blockStateCalls[0].calls) }] } : null;
-      if (!reply) return route.fulfill({ status: 500, headers: cors, body: '' });
-      return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: body.id, ...reply }) });
-    });
+    s.rpc.simulate = (params) => [{ calls: chain.simulate(params[0].blockStateCalls[0].calls) }];
     await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
     await s.page.locator('[data-create-position="idle"]').click();
     await openCreated(s.page, '4242', 60_000);
-    assert.ok(primary.length > 0, 'the chain’s own RPC was asked first');
-    assert.deepEqual(asked.filter((line) => /eth_simulateV1|eth_chainId/.test(line)).slice(0, 2), ['robinhood-rpc.publicnode.com eth_chainId', 'robinhood-rpc.publicnode.com eth_simulateV1'], 'checked to be chain 4663, then simulated');
-    assert.ok(!asked.some((line) => line.startsWith('rpc.ordofi.network eth_simulateV1')), 'never ordofi, which has no simulation');
+    assert.ok(s.rpc.edgeLog.includes('/api/chain/v1/simulate'), 'simulated on the site’s route');
+    assert.deepEqual(s.rpc.publicAsked, [], 'no RPC host was asked anything');
     assert.deepEqual(chain.sends, []);
     assert.equal(chain.batches.length, 1, 'signed once');
   } finally { await s.close(); }
@@ -1759,7 +2967,9 @@ test('a one-token deposit in one batch: the ETH as the deposit’s value, the sw
 
 // 2026-09-28 (review): once the same press goes on step by step, the line under Create position says to confirm each
 // step, never "one signature for every step", while the wallet asks for the approval, the deposit and the mint.
-test('a batch the wallet cannot make after all goes step by step in the same press; one the wallet cannot simulate is simulated on the chain’s RPC', async () => {
+// Changed on purpose (RPC-SPEC D7): a batch the wallet cannot simulate is no longer simulated on the chain's RPC; the
+// site's own simulate route is (the test above, when it is on).
+test('a batch the wallet cannot make after all goes step by step in the same press; one nothing simulates goes step by step too', async () => {
   // Said supported, refused as unsupported: asked once, then each step as for any wallet.
   let chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', batchError: { code: 5760, message: 'Atomicity not supported' } });
   let s = await atReview(chain);
@@ -1774,58 +2984,25 @@ test('a batch the wallet cannot make after all goes step by step in the same pre
     await saidEachStep(s.page, { batchAsked: true, steps: ['approve', 'fund', 'mint'] });
     await onlyTheWallet(s, chain);
   } finally { await s.close(); }
-  // No simulation anywhere (not in the wallet, not on the chain's RPC, not at a fallback): the batch is never offered,
-  // and the same press goes on step by step, said as such.
-  chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', simulation: 'unsupported' });
-  s = await atReview(chain);
-  const simulated = [];
-  try {
-    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
-    const noSimulation = (status, reply) => async route => {
-      const request = route.request();
-      const body = request.method() === 'POST' ? JSON.parse(request.postData() ?? '{}') : {};
-      if (body.method !== 'eth_simulateV1') return route.fallback();
-      simulated.push(new URL(request.url()).hostname);
-      return route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: body.id, ...reply }) });
-    };
-    await s.context.route(/rpc\.mainnet\.chain\.robinhood\.com/, noSimulation(500, { error: { code: -32603, message: 'internal error' } }));
-    await s.context.route(/^https:\/\/(?:robinhood-rpc\.publicnode\.com|rpc\.ordofi\.network|robinhood\.drpc\.org)\/?$/, noSimulation(200, { error: { code: -32601, message: 'the method eth_simulateV1 does not exist/is not available' } }));
-    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
-    await recordReason(s.page);
-    await s.page.locator('[data-create-position="idle"]').click();
-    await openCreated(s.page, '4242', 60_000);
-    assert.ok(simulated.includes('rpc.mainnet.chain.robinhood.com'), 'the chain’s RPC was asked to simulate');
-    assert.deepEqual(chain.batches, []);
-    assert.equal(chain.log.filter(method => method === 'wallet_sendCalls').length, 0, 'nothing unsimulated is offered as a batch');
-    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open', 'mint'], 'each step, as for any wallet');
-    await saidEachStep(s.page, { batchAsked: false, steps: ['approve', 'fund', 'mint'] });
-  } finally { await s.close(); }
-  // No eth_simulateV1 in the wallet: the chain's own RPC simulates the batch, and the wallet still signs it once.
-  chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', simulation: 'unsupported' });
-  s = await atReview(chain);
-  const asked = [];
-  try {
-    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
-    await s.context.route(/rpc\.mainnet\.chain\.robinhood\.com/, async route => {
-      const request = route.request();
-      if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
-      const body = JSON.parse(request.postData() ?? '{}');
-      asked.push(body.method);
-      if (body.method !== 'eth_simulateV1') return route.fulfill({ status: 500, headers: cors, body: '' });
-      return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [{ calls: chain.simulate(body.params[0].blockStateCalls[0].calls) }] }) });
-    });
-    await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
-    await s.page.locator('[data-create-position="idle"]').click();
-    await openCreated(s.page, '4242', 60_000);
-    // Changed on purpose 2026-09-28 (speed wave B, item 24): the new position's page reads its state as soon as its route
-    // is open, before its chunk is in: what Create position asked the chain's RPC is the simulation, first and once.
-    assert.deepEqual(asked.filter((method) => method === 'eth_simulateV1'), ['eth_simulateV1']);
-    assert.equal(asked[0], 'eth_simulateV1');
-    assert.deepEqual(chain.sends, []);
-    assert.equal(chain.batches.length, 1);
-    assert.deepEqual(chain.refused, [], 'the wallet’s refusal of eth_simulateV1 is its own answer, not a method this page needs');
-  } finally { await s.close(); }
+  // Changed on purpose (RPC-SPEC D7, 2026-10-01): no simulation in the wallet, and the site's simulate route off, as a
+  // deployment has it by default (or on, with a node that does not carry the method): the batch is never offered, and
+  // the same press goes on step by step, said as such. No RPC host is asked to simulate.
+  for (const route of ['off', 'unsupported']) {
+    chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n }, atomic: 'supported', simulation: 'unsupported' });
+    s = await atReview(chain);
+    try {
+      if (route === 'unsupported') s.rpc.simulate = () => { throw Object.assign(new Error('the method eth_simulateV1 does not exist/is not available'), { code: -32601 }); };
+      await s.page.locator('#create-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
+      await recordReason(s.page);
+      await s.page.locator('[data-create-position="idle"]').click();
+      await openCreated(s.page, '4242', 60_000);
+      assert.ok(s.rpc.edgeLog.includes('/api/chain/v1/simulate'), `${route}: the site’s simulate route was asked`);
+      assert.deepEqual(chain.batches, [], route);
+      assert.equal(chain.log.filter(method => method === 'wallet_sendCalls').length, 0, `${route}: nothing unsimulated is offered as a batch`);
+      assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open', 'mint'], `${route}: each step, as for any wallet`);
+      await saidEachStep(s.page, { batchAsked: false, steps: ['approve', 'fund', 'mint'] });
+    } finally { await s.close(); }
+  }
 });
 
 test('Create position finds this wallet’s earlier deposit in the same pool and mints it: no approval and no second deposit, only the mint, and the page opens that position', async () => {
@@ -1924,6 +3101,151 @@ test('pressed again after a declined mint, Create position mints the held deposi
     assert.deepEqual(chain.decoded().map(tx => [tx.functionName, tx.nonce]), [['approve', '0x0'], ['open', '0x1'], ['mint', '0x2']], 'one approval, one deposit, and the mint at the nonce the declined one gave back');
     assert.deepEqual([mint.args[0].operationId, mint.args[0].maxAmount0, mint.args[0].maxAmount1], [open.args[0], open.args[2], open.args[3]], 'the held operation, capped at what it holds');
     assert.equal(chain.operations.size, 1, 'no second operation');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// 2026-10-01 (audit C2, the owner's OK): a send the wallet answered with an error that proves nothing either way keeps
+// its nonce latched, so the next press says the request may still be open in the wallet. "I rejected it in my wallet"
+// lets the latch go while the chain shows nothing pending; nothing is sent by it, and the press after it prepares and
+// reviews the step anew. The lost request is never sent again by the page itself.
+test('a mint the wallet answered with an unknown error holds the next press until the person says they rejected it; then Create position mints once', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  chain.lose('mint');
+  const s = await atReview(chain);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    const held = s.page.locator('[data-create-position="held"]');
+    await held.waitFor({ timeout: 60_000 });
+    assert.deepEqual(chain.lost, ['mint']);
+    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve', 'open'], 'the lost mint sent nothing');
+    const sendsAsked = () => chain.log.filter(method => method === 'eth_sendTransaction').length;
+    assert.equal(sendsAsked(), 3, 'the approval, the deposit and the one mint the wallet lost');
+
+    // The next press finds the mint's nonce still latched by this page: it says so, sends nothing, and offers the way out.
+    await held.click();
+    const open = s.page.locator('[data-create-notice="wallet_request_open"]');
+    await open.waitFor({ timeout: 30_000 });
+    assert.equal(await open.innerText(), 'Your wallet may still be showing an earlier request from this page. Approve or reject it there. If you already rejected or closed it, say so below.');
+    assert.equal(sendsAsked(), 3, 'nothing is sent while the request may be open');
+    const forget = s.page.locator('[data-create-forget-request]');
+    assert.equal(await forget.innerText(), 'I rejected it in my wallet');
+    await forget.click();
+    await s.page.locator('[data-create-notice="request_forgotten"]').filter({ hasText: 'Nothing was sent. Press Create position to continue.' }).waitFor({ timeout: 30_000 });
+    assert.equal(await forget.count(), 0, 'the way out is gone once used');
+    assert.equal(sendsAsked(), 3, 'and saying so sends nothing either');
+
+    // The press after it reviews the mint anew and sends it once, at the nonce nothing on chain used.
+    await held.click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.decoded().map(tx => [tx.functionName, tx.nonce]), [['approve', '0x0'], ['open', '0x1'], ['mint', '0x2']]);
+    assert.equal(sendsAsked(), 4, 'one more send in all: the mint the person asked for');
+    assert.equal(chain.operations.size, 1, 'no second operation');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// 2026-10-01 (audit C14): a transaction the person replaced in the wallet ("Speed up" or "Cancel") is known at once by
+// its nonce: the chain does not know the hash the page was given, and the account's nonce has passed it. The page reads
+// the state again and goes on from what happened; it used to watch the unknown hash as pending for five minutes.
+test('a mint sped up in the wallet: the page finds the position by reading the operation again, and opens it', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  chain.speedUp('mint');
+  const s = await atReview(chain);
+  try {
+    const started = Date.now();
+    await s.page.locator('[data-create-position="idle"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.ok(Date.now() - started < 60_000, 'well before the five minutes an unknown hash used to be watched');
+    assert.deepEqual(chain.decoded().map(tx => [tx.functionName, tx.nonce]), [['approve', '0x0'], ['open', '0x1'], ['mint', '0x2']], 'nothing sent twice');
+    assert.equal(chain.operations.size, 1);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('a deposit cancelled in the wallet is said within seconds, not after five minutes: nothing was deposited, and the next press deposits once', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  chain.cancelInWallet('open');
+  const s = await atReview(chain);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    const said = s.page.locator('[data-create-notice="transaction_replaced"]');
+    await said.waitFor({ timeout: 60_000 });
+    assert.equal(await said.innerText(), 'Your wallet replaced the deposit with another transaction, and nothing was deposited. Press Create position again.');
+    assert.deepEqual(chain.decoded().map(tx => tx.functionName), ['approve'], 'the deposit never happened');
+    assert.equal(chain.operations.size, 0);
+
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.decoded().map(tx => [tx.functionName, tx.nonce]), [['approve', '0x0'], ['open', '0x2'], ['mint', '0x3']], 'one deposit, after the nonce the cancel took, and no second approval');
+    assert.equal(chain.operations.size, 1);
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+test('an approval cancelled in the wallet stops the press instead of asking again; the next press approves once', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  chain.cancelInWallet('approve');
+  const s = await atReview(chain);
+  try {
+    await s.page.locator('[data-create-position="idle"]').click();
+    const said = s.page.locator('[data-create-notice="transaction_replaced"]');
+    await said.waitFor({ timeout: 60_000 });
+    assert.equal(await said.innerText(), 'Your wallet replaced the approval with another transaction, and nothing was approved. Press Create position again.');
+    assert.equal(chain.log.filter(method => method === 'eth_sendTransaction').length, 1, 'the cancelled approval was not asked for again in the same press');
+    assert.deepEqual(chain.sends, []);
+
+    await s.page.locator('[data-create-position="failed"]').click();
+    await openCreated(s.page, '4242', 60_000);
+    assert.deepEqual(chain.decoded().map(tx => [tx.functionName, tx.nonce]), [['approve', '0x1'], ['open', '0x2'], ['mint', '0x3']], 'the approval once, after the nonce the cancel took');
+    await onlyTheWallet(s, chain);
+  } finally { await s.close(); }
+});
+
+// 2026-10-01 (audit C1, the owner's OK): Review's "Switch to Robinhood Chain" asks the wallet to switch, adds the network
+// when the wallet does not have it (wallet_addEthereumChain, EIP-3085), and says every refusal under the button; it used
+// to drop the outcome, and a wallet without Robinhood Chain could never get past it.
+test('a wallet moved to another network at Review: Switch to Robinhood Chain says a refusal, then adds the network and Review is back as it was', async () => {
+  const chain = fakeDepositChain(ACCOUNTS[0].address, { balances: { [FIXTURE_TOKEN]: 5_000_000n } });
+  const s = await atReview(chain);
+  try {
+    chain.moveWallet(1, { forget: true });
+    await s.page.evaluate(() => window.__depositWalletEmit('chainChanged', '0x1'));
+    const button = s.page.locator('[data-create-position="connect"]');
+    await button.waitFor({ timeout: 10_000 });
+    assert.equal(await button.innerText(), 'Switch to Robinhood Chain');
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Switch your wallet to Robinhood Chain to continue.');
+
+    // Refused in the wallet: said under the button, and the button is there to press again.
+    chain.refuseNetworkOnce('add');
+    await button.click();
+    const refused = s.page.locator('[data-create-notice="switch_add_rejected"]');
+    await refused.waitFor({ timeout: 10_000 });
+    assert.equal(await refused.innerText(), 'Your wallet declined adding Robinhood Chain.');
+    assert.equal(await button.innerText(), 'Switch to Robinhood Chain');
+    assert.equal(await button.isEnabled(), true);
+    assert.equal(chain.walletChain(), 1);
+
+    // Pressed again: the switch, the network added with Robinhood Chain's own details, and the wallet on it.
+    await button.click();
+    await s.page.locator('[data-create-position="idle"]').waitFor({ timeout: 10_000 });
+    assert.equal(chain.walletChain(), 4663);
+    assert.equal(await s.page.locator('[data-create-notice]').count(), 0, 'the refusal is cleared by the press that worked');
+    assert.equal(await s.page.locator('#create-reason').innerText(), 'Your wallet will ask you to confirm each step.');
+    const asked = chain.log.filter(method => method === 'wallet_switchEthereumChain' || method === 'wallet_addEthereumChain');
+    assert.deepEqual(asked, ['wallet_switchEthereumChain', 'wallet_addEthereumChain', 'wallet_switchEthereumChain', 'wallet_addEthereumChain']);
+    assert.equal(chain.added.length, 2);
+    for (const params of chain.added) {
+      assert.deepEqual(params, {
+        chainId: '0x1237',
+        chainName: 'Robinhood Chain',
+        nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+        // RPC-SPEC §7.5: the chain's official RPC alone, the wallet's own (src/wallet/chain.ts).
+        rpcUrls: ['https://rpc.mainnet.chain.robinhood.com'],
+        blockExplorerUrls: ['https://robinhoodchain.blockscout.com'],
+      });
+    }
+    assert.deepEqual(chain.sends, [], 'nothing was sent by switching');
     await onlyTheWallet(s, chain);
   } finally { await s.close(); }
 });
@@ -2616,14 +3938,17 @@ test('a link from a pool page verifies the pool with the token it names, and ste
     await stage.waitFor({ timeout: 30_000 });
     assert.deepEqual(asked, [{ token: FIXTURE_TOKEN, maxPools: 1, poolIds: [LINKED] }], 'verified once, with the token the link names');
     assert.equal(await s.page.locator('[data-chosen-pool]').getAttribute('data-chosen-pool'), LINKED);
-    assert.equal(await s.page.locator('[data-chosen-pool] .dm-chip').innerText(), '0.30% fee');
+    // Changed on purpose 2026-10-01 (audit E21): the fee as every chip writes it.
+    assert.equal(await s.page.locator('[data-chosen-pool] .dm-chip').innerText(), 'Uniswap · 0.30% fee');
     assert.equal(await s.page.locator('[data-deposit-choice], [data-deposit-token]').count(), 0, 'no question about which token is deposited');
     assert.equal(await s.page.getByRole('combobox', { name: 'Search a token' }).count(), 0, 'the pool is chosen: no search until Change pool');
     const next = footerButton(s.page, 'Continue');
     assert.equal(await next.isDisabled(), false, 'Continue at once, as when the pool is chosen from the list');
     await next.click();
     await s.page.locator('[data-stage="range"]').waitFor();
-    assert.equal(await s.page.locator('li[data-step="pool"] .dm-flow-row-summary').innerText(), 'ETH / TOKEN · 0.30%', 'no "deposit TOKEN" on the row');
+    // Changed on purpose 2026-10-01 (integration pass 3, audit E21): the step's row writes the fee as every chip does
+    // (components/create/StepList.tsx, lib/format/fee.ts feeWords).
+    assert.equal(await s.page.locator('li[data-step="pool"] .dm-flow-row-summary').innerText(), 'ETH / TOKEN · 0.30% fee', 'no "deposit TOKEN" on the row');
   } finally { await s.close(); }
 });
 
@@ -2867,9 +4192,10 @@ test('New position names the provider’s most liquid pools in its one pools rea
     // Changed on purpose (round 6, 2026-09-27): New position's rows no longer print their pool id; it is data-pool-key.
     assert.deepEqual(await rows.evaluateAll(els => els.map(el => el.getAttribute('data-pool-key'))), [Z, Y], 'the read service’s TVL decides the order: $900 before $50');
     const figures = await rows.evaluateAll(els => els.map(el => [...el.querySelectorAll('[data-provider-figure], [data-row-apr]')].map(cell => cell.innerText.replace(/\s+/g, ' ').trim())));
+    // Changed on purpose 2026-10-01 (audit E21): the one APR rule of every screen (lib/format/apr.ts).
     assert.deepEqual(figures, [
-      ['TVL $900.00', '24h volume $100.00', 'APR 12.17% est.'],
-      ['TVL $50.00', '24h volume $1.2K', 'APR 2703.69% est.'],
+      ['TVL $900.00', '24h volume $100.00', 'APR 12.2% est.'],
+      ['TVL $50.00', '24h volume $1.2K', 'APR 2,704% est.'],
     ]);
     const stage = await s.page.locator('[data-stage="token"]').innerText();
     assert.doesNotMatch(stage, /verified at block|No market figures|Pool details|hooks|adapter|coverage|catalogue|Rejected/i, 'no disclosure, no footnote, no panel');
@@ -2978,9 +4304,9 @@ test('New position reads the chosen token’s pools once, Change pool shows that
     // The chosen pool's radio is already checked: keeping it is the step's own button.
     await s.page.getByRole('button', { name: 'Keep this pool', exact: true }).click();
     await s.page.locator('[data-chosen-pool]').waitFor();
-    await footerButton(s.page, 'Continue').click();
+    await pressContinue(s.page);
     await s.page.locator('[data-stage="range"]').waitFor();
-    await footerButton(s.page, 'Continue').click();
+    await pressContinue(s.page);
     await s.page.locator('[data-pair-side="1"] input[inputmode="decimal"]').fill('1');
     // Changed on purpose 2026-09-28 (speed wave, after review): Review draws the loaded Create position in the frame it
     // opens, never the disabled stand-in React holds 300 ms for a lazy control. Every change to the page is watched from
@@ -2995,7 +4321,7 @@ test('New position reads the chosen token’s pools once, Change pool shows that
       };
       new MutationObserver(look).observe(document.body, { childList: true, subtree: true, characterData: true });
     }, 'Loading the wallet steps…');
-    await footerButton(s.page, 'Continue').click();
+    await pressContinue(s.page);
     await s.page.locator('[data-stage-card="review"]').waitFor();
     await s.page.locator('[data-create-position="connect"]').waitFor();
     assert.equal(chunks.length, 1, 'Review found the chunk loaded');
@@ -3208,6 +4534,7 @@ test('with no wallet connected Review’s last control is Connect wallet, says w
 });
 
 // ---- G13 receipt identity and status refresh; G16 Start tracking from owned sequences ---------------------------
+part('automation');
 
 import { decodeFunctionData, encodeFunctionResult, numberToHex, parseAbi, parseAbiParameters, parseUnits, stringToHex, zeroAddress } from 'viem';
 
@@ -3289,7 +4616,7 @@ test('a finalized receipt is one short row: Done, what it added back, and its de
     assert.equal(await open.getAttribute('data-execution-can-cancel'), 'true');
     await open.locator('summary').click();
     // Changed on purpose (2026-09-27, round 5 review): the sentence is plain ("a transaction slot is reserved" was for engineers).
-    assert.match(await open.innerText(), /Getting ready\. Nothing has been sent\.\s+It can still be stopped: pause your automation before it is signed\.\s+How to pause/);
+    assert.match(await open.innerText(), /Getting ready\. Nothing has been sent\.\s+It can still be stopped: press Pause on your position’s page before it is signed\.\s+How to pause/);
     assert.equal(await open.getByRole('link', { name: 'How to pause', exact: true }).getAttribute('href'), '#/docs/non-custodial#pause-revoke-withdraw');
     assert.deepEqual(await receipts.locator('a').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['#/docs/non-custodial#pause-revoke-withdraw'], 'no external link: the one link is how to pause');
     assert.deepEqual([await done.getAttribute('data-execution-can-cancel'), await done.getByRole('link').count()], ['false', 0]);
@@ -3379,8 +4706,10 @@ async function shootBoth(page, name, target = null) {
 // and the way back read no list of their own (execution-v1 allows one read per 30 s), and a failed receipt's sentence is plain.
 // 2026-09-28 (speed wave B, item 25: Receipts named its tokens one at a time through the read path, 1.1 s apart, about 2.7
 // to 4.5 s on a first visit): a receipt's tokens are named from one read of the chain for all of them (their symbol() and
-// decimals() in one aggregate3), and only one the chain gives no decimals for goes on to the read path.
-test('a receipt’s tokens are named from one read of the chain; only one the chain gives no decimals for is asked of the read path', async () => {
+// decimals() in one aggregate3), and only one the chain gives no decimals for goes on to the read path. Changed on purpose
+// (RPC-SPEC, 2026-10-01, the owner's rule: nothing is read from a public RPC): no read of the chain for them any more; a
+// token this visit's chain routes named is named at once, and every other one is read-v1's `token` read, as before.
+test('a receipt’s tokens are named from the read path, nothing read of the chain for them; one it gives no decimals for says so', async () => {
   const TOKEN = '0x' + '11'.repeat(20), OTHER = '0x' + '22'.repeat(20), UNKNOWN = '0x' + '33'.repeat(20);
   const chain = browserChain({ tokens: { [TOKEN]: { symbol: 'TOKEN', decimals: 6 }, [OTHER]: { symbol: 'OTH', decimals: 18 } } });
   const s = await scenario({ clock: true, chain });
@@ -3396,16 +4725,16 @@ test('a receipt’s tokens are named from one read of the chain; only one the ch
   await s.context.route(/\/api\/execution\/v1\/(list|status)$/, async route => {
     await route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', headers: { 'X-Domino-Execution-Contract': executionRuntime.CONTRACT_VERSION }, body: JSON.stringify(list) });
   });
-  const asked = await answerTokenReads(s.context, {});
+  const asked = await answerTokenReads(s.context, { [TOKEN]: { symbol: 'TOKEN', decimals: 6 }, [OTHER]: { symbol: 'OTH', decimals: 18 } });
   try {
     await login(s.page);
     const done = s.page.locator(`section[aria-label="Execution receipts"] [data-execution-intent="${finalized.intentId}"]`);
     await done.locator('[data-receipt-added]').getByText('1.47 TOKEN', { exact: true }).waitFor({ timeout: 30_000 });
     await done.locator('[data-receipt-added]').getByText('2 OTH', { exact: true }).waitFor({ timeout: 30_000 });
     await done.locator(`[data-receipt-added] [data-receipt-currency="${UNKNOWN}"] [data-amount-reason="decimals_unavailable"]`).waitFor({ timeout: 30_000 });
-    assert.deepEqual(asked, [UNKNOWN], 'the read path asked only for the token the chain gave no decimals for');
-    const reads = chain.log.filter((call) => call.method === 'eth_call' && call.params[1] === 'latest' && call.params[0].data.includes('95d89b41'));
-    assert.equal(reads.length, 1, 'one read of the chain for the receipt’s tokens');
+    assert.deepEqual([...asked].sort(), [TOKEN, OTHER, UNKNOWN].sort(), 'each token asked of the read path once');
+    const reads = chain.log.filter((call) => call.method === 'eth_call' && call.params[0].data.includes('95d89b41'));
+    assert.equal(reads.length, 0, 'nothing read of the chain for the receipt’s tokens');
   } finally { await s.close(); }
 });
 
@@ -3477,6 +4806,9 @@ test('many receipts: the Positions tab shows four short rows at most, cancelled 
     // Changed on purpose (2026-09-28, round 6 review): while it is on its way Show more is offered (it was left out until the whole
     // read ended, so it went away while the rest was coming); the rest still comes with nothing pressed, and then it goes.
     const reads = asked.filter(call => call.path.endsWith('/list')).length;
+    // Waited for, not counted at once (audit H3: CI counted 0 on PR #280): the page draws Show more from the shared
+    // receipts as it mounts, and the rest cannot come before the clock's jump below, so nothing can take it away first.
+    await full.getByRole('button', { name: 'Show more' }).waitFor();
     assert.equal(await full.getByRole('button', { name: 'Show more' }).count(), 1, 'more on its way: Show more is offered');
     await jump(s.page, '00:31');
     await full.locator(`[data-execution-intent="${intentOf(11)}"]`).waitFor();
@@ -3687,6 +5019,11 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
   const hashOf = index => at(0xcc + index, 32);
   let included = settled ? { transaction: {}, receipt: {} } : null;
   const include = (patch) => { included = patch ? { transaction: patch.transaction ?? {}, receipt: patch.receipt ?? {} } : null; };
+  // 2026-10-01 (audit C14): the next send (of the function named, or any) replaced in the wallet. "Speed up": the same call
+  // mined under another hash than the one the page is given. "Cancel": a 0-ETH transfer to the account itself takes the
+  // nonce (`burned`), and the call never happens.
+  let speedNext = null, cancelNext = null, burned = 0;
+  const replacing = (wanted, tx) => wanted === true || (wanted !== null && decodeFunctionData({ abi: chainAbi, data: tx.data }).functionName === wanted);
   /**
    * What the contracts make of a sent transaction: an approval is recorded against its NFT, a creation registers the vault
    * it predicted, and a vault's resume or pause (2026-09-25) flips its policy's paused flag.
@@ -3763,14 +5100,24 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
       if (method === 'eth_getBlockByNumber') return { result: { number: '0x10', hash: at(0xbb, 32) } };
       // A suite that routes these here keeps them off the mock wallet, which
       // refuses anything outside its login set and fails the scenario's close.
-      if (method === 'eth_getTransactionCount') return { result: numberToHex(sends.length) };
+      if (method === 'eth_getTransactionCount') return { result: numberToHex(sends.length + burned) };
       if (method === 'eth_estimateGas') return { result: '0x186a0' };
       if (method === 'eth_getBalance') return { result: balance };
       if (method === 'eth_gasPrice') return { result: '0x5f5e100' };
-      if (method === 'eth_sendTransaction') { const index = sends.length; sends.push(params[0]); apply(params[0]); return { result: hashOf(index) }; }
+      if (method === 'eth_sendTransaction') {
+        if (replacing(cancelNext, params[0])) { cancelNext = null; burned += 1; return { result: at(0xd0 + burned, 32) }; }
+        const index = sends.length; sends.push(params[0]); apply(params[0]);
+        if (replacing(speedNext, params[0])) { speedNext = null; return { result: at(0xe0 + index, 32) }; }
+        return { result: hashOf(index) };
+      }
       if (method === 'eth_getTransactionByHash' || method === 'eth_getTransactionReceipt') {
         const index = sends.findIndex((_, i) => hashOf(i) === String(params[0]).toLowerCase());
-        if (!included || index === -1) return { result: null };
+        if (index === -1) return { result: null };
+        // 2026-10-01 (audit C14): a node knows a transaction still pending by its hash (no block yet); only its receipt waits.
+        if (!included) {
+          const sent = sends[index];
+          return { result: method === 'eth_getTransactionByHash' ? { hash: hashOf(index), from: sent.from, to: sent.to, input: sent.data, value: sent.value, nonce: sent.nonce, blockHash: null, blockNumber: null } : null };
+        }
         const sent = sends[index], hash = hashOf(index);
         const block = { blockHash: at(0xbb, 32), blockNumber: '0x10' };
         if (method === 'eth_getTransactionByHash') return { result: { hash, from: sent.from, to: sent.to, input: sent.data, value: sent.value, nonce: sent.nonce, chainId: sent.chainId, type: sent.type,
@@ -3794,6 +5141,8 @@ function fakeSequenceChain(owner, { roots, chains = {}, operator = null, service
     }
   }
   return { log, missing, refused, sends, simulations, batches, request, include, predict, poolKey, poolId, policy, limits, vaults: [...vaults.keys()], release: { contractVersion: '1.0.0-rc.1', chainId: 4663, available: true, deployment },
+    // 2026-10-01 (audit C14): the person speeds the next send (of `name`) up, or cancels it, in the wallet; the nonces cancels took.
+    speedUpNext: (name = true) => { speedNext = name; }, cancelNextInWallet: (name = true) => { cancelNext = name; }, burned: () => burned,
     holdNext: () => { hold = true; }, simulate: calls => batchResults(calls).results };
 }
 
@@ -3997,9 +5346,51 @@ test('with no wallet the page asks to connect; connected, the wallet’s own pos
     assert.doesNotMatch(text, /Owner controls|Network budget|Create a paused sequence|Manage a sequence|Root NFT|Read my sequences|Sequence address/i);
     assert.doesNotMatch(text, FORBIDDEN);
     // Changed on purpose 2026-09-28 (speed wave B, item 23): a wallet that never opened a setup operation (its nonce, read
-    // with the head in the list's first call) has no position: no SetupMinted log is read for it.
-    assert.equal(s.rpc.scans(OWNER), 0, 'the positions are read from the chain, once: its nonce says there are none');
+    // with the head in the list's first call) has no position. Changed on purpose (RPC-SPEC, 2026-10-01): the list is the
+    // site's route, asked once; what it reads of the chain for it is the route's own (tests/chain-routes.test.mjs).
+    assert.equal(s.rpc.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 1, 'the positions are read once, through the site’s route');
     assert.deepEqual(chain.log, [], 'nothing is read from the chain by opening the page');
+    assert.deepEqual(chain.sends, []);
+    assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
+  } finally { await s.close(); }
+});
+
+// 2026-10-01 (audit C1, the owner's OK): Automate's "Switch network" says how the switch ended, in the wallet dialog's
+// words, and adds Robinhood Chain to a wallet that does not have it; it used to drop the outcome and show nothing.
+test('a wallet on another network at Automate: Switch network says a refusal, then adds Robinhood Chain and the wallet’s positions are read', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [] });
+  await routeChain(s, chain, CHAIN_METHODS);
+  try {
+    s.set({ sequenceRelease: { status: 200, body: chain.release } });
+    await s.page.goto(`${s.origin}/#/sequence/compound/5`);
+    await s.page.reload();
+    const main = s.page.locator('main');
+    await main.locator('[data-sequence-wallet="none"]').getByRole('button', { name: 'Connect wallet', exact: true }).click();
+    const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+    await dialog.getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await s.page.keyboard.press('Escape');
+    await main.locator('[data-sequence-positions="empty"]').waitFor();
+
+    // The person moves the wallet to a network, and Robinhood Chain is not among the wallet's own.
+    s.wallet.forgetChain('a', 4663);
+    await s.wallet.switchChain('a', 1);
+    const elsewhere = main.locator('[data-sequence-wallet="other-network"]');
+    await elsewhere.getByText('Switch to Robinhood Chain', { exact: true }).waitFor();
+    const button = elsewhere.getByRole('button', { name: 'Switch network', exact: true });
+    s.wallet.rejectNext('a', 'wallet_addEthereumChain');
+    await button.click();
+    const notice = elsewhere.locator('[data-sequence-switch-notice]');
+    await notice.waitFor();
+    assert.equal(await notice.innerText(), 'Your wallet declined adding Robinhood Chain.');
+    assert.equal(await button.isEnabled(), true, 'pressed again whenever the person is ready');
+
+    await button.click();
+    await main.locator('[data-sequence-positions="empty"]').waitFor({ timeout: 10_000 });
+    assert.equal(s.wallet.wallet('a').chainId, 4663);
+    assert.deepEqual(s.wallet.added('a').map((params) => [params.chainId, params.chainName, params.rpcUrls[0]]), [['0x1237', 'Robinhood Chain', 'https://rpc.mainnet.chain.robinhood.com']]);
+    assert.deepEqual(s.wallet.state.log.filter((entry) => /^wallet_(switch|add)EthereumChain$/.test(entry.method)).map((entry) => entry.method),
+      ['wallet_switchEthereumChain', 'wallet_addEthereumChain', 'wallet_switchEthereumChain', 'wallet_addEthereumChain']);
     assert.deepEqual(chain.sends, []);
     assert.equal(s.wallet.state.signed.length, 0, 'no sign-in signature');
   } finally { await s.close(); }
@@ -4213,31 +5604,24 @@ test('a sent batch is watched until the wallet says what became of it: each outc
   } finally { await s.close(); }
 });
 
-test('a sequence batch the wallet cannot simulate is simulated on the chain’s RPC; with no simulation anywhere, the same press goes step by step', async () => {
-  const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' };
-  for (const rpcSimulates of [true, false]) {
+// Changed on purpose (RPC-SPEC D7, 2026-10-01, the owner's rule: nothing is read from a public RPC): the site's own fixed
+// simulate route in place of the chain's RPC. On (a deployment that turns it on), the batch is simulated there and signed
+// once; off (the default), the same press goes step by step.
+test('a sequence batch the wallet cannot simulate is simulated on the site’s simulate route when it is on; off, the same press goes step by step', async () => {
+  for (const routeOn of [true, false]) {
     const s = await scenario();
     const chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, atomic: 'supported', simulation: 'unsupported' });
     await routeChain(s, chain, [...CHAIN_METHODS, ...BATCH_METHODS]);
-    const asked = [];
+    if (routeOn) s.rpc.simulate = (params) => [{ calls: chain.simulate(params[0].blockStateCalls[0].calls) }];
     try {
-      await s.context.route(/rpc\.mainnet\.chain\.robinhood\.com/, async route => {
-        const request = route.request();
-        if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
-        const body = JSON.parse(request.postData() ?? '{}');
-        asked.push(body.method);
-        if (!rpcSimulates || body.method !== 'eth_simulateV1') return route.fulfill({ status: 500, headers: cors, body: '' });
-        return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', id: body.id, result: [{ calls: chain.simulate(body.params[0].blockStateCalls[0].calls) }] }) });
-      });
       await connectOnly(s.page);
       const card = await setUpFromLink(s, chain, { press: false });
       await card.locator('#sequence-reason', { hasText: 'sign once' }).waitFor({ timeout: 30_000 });
       await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
       await s.page.locator(`[data-sequence-created="${chain.predict(0)}"]`).waitFor({ timeout: 60_000 });
-      assert.ok(asked.includes('eth_simulateV1'), 'the chain’s RPC was asked to simulate');
-      if (rpcSimulates) {
-        assert.deepEqual([chain.sends, chain.batches.length], [[], 1], 'simulated on the RPC, and signed once');
+      assert.ok(s.rpc.edgeLog.includes('/api/chain/v1/simulate'), 'the site’s simulate route was asked');
+      if (routeOn) {
+        assert.deepEqual([chain.sends, chain.batches.length], [[], 1], 'simulated on the site’s route, and signed once');
       } else {
         assert.deepEqual(chain.batches, []);
         assert.deepEqual(chain.sends.map(tx => decodeFunctionData({ abi: chainAbi, data: tx.data }).functionName), ['approve', 'createVault'], 'no simulation: each step, as for any wallet');
@@ -4303,7 +5687,9 @@ test('from a position link, one press puts the NFT under Domino-compound: the ap
     // The picker: the wallet's open positions only, the link's one chosen; the link's mode chosen; the quote currency next.
     const picker = card.getByRole('radiogroup', { name: 'Your open positions' });
     assert.deepEqual(await picker.getByRole('radio').evaluateAll(items => items.map(item => [item.getAttribute('data-sequence-position'), item.getAttribute('aria-checked')])), [['5', 'true'], ['7', 'false']], 'open positions only; the link preselects its own');
-    assert.match((await picker.getByRole('radio').first().innerText()).trim(), /^AAA \/ BBB\s+0\.30%\s+#5$/);
+    // Changed on purpose 2026-10-01 (integration pass 3, audit E21): the picker's chip writes the fee as every chip does
+    // (components/automate/PositionPicker.tsx, lib/format/fee.ts feeWords).
+    assert.match((await picker.getByRole('radio').first().innerText()).trim(), /^AAA \/ BBB\s+0\.30% fee\s+#5$/);
     assert.equal(await card.getAttribute('data-sequence-create-mode'), 'domino');
     assert.equal(await card.getAttribute('data-sequence-create'), 'quote');
     assert.equal(await card.locator('[data-sequence-mode="domino"]').getAttribute('aria-checked'), 'true');
@@ -4336,7 +5722,7 @@ test('from a position link, one press puts the NFT under Domino-compound: the ap
     assert.equal(await created.getAttribute('data-sequence-create'), 'done');
     assert.match(await created.innerText(), /^\s*Domino-compound is set up for position #5\s+It starts paused, and your position stays in your wallet\./);
     assert.deepEqual(await created.locator('[data-wallet-step]').evaluateAll(items => items.map(item => item.getAttribute('data-step-state'))), ['done', 'done']);
-    assert.equal(await created.getByRole('link', { name: 'How to switch it on' }).getAttribute('href'), '#/docs/domino-compounder#start-and-stop');
+    assert.equal(await created.getByRole('link', { name: 'How to switch it on' }).getAttribute('href'), '#/docs/domino-compound#start-and-stop');
     // 2026-09-24 (the three features joined up): and the way back to the position, which Positions now shows in its sequence.
     assert.equal(await created.getByRole('link', { name: 'View position' }).getAttribute('href'), '#/positions/5');
     assert.equal(await main.locator('[data-notice-code]').count(), 0, 'no error code beside any sentence');
@@ -4494,6 +5880,35 @@ test('a sequence whose creation receipt is in is shown created, even when a read
   } finally { await s.close(); }
 });
 
+// 2026-10-01 (audit C14): Set up automation's two steps replaced in the wallet ("Speed up" or "Cancel") are known within
+// seconds by their nonce, and the chain read again says whether each happened. A cancelled approval stops the press at its
+// own step and is never asked for again in it; a sped-up creation is shown created.
+test('an approval cancelled in the wallet stops Set up automation at its step without asking again; the next press approves once, and a creation sped up is shown created', async () => {
+  const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true });
+  const vault = chain.predict(0);
+  await routeChain(s, chain, CHAIN_METHODS);
+  const sends = () => chain.log.filter((method) => method === 'eth_sendTransaction').length;
+  try {
+    await connectOnly(s.page);
+    chain.cancelNextInWallet('approve');
+    const card = await setUpFromLink(s, chain);
+    assert.deepEqual(await said(card), { text: 'Your wallet replaced the approval with another transaction, and nothing was approved. Press Set up automation again.', code: 'sequence_approval_replaced' });
+    assert.deepEqual(await stepStates(card), ['failed', 'upcoming']);
+    assert.deepEqual([chain.sends.length, chain.burned(), sends()], [0, 1, 1], 'the cancelled approval was not asked for again in the same press');
+
+    // The next press: the approval once, at the nonce after the one the cancel took; then the creation, sped up.
+    chain.speedUpNext('createVault');
+    await card.getByRole('button', { name: 'Set up automation', exact: true }).click();
+    const created = s.page.locator(`main [data-sequence-created="${vault}"]`);
+    await created.waitFor({ timeout: 60_000 });
+    assert.deepEqual(await stepStates(created), ['done', 'done']);
+    assert.equal(await s.page.locator('main p[role="status"]').count(), 0, 'no failure is said');
+    assert.deepEqual(chain.sends.map((tx) => [decodeFunctionData({ abi: chainAbi, data: tx.data }).functionName, tx.nonce]), [['approve', '0x1'], ['createVault', '0x2']], 'each step once');
+    assert.equal(sends(), 3);
+    assert.deepEqual([chain.missing, chain.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
 // The page no longer has a review or a network budget: the sentences it can reach name neither.
 test('not enough ETH for a step is said as the network fee it does not cover, not as a reserve set in a network budget', async () => {
   const s = await scenario(), chain = fakeSequenceChain(OWNER, { roots: [], approved: false, settled: true, balance: '0x0' });
@@ -4530,6 +5945,7 @@ test('a creation that is no longer what was prepared sends the owner back to Set
 // (tests/support/browser-chain.mjs) and check that no route of the site is asked, and that a read that failed is never
 // shown as a wallet with nothing.
 // ---------------------------------------------------------------------------
+part('positions');
 
 /** The stub's pool as the chain keys it: ETH against TOKEN, 0.30%, spacing 60, no hooks. */
 const STUB_KEY = { currency0: zeroAddress, currency1: FIXTURE_TOKEN.toLowerCase(), fee: 3000, tickSpacing: 60, hooks: zeroAddress };
@@ -4602,36 +6018,15 @@ function refusing(chain) {
   };
   return state;
 }
-/**
- * 2026-09-28 (hotfix: the chain's RPC refuses an eth_getLogs over 100,000 blocks when one place of its filter holds several
- * values, tests/support/log-limits.mjs): a read of the pool's epochs asks their three events in one filter, or over a
- * wider range one filter each, in one batch (functions/_lib/fees.ts). `epochRead`: the three in one filter, a
- * ProtocolFeeUpdated filter, or a ModifyLiquidity filter of the pool naming no sender. `swapRead`: a day's or a span's
- * Swaps and Donates, both in one filter or a Donate filter of its own (a Swap before the mint is a Swap filter alone).
- */
-const EPOCH_TOPICS = { modify: '0xf208f4912782fd25c7f114ca3723a2d5dd6f3bcc3ac8db5af63baa85f711d5ec', protocolFee: '0xe9c42593e71f84403b84352cd168d693e2c9fcd1fdbcc3feb21d92b43e6696f9', donate: '0x29ef05caaff9404b7cb6d1c0e9bbae9eaa7ab2541feba1a9c4248594c08156cb' };
-const epochRead = (filter) => {
-  const first = [filter.topics?.[0]].flat();
-  return first.length === 3 || (first.length === 1 && (first[0] === EPOCH_TOPICS.protocolFee || (first[0] === EPOCH_TOPICS.modify && filter.topics.length === 2)));
-};
-const swapRead = (filter) => {
-  const first = [filter.topics?.[0]].flat();
-  return first.length === 2 || (first.length === 1 && first[0] === EPOCH_TOPICS.donate);
-};
-/**
- * 2026-09-28 (speed wave B, item 23): the list's first call, its head and the wallet's nonce in one aggregate3 at 'latest'
- * (functions/_lib/walletPositions.ts scanWallet), where it asked eth_blockNumber before.
- */
-const listHead = (call) => call.method === 'eth_call' && call.params?.[1] === 'latest';
-/** Whether a request is the fees worker's (a history's logs or block headers), not the list's or a position's state. */
-const feesRead = (request) => request.calls.some((call) => call.method === 'eth_getBlockByNumber' || (call.method === 'eth_getLogs' && call.topic !== SETUP_MINTED_TOPIC));
 /** After a reload or in a new tab: the wallet connects again by itself, or is connected again from the header. */
 async function reconnect(page) {
   await page.waitForFunction(() => ['no-wallet', 'kept', 'ready', 'loading', 'retrying', 'unlisted'].includes(document.querySelector('[data-owned]')?.getAttribute('data-owned')), null, { timeout: 15_000 });
   if ((await page.locator('[data-owned]').getAttribute('data-owned')) === 'no-wallet') await connectWallet(page);
 }
 /** The rows of Your positions as they read, in order. */
-const ownedRows = (page) => page.locator('[data-owned] a[data-position-row]').evaluateAll((rows) => rows.map((row) => `${row.getAttribute('data-position-row')} ${row.innerText.replace(/\s+/g, ' ').trim()}`));
+// Changed on purpose 2026-10-02 (review of the rules, finding 11): a row's Your APR is its ledger's ("not measured" for one
+// that cannot be measured), which a copy drawn before any read cannot know ("— on its page"): its words are left out.
+const ownedRows = (page) => page.locator('[data-owned] a[data-position-row]').evaluateAll((rows) => rows.map((row) => `${row.getAttribute('data-position-row')} ${row.innerText.replace(/\s+/g, ' ').trim().replace(/Your APR (?:— on its page|not measured)/, 'Your APR')}`));
 
 /** What the list card showed since recordList, once a wallet was connected (the no-wallet and waiting cards left out). */
 const listSeen = (page) => page.evaluate(() => window.__ownedSeen.filter((what) => !/^(?:no-wallet|waiting|other-network)\b/.test(what)));
@@ -4666,14 +6061,14 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // No wallet yet: one empty state that asks for one, and nothing is listed or read.
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     assert.equal((await s.page.locator('[data-empty="owned-connect"]').innerText()).replace(/\s+/g, ' '), 'Connect a wallet to see your positions Connect wallet');
-    assert.deepEqual([chain.scans(OWNER), nftReads(read).length], [0, 0], 'nothing is asked without a wallet');
+    assert.deepEqual([chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, nftReads(read).length], [0, 0], 'nothing is asked without a wallet');
 
     await recordList(s.page);
     await connectWallet(s.page);
     const card = s.page.locator('[data-owned="ready"]');
     await card.waitFor();
     // One read of the chain by the page itself, the address in its POST bodies only; no route of the site.
-    assert.equal(chain.scans(OWNER), 1);
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 1);
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
     assert.deepEqual(await listSeen(s.page), ['loading', 'ready'], 'the loading rows, then the list');
     const tabs = s.page.getByRole('tab');
@@ -4689,7 +6084,8 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // Changed on purpose (the owner, round 6, 2026-09-27: one tidy row a position, plain words): the pair and "0.30% fee"
     // over In range; the NFT id is for a screen reader only ("Position #3135288"), no longer a chip.
     assert.match(rowText, /ETH\s*\/\s*TOKEN\s+0\.30% fee\s+Position #3135288\s+In range/);
-    assert.match(rowText, /633,825,300,114 ETH|0\.000000633825 ETH/);
+    // Changed on purpose 2026-10-01 (audit E7): an amount under a millionth reads "<0.000001", every digit in its title.
+    assert.match(rowText, /633,825,300,114 ETH|<0\.000001 ETH/);
     assert.equal(await s.page.locator('[data-position-row]').count(), 1);
     // 2026-09-24 (the three features joined up): its feature from chain and the way to automate it. Changed on purpose
     // (round 6, 2026-09-27): in the row's Automation column, over the row as its sibling, no longer a line under it with
@@ -4716,7 +6112,7 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     await s.page.getByRole('button', { name: 'Show 1 more', exact: true }).click();
     await s.page.locator(`[data-owned-rows="closed"] a[data-position-row="${OWNED_CLOSED[10]}"]`).waitFor();
     assert.equal(await s.page.getByRole('button', { name: /^Show \d+ more$/ }).count(), 0);
-    assert.equal(chain.scans(OWNER), 1, 'the tabs and Show more ask nothing');
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 1, 'the tabs and Show more ask nothing');
     await s.page.locator('main').screenshot({ path: join(shots(), 'positions-closed.png') });
     const listText = await s.page.locator('main').innerText();
     assert.doesNotMatch(listText, FORBIDDEN);
@@ -4736,16 +6132,20 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     // "fee" beside Your APR; the key figures are Position value, Fees ready to collect, Your APR and Current price, the
     // price written "1 ETH = …" and the range under it as a bar with its two ends, without "≈"; the facts are in Details,
     // closed until opened.
-    assert.match(await detail.locator('.dm-pos-chips').innerText(), /Uniswap · 0\.30% fee · #3135288\s+In range/);
+    // Changed on purpose 2026-10-01 (audit E5): the NFT's number is no longer in the chip; a screen reader still hears it.
+    assert.match(await detail.locator('.dm-pos-chips').innerText(), /Uniswap · 0\.30% fee\s+Position #3135288\s+In range/);
+    assert.equal(await detail.locator('.dm-pos-chips .dm-chip', { hasText: '#3135288' }).count(), 0, 'no NFT number on the chip');
     const stats = await detail.locator('[data-position-stats]').innerText();
     // Changed on purpose 2026-09-28 (one-sided): TOKEN's price in ETH, the app's one way round (lib/read/orientation.ts).
     assert.match(stats, /CURRENT PRICE\s+1 TOKEN = 0\.000000000001 ETH\s+0\.000000000000994018\s+Your range\s+0\.00000000000100602\s+In range: earning fees/, 'the pool’s price from the same read, with no button to ask for it');
-    assert.match(stats, /FEES READY TO COLLECT\s+[\d.,]+ ETH\s+0 TOKEN/);
+    assert.match(stats, /FEES READY TO COLLECT\s+<?[\d.,]+ ETH\s+0 TOKEN/);
     assert.match(stats, /POSITION VALUE\s+[\d.,]+ ETH/);
     // Your APR waits for the fees history (a skeleton meanwhile); this chain has none to give it, so a dash and why.
     const apr = detail.locator('[data-cell="apr"]:not([data-apr="loading"]):not([data-apr="idle"])');
     await apr.waitFor({ timeout: 15_000 });
-    assert.match(await apr.innerText(), /^YOUR APR\s+—\s+Not measured yet$/, 'no fees history on this chain: a dash and why, never a guess');
+    // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): this chain holds none of the position's events (not even its mint
+    // above block 69,249,061), so its ledger cannot measure its fees earned, and says so.
+    assert.match(await apr.innerText(), /^YOUR APR\s+—\s+Not measured for this position$/, 'no fees history on this chain: a dash and why, never a guess');
     // 2026-09-27 (review): a pair without USDG stacks each tile in its own flow (the rows line up across the tiles only
     // for one-line USD figures), so the reason stands right under its dash, not at the foot of the tallest tile.
     const under = await apr.evaluate((tile) => tile.querySelector('.dm-stat-sub').getBoundingClientRect().top - tile.querySelector('.dm-stat-value').getBoundingClientRect().bottom);
@@ -4776,7 +6176,9 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
     await detail.locator('[data-position-actions] a[data-automate-entry]').waitFor();
     assert.deepEqual(await detail.locator('[data-position-actions] a[data-automate-entry]').evaluate((a) => [a.textContent, a.getAttribute('href')]), ['Automate', `#/sequence/${OWNED_OPEN}`]);
     assert.equal(await detail.locator('.dm-pos-chips [data-automation="plain"]').innerText(), 'Plain position');
-    assert.ok(chain.log.some((call) => call.method === 'eth_call' && Number(call.params[1]) === chain.head - 2), 'the page reads its NFT from the chain, at head − 2');
+    // Changed on purpose 2026-10-01 (fees item A21): the page's state read is two calls, the first at 'latest' (naming its
+    // block through ArbSys), the second at that block: the head here, where it read head − 2 before.
+    assert.ok(chain.log.some((call) => call.method === 'eth_call' && call.params[1] === 'latest') && chain.log.some((call) => call.method === 'eth_call' && Number(call.params[1]) === chain.head), 'the page reads its NFT from the chain, at the block its first call ran at');
     assert.deepEqual(nftReads(read), [], 'and never from the read service');
     assert.ok(!read.requests.some((r) => r.path.endsWith('/pool-market')), 'nor the pool’s price: it came with the read');
     // The owner's actions have their mount: the chunk is opened on the page, behind the wallet flag.
@@ -4807,19 +6209,89 @@ test('Positions lists the positions the wallet created through Domino, Open 1 an
   } finally { await s.close(); }
 });
 
+// 2026-10-01 (audit V7, the optional part the owner approved): View address shows that public address's positions too,
+// read-only, in the same list: no wallet needed, nothing to act on (no Automate, no held deposit or its refund, no New
+// position), read once (no refresh, no browser copy, no history read ahead), and Use the connected wallet goes back.
+test('View address lists that address’s positions read-only beside its tokens, with no wallet; read once, nothing to act on; Use the connected wallet goes back to the wallet’s own', async () => {
+  const OTHER = '0x7777777777777777777777777777777777777777';
+  const deposit = { key: STUB_KEY, balance0: 1000n, balance1: 0n };
+  const chain = browserChain({
+    positions: [onChain(OWNED_OPEN), onChain('4000001', { holder: OTHER }), closedOnChain('4000002', { holder: OTHER })],
+    tokens: TOKENS,
+    deposits: { [OTHER]: [deposit] },
+  });
+  const site = siteRoutes();
+  const read = createReadStub();
+  const s = await scenario({ clock: true, chain, refresh: true, prefetch: true, routes: [site.route, (request, url) => read.handle(request, url)] });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    // A link to the address, with no wallet connected: its positions, named by the address.
+    await s.page.evaluate((address) => { location.hash = `#/portfolio/${address}`; }, OTHER);
+    const card = s.page.locator(`[data-owned="ready"][data-owned-viewed="${OTHER}"]`);
+    await card.waitFor({ timeout: 15_000 });
+    assert.equal((await card.locator('#own-title').innerText()).replace(/\s+/g, ' ').trim(), 'Positions of 0x7777…7777');
+    assert.equal(await card.locator('#own-title [title]').getAttribute('title'), OTHER, 'the full address one hover away');
+    assert.deepEqual((await card.getByRole('tab').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ').trim()), ['Open 1', 'Closed 1']);
+    const row = card.locator('a[data-position-row="4000001"]');
+    await row.waitFor();
+    assert.equal(await row.getAttribute('href'), '#/positions/4000001', 'each row opens the position’s public page');
+    // Nothing to act on: no Automate, no held deposit or refund (though the address holds one), no New position, no Connect.
+    assert.equal(await s.page.locator('a[data-automate-entry]').count(), 0);
+    assert.equal(await s.page.locator('[data-held-deposits]').count(), 0);
+    assert.equal(await card.getByRole('button').count(), 0);
+    assert.equal(await card.getByRole('link', { name: 'New position' }).count(), 0);
+    assert.equal(await s.page.locator('[data-empty="owned-connect"]').count(), 0, 'no wallet needed');
+    assert.equal(await s.page.locator('[data-portfolio-address]').getAttribute('data-portfolio-address'), OTHER, 'the Wallet card views the same address');
+    assert.equal(await s.page.locator('[data-automation-cards]').count(), 0, 'no automation cards beside that address (fix round 1)');
+    assert.doesNotMatch(await card.innerText(), FORBIDDEN);
+    await s.page.screenshot({ path: join(shots(), 'v7-viewed-address.png'), fullPage: true });
+    // Read once: the scan of that address, and no refresh 30 s later (the wallet's own list refreshes), no browser copy,
+    // and no history read ahead for its rows (the list's APR prefetch is on in this scenario).
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 1);
+    await jump(s.page, '00:31');
+    await s.page.waitForTimeout(500);
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 1, 'not read again on a timer');
+    assert.deepEqual(chain.log.filter((entry) => entry.method === 'eth_getLogs' && entry.params[0].topics?.[0] !== SETUP_MINTED_TOPIC), [], 'no history read for its rows');
+    assert.deepEqual(await kept(s.page), [], 'nothing about that address kept in the browser');
+    assert.deepEqual(site.asked, [], 'no route of the site');
+
+    // Connected, on its own list, then View another address from the Wallet card: the list follows the address shown.
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await connectWallet(s.page);
+    await s.page.locator(`[data-owned="ready"]:not([data-owned-viewed]) a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 15_000 });
+    assert.equal((await s.page.locator('#own-title').innerText()).trim(), 'Your positions');
+    const wallet = s.page.locator('[data-portfolio-address]');
+    await wallet.getByRole('button', { name: 'View another address', exact: true }).click();
+    await wallet.getByPlaceholder('Public address, 0x…').fill(OTHER);
+    await wallet.getByRole('button', { name: 'View address', exact: true }).click();
+    await s.page.locator(`[data-owned-viewed="${OTHER}"] a[data-position-row="4000001"]`).waitFor({ timeout: 15_000 });
+    assert.equal(await s.page.locator('a[data-position-row]').count(), 1, 'that address’s open row alone, not the wallet’s');
+    assert.equal(await s.page.locator('a[data-automate-entry]').count(), 0);
+    // Fix round 1 (2026-10-01): the signed-in wallet's Managed positions and Receipts (or their one line) are not shown
+    // beside another address's positions, where a beginner would read them as that address's.
+    assert.equal(await s.page.locator('[data-automation-cards]').count(), 0, 'no automation cards while another address is viewed');
+    await wallet.getByRole('button', { name: 'Use the connected wallet', exact: true }).click();
+    await s.page.locator(`[data-owned="ready"]:not([data-owned-viewed]) a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 15_000 });
+    assert.equal((await s.page.locator('#own-title').innerText()).trim(), 'Your positions');
+    await s.page.locator(`a[data-automate-entry]`).first().waitFor();
+    assert.equal(await s.page.locator('[data-automation-cards]').count(), 1, 'back with the wallet’s own list');
+  } finally { await s.close(); }
+});
+
 // The owner's complaint of 2026-09-25: with the RPC refusing the site's routes, a read that failed drew "No positions to
 // show" for a wallet with four open positions. A failed read now says nothing about the wallet: the loading rows and one
 // quiet line while it is asked again on its own (2, 5 and 10 s), one calm line if those fail too; never the empty state.
 test('a read that fails is never “no positions”: the loading rows and one quiet line while it is asked again, the list and the held deposit once the chain answers, one calm line if it keeps failing, and no Retry', async () => {
   const deposit = { key: { currency0: zeroAddress, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: zeroAddress }, balance0: 0n, balance1: 100000n };
   const chain = browserChain({ positions: [onChain(OWNED_OPEN), ...OWNED_CLOSED.map((id) => closedOnChain(id))], tokens: { ...TOKENS, [USDG]: { symbol: 'USDG', decimals: 6 } }, deposits: { [OWNER]: [deposit] } });
-  // The chain refuses the page's first two reads, then answers.
-  let refusals = 0;
-  // Changed on purpose 2026-09-28 (speed wave B, item 23): the list's first call is its head and nonce's aggregate3.
-  chain.outage = (call) => (listHead(call) && ++refusals <= 2 ? 500 : null);
+  // The chain refuses the page's first two reads, then answers. Changed on purpose (RPC-SPEC, 2026-10-01): the list is the
+  // site's route, which says so (502 chain_unavailable, its short wait), whatever the node's own failure was.
+  const { refusingRoute } = await import('./support/edge-busy.mjs');
   const site = siteRoutes();
   const read = createReadStub();
   const s = await scenario({ chain, routes: [site.route, (request, url) => read.handle(request, url)] });
+  const owned = await refusingRoute(s.context, '/api/owned/v2/positions', { body: { error: 'chain_unavailable' }, retryAfter: 12 });
+  owned.times = 2;
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
@@ -4928,7 +6400,7 @@ async function refreshing(chain, { wallet = null } = {}) {
   await s.page.locator(`[data-owned="ready"][data-owned-block="${chain.head}"] a[data-position-row="${OWNED_OPEN}"]`).waitFor();
   // The open row's feature, read from the chain once the list is in: read before any clock jump, so every later call is the refresh's.
   await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor();
-  assert.equal(chain.scans(OWNER), 1);
+  assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 1);
   return { s, site, read };
 }
 /**
@@ -4945,7 +6417,10 @@ const watchDetail = (page) =>
   });
 const detailInPlace = (page) => page.evaluate(() => ({ loading: [...new Set(window.__detail.loading)], same: window.__detail.same() }));
 
-test('Your positions and a position’s page read themselves again while the tab is shown: new figures in place, no loading rows or skeleton, the same answer draws nothing, and the list’s next scan reads only the recent logs', async () => {
+// Changed on purpose (RPC-SPEC P1, 2026-10-01): the page asks the site's route for the owner alone; the edge keeps the
+// wallet's SetupMinted walk (RPC-SPEC D4), so the page's own memory of the minted ids (the next scan reading only the
+// recent logs) is gone, and each refresh is one POST of the owner.
+test('Your positions and a position’s page read themselves again while the tab is shown: new figures in place, no loading rows or skeleton, the same answer draws nothing, and each refresh is one ask of the site’s route', async () => {
   const open = onChain(OWNED_OPEN);
   const chain = browserChain({ positions: [open, closedOnChain(OWNED_CLOSED[0])], tokens: TOKENS });
   const first = chain.head;
@@ -4955,37 +6430,42 @@ test('Your positions and a position’s page read themselves again while the tab
     await recordList(s.page);
     await watchInPlace(s.page);
 
-    // Fees accrue: 30 s later the list reads the chain again and the row's figures change where they stand.
+    // Fees accrue: 30 s later the list reads the chain again and the row's figures change where they stand. 2026-10-02
+    // (RPC fix round 2): the route keeps an answer 25 s (functions/_lib/owned.ts CACHE_SECONDS), a little less than the
+    // list's 30 s refresh, so the refresh 30 s later reaches the node (the review's finding 14 had moved this to 41 s).
     chain.head = first + 120;
     open.unclaimed = [1_267_650_600_228n, 0n];
     await jump(s.page, '00:31');
     await s.page.locator(`[data-owned="ready"][data-owned-block="${chain.head}"]`).waitFor();
     await s.page.waitForFunction((id) => document.querySelector(`a[data-position-row="${id}"] [data-cell="fees"] [data-amount]`)?.getAttribute('title') === '0.000001267650600228', OWNED_OPEN);
-    assert.equal(chain.scans(OWNER), 2);
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 2);
     assert.deepEqual(await inPlace(s.page), { loading: [], same: true }, 'the same card and row, never a loading row, a skeleton or a line');
     assert.deepEqual(await listSeen(s.page), ['ready'], 'ready all along');
     assert.equal(await s.page.locator(`a[data-position-row="${OWNED_OPEN}"]`).getAttribute('data-snapshot'), String(chain.head));
-    // The scan's memory of the wallet's minted ids: the second read asks only the logs since shortly before the first.
-    assert.deepEqual(mintedRanges(chain).map(([from]) => from > first - REREAD_BLOCKS), [false, true]);
-    assert.deepEqual(mintedRanges(chain)[1], [first - REREAD_BLOCKS + 1, chain.head]);
+    // Each read is the site's route, asked for the owner alone (it keeps the wallet's walk itself).
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 2, 'two asks of the route: the first read and the refresh');
 
     // Nothing changed but the head: read, and nothing is drawn again (the block on screen stays the one it was read at).
     const drawn = chain.head;
     chain.head += 120;
     await jump(s.page, '00:31');
-    await until(() => chain.scans(OWNER) === 3, 'the third scan');
+    await until(() => chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length === 3, 'the third scan');
     await s.page.waitForTimeout(300);
     assert.equal(await s.page.locator('[data-owned]').getAttribute('data-owned-block'), String(drawn), 'the same answer is not drawn again');
     assert.deepEqual(await inPlace(s.page), { loading: [], same: true });
 
     // A position's page: its header reads itself again a minute later, in place.
+    const asked = chain.asked.get(OWNED_OPEN) ?? 0;
     await s.page.locator(`a[data-position-row="${OWNED_OPEN}"]`).click();
     const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
     await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
     const fees = () => detail.locator('[data-stat="fees"] [data-amount]').first().getAttribute('title');
-    // The list's warm row paints first at its head. Wait for the page's own
-    // head - 2 answer before measuring the following minute's refresh.
-    await s.page.waitForFunction((block) => document.querySelector('[data-position-detail]')?.getAttribute('data-snapshot') === String(block), chain.head - 2);
+    // The list's warm row paints first at its head. Wait for the page's own answer before measuring the following minute's
+    // refresh. Changed on purpose 2026-10-01 (fees item A21): the page reads at the block its first call ran at, the head
+    // here as the row's, where it read head − 2 before: its own read is told by its NFT asked of the chain again.
+    await until(() => (chain.asked.get(OWNED_OPEN) ?? 0) > asked, 'the page’s own read of its NFT');
+    await s.page.waitForTimeout(300);
+    await s.page.waitForFunction((block) => document.querySelector('[data-position-detail]')?.getAttribute('data-snapshot') === String(block), chain.head);
     assert.equal(await fees(), '0.000001267650600228');
     const read = await detail.getAttribute('data-snapshot');
     await watchDetail(s.page);
@@ -4995,7 +6475,7 @@ test('Your positions and a position’s page read themselves again while the tab
     await s.page.waitForTimeout(300);
     assert.equal(await detail.getAttribute('data-snapshot'), read, 'not before a minute');
     await jump(s.page, '00:31');
-    await s.page.waitForFunction((block) => document.querySelector('[data-position-detail]')?.getAttribute('data-snapshot') === String(block), chain.head - 2);
+    await s.page.waitForFunction((block) => document.querySelector('[data-position-detail]')?.getAttribute('data-snapshot') === String(block), chain.head);
     await s.page.waitForFunction(() => document.querySelector('[data-position-detail] [data-stat="fees"] [data-amount]')?.getAttribute('title') === '0.000002535301200456');
     assert.deepEqual(await detailInPlace(s.page), { loading: [], same: true }, 'the same page, never the skeleton');
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
@@ -5019,10 +6499,10 @@ test('a hidden tab asks nothing: the list’s refresh waits while the tab is hid
     assert.deepEqual(chain.log.slice(asked).map((call) => call.method), [], 'nothing is asked of the chain while the tab is hidden');
     assert.equal(await rowFees(s.page), '0.000000633825300114');
     await setVisibility(s.page, 'visible');
-    await until(() => chain.scans(OWNER) === 2, 'the refresh once the tab is shown');
+    await until(() => chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length === 2, 'the refresh once the tab is shown');
     await s.page.waitForFunction((id) => document.querySelector(`a[data-position-row="${id}"] [data-cell="fees"] [data-amount]`)?.getAttribute('title') === '0.000001267650600228', OWNED_OPEN);
     await s.page.waitForTimeout(500);
-    assert.equal(chain.scans(OWNER), 2, 'once');
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 2, 'once');
   } finally { await s.close(); }
 });
 
@@ -5035,6 +6515,7 @@ test('a failed refresh keeps the figures: no loading rows, no line and no reason
     await watchInPlace(s.page);
     const refused = [];
     chain.outage = (call) => (refused.push(call.method), 500);
+    // 2026-10-02 (RPC fix round 2): the route keeps the first answer 25 s, so the refresh 30 s later reaches the node.
     await jump(s.page, '00:31');
     await until(() => refused.length === 1, 'the refresh the chain refused');
     await s.page.waitForTimeout(500);
@@ -5059,7 +6540,7 @@ test('a failed refresh keeps the figures: no loading rows, no line and no reason
     assert.equal(await rowFees(s.page), '0.000001267650600228');
     assert.deepEqual(await inPlace(s.page), { loading: [], same: true });
     assert.deepEqual(await listSeen(s.page), ['ready']);
-    assert.equal(chain.scans(OWNER), 2);
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 3, 'the route asked three times: the first read, the refresh it could not answer, the one it did');
   } finally { await s.close(); }
 });
 
@@ -5072,17 +6553,24 @@ test('a position’s page keeps its header through refreshes that fail or find n
   const chain = browserChain({ positions: [open], tokens: TOKENS });
   const { s } = await refreshing(chain);
   try {
+    const asked = chain.asked.get(OWNED_OPEN) ?? 0;
     await s.page.locator(`a[data-position-row="${OWNED_OPEN}"]`).click();
     const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
     await detail.locator('[data-stat="price"] [data-current-price="usable"]').waitFor();
     const header = async () => [await detail.getAttribute('data-snapshot'), await detail.locator('[data-stat="fees"] [data-amount]').first().getAttribute('title')];
-    /** The header once it shows the chain's head (read at head − 2) and these fees. */
+    /**
+     * The header once it shows the chain's head and these fees. Changed on purpose 2026-10-01 (fees item A21): read at the
+     * block its first call ran at (the head, as the list's row), where it was read at head − 2; the page's own first read
+     * is told by its NFT asked of the chain again.
+     */
     const drawn = (fees) => s.page.waitForFunction(([block, title]) => {
       const page = document.querySelector('[data-position-detail]');
       return page?.getAttribute('data-snapshot') === String(block) && page.querySelector('[data-stat="fees"] [data-amount]')?.getAttribute('title') === title;
-    }, [chain.head - 2, fees]);
+    }, [chain.head, fees]);
+    await until(() => (chain.asked.get(OWNED_OPEN) ?? 0) > asked, 'the page’s own read of its NFT');
+    await s.page.waitForTimeout(300);
     await drawn('0.000000633825300114');
-    assert.deepEqual(await header(), [String(chain.head - 2), '0.000000633825300114']);
+    assert.deepEqual(await header(), [String(chain.head), '0.000000633825300114']);
     await watchDetail(s.page);
     const refused = [];
     const down = () => { chain.outage = (call) => (refused.push(call.method), 500); };
@@ -5170,19 +6658,19 @@ test('a held deposit’s refund holds the list’s refresh: nothing is read whil
     await jump(s.page, '00:31', { pending: true });
     await s.page.waitForTimeout(1_000);
     assert.deepEqual(chain.log.slice(asked).map((call) => call.method), [], 'no refresh while the refund is on its way');
-    assert.equal(chain.scans(OWNER), 1);
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 1);
     assert.equal(await row.locator('[data-held-progress="wallet"]').count(), 1, 'the deposit and its line stay');
 
     // Confirmed: the refund is sent and included, and the list is read again at once, without the deposit.
     deposit.closed = true;
     confirm();
-    await until(() => chain.scans(OWNER) === 2, 'the list read again once the refund is over', 30_000);
+    await until(() => chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length === 2, 'the list read again once the refund is over', 30_000);
     assert.deepEqual([wallet.sends.length, wallet.paid], [1, [{ to: OWNER, currencies: [zeroAddress, USDG], amounts: [0n, 100000n] }]]);
     await card.waitFor({ state: 'detached' });
     await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor();
     // And the refresh goes on at its own pace.
     await jump(s.page, '00:31');
-    await until(() => chain.scans(OWNER) === 3, 'the refresh 30 s later');
+    await until(() => chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length === 3, 'the refresh 30 s later');
     assert.deepEqual([wallet.refused, wallet.missing], [[], []], 'the wallet was asked only what it answers');
     assert.deepEqual([chain.refused, chain.missing], [[], []]);
   } finally { await s.close(); }
@@ -5197,7 +6685,10 @@ test('an initial position read failure recovers from the fees store before the p
   const gate = new Promise((resolve) => { release = resolve; });
   chain.fetch = async (url, init) => {
     const body = JSON.parse(init.body);
-    if (body.method === 'eth_blockNumber') {
+    // Changed on purpose 2026-10-01 (fees item A21): a position's state read asks no eth_blockNumber any more: its first
+    // call is an aggregate3 at 'latest' (its block named by ArbSys). The first one (the read warmed for the page) fails;
+    // the later ones (the fees store's own) are held.
+    if (body.method === 'eth_call' && body.params?.[1] === 'latest') {
       heads += 1;
       if (heads === 1) return new Response('Unavailable', { status: 500 });
       // Loading -> failed replaces the FeesCard subscription. Its cancelled read can remain in this mock while
@@ -5220,7 +6711,7 @@ test('an initial position read failure recovers from the fees store before the p
     await s.page.clock.pauseAt(new Date(await s.page.evaluate(() => Date.now() + 100)));
     assert.equal(await s.page.locator('[data-position-detail]').count(), 0);
     release();
-    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"][data-snapshot="${chain.head - 2}"]`);
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"][data-snapshot="${chain.head}"]`);
     await detail.waitFor({ timeout: 10_000 });
     assert.equal(await s.page.locator('[data-empty="position-unread"]').count(), 0);
     assert.equal(await detail.locator('[data-cell="apr"]').count(), 1, 'Your APR is mounted again with the recovered position');
@@ -5237,23 +6728,28 @@ test('a different NFT’s stored state cannot populate a missing position or rep
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
-    await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"][data-snapshot="${chain.head - 2}"]`).waitFor();
+    // Changed on purpose 2026-10-01 (fees item A21): the page reads at the block its first call ran at, the head here.
+    await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"][data-snapshot="${chain.head}"]`).waitFor();
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, MISSING);
-    await until(() => chain.asked.get(MISSING) === 1, 'the first missing-NFT read');
-    await s.page.locator('[data-position-loading]').waitFor();
+    // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the page asks the NFT's state and its ledger together, each of which
+    // reads it once.
+    await until(() => (chain.asked.get(MISSING) ?? 0) >= 1, 'the first missing-NFT read');
     assert.equal(await s.page.locator('[data-position-detail]').count(), 0, 'the previous position’s cached values never cross identities');
-    for (const [index, delay] of ['00:04', '00:09', '00:13'].entries()) {
-      // The deliberately retained new-NFT skeleton is aria-busy while its
-      // bounded retry timer waits; each jump fires that next timer once.
-      await jump(s.page, delay, { pending: true });
-      await until(() => chain.asked.get(MISSING) === index + 2, 'the next missing-NFT read');
-    }
+    // Changed on purpose 2026-10-01 (fees item D5): an id below PositionManager.nextTokenId that the chain does not show was
+    // minted and burned: said at once, where the page asked it again at 4, 9 and 13 s before saying so.
     const gone = s.page.locator('[data-empty="position-gone"]');
     await gone.waitFor();
     assert.match(await gone.innerText(), new RegExp(`NFT #${MISSING} was not found`));
     await jump(s.page, '02:01');
     assert.equal(await gone.count(), 1, 'a confirmed absence stays absent');
     assert.equal(await s.page.locator('[data-position-detail], [data-position-actions]').count(), 0);
+    // And an id far past nextTokenId was never minted: no position with that number, said at once (item D5).
+    const NEVER = '99999999';
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, NEVER);
+    const missing = s.page.locator('[data-empty="position-missing"]');
+    await missing.waitFor();
+    assert.match(await missing.innerText(), new RegExp(`No position #${NEVER} was found`));
+    assert.equal(await s.page.locator('[data-empty="position-gone"], [data-position-detail]').count(), 0, 'never “no longer exists” for an id never minted');
     assert.deepEqual(s.wallet.state.signed, []);
   } finally { await s.close(); }
 });
@@ -5412,13 +6908,13 @@ test('a position’s page offers Automate and says Plain position only for one o
 
     // A link to the automation page for the NFT opened elsewhere (typed, or kept from before): its list is the wallet's
     // Domino positions, and a missing id that no New position made here is not asked for again, fresh.
-    const before = chain.scans(OWNER);
+    const before = chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length;
     await s.page.evaluate((id) => { location.hash = `#/sequence/${id}`; }, ELSEWHERE);
     await s.page.locator('main.dm-seq [data-sequence-release]').first().waitFor({ timeout: 10_000 });
     await s.page.waitForTimeout(1_000);
     // Changed on purpose 2026-09-28 (speed wave B, item 18): the wallet's list read a moment ago on Positions is this
     // visit's, kept in the page's memory: the automation page takes it and reads it neither once more nor for an id it lacks.
-    assert.equal(chain.scans(OWNER) - before, 0, 'the wallet’s list kept from Positions, not read again, and not for an id it lacks');
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length - before, 0, 'the wallet’s list kept from Positions, not read again, and not for an id it lacks');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
   } finally { await s.close(); }
 });
@@ -5462,7 +6958,11 @@ test('after a success, New position in the footer opens a fresh flow at step 1; 
     await detail.locator('[data-position-actions] a[data-automate-entry]').waitFor({ timeout: 20_000 });
     assert.equal(await detail.locator('[data-position-actions] a[data-automate-entry]').getAttribute('href'), '#/sequence/4243');
     assert.equal(await detail.locator('.dm-pos-chips [data-automation="plain"]').innerText(), 'Plain position');
-    assert.equal(s.rpc.scans(OWNER), 2, 'the list from before the mint, then one more read');
+    // Changed on purpose 2026-10-01 (RPC-SPEC D4): the edge reads the wallet's ids from DominoSetupV1's state, which a
+    // node's lagging SetupMinted logs do not hide (they give only the mint's block, functions/_lib/ownedMints.ts): the
+    // list read after the mint names the new position, and it is asked once more only while the kept list lacks it.
+    const asked = s.rpc.edgeLog.filter((path) => path === '/api/owned/v2/positions').length;
+    assert.ok(asked >= 1 && asked <= 2, `the list, read again at most once (${asked})`);
     await onlyTheWallet(s, chain);
   } finally { await s.close(); }
 });
@@ -5517,6 +7017,7 @@ test('a paused Auto-compound says so on its row and its page, offers how to swit
 });
 
 // ---- A sequence's Turn on and Pause (the owner, 2026-09-25: "vamos ligar tudo") ------------------------------------
+part('automation');
 // A sequence is created paused, and since Manage a sequence left (2026-09-24) nothing switched it on. Its root position's
 // page now offers Turn on once the automation service says, through the signed-in session, that it is ready for this
 // owner and vault (POST /api/execution/v1/availability), and Pause while it runs. Each press is the one owner
@@ -5646,6 +7147,64 @@ test('a paused sequence’s page offers Turn on once the service says it is read
   } finally { await s.close(); }
 });
 
+// 2026-10-01 (audit C14): Turn on or Pause replaced in the wallet ("Speed up" or "Cancel") is known within seconds by its
+// nonce, and the vault read again says whether it switched; it used to be waited for up to four minutes. Nothing is sent
+// again for a replaced step.
+test('Turn on sped up in the wallet is turned on within seconds; a Pause cancelled in the wallet says the sequence was not paused, and nothing is sent again', async () => {
+  const { seq, chain, VAULT } = pausedRoot();
+  // The public RPC follows the wallet's chain, as pausedRoot's does, but only for a send the chain carried out: a cancel
+  // takes the nonce and switches nothing.
+  const answer = async (method, params) => {
+    const burned = seq.burned();
+    const reply = await seq.request(method, params);
+    if (method === 'eth_sendTransaction' && String(params[0].to).toLowerCase() === VAULT && seq.burned() === burned) {
+      const { functionName } = decodeFunctionData({ abi: chainAbi, data: params[0].data });
+      chain.vaults[VAULT].paused = functionName === 'pause';
+    }
+    return reply;
+  };
+  const service = availabilityRoute(OWNER, () => true);
+  const s = await scenario({ chain, routes: [service.route] });
+  await routeChain(s, seq, CHAIN_METHODS, answer);
+  await s.page.reload();
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    s.set({ sequenceRelease: { status: 200, body: seq.release } });
+    await login(s.page);
+    const detail = await openRoot(s);
+    const pill = detail.locator('.dm-pos-chips [data-automation="domino"]');
+    const turnOn = detail.locator('[data-position-actions] button[data-sequence-switch="turn-on"]');
+    await turnOn.waitFor({ timeout: 10_000 });
+    const sends = () => seq.log.filter((method) => method === 'eth_sendTransaction').length;
+
+    // "Speed up": the resume is mined under another hash than the one the page was given.
+    seq.speedUpNext('resume');
+    const started = Date.now();
+    await turnOn.click();
+    const pause = detail.locator('[data-position-actions] button[data-sequence-switch="pause"]');
+    await pause.waitFor({ timeout: 30_000 });
+    assert.ok(Date.now() - started < 30_000, 'within seconds, not after the four-minute wait');
+    assert.equal(await pill.innerText(), 'Domino-compound · Active');
+    assert.equal(await detail.locator('[data-sequence-switch-note]').innerText(), 'Turned on.');
+    assert.equal(seq.sends.length, 1);
+
+    // "Cancel": the Pause never happens; said within seconds, and Pause is offered again for a new press.
+    await s.page.waitForTimeout(500);
+    seq.cancelNextInWallet('pause');
+    await pause.click();
+    const note = detail.locator('[data-sequence-switch-note="sequence_step_replaced"]');
+    await note.waitFor({ timeout: 40_000 });
+    // Changed on purpose 2026-10-01 (integration pass 3, the copy review): "automation", not "sequence", in Create position's pattern.
+    assert.equal(await note.innerText(), 'Your wallet replaced this step with another transaction, and automation was not paused. Press Pause again.');
+    assert.equal(await pill.innerText(), 'Domino-compound · Active', 'still running');
+    assert.deepEqual([seq.sends.length, seq.burned(), sends()], [1, 1, 2], 'the cancelled Pause was not offered again');
+    await pause.waitFor();
+    assert.equal(await pause.isEnabled(), true);
+    assert.doesNotMatch(await detail.innerText(), FORBIDDEN);
+    assert.deepEqual([seq.missing, seq.refused], [[], []]);
+  } finally { await s.close(); }
+});
+
 // The review of 2026-09-25: the execution contract lets a "ready" live at most 10 seconds after the service's check, so
 // Turn on never stands on an answer the service has declared expired. Here the service's first answer holds 3 seconds
 // and its next is held back: Turn on goes when the first lapses, with no newer answer in, and the docs link is back;
@@ -5752,49 +7311,39 @@ test('with the execution route not available, a paused sequence’s page shows n
   } finally { await s.close(); }
 });
 
-// 2026-09-25: the fees history through the page's own chain reads in the browser: the replay worker reads the logs from
-// the RPC itself, under its own CSP (functions/_middleware.ts WORKER_CSP, served by the test server as in production),
-// and the card is drawn only because the replay equals the chain's unclaimed fees. The chain is the recorded one of NFT
-// 3136705 (tests/support/fees/case-chain.mjs), and no route of the site is asked.
-test('a position’s fees history is read from the chain by the page and its worker, and drawn once the replay equals the chain’s unclaimed fees', async () => {
-  const chain = caseChain('3136705');
-  const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route] });
-  try {
-    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-    await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    await s.page.evaluate(() => { location.hash = '#/positions/3136705'; });
-    await s.page.locator('[data-position-detail][data-position-id="3136705"]').waitFor({ timeout: 15_000 });
-    const card = s.page.locator('[data-fees-card][data-fees-state="verified"]');
-    await card.first().waitFor({ timeout: 45_000 });
-    const logs = chain.log.filter((call) => call.method === 'eth_getLogs');
-    assert.ok(logs.some((call) => call.params[0].topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'), 'the NFT’s Transfer logs, read by the worker');
-    assert.ok(logs.some((call) => Array.isArray(call.params[0].topics[0])), 'and the pool’s logs');
-    // 2026-09-27 (the owner): Your APR, from the history the card draws (lib/positionApr.ts, no read of its own), since
-    // the position opened and over the last 24 hours; and its Activity in a card of its own after Price range.
-    const apr = s.page.locator('[data-cell="apr"][data-apr="ready"]');
-    await apr.waitFor({ timeout: 5_000 });
-    assert.match(await apr.innerText(), /^YOUR APR\s+[\d,]+(\.\d)?%\s+Since opened \(38 hours\)\s+Last 24 hours: [\d,]+(\.\d)?%$/);
-    assert.equal(await card.first().locator('.dm-fees-act').count(), 0, 'the fees card lists no activity');
-    assert.match(await s.page.locator('[data-position-activity]').innerText(), /^Activity\s+Opened\s+09-23 01:39 UTC$/);
-    assert.deepEqual(chain.refused, [], 'nothing but the reads');
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
-    await s.page.screenshot({ path: join(shots(), 'position-fees-chain.png'), fullPage: true });
-  } finally { await s.close(); }
-});
+part('positions');
 
-// 2026-09-27 (the owner: the Fees earned chart took far too long): his Auto-compound position 3325113, USDG/UFG 4 %, a day
-// old, recorded read-only that day (tests/support/fees/3325113.json.gz). Its pool's liquidity history (866 kB of the RPC's
-// JSON live) was read whole before any Swap, at the worker's paced 96 kB/s: 12.9 s to a verified chart live, 12.7 s in
-// this harness with a 160 ms round trip (C:/dwt/round5/feesfast/measure.txt). A young position in a pool whose Swaps the
-// probe sees now takes the price path of its own life, and finds its settlements (compounds, which pay its owner nothing)
-// among the pool's PositionManager ModifyLiquidity; back on its page later in the visit, the chart is there at once.
-test('the owner’s Auto-compound position draws its fees from its own life: settlements found though none paid him, none of the pool’s history, then at once on a return', async () => {
-  const chain = caseChain('3325113');
+// 2026-10-02 (RPC-SPEC §11.4, rugged97's rules for the site's token, C:/dwt/rpc-plan/RUGGED_RPC_SITE_2026-10-02.md): a
+// position's fees history is its own ledger (POST /api/fees/v2/ledger, functions/_lib/feesLedger.ts): every settlement
+// from the position's own events and the engine's, read by Domino's node from block 69,249,061 on, never a pool's
+// history; the page folds it with the position's state (lib/fees/ledger.ts). It replaces the fees replay worker, its
+// point reads and the list's prefetch queue, and their tests here. The positions are tests/support/fees/ledger-world.mjs's.
+
+/** How many times the page asked the site's ledger route. */
+const ledgerAsked = (chain) => chain.edgeLog.filter((path) => path === '/api/fees/v2/ledger').length;
+/** A pool's own history, which no route reads (rugged97's rule 2): Swap, Initialize, Donate. */
+const POOL_HISTORY = ['0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f', '0xdd466e674ea557f56295e2d0218a125ea4b4f0f6f3307b95f85e6110838d6438', '0x29ef05caaff9404b7cb6d1c0e9bbae9eaa7ab2541feba1a9c4248594c08156cb'];
+/**
+ * Every log read the world's node answered keeps to rugged97's rules: from block 69,249,061, windows of 10,000,000 at most
+ * (the transport's LOCAL_RPC_LOG_BLOCKS since the review of the rules, 2026-10-02; 1,000,000 before), the PoolManager one
+ * block at a time, no pool history.
+ */
+function nodeRulesKept(world) {
+  assert.ok(world.asked.length > 0, 'the node was read');
+  for (const filter of world.asked) {
+    const what = JSON.stringify(filter);
+    assert.ok(filter.from >= 69_249_061, `below the floor: ${what}`);
+    assert.ok(filter.to - filter.from + 1 <= 10_000_000, `a window past 10,000,000 blocks: ${what}`);
+    if ([filter.address].flat().map((one) => String(one).toLowerCase()).includes(LEDGER_PM)) assert.equal(filter.from, filter.to, `the PoolManager over more than one block: ${what}`);
+    assert.ok(![filter.topics[0]].flat().some((topic) => POOL_HISTORY.includes(topic)), `a pool's history: ${what}`);
+  }
+}
+
+test('a position’s fees history is its own ledger, read from the site’s ledger route: the owner’s Auto-compound position drawn exact from its settlements, none of the pool’s history, and at once on a return', async () => {
+  const world = ledgerWorld({ holder: OWNER });
+  const chain = world.chain;
   const site = siteRoutes();
   const s = await scenario({ chain, routes: [site.route] });
-  const PM_WORD = `0x${'58daec3116aae6d93017baaea7749052e8a04fa7'.padStart(64, '0')}`;
-  const MODIFY = '0xf208f4912782fd25c7f114ca3723a2d5dd6f3bcc3ac8db5af63baa85f711d5ec';
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
@@ -5804,319 +7353,216 @@ test('the owner’s Auto-compound position draws its fees from its own life: set
     const verified = s.page.locator('[data-fees-card][data-fees-state="verified"]');
     await verified.first().waitFor({ timeout: 30_000 });
     const drawn = Date.now() - started;
-    const logs = chain.log.filter((call) => call.method === 'eth_getLogs');
-    const filters = logs.map((call) => call.params[0]);
-    assert.ok(!filters.some(epochRead), 'no epoch of the pool’s history');
-    assert.ok(filters.some((filter) => filter.topics[0] === MODIFY && filter.topics[2] === PM_WORD && Number(filter.toBlock) > Number(filter.fromBlock)), 'its settlements, among the PositionManager’s ModifyLiquidity over its life');
-    const read = logs.reduce((sum, call) => sum + call.bytes, 0);
-    assert.ok(read < 256 * 1024, `${read} B of logs, where its pool’s history alone was 866 kB`);
-    assert.match(await verified.first().innerText(), /collected/i);
-    // Away and back in the same visit: the history is the store's, drawn with the page, and nothing is read again for it.
+    // Your APR, from the ledger the card draws (lib/positionApr.ts, no read of its own), since the position opened at
+    // today's prices; the last 24 hours only from a point measured about a day ago (here the mint).
+    const apr = s.page.locator('[data-cell="apr"][data-apr="ready"]');
+    await apr.waitFor({ timeout: 5_000 });
+    assert.match(await apr.innerText(), /^YOUR APR\s+[\d,]+(\.\d)?%\s+Since opened \([^)]+\)(\s+Last 24 hours: [\d,]+(\.\d)?%)?$/);
+    assert.doesNotMatch(await s.page.locator('main').innerText(), /\best\./, 'no estimate anywhere');
+    // Its Activity in a card of its own: the three compounds, each one row, and its opening.
+    assert.equal(await verified.first().locator('.dm-fees-act').count(), 0, 'the fees card lists no activity');
+    const rows = await activityRowsOf(s.page);
+    assert.deepEqual(rows.map((row) => row.slice(0, 3)), [['auto', true, 'Fees added back'], ['auto', true, 'Fees added back'], ['auto', true, 'Fees added back'], ['mint', false, 'Opened']]);
+    // The site's state and ledger routes, and nothing of the retired logs route; every node read within the rules.
+    assert.ok(chain.edgeLog.includes('/api/fees/v1/state'), 'the position’s state, from the site’s state route');
+    assert.ok(ledgerAsked(chain) >= 1, 'its ledger, from the site’s ledger route');
+    assert.ok(!chain.edgeLog.includes('/api/fees/v1/logs'), 'no logs route');
+    nodeRulesKept(world);
+    assert.deepEqual(chain.publicAsked, [], 'no public node');
+    // Away and back in the same visit: the history is the store's, drawn with the page at once.
     await s.page.evaluate(() => { location.hash = '#/positions'; });
     await s.page.locator('[data-position-detail]').waitFor({ state: 'detached', timeout: 10_000 });
-    const asked = chain.log.filter((call) => call.method === 'eth_getLogs').length;
     const back = Date.now();
     await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
-    await verified.first().waitFor({ timeout: 10_000 });
+    await verified.first().waitFor({ timeout: 5_000 });
     const again = Date.now() - back;
-    assert.equal(chain.log.filter((call) => call.method === 'eth_getLogs').length, asked, 'no log read again');
     assert.deepEqual(chain.refused, [], 'nothing but the reads');
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
-    console.log(`# verified ${drawn} ms after the page was opened (${Math.round(read / 1024)} kB of logs), ${again} ms on a return`);
+    assert.deepEqual(site.asked, [], 'nothing past the chain routes is asked');
+    await s.page.screenshot({ path: join(shots(), 'position-fees-ledger.png'), fullPage: true });
+    console.log(`# verified ${drawn} ms after the page was opened (${world.asked.length} log reads at the node), ${again} ms on a return`);
   } finally { await s.close(); }
 });
 
-test('a verified fees chart is shown while its automation vault record is still pending, then adds only verified attribution', async () => {
-  const VAULT = `0x${'5b'.repeat(20)}`;
-  const sample = caseChain('3325113');
-  const tx = sample.fixture.expect.events.find((event) => event[0] === 'increase')[2];
-  const chain = automatedChain('3325113', { vault: VAULT, owner: OWNER, executions: [{ tx, action: 0 }] });
-  const fetch = chain.fetch;
-  let held = 0;
-  let released = false;
-  let release;
-  const gate = new Promise((resolve) => { release = () => { released = true; resolve(); }; });
-  chain.fetch = async (url, init) => {
-    const body = JSON.parse(init.body);
-    const calls = Array.isArray(body) ? body : [body];
-    if (calls.some((call) => call.method === 'eth_getLogs' && String(call.params[0].address).toLowerCase() === VAULT)) {
-      held += 1;
-      await gate;
-    }
-    return fetch(url, init);
-  };
+test('Your positions: each open row’s Your APR is its own ledger’s, asked with the list for the connected wallet; a row whose fees can’t be measured says so on its page; no figure moves', async () => {
+  const world = ledgerWorld({ holder: OWNER, extraPositions: [onChain(OWNED_OPEN)], tokens: { ...LEDGER_TOKENS, ...TOKENS } });
+  const chain = world.chain;
   const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route] });
+  // 2026-10-02 (the fee chart's periods back): the site's read bridge lists read-v1 nft-positions, as deployed; the list
+  // never reads a position at a past block (its Your APR is since opened), only a position's page may.
+  const pastAsked = [];
+  const read = createReadStub({ reads: 'nft-positions', answer: (route, body) => { pastAsked.push(body); return world.pastAnswer(body.blockNumber); } });
+  const s = await scenario({ chain, routes: [site.route, (request, url) => (url.pathname.startsWith('/api/read/') ? read.handle(request, url) : undefined)] });
+  const ledgers = [];
+  s.page.on('request', (request) => { if (new URL(request.url()).pathname === '/api/fees/v2/ledger') ledgers.push(JSON.parse(request.postData() ?? '{}')); });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
-    await until(() => held > 0, 'the held vault record');
-    // The APR uses the completed history independently of the vault record.
-    // At that same point the graph must show it, not wait for decoration.
-    await s.page.locator('[data-cell="apr"][data-apr="ready"]').waitFor({ timeout: 30_000 });
-    const chart = s.page.locator('[data-fees-card][data-fees-state="verified"]');
-    await chart.waitFor({ timeout: 1_000 });
-    assert.equal(released, false);
-    assert.equal(await chart.locator('[data-automation-impact]').count(), 0, 'no automation claim before the vault answers');
-    const earned = await chart.locator('.dm-fees-hero').innerText();
-    release();
-    await chart.locator('[data-automation-impact="compound"] [data-impact="added"]').waitFor({ timeout: 10_000 });
-    assert.equal(await chart.locator('.dm-fees-hero').innerText(), earned, 'attribution does not replace the verified fee figure');
-    assert.deepEqual(site.asked, []);
-    assert.deepEqual(s.wallet.state.signed, []);
-  } finally { release(); await s.close(); }
-});
-
-// 2026-09-27, round 6 (the owner: add each position's APR to Your positions, and keep the table clean): the owner's own
-// Auto-compound 3325113 (recorded, tests/support/fees/3325113.json.gz, held by a vault Domino's factory made) beside a
-// plain position. The row shows the page's own figure. Nothing is kept in the browser.
-// Changed on purpose (2026-09-28, hotfix: from that morning, for everyone, a position's Fees earned chart and Your APR
-// often did not show, and it took many reloads): the list measures nothing itself any more. Its queue replayed each open
-// position's history from the list, at a page's budget; live, it drew the RPC's refusals of the list's own read, and a
-// history it could not finish stayed the fees store's answer, so the page opened from the list read nothing more until a
-// reload. Now the list starts no history run: each row shows a calm dash until its page drew the history this visit, and
-// then the page's own figure, with nothing read again on the way back.
-/** A list with one real recorded history: the RPC is still entirely offline/fake. */
-function earlyAprChain() {
-  const vault = `0x${'5a'.repeat(20)}`;
-  const recorded = automatedChain('3325113', { vault, owner: ACCOUNTS[0].address, executions: [] });
-  const position = recorded.fixture.state.positions[0];
-  const base = browserChain({
-    head: recorded.head,
-    timestamp: recorded.fixture.state.timestamp,
-    positions: [{ tokenId: '3325113', holder: OWNER, key: position.poolKey, tickLower: position.tickLower, tickUpper: position.tickUpper, liquidity: 1n, unclaimed: [0n, 0n] }],
-    tokens: TOKENS,
-  });
-  return listChain({ recorded, base, vault });
-}
-
-async function observePrefetch(s, now, holdList = false) {
-  // Preserve the fixture's actual timestamp; only the test's wall clock moves, never the recorded financial history.
-  await s.context.addInitScript((now) => {
-    const RealDate = Date;
-    globalThis.Date = class extends RealDate {
-      constructor(...args) { super(...(args.length ? args : [now])); }
-      static now() { return now; }
-    };
-  }, now);
-  await s.context.addInitScript(({ holdList }) => {
-    const send = Worker.prototype.postMessage;
-    window.__prefetchRuns = [];
-    Worker.prototype.postMessage = function (message, ...rest) {
-      if (message?.type === 'run' || message?.type === 'cancel') {
-        window.__prefetchRuns.push({ type: message.type, id: message.id, budget: message.budgetBytes ?? null });
-        // Hold only the test's opportunistic run; a detail's ordinary worker always executes normally.
-        if (holdList && message.type === 'run' && message.budgetBytes <= 1024 * 1024) return;
-      }
-      return send.call(this, message, ...rest);
-    };
-  }, { holdList });
-  await s.page.reload();
-  await s.page.locator('[data-empty="owned-connect"]').waitFor();
-  await connectWallet(s.page);
-  await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 20_000 });
-}
-
-test('bounded visible APR prefetch draws the recorded position’s qualified rate without opening its detail or signing', async () => {
-  const site = siteRoutes();
-  const chain = earlyAprChain();
-  const s = await scenario({ chain, routes: [site.route], prefetch: true });
-  try {
-    await observePrefetch(s, (chain.recorded.fixture.state.timestamp + 5) * 1000);
-    const row = s.page.locator('[data-position-row="3325113"]');
-    await row.scrollIntoViewIfNeeded();
-    await row.locator('[data-cell="apr"][data-apr="ready"]').waitFor({ timeout: 15_000 });
-    assert.match((await row.locator('[data-cell="apr"]').innerText()).trim(), /%/);
-    assert.equal(await s.page.locator('[data-position-detail]').count(), 0, 'no detail was opened to populate the APR');
-    const runs = await s.page.evaluate(() => window.__prefetchRuns.filter((message) => message.type === 'run'));
-    assert.deepEqual(runs, [{ type: 'run', id: '3325113', budget: 1024 * 1024 }], 'one low-priority list run, not page-budget fan-out');
-    assert.equal(s.wallet.state.log.some((call) => /personal_sign|eth_sign|sendTransaction/.test(call.method)), false);
-  } finally { await s.close(); }
-});
-
-test('opening a position cancels its held background APR before the detail starts its own full-budget history', async () => {
-  const site = siteRoutes();
-  const chain = earlyAprChain();
-  const s = await scenario({ chain, routes: [site.route], prefetch: true });
-  try {
-    await observePrefetch(s, (chain.recorded.fixture.state.timestamp + 5) * 1000, true);
-    const row = s.page.locator('[data-position-row="3325113"]');
-    await row.scrollIntoViewIfNeeded();
-    await s.page.waitForFunction(() => window.__prefetchRuns.some((message) => message.type === 'run' && message.budget === 1024 * 1024));
-    await row.click();
-    await s.page.locator('[data-position-detail][data-position-id="3325113"]').waitFor({ timeout: 15_000 });
-    await s.page.waitForFunction(() => window.__prefetchRuns.some((message) => message.type === 'run' && message.budget === 2 * 1024 * 1024));
-    const messages = await s.page.evaluate(() => window.__prefetchRuns);
-    const cancel = messages.findIndex((message) => message.type === 'cancel' && message.id === '3325113');
-    const pageRun = messages.findIndex((message) => message.type === 'run' && message.budget === 2 * 1024 * 1024);
-    assert.ok(cancel > 0 && cancel < pageRun, JSON.stringify(messages));
-    await s.page.locator('[data-fees-card][data-fees-state="verified"]').first().waitFor({ timeout: 20_000 });
-    assert.equal(messages.filter((message) => message.type === 'run' && message.budget === 1024 * 1024).length, 1);
-  } finally { await s.close(); }
-});
-
-test('with background prefetch disabled, each row shows its page’s own APR once the page drew it this visit and the way back reads nothing again', async () => {
-  const VAULT = `0x${'5a'.repeat(20)}`;
-  const recorded = automatedChain('3325113', { vault: VAULT, owner: ACCOUNTS[0].address, executions: [] });
-  const position = recorded.fixture.state.positions[0];
-  const base = browserChain({
-    head: recorded.head,
-    timestamp: recorded.fixture.state.timestamp,
-    // The recorded NFT's SetupMinted log only: every read of it goes to the recording.
-    positions: [{ tokenId: '3325113', holder: OWNER, key: position.poolKey, tickLower: position.tickLower, tickUpper: position.tickUpper, liquidity: 1n, unclaimed: [0n, 0n] }, onChain(OWNED_OPEN)],
-    tokens: TOKENS,
-  });
-  const chain = listChain({ recorded, base, vault: VAULT });
-  const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route] });
-  try {
-    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-    // Every run the fees store sends its worker and every cancel, and each run's end the worker sends back, in order.
-    // Changed on purpose 2026-09-28 (speed wave B, item 37): Positions creates the worker as it opens, so these are
-    // counted from the page's load (an init script, and the page loaded again).
-    await s.context.addInitScript(() => {
-      const Base = window.Worker;
-      const send = Base.prototype.postMessage;
-      window.__feesRuns = [];
-      Base.prototype.postMessage = function (message, ...rest) {
-        if (message?.type === 'run' || message?.type === 'cancel') window.__feesRuns.push(`${message.type} ${message.id}`);
-        return send.call(this, message, ...rest);
-      };
-      window.Worker = class extends Base {
-        constructor(...args) {
-          super(...args);
-          this.addEventListener('message', (event) => {
-            if (event.data?.type === 'done') window.__feesRuns.push(`done ${event.data.id}`);
-          });
-        }
-      };
-    });
-    await s.page.reload();
-    await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    // 2026-09-28 (review: every figure moved left when the badges, then an APR, arrived): where each row's figures stand
-    // the moment the list is drawn, before the automation's own read and any APR.
+    // Where each row's figures stand the moment the list is drawn, before any APR.
     await s.page.evaluate(() => {
       window.__rowEdges = () => [...document.querySelectorAll('a[data-position-row]')].map((row) => ['principal', 'fees', 'apr'].map((cell) => Math.round(row.querySelector(`[data-cell="${cell}"]`).getBoundingClientRect().right)));
       new MutationObserver((_, observer) => {
-        if (!document.querySelector('[data-owned="ready"] a[data-position-row]')) return;
+        if (document.querySelectorAll('[data-owned="ready"] a[data-position-row]').length < 2) return;
         observer.disconnect();
-        window.__drawn = { edges: window.__rowEdges(), late: document.querySelectorAll('[data-apr="ready"]').length };
+        window.__drawn = { edges: window.__rowEdges() };
       }).observe(document.body, { subtree: true, childList: true, attributes: true });
     });
     await connectWallet(s.page);
     await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 20_000 });
     const order = await s.page.locator('a[data-position-row]').evaluateAll((rows) => rows.map((row) => row.getAttribute('data-position-row')));
-    assert.deepEqual([...order].sort(), ['3135288', '3325113']);
-
-    // Every row a calm dash, and no history run at all from the list, however long it stays on screen.
-    await s.page.waitForTimeout(3_000);
-    for (const id of order) {
-      const dash = s.page.locator(`[data-position-row="${id}"] [data-cell="apr"][data-apr="none"]`);
-      assert.equal((await dash.innerText()).replace(/\s+/g, ' ').trim(), 'Your APR —', id);
-      assert.equal(await dash.getAttribute('title'), 'Shown on the position’s page');
-    }
-    assert.deepEqual(await s.page.evaluate(() => window.__feesRuns), [], 'the list replays no history');
-    assert.ok(!chain.log.some((call) => call.method === 'eth_getBlockByNumber'), 'nor reads any of one');
-    // The automation beside it: a small badge that runs, in the row's Automation column.
-    const badge = s.page.locator('[data-position-item="3325113"] > [data-position-automation="3325113"][data-automation="compound"]');
-    await badge.waitFor();
-    assert.equal((await badge.innerText()).trim(), 'Auto-compound');
-    // Changed on purpose (2026-09-28, review): no tooltip on the cell, a click on the badge being the row's (below).
-    assert.equal(await badge.getAttribute('title'), null);
-    await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor();
-    // Nothing moved: the figures stand where they were drawn, now that the badges are in (their columns kept their room
-    // from the first paint).
+    assert.deepEqual([...order].sort(), [OWNED_OPEN, '3325113']);
+    // The rows' ledgers, asked together (eight ids a request at most), with no position's page open.
+    const apr = s.page.locator('[data-position-row="3325113"] [data-cell="apr"][data-apr="ready"]');
+    await apr.waitFor({ timeout: 20_000 });
+    assert.match((await apr.locator('.dm-own-fig').innerText()).trim(), /^[\d,]+(\.\d)?%$/);
+    assert.equal(await apr.getAttribute('title'), 'Since the position opened');
+    assert.ok(ledgers.some((body) => [...body.tokenIds].sort().join() === [OWNED_OPEN, '3325113'].sort().join()), `one request for both rows: ${JSON.stringify(ledgers)}`);
+    assert.ok(ledgers.every((body) => body.tokenIds.length <= 8));
+    assert.equal(await s.page.locator('[data-position-detail]').count(), 0, 'no page was opened for it');
+    assert.deepEqual(pastAsked, [], 'the list reads no position at a past block');
+    // A row whose ledger cannot measure its fees (here: none of its events on the node) keeps a dash and says why; its
+    // page has no figure either, so it says so rather than "on its page" (2026-10-02, review of the rules, finding 11).
+    const dash = s.page.locator(`[data-position-row="${OWNED_OPEN}"] [data-cell="apr"][data-apr="missing"]`);
+    await dash.waitFor({ timeout: 10_000 });
+    assert.equal((await dash.innerText()).replace(/\s+/g, ' ').trim(), 'Your APR not measured');
+    assert.equal(await dash.getAttribute('title'), 'Not measured for this position');
+    assert.doesNotMatch(await s.page.locator('[data-owned]').innerText(), /\best\./, 'no estimate');
+    // Nothing moved: the figures stand where they were first drawn, now that the APR is in.
     const drawn = await s.page.evaluate(() => window.__drawn);
-    // Changed on purpose 2026-09-28 (speed wave B, item 17): each position's feature comes with the list's own read, so its
-    // badge or its Automate is drawn with the row, and nothing moves after (the list draws no APR of its own since the
-    // log-limits hotfix; a row's APR is its page's, on the way back).
-    assert.equal(drawn.late, 0, 'measured before any APR came');
     assert.deepEqual(await s.page.evaluate(() => window.__rowEdges()), drawn.edges, 'every figure where it was first drawn');
-
-    // 2026-09-29 (final release, speed wave B with feat/one-sided): the page's header is drawn at once from the list's row
-    // (wave B, item 18: lib/walletPositions.ts keptPosition), and that first frame writes the price the app's one way round
-    // (lib/read/orientation.ts) as the page's own read does after it: this pool's first currency is USDG, so "1 UFG = …
-    // USDG" with the range's lowest price of UFG first, never "1 USDG = … UFG". Every frame the header shows is recorded.
-    await s.page.evaluate(() => {
-      window.__headers = [];
-      const note = () => {
-        const detail = document.querySelector('[data-position-detail][data-position-id="3325113"]');
-        const price = detail?.querySelector('[data-stat="price"] [data-current-price="usable"]');
-        const ends = detail?.querySelector('[data-stat="range"] .dm-pos-span-ends');
-        if (!price || !ends) return;
-        const frame = { snapshot: detail.getAttribute('data-snapshot'), price: price.textContent.replace(/\s+/g, ' ').trim(), ends: [...ends.children].map((end) => end.textContent.trim()) };
-        const last = window.__headers.at(-1);
-        if (!last || last.snapshot !== frame.snapshot || last.price !== frame.price || last.ends.join() !== frame.ends.join()) window.__headers.push(frame);
-      };
-      new MutationObserver(note).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
-    });
-
-    // Its page, opened by a click on the badge (2026-09-28, review: the badge was a dead spot in the row): its own run,
-    // the chart and Your APR.
-    const onBadge = await badge.locator('.dm-own-badge').boundingBox();
-    await s.page.mouse.click(onBadge.x + onBadge.width / 2, onBadge.y + onBadge.height / 2);
+    assert.deepEqual(pastAsked, [], 'still none, the rows drawn');
+    // Its page: the same figure.
+    await s.page.locator('a[data-position-row="3325113"]').click();
     const detail = s.page.locator('[data-position-detail][data-position-id="3325113"]');
     await detail.waitFor({ timeout: 15_000 });
-    assert.equal(await s.page.evaluate(() => location.hash), '#/positions/3325113');
-    await s.page.locator('[data-fees-card][data-fees-state="verified"]').first().waitFor({ timeout: 45_000 });
     const pageApr = detail.locator('[data-cell="apr"][data-apr="ready"]');
-    await pageApr.waitFor({ timeout: 10_000 });
+    await pageApr.waitFor({ timeout: 15_000 });
     const figure = (await pageApr.locator('.dm-pos-apr').innerText()).trim().split(/\s/)[0];
-    assert.match(figure, /^[\d,]+(\.\d)?%$/);
-    assert.deepEqual((await s.page.evaluate(() => window.__feesRuns)).filter((entry) => entry.startsWith('run')), ['run 3325113'], 'the page’s own run, once');
-    // The header from the row, then from the page's own read: one way round in every frame.
-    const headers = await s.page.evaluate(() => window.__headers);
-    assert.ok(headers.length > 0, 'the header was drawn');
-    for (const frame of headers) {
-      assert.match(frame.price, /^1 UFG = [\d,]+(\.\d+)? USDG$/, `block ${frame.snapshot}: UFG’s price in USDG`);
-      const [low, , high] = frame.ends.map((end) => Number(end.replace(/[^\d.]/g, '')));
-      assert.ok(low > 0 && high > low, `block ${frame.snapshot}: the range’s lowest price first (${frame.ends.join(' ')})`);
-    }
-    const snapshots = [...new Set(headers.map((frame) => frame.snapshot))];
-    assert.equal(snapshots.at(-1), await detail.getAttribute('data-snapshot'), 'the last frame is the page’s own read');
-    // The list's row is at the chain's head, the page's own read two blocks behind it (lib/fees/client.ts).
-    assert.ok(snapshots.length >= 2 && Number(snapshots[0]) > Number(snapshots.at(-1)), `the first frame is the list’s row: blocks ${snapshots.join(', ')}`);
-    console.log(`# the header's frames: ${headers.map((frame) => `block ${frame.snapshot} "${frame.price}" ${frame.ends.join(' ')}`).join('; ')}`);
-    // Back: the page's figure at once on its row, the other row still a dash, and nothing replayed again.
-    const before = (await s.page.evaluate(() => window.__feesRuns)).length;
+    // The other position's page says plainly that its fees earned can't be measured, its fees ready to collect exact.
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    const quiet = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="not_exact"]');
+    await quiet.waitFor({ timeout: 15_000 });
+    assert.match(await quiet.innerText(), /Fees earned can’t be measured for this position\. Fees ready to collect is exact\./);
+    assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'no Retry');
+    // Back: the row's figure is the page's.
     await s.page.evaluate(() => { location.hash = '#/positions'; });
-    const apr = s.page.locator('[data-position-row="3325113"] [data-cell="apr"][data-apr="ready"]');
-    await apr.waitFor({ timeout: 5_000 });
-    assert.equal((await apr.locator('.dm-own-fig').innerText()).trim(), figure);
-    assert.equal(await apr.getAttribute('title'), 'Since the position opened');
-    assert.equal(await s.page.locator(`[data-position-row="${OWNED_OPEN}"] [data-cell="apr"][data-apr="none"]`).count(), 1);
-    await s.page.waitForTimeout(1_500);
-    assert.deepEqual((await s.page.evaluate(() => window.__feesRuns)).slice(before).filter((entry) => entry.startsWith('run')), [], 'no history replayed again');
-    // Changed on purpose (2026-09-28): the list's display copy, and nothing else (no APR, no history).
+    const again = s.page.locator('[data-position-row="3325113"] [data-cell="apr"][data-apr="ready"]');
+    await again.waitFor({ timeout: 5_000 });
+    assert.equal((await again.locator('.dm-own-fig').innerText()).trim(), figure);
+    // The list's display copy and nothing else about positions (the fee history's copies hold no address).
     assert.deepEqual(await kept(s.page), [OWNED_COPY], 'nothing about positions is kept in the browser but the list’s copy');
+    nodeRulesKept(world);
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
     assert.deepEqual(chain.refused, [], 'nothing but the reads');
     await s.page.locator('[data-owned]').screenshot({ path: join(shots(), 'positions-apr.png') });
   } finally { await s.close(); }
 });
 
+// 2026-10-02 (the owner's preview: the ledger was asked once per page load, and a position's page then never asked it, its
+// Fees earned card and Your APR skeletons for the visit). The route answers a first read it could not finish `reading`
+// (functions/_lib/feesLedger.ts: past LEDGER_STEP's lookups, or past the question's byte budget). The store asks again
+// 2 s later only while a screen shows the id; the owner's click into another row left this one with no screen, and a kept
+// `reading` ledger stopped every later screen from asking (lib/fees/store.ts needsLedger).
+test('a row whose ledger answered `reading` as the owner opened another row is asked again on its own page and on the list', async () => {
+  const { edgeRoutes } = await import('./support/edge-routes.mjs');
+  const { RPC_URL } = await import('./support/browser-chain.mjs');
+  const world = ledgerWorld({ holder: OWNER, extraPositions: [onChain(OWNED_OPEN)], tokens: { ...LEDGER_TOKENS, ...TOKENS } });
+  const chain = world.chain;
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  // The first ledger answer as the deployment gives a first read it could not finish: every row `reading`.
+  const own = edgeRoutes({ fetch: (_url, init) => chain.fetch(RPC_URL, init) });
+  const ledgers = [];
+  await s.context.route((url) => url.pathname === '/api/fees/v2/ledger', async (route) => {
+    const body = JSON.parse(route.request().postData() ?? '{}');
+    ledgers.push(body.tokenIds);
+    if (ledgers.length > 1) return route.fallback();
+    const real = await own(new Request('https://edge.test/api/fees/v2/ledger', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://edge.test', 'sec-fetch-site': 'same-origin' }, body: JSON.stringify(body) }));
+    const value = await real.json();
+    value.positions = value.positions.map((one) => (one.ok ? { ...one, exact: false, why: 'reading' } : one));
+    return route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', headers: { 'Cache-Control': 'no-store' }, body: JSON.stringify(value) });
+  });
+  const asked = (id) => ledgers.filter((ids) => ids.includes(id)).length;
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await connectWallet(s.page);
+    await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 20_000 });
+    await until(() => ledgers.length >= 1, 'the list’s ledger read');
+    assert.deepEqual([...ledgers[0]].sort(), [OWNED_OPEN, '3325113'].sort(), 'both rows asked with the list');
+    // The click into the main position, before the store's 2 s `reading` retry: its page reads on and draws it.
+    await s.page.locator('a[data-position-row="3325113"]').click();
+    await s.page.locator('[data-position-detail][data-position-id="3325113"]').waitFor({ timeout: 15_000 });
+    await s.page.locator('[data-fees-card][data-fees-state="verified"]').first().waitFor({ timeout: 15_000 });
+    // Past the other row's 2 s retry (fired with no screen showing it) and the store's 3 s release.
+    await new Promise((done) => setTimeout(done, 4_000));
+    assert.equal(asked(OWNED_OPEN), 1, 'no screen showed it: not asked again meanwhile');
+    // Its own page asks its ledger again, and its card leaves its skeleton.
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`).waitFor({ timeout: 15_000 });
+    await s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"][data-fees-reason="not_exact"]').waitFor({ timeout: 15_000 });
+    assert.equal(asked(OWNED_OPEN), 2, 'asked again by its page');
+    // Back on the list: its row says why there is no figure, never a skeleton for the visit.
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await s.page.locator(`[data-position-row="${OWNED_OPEN}"] [data-cell="apr"][data-apr="missing"]`).waitFor({ timeout: 15_000 });
+    await s.page.locator('[data-position-row="3325113"] [data-cell="apr"][data-apr="ready"]').waitFor({ timeout: 15_000 });
+    assert.deepEqual(site.asked, []);
+  } finally { await s.close(); }
+});
+
+// The node busy for one ledger read (its 429, Retry-After 1 s: Domino's node, or this visitor's share of it): the card
+// stays calm with the chain's unclaimed figure, no Retry is offered, and the store asks again on its own first wait
+// (lib/fees/store.ts RETRY_MS), so the chart is drawn seconds later, not a minute.
+test('the ledger route refuses once: the card stays calm with the chain’s unclaimed figure, and the chart is drawn after the store’s first wait, not a minute later', async () => {
+  const world = ledgerWorld({ holder: OWNER });
+  const chain = world.chain;
+  const site = siteRoutes();
+  const s = await scenario({ chain, routes: [site.route] });
+  const asks = [];
+  await s.context.route((url) => url.pathname === '/api/fees/v2/ledger', (route) => {
+    asks.push(Date.now());
+    if (asks.length === 1) return route.fulfill({ status: 429, contentType: 'application/json; charset=utf-8', headers: { 'Retry-After': '1', 'Cache-Control': 'no-store' }, body: JSON.stringify({ v: 1, error: 'rate_limited' }) });
+    return route.fallback();
+  });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
+    await s.page.locator('[data-position-detail][data-position-id="3325113"]').waitFor({ timeout: 15_000 });
+    await until(() => asks.length >= 1, 'the refused ledger read');
+    const calm = s.page.locator('[data-fees-card]');
+    await calm.first().waitFor({ timeout: 10_000 });
+    assert.match(await calm.first().innerText(), /Ready to collect[\s\S]*\$[\d,]+\.\d\d/, 'the chain’s unclaimed figure meanwhile');
+    assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'no Retry');
+    const verified = s.page.locator('[data-fees-card][data-fees-state="verified"]');
+    await verified.first().waitFor({ timeout: 20_000 });
+    assert.ok(asks.length >= 2, 'asked again by the store');
+    const wait = asks[1] - asks[0];
+    assert.ok(wait >= 900 && wait < 15_000, `asked again ${wait} ms after the refusal`);
+    assert.deepEqual(site.asked, []);
+  } finally { await s.close(); }
+});
+
 // 2026-09-28 (the owner, on his phone, in a wallet's in-app browser: Your positions stayed on its loading rows with
 // "Reading your positions from the chain…" while the public RPC refused his address). The list keeps this browser's copy
 // of the chain's last answer, per wallet and chain, and draws it at once on the next visit (data-owned="kept") while the
-// chain is read, then the chain's own list in its place, as soon as the RPC lets the address in. Display only: the held
-// deposit and its refund, the automation's badges and reads wait for the chain; a copy the parser refuses (another
-// wallet's answer under this one's name, a broken field) or one over a week old is dropped, never drawn; and the chain
-// saying the wallet has none forgets it. Review of 2026-09-28: once a read failed, the card's one quiet line stands over
-// the copy as it stands over the loading rows (the next test: its calm line, and a copy too old for its USD figures).
-test('Your positions draws this browser’s copy at once while the RPC refuses, then the chain’s list in its place; a broken, another wallet’s or an old copy is never drawn', async () => {
+// chain is read, then the chain's own list in its place. Display only: the held deposit and its refund, the automation's
+// badges and reads wait for the chain; a copy the parser refuses (another wallet's answer under this one's name, a broken
+// field) or one over a week old is dropped, never drawn; and the chain saying the wallet has none forgets it. Review of
+// 2026-09-28: once a read failed, the card's one quiet line stands over the copy as it stands over the loading rows.
+// Changed on purpose (RPC-SPEC, 2026-10-01: the page asks the site's own route, which reads Domino's node at the edge):
+// "while the RPC refuses" is now "while POST /api/owned/v2/positions answers 502 chain_busy" (the node or the visitor's
+// limiter refusing). The page asks again when the route's Retry-After is over. There is no cross-tab pacing, no shared
+// cooldown and no reach probe any more: they paced the public RPC (lib/chain/browser.ts), which the list no longer reads.
+test('Your positions draws this browser’s copy at once while the site’s route answers chain_busy, then the chain’s list in its place; a broken, another wallet’s or an old copy is never drawn', async () => {
+  const { refusingRoute } = await import('./support/edge-busy.mjs');
   const deposit = { key: { currency0: zeroAddress, currency1: USDG, fee: 3000, tickSpacing: 60, hooks: zeroAddress }, balance0: 0n, balance1: 100000n };
   const chain = browserChain({ positions: [onChain(OWNED_OPEN), closedOnChain(OWNED_CLOSED[0])], tokens: { ...TOKENS, [USDG]: { symbol: 'USDG', decimals: 6 } }, deposits: { [OWNER]: [deposit] } });
-  const rpc = refusing(chain);
   const site = siteRoutes();
   const read = createReadStub();
   const s = await scenario({ chain, routes: [site.route, (request, url) => read.handle(request, url)] });
+  const RETRY_S = 3;
+  const owned = await refusingRoute(s.context, '/api/owned/v2/positions', { retryAfter: RETRY_S });
   try {
-    await s.context.addInitScript(() => {
-      window.__cooldowns = [];
-      window.__cooldownObserver = new BroadcastChannel('domino-chain-cooldown-v1');
-      window.__cooldownObserver.onmessage = ({ data }) => { if (data && typeof data === 'object') window.__cooldowns.push({ at: Date.now(), ...data }); };
-    });
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     await connectWallet(s.page);
@@ -6131,50 +7577,42 @@ test('Your positions draws this browser’s copy at once while the RPC refuses, 
     assert.deepEqual([copy.data.owner, copy.data.block, copy.data.positions.map((p) => p.tokenId), copy.data.deposits], [OWNER, chain.head, [OWNED_OPEN, OWNED_CLOSED[0]], []], 'the chain’s answer, never its held deposit');
     assert.deepEqual(await kept(s.page), [OWNED_COPY]);
 
-    // Reloaded while the RPC refuses this address, as it does live: the copy at once, as it was drawn, and nothing that
-    // acts or reads for it; then the chain's list in its place once the RPC lets the address in.
-    rpc.until = Date.now() + 60_000;
+    // Reloaded while the route refuses this wallet: the copy at once, as it was drawn, and nothing that acts or reads for
+    // it; then the chain's list in its place once the route answers.
+    owned.until = Date.now() + 60_000;
     await s.page.reload();
     await recordList(s.page);
     await reconnect(s.page);
     await s.page.locator(`[data-owned="kept"][data-owned-block="${chain.head}"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 5_000 });
     assert.deepEqual(await ownedRows(s.page), fresh, 'the rows as they were drawn');
     assert.deepEqual(await tabs(), ['Open 1', 'Closed 1']);
-    // Changed on purpose (review, 2026-09-28): no line only while the first read is on its way (its refused calls and
-    // the scan's waits take 10 s); the loading rows and the empty state never.
-    assert.equal(await s.page.locator('[data-owned] [data-owned-loading], [data-owned] [data-owned-note], [data-owned] [data-empty]').count(), 0, 'no loading rows, no line yet, no empty state');
+    assert.equal(await s.page.locator('[data-owned] [data-owned-loading], [data-owned] [data-empty]').count(), 0, 'no loading rows, no empty state');
     assert.equal(await s.page.locator('[data-held-deposit], [data-position-automation]').count(), 0, 'no held deposit to refund, no automation read for the copy');
-    await until(() => rpc.asked.some((request) => request.refused), 'the list asked the chain, refused');
-    // Review of 2026-09-28: the copy is never drawn as the chain's answer of now. Once the first read failed and is asked
-    // again, the one quiet line the loading rows have stands over the copy's rows, which stay.
+    await until(() => owned.asked.some((request) => request.refused), 'the list asked the route, refused');
+    // The copy is never drawn as the chain's answer of now: the one quiet line the loading rows have stands over its rows.
     const note = s.page.locator('[data-owned="kept"] [data-owned-note="rereading"]');
     await note.waitFor({ timeout: 20_000 });
     assert.equal(await note.innerText(), 'Reading your positions from the chain…');
     assert.equal(await s.page.locator('[data-owned]').getAttribute('data-owned-reason'), 'chain_busy');
     assert.deepEqual(await ownedRows(s.page), fresh, 'the copy’s rows stay under it');
     assert.equal(await s.page.locator('[data-owned] [data-owned-loading], [data-owned] [data-empty]').count(), 0);
+    // Refused again: each ask waits the route's Retry-After from the one before, never sooner.
+    await until(() => owned.asked.filter((request) => request.refused).length >= 2, 'asked again after the route’s wait', 15_000);
+    const refused = owned.asked.filter((request) => request.refused);
+    for (let i = 1; i < refused.length; i++) assert.ok(refused[i].at - refused[i - 1].at >= RETRY_S * 1000 - 250, `ask ${i + 1} ${refused[i].at - refused[i - 1].at} ms after the one before`);
     const lifted = Date.now();
-    // Genuine repeated refusals rest pages as well as workers now. Lifting the fake RPC does not revoke the
-    // announced cooldown: require silence until it expires, then the same prompt recovery as before.
-    const cooldowns = await s.page.evaluate(() => window.__cooldowns);
-    const cooldown = cooldowns.at(-1);
-    assert.ok(cooldown && cooldown.count >= 1 && cooldown.until > lifted, 'the repeated refusal announced an active staged cooldown');
-    assert.ok(cooldown.until - cooldown.at <= LANE_PACE.restMs, 'the announced cooldown stays within the real backoff cap');
-    rpc.until = 0;
-    await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: Math.max(0, cooldown.until - Date.now()) + 6_000 });
-    const late = Date.now() - cooldown.until;
-    assert.ok(late >= 0 && late < 6_000, `the chain’s list ${late} ms after the shared cooldown expired`);
-    assert.deepEqual(rpc.asked.filter((request) => request.at >= lifted && request.at < cooldown.until), [], 'no physical RPC read bypassed the announced cooldown');
-    console.log(`# Wallet copy: chain-backed list ${late} ms after the staged cooldown expired; no RPC read during its remaining ${cooldown.until - lifted} ms`);
+    owned.until = 0;
+    await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: RETRY_S * 1000 + 6_000 });
+    const late = Date.now() - lifted;
+    assert.ok(late < RETRY_S * 1000 + 4_000, `the chain’s list ${late} ms after the route answered again`);
+    console.log(`# Wallet copy: ${refused.length} asks refused, each after the route’s ${RETRY_S} s; the chain’s list ${late} ms after the route answered`);
     assert.equal(await s.page.locator('[data-owned] [data-owned-note]').count(), 0, 'and no line over the chain’s list');
     await s.page.locator('[data-held-deposit]').waitFor();
     await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor();
     assert.deepEqual(await listSeen(s.page), ['kept', 'kept:rereading', 'ready'], 'the copy, the copy under the quiet line, then the chain’s list: never the loading rows');
     assert.deepEqual(await ownedRows(s.page), fresh);
-    // Changed on purpose 2026-09-28 (speed wave B, item 23): the list's first call is its head and nonce's aggregate3.
-    assert.equal(rpc.asked.filter((request) => request.refused && request.calls.some((call) => !listHead(call))).length, 0, 'while refused, only the list’s first call was asked again');
 
-    // Copies that are never drawn: the reload finds none it may draw, the chain refusing meanwhile, and drops them.
+    // Copies that are never drawn: the reload finds none it may draw, the route refusing meanwhile, and drops them.
     const other = ACCOUNTS[1].address.toLowerCase();
     const week = 7 * 86_400_000;
     const broken = { ...copy.data, positions: [{ ...copy.data.positions[0], liquidity: '0' }] };
@@ -6184,7 +7622,7 @@ test('Your positions draws this browser’s copy at once while the RPC refuses, 
       ['older than a week', { at: Date.now() - week - 60_000, data: copy.data }],
     ]) {
       await s.page.evaluate(([name, value]) => localStorage.setItem(name, JSON.stringify(value)), [OWNED_COPY, entry]);
-      rpc.until = Date.now() + 60_000;
+      owned.until = Date.now() + 60_000;
       await s.page.reload();
       await recordList(s.page);
       await reconnect(s.page);
@@ -6194,22 +7632,23 @@ test('Your positions draws this browser’s copy at once while the RPC refuses, 
       assert.ok(!(await listSeen(s.page)).includes('kept'), label);
     }
 
-    // The chain says the wallet has none now: the list says so, and the copy is forgotten.
-    rpc.until = 0;
+    // The chain says the wallet has none now: the list says so, and the copy is forgotten. (The route's answer of none is
+    // given here as the route sends it: the edge keeps a wallet's answer for a while, which is the edge's own rule.)
+    owned.until = 0;
     await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
     assert.notEqual(await s.page.evaluate((name) => localStorage.getItem(name), OWNED_COPY), null, 'kept again from the chain’s answer');
     chain.positions.length = 0;
     chain.deposits[OWNER] = [];
+    const none = await refusingRoute(s.context, '/api/owned/v2/positions', { status: 200, body: { v: 1, answer: { owner: OWNER, block: chain.head, positions: [], deposits: [] }, automation: { block: chain.head, positions: [] }, mints: [], capped: false } });
+    none.until = Date.now() + 60_000;
     await s.page.reload();
     await reconnect(s.page);
     await s.page.locator('[data-owned="ready"] [data-empty="owned-none"]').waitFor({ timeout: 20_000 });
     assert.deepEqual(await kept(s.page), [], 'forgotten');
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    assert.deepEqual(site.asked, [], 'nothing reached the server behind the site’s routes');
     assert.deepEqual(s.wallet.state.signed, [], 'nothing was signed');
-    // 2026-09-28: the RPC's refusal, which the browser cannot read (a TypeError, as a name that does not resolve is), was
-    // told from one by the page's reach probe (a no-cors GET the RPC answered): no public fallback was ever asked.
-    assert.ok(chain.probes >= 1, `the page asked whether the RPC was there (${chain.probes})`);
-    assert.deepEqual(chain.fallbackLog, [], 'no fallback was asked anything');
+    assert.ok(chain.edgeLog.includes('/api/owned/v2/positions'), 'the list is the site’s own route');
+    assert.deepEqual(chain.publicAsked, [], 'no public RPC was asked anything');
   } finally { await s.close(); }
 });
 
@@ -6245,7 +7684,12 @@ test('a copy kept over an hour ago shows no USD figure and no Total value until 
     const total = await band.innerText();
     assert.match(total, /Total value/);
 
-    // Kept a moment ago, the chain failing: drawn as it was, its USD figures and its total included.
+    // Kept a moment ago, the chain failing: drawn as it was, its USD figures and its total included. Changed on purpose
+    // 2026-10-01 (RPC-SPEC): the list is the site's route, whose answer the edge keeps 30 s, so the chain's failure is the
+    // route's own answer to it (502 chain_unavailable, functions/_lib/owned.ts), given here at once.
+    const { refusingRoute } = await import('./support/edge-busy.mjs');
+    const failing = await refusingRoute(s.context, '/api/owned/v2/positions', { body: { error: 'chain_unavailable' }, retryAfter: 12 });
+    failing.until = Infinity;
     chain.outage = 500;
     await again();
     await s.page.locator('[data-owned="kept"] a[data-position-row="5"]').waitFor({ timeout: 5_000 });
@@ -6281,6 +7725,7 @@ test('a copy kept over an hour ago shows no USD figure and no Total value until 
 
     // The chain answers: its USD figures and total, no line, and the copy kept again at this time.
     chain.outage = null;
+    failing.until = 0;
     await again();
     await s.page.locator('[data-owned="ready"] a[data-position-row="5"]').waitFor({ timeout: 15_000 });
     assert.deepEqual(await ownedRows(s.page), fresh);
@@ -6293,90 +7738,34 @@ test('a copy kept over an hour ago shows no USD figure and no Total value until 
 
 // 2026-09-28 (the owner, on his phone, with five tabs open: Your positions stayed on its loading rows while the public
 // RPC refused his address, and the list's own read had no way ahead of the fees histories). Two tabs of one browser: A
-// shows a position's page (the recorded 3325113, its history replayed by A's fees worker); B opens Positions while the RPC
-// refuses this address for a few seconds, as it does live. B draws this browser's copy at once and the chain's list as
-// soon as the RPC lets it in; from B's first call on, no tab's fees worker asks anything: B's read holds every lane for
-// the whole of it, and its refusals rest them all (lib/chain/browser.ts holdReads).
-// Before the fix (measured on d1197112, twice, with this test's assertions logged instead): B showed its loading rows
-// until the chain answered, 10.4 s after its first call, while the other tab's fees reads went on in B's waits.
-// Changed on purpose (2026-09-28, hotfix): tab A shows a position's page, not the list measuring its APR: the list
-// measures nothing any more (tests/list-apr.test.mjs), so no tab starts a history run from the list.
-// Changed on purpose (2026-09-29, CI of hotfix/lane-pace, PR #264, 'Frontend browser (finance)' on Linux): the lanes rest
-// 6 s after a refusal, no longer 30 s (LANE_PACE.restMs, d478979d). The test said no history run was even started in
-// either tab until 3 s after B's list. That held only while the rest was 30 s: A's page asks the run B's refusals stopped
-// again once its lane's rest is over (fees/store.ts RETRY_MS, with the `wait` the worker's `done` carries), 30 s later
-// then, past this test's end. And on a fast machine A's history was read to its end before B's first call, so the case
-// was not tested at all (seen here: A's run done 135 ms before it). On CI's runner A's run was still on. With A's third
-// history read held until B's first call (below), 3 runs of 3 on 6c493de0: A's page asked its run again 8.6 s after B's
-// first call, while B's list was still unread, and that run ended at once without a read, the lanes still resting from
-// B's refusal at 5.7 s; no fees read, B's list at 10.5 s. With restMs at 30 s again, 2 of 2 passed, B's list at 10.5 s.
-// No page holds back when its fees store starts a run (852a4140 took the page's quietIn away with the list's APR queue):
-// the list goes first at the RPC, where the lanes wait for its read and rest after its refusals. So this test now holds
-// A's history read on its way when B asks first, and asserts that B's refusals rest every lane, that no fees read is
-// asked from then until B's list is drawn nor while the rest of B's last refusal lasts, A's run asked again meanwhile
-// included, and that B, the list's tab, starts no history run. Measured: 16 of 16 here (4 with the CPU throttled 4x to
-// 8x); with the list's hold and the page's rest taken out (as on d1197112), A's worker read at 5,006 ms, refused; with
-// the page's rest alone taken out, no lane heard a rest.
-test('the RPC refusing for a few seconds while another tab reads a position’s history: the list is drawn at once from this browser’s copy and from the chain as soon as the RPC lets it in, and no fees read is asked meanwhile', async () => {
-  const VAULT = `0x${'5a'.repeat(20)}`;
-  const recorded = automatedChain('3325113', { vault: VAULT, owner: ACCOUNTS[0].address, executions: [] });
-  const position = recorded.fixture.state.positions[0];
-  const base = browserChain({
-    head: recorded.head,
-    timestamp: recorded.fixture.state.timestamp,
-    positions: [{ tokenId: '3325113', holder: OWNER, key: position.poolKey, tickLower: position.tickLower, tickUpper: position.tickUpper, liquidity: 1n, unclaimed: [0n, 0n] }, onChain(OWNED_OPEN)],
-    tokens: TOKENS,
-  });
-  const chain = listChain({ recorded, base, vault: VAULT });
-  // 2026-09-29: A's third history read is answered only once B has asked its first call, so A's history is being read
-  // when B opens Positions, however fast this machine is (a scan the node works on, as live).
-  const answer = chain.fetch;
-  const onItsWay = { at: 0, answer: null };
-  let historyReads = 0;
-  chain.fetch = async (url, init) => {
-    const body = JSON.parse(init.body);
-    const calls = (Array.isArray(body) ? body : [body]).map((call) => ({ method: call.method, topic: call.params?.[0]?.topics?.[0] }));
-    if (feesRead({ calls }) && ++historyReads === 3) {
-      onItsWay.at = Date.now();
-      await new Promise((done) => { onItsWay.answer = done; });
-    }
-    return answer(url, init);
-  };
-  const rpc = refusing(chain);
+// shows a position's page (the recorded 3325113, its history replayed by A's fees worker); B opens Positions while the
+// list's source refuses for a few seconds. B draws this browser's copy at once and the chain's list as soon as the source
+// lets it in, and B, the list's tab, starts no history run.
+// Changed on purpose (RPC-SPEC, 2026-10-01: the page asks the site's own route, which reads Domino's node at the edge):
+// the refusal is now POST /api/owned/v2/positions answering 502 chain_busy for B's tab. Cross-tab pacing is gone: the
+// list's read held every tab's fees lanes and its refusals rested them all because one public RPC address served both
+// (lib/chain/browser.ts holdReads and the shared cooldown); the list's route and the fees' reads no longer share a
+// limit in the browser, so this test no longer holds A's history read nor measures the lanes' rests.
+// Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the list's tab reads its rows' ledgers (their Your APR), so it no longer
+// promises to start no history; A's page draws 3325113's ledger.
+test('the site’s route refusing for a few seconds while another tab reads a position’s history: the list is drawn at once from this browser’s copy and from the route as soon as it answers', async () => {
+  const { refusingRoute } = await import('./support/edge-busy.mjs');
+  // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the ledger world's 3325113, read by its own ledger, beside a plain row.
+  const world = ledgerWorld({ holder: OWNER, extraPositions: [onChain(OWNED_OPEN)], tokens: { ...LEDGER_TOKENS, ...TOKENS } });
+  const chain = world.chain;
   const site = siteRoutes();
   const s = await scenario({ chain, routes: [site.route] });
   let b = null;
-  // Every run a tab's fees store sends its worker, and when (the page's clock: this machine's, as the fake RPC's).
-  const countRuns = (page) => page.evaluate(() => {
-    const send = Worker.prototype.postMessage;
-    window.__feesRuns = [];
-    Worker.prototype.postMessage = function (message, ...rest) {
-      if (message?.type === 'run') window.__feesRuns.push({ id: message.id, at: Date.now() });
-      return send.call(this, message, ...rest);
-    };
-  });
-  const runsSince = async (page, at) => (await page.evaluate(() => window.__feesRuns ?? [])).filter((run) => run.at > at);
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    await countRuns(s.page);
-    // Every rest a refusal starts, when the lanes hear it (lib/chain/browser.ts: 'rest' on the pages' channel).
-    await s.page.evaluate(() => {
-      window.__rests = [];
-      window.__restsHeard = new BroadcastChannel('domino-chain-reads');
-      window.__restsHeard.onmessage = (event) => { if (event.data === 'rest') window.__rests.push(Date.now()); };
-      window.__cooldowns = [];
-      window.__cooldownObserver = new BroadcastChannel('domino-chain-cooldown-v1');
-      window.__cooldownObserver.onmessage = ({ data }) => { if (data && typeof data === 'object') window.__cooldowns.push({ at: Date.now(), ...data }); };
-    });
     await connectWallet(s.page);
-    // A's list (it keeps this browser's copy), then 3325113's page: its run is on, and its worker reads the history.
+    // A's list (it keeps this browser's copy), then 3325113's page: its ledger is read and drawn.
     await s.page.locator('[data-owned="ready"] a[data-position-row="3325113"]').waitFor({ timeout: 20_000 });
     await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
-    await s.page.waitForFunction(() => window.__feesRuns.some((run) => run.id === '3325113'), null, { timeout: 20_000 });
-    await until(() => onItsWay.at > 0, 'A’s fees worker reading the history, a read on its way', 20_000);
+    await s.page.locator('[data-fees-card][data-fees-state="verified"]').first().waitFor({ timeout: 30_000 });
 
-    // B opens Positions; the RPC refuses this address for six seconds from B's first call.
+    // B opens Positions; the route refuses B's list for six seconds from now (B's own routes only: A's page reads on).
     b = await s.context.newPage();
     await b.addInitScript(() => {
       window.__ownedReadyAt = 0;
@@ -6387,154 +7776,37 @@ test('the RPC refusing for a few seconds while another tab reads a position’s 
       });
       observed.observe(document, { childList: true, subtree: true, attributes: true });
     });
-    let first = 0;
-    await b.route(/^https:\/\/rpc\.mainnet\.chain\.robinhood\.com\/?$/, (route) => {
-      if (!first) {
-        first = Date.now();
-        rpc.until = first + 6_000;
-        onItsWay.answer();
-      }
-      return route.fallback();
-    });
+    const owned = await refusingRoute(b, '/api/owned/v2/positions', { retryAfter: 2 });
+    const first = Date.now();
+    owned.until = first + 6_000;
     await b.goto(`${s.origin}/#/app`);
-    await countRuns(b);
     await recordList(b);
     await reconnect(b);
     // B's copy (A kept it) at once, before any answer.
     await b.locator('[data-owned="kept"] a[data-position-row="3325113"]').waitFor({ timeout: 5_000 });
-    await until(() => first > 0, 'B’s first call');
+    await until(() => owned.asked.some((request) => request.refused), 'B’s list asked the route, refused');
     await b.locator('[data-owned="ready"] a[data-position-row="3325113"]').waitFor({ timeout: 30_000 });
-    // Measure the browser's transition, not when Playwright's next poll notices it. Once the list is drawn,
-    // another tab may legitimately resume its history before waitFor returns to the test process.
     const ready = await b.evaluate(() => window.__ownedReadyAt);
     assert.ok(ready > first, 'the browser observed B’s chain-backed list');
-    const late = ready - rpc.until;
-    assert.ok(late < 6_000, `B’s list from the chain ${late} ms after the RPC let the address in`);
-    assert.deepEqual(await listSeen(b), ['kept', 'ready'], 'B: the copy, then the chain’s list; never the loading rows or a line');
-    assert.ok(onItsWay.at < first, 'A’s history read was on its way when B asked first');
-
-    // Nothing of the fees histories from B's first call to its list, nor while the rest its last refusal started lasts.
-    // A rest is told once the refused call it follows came back, so it lasts at least its stage from that call as the fake
-    // RPC saw it (the same clock): each rest the lanes heard, from the last refusal before it.
-    // 2026-09-29 (final release, speed wave B with hotfix/charts): the rest is staged (lib/chain/browser.ts restAfter:
-    // LANE_PACE.firstRestMs, then four times as long for each rest heard within LANE_PACE.restMs of the last one's end, up
-    // to LANE_PACE.restMs: 6, 24, then 30 s), so the window follows the stages of the rests heard, as the lanes count them
-    // (one per page call the RPC refused, which may be two refused requests: the page asks an unreadable refusal once more
-    // before it tells the rest), no longer restMs from the last refusal.
-    const refused = rpc.asked.filter((request) => request.refused);
-    const rests = (await s.page.evaluate(() => window.__rests)).filter((at) => at >= first);
-    assert.ok(rests.length > 0, 'B’s refusals rested every lane');
-    const lane = { until: 0, count: 0 };
-    for (const heard of rests) {
-      const before = refused.filter((request) => request.at <= heard).map((request) => request.at);
-      assert.ok(before.length > 0, 'every rest follows a refusal');
-      const at = Math.max(...before);
-      lane.count = at < lane.until + LANE_PACE.restMs ? lane.count + 1 : 0;
-      lane.until = Math.max(lane.until, at + Math.min(LANE_PACE.restMs, LANE_PACE.firstRestMs * 4 ** lane.count));
-    }
-    const cooldowns = (await s.page.evaluate(() => window.__cooldowns)).filter((value) => value.at >= first);
-    assert.ok(cooldowns.length > 0, 'B’s refusal also announced its absolute cooldown to pages and new workers');
-    assert.ok(cooldowns.every((value) => value.until > value.at && value.until - value.at <= LANE_PACE.restMs), 'each shared cooldown is bounded');
-    const restUntil = Math.max(lane.until, ...cooldowns.map((value) => value.until));
-    const quiet = Math.max(ready, restUntil);
-    await new Promise((done) => setTimeout(done, Math.max(3_000, quiet - Date.now() + 500)));
-    const meanwhile = rpc.asked.filter((request) => request.at > first + 100 && request.at <= quiet && feesRead(request));
-    assert.deepEqual(meanwhile.map((request) => `${request.at - first} ms ${request.refused ? 'refused' : 'answered'} ${request.calls.map((call) => call.method).join('+')}`), [], 'no tab’s fees worker asked anything');
-    assert.deepEqual(await runsSince(b, first), [], 'no history run was started in the list’s tab');
-    // A's page may ask the run B's refusals stopped again meanwhile (store.ts RETRY_MS): the reads above say it asked
-    // nothing, and it is the page's own run, never the list's (speed wave B, item 19).
-    const againRuns = await runsSince(s.page, first);
-    assert.ok(againRuns.every((run) => run.id === '3325113'), 'tab A: only its page’s own run, asked again');
-    const again = againRuns.map((run) => `${run.id} at ${run.at - first} ms`);
-    // Changed on purpose 2026-09-28 (speed wave B, item 23): the list's first call is its head and nonce's aggregate3.
-    assert.ok(refused.length > 0 && refused.every((request) => request.at >= first && request.calls.every(listHead)), 'only the list’s first call was asked while refused');
-    console.log(`# B: its copy at once, the chain’s list ${late} ms after the RPC let the address in; ${refused.length} refused, each the list’s first call; A’s history read on its way ${first - onItsWay.at} ms before B’s first call; no fees read from then to ${quiet - first} ms after it (its list at ${ready - first} ms, ${rests.length} rests, the shared rest to ${restUntil - first} ms); A’s page asked again: ${again.join(', ') || 'nothing'}`);
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    const late = ready - owned.until;
+    assert.ok(late < 6_000, `B’s list from the route ${late} ms after it answered again`);
+    assert.deepEqual(await listSeen(b), ['kept', 'kept:rereading', 'ready'], 'B: the copy, the quiet line over it, then the chain’s list; never the loading rows');
+    const refused = owned.asked.filter((request) => request.refused);
+    console.log(`# B: its copy at once, the chain’s list ${late} ms after the route answered again; ${refused.length} asks refused`);
+    assert.deepEqual(site.asked, [], 'nothing reached the server behind the site’s routes');
   } finally {
-    onItsWay.answer?.();
     await b?.close();
     await s.close();
   }
 });
 
-// 2026-09-27 (the owner: the Fees earned chart took far too long; traced live on his 3325113 at the integration of round 5):
-// the public RPC refused the replay's batch of block headers (its 429 reaches a browser as a CORS failure, the allow-origin
-// `*,*`), the run stopped, the worker's lane rested 30 s (LANE_PACE.restMs), and the card was asked again only by the next
-// minute's /state read at a newer block: about 67 s to the chart live, and never here, where the head does not move. The
-// store now asks the run again as soon as the lane's rest is over (src/lib/fees/store.ts RETRY_MS): the chart is drawn
-// within about the rest and one run's time, after that one refusal, and the worker asks nothing while it rests.
-// 2026-09-27 (review of the retry): the store is sent exactly two runs, the second only once the rest is over. A worker
-// whose `done` lost its lane's wait (feesReplay.worker.ts) had the store ask again 2 s after the refusal, a run the resting
-// lane ended at once without a read, and the chart came at the 30 s attempt: the reads alone never showed it.
-// Changed on purpose (2026-09-28, hotfix): the lane's rest (LANE_PACE.restMs) is 6 s, no longer 30 s: live, the RPC takes
-// the address's calls again 4.5 to 6 s after the work that drew its refusal (src/lib/chain/browser.ts). 2026-09-29
-// (speed wave B merged with hotfix/charts): that 6 s is the wave's first, staged rest (LANE_PACE.firstRestMs).
-test('the RPC refuses the replay’s header batch once: the chart is drawn right after the lane’s rest, not a minute later, and nothing is asked meanwhile', async () => {
-  const chain = caseChain('3325113');
-  const answer = chain.fetch;
-  const refusals = [];
-  chain.fetch = async (url, init) => {
-    const body = JSON.parse(init.body);
-    if (refusals.length === 0 && Array.isArray(body) && body.length > 1 && body.every((call) => call.method === 'eth_getBlockByNumber')) {
-      refusals.push({ at: Date.now(), headers: body.length });
-      return new Response('Too Many Requests', { status: 429, headers: { 'access-control-allow-origin': '*,*', 'content-type': 'text/plain' } });
-    }
-    return answer(url, init);
-  };
-  const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route] });
-  const workerReads = (after) => chain.log.filter((call) => (call.method === 'eth_getLogs' || call.method === 'eth_getBlockByNumber') && call.at > after);
-  try {
-    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-    await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    // Every run the store sends its worker, and when (the page's clock: this machine's, as the fake RPC's).
-    await s.page.evaluate(() => {
-      const send = Worker.prototype.postMessage;
-      window.__feesRuns = [];
-      Worker.prototype.postMessage = function (message, ...rest) {
-        if (message?.type === 'run') window.__feesRuns.push({ id: message.id, at: Date.now() });
-        return send.call(this, message, ...rest);
-      };
-    });
-    const started = Date.now();
-    await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
-    await s.page.locator('[data-position-detail][data-position-id="3325113"]').waitFor({ timeout: 15_000 });
-    // Refused: the card keeps the chain's unclaimed figure while the lane rests.
-    await s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"]').waitFor({ timeout: 20_000 });
-    assert.equal(refusals.length, 1, 'the header batch was refused');
-    const refusedAt = refusals[0].at;
-    const verified = s.page.locator('[data-fees-card][data-fees-state="verified"]');
-    // Changed on purpose 2026-09-28 (speed wave B, item 19): the lane's rest after a first refusal is its first, staged one
-    // (LANE_PACE.firstRestMs: 2.5 s, and 6 s since 2026-09-29 with hotfix/charts), no longer the whole 30 s.
-    const rest = LANE_PACE.firstRestMs;
-    await verified.first().waitFor({ timeout: rest + 20_000 });
-    const drawn = Date.now() - refusedAt;
-    const next = workerReads(refusedAt)[0];
-    assert.ok(next && next.at - refusedAt >= rest - 250, `nothing asked while the lane rested: the next read ${next ? next.at - refusedAt : '-'} ms after the refusal`);
-    assert.ok(drawn >= rest && drawn < rest + 5_000, `the chart ${drawn} ms after the refusal: the rest (${rest} ms) and one run`);
-    const runs = (await s.page.evaluate(() => window.__feesRuns)).filter((run) => run.id === '3325113').map((run) => run.at - refusedAt);
-    assert.equal(runs.length, 2, `two runs sent to the worker, the first and one after the rest: ${runs.join(', ')} ms from the refusal`);
-    assert.ok(runs[0] <= 0, 'the first, refused');
-    assert.ok(runs[1] >= rest && runs[1] < rest + 3_000, `the second ${runs[1]} ms after the refusal: once the lane's rest (${rest} ms) is over, not during it`);
-    assert.ok(Date.now() - started < 60_000, 'before the minute’s /state read would have asked again');
-    assert.ok(workerReads(refusedAt).some((call) => call.method === 'eth_getBlockByNumber'), 'the headers, read on the new attempt');
-    assert.equal(refusals.length, 1, 'one refusal, nothing else refused');
-    assert.match(await verified.first().innerText(), /collected/i);
-    assert.deepEqual(chain.refused, [], 'nothing but the reads');
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
-    console.log(`# refused ${refusedAt - started} ms after the page was opened (${refusals[0].headers} headers), run again ${runs[1]} ms and verified ${drawn} ms after the refusal`);
-  } finally { await s.close(); }
-});
-
 // 2026-09-27 (the owner: show when Domino's automation put the fees back; the review of r5/position: never from the
-// collect-and-increase pattern alone). NFT 2310187's recording (USDG/UFG 4 %, fourteen days, five collect-and-increase
-// transactions of its own owner, all before Domino's vaults existed), held by Test Wallet A: as a plain position, and
-// held by a fake Auto-compound vault whose ExecutionCompleted logs name four of those five transactions
-// (tests/support/fees/automated-chain.mjs). Activity lists every row, newest first, in plain words; only the four the
-// vault's record names are "Fees added back", with the chart's own mark and what the automation put back (their sum is
-// the card's "added $X back"); the fifth stays the owner's "Fees collected" and "Added to position".
-const ACTIVITY_VAULT = '0x7a17c0de00000000000000000000000000c0de01';
-const ACTIVITY_PAIRS = ['0x3648206ec3', '0x85e4b56105', '0xd2ee9c0a97', '0xd47d72a202', '0x5701d9285a'];
+// collect-and-increase pattern alone). Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the positions are the ledger
+// world's (tests/support/fees/ledger-world.mjs), held by Test Wallet A: a plain one whose owner collected three times,
+// and the Auto-compound one whose three compounds the engine's own events name, with one collect of its owner's after
+// them. Activity lists every row, newest first, in plain words; only the engine's compounds are "Fees added back", with
+// the chart's own mark and what the automation put back (their sum is the card's "added $X back"); the owner's collect
+// stays "Fees collected".
 /** Every row of a position's Activity: its kind, whether it is the automation's, verb, date, figure, and the quiet line under the figure. */
 async function activityRowsOf(page) {
   const activity = page.locator('[data-position-activity]');
@@ -6547,494 +7819,168 @@ async function activityRowsOf(page) {
   }));
 }
 
-test('a position’s Activity names Domino’s automation only where its vault’s own record does, with what it put back, and never from a collect and an increase alone', async () => {
-  const txOf = (chain, prefix) => chain.fixture.expect.events.find((event) => event[2].startsWith(prefix))[2];
-  const base = automatedChain('2310187', { owner: ACCOUNTS[0].address });
-  const executions = ACTIVITY_PAIRS.filter((_, i) => i !== 1).map((prefix) => ({ tx: txOf(base, prefix), action: 0 }));
+test('a position’s Activity names Domino’s automation only where the engine’s own events do, with what it put back, and never from a collect and an increase alone', async () => {
+  const collect = (block, fees) => ({ block, kind: 'collect', fees });
+  const worlds = {
+    plain: ledgerWorld({ holder: OWNER, vault: null, steps: OWNER_STEPS.map((step) => collect(step.block, step.fees)) }),
+    automated: ledgerWorld({ holder: OWNER, steps: [...OWNER_STEPS, collect(73_900_000, [1_000_000n, 300_000_000_000_000_000_000n])] }),
+  };
   const rows = {};
-  for (const [name, chain] of [['plain', base], ['automated', automatedChain('2310187', { vault: ACTIVITY_VAULT, owner: ACCOUNTS[0].address, executions })]]) {
+  for (const [name, world] of Object.entries(worlds)) {
+    const chain = world.chain;
     const site = siteRoutes();
     const s = await scenario({ chain, routes: [site.route] });
     try {
       await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
       await s.page.locator('[data-empty="owned-connect"]').waitFor();
-      await s.page.evaluate(() => { location.hash = '#/positions/2310187'; });
-      await s.page.locator('[data-position-detail][data-position-id="2310187"]').waitFor({ timeout: 15_000 });
+      await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
+      await s.page.locator('[data-position-detail][data-position-id="3325113"]').waitFor({ timeout: 15_000 });
       const card = s.page.locator('[data-fees-card][data-fees-state="verified"]');
-      await card.waitFor({ timeout: 90_000 });
-      if (name === 'automated') await s.page.locator('[data-position-activity] .dm-fees-act[data-auto]').first().waitFor({ timeout: 20_000 });
+      await card.waitFor({ timeout: 60_000 });
+      if (name === 'automated') {
+        await s.page.locator('[data-position-activity] .dm-fees-act[data-auto]').first().waitFor({ timeout: 20_000 });
+        await card.locator('[data-automation-impact] [data-impact="added"]').waitFor({ timeout: 20_000 });
+      }
       rows[name] = await activityRowsOf(s.page);
       if (name === 'automated') {
         // What the rows say the automation put back is what the card says it did, to the rounding of each row.
         const added = await card.locator('[data-automation-impact] [data-impact="added"]').innerText();
         const total = Number(/added \$([\d,.]+) back/.exec(added)[1].replace(/,/g, ''));
         const sum = rows[name].filter((row) => row[1]).reduce((all, row) => all + Number(row[4].replace(/[$,]/g, '')), 0);
-        assert.ok(Math.abs(sum - total) <= 0.005 * 4, `the rows' $${sum.toFixed(2)} against the card's ${added}`);
-        assert.equal(await s.page.locator('[data-position-activity] .dm-fees-act[data-auto] .dm-fees-auto-glyph').count(), 4, 'the chart’s own mark on each');
+        assert.ok(Math.abs(sum - total) <= 0.005 * 3, `the rows' $${sum.toFixed(2)} against the card's ${added}`);
+        assert.equal(await s.page.locator('[data-position-activity] .dm-fees-act[data-auto] .dm-fees-auto-glyph').count(), 3, 'the chart’s own mark on each');
         assert.equal(await s.page.locator('[data-position-activity] .dm-fees-act[data-auto] .dm-fees-act-verb').first().getAttribute('title'), 'Auto-compound added these fees back into your position');
         await s.page.locator('[data-position-activity]').screenshot({ path: join(shots(), 'position-activity-automated.png') });
       } else {
         assert.equal(await s.page.locator('.dm-fees-auto-glyph, [data-automation-impact]').count(), 0, 'nothing of an automation, anywhere on the page');
       }
       assert.doesNotMatch(await s.page.locator('[data-position-activity]').innerText(), /0x[0-9a-f]{6}/i, 'no transaction hash on the page');
+      nodeRulesKept(world);
       assert.deepEqual(chain.refused, [], 'nothing but the reads');
       assert.deepEqual(site.asked, [], 'no route of the site is asked');
     } finally { await s.close(); }
   }
-  const collected = (date, value, tokens) => ['collect', false, 'Fees collected', date, value, tokens];
-  const ownAdd = (date) => ['increase', false, 'Added to position', date, null, null];
-  const opened = ['mint', false, 'Opened', '09-10 07:06 UTC', null, null];
-  // Plain: the owner's own five collect-and-increase transactions, each its collect with the fees it took and the
-  // increase under it, in neutral words; no row is the automation's.
-  assert.deepEqual(rows.plain, [
-    collected('09-24 03:21 UTC', '$623.91', '339.951 USDG 112,679 UFG'),
-    collected('09-23 12:08 UTC', '$120.14', '47.6386 USDG 28,769.6 UFG'), ownAdd('09-23 12:08 UTC'),
-    collected('09-19 21:13 UTC', '$104.14', '44.3483 USDG 23,725.7 UFG'), ownAdd('09-19 21:13 UTC'),
-    collected('09-17 04:34 UTC', '$102.53', '34.5572 USDG 26,971.2 UFG'), ownAdd('09-17 04:34 UTC'),
-    collected('09-15 04:29 UTC', '$106.73', '44.0511 USDG 24,873.9 UFG'), ownAdd('09-15 04:29 UTC'),
-    collected('09-13 05:14 UTC', '$226.19', '116.55 USDG 43,505.5 UFG'), ownAdd('09-13 05:14 UTC'),
-    collected('09-11 01:46 UTC', '$175.02', '110.494 USDG 25,604.5 UFG'),
-    opened,
+  const DATE = /^\d\d-\d\d \d\d:\d\d UTC$/;
+  const shape = (row) => [row[0], row[1], row[2], DATE.test(row[3]), row[4] === null ? null : /^\$[\d,]+\.\d\d$/.test(row[4])];
+  // Plain: the owner's own three collects, each with the fees it took, in neutral words; no row is the automation's.
+  assert.deepEqual(rows.plain.map(shape), [
+    ['collect', false, 'Fees collected', true, true],
+    ['collect', false, 'Fees collected', true, true],
+    ['collect', false, 'Fees collected', true, true],
+    ['mint', false, 'Opened', true, null],
   ]);
-  // Automated: the four the vault's record names are one row each, with what Auto-compound put back (less its service
-  // fee and what did not fit the range) and by whom; the owner's own of 09-15 is unchanged.
-  const addedBack = (date, value) => ['auto', true, 'Fees added back', date, value, 'by Auto-compound'];
-  assert.deepEqual(rows.automated, [
-    collected('09-24 03:21 UTC', '$623.91', '339.951 USDG 112,679 UFG'),
-    addedBack('09-23 12:08 UTC', '$66.92'),
-    addedBack('09-19 21:13 UTC', '$56.30'),
-    addedBack('09-17 04:34 UTC', '$63.12'),
-    collected('09-15 04:29 UTC', '$106.73', '44.0511 USDG 24,873.9 UFG'), ownAdd('09-15 04:29 UTC'),
-    addedBack('09-13 05:14 UTC', '$181.89'),
-    collected('09-11 01:46 UTC', '$175.02', '110.494 USDG 25,604.5 UFG'),
-    opened,
+  for (const row of rows.plain.slice(0, 3)) assert.match(row[5], /USDG .* UFG/, 'the tokens it took');
+  // Automated: the owner's collect, then the three the engine names, one row each, with what Auto-compound put back.
+  assert.deepEqual(rows.automated.map(shape), [
+    ['collect', false, 'Fees collected', true, true],
+    ['auto', true, 'Fees added back', true, true],
+    ['auto', true, 'Fees added back', true, true],
+    ['auto', true, 'Fees added back', true, true],
+    ['mint', false, 'Opened', true, null],
   ]);
+  for (const row of rows.automated.filter((one) => one[1])) assert.equal(row[5], 'by Auto-compound');
 });
 
-// 2026-09-25 (r4/fees, the owner: the card loaded, then vanished, on his busy-pool positions): the price path in the
-// browser, through the page's worker, its paced lane and its CSP. PONS/USDG NFT 3202568, recorded, as of block
-// 71,568,000 (about 4.6 hours of its life, some 830 Swaps): the probe sees a busy pool, the card draws an estimate from
-// windows of the life first, marked "est." (its figures the chain's, Time in range left out), then the exact history
-// once the Swaps of the life are read. No pool epoch or swap day is asked, and no route of the site.
-test('a busy pool’s fees history is drawn estimated first, then exact, from the Swaps of its own life', async () => {
-  const chain = pathChain('path-pons', '3202568', 71_568_000);
-  const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route] });
-  try {
-    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-    await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    const started = Date.now();
-    await s.page.evaluate(() => { location.hash = '#/positions/3202568'; });
-    await s.page.locator('[data-position-detail][data-position-id="3202568"]').waitFor({ timeout: 15_000 });
-    const estimated = s.page.locator('[data-fees-card][data-fees-state="estimated"]');
-    await estimated.waitFor({ timeout: 30_000 });
-    const drawn = Date.now() - started;
-    assert.equal(await estimated.locator('[data-fees-estimate]').count(), 1, 'marked "est."');
-    assert.match(await estimated.locator('[data-fees-estimate]').innerText(), /^est\.$/);
-    assert.doesNotMatch(await estimated.innerText(), /time in range/i, 'a sampled time in range is not shown');
-    assert.equal(await estimated.locator('svg').count() > 0, true, 'a chart');
-    await s.page.screenshot({ path: join(shots(), 'position-fees-estimated.png'), fullPage: true });
-    const verified = s.page.locator('[data-fees-card][data-fees-state="verified"]');
-    await verified.waitFor({ timeout: 90_000 });
-    const exact = Date.now() - started;
-    assert.equal(await verified.locator('[data-fees-estimate]').count(), 0, 'no mark once exact');
-    assert.match(await verified.innerText(), /time in range/i);
-    await s.page.screenshot({ path: join(shots(), 'position-fees-exact.png'), fullPage: true });
-    const logs = chain.log.filter((call) => call.method === 'eth_getLogs').map((call) => call.params[0]);
-    assert.ok(!logs.some(epochRead), 'no epoch of the pool’s history');
-    // Changed on purpose (2026-09-28, hotfix: the RPC's eth_getLogs limits): over its 4.6 hours of life, more than 100,000
-    // blocks, the owner's payments are one filter per currency (an ERC-20 Transfer: three topics).
-    assert.ok(logs.some((filter) => filter.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' && filter.topics.length === 3 && typeof filter.address === 'string'), 'the owner’s payments, for its settlements');
-    assert.deepEqual(chain.refused, [], 'nothing but the reads');
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
-    console.log(`# estimate drawn after ${drawn} ms, exact after ${exact} ms`);
-  } finally { await s.close(); }
-});
-
-// 2026-09-25 (review of r4/fees): the exact read of a busy pool's life is the longest read the fees worker makes, and each
-// tab has its own worker and lane, where the RPC limits the visitor's address. Here the chain limits one address as the
-// RPC does, at one and a half times the lane's pace: two tabs refining at once, each paced alone, pass it. The lanes
-// share one pace across tabs, so nothing is refused (the page's own reads among them) and both cards reach the exact
-// history.
-test('two tabs reading a busy pool’s history at once share one pace: no call is refused, and both draw the exact history', async () => {
-  // As of block 71,712,000: some 8.6 hours of NFT 3202568's life, 1.6 MB of the RPC's JSON a tab.
-  const chain = pathChain('path-pons', '3202568', 71_712_000, { limit: { capacity: 512 * 1024, perSecond: 144 * 1024 } });
-  const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route] });
-  let second = null;
-  try {
-    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-    await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    second = await s.context.newPage();
-    await second.goto(`${s.origin}/#/positions/3202568`);
-    await s.page.evaluate(() => { location.hash = '#/positions/3202568'; });
-    const started = Date.now();
-    const drawn = [];
-    for (const page of [s.page, second]) {
-      if (await page.locator('[data-fees-card][data-fees-state="verified"]').waitFor({ timeout: 150_000 }).then(() => false, () => true)) {
-        // Measured without the shared pace (2026-09-25): the first refusal came 3 s in, and both cards stayed estimated.
-        const states = await Promise.all([s.page, second].map((one) => one.locator('[data-fees-card]').first().getAttribute('data-fees-state').catch(() => 'none')));
-        assert.fail(`not exact: ${states.join(', ')}; ${chain.refusals.length} refused, the first ${chain.refusals[0] ? chain.refusals[0].at - started : '-'} ms in`);
-      }
-      drawn.push(Date.now() - started);
-    }
-    const read = chain.log.filter((call) => call.method === 'eth_getLogs').reduce((sum, call) => sum + call.bytes, 0);
-    console.log(`# two tabs: exact after ${drawn.join(' and ')} ms, ${Math.round(read / 1024)} kB of logs, ${chain.refusals.length} refused`);
-    assert.ok(read > 2 * 400 * 1024, `both tabs read the life (${read} B)`);
-    assert.deepEqual(chain.refusals, [], 'no call of either tab was refused, the page’s own reads among them');
-    for (const page of [s.page, second]) assert.match(await page.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT/);
-    assert.deepEqual(chain.refused, [], 'nothing but the reads');
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
-  } finally {
-    await second?.close();
-    await s.close();
-  }
-});
-
-// Review of 2026-09-25: the fees replays ran in the visitor's browser with two requests in flight per history and four
-// tries per refused call, used up the public RPC's per-address limit, and the RPC then refused the page's own list and
-// position reads too (the list took 7.4 s to come back; a busy position's card loaded for minutes). Here the chain
-// limits one address as the RPC does (a budget of reply bytes a reply may overdraw, refused with the allow-origin
-// `*,*` a browser cannot read) and the position's pool has a long liquidity history. While it is replayed, the list and
-// the position's page come back within about two seconds; once the RPC refuses the replay, the card stops loading at
-// once (the band keeps the unclaimed figure) and the worker asks nothing more.
-// Changed on purpose (2026-09-25, later): the page's budget is 2 MB and a probe comes first. This pool is quiet now (the
-// probe lets the replay start) and its history, 1.7 MB, is read for a while under the budget.
-test('while a busy history is replayed the list and the position’s page come back at once, and a refusal ends the replay instead of a card loading for minutes', async () => {
-  // A long history the probe does not see (quietProbe, 2026-09-25): the exact replay of the pool's epochs is chosen.
-  const history = busyHistory({ tokenId: OWNED_OPEN, key: STUB_KEY, owner: OWNER, perEpoch: 200, quietProbe: true });
-  const chain = browserChain({ positions: [onChain(OWNED_OPEN)], tokens: TOKENS, history, limit: { capacity: 256 * 1024, perSecond: 400 * 1024 } });
-  const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route] });
-  // The pool's epochs: Initialize, ModifyLiquidity and ProtocolFeeUpdated (the probe asks five kinds, the swap days two).
-  const poolLogs = () => chain.log.filter((call) => call.method === 'eth_getLogs' && epochRead(call.params[0])).length;
-  const within = async (what, locator, ms) => {
-    const started = Date.now();
-    await locator.waitFor({ timeout: 15_000 });
-    const took = Date.now() - started;
-    assert.ok(took < ms, `${what} in ${took} ms`);
-    return took;
-  };
-  try {
-    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-    await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    await connectWallet(s.page);
-    await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 15_000 });
-
-    // The position's page: its state at once, then its fees card loading while the worker reads the pool's epochs.
-    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
-    await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`).waitFor({ timeout: 15_000 });
-    await s.page.locator('[data-fees-card][data-fees-state="loading"]').waitFor({ timeout: 15_000 });
-    for (let i = 0; i < 150 && poolLogs() < 3; i++) await new Promise((done) => setTimeout(done, 100));
-    assert.ok(poolLogs() >= 3, 'the pool’s epochs are being read');
-
-    // Back to the list, and to the position again, while its epochs are still read: each within about two seconds.
-    await s.page.evaluate(() => { location.hash = '#/positions'; });
-    const listed = await within('the list', s.page.locator('[data-owned="ready"]'), 2_500);
-    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
-    const shown = await within('the position’s page', s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`), 2_500);
-    const readBefore = poolLogs();
-    await s.page.locator('[data-fees-card][data-fees-state="loading"]').waitFor({ timeout: 5_000 });
-    for (let i = 0; i < 100 && poolLogs() === readBefore; i++) await new Promise((done) => setTimeout(done, 100));
-    assert.ok(poolLogs() > readBefore, `the replay went on meanwhile (list ${listed} ms, page ${shown} ms)`);
-    // Paced by bytes (changed on purpose, 2026-09-25: a pool's epochs may be asked in capped tenths, small replies a few
-    // milliseconds apart within the lane's burst): the worker's pool log reads never ran ahead of the lane's burst and
-    // rate (lib/chain/browser.ts LANE_PACE), by more than the one reply that may overdraw it.
-    const reads = chain.log.filter((call) => call.method === 'eth_getLogs' && epochRead(call.params[0]));
-    let read = 0;
-    for (const [i, call] of reads.entries()) {
-      const allowed = LANE_PACE.burstBytes + (LANE_PACE.bytesPerSecond * (call.at - reads[0].at)) / 1000 + Math.max(0, ...reads.slice(0, i).map((r) => r.bytes));
-      assert.ok(read <= allowed, `read ${read} B before call ${i} at +${call.at - reads[0].at} ms: over the lane's pace (${Math.round(allowed)} B)`);
-      read += call.bytes;
-    }
-    assert.ok(reads.every((call) => call.bytes < 256 * 1024), `no large reply: ${Math.max(...reads.map((call) => call.bytes))} B at most`);
-
-    // The RPC starts refusing this address. The replay ends at the first refusal: no card left loading, nothing asked
-    // again by the worker, and the band still shows the chain's unclaimed fees.
-    const refusedBefore = chain.refusals.length;
-    chain.limit = { capacity: 256 * 1024, perSecond: 1, tokens: -1 };
-    const stopped = Date.now();
-    await s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 10_000 });
-    const took = Date.now() - stopped;
-    assert.ok(took < 5_000, `the card stopped loading ${took} ms after the first refusal`);
-    // Changed on purpose 2026-09-28 (speed wave B, item 19): nothing asked again during the lane's first rest (2.5 s; 6 s
-    // since 2026-09-29, with hotfix/charts), after which the store asks the run once more (its first retry).
-    await new Promise((done) => setTimeout(done, Math.max(0, LANE_PACE.firstRestMs - took - 300)));
-    const refused = chain.refusals.slice(refusedBefore);
-    assert.equal(refused.length, 1, `one refused request, and nothing asked again during the rest: ${refused.map((r) => r.method).join(', ')}`);
-    assert.match(await s.page.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
-    // Changed on purpose (2026-09-25, the owner: the card loaded, then vanished): the card stays, with the chain's
-    // unclaimed figure and a flat, quiet plot where no history can be drawn.
-    const quietCard = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"]');
-    assert.equal(await quietCard.count(), 1, 'the card stays');
-    assert.equal(await quietCard.locator('[data-fees-quiet]').count(), 1, 'its plot flat and quiet');
-    // Changed on purpose at the integration (2026-09-27): the card's row says "Ready to collect", the key figures' words.
-    assert.match(await quietCard.innerText(), /fees earned[\s\S]*ready to collect/i);
-
-    // The RPC lets this address in again: the list is read at once.
-    chain.limit = null;
-    await s.page.evaluate(() => { location.hash = '#/positions'; });
-    await within('the list after the refusals', s.page.locator('[data-owned="ready"]'), 2_500);
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
-  } finally { await s.close(); }
-});
-
-// Changed on purpose (2026-09-25, review of r3/chain, option a): the Positions list replays no fees history. Its
-// aggregate card replayed every open position's history from the visitor's own browser, which the public RPC's
-// per-address limit could not bear (PONS/USDG's history is over 60 MB), and its refusals then held back the list's own
-// reads. Each row shows its unclaimed fees from the list's read; no Transfer or pool log is asked, and no Fees card.
-test('the list replays no fees history: each row shows its unclaimed fees from the list’s read, no log is asked, and no Fees card', async () => {
-  const usdgKey = (fee) => ({ currency0: zeroAddress, currency1: USDG, fee, tickSpacing: 60, hooks: zeroAddress });
-  const chain = browserChain({ positions: [onChain('5', { key: usdgKey(3000), unclaimed: [0n, 2_500_000n] }), onChain('7', { key: usdgKey(500) })], tokens: { [USDG]: { symbol: 'USDG', decimals: 6 } } });
-  const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route] });
-  const workers = [];
-  s.page.on('worker', (worker) => workers.push(worker.url()));
-  try {
-    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-    await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    await connectWallet(s.page);
-    await s.page.locator('[data-owned="ready"]').waitFor({ timeout: 15_000 });
-    assert.deepEqual((await s.page.getByRole('tab').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim()), ['Open 2', 'Closed 0']);
-    assert.match(await s.page.locator('a[data-position-row="5"]').innerText(), /2\.5 USDG|\$2\.50/, 'the row’s unclaimed fees, from the list’s read');
-    await new Promise((done) => setTimeout(done, 3_000));
-    const logs = chain.log.filter((call) => call.method === 'eth_getLogs' && call.params[0].topics?.[0] !== SETUP_MINTED_TOPIC);
-    assert.deepEqual(logs, [], 'no Transfer, pool or swap log: nothing is replayed for the list');
-    // Changed on purpose 2026-09-28 (speed wave B, item 37): Positions creates the replay worker as it opens (its file in
-    // beside the page's chunk); it is sent nothing to replay for the list, and reads nothing (no log above).
-    assert.ok(workers.length <= 1, `the one worker Positions opens with, at most: ${workers.join(', ')}`);
-    assert.equal(await s.page.locator('[data-fees-card]').count(), 0, 'and no Fees card');
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
-  } finally { await s.close(); }
-});
-
-// 2026-09-25 (the owner's positions must never go missing again): a position in a pool busy now (PONS/USDG's history is
-// over 60 MB) can never verify in a browser. Its page probes the pool's last minutes before reading any of its
-// history, and stops there: no pool epoch is read, the card never loads for long, the band keeps the unclaimed figure,
-// and the list and the page come back at once, with no refusal of the page's reads. 2026-09-25, later: past the probe
-// the price path asks only the NFT's own settlements and the Swaps of its life (tests/fees-path.test.mjs).
-test('a history the probe says cannot verify is never read: no pool epoch, no card loading for long, the list and the page at once', async () => {
-  const history = busyHistory({ tokenId: OWNED_OPEN, key: STUB_KEY, owner: OWNER, recent: 40 });
-  const chain = browserChain({ positions: [onChain(OWNED_OPEN)], tokens: TOKENS, history, limit: { capacity: 256 * 1024, perSecond: 400 * 1024 } });
-  const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route] });
-  const asked = (kinds) => chain.log.filter((call) => call.method === 'eth_getLogs' && Array.isArray(call.params[0].topics[0]) && call.params[0].topics[0].length === kinds).length;
-  const within = async (what, locator, ms) => {
-    const started = Date.now();
-    await locator.waitFor({ timeout: 15_000 });
-    const took = Date.now() - started;
-    assert.ok(took < ms, `${what} in ${took} ms`);
-    return took;
-  };
-  try {
-    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-    await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    await connectWallet(s.page);
-    await within('the list', s.page.locator('[data-owned="ready"]'), 5_000);
-    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
-    await within('the position’s page', s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`), 2_500);
-    // The probe (five kinds of log) is asked, then no card is left loading, quickly.
-    for (let i = 0; i < 150 && asked(5) === 0; i++) await new Promise((done) => setTimeout(done, 100));
-    assert.equal(asked(5), 1, 'one probe');
-    const probe = chain.log.find((call) => call.method === 'eth_getLogs' && call.params[0].topics[0].length === 5).params[0];
-    assert.equal(Number(probe.toBlock) - Number(probe.fromBlock) + 1, 3_600, 'of the pool’s last 3,600 blocks, six minutes');
-    await s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 5_000 });
-    await new Promise((done) => setTimeout(done, 2_000));
-    assert.equal(chain.log.filter((call) => call.method === 'eth_getLogs' && epochRead(call.params[0])).length, 0, 'no epoch of the pool’s history is read');
-    assert.equal(chain.log.filter((call) => call.method === 'eth_getLogs' && swapRead(call.params[0])).length, 0, 'nor any swap day');
-    assert.match(await s.page.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
-    // Changed on purpose (2026-09-25): past the probe, the price path asks the NFT's own settlements (none here: this
-    // recording has no ModifyLiquidity of its own), and the card stays, with its unclaimed figure and a quiet plot.
-    const quietCard = s.page.locator('[data-fees-card][data-fees-state="unclaimed-only"]');
-    assert.equal(await quietCard.count(), 1, 'the card stays, no chart');
-    assert.equal(await quietCard.locator('[data-fees-quiet]').count(), 1);
-    // Back to the list, and to the page again: each at once, and nothing of the page's was refused.
-    await s.page.evaluate(() => { location.hash = '#/positions'; });
-    await within('the list again', s.page.locator('[data-owned="ready"]'), 2_500);
-    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
-    await within('the position’s page again', s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`), 2_500);
-    assert.deepEqual(chain.refusals, [], 'no read was refused');
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
-  } finally { await s.close(); }
-});
-
-// 2026-09-28: the DNS of Vivo, one of Brazil's largest ISPs, answers NXDOMAIN for every host under chain.robinhood.com. On
-// that network the page met net::ERR_NAME_NOT_RESOLVED for the chain's own RPC: Your positions "couldn't be read", and a
-// position's fees read nothing. The owner asked for no backend change and the same screens: the page now reads through
-// the chain's public fallbacks while its own RPC cannot be reached (src/lib/chain/endpoints.ts and failover.ts), each
-// answering here as it was measured that day (tests/support/fallbacks.mjs), and the list finds the wallet's ids in
-// DominoSetupV1's own state, since none of them reads the millions of blocks of logs the list's first scan asks.
-test('the chain’s own RPC behind a name that does not resolve: Your positions, a position’s page and its fees card read through the public fallbacks, word for word as through the RPC, the list from DominoSetupV1’s state and not one log', async () => {
-  const make = () => browserChain({ positions: [onChain(OWNED_OPEN), ...OWNED_CLOSED.slice(0, 3).map((id) => closedOnChain(id))], tokens: TOKENS, operations: true });
-  const seen = async (chain) => {
-    const site = siteRoutes();
-    const s = await scenario({ chain, routes: [site.route] });
-    try {
-      await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-      await s.page.locator('[data-empty="owned-connect"]').waitFor();
-      await recordList(s.page);
-      await connectWallet(s.page);
-      await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
-      await s.page.locator(`[data-position-automation="${OWNED_OPEN}"] a[data-automate-entry]`).waitFor({ timeout: 15_000 });
-      const list = { seen: await listSeen(s.page), rows: await ownedRows(s.page), text: await s.page.locator('[data-owned]').innerText() };
-      await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
-      await s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`).waitFor({ timeout: 15_000 });
-      await s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card]').length > 0 && document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 45_000 });
-      const page = { stats: await s.page.locator('[data-position-stats]').innerText(), card: await s.page.locator('[data-fees-card]').first().getAttribute('data-fees-state') };
-      const text = await s.page.locator('main').innerText();
-      assert.doesNotMatch(text, FORBIDDEN);
-      assert.deepEqual(site.asked, [], 'no route of the site is asked');
-      return { list, page, text };
-    } finally { await s.close(); }
-  };
-  const direct = make();
-  const expected = await seen(direct);
-  const through = make();
-  through.primary = 'dns';
-  const read = await seen(through);
-  assert.deepEqual(read.list, expected.list, 'the list: the loading rows, then the same rows, word for word');
-  assert.equal(read.page.stats, expected.page.stats, 'the position’s figures, word for word');
-  assert.match(read.page.stats, /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
-  assert.ok(['unclaimed-only', expected.page.card].includes(read.page.card), `the fees card as the RPC gives it, or its unclaimed figure alone (${read.page.card})`);
-  assert.ok(direct.scans(OWNER) >= 1, 'through the RPC: its SetupMinted logs');
-  assert.equal(through.scans(OWNER), 0, 'through the fallbacks: not one SetupMinted log, the ids from DominoSetupV1’s state');
-  assert.ok(through.primaryAsked.length > 0, 'the chain’s own RPC was asked first');
-  assert.ok(through.fallbackLog.length > 0 && through.fallbackLog.every((call) => FALLBACK_URLS.includes(call.host)), 'then only the three fallbacks');
-  assert.ok(through.fallbackLog.some((call) => call.host === PUBLICNODE && call.method === 'eth_call'), 'the state near the head at publicnode');
-  const wide = through.fallbackLog.filter((call) => call.method === 'eth_getLogs' && Number(call.params[0].toBlock) - Number(call.params[0].fromBlock) + 1 > (call.host === ORDOFI ? 5_000 : 100));
-  assert.deepEqual(wide, [], 'no range wider than a fallback reads in one call was sent');
-  assert.deepEqual(direct.fallbackLog, [], 'with the RPC there, no fallback is asked');
-  assert.deepEqual(through.refused, [], 'nothing but the reads');
-});
-
-// 2026-09-28 (fix/vivo-release): the same outage, and its end, in one page. While the chain's own RPC cannot be reached,
-// Your positions, a position's header and figures and its fees card (its unclaimed figure: this chain keeps no history,
-// the next test replays one) are drawn through the public fallbacks; once it answers again, the page's quiet probe
-// (lib/chain/failover.ts, FIRST_DOWN_MS after the RPC was found unreachable) finds it on the list's next read, and every
-// read of the page after that goes to it and to no fallback.
-test('the chain’s own RPC unreachable, then back: Your positions, a position’s header and figures and its fees card are drawn through the fallbacks, and once the RPC answers again the page’s reads go back to it', async () => {
+// 2026-09-28: the DNS of Vivo, one of Brazil's largest ISPs, answered NXDOMAIN for every host under chain.robinhood.com,
+// and the page read through the chain's public fallbacks while its own RPC could not be reached (two scenarios here).
+// Changed on purpose (RPC-SPEC §3.4, 2026-10-01, the owner's rule: nothing is read from a public RPC): one scenario. The
+// site's chain routes without their node (no secret yet, or the node away: every route answers 503 source_unavailable)
+// show the calm states, never "No positions", and no public node is asked; once the node is there, the list, a position's
+// header and figures and its fees card are drawn from the routes.
+test('the site’s chain routes without their node, then with it: Your positions, a position’s header and figures and its fees card go from their calm states to drawn, and no public node is asked', async () => {
   const open = onChain(OWNED_OPEN);
   const chain = browserChain({ positions: [open, ...OWNED_CLOSED.slice(0, 3).map((id) => closedOnChain(id))], tokens: TOKENS, operations: true });
-  chain.primary = 'dns';
+  // The node away: every chain route answers 503 (RPC-SPEC §2.2). Until UNIT fees lands, a position's state and its fees
+  // history are still read from the chain's RPC by the page: that fails too (a 500, never a rate refusal), as the node.
+  chain.edge = 'off';
+  chain.outage = 500;
   const site = siteRoutes();
   const s = await scenario({ clock: true, refresh: true, chain, routes: [site.route] });
-  // What the chain's own RPC is sent once it answers again: each POST's methods, in order (the reach probe, a GET, aside).
-  const answered = [];
-  await s.context.route(/^https:\/\/rpc\.mainnet\.chain\.robinhood\.com\/?$/, (route) => {
-    const request = route.request();
-    if (chain.primary !== 'dns' && request.method() === 'POST') answered.push([JSON.parse(request.postData() ?? 'null')].flat().map((call) => call?.method));
-    return route.fallback();
-  });
-  const feesDrawn = () => s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card]').length > 0 && document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 45_000 });
+  const feesSettled = () => s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card]').length > 0 && document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 45_000 });
+  try {
+    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+    await s.page.locator('[data-empty="owned-connect"]').waitFor();
+    await recordList(s.page);
+    await connectWallet(s.page);
+    // The list: its calm line at once (the route named a wait of minutes), over no row and never the empty state.
+    const card = s.page.locator('[data-owned]');
+    await card.locator('[data-owned-note="unread"]').waitFor({ timeout: 20_000 });
+    assert.equal(await card.locator('[data-owned-note]').innerText(), 'Your positions couldn’t be read right now.');
+    assert.deepEqual([await card.getAttribute('data-owned'), await card.getAttribute('data-owned-reason')], ['unlisted', 'chain_unavailable']);
+    assert.equal(await card.locator('[data-empty], a[data-position-row]').count(), 0, 'never “No positions”');
+    assert.ok((await listSeen(s.page)).every((what) => !/owned-none/.test(what)), 'never the empty state');
+    assert.equal(await s.page.getByRole('button', { name: /^(Retry|Refresh|Try again|Read again)$/ }).count(), 0, 'no Retry');
+
+    // A position's page: its calm state, and the fees card's.
+    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
+    await s.page.locator('[data-empty="position-unread"]').waitFor({ timeout: 30_000 });
+    assert.match(await s.page.locator('[data-empty="position-unread"]').innerText(), /Its details could not be read just now\./);
+    assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
+    assert.ok(chain.edgeLog.includes('/api/owned/v2/positions'), 'the list asked the site’s route');
+
+    // The node is there: the page's next reads draw the position, its figures and its fees card, then the list.
+    chain.edge = 'up';
+    chain.outage = null;
+    await jump(s.page, '05:01', { pending: true });
+    const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
+    await detail.waitFor({ timeout: 30_000 });
+    assert.match(await detail.locator('.dm-pos-name').innerText(), new RegExp(`#${OWNED_OPEN}`));
+    assert.equal(await detail.locator('[data-position-status]').getAttribute('data-position-status'), 'in-range');
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+<?[\d.,]+ ETH/);
+    await feesSettled();
+    const fees = await detail.locator('[data-fees-card]').first().getAttribute('data-fees-state');
+    assert.ok(!['loading', 'unavailable'].includes(fees), `the fees card is drawn (${fees})`);
+    await s.page.evaluate(() => { location.hash = '#/positions'; });
+    await s.page.locator(`[data-owned="ready"][data-owned-block="${chain.head}"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
+    assert.equal(await s.page.locator('[data-owned] [data-owned-note]').count(), 0, 'and no line over the chain’s list');
+    assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
+    assert.deepEqual(chain.publicAsked, [], 'no public RPC, ever');
+    assert.deepEqual(site.asked, [], 'nothing reached the server behind the site’s routes');
+    assert.deepEqual(chain.refused, [], 'nothing but the reads');
+  } finally { await s.close(); }
+});
+
+// 2026-09-28 (fix/vivo-release): a position's page with the chain's own RPC unreachable, drawn through the fallbacks.
+// Changed on purpose (RPC-SPEC P2, 2026-10-01): with the site's chain routes without their node, the page draws the read
+// gateway's row of the NFT (read-v1 `nft-positions`, its pool's `pool-market` and its token's `token`: the page's other
+// source), at the gateway's own block and with no action on it, until its own read answers; then that answer in its place.
+test('a position’s page with the site’s chain routes without their node: the read gateway’s row, with no action on it, then the page’s own read in its place once the node is there', async () => {
+  const { liveNft } = await import('./support/edge-busy.mjs');
+  const chain = browserChain({ positions: [onChain(OWNED_OPEN)], tokens: TOKENS });
+  // The node away (RPC-SPEC §2.2); until UNIT fees lands, the page's own state read is the chain's RPC: a 500 there.
+  chain.edge = 'off';
+  chain.outage = 500;
+  const NFTS = readGateway('nft-positions.success');
+  assert.equal(NFTS.items[0].poolId, STUB_POOL_ID, 'the recorded NFT is in the stub’s pool');
+  const read = createReadStub({ answer: (route, body) => (route === 'nft-positions' ? liveNft(NFTS, { ...NFTS.items[0], tokenId: body.tokenIds[0], owner: OWNER, poolKey: STUB_KEY }) : undefined) });
+  const site = siteRoutes();
+  const s = await scenario({ clock: true, chain, routes: [site.route, (request, url) => read.handle(request, url)] });
   try {
     await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
     await s.page.locator('[data-empty="owned-connect"]').waitFor();
     await connectWallet(s.page);
-    await s.page.locator(`[data-owned="ready"][data-owned-block="${chain.head}"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
-    const rows = await ownedRows(s.page);
-    assert.ok(rows.some((row) => row.startsWith(`${OWNED_OPEN} `)), 'the open position’s row');
-    assert.equal(chain.scans(OWNER), 0, 'the ids from DominoSetupV1’s state, not one SetupMinted log');
-    assert.ok(chain.primaryAsked.length > 0, 'the chain’s own RPC was asked first');
-    assert.ok(chain.fallbackLog.length > 0 && chain.fallbackLog.every((call) => FALLBACK_URLS.includes(call.host)), 'then only the three fallbacks');
-
-    // The position's page: its header (pair, fee, id, state), its figures and its fees card, through the fallbacks.
     await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
     const detail = s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"]`);
-    await detail.waitFor({ timeout: 15_000 });
-    await feesDrawn();
-    const header = await detail.locator('.dm-pos-name').innerText();
-    assert.match(header, new RegExp(`#${OWNED_OPEN}`));
-    assert.equal(await detail.locator('[data-position-status]').getAttribute('data-position-status'), 'in-range');
-    const stats = await detail.locator('[data-position-stats]').innerText();
-    assert.match(stats, /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
-    const card = await detail.locator('[data-fees-card]').first().getAttribute('data-fees-state');
-    assert.ok(!['loading', 'unavailable'].includes(card), `the fees card is drawn (${card})`);
+    const at = (block) => s.page.locator(`[data-position-detail][data-position-id="${OWNED_OPEN}"][data-snapshot="${block}"]`);
+    // The gateway's row: its own block, the pair, the range and the fees ready to collect, and no action for the owner.
+    await at(NFTS.snapshot.number).waitFor({ timeout: 30_000 });
+    assert.match(await detail.locator('.dm-pos-name').innerText(), /ETH/);
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+<?[\d.,]+ ETH/);
+    assert.equal((await detail.locator('[data-ticks]').textContent()).trim(), '-60 to 60');
+    assert.equal(await detail.locator('[data-position-actions]').count(), 0, 'no action on the gateway’s row');
+    assert.deepEqual(nftReads(read), [[OWNED_OPEN]], 'the gateway asked once');
     assert.doesNotMatch(await s.page.locator('main').innerText(), FORBIDDEN);
-    assert.deepEqual(answered, [], 'nothing reached the chain’s own RPC while its name did not resolve');
 
-    // The RPC answers again. Back on the list, its next read (30 s on, past the RPC's first down period) finds it with
-    // the page's quiet probe. Each read below brings new fees, so the list draws it (the same answer draws nothing).
-    chain.primary = 'up';
-    await s.page.evaluate(() => { location.hash = '#/positions'; });
-    await s.page.locator(`[data-owned="ready"] a[data-position-row="${OWNED_OPEN}"]`).waitFor();
-    const ids = (list) => list.map((row) => row.split(' ')[0]);
-    const refreshed = async (unclaimed, title) => {
-      await s.page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'));
-      open.unclaimed = [unclaimed, 0n];
-      chain.head += 120;
-      await jump(s.page, '00:31');
-      await s.page.locator(`[data-owned="ready"][data-owned-block="${chain.head}"] a[data-position-row="${OWNED_OPEN}"]`).waitFor({ timeout: 20_000 });
-      assert.equal(await rowFees(s.page), title);
-      assert.deepEqual(ids(await ownedRows(s.page)), ids(rows), 'the same positions');
-    };
-    await refreshed(1_267_650_600_228n, '0.000001267650600228');
-    assert.ok(answered.some((methods) => methods.length === 1 && methods[0] === 'eth_blockNumber'), 'the page’s quiet probe reached the RPC');
-
-    // From here every read of the page goes to the RPC: the list's next read, whole, and the position's page again (its
-    // fees card's worker, let go while the list was shown, starts afresh).
-    const fallbackAt = chain.fallbackLog.length;
-    const answeredAt = answered.length;
-    const scans = chain.scans(OWNER);
-    await refreshed(1_901_475_900_342n, '0.000001901475900342');
-    assert.ok(answered.length > answeredAt, 'the RPC answered the list’s read');
-    assert.equal(chain.scans(OWNER), scans + 1, 'the list’s read asks the RPC its SetupMinted logs again');
-    assert.deepEqual(chain.fallbackLog.slice(fallbackAt), [], 'the list’s read asked no fallback');
-    const listed = answered.length;
-    await s.page.evaluate((id) => { location.hash = `#/positions/${id}`; }, OWNED_OPEN);
-    await detail.waitFor({ timeout: 15_000 });
-    await feesDrawn();
-    // The automation chip comes from its own read, which can land after the fees card on a slow runner (CI, 2026-09-28).
-    await detail.locator('.dm-pos-name', { hasText: header.split('\n').pop() }).waitFor({ timeout: 15_000 });
-    assert.equal(await detail.locator('.dm-pos-name').innerText(), header, 'the same header, word for word');
-    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+[\d.,]+ ETH/);
-    assert.ok(answered.length > listed, 'the RPC answered the position’s page');
-    assert.deepEqual(chain.fallbackLog.slice(fallbackAt), [], 'nothing of the page asked a fallback');
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
-  } finally { await s.close(); }
-});
-
-// 2026-09-28 (fix/vivo-release): the fees card's own reads, in the fees worker, which has a router of its own. A recorded
-// position (NFT 3325113) opened with the chain's own RPC unreachable: its header and figures are drawn through the
-// public fallbacks, and its fees card keeps the chain's unclaimed figure (none of the fallbacks reads a history's weeks of
-// logs within the budgets). Once the RPC answers again, the card's next run finds it (the worker's router probes it
-// when a call only it serves is asked) and reads the history there: the chart is drawn, as with the RPC there all along.
-test('a position’s page with the chain’s own RPC unreachable, then back: its header, figures and fees card are drawn through the fallbacks, and once the RPC answers again the card’s next run reads the history at the RPC and draws the chart', async () => {
-  const chain = caseChain('3325113');
-  chain.primary = 'dns';
-  const site = siteRoutes();
-  const s = await scenario({ chain, routes: [site.route] });
-  // What the chain's own RPC is sent once it answers again: each POST's methods (the reach probe, a GET, aside).
-  const answered = [];
-  await s.context.route(/^https:\/\/rpc\.mainnet\.chain\.robinhood\.com\/?$/, (route) => {
-    const request = route.request();
-    if (chain.primary !== 'dns' && request.method() === 'POST') answered.push([JSON.parse(request.postData() ?? 'null')].flat().map((call) => call?.method));
-    return route.fallback();
-  });
-  try {
-    await s.context.route(ARTWORK, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-    await s.page.locator('[data-empty="owned-connect"]').waitFor();
-    await s.page.evaluate(() => { location.hash = '#/positions/3325113'; });
-    const detail = s.page.locator('[data-position-detail][data-position-id="3325113"]');
-    await detail.waitFor({ timeout: 15_000 });
-    await s.page.waitForFunction(() => document.querySelectorAll('[data-fees-card]').length > 0 && document.querySelectorAll('[data-fees-card][data-fees-state="loading"]').length === 0, null, { timeout: 45_000 });
-    const header = await detail.locator('.dm-pos-name').innerText();
-    assert.match(header, /#3325113/);
-    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT/);
-    const card = detail.locator('[data-fees-card]').first();
-    assert.equal(await card.getAttribute('data-fees-state'), 'unclaimed-only', 'the card keeps the chain’s unclaimed figure');
-    assert.ok(chain.primaryAsked.length > 0, 'the chain’s own RPC was asked first');
-    assert.ok(chain.fallbackLog.length > 0 && chain.fallbackLog.every((call) => FALLBACK_URLS.includes(call.host)), 'then only the three fallbacks');
-    assert.deepEqual(answered, [], 'nothing reached the chain’s own RPC while its name did not resolve');
-
-    // The RPC answers again: the card's next run reads the history there, and the chart is drawn.
-    chain.primary = 'up';
-    await detail.locator('[data-fees-card][data-fees-state="verified"]').first().waitFor({ timeout: 90_000 });
-    assert.ok(answered.some((methods) => methods.includes('eth_getBlockByNumber')), 'the history’s block headers, at the RPC');
-    assert.ok(answered.some((methods) => methods.includes('eth_getLogs')), 'the history’s logs, at the RPC');
-    await detail.locator('.dm-pos-name', { hasText: header.split('\n').pop() }).waitFor({ timeout: 15_000 });
-    assert.equal(await detail.locator('.dm-pos-name').innerText(), header, 'the same header, word for word');
-    assert.deepEqual(chain.refused, [], 'nothing but the reads');
-    assert.deepEqual(site.asked, [], 'no route of the site is asked');
+    // The node is there: the page's own read, at the head, in place of the row, and the owner's actions with it.
+    chain.edge = 'up';
+    chain.outage = null;
+    await jump(s.page, '05:01', { pending: true });
+    await at(chain.head).waitFor({ timeout: 30_000 });
+    await detail.locator('[data-position-actions]').waitFor({ timeout: 15_000 });
+    assert.match(await detail.locator('[data-position-stats]').innerText(), /FEES READY TO COLLECT\s+<?[\d.,]+ ETH/);
+    assert.deepEqual(nftReads(read), [[OWNED_OPEN]], 'the gateway was not asked again over the page’s own read');
+    assert.deepEqual(chain.publicAsked, [], 'no public RPC, ever');
+    assert.deepEqual(site.asked, [], 'nothing reached the server behind the site’s routes');
   } finally { await s.close(); }
 });
 
@@ -7054,7 +8000,7 @@ test('the automation page lists the wallet’s open positions from the page’s 
     const option = s.page.locator('[data-sequence-position]');
     await option.first().waitFor({ timeout: 15_000 });
     assert.deepEqual(await option.evaluateAll((all) => all.map((button) => [button.getAttribute('data-sequence-position'), button.getAttribute('aria-checked')])), [['5', 'true']], 'the open one, chosen by the link; the closed one and someone else’s are not listed');
-    assert.equal(chain.scans(OWNER), 1);
+    assert.equal(chain.edgeLog.filter((path) => path === '/api/owned/v2/positions').length, 1);
     assert.deepEqual(site.asked, [], 'no route of the site is asked');
 
     // Another wallet, and a chain that refuses every read: loading while it is asked again, then one line; never "No open positions".
@@ -7070,6 +8016,7 @@ test('the automation page lists the wallet’s open positions from the page’s 
 });
 
 // ---- Receipts never blank (the owner, 2026-09-27, round 6) ------------------------------------------------------------------
+part('automation');
 //
 // The receipts page painted from nothing on every read, blanked whenever the tab was hidden (a window covering the browser counts)
 // and lost Show more's rows to the next refresh. Now what is shown stays through every read, a hidden tab and a failure; Show
@@ -7270,9 +8217,76 @@ test('Managed positions never flash empty: a hidden tab, a failed read and the w
     await s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]').getByRole('button', { name: 'Sign out', exact: true }).click();
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
     await s.page.keyboard.press('Escape');
-    await s.page.getByText('Sign in with your wallet to see your automated positions.', { exact: true }).waitFor();
-    await s.page.getByText('Sign in with your wallet to see your receipts.', { exact: true }).waitFor();
+    // Changed on purpose 2026-10-01 (the D2 follow-up): with nothing to show for the same reason, one line for both cards.
+    await s.page.getByText('Sign in with your wallet to see your automated positions and their receipts.', { exact: true }).waitFor();
     assert.deepEqual(await s.page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('domino.kept.v1.'))), ['domino.kept.v1.tokens']);
+  } finally { await s.close(); }
+});
+
+// 2026-10-01 (audit D2): connected and signed out, each card says to sign in and carries the button the audit asks for,
+// which opens the header's wallet dialog: signing in there fills both cards. Nothing private is read before.
+// Changed on purpose 2026-10-01 (the D2 follow-up): with nothing to show for the same reason, the two cards are one calm
+// line in one card, with its one Sign in; signing in puts both cards back, filled.
+test('connected and signed out, the cards’ one line offers Sign in, which opens the wallet dialog, and signing in there fills both cards', async () => {
+  const s = await scenario();
+  try {
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'no_wallet');
+    const dialog = s.page.locator('[role="dialog"][aria-labelledby="wallet-dialog-title"]');
+    const merged = s.page.locator('[data-automation-cards="merged"] [data-automation-empty]');
+    await s.page.locator('[data-automation-empty="no_wallet"]').waitFor();
+    await s.page.locator('header [aria-haspopup="dialog"]').click();
+    await dialog.getByRole('button', { name: 'Connect Test Wallet A', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out');
+    await s.page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'hidden' });
+    await s.page.locator('[data-automation-empty="signed_out"]').waitFor();
+    assert.equal((await merged.innerText()).replace(/\s+/g, ' ').trim(), 'Managed positions and receipts Sign in with your wallet to see your automated positions and their receipts. Sign in');
+    assert.equal(await s.page.locator('main').getByText(/^Sign in with your wallet to see your (automated positions|receipts)\.$/).filter({ visible: true }).count(), 0, 'not said twice');
+    assert.deepEqual(await Promise.all(['managed-title', 'receipts-title'].map((id) => s.page.locator(`section[aria-labelledby="${id}"]`).isVisible())), [false, false]);
+    assert.equal(await s.page.locator('[data-receipts-all]').isVisible(), false, 'no See all with nothing to list');
+    assert.deepEqual([s.calls.length, s.executions.length], [0, 0], 'nothing private is read while signed out');
+    await merged.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_in');
+    await s.page.keyboard.press('Escape');
+    await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"]').waitFor();
+    assert.equal(await s.page.locator('[data-automation-cards="split"]').count(), 1, 'both cards back, filled');
+    assert.equal(await s.page.locator('[data-automation-empty]').count(), 0);
+    assert.equal(await s.page.locator('[data-signed-out]').count(), 0);
+    assert.equal(await s.page.locator('[data-receipts-all]').isVisible(), true);
+    assert.equal(s.wallet.state.signed.length, 1, 'the one sign-in signature');
+  } finally { await s.close(); }
+});
+
+// 2026-10-01 (the D2 follow-up): signed in, with no automation and no receipt yet, Managed positions and Receipts have
+// nothing to show for the same reason: one calm line for both. A receipt read later puts both cards back.
+test('signed in with nothing automated and no receipt yet, the two cards are one calm line; a receipt read later puts both cards back', async () => {
+  const s = await scenario({ clock: true });
+  await s.context.route(/\/api\/performance\/v2\/epochs$/, async (route) => {
+    const answer = { ...fixture('responses/epochs'), owner: OWNER, enrollments: [] };
+    assert.ok(runtime.validateResponse('epochs', answer), 'the epochs answer is valid');
+    await route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', headers: { 'X-Domino-Performance-Contract': runtime.CONTRACT_VERSION }, body: JSON.stringify(answer) });
+  });
+  const pages = [[]];
+  await answerReceipts(s.context, pages);
+  try {
+    await login(s.page);
+    const merged = s.page.locator('[data-automation-empty="empty"]');
+    await merged.waitFor();
+    // Changed on purpose 2026-10-01 (integration pass 3, the copy review): the line is shorter, with "here" once.
+    assert.equal((await merged.innerText()).replace(/\s+/g, ' ').trim(), 'Managed positions and receipts Nothing here yet. Turn on Auto-compound for a position to follow it and its receipts here.');
+    assert.equal(await merged.locator('button').count(), 0, 'nothing to press');
+    assert.doesNotMatch(await merged.innerText(), FORBIDDEN);
+    await s.page.locator('section[aria-label="Execution receipts"][data-execution="ready"]').waitFor({ state: 'attached' });
+    assert.deepEqual(await Promise.all(['managed-title', 'receipts-title'].map((id) => s.page.locator(`section[aria-labelledby="${id}"]`).isVisible())), [false, false], 'the two cards stay, hidden, and go on reading');
+    await shootBoth(s.page, 'd2-nothing-yet', s.page.locator('.dm-acct-pair'));
+    // A receipt: read at the list's own next read (every five minutes while the tab is shown), it puts both cards back.
+    pages[0] = [receiptItem(2, 'reconciled', { block: 7346840, usdg: '16490000' })];
+    await jump(s.page, '05:01');
+    await s.page.locator('section[aria-label="Execution receipts"] [data-execution-intent]').first().waitFor();
+    assert.equal(await s.page.locator('[data-automation-cards="split"]').count(), 1);
+    assert.equal(await s.page.locator('[data-automation-empty]').count(), 0);
+    await s.page.getByText('Nothing here yet. Turn on Auto-compound for a position and how it does shows here.', { exact: true }).waitFor();
   } finally { await s.close(); }
 });
 
@@ -7318,7 +8332,8 @@ test('signing out or letting the wallet go on any page forgets every private cop
     await s.page.evaluate(() => { location.hash = '#/positions'; });
     await s.page.reload();
     await s.page.waitForFunction(() => window.__dominoSessionProbe?.view().status === 'signed_out', null, { timeout: 30_000 });
-    await s.page.getByText('Sign in with your wallet to see your receipts.', { exact: true }).waitFor();
+    // Changed on purpose 2026-10-01 (the D2 follow-up): signed out, the two cards are one line for both.
+    await s.page.getByText('Sign in with your wallet to see your automated positions and their receipts.', { exact: true }).waitFor();
     assert.deepEqual(await s.page.evaluate(() => window.__painted), [], 'a signed-out wallet’s receipts and positions never paint');
 
     // Signed in again, then another account picked in the wallet, on Markets: that session ends, and the same.

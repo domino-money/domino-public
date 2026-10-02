@@ -21,7 +21,7 @@ import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { TEXT_FILE, findForbidden } from '../scripts/deploy-markers.mjs';
-import { apiOf, close, go, leaving, open as openPage, problemsOf, reload, shown } from './page-watch.mjs';
+import { apiOf, close, dexOf, go, leaving, open as openPage, problemsOf, reload, shown } from './page-watch.mjs';
 import { CONTROL_VIEWPORTS, MOTION_CONTROL, textUnderMotionControl } from './motion-overlap.mjs';
 import { feesAnswer } from './support/fees/stub.mjs';
 
@@ -185,9 +185,10 @@ test('every route in the header renders', async () => {
     ['/', /Robinhood Chain/],
     ['/markets', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
     [`/markets/0x${'1'.repeat(40)}`, /Markets[\s\S]*Search the pool catalogue/],
-    // 2026-09-26 (featured pools v1, kept after review): a pool page with no token, for a pool outside the list, says
-    // today's words while the embedded list is on screen.
-    [`/pool/0x${'2'.repeat(64)}`, /Open this pool from Markets[\s\S]*is not one of the selected six, and this link names no token to verify it with\./],
+    // Changed on purpose 2026-10-01 (audit B8): a pool page with no token, for a pool outside the list, says in plain words
+    // how to open it once the list has answered and nothing can verify it by its id (no read service behind this
+    // server): no "selected six", no hex id.
+    [`/pool/0x${'2'.repeat(64)}`, /Open this pool from Markets[\s\S]*This link doesn’t say which token to check the pool with\./],
     ['/explore', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
     ['/pools', /Markets[\s\S]*Selected pools[\s\S]*Search the pool catalogue/],
     ['/positions', /Positions[\s\S]*Managed positions/],
@@ -428,7 +429,13 @@ test('the fonts are the site’s own files under /assets/, and Home loads them f
   const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
   const assets = readdirSync(join(DIST, 'assets'));
   const styles = assets.filter((file) => file.endsWith('.css')).map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
-  const faces = styles.match(/@font-face\{[^}]*\}/g) ?? [];
+  // 2026-10-01 (platform workstream, F9): and four faces of local fonts matched to them (src/styles/font-fallbacks.css),
+  // which load no file.
+  const allFaces = styles.match(/@font-face\{[^}]*\}/g) ?? [];
+  const local = allFaces.filter((face) => /src:local\(/.test(face));
+  assert.equal(local.length, 4, 'the four fallback faces');
+  for (const face of local) assert.doesNotMatch(face, /url\(/, 'a fallback face loads nothing');
+  const faces = allFaces.filter((face) => !local.includes(face));
   assert.equal(faces.length, 36, 'the 36 rules of src/styles/fonts.css');
   const urls = faces.map((face) => /src:url\((["']?)([^"')]+)\1\)\s*format\(["']?woff2["']?\)/.exec(face)?.[2]);
   for (const url of urls) assert.match(url ?? '', /^\/assets\/[\w-]+\.woff2$/, 'a woff2 file under /assets/');
@@ -809,13 +816,18 @@ const SELECTED = readFileSync(resolve(import.meta.dirname, '../src/config/select
 
 test('selected pool screens ask the featured list, check each needed namespace once and post nothing else when disconnected; New position asks the list; owner screens ask only their release; other routes ask nothing', async () => {
   const seen = [];
+  const dex = [];
   for (const route of ROUTES) {
     const page = await open(route);
     await reload(page, route);
     seen.push([route, apiOf(page)]);
+    dex.push(...dexOf(page));
     clean(page, `requests on ${route}`);
     await close(page);
   }
+  // Added 2026-10-01 (audit I3): artwork for a token with none bundled is asked through our own edge, one token a GET,
+  // and nothing else of it; never a figure while no read has answered.
+  assert.ok(dex.every((request) => /^GET \/api\/read\/dex\/token-pairs\/0x[0-9a-f]{40}$/.test(request)), dex.join(', '));
   // Per document: the first load and the reload each ask the list once and once per namespace, and post nothing else.
   const once = CAPABILITIES;
   assert.deepEqual(seen, [
@@ -861,7 +873,9 @@ test('the deployable build carries the live read path and the selected pools, no
   // The entry is the script index.html loads; a lazy chunk can be named
   // index-* too, because the module that opens it is called index.ts.
   const html = readFileSync(join(DIST, 'index.html'), 'utf8');
-  const entry = scripts.filter((file) => html.includes(file));
+  // Changed on purpose 2026-10-01 (platform workstream, F1/F4): the entry is the page's module script; the page also names
+  // its stable chunks (modulepreload) and every route's files (the boot script's table).
+  const entry = [...html.matchAll(/<script\b[^>]*\btype="module"[^>]*\bsrc="\/assets\/([^"]+)"/g)].map((match) => match[1]);
   const island = scripts.filter((file) => file.startsWith('WalletSessionIsland-'));
   // Wallet sign-in is the one lazily loaded chunk: a visitor who never opens
   // it never downloads it. Anything else split out is a chunk nobody asked for.
@@ -948,8 +962,11 @@ test('Automate shows the plain position, then its two cards and nothing under th
   assert.equal(ways[0].height, ways[1].height, `the two ways in: ${ways.map(({ height }) => height).join(' vs ')} px`);
   assert.equal(await page.locator('main .dm-inset, main .dm-acct-auto-note').count(), 0, 'no panel under the cards');
   assert.doesNotMatch(await page.locator('main').innerText(), /Setup checks the deployment/, 'no note under the cards');
-  assert.equal(await page.locator('[data-automation-card="compound"] .dm-acct-auto-fee dd').innerText(), '2% of earned fees consumed, once');
-  assert.equal(await page.locator('[data-automation-card="domino"] .dm-acct-auto-fee dd').innerText(), '4% of earned fees consumed, once');
+  // Changed on purpose 2026-10-01 (audit E4, live note L12): plain words, no "consumed", and no promise about the APR.
+  assert.equal(await page.locator('[data-automation-card="compound"] .dm-acct-auto-fee dd').innerText(), '2% of the fees it uses, once');
+  assert.equal(await page.locator('[data-automation-card="domino"] .dm-acct-auto-fee dd').innerText(), '4% of the fees it uses, once');
+  assert.deepEqual(await page.locator('[data-automation-card="compound"] .dm-acct-auto-points li').allInnerTexts(), ['Adds the fees your position has earned back into the same position, so it grows.', 'Uses earned fees only.']);
+  assert.doesNotMatch(await page.locator('main').innerText(), /improving|consumed|hold’s/, 'no broken possessive, no "consumed", no promise');
   // 2026-09-24 (the three features): the plain position leads the page, one line and one way in, New position, before the
   // two automations that start from it.
   const plain = page.locator('main [data-feature="plain"]');
@@ -1023,6 +1040,10 @@ test('the positions screen is an honest empty state: no cards, totals or private
   const empty = page.locator('[data-empty="owned-connect"]');
   await empty.waitFor();
   assert.equal(await page.locator('[data-owned]').getAttribute('data-owned'), 'no-wallet');
+  // Changed on purpose 2026-10-01 (audit D2 follow-up): with nothing to show for the same reason, here no wallet, Managed
+  // positions and Receipts are one calm line in one card, where two large empty cards said it twice.
+  const merged = page.locator('[data-automation-empty="no_wallet"]');
+  await merged.waitFor();
   const text = await page.locator('#root').innerText();
   assert.match(text, /Your positions\s+Connect a wallet to see your positions\s+Connect wallet/);
   assert.doesNotMatch(text, /Look up|Position NFTs|Enter its ID|NFT ids?\b/i, 'no typed ids asked for, anywhere');
@@ -1030,12 +1051,18 @@ test('the positions screen is an honest empty state: no cards, totals or private
   // The managed side asks for a wallet session and shows nothing private without one.
   // Changed on purpose (owner, 2026-09-27, round 5: plain words for people new to pools): the two sign-in sentences and the
   // two lines under the titles say what is there, with no "private", "execution" or "sequences".
-  assert.match(text, /Sign in with your wallet to see your automated positions\./);
-  assert.match(text, /Sign in with your wallet to see your receipts\./);
-  // Changed on purpose (qa:visual, Positions): one plain line under Managed positions and Receipts, and no hint under the Wallet field.
-  // The state rules those captions printed are titles now.
-  assert.match(text, /Managed positions[\s\S]*Last 24 hours[\s\S]*How your automated positions did in the last 24 hours\./);
-  assert.match(text, /Receipts[\s\S]*See all[\s\S]*What automation did for your positions\./);
+  // Changed on purpose 2026-10-01 (audit D2): each card says why there is no session, here no wallet; "Sign in" was said
+  // to every visitor, sign-in available or not. Connecting is the header's and the list's own Connect wallet, so the
+  // cards add no third and fourth (tests/session.browser.test.mjs drives the Sign in each card offers once connected).
+  // Changed on purpose 2026-10-01 (audit D2 follow-up): the two cards' sentences are one, in one card.
+  assert.match(text, /Managed positions and receipts\s+Connect your wallet to see your automated positions and their receipts\./);
+  assert.doesNotMatch(text, /Connect your wallet to see your (automated positions|receipts)\./, 'not said twice');
+  assert.equal(await page.locator('[data-automation-cards="merged"]').count(), 1);
+  assert.equal(await merged.locator('button').count(), 0, 'connecting is the header’s and the list’s own Connect wallet');
+  // The two cards stay on the page, hidden, and go on reading: either takes its place again once it has something.
+  assert.deepEqual(await Promise.all(['managed-title', 'receipts-title'].map((id) => page.locator(`section[aria-labelledby="${id}"]`).isVisible())), [false, false]);
+  // 2026-10-01 (audit D2): with no session there is nothing to list, so See all is not shown (it opened an empty page).
+  assert.equal(await page.locator('[data-receipts-all]').isVisible(), false);
   // 2026-09-27 (round 5): the Receipts card is a short Recent list; its See all opens every receipt on a page of its own.
   assert.equal(await page.locator('[data-receipts-all]').getAttribute('href'), '#/positions/receipts');
   assert.doesNotMatch(text, /Canonical receipts|unavailable values|never shown as completed|Sent exactly as typed|checksum|proves nothing/i, 'no caption about data states');
@@ -1059,11 +1086,19 @@ test('the positions screen is an honest empty state: no cards, totals or private
 // Added 2026-09-27 (owner, round 5: the receipts ran down the Positions tab forever): every receipt on a page of its own under
 // Positions, which the Receipts card's See all opens. Signed out it says how to see them, reads nothing, and keeps
 // Positions lit in the header; its one way back is Positions.
-test('the receipts page opens from the Receipts card, keeps Positions lit, and signed out asks for a sign-in and reads nothing', async () => {
+// Changed on purpose 2026-10-01 (audit D2): with no session the card's See all is hidden (it opened a page with nothing to
+// list), so the page is opened by its address here; with no wallet in this suite, it says to connect one.
+test('the receipts page keeps Positions lit, and with no wallet asks for one and reads nothing', async () => {
   const page = await open('/positions');
-  await page.locator('[data-receipts-all]').click();
+  // Changed on purpose 2026-10-01 (audit D2 follow-up): the cards' one line for both, with no wallet.
+  await page.locator('[data-automation-empty="no_wallet"]').waitFor();
+  assert.equal(await page.locator('[data-receipts-all]').isVisible(), false, 'no See all with nothing to list');
+  await page.evaluate(() => { location.hash = '#/positions/receipts'; });
   await page.waitForFunction(() => location.hash === '#/positions/receipts');
-  await page.getByText('Sign in with your wallet to see your receipts.', { exact: true }).waitFor();
+  // The hash changes before the page is drawn, and Positions' own Receipts card says the same sentence: wait for the
+  // page's heading first (audit H3; finance.browser read "Positions" there on CI, 2026-09-28).
+  await page.getByRole('heading', { level: 1, name: 'Receipts', exact: true }).waitFor();
+  await page.getByText('Connect your wallet to see your receipts.', { exact: true }).waitFor();
   assert.equal(await page.getByRole('heading', { level: 1 }).innerText(), 'Receipts');
   assert.equal(await page.getByRole('heading', { level: 2, name: 'All receipts' }).count(), 1);
   const nav = await page.locator('header nav[aria-label="Main"] a').evaluateAll((els) => els.map((a) => [a.textContent.trim(), a.getAttribute('aria-current')]));
@@ -1089,9 +1124,15 @@ test('the explanatory sections stay, in relative terms, and say plainly what is 
   // The landing page describes owner-scoped availability without claiming the service is on or off for everyone.
   // Changed on purpose (owner, round 6, 2026-09-27): the simulator names the automation in one plain line and wears no
   // pill, so the two automation feature cards say it (the How it works step is counted below).
-  assert.ok((text.match(/Per sequence/g) ?? []).length >= 2, 'the feature cards say so');
-  assert.equal(await page.locator('.dm-features .dm-pill', { hasText: 'Per sequence' }).count(), 2, 'Auto-compound and Domino-compound wear ROADMAP’s pill');
-  assert.equal(await page.locator('#learn .dm-pill', { hasText: 'Per sequence' }).count(), 1, 'the Automation step of How it works wears ROADMAP’s pill');
+  // Changed on purpose 2026-10-01 (audit E3): "Per sequence" named an internal scope; the pill says "Starts paused", and its
+  // title what that means.
+  assert.ok((text.match(/Starts paused/g) ?? []).length >= 2, 'the feature cards say so');
+  assert.equal(await page.locator('.dm-features .dm-pill', { hasText: 'Starts paused' }).count(), 2, 'Auto-compound and Domino-compound wear ROADMAP’s pill');
+  assert.equal(await page.locator('#learn .dm-pill', { hasText: 'Starts paused' }).count(), 1, 'the Automation step of How it works wears ROADMAP’s pill');
+  for (const title of await page.locator('.dm-features .dm-pill, #learn .dm-pill').evaluateAll((pills) => pills.map((pill) => pill.getAttribute('title')))) {
+    assert.equal(title, 'Each automation starts paused. Once Domino’s automation service is ready for it, its position’s page offers Turn on.');
+  }
+  assert.doesNotMatch(text, /Per sequence|never principal|the sequence stops at a cap/, 'plain words on Home');
   assert.doesNotMatch(text, /Not running|automation is running/i);
   // The pools card has no caption any more (the owner's decision on the redesign): each figure names its source and age in its own title.
   assert.doesNotMatch(text, /Every figure on this page names its source and its age|describes a pool, not a position, and is not a forecast/);
@@ -1105,7 +1146,7 @@ test('the explanatory sections stay, in relative terms, and say plainly what is 
   for (const words of [/Only ETH/, /Your range/, /Only USDG/, /−30%/, /\+50%/, /Start/, /What you hold/, /Auto-compound adds them back into your position/, /Domino-compound uses them to open your next range a step higher/]) {
     assert.match(sim, words);
   }
-  assert.doesNotMatch(sim, /×|Closer|Wider|Per sequence|Figures, and the other range|Domino steps in|Stablecoin|Token share/, 'no multiple, range switch, figure list, pill or old wording');
+  assert.doesNotMatch(sim, /×|Closer|Wider|Per sequence|Starts paused|Figures, and the other range|Domino steps in|Stablecoin|Token share/, 'no multiple, range switch, figure list, pill or old wording');
   assert.equal(await page.locator('#ranges input').count(), 1, 'one control: the price');
   assert.equal(await page.locator('#ranges details, #ranges button, #ranges [role="radiogroup"]').count(), 0, 'nothing folded away and no second control');
   assert.doesNotMatch(text, /MEME|Example token/, 'no example token');
@@ -1168,7 +1209,8 @@ test('the docs: every page opens from the sidebar with its title and its link ma
   assert.deepEqual(await sidebar.locator('a[aria-current="page"]').allInnerTexts(), ['Overview']);
   assert.equal(await page.locator('nav[aria-label="On this page"]').count(), 0, 'the index lists pages, not sections');
   const pages = links.slice(1);
-  assert.equal(pages.length, 16, `the sidebar lists ${pages.length} pages`);
+  // Changed on purpose 2026-10-01 (the copy workstream): Wallet requests, A pool’s page and Privacy joined the docs.
+  assert.equal(pages.length, 19, `the sidebar lists ${pages.length} pages`);
   const listed = await page.locator('main a[href^="#/docs/"]').evaluateAll((anchors) => [...new Set(anchors.filter((a) => !a.closest('nav[aria-label="Docs"]')).map((a) => a.getAttribute('href')))].sort());
   assert.deepEqual(listed, pages.map(([, href]) => href).sort(), 'the index itself links every page');
 
@@ -1381,4 +1423,150 @@ test('the docs on a phone: nothing spills sideways, nothing sticks, the docs men
   assert.equal(await page.locator('[role="dialog"]').count(), 0, 'nothing opens over the page');
   clean(page, 'docs on a phone');
   await close(page);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-01, platform workstream.
+// ---------------------------------------------------------------------------
+
+// Live notes L19: a link that names no page said nothing and showed Home (or Markets) as if it had worked.
+test('a route that names no page says so plainly, offers the ways on, and lights nothing in the header', async () => {
+  for (const route of ['/nope', '/receipts', '/markets/0xab', '/positionsx/1']) {
+    const page = await open(route);
+    assert.equal(await page.locator('h1').first().innerText(), 'This page doesn’t exist', route);
+    assert.equal(await page.locator('[data-not-found]').count(), 1, route);
+    assert.equal(await page.title(), 'Page not found · Domino', route);
+    assert.equal(await page.locator('#pools').count(), 0, `${route}: not Home`);
+    assert.equal(await page.locator('nav[aria-label="Main"] a[aria-current="page"]').count(), 0, `${route}: nothing lit`);
+    const links = await page.locator('main a').evaluateAll((list) => list.map((a) => [a.textContent.trim(), a.getAttribute('href')]));
+    assert.deepEqual(links, [['Go to Home', '#/'], ['Explore markets', '#/markets']], route);
+    clean(page, route);
+    await close(page);
+  }
+});
+
+// Audit E11 (2026-10-01, the copy workstream): every route was titled "Domino", and a move between routes told a screen
+// reader nothing. Each screen names its tab, and a later move is said once in a polite live region outside the app.
+test('each route names its tab, gives Home its own name back, and a move to another route is said in a polite region', async () => {
+  const page = await open('/markets');
+  await page.waitForFunction(() => document.title === 'Markets · Domino');
+  assert.equal(await page.locator('[data-route-announcer]').count(), 0, 'the first screen of a visit is not announced: the browser reads its title');
+  for (const [route, title] of [['/automate', 'Automate · Domino'], ['/positions', 'Positions · Domino'], ['/new', 'New position · Domino'], ['/docs/privacy', 'Privacy · Domino docs'], ['/', 'Domino']]) {
+    await go(page, route);
+    await page.waitForFunction((want) => document.title === want, title, { timeout: 10_000 });
+  }
+  const region = page.locator('[data-route-announcer]');
+  assert.equal(await region.count(), 1, 'one region, made once');
+  assert.deepEqual(await region.evaluate((node) => [node.getAttribute('aria-live'), node.getAttribute('aria-atomic'), node.className, node.closest('#root') === null]), ['polite', 'true', 'sr-only', true]);
+  await page.waitForFunction(() => document.querySelector('[data-route-announcer]')?.textContent === 'Domino');
+  // The older docs slug still opens Domino-compound (live note L12).
+  await go(page, '/docs/domino-compounder');
+  await page.waitForFunction(() => document.title === 'Domino-compound · Domino docs');
+  assert.equal(await page.locator('h1').innerText(), 'Domino-compound');
+  clean(page, 'tab titles');
+  await close(page);
+});
+
+// F1/F2/F8: the build writes, beside the page's boot script, each route's files; the script asks for the opened route's
+// while the app's own script downloads, and Home asks for none of them.
+test('the page asks for the opened route’s code and styles while the app starts; Home loads no screen’s', async () => {
+  const html = readFileSync(join(DIST, 'index.html'), 'utf8');
+  const table = JSON.parse(/<script type="application\/json" id="dm-boot">(.*?)<\/script>/.exec(html)[1]);
+  assert.equal(table.early, true, 'the deployable build sends Home’s first reads early');
+  // Changed on purpose 2026-10-01 (fix round 1): the second chain's section has no row. The same build is served on
+  // domino.money, where #/elysium… is not found, so the page never preloads its chunk (vite.config.ts ROUTE_MODULES).
+  assert.deepEqual(Object.keys(table.chunks).sort(), ['automate', 'docs', 'markets', 'new', 'pool', 'position', 'positions', 'sequence', 'setup']);
+  assert.ok(!html.includes('ElysiumEntry'), 'the page names none of the section’s files');
+  assert.match(table.chunks.markets[0], /^\/assets\/Explore-[\w-]+\.js$/);
+  // Changed on purpose 2026-10-01 (RPC-SPEC §7.8): a position's page no longer runs the chain code; its first read asks the
+  // site's own state route (lib/edge/chainRoutes.ts), so the chain code's chunk is not preloaded for it, nor for the list.
+  assert.ok(table.chunks.position.some((file) => /^\/assets\/PositionDetail-/.test(file)), 'a position’s page (F2)');
+  for (const route of ['position', 'positions']) assert.ok(!table.chunks[route].some((file) => /^\/assets\/chainCode-/.test(file)), `${route}: no chain code`);
+  for (const files of Object.values(table.chunks)) {
+    assert.ok(files.some((file) => /^\/assets\/screens-[\w-]+\.css$/.test(file)), 'each screen’s styles come with it');
+    for (const file of files) assert.ok(existsSync(join(DIST, file)), file);
+  }
+  const page = await open('/markets');
+  const asked = await page.evaluate(() => [...document.querySelectorAll('link[rel="modulepreload"], link[rel="preload"][as="style"]')].map((link) => link.getAttribute('href')));
+  for (const file of table.chunks.markets) assert.ok(asked.includes(file), `${file} asked ahead`);
+  clean(page, 'markets');
+  await close(page);
+  const home = await open('/');
+  const screen = /\/assets\/(Explore|PoolDetail|Positions|NewPosition|Automate|Docs|screens)-/;
+  const early = await home.evaluate((source) => {
+    const pattern = new RegExp(source);
+    const prefetched = new Set([...document.querySelectorAll('link[rel="prefetch"]')].map((link) => link.getAttribute('href')));
+    return performance.getEntriesByType('resource').map((entry) => new URL(entry.name).pathname).filter((path) => pattern.test(path) && !prefetched.has(path));
+  }, screen.source);
+  assert.deepEqual(early, [], 'Home loads no screen’s code or styles for its first paint');
+  // Once the page has loaded and gone quiet, the main screens' files are fetched at the lowest priority
+  // (src/lib/prefetchRoutes.ts), so a first move to one draws at once.
+  await home.waitForFunction(() => document.querySelectorAll('link[rel="prefetch"]').length > 0, undefined, { timeout: 20_000 });
+  const prefetch = await home.evaluate(() => {
+    const load = performance.getEntriesByType('navigation')[0].loadEventEnd;
+    return [...document.querySelectorAll('link[rel="prefetch"]')].map((link) => ({ href: link.getAttribute('href'), as: link.getAttribute('as'), crossorigin: link.getAttribute('crossorigin'), load }));
+  });
+  const wanted = new Set(['markets', 'positions', 'position', 'pool', 'new', 'automate', 'docs'].flatMap((route) => table.chunks[route] ?? []));
+  for (const link of prefetch) {
+    assert.ok(wanted.has(link.href), `${link.href} is a main screen’s file`);
+    assert.equal(link.as, link.href.endsWith('.css') ? 'style' : 'script');
+    assert.equal(link.crossorigin, '');
+  }
+  assert.ok(prefetch.some((link) => screen.test(link.href)), 'the screens’ files are among them');
+  const prefetchedAt = await home.evaluate(() => {
+    const load = performance.getEntriesByType('navigation')[0].loadEventEnd;
+    const hrefs = new Set([...document.querySelectorAll('link[rel="prefetch"]')].map((link) => link.getAttribute('href')));
+    return performance.getEntriesByType('resource').filter((entry) => hrefs.has(new URL(entry.name).pathname)).map((entry) => entry.startTime - load);
+  });
+  for (const after of prefetchedAt) assert.ok(after >= 3_500, `a prefetch began ${Math.round(after)} ms after the page loaded`);
+  clean(home, 'home');
+  await close(home);
+});
+
+// D7: Tab from New position's token search lost the keyboard's place: the list's scrolling box was a Tab stop that
+// closed as the input blurred, and focus fell to the end of the page.
+test('Tab from New position’s token search moves on to the next control; the list is never a stop', async () => {
+  const page = await open('/new');
+  const input = page.locator('input[role="combobox"]').first();
+  await input.focus();
+  await page.keyboard.type('U');
+  const list = page.locator('[role="listbox"]').first();
+  assert.equal(await list.getAttribute('tabindex'), '-1');
+  await page.keyboard.press('Tab');
+  const active = await page.evaluate(() => {
+    const element = document.activeElement;
+    return { body: element === document.body || element === null, inList: Boolean(element?.closest('[role="listbox"]')), tag: element?.tagName ?? null };
+  });
+  assert.equal(active.body, false, `focus was lost to the page (${active.tag})`);
+  assert.equal(active.inList, false, 'focus left the search for the next control, not into the list');
+  clean(page, 'new position keyboard');
+  await close(page);
+});
+
+// 2026-10-01 (the chain2 workstream, part B): the second chain's section is a route of its own, #/elysium…, drawn from a
+// chunk only that route opens. Changed on purpose 2026-10-01 (fix round 1): on any origin but the exact preview alias
+// and the local development servers (this suite's is 127.0.0.1 on a random port) the route does not exist, like
+// domino.money's: the page is Not found, asks for none of the section's code, names no chain and reads nothing of it
+// (src/App.tsx ELYSIUM_OPEN). The menu does not link it (the menu's entries are pinned in the Settings test above).
+test('#/elysium is not found where the second chain’s section is off: no chunk, no chain named, nothing read', async () => {
+  for (const route of ['/elysium', '/elysium/pool/0x4b79c0e837ab70451bc849bf21d9ea3b25b69883', '/elysium/new', '/elysium/receipts']) {
+    const page = await open(route);
+    await page.locator('[data-not-found]').waitFor();
+    assert.equal(await page.locator('[data-chain2-section]').count(), 0, route);
+    assert.doesNotMatch(await page.locator('main').innerText(), /Elysium/i, `${route}: no chain named`);
+    assert.doesNotMatch(await page.title(), /Elysium/i, `${route}: nor in the tab`);
+    assert.equal(await page.locator('header nav[aria-label="Main"] a[aria-current="page"]').count(), 0, `${route}: nothing lit`);
+    const loaded = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => new URL(entry.name).pathname));
+    assert.ok(!loaded.some((path) => /ElysiumEntry-/.test(path)), `${route}: the section's chunk is never asked for`);
+    const asked = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name));
+    assert.deepEqual(asked.filter((url) => /kinetiq|elysium\.|\/uniswap-v3\//.test(url)), [], `${route}: nothing of that chain is read`);
+    clean(page, route);
+    await close(page);
+  }
+  // Home loads none of it.
+  const home = await open('/');
+  const homeLoaded = await home.evaluate(() => performance.getEntriesByType('resource').map((entry) => new URL(entry.name).pathname));
+  assert.ok(!homeLoaded.some((path) => /ElysiumEntry-/.test(path)), 'Home loads none of the section');
+  clean(home, 'home');
+  await close(home);
 });

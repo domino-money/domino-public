@@ -45,6 +45,15 @@
  * list, gives that first read 3.5 s (FEATURED_FIRST_DEADLINE_MS) rather than
  * 1.5 s, so a slow list is not taken for none.
  *
+ * Changed 2026-10-01 (audit B1, B2, B3):
+ *   - the list says how many pools its rules ask for (`size`, the answer's rules.size), so a short list can say so
+ *     honestly ("4 of 6 today") instead of looking whole;
+ *   - each withdrawal keeps its reason (`withdrawnReasons`). New position refuses a link only to a pool withdrawn for
+ *     safety (`withdrawn`: every reason but SOFT_WITHDRAWALS, a pool's figures unavailable or its volume gone); one
+ *     that left only because its figures were unavailable is preselected as any other pool;
+ *   - every read made while the embedded list only holds the place (the first, and each read again after a first that
+ *     found no answer) has FEATURED_FIRST_DEADLINE_MS (`placeholder`); only a refresh of a served list keeps 1.5 s.
+ *
  * Pure and Node-safe: the runtime is handed in, never imported, so the node
  * tests compile this file and give it the very same runtime.
  */
@@ -52,6 +61,7 @@ import type * as V5 from 'api-contracts/read-v5/runtime.mjs'
 import type { VerifiedPool } from 'api-contracts/read-v1/types'
 import type { FeaturedPool, FeaturedPoolsResponse } from 'api-contracts/read-v5/runtime.mjs'
 import { mainTokenAt, readsAsMainToken } from '../../config/mainTokens'
+import { UNSAFE_SYMBOL_TEXT, unsafeSymbol } from '../symbolReading'
 import { SELECTED_POOL_CATALOGUE, catalogueTokens, type PoolCatalogueEntry } from '../../config/selectedPoolCatalogue'
 import { createBridgeSource, type BridgeOptions } from './bridgeSource'
 import type { PoolList } from './marketsProvider'
@@ -90,17 +100,12 @@ export type FeaturedDropReason = 'denied' | 'hooked' | 'fee_mode' | 'integration
 const ZERO_HOOKS = '0x0000000000000000000000000000000000000000'
 
 /**
- * Text a symbol never holds, upper-cased: what reads as a web address or a claim. The selector's own rule
- * (backend/featured_pools.py UNSAFE_SYMBOL_TEXT, `token_symbol_unsafe`), checked again here, as spec §11.9 asks:
- * "claim.x.io" is a string the runtime lets through. Added 2026-09-26 after review.
+ * Text a symbol never holds, and whether a symbol holds it (lib/symbolReading.ts since 2026-10-01): the selector's own
+ * rule (backend/featured_pools.py UNSAFE_SYMBOL_TEXT, `token_symbol_unsafe`), checked again here, as spec §11.9 asks:
+ * "claim.x.io" is a string the runtime lets through. Added 2026-09-26 after review; a format character counts too
+ * since 2026-10-01 (audit I2): a bidirectional control can reorder the text around it on screen.
  */
-export const UNSAFE_SYMBOL_TEXT: readonly string[] = Object.freeze(['.', '/', ':', 'WWW', 'HTTP', 'CLAIM'])
-
-/** Whether a symbol holds text of a web address or a claim (UNSAFE_SYMBOL_TEXT). */
-export const unsafeSymbol = (symbol: string) => {
-  const upper = symbol.toUpperCase()
-  return UNSAFE_SYMBOL_TEXT.some((text) => upper.includes(text))
-}
+export { UNSAFE_SYMBOL_TEXT, unsafeSymbol }
 
 /** The app's own checks of one pool of a valid answer: null when it may be shown. */
 export function featuredPoolProblem(pool: FeaturedPool): FeaturedDropReason | null {
@@ -186,19 +191,32 @@ export function readFeaturedList(source: ReadSource, { signal, clock = realClock
   return source.read(FEATURED_ROUTE, {}, { priority: 'first', signal, deadlineAt: clock.monotonic() + deadlineMs })
 }
 
+/** A pool the list withdrew, lowercase, with the answer's reason. */
+export interface Withdrawal {
+  poolId: string
+  reason: string
+}
+
+/**
+ * Withdrawals that say nothing about a pool's safety: its figures were unavailable, or its volume went away. A link
+ * to such a pool opens New position as any other pool's does (audit B2, the owner's OK, 2026-10-01). Every other
+ * reason, and any reason this build does not know, is refused from a link (featured pools v1 §11.5).
+ */
+export const SOFT_WITHDRAWALS: ReadonlySet<string> = new Set(['estimate_unavailable', 'volume_collapse'])
+
 /** What an answer means for the list, before the rules of §11.2 are applied. */
 export type FeaturedAnswer =
   /** A valid list (not `none`), with the pools the app shows. */
-  | { kind: 'list'; valid: ValidFeatured; withdrawn: readonly string[] }
+  | { kind: 'list'; valid: ValidFeatured; withdrawn: readonly Withdrawal[] }
   /** `none`, or the route is off or not there at all: the embedded list, at once. */
-  | { kind: 'off'; withdrawn: readonly string[] }
+  | { kind: 'off'; withdrawn: readonly Withdrawal[] }
   /**
    * Anything else: an invalid answer, another refusal, a busy service, the 1.5 s passed. `passing` when it can clear
    * by itself (transient.ts: the deadline, a busy service, an edge page): only such a first failure is asked again.
    */
   | { kind: 'failed'; passing?: true }
 
-const withdrawnOf = (answer: FeaturedPoolsResponse) => answer.withdrawn.map((entry) => entry.poolId.toLowerCase())
+const withdrawnOf = (answer: FeaturedPoolsResponse): Withdrawal[] => answer.withdrawn.map((entry) => ({ poolId: entry.poolId.toLowerCase(), reason: entry.reason }))
 
 /**
  * An outcome of the list's read as the list sees it. The data of an `ok`
@@ -225,10 +243,12 @@ export interface FeaturedList {
   entries: readonly PoolCatalogueEntry[]
   /** The server's listId; null for the embedded list. */
   listId: string | null
+  /** How many pools the list's rules ask for (its rules.size); null for the embedded list or a list without rules. */
+  size?: number | null
 }
 
 /** The embedded list: config/selectedPools.ts with its labels. */
-export const BUNDLED_LIST: FeaturedList = Object.freeze({ source: 'bundled', entries: SELECTED_POOL_CATALOGUE, listId: null })
+export const BUNDLED_LIST: FeaturedList = Object.freeze({ source: 'bundled', entries: SELECTED_POOL_CATALOGUE, listId: null, size: null })
 
 /** Bundled artwork for a token by its exact address: the main tokens', else the embedded list's; none for any other token. */
 function artworkAt(address: string) {
@@ -249,7 +269,7 @@ export function entryOf(pool: FeaturedPool): PoolCatalogueEntry {
     fee: fixedFeePercent(pool.poolKey.fee_pips),
     sourceUrl: `https://app.uniswap.org/explore/pools/robinhood/${poolId}`,
     ...(pool.source === 'pinned' ? { pinned: true as const } : {}),
-    ...(pool.rankInputs ? { rankApr: pool.rankInputs.rankApr } : {}),
+    ...(pool.rankInputs ? { rankApr: pool.rankInputs.rankApr, selection: { tvlUsd: pool.rankInputs.reportedLiquidityUsd, volume24hUsd: pool.rankInputs.volume24hUsd, apr: pool.rankInputs.freshApr, evaluatedAt: pool.rankInputs.evaluatedAt } } : {}),
     poolKey: {
       currency0: pool.poolKey.currency0.toLowerCase(),
       currency1: pool.poolKey.currency1.toLowerCase(),
@@ -286,7 +306,16 @@ export function listFrom(answer: FeaturedAnswer): FeaturedList {
   const current = (body.status === 'current' || body.status === 'repaired') && servedAt <= validUntil
   // The criterion title only for a list that names the rules it was ranked by. The method line that spelled them out
   // under the title was removed 2026-09-28 (the owner: "Não precisa ter essa descrição"); the docs page says how.
-  return { source: current && body.rules !== null ? 'server' : 'server_neutral', entries: pools.map(entryOf), listId: body.listId }
+  return { source: current && body.rules !== null ? 'server' : 'server_neutral', entries: pools.map(entryOf), listId: body.listId, size: body.rules?.size ?? null }
+}
+
+/**
+ * How many of the pools a served list's rules ask for it shows, when it shows fewer (audit B1, the owner's OK,
+ * 2026-10-01): "4 of 6 today". Null for a whole list, the embedded one, or one without rules.
+ */
+export function shortCount(list: Pick<FeaturedList, 'source' | 'entries' | 'size'>): { shown: number; size: number } | null {
+  if (list.source === 'bundled' || typeof list.size !== 'number' || list.size <= 0) return null
+  return list.entries.length < list.size ? { shown: list.entries.length, size: list.size } : null
 }
 
 const idsOf = (list: FeaturedList) => list.entries.map((entry) => entry.poolId)
@@ -309,7 +338,7 @@ export function nextList(shown: FeaturedList, waiting: FeaturedList | null, answ
   if (candidate.source === 'bundled') return { shown: BUNDLED_LIST, waiting: null }
   if (shown.source === 'bundled') return { shown: candidate, waiting: null }
   // The same list: its pools and order stay; its title follows the answer (a list gone stale says so).
-  if (candidate.listId === shown.listId) return { shown: { ...shown, source: candidate.source }, waiting: null }
+  if (candidate.listId === shown.listId) return { shown: { ...shown, source: candidate.source, size: candidate.size ?? null }, waiting: null }
   const ids = idsOf(candidate)
   if (onlyRemovals(idsOf(shown), ids)) return { shown: candidate, waiting: null }
   // Replacements cannot wait for a remount: remove departed pools, keep survivors
@@ -327,8 +356,13 @@ export function nextList(shown: FeaturedList, waiting: FeaturedList | null, answ
 export interface FeaturedSnapshot extends FeaturedList {
   /** Whether the first answer is in (or given up on). Before it, the embedded list stands in. */
   settled: boolean
-  /** Pools removed by a safety rule in the last seven days, lowercase: New position refuses them from a link (§11.5). */
+  /**
+   * Pools removed by a safety rule in the last seven days, lowercase: New position refuses them from a link (§11.5).
+   * Since 2026-10-01 (audit B2) only the safety ones: a pool withdrawn for SOFT_WITHDRAWALS is not in it.
+   */
   withdrawn: ReadonlySet<string>
+  /** Every withdrawal of the last answer, lowercase pool id to the answer's reason (audit B2). */
+  withdrawnReasons?: ReadonlyMap<string, string>
 }
 
 export interface FeaturedStore {
@@ -349,13 +383,18 @@ export interface FeaturedStore {
 }
 
 const NO_WITHDRAWN: ReadonlySet<string> = new Set()
+const NO_REASONS: ReadonlyMap<string, string> = new Map()
 
 /**
  * The page's one list. `read` asks the list once and says what came back; it
  * never throws (readFeaturedList and answerOf, in the app).
  */
-export function createFeaturedStore({ read, clock = realClock }: { read: (signal?: AbortSignal, first?: boolean) => Promise<FeaturedAnswer>; clock?: Clock }): FeaturedStore {
-  let snapshot: FeaturedSnapshot = { ...BUNDLED_LIST, settled: false, withdrawn: NO_WITHDRAWN }
+export function createFeaturedStore({ read, clock = realClock }: {
+  /** `placeholder`: the embedded list only holds the place while this read is out (B3): it gets the longer deadline. */
+  read: (signal?: AbortSignal, placeholder?: boolean) => Promise<FeaturedAnswer>
+  clock?: Clock
+}): FeaturedStore {
+  let snapshot: FeaturedSnapshot = { ...BUNDLED_LIST, settled: false, withdrawn: NO_WITHDRAWN, withdrawnReasons: NO_REASONS }
   let waiting: FeaturedList | null = null
   /** When the pools on screen were put there, on the monotonic clock. */
   let shownAt = clock.monotonic()
@@ -377,18 +416,24 @@ export function createFeaturedStore({ read, clock = realClock }: { read: (signal
   }
 
   /** Puts `shown` on screen, and tells the page only when something it shows changed. */
-  const publish = (shown: FeaturedList, withdrawn: ReadonlySet<string>) => {
+  const publish = (shown: FeaturedList, withdrawn: Withdrawn) => {
     const ids = idsOf(shown).join()
     if (ids !== idsOf(snapshot).join()) shownAt = clock.monotonic()
+    const reasons = [...withdrawn.reasons].join()
     const same = snapshot.settled && ids === idsOf(snapshot).join() && shown.listId === snapshot.listId && shown.source === snapshot.source
-      && [...withdrawn].join() === [...snapshot.withdrawn].join()
+      && (shown.size ?? null) === (snapshot.size ?? null) && reasons === [...(snapshot.withdrawnReasons ?? NO_REASONS)].join()
     if (same) return
-    snapshot = { source: shown.source, entries: shown.entries, listId: shown.listId, settled: true, withdrawn }
+    snapshot = { source: shown.source, entries: shown.entries, listId: shown.listId, size: shown.size ?? null, settled: true, withdrawn: withdrawn.safety, withdrawnReasons: withdrawn.reasons }
     for (const listener of listeners) listener()
   }
+  type Withdrawn = { safety: ReadonlySet<string>; reasons: ReadonlyMap<string, string> }
   // A failure says nothing about removals: the ones known stay.
-  const withdrawnFrom = (answer: FeaturedAnswer): ReadonlySet<string> => (answer.kind === 'failed' ? snapshot.withdrawn : new Set(answer.withdrawn))
-  const safely = (signal?: AbortSignal, firstRead = false) => read(signal, firstRead).catch((): FeaturedAnswer => ({ kind: 'failed' }))
+  const withdrawnFrom = (answer: FeaturedAnswer): Withdrawn => answer.kind === 'failed'
+    ? { safety: snapshot.withdrawn, reasons: snapshot.withdrawnReasons ?? NO_REASONS }
+    : { safety: new Set(answer.withdrawn.filter((entry) => !SOFT_WITHDRAWALS.has(entry.reason)).map((entry) => entry.poolId)), reasons: new Map(answer.withdrawn.map((entry) => [entry.poolId, entry.reason])) }
+  const kept = (): Withdrawn => ({ safety: snapshot.withdrawn, reasons: snapshot.withdrawnReasons ?? NO_REASONS })
+  // A read made while the embedded list only holds the place has the longer deadline (B3).
+  const safely = (signal?: AbortSignal, placeholder = false) => read(signal, placeholder).catch((): FeaturedAnswer => ({ kind: 'failed' }))
 
   function ensure(): Promise<FeaturedSnapshot> {
     first ??= safely(undefined, true).then((answer) => {
@@ -401,7 +446,7 @@ export function createFeaturedStore({ read, clock = realClock }: { read: (signal
 
   async function refresh(signal?: AbortSignal): Promise<FeaturedSnapshot> {
     if (!snapshot.settled) return ensure()
-    const answer = await safely(signal)
+    const answer = await safely(signal, provisional || snapshot.source === 'bundled')
     if (signal?.aborted) return snapshot
     if (provisional && answer.kind !== 'failed') {
       // The first answer since a first read that found none: it takes the screen, as a first answer does.
@@ -434,7 +479,7 @@ export function createFeaturedStore({ read, clock = realClock }: { read: (signal
       if (!waiting || !snapshot.settled || clock.monotonic() - shownAt < FEATURED_REMOUNT_MS) return
       const adopted = waiting
       waiting = null
-      publish(adopted, snapshot.withdrawn)
+      publish(adopted, kept())
     },
     unbind(poolIds) {
       if (poolIds.length === 0 || snapshot.source === 'bundled') return
@@ -444,7 +489,7 @@ export function createFeaturedStore({ read, clock = realClock }: { read: (signal
       // The list waiting for its turn is the service's; a row that did not bind leaves it too.
       if (waiting) waiting = { ...waiting, entries: waiting.entries.filter((entry) => !gone.has(entry.poolId)) }
       if (waiting && waiting.entries.length === 0) waiting = null
-      publish(kept.length > 0 ? { ...snapshot, entries: kept } : BUNDLED_LIST, snapshot.withdrawn)
+      publish(kept.length > 0 ? { ...snapshot, entries: kept } : BUNDLED_LIST, { safety: snapshot.withdrawn, reasons: snapshot.withdrawnReasons ?? NO_REASONS })
     },
   }
 }
@@ -465,7 +510,7 @@ export function poolListOf(store: FeaturedStore): PoolList {
 
 /** A store for a build that never reads the list (the fixture and test builds): the embedded list, settled. */
 export function bundledStore(): FeaturedStore {
-  const snapshot: FeaturedSnapshot = { ...BUNDLED_LIST, settled: true, withdrawn: NO_WITHDRAWN }
+  const snapshot: FeaturedSnapshot = { ...BUNDLED_LIST, settled: true, withdrawn: NO_WITHDRAWN, withdrawnReasons: NO_REASONS }
   return {
     getSnapshot: () => snapshot,
     subscribe: () => () => undefined,

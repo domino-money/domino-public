@@ -3,9 +3,9 @@ import { drop, keep, readKept } from '../../finance/privateCards'
 import { feesStore } from '../../lib/fees/spawn'
 import { historyLoadQuality } from '../../lib/fees/freshness'
 import type { FeeHistoryView } from '../../lib/fees/types'
-import { CHAIN_ID } from '../../lib/read/screens/identity'
+import { CHAIN_ID, shortAddress } from '../../lib/read/screens/identity'
 import { walletCard, walletState } from '../../lib/walletCards'
-import { REFRESH_MS, parseWalletAnswer, useWalletAnswer, type WalletDeposit } from '../../lib/walletPositions'
+import { REFRESH_MS, parseWalletAnswer, useWalletAnswer, walletChanged, type WalletDeposit } from '../../lib/walletPositions'
 import { useLoadMilestone } from '../../lib/useLoadMilestone'
 import type { WalletIdentityView } from '../../lib/walletIdentity'
 import { newPositionHref } from '../explore/routes'
@@ -14,16 +14,16 @@ import { Button, EmptyState, LinkButton, Skeleton, Tabs } from '../ui'
 import { AutomateEntry } from './AutomateEntry'
 import { automatable } from '../../lib/automate/picker'
 import { rowAprs, type RowApr } from './listApr'
-import { useAprPrefetch } from './useAprPrefetch'
 import { visibleAmountQuality } from './valueReadiness'
 import { PendingRow, PendingRows, PendingSummary, PositionRow, RowsHead } from './PositionRow'
 import { PortfolioSummary, portfolioOf } from './visual/PortfolioSummary'
+import { KEPT_MAX_AGE_MS } from '../../lib/browserCopies'
 
 /**
  * What Positions hands the held deposits: drawn by the lazily loaded HeldDeposits in wallet builds. `onBusy` says when a
  * refund is on its way and when it is over: the list's refresh waits meanwhile, so a new list never unmounts it mid-refund.
  */
-export type DepositsSlot = (props: { owner: string; deposits: readonly WalletDeposit[]; onChanged: () => void; onBusy?: (busy: boolean) => void }) => ReactNode
+export type DepositsSlot = (props: { owner: string; deposits: readonly WalletDeposit[]; onChanged: (block?: bigint) => void; onBusy?: (busy: boolean) => void }) => ReactNode
 
 /** Rows shown at a time, before Show more. */
 const PAGE_SIZE = 10
@@ -41,15 +41,18 @@ function quiet() {}
 const noViews: ReadonlyMap<string, FeeHistoryView> = new Map()
 
 /**
- * Rows only watch the store: drawing one never subscribes a history or repeats its reads. useAprPrefetch separately
- * warms at most two visible rows per visit, one at a time at the small list budget, yielding immediately to detail.
- * This is not the removed unbounded per-wallet replay queue. A missing/partial history still gives no APR.
+ * Each row's Your APR. Changed on purpose 2026-10-02 (RPC-SPEC §11.4): while `ask` (the wallet's own open rows, read
+ * fresh), the rows' ledgers are asked, eight ids a request (the store's 'list' scope: the ledger alone, its own state), so
+ * every row whose ledger is exact shows its rate since opened; it was a bounded warm-up of at most a few visible rows, one
+ * replay at a time. Otherwise (another address's list, audit V7) the rows only watch the store: an APR shows once the
+ * position's own page drew it.
  */
-function useRowAprs(ids: readonly string[]): ReadonlyMap<string, RowApr> {
+function useRowAprs(ids: readonly string[], ask: boolean): ReadonlyMap<string, RowApr> {
   const key = ids.join(',')
   const watch = useCallback((listener: () => void) => (key === '' ? quiet : feesStore.watch(key.split(','), listener)), [key])
   const snapshot = useCallback(() => (key === '' ? noViews : feesStore.views(key.split(','))), [key])
   const views = useSyncExternalStore(watch, snapshot, () => noViews)
+  useEffect(() => (ask && key !== '' ? feesStore.subscribeHistory(key.split(','), 'list', quiet) : undefined), [key, ask])
   return useMemo(() => rowAprs(key === '' ? [] : key.split(','), views), [key, views])
 }
 
@@ -64,31 +67,47 @@ const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria
  */
 const REREADING = 'Reading your positions from the chain…'
 const UNREAD = 'Your positions couldn’t be read right now.'
+/** The same two lines for another address the page views (2026-10-01, audit V7). */
+const VIEWED_REREADING = 'Reading this address’s positions from the chain…'
+const VIEWED_UNREAD = 'This address’s positions couldn’t be read right now.'
 
 /**
  * 2026-09-28 (the owner's phone: the card stayed on its loading rows while the RPC refused his address): this browser's
  * copy of the wallet's last list, per wallet and chain, drawn at once (`data-owned="kept"`) while the chain is read, then
- * replaced by the chain's answer. Display only: checked field by field as a chain answer is, at most a week old, its
+ * replaced by the chain's answer. Display only: checked field by field as a chain answer is, at most a day old (a week
+ * until 2026-10-01, I6: lib/browserCopies.ts), its
  * positions only (never a held deposit and its refund), and no APR or automation is asked for it. A wallet with no
  * position keeps none: only the chain says a wallet has none. Its USD figures are from its own pool prices: past
  * PRICED_MS its rows show their token amounts only, and no total (review, 2026-09-28).
  */
 const copyName = (owner: string) => `owned.${CHAIN_ID}.${owner}`
 const recall = (owner: string) =>
-  readKept(copyName(owner), 7 * 86_400_000, (data, at) => {
+  readKept(copyName(owner), KEPT_MAX_AGE_MS.owned, (data, at) => {
     const answer = parseWalletAnswer(data, owner)
     return answer?.positions.length ? { answer, at } : null
   })
 /** How long a copy's prices count: the Wallet card's rule (lib/walletMemory.ts WALLET_PRICE_MAX_AGE_MS, an hour; not imported, it is that card's chunk). */
 const PRICED_MS = 3_600_000
 
-/** The card's frame: its title, and the tabs once there is something to put in them. */
-function Frame({ children, tabs, data }: { children: ReactNode; tabs?: ReactNode; data?: Record<string, string | undefined> }) {
+/**
+ * The card's frame: its title, and the tabs once there is something to put in them. `viewed` (2026-10-01, audit V7):
+ * another address's list, named by that address (its full address one hover away).
+ */
+function Frame({ children, tabs, data, viewed }: { children: ReactNode; tabs?: ReactNode; data?: Record<string, string | undefined>; viewed?: string }) {
   return (
     <section className="dm-card dm-acct-nft-card dm-own-card" aria-labelledby="own-title" {...data}>
       <div className="dm-own-head">
         <h2 id="own-title" className="dm-title">
-          Your positions
+          {viewed ? (
+            <>
+              Positions of{' '}
+              <span title={viewed} translate="no">
+                {shortAddress(viewed)}
+              </span>
+            </>
+          ) : (
+            'Your positions'
+          )}
         </h2>
         {tabs}
       </div>
@@ -105,6 +124,11 @@ export interface OwnedPositionsProps {
    * title row then steps its New position back, so one filled button leads the screen. Optional, for older callers.
    */
   onEmptyAction?: (shown: boolean) => void
+  /**
+   * 2026-10-01 (audit V7): another public address the page views (`#/portfolio/<address>`, lowercase): the card lists its
+   * positions, read-only, with no wallet needed. Unset, or the connected wallet's own: the wallet's list.
+   */
+  viewed?: string | null
   /** The positions screens' entry anchor (components/positions/visual/kit.ts): passed, never read. */
   kit?: unknown
 }
@@ -119,7 +143,11 @@ export interface OwnedPositionsProps {
  * kept in the browser (the owner's rule, 2026-09-24) but, since 2026-09-28,
  * the list's display copy (copyName below).
  */
-export default function OwnedPositions({ identity, deposits, onEmptyAction }: OwnedPositionsProps) {
+export default function OwnedPositions({ identity, deposits, onEmptyAction, viewed }: OwnedPositionsProps) {
+  // 2026-10-01 (audit V7): another address the page views: its positions, read-only, whatever the wallet is doing.
+  if (viewed && /^0x[0-9a-f]{40}$/.test(viewed) && !(identity.kind === 'connected' && identity.address.toLowerCase() === viewed)) {
+    return <YourPositions key={`viewed:${viewed}`} owner={viewed} deposits={null} readOnly />
+  }
   if (identity.kind === 'unknown') {
     return (
       <Frame data={{ 'data-owned': 'waiting' }}>
@@ -167,7 +195,12 @@ export default function OwnedPositions({ identity, deposits, onEmptyAction }: Ow
   return <YourPositions key={owner} owner={owner} deposits={deposits} onEmptyAction={onEmptyAction} />
 }
 
-function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsProps, 'identity' | 'kit'> & { owner: string }) {
+/**
+ * The list of `owner`'s positions. `readOnly` (2026-10-01, audit V7): another address the page views, as public data: the
+ * same rows and tabs, read once (no refresh, no browser copy, the fees lanes not held, no APR read ahead) and with nothing
+ * to act on (no Automate, no held deposits, no New position).
+ */
+function YourPositions({ owner, deposits, onEmptyAction, readOnly = false }: Omit<OwnedPositionsProps, 'identity' | 'kit' | 'viewed'> & { owner: string; readOnly?: boolean }) {
   // How many times the page has asked again after an action (a refund) changed the answer: each asks fresh.
   const [asked, setAsked] = useState(0)
   // A held deposit's refund on its way: the refresh waits until it is over (its timer reads the ref, set after each render).
@@ -176,13 +209,18 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   useEffect(() => {
     refundingRef.current = refunding
   }, [refunding])
-  const answer = useWalletAnswer(owner, asked, REFRESH, refundingRef)
+  // 2026-10-02 (review of the RPC switch, finding 8): a position this visit's Create position made that the list lacks
+  // (a node still behind its mint) is asked for again, fresh, on a short ladder, as the automation page and a position's
+  // own page do; the first read after the mint is fresh already (walletPositions.ts wantsFresh). RPC fix round 2: the
+  // read itself runs that ladder (askWallet), for this wallet's own positions only.
+  const answer = useWalletAnswer(owner, asked, readOnly ? null : REFRESH, refundingRef, !readOnly)
   const ready = answer.phase === 'ready' ? answer.answer : null
   const reason = answer.phase === 'failed' || answer.phase === 'retrying' ? answer.reason : null
   // Given up on for now (the quick re-asks failed too): one calm line. Still reading, or asked again: the loading rows.
   const unread = answer.phase === 'failed'
-  // This browser's copy until the chain answers; each answer of the chain is kept for the next visit.
-  const [copy] = useState(() => recall(owner))
+  // This browser's copy until the chain answers; each answer of the chain is kept for the next visit. (RPC-SPEC: the
+  // route keeps the wallet's SetupMinted walk itself, so the copy no longer seeds the read.)
+  const [copy] = useState(() => (readOnly ? null : recall(owner)))
   const list = ready ?? copy?.answer
   // Whether the copy's prices still count: from PRICED_MS after it was kept, its rows show their amounts only.
   const [valued, setValued] = useState(() => !!copy && Date.now() - copy.at <= PRICED_MS)
@@ -193,9 +231,10 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   }, [valued, ready, copy])
   const priced = !!ready || valued
   useEffect(() => {
+    if (readOnly) return
     if (ready?.positions.length) keep(copyName(owner), { ...ready, deposits: [] })
     else if (ready) drop(copyName(owner))
-  }, [ready, owner])
+  }, [ready, owner, readOnly])
 
   // Every row straight from the chain read: its card, and the state its USD is valued at (the same read, the same block).
   const rows = useMemo(
@@ -214,12 +253,12 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   const more = tabs ? tabs[tab].length - shown.length : 0
   // The open positions on the list's open page, whose APR the rows show when their page drew it this visit.
   const measured = useMemo(() => (tabs ? tabs.open.slice(0, pages.open * PAGE_SIZE).filter((row) => row.card.hasLiquidity).map((row) => row.card.tokenId) : []), [tabs, pages.open])
-  const aprs = useRowAprs(measured)
   const fresh = ready !== null
-  const prefetchRows = useAprPrefetch(measured, fresh && tab === 'open' && !refunding)
+  // Another address's list reads no history ahead (audit V7): its rows show an APR only once their own page drew it.
+  const aprs = useRowAprs(measured, !readOnly && fresh && tab === 'open' && !refunding)
   const shownValues = shown.map((row) => visibleAmountQuality(row.card.principal))
   const valueQuality = shownValues.includes('current') ? 'current' : shownValues.includes('partial') ? 'partial' : null
-  useLoadMilestone('positions', 'value', valueQuality && !fresh ? 'cached' : valueQuality)
+  useLoadMilestone('positions', 'value', readOnly ? null : valueQuality && !fresh ? 'cached' : valueQuality)
   const total = tabs ? tabs.open.length + tabs.closed.length : 0
   const phase = ready ? 'ready' : copy ? 'kept' : unread ? 'unlisted' : answer.phase === 'retrying' ? 'retrying' : 'loading'
   // `No positions yet` carries its own New position: the page's title row steps its own back (before paint, no flash).
@@ -230,15 +269,20 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
     return () => onEmptyAction(false)
   }, [emptyAction, onEmptyAction])
   // A read that failed is never "no positions": its code is a data attribute, and the one line says it is read again or could not be.
-  const status = !tabs ? (unread ? UNREAD : 'Listing your positions…') : `${tabs.open.length} open and ${tabs.closed.length} closed positions.`
+  const status = !tabs ? (unread ? (readOnly ? VIEWED_UNREAD : UNREAD) : readOnly ? 'Listing this address’s positions…' : 'Listing your positions…') : `${tabs.open.length} open and ${tabs.closed.length} closed positions.`
 
   // The one line while a failed read is asked again, or once it could not be: over the loading rows, or over this
-  // browser's copy (2026-09-28, review), never over the chain's own list.
-  const note = unread ? 'unread' : answer.phase === 'retrying' ? 'rereading' : null
+  // browser's copy (2026-09-28, review), never over the chain's own list. Changed on purpose 2026-10-01 (fees items A8 and
+  // A9): "reading" only while a read is on its way (from the RPC's first refusal), not while the page waits to ask again.
+  const note = unread ? 'unread' : answer.phase === 'retrying' && answer.reading ? 'rereading' : null
 
   let body: ReactNode
   if (!tabs) {
     body = !unread && <PendingRows loading />
+  } else if (total === 0 && readOnly) {
+    // Another address with none: said plainly, with nothing to press (audit V7). Changed on purpose 2026-10-01 (integration
+    // pass 3, the copy review): one line says what the list counts, as the docs do (positions made elsewhere are not listed).
+    body = <EmptyState icon={<IconSearch />} title="No positions at this address" body="Only positions opened with Domino are listed." plate className="dm-own-none" data-empty="viewed-none" />
   } else if (total === 0) {
     body = (
       <EmptyState
@@ -259,7 +303,7 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
     body = <EmptyState title={tab === 'open' ? 'No open positions' : 'No closed positions'} data-empty={`owned-${tab}`} />
   } else {
     body = (
-      <div ref={prefetchRows} className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
+      <div className="dm-own-list" role="tabpanel" aria-labelledby="own-title" data-owned-rows={tab}>
         {/* The column names for the eye; each row's own cells carry their names for a screen reader. */}
         <RowsHead closed={tab === 'closed'} />
         {shown.map((row) => (
@@ -270,7 +314,7 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
             state={row.state}
             apr={aprs.get(row.card.tokenId) ?? null}
             aprQuality={historyLoadQuality(feesStore.view(row.card.tokenId))}
-            automation={fresh && <AutomateEntry tokenId={row.card.tokenId} open={automatable(row.position)} />}
+            automation={fresh && !readOnly && <AutomateEntry tokenId={row.card.tokenId} open={automatable(row.position)} />}
           />
         ))}
       </div>
@@ -280,10 +324,12 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
   return (
     <>
       <Frame
+        viewed={readOnly ? owner : undefined}
         data={{
           'data-owned': phase,
           'data-owned-reason': reason ?? undefined,
           'data-owned-block': list ? String(list.block) : undefined,
+          'data-owned-viewed': readOnly ? owner : undefined,
         }}
         tabs={
           tabs && total > 0 ? (
@@ -309,7 +355,7 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
         {tab === 'open' && (portfolio?.totals ? <PortfolioSummary {...portfolio.totals} /> : (!tabs || !priced) && !unread ? <PendingSummary /> : null)}
         {note && (
           <p className="dm-own-note" data-owned-note={note}>
-            {note === 'unread' ? UNREAD : REREADING}
+            {note === 'unread' ? (readOnly ? VIEWED_UNREAD : UNREAD) : readOnly ? VIEWED_REREADING : REREADING}
           </p>
         )}
         {body}
@@ -328,7 +374,11 @@ function YourPositions({ owner, deposits, onEmptyAction }: Omit<OwnedPositionsPr
         deposits({
           owner,
           deposits: held,
-          onChanged: () => setAsked((n) => n + 1),
+          // RPC fix round 2: the refund's block, so every read of the wallet waits for an answer past it (walletChanged).
+          onChanged: (included) => {
+            walletChanged(included)
+            setAsked((n) => n + 1)
+          },
           onBusy: setRefunding,
         })}
     </>

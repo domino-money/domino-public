@@ -90,11 +90,19 @@ export function formatUsdCompact(text: string): string | null {
     [1_000_000n, 6, 'M', 1],
     [1_000n, 3, 'K', 1],
   ]
-  for (const [threshold, exponent, suffix, places] of steps) {
-    if (atLeast(threshold)) {
-      const shifted: Decimal = { coefficient: abs.coefficient, scale: abs.scale + exponent }
-      return `${sign}$${fixedText(scaled(shifted, places), places)}${suffix}`
+  const inUnit = ([, exponent, suffix, places]: [bigint, number, string, number]) => {
+    const units = scaled({ coefficient: abs.coefficient, scale: abs.scale + exponent }, places)
+    return { text: `${sign}$${fixedText(units, places)}${suffix}`, full: units >= 1_000n * pow10(places) }
+  }
+  // Rounded first, then sized (audit E8, 2026-10-01): $999,950 read "$1000.0K" and is "$1.0M".
+  let unit = steps.findIndex(([threshold]) => atLeast(threshold))
+  if (unit !== -1) {
+    let shown = inUnit(steps[unit])
+    while (shown.full && unit > 0) {
+      unit -= 1
+      shown = inUnit(steps[unit])
     }
+    return shown.text
   }
   const cents = abs.coefficient > 0n && abs.coefficient * 100n < pow10(abs.scale)
   const places = cents ? 6 : 2

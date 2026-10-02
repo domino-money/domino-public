@@ -1,7 +1,7 @@
 import { LiveFigure, UsdText } from '../../figures'
 import { cx } from '../../ui'
 import type { PositionState } from '../../../lib/fees/types'
-import { formatUsd } from '../../../lib/format/usd'
+import { formatUsdFloor } from '../../../lib/format/usd'
 import type { LiveCard } from '../../../lib/walletCards'
 import { basisOf, positive, unitsText, usdgSide, valueOfRaw } from './value'
 
@@ -74,12 +74,12 @@ export function PortfolioSummary({ principal, unclaimed, block }: { principal: b
       <div className="dm-portfolio-fig">
         <span className="dm-portfolio-label">Total value</span>
         <span title={title}>
-          <LiveFigure value={formatUsd(unitsText(principal))} mode="digits" dimCents className="dm-fig-hero" />
+          <LiveFigure value={formatUsdFloor(unitsText(principal))} mode="digits" dimCents className="dm-fig-hero" />
         </span>
       </div>
       <div className="dm-portfolio-fig">
         <span className="dm-portfolio-label">Fees ready to collect</span>
-        <UsdText value={unitsText(unclaimed)} block={block} className={cx('dm-fig-lg', positive(unclaimed) && 'dm-fees-in')} />
+        <UsdText value={unitsText(unclaimed)} block={block} floor className={cx('dm-fig-lg', positive(unclaimed) && 'dm-fees-in')} />
       </div>
     </div>
   )

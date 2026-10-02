@@ -26,7 +26,6 @@ import { ARB_SYS, ETH_KEY, ETH_POOL, KEY, OWNER, PARENT_BLOCK, POOL, TOKEN, USDG
 import { browserChain } from './support/browser-chain.mjs';
 
 const require = createRequire(import.meta.url);
-const route = require('../.test-build/app/functions/api/owned/v2/positions.js');
 const { onRequest: gate, LOGIN_PATH, API_CSP } = require('../.test-build/app/functions/_middleware.js');
 const { forward } = require('../.test-build/app/functions/_lib/bridge.js');
 const poolRange = require('../.test-build/app/src/lib/read/screens/poolRange.js');
@@ -64,7 +63,8 @@ test('the selectors, the pins, the SetupMinted topic and the deployment block ar
   const pin = readFileSync(new URL('../src/finance/pin.ts', import.meta.url), 'utf8');
   assert.match(pin, new RegExp(`export const SETUP_CONTRACT: Pin = '${SETUP}'`));
   assert.match(pin, new RegExp(`export const POSITION_MANAGER = '${PM}'`));
-  assert.equal(owned.RPC_URL, 'https://rpc.mainnet.chain.robinhood.com');
+  // Changed on purpose 2026-10-01 (RPC-SPEC §7.3): a sentinel, not a URL; only the edge's transport (localRpc.ts) answers it.
+  assert.equal(owned.RPC_URL, 'local-rpc:robinhood');
   assert.equal(owned.MULTICALL3, '0xca11bde05977b3631167028862be2a173976ca11');
 });
 
@@ -100,9 +100,11 @@ test('aggregate3 is encoded as viem encodes it, and its results and an Operation
 });
 
 test('RPC errors are sorted into split the range, wait and ask again, or stop', () => {
-  for (const message of ['query exceeds limit of 10000', 'logs matched by query exceeds limit of 10000', 'log query timed out', 'block range is too wide', 'query returned more than 10000 results', 'request timeout']) {
+  for (const message of ['query exceeds limit of 10000', 'logs matched by query exceeds limit of 10000', 'block range is too wide', 'query returned more than 10000 results']) {
     assert.equal(owned.classifyRpcError(-32000, message), 'range', message);
   }
+  // Changed on purpose 2026-10-02 (rugged97's rule 7): a time-out (the node's -32002 after 30 s) stops; it is never split.
+  for (const [code, message] of [[-32000, 'log query timed out'], [-32000, 'request timeout'], [-32002, 'request timed out'], [-32002, '']]) assert.equal(owned.classifyRpcError(code, message), 'fatal', message);
   for (const [code, message] of [[429, ''], [-32005, 'limit'], [-32000, 'Too Many Requests'], [-32603, 'rate limited']]) assert.equal(owned.classifyRpcError(code, message), 'rate', message);
   for (const message of ['method not found', 'execution reverted', '']) assert.equal(owned.classifyRpcError(-32601, message), 'fatal', message);
 });
@@ -232,10 +234,11 @@ test('a range the RPC refuses as too large is split in halves, the newer half as
   assert.equal(answered.at(-1)[0], owned.SETUP_DEPLOY_BLOCK);
   for (let i = 1; i < answered.length; i++) assert.equal(answered[i][1], answered[i - 1][0] - 1, `range ${i} ends just before the one read before it`);
 
-  // A log query that times out is split the same way.
+  // Changed on purpose 2026-10-02 (rugged97's rule 7): a log query that times out stops the scan; it is never split and
+  // asked again, at the node's cost each time.
   const timeout = fakeChain({ minted: minted(9), nfts: { 9: nft() }, script: { eth_getLogs: [{ error: { code: -32000, message: 'log query timed out' } }] } });
-  assert.deepEqual((await wallet.scanWallet(timeout.deps, OWNER)).body.positions.map((p) => p.tokenId), ['9']);
-  assert.equal(timeout.log.filter(({ method }) => method === 'eth_getLogs').length, 3, 'the whole range, then its two halves');
+  await assert.rejects(wallet.scanWallet(timeout.deps, OWNER), (error) => error.kind === 'fatal');
+  assert.equal(timeout.log.filter(({ method }) => method === 'eth_getLogs').length, 1, 'asked once');
 
   // 130 mints: the 100 most recent are listed, the walk says it stopped, and the reads come in chunks of 50 ids.
   const lots = Array.from({ length: 130 }, (_, i) => ({ block: owned.SETUP_DEPLOY_BLOCK + 1_000 + i * 1_000, id: 1000 + i }));
@@ -245,7 +248,10 @@ test('a range the RPC refuses as too large is split in halves, the newer half as
   assert.deepEqual(stopped.body.positions.map((p) => p.tokenId), Array.from({ length: 100 }, (_, i) => String(1129 - i)));
   // Changed on purpose 2026-09-28 (speed wave B, item 23): the head and the nonce read first, and (the fake's nonce now
   // counts its 130 mints) its 128 most recent operations read.
-  assert.equal(big.log.filter(({ method }) => method === 'eth_call').length, 1 + 2 + Math.ceil((1 + 100 * 2 + 4 + 128 * 2) / wallet.CALLS_PER_AGGREGATE), 'the head and the nonce, two first reads of 50 ids, then the second read in chunks');
+  // Changed on purpose 2026-10-02 (rugged97's rule 5: at most 50 calls a multicall): first reads of 12 ids, then chunks of 50.
+  assert.equal(wallet.IDS_PER_CALL, 12);
+  assert.equal(wallet.CALLS_PER_AGGREGATE, 50);
+  assert.equal(big.log.filter(({ method }) => method === 'eth_call').length, 1 + Math.ceil(100 / wallet.IDS_PER_CALL) + Math.ceil((1 + 100 * 2 + 4 + 128 * 2) / wallet.CALLS_PER_AGGREGATE), 'the head and the nonce, first reads of 12 ids, then the second read in chunks');
 });
 
 // 2026-09-28 (speed wave B, item 23: a wallet that never used Domino paid the whole scan, three calls in a row, before "No
@@ -451,10 +457,13 @@ test('a chain that cannot be read is a 502 with a code, never a partial list; th
   const recovered = await ask(post({ owner: OWNER }), busy.deps, cache);
   assert.equal(recovered.status, 200);
   assert.deepEqual((await recovered.json()).positions.map((p) => [p.tokenId, p.status]), [['1', 'open']]);
-  assert.match(stored.get(key).headers.get('Cache-Control'), /^max-age=30$/);
+  // Changed on purpose 2026-10-02 (RPC fix round 2): an answer is kept 25 s, a little less than the list's own 30 s refresh
+  // (src/lib/walletPositions.ts REFRESH_MS), so each refresh of an open list reads figures at most one refresh old (the
+  // review's finding 14 had made it 40 s, figures up to a minute old); every tab of the owner shares the one entry.
+  assert.match(stored.get(key).headers.get('Cache-Control'), /^max-age=25$/);
 });
 
-test('an answer is kept per owner for 30 seconds under a digest, and a fresh question within 5 seconds of it gets it rather than a new scan', async () => {
+test('an answer is kept per owner for 25 seconds under a digest, and a fresh question within 5 seconds of it gets it rather than a new scan', async () => {
   const { cache, stored } = memoryCache();
   const chain = fakeChain({ minted: minted(1), nfts: { 1: nft() } });
   const body = await (await ask(post({ owner: OWNER }), chain.deps, cache)).json();
@@ -467,12 +476,12 @@ test('an answer is kept per owner for 30 seconds under a digest, and a fresh que
   };
   assert.equal(await again(4_999, true), 1, 'a fresh question 4.999 s after the answer gets it');
   assert.equal(await again(5_000, true), 2, 'from 5 s on, a fresh question reads the chain again');
-  assert.equal(await again(5_000 + 29_999, false), 2, 'a plain question within 30 s of that answer gets it');
-  assert.equal(await again(35_000, false), 3, 'at 30 s it is read again');
+  assert.equal(await again(5_000 + 24_999, false), 2, 'a plain question within 25 s of that answer gets it');
+  assert.equal(await again(30_000, false), 3, 'at 25 s it is read again');
   const [key] = stored.keys();
   assert.doesNotMatch(key, new RegExp(OWNER.slice(2), 'i'), 'the address is not part of the cache key');
-  stored.set(key, new Response(JSON.stringify(body), { headers: { 'Cache-Control': 'max-age=30' } }));
-  assert.equal(await again(35_001, false), 4, 'an entry without its stored-at and outcome headers is not served');
+  stored.set(key, new Response(JSON.stringify(body), { headers: { 'Cache-Control': 'max-age=25' } }));
+  assert.equal(await again(30_001, false), 4, 'an entry without its stored-at and outcome headers is not served');
   await ask(post({ owner: OTHER }), fakeChain({ owner: OTHER }).deps, cache);
   assert.equal(stored.size, 2, 'another owner is another key');
 });
@@ -492,40 +501,40 @@ async function betaCookie() {
   return response.headers.get('Set-Cookie').split(';')[0];
 }
 
-test('the route answers only behind the beta gate, leaves with no-store and the API CSP, and the forwarder never takes its path', async () => {
-  let reached = 0;
-  const next = (request) => async () => {
-    reached += 1;
-    return route.onRequest({ request });
-  };
+// Changed on purpose (2026-10-01, platform workstream, D8): the route was retired (the page read the chain itself since
+// 2026-09-25). Changed on purpose again the same day (RPC-SPEC §2.5.1, the owner's rule: the site reads nothing from a
+// public RPC): it is back, answered from Domino's own node (functions/_lib/chainRoutes.ts, tests/chain-routes.test.mjs),
+// behind the gate, with no cookie past it. Never the catch-all forwarder's.
+test('the route answers behind the gate, from Domino’s own node: no cookie goes on, and without the node’s secret a calm 503 reads nothing', async () => {
+  const route = require('../.test-build/app/functions/api/owned/v2/positions.js');
   const original = globalThis.fetch;
-  globalThis.fetch = async () => assert.fail('the gate let an unauthenticated request reach the chain');
+  const log = console.log;
+  globalThis.fetch = async () => assert.fail('nothing may reach the chain from the edge without its secret');
+  console.log = () => {};
   try {
-    const request = post({ owner: OWNER });
-    const refused = await gate({ request, env: GATE, next: next(request) });
+    const refused = await gate({ request: post({ owner: OWNER }), env: GATE, next: async () => assert.fail('the gate let an unauthenticated request through') });
     assert.equal(refused.status, 401);
     assert.deepEqual(await refused.json(), { error: 'beta_access_required' });
-    assert.equal(reached, 0);
+    const cookie = await betaCookie();
+    const request = post({ owner: OWNER }, { Cookie: `${cookie}; __Host-domino-session=v1.sessiontoken` });
+    const handed = [];
+    const answered = await gate({ request, env: GATE, next: async (passed) => (handed.push(passed), route.onRequest({ request: passed ?? request, env: {} })) });
+    assert.ok(handed[0] instanceof Request, 'the gate hands on a request of its own');
+    assert.equal(handed[0].headers.get('Cookie'), null, 'no cookie of any kind goes past the gate');
+    assert.equal(answered.status, 503);
+    assert.equal(answered.headers.get('Retry-After'), '300');
+    assert.equal(answered.headers.get('Cache-Control'), 'no-store');
+    assert.equal(answered.headers.get('Content-Security-Policy'), API_CSP);
+    assert.deepEqual(await answered.json(), { error: 'source_unavailable' });
+    // Its path is no bridge family's: the forwarder alone still answers it with a 404.
+    assert.equal((await forward(post({ owner: OWNER }), {})).status, 404);
   } finally {
     globalThis.fetch = original;
+    console.log = log;
   }
-
-  const cookie = await betaCookie();
-  const request = post('{"owner":"nope"}', { Cookie: cookie });
-  const answered = await gate({ request, env: GATE, next: next(request) });
-  assert.equal(reached, 1);
-  assert.equal(answered.status, 400);
-  assert.equal(answered.headers.get('Cache-Control'), 'no-store, no-transform');
-  assert.equal(answered.headers.get('Content-Security-Policy'), API_CSP);
-  assert.deepEqual(await answered.json(), { error: 'invalid_owner' });
-
-  // No bridge family owns /api/owned/: if Pages ever handed the path to the catch-all, it would be a 404, not a proxy.
-  const forwarded = await forward(post({ owner: OWNER }), {});
-  assert.equal(forwarded.status, 404);
-  assert.deepEqual(await forwarded.json(), { error: 'not_found' });
 });
 
-test('wrangler 4.130.0 routes /api/owned/v2/positions to its own function, ahead of the catch-all forwarder, and v1 is gone', () => {
+test('wrangler 4.130.0 routes the edge-cached reads and Domino’s own chain routes to their own functions, ahead of the catch-all forwarder', () => {
   const web = fileURLToPath(new URL('../../web/node_modules/wrangler/', import.meta.url));
   const out = mkdtempSync(join(tmpdir(), 'owned-routes-'));
   try {
@@ -547,14 +556,31 @@ test('wrangler 4.130.0 routes /api/owned/v2/positions to its own function, ahead
     // 2026-09-28 (speed wave, item 45): a pool's stored history keeps its built answers at the edge too
     // (functions/api/read/v3/history.ts), ahead of the catch-all the same way; every other /api/read/v3/ path still
     // reaches the catch-all.
+    // 2026-10-01 (platform workstream, D8): the four chain routes (automation/v1/state, fees/v1/logs, fees/v1/state,
+    // owned/v2/positions) were retired: the page read the chain itself.
+    // 2026-10-01 (RPC-SPEC §2.1, the owner's rule: the site reads nothing from a public RPC): the four are back, with
+    // automation/v1/record and chain/v1/simulate, answered from Domino's own node (functions/_lib/chainRoutes.ts), each
+    // ahead of the catch-all.
+    // 2026-10-02 (RPC-SPEC §11.4, rugged97's rule 2): fees/v1/logs is gone with the fees replay; fees/v2/ledger in its place.
     assert.deepEqual(handlers, [
+      ['/api/automation/v1/record', 'api/automation/v1/record.ts:onRequest'],
       ['/api/automation/v1/state', 'api/automation/v1/state.ts:onRequest'],
-      ['/api/fees/v1/logs', 'api/fees/v1/logs.ts:onRequest'],
+      ['/api/chain/v1/simulate', 'api/chain/v1/simulate.ts:onRequest'],
       ['/api/fees/v1/state', 'api/fees/v1/state.ts:onRequest'],
+      ['/api/fees/v2/ledger', 'api/fees/v2/ledger.ts:onRequest'],
       ['/api/owned/v2/positions', 'api/owned/v2/positions.ts:onRequest'],
       ['/api/read/v3/history', 'api/read/v3/history.ts:onRequest'],
+      // 2026-10-01 (audit A7 b, A14): the stored overview's settled answers at the edge, the same way.
+      ['/api/read/v3/overview', 'api/read/v3/overview.ts:onRequest'],
       ['/api/read/v5/featured-pools', 'api/read/v5/featured-pools.ts:onRequest'],
+      // 2026-10-01 (audit I3): DEX Screener through our own edge; no read family owns /api/read/dex/, and its route comes
+      // before the catch-all, so it never reaches a Worker.
+      ['/api/read/dex/:path*', 'api/read/dex/[[path]].ts:onRequest'],
       ['/api/:path*', 'api/[[path]].ts:onRequest'],
+      // 2026-10-01 (the chain2 workstream, part B, audit G9): rugged97's Uniswap v3 services for the second chain's
+      // section, through this site's edge (functions/_lib/uniswap-v3/handler.ts); outside /api/, so no forwarder family
+      // can ever answer for it, and nothing here can shadow it.
+      ['/uniswap-v3/:path*', 'uniswap-v3/[[path]].ts:onRequest'],
     ], 'Pages takes the first route that matches, after the root middleware');
     assert.deepEqual(routes.filter((entry) => entry.middleware).map((entry) => [entry.routePath, entry.middleware.join()]), [['/', '_middleware.ts:onRequest']], 'the beta gate still runs before every route');
   } finally {
@@ -590,6 +616,8 @@ test('the list’s and a position’s state reads carry each position’s featur
   const VAULT = `0x${'5a'.repeat(20)}`;
   const make = () =>
     browserChain({
+      // The chain code run directly, with the chain RPC's own windows.
+      nodeRules: false,
       positions: [
         { tokenId: 11, holder: OWNER, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 12n, unclaimed: [5n, 7n], subscriber: VAULT },
         { tokenId: 12, holder: OWNER, key: KEY, tickLower: -600, tickUpper: 600, liquidity: 10n ** 12n, unclaimed: [0n, 0n] },
@@ -614,11 +642,14 @@ test('the list’s and a position’s state reads carry each position’s featur
 
   fees.resetRelayMemory();
   const stateChain = make();
-  const state = await fees.stateOnChain({ deps: runtime(stateChain), cache: null }, ['11', '12'], true);
-  assert.equal(state.ok, true);
-  assert.deepEqual(state.value.automation, expected);
-  assert.deepEqual(stateChain.log.map((call) => call.method), ['eth_blockNumber', 'eth_call', 'eth_call'], 'the state read’s own three calls');
+  const budget = (rt) => fees.newBudget(rt);
+  const rt = { deps: runtime(stateChain), cache: null };
+  const state = await fees.readState(rt, budget(rt), [11n, 12n], true);
+  assert.deepEqual(state.automation, expected);
+  // Changed on purpose 2026-10-01 (fees item A21): two calls, the first at 'latest' naming its block.
+  assert.deepEqual(stateChain.log.map((call) => call.method), ['eth_call', 'eth_call'], 'the state read’s own two calls');
   fees.resetRelayMemory();
-  const bare = await fees.stateOnChain({ deps: runtime(make()), cache: null }, ['11', '12']);
-  assert.equal(bare.value.automation, undefined, 'the route’s read carries none');
+  const bareRt = { deps: runtime(make()), cache: null };
+  const bare = await fees.readState(bareRt, budget(bareRt), [11n, 12n]);
+  assert.equal(bare.automation, undefined, 'the route’s read carries none');
 });

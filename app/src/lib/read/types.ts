@@ -75,6 +75,11 @@ export interface RawReply {
   retryAfterHeader: string | null
   /** `X-Domino-Edge-Cache: hit`: a Pages Function answered from its edge cache, so no Worker or gateway saw it (2026-09-28). */
   edgeHit?: true
+  /**
+   * `X-Domino-Edge-Age`: how old, in ms, the kept answer was when it left the edge (2026-10-01). The outcome is dated by
+   * when the edge received it (pipeline.ts), so a kept figure is never younger on screen than it is.
+   */
+  edgeAgeMs?: number
   body: RawBody
 }
 

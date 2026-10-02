@@ -1,26 +1,15 @@
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../styles/screens.css'
 import type { CSSProperties, ReactNode } from 'react'
 import { ModeArt, PlainArt } from '../components/automate/ModeArt'
 import { FeeMeter } from '../components/automate/ServiceFee'
 import { IconChevronRight, IconLock, IconPlus } from '../components/icons'
-import { Display, LinkButton, PageHeader, PageShell, Pill, cx } from '../components/ui'
+import { Display, LinkButton, PageHeader, PageShell } from '../components/ui'
+import { RoadmapPill } from '../components/automate/RoadmapPill'
 import { newPositionHref } from '../components/explore/routes'
 import { FEATURES } from '../lib/automate/features'
 import { CREATE } from '../lib/create/copy'
-import { ROADMAP, ROADMAP_PILL } from '../lib/capabilities'
-
-/**
- * Where a ROADMAP entry stands, as the pill a person scans for. Read from
- * ROADMAP every time, never written by hand, so the pill changes by itself
- * when the entry does; an entry that is not listed, or whose status wears no
- * pill (ROADMAP_PILL), shows nothing. Every status is the neutral pill: the
- * words say where it stands, never a colour.
- */
-export function RoadmapPill({ name, className }: { name: string; className?: string }) {
-  const status = ROADMAP.find((entry) => entry.name === name)?.status
-  const label = status && ROADMAP_PILL[status]
-  if (!label) return null
-  return <Pill className={cx('dm-acct-status', className)}>{label}</Pill>
-}
+import { useRouteTitle } from '../lib/routeTitle'
 
 const rise = (step: number) => ({ '--delay': `${step * 40}ms` }) as CSSProperties
 
@@ -111,6 +100,8 @@ const OFF = (
  * ROADMAP.
  */
 export function Automate() {
+  // The tab's name (lib/routeTitle.ts, audit E11).
+  useRouteTitle('Automate')
   return (
     <PageShell data-automate="">
       <PageHeader
@@ -128,10 +119,8 @@ export function Automate() {
           roadmap="Compound"
           title="Auto-compound"
           step={2}
-          points={[
-            'Adds a position you already hold’s earned fees back into that same position, improving your fees APR.',
-            'Compounds earned fees only, nothing else.',
-          ]}
+          // Changed on purpose 2026-10-01 (audit E4, live note L12): one plain sentence, and no promise about the APR.
+          points={['Adds the fees your position has earned back into the same position, so it grows.', 'Uses earned fees only.']}
           entry={
             __DOMINO_WALLET_SESSION__ ? (
               <div className="dm-acct-auto-entry">
@@ -151,10 +140,7 @@ export function Automate() {
           roadmap="Domino"
           title="Domino-compound"
           step={3}
-          points={[
-            'As the price nears the top of the range, earned fees automatically open the next position, one step higher.',
-            'Compounds earned fees only, nothing else.',
-          ]}
+          points={['As the price nears the top of the range, earned fees automatically open the next position, one step higher.', 'Uses earned fees only.']}
           entry={
             __DOMINO_WALLET_SESSION__ ? (
               <div className="dm-acct-auto-entry">

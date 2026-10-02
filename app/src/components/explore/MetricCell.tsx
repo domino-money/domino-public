@@ -1,5 +1,6 @@
-import { compactUsd, percentText, presentMetric, turnover, type Market, type Metric, type Presented } from '../../lib/markets'
+import { compactUsd, percentText, presentMetric, turnover, type FigureFallback, type Market, type Metric, type Presented } from '../../lib/markets'
 import { reasonText } from '../../lib/read/describe'
+import { utcTime } from '../../lib/read/screens/figures'
 import { Skeleton, cx } from '../ui'
 
 /**
@@ -75,6 +76,7 @@ export function PresentedFigure({
     <span
       className={cx('tnum whitespace-nowrap', tone === 'in' ? 'text-money-in' : 'text-fg', strong && 'font-medium', className)}
       data-metric={shown.stale ? 'stale' : shown.source ? 'provider' : shown.calculatedFrom ? 'calculated' : 'qualified'}
+      data-figure-source={shown.fallback}
       title={valueTitle(shown, retrieved)}
     >
       {shown.text}
@@ -82,8 +84,53 @@ export function PresentedFigure({
   )
 }
 
+/** How long ago a unix time was, in whole minutes or hours, for a figure's title. */
+export function agoText(seconds: number, nowMs: number = Date.now()): string {
+  const ago = Math.max(0, Math.floor(nowMs / 1000) - seconds)
+  if (ago < 120) return `${ago} s ago`
+  if (ago < 7_200) return `${Math.floor(ago / 60)} min ago`
+  return `${Math.floor(ago / 3_600)} h ago`
+}
+
+/**
+ * A stand-in figure's title (audit V1, 2026-10-01): where it comes from and when it was observed, and that the read
+ * service's own provider did not answer this time. DEX Screener is named: it is a second source, beside the read
+ * service's own provider, and a reader should be able to tell the two apart.
+ */
+export function fallbackTitle(fallback: FigureFallback, asOf: number | undefined, kind: 'figure' | 'estimate' = 'figure'): string {
+  const when = asOf === undefined ? 'at an unknown time' : `at ${utcTime(asOf)} (${agoText(asOf)})`
+  const why = 'Shown because the usual market data provider did not answer this time.'
+  if (kind === 'estimate') {
+    switch (fallback) {
+      case 'kept':
+        return `The last estimate this page saw, from figures a market data provider reported ${when}. Not current. ${why}`
+      case 'dexscreener':
+        return `Worked out the read service’s way (fixed LP fee × 24h volume ÷ TVL × 365) from DEX Screener’s figures, retrieved ${when}. ${why}`
+      case 'selection':
+        return `The estimate today’s selection of Top pools was made with, from figures reported ${when}. Not current. ${why}`
+      case 'discovered':
+        return `Worked out the read service’s way (fixed LP fee × 24h volume ÷ TVL × 365) from DEX Screener’s figures, retrieved ${when}. Domino doesn’t collect this pool’s figures yet.`
+      default:
+        return fallback satisfies never
+    }
+  }
+  switch (fallback) {
+    case 'kept':
+      return `Last reported by a market data provider ${when}. Not current. ${why}`
+    case 'dexscreener':
+      return `Reported by DEX Screener, a second market data provider, retrieved ${when}. Not reconciled by Domino. ${why}`
+    case 'selection':
+      return `From today’s selection of Top pools, as a market data provider reported it ${when}. Not current. ${why}`
+    case 'discovered':
+      return `Reported by DEX Screener, a market data provider, retrieved ${when}. Domino doesn’t collect this pool’s figures yet. Not reconciled by Domino.`
+    default:
+      return fallback satisfies never
+  }
+}
+
 /** Who a shown figure comes from, and how old it is, in our own words. A provider is the part it plays, never its name. */
 export function valueTitle(shown: Extract<Presented, { kind: 'value' }>, retrieved = 'retrieval time unknown'): string | undefined {
+  if (shown.fallback) return fallbackTitle(shown.fallback, shown.asOf)
   const stale = shown.stale ? ' Stale, not current.' : ''
   if (shown.source) return `Reported by a market data provider, ${retrieved}. Not reconciled by Domino.${stale}`
   // Only 24h vol/TVL is calculated from a provider's figures.

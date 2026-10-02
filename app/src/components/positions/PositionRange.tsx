@@ -84,7 +84,7 @@ export function rangeWords(card: LiveCard, price: CardPrice) {
  * chart with the pool's hourly line, takes the same place when the history arrives. The head's sentence stays for a
  * screen reader. Without a usable price or a decimal the bar and its ends stand in, as on the list.
  */
-export function PositionRange({ card, price, variant = 'bar', chart }: { card: LiveCard; price: CardPrice; variant?: 'bar' | 'page'; chart?: ReactNode }) {
+export function PositionRange({ card, price, variant = 'bar', chart, missing = false }: { card: LiveCard; price: CardPrice; variant?: 'bar' | 'page'; chart?: ReactNode; missing?: boolean }) {
   const { state, scale } = price
   // The app's one way round (2026-09-28): the priced token, the one it is priced in, and the range's lowest and highest price.
   const { base, quote, low, high } = shownCardRange(card)
@@ -148,7 +148,7 @@ export function PositionRange({ card, price, variant = 'bar', chart }: { card: L
         {charted
           ? chart || (
               <div className="dm-pos-chart">
-                <PriceVsRange series={null} />
+                <PriceVsRange series={null} missing={missing} />
               </div>
             )
           : null}

@@ -1,14 +1,19 @@
 /**
- * Bounded, origin-local public history snapshots, NOT replay checkpoints.
- * The only writer is a successful replay. Restores remain `cached`, even if
+ * Bounded, origin-local public history snapshots.
+ * The only writer is a verified ledger history (store.ts). Restores remain `cached`, even if
  * structurally valid: local storage cannot prove canonical chain history.
  * Neither owner/wallet membership nor a session, growth or action state is saved.
  */
 import { POOL_MANAGER, POSITION_MANAGER, STATE_VIEW } from './constants'
 import type { CachedFeeHistory, FeeDisplayState, FeeHistory, FeeHistoryView, PositionState } from './types'
 
-export const HISTORY_CACHE_KEY = 'domino:public-fee-history:1'
-export const HISTORY_MAX_AGE_MS = 24 * 60 * 60 * 1_000
+/** Changed on purpose 2026-10-02 (RPC-SPEC §11.4): :2, a ledger's history; the replay's copies under :1 are let go. */
+export const HISTORY_CACHE_KEY = 'domino:public-fee-history:2'
+/**
+ * Changed on purpose 2026-10-01 (item A17, the owner's call: older figures, labelled so): a week, as the Positions list
+ * keeps its copy (OwnedPositions.tsx), where it was a day. A restored history is always drawn as saved, "Not current".
+ */
+export const HISTORY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000
 export const HISTORY_MAX_ENTRIES = 6
 export const HISTORY_MAX_ENTRY_CHARS = 240_000
 export const HISTORY_MAX_CHARS = 900_000
@@ -78,51 +83,44 @@ function state(v: unknown): FeeDisplayState {
   if (!out.block || !out.timestamp || out.tickLower >= out.tickUpper || out.liquidity >= (1n << 128n)) invalid()
   return out
 }
+function amounts(v: unknown): readonly [bigint, bigint] | null {
+  return v === null ? null : pair(v)
+}
 function snapshot(v: unknown, now: number): CachedFeeHistory {
-  const s = requireObject(v, ['phase', 'state', 'history', 'prices', 'savedAt', 'source'])
-  if (s.phase !== 'cached' || s.source !== 'public-chain-replay' || !integer(s.savedAt) || s.savedAt > now || now - s.savedAt >= HISTORY_MAX_AGE_MS) invalid()
+  const s = requireObject(v, ['phase', 'state', 'history', 'savedAt', 'source'])
+  if (s.phase !== 'cached' || s.source !== 'public-chain-ledger' || !integer(s.savedAt) || s.savedAt > now || now - s.savedAt >= HISTORY_MAX_AGE_MS) invalid()
   const st = state(s.state)
   // Age is from the actual chain snapshot as well as the save, never reset by a restore.
   if (st.timestamp * 1_000 > s.savedAt + 60_000 || now - st.timestamp * 1_000 >= HISTORY_MAX_AGE_MS) invalid()
-  const h = requireObject(s.history, ['mintedAt', 'earned', 'collected', 'timeInRange', 'hourly', 'events', 'checks', 'near'])
+  const h = requireObject(s.history, ['mintedAt', 'earned', 'collected', 'points', 'events', 'through'])
   const mint = requireObject(h.mintedAt, ['block', 'timestamp'])
   const mintedAt = { block: number(mint.block, st.block), timestamp: number(mint.timestamp, st.timestamp) }
-  const span = requireObject(h.timeInRange, ['inSeconds', 'totalSeconds'])
-  const timeInRange = { inSeconds: number(span.inSeconds), totalSeconds: number(span.totalSeconds, st.timestamp - mintedAt.timestamp) }
-  if (timeInRange.inSeconds > timeInRange.totalSeconds) invalid()
   const earned = pair(h.earned), collected = pair(h.collected)
   if (earned.some((n, i) => n !== collected[i] + st.unclaimed[i])) invalid()
-  let lastAnchor = -1, lastTime = mintedAt.timestamp
-  const hourly = array(h.hourly, 4096).map((v) => {
-    const r = requireObject(v, ['anchor', 't', 'earned', 'collected', 'inRangeSeconds', 'sqrtPriceX96Close', 'tickClose'])
-    const anchor = number(r.anchor), t = number(r.t, st.timestamp)
-    if (anchor <= lastAnchor || t < lastTime) invalid()
-    lastAnchor = anchor; lastTime = t
-    return { anchor, t, earned: pair(r.earned), collected: pair(r.collected), inRangeSeconds: number(r.inRangeSeconds, st.timestamp - mintedAt.timestamp), sqrtPriceX96Close: price(r.sqrtPriceX96Close), tickClose: atTick(r.tickClose) }
+  let lastBlock = -1, lastTime = 0
+  const points = array(h.points, 4096).map((v) => {
+    const r = requireObject(v, ['block', 't', 'earned', 'collected', 'kind'])
+    if (!['opened', 'settlement', 'reading', 'now'].includes(String(r.kind))) invalid()
+    const block = number(r.block, st.block), t = number(r.t, st.timestamp)
+    if (block <= lastBlock || t < lastTime) invalid()
+    lastBlock = block; lastTime = t
+    return { block, t, earned: pair(r.earned), collected: pair(r.collected), kind: r.kind as FeeHistory['points'][number]['kind'] }
   })
-  if (!hourly.length || hourly.at(-1)!.t !== st.timestamp || hourly.at(-1)!.earned.some((n, i) => n !== earned[i]) || hourly.at(-1)!.collected.some((n, i) => n !== collected[i])) invalid()
+  if (points.length < 2 || points[0].kind !== 'opened' || points[0].block !== mintedAt.block || points.at(-1)!.kind !== 'now' || points.at(-1)!.block !== st.block || points.at(-1)!.earned.some((n, i) => n !== earned[i])) invalid()
   let previousBlock = mintedAt.block, previousTime = mintedAt.timestamp
-  const events = array(h.events, 2048).map((v) => {
-    const e = requireObject(v, ['kind', 'block', 'timestamp', 'tx', 'fees', 'liquidityDelta'])
+  const events = array(h.events, 4096).map((v) => {
+    const e = requireObject(v, ['kind', 'block', 'timestamp', 'tx', 'fees', 'liquidityDelta', 'auto', 'service'])
     if (!['mint', 'collect', 'increase', 'decrease', 'close'].includes(String(e.kind))) invalid()
     const block = number(e.block, st.block), timestamp = number(e.timestamp, st.timestamp)
     if (block < previousBlock || timestamp < previousTime) invalid()
+    if (e.auto !== undefined && e.auto !== true) invalid()
     previousBlock = block; previousTime = timestamp
-    return { kind: e.kind as FeeHistory['events'][number]['kind'], block, timestamp, tx: text(e.tx, HASH), fees: pair(e.fees), liquidityDelta: raw(e.liquidityDelta, true) }
+    const fees = amounts(e.fees)
+    if (fees === null) invalid()
+    return { kind: e.kind as FeeHistory['events'][number]['kind'], block, timestamp, tx: text(e.tx, HASH), fees, liquidityDelta: raw(e.liquidityDelta, true), ...(e.auto === true ? { auto: true as const } : {}), ...(e.service === undefined ? {} : { service: pair(e.service) }) }
   })
-  const checks = requireObject(h.checks, ['swaps', 'steps', 'tickMismatch', 'liquidityMismatch', 'swapFeeMismatch', 'inconsistentLastStep'])
-  const verifiedChecks = { swaps: number(checks.swaps), steps: number(checks.steps), tickMismatch: number(checks.tickMismatch, 0), liquidityMismatch: number(checks.liquidityMismatch, 0), swapFeeMismatch: number(checks.swapFeeMismatch, 0), inconsistentLastStep: number(checks.inconsistentLastStep, 0) }
-  if (h.near !== undefined && h.near !== true) invalid()
-  const prices = requireObject(s.prices, ['hours'])
-  lastAnchor = -1; lastTime = mintedAt.timestamp
-  const hours = array(prices.hours, 4096).map((v) => {
-    const p = requireObject(v, ['anchor', 't', 'sqrtPriceX96Close', 'tickClose'])
-    const anchor = number(p.anchor), t = number(p.t, st.timestamp)
-    if (anchor <= lastAnchor || t < lastTime) invalid()
-    lastAnchor = anchor; lastTime = t
-    return { anchor, t, sqrtPriceX96Close: price(p.sqrtPriceX96Close), tickClose: atTick(p.tickClose) }
-  })
-  return { phase: 'cached', source: 'public-chain-replay', savedAt: s.savedAt, state: st, history: { mintedAt, earned, collected, timeInRange, hourly, events, checks: verifiedChecks, ...(h.near === true ? { near: true } : {}) }, prices: { hours } }
+  const through = number(h.through, st.block)
+  return { phase: 'cached', source: 'public-chain-ledger', savedAt: s.savedAt, state: st, history: { mintedAt, earned, collected, points, events, through } }
 }
 const encode = (v: unknown) => JSON.stringify(v, (_key, value: unknown) => typeof value === 'bigint' ? value.toString() : value)
 
@@ -174,7 +172,7 @@ export function createHistoryCache(storage: () => Storage | null, now: () => num
       if (!idOk(id) || view.phase !== 'verified') return
       try {
         const { owner: _owner, ...publicState } = view.state
-        const candidate = { id, snapshot: { phase: 'cached', source: 'public-chain-replay', savedAt: now(), state: publicState, history: view.history, prices: view.prices } }
+        const candidate = { id, snapshot: { phase: 'cached', source: 'public-chain-ledger', savedAt: now(), state: publicState, history: view.history } }
         const text = encode(candidate)
         if (text.length > HISTORY_MAX_ENTRY_CHARS) return
         const safe = snapshot(JSON.parse(text).snapshot, now())

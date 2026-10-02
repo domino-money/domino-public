@@ -424,7 +424,9 @@ test('a measured zero volume is 0.00, and a zero TVL has no turnover', () => {
 });
 
 test('the ticker APR follows the same state rule', () => {
-  assert.equal(markets.aprLabel(metric('150.924')).text, '150.92% APR');
+  // Changed on purpose 2026-10-01 (audit E21): the one APR rule of every screen: whole percents from 100%.
+  assert.equal(markets.aprLabel(metric('150.924')).text, '151% APR');
+  assert.equal(markets.aprLabel(metric('27.18')).text, '27.2% APR', 'one decimal under 100%');
   assert.equal(markets.aprLabel(metric('150.92', 'unavailable')).kind, 'unavailable', 'retained APR shown as current');
   const stale = markets.aprLabel(metric('150.92', 'stale', 1_700_000_000));
   assert.equal(stale.stale, true);
@@ -501,7 +503,7 @@ test('turnover divides the decimal strings exactly, whatever their size', () => 
 test('the ticker APR says not current or not reported in words, never with the number', () => {
   assert.equal(markets.aprLabel({ value: '158.06', state: 'reference' }).kind, 'not_current');
   assert.equal(markets.aprLabel({ value: null, state: 'absent' }).kind, 'absent');
-  assert.equal(markets.aprLabel({ value: '158.060469175186043958', state: 'qualified' }).text, '158.06% APR');
+  assert.equal(markets.aprLabel({ value: '158.060469175186043958', state: 'qualified' }).text, '158% APR');
 });
 
 test('a row shows its fee as a fixed tier or as dynamic, and is keyed by pool, never by symbol', () => {

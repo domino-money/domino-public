@@ -11,10 +11,10 @@ import { quoteIndex as quoteOf } from '../../../lib/read/orientation'
 import { shortAmount } from '../../../lib/format/amount'
 import { group, scaledText } from '../../../lib/format/decimal'
 import { PRICE_SCALE, valueIn } from '../../../lib/format/price'
-import { formatUsd } from '../../../lib/format/usd'
+import { formatUsdFloor } from '../../../lib/format/usd'
 import type { FeeDisplayState as PositionState, StateCurrency } from '../../../lib/fees/types'
 import { unreadToken } from '../../../lib/read/project'
-import { tokenAmount } from '../../../lib/read/screens/figures'
+import { DUST, tokenAmount } from '../../../lib/read/screens/figures'
 import { sqrtPriceAtTick } from '../../../lib/read/screens/poolRange'
 import type { TokenDisplay } from '../../../lib/read/types'
 
@@ -91,12 +91,17 @@ export function valueOfRaw(basis: Basis, raw: readonly [string, string]): bigint
  */
 export function quoteFigure(units: bigint): string {
   const [whole, fraction = ''] = unitsText(units).split('.')
-  return shortAmount(`${group(whole)}.${fraction}`).short
+  const short = shortAmount(`${group(whole)}.${fraction}`).short
+  // A crumb under a millionth reads as one (audit E7, 2026-10-01), as the Wallet card writes it.
+  return units > 0n && /^0\.0{6}/.test(short) ? DUST : short
 }
 
-/** A value as the screens write it: `$1,234.56` for USD, a quote figure otherwise (its symbol is the caller's). */
+/**
+ * A value as the screens write it: `$1,234.56` for USD, a quote figure otherwise (its symbol is the caller's). Under a
+ * cent, "<$0.01" (audit E7, 2026-10-01): a new position's fees read "$0.000005" before.
+ */
 export function valueFigure(basis: Pick<Basis, 'kind'>, units: bigint): string {
-  return basis.kind === 'usd' ? formatUsd(unitsText(units)) : quoteFigure(units)
+  return basis.kind === 'usd' ? formatUsdFloor(unitsText(units)) : quoteFigure(units)
 }
 
 /**

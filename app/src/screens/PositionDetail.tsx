@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
 import { newPositionHref, poolHref, positionsHref } from '../components/explore/routes'
 import { IconChevronDown, IconChevronLeft, IconMarkets, IconPlus, IconSearch } from '../components/icons'
 import { PairName, PositionStatus } from '../components/positions/PositionFigures'
@@ -8,26 +8,32 @@ import { PositionActivity, useAutomaticAdds } from '../components/positions/Posi
 import { PositionRange, chainCardPrice } from '../components/positions/PositionRange'
 import { FeesCard } from '../components/positions/visual/FeesCard'
 import { PositionSkeleton } from '../components/positions/visual/PositionSkeleton'
-import { PriceVsRange, usePriceSeries } from '../components/positions/visual/PriceVsRange'
 import { usdgSide } from '../components/positions/visual/value'
-import { TokenLabel } from '../components/read/TokenLabel'
 import { Address } from '../components/read/screens/Address'
 import { TokenMarkPair } from '../components/TokenIcon'
-import { Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, PageShell } from '../components/ui'
-import { chainState, takeWarmState } from '../lib/fees/client'
+import { Button, Chip, Display, EmptyState, KeyValue, KeyValueList, LinkButton, PageShell } from '../components/ui'
+import { chainState, freshState, takeWarmState } from '../lib/fees/client'
 import { feesStore } from '../lib/fees/spawn'
-import { refreshFeeStates } from '../lib/fees/useFeeHistory'
+import { refreshFeeStates, useFeeHistory } from '../lib/fees/useFeeHistory'
+import { readKept } from '../finance/privateCards'
+import { KEPT_MAX_AGE_MS } from '../lib/browserCopies'
+import { createdHere } from '../lib/create/createProgress'
+import { shortDate, shortTime } from '../lib/format/time'
+import { CHAIN_ID } from '../lib/read/screens/identity'
 import type { RelayAnswer, StatePositionOk, StateResponse } from '../lib/fees/types'
 import { warmVault } from '../lib/automationImpact'
 import { useAutomation } from '../lib/automationState'
 import { useMediaQuery } from '../lib/useMediaQuery'
+import { recovering } from '../lib/staleRelease'
 import { NATIVE_CURRENCY } from '../lib/read/screens/identity'
 import { whenVisibleAfter } from '../lib/read/screens/quietRead'
 import { cardPoolUsableForDomino } from '../lib/read/screens/positions'
 import type { TokenDisplay } from '../lib/read/types'
 import { positionOfState, walletCard, walletState, type CurrencyView } from '../lib/walletCards'
 import { useWalletIdentity, walletKey } from '../lib/walletIdentity'
-import { forgetWallet, keptPosition, type WalletPosition } from '../lib/walletPositions'
+import { keptPosition, parseWalletAnswer, walletChanged, type WalletPosition } from '../lib/walletPositions'
+import { readGatewayRow } from '../lib/positions/gatewayRow'
+import { loadReadSource } from '../lib/read/buildMode'
 
 /**
  * What the owner's actions take (components/positions/PositionActions.tsx, the
@@ -41,7 +47,7 @@ interface ActionsProps {
   unsettledFeesRaw: readonly [string, string] | null
   currencies: readonly [CurrencyView, CurrencyView]
   hooks: string
-  onChanged: () => void
+  onChanged: (block?: bigint) => void
   /** The `/state` pool price, for the dialogs' USD lines (pairs with USDG only). */
   usd?: { usdgIndex: 0 | 1; sqrtPriceX96: bigint; block: number } | null
   /** The page's token marks, beside the dialogs' amounts. */
@@ -62,7 +68,7 @@ const couldNotLoad = () => ({
     </span>
   ),
 })
-const PositionActions = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ActionsProps>>(() => import('../components/positions/PositionActions').catch(couldNotLoad)) : null
+const PositionActions = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ActionsProps>>(recovering(() => import('../components/positions/PositionActions'), couldNotLoad)) : null
 
 /**
  * The page's own chain read: the fees relay's /state read of this NFT, from the chain, at one block. 2026-09-28 (speed
@@ -71,19 +77,39 @@ const PositionActions = __DOMINO_WALLET_SESSION__ ? lazy<ComponentType<ActionsPr
  */
 type Detail =
   | { phase: 'loading' }
-  | { phase: 'ready'; position: WalletPosition; owner: string; block: number; row?: true }
+  /**
+   * `copy` (2026-10-01, item A15): from this browser's copy of the wallet's list, kept at that time (ms). `gateway`
+   * (RPC-SPEC P2): from the read gateway while the site's chain routes cannot answer (lib/positions/gatewayRow.ts).
+   */
+  | { phase: 'ready'; position: WalletPosition; owner: string; block: number; row?: true; copy?: number; gateway?: true }
   | { phase: 'failed'; reason: string }
-  /** ownerOf reverts: never minted, or burned. */
+  /** ownerOf reverts and the id is below PositionManager.nextTokenId: it was minted, and burned. */
   | { phase: 'gone'; block: number }
+  /** 2026-10-01 (item D5): no NFT was ever minted with this id (at or above nextTokenId), and this visit made none. */
+  | { phase: 'missing'; block: number }
 
 /** The waits before a read that failed only for the moment is asked again, while the page is visible. */
 const REASK_MS = [3_000, 12_000, 30_000] as const
 /**
+ * RPC-SPEC P2: while the page's own read answers `unavailable` (the site's chain routes without their node: no secret
+ * yet, or the node away) and nothing is drawn, the read gateway's row of the NFT is asked, at most once this often per
+ * NFT; the page's own read goes on at its schedule, and its answer replaces the row.
+ */
+const GATEWAY_EVERY_MS = 60_000
+const gatewayAsked = new Map<string, number>()
+/**
  * An NFT the chain says does not exist is asked again after these waits, the skeleton kept, before the page says so:
- * Create position opens a new position's page 3 s after its mint, and the page reads two blocks behind the head, from a
- * public RPC whose nodes may lag one another (the relay's 10 s answer cache these waits once reached past is gone).
+ * Create position opens a new position's page 3 s after its mint, and the page reads two blocks behind the head (from a
+ * public RPC whose nodes could lag one another until 2026-10-01; from the site's state route, whose answer is kept 10 s,
+ * since then).
  */
 const NOT_FOUND_REASK_MS = [3_000, 8_000, 12_000] as const
+/**
+ * 2026-10-01 (item D5): an id at most this far past PositionManager.nextTokenId may be a mint the page's read does not show
+ * yet (it reads two blocks behind the head, and a node may lag): asked again as above, the skeleton kept. One further past
+ * it was never minted, and says so at once.
+ */
+const FRESH_IDS = 100n
 /**
  * After an action, the page is read again at once and once more a moment later: its read is at head − 2, which right after
  * the receipt may not hold the action yet (the relay's 10 s answer cache, which this wait first reached past, is gone
@@ -108,6 +134,20 @@ const ready = (position: StatePositionOk, block: number): Ready => ({ phase: 're
 function fromList(tokenId: string): Detail {
   const row = keptPosition(tokenId)
   return row ? { phase: 'ready', position: row.position, owner: row.owner, block: row.block, row: true } : { phase: 'loading' }
+}
+/**
+ * 2026-10-01 (item A15: a reload or a link drew the skeleton, for 12 s or more while the RPC refused, for figures this
+ * browser already had): the NFT's row in this browser's copy of the connected wallet's list (Your positions keeps it a
+ * day, OwnedPositions.tsx), drawn as a dated copy with no action until the page's own read answers. Read at the copy's
+ * own age (lib/browserCopies.ts, I6: a week until 2026-10-01), so the page never shows a copy the list would not.
+ */
+function fromCopy(tokenId: string, owner: string): Detail | null {
+  const kept = readKept(`owned.${CHAIN_ID}.${owner}`, KEPT_MAX_AGE_MS.owned, (data, at) => {
+    const answer = parseWalletAnswer(data, owner)
+    return answer?.positions.length ? { answer, at } : null
+  })
+  const position = kept?.answer.positions.find((one) => one.tokenId === tokenId)
+  return kept && position ? { phase: 'ready', position, owner, block: kept.answer.block, row: true, copy: kept.at } : null
 }
 /** The store's newest read of `tokenId` (feesStore.position), followed while the refresh is on. */
 function useStoredPosition(tokenId: string): Readonly<{ position: StatePositionOk; block: number }> | null {
@@ -143,7 +183,42 @@ function Back() {
  * Robinhood Chain, also gets Collect fees and Close position in the title row; anyone else reads the same page with
  * no action on it. Every figure but the fees history's is from one chain read, at its block (the figures' title).
  */
-function LiveDetail({ wallet, owner, block, cached, changes, onChanged }: { wallet: WalletPosition; owner: string; block: number; cached: boolean; changes: number; onChanged: () => void }) {
+/** Why a ledger cannot measure Fees earned, in Details' own words (lib/fees/types.ts LedgerWhy). */
+const WHY_WORDS: Readonly<Record<string, string>> = {
+  before_floor: 'the position was opened before Domino’s release',
+  manual: 'an add or a withdrawal settled fees together with the tokens it moved',
+  shared: 'a collect’s transaction did more than collect this position',
+  native: 'a collect paid out ETH, which leaves no log',
+  liquidity: 'a change of this position was not found',
+  unseen: 'something settled this position that Domino’s reads cannot see',
+  too_many: 'it has more settlements or owners than one ledger keeps',
+  reading: 'it is still being read',
+}
+
+/**
+ * Where the fees history on this page comes from, for the technical Details (item A13 moved blocks and exact times here,
+ * off the main screen). Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the position's own ledger of settlements, and how
+ * its chart's points were measured.
+ */
+function HistorySource({ tokenId }: { tokenId: string }) {
+  const fees = useFeeHistory(tokenId)
+  let text: string
+  if (fees.phase === 'verified') {
+    text = `Every settlement of this position from its own events, through block ${fees.history.through}, and the fees ready to collect at block ${fees.state.block}. Measured at each compound or collect and when this browser read it; the line between points is a guide, not a measurement.`
+  } else if (fees.phase === 'cached') text = `A copy saved in this browser, through block ${fees.state.block} (${shortDate(fees.state.timestamp)} ${shortTime(fees.state.timestamp)})`
+  else if (fees.phase === 'unclaimed-only' && fees.reason === 'not_exact') text = `Fees earned is not measured: ${WHY_WORDS[fees.why ?? 'unseen'] ?? WHY_WORDS.unseen}. Fees ready to collect is exact.`
+  else if (fees.phase === 'unclaimed-only' || fees.phase === 'unavailable') text = `Not read (${fees.reason.replace(/_/g, ' ')})`
+  else text = 'Reading…'
+  return (
+    <KeyValue label="Fees history">
+      <span data-history-source={fees.phase === 'verified' ? 'ledger' : fees.phase} data-history-why={fees.phase === 'unclaimed-only' ? fees.why : undefined}>
+        {text}
+      </span>
+    </KeyValue>
+  )
+}
+
+function LiveDetail({ wallet, owner, block, cached, copy, gateway = false, changes, onChanged }: { wallet: WalletPosition; owner: string; block: number; cached: boolean; copy?: number; gateway?: boolean; changes: number; onChanged: (block?: bigint) => void }) {
   const card = useMemo(() => walletCard(wallet, owner), [wallet, owner])
   // The same read values the amounts for a pair with USDG (§6.2): one price, one block.
   const state = useMemo(() => walletState(wallet, block, owner), [wallet, block, owner])
@@ -161,7 +236,6 @@ function LiveDetail({ wallet, owner, block, cached, changes, onChanged }: { wall
   const listed = useListedPosition(card.tokenId, mine ? card.owner.address : null, changes)
   const automatable = listed === true && card.hasLiquidity
   const usdgIndex = state ? usdgSide(state.currencies) : null
-  const series = usePriceSeries(card.tokenId)
   const phone = useMediaQuery('(max-width: 767px)')
   const automation = useAutomation(card.tokenId)
   // What the automation put back, from its vault's own record: the only rows of Activity that name it (2026-09-27).
@@ -178,21 +252,52 @@ function LiveDetail({ wallet, owner, block, cached, changes, onChanged }: { wall
             <Display as="h1" className="dm-display-h1 dm-pos-pair">
               <PairName card={card} />
             </Display>
+            {/* A copy kept by this browser (item A15): dated, and no action is offered on it. */}
+            {copy !== undefined && (
+              <p className="dm-pos-copy" data-position-copy="">
+                Saved copy from {shortDate(Math.floor(copy / 1000))} {shortTime(Math.floor(copy / 1000))} · Reading the chain…
+              </p>
+            )}
             <div className="dm-pos-chips">
-              {/* "fee" after the pool's fee tier (2026-09-27): beside Your APR, a bare percentage would read as a yield. */}
+              {/* "fee" after the pool's fee tier (2026-09-27): beside Your APR, a bare percentage would read as a yield.
+                  Changed on purpose 2026-10-01 (audit E5): the NFT's number left the chip for Details, the tab's title
+                  and a screen reader, as on the Positions list. */}
               <Chip>
                 <span>
-                  Uniswap · <span data-fee="">{card.fee}</span> fee · #<span translate="no">{card.tokenId}</span>
+                  Uniswap · <span data-fee="">{card.fee}</span> fee
                 </span>
               </Chip>
+              <span className="sr-only">
+                Position #<span translate="no">{card.tokenId}</span>
+              </span>
               <PositionStatus card={card} />
               <AutomationChip tokenId={card.tokenId} listed={card.hasLiquidity ? listed : false} />
             </div>
           </div>
         </div>
-        {PositionActions && mine && (
+        {/* No action on a row from the read gateway (RPC-SPEC P2): the page's own read offers them once it answers. */}
+        {PositionActions && mine && copy === undefined && !gateway && (
           <div className="dm-pos-actions" data-position-actions="">
-            <Suspense fallback={entry}>
+            {/* While the actions' chunk loads, the row already holds their place (2026-10-01, E1): the way on, and the two
+                buttons' room, unseen, so the figures below never move when they arrive (they slid down under the finger,
+                about 0.3 s after the figures). */}
+            <Suspense
+              fallback={
+                <>
+                  {entry}
+                  <div className="flex flex-wrap items-center gap-2" aria-hidden="true" style={{ visibility: 'hidden' }} data-position-actions-pending="">
+                    <Button type="button" variant="outline" tabIndex={-1}>
+                      Collect fees
+                    </Button>
+                    {card.hasLiquidity && (
+                      <Button type="button" variant="danger" tabIndex={-1}>
+                        Close position
+                      </Button>
+                    )}
+                  </div>
+                </>
+              }
+            >
               <PositionActions
                 tokenId={card.tokenId}
                 owner={card.owner.address}
@@ -217,30 +322,14 @@ function LiveDetail({ wallet, owner, block, cached, changes, onChanged }: { wall
       {/* The quote of a pair without USDG is the app's one way round's (visual/value.ts basisOf, 2026-09-28). */}
       <FeesCard kind="plain" source={{ tokenId: card.tokenId }} bandPresent tokens={[base, quote]} activity={false} />
 
-      <div className="dm-pos-grid" data-has-price-chart={series ? '' : undefined}>
+      <div className="dm-pos-grid">
         <section className="dm-card dm-pos-card" aria-labelledby="position-range-title">
           <h2 id="position-range-title" className="dm-title">
             Price range
           </h2>
-          <PositionRange
-            card={card}
-            price={price}
-            variant="page"
-            chart={
-              series && (
-                <div className="dm-pos-chart">
-                  <PriceVsRange
-                    series={series}
-                    unit={
-                      <>
-                        <TokenLabel token={quote} /> per <TokenLabel token={base} />
-                      </>
-                    }
-                  />
-                </div>
-              )
-            }
-          />
+          {/* The range, its ends and the price now (the page's own read). Changed on purpose 2026-10-02 (RPC-SPEC §11.4):
+              no line of the pool's past prices, which came from the fees replay's reads of the pool's history. */}
+          <PositionRange card={card} price={price} variant="page" />
         </section>
 
         <PositionActivity tokenId={card.tokenId} automatic={automatic} />
@@ -282,6 +371,7 @@ function LiveDetail({ wallet, owner, block, cached, changes, onChanged }: { wall
             <KeyValue label="Position manager">
               <Address value={card.positionManager} />
             </KeyValue>
+            <HistorySource tokenId={card.tokenId} />
           </KeyValueList>
           <div className="dm-pos-links">
             <LinkButton href={poolHref(card.poolId, token)} variant="outline" size="sm">
@@ -305,9 +395,11 @@ function LiveDetail({ wallet, owner, block, cached, changes, onChanged }: { wall
 /**
  * `#/positions/<id>`: one position NFT's own page, read from chain by the fees
  * relay's /state read (the NFT's pool, range, liquidity, owner, the pool's
- * price and its unclaimed fees at one block), which the page runs itself
- * against the public RPC since 2026-09-25, so it opens whether or not the read
- * service or the site's routes are up. A read that failed only for
+ * price and its unclaimed fees at one block). From 2026-09-25 the page ran it
+ * itself against the public RPC; since 2026-10-01 (RPC-SPEC D2, the owner's
+ * rule: nothing is read from a public RPC) it asks the site's own state route
+ * (lib/fees/client.ts chainState), and while that cannot answer, the read
+ * gateway's row of the NFT stands in (lib/positions/gatewayRow.ts). A read that failed only for
  * the moment is asked again on its own while the page is visible; the owner's
  * actions ask the page to read again once they are included on chain; and
  * every minute the fees store's read of it moves its header on (REFRESH).
@@ -318,19 +410,32 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
   const [detail, setDetail] = useState<Detail>(() => fromList(tokenId))
   const [asked, setAsked] = useState(0)
   const stored = useStoredPosition(tokenId)
+  // 2026-10-01 (item A15): while nothing is drawn, the row of this browser's copy of the connected wallet's list. Taken as
+  // the page renders, as the store's answer is below (integration pass 2a: set from an effect, it drew the skeleton for
+  // one paint first, and the lint's React compiler rule refuses a synchronous setState in an effect).
+  const identity = useWalletIdentity()
+  const connected = identity.kind === 'connected' ? identity.address.toLowerCase() : null
+  const kept = useMemo(() => (detail.phase === 'loading' && connected ? fromCopy(tokenId, connected) : null), [detail.phase, connected, tokenId])
+  if (kept && detail.phase === 'loading') setDetail(kept)
   // A successful store read can also recover the first read's failure. It must
   // name this NFT, never replace a confirmed absence, and never move a ready
   // header back to an older block. The store keeps reading after our bounded
   // initial retries end, so it is the same source of recovery as of refreshes.
   const current = useMemo(() => {
     if (!stored || stored.position.tokenId !== tokenId || detail.phase === 'gone') return detail
-    if (detail.phase === 'ready' && stored.block <= detail.block) return detail
+    // A row from the read gateway (RPC-SPEC P2) gives way to the chain routes' answer whatever its block.
+    if (detail.phase === 'ready' && !detail.gateway && stored.block <= detail.block) return detail
     return ready(stored.position, stored.block)
   }, [detail, stored, tokenId])
   // Keep the last successful store answer in the header too. If a later
   // read cannot find the NFT, the store may clear its copy; that must not
   // roll the visible figures back to the page's first, older answer.
   if (current !== detail && current.phase === 'ready') setDetail(current)
+  // What is on screen, for the read gateway's row (RPC-SPEC P2), which is never asked over a row or an answer.
+  const drawn = useRef<Detail>(current)
+  useEffect(() => {
+    drawn.current = current
+  }, [current])
   useEffect(() => {
     const controller = new AbortController()
     let attempts = 0
@@ -348,6 +453,19 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
       })
     }
     let first = asked === 0
+    // RPC-SPEC P2: the read gateway's row, while the page's own read answers `unavailable` and nothing is drawn.
+    const fromGateway = () => {
+      const last = gatewayAsked.get(tokenId)
+      if (drawn.current.phase === 'ready' || (last !== undefined && Date.now() - last < GATEWAY_EVERY_MS)) return
+      gatewayAsked.set(tokenId, Date.now())
+      void loadReadSource()
+        ?.then((source) => (controller.signal.aborted ? null : readGatewayRow(source, tokenId, controller.signal)))
+        .then((got) => {
+          if (!got || controller.signal.aborted) return
+          setDetail((before) => (before.phase === 'ready' || before.phase === 'gone' || before.phase === 'missing' ? before : { phase: 'ready', position: got.row, owner: got.owner, block: got.block, row: true, gateway: true }))
+        })
+        .catch(() => undefined)
+    }
     const ask = () => {
       const read = (first && takeWarmState(tokenId)) || chainState([tokenId], controller.signal)
       first = false
@@ -369,19 +487,32 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
         // A position on screen stays there through a read that fails: the store's next minute read is the next ask.
         if (REFRESH && shown) return
         if (answer.ok && found && !found.ok && found.reason === 'not_found') {
-          // Not there yet, perhaps: asked again a few times, the skeleton (or the position already shown) kept.
-          if (empties < NOT_FOUND_REASK_MS.length) {
+          const block = answer.value.block
+          // 2026-10-01 (item D5): an id below nextTokenId was minted: not found now, it was burned, said at once. One at or
+          // above it was not minted at that block: one this visit's New position made, or one just past it (FRESH_IDS: a
+          // mint a read from a node still behind it does not show) is asked again a few times, the skeleton kept; any
+          // other was never minted, and says so at once.
+          const next = answer.value.nextTokenId === undefined ? null : BigInt(answer.value.nextTokenId)
+          if (next !== null && BigInt(tokenId) < next) {
+            setDetail((before) => (before.phase === 'ready' ? before : { phase: 'gone', block }))
+            return
+          }
+          const made = createdHere(tokenId)
+          if ((next === null || made || BigInt(tokenId) - next < FRESH_IDS) && empties < NOT_FOUND_REASK_MS.length) {
+            // 2026-10-01 (the RPC switch's integration): asked fresh, so the route takes no answer it kept from before the
+            // mint (it keeps a state 10 s; the page read the chain itself, uncached, until the switch).
+            freshState([tokenId])
             askAfter(NOT_FOUND_REASK_MS[empties])
             empties += 1
             return
           }
-          const block = answer.value.block
-          setDetail((before) => (before.phase === 'ready' ? before : { phase: 'gone', block }))
+          setDetail((before) => (before.phase === 'ready' ? before : next !== null && !made ? { phase: 'missing', block } : { phase: 'gone', block }))
           return
         }
         const reason = !answer.ok ? answer.failure : found && !found.ok ? found.reason : 'invalid_reply'
         // A position already on screen stays there, from its own block, when a later read fails.
         setDetail((before) => (before.phase === 'ready' ? before : { phase: 'failed', reason }))
+        if (!answer.ok && answer.failure === 'unavailable') fromGateway()
         const passing = reason === 'unavailable' || reason === 'rate_limited' || reason === 'rpc_unavailable'
         if (!passing || attempts >= REASK_MS.length) return
         const wait = Math.max(REASK_MS[attempts], answer.ok ? 0 : answer.retryAfterMs)
@@ -435,6 +566,22 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
         data-empty="position-gone"
       />
     )
+  } else if (current.phase === 'missing') {
+    body = (
+      <EmptyState
+        icon={<IconSearch />}
+        title={`No position #${tokenId} was found`}
+        body="Robinhood Chain has no position with this number. Check the link."
+        plate
+        className="dm-pos-empty"
+        action={
+          <LinkButton href={positionsHref} variant="outline" size="sm">
+            Positions
+          </LinkButton>
+        }
+        data-empty="position-missing"
+      />
+    )
   } else if (current.phase === 'ready') {
     body = (
       <LiveDetail
@@ -442,11 +589,16 @@ export default function PositionDetail({ tokenId }: { tokenId: string }) {
         owner={current.owner}
         block={current.block}
         cached={current.row === true}
+        copy={current.copy}
+        gateway={current.gateway === true}
         changes={asked}
-        onChanged={() => {
+        onChanged={(included) => {
           setAsked((n) => n + 1)
           // The list kept for this visit is from before the action (item 18); the fees card reads its own state at once too.
-          forgetWallet()
+          // 2026-10-02 (review findings 8 and 15): and the wallet's next read asks the route fresh, wherever it is asked
+          // (Positions after this page), so no answer the edge kept from before the action is drawn. RPC fix round 2: until
+          // an answer is at or past the block the action was included in (a node behind its receipt answers from before it).
+          walletChanged(included)
           refreshFeeStates([tokenId])
         }}
       />

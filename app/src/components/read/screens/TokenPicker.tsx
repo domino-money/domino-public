@@ -187,8 +187,9 @@ function CandidateRow({ candidate, name, checked, onPick, index }: { candidate: 
           </span>
           {candidate.balance && candidate.why === null && (
             <span className="text-caption text-fg-muted">
-              {/* A long balance wraps only between its digit groups, so the row never pushes the page sideways. */}
-              Balance at snapshot:{' '}
+              {/* A long balance wraps only between its digit groups, so the row never pushes the page sideways. Changed on
+                  purpose 2026-10-01 (audit E10): "Balance", not "Balance at snapshot"; its block is the list's title. */}
+              Balance:{' '}
               <span className="text-fg">
                 <Figure text={candidate.balance.text} />
               </span>

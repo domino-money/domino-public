@@ -4,5 +4,7 @@
  * Loaded only through src/lib/read/screens/slots.tsx, which the default
  * build folds to nothing.
  */
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../../../styles/screens.css'
 export { ChainSelectionPanel } from './ChainSelectionPanel'
 export { PoolFiguresDialog } from './PoolFiguresDialog'

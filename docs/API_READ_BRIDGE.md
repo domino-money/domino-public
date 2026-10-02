@@ -218,6 +218,38 @@ takes it out, so a rollback reaches visitors at their next read, within 15
 minutes at the most. Same day, the same rules for a pool's built stored history,
 read-v3 `history`, kept 20 seconds and never served stale:
 `app/functions/api/read/v3/history.ts`.)
+
+Changed 2026-10-01, the owner's OK on the audit's items A6, A7 b and A14 ("more
+cache at the edge"), with no change on the VM. Still only reads whose answer is
+the same for every visitor; `pool-market`, wallet, NFT and session reads are
+never kept:
+
+| Route (Pages Function) | Kept when | Fresh | Served while it refreshes behind |
+| --- | --- | --- | --- |
+| read-v5 `featured-pools` (`api/read/v5/featured-pools.ts`) | any 200 read-v5's runtime accepts | 60 s | to 15 min; a visitor waits up to 1 s for the refresh only once the list is 5 min old (A6) |
+| read-v3 `history` (`api/read/v3/history.ts`) | `available` only | 20 s | to 60 s, below the chart's own 2 min (A14) |
+| read-v3 `overview` (`api/read/v3/overview.ts`) | settled only: every pool and token `ready`, none refreshing or failed, every pool's provider figures `available` | 10 s | to 30 s |
+
+An answer still collecting, or one whose provider refused, is passed on and
+never kept, so the page's catch-up asks always meet the store's newest. Every
+answer served from the edge says how old it is (`X-Domino-Edge-Age`, ms) and
+the page dates its figures by when the edge received it, so a kept figure is
+never younger on screen than it is; `Server-Timing: edge;desc=…` names a hit, a
+stale answer, a coalesced one or a miss. Concurrent misses for one question are
+coalesced per isolate (F7): one request reaches the Worker, the others wait up
+to 1 s for its answer and then ask the Worker themselves. A kept answer carries
+`X-Domino-Edge-Cache: hit`, and the page gives back the read it took from its
+budget. No KV: `caches.default` only, per colo, so no binding and no dashboard
+step.
+
+One more route at the edge that is not a read of ours (audit I3, privacy):
+`api/read/dex/[[path]].ts` asks DEX Screener's public API for the page, one token
+per upstream request, and keeps each token's answer 30 s fresh and up to 5 min
+while it is read again. The visitor's address and a wallet's set of tokens no
+longer reach the provider. When the edge cannot reach it (it may refuse
+Cloudflare's shared egress, as the chain's public RPC does), the route answers
+502 and the page asks the provider itself, as before.
+
 Keep PR #10's
 bounded market-observation cache: fresh for 60 seconds, stale fallback up to
 300 seconds of age since its original successful retrieval, and a 15-second

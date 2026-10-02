@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "id": "elysium-99801",
+  "chainId": 99801,
+  "name": "Elysium Testnet",
+  "network": "testnet",
+  "parentChainId": 998,
+  "nativeCurrency": {
+    "name": "HYPE",
+    "symbol": "HYPE",
+    "decimals": 18
+  },
+  "wrappedNative": "0xcd57f65c2b0e5881cfc2e609f7cd53b746e1f234",
+  "stableTokens": [
+    "0x7d29d8047b905000459c0e80c34a26ceedcb47b2"
+  ],
+  "explorerUrl": "https://elysium.kinetiq.xyz/testnet-explorer",
+  "publicRpcUrl": "https://testnet-rpc.elysium.kinetiq.xyz",
+  "protocolDeploymentId": "elysium-v3-unqualified",
+  "nitro": {
+    "minimumArbOS": 40,
+    "arbSys": "0x0000000000000000000000000000000000000064",
+    "nodeInterface": "0x00000000000000000000000000000000000000c8",
+    "blockHashWindow": 256
+  },
+  "finality": {
+    "maxFinalizedLagSeconds": 1800
+  },
+  "gas": {
+    "wallet": {
+      "priorityFeePerGasWei": "1",
+      "maxGas": "8000000",
+      "floorMaxFeePerGasWei": "10000000"
+    },
+    "operator": {
+      "priorityFeePerGasWei": "1"
+    },
+    "publisher": {
+      "priorityFeePerGasWei": "1"
+    }
+  },
+  "windows": {
+    "mode": "timestamp",
+    "liveWindowSeconds": 86400,
+    "retentionBlocks": null,
+    "localStateBlocks": null
+  },
+  "providers": {
+    "inventory": null,
+    "marketChain": null,
+    "uniswapApi": false
+  },
+  "web": {
+    "origin": null
+  }
+}

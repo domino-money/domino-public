@@ -58,9 +58,13 @@ export const gatewayError = (code, status) =>
  * Added 2026-09-28 (speed wave, after review): either may also return a promise of its answer, for a service that
  * answers late, and `answer` may return a Response, for the gateway refusing the read with its own status
  * (`gatewayError`).
+ *
+ * `reads`, optional (added 2026-10-02, the fee chart's periods): the read-v1 routes the deployment lists, a comma list,
+ * in place of the default (a suite that wants only `nft-positions` listed, say).
  */
-export function createReadStub({ answer, stored } = {}) {
-  const env = stored ? { ...BRIDGE, READ_V3_BRIDGE_ENABLED: 'true', ENABLED_V3_READS: 'overview,history,search' } : BRIDGE;
+export function createReadStub({ answer, stored, reads } = {}) {
+  const base = reads === undefined ? BRIDGE : { ...BRIDGE, ENABLED_READS: reads };
+  const env = stored ? { ...base, READ_V3_BRIDGE_ENABLED: 'true', ENABLED_V3_READS: 'overview,history,search' } : base;
   /** Every read the page asked the Worker for, as it arrived. */
   const requests = [];
   const worker = createWorker({

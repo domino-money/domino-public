@@ -11,7 +11,8 @@ export type ReadControl = 'Read my operations' | 'Set up automation' | 'Create p
 
 /** A sentence, or one that names the screen's own read button, since each screen names it differently. */
 const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> = {
-  connect_robinhood_wallet: 'Connect a wallet on Robinhood Chain (4663) first.',
+  // Changed on purpose 2026-10-01 (audit E6): no chain id on a main screen.
+  connect_robinhood_wallet: 'Connect a wallet on Robinhood Chain first.',
   wallet_identity_changed: (again) => `Your wallet account or network changed. Press ${again} again.`,
   wallet_action_busy: 'Your wallet is still answering the previous request.',
   wallet_action_expired: 'Your wallet took too long to answer.',
@@ -44,6 +45,15 @@ const TEXT: Readonly<Record<string, string | ((again: ReadControl) => string)>> 
   native_eth_refused: "Your wallet can't receive ETH right now: its smart-account delegation (EIP-7702) refuses plain ETH, so this ETH payment would fail. Change or turn off that delegation in your wallet, then try again. Nothing was sent.",
   delegate_unrecognized: 'Your account runs a smart-account contract (EIP-7702) that Domino does not recognize, and that code can move everything the account holds. Nothing was prepared. If you set up this smart account in your wallet yourself, confirm it below, then prepare the funding again.',
   pending_wallet_transaction: 'Your wallet has a pending transaction. Let it finish first.',
+  // 2026-10-01 (audit C2): nothing is pending on chain, but this browser offered the same step to the wallet and heard
+  // nothing back. Reloading lets the latch go (finance/nonce.ts settle), so the sentence can say how to get out.
+  wallet_request_open: 'Your wallet may still be showing an earlier request from this site. Approve or reject it there. If you already rejected or closed it, reload this page.',
+  // 2026-10-01 (audit C6): the wallet's own RPC could not reach Robinhood Chain, and the page's could not stand in.
+  wallet_rpc_unreachable: 'Your wallet can’t reach Robinhood Chain right now. Check the network’s RPC in your wallet, then try again.',
+  // 2026-10-02 (review of the RPC switch, finding 16): a WalletConnect wallet hands its reads to the page, and the site
+  // serves none (RPC-SPEC D6, pending a decision of the owner and rugged97): said as what it is. The refusal comes before
+  // any wallet step, so nothing was sent.
+  site_reads_unavailable: 'Creating and managing positions isn’t available yet for wallets connected with WalletConnect. Nothing was sent.',
   invalid_pool_key: 'Check the pool: tokens in address order, no hooks, and a fee and tick spacing in range.',
   invalid_funding: 'Fund at least one token, within range.',
   invalid_operation_id: 'Enter the operation ID as a 32-byte hex value.',
@@ -116,8 +126,10 @@ export function errorCode(error: unknown): string | null {
 }
 
 /** A receipt state in words. `over_budget` is an included, successful transaction whose cost went past what the review approved: not a revert, not a mismatch. */
-export const RECEIPT_TEXT: Readonly<Record<'pending' | 'included' | 'confirming' | 'reorged' | 'reverted' | 'finalized' | 'over_budget' | 'over_budget_finalized', string>> = {
+export const RECEIPT_TEXT: Readonly<Record<'pending' | 'replaced' | 'included' | 'confirming' | 'reorged' | 'reverted' | 'finalized' | 'over_budget' | 'over_budget_finalized', string>> = {
   pending: 'Waiting to be included',
+  // 2026-10-01 (audit C14): a hash the chain does not know while the account's nonce has passed it (Speed up or Cancel).
+  replaced: 'Replaced in your wallet by another transaction',
   included: 'Included, waiting for finality',
   confirming: 'Included, waiting for finality',
   reorged: 'Its block left the canonical chain',

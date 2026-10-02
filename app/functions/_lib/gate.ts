@@ -10,6 +10,21 @@
  * The project owner chose a shared password over Cloudflare Access for this
  * beta. It proves an invitation, not wallet ownership: wallet admission is a
  * separate backend concern and nothing here grants any capability in the app.
+ *
+ * 2026-10-01 (platform workstream, D3, I5, I7):
+ *   - The access lasts SESSION_SECONDS from the last visit, not from the
+ *     login: a page served with a cookie more than RENEW_AFTER_SECONDS old
+ *     carries a fresh one (functions/_middleware.ts), so an active tester is
+ *     never cut off in the middle of a week. Rotating BETA_PASSWORD or
+ *     BETA_COOKIE_KEY still signs everyone out at once: the signature covers
+ *     both.
+ *   - The link a visitor opened (its hash, which never reaches a server) is
+ *     carried through the login by the access page's one inline script into
+ *     a hidden field, checked against NEXT_HASH, and the login goes back to
+ *     it instead of to Home.
+ *   - The access page loads no Google Fonts: its two fonts are the site's own
+ *     files, served without the cookie from GATE_FONTS.
+ *   - Logins are limited per client address (createLoginLimiter).
  */
 
 export interface BetaEnv {
@@ -31,6 +46,8 @@ export interface BetaConfig {
 
 export const COOKIE_NAME = '__Host-domino-beta'
 export const SESSION_SECONDS = 7 * 24 * 60 * 60
+/** A cookie older than this (less than six days left) is renewed by the next page the gate serves with it. */
+export const RENEW_AFTER_SECONDS = 24 * 60 * 60
 export const MIN_PASSWORD_LENGTH = 16
 export const MIN_KEY_BYTES = 32
 const MAX_SECRET_LENGTH = 512
@@ -122,50 +139,143 @@ export async function issueCookie(config: BetaConfig, nowMs: number): Promise<st
 
 export const clearCookie = () => `${COOKIE_NAME}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0`
 
-export async function hasValidCookie(config: BetaConfig, header: string | null, nowMs: number): Promise<boolean> {
-  if (!header || header.length > MAX_COOKIE_HEADER) return false
+/**
+ * The expiry, in seconds since the epoch, of the one valid access cookie in `header`, or null when there is none: a
+ * missing, malformed, duplicated, expired, foreign or tampered cookie is no cookie.
+ */
+export async function cookieExpiry(config: BetaConfig, header: string | null, nowMs: number): Promise<number | null> {
+  if (!header || header.length > MAX_COOKIE_HEADER) return null
   const values = header
     .split(';')
     .map((part) => part.trim())
     .filter((part) => part.startsWith(`${COOKIE_NAME}=`))
     .map((part) => part.slice(COOKIE_NAME.length + 1))
   // Exactly one: a duplicate is either a mistake or an attempt to confuse parsing.
-  if (values.length !== 1) return false
+  if (values.length !== 1) return null
   const match = /^v1\.(\d{1,12})\.([A-Za-z0-9_-]{43})$/.exec(values[0])
-  if (!match) return false
+  if (!match) return null
   const expires = Number(match[1])
   const now = Math.floor(nowMs / 1000)
-  if (expires <= now || expires > now + SESSION_SECONDS + 60) return false
+  if (expires <= now || expires > now + SESSION_SECONDS + 60) return null
   const signature = fromBase64Url(match[2])
-  if (!signature || signature.length !== 32) return false
+  if (!signature || signature.length !== 32) return null
   // subtle.verify compares in constant time.
-  return crypto.subtle.verify('HMAC', config.key, signature, signedPayload(config, expires))
+  return (await crypto.subtle.verify('HMAC', config.key, signature, signedPayload(config, expires))) ? expires : null
 }
 
-/** CSP for the access page itself: no scripts at all, fonts from the same host as the app. */
+export async function hasValidCookie(config: BetaConfig, header: string | null, nowMs: number): Promise<boolean> {
+  return (await cookieExpiry(config, header, nowMs)) !== null
+}
+
+/** Whether a valid cookie expiring at `expires` is old enough to be renewed at `nowMs` (D3: a sliding week). */
+export const renewable = (expires: number, nowMs: number) => expires - Math.floor(nowMs / 1000) < SESSION_SECONDS - RENEW_AFTER_SECONDS
+
+/**
+ * The link a visitor opened, as the login may go back to it: a hash route of the site's own shape (`#/positions/42`,
+ * `#/markets/0x…`, `#/docs/wallet#sign-in`), nothing else. It is a location on this site only: the login answers
+ * `Location: /` followed by it, never another host.
+ */
+const NEXT_PATTERN = '^#\\/[A-Za-z0-9\\/_.,-]{0,200}(?:#[A-Za-z0-9_-]{1,64})?$'
+export const NEXT_HASH = new RegExp(NEXT_PATTERN)
+
+/** `candidate` when it is such a link, else the empty string. */
+export const nextHash = (candidate: string | null): string => (candidate !== null && NEXT_HASH.test(candidate) ? candidate : '')
+
+/**
+ * The access page's one script: it puts the opened link's hash into the form's hidden field, so the login can go back
+ * to it. It reads location.hash and writes one input; it sends nothing. PAGE_CSP admits exactly this text by its hash
+ * (tests/gate.test.mjs recomputes it).
+ */
+export const GATE_SCRIPT = `(function () {
+  var next = document.getElementById('next')
+  if (next && /${NEXT_PATTERN}/.test(location.hash)) next.value = location.hash
+})()`
+export const GATE_SCRIPT_HASH = "'sha256-9uz1XhExhnnq32y0mtDaXrAaUwxq8YxGJSM8oJfEAt4='"
+
+/**
+ * The two fonts the access page uses, the site's own files (public/__beta/fonts/, byte for byte src/fonts/'s), served
+ * without the cookie: a visitor who has not signed in yet is reported to no one (I5; until 2026-10-01 the page linked
+ * Google Fonts, which saw every invitee's address, browser and this site).
+ */
+export const GATE_FONTS = Object.freeze(['/__beta/fonts/geist-latin.woff2', '/__beta/fonts/instrument-serif-latin.woff2'])
+
+/** Login attempts per client address (I7): after LOGIN_LIMIT.failures wrong passwords within its window, none for a while. */
+export const LOGIN_LIMIT = Object.freeze({ failures: 5, windowMs: 10 * 60_000, lockMs: 60_000, clients: 5_000 })
+
+/**
+ * Best effort, per isolate: Cloudflare runs many isolates and recycles them, so this slows a guesser down without
+ * promising a hard cap. The firm limit is a rate limiting rule on POST /__beta/login in the Cloudflare dashboard, the
+ * owner's to add. Bounded memory: at most LOGIN_LIMIT.clients addresses, the oldest let go first.
+ */
+export function createLoginLimiter(limits: typeof LOGIN_LIMIT = LOGIN_LIMIT) {
+  const clients = new Map<string, { failures: number[]; lockedUntil: number }>()
+  const prune = (now: number) => {
+    for (const [client, entry] of clients) {
+      if (entry.lockedUntil <= now && entry.failures.every((at) => now - at >= limits.windowMs)) clients.delete(client)
+    }
+    while (clients.size >= limits.clients) clients.delete(clients.keys().next().value as string)
+  }
+  return {
+    /** How long `client` must wait before its next attempt, in ms; 0 when it may try now. */
+    waitMs(client: string, now: number): number {
+      const entry = clients.get(client)
+      return entry && entry.lockedUntil > now ? entry.lockedUntil - now : 0
+    },
+    /** A wrong password from `client`: the one that reaches the limit locks it for LOGIN_LIMIT.lockMs. */
+    failed(client: string, now: number): void {
+      if (!clients.has(client)) prune(now)
+      const entry = clients.get(client) ?? { failures: [], lockedUntil: 0 }
+      entry.failures = [...entry.failures.filter((at) => now - at < limits.windowMs), now]
+      if (entry.failures.length >= limits.failures) {
+        entry.lockedUntil = now + limits.lockMs
+        entry.failures = []
+      }
+      clients.delete(client)
+      clients.set(client, entry)
+    },
+    /** The right password: `client` starts again from nothing. */
+    succeeded(client: string): void {
+      clients.delete(client)
+    },
+    size: () => clients.size,
+  }
+}
+
+/**
+ * CSP for the access page itself: its one script by its hash, its own inline styles, and the site's own two fonts. No
+ * other host: the page loads nothing from Google since 2026-10-01 (I5).
+ */
 export const PAGE_CSP = [
   "default-src 'none'",
-  "style-src 'unsafe-inline' https://fonts.googleapis.com",
-  'font-src https://fonts.gstatic.com',
+  `script-src ${GATE_SCRIPT_HASH}`,
+  "style-src 'unsafe-inline'",
+  "font-src 'self'",
   'img-src data:',
   "form-action 'self'",
   "frame-ancestors 'none'",
   "base-uri 'none'",
 ].join('; ')
 
-export type PageState = 'ask' | 'wrong' | 'unavailable'
+export type PageState = 'ask' | 'wrong' | 'wait' | 'unavailable'
 
 /** The app's own favicon (public/favicon.svg): the domino tile, tilted 24 degrees, with nothing behind it. */
 const FAVICON =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg transform='rotate(-24 32 32)'%3E%3Crect x='15' y='5' width='34' height='54' rx='6' fill='%23f49a57'/%3E%3Crect x='17.5' y='30.5' width='29' height='3' rx='1.5' fill='%23faf5ea' opacity='.5'/%3E%3Ccircle cx='24.5' cy='14' r='6' fill='%23faf5ea'/%3E%3Ccircle cx='39.5' cy='24' r='6' fill='%23faf5ea'/%3E%3Ccircle cx='32' cy='46' r='6' fill='%23faf5ea'/%3E%3C/g%3E%3C/svg%3E"
 
 /**
- * The access page. Self-contained and without script: the app's upright tile
- * mark and wordmark (src/components/Header.tsx), and its warm palette
- * (src/styles/tokens.css), inlined. Dark only, like the app (owner, 2026-09-26:
- * dark only): the viewer's system setting is not consulted.
+ * The access page. Self-contained: the app's upright tile mark and wordmark (src/components/Header.tsx), and its warm
+ * palette (src/styles/tokens.css), inlined; its two fonts from GATE_FONTS. Dark only, like the app (owner, 2026-09-26:
+ * dark only): the viewer's system setting is not consulted. Its one script, GATE_SCRIPT, carries the opened link
+ * through the login; `next` is that link again on a page the login answers (a wrong password, a wait), checked here.
  */
-export function accessPage(state: PageState): string {
+export function accessPage(state: PageState, next = ''): string {
+  const link = nextHash(next)
+  const notice =
+    state === 'wrong'
+      ? '<p id="error" class="error" role="alert">That password didn’t work. Check it and try again.</p>'
+      : state === 'wait'
+        ? '<p id="error" class="error" role="alert">Too many tries in a row. Wait a minute, then try again.</p>'
+        : ''
   const body =
     state === 'unavailable'
       ? `<h1>Access is paused.</h1>
@@ -175,8 +285,9 @@ export function accessPage(state: PageState): string {
         <form method="post" action="/__beta/login" novalidate>
           <label for="password">Access password</label>
           <input id="password" name="password" type="password" autocomplete="current-password"
-            required autofocus spellcheck="false" autocapitalize="off"${state === 'wrong' ? ' aria-invalid="true" aria-describedby="error"' : ''} />
-          ${state === 'wrong' ? '<p id="error" class="error" role="alert">That password didn’t work. Check it and try again.</p>' : ''}
+            required autofocus spellcheck="false" autocapitalize="off"${notice ? ' aria-invalid="true" aria-describedby="error"' : ''} />
+          ${notice}
+          <input id="next" name="next" type="hidden" value="${link}" />
           <button type="submit">Enter Domino</button>
         </form>`
 
@@ -189,8 +300,11 @@ export function accessPage(state: PageState): string {
 <meta name="color-scheme" content="dark" />
 <title>Domino · Access</title>
 <link rel="icon" type="image/svg+xml" href="${FAVICON}" />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Geist:wght@400;500&display=swap" />
+<link rel="preload" href="${GATE_FONTS[0]}" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="${GATE_FONTS[1]}" as="font" type="font/woff2" crossorigin />
 <style>
+  @font-face { font-family: 'Geist'; font-style: normal; font-weight: 400 500; font-display: swap; src: url('${GATE_FONTS[0]}') format('woff2'); }
+  @font-face { font-family: 'Instrument Serif'; font-style: normal; font-weight: 400; font-display: swap; src: url('${GATE_FONTS[1]}') format('woff2'); }
   :root {
     color-scheme: dark;
     --bg: #0d0a08; --surface-1: #171310; --surface-2: #1f1a17; --surface-3: #2c2723;
@@ -297,6 +411,7 @@ export function accessPage(state: PageState): string {
     </div>
   </main>
   <footer>Robinhood Chain</footer>
+  <script>${GATE_SCRIPT}</script>
 </body>
 </html>`
 }

@@ -1,13 +1,15 @@
 /**
  * The chain helpers behind the site's own reads of Robinhood Chain: the
  * wallet's Domino positions (functions/_lib/walletPositions.ts) and the fees
- * relay (functions/_lib/fees.ts). Since 2026-09-25 the page itself imports
- * them and asks the public RPC from the browser (src/lib/chain/browser.ts):
- * the RPC answers 429 to every call from Cloudflare's shared egress, so the
- * same-origin routes (POST /api/owned/v2/positions, /api/fees/v1/*) failed
- * in production. The routes stay, tested, and nothing on the page asks them.
+ * relay (functions/_lib/fees.ts). From 2026-09-25 to 2026-10-01 the page
+ * imported them and asked the public RPC from the browser, because that RPC
+ * answers 429 to every call from Cloudflare's shared egress. Changed on purpose
+ * 2026-10-01 (RPC-SPEC, the owner's rule: nothing is read from a public RPC):
+ * they run only in the site's Pages Functions again (functions/_lib/
+ * chainRoutes.ts), over Domino's own node (functions/_lib/localRpc.ts, whose
+ * address and token are a Cloudflare secret the browser never learns).
  * Nothing here may name the DOM, a build flag or a Workers-only API at module
- * level: the same file runs in a Pages Function, a page and a Web Worker.
+ * level: the same file still runs in a Node test and a Pages Function.
  *
  * Here: the pins, the hand-written ABI encoding of Multicall3's aggregate3 and
  * its results, Keccak-256, the bounded RPC call (a cap on calls, bytes and
@@ -16,27 +18,42 @@
  * seconds, 5 for a fresh question, a failure 12), so a loop of questions is
  * not a loop of scans.
  *
- * What this is not: a general RPC proxy. The endpoint, every method, contract,
- * topic, block range and calldata are fixed by the routes that use it. No
- * secret is involved: the RPC is the chain's public one, and every answer is
+ * What this is not: a general RPC proxy. Every method, contract, topic, block
+ * range and calldata are fixed by the routes that use it, and the transport
+ * forwards only those (functions/_lib/localRpc.ts's allowlist). Every answer is
  * public chain data about a public address, which is why the owner travels in
  * a POST body, never in a URL.
  *
  * The ABI encoding is written by hand (a Function carries no viem), and
  * tests/owned.test.mjs checks every selector, encoding and the Keccak below
  * against viem.
+ *
+ * Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit items G3 and G4): the chain's id, its RPC, its
+ * contracts, their first blocks and the RPC's log limits are the chain registry's (config/chainIdentity.ts,
+ * config/chainRobinhood.ts), read from there under the names this module always gave them; the same values.
+ * scripts/release.mjs BUNDLED lists those two files, which a Pages Function now compiles in.
  */
+import { MULTICALL3_CANONICAL, ROBINHOOD_ID, ROBINHOOD_POSITION_MANAGER } from '../../src/config/chainIdentity'
+import { FIRST_TRANSFER_BLOCK as REGISTRY_FIRST_TRANSFER_BLOCK, LOG_BLOCKS_MANY as REGISTRY_LOG_BLOCKS_MANY, LOG_BLOCKS_ONE as REGISTRY_LOG_BLOCKS_ONE } from '../../src/config/chainRobinhood'
 
-export const RPC_URL = 'https://rpc.mainnet.chain.robinhood.com'
-export const CHAIN_ID = 4663
+/**
+ * The name every read of the chain code is asked under: a sentinel, not a URL. Changed on purpose 2026-10-01 (RPC-SPEC
+ * §7.3): it was the chain's public RPC; now the only runtime that answers it is the edge's transport
+ * (functions/_lib/localRpc.ts), which refuses any other name and sends each read to Domino's own node.
+ */
+export const RPC_URL = 'local-rpc:robinhood'
+export const CHAIN_ID = ROBINHOOD_ID
 /** Uniswap v4 PositionManager on Robinhood Chain; the same pin as app/src/finance/pin.ts. */
-export const POSITION_MANAGER = '0x58daec3116aae6d93017baaea7749052e8a04fa7'
-/** DominoSetupV1; the same pin as app/src/finance/pin.ts SETUP_CONTRACT. */
+export const POSITION_MANAGER = ROBINHOOD_POSITION_MANAGER
+/**
+ * DominoSetupV1; the same pin as app/src/finance/pin.ts SETUP_CONTRACT. A literal on purpose: the backend's
+ * tests/test_domino_positions.py reads this line from source; tests/chain-registry.test.mjs holds it equal to the registry.
+ */
 export const SETUP_CONTRACT = '0x676f449fcfcd0f5ce4c7a1db2d98c7d6565dd37a'
 /** Multicall3 at its canonical address, deployed on Robinhood Chain. */
-export const MULTICALL3 = '0xca11bde05977b3631167028862be2a173976ca11'
+export const MULTICALL3 = MULTICALL3_CANONICAL
 /** The block of the PositionManager's first Transfer (the mint of NFT 1): nothing before it can name an NFT. */
-export const FIRST_TRANSFER_BLOCK = 9506
+export const FIRST_TRANSFER_BLOCK = REGISTRY_FIRST_TRANSFER_BLOCK
 /** keccak256('Transfer(address,address,uint256)'). */
 export const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
@@ -46,7 +63,7 @@ export const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11
  * docs/deployments/v1-robinhood-mainnet-2026-09-21 records the same): no
  * SetupMinted can be older.
  */
-export const SETUP_DEPLOY_BLOCK = 69_249_061
+export const SETUP_DEPLOY_BLOCK = 69_249_061 // a literal for the backend's source check; held equal to the registry by tests
 /** keccak256('SetupMinted(bytes32,address,uint256,uint128,uint128,uint128)'): contracts/src/DominoSetup.sol, owner indexed as topic 2. */
 export const SETUP_MINTED_TOPIC = '0xbe9f53385653b534d15ec3cb50f69cebc58346b3279852d27cab1dce0dfd3d9f'
 /** The most RPC calls one answer may cost, retries and splits included. */
@@ -74,10 +91,10 @@ export const MIN_SPLIT_BLOCKS = 2000
  * this request; narrow the block range, or send one value per position" (measured live that evening). Such a refusal
  * reads as a range to split ("block range"), and the fees history's reads that OR several values over a wider range
  * (a pool epoch's three events, a day's Swaps and Donates, a settlements read's currencies and owners) ask one filter
- * per value instead, in one batch (functions/_lib/fees.ts, feesPath.ts; lib/automationImpact.ts keeps its own copy).
+ * per value instead, in one batch (functions/_lib/fees.ts; lib/automationImpact.ts keeps its own copy).
  */
-export const LOG_BLOCKS_ONE = 10_000_000
-export const LOG_BLOCKS_MANY = 100_000
+export const LOG_BLOCKS_ONE = REGISTRY_LOG_BLOCKS_ONE
+export const LOG_BLOCKS_MANY = REGISTRY_LOG_BLOCKS_MANY
 /**
  * The owner's most recent setup operations that are read, for the deposits still held in them. Changed on purpose
  * (2026-09-25, audit of 754014c): it was 8, and a deposit older than the owner's last 8 operations was left out with
@@ -87,8 +104,16 @@ export const LOG_BLOCKS_MANY = 100_000
 export const RECENT_OPERATIONS = 128
 const CALL_TIMEOUT_MS = 10_000
 const DEADLINE_MS = 25_000
-/** How long an answer is kept per owner. */
-export const CACHE_SECONDS = 30
+/**
+ * How long an answer is kept per owner. Changed on purpose 2026-10-02 (RPC fix round 2): 25 s, a little less than the
+ * list's own 30 s refresh (src/lib/walletPositions.ts REFRESH_MS), so each refresh of an open list reads figures at most
+ * one refresh old, as the owner approved. The review's finding 14 had made it 40 s, past the refresh, so that an open
+ * list scanned the node only every other refresh, at the cost of figures up to a minute old. The node's load stays
+ * bounded without that: the entry is shared by every tab and visitor of the same owner, so an owner costs at most one
+ * scan per 25 s per data centre (a warm scan is a handful of POSTs; its mints walk is skipped while every listed
+ * position's mint is kept, ownedMints.ts), and a read after an action asks fresh (FRESH_AFTER_MS).
+ */
+export const CACHE_SECONDS = 25
 /** How long a chain_busy or chain_unavailable is kept per owner, for every question, fresh or not. */
 export const FAILURE_SECONDS = 12
 /** A fresh question gets the kept answer while it is younger than this, rather than a new scan. */
@@ -132,10 +157,10 @@ export interface OwnedDeps {
   /** True once nobody wants the answer any more (the page left): no further call is made. Optional; a Function has none. */
   cancelled?: () => boolean
   /**
-   * 2026-09-28: false while the runtime cannot read a wide range of logs in one call, as the chain's own RPC does (the
-   * page's, while that RPC is unreachable and its public fallbacks serve it: none reads more than a few thousand blocks
-   * of logs at once, src/lib/chain/endpoints.ts). The wallet scan then finds its ids another way (walletPositions.ts
-   * operationIds). Optional; a Function's runtime and the tests' fakes read the chain's own RPC and have none.
+   * 2026-09-28: false while the runtime cannot read a wide range of logs in one call (then: the page's, while the chain's
+   * RPC was unreachable and its public fallbacks served it). The wallet scan then finds its ids another way
+   * (walletPositions.ts operationIds). Since 2026-10-01 (RPC-SPEC D4) the owned route always says false: the ids come
+   * from DominoSetupV1's state, the mint blocks from a cached log walk (ownedMints.ts). Optional; the tests' fakes have none.
    */
   wideLogs?: () => boolean
   /**
@@ -144,6 +169,22 @@ export interface OwnedDeps {
    */
   head?: (block: number) => void
 }
+
+/**
+ * 2026-10-01 (RPC-SPEC §2.6): the widest log window one logical eth_getLogs may ask, for one value in each place of its
+ * filter and for several, where the runtime is not the chain's RPC: Domino's own node at the edge
+ * (functions/_lib/localRpc.ts EDGE_LOG_LIMITS), whose transport splits each call into the windows the node serves.
+ * Without it, LOG_BLOCKS_ONE and LOG_BLOCKS_MANY, as before. A field of the runtime (EdgeDeps, FeesDeps), not of
+ * OwnedDeps itself (the page's runtime, the retired src/lib/chain/browser.ts, typed itself as Required<OwnedDeps>).
+ */
+export interface LogLimits {
+  one: number
+  many: number
+}
+export type EdgeDeps = OwnedDeps & { logLimits?: LogLimits }
+
+/** The log windows a runtime reads in: its logLimits, or the chain RPC's own limits. */
+export const limitsOf = (deps: object): LogLimits => (deps as { logLimits?: LogLimits }).logLimits ?? { one: LOG_BLOCKS_ONE, many: LOG_BLOCKS_MANY }
 
 /** Wait and ask again; split the range; stop; or (logs only) the answer's log bytes are used up. */
 type Failure = 'rate' | 'range' | 'fatal' | 'bytes'
@@ -158,16 +199,23 @@ export class ChainError extends Error {
 }
 
 const RATE_WORDS = /rate.?limit|too many requests|throttl/i
-const RANGE_WORDS = /exceed|more than \d+|block range|range (?:is )?too (?:large|wide|big)|too many (?:logs|results)|query returned more|timed? ?out|timeout/i
+const RANGE_WORDS = /exceed|more than \d+|block range|range (?:is )?too (?:large|wide|big)|too many (?:logs|results)|query returned more/i
 const BUSY_WORDS = /\brate\b|capacity|busy/i
+/**
+ * A call the node gave up on after its 30 s (`-32002 request timed out`), or any time-out. Changed on purpose 2026-10-02
+ * (rugged97's rule 7): it read as a range to split, so the same expensive work was asked again in halves, up to the call
+ * cap; a time-out now stops the read (and the edge's transport rests its isolate, functions/_lib/localRpc.ts).
+ */
+const TIMEOUT_WORDS = /timed? ?out|timeout/i
 
 /**
  * What an RPC error means for the scan: wait and ask again, split the range,
  * or stop. Words decide before codes: -32005 means a rate limit at one
- * provider and "more than 10000 results" at another.
+ * provider and "more than 10000 results" at another. A time-out stops; it is never a range to split.
  */
 export function classifyRpcError(code: unknown, message: string): Failure {
   if (RATE_WORDS.test(message)) return 'rate'
+  if (code === -32002 || TIMEOUT_WORDS.test(message)) return 'fatal'
   if (RANGE_WORDS.test(message)) return 'range'
   if (code === 429 || code === -32005 || BUSY_WORDS.test(message)) return 'rate'
   return 'fatal'
@@ -358,6 +406,17 @@ export interface Budget {
 }
 
 /**
+ * 2026-10-02 (review finding 11): a call's init may say how many bytes of the reply its caller reads (`replyBytes`). A
+ * transport that reads the node for it (functions/_lib/localRpc.ts) then stops reading, and sending a long read's further
+ * windows, once the reply passes that, and answers 200 with REPLY_CUT set and no body: the caller takes that as a reply
+ * past its limit, exactly as its own cut read would have found it. Any other fetch ignores the field.
+ */
+export interface ChainInit extends RequestInit {
+  replyBytes?: number
+}
+export const REPLY_CUT = 'X-Domino-Reply-Cut'
+
+/**
  * A reply's (or a request's) body as text, read no further than `limit` bytes:
  * null past it. The RPC sends its replies chunked, with no length, so the size
  * is known only by reading. 2026-09-28: the fees relay's copy of it is this one
@@ -397,29 +456,39 @@ async function rpc(deps: OwnedDeps, budget: Budget, method: string, params: unkn
   if (budget.calls > MAX_RPC_CALLS) throw new ChainError('fatal', 'rpc_call_cap')
   if (deps.now() - budget.started > DEADLINE_MS) throw new ChainError('fatal', 'deadline')
   const logs = method === 'eth_getLogs'
-  // A call that took too long is, for a log range, a range too large; any other call stops the scan.
+  // A call that took too long stops the scan. Changed on purpose 2026-10-02 (rugged97's rule 7): a log range that took too
+  // long was split and asked again, paying the node's work once more for each half; it is never split now.
   const slow = (error: unknown) => {
     const name = error instanceof Error ? error.name : ''
-    return name === 'TimeoutError' || name === 'AbortError' ? new ChainError(logs ? 'range' : 'fatal', 'rpc_timeout') : null
+    return name === 'TimeoutError' || name === 'AbortError' ? new ChainError('fatal', 'rpc_timeout') : null
+  }
+  const limit = logs ? MAX_LOG_BYTES - budget.logBytes : MAX_REPLY_BYTES
+  // 2026-10-02 (review finding 11): the limit goes with the call (ChainInit), so the edge's transport stops reading at it.
+  const init: ChainInit = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: budget.calls, method, params }),
+    signal: timeoutSignal(CALL_TIMEOUT_MS),
+    replyBytes: Math.max(0, limit),
   }
   let response: Response
   try {
-    response = await deps.fetch(RPC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: budget.calls, method, params }),
-      signal: timeoutSignal(CALL_TIMEOUT_MS),
-    })
+    response = await deps.fetch(RPC_URL, init)
   } catch (error) {
     throw slow(error) ?? new ChainError('fatal', 'rpc_unreachable')
   }
   if (response.status === 429 || response.status === 503) throw new ChainError('rate', `http_${response.status}`)
   if (!response.ok) throw new ChainError('fatal', `http_${response.status}`)
   let read: { text: string | null; bytes: number }
-  try {
-    read = await bodyWithin(response, logs ? MAX_LOG_BYTES - budget.logBytes : MAX_REPLY_BYTES)
-  } catch (error) {
-    throw slow(error) ?? new ChainError('fatal', 'rpc_read_failed')
+  if (response.headers.get(REPLY_CUT) !== null) {
+    await response.body?.cancel().catch(() => undefined)
+    read = { text: null, bytes: limit + 1 }
+  } else {
+    try {
+      read = await bodyWithin(response, limit)
+    } catch (error) {
+      throw slow(error) ?? new ChainError('fatal', 'rpc_read_failed')
+    }
   }
   if (logs) budget.logBytes += read.bytes
   if (read.text === null) throw logs ? new ChainError('bytes', 'log_byte_cap') : new ChainError('fatal', 'reply_too_large')
@@ -508,8 +577,14 @@ export async function ownerFrom(request: Request, url: URL): Promise<{ owner: st
   if ((origin !== null && origin !== url.origin) || (site !== null && site !== 'same-origin')) return refuse('origin_not_allowed', 403)
   if (!(request.headers.get('Content-Type') ?? '').toLowerCase().startsWith('application/json')) return refuse('json_required', 415)
   if (Number(request.headers.get('Content-Length') ?? '0') > MAX_BODY_BYTES) return refuse('request_too_large', 413)
-  const text = await request.text()
-  if (text.length > MAX_BODY_BYTES) return refuse('request_too_large', 413)
+  // 2026-10-02 (review finding 6): read no further than the limit, whatever Content-Length said (a chunked body has none).
+  let text: string | null
+  try {
+    text = (await bodyWithin(request, MAX_BODY_BYTES)).text
+  } catch {
+    return refuse('invalid_request', 400)
+  }
+  if (text === null) return refuse('request_too_large', 413)
   let body: unknown
   try {
     body = JSON.parse(text)
@@ -574,7 +649,7 @@ export interface OwnerScan {
  * owner, under a digest and the route's `version`, the last outcome is kept:
  * an answer for CACHE_SECONDS (a fresh question takes it only within
  * FRESH_AFTER_MS), a failure for FAILURE_SECONDS whatever the question, so
- * asking in a loop cannot make every question a scan of the public RPC.
+ * asking in a loop cannot make every question a scan of the node.
  */
 export async function answerOwner(
   request: Request,
@@ -587,6 +662,22 @@ export async function answerOwner(
   const url = new URL(request.url)
   const asked = await ownerFrom(request, url)
   if (asked instanceof Response) return asked
+  return answerOwnerAsked(asked, url, deps, version, scan, cache, waitUntil)
+}
+
+/**
+ * answerOwner once the request is checked (2026-10-01, RPC-SPEC §2.5.1: the edge route checks it, and the visitor's
+ * rate and the node's secret, before the cache): the kept outcome for `asked`, or a scan, kept.
+ */
+export async function answerOwnerAsked(
+  asked: { owner: string; fresh: boolean },
+  url: URL,
+  deps: OwnedDeps,
+  version: string,
+  scan: (deps: OwnedDeps, owner: string) => Promise<OwnerScan>,
+  cache: AnswerCache | null = null,
+  waitUntil?: (work: Promise<unknown>) => void,
+): Promise<Response> {
   const { owner, fresh } = asked
   const key = cache ? await cacheKey(url, version, owner) : null
   if (cache && key) {

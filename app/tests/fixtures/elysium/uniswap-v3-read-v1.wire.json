@@ -1,0 +1,251 @@
+{
+  "fixtureKind": "synthetic-contract-shapes-not-economic-evidence",
+  "identity": {
+    "chainId": 99801,
+    "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+    "positionManager": "0x0000000000000000000000000000000000000016",
+    "protocol": "uniswap-v3"
+  },
+  "requests": {
+    "capabilities": {
+      "chainId": 99801,
+      "protocol": "uniswap-v3"
+    },
+    "discover-pool": {
+      "chainId": 99801,
+      "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "fee": 3000,
+      "positionManager": "0x0000000000000000000000000000000000000016",
+      "protocol": "uniswap-v3",
+      "tokenA": "0x0000000000000000000000000000000000000001",
+      "tokenB": "0x0000000000000000000000000000000000000002"
+    },
+    "history": {
+      "chainId": 99801,
+      "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "limit": 50,
+      "positionManager": "0x0000000000000000000000000000000000000016",
+      "protocol": "uniswap-v3",
+      "vault": "0x0000000000000000000000000000000000000006"
+    },
+    "ledger": {
+      "chainId": 99801,
+      "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "positionManager": "0x0000000000000000000000000000000000000016",
+      "protocol": "uniswap-v3",
+      "vault": "0x0000000000000000000000000000000000000006"
+    },
+    "pool": {
+      "chainId": 99801,
+      "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "pool": "0x0000000000000000000000000000000000000003",
+      "positionManager": "0x0000000000000000000000000000000000000016",
+      "protocol": "uniswap-v3"
+    },
+    "position": {
+      "chainId": 99801,
+      "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "positionManager": "0x0000000000000000000000000000000000000016",
+      "protocol": "uniswap-v3",
+      "tokenId": "1"
+    }
+  },
+  "responses": {
+    "capabilities": {
+      "chainId": 99801,
+      "contractVersion": "1.0.0-rc.2",
+      "deployment": null,
+      "financialExecutionAvailable": false,
+      "ledgerConfigured": false,
+      "protocol": "uniswap-v3",
+      "providerConfigured": false,
+      "registryId": "elysium-v3-unqualified",
+      "status": "unqualified",
+      "walletAuthenticationAvailable": false
+    },
+    "discover-pool": {
+      "anchor": {
+        "hash": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+        "number": 1000,
+        "timestamp": 1800000000
+      },
+      "chainId": 99801,
+      "contractVersion": "1.0.0-rc.2",
+      "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "financialExecutionAvailable": false,
+      "pool": {
+        "address": "0x0000000000000000000000000000000000000003",
+        "factory": "0x0000000000000000000000000000000000000004",
+        "fee": 3000,
+        "liquidityRaw": "1000000",
+        "sqrtPriceX96Raw": "79228162514264337593543950336",
+        "tick": 0,
+        "tickSpacing": 60,
+        "token0": {
+          "address": "0x0000000000000000000000000000000000000001",
+          "decimals": 18,
+          "symbol": "TEST0"
+        },
+        "token1": {
+          "address": "0x0000000000000000000000000000000000000002",
+          "decimals": 6,
+          "symbol": null
+        },
+        "unlocked": true
+      },
+      "positionManager": "0x0000000000000000000000000000000000000016",
+      "protocol": "uniswap-v3",
+      "qualification": "local-fixture",
+      "status": "found"
+    },
+    "history": {
+      "anchor": {
+        "hash": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+        "number": 1000,
+        "timestamp": 1800000000
+      },
+      "chainId": 99801,
+      "contractVersion": "1.0.0-rc.2",
+      "coverage": {
+        "basis": "canonical-vault-events",
+        "complete": true,
+        "fromBlock": 900,
+        "reason": "complete",
+        "toBlock": 1000
+      },
+      "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "financialExecutionAvailable": false,
+      "items": [
+        {
+          "amount0Raw": "5000",
+          "amount1Raw": "0",
+          "basis": "capital",
+          "blockHash": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+          "blockNumber": 1000,
+          "chargedRaw": null,
+          "currency": null,
+          "kind": "CapitalReduced",
+          "liquidityRaw": "100",
+          "logIndex": 3,
+          "originalRaw": null,
+          "serviceFeeRaw": null,
+          "sourceId": null,
+          "timestamp": 1800000000,
+          "tokenId": "1",
+          "transactionHash": "0x00000000000000000000000000000000000000000000000000000000000001bc",
+          "transactionIndex": 0,
+          "vault": "0x0000000000000000000000000000000000000006"
+        }
+      ],
+      "nextAfter": null,
+      "positionManager": "0x0000000000000000000000000000000000000016",
+      "protocol": "uniswap-v3",
+      "qualification": "local-fixture",
+      "vault": "0x0000000000000000000000000000000000000006"
+    },
+    "ledger": {
+      "anchor": {
+        "hash": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+        "number": 1000,
+        "timestamp": 1800000000
+      },
+      "chainId": 99801,
+      "contractVersion": "1.0.0-rc.2",
+      "coverage": {
+        "basis": "canonical-vault-events",
+        "complete": true,
+        "fromBlock": 900,
+        "reason": "complete",
+        "toBlock": 1000
+      },
+      "currencies": [
+        {
+          "chargedAwaitingRaw": "0",
+          "collectedFeesRaw": "1000",
+          "currency": "0x0000000000000000000000000000000000000001",
+          "manualAddedRaw": "100000",
+          "originalAwaitingRaw": "0",
+          "principalWithdrawnRaw": "5000",
+          "reinvestedRaw": "980",
+          "serviceFeesRaw": "20",
+          "withdrawnFeesRaw": "0"
+        }
+      ],
+      "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "feeApr": null,
+      "financialExecutionAvailable": false,
+      "incomeUsd": null,
+      "positionManager": "0x0000000000000000000000000000000000000016",
+      "protocol": "uniswap-v3",
+      "qualification": "local-fixture",
+      "valuationStatus": "unavailable",
+      "vault": "0x0000000000000000000000000000000000000006"
+    },
+    "pool": {
+      "anchor": {
+        "hash": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+        "number": 1000,
+        "timestamp": 1800000000
+      },
+      "chainId": 99801,
+      "contractVersion": "1.0.0-rc.2",
+      "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "financialExecutionAvailable": false,
+      "pool": {
+        "address": "0x0000000000000000000000000000000000000003",
+        "factory": "0x0000000000000000000000000000000000000004",
+        "fee": 3000,
+        "liquidityRaw": "1000000",
+        "sqrtPriceX96Raw": "79228162514264337593543950336",
+        "tick": 0,
+        "tickSpacing": 60,
+        "token0": {
+          "address": "0x0000000000000000000000000000000000000001",
+          "decimals": 18,
+          "symbol": "TEST0"
+        },
+        "token1": {
+          "address": "0x0000000000000000000000000000000000000002",
+          "decimals": 6,
+          "symbol": null
+        },
+        "unlocked": true
+      },
+      "positionManager": "0x0000000000000000000000000000000000000016",
+      "protocol": "uniswap-v3",
+      "qualification": "local-fixture"
+    },
+    "position": {
+      "anchor": {
+        "hash": "0x00000000000000000000000000000000000000000000000000000000000003e8",
+        "number": 1000,
+        "timestamp": 1800000000
+      },
+      "chainId": 99801,
+      "contractVersion": "1.0.0-rc.2",
+      "deploymentId": "0x000000000000000000000000000000000000000000000000000000000000000b",
+      "financialExecutionAvailable": false,
+      "position": {
+        "accruedSinceCheckpoint0Raw": "500",
+        "accruedSinceCheckpoint1Raw": "100",
+        "fee": 3000,
+        "inRange": true,
+        "liquidityRaw": "1000000",
+        "owedClassification": "unclassified",
+        "owner": "0x0000000000000000000000000000000000000005",
+        "pool": "0x0000000000000000000000000000000000000003",
+        "tickLower": -600,
+        "tickUpper": 600,
+        "token0": "0x0000000000000000000000000000000000000001",
+        "token1": "0x0000000000000000000000000000000000000002",
+        "tokenId": "1",
+        "tokensOwed0Raw": "2000",
+        "tokensOwed1Raw": "0"
+      },
+      "positionManager": "0x0000000000000000000000000000000000000016",
+      "protocol": "uniswap-v3",
+      "qualification": "local-fixture"
+    }
+  },
+  "wireAdaptation": "Original local EVM evidence adapted to wire rc.2; qualification remains local-fixture, no new live claim."
+}

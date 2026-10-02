@@ -5,6 +5,7 @@ import { RECEIPT_EVERY_MS, RECEIPT_WAIT_MS, settleStep, type Connected, type Seq
 import type { GasBudget } from '../finance/setup'
 import type { AtomicStatus } from '../finance/batch'
 import { errorCode, financeErrorText } from '../finance/words'
+import { personRefused } from '../finance/nonce'
 import { CREATE } from '../lib/create/copy'
 import { SEQUENCE_DEFAULTS, sequenceOptionsFrom, type SequenceForm, type SequenceMode } from '../lib/create/sequenceDefaults'
 import { preselected, tokenName } from '../lib/automate/picker'
@@ -20,6 +21,7 @@ import { CompoundPreview } from '../components/automate/CompoundPreview'
 import { PositionPicker } from '../components/automate/PositionPicker'
 import { AddressMark } from '../components/automate/marks'
 import { SequenceSwitch } from '../components/positions/SequenceSwitch'
+import { readAfterReplaced } from '../components/positions/walletSteps'
 
 /**
  * Putting a position's earned fees to work (the owner's simpler page,
@@ -80,6 +82,11 @@ const OWN: Readonly<Record<string, string>> = {
   batch_already_offered: 'A batch for this sequence is already waiting in your wallet. Check your wallet activity: nothing is sent twice.',
   sequence_batch_dropped: `Your wallet did not include the batch. Nothing was created. Press ${ACTION} again.`,
   sequence_batch_unknown: `The batch’s outcome could not be read. Check your wallet activity, then press ${ACTION} again: the chain is read first, and nothing is sent twice.`,
+  // 2026-10-01 (audit C14): a step the person cancelled in the wallet ("Cancel"), read back from the chain. The approval's
+  // line is Create position's word for word. Changed on purpose 2026-10-01 (integration pass 3, the copy review): "the
+  // creation step", not "the creation".
+  sequence_approval_replaced: `Your wallet replaced the approval with another transaction, and nothing was approved. Press ${ACTION} again.`,
+  sequence_creation_replaced: `Your wallet replaced the creation step with another transaction, and no automation was set up. Press ${ACTION} again.`,
 }
 // Once a press has sent a transaction, no sentence may claim that nothing was sent, requested or prepared: such a clause is
 // left out (NOTHING), and a failure with no sentence of its own says SENT instead of the usual fallback.
@@ -121,9 +128,30 @@ class Offered extends Error {
   }
 }
 
-/** Reads a sent step's receipt every few seconds until it settles (finance/sequenceLive.ts); throws unless it landed, and stops quietly once the page moved on. */
-async function settle(client: Client, hash: Hex, here: () => boolean) {
-  if ((await settleStep(client, hash, here)) === 'left') throw new Left()
+/**
+ * Reads a sent step's receipt every few seconds until it settles (finance/sequenceLive.ts); throws unless it landed or
+ * the wallet replaced it (2026-10-01, audit C14: the caller reads the chain again), and stops quietly once the page
+ * moved on.
+ */
+async function settle(client: Client, hash: Hex, here: () => boolean): Promise<'landed' | 'replaced'> {
+  const settled = await settleStep(client, hash, here)
+  if (settled === 'left') throw new Left()
+  return settled
+}
+
+/**
+ * Whether the sequence a creation the wallet replaced was prepared for stands at its address now (audit C14): a sped-up
+ * creation made it, a cancelled one did not (no code there yet). Read until it does, a few times (walletSteps.ts
+ * readAfterReplaced); throws Left once the page moved on, and what cannot be read. Nothing is sent from here.
+ */
+async function createdAfterReplaced(client: Client, vault: `0x${string}`, here: () => boolean): Promise<boolean> {
+  const exists = () => client.inspect(vault).then(() => true, (error: unknown) => {
+    if (errorCode(error) === 'unqualified_sequence') return false
+    throw error
+  })
+  const made = await readAfterReplaced(exists, (found) => found, here)
+  if (made === null) throw new Left()
+  return made
 }
 
 /**
@@ -161,9 +189,10 @@ function noticeFor(error: unknown, sent: boolean): Notice {
         ? financeErrorText(errorCode(error), '', 'Set up automation') || (sent ? SENT : 'The wallet read or simulation could not be completed. No transaction was sent.')
         : code !== null && BEFORE_WALLET.includes(code)
           ? `The preparation is no longer valid. No wallet transaction was requested. Press ${ACTION} again.`
-          : !!inner && typeof inner === 'object' && (inner as { code?: unknown }).code === 4001
+          : personRefused(inner)
             ? `You declined in your wallet. Press ${ACTION} to try again.`
-            : 'The wallet outcome may be unknown. Check wallet activity and chain state before continuing. This nonce stays protected against another offer, including after reload.'
+            // Changed on purpose 2026-10-01 (audit E3): no "nonce" on screen; the latch it names still holds the step.
+            : 'Your wallet may or may not have sent it. Check your wallet activity before trying again. This step won’t be offered twice, even after a reload.'
   return { text: sent ? text.replace(NOTHING, '') : text, code, stage: sequenceReadStage(inner) }
 }
 
@@ -243,8 +272,12 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
     if (generation.current === gen) setSteps((old) => ({ ...old, [key]: state }))
   }
 
-  /** Offers one prepared step to the wallet, then reads its receipt until it settles. Returns only once it is in. `press.sent` names the step once the wallet gave its hash. */
-  async function sendAndWait(client: Client, step: PreparedSequence, key: StepKey, gen: number, press: { sent: StepKey | null }) {
+  /**
+   * Offers one prepared step to the wallet, then reads its receipt until it settles. Returns once it is in, or once the
+   * wallet replaced it (2026-10-01, audit C14: "Speed up" or "Cancel"; the caller reads the chain again to know whether
+   * it happened, and marks the step). `press.sent` names the step once the wallet gave its hash.
+   */
+  async function sendAndWait(client: Client, step: PreparedSequence, key: StepKey, gen: number, press: { sent: StepKey | null }): Promise<'landed' | 'replaced'> {
     mark(key, 'wallet', gen)
     let hash: Hex
     try {
@@ -255,8 +288,9 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
     press.sent = key
     if (generation.current !== gen) throw new Left()
     mark(key, 'chain', gen)
-    await settle(client, hash, () => generation.current === gen)
+    if ((await settle(client, hash, () => generation.current === gen)) === 'replaced') return 'replaced'
     mark(key, 'done', gen)
+    return 'landed'
   }
 
   /**
@@ -339,7 +373,15 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
       let step = await client.create(checked.options, gas)
       verified()
       if (step.kind === 'approve-root') {
-        await sendAndWait(client, step, 'approve-root', gen, press)
+        if ((await sendAndWait(client, step, 'approve-root', gen, press)) === 'replaced') {
+          // 2026-10-01 (audit C14): an approval the wallet replaced is in only if the chain shows the NFT approved to the
+          // sequence now (a sped-up one); a cancelled one stops this press at its own step, and is never asked again in it.
+          const root = checked.options.rootTokenId
+          const approved = await readAfterReplaced(() => client.inspectRoot(root), (read) => read.approved === read.vault, () => generation.current === gen)
+          if (approved === null) throw new Left()
+          if (!approved) throw new Error('sequence_approval_replaced')
+          mark('approve-root', 'done', gen)
+        }
         at = 'create'
         mark('create', 'reading', gen)
         step = await client.create(checked.options, gas)
@@ -349,7 +391,11 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
         mark('approve-root', 'done', gen)
       }
       at = 'create'
-      await sendAndWait(client, step, 'create', gen, press)
+      // 2026-10-01 (audit C14): a creation the wallet replaced is made only if the sequence stands at its address now.
+      if ((await sendAndWait(client, step, 'create', gen, press)) === 'replaced') {
+        if (!(await createdAfterReplaced(client, step.vault, () => generation.current === gen))) throw new Error('sequence_creation_replaced')
+        mark('create', 'done', gen)
+      }
       // Its receipt is in and matches what was prepared: the sequence exists at the address it was prepared for.
       if (generation.current !== gen) return
       setCreated({ vault: step.vault, tokenId: position.tokenId })
@@ -361,8 +407,9 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
       if (error instanceof Left || generation.current !== gen) return
       // A step the wallet gave a hash for failed only if its receipt says it reverted; otherwise it stays sent, and the
       // press ending here means nothing reads its receipt any more (`sent`, not `chain`).
-      // A batch the wallet did not include failed as surely as one that reverted: nothing of it can execute.
-      mark(at, press.sent !== at || ['sequence_step_reverted', 'sequence_batch_dropped'].includes(errorCode(error) ?? '') ? 'failed' : 'sent', gen)
+      // A batch the wallet did not include failed as surely as one that reverted: nothing of it can execute. So did a step
+      // the wallet replaced that the chain does not show (2026-10-01, audit C14).
+      mark(at, press.sent !== at || ['sequence_step_reverted', 'sequence_batch_dropped', 'sequence_approval_replaced', 'sequence_creation_replaced'].includes(errorCode(error) ?? '') ? 'failed' : 'sent', gen)
       const said = noticeFor(error, press.sent !== null)
       // Something is already subscribed to this NFT: the picker says so beside it and no longer offers it.
       if (said.code === 'position_subscribed') setLinked(noted(position.tokenId, said.text))
@@ -454,7 +501,7 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
             signIn={false}
             size="lg"
             fallback={
-              <LinkButton href={chosen.key === 'domino' ? '#/docs/domino-compounder#start-and-stop' : '#/docs/auto-compound#where-it-starts'} variant="outline" size="lg" className="dm-seq-done-link">
+              <LinkButton href={chosen.key === 'domino' ? '#/docs/domino-compound#start-and-stop' : '#/docs/auto-compound#where-it-starts'} variant="outline" size="lg" className="dm-seq-done-link">
                 How to switch it on
                 <IconChevronRight />
               </LinkButton>
@@ -555,7 +602,7 @@ export default function SequenceCreate({ positions, intent, connect, capabilitie
                   }}
                 />
                 <span>
-                  I consent to using this NFT’s already uncollected fees, plus future earned fees, for {chosen.title} under these limits. The service fee is {chosen.fee} of earned fees consumed, once, never principal.
+                  I consent to using this NFT’s already uncollected fees, plus future earned fees, for {chosen.title} under these limits. The service fee is {chosen.fee} of the earned fees it uses, once, never principal.
                 </span>
               </label>
             </fieldset>

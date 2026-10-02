@@ -4,6 +4,7 @@ import { POSITION_MANAGER, SETUP_CONTRACT, V4_QUOTER, V4_QUOTER_CODE_HASH, ROUTE
 import { readAccountCode, type AccountCode } from './delegates.js'
 import { BATCH_FRAME_GAS, BATCH_UNSUPPORTED, batchCallsStatus, offerBatch, simulateBatch, type BatchCall, type BatchSimulator } from './batch.js'
 import { checkRoutedSwap, routePermitAbi, type CheckedRoutedSwap, type RoutedSwapInput } from './routedSwap.js'
+import { definiteRefusal } from './nonce.js'
 export { atomicStatus, type AtomicStatus, type BatchCall, type BatchSimulator } from './batch.js'
 export type { RoutedSwapInput } from './routedSwap.js'
 
@@ -89,8 +90,30 @@ export interface SetupDeployment {
 export interface WalletRpc {
   owner: Address; current(): boolean; request(method: string, params: unknown[]): Promise<unknown>
   nonceOffered(nonce: bigint): boolean; claimNonce(nonce: bigint): Promise<string>; releaseRejectedNonce(nonce: bigint, token: string): Promise<void>
+  /**
+   * A latch on `nonce` met while the chain shows nothing pending for it (./nonce.ts settle, 2026-10-01): let go when
+   * the page that offered it is gone or it is older than `maxAge` seconds. True when the nonce is free.
+   */
+  settleNonce?(nonce: bigint, now: number, maxAge: number): Promise<boolean>
+  /** The person says they rejected or closed the request in their wallet (forgetOpenRequest): the latch is let go. */
+  forgetNonce?(nonce: bigint): Promise<boolean>
+  /**
+   * The site's reads (lib/walletReads.ts readOnChain; until the RPC switch, the page's own line to the chain), for a
+   * pure read the wallet's own RPC could not answer (2026-10-01, audit C6), while everything it must answer itself (the
+   * account, the network, nonces, sends) stays with it. Since 2026-10-01 (RPC-SPEC D6, the owner's rule: nothing is read from a public RPC) it serves no read: each is
+   * refused at once, as one the chain could not answer, and the step fails as it does without it.
+   */
+  read?(method: string, params: unknown[]): Promise<unknown>
   /** Whether the person confirmed on this page that they set up this EIP-7702 delegate themselves (./delegates.ts). */
   delegateConfirmed?(delegate: Address): boolean
+  /**
+   * Whether the connected wallet answers no reads itself and its provider hands them to the site instead (WalletConnect,
+   * wallet/walletConnect.ts; fix round 3.1), which serves none since the RPC switch (lib/walletReads.ts readOnChain,
+   * RPC-SPEC D6): reads made only to tell a replaced routed swap apart are then not asked at all
+   * (finance/routedReplacement.ts walletOwnReads), and every other read of such a wallet stops its step as
+   * `site_reads_unavailable` (readThrough).
+   */
+  readsThroughPage?: boolean
   /** The latch of a batch offered for this owner's operation (./nonce.ts): the wallet's id for it, '' before it answered, null when none. */
   batchOffered?(operationId: Hex): string | null
   claimBatch?(operationId: Hex): Promise<string>
@@ -157,6 +180,16 @@ export const STEP_DEADLINE_S = SIGN_WINDOW_S + 300
  * opens each operation id once.
  */
 export const BATCH_LATCH_EXPIRY_S = 1_200 + 300
+/**
+ * How long a nonce's latch may hold the owner's next nonce while its page is still open and the chain shows nothing
+ * pending for it (./nonce.ts settle; 2026-10-01, audit C2, the owner's OK): a request still open in the wallet that
+ * long is one the person left; the latch is let go then, and sooner when its page was reloaded or closed, or when the
+ * person says they rejected or closed it. Nothing is sent for it, then or later: each later step is reviewed anew,
+ * and each step names what it does on chain once.
+ */
+export const NONCE_LATCH_EXPIRY_S = 600
+/** How long a whole read-back of the deployment (code and views) stands for the next steps of one press (C10). */
+export const VERIFIED_FOR_S = 30
 const fail = (code: string): never => { throw new Error(code) }
 const asHex = (value: unknown): Hex => typeof value === 'string' && /^0x(?:[0-9a-fA-F]{2})*$/.test(value) ? value as Hex : fail('invalid_wallet_reply')
 const quantity = (value: unknown): bigint => typeof value === 'string' && /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/.test(value) ? BigInt(value) : fail('invalid_wallet_quantity')
@@ -182,6 +215,44 @@ export function revertOf(error: unknown): { data: Hex | null } | null {
   return reverted && !other ? { data } : null
 }
 export const isRevert = (error: unknown): boolean => revertOf(error) !== null
+/** The reads that say only what the chain holds, whoever is asked: the ones a wallet's own RPC may be stood in for (C6). */
+const PURE_READS: ReadonlySet<string> = new Set(['eth_call', 'eth_getCode', 'eth_getBalance', 'eth_estimateGas', 'eth_blockNumber', 'eth_getBlockByNumber'])
+const UNREACHABLE_WORDS = /fetch|network|timed? ?out|ENOTFOUND|getaddrinfo|ECONN|socket|rate.?limit|too many requests|\b(?:429|502|503|504)\b|bad gateway|service unavailable|unavailable/i
+/**
+ * Whether `error` is the site's own refusal of a read (lib/walletReads.ts readOnChain: SITE_READS_UNAVAILABLE, which this
+ * money module names by its text rather than import that module's chunk), at the top or wrapped in a wallet's error.
+ */
+export function siteRefused(error: unknown): boolean {
+  let found = false
+  const walk = (value: unknown, depth: number) => {
+    if (found || !value || typeof value !== 'object' || depth > 4) return
+    const node = value as { message?: unknown; data?: unknown; cause?: unknown; originalError?: unknown; error?: unknown }
+    if (node.message === 'site_reads_unavailable') found = true
+    for (const next of [node.data, node.cause, node.originalError, node.error]) walk(next, depth + 1)
+  }
+  walk(error, 0)
+  return found
+}
+/**
+ * Whether a wallet's read failed because its RPC could not be reached or refused it (2026-10-01, audit C6): MetaMask's
+ * -32603 "Internal JSON-RPC error." around "Failed to fetch" (its DNS could not resolve the chain's RPC, as on that
+ * ISP's), a -32005 or 429 rate limit, a browser's own TypeError. Never a revert, which the chain answered, nor anything
+ * the person did.
+ */
+export function walletUnreachable(error: unknown): boolean {
+  if (revertOf(error) !== null || definiteRefusal(error)) return false
+  if (error instanceof TypeError) return true
+  let found = false
+  const walk = (value: unknown, depth: number) => {
+    if (found || !value || typeof value !== 'object' || depth > 4) return
+    const node = value as { code?: unknown; message?: unknown; data?: unknown; cause?: unknown; originalError?: unknown; error?: unknown }
+    if (node.code === -32005 || node.code === 429 || node.code === -32603) found = true
+    if (typeof node.message === 'string' && UNREACHABLE_WORDS.test(node.message)) found = true
+    for (const next of [node.data, node.cause, node.originalError, node.error]) walk(next, depth + 1)
+  }
+  walk(error, 0)
+  return found
+}
 /**
  * Whether the connected account can be paid plain ETH, read through the
  * wallet's own provider: no signature, no transaction.
@@ -272,6 +343,29 @@ export async function walletBalance(wallet: WalletRpc, currency: Address): Promi
   const data = encodeFunctionData({ abi: balanceAbi, functionName: 'balanceOf', args: [wallet.owner] })
   return decodeFunctionResult({ abi: balanceAbi, functionName: 'balanceOf', data: asHex(await wallet.request('eth_call', [{ to: currency, data }, 'latest'])) })
 }
+/**
+ * The person says they rejected or closed the earlier request in their wallet (2026-10-01, audit C2, the owner's OK:
+ * "I rejected it in my wallet"). The latch on the owner's next nonce is let go, and only while the chain shows nothing
+ * pending for it: a transaction the wallet did send keeps its latch until it is mined. Nothing is sent, here or after:
+ * the next step is prepared and reviewed anew. True when a latch was let go.
+ */
+export async function forgetOpenRequest(wallet: WalletRpc): Promise<boolean> {
+  const [latest, pending] = (await Promise.all([wallet.request('eth_getTransactionCount', [wallet.owner, 'latest']), wallet.request('eth_getTransactionCount', [wallet.owner, 'pending'])])).map(quantity)
+  if (latest !== pending || !wallet.nonceOffered(pending) || !wallet.forgetNonce) return false
+  return wallet.forgetNonce(pending)
+}
+/**
+ * Where `nonce` stands on chain for this owner (fix round 3.1), for a routed swap offered to the wallet whose hash never
+ * came back: `passed` (a transaction took it: what it was decides), `open` (still the next one, with nothing pending: the
+ * wallet may still be showing the request, and only the person can say they rejected it), `pending` (a transaction of
+ * the owner's is waiting on chain), or `behind` (the node has not reached it yet).
+ */
+export async function nonceStanding(wallet: Pick<WalletRpc, 'owner' | 'request'>, nonce: bigint): Promise<'passed' | 'open' | 'pending' | 'behind'> {
+  const [latest, pending] = (await Promise.all([wallet.request('eth_getTransactionCount', [wallet.owner, 'latest']), wallet.request('eth_getTransactionCount', [wallet.owner, 'pending'])])).map(quantity)
+  if (latest > nonce) return 'passed'
+  if (latest < nonce) return 'behind'
+  return pending > latest ? 'pending' : 'open'
+}
 export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, now = () => Date.now() / 1000,
   currentAdmission?: () => Promise<SetupDeployment | null>, options: { simulate?: BatchSimulator; validateRoute?: (value: unknown) => boolean; routeAuthorized?: () => boolean } = {}) {
   const deployment = Object.freeze({ ...supplied })
@@ -285,6 +379,8 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
   // page persists the offer for reload recovery, and continues with fund/mint.
   const routedOffers = new Set<Hex>()
   let busy = false
+  /** When the deployment's code and views were last read back whole, for this client (verify). */
+  let verifiedAt = -Infinity
   /** Whether V4Quoter's code and PoolManager were read back as pinned, once for this client (quotePool). */
   let quoterVerified = false
   async function bounded<T>(work: (rpc: (method: string, params: unknown[], onRejected?: (error: unknown) => Promise<void>, onOffered?: () => void) => Promise<unknown>) => Promise<T>, seconds = 25): Promise<T> {
@@ -299,7 +395,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
         // Keep a definite wallet rejection observable even if our deadline has
         // already won. An unknown outcome must retain its nonce quarantine.
         onOffered?.()
-        const request = wallet.request(method, params).catch(async error => {
+        const request = (sends(method) ? wallet.request(method, params) : readThrough(method, params)).catch(async error => {
           await onRejected?.(error)
           throw error
         })
@@ -311,8 +407,38 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     try { return await work(rpc) } finally { busy = false }
   }
   type Rpc = Parameters<Parameters<typeof bounded>[0]>[0]
+  /** What only the wallet can answer, or does on the person's word: everything that is not a read of the chain. */
+  function sends(method: string) {
+    return !method.startsWith('eth_') || method === 'eth_sendTransaction' || method === 'eth_accounts' || method === 'eth_chainId'
+  }
+  /**
+   * A read, asked of the wallet first. A pure read its own RPC could not answer is asked once of the site instead (audit
+   * C6; since the RPC switch the site refuses it at once, lib/walletReads.ts); a read that still fails for want of the chain is said as itself
+   * (wallet_rpc_unreachable), not as a failure of the step. Receipt and transaction reads keep their own errors.
+   */
+  async function readThrough(method: string, params: unknown[]): Promise<unknown> {
+    try {
+      return await wallet.request(method, params)
+    } catch (error) {
+      // 2026-10-02 (review of the RPC switch, finding 16): the wallet's own request was answered by the site, which serves
+      // no read (a WalletConnect wallet hands its reads to the page, lib/walletReads.ts readOnChain, RPC-SPEC D6): said as
+      // that, never as the wallet's RPC, which was not asked and which nothing the person changes there would help.
+      if (siteRefused(error)) throw Object.assign(new Error('site_reads_unavailable'), { cause: error })
+      if (!walletUnreachable(error)) throw error
+      if (PURE_READS.has(method) && wallet.read) {
+        try {
+          return await wallet.read(method, params)
+        } catch (second) {
+          if (revertOf(second) !== null) throw second
+        }
+      }
+      if (PURE_READS.has(method) || method === 'eth_getTransactionCount') throw Object.assign(new Error('wallet_rpc_unreachable'), { cause: error })
+      throw error
+    }
+  }
   async function identity(rpc: Rpc) {
-    const accounts = await rpc('eth_accounts', []), chain = await rpc('eth_chainId', [])
+    // Both asked at once (audit C10): the same two checks, one round trip.
+    const [accounts, chain] = await Promise.all([rpc('eth_accounts', []), rpc('eth_chainId', [])])
     if (!Array.isArray(accounts) || typeof accounts[0] !== 'string' || accounts[0].toLowerCase() !== wallet.owner || quantity(chain) !== 4663n) return fail('wallet_identity_changed')
   }
   async function call(rpc: Rpc, name: 'manager' | 'positions' | 'stateView' | 'feeRecipient' | 'assistedFeeBps' | 'tariffVersion') {
@@ -331,13 +457,29 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       const identities: (keyof SetupDeployment)[] = ['setup','setupCodeHash','poolManager','poolManagerCodeHash','positionManager','positionManagerCodeHash','stateView','stateViewCodeHash','feeRecipient','feeBps','tariffVersion']
       if (!current || now() >= current.expiresAt || identities.some(key => current[key] !== deployment[key])) return fail('setup_admission_unavailable')
     }
+    // A whole read-back stands for the next steps of the same press for VERIFIED_FOR_S (audit C10): the same checks,
+    // made once per press rather than at every step. The admission above is asked every time.
+    if (now() - verifiedAt < VERIFIED_FOR_S) return
     const dependencies = [[deployment.poolManager, deployment.poolManagerCodeHash], [deployment.positionManager, deployment.positionManagerCodeHash], [deployment.stateView, deployment.stateViewCodeHash]] as const
-    for (const [address, hash] of [[deployment.setup, deployment.setupCodeHash], ...(recovery ? [] : dependencies)] as const) {
-      if (keccak256(asHex(await rpc('eth_getCode', [address, 'latest']))) !== hash) return fail('deployment_code_changed')
-    }
-    for (const [name, expected] of [['manager', deployment.poolManager], ['positions', deployment.positionManager], ['stateView', deployment.stateView], ['feeRecipient', deployment.feeRecipient], ['assistedFeeBps', deployment.feeBps], ['tariffVersion', deployment.tariffVersion]] as const) {
-      if (String(await call(rpc, name)).toLowerCase() !== String(expected)) return fail('deployment_identity_changed')
-    }
+    const codes = [[deployment.setup, deployment.setupCodeHash], ...(recovery ? [] : dependencies)] as const
+    const views = [['manager', deployment.poolManager], ['positions', deployment.positionManager], ['stateView', deployment.stateView], ['feeRecipient', deployment.feeRecipient], ['assistedFeeBps', deployment.feeBps], ['tariffVersion', deployment.tariffVersion]] as const
+    // Every code and every view asked at once (audit C10), then checked in the same order as before.
+    const [read, said] = await Promise.all([Promise.all(codes.map(([address]) => rpc('eth_getCode', [address, 'latest']))), Promise.all(views.map(([name]) => call(rpc, name)))])
+    for (const [index, [, hash]] of codes.entries()) if (keccak256(asHex(read[index])) !== hash) return fail('deployment_code_changed')
+    for (const [index, [, expected]] of views.entries()) if (String(said[index]).toLowerCase() !== String(expected)) return fail('deployment_identity_changed')
+    if (!recovery) verifiedAt = now()
+  }
+  /**
+   * The owner's next nonce, when nothing holds it (audit C2): a transaction pending on chain is said as such; an
+   * earlier offer this browser made of the same nonce with nothing pending on chain is let go when its page is gone or
+   * it is too old (wallet.settleNonce), and said otherwise as a request still open in the wallet.
+   */
+  async function freeNonce(rpc: Rpc): Promise<bigint> {
+    const [latest, pending] = (await Promise.all([rpc('eth_getTransactionCount', [wallet.owner, 'latest']), rpc('eth_getTransactionCount', [wallet.owner, 'pending'])])).map(quantity)
+    if (latest !== pending) return fail('pending_wallet_transaction')
+    if (offered.has(String(pending))) return fail('wallet_request_open')
+    if (wallet.nonceOffered(pending) && !(await wallet.settleNonce?.(pending, now(), NONCE_LATCH_EXPIRY_S))) return fail('wallet_request_open')
+    return pending
   }
   /** The id the setup contract gives this owner's next operation: the one a batch opens, and only that one. */
   async function nextOperationId(rpc: Rpc): Promise<Hex> {
@@ -352,22 +494,23 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     return decodeFunctionResult({ abi: setupAbi, functionName: 'operation', data: asHex(await rpc('eth_call', [{ to: deployment.setup, data }, 'latest'])) })
   }
   async function operation(rpc: Rpc, id: Hex) {
-    const op = await stored(rpc, id)
-    if (op.owner.toLowerCase() !== wallet.owner) return fail('operation_not_owned')
     const recoveryData = encodeFunctionData({ abi: setupAbi, functionName: 'recoveryStarted', args: [id] })
-    const recoveryStarted = decodeFunctionResult({ abi: setupAbi, functionName: 'recoveryStarted', data: asHex(await rpc('eth_call', [{ to: deployment.setup, data: recoveryData }, 'latest'])) })
+    // Both asked at once (audit C10); the owner is checked before either answer is used.
+    const [op, started] = await Promise.all([stored(rpc, id), rpc('eth_call', [{ to: deployment.setup, data: recoveryData }, 'latest'])])
+    if (op.owner.toLowerCase() !== wallet.owner) return fail('operation_not_owned')
+    const recoveryStarted = decodeFunctionResult({ abi: setupAbi, functionName: 'recoveryStarted', data: asHex(started) })
     return { ...op, recoveryStarted }
   }
   async function prepare(rpc: Rpc, kind: PreparedSetup['kind'], operationId: Hex | null, to: Address, data: Hex, value: bigint, gas: GasBudget, summary: string[], expiry = now() + 25) {
     if (gas.maxGas < 21000n || gas.maxGas > 15_000_000n || gas.maxFeePerGas <= 0n || gas.maxFeePerGas >= 2n ** 128n || gas.maxPriorityFeePerGas < 0n || gas.maxPriorityFeePerGas > gas.maxFeePerGas || gas.reserveWei < 0n) return fail('invalid_gas_budget')
-    const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest'])), pending = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'pending']))
-    if (latest !== pending || offered.has(String(pending)) || wallet.nonceOffered(pending)) return fail('pending_wallet_transaction')
+    const pending = await freeNonce(rpc)
     const tx = { from: wallet.owner, to, data, value: numberToHex(value) }
-    await rpc('eth_call', [tx, 'latest'])
-    const estimate = quantity(await rpc('eth_estimateGas', [tx]))
+    // The simulation, the estimate and the balance asked at once (audit C10), and checked in the same order as before.
+    const [, estimated, balance] = await Promise.all([rpc('eth_call', [tx, 'latest']), rpc('eth_estimateGas', [tx]), rpc('eth_getBalance', [wallet.owner, 'latest'])])
+    const estimate = quantity(estimated)
     const limit = (estimate * 120n + 99n) / 100n
     if (limit > gas.maxGas) return fail('gas_budget_exceeded')
-    if (quantity(await rpc('eth_getBalance', [wallet.owner, 'latest'])) < value + limit * gas.maxFeePerGas + gas.reserveWei) return fail('native_gas_reserve_insufficient')
+    if (quantity(balance) < value + limit * gas.maxFeePerGas + gas.reserveWei) return fail('native_gas_reserve_insufficient')
     const result: PreparedSetup = Object.freeze({ kind, operationId, owner: wallet.owner, expiresAt: Math.min(now() + 25, expiry),
       transaction: Object.freeze({ ...tx, chainId: '0x1237', type: '0x2', nonce: numberToHex(pending), gas: numberToHex(limit), maxFeePerGas: numberToHex(gas.maxFeePerGas), maxPriorityFeePerGas: numberToHex(gas.maxPriorityFeePerGas) }),
       summary: Object.freeze([...summary, `Maximum network cost: ${limit * gas.maxFeePerGas} wei.`, `Contract: ${to}`]) })
@@ -455,12 +598,11 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       await verify(rpc, true)
       const data = encodeFunctionData({ abi: setupAbi, functionName: 'ownerNonce', args: [wallet.owner] })
       const n = decodeFunctionResult({ abi: setupAbi, functionName: 'ownerNonce', data: asHex(await rpc('eth_call', [{ to: deployment.setup, data }, 'latest'])) })
-      const values: { id: Hex; operation: SetupOperation }[] = []
-      for (let i = n; i > 0n && i > n - 8n; i--) {
-        const id = keccak256(encodeAbiParameters(operationIdParameters, [4663n, deployment.setup, wallet.owner, i - 1n]))
-        values.push({ id, operation: await operation(rpc, id) })
-      }
-      return values
+      const ids: Hex[] = []
+      for (let i = n; i > 0n && i > n - 8n; i--) ids.push(keccak256(encodeAbiParameters(operationIdParameters, [4663n, deployment.setup, wallet.owner, i - 1n])))
+      // The newest eight operations read at once (audit C10), listed newest first as before.
+      const read = await Promise.all(ids.map((id) => operation(rpc, id)))
+      return ids.map((id, index): { id: Hex; operation: SetupOperation } => ({ id, operation: read[index] }))
     }),
     /**
      * What swapping `gross` of this operation's token buys, from the contract itself: the swap simulated through
@@ -547,8 +689,8 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
     send: (prepared: PreparedSetup, acknowledged: boolean) => bounded(async rpc => {
       if (!acknowledged || !issued.has(prepared) || prepared.expiresAt <= now() || prepared.owner !== wallet.owner) return fail('wallet_review_required')
       await verify(rpc, prepared.kind === 'cancel' || prepared.kind === 'recover')
-      const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest'])), pending = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'pending']))
-      if (latest !== pending || numberToHex(pending) !== prepared.transaction.nonce || offered.has(String(pending)) || wallet.nonceOffered(pending) || prepared.expiresAt <= now()) return fail('pending_wallet_transaction')
+      const pending = await freeNonce(rpc)
+      if (numberToHex(pending) !== prepared.transaction.nonce || prepared.expiresAt <= now()) return fail('pending_wallet_transaction')
       await rpc('eth_call', [prepared.transaction, 'latest'])
       if (prepared.expiresAt <= now()) return fail('wallet_review_expired')
       const claim = await wallet.claimNonce(pending)
@@ -566,10 +708,12 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       if (route && options.routeAuthorized?.() !== true) { await wallet.releaseRejectedNonce(pending, claim); return fail('route_session_changed') }
       offered.add(String(pending)); issued.delete(prepared)
       const rejected = async (error: unknown) => {
-        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 4001) return
+        // 2026-10-01 (audit C2): every refusal that proves nothing was sent, not only 4001 (./nonce.ts definiteRefusal).
+        if (!definiteRefusal(error)) return
         // This handler belongs to the original provider promise, including a
-        // rejection after timeout. Release only this exact claim after4001;
-        // a new preparation still requires fresh review and no retry is sent.
+        // rejection after timeout. Release only this exact claim after a
+        // definite refusal; a new preparation still requires fresh review and
+        // no retry is sent.
         await wallet.releaseRejectedNonce(pending, claim)
         offered.delete(String(pending))
         offeredSteps.delete(prepared)
@@ -589,10 +733,26 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       returned.set(hash.toLowerCase() as Hex, prepared)
       return hash.toLowerCase() as Hex
     }, SIGN_WINDOW_S),
-    receipt: (hash: Hex, operationId?: Hex, routedPlan?: BatchPlan) => bounded(async rpc => {
+    /**
+     * `sentNonce`: the nonce a hash this client did not send went out with (a routed swap's journal keeps it, fix round
+     * 1), so a replacement is known on a later press and after a reload too, not only by the client that sent it.
+     */
+    receipt: (hash: Hex, operationId?: Hex, routedPlan?: BatchPlan, sentNonce?: bigint) => bounded(async rpc => {
       await identity(rpc)
       if (!HASH.test(hash)) return fail('invalid_transaction_hash')
-      const tx = await rpc('eth_getTransactionByHash', [hash]) as { hash?: string; from?: string; to?: string; input?: string; value?: string; nonce?: string } | null
+      let tx = await rpc('eth_getTransactionByHash', [hash]) as { hash?: string; from?: string; to?: string; input?: string; value?: string; nonce?: string } | null
+      const sent = returned.get(hash)
+      const nonce = sent ? quantity(sent.transaction.nonce) : sentNonce
+      if (tx === null && nonce !== undefined) {
+        // A hash sent from this account that the chain does not know, while the owner's mined nonce has passed it: the
+        // wallet replaced it ("Speed up" or "Cancel"; 2026-10-01, audit C14). Asked once more after the nonce, so a node
+        // that had not seen it yet is not taken for a replacement; the caller reads the state again to know what happened.
+        const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest']))
+        if (latest > nonce) {
+          tx = await rpc('eth_getTransactionByHash', [hash]) as typeof tx
+          if (tx === null) return { state: 'replaced' as const }
+        }
+      }
       if (tx === null) return { state: 'pending' as const }
       if (!tx || tx.hash?.toLowerCase() !== hash || tx.from?.toLowerCase() !== wallet.owner || !tx.to || !tx.input || !tx.value || !tx.nonce) return fail('invalid_transaction')
       const known = returned.get(hash)
@@ -626,11 +786,12 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       // minutes, and a revert read as "included" would let the next step start on a state that never changed.
       if (receipt.status === '0x0') {
         if (known?.kind === 'route-swap' && known.operationId) routedOffers.delete(known.operationId)
-        return { state: 'reverted' as const, blockHash: receipt.blockHash }
+        return { state: 'reverted' as const, blockHash: receipt.blockHash, blockNumber: quantity(receipt.blockNumber) }
       }
       const final = await rpc('eth_getBlockByNumber', ['finalized', false]) as { number?: string } | null
-      if (!final?.number || quantity(final.number) < quantity(receipt.blockNumber)) return { state: 'included' as const }
-      return { state: receipt.status === '0x1' ? 'finalized' as const : 'reverted' as const, blockHash: receipt.blockHash }
+      // RPC fix round 2: with the block it was included in, so the page's list waits for a read past it (walletChanged).
+      if (!final?.number || quantity(final.number) < quantity(receipt.blockNumber)) return { state: 'included' as const, blockNumber: quantity(receipt.blockNumber) }
+      return { state: receipt.status === '0x1' ? 'finalized' as const : 'reverted' as const, blockHash: receipt.blockHash, blockNumber: quantity(receipt.blockNumber) }
     }),
     /**
      * A batch this page or another tab offered for the operation the setup contract opens next, still latched: its id,
@@ -680,8 +841,7 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
         || mint.maxAmount0 < 0n || mint.maxAmount1 < 0n || mint.maxAmount0 > balance0 || mint.maxAmount1 > balance1
         || mint.minSqrtPriceX96 <= 0n || mint.maxSqrtPriceX96 < mint.minSqrtPriceX96 || mint.maxSqrtPriceX96 >= 2n ** 160n
         || mint.initialSqrtPriceX96 < 0n || mint.initialSqrtPriceX96 >= 2n ** 160n) return fail('invalid_mint_limits')
-      const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest'])), pending = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'pending']))
-      if (latest !== pending || offered.has(String(pending)) || wallet.nonceOffered(pending)) return fail('pending_wallet_transaction')
+      await freeNonce(rpc)
       const operationId = await nextOperationId(rpc)
       if (route && routedOffers.has(operationId)) return fail('routed_swap_already_offered')
       const latched = wallet.batchOffered?.(operationId)
@@ -777,14 +937,14 @@ export function createSetupClient(wallet: WalletRpc, supplied: SetupDeployment, 
       if (!acknowledged || !issuedBatches.has(prepared) || prepared.expiresAt <= now() || prepared.owner !== wallet.owner) return fail('wallet_review_required')
       await verify(rpc)
       if (await nextOperationId(rpc) !== prepared.operationId) return fail('batch_state_changed')
-      const latest = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'latest'])), pending = quantity(await rpc('eth_getTransactionCount', [wallet.owner, 'pending']))
-      if (latest !== pending || offered.has(String(pending)) || wallet.nonceOffered(pending) || prepared.expiresAt <= now()) return fail('pending_wallet_transaction')
+      await freeNonce(rpc)
+      if (prepared.expiresAt <= now()) return fail('pending_wallet_transaction')
       issuedBatches.delete(prepared)
       let claim: string | undefined
       const batchWallet = { ...wallet, claimBatch: wallet.claimBatch ? async (key: Hex) => { claim = await wallet.claimBatch!(key); return claim } : undefined }
       const request = (method: string, params: unknown[]) => rpc(method, params, async error => {
         const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
-        if (code !== 4001 && code !== 5750 && !BATCH_UNSUPPORTED.has(code as number)) return
+        if (!definiteRefusal(error) && code !== 5750 && !BATCH_UNSUPPORTED.has(code as number)) return
         offeredBatches.delete(prepared)
         // The original promise can refuse after our timeout; release only its
         // own claim, never an unrelated later batch.

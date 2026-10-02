@@ -8,6 +8,7 @@
 import { parseDecimal } from '../read/decimal'
 import { usableTicks } from '../read/screens/poolRange'
 import { CREATE } from './copy'
+import { numberFormat } from '../format/numberFormat'
 
 const MAX_UINT256 = (1n << 256n) - 1n
 const DECIMAL_TEXT = /^(?:0|[1-9]\d*)(?:\.\d+)?$/
@@ -45,5 +46,5 @@ export function tickRange(lowerText: string, upperText: string, spacing: number)
 export function tickPrice(tick: number, decimals0: number, decimals1: number): string | null {
   const value = Math.pow(1.0001, tick) * Math.pow(10, decimals0 - decimals1)
   if (!isFinite(value) || value < 1e-12 || value > 1e24) return null
-  return `≈${new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6 }).format(value)}`
+  return `≈${numberFormat({ maximumSignificantDigits: 6 }).format(value)}`
 }

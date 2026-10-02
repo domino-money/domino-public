@@ -4,11 +4,16 @@
  * relay may use (eth_blockNumber, eth_getLogs, eth_call to Multicall3,
  * batched eth_getBlockByNumber) and fails the test on anything else. Not a
  * suite of its own.
+ *
+ * Changed on purpose 2026-10-02 (RPC-SPEC §11.4): it stands for Domino's own node behind the site's transport, so a log
+ * read breaks the node's rules (tests/support/log-limits.mjs nodeLogError: below block 69,249,061, past 1,000,000
+ * blocks, the PoolManager over more than one block) rather than the public RPC's limits; and a pool's swaps are no
+ * longer made (no route reads them).
  */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { decodeFunctionData, encodeFunctionResult, numberToHex, parseAbi } from 'viem';
-import { logLimitError } from '../log-limits.mjs';
+import { nodeLogError } from '../log-limits.mjs';
 
 const require = createRequire(import.meta.url);
 export const fees = require('../../../.test-build/app/functions/_lib/fees.js');
@@ -30,7 +35,11 @@ export const positionManagerAbi = parseAbi([
   'function ownerOf(uint256 id) view returns (address owner)',
   // 2026-09-25: a position's feature, read by the page (functions/_lib/automation.ts): nothing is subscribed here.
   'function subscriber(uint256 id) view returns (address)',
+  // 2026-10-01 (fees item D5): the page's state read asks it, to tell an id never minted from a burned one.
+  'function nextTokenId() view returns (uint256)',
 ]);
+const arbSysAbi = parseAbi(['function arbBlockNumber() view returns (uint256)']);
+const ARB_SYS = '0x0000000000000000000000000000000000000064';
 export const stateViewAbi = parseAbi([
   'function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)',
   'function getFeeGrowthInside(bytes32 poolId, int24 tickLower, int24 tickUpper) view returns (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128)',
@@ -65,7 +74,8 @@ export function fakeChain({ head = 71_500_000, logs = [], headers = {}, views = 
       const to = Number(filter.toBlock);
       assert.ok(from <= to && to <= chain.head, `range ${from}..${to} (head ${chain.head})`);
       // 2026-09-28: the RPC's gateway refuses a range past its limits (tests/support/log-limits.mjs), as it does live.
-      const limited = logLimitError(filter);
+      // Changed on purpose 2026-10-02: Domino's node's rules, which the site's transport keeps to.
+      const limited = nodeLogError(filter);
       if (limited) return { error: limited };
       const [topic0, topic1, topic2, topic3] = filter.topics;
       const first = Array.isArray(topic0) ? topic0 : [topic0];
@@ -88,10 +98,18 @@ export function fakeChain({ head = 71_500_000, logs = [], headers = {}, views = 
     const [call, block] = params;
     assert.deepEqual(Object.keys(call).sort(), ['data', 'to']);
     assert.equal(call.to, owned.MULTICALL3);
-    chain.callBlocks.push(Number(block));
+    // Changed on purpose 2026-10-01 (fees item A21): the state read's first aggregate runs at 'latest' (the head) and asks
+    // ArbSys which block that was; PositionManager.nextTokenId (item D5) is answered when the chain names one.
+    const at = block === 'latest' ? chain.head : Number(block);
+    chain.callBlocks.push(at);
     const { args } = decodeFunctionData({ abi: multicallAbi, data: call.data });
     for (const sub of args[0]) assert.equal(sub.allowFailure, true);
-    return { result: encodeFunctionResult({ abi: multicallAbi, functionName: 'aggregate3', result: args[0].map((sub) => chain.views(sub.target.toLowerCase(), sub.callData)) }) };
+    const view = (target, data) => {
+      if (target === ARB_SYS) return { success: true, returnData: encodeFunctionResult({ abi: arbSysAbi, functionName: 'arbBlockNumber', result: BigInt(at) }) };
+      if (target === owned.POSITION_MANAGER && data.startsWith('0x75794a3c')) return chain.nextTokenId === undefined ? { success: false, returnData: '0x' } : { success: true, returnData: encodeFunctionResult({ abi: positionManagerAbi, functionName: 'nextTokenId', result: BigInt(chain.nextTokenId) }) };
+      return chain.views(target, data);
+    };
+    return { result: encodeFunctionResult({ abi: multicallAbi, functionName: 'aggregate3', result: args[0].map((sub) => view(sub.target.toLowerCase(), sub.callData)) }) };
   };
   const deps = {
     time: 1_000_000,
@@ -138,8 +156,3 @@ export function rpcLog({ address = fees.POOL_MANAGER, topics, data = '0x', block
   return { address, topics, data, blockNumber: numberToHex(block), logIndex: numberToHex(index), transactionHash: tx, blockHash: `0x${'cd'.repeat(32)}`, transactionIndex: '0x0', blockTimestamp: '0x0', removed };
 }
 
-/** A Swap log of `poolId` at `block` (its data words are arbitrary but well-formed). */
-export function swapLog(poolId, block, index = 0, pad = 0) {
-  const data = `0x${[-5n, 7n, 79228162514264337593543950336n, 10n ** 18n, 0n, 3000n].map(word).join('')}`;
-  return rpcLog({ topics: [fees.TOPIC.Swap, poolId, addressTopic('0x1111111111111111111111111111111111111111')], data, block, index, tx: `0x${(block * 1000 + index + pad).toString(16).padStart(64, '0')}` });
-}

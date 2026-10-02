@@ -8,6 +8,11 @@ Its observability block is pinned to exactly that shape — enabled, every
 request, invocation logs off — because the invocation log carries the raw
 method and URL the hop record exists not to record. Every other Worker stays
 without logging until its family is switched on.
+
+Added 2026-10-02 (review of rugged97's RPC rules, finding 2): the site-wide
+gate of wide log scans (wrangler.wide-gate.toml), a Durable Object the Pages
+Functions reach through their binding. It has no variables and no ingress,
+and exactly one Durable Object class and its one migration.
 """
 from pathlib import Path
 import sys
@@ -26,9 +31,23 @@ SERVICES = {
 # The one retained record per request, and nothing else: no invocation log.
 RECORD_ONLY = {"enabled": True, "head_sampling_rate": 1, "logs": {"invocation_logs": False}}
 OBSERVABILITY = {"read": RECORD_ONLY}
+GATE_CONFIG = "wrangler.wide-gate.toml"
+GATE_EXPECTED = {
+    "name": "domino-wide-gate",
+    "main": "src/wide-gate-worker.mjs",
+    "compatibility_date": "2026-10-02",
+    "workers_dev": False,
+    "preview_urls": False,
+    "routes": [],
+    "logpush": False,
+    "observability": {"enabled": False},
+    "durable_objects": {"bindings": [{"name": "WIDE_GATE", "class_name": "WideGate"}]},
+    "migrations": [{"tag": "v1", "new_sqlite_classes": ["WideGate"]}],
+}
 KNOWN_CONFIGS = {
     "wrangler.example.toml", "wrangler.session.example.toml",
     "wrangler.onboarding.example.toml", "wrangler.deposit.example.toml",
+    GATE_CONFIG,
     *(f"wrangler.{service}.toml" for service in SERVICES),
 }
 
@@ -77,6 +96,17 @@ def validate(service, config):
     return errors
 
 
+def validate_gate(config):
+    """Return policy errors of the wide-scan gate's configuration: exactly its reviewed shape."""
+    errors = []
+    if set(config) != set(GATE_EXPECTED):
+        errors.append("unexpected or missing configuration fields")
+    for key, value in GATE_EXPECTED.items():
+        if not same_value(config.get(key), value):
+            errors.append(f"{key} differs from the reviewed gate policy")
+    return errors
+
+
 def inventory_errors(directory, *, allowed_names=KNOWN_CONFIGS):
     """Reject alternate config entry points; do not inspect their contents."""
     try:
@@ -110,10 +140,16 @@ def main():
             failures.extend(f"{path.name}: {error}" for error in validate(service, config))
         except (OSError, ValueError):
             failures.append(f"{path.name}: unreadable or invalid TOML")
+    path = ROOT / "bridge" / GATE_CONFIG
+    try:
+        with path.open("rb") as stream:
+            failures.extend(f"{path.name}: {error}" for error in validate_gate(tomllib.load(stream)))
+    except (OSError, ValueError):
+        failures.append(f"{path.name}: unreadable or invalid TOML")
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
-    print(f"{len(SERVICES)} disabled Worker configurations satisfy the repository policy; remote state unchecked.")
+    print(f"{len(SERVICES)} disabled Worker configurations and the wide-scan gate satisfy the repository policy; remote state unchecked.")
     return 0
 
 

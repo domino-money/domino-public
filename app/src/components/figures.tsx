@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { cx, Segmented } from './ui'
 import { shortAmount } from '../lib/format/amount'
 import { compareDisplayed } from '../lib/format/change'
-import { formatUsd } from '../lib/format/usd'
+import { formatUsd, formatUsdFloor } from '../lib/format/usd'
 
 /*
  * Figure primitives (DESIGN-V2 §3.15). They present text the page already
@@ -121,15 +121,18 @@ export function Delta({
   variant = 'text',
   size = 'sm',
   className,
+  title,
 }: {
   sign: -1 | 0 | 1
   children: ReactNode
   variant?: 'text' | 'pill'
   size?: 'sm' | 'md'
   className?: string
+  /** What the change is measured from, in words (2026-10-02: the fees card's period, from its measured start). */
+  title?: string
 }) {
   return (
-    <span className={cx('dm-delta', size === 'md' && 'dm-delta--md', className)} data-sign={sign} data-variant={variant}>
+    <span className={cx('dm-delta', size === 'md' && 'dm-delta--md', className)} data-sign={sign} data-variant={variant} title={title}>
       <span className="dm-delta-arrow" aria-hidden="true" />
       {sign !== 0 && <span className="sr-only">{sign > 0 ? '+' : '−'}</span>}
       {children}
@@ -163,26 +166,33 @@ export function AmountText({ text, mode = 'cut', className }: { text: string; mo
 /**
  * "$1,234.56" from a decimal string (§6.2). Null when the value is null:
  * never a placeholder. `block` puts the valuation's pool block in the title;
- * `dimCents` dims the cents (hero figures only); `approx` prefixes a dim ≈.
+ * `dimCents` dims the cents (hero figures only); `approx` prefixes a dim ≈;
+ * `floor` writes a positive amount under a cent as "<$0.01", its exact figure
+ * in the title (the position screens, audit E7, 2026-10-01).
  */
 export function UsdText({
   value,
   block,
   dimCents = false,
   approx = false,
+  floor = false,
   className,
 }: {
   value: string | null
   block?: number
   dimCents?: boolean
   approx?: boolean
+  floor?: boolean
   className?: string
 }) {
   if (value === null) return null
-  const text = formatUsd(value)
+  const exact = formatUsd(value)
+  const text = floor ? formatUsdFloor(value) : exact
   const cents = dimCents ? centsAt(text) : -1
+  const where = block === undefined ? null : `Pool price at block ${block}`
+  const title = text === exact ? where : [exact, where].filter(Boolean).join(' · ')
   return (
-    <span className={cx('tnum', className)} title={block === undefined ? undefined : `Pool price at block ${block}`}>
+    <span className={cx('tnum', className)} title={title ?? undefined}>
       {approx && <span className="dm-approx">≈</span>}
       {cents === -1 ? (
         text

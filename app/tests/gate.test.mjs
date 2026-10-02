@@ -10,7 +10,12 @@ import { beforeEach, test } from 'node:test';
 
 const require = createRequire(import.meta.url);
 const gate = require('../.test-build/app/functions/_lib/gate.js');
-const { onRequest, APP_CSP, ICON_CACHE, LOGIN_PATH, LOGOUT_PATH, PERMISSIONS_POLICY, WORKER_CSP } = require('../.test-build/app/functions/_middleware.js');
+const { onRequest, APP_CSP, APP_CSP_SOURCES, ICON_CACHE, LOGIN_PATH, LOGOUT_PATH, PERMISSIONS_POLICY, STATIC_CSP, cspOf, loginLimiter } = require('../.test-build/app/functions/_middleware.js');
+const middlewareExports = require('../.test-build/app/functions/_middleware.js');
+const { BOOT_SCRIPT, BOOT_SCRIPT_HASH } = require('../.test-build/app/functions/_lib/boot.js');
+const { createHash } = require('node:crypto');
+/** A CSP hash source for an inline script's exact text. */
+const hashOf = (text) => `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`;
 
 const PASSWORD = 'correct-horse-battery-staple-42';
 const KEY = 'q3VfK9mJx7Rt2WbN5cYp8LhD4sGa6ZeU1oTiQwErTyA';
@@ -116,7 +121,14 @@ test('a page navigation without access gets the access page, not the app', async
   const text = await response.text();
   assert.match(text, /<form method="post" action="\/__beta\/login"/);
   assert.match(text, /type="password"/);
-  assert.doesNotMatch(text, /<script/, 'the access page must run no script');
+  // Changed on purpose 2026-10-01 (platform workstream, D3): one script, the one that carries the opened link through
+  // the login, and the page's CSP admits exactly its text, by its hash, and nothing else that runs.
+  const scripts = [...text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+  assert.deepEqual(scripts, [gate.GATE_SCRIPT], 'the access page runs its one script and no other');
+  assert.equal(gate.GATE_SCRIPT_HASH, hashOf(gate.GATE_SCRIPT), 'PAGE_CSP names the script’s own hash');
+  assert.ok(gate.PAGE_CSP.split('; ').includes(`script-src ${gate.GATE_SCRIPT_HASH}`), gate.PAGE_CSP);
+  assert.doesNotMatch(gate.PAGE_CSP, /unsafe-inline'[^;]*script|script-src[^;]*unsafe|connect-src|google/i);
+  assert.doesNotMatch(gate.GATE_SCRIPT, /\b(?:fetch|XMLHttpRequest|cookie|localStorage|sessionStorage|eval|src|href)\b/, 'it reads the hash and writes one field, nothing else');
 });
 
 test('assets, tokens and API paths without access are refused as JSON', async () => {
@@ -235,12 +247,12 @@ test('the access page and refusals carry the same isolation headers as the app',
   }
 });
 
-test('the permissions policy switches off sensors and payments but leaves hardware-wallet paths alone', () => {
-  for (const feature of ['camera', 'microphone', 'geolocation', 'payment']) {
+// Changed on purpose 2026-10-01 (platform workstream, I8): USB, HID, serial and Bluetooth are switched off too. They were
+// left open for a wallet connection still to come; it came, and it reaches wallets only through their own providers
+// (EIP-6963), so a hardware wallet behind an extension talks to its device from the extension, never from this page.
+test('the permissions policy switches off sensors, payments and the device APIs the page never uses', () => {
+  for (const feature of ['camera', 'microphone', 'geolocation', 'payment', 'usb', 'hid', 'serial', 'bluetooth']) {
     assert.match(PERMISSIONS_POLICY, new RegExp(`(^|, )${feature}=\\(\\)`), `${feature} is not switched off`);
-  }
-  for (const feature of ['usb', 'hid', 'serial', 'bluetooth']) {
-    assert.doesNotMatch(PERMISSIONS_POLICY, new RegExp(`(^|, )${feature}=`), `${feature} would block hardware wallets`);
   }
 });
 
@@ -267,8 +279,10 @@ async function admitted(path, type) {
 
 // 2026-09-28 (speed wave, item 36): a content-hashed file is the same for everyone, and `private` already keeps it out
 // of shared caches, so it no longer varies on Cookie: that made every chunk the browser held go back to the server,
-// once each, after any cookie changed. Every other answer still varies on it.
-test('hashed assets do not vary on the cookie; pages, icons, other files and API answers do', async () => {
+// once each, after any cookie changed. Changed on purpose 2026-10-01 (platform workstream, F3, D1): the fixed public
+// files (icons, the docs' pictures, the favicon) do not vary on it either, now that the beta cookie is renewed as it is
+// used; a file the deployment does not hold, which Pages answers with the app's page, is a 404 no cache keeps.
+test('hashed assets and fixed public files do not vary on the cookie; pages, other files and API answers do', async () => {
   for (const [path, type] of [
     ['/assets/index-abc123.js', 'text/javascript'],
     ['/assets/index-abc123.css', 'text/css'],
@@ -279,37 +293,45 @@ test('hashed assets do not vary on the cookie; pages, icons, other files and API
     assert.equal(response.headers.get('Vary'), null, path);
     assert.equal(response.headers.get('Cache-Control'), 'private, max-age=31536000, immutable', path);
   }
+  for (const [path, type] of [['/tokens/weth.svg', 'image/svg+xml'], ['/wallets/rabby.svg', 'image/svg+xml'], ['/docs/markets.webp', 'image/webp'], ['/favicon.svg', 'image/svg+xml']]) {
+    assert.equal((await admitted(path, type)).headers.get('Vary'), null, path);
+  }
   for (const [path, type] of [
     ['/', 'text/html; charset=utf-8'],
-    // A missing file under /assets/ answered with the app's page: a page, so it varies and is never kept.
-    ['/assets/missing-abc.js', 'text/html; charset=utf-8'],
-    ['/tokens/weth.svg', 'image/svg+xml'],
-    ['/wallets/rabby.svg', 'image/svg+xml'],
-    ['/docs/markets.webp', 'image/webp'],
-    ['/favicon.svg', 'image/svg+xml'],
+    ['/robots.txt', 'text/plain'],
     ['/api/read/v1/capabilities', 'application/json'],
   ]) {
     assert.match((await admitted(path, type)).headers.get('Vary') ?? '', /Cookie/, path);
   }
-  assert.equal((await admitted('/assets/missing-abc.js', 'text/html; charset=utf-8')).headers.get('Cache-Control'), 'private, no-cache');
+  // A missing file, under /assets/ (an old release's chunk, D1) or anywhere else, answered with the app's page: a 404.
+  for (const path of ['/assets/missing-abc.js', '/assets/missing.css', '/tokens/nosuchtoken.svg', '/docs/nosuch.webp', '/favicon.ico']) {
+    const missing = await admitted(path, 'text/html; charset=utf-8');
+    assert.equal(missing.status, 404, path);
+    assert.equal(missing.headers.get('Cache-Control'), 'no-store', path);
+    assert.deepEqual(await missing.json(), { error: 'not_found' }, path);
+  }
+  // Pages and paths with no file name stay the app's page.
+  for (const path of ['/', '/index.html', '/positions', '/x.html']) assert.equal((await admitted(path, 'text/html; charset=utf-8')).status, 200, path);
 });
 
 // 2026-09-28 (speed wave, item 41): the tokens' and wallets' icons public/ serves under fixed names are kept a day, then
-// used while they are checked again, instead of being asked through the gate on every page load. The docs' pictures,
-// the favicon and any other public file keep private, no-cache; an icon path answered with the app's page is a page.
-test('token and wallet icons are kept a day; other public files are checked on every load', async () => {
-  for (const [path, type] of [['/tokens/weth.svg', 'image/svg+xml'], ['/tokens/marlin.jpg', 'image/jpeg'], ['/wallets/metamask.svg', 'image/svg+xml']]) {
+// used while they are checked again, instead of being asked through the gate on every page load. Changed on purpose
+// 2026-10-01 (platform workstream, F3): the docs' pictures (one round trip each per docs page) and the favicon too. Any
+// other public file is checked on every load. Every file that is not a page carries the static files' CSP (I8): an
+// SVG opened on its own runs nothing.
+test('icons, the docs’ pictures and the favicon are kept a day; other public files are checked on every load', async () => {
+  for (const [path, type] of [['/tokens/weth.svg', 'image/svg+xml'], ['/tokens/marlin.jpg', 'image/jpeg'], ['/wallets/metamask.svg', 'image/svg+xml'], ['/docs/markets.webp', 'image/webp'], ['/favicon.svg', 'image/svg+xml']]) {
     const response = await admitted(path, type);
     assert.equal(response.headers.get('Cache-Control'), ICON_CACHE, path);
-    assert.equal(response.headers.get('Content-Security-Policy'), null, path);
+    assert.equal(response.headers.get('Content-Security-Policy'), STATIC_CSP, path);
   }
   assert.equal(ICON_CACHE, 'private, max-age=86400, stale-while-revalidate=604800');
-  for (const [path, type] of [['/docs/markets.webp', 'image/webp'], ['/favicon.svg', 'image/svg+xml'], ['/tokensx/weth.svg', 'image/svg+xml'], ['/x/tokens/weth.svg', 'image/svg+xml']]) {
-    assert.equal((await admitted(path, type)).headers.get('Cache-Control'), 'private, no-cache', path);
+  assert.equal(STATIC_CSP, "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'none'");
+  for (const [path, type] of [['/tokensx/weth.svg', 'image/svg+xml'], ['/x/tokens/weth.svg', 'image/svg+xml'], ['/robots.txt', 'text/plain']]) {
+    const response = await admitted(path, type);
+    assert.equal(response.headers.get('Cache-Control'), 'private, no-cache', path);
+    assert.equal(response.headers.get('Content-Security-Policy'), STATIC_CSP, path);
   }
-  const missing = await admitted('/tokens/nosuchtoken.svg', 'text/html; charset=utf-8');
-  assert.equal(missing.headers.get('Cache-Control'), 'private, no-cache');
-  assert.equal(missing.headers.get('Content-Security-Policy'), APP_CSP);
 });
 
 // 2026-09-28 (speed wave, item 35): the fonts are the site's own files (src/styles/fonts.css), so the page's CSP admits
@@ -322,23 +344,192 @@ test('the page takes its styles and fonts from this origin alone', () => {
 });
 
 // 2026-09-25: the page and the fees replay worker read Robinhood Chain's public RPC themselves (it rate-limits
-// Cloudflare's edge). The page's CSP names it; a dedicated worker keeps the CSP its own file is served with, so the
-// worker's file carries one that loads nothing and reaches only the RPC. No other script gets a CSP of its own.
-test('the page and the fees worker may reach the chain’s RPC, and nothing else is opened', async () => {
+// Cloudflare's edge); a dedicated worker keeps the CSP its own file is served with, so the worker's file carries one that
+// loads nothing. No other script gets a CSP of its own. Changed on purpose 2026-10-01 (RPC-SPEC §7.4, the owner's rule:
+// nothing is read from a public RPC): neither names any chain RPC any more; the chain is read through the site's own
+// routes ('self'), and the worker reaches the site alone. Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the fees worker
+// is gone with the replay; every file under /assets/ carries the static files' CSP, a worker's name included.
+test('the page reaches this site, and no chain RPC; there is no worker policy; nothing else is opened', async () => {
   const connect = APP_CSP.split('; ').find((part) => part.startsWith('connect-src '));
-  // Changed on purpose (2026-09-28: a large Brazilian ISP's DNS answers NXDOMAIN for chain.robinhood.com): the chain's three
-  // public fallbacks (src/lib/chain/endpoints.ts), which the page and the fees worker read while the RPC cannot be reached.
-  const fallbacks = 'https://robinhood-rpc.publicnode.com https://rpc.ordofi.network https://robinhood.drpc.org';
-  assert.equal(connect, `connect-src 'self' https://api.dexscreener.com https://rpc.mainnet.chain.robinhood.com ${fallbacks}`);
-  assert.equal(WORKER_CSP, `default-src 'none'; connect-src https://rpc.mainnet.chain.robinhood.com ${fallbacks}`);
+  // Changed on purpose (2026-10-01, audit C3): and WalletConnect's relay, with its Verify API's frame, for a phone's wallet.
+  assert.equal(connect, "connect-src 'self' https://api.dexscreener.com wss://relay.walletconnect.org");
+  assert.deepEqual(APP_CSP.split('; ').filter((part) => part.startsWith('frame-src ')), ['frame-src https://verify.walletconnect.org']);
+  assert.equal(middlewareExports.WORKER_CSP, undefined, 'no worker policy');
+  assert.doesNotMatch(APP_CSP, /robinhood|publicnode|ordofi|drpc/i, 'no Robinhood Chain RPC, nor any of its public fallbacks');
   const cookie = await signIn();
   const asset = (path) => onRequest({ request: fetchLike(path, { Cookie: cookie }), env: ENV, next: async () => new Response('x', { headers: { 'Content-Type': 'text/javascript' } }) });
   const worker = await asset('/assets/feesReplay.worker-CdlBbZHL.js');
-  assert.equal(worker.headers.get('Content-Security-Policy'), WORKER_CSP);
+  assert.equal(worker.headers.get('Content-Security-Policy'), STATIC_CSP, 'the old worker\'s name gets nothing of its own');
   assert.equal(worker.headers.get('Cache-Control'), 'private, max-age=31536000, immutable');
+  // Changed on purpose 2026-10-01 (I8): every other file under /assets/ carries the static files' CSP, which a script the
+  // page loads ignores (the page's policy governs it) and which keeps any of them inert when opened on its own.
   for (const path of ['/assets/index-abc123.js', '/assets/feesReplay.worker.js', '/assets/x/feesReplay.worker-abc.js', '/assets/feesReplay.worker-abc.js.map']) {
-    assert.equal((await asset(path)).headers.get('Content-Security-Policy'), null, path);
+    assert.equal((await asset(path)).headers.get('Content-Security-Policy'), STATIC_CSP, path);
   }
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-01, platform workstream: the page's CSP as data, its one inline script by hash (F1, F3).
+// ---------------------------------------------------------------------------
+
+test('the page’s CSP is its directives’ lists, and admits exactly one inline script, the boot script, by its hash', () => {
+  assert.equal(APP_CSP, cspOf(APP_CSP_SOURCES));
+  // 2026-10-01 (audit C3, the wallets workstream): and frame-src, WalletConnect's Verify API frame alone.
+  assert.deepEqual(Object.keys(APP_CSP_SOURCES), ['default-src', 'script-src', 'style-src', 'font-src', 'img-src', 'connect-src', 'frame-src', 'object-src', 'frame-ancestors', 'base-uri', 'form-action']);
+  assert.deepEqual(APP_CSP_SOURCES['script-src'], ["'self'", BOOT_SCRIPT_HASH]);
+  assert.equal(BOOT_SCRIPT_HASH, hashOf(BOOT_SCRIPT), 'the hash is the boot script’s own');
+  assert.doesNotMatch(APP_CSP, /'unsafe-inline'|'unsafe-eval'|'nonce-|'strict-dynamic'/, 'nothing else inline runs, Cloudflare’s injected script included');
+  for (const [directive, list] of Object.entries(APP_CSP_SOURCES)) {
+    assert.equal(new Set(list).size, list.length, `${directive} names a source twice`);
+    // A host is an https origin; the one wss origin is WalletConnect's relay, in connect-src (2026-10-01, audit C3).
+    for (const source of list) assert.match(source, /^(?:'[a-z-]+'|'sha256-[A-Za-z0-9+/]{43}='|data:|https:\/\/[a-z0-9.-]+)$|^wss:\/\/relay\.walletconnect\.org$/, `${directive} ${source}`);
+    if (list.some((source) => source.startsWith('wss:'))) assert.equal(directive, 'connect-src', 'a wss source only where the page connects');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-01, platform workstream: public files with no cookie (V5, I5).
+// ---------------------------------------------------------------------------
+
+test('the favicon and the access page’s two fonts are served without the cookie, kept a day, and nothing else is', async () => {
+  for (const [path, type] of [['/favicon.ico', 'image/x-icon'], ['/__beta/fonts/geist-latin.woff2', 'font/woff2'], ['/__beta/fonts/instrument-serif-latin.woff2', 'font/woff2']]) {
+    let handed = 0;
+    const response = await onRequest({ request: fetchLike(path), env: ENV, next: async () => (handed++, new Response('x', { headers: { 'Content-Type': type } })) });
+    assert.equal(response.status, 200, path);
+    assert.equal(handed, 1, path);
+    assert.equal(response.headers.get('Cache-Control'), ICON_CACHE, path);
+    assert.equal(response.headers.get('Vary'), null, path);
+    assert.equal(response.headers.get('Content-Security-Policy'), STATIC_CSP, path);
+    assert.equal(response.headers.get('Cross-Origin-Resource-Policy'), 'same-origin', path);
+    // Not served in place of a missing file: Pages' page for it becomes a 404.
+    const missing = await onRequest({ request: fetchLike(path), env: ENV, next: async () => new Response('<!doctype html>', { headers: { 'Content-Type': 'text/html; charset=utf-8' } }) });
+    assert.equal(missing.status, 404, path);
+    // Only a GET or a HEAD, and only these exact paths.
+    const posted = await onRequest({ request: new Request(`${ORIGIN}${path}`, { method: 'POST', body: 'x' }), env: ENV, next: async () => assert.fail('a POST went past the gate') });
+    assert.equal(posted.status, 401, path);
+  }
+  for (const path of ['/favicon.svg', '/__beta/fonts/other.woff2', '/__beta/fonts/', '/__beta/fonts/geist-latin.woff2x', '/favicon.ico/x']) {
+    const response = await run(fetchLike(path));
+    assert.equal(response.status, 401, path);
+  }
+  assert.equal(served, 0);
+  const config = await run(navigate('/favicon.ico'), {});
+  assert.equal(config.status, 503, 'a deployment without its secrets still serves nothing');
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-01, platform workstream: the week runs from the last visit, and the opened link survives the login (D3).
+// ---------------------------------------------------------------------------
+
+test('a page loaded with a cookie more than a day old gets a fresh one; nothing else renews it', async () => {
+  const config = await gate.readConfig(ENV);
+  const DAY = 86_400_000;
+  const old = (await gate.issueCookie(config, Date.now() - 2 * DAY)).split(';')[0];
+  const recent = (await gate.issueCookie(config, Date.now() - 3_600_000)).split(';')[0];
+  const renewed = await run(navigate('/', { Cookie: old }));
+  assert.equal(renewed.status, 200);
+  const cookie = renewed.headers.get('Set-Cookie');
+  assert.match(cookie ?? '', /^__Host-domino-beta=v1\.\d+\.[A-Za-z0-9_-]{43}; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=604800$/);
+  const expires = Number(/v1\.(\d+)\./.exec(cookie)[1]);
+  assert.ok(Math.abs(expires - (Math.floor(Date.now() / 1000) + gate.SESSION_SECONDS)) <= 5, 'a full week from now');
+  assert.equal(await gate.hasValidCookie(config, cookie.split(';')[0], Date.now()), true);
+  assert.equal((await run(navigate('/', { Cookie: recent }))).headers.get('Set-Cookie'), null, 'less than a day old: kept as it is');
+  // A page the browser's copy answers (304) renews it too: most page loads after the first are those.
+  const notModified = await onRequest({ request: navigate('/', { Cookie: old }), env: ENV, next: async () => new Response(null, { status: 304 }) });
+  assert.match(notModified.headers.get('Set-Cookie') ?? '', /^__Host-domino-beta=v1\./);
+  // A script, a style or an API call never carries one, nor does a refusal.
+  for (const path of ['/assets/index-abc.js', '/api/read/v1/capabilities']) {
+    const response = await onRequest({ request: fetchLike(path, { Cookie: old }), env: ENV, next: async () => new Response('{}', { headers: { 'Content-Type': 'application/json' } }) });
+    assert.equal(response.headers.get('Set-Cookie'), null, path);
+  }
+  const failed = await onRequest({ request: navigate('/', { Cookie: old }), env: ENV, next: async () => new Response('down', { status: 500, headers: { 'Content-Type': 'text/plain' } }) });
+  assert.equal(failed.headers.get('Set-Cookie'), null);
+  assert.equal(gate.RENEW_AFTER_SECONDS, 86_400);
+  assert.equal(gate.renewable(Math.floor(Date.now() / 1000) + gate.SESSION_SECONDS - 86_399, Date.now()), false);
+  assert.equal(gate.renewable(Math.floor(Date.now() / 1000) + gate.SESSION_SECONDS - 86_401, Date.now()), true);
+});
+
+const loginWith = (fields, headers = {}) =>
+  new Request(`${ORIGIN}${LOGIN_PATH}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: ORIGIN, ...headers },
+    body: new URLSearchParams(fields).toString(),
+  });
+
+test('the login goes back to the link the visitor opened, and only to a link of this site’s own shape', async () => {
+  for (const next of ['#/positions/3325113', '#/markets/0x5fc5360d0400a0fd4f2af552add042d716f1d168', '#/docs/wallet#sign-in', '#/', '#/new/0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03']) {
+    const response = await run(loginWith({ password: PASSWORD, next }));
+    assert.equal(response.status, 303, next);
+    assert.equal(response.headers.get('Location'), `/${next}`, next);
+    assert.match(response.headers.get('Set-Cookie') ?? '', /^__Host-domino-beta=v1\./);
+  }
+  for (const next of ['', 'https://evil.example', '//evil.example', '/positions', '#positions', '#/x"><script>alert(1)</script>', '#/%2F%2Fevil', `#/${'a'.repeat(201)}`, '#/a#b#c', '#/a b', 'javascript:alert(1)']) {
+    const response = await run(loginWith({ password: PASSWORD, next }));
+    assert.equal(response.headers.get('Location'), '/', JSON.stringify(next));
+  }
+  // A wrong password keeps the link in the page it answers with, and only a link of that shape.
+  const wrong = await (await run(loginWith({ password: 'wrong', next: '#/positions/42' }))).text();
+  assert.match(wrong, /<input id="next" name="next" type="hidden" value="#\/positions\/42" \/>/);
+  const hostile = await (await run(loginWith({ password: 'wrong', next: '#/x"><script>' }))).text();
+  assert.match(hostile, /<input id="next" name="next" type="hidden" value="" \/>/);
+  // The page's script copies the opened link into that field, the same shape only.
+  const field = { value: '' };
+  const runScript = (hash) => {
+    field.value = '';
+    new Function('document', 'location', gate.GATE_SCRIPT)({ getElementById: (id) => (id === 'next' ? field : null) }, { hash });
+    return field.value;
+  };
+  assert.equal(runScript('#/positions/3325113'), '#/positions/3325113');
+  assert.equal(runScript('#/docs/wallet#sign-in'), '#/docs/wallet#sign-in');
+  for (const hash of ['', '#', '#x', '#/x"><b>', `#/${'a'.repeat(201)}`]) assert.equal(runScript(hash), '', hash);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-01, platform workstream: wrong passwords are limited per client address (I7).
+// ---------------------------------------------------------------------------
+
+test('after five wrong passwords from one address, that address waits a minute, whatever it sends; another does not', async () => {
+  const address = '198.51.100.7';
+  const from = (ip) => ({ 'CF-Connecting-IP': ip });
+  for (let i = 0; i < gate.LOGIN_LIMIT.failures; i++) {
+    const response = await run(loginWith({ password: 'wrong' }, from(address)));
+    assert.equal(response.status, 401, `try ${i + 1}`);
+  }
+  for (const password of ['wrong', PASSWORD]) {
+    const response = await run(loginWith({ password, next: '#/positions/1' }, from(address)));
+    assert.equal(response.status, 429, password === PASSWORD ? 'even the right one' : 'a sixth');
+    assert.equal(response.headers.get('Set-Cookie'), null);
+    assert.match(response.headers.get('Retry-After') ?? '', /^(?:[1-5]?[0-9]|60)$/);
+    const text = await response.text();
+    assert.match(text, /Too many tries in a row\. Wait a minute, then try again\./);
+    assert.match(text, /value="#\/positions\/1"/, 'the link is kept for the next try');
+  }
+  assert.equal((await run(loginWith({ password: PASSWORD }, from('198.51.100.8')))).status, 303, 'another address is not held');
+  assert.equal((await run(loginWith({ password: PASSWORD }))).status, 303, 'a request without an edge address is not limited: there is nothing to hold it to');
+});
+
+test('the limiter: a window, a lock that ends, a reset on success, and bounded memory', () => {
+  const limits = { failures: 3, windowMs: 1000, lockMs: 500, clients: 4 };
+  const limiter = gate.createLoginLimiter(limits);
+  limiter.failed('a', 0);
+  limiter.failed('a', 100);
+  assert.equal(limiter.waitMs('a', 200), 0, 'two of three: still free');
+  limiter.failed('a', 1200);
+  assert.equal(limiter.waitMs('a', 1200), 0, 'the first two left the window');
+  limiter.failed('a', 1250);
+  limiter.failed('a', 1300);
+  assert.equal(limiter.waitMs('a', 1300), 500, 'three within the window: locked');
+  assert.equal(limiter.waitMs('a', 1799), 1);
+  assert.equal(limiter.waitMs('a', 1800), 0, 'and free again after the lock');
+  limiter.failed('b', 0);
+  limiter.failed('b', 1);
+  limiter.succeeded('b');
+  limiter.failed('b', 2);
+  assert.equal(limiter.waitMs('b', 3), 0, 'a success starts again from nothing');
+  for (const client of ['c', 'd', 'e', 'f', 'g', 'h']) limiter.failed(client, 10);
+  assert.ok(limiter.size() <= limits.clients, `at most ${limits.clients} addresses kept: ${limiter.size()}`);
+  assert.deepEqual(gate.LOGIN_LIMIT, { failures: 5, windowMs: 600_000, lockMs: 60_000, clients: 5_000 });
+  assert.equal(typeof loginLimiter.waitMs, 'function');
 });
 
 test('the cookie is accepted among other cookies', async () => {
@@ -412,11 +603,126 @@ test('everything that is not a public read keeps its cookies, because session ro
   }
 });
 
+// 2026-10-01 (RPC-SPEC §2.7): Domino's own chain routes go on as a public read does: with no cookie at all, and their
+// answers compressible (no-store alone). Any other path under their prefixes keeps its cookies.
+test('Domino’s own chain routes go on past the gate with no cookie at all, and leave no-store; nothing else under their prefixes does', async () => {
+  const cookie = await signIn();
+  // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the ledger route, in place of the fees replay's /logs.
+  const paths = ['/api/owned/v2/positions', '/api/fees/v1/state', '/api/fees/v2/ledger', '/api/automation/v1/state', '/api/automation/v1/record', '/api/chain/v1/simulate', '/API/Fees/V2/Ledger'];
+  for (const path of paths) {
+    const body = '{"tokenIds":["1"]}';
+    const request = new Request(`${ORIGIN}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN, 'Sec-Fetch-Site': 'same-origin', Cookie: `theme=dark; ${cookie}; ${SESSION_COOKIES}` }, body });
+    const { response, handed } = await passedOn(request);
+    assert.equal(response.status, 200, path);
+    assert.ok(handed[0] instanceof Request, `${path}: the gate hands on a request of its own`);
+    assert.equal(handed[0].headers.get('Cookie'), null, `${path}: no cookie of any kind goes past the gate`);
+    for (const [name, value] of handed[0].headers) assert.doesNotMatch(value, /sessiontoken|preauthtoken|domino-beta/, `${path}: a credential went on in ${name}`);
+    assert.equal(await handed[0].text(), body, `${path}: the body goes on byte for byte`);
+    assert.equal(response.headers.get('Cache-Control'), 'no-store', path);
+    assert.equal(response.headers.get('Content-Security-Policy'), "default-src 'none'; frame-ancestors 'none'", path);
+  }
+  for (const path of ['/api/owned/v2/positions/', '/api/fees/v1/state/x', '/api/owned/v1/positions', '/api/chain/v1/call', '/api/fees/v1/logs', '/api/fees/v2/ledger/x']) {
+    const { response, handed } = await passedOn(fetchLike(path, { Cookie: `${cookie}; ${SESSION_COOKIES}` }));
+    assert.deepEqual(handed, [undefined], `${path} goes on as the browser sent it`);
+    assert.equal(response.headers.get('Cache-Control'), 'no-store, no-transform', path);
+  }
+  // Without the beta cookie, refused as every API call is.
+  const { response, handed } = await passedOn(new Request(`${ORIGIN}/api/fees/v2/ledger`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: SESSION_COOKIES }, body: '{}' }));
+  assert.deepEqual([response.status, await response.json(), handed], [401, { error: 'beta_access_required' }, []]);
+});
+
 test('a read without the beta cookie is still refused, whatever else it carries', async () => {
   const { response, handed } = await passedOn(fetchLike('/api/read/v1/token', { Cookie: SESSION_COOKIES }));
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { error: 'beta_access_required' });
   assert.deepEqual(handed, []);
+});
+
+// ---------------------------------------------------------------------------
+// 2026-10-01, the chain2 workstream, part B: /uniswap-v3/* (rugged97's Uniswap v3 services for the second chain's
+// section, functions/uniswap-v3/[[path]].ts) is an API path behind the gate, and the preview's page CSP names the
+// second chain's RPC.
+// ---------------------------------------------------------------------------
+
+const V3_BODY = '{"chainId":99801,"protocol":"uniswap-v3"}';
+const v3Post = (path, headers = {}) =>
+  new Request(`${ORIGIN}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN, 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty', ...headers }, body: V3_BODY });
+
+test('/uniswap-v3 goes on past the gate with no cookie at all, and its answer leaves as an API answer', async () => {
+  const cookie = await signIn();
+  for (const path of ['/uniswap-v3/read/v1/capabilities', '/uniswap-v3/actions/v1/prepare', '/UNISWAP-V3/read/v1/capabilities', '/uniswap-v3', '/uniswap-v3/']) {
+    const handed = [];
+    const response = await onRequest({
+      request: v3Post(path, { Cookie: `theme=dark; ${cookie}; ${SESSION_COOKIES}` }),
+      env: ENV,
+      next: async (passed) => {
+        handed.push(passed);
+        return new Response('{}', { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', 'Content-Security-Policy': "default-src *" } });
+      },
+    });
+    assert.equal(response.status, 200, path);
+    assert.equal(handed.length, 1, path);
+    assert.ok(handed[0] instanceof Request, `${path}: the gate hands on a request of its own`);
+    assert.equal(handed[0].headers.get('Cookie'), null, `${path}: no cookie of any kind goes past the gate`);
+    for (const [name, value] of handed[0].headers) assert.doesNotMatch(value, /sessiontoken|preauthtoken|domino-beta/, `${path}: a credential went on in ${name}`);
+    assert.equal(handed[0].method, 'POST');
+    assert.equal(handed[0].headers.get('Origin'), ORIGIN, 'the browser\'s own Origin goes on, for the route\'s same-origin check');
+    assert.equal(await handed[0].text(), V3_BODY, 'the body goes on byte for byte');
+    assert.equal(response.headers.get('Cache-Control'), 'no-store, no-transform', `${path}: never stored, whatever the route said`);
+    assert.equal(response.headers.get('Content-Security-Policy'), "default-src 'none'; frame-ancestors 'none'", `${path}: the API's CSP`);
+    assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
+    assert.match(response.headers.get('Vary') ?? '', /Cookie/);
+    assert.equal(response.headers.get('Set-Cookie'), null, 'an API call never renews the beta cookie');
+  }
+  // Not this prefix: the page's own route goes on as the browser sent it.
+  const { handed } = await passedOn(fetchLike('/uniswap-v3x/read/v1/capabilities', { Cookie: `${cookie}; ${SESSION_COOKIES}` }));
+  assert.deepEqual(handed, [undefined]);
+});
+
+test('/uniswap-v3 without the beta cookie is refused as JSON, and a path with an empty segment never reaches the files', async () => {
+  const { response, handed } = await passedOn(v3Post('/uniswap-v3/read/v1/capabilities', { Cookie: SESSION_COOKIES }));
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: 'beta_access_required' });
+  assert.deepEqual(handed, []);
+  const cookie = await signIn();
+  for (const path of ['/uniswap-v3//read/v1/capabilities', '/uniswap-v3/read/v1//capabilities', '/UNISWAP-V3//x']) {
+    const refused = await onRequest({ request: v3Post(path, { Cookie: cookie }), env: ENV, next });
+    assert.equal(refused.status, 404, path);
+    assert.deepEqual(await refused.json(), { error: 'not_found' }, path);
+    assert.equal(refused.headers.get('Cache-Control'), 'no-store, no-transform', path);
+    assert.equal(refused.headers.get('Content-Security-Policy'), "default-src 'none'; frame-ancestors 'none'", path);
+    assert.equal(served, 0, `${path}: never index.html`);
+  }
+});
+
+// Changed on purpose 2026-10-02 (review of the RPC switch, finding 1; the owner's rule: the site reads nothing from a
+// public RPC, on the preview too): the second chain's RPC is a public node, and its section is closed while it could read
+// only that (src/chains/elysium/mode.ts SECTION_READS), so the preview's page CSP names it no more: CHAIN2_PREVIEW "true"
+// serves APP_CSP_CHAIN2, which is production's policy until the section has a source of rugged97's.
+test('the preview\'s page CSP where CHAIN2_PREVIEW is "true" names no public node while the second chain\'s section reads none, and nothing else changes', async () => {
+  const { APP_CSP_CHAIN2 } = require('../.test-build/app/functions/_middleware.js');
+  const directive = (policy, name) => policy.split('; ').find((part) => part.startsWith(`${name} `));
+  assert.equal(directive(APP_CSP_CHAIN2, 'connect-src'), directive(APP_CSP, 'connect-src'), 'the page\'s own sources and WalletConnect\'s relay, no chain\'s RPC (no Robinhood Chain RPC since 2026-10-01, RPC-SPEC §7.4; no Elysium one since 2026-10-02)');
+  assert.deepEqual(APP_CSP_CHAIN2.split('; ').filter((part) => !part.startsWith('connect-src ')), APP_CSP.split('; ').filter((part) => !part.startsWith('connect-src ')), 'every other directive is production\'s');
+  assert.doesNotMatch(APP_CSP, /elysium|kinetiq/, 'production\'s policy names no host of the second chain');
+  assert.doesNotMatch(APP_CSP_CHAIN2, /elysium|kinetiq/, 'nor the preview\'s');
+  const cookie = await signIn();
+  const csp = async (env, request = navigate('/', { Cookie: cookie })) => (await onRequest({ request, env, next })).headers.get('Content-Security-Policy');
+  assert.equal(await csp(ENV), APP_CSP, 'unset: production\'s');
+  assert.equal(await csp({ ...ENV, CHAIN2_PREVIEW: 'true' }), APP_CSP_CHAIN2, '"true": the preview\'s');
+  for (const value of ['TRUE', 'True', '1', 'yes', ' true', 'true ', '', 'false']) assert.equal(await csp({ ...ENV, CHAIN2_PREVIEW: value }), APP_CSP, `"${value}": production's`);
+  // A page the browser revalidates gets the same, and nothing that is not a page changes: the files stay inert (the fees
+  // worker's name too, since 2026-10-02), API answers render nothing.
+  const revalidated = await onRequest({ request: navigate('/', { Cookie: cookie }), env: { ...ENV, CHAIN2_PREVIEW: 'true' }, next: async () => new Response(null, { status: 304, headers: { 'Content-Type': 'text/html; charset=utf-8' } }) });
+  assert.equal(revalidated.headers.get('Content-Security-Policy'), APP_CSP_CHAIN2);
+  const asset = (path, type) => onRequest({ request: fetchLike(path, { Cookie: cookie }), env: { ...ENV, CHAIN2_PREVIEW: 'true' }, next: async () => new Response('x', { headers: { 'Content-Type': type } }) });
+  assert.equal((await asset('/assets/feesReplay.worker-CdlBbZHL.js', 'text/javascript')).headers.get('Content-Security-Policy'), STATIC_CSP);
+  assert.equal((await asset('/assets/index-abc123.js', 'text/javascript')).headers.get('Content-Security-Policy'), STATIC_CSP);
+  assert.equal((await asset('/api/read/v1/capabilities', 'application/json')).headers.get('Content-Security-Policy'), "default-src 'none'; frame-ancestors 'none'");
+  // The access page keeps its own policy either way.
+  const ask = await onRequest({ request: navigate('/'), env: { ...ENV, CHAIN2_PREVIEW: 'true' }, next });
+  assert.equal(ask.status, 401);
+  assert.doesNotMatch(ask.headers.get('Content-Security-Policy'), /elysium|kinetiq/);
 });
 
 test('a tampered, expired, foreign or duplicated cookie is refused', async () => {
@@ -541,4 +847,24 @@ test('a GET on the login path redirects and touches no cookie; only a same-origi
   const out = await run(new Request(`${ORIGIN}${LOGOUT_PATH}`, { method: 'POST', headers: { Origin: ORIGIN, Cookie: cookie } }));
   assert.equal(out.status, 303);
   assert.match(out.headers.get('Set-Cookie') ?? '', /Max-Age=0/);
+});
+
+// 2026-10-01 (platform workstream, I8): a 304's headers replace those of the browser's copy. The page's own revalidation
+// often comes back with no Content-Type, and must not carry the static files' CSP, or the page's CSP would be replaced
+// by one that runs nothing.
+test('a 304 never carries a CSP other than the one its copy was served with', async () => {
+  const cookie = await signIn();
+  const revalidated = (path, headers = {}) =>
+    onRequest({ request: navigate(path, { Cookie: cookie }), env: ENV, next: async () => new Response(null, { status: 304, headers }) });
+  const page = await revalidated('/');
+  assert.equal(page.status, 304);
+  assert.equal(page.headers.get('Content-Security-Policy'), null, 'the page keeps its own CSP');
+  assert.equal(page.headers.get('Cache-Control'), 'private, no-cache');
+  assert.equal((await revalidated('/', { 'Content-Type': 'text/html; charset=utf-8' })).headers.get('Content-Security-Policy'), APP_CSP);
+  const icon = await onRequest({ request: fetchLike('/tokens/weth.svg', { Cookie: cookie }), env: ENV, next: async () => new Response(null, { status: 304 }) });
+  assert.equal(icon.headers.get('Content-Security-Policy'), null);
+  assert.equal(icon.headers.get('Cache-Control'), ICON_CACHE);
+  const favicon = await onRequest({ request: fetchLike('/favicon.ico'), env: ENV, next: async () => new Response(null, { status: 304 }) });
+  assert.equal(favicon.status, 304);
+  assert.equal(favicon.headers.get('Content-Security-Policy'), null);
 });

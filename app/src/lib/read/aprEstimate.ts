@@ -1,6 +1,6 @@
 import type { PoolAprEstimate } from 'api-contracts/read-v2/types'
 import type { Instant } from '../markets'
-import { compare, toFixed } from './decimal'
+import { aprDigits } from '../format/apr'
 
 /** The exact producer result is retained separately from qualified historical APR. */
 export interface AprEstimateObservation {
@@ -54,7 +54,8 @@ export function presentAprEstimate(observation: AprEstimateObservation | undefin
   if (snapshotAge !== null && snapshotAge > p.snapshotFreshForSeconds) reasons.push('onchain_snapshot_stale')
   if (observation.retained) reasons.push('retained_after_refresh_failure')
   const value = data.feeAprEstimate24hPercent
-  const text = compare(value, '0') === 1 && compare(value, '0.01') === -1 ? '<0.01' : toFixed(value, 2)
+  // The one APR rule of every screen (lib/format/apr.ts, audit E21, 2026-10-01): "27.2", "530", "<0.1".
+  const text = aprDigits(value)
   return { state: data.status === 'stale' || reasons.length ? 'stale' as const : 'available' as const, text, reasons: [...new Set(reasons)], ageSeconds: age }
 }
 

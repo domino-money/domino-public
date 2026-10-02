@@ -27,6 +27,17 @@ RainbowKit, revision `03360ee924cfa6af13ff1d623b356bf5a170348e`:
 - [magic-eden.svg](https://github.com/rainbow-me/rainbowkit/blob/03360ee924cfa6af13ff1d623b356bf5a170348e/packages/rainbowkit/src/wallets/walletConnectors/magicEdenWallet/magicEden.svg)
 - [MIT license](https://github.com/rainbow-me/rainbowkit/blob/03360ee924cfa6af13ff1d623b356bf5a170348e/LICENSE)
 
+Web3 Icons again, as published on npm: `@web3icons/core` 4.0.57 (MIT, the same
+project), retrieved 2026-10-01 for the audit's item C16. Each SVG is the
+package's string for it, unchanged (`dist/svgs/wallets/<variant>/<name>.svg.js`),
+checked to hold no scripts, event handlers, links, images or foreign objects:
+
+- coinbase.svg: `branded/coinbase`
+- okx.svg: `background/okx` (OKX's black tile; the branded mark alone is black
+  on transparent and would vanish on the dark theme)
+- trust.svg: `branded/trust`
+- walletconnect.svg: `branded/wallet-connect`, for the WalletConnect row
+
 ## Published identity metadata
 
 RainbowKit's connector TypeScript files at the same pinned revision declare
@@ -41,6 +52,19 @@ the identity or safety of a browser-injected provider:
 | MetaMask | `io.metamask` | `metaMaskWallet/metaMaskWallet.ts` |
 | Magic Eden | `io.magiceden.wallet` | `magicEdenWallet/magicEdenWallet.ts` |
 | Brave | `com.brave.wallet` | `braveWallet/braveWallet.ts` |
+
+Added 2026-10-01 (audit C16), as these wallets' extensions announce themselves;
+not re-checked against the pinned revision above. A wrong value can only show
+the generic tile, never select or trust a provider:
+
+| Wallet | rdns |
+| --- | --- |
+| Coinbase Wallet | `com.coinbase.wallet` |
+| OKX Wallet | `com.okex.wallet` |
+| Trust Wallet | `com.trustwallet.app` |
+
+The Robinhood Wallet's EIP-6963 rdns could not be confirmed, so it keeps the
+generic tile.
 
 ## Web3 Icons license
 

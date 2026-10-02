@@ -57,6 +57,7 @@
     "src/finance/setup.ts",
     "src/finance/nonce.ts",
     "src/finance/routedJournal.ts",
+    "src/finance/routedReplacement.ts",
     "src/finance/routedPlan.ts",
     "src/finance/position.ts"
   ]

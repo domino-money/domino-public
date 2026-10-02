@@ -12,11 +12,13 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { decodeFunctionData, encodeFunctionResult, numberToHex, parseAbi, toFunctionSelector } from 'viem';
 import { memoryCache, multicallAbi } from './owned-chain.mjs';
+import { edgeFetch } from './support/edge-routes.mjs';
 
 const require = createRequire(import.meta.url);
 const endpoint = require('../.test-build/app/functions/_lib/automation.js');
 const owned = require('../.test-build/app/functions/_lib/owned.js');
 const client = require('../.test-build/app/src/lib/automationState.js');
+const routes = require('../.test-build/app/src/lib/edge/chainRoutes.js');
 const { FEATURES, FEATURE_ORDER } = require('../.test-build/app/src/lib/automate/features.js');
 const { CREATE } = require('../.test-build/app/src/lib/create/copy.js');
 const { AUTOMATION_FEE_BPS } = require('../.test-build/app/src/finance/sequence.js');
@@ -203,23 +205,24 @@ test('the three features have one name and one line each, in the order they are 
     assert.equal(FEATURES[key].name, options[key].title, key);
     assert.equal(FEATURES[key].line, options[key].line.slice(0, options[key].line.indexOf('.') + 1), key);
     assert.equal(FEATURES[key].fee, `${AUTOMATION_FEE_BPS[key] / 100}%`, key);
-    assert.ok(options[key].line.endsWith(` ${FEATURES[key].fee} of earned fees consumed.`), key);
+    // Changed on purpose 2026-10-01 (audit E4): "of the fees it uses", not "of earned fees consumed".
+    assert.ok(options[key].line.endsWith(` ${FEATURES[key].fee} of the fees it uses.`), key);
   }
 });
 
-// Changed on purpose (2026-09-25): the public RPC answers 429 to every call from Cloudflare's edge, so POST
-// /api/automation/v1/state could never answer in production and no position ever said its feature. The page runs the
-// route's own scan itself (src/lib/automationState.ts readAutomation, through the chain code chunk and the page's one
-// fetcher, src/lib/chain/browser.ts), as it reads the wallet's positions and a position's state.
-test('the page reads the chain itself: the scan’s fixed calls, POSTed to the public RPC with no credentials and no referrer, and the same answer the route gives', async () => {
+// Changed on purpose (RPC-SPEC D3, 2026-10-01, the owner's rule: nothing is read from a public RPC): the page asks POST
+// /api/automation/v1/state again (src/lib/edge/chainRoutes.ts), which runs this scan at the edge against Domino's own
+// node (tests/support/edge-routes.mjs answers it here, over the same fake chain). From 2026-09-25 the page ran the
+// route's own scan itself against the public RPC, which answered 429 to every call from Cloudflare's edge.
+test('the page asks the site’s own route: one same-origin POST of the ids, and the same answer the scan gives, checked field by field', async () => {
   const setup = { subscribers: { 11: vault(1) }, vaults: { [vault(1)]: { made: true, root: 11, fee: 200, paused: true, valid: true } } };
   const original = globalThis.fetch;
   const flags = [globalThis.__DOMINO_DEPLOYABLE__, globalThis.__DOMINO_TEST_HOOKS__];
   const sent = [];
   let chain = fakeChain(setup);
-  globalThis.fetch = async (url, init) => {
-    sent.push({ url, init });
-    return chain.deps.fetch(url, init);
+  globalThis.fetch = async (path, init) => {
+    sent.push({ path, init });
+    return edgeFetch(chain.deps)(path, init);
   };
   try {
     globalThis.__DOMINO_DEPLOYABLE__ = true;
@@ -234,14 +237,20 @@ test('the page reads the chain itself: the scan’s fixed calls, POSTed to the p
     });
     const route = await endpoint.answerAutomation(ask({ tokenIds: ['10', '11'] }), fakeChain(setup).deps);
     assert.deepEqual(answer, await route.json(), 'the route’s answer, field for field');
-    assert.deepEqual(chain.log.map((entry) => entry.method), ['eth_blockNumber', 'eth_call', 'eth_call'], 'the head and two batched reads');
-    for (const { url, init } of sent) {
-      assert.equal(url, owned.RPC_URL);
-      assert.deepEqual({ ...init, body: undefined, signal: undefined }, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: undefined, signal: undefined, credentials: 'omit', referrerPolicy: 'no-referrer' });
-    }
-    // A chain that cannot be read says nothing: no state, never a guess.
+    assert.deepEqual(chain.log.map((entry) => entry.method), ['eth_blockNumber', 'eth_call', 'eth_call'], 'the head and two batched reads, at the edge');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].path, '/api/automation/v1/state');
+    assert.deepEqual(JSON.parse(sent[0].init.body), { tokenIds: ['10', '11'] });
+    assert.deepEqual({ ...sent[0].init, body: undefined, signal: undefined }, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: undefined, credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: undefined });
+    // A chain that cannot be read says nothing: no state, never a guess. So does the source away, and a route that refuses.
     chain = fakeChain({ script: Array.from({ length: 8 }, () => new Response('busy', { status: 503 })) });
-    assert.equal(await client.readAutomation(['12'], chain.deps), null);
+    assert.equal(await client.readAutomation(['12']), null);
+    const reply = (body, status = 200, headers = {}) => async () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
+    assert.equal(await client.readAutomation(['12'], (ids, options) => routes.postAutomation(ids, { ...options, fetch: reply({ error: 'source_unavailable' }, 503, { 'Retry-After': '300' }) })), null);
+    assert.equal(await client.readAutomation(['12'], (ids, options) => routes.postAutomation(ids, { ...options, fetch: reply({ error: 'rate_limited' }, 429) })), null);
+    // An answer that is not exactly the ids asked, in order, with their fields: nothing.
+    assert.equal(await client.readAutomation(['12', '13'], (ids, options) => routes.postAutomation(ids, { ...options, fetch: reply({ block: 1, positions: [{ tokenId: '13', automation: 'plain' }, { tokenId: '12', automation: 'plain' }] }) })), null);
+    assert.equal(await client.readAutomation(['12'], async () => { throw new Error('a client that throws'); }), null);
     // Nothing is asked for ids the scan would refuse, nor in a build not meant to reach the chain.
     const before = sent.length;
     for (const ids of [[], ['1', '1'], ['01'], [(2n ** 256n).toString()], Array.from({ length: 101 }, (_, i) => String(i + 1))]) assert.equal(await client.readAutomation(ids), null, JSON.stringify(ids).slice(0, 40));
@@ -251,5 +260,57 @@ test('the page reads the chain itself: the scan’s fixed calls, POSTed to the p
   } finally {
     globalThis.fetch = original;
     [globalThis.__DOMINO_DEPLOYABLE__, globalThis.__DOMINO_TEST_HOOKS__] = flags;
+  }
+});
+
+// 2026-10-02 (review of the RPC switch, findings 7 and 15): the routes keep their answers at the edge (the list 40 s, the
+// automation route 15 s, the state route 10 s), so one read just before the owner's own Turn on, Pause or Set up
+// automation can arrive after it. The owner's confirmed action holds against every answer for ACTION_HOLD_MS, and an
+// answer from an older block than the state shown is never drawn over it.
+test('a state the owner’s own confirmed action set holds against the routes’ answers for a while; an older answer is never drawn over a newer one', () => {
+  const realNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+  client.forgetAutomation();
+  try {
+    const active = { tokenId: '5', automation: 'compound', paused: false, active: true, vault: vault(5) };
+    const paused = { ...active, paused: true, active: false };
+    client.noteAnswered([active], 100);
+    assert.deepEqual(client.automationShown('5'), { phase: 'ready', state: active });
+    // The owner pauses it, and the receipt is in: shown at once.
+    client.noteAutomation(paused);
+    assert.deepEqual(client.automationShown('5'), { phase: 'ready', state: paused });
+    // The wallet's list, or a position's state, the edge kept from before the Pause: not drawn over it.
+    now += 2_000;
+    client.noteAnswered([active], 100);
+    now += 30_000;
+    client.noteAnswered([active], 140);
+    assert.deepEqual(client.automationShown('5'), { phase: 'ready', state: paused }, 'held past every route’s cache');
+    assert.ok(client.ACTION_HOLD_MS >= owned.CACHE_SECONDS * 1000, 'longer than the longest a route keeps an answer');
+    // Once the hold is over, the next answer is drawn as usual.
+    now += client.ACTION_HOLD_MS;
+    client.noteAnswered([paused], 200);
+    assert.deepEqual(client.automationShown('5'), { phase: 'ready', state: paused });
+    // An answer from an older block than the one shown is not drawn; a newer one is.
+    client.noteAnswered([active], 150);
+    assert.deepEqual(client.automationShown('5'), { phase: 'ready', state: paused }, 'older than the state shown');
+    client.noteAnswered([active], 250);
+    assert.deepEqual(client.automationShown('5'), { phase: 'ready', state: active });
+    // A sequence just set up (SequenceCreate): the plain position's answer from before it does not take it back.
+    const plain = { tokenId: '6', automation: 'plain' };
+    client.noteAnswered([plain], 300);
+    client.noteAutomation({ tokenId: '6', automation: 'domino', paused: true, active: false, vault: vault(6) });
+    now += 10_000;
+    client.noteAnswered([plain], 300);
+    assert.equal(client.automationShown('6')?.state?.automation, 'domino');
+    // The page's clients hand every answer with its block (the list, the state route), never one by one with an index.
+    const list = readFileSync(new URL('../src/lib/walletPositions.ts', import.meta.url), 'utf8');
+    const state = readFileSync(new URL('../src/lib/fees/client.ts', import.meta.url), 'utf8');
+    assert.match(list, /noteAnswered\(envelope\.automation\.positions, envelope\.automation\.block\)/);
+    assert.match(state, /noteAnswered\(parsed\.positions, parsed\.block\)/);
+    assert.doesNotMatch(list + state, /forEach\(noteAutomation\)/);
+  } finally {
+    Date.now = realNow;
+    client.forgetAutomation();
   }
 });

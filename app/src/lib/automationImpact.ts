@@ -13,14 +13,16 @@
  * destinationTokenId, stateNonce). A manual increase has the same ModifyLiquidity (sender the PositionManager, salt
  * the NFT id): only the vault's ExecutionCompleted in the same transaction tells them apart.
  *
- * So, in the page's chain code (lib/chain/chainCode.ts), a position whose automation names a vault gets two small
- * log reads: the vault's ExecutionCompleted logs from the NFT's mint to its latest settlement (a settlement is the
- * only thing that can bring a new one), and, when both currencies are ERC-20s, their transfers out of the vault in
- * the blocks of those executions: every one of them that is not the vault paying the PoolManager is the service fee.
+ * So a position whose automation names a vault gets its record (RPC-SPEC §2.5.5: the site's fixed route
+ * POST /api/automation/v1/record, which reads Domino's own node): the vault's ExecutionCompleted logs from the NFT's
+ * mint to its latest settlement (a settlement is the only thing that can bring a new one), and, when both currencies
+ * are ERC-20s, their transfers out of the vault in the blocks of those executions: every one of them that is not the
+ * vault paying the PoolManager is the service fee. The page still parses every log itself (lib/vaultLogs.ts).
  *
  * What is worked out, all at the pool's price now (the Fees earned card's one price, visual/value.ts):
- * - each automatic re-add: its time, what the liquidity it added is worth now, and the service fee paid on it (the
- *   transfers, exactly; for a native currency, whose moves leave no log, the policy's rate on the fees put back,
+ * - each automatic re-add: its time, what the liquidity it added is worth now, and the service fee paid on it (exactly:
+ *   the engine's BudgetApplied for the position, which its ledger carries (2026-10-02, RPC-SPEC §11.4), native currency
+ *   included; else the vault's transfers; else, for a native currency, the policy's rate on the fees put back,
  *   value × bps / (10,000 − bps), written with "≈");
  * - how many, and their total;
  * - how much larger the position is than the owner's own deposits: the liquidity the vault added against the rest,
@@ -29,16 +31,15 @@
  * Nothing is invented: without the vault's logs, or with any log that is not what was asked for, there is no figure.
  */
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
-import type { OwnedDeps } from '../../functions/_lib/owned'
 import { type Basis, principalAt, valueUnits } from '../components/positions/visual/value'
-import type { FeeHistory, PositionState } from './fees/types'
+import { postVaultRecord, type RouteOptions, type VaultRecordRequest } from './edge/chainRoutes'
+import type { FeeHistory, PositionState, RelayAnswer } from './fees/types'
+import { EXECUTION_COMPLETED, executionsOf, paymentsOf, type Execution } from './vaultLogs'
+import { mintHints } from './fees/mintHints'
 
-/** keccak256("ExecutionCompleted(bytes32,bytes32,uint8,uint256,uint256,uint64)"), DominoVaultV4's. */
-export const EXECUTION_COMPLETED = '0xa75f5619abce0f39b6b0ace7eb96f20ba345b963b9799beed8451480a406cde0'
-/** keccak256("Transfer(address,address,uint256)"). */
-const TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
-/** Uniswap v4's PoolManager on Robinhood Chain (functions/_lib/fees.ts POOL_MANAGER, repeated here). */
-const POOL_MANAGER = '0x8366a39cc670b4001a1121b8f6a443a643e40951'
+// 2026-10-01: the vault's logs are parsed in lib/vaultLogs.ts (no React there); the same names here.
+export { EXECUTION_COMPLETED, executionsOf, paymentsOf, type Execution }
+
 const NATIVE = '0x0000000000000000000000000000000000000000'
 /** contracts/src/DominoExecutionTypes.sol: GENERAL and NET add to the parent; FUND adds to an existing successor; MINT opens one. */
 export const ACTION = { GENERAL: 0, NET: 1, FUND: 2, MINT: 3 } as const
@@ -46,14 +47,6 @@ export const ACTION = { GENERAL: 0, NET: 1, FUND: 2, MINT: 3 } as const
 export const SERVICE_FEE_BPS = { compound: 200, domino: 400 } as const
 
 export type AutomationKind = keyof typeof SERVICE_FEE_BPS
-
-/** One ExecutionCompleted of the vault whose parent is the position. */
-export interface Execution {
-  tx: string
-  block: number
-  action: number
-  destination: string
-}
 
 /** Per execution's transaction, the service fee the vault paid in it, per currency (raw amounts). */
 export type Paid = ReadonlyMap<string, readonly [bigint, bigint]>
@@ -82,7 +75,7 @@ export interface AutomationImpact {
   /** Their total value now, and the fees on them. */
   added: bigint
   fees: bigint
-  /** The fees are the transfers themselves (false: the policy's rate on the value, "≈"). */
+  /** The fees are the engine's or the transfers' own figures (false: the policy's rate on the value, "≈"). */
   exactFees: boolean
   /** The re-added share of the position now, as a share of the owner's own (0.0264 is 2.64 % larger); null when there is none of the owner's left. */
   growth: number | null
@@ -91,66 +84,9 @@ export interface AutomationImpact {
   moved: bigint
 }
 
-const HASH = /^0x[0-9a-f]{64}$/
-const QUANTITY = /^0x[0-9a-f]{1,16}$/
-const words = (data: string) => data.slice(2).match(/.{64}/g) ?? []
-
-/** A log's fields as text, lowercase; null when it is not a log. */
-function fieldsOf(log: unknown) {
-  if (!log || typeof log !== 'object') return null
-  const entry = log as Record<string, unknown>
-  const topics = Array.isArray(entry.topics) ? entry.topics.map((topic) => String(topic).toLowerCase()) : []
-  const tx = String(entry.transactionHash).toLowerCase()
-  const block = String(entry.blockNumber).toLowerCase()
-  if (!HASH.test(tx) || !QUANTITY.test(block) || !topics.every((topic) => HASH.test(topic))) return null
-  return { removed: entry.removed === true, address: String(entry.address).toLowerCase(), topics, data: String(entry.data).toLowerCase(), tx, block: Number(BigInt(block)) }
-}
-
 /**
- * The vault's ExecutionCompleted logs whose parent is `tokenId`, oldest first; null when any log is not what was
- * asked for (another address or event, a malformed word): an answer that cannot be trusted names nothing. A removed
- * log (a reorg) is left out.
- */
-export function executionsOf(logs: unknown, vault: string, tokenId: string): Execution[] | null {
-  if (!Array.isArray(logs)) return null
-  const parent = BigInt(tokenId)
-  const out: Execution[] = []
-  for (const log of logs) {
-    const f = fieldsOf(log)
-    if (!f || f.address !== vault || f.topics.length !== 3 || f.topics[0] !== EXECUTION_COMPLETED || !/^0x[0-9a-f]{256}$/.test(f.data)) return null
-    if (f.removed) continue
-    const [action, from, to] = words(f.data).map((word) => BigInt(`0x${word}`))
-    if (action > 255n) return null
-    if (from !== parent) continue
-    out.push({ tx: f.tx, block: f.block, action: Number(action), destination: to.toString() })
-  }
-  return out.sort((a, b) => a.block - b.block)
-}
-
-/**
- * The service fee paid in each of `txs`: the pair's transfers out of the vault in them, but the vault's payments to
- * the PoolManager (liquidity). Null when any log is not what was asked for.
- */
-export function paymentsOf(logs: unknown, vault: string, currencies: readonly [string, string], txs: ReadonlySet<string>): Map<string, readonly [bigint, bigint]> | null {
-  if (!Array.isArray(logs)) return null
-  const from = `0x${vault.slice(2).padStart(64, '0')}`
-  const pool = `0x${POOL_MANAGER.slice(2).padStart(64, '0')}`
-  const out = new Map<string, readonly [bigint, bigint]>()
-  for (const log of logs) {
-    const f = fieldsOf(log)
-    const side = f ? currencies.indexOf(f.address) : -1
-    if (!f || side === -1 || f.topics.length !== 3 || f.topics[0] !== TRANSFER || f.topics[1] !== from || !/^0x[0-9a-f]{64}$/.test(f.data)) return null
-    if (f.removed || !txs.has(f.tx) || f.topics[2] === pool) continue
-    const amount = BigInt(f.data)
-    const [a, b] = out.get(f.tx) ?? [0n, 0n]
-    out.set(f.tx, side === 0 ? [a + amount, b] : [a, b + amount])
-  }
-  return out
-}
-
-/**
- * What the automation did, from the position's verified (or estimated) fees history, its state now, the card's basis
- * and the vault's record. Null when it did nothing yet: the card then says nothing of it.
+ * What the automation did, from the position's verified fees history (its ledger's settlements), its state now, the card's
+ * basis and the vault's record. Null when it did nothing yet: the card then says nothing of it.
  */
 export function automationImpact({
   tokenId,
@@ -168,6 +104,10 @@ export function automationImpact({
   record: VaultRecord
 }): AutomationImpact | null {
   const byTx = new Map(record.executions.map((execution) => [execution.tx, execution]))
+  // The engine's service fee per transaction, as the position's ledger carries it (BudgetApplied): exact, ETH included.
+  const service = new Map<string, readonly [bigint, bigint]>()
+  for (const event of history.events) if (event.service) service.set(event.tx.toLowerCase(), event.service)
+  let estimated = false
   const bps = BigInt(SERVICE_FEE_BPS[kind])
   const worth = (liquidity: bigint) => valueUnits(basis, principalAt(liquidity, state.sqrtPriceX96, state.tick, state.tickLower, state.tickUpper))
   const adds: AutoAdd[] = []
@@ -183,8 +123,10 @@ export function automationImpact({
     const readds = execution && execution.destination === tokenId && (execution.action === ACTION.GENERAL || execution.action === ACTION.NET)
     if (delta > 0n && readds) {
       const value = worth(delta)
+      const own = service.get(tx)
       const paid = record.paid?.get(tx)
-      adds.push({ tx: event.tx, timestamp: event.timestamp, liquidity: delta, value, fee: record.paid ? (paid ? valueUnits(basis, paid) : 0n) : (value * bps) / (10_000n - bps) })
+      if (!own && !record.paid) estimated = true
+      adds.push({ tx: event.tx, timestamp: event.timestamp, liquidity: delta, value, fee: own ? valueUnits(basis, own) : record.paid ? (paid ? valueUnits(basis, paid) : 0n) : (value * bps) / (10_000n - bps) })
       auto += delta
     } else if (delta > 0n) {
       own += delta
@@ -197,7 +139,7 @@ export function automationImpact({
         auto = (auto * left) / total
       }
     }
-    if (execution && execution.destination !== tokenId && (execution.action === ACTION.MINT || execution.action === ACTION.FUND)) moved += valueUnits(basis, event.fees)
+    if (execution && execution.destination !== tokenId && (execution.action === ACTION.MINT || execution.action === ACTION.FUND)) moved += valueUnits(basis, event.fees ?? [0n, 0n])
   }
   const opened = record.executions.filter((execution) => execution.action === ACTION.MINT && execution.destination !== tokenId).length
   if (adds.length === 0 && opened === 0) return null
@@ -206,71 +148,50 @@ export function automationImpact({
     adds,
     added: adds.reduce((sum, add) => sum + add.value, 0n),
     fees: adds.reduce((sum, add) => sum + add.fee, 0n),
-    exactFees: record.paid !== null,
+    exactFees: !estimated,
     growth: own > 0n && auto > 0n ? Number((auto * 1_000_000n) / own) / 1_000_000 : null,
     opened,
     moved,
   }
 }
 
-/** The fewest blocks a log range the RPC refuses as too large is split down to (functions/_lib/owned.ts MIN_SPLIT_BLOCKS). */
-const MIN_SPLIT = 2_000
-/**
- * 2026-09-28: the most blocks the RPC reads for one filter, and for a filter with several addresses
- * (functions/_lib/owned.ts LOG_BLOCKS_ONE and LOG_BLOCKS_MANY): a longer record is asked in windows of the first, oldest
- * first, and the vault's payments over a longer span than the second one currency at a time, not refused and halved.
- */
-const ONE_VALUE_BLOCKS = 10_000_000
-const MANY_VALUES_BLOCKS = 100_000
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 
 /**
- * The vault's record for `tokenId` in blocks [from, to], read from the chain by the page: its executions (one
- * eth_getLogs, split only when the RPC refuses the range), and when there are any and both currencies are ERC-20s,
- * the transfers out of the vault in their blocks (one more). Null when either could not be read. `deps` is the page's
- * runtime (lib/chain/browser.ts) unless a test hands in its own.
+ * The vault's record for `tokenId` in blocks [from, to], through the site's route (RPC-SPEC §2.5.5, which reads it from
+ * Domino's own node in windows of its own): its executions, and when there are any and both currencies are ERC-20s, the
+ * transfers out of the vault in their blocks. Every log is parsed here (lib/vaultLogs.ts executionsOf, paymentsOf). Null
+ * when it could not be read, when any log is not what was asked for, or while the node is behind `to` (the store asks
+ * again). `post` is the route's client (lib/edge/chainRoutes.ts); tests hand in their own.
  */
-export async function readVault(vault: string, tokenId: string, currencies: readonly [string, string], from: number, to: number, deps?: OwnedDeps, signal?: AbortSignal): Promise<VaultRecord | null> {
-  // The deployable builds and the wallet test builds (whose browsers answer the RPC with a fake chain) read the chain.
+export async function readVault(
+  vault: string,
+  tokenId: string,
+  currencies: readonly [string, string],
+  from: number,
+  to: number,
+  post: (request: VaultRecordRequest, options?: RouteOptions) => Promise<RelayAnswer<unknown>> = postVaultRecord,
+  signal?: AbortSignal,
+): Promise<VaultRecord | null> {
+  // The deployable builds and the wallet test builds (whose browsers answer the site's routes from a fake chain) read it.
   if (!(__DOMINO_DEPLOYABLE__ || __DOMINO_TEST_HOOKS__)) return null
-  if (!/^0x[0-9a-f]{40}$/.test(vault) || !/^[1-9]\d{0,77}$/.test(tokenId) || !(from >= 0 && to >= from)) return null
+  if (!/^0x[0-9a-f]{40}$/.test(vault) || !/^[1-9]\d{0,77}$/.test(tokenId) || !(Number.isSafeInteger(from) && Number.isSafeInteger(to) && from >= 0 && to >= from)) return null
+  // 2026-09-28 (speed wave B, item 26): read beside the position's chart, not a read its fees lane waits for.
+  if (signal?.aborted) return null
+  const pair = [currencies[0].toLowerCase(), currencies[1].toLowerCase()] as const
   try {
-    const code = await import('./chain/chainCode')
-    // 2026-09-28 (speed wave B, item 26): read beside the position's chart, not a read its fees lane waits for.
-    if (signal?.aborted) return null
-    const rt = deps ?? code.chainDeps(signal, true)
-    const budget = { calls: 0, started: rt.now(), logBytes: 0 }
-    const logs = async (filter: { address: string | string[]; topics: (string | null)[] }, a: number, b: number) => {
-      const queue: [number, number][] = [[a, b]]
-      const out: unknown[] = []
-      while (queue.length > 0) {
-        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-        const [start, end] = queue.shift() as [number, number]
-        if (end - start >= ONE_VALUE_BLOCKS) {
-          queue.unshift([start, start + ONE_VALUE_BLOCKS - 1], [start + ONE_VALUE_BLOCKS, end])
-          continue
-        }
-        try {
-          const got = await code.paced(rt, budget, 'eth_getLogs', [{ ...filter, fromBlock: `0x${start.toString(16)}`, toBlock: `0x${end.toString(16)}` }])
-          if (!Array.isArray(got)) throw new code.ChainError('fatal', 'invalid_logs')
-          out.push(...got)
-        } catch (error) {
-          if (!(error instanceof code.ChainError) || error.kind !== 'range' || end - start + 1 < 2 * MIN_SPLIT) throw error
-          const middle = start + Math.floor((end - start) / 2)
-          queue.unshift([start, middle], [middle + 1, end])
-        }
-      }
-      return out
-    }
-    const executions = executionsOf(await logs({ address: vault, topics: [EXECUTION_COMPLETED] }, from, to), vault, tokenId)
+    const answer = await post({ vault, tokenId, currencies: pair, from, to }, { signal })
+    if (signal?.aborted || !answer.ok || !isRecord(answer.value) || answer.value.v !== 1) return null
+    const value = answer.value
+    // The node is behind the blocks asked: nothing yet, asked again by the store.
+    if (value.behind === true) return null
+    const executions = executionsOf(value.executions, vault, tokenId)
     if (!executions) return null
-    const pair = [currencies[0].toLowerCase(), currencies[1].toLowerCase()] as const
     if (executions.length === 0) return { executions, paid: new Map() }
+    // A native currency's moves leave no log: the route reads none (`transfers: null`), and the fees are the policy's rate.
     if (pair.includes(NATIVE)) return { executions, paid: null }
-    const vaultWord = `0x${vault.slice(2).padStart(64, '0')}`
-    const [first, last] = [executions[0].block, executions[executions.length - 1].block]
-    const transfers = last - first + 1 > MANY_VALUES_BLOCKS ? [...(await logs({ address: pair[0], topics: [TRANSFER, vaultWord] }, first, last)), ...(await logs({ address: pair[1], topics: [TRANSFER, vaultWord] }, first, last))] : await logs({ address: [...pair], topics: [TRANSFER, vaultWord] }, first, last)
-    const paid = paymentsOf(transfers, vault, pair, new Set(executions.map((execution) => execution.tx)))
-    return !signal?.aborted && paid ? { executions, paid } : null
+    const paid = paymentsOf(value.transfers, vault, pair, new Set(executions.map((execution) => execution.tx)))
+    return paid ? { executions, paid } : null
   } catch {
     return null
   }
@@ -386,7 +307,10 @@ export function warmVault(vault: string, tokenId: string, currencies: readonly [
     const stop = store.subscribe(vault, tokenId, () => undefined)
     signal.addEventListener('abort', stop, { once: true })
   }
-  store.want(vault, tokenId, currencies, VAULT_FIRST_BLOCK, block)
+  // 2026-10-01 (fees items A10 and A24): from the NFT's mint when this browser knows it (no execution for it is older),
+  // where it was the factory's first block (millions of blocks read again on every visit).
+  const mint = mintHints.get(tokenId)?.block
+  store.want(vault, tokenId, currencies, mint && mint >= VAULT_FIRST_BLOCK && mint <= block ? mint : VAULT_FIRST_BLOCK, block)
 }
 
 /**

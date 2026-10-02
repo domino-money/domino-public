@@ -36,7 +36,7 @@ const HOOKLESS_FIXED_FEE: ReadonlySet<string> = new Set([
  * native or wrapped; the same Initialize event does: currency0 is the zero
  * address, native ETH.
  */
-const READ_CURRENCIES: Readonly<Record<string, readonly [string, string]>> = {
+export const READ_CURRENCIES: Readonly<Record<string, readonly [string, string]>> = {
   '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e': [NATIVE_CURRENCY, SELECTED_POOLS_COMMON_TOKEN],
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
-import type { OwnedDeps } from '../../functions/_lib/owned'
+import { postAutomation, type RouteOptions } from './edge/chainRoutes'
+import type { RelayAnswer } from './fees/types'
 
 /**
  * Which of Domino's three features a position is in (the owner's product,
@@ -10,19 +11,33 @@ import type { OwnedDeps } from '../../functions/_lib/owned'
  * made, that vault's policy), for Positions' rows, a position's page and the
  * automation page's picker.
  *
- * 2026-09-25: the page reads it itself, from the chain's public RPC, with the
- * scan the site's route ran (through lib/chain/browser.ts, in the chain code
- * chunk lib/chain/chainCode.ts, loaded on the first read), exactly as the
- * wallet's positions and a position's state moved: the RPC answers 429 to
- * every call from Cloudflare's edge, so POST /api/automation/v1/state could
- * never answer in production. The route stays, tested; the page never asks
- * it. The scan's answer still passes this module's parser, field by field.
+ * 2026-09-25 to 2026-10-01: the page read it itself, from the chain's public
+ * RPC, with the scan the site's route ran, because that RPC answered 429 to
+ * every call from Cloudflare's edge.
+ *
+ * RPC-SPEC D3 (2026-10-01, the owner's rule: nothing is read from a public
+ * RPC): the page asks the site's own fixed route again, POST
+ * /api/automation/v1/state (lib/edge/chainRoutes.ts), which runs that same scan
+ * at the edge against Domino's own node. The wallet's list and a position's
+ * state carry the same features in their own answers (noteAutomation). The
+ * answer still passes this module's parser, field by field. read-v4's
+ * sequence snapshot cannot say this (no subscriber, no policy, and pinned to
+ * the finalized block), so it stays where it is: the money code's fallback.
  *
  * The screens ask by id, and the ids asked in the same moment go out in one
  * read: a list of positions is one read. An answer is kept a few seconds
  * in memory (never in the browser's storage). A read that fails is not
  * retried and says nothing: the screens then show no state, only the way to
  * Automate.
+ *
+ * 2026-10-02 (review of the RPC switch, findings 7 and 15): the routes keep
+ * their answers at the edge (the list 40 s, the automation route 15 s, the
+ * state route 10 s), so an answer read just before the owner's own Turn on,
+ * Pause or Set up automation can arrive after it. Each answer is taken with its
+ * block, and one older than the state shown is never drawn over it; a state the
+ * owner's own confirmed action set (noteAutomation) holds against every answer
+ * for ACTION_HOLD_MS, past the longest of those caches, and the next answer
+ * after that is drawn as usual.
  */
 
 export type AutomationMode = 'compound' | 'domino'
@@ -54,6 +69,11 @@ export type AutomationView = { phase: 'loading' } | { phase: 'ready'; state: Pos
 export const MAX_AUTOMATION_IDS = 100
 /** How long an answer is kept before a screen that opens asks again. */
 const KEEP_MS = 10_000
+/**
+ * How long a state the owner's own confirmed action set holds against the routes' answers: past the longest time a
+ * route keeps an answer from before the action (functions/_lib/owned.ts CACHE_SECONDS, 25 s), with a margin.
+ */
+export const ACTION_HOLD_MS = 45_000
 const ID = /^[1-9]\d{0,77}$/
 const ADDRESS = /^0x[0-9a-f]{40}$/
 
@@ -86,7 +106,7 @@ export function parseAutomationAnswer(value: unknown, ids: readonly string[]): A
   return { block: value.block as number, positions }
 }
 
-/** Whether this build reads the chain: the deployable builds, and the wallet test builds whose browsers answer the RPC with a fake chain. */
+/** Whether this build reads the chain: the deployable builds, and the wallet test builds whose browsers answer the site's routes from a fake chain. */
 function chainRead(): boolean {
   return __DOMINO_DEPLOYABLE__ || __DOMINO_TEST_HOOKS__
 }
@@ -94,26 +114,39 @@ function chainRead(): boolean {
 const U256 = 1n << 256n
 
 /**
- * One read of `ids` (distinct, at most MAX_AUTOMATION_IDS) from the chain by the page; null when it could not be read.
- * `deps` is the page's own runtime (lib/chain/browser.ts); tests hand in fakes.
+ * One read of `ids` (distinct, at most MAX_AUTOMATION_IDS) through the site's route (RPC-SPEC §2.5.4); null when it could
+ * not be read. `post` is the route's client (lib/edge/chainRoutes.ts); tests hand in their own.
  */
-export async function readAutomation(ids: readonly string[], deps?: OwnedDeps): Promise<AutomationAnswer | null> {
+export async function readAutomation(ids: readonly string[], post: (ids: readonly string[], options?: RouteOptions) => Promise<RelayAnswer<unknown>> = postAutomation): Promise<AutomationAnswer | null> {
   if (!chainRead() || ids.length === 0 || ids.length > MAX_AUTOMATION_IDS || new Set(ids).size !== ids.length) return null
   if (!ids.every((id) => ID.test(id) && BigInt(id) < U256)) return null
   try {
-    const code = await import('./chain/chainCode')
-    const answer = await code.scanAutomation(deps ?? code.chainDeps(), ids.map((id) => BigInt(id)))
-    // The scan's answer as the route would have sent it, taken only when every field is what the parser expects.
-    return parseAutomationAnswer(JSON.parse(JSON.stringify(answer)), ids)
+    const answer = await post(ids)
+    // Taken only when every field is what the parser expects: exactly the ids asked, in their order.
+    return answer.ok ? parseAutomationAnswer(answer.value, ids) : null
   } catch {
-    // The chain could not be read, or the chain code's chunk could not be loaded (a file of an earlier deploy).
     return null
   }
 }
 
 const LOADING: AutomationView = { phase: 'loading' }
 const UNKNOWN: AutomationView = { phase: 'unknown' }
-const known = new Map<string, { view: AutomationView; at: number }>()
+/**
+ * What each position's screens show: its view, when it was set, the block of the answer it came from (null: none, or
+ * the owner's own action), and when the owner's own action set it (0: an answer did).
+ */
+const known = new Map<string, { view: AutomationView; at: number; block: number | null; acted: number }>()
+
+/**
+ * Whether an answer read at `block` may be drawn for `tokenId` now: not over a state the owner's own action set less
+ * than ACTION_HOLD_MS ago, and not over one from a later block.
+ */
+function answerTakes(tokenId: string, block: number, now: number): boolean {
+  const kept = known.get(tokenId)
+  if (!kept) return true
+  if (kept.acted > 0) return now - kept.acted >= ACTION_HOLD_MS
+  return kept.block === null || block >= kept.block
+}
 const listeners = new Set<() => void>()
 const queued = new Set<string>()
 let flushing: ReturnType<typeof setTimeout> | null = null
@@ -127,10 +160,14 @@ function flush() {
     void readAutomation(part).then((answer) => {
       const now = Date.now()
       for (const [index, id] of part.entries()) {
-        const before = known.get(id)?.view
+        const kept = known.get(id)
+        const before = kept?.view
         const found = answer?.positions[index]
+        // An answer from before the owner's own action, or older than the state shown, is not drawn (answerTakes).
+        if (found && answer && answerTakes(id, answer.block, now)) known.set(id, { view: { phase: 'ready', state: found }, at: now, block: answer.block, acted: 0 })
+        else if (found && kept) continue
         // A later read that fails keeps a state already on screen.
-        known.set(id, { view: found ? { phase: 'ready', state: found } : before?.phase === 'ready' ? before : UNKNOWN, at: now })
+        else known.set(id, { view: before?.phase === 'ready' ? before : UNKNOWN, at: now, block: kept?.block ?? null, acted: kept?.acted ?? 0 })
       }
       for (const listener of listeners) listener()
     })
@@ -142,7 +179,7 @@ function want(tokenId: string) {
   if (!ID.test(tokenId) || queued.has(tokenId)) return
   const kept = known.get(tokenId)
   if (kept && (kept.view.phase === 'loading' || Date.now() - kept.at < KEEP_MS)) return
-  if (!kept) known.set(tokenId, { view: LOADING, at: Date.now() })
+  if (!kept) known.set(tokenId, { view: LOADING, at: Date.now(), block: null, acted: 0 })
   queued.add(tokenId)
   flushing ??= setTimeout(flush, 0)
 }
@@ -155,12 +192,40 @@ function subscribe(listener: () => void) {
 }
 
 /**
- * A state read on chain elsewhere on this page, shown at once: the automation page's own read of the sequence it
- * just created (SequenceCreate.tsx), so Positions shows it without waiting for the next read. Asked again after KEEP_MS.
+ * The state the owner's own confirmed action set, shown at once: a sequence the automation page just created
+ * (SequenceCreate.tsx), or one just turned on or paused (SequenceSwitch.tsx), so Positions shows it without waiting for
+ * the next read. It holds against the routes' answers for ACTION_HOLD_MS (they may be from before the action), then the
+ * next answer is drawn as usual. Asked again after KEEP_MS.
  */
 export function noteAutomation(state: PositionAutomation) {
-  known.set(state.tokenId, { view: { phase: 'ready', state }, at: Date.now() })
+  const now = Date.now()
+  known.set(state.tokenId, { view: { phase: 'ready', state }, at: now, block: null, acted: now })
   for (const listener of listeners) listener()
+}
+
+/**
+ * The features a route's answer carried, read at `block` (the wallet's list, a position's state: lib/walletPositions.ts,
+ * lib/fees/client.ts), shown at once where answerTakes lets them: never over the owner's own action of the last
+ * ACTION_HOLD_MS, nor over a state from a later block.
+ */
+export function noteAnswered(states: readonly PositionAutomation[], block: number) {
+  const now = Date.now()
+  let drawn = false
+  for (const state of states) {
+    if (!answerTakes(state.tokenId, block, now)) continue
+    known.set(state.tokenId, { view: { phase: 'ready', state }, at: now, block, acted: 0 })
+    drawn = true
+  }
+  if (drawn) for (const listener of listeners) listener()
+}
+
+/** For tests: what the screens would show for `tokenId` now (undefined: nothing asked or noted). */
+export const automationShown = (tokenId: string): AutomationView | undefined => known.get(tokenId)?.view
+
+/** For tests: forget every state shown, asked or noted. */
+export function forgetAutomation(): void {
+  known.clear()
+  queued.clear()
 }
 
 /** One position's automation, asked when a screen shows it (null asks nothing). */

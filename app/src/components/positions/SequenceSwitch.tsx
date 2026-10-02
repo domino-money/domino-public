@@ -5,12 +5,13 @@ import { automationReadyUntil } from '../../finance/automationAvailability'
 import { financialFetch } from '../../finance/http'
 import { connectSequence, watchSequenceRelease, settleStep } from '../../finance/sequenceLive'
 import { errorCode, financeErrorText } from '../../finance/words'
+import { personRefused } from '../../finance/nonce'
 import { livePort } from '../../session/livePort'
 import { readyUntil, renewIn, switchOffer, type Readiness } from '../../lib/automate/switchGate'
 import { noteAutomation, useAutomation } from '../../lib/automationState'
 import { useWalletIdentity, walletKey } from '../../lib/walletIdentity'
 import { Button } from '../ui'
-import { outcomeUnknown } from './walletSteps'
+import { outcomeUnknown, readAfterReplaced } from './walletSteps'
 
 /*
  * Turn on and Pause (the owner, 2026-09-25: "vamos ligar tudo"): the one owner transaction a sequence's vault takes to
@@ -54,7 +55,7 @@ const OWN: Readonly<Record<string, string>> = {
   sequence_step_reorged: 'The block that held the transaction left the chain. Check your wallet activity before trying again.',
 }
 /** The checks a send makes before the wallet opens: failing one, the wallet was never asked. */
-const BEFORE_WALLET = ['review_required', 'sequence_admission_unavailable', 'sequence_release_expired', 'sequence_activation_unavailable', 'sequence_tariff_changed', 'deployment_code_changed', 'deployment_identity_changed', 'sequence_preparation_changed', 'pending_wallet_transaction']
+const BEFORE_WALLET = ['review_required', 'sequence_admission_unavailable', 'sequence_release_expired', 'sequence_activation_unavailable', 'sequence_tariff_changed', 'deployment_code_changed', 'deployment_identity_changed', 'sequence_preparation_changed', 'pending_wallet_transaction', 'wallet_request_open']
 /** Once a transaction was sent, no sentence may claim that nothing was sent (the review of 754014c). */
 const NOTHING = / ?(No (wallet )?transaction|Nothing) was \w+\./g
 
@@ -65,7 +66,8 @@ class Offered extends Error {
   }
 }
 
-const declined = (error: unknown) => !!error && typeof error === 'object' && (error as { code?: unknown }).code === 4001
+// The person's own refusal, as the nonce latch reads it (finance/nonce.ts: 4001, WalletConnect's 5000, a hardware wallet's words).
+const declined = (error: unknown) => personRefused(error)
 
 /** A press's failure in words. `sent`: the wallet gave a hash, so the sentence says what is known of it and never that nothing was sent. */
 function noticeFor(error: unknown, sent: boolean, action: Action): { text: string; code: string | null } {
@@ -74,6 +76,9 @@ function noticeFor(error: unknown, sent: boolean, action: Action): { text: strin
   const code = errorCode(inner)
   let text: string
   if (code !== null && Object.hasOwn(OWN, code)) text = OWN[code]
+  // 2026-10-01 (audit C14): "Cancel" in the wallet, read back from the chain: the vault did not change. Changed on purpose
+  // 2026-10-01 (integration pass 3, the copy review): "automation", not "sequence" (audit E3), and Create position's pattern.
+  else if (code === 'sequence_step_replaced') text = `Your wallet replaced this step with another transaction, and automation was not ${action === 'turn-on' ? 'turned on' : 'paused'}. Press ${LABEL[action]} again.`
   else if (sent) text = outcomeUnknown('transaction')
   else if (offered && declined(inner)) text = 'You declined in your wallet. Nothing was sent.'
   else if (offered && code !== null && BEFORE_WALLET.includes(code)) text = financeErrorText(code, 'The sequence changed. Nothing was sent. Try again.', LABEL[action])
@@ -215,7 +220,15 @@ export function SequenceSwitch({ tokenId, holder, liquid, fallback = null, signI
       sent = true
       if (!alive()) return
       setRun({ action: chosen, stage: 'chain', notice: null })
-      if ((await settleStep(client, hash, alive)) === 'left' || !alive()) return
+      const settled = await settleStep(client, hash, alive)
+      if (settled === 'left' || !alive()) return
+      if (settled === 'replaced') {
+        // 2026-10-01 (audit C14): replaced in the wallet ("Speed up" or "Cancel"). The vault read again says whether it is
+        // now on or paused: a sped-up step switched it, a cancelled one did not. Nothing is sent again.
+        const switched = await readAfterReplaced(() => client.inspect(vault), (state) => state.paused === (chosen === 'pause'), alive)
+        if (switched === null || !alive()) return
+        if (!switched) throw new Error('sequence_step_replaced')
+      }
       // Its receipt is in and matches what was prepared: the vault is running or paused now. Positions and this page
       // show it at once, and the chain is asked again a few seconds later.
       noteAutomation({ tokenId, automation: sequence.automation, paused: chosen === 'pause', active: chosen === 'turn-on', vault })

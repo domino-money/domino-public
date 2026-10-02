@@ -1,11 +1,16 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { unreadToken } from '../../../lib/read/project'
+import { formatUsdCompact } from '../../../lib/read/decimal'
+import { dexStore, usdText } from '../../../lib/read/dexFigures'
+import { tokenWarning, warningText } from '../../../lib/read/screens/lookalike'
+import { symbolReading } from '../../../lib/symbolReading'
+import { tokenArtwork } from '../../../lib/tokenArtwork'
 import { ADDRESS_PROBLEM, failureText } from '../../../lib/read/screens/copy'
 import { parseAddressInput, screenPaste, shortAddress, type AddressKey } from '../../../lib/read/screens/identity'
 import { failureCode, quietTitle, reaskDelayMs, whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { readWithin } from '../../../lib/read/screens/screenRead'
 import { SEARCH_LIMIT, extendsQuery, keepSearch, keptSearch, searchCandidates } from '../../../lib/read/screens/searchAnswers'
-import { knownTokens, searchTokens, type KnownToken, type SearchResult } from '../../../lib/read/screens/tokenSearch'
+import { disambiguate, knownTokens, searchTokens, type KnownToken, type SearchResult, type TokenFacts } from '../../../lib/read/screens/tokenSearch'
 import { candidateFromToken, selectable, type TokenCandidate } from '../../../lib/read/screens/tokens'
 import type { ReadSource, TokenDisplay } from '../../../lib/read/types'
 import { IconSearch } from '../../icons'
@@ -50,8 +55,38 @@ function typedProblem(value: string): string | null {
   return ADDRESS_PROBLEM[parsed.reason]
 }
 
-/** A known token as a hit: its name and address, and a listed wallet's balance when there is one. Where the app knows it from is a data attribute only. */
-function KnownRow({ token }: { token: KnownToken }) {
+/**
+ * What the page knows of a token beside its name (audit V3, 2026-10-01): DEX Screener's liquidity across its pools,
+ * whether a logo was found for it, and whether it passes for one of the site's main tokens.
+ */
+function factsOf(token: KnownToken | null, key: AddressKey): TokenFacts {
+  const peeked = tokenArtwork.peek(4663, key)
+  const known = dexStore.token(key)
+  return {
+    liquidityUsd: known ? known.liquidityUsd : null,
+    artwork: token?.artwork ? true : peeked === undefined ? null : peeked !== null,
+    warned: token !== null && tokenWarning({ symbol: token.label, address: key }) !== null,
+  }
+}
+
+/** Liquidity as a hit's line says it: "$144.6K liquidity", or that no pool trades it. Null while not known. */
+function liquidityText(facts: TokenFacts): string | null {
+  if (facts.liquidityUsd === null) return null
+  if (facts.liquidityUsd <= 0) return 'No liquidity found'
+  const usd = usdText(facts.liquidityUsd)
+  const shown = usd === null ? null : formatUsdCompact(usd)
+  return shown === null ? null : `${shown} liquidity`
+}
+
+/**
+ * A known token as a hit: its name and address, a listed wallet's balance when there is one, and, since 2026-10-01
+ * (audit V3, I1), its liquidity where DEX Screener reports it, a word when another hit has the same name, and a warning
+ * when it passes for one of the site's main tokens. Where the app knows it from is a data attribute only.
+ */
+function KnownRow({ token, twin }: { token: KnownToken; twin: boolean }) {
+  const facts = factsOf(token, token.key)
+  const warning = tokenWarning({ symbol: token.label, address: token.key })
+  const liquidity = liquidityText(facts)
   return (
     <>
       <TokenMark token={displayOf(token)} size={28} />
@@ -67,7 +102,24 @@ function KnownRow({ token }: { token: KnownToken }) {
               <span className="tnum">Balance {token.balanceText}</span>
             </>
           )}
+          {liquidity !== null && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span className="tnum" data-token-liquidity={facts.liquidityUsd ?? undefined} title="Liquidity across this token’s pools, as DEX Screener reports it.">{liquidity}</span>
+            </>
+          )}
+          {twin && !warning && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span data-token-twin="" title="Another token has this name. Check the address before choosing.">Same name as another token</span>
+            </>
+          )}
         </span>
+        {warning && (
+          <span className="dm-flow-hit-meta text-money-out" data-token-warning={warning.kind}>
+            {warning.kind === 'lookalike' ? `Not the ${warning.main} Domino uses` : 'Misleading name'}
+          </span>
+        )}
       </span>
     </>
   )
@@ -136,7 +188,10 @@ export function TokenSearch({
 }) {
   const [value, setValue] = useState(initialValue ?? '')
   const [open, setOpen] = useState(false)
-  const [active, setActive] = useState(0)
+  // The hit moved to by the keyboard or the pointer; null until then, when the preselected one (if any) is highlighted.
+  const [active, setActive] = useState<number | null>(null)
+  // DEX Screener's figures arriving for the hits re-order and re-word them (audit V3).
+  useSyncExternalStore(dexStore.subscribe, dexStore.version, dexStore.version)
   const [problem, setProblem] = useState<string | null>(() => typedProblem(initialValue ?? ''))
   const [said, setSaid] = useState<Said | null>(null)
   const [failed, setFailed] = useState<{ code: string; reason: string } | null>(null)
@@ -147,11 +202,11 @@ export function TokenSearch({
   // A quiet re-ask waiting for its time, cancelled by any newer choice.
   const quiet = useRef<(() => void) | null>(null)
   // The latest callback, so the outcome of a read reaches the caller as it is now.
-  const found = useRef(onFound)
+  const foundRef = useRef(onFound)
   const chose = useRef(onChoose)
   const point = useRef(onPoint)
   useEffect(() => {
-    found.current = onFound
+    foundRef.current = onFound
     chose.current = onChoose
     point.current = onPoint
   }, [onFound, onChoose, onPoint])
@@ -218,15 +273,24 @@ export function TokenSearch({
   const answered = searchable(query) ? (keptSearch(source, query) ?? (stored?.query === query ? stored.candidates : null)) : null
   const persisted = answered ? knownTokens({ catalogue: [], candidates: answered }) : []
   const present = new Set(known.map((token) => token.key))
-  const results = searchTokens(value, [...known, ...persisted.filter((token) => !present.has(token.key))])
+  // Every hit the stored search answered, 20 at the most, where the list used to stop at 8 without a word (audit B7);
+  // hits with one name told apart, and the clearly real one alone preselected (audit V3).
+  const found = searchTokens(value, [...known, ...persisted.filter((token) => !present.has(token.key))], SEARCH_LIMIT)
+  const { results, twins, preselect } = disambiguate(found, (key) => factsOf(found.flatMap((result) => (result.kind === 'known' && result.token.key === key ? [result.token] : []))[0] ?? null, key), symbolReading)
+  const asked = [...twins].filter((key) => dexStore.token(key) === null).sort().join()
+  useEffect(() => {
+    for (const key of asked ? asked.split(',') : []) dexStore.ask(key)
+  }, [asked])
   // A known token with no read of its own that the stored search verified (the catalogue's USDG, WETH...): choosing it
   // hands over the search's answer instead of reading it again (study item 28, 2026-09-28).
   const verifiedBySearch = new Map(persisted.flatMap((token) => (token.candidate ? [[token.key, token.candidate] as const] : [])))
   const expanded = open && problem === null
-  const highlighted = results.length === 0 ? -1 : Math.min(active, results.length - 1)
+  const highlighted = results.length === 0 ? -1 : active === null ? preselect : Math.min(active, results.length - 1)
   const listboxId = `${id}-listbox`
   const optionId = (result: SearchResult) => `${id}-option-${keyOf(result)}`
-  const excluded = (result: SearchResult) => exclude !== null && keyOf(result) === exclude
+  // A hit that passes for one of the site's main tokens, or carries a misleading name, is listed and never chosen (I1).
+  const warned = (result: SearchResult) => result.kind === 'known' && tokenWarning({ symbol: result.token.label, address: result.token.key }) !== null
+  const excluded = (result: SearchResult) => (exclude !== null && keyOf(result) === exclude) || warned(result)
   // The row pointed at while the list is open: New position asks its pool hints now (speed wave, 2026-09-28).
   const pointed = expanded && highlighted >= 0 ? keyOf(results[highlighted]) : null
   useEffect(() => {
@@ -260,7 +324,16 @@ export function TokenSearch({
       }
       if (outcome.state === 'ok') {
         setBusy(false)
-        found.current(candidateFromToken(outcome.data, wire))
+        const candidate = candidateFromToken(outcome.data, wire)
+        // An address read to a token that passes for one of the site's main tokens is refused here (audit I1).
+        const warning = tokenWarning({ symbol: candidate.token.symbol, address: candidate.key })
+        if (warning) {
+          chose.current?.(null)
+          setProblem(warningText(warning, 'token'))
+          setSaid({ code: 'warned', words: warningText(warning, 'token') })
+          return
+        }
+        foundRef.current(candidate)
         setSaid({ code: 'ok', words: readAt(outcome.data.snapshot.number) })
         return
       }
@@ -298,7 +371,7 @@ export function TokenSearch({
       setBusy(false)
       setFailed(null)
       setSaid(null)
-      found.current(candidate)
+      foundRef.current(candidate)
       return
     }
     read(result.token.wire, name)
@@ -310,7 +383,7 @@ export function TokenSearch({
         event.preventDefault()
         if (!open) {
           setOpen(true)
-          setActive(0)
+          setActive(null)
         } else if (results.length > 0) {
           setActive(Math.min(highlighted + 1, results.length - 1))
         }
@@ -370,7 +443,7 @@ export function TokenSearch({
           onChange={(event) => {
             setValue(event.target.value)
             setOpen(true)
-            setActive(0)
+            setActive(null)
             setProblem(typedProblem(event.target.value))
           }}
           onKeyDown={onKeyDown}
@@ -385,7 +458,10 @@ export function TokenSearch({
           className="dm-flow-combo-input"
         />
         <div className="dm-flow-listbox" hidden={!expanded}>
-          <div id={listboxId} role="listbox" aria-label={LISTBOX_LABEL} className="dm-flow-listbox-scroll">
+          {/* Never a Tab stop (2026-10-01, D7): a browser makes a scrolling box focusable, and Tab from the input landed
+              on this list, which closes as the input blurs, so focus fell to the page's end. The options are reached
+              through aria-activedescendant, and Tab moves on from the input to the next control. */}
+          <div id={listboxId} role="listbox" aria-label={LISTBOX_LABEL} className="dm-flow-listbox-scroll" tabIndex={-1}>
             {expanded &&
               results.map((result, index) => {
                 const key = keyOf(result)
@@ -409,8 +485,8 @@ export function TokenSearch({
                     onClick={() => choose(result)}
                     className={cx('dm-flow-hit', disabled && 'dm-flow-hit--off')}
                   >
-                    {result.kind === 'known' ? <KnownRow token={result.token} /> : <AddressRow wire={result.wire} />}
-                    {disabled && <span className="dm-flow-hit-meta shrink-0">{ALREADY_CHOSEN}</span>}
+                    {result.kind === 'known' ? <KnownRow token={result.token} twin={twins.has(result.token.key)} /> : <AddressRow wire={result.wire} />}
+                    {disabled && !warned(result) && <span className="dm-flow-hit-meta shrink-0">{ALREADY_CHOSEN}</span>}
                   </button>
                 )
               })}

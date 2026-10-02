@@ -1,6 +1,7 @@
 import { concatHex, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, keccak256, numberToHex, stringToHex, zeroAddress, type Abi, type Address, type ContractFunctionName, type ContractFunctionReturnType, type Hex } from 'viem'
 import { POSITION_MANAGER, SEQUENCE_FACTORY, pinned, unpinned } from './pin.js'
-import { acceptsNativeEth, type GasBudget, type WalletRpc } from './setup.js'
+import { NONCE_LATCH_EXPIRY_S, SIGN_WINDOW_S, acceptsNativeEth, type GasBudget, type WalletRpc } from './setup.js'
+import { definiteRefusal } from './nonce.js'
 import { BATCH_FRAME_GAS, batchCallsStatus, offerBatch, simulateBatch, type BatchCall, type BatchSimulator } from './batch.js'
 import { sequenceSnapshotFrom, snapshotCalls, type SequenceSnapshot } from './sequenceSnapshot.js'
 
@@ -355,10 +356,15 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       return calls.get(key(tx.to as Address,tx.data as Hex)) ?? fail('sequence_read_snapshot_invalid')
     }
   }
+  /**
+   * `seconds`: how long the action may take. 30 s for reads; a send gets the signing window Create position's has
+   * (setup.ts SIGN_WINDOW_S, 180 s; 2026-10-01, audit C8, the owner's OK): a person reading a transaction on a phone or
+   * confirming on a Ledger took longer than 30 s, and the page gave up while the signature could still go through.
+   */
   async function bounded<T>(work: (c: Context) => Promise<T>, diagnoseRead = false,
-    fallbackTokenId?: bigint | null, receiptRead = false): Promise<T> {
+    fallbackTokenId?: bigint | null, receiptRead = false, seconds = 30): Promise<T> {
     if (busy) return fail('wallet_action_busy')
-    busy = true; const started = now(); let end = started + 30; let calls = 0, readCallLimit = 100
+    busy = true; const started = now(); let end = started + seconds; let calls = 0, readCallLimit = 100
     let timedOutContractRead = false
     const rpc: Rpc = async (method, params, rejected) => {
       // Keep the wallet transaction lane exactly as it was. Diagnostic
@@ -620,10 +626,20 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       `Execution gas cost cap: ${o.maxGasCostWei} wei; observation age: ${o.maxObservationAgeSeconds}s; forecast horizon: ${o.forecastHorizonSeconds}s.`]
     return { r, params, approval, guard, terms }
   }
+  /**
+   * The owner's next nonce, when nothing holds it (2026-10-01, audit C2): a transaction pending on chain is said as such;
+   * an earlier offer of the same nonce with nothing pending on chain is let go when its page is gone or it is too old
+   * (wallet.settleNonce), and said otherwise as a request still open in the wallet.
+   */
+  async function freeNonce(c: Context): Promise<bigint> {
+    const latest = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'latest'])), pending = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'pending']))
+    if (latest !== pending) fail('pending_wallet_transaction')
+    if (wallet.nonceOffered(pending) && !(await wallet.settleNonce?.(pending, now(), NONCE_LATCH_EXPIRY_S))) fail('wallet_request_open')
+    return pending
+  }
   async function prepare(c: Context, kind: PreparedSequence['kind'], vault: Address, to: Address, data: Hex, gas: GasBudget, summary: string[], guard: (c: Context) => Promise<void>) {
     if (gas.maxGas < 21000n || gas.maxGas > 15_000_000n || uint(gas.maxFeePerGas) === 0n || uint(gas.maxPriorityFeePerGas) > gas.maxFeePerGas || uint(gas.reserveWei,256) < 0n) fail('invalid_gas_budget')
-    const latest = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'latest'])), pending = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'pending']))
-    if (latest !== pending || wallet.nonceOffered(pending)) fail('pending_wallet_transaction')
+    const pending = await freeNonce(c)
     const tx = { from: wallet.owner, to, data, value: '0x0' as const }
     await c.rpc('eth_call',[tx,'latest'])
     const estimate = quantity(await c.rpc('eth_estimateGas',[tx])), limit = (estimate * 120n + 99n) / 100n
@@ -704,8 +720,7 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
         if (status !== 400 && status !== 500 && status !== null) fail('batch_already_offered')
         await wallet.releaseBatch?.(r.id, latched)
       }
-      const latest = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'latest'])), pending = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'pending']))
-      if (latest !== pending || wallet.nonceOffered(pending)) fail('pending_wallet_transaction')
+      await freeNonce(c)
       const calls: BatchCall[] = [...(approval ? [{ to: d.positionManager, data: encode('approve',[r.vault,o.rootTokenId]), value: '0x0' as Hex }] : []),
         { to: d.factory, data: encode('createVault',[params,r.ownerNonce]), value: '0x0' as Hex }]
       const gasUsed = await simulateBatch(c.rpc, wallet.owner, calls, batch.simulate)
@@ -729,11 +744,10 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       const guard = issuedBatches.get(prepared)
       if (!acknowledged || !guard || prepared.owner !== wallet.owner || now() >= prepared.expiresAt) fail('review_required')
       await guard!(c); await canonical(c)
-      const latest = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'latest'])), pending = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'pending']))
-      if (latest !== pending || wallet.nonceOffered(pending)) fail('pending_wallet_transaction')
+      await freeNonce(c)
       issuedBatches.delete(prepared)
       return offerBatch(c.rpc, wallet, prepared.sequenceId, prepared.calls, () => wallet.current() && now() < prepared.expiresAt)
-    }),
+    }, false, undefined, false, SIGN_WINDOW_S),
     /**
      * Where a creation batch stands: the wallet's status for what it knows, then the chain for what happened. The vault
      * read back at its predicted address, this owner's, registered for this sequence, is `created`. No code there after
@@ -894,24 +908,35 @@ export function createSequenceClient(wallet: WalletRpc, deployment: SequenceDepl
       const guard = issued.get(prepared)
       if (!acknowledged || !guard || prepared.owner !== wallet.owner || now() >= prepared.expiresAt) fail('review_required')
       await guard!(c); await canonical(c)
-      const nonce = BigInt(prepared.transaction.nonce), latest = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'latest'])), pending = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'pending']))
-      if (latest !== nonce || pending !== nonce || wallet.nonceOffered(nonce)) fail('pending_wallet_transaction')
+      const nonce = BigInt(prepared.transaction.nonce)
+      if (await freeNonce(c) !== nonce) fail('pending_wallet_transaction')
       await c.rpc('eth_call',[prepared.transaction,'latest'])
       const claim = await wallet.claimNonce(nonce)
       issued.delete(prepared)
       const hash = await c.rpc('eth_sendTransaction',[prepared.transaction],async error => {
-        if (error && typeof error === 'object' && (error as {code?:unknown}).code === 4001) await wallet.releaseRejectedNonce(nonce,claim)
+        // 2026-10-01 (audit C2): every refusal that proves nothing was sent, not only 4001 (./nonce.ts definiteRefusal).
+        if (definiteRefusal(error)) await wallet.releaseRejectedNonce(nonce,claim)
       })
       if (typeof hash !== 'string' || !hashPattern.test(hash)) fail('wallet_outcome_unknown')
       sent.set(hash as Hex,prepared); return hash as Hex
-    }),
+    }, false, undefined, false, SIGN_WINDOW_S),
     receipt: (hash: Hex) => bounded(async c => {
       if (!hashPattern.test(hash)) fail('invalid_transaction_hash')
       const expected = sent.get(hash) ?? fail('receipt_not_from_this_review')
       // After a reload, owner state remains independently readable; never label
       // an unrelated pasted transaction as confirmation of a reviewed action.
       const value = await c.rpc('eth_getTransactionReceipt',[hash])
-      if (value === null) return {state:'pending' as const}
+      if (value === null) {
+        // A hash this client sent that the chain does not know, while the owner's mined nonce has passed it: the wallet
+        // replaced it ("Speed up" or "Cancel"; 2026-10-01, audit C14, the rule of ./setup.ts receipt). Asked once more
+        // after the nonce, so a node that had not seen it yet is not taken for a replacement. The caller reads the vault
+        // again to know whether the step happened; nothing is sent again.
+        if (await c.rpc('eth_getTransactionByHash',[hash]) === null) {
+          const latest = quantity(await c.rpc('eth_getTransactionCount',[wallet.owner,'latest']))
+          if (latest > BigInt(expected.transaction.nonce) && await c.rpc('eth_getTransactionByHash',[hash]) === null) return {state:'replaced' as const}
+        }
+        return {state:'pending' as const}
+      }
       const r = record(value), tx = record(await c.rpc('eth_getTransactionByHash',[hash]))
       // Identity is exact: hash, from, to, calldata, nonce, value, chain and
       // type are what was reviewed, byte for byte, and the receipt names the

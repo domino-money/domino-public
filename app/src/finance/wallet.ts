@@ -1,10 +1,11 @@
 import { getConnection } from 'wagmi/actions'
 import { numberToHex } from 'viem'
 import { walletConfig } from '../wallet/config'
+import { WALLETCONNECT_ID } from '../wallet/walletConnect'
 import type { WalletHandoff } from '../deposit/handoff'
 import { livePort } from '../session/livePort'
 import type { WalletRpc } from './setup'
-import { claimOwnerBatch, claimOwnerNonce, expireOwnerBatch, ownerBatchOffered, ownerNonceOffered, recordOwnerBatch, releaseOwnerBatch, releaseOwnerNonceAfterRejection } from './nonce'
+import { claimOwnerBatch, claimOwnerNonce, definiteRefusal, expireOwnerBatch, forgetOwnerNonce, ownerBatchOffered, ownerNonceOffered, recordOwnerBatch, releaseOwnerBatch, releaseOwnerNonceAfterRejection, settleOwnerNonce } from './nonce'
 
 interface Provider { request(args: { method: string; params?: unknown[] }): Promise<unknown> }
 // Once offered to a wallet, a nonce stays latched for this page even if the
@@ -29,6 +30,17 @@ export async function setupWallet(): Promise<WalletRpc> {
   }, request: (method, params) => provider.request({ method, params }),
   nonceOffered: nonce => ownerNonceOffered(owner, nonce), claimNonce: nonce => claimOwnerNonce(owner, nonce),
   releaseRejectedNonce: (nonce, token) => releaseOwnerNonceAfterRejection(owner, nonce, token),
+  // 2026-10-01 (audit C2): a latch whose page is gone or that is too old, met with nothing pending on chain; and the
+  // person's word that they rejected or closed the request in their wallet (./setup.ts forgetOpenRequest).
+  settleNonce: (nonce, now, maxAge) => settleOwnerNonce(owner, nonce, now, maxAge),
+  forgetNonce: nonce => forgetOwnerNonce(owner, nonce),
+  // 2026-10-01 (audit C6): a pure read the wallet's own RPC could not answer, asked once more of the site. Since the RPC
+  // switch the site serves no read (lib/walletReads.ts readOnChain, RPC-SPEC D6): it is refused at once, and setup.ts
+  // says the wallet's RPC is out of reach, which it is.
+  read: (method, params) => import('../lib/chain/chainCode').then((chain) => chain.readOnChain(method, params)),
+  // Fix round 3.1: a WalletConnect wallet answers no reads; its provider hands them to the site, which serves none since
+  // the RPC switch (lib/walletReads.ts readOnChain, RPC-SPEC D6), so reads that only tell a replaced swap apart are not asked.
+  readsThroughPage: connector.id === WALLETCONNECT_ID,
   delegateConfirmed: delegate => confirmedDelegates.has(`${owner}|${delegate.toLowerCase()}`),
   batchOffered: operationId => ownerBatchOffered(owner, operationId), claimBatch: operationId => claimOwnerBatch(owner, operationId),
   recordBatch: (operationId, claim, id) => recordOwnerBatch(owner, operationId, claim, id),
@@ -64,7 +76,8 @@ export const liveWalletHandoff: WalletHandoff = {
       value: numberToHex(BigInt(tx.valueRaw)), nonce: numberToHex(BigInt(tx.nonceRaw)), gas: numberToHex(BigInt(tx.gasLimitRaw)),
       maxFeePerGas: numberToHex(BigInt(tx.maxFeePerGasRaw)), maxPriorityFeePerGas: numberToHex(BigInt(tx.maxPriorityFeePerGasRaw)), type: '0x2' }] }) }
     catch (error) {
-      if (error && typeof error === 'object' && 'code' in error && error.code === 4001) { offered.delete(key); await releaseOwnerNonceAfterRejection(session.owner, BigInt(tx.nonceRaw), claim) }
+      // 2026-10-01 (audit C2): every refusal that proves nothing was sent, not only 4001 (./nonce.ts definiteRefusal).
+      if (definiteRefusal(error)) { offered.delete(key); await releaseOwnerNonceAfterRejection(session.owner, BigInt(tx.nonceRaw), claim) }
       throw error
     }
     if (typeof result !== 'string' || !/^0x[0-9a-f]{64}$/i.test(result)) throw new Error('wallet_result_unknown')

@@ -1,8 +1,6 @@
-import { useState } from 'react'
 import { FEATURES } from '../../lib/automate/features'
 import { automatable } from '../../lib/automate/picker'
 import { automationWord, useAutomation, type AutomationMode, type AutomationView } from '../../lib/automationState'
-import { createdHere } from '../../lib/create/createProgress'
 import { useWalletAnswer } from '../../lib/walletPositions'
 import { sequenceHref } from '../explore/routes'
 import { IconAutomate } from '../icons'
@@ -40,7 +38,7 @@ function dataOf(view: AutomationView) {
 const offered = (view: AutomationView) => view.phase === 'unknown' || (view.phase === 'ready' && view.state.automation === 'plain')
 
 /** Where the docs say how a sequence is switched on: the automation page's own link once a sequence is set up (SequenceCreate.tsx). */
-const SWITCH_ON: Readonly<Record<AutomationMode, string>> = { compound: '#/docs/auto-compound#where-it-starts', domino: '#/docs/domino-compounder#start-and-stop' }
+const SWITCH_ON: Readonly<Record<AutomationMode, string>> = { compound: '#/docs/auto-compound#where-it-starts', domino: '#/docs/domino-compound#start-and-stop' }
 
 /** For a sequence that does not run, paused or its permission over the NFT lost, the next step: the docs on switching it on (review of 2026-09-24). */
 function switchOn(view: AutomationView): string | null {
@@ -56,15 +54,16 @@ function switchOn(view: AutomationView): string | null {
  * (automatable, the picker's own test). `owner`: the NFT's owner when that wallet is the one connected here on
  * Robinhood Chain, and null for anyone else, for whom nothing is asked. True or false once read, null until then or
  * when nothing is asked. A position this visit's New position made that a read from a node still behind its mint lacks
- * is asked for once more (createdHere); any other missing id is simply not one of the wallet's Domino positions.
+ * is asked for again, a few times (the read's own ladder, walletPositions.ts askWallet); any other missing id is simply
+ * not one of the wallet's Domino positions.
  * `changes`: the page's count of the owner's actions on it; each reads the list again (2026-09-25).
  */
 export function useListedPosition(tokenId: string, owner: string | null, changes = 0): boolean | null {
-  const [again, setAgain] = useState(0)
-  const answer = useWalletAnswer(owner ? owner.toLowerCase() : null, again + changes)
+  // 2026-10-01 (fees item A23): this read only decides Automate: it does not hold the page's history reads (hold off).
+  // 2026-10-02 (RPC fix round 2): a list that lacks a position made here is asked again by the read itself (askWallet).
+  const answer = useWalletAnswer(owner ? owner.toLowerCase() : null, changes, null, undefined, false)
   if (answer.phase !== 'ready') return null
   const position = answer.answer.positions.find((entry) => entry.tokenId === tokenId)
-  if (!position && !again && createdHere(tokenId)) setAgain(1)
   return position ? automatable(position) : false
 }
 

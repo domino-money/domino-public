@@ -1,15 +1,17 @@
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../styles/screens.css'
 import { useEffect, useState } from 'react'
 import { setupWallet } from '../finance/wallet'
+import { useRouteTitle } from '../lib/routeTitle'
 import { atomicStatus } from '../finance/batch'
 import type { ReleaseRead } from '../finance/release'
 import type { SequenceDeployment } from '../finance/sequence'
 import { connectSequence, watchSequenceRelease } from '../finance/sequenceLive'
-import { switchToRobinhood } from '../wallet/port'
+import { SWITCH_NOTICE, switchToRobinhood } from '../wallet/port'
 import { Button, Display, EmptyState, LinkButton, Skeleton } from '../components/ui'
 import { IconAutomate, IconPlus, IconWallet } from '../components/icons'
 import { hashParts } from '../components/explore/routes'
 import { sequenceIntent, type SequenceMode } from '../lib/create/sequenceDefaults'
-import { createdHere } from '../lib/create/createProgress'
 import { pickerList } from '../lib/automate/picker'
 import { useWalletIdentity, walletKey } from '../lib/walletIdentity'
 import { useWalletAnswer, type WalletPosition, type WalletPositionsState } from '../lib/walletPositions'
@@ -48,24 +50,39 @@ const openWallet = () => document.querySelector<HTMLButtonElement>('header [aria
  * how the processes work is on the docs pages.
  */
 export default function Sequence({ lab: labText }: { lab?: string } = {}) {
+  // The tab's name (lib/routeTitle.ts, audit E11).
+  useRouteTitle('Set up automation')
   const [release, setRelease] = useState<Release>({ kind: 'loading' })
   const [lab] = useState(() => (__DOMINO_TEST_HOOKS__ && labText ? labSpec(labText) : null))
   // What the link asked for (#/sequence/<mode>/<nft>): the mode is chosen, and the position is chosen when it is one of the wallet's.
   const [intent] = useState<SequenceIntent>(() => lab?.intent ?? sequenceIntent(hashParts(window.location.hash).segments))
   useEffect(() => watchSequenceRelease(setRelease), [])
   const identity = useWalletIdentity()
+  // 2026-10-01 (audit C1): the network switch says how it ended, in the wallet dialog's words; it used to say nothing.
+  const [switching, setSwitching] = useState(false)
+  const [switchNotice, setSwitchNotice] = useState<string | null>(null)
+  const switchNetwork = async () => {
+    if (switching) return
+    setSwitching(true)
+    setSwitchNotice(null)
+    try {
+      const result = await switchToRobinhood()
+      setSwitchNotice(result === 'switched' ? null : SWITCH_NOTICE[result])
+    } finally {
+      setSwitching(false)
+    }
+  }
   const key = walletKey(identity)
   const owner = key === null ? null : key.slice(key.indexOf('|') + 1)
   // A link to a position just created (New position's success, #/sequence/<mode>/<id>): a read of the chain from a node
-  // still behind its mint does not have it yet, so the list is asked once more; SequenceCreate chooses it when it arrives.
-  // Only for an id Create position made during this visit (createdHere): any other id missing from the list is not one
+  // still behind its mint does not have it yet, so the list is asked again (a few times, by the read itself: RPC fix round
+  // 2, walletPositions.ts askWallet); SequenceCreate chooses it when it arrives.
+  // Only for an id Create position made during this visit, by this wallet: any other id missing from the list is not one
   // of the wallet's Domino positions, and costs no second read (review of 2026-09-24).
-  const [again, setAgain] = useState(0)
-  const answer = useWalletAnswer(owner ? owner.toLowerCase() : null, again)
+  const answer = useWalletAnswer(owner ? owner.toLowerCase() : null)
   // A read being asked again on its own is still loading: the picker never says "No open positions" for a failed read.
   const read: WalletPositionsState =
     answer.phase === 'ready' ? { phase: 'ready', block: answer.answer.block, positions: answer.answer.positions } : answer.phase === 'retrying' ? { phase: 'loading' } : answer
-  if (!lab && !again && intent.tokenId !== null && createdHere(intent.tokenId) && read.phase === 'ready' && !read.positions.some((entry) => entry.tokenId === intent.tokenId)) setAgain(1)
   const positions: WalletPositionsState = lab && owner ? { phase: 'ready', block: 0, positions: lab.positions } : read
   const list = pickerList(positions)
 
@@ -82,6 +99,15 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
         </p>
       </div>
     )
+  // 2026-10-01 (audit C5): the wallet control is still finding the wallet; "Connect your wallet" flashed here meanwhile.
+  else if (owner === null && identity.kind === 'unknown')
+    body = (
+      <div className="dm-card dm-acct-block dm-seq-loading" data-sequence-release="available" data-sequence-wallet="waiting" aria-busy="true">
+        {[0, 1, 2].map((row) => (
+          <Skeleton key={row} className="dm-seq-loading-row" />
+        ))}
+      </div>
+    )
   else if (owner === null) {
     const elsewhere = identity.kind === 'connected'
     body = (
@@ -94,9 +120,16 @@ export default function Sequence({ lab: labText }: { lab?: string } = {}) {
         title={elsewhere ? 'Switch to Robinhood Chain' : 'Connect your wallet'}
         body="Your open positions appear here to choose from."
         action={
-          <Button type="button" variant="primary" size="lg" onClick={() => (elsewhere ? void switchToRobinhood() : openWallet())}>
-            {elsewhere ? 'Switch network' : 'Connect wallet'}
-          </Button>
+          <>
+            <Button type="button" variant="primary" size="lg" aria-busy={switching || undefined} disabled={switching} onClick={() => (elsewhere ? void switchNetwork() : openWallet())}>
+              {elsewhere ? (switching ? 'Switching…' : 'Switch network') : 'Connect wallet'}
+            </Button>
+            {elsewhere && switchNotice && (
+              <p role="alert" className="mt-3 text-[13px] leading-[18px] text-fg-muted" data-sequence-switch-notice="">
+                {switchNotice}
+              </p>
+            )}
+          </>
         }
       />
     )

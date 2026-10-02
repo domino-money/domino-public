@@ -4,7 +4,9 @@ import type { CardsResponse, EpochsResponse, Metrics } from 'api-contracts/perfo
 import type { Address } from 'viem'
 import { sessionKey } from '../session/port'
 import { livePort } from '../session/livePort'
+import { openWalletDialog, signedOutLine } from '../finance/signedOut'
 import { realClock } from '../lib/clock'
+import { NOTHING_YET_BOTH, type CardShows } from '../lib/automationCards'
 import {
   COLLECTION_TEXT, ENROLLMENT_REASON_TEXT, ENROLLMENT_STATUS_TEXT, PERFORMANCE_STATUS_TEXT,
   createPerformanceController, enrollmentFailureText, exactDecimal, formatMetricPercent, formatMetricUsd, performanceReasonText, trackableSequence, utcSeconds,
@@ -210,8 +212,25 @@ function emptyText(view: PerformanceView): string {
   // While the session is checked with nothing kept: no line yet (2026-09-27, round 6), the check decides it in a moment.
   if (view.state === 'checking') return ''
   if (view.state !== 'ready' || view.sequences.state === 'idle' || view.sequences.state === 'reading') return 'Your automated positions appear here.'
-  if (!trackable(view)) return 'Nothing here yet. Turn on Auto-compound for a position and how it does shows here.'
+  if (!trackable(view)) return NOTHING_YET
   return untracked(view) ? 'Nothing tracked yet: press Start tracking below.' : 'Your automated positions appear here.'
+}
+const NOTHING_YET = 'Nothing here yet. Turn on Auto-compound for a position and how it does shows here.'
+
+/** Whether Start tracking is drawn below the plate (TrackSequences): an offer the person can act on. */
+const offersTracking = (view: PerformanceView) => trackable(view) && (!!view.enrollment || untracked(view))
+
+/**
+ * What this card has to show, for Positions (2026-10-01, audit D2, lib/automationCards.ts): nothing while signed out
+ * (the session's own reason) or once read with nothing yet, so the page can say one line for this card and Receipts;
+ * a line of its own when the history could not be read; null while it is still being decided (the session checked
+ * with nothing kept, the history or the wallet's automations on their way).
+ */
+function shows(view: PerformanceView, kind: Parameters<typeof signedOutLine>[0], empty: boolean): CardShows | null {
+  if (view.state === 'signed_out') return { kind: 'none', reason: kind, ...signedOutLine(kind, 'both') }
+  if (!empty || view.more || offersTracking(view)) return { kind: 'content' }
+  if (view.state === 'checking' || view.state === 'loading' || (view.state === 'ready' && (view.sequences.state === 'idle' || view.sequences.state === 'reading'))) return null
+  return emptyText(view) === NOTHING_YET ? { kind: 'none', reason: 'empty', text: NOTHING_YET_BOTH, action: null } : { kind: 'other' }
 }
 
 /**
@@ -270,20 +289,30 @@ const controller = createPerformanceController({ session: livePort, fetch: finan
   sequences: walletSequenceReads(), cache: { load: keptManaged, save: (owner, epochs, cards) => keep(walletName('managed', owner), { epochs, cards }) } })
 const watch = sharedStart(controller)
 
-export default function Performance() {
+/** `onShows` (Positions, 2026-10-01, audit D2): told what this card has to show, after every render (lib/automationCards.ts). */
+export default function Performance({ onShows }: { onShows?: (shows: CardShows | null) => void }) {
   const live = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
+  // Why there is no session, said as itself (2026-10-01, audit D2): sign-in may be switched off, the wallet elsewhere.
+  const session = useSyncExternalStore(livePort.subscribe, livePort.getSnapshot)
+  const out = signedOutLine(session.kind, 'managed')
   useEffect(watch, [])
   // While the wallet's session is checked, what this browser kept for it (the controller shows the same once signed in).
   const early = useKeptWhileChecking(live.state === 'checking', keptManaged)
   const view = early ? { ...live, ...early } : live
   const waiting = view.enrollments.filter(item => item.epochId === null)
   const empty = view.cards.length === 0 && waiting.length === 0
+  const showing = shows(view, session.kind, empty)
+  // Told after every render; the page keeps what it was told before when this says the same (sameShows).
+  useEffect(() => onShows?.(showing))
   return <section aria-label="Private performance" className="dm-acct-perf" aria-busy={view.busy || undefined} data-performance={view.state} data-performance-reason={view.reason ?? undefined}
     data-sequences={view.sequences.state} data-sequences-reason={view.sequences.reason ?? undefined}>
     <h2 className="sr-only">Your strategy history</h2>
     {/* One plain line; how a missing figure shows is its title, and each cell's own title says why. */}
     <p className="dm-acct-desc" title="Missing prices and incomplete history show as dashes.">How your automated positions did in the last 24 hours.</p>
-    {view.state === 'signed_out' ? <Card level={2} className="dm-acct-plot dm-dots-chart">Sign in with your wallet to see your automated positions.</Card> : <>
+    {view.state === 'signed_out' ? <Card level={2} className="dm-acct-plot dm-dots-chart" data-signed-out={session.kind}>
+      <p>{out.text}</p>
+      {out.action && <Button variant="outline" size="sm" onClick={openWalletDialog}>{out.action}</Button>}
+    </Card> : <>
       {empty && <Card level={2} className="dm-acct-plot dm-dots-chart" title={view.reason ? `History could not be read: ${view.reason.replaceAll('_', ' ')}` : undefined}>
         {emptyText(view)}
       </Card>}

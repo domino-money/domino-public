@@ -25,13 +25,27 @@
  * lib/walletHoldings.ts), so a token that lost its price never falls behind
  * an airdrop.
  */
+import { ROBINHOOD_ID } from '../config/chainIdentity'
+import { chainKey, movedScoped } from './chainStorage'
 import { amountFact, type WalletRow } from './read/pagers'
 import { identityKey, unreadToken } from './read/project'
 import { NATIVE, PRICE_TTL_MS, WETH, type PriceAnswer, type TokenQuote } from './walletPrices'
 
-export const WALLET_MEMORY_KEY = 'domino-wallet-v1'
-/** How long a remembered list may be drawn before its read answers: a week. */
-export const WALLET_MEMORY_MAX_AGE_MS = 7 * 86_400_000
+/**
+ * The one key, which names the chain the lists are of (2026-10-01, the chain2 workstream, part B, audit item G10):
+ * `domino-wallet-v2:4663`, so a wallet remembered on one chain is never drawn on another for the same address. What was
+ * kept under LEGACY_WALLET_MEMORY_KEY is Robinhood Chain's, and moves here the first time it is read (lib/chainStorage.ts
+ * movedScoped); lib/browserCopies.ts ages and forgets both names.
+ */
+export const WALLET_MEMORY_KEY = chainKey('domino-wallet-v2', ROBINHOOD_ID)
+/** The name the card kept its lists under until 2026-10-01, with no chain in it. */
+export const LEGACY_WALLET_MEMORY_KEY = 'domino-wallet-v1'
+/**
+ * How long a remembered list may be drawn before its read answers: a day (a week until 2026-10-01, I6: lib/browserCopies.ts
+ * says what this browser keeps and for how long, deletes what is past its age as the site opens, and deletes this copy
+ * when the wallet is disconnected here).
+ */
+export const WALLET_MEMORY_MAX_AGE_MS = 86_400_000
 export const WALLET_MEMORY_ADDRESSES = 4
 export const WALLET_MEMORY_ROWS = 200
 /** How long a price counts after the provider answered it: an hour. */
@@ -84,6 +98,8 @@ export interface RememberedList {
 export interface StorageLike {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
+  /** The browser's always can; without it, a copy kept under the old name is copied, not moved. */
+  removeItem?(key: string): void
 }
 
 type Kept = { at: number; whole: boolean; rows: [string, string | null, number | null, string, number][]; quotes: [string, string | null, number | null, number][] }
@@ -103,7 +119,7 @@ export function browserStorage(): StorageLike | null {
 
 function readAll(storage: StorageLike | null): Record<string, unknown> {
   try {
-    const parsed: unknown = JSON.parse(storage?.getItem(WALLET_MEMORY_KEY) ?? 'null')
+    const parsed: unknown = JSON.parse(movedScoped(storage, WALLET_MEMORY_KEY, LEGACY_WALLET_MEMORY_KEY) ?? 'null')
     const wallets = parsed !== null && typeof parsed === 'object' && (parsed as { v?: unknown }).v === 1 ? (parsed as { wallets?: unknown }).wallets : null
     return wallets !== null && typeof wallets === 'object' && !Array.isArray(wallets) ? (wallets as Record<string, unknown>) : {}
   } catch {

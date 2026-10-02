@@ -1,0 +1,19 @@
+/* The screens' own styles, which Home does not use (2026-10-01, platform workstream, F8). Until then tokens.css carried
+   them, and every first visit downloaded the styles of every screen before Home could paint. Now each screen's module
+   imports this file (src/screens/*.tsx and the lazily loaded parts that render outside a screen), so it arrives with
+   the first screen that needs it, and the app's loader holds the screen until it has (Vite waits for a chunk's
+   stylesheet before it resolves the chunk).
+
+   The same files, in the same order, right after the ones tokens.css keeps: they came after them in the one stylesheet
+   and come after it now, so the cascade is what it was. account.css stays in tokens.css (Home's feature pills use its
+   .dm-acct-status), ahead of pool.css and flow.css, which style none of its classes. Every rule here sits in
+   @layer components, ordered after the site's own layers by tokens.css's Tailwind import, and no rule of tokens.css's
+   own body shares that layer. Checked by comparing every element's computed style on every route, one stylesheet
+   against two (C:/dwt/pacote/platform/measure/cssdiff.mjs): no difference. */
+@import './pool.css';     /* pool: chart card, stat strip specifics */
+@import './flow.css';     /* new position: step list */
+@import './positions.css';        /* positions: list, position page, Performance, Execution */
+@import './automate.css';         /* automate: Automate and the sequence pages */
+@import './account-screens.css';  /* foundation: rugged97's screens */
+@import './docs.css';     /* docs: #/docs layout, sidebar, prose, on-this-page */
+@import './three.css';    /* the three features joined up: rows, a position's page, New position's success, Automate */

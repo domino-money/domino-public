@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react'
 import { rangeGeometry } from '../../lib/chart/range'
 import { CREATE } from '../../lib/create/copy'
+import { aprDigits } from '../../lib/format/apr'
 import type { JourneyState } from '../../lib/create/journey'
 import { awayShort, plainFigure } from '../../lib/create/plain'
 import { formatUsd } from '../../lib/format/usd'
@@ -22,7 +23,8 @@ type Usable = Extract<PoolPrice, { state: 'usable' }>
 function poolFigures(pool: PoolOption): { tvl: string | null; apr: string | null } {
   const tvl = pool.liquidity.state === 'attributed' || pool.liquidity.state === 'attributed_stale' ? pool.liquidity.value : null
   const apr = rowApr({ integration: pool.integration, currentLpFeePips: pool.feePips, protocolFeeRaw: pool.protocolFeeRaw, liquidity: pool.liquidity, volume: pool.volume })
-  return { tvl, apr: apr.kind === 'estimate' ? `${apr.text}% est.` : null }
+  // The one APR rule of every screen (lib/format/apr.ts, audit E21).
+  return { tvl, apr: apr.kind === 'estimate' ? `${aprDigits(apr.text) ?? apr.text}% est.` : null }
 }
 
 /** Review's own words for what a one-token plan takes from the wallet (StageReview's swap line). */

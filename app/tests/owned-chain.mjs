@@ -83,6 +83,9 @@ export const nft = (patch = {}) => ({ holder: OWNER, key: KEY, tickLower: -600, 
  * for the owner, as DominoSetupV1 counts them (every mint is one of its operations), and the scan's first read, at
  * 'latest', asks ArbSys for its block beside that nonce. `arbHead`: what ArbSys answers, if not the head (below 0: it
  * reverts).
+ * Changed on purpose 2026-10-01 (RPC-SPEC §2.9): unless a test gives its own `operations`, each position `minted` names
+ * for the owner is one of its DominoSetupV1 operations too, oldest first, closed with its NFT's id, as the contract
+ * records it: the edge's list reads its ids from that state (functions/_lib/walletPositions.ts operationIds).
  */
 export function fakeChain({
   owner = OWNER,
@@ -92,7 +95,7 @@ export function fakeChain({
   pools = { [POOL]: { sqrtPriceX96: 2n ** 96n, tick: 0, growthInside: [0n, 0n] }, [ETH_POOL]: { sqrtPriceX96: 2n ** 96n, tick: 0, growthInside: [0n, 0n] } },
   tokens = { [USDG]: { symbol: 'USDG', decimals: 6 }, [TOKEN]: { symbol: 'UFG', decimals: 18 } },
   nonce = null,
-  operations = {},
+  operations = null,
   recovery = {},
   logLimit = Infinity,
   script = {},
@@ -101,6 +104,12 @@ export function fakeChain({
   const log = [];
   const slept = [];
   nonce ??= BigInt(minted.filter(({ owner: recipient = owner }) => recipient === owner).length);
+  operations ??= Object.fromEntries(
+    minted
+      .filter(({ owner: recipient = owner }) => recipient === owner)
+      .sort((a, b) => a.block - b.block)
+      .map(({ id }, n) => [opId(owner, BigInt(n)), { owner, key: nfts[String(id)]?.key ?? KEY, balance0: 0n, balance1: 0n, swapped: false, closed: true, tokenId: BigInt(id) }]),
+  );
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
   const ok = (abi, functionName, result) => ({ success: true, returnData: encodeFunctionResult({ abi, functionName, result }) });
   const revert = { success: false, returnData: '0x08c379a0' };

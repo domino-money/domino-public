@@ -327,13 +327,17 @@ test('the digest covers the files outside functions/ that a function imports, an
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);
   };
+  // Changed on purpose 2026-10-01 (the chain2 workstream, part B): a bundled file may sit inside the app too (the chain
+  // registry, src/config/chain*.ts, and src/lib/chain/csp.ts), so a bundled file is any the inventory lists outside
+  // dist/ and functions/ but wrangler.toml.
+  const bundledIn = (files) => Object.keys(files).filter((path) => !/^(?:dist|functions)\//.test(path) && path !== 'wrangler.toml');
   try {
     for (const [path, text] of Object.entries(BASE)) put(path, text);
     const without = inventory(root);
-    assert.deepEqual(Object.keys(without.files).filter((path) => path.startsWith('../')), [], 'absent, nothing is listed');
+    assert.deepEqual(bundledIn(without.files), [], 'absent, nothing is listed');
     for (const path of BUNDLED) put(path, `// ${path}`);
     const one = inventory(root);
-    assert.deepEqual(Object.keys(one.files).filter((path) => path.startsWith('../')), [...BUNDLED].sort());
+    assert.deepEqual(bundledIn(one.files), [...BUNDLED].sort());
     assert.notEqual(one.digest, without.digest);
     for (const path of BUNDLED) {
       put(path, `// ${path} changed`);
@@ -345,10 +349,12 @@ test('the digest covers the files outside functions/ that a function imports, an
     rmSync(parent, { recursive: true, force: true });
   }
 
-  // Every value import that leaves functions/, and every import those files make, is in BUNDLED.
+  // Every value import that leaves functions/, and every import those files make, is in BUNDLED. A TypeScript import
+  // names its module without the extension (2026-10-01, the chain2 workstream, part B: the chain registry's).
   const app = resolve(import.meta.dirname, '..');
+  const withExtension = (path) => (/\.(?:[cm]?[jt]s|json)$/.test(path) ? path : `${path}.ts`);
   const imports = (file) => [...readFileSync(file, 'utf8').matchAll(/\b(?:import|export)\s+(type\s+)?[^'"`]*?\bfrom\s+'([^']+)'/g)]
-    .filter((match) => !match[1] && match[2].startsWith('.')).map((match) => resolve(dirname(file), match[2]));
+    .filter((match) => !match[1] && match[2].startsWith('.')).map((match) => withExtension(resolve(dirname(file), match[2])));
   const walk = (dir) => readdirSync(dir, { withFileTypes: true })
     .flatMap((entry) => entry.isDirectory() ? walk(join(dir, entry.name)) : entry.name.endsWith('.ts') ? [join(dir, entry.name)] : []);
   const functions = join(app, 'functions');
@@ -361,5 +367,47 @@ test('the digest covers the files outside functions/ that a function imports, an
     pending.push(...imports(join(app, target)));
   }
   assert.deepEqual([...outside].sort(), [...BUNDLED].sort(), 'functions/ imports from outside itself exactly the listed files');
-  assert.deepEqual(Object.keys(inventory(app).files).filter((path) => path.startsWith('../')), [...BUNDLED].sort());
+  assert.deepEqual(bundledIn(inventory(app).files), [...BUNDLED].sort());
+});
+
+// 2026-10-01 (platform workstream, D1): an open tab of the previous release finds its files in the new one.
+test('carry: the previous release’s own files, reached from its page at any depth, join dist/assets, and nothing else', async () => {
+  const { carry } = await import('../scripts/release.mjs');
+  const next = app({ ...BASE, 'dist/assets/Shared-s.js': 'x' });
+  const previous = app({
+    'dist/index.html': '<script type="module" crossorigin src="/assets/index-old.js"></script><link rel="stylesheet" href="/assets/index-old.css">',
+    'dist/assets/index-old.js': 'const m=()=>import("./Explore-old.js");new Worker(new URL("/assets/feesReplay.worker-old.js",import.meta.url))',
+    'dist/assets/Explore-old.js': 'import"./Shared-s.js";import"./Deep-old.js"',
+    'dist/assets/Deep-old.js': 'export const deep=1',
+    'dist/assets/Shared-s.js': 'x',
+    'dist/assets/index-old.css': '@font-face{src:url(/assets/geist-old.woff2)}',
+    'dist/assets/geist-old.woff2': 'wOF2',
+    'dist/assets/feesReplay.worker-old.js': 'self.onmessage=()=>{}',
+    'dist/assets/Carried-older.js': 'from the release before it, which its page no longer names',
+  });
+  try {
+    const result = carry(join(previous.root, 'dist'), { root: next.root });
+    assert.deepEqual(result.carried, ['Deep-old.js', 'Explore-old.js', 'feesReplay.worker-old.js', 'geist-old.woff2', 'index-old.css', 'index-old.js']);
+    assert.equal(result.reached, 7, 'Shared-s.js was reached, and is already there with the same bytes');
+    const files = readdirSync(join(next.root, 'dist', 'assets')).sort();
+    assert.ok(!files.includes('Carried-older.js'), 'what the previous release only carried is not carried again');
+    assert.equal(readFileSync(join(next.root, 'dist', 'assets', 'Explore-old.js'), 'utf8'), 'import"./Shared-s.js";import"./Deep-old.js"');
+    assert.equal(readFileSync(join(next.root, 'dist', 'index.html'), 'utf8'), BASE['dist/index.html'], 'the new page is untouched');
+    // Twice is the same as once, and record covers the carried files.
+    assert.deepEqual(carry(join(previous.root, 'dist'), { root: next.root }).carried, []);
+    assert.ok(Object.keys(record({ root: next.root, git: fakeGit(), now }).files).includes('dist/assets/Explore-old.js'));
+
+    // A name the new build has with other bytes, or a carried file with a forbidden marker, carries nothing.
+    previous.put('dist/assets/Shared-s.js', 'other bytes');
+    assert.throws(() => carry(join(previous.root, 'dist'), { root: next.root }), /exists with other bytes/);
+    previous.put('dist/assets/Shared-s.js', 'x');
+    previous.put('dist/assets/Deep-old.js', 'const banner = "Fixture build"');
+    rmSync(join(next.root, 'dist', 'assets', 'Deep-old.js'));
+    assert.throws(() => carry(join(previous.root, 'dist'), { root: next.root }), /must never ship/);
+    assert.ok(!existsSync(join(next.root, 'dist', 'assets', 'Deep-old.js')), 'nothing was carried');
+    assert.throws(() => carry(join(previous.root, 'nope'), { root: next.root }), /not a built dist/);
+  } finally {
+    next.done();
+    previous.done();
+  }
 });

@@ -90,19 +90,22 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
   // with the one-signature choice under Create position; one that cannot batch, or not yet read, keeps them too.
   const ability = useBatchAbility()
   const ordinary = walletSteps(state, swap ? swap.from : null, fee)
+  // The swap through Uniswap, when the onboarding service offers one (finance/routedSwap.ts), in CREATE's plain words
+  // (audit E20, 2026-10-01): no "router" and no "guaranteed" on the screen.
+  const ROUTED = CREATE.review.routed
   const inOrder = routed && pool ? [
     ...(pool.currencies[routed.from].address !== NATIVE_CURRENCY ? [
-      { key: 'route-approve', title: 'Approve the exact swap amount', token: pool.currencies[routed.from], detail: 'Only if allowance is short; a reset may need an extra confirmation.' },
-      { key: 'route-permit', title: 'Authorize the Uniswap router', detail: 'Exact amount with a deadline.' },
+      { key: 'route-approve', title: ROUTED.approveStep, token: pool.currencies[routed.from], detail: ROUTED.approveDetail },
+      { key: 'route-permit', title: ROUTED.permitStep, detail: ROUTED.permitDetail },
     ] : []),
-    { key: 'route-swap', title: 'Swap through Uniswap', detail: '0.65% fee on the received token, once.' },
+    { key: 'route-swap', title: ROUTED.swapStep, detail: ROUTED.swapDetail(fee) },
     ...pool.currencies.filter((token, i) => token.address !== NATIVE_CURRENCY && (i !== routed.from || routeKept > 0n))
-      .map((token) => ({ key: `approve:${token.address}`, title: CREATE.review.approveStep, token, detail: 'Only if allowance is short.' })),
+      .map((token) => ({ key: `approve:${token.address}`, title: CREATE.review.approveStep, token, detail: ROUTED.approveOnlyIfShort })),
     { key: 'fund', title: CREATE.review.fundStep, detail: '' },
     { key: 'mint', title: CREATE.review.mintStep, detail: '' },
   ] : ordinary
   const steps = ability === 'supported'
-    ? routed ? [{ key: 'batch', title: 'Approve, swap and create position', detail: CREATE.review.batchStepDetail }] : batchedSteps(inOrder)
+    ? routed ? [{ key: 'batch', title: ROUTED.batchStep, detail: CREATE.review.batchStepDetail }] : batchedSteps(inOrder)
     : inOrder
   // Once Create position runs, its own steps, as they happen: the tokens it found in the wallet decide them.
   const progress = useCreateProgress()
@@ -190,13 +193,13 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
           {routed && pool && (
             <>
               <p className="dm-flow-headline-line tnum" data-review-route="uniswap">
-                Swap <AmountText text={sideOf(pool, routed.from, routed.gross).amount} /> <SymbolText token={pool.currencies[routed.from]} /> via Uniswap.{' '}
-                {routed.poolUnfilled ? 'The selected pool cannot fill this swap.' : routed.advantageBps !== null ? `${(routed.advantageBps / 100).toFixed(2)}% more output than the selected pool.` : ''}
+                {ROUTED.lead} <AmountText text={sideOf(pool, routed.from, routed.gross).amount} /> <SymbolText token={pool.currencies[routed.from]} /> {ROUTED.via}{' '}
+                {routed.poolUnfilled ? ROUTED.unfilled : routed.advantageBps !== null ? ROUTED.better((routed.advantageBps / 100).toFixed(2)) : ''}
               </p>
               <p className="dm-flow-headline-line tnum" data-review-route-minimum="">
-                Receive at least <AmountText text={sideOf(pool, routed.from === 0 ? 1 : 0, routed.minimum).amount} /> <SymbolText token={pool.currencies[routed.from === 0 ? 1 : 0]} /> after the fee.{' '}
-                Estimated fee: <AmountText text={sideOf(pool, routed.from === 0 ? 1 : 0, routed.fee).amount} /> <SymbolText token={pool.currencies[routed.from === 0 ? 1 : 0]} /> (0.65%, once).
-                {' '}Price impact: {routed.priceImpact === null ? 'unavailable' : `${routed.priceImpact}%`}. The deposit uses the guaranteed minimum; any extra received stays in your wallet.
+                {ROUTED.atLeast} <AmountText text={sideOf(pool, routed.from === 0 ? 1 : 0, routed.minimum).amount} /> <SymbolText token={pool.currencies[routed.from === 0 ? 1 : 0]} /> {ROUTED.afterFee}{' '}
+                {ROUTED.feeLead} <AmountText text={sideOf(pool, routed.from === 0 ? 1 : 0, routed.fee).amount} /> <SymbolText token={pool.currencies[routed.from === 0 ? 1 : 0]} /> {ROUTED.feeOnce(fee)}
+                {' '}{ROUTED.keep}
               </p>
             </>
           )}
@@ -229,7 +232,7 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
         {inside === true && usable && <span className="sr-only" data-review-position="inside">{CREATE.review.inRange}</span>}
         {routed?.sequential && (
           <p role="status" className="dm-flow-position" data-tone="neutral" data-review-route-risk="">
-            <span>Confirm each step separately. If you stop after the swap, the received tokens stay in your wallet; the swap and its fee are not undone. Creating the position does not charge another swap fee.</span>
+            <span>{ROUTED.sequential}</span>
           </p>
         )}
         {!routed && swap && pool && (
@@ -324,7 +327,14 @@ export function StageReview({ state, now, balances }: { state: JourneyState; now
             {swap && (
               <div>
                 <dt>{CREATE.review.feeLabels.swap}</dt>
-                <dd>{routed ? '0.65% of the received token, once. No additional assisted-swap fee on the deposit.' : CREATE.review.feeValues.swap}</dd>
+                <dd>{routed ? ROUTED.feeRow(fee) : CREATE.review.feeValues.swap}</dd>
+              </div>
+            )}
+            {/* How far the swap through Uniswap moves its price, as the route reported it: a technical fact, here only. */}
+            {routed && (
+              <div data-review-route-impact="">
+                <dt>{ROUTED.impactLabel}</dt>
+                <dd className="tnum">{ROUTED.impact(routed.priceImpact)}</dd>
               </div>
             )}
             <div>

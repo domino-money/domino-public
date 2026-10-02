@@ -17,7 +17,7 @@ import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { closeBrowser } from './support/close-browser.mjs';
 import { decodeAbiParameters, decodeFunctionData, encodeFunctionData } from 'viem';
-import { browserChain, busyHistory, poolIdOf, routeChain } from './support/browser-chain.mjs';
+import { browserChain, poolIdOf, routeChain } from './support/browser-chain.mjs';
 import { createFakeSession } from './support/fake-session.mjs';
 import { installWallets } from './support/mock-wallet.mjs';
 import { POSITION_MANAGER, createPositionChain } from './support/position-chain.mjs';
@@ -184,6 +184,9 @@ test('Close position removes all of the liquidity with minimums from the slippag
     // At the default 0.5%: the band minimums proven on mainnet, plus the fees.
     assert.match(await text(dialog.locator('[data-position-at-least]')), /^At least\s+0\.990047 USDG\s+322\.448 UFG$/);
     assert.equal(await dialog.locator('[data-slippage-choice]').getAttribute('data-slippage-bps'), '50');
+    // Changed on purpose 2026-10-01 (audit E5): the slippage tolerance is under the dialog's closed Advanced, as on New position.
+    assert.equal(await dialog.locator('[data-close-advanced]').getAttribute('open'), null, 'closed until opened');
+    await dialog.locator('[data-close-advanced] > summary').click();
     await dialog.locator('[data-slippage-preset="100"]').click();
     const minimums = position.closeMinimums(NFT.sqrtPriceX96, NFT.tickLower, NFT.tickUpper, NFT.liquidity, 100);
     assert.match(await text(dialog.locator('[data-position-at-least]')), /^At least\s+0\.98\d+ USDG\s+319\.\d+ UFG$/, 'the minimums follow the limit chosen');
@@ -308,6 +311,91 @@ test('Refund to wallet needs no published release: the profile this browser save
   } finally { await s.close(); }
 });
 
+// 2026-10-01 (audit C14): a refund, a collect or a close the person replaced in the wallet ("Speed up" or "Cancel") is known
+// within seconds by its nonce (the chain does not know the hash the page was given, and the account has mined past it), and
+// the chain read again says whether it happened. They used to be watched as pending for five minutes. Nothing is ever sent
+// again for a replaced step: the next press reviews anew.
+test('a refund sped up in the wallet reads refunded within seconds; one cancelled says the deposit is still held, and the next press refunds it once', async () => {
+  const key = { currency0: USDG, currency1: UFG, fee: 792831, tickSpacing: 9303 };
+  const chain = chainFor({ deposits: [{ key, balance0: 100000n, balance1: 0n }, { key, balance0: 200000n, balance1: 0n }] });
+  const ids = [chain.operationId(0n), chain.operationId(1n)];
+  const held = { owner: OWNER, deposits: ids.map((operationId, i) => ({ operationId, ...key, hooks: NFT.key.hooks, balance0: String(100000 * (i + 1)), balance1: '0', currencies: CURRENCIES })) };
+  const s = await atLab(chain, { held });
+  try {
+    const card = s.page.locator('[data-held-deposits]');
+    const sends = () => chain.log.filter((m) => m === 'eth_sendTransaction').length;
+    // "Speed up": the refund is mined under another hash than the one the page was given.
+    chain.speedUp();
+    const first = card.locator(`[data-held-deposit="${ids[0]}"]`);
+    const started = Date.now();
+    await first.getByRole('button', { name: 'Refund to wallet', exact: true }).click();
+    await first.locator('[data-held-progress="done"]').waitFor({ timeout: 30_000 });
+    assert.ok(Date.now() - started < 30_000, 'within seconds, not after the five-minute watch');
+    assert.equal(await first.locator('[data-held-notice]').count(), 0);
+    assert.deepEqual(chain.paid, [{ to: OWNER, currencies: [USDG, UFG], amounts: [100000n, 0n] }]);
+    await s.page.locator('[data-position-lab][data-changes="1"]').waitFor();
+
+    // "Cancel": its nonce is taken by a transfer to the account itself, and the deposit stays held.
+    chain.cancelInWallet();
+    const second = card.locator(`[data-held-deposit="${ids[1]}"]`);
+    await second.getByRole('button', { name: 'Refund to wallet', exact: true }).click();
+    await second.locator('[data-held-notice="replaced"]').waitFor({ timeout: 40_000 });
+    assert.equal(await text(second.locator('[data-held-notice]')), 'Your wallet replaced the refund with another transaction, and your deposit is still held. Try the refund again.');
+    assert.equal(chain.operations.get(ids[1]).closed, false);
+    assert.equal(sends(), 2, 'the cancelled refund was not offered again');
+    assert.doesNotMatch(await text(card), FORBIDDEN);
+    assert.equal(await card.getByRole('button', { name: /retry/i }).count(), 0, 'no Retry');
+
+    // The next press refunds it once, at the nonce after the one the cancel took.
+    await second.getByRole('button', { name: 'Refund to wallet', exact: true }).click();
+    await second.locator('[data-held-progress="done"]').waitFor({ timeout: 30_000 });
+    assert.deepEqual(chain.sends.map((tx) => tx.nonce), ['0x0', '0x2']);
+    assert.deepEqual(chain.paid.map((paid) => paid.amounts), [[100000n, 0n], [200000n, 0n]]);
+    assert.equal(sends(), 3);
+  } finally { await s.close(); }
+});
+
+test('a collect sped up in the wallet ends done within seconds; a close cancelled in the wallet says the position was not closed, and the next press closes it once', async () => {
+  const chain = chainFor();
+  const s = await atLab(chain, { position: actionsFor() });
+  try {
+    const sends = () => chain.log.filter((m) => m === 'eth_sendTransaction').length;
+    await s.page.locator('[data-position-action="collect"]').click();
+    const collect = s.page.locator('[role="dialog"][data-position-dialog="collect"]');
+    await collect.locator('[data-position-send="collect"]:not([disabled])').waitFor();
+    chain.speedUp();
+    const started = Date.now();
+    await collect.getByRole('button', { name: 'Collect in wallet', exact: true }).click();
+    await collect.locator('[data-position-progress="done"]').waitFor({ timeout: 30_000 });
+    assert.ok(Date.now() - started < 30_000, 'within seconds, not after the five-minute watch');
+    assert.deepEqual(chain.paid, [{ to: OWNER, currencies: [USDG, UFG], amounts: FEES }]);
+    await s.page.locator('[data-position-lab][data-changes="1"]').waitFor();
+    await collect.getByRole('button', { name: 'Back to position', exact: true }).click();
+    await collect.waitFor({ state: 'detached' });
+
+    await s.page.locator('[data-position-action="close"]').click();
+    const closing = s.page.locator('[role="dialog"][data-position-dialog="close"]');
+    await closing.locator('[data-position-send="close"]:not([disabled])').waitFor();
+    chain.cancelInWallet();
+    await closing.getByRole('button', { name: 'Close in wallet', exact: true }).click();
+    await closing.locator('[data-position-notice="replaced"]').waitFor({ timeout: 40_000 });
+    // Changed on purpose 2026-10-01 (integration pass 3, the copy review): "this step", and what is still true in plain words.
+    assert.equal(await text(closing.locator('[data-position-notice]')), 'Your wallet replaced this step with another transaction, and the position is still open. Press Close in wallet again.');
+    assert.equal(chain.nft(NFT.tokenId).liquidity, NFT.liquidity, 'nothing was closed');
+    assert.equal(sends(), 2, 'the cancelled close was not offered again');
+    assert.doesNotMatch(await text(closing), FORBIDDEN);
+    assert.equal(await closing.getByRole('button', { name: /retry/i }).count(), 0, 'no Retry');
+
+    // Pressed again: one close, at the nonce after the one the cancel took.
+    await closing.locator('[data-position-send="close"]:not([disabled])').waitFor();
+    await closing.getByRole('button', { name: 'Close in wallet', exact: true }).click();
+    await closing.locator('[data-position-progress="done"]').waitFor({ timeout: 30_000 });
+    assert.equal(chain.nft(NFT.tokenId).liquidity, 0n);
+    assert.deepEqual(chain.sends.map((tx) => tx.nonce), ['0x0', '0x2']);
+    assert.equal(sends(), 3);
+  } finally { await s.close(); }
+});
+
 test('a receipt read that fails once is read again: the refund and a collect end done, and the page reads again', async () => {
   const chain = chainFor({ deposits: [{ key: { currency0: USDG, currency1: UFG, fee: 792831, tickSpacing: 9303 }, balance0: 100000n, balance1: 0n }] });
   const operationId = chain.operationId(0n);
@@ -423,14 +511,13 @@ test('after Collect and Close on a position’s page, its figures, its fees card
   const chain = chainFor();
   const key = { ...NFT.key, currency0: USDG, currency1: UFG };
   // The public RPC as the page reads it, following the wallet's chain: each included send moves its head on, and the
-  // position's liquidity and unclaimed fees are the wallet chain's. Its pool's history is long, so the fees card is still
-  // loading (with its unclaimed figure) while the owner acts.
+  // position's liquidity and unclaimed fees are the wallet chain's. Changed on purpose 2026-10-02 (RPC-SPEC §11.4): the
+  // fees card shows its unclaimed figure in whatever state its ledger leaves it (this chain holds none of the position's
+  // events: Fees earned not measured), so the test reads the figure, not a loading state.
   const rpc = browserChain({
     positions: [{ tokenId: '3135288', holder: OWNER, key, tickLower: NFT.tickLower, tickUpper: NFT.tickUpper, get liquidity() { return chain.nft(NFT.tokenId).liquidity; }, get unclaimed() { return chain.sends.length ? [0n, 0n] : FEES; } }],
     pools: { [poolIdOf(key)]: { sqrtPriceX96: NFT.sqrtPriceX96, tick: NFT.tick } },
     tokens: { [USDG]: { symbol: 'USDG', decimals: 6 }, [UFG]: { symbol: 'UFG', decimals: 18 } },
-    // A long history the probe does not see (quietProbe, 2026-09-25): the exact replay of the pool's epochs is chosen.
-    history: busyHistory({ tokenId: '3135288', key, owner: OWNER, perEpoch: 200, quietProbe: true }),
   });
   const HEAD = rpc.head;
   Object.defineProperty(rpc, 'head', { get: () => HEAD + 10 * chain.sends.length });
@@ -441,9 +528,10 @@ test('after Collect and Close on a position’s page, its figures, its fees card
     await detail.waitFor({ timeout: 15_000 });
     await detail.locator('[data-position-actions] a[data-automate-entry]').waitFor({ timeout: 15_000 });
     assert.equal(await text(detail.locator('.dm-pos-chips [data-automation="plain"]')), 'Plain position');
-    const card = page.locator('[data-fees-card][data-fees-state="loading"]');
+    const card = page.locator('[data-fees-card]');
     await card.waitFor({ timeout: 15_000 });
-    assert.match(await text(card), /0\.001234 USDG[\s\S]*0\.5 UFG/, 'the card’s unclaimed figure while its history loads');
+    await page.waitForFunction(() => /0\.001234 USDG[\s\S]*0\.5 UFG/.test(document.querySelector('[data-fees-card]')?.innerText ?? ''), null, { timeout: 15_000 });
+    assert.match(await text(card), /0\.001234 USDG[\s\S]*0\.5 UFG/, 'the card’s unclaimed figure');
     assert.match(await text(detail.locator('[data-stat="fees"]')), /0\.001234\s+USDG/);
 
     // Collect fees: the page's figures and the card's are 0 at once, not a minute later.

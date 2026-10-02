@@ -226,3 +226,50 @@ test('quiet first hours draw nothing: the line starts at the first close; one pr
   unread.candles[0] = { ...unread.candles[0], open: 'x' };
   assert.notEqual(sparkGeometry(unread, 360, 164, SPARK_PAD), null, 'an open is never read');
 });
+
+// 2026-10-02 (the owner: the 24H / 7D / 30D / All tabs went missing): the fees card's periods are back, each cut from its
+// measured start (lib/fees/periods.ts periodStart) by components/positions/visual/model.ts periodView.
+test('the fees chart’s periods: the points from each measured start on, its earned value the floor, the settlements after it, All from the mint', () => {
+  const { feesView, periodView } = require('../.test-build/app/src/components/positions/visual/model.js');
+  const { basisOf } = require('../.test-build/app/src/components/positions/visual/value.js');
+  const { periodStart } = require('../.test-build/app/src/lib/fees/periods.js');
+  const T = 1_790_000_000;
+  const now = T + 10 * DAY;
+  const pair = (n) => [BigInt(n) * 1_000_000n, BigInt(n) * 1_000_000n];
+  const point = (age, n, kind, collected = 0) => ({ block: Math.round((now - age - T) * 10) + 100, t: now - age, earned: pair(n), collected: pair(collected), kind });
+  const points = [point(10 * DAY, 0, 'opened'), point(8 * DAY, 2, 'settlement', 2), point(7.1 * DAY, 3, 'reading', 2), point(25 * HOUR, 8, 'reading', 2), point(12 * HOUR, 9, 'settlement', 9), point(0, 10, 'now', 9)];
+  const event = (p, kind, n) => ({ kind, block: p.block, timestamp: p.t, tx: `0x${String(p.block).padStart(64, '0')}`, fees: pair(n), liquidityDelta: kind === 'mint' ? 1000n : 0n });
+  const history = { mintedAt: { block: 100, timestamp: T }, earned: pair(10), collected: pair(9), points, events: [event(points[0], 'mint', 0), event(points[1], 'collect', 2), event(points[4], 'collect', 7)], through: points[5].block };
+  const currencies = [{ address: `0x${'0a'.repeat(20)}`, symbol: 'AAA', decimals: 6 }, { address: `0x${'0b'.repeat(20)}`, symbol: 'BBB', decimals: 6 }];
+  const state = { block: points[5].block, timestamp: now, unclaimed: pair(1), sqrtPriceX96: 2n ** 96n, tick: 0, tickLower: -600, tickUpper: 600, liquidity: 1000n, poolId: `0x${'ab'.repeat(32)}`, currencies };
+  const basis = basisOf(state);
+  const view = feesView({ id: '7', state, history, basis });
+  const cut = (period) => periodView(view, period, periodStart(history, period));
+  const all = cut('all');
+  assert.equal(all.period, 'all');
+  assert.equal(all.from.kind, 'opened');
+  assert.equal(all.base, 0n);
+  assert.equal(all.points.length, 6);
+  assert.deepEqual(all.events.map((one) => one.kind), ['mint', 'collect', 'collect'], 'the mint’s pip, where All starts, and each settlement');
+  const week = cut('7d');
+  assert.equal(week.period, '7d');
+  assert.equal(week.from.kind, 'reading');
+  assert.equal(week.start, now - 7.1 * DAY);
+  assert.equal(week.end, now);
+  assert.equal(week.points.length, 4, 'from the week’s start: two readings, a settlement and now');
+  assert.equal(week.buckets.length, 3);
+  assert.equal(week.base, view.earned * 3n / 10n, 'the floor: what was earned by the start');
+  assert.equal(week.last, view.earned);
+  assert.deepEqual(week.events.map((one) => one.kind), ['collect'], 'only the settlement after it; the one before is in the floor');
+  assert.equal(week.points[0].t, week.start, 'the line starts at the start, on the floor');
+  assert.ok(week.points[0].v > 0 && week.points[0].v < week.points.at(-1).v);
+  const day = cut('24h');
+  assert.equal(day.from.kind, 'reading');
+  assert.equal(day.start, now - 25 * HOUR);
+  assert.equal(day.points.length, 3);
+  assert.equal(day.last - day.base, view.earned * 2n / 10n, 'the day’s growth: 8 to 10');
+  // Each stretch's own figures: what was earned in it, and what was collected.
+  assert.equal(day.buckets[0].earnedIn, view.earned / 10n);
+  assert.equal(day.buckets[0].collectedIn, view.earned * 7n / 10n);
+  assert.equal(day.buckets.at(-1).end, now);
+});

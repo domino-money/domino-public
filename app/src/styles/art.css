@@ -3,7 +3,9 @@
    composition: the static CSS, the 0% keyframe and
    the 100% keyframe of every loop are the same complete picture, so a paused loop, a loop still inside its delay
    and `animation: none` (reduced motion, html.dm-still: tokens.css) all show it. Loops play only while the art
-   root carries .is-running, which an IntersectionObserver sets while the art is in view. */
+   root carries .is-running, which an IntersectionObserver sets while the art is in view, and each plays --art-loops
+   times (tokens.css), then rests on that complete picture (2026-10-01, F6: an endless loop kept the processor busy for as
+   long as Home was open, about 3.7 ms a frame on a slow phone). */
 
 @layer components {
   /* ---- Shared art rules (F) ---------------------------------------------------------------- */
@@ -52,7 +54,7 @@
   .dm-hero-art .glow-0 { stop-color: var(--primary-glow); }
   .dm-hero-art .glow-1 { stop-color: var(--primary-glow); stop-opacity: 0; }
   /* The glow brightens as the new tile arrives (6.8 to 7.6 s) and dims as the run resets (9.4 to 10.4 s). */
-  .dm-hero-art .warm { opacity: 0.5; fill-opacity: var(--hero-warm); animation: dm-hero-warm 12s linear var(--hero-delay) infinite; }
+  .dm-hero-art .warm { opacity: 0.5; fill-opacity: var(--hero-warm); animation: dm-hero-warm 12s linear var(--hero-delay) var(--art-loops); }
   /* The staircase's body: lit along its top edge and dissolving into the plate below. */
   .dm-hero-art .steps-0 { stop-color: var(--wash-strong); }
   .dm-hero-art .steps-1 { stop-color: var(--wash-strong); stop-opacity: 0; }
@@ -64,15 +66,15 @@
   .dm-hero-art .pip { fill: var(--hero-pip); }
 
   /* A tile tips about its front foot. Its keyframes are its own (HeroArt names them per tile). */
-  .dm-hero-art .tip { color: var(--hero-tile); transform-box: fill-box; transform-origin: 100% 100%; animation-duration: 12s; animation-timing-function: linear; animation-delay: var(--hero-delay); animation-iteration-count: infinite; }
+  .dm-hero-art .tip { color: var(--hero-tile); transform-box: fill-box; transform-origin: 100% 100%; animation-duration: 12s; animation-timing-function: linear; animation-delay: var(--hero-delay); animation-iteration-count: var(--art-loops); }
   /* The reset: the fallen run fades out (9.4 to 9.9 s), stands up unseen at 10 s, fades back in (10.2 to 10.8 s). */
-  .dm-hero-art .chain { animation: dm-hero-chain 12s linear var(--hero-delay) infinite; }
+  .dm-hero-art .chain { animation: dm-hero-chain 12s linear var(--hero-delay) var(--art-loops); }
   /* The new tile stays on the top step while the run falls toward it and steps away only at the last moment
      (5.6 to 6.0 s, as the last ground tile lands), leaving its dashed slot; it rises back onto the step from
      6.8 to 7.4 s, as the tile on the first step comes to rest against the second. */
-  .dm-hero-art .next { transform-box: fill-box; transform-origin: 50% 100%; animation: dm-hero-next 12s linear var(--hero-delay) infinite; }
+  .dm-hero-art .next { transform-box: fill-box; transform-origin: 50% 100%; animation: dm-hero-next 12s linear var(--hero-delay) var(--art-loops); }
   /* The slot shows for about 1.3 s, only while the new tile is away. */
-  .dm-hero-art .ghost { fill: none; stroke: var(--fg-faint); stroke-width: 1px; stroke-dasharray: 3 3; opacity: 0; animation: dm-hero-ghost 12s linear var(--hero-delay) infinite; }
+  .dm-hero-art .ghost { fill: none; stroke: var(--fg-faint); stroke-width: 1px; stroke-dasharray: 3 3; opacity: 0; animation: dm-hero-ghost 12s linear var(--hero-delay) var(--art-loops); }
 
   /* The first-load entrance: the run is set up left to right, one --stagger apart, 200 ms after the plate lands
      (on a phone, counted from the first tile it shows). It plays whether or not the loop runs (see the pause
@@ -99,11 +101,11 @@
   .dm-vig-compound .drop-dot { fill: var(--primary); transform-box: fill-box; transform-origin: 50% 50%; scale: 0.6; }
   .dm-vig-compound .mark { transform-box: fill-box; transform-origin: 50% 100%; }
 
-  .dm-vig-compound:not(.dm-vig-still) .vig { animation: dm-vig-reset 6s var(--ease-std) infinite; }
-  .dm-vig-compound:not(.dm-vig-still) .band-fill { animation: dm-band-fill 6s var(--ease-enter) infinite; }
-  .dm-vig-compound:not(.dm-vig-still) .mark { animation: dm-mark-pulse 6s var(--ease-enter) infinite; }
-  .dm-vig-compound:not(.dm-vig-still) .drop { animation: dm-drop-arc 6s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
-  .dm-vig-compound:not(.dm-vig-still) .drop-dot { animation: dm-drop-scale 6s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+  .dm-vig-compound:not(.dm-vig-still) .vig { animation: dm-vig-reset 6s var(--ease-std) var(--art-loops); }
+  .dm-vig-compound:not(.dm-vig-still) .band-fill { animation: dm-band-fill 6s var(--ease-enter) var(--art-loops); }
+  .dm-vig-compound:not(.dm-vig-still) .mark { animation: dm-mark-pulse 6s var(--ease-enter) var(--art-loops); }
+  .dm-vig-compound:not(.dm-vig-still) .drop { animation: dm-drop-arc 6s cubic-bezier(0.45, 0, 0.55, 1) var(--art-loops); }
+  .dm-vig-compound:not(.dm-vig-still) .drop-dot { animation: dm-drop-scale 6s cubic-bezier(0.45, 0, 0.55, 1) var(--art-loops); }
   .dm-vig-compound:not(.dm-vig-still) .drop-1,
   .dm-vig-compound:not(.dm-vig-still) .drop-1 .drop-dot { animation-delay: 0.2s; }
   .dm-vig-compound:not(.dm-vig-still) .drop-2,
@@ -133,16 +135,16 @@
 
   /* The loop runs only where offset-path can place the travelling parts; anywhere else the staircase rests. */
   @supports (offset-path: path('M 0 0')) {
-    .dm-vig-seq:not(.dm-vig-still) .scene { animation: dm-stair-scene 8s var(--ease-std) infinite; }
-    .dm-vig-seq:not(.dm-vig-still) .range-b-ghost { animation: dm-stair-ghost 8s var(--ease-std) infinite; }
-    .dm-vig-seq:not(.dm-vig-still) .range-b { animation: dm-stair-lit 8s var(--ease-std) infinite; }
-    .dm-vig-seq:not(.dm-vig-still) .rise { animation: dm-stair-rise 8s var(--ease-std) infinite; }
-    .dm-vig-seq:not(.dm-vig-still) .price { animation: dm-stair-price 8s linear infinite; }
-    .dm-vig-seq:not(.dm-vig-still) .tip-rest { animation: dm-stair-rest 8s linear infinite; }
-    .dm-vig-seq:not(.dm-vig-still) .tip { animation: dm-stair-tip 8s linear infinite; }
-    .dm-vig-seq:not(.dm-vig-still) .tip .tip-ring { animation: dm-stair-pulse 8s var(--ease-std) infinite; }
-    .dm-vig-seq:not(.dm-vig-still) .drop { animation: dm-stair-drop 8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
-    .dm-vig-seq:not(.dm-vig-still) .drop-dot { animation: dm-stair-drop-scale 8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+    .dm-vig-seq:not(.dm-vig-still) .scene { animation: dm-stair-scene 8s var(--ease-std) var(--art-loops); }
+    .dm-vig-seq:not(.dm-vig-still) .range-b-ghost { animation: dm-stair-ghost 8s var(--ease-std) var(--art-loops); }
+    .dm-vig-seq:not(.dm-vig-still) .range-b { animation: dm-stair-lit 8s var(--ease-std) var(--art-loops); }
+    .dm-vig-seq:not(.dm-vig-still) .rise { animation: dm-stair-rise 8s var(--ease-std) var(--art-loops); }
+    .dm-vig-seq:not(.dm-vig-still) .price { animation: dm-stair-price 8s linear var(--art-loops); }
+    .dm-vig-seq:not(.dm-vig-still) .tip-rest { animation: dm-stair-rest 8s linear var(--art-loops); }
+    .dm-vig-seq:not(.dm-vig-still) .tip { animation: dm-stair-tip 8s linear var(--art-loops); }
+    .dm-vig-seq:not(.dm-vig-still) .tip .tip-ring { animation: dm-stair-pulse 8s var(--ease-std) var(--art-loops); }
+    .dm-vig-seq:not(.dm-vig-still) .drop { animation: dm-stair-drop 8s cubic-bezier(0.45, 0, 0.55, 1) var(--art-loops); }
+    .dm-vig-seq:not(.dm-vig-still) .drop-dot { animation: dm-stair-drop-scale 8s cubic-bezier(0.45, 0, 0.55, 1) var(--art-loops); }
     .dm-vig-seq:not(.dm-vig-still) .drop-1,
     .dm-vig-seq:not(.dm-vig-still) .drop-1 .drop-dot { animation-delay: 4s; }
     .dm-vig-seq:not(.dm-vig-still) .drop-2,
@@ -165,10 +167,10 @@
   .dm-vig-wallet .band-lit { fill: none; stroke: var(--primary-line); stroke-width: 1.25px; opacity: 0; }
   .dm-vig-wallet .pos { transform-box: fill-box; transform-origin: 50% 100%; }
 
-  .dm-vig-wallet:not(.dm-vig-still) .seal-ring { animation: dm-sign-seal 7.5s var(--ease-std) infinite; }
-  .dm-vig-wallet:not(.dm-vig-still) .trace { animation: dm-sign-trace 7.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
-  .dm-vig-wallet:not(.dm-vig-still) .band-lit { animation: dm-sign-lit 7.5s var(--ease-std) infinite; }
-  .dm-vig-wallet:not(.dm-vig-still) .pos { animation: dm-sign-pos 7.5s var(--ease-enter) infinite; }
+  .dm-vig-wallet:not(.dm-vig-still) .seal-ring { animation: dm-sign-seal 7.5s var(--ease-std) var(--art-loops); }
+  .dm-vig-wallet:not(.dm-vig-still) .trace { animation: dm-sign-trace 7.5s cubic-bezier(0.45, 0, 0.55, 1) var(--art-loops); }
+  .dm-vig-wallet:not(.dm-vig-still) .band-lit { animation: dm-sign-lit 7.5s var(--ease-std) var(--art-loops); }
+  .dm-vig-wallet:not(.dm-vig-still) .pos { animation: dm-sign-pos 7.5s var(--ease-enter) var(--art-loops); }
 
   /* ---- Nav icon gestures (D.2): one shot while a link is hovered; the markup is foundation's ---- */
   .i-turn { transform-box: view-box; transform-origin: 8px 8px; }

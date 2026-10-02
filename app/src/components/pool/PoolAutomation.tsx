@@ -3,7 +3,7 @@ import { docsHref } from '../explore/routes'
 import { IconCheck } from '../icons'
 
 /** Where each feature is explained. */
-const DOCS: Record<string, string | null> = { plain: 'earned-fees', compound: 'auto-compound', domino: 'domino-compounder' }
+const DOCS: Record<string, string | null> = { plain: 'earned-fees', compound: 'auto-compound', domino: 'domino-compound' }
 
 /**
  * What Domino can do in this pool, the product's three features side by side (lib/automate/features.ts): a plain

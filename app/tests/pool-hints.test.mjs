@@ -270,5 +270,6 @@ test('hints are asked for by a token the provider lists, and never hold up the r
   assert.deepEqual(await cancelled, []);
   const aborted = new AbortController(); aborted.abort();
   assert.deepEqual(await hints.hintsWithin(PONS, null, aborted.signal, { pairs }), [], 'already cancelled');
-  assert.equal(hints.HINT_WAIT_MS, 2500);
+  // Changed on purpose 2026-10-01 (audit A16): the list waits 800 ms for the hints, no longer 2.5 s.
+  assert.equal(hints.HINT_WAIT_MS, 800);
 });

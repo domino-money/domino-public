@@ -1,11 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReadRequests, ReadSource } from '../../../lib/read/types'
 import type { MarketsProvider, MarketsState } from '../../../lib/read/marketsProvider'
+import type { Market } from '../../../lib/markets'
 import { overviewRows } from '../../../lib/read/publicOverview'
 import { candidateFromToken } from '../../../lib/read/screens/tokens'
-import { readWithin, type ScreenOutcome } from '../../../lib/read/screens/screenRead'
+import { askAgainLater, readWithin, type ScreenOutcome } from '../../../lib/read/screens/screenRead'
 import { whenVisibleAfter } from '../../../lib/read/screens/quietRead'
 import { failureText } from '../../../lib/read/screens/copy'
+import { hintsWithin } from '../../../lib/read/screens/poolHints'
+import { usablePoolsRequest } from '../../../lib/read/screens/poolsList'
+import { featuredPoolIds } from '../../../lib/read/screens/featuredPools'
+import { tokenWarning, warningText } from '../../../lib/read/screens/lookalike'
+import { addressKey } from '../../../lib/read/screens/identity'
+import { discoveryRows, mergeTokenPools, splitFlagged } from '../../../lib/read/tokenPools'
+import { dexStore } from '../../../lib/read/dexFigures'
+import { useFeatured } from '../../../lib/read/featuredSource'
 import { MarketsContext } from '../../../lib/read/useMarkets'
 import { MarketsTable } from '../../MarketsTable'
 import { Button, Card, Skeleton } from '../../ui'
@@ -15,18 +24,59 @@ import { SymbolText } from './SymbolText'
 type Page = Pick<ReadRequests['overview'], 'afterPoolId' | 'revision'>
 type Success = Extract<ScreenOutcome<'overview'>, { state: 'ok' }>
 
+/**
+ * The pools DEX Screener lists for the token, verified on chain by the read service's pools route, as New position
+ * reads them (audit V2, 2026-10-01): the hints first (one token-pairs GET, shared with the artwork, through our own
+ * edge), then one pools read naming today's listed pools that hold the token and the most liquid of the hints. Asked
+ * again on its own, a few times, when the read service was busy or briefly out; nothing on screen says how it went.
+ */
+function useDiscoveredPools(source: ReadSource, token: string): Market[] {
+  const [rows, setRows] = useState<{ token: string; rows: Market[] } | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    const { signal } = controller
+    void (async () => {
+      // Only where the deployment lists the pools route: a capabilities answer, no read of the budget.
+      if (!source.routeEnabled) return
+      const check = await source.routeEnabled('pools', { signal })
+      if (signal.aborted || check.state !== 'enabled') return
+      const key = addressKey(token)
+      const request = usablePoolsRequest(key, null, await hintsWithin(key, null, signal))
+      if (signal.aborted) return
+      let outcome = await readWithin(source, 'pools', request, { signal })
+      if (outcome.state === 'restart_required' && outcome.code === 'catalogue_revision_changed') outcome = await readWithin(source, 'pools', request, { signal, deadlineAt: outcome.provenance.deadlineAt })
+      if (signal.aborted || outcome.state === 'aborted') return
+      if (outcome.state === 'ok') setRows({ token, rows: discoveryRows(outcome.data, outcome.provenance) })
+      else if (await askAgainLater(outcome, attempt, signal)) setAttempt((n) => n + 1)
+    })()
+    return () => controller.abort()
+  }, [source, token, attempt])
+  return rows?.token === token ? rows.rows : NONE
+}
+
+const NONE: Market[] = []
+
 /** One bounded page at a time. Storage acquisition survives leaving the page;
  * this consumer only refreshes visible observations and never waits for full
- * historical coverage before showing current values. */
+ * historical coverage before showing current values.
+ *
+ * Changed 2026-10-01 (audit V2, B6, I1): the first page also lists the pools the pools route verified for the token
+ * (useDiscoveredPools), each pool once; today's Top pools that hold the token first, then by liquidity; the pools with
+ * a very high fee or that Domino can't open positions in are flagged and left out until "Show all"; how many pools are
+ * still being collected is said; and a token that passes for one of the site's main tokens says so first. */
 export function StoredTokenExplorer({ source, token }: { source: ReadSource; token: string }) {
   const [pages, setPages] = useState<Page[]>([{}])
   const [refresh, setRefresh] = useState(0)
   const [answer, setAnswer] = useState<{ key: string; outcome: ScreenOutcome<'overview'> } | null>(null)
   const [retained, setRetained] = useState<{ key: string; outcome: Success } | null>(null)
+  const [showAll, setShowAll] = useState(false)
   const page = pages[pages.length - 1]
   const key = `${token}:${page.afterPoolId ?? ''}:${page.revision ?? ''}`
   const outcome = answer?.key === key ? answer.outcome : null
   const value = outcome?.state === 'ok' ? outcome : retained?.key === key ? retained.outcome : null
+  const featured = useFeatured()
+  const discovered = useDiscoveredPools(source, token)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -58,33 +108,49 @@ export function StoredTokenExplorer({ source, token }: { source: ReadSource; tok
     return () => { controller.abort(); cancel?.() }
   }, [source, token, page, key, pages.length, refresh])
 
-  const rows = useMemo(() => value ? overviewRows(value) : [], [value])
+  const firstPage = pages.length === 1
+  const stored = useMemo(() => (value ? overviewRows(value) : NONE), [value])
+  // Today's Top pools that hold the token come first (B6), then the largest by liquidity; DEX Screener's figure orders a
+  // pool whose own figures the provider refused.
+  const listed = useMemo(() => featuredPoolIds(addressKey(token), null, featured.entries), [token, featured.entries])
+  const merged = useMemo(() => mergeTokenPools(stored, firstPage ? discovered : NONE, { listed, liquidity: (poolId) => dexStore.pool(poolId)?.liquidityUsd ?? null }), [stored, discovered, firstPage, listed])
+  const split = useMemo(() => splitFlagged(merged), [merged])
+  const rows = showAll ? merged : split.shown
   const provider = useMemo<MarketsProvider>(() => {
     const state: MarketsState = { phase: 'ready', result: { source: 'live', chainId: 4663, network: 'Robinhood Chain', markets: rows }, problems: [] }
     return { kind: 'bridge', getSnapshot: () => state, subscribe: () => () => {}, ensure() {}, refresh() { setRefresh((n) => n + 1) } }
   }, [rows])
   const selected = value?.data.tokens.find((entry) => entry.address === token)
   const candidate = selected?.value ? candidateFromToken(selected.value, token) : null
-  const pending = value?.data.tokens.some((entry) => entry.acquisition.status === 'pending') || value?.data.pools.some((entry) => entry.acquisition.status === 'pending')
+  const warning = candidate ? tokenWarning(candidate.token) : null
+  const collecting = value?.data.pools.filter((entry) => entry.acquisition.status === 'pending').length ?? 0
+  const pending = value?.data.tokens.some((entry) => entry.acquisition.status === 'pending') || collecting > 0
   // The producer says whether it took the acquisition on. Refused and pending
   // is not "collecting": nothing is collecting, and saying so forever is a lie
   // a person cannot act on. Same words the history chart already uses.
   const atCapacity = pending === true && value?.data.acquisitionAccepted === false
-  const CAPACITY = 'Data collection is at capacity; showing what is already stored.'
+  const CAPACITY = 'Domino’s data service is busy, so only the pools already stored are shown.'
   const failure = outcome && outcome.state !== 'ok' && outcome.state !== 'aborted' ? failureText(outcome, 'pools').title : null
-  const loading = !value && !failure
-  const said = failure ?? (atCapacity ? CAPACITY : pending ? 'Collecting data. Available figures are shown below.' : selected?.acquisition.status === 'rejected' ? 'This token could not be verified.' : loading ? 'Reading stored pools…' : '')
+  const loading = !value && !failure && merged.length === 0
+  const collectingText = collecting > 0 ? `Collecting figures for ${collecting} ${collecting === 1 ? 'pool' : 'pools'}. The rest are below.` : 'Collecting data. Available figures are shown below.'
+  const said = failure && merged.length === 0 ? failure : atCapacity ? CAPACITY : pending ? collectingText : selected?.acquisition.status === 'rejected' ? 'This token could not be verified.' : loading ? 'Reading pools…' : ''
 
   return (
-    <section className="mt-6 grid gap-4" aria-labelledby="stored-token-title" data-stored-token={token} data-acquisition={atCapacity ? 'at_capacity' : pending ? 'pending' : 'settled'}>
+    <section className="mt-6 grid gap-4" aria-labelledby="stored-token-title" data-stored-token={token} data-acquisition={atCapacity ? 'at_capacity' : pending ? 'pending' : 'settled'} data-pools-merged={merged.length} data-pools-discovered={discovered.length}>
       <Card pad="md">
-        <h2 id="stored-token-title" className="dm-title" title="Verified pools stored for this token. The list does not imply complete chain history.">{candidate ? <SymbolText token={candidate.token} /> : 'Token data'}</h2>
+        <h2 id="stored-token-title" className="dm-title" title="Pools stored for this token, and the ones a market data provider lists for it, each checked on Robinhood Chain. The list does not imply complete chain history.">{candidate ? <SymbolText token={candidate.token} /> : 'Token data'}</h2>
         <p className="mt-2 text-caption text-fg-muted"><Address value={token} /></p>
+        {warning && <p role="alert" className="dm-pool-warning mt-3" data-token-warning={warning.kind}>{warningText(warning, 'token')}</p>}
         {!value && !failure && <Skeleton className="mt-3 h-5 w-48" />}
         <p role="status" className={said && !loading ? 'mt-3 text-caption text-fg-muted' : 'sr-only'}>{said}</p>
       </Card>
-      {value && <MarketsContext.Provider value={provider}><MarketsTable variant="full" includeCatalogue={false} poolToken={token} empty={<p className="p-5 text-body text-fg-muted">{atCapacity ? 'Data collection is at capacity. No pools are stored for this token yet.' : pending ? 'Pool data is being collected.' : 'No verified pools are stored for this token yet.'}</p>} /></MarketsContext.Provider>}
-      <div className="flex gap-3">
+      {(value || merged.length > 0) && <MarketsContext.Provider value={provider}><MarketsTable variant="full" includeCatalogue={false} poolToken={token} empty={<p className="p-5 text-body text-fg-muted">{atCapacity ? 'Domino’s data service is busy, and no pools of this token are stored yet.' : pending ? 'Pool data is being collected.' : split.hidden.length > 0 ? 'Every pool of this token has a very high fee, or is one Domino can’t open positions in.' : 'No verified pools are stored for this token yet.'}</p>} /></MarketsContext.Provider>}
+      <div className="flex flex-wrap items-center gap-3">
+        {split.hidden.length > 0 && (
+          <Button variant="ghost" onClick={() => setShowAll((all) => !all)} data-show-all-pools={showAll ? 'shown' : 'hidden'} title="Pools with a fee above 10% of every swap, and pools Domino can’t open positions in.">
+            {showAll ? `Hide ${split.hidden.length} flagged ${split.hidden.length === 1 ? 'pool' : 'pools'}` : `Show all ${merged.length} pools`}
+          </Button>
+        )}
         {pages.length > 1 && <Button variant="ghost" onClick={() => { setPages((prior) => prior.slice(0, -1)); setAnswer(null); setRetained(null) }}>Previous pools</Button>}
         {value?.data.hasMore && value.data.nextAfterPoolId && <Button onClick={() => { setPages((prior) => [...prior, { afterPoolId: value.data.nextAfterPoolId, revision: value.data.revision }]); setAnswer(null); setRetained(null) }}>More pools</Button>}
       </div>

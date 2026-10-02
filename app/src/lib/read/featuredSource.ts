@@ -11,7 +11,6 @@
  */
 import { useEffect, useSyncExternalStore } from 'react'
 import type { ReadV5ContractVersion } from 'api-contracts/read-v5/runtime.mjs'
-import { appPaint } from './appPaint'
 import { answerOf, bundledStore, createFeaturedStore, FEATURED_FIRST_DEADLINE_MS, readFeaturedList, type FeaturedSnapshot, type FeaturedStore } from './featuredList'
 import type { READ_V5_PIN } from './pin'
 import { appBridgeSource } from './screens/appSourceBridge'
@@ -27,9 +26,11 @@ let store: FeaturedStore | null = null
 export function featuredStore(): FeaturedStore {
   if (store) return store
   if (__DOMINO_POOL_SET__ !== 'selected') return (store = bundledStore())
-  // The first read has 3.5 s where the page waits for it, with no copy of the last overview to paint from (speed wave,
-  // item 8): a slow list was taken for none, and the embedded list stood in its place.
-  const made = createFeaturedStore({ read: (signal, first) => readFeaturedList(appBridgeSource(), { signal, ...(first && !appPaint?.load() ? { deadlineMs: FEATURED_FIRST_DEADLINE_MS } : {}) }).then(answerOf) })
+  // Every read made while the embedded list only holds the place has 3.5 s (audit B3, 2026-10-01): the first, with or
+  // without a copy of the last overview to paint from, and each read again after a first that found no answer. A slow
+  // list was taken for none, and the embedded list stood in its place (speed wave, item 8, gave the first read alone
+  // 3.5 s, and only without a copy). A refresh of a served list keeps 1.5 s.
+  const made = createFeaturedStore({ read: (signal, placeholder) => readFeaturedList(appBridgeSource(), { signal, ...(placeholder ? { deadlineMs: FEATURED_FIRST_DEADLINE_MS } : {}) }).then(answerOf) })
   // New position names the pools of the list on screen (screens/featuredPools.ts).
   followFeaturedList(() => made.getSnapshot().entries)
   return (store = made)

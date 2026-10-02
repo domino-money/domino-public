@@ -151,7 +151,7 @@ export function createWalletPager(source: ReadSource, request: WalletAssetsReque
       title: { label: 'Token', text: '', state: 'unavailable', tokens: [unreadToken(asset.currency)] },
       facts: [{ label: 'Balance', text: `Unavailable: ${reasonText(asset.reason)}`, state: 'unavailable' }],
     }))
-    notes = [inventoryNote(inventory), 'Balances at the snapshot block. Not proof of wallet control.'].filter((note): note is string => note !== null)
+    notes = [inventoryNote(inventory), 'Balances read from the chain at one block. Anyone can see them; they don’t prove who controls the wallet.'].filter((note): note is string => note !== null)
     freshness = freshnessLines(outcome.observation)
     cursor = inventory.status === 'page_received' && inventory.hasMore && inventory.nextCursor !== null ? (inventory.nextCursor as OpaqueCursor) : null
     pages = page

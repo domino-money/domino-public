@@ -35,13 +35,15 @@ const REFRESH_MS = 300_000
 /**
  * On a first visit (nothing remembered), how long the card waits for the whole list and its prices before it draws
  * what it has: a list read in time appears once, in its final order, and a slow one still appears within this.
+ * Changed 2026-10-01 (audit V7): 1.5 s, from 5 s. An address's list comes in pages of about 1.5 s each, one after
+ * another (the read service's own pace); its first page is on screen after one of them, and the rest follow in place.
  */
-const FIRST_PAINT_MS = 5000
+const FIRST_PAINT_MS = 1500
 
 /** The pager's own closing sentence; the title says the same thing with the block number in it. */
-const PAGER_FOOTNOTE = 'Balances at the snapshot block. Not proof of wallet control.'
+const PAGER_FOOTNOTE = 'Balances read from the chain at one block. Anyone can see them; they don’t prove who controls the wallet.'
 /** An empty card after a read that failed. */
-const NOTHING_TO_SHOW = 'No token balances to show.'
+const NOTHING_TO_SHOW = 'Your tokens couldn’t be loaded right now.'
 /** An empty card whose list answered: its block is the line's title. */
 const NONE_LISTED = 'No tokens listed.'
 
@@ -223,7 +225,7 @@ function TokensForm({ onCheck }: { onCheck: (tokens: string[]) => void }) {
 function listTitle(snap: WalletSnapshot, view: WalletView, block: string | null, checkedByAddress: boolean): string {
   const provenance = view.freshness.filter((line) => !/^Block \d+$/.test(line))
   const lines = [
-    block ? `Balances at block ${block}. Public data, not proof of wallet control.` : 'Balances at the snapshot block. Public data, not proof of wallet control.',
+    block ? `Balances read from the chain at block ${block}. Anyone can see them; they don’t prove who controls the wallet.` : 'Balances read from the chain. Anyone can see them; they don’t prove who controls the wallet.',
     ...view.notes.filter((note) => note !== PAGER_FOOTNOTE),
     provenance.length > 0 ? `${provenance.join(' · ')}.` : null,
     view.skipped > 0 ? `${view.skipped} provider candidate${view.skipped === 1 ? ' wasn’t' : 's weren’t'} checked in this read.` : null,
@@ -590,6 +592,8 @@ export function PortfolioTokens({ address }: { address: string }) {
               </>
             )}
             {' · '}page <span className="tnum">{view.pages}</span> of up to <span className="tnum">{WALLET_PAGE_CAP}</span>
+            {/* Whether the list is whole, in words (audit V7): more pages on their way, or a list longer than is read. */}
+            {loading && snap?.canLoadMore ? <span data-wallet-more="reading"> · reading more</span> : snap?.capped ? <span data-wallet-more="capped"> · more tokens not listed</span> : null}
           </>
         ) : (
           ''

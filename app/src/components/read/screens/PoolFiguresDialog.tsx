@@ -18,10 +18,14 @@ import { ProviderFigure } from './ProviderFigure'
 import { PoolAprEstimate } from './PoolAprEstimate'
 import { PoolPriceChart } from './PoolPriceChart'
 
-/** A row metric as a GeckoTerminal figure, when that is what it is. */
+/**
+ * A row metric as a provider's figure, when that is what it is: the read service's (GeckoTerminal), or, since
+ * 2026-10-01 (audit V1, V2), DEX Screener's standing in for it or carried by the pools route, dated by its retrieval.
+ */
 export function rowProviderFigure(metric: Metric, cacheAgeSeconds: number | null): AttributedFigure | null {
-  if (metric.source !== 'GeckoTerminal') return null
-  const provider = 'geckoterminal' as const
+  if (metric.source !== 'GeckoTerminal' && metric.source !== 'DexScreener') return null
+  const provider = metric.source === 'DexScreener' ? ('dexscreener' as const) : ('geckoterminal' as const)
+  if (metric.source === 'DexScreener') cacheAgeSeconds = null
   if (metric.state === 'absent') return { state: 'not_reported', provider }
   if ((metric.state === 'provider' || metric.state === 'stale') && metric.value !== null && metric.asOf !== undefined) {
     const value = formatUsdCompact(metric.value) ?? 'Unavailable'

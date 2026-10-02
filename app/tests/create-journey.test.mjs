@@ -136,7 +136,8 @@ test('no stage asks about automation: the fields stay at their defaults, Automat
   assert.deepEqual(Object.keys(CREATE.stage), journey.STAGES);
   // Review's own automation copy went with the section that showed it; Automate keeps the fee's value.
   for (const key of ['serviceFee', 'serviceFeeNote', 'automationApproveStep', 'automationCreateStep', 'automationActivateStep', 'automationStepNames']) assert.equal(CREATE.review[key], undefined, key);
-  assert.equal(CREATE.review.serviceFeeValue('domino'), '4% of earned fees consumed', 'screens/Automate.tsx states it');
+  // Changed on purpose 2026-10-01 (audit E4): "of the fees it uses", not "of earned fees consumed".
+  assert.equal(CREATE.review.serviceFeeValue('domino'), '4% of the fees it uses', 'screens/Automate.tsx states it');
   assert.doesNotMatch(CREATE.review.stepsNote, /automation|Automate/i, 'the wallet steps are the deposit’s alone');
 });
 
@@ -545,7 +546,8 @@ test('Review ends on Create position, made in place: no hand-off to Setup, and t
   // Changed on purpose (2026-09-24, the three features joined up): the page no longer leaves by itself once the position
   // exists. Create position publishes it (lib/create/createProgress.ts), and Review offers what comes next in its place
   // (CreatedNext.tsx): the position's own page on Positions, or its automation with the position chosen.
-  assert.match(control, /publishCreated\(tokenId\.toString\(\)\)/, 'the new position is handed to Review');
+  // 2026-10-02 (RPC fix round 2): with the wallet that made it, so only that wallet's list is asked again for it.
+  assert.match(control, /publishCreated\(tokenId\.toString\(\), wallet === null \? null : wallet\.slice\(wallet\.indexOf\('\|'\) \+ 1\)\)/, 'the new position is handed to Review');
   assert.doesNotMatch(control, /window\.location\.hash =/, 'nothing opens another page on its own');
   const next = readFileSync(new URL('../src/components/create/CreatedNext.tsx', import.meta.url), 'utf8');
   assert.match(next, /positionHref\(tokenId\)/, 'the position’s own page (screens/PositionDetail.tsx)');
@@ -841,7 +843,7 @@ test('the automation choices carry the approved names, and the service fee keeps
   assert.equal(CREATE.automation.domino, 'Domino-compound');
   assert.equal(CREATE.automation.dominoRulesHeading, 'How Domino-compound works');
   // The docs' fees page draws its service row from these (lib/docs/pages/reference.ts).
-  assert.match(CREATE.review.feeValues.service, /^Auto-compound 2%; Domino-compound 4% of earned fees consumed$/);
+  assert.match(CREATE.review.feeValues.service, /^Auto-compound 2%; Domino-compound 4% of the earned fees it uses$/);
   assert.equal(CREATE.review.feeLabels.service, 'Domino service fee', 'the fee label names the company, not the product');
   // "sequence" stays where it names the vault or its cap.
   assert.equal(CREATE.automation.cap, 'Positions in the sequence');

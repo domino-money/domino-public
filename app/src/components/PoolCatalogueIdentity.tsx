@@ -1,4 +1,5 @@
 import { catalogueTokenLabel, type PoolCatalogueEntry } from '../config/selectedPoolCatalogue'
+import { FEE_VENUE_PREFIX, feeWords } from '../lib/format/fee'
 import type { TokenDisplay } from '../lib/read/types'
 import { TokenLabel } from './read/TokenLabel'
 import { TokenIcon, TokenMark } from './TokenIcon'
@@ -38,8 +39,14 @@ export function PoolCatalogueIdentity({ entry, compact = false }: { entry: PoolC
       })}
     </span>
     <span className={compact ? 'font-medium text-fg' : 'min-w-0 font-medium'}><CatalogueLabel text={entry.labels[0]} />/<CatalogueLabel text={entry.labels[1]} />
-      {!compact && <span className="dm-chip mt-1 flex w-fit font-sans font-medium">Uniswap · {entry.fee}</span>}
+      {/* The fee as every chip writes it (lib/format/fee.ts, audit E21); a phone keeps the fee and drops "Uniswap · ". */}
+      {!compact && (
+        <span className="dm-chip mt-1 flex w-fit font-sans font-medium">
+          <span className="dm-fee-venue">{FEE_VENUE_PREFIX}</span>
+          {feeWords(entry.fee)}
+        </span>
+      )}
     </span>
-    {compact && <span className="tnum">{entry.fee}</span>}
+    {compact && <span className="tnum">{feeWords(entry.fee)}</span>}
   </>
 }

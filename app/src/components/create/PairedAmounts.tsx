@@ -115,6 +115,11 @@ export function PairedAmounts({
 
   // No wallet: one line under both panels asks for one, instead of the same line in each (round 6, 2026-09-28: less on screen).
   const disconnected = balances.status === 'disconnected'
+  // The wallet cannot fund the amounts either way (audit E9, 2026-10-01): said as a warning, announced, tied to the typed
+  // field, and naming both tokens, since neither one alone nor both together cover it. Words only: Create position stays
+  // open (it looks for an earlier deposit first), and Review says the same with the amounts.
+  const short = plan !== null && plan.kind === 'short'
+  const shortId = 'create-amount-short'
 
   // Each amount's raw units, for its USD line: the typed one once it is a real amount, the other once the range pairs one with it.
   const rawOf = (side: 0 | 1): string | null => (side === independent ? (budget.ok ? budget.raw : null) : other && other.kind === 'amount' ? other.raw : null)
@@ -161,6 +166,7 @@ export function PairedAmounts({
                   disabled={unreadable}
                   onChange={(event) => (mine ? onBudget(event.target.value) : onDeposit(choice, event.target.value))}
                   error={mine && state.budget !== '' && !budget.ok ? budget.reason : unreadable ? CREATE.amount.pairUnreadable : null}
+                  {...(mine && short ? { 'aria-invalid': true, 'aria-describedby': shortId } : {})}
                   usd={usd !== null ? <UsdText value={usd} /> : undefined}
                   below={shown.note ? <p className="dm-hint">{shown.note}</p> : null}
                   footer={
@@ -223,8 +229,8 @@ export function PairedAmounts({
         </p>
       )}
       {plan && plan.kind === 'short' && (
-        <p className="dm-flow-position" data-tone="neutral" data-amount-short={plan.token}>
-          {CREATE.amount.short}
+        <p id={shortId} role="status" className="dm-flow-position" data-tone="warn" data-amount-short={plan.token}>
+          {CREATE.amount.shortOf(pool.currencies[plan.token].symbol ?? '', pool.currencies[plan.token === 0 ? 1 : 0].symbol ?? '')}
         </p>
       )}
     </div>

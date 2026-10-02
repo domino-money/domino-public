@@ -28,6 +28,8 @@ execFileSync(
     'tests/domain.test.mjs',
     'tests/load-timing.test.mjs',
     'tests/gate.test.mjs',
+    // 2026-10-01 (platform workstream): an open tab across a release, the browser's copies, the kept formatters and the boot script.
+    'tests/platform.test.mjs',
     'tests/read.test.mjs',
     'tests/read-estimate.test.mjs',
     'tests/read-public.test.mjs',
@@ -37,8 +39,18 @@ execFileSync(
     'tests/backend-contract.test.mjs',
     'tests/build-guard.test.mjs',
     'tests/forwarder.test.mjs',
+    'tests/edge-client.test.mjs',
+    // 2026-10-01 (RPC-SPEC §2.10): Domino's own node from the edge (functions/_lib/localRpc.ts), and the six chain routes over it.
+    'tests/local-rpc.test.mjs',
+    'tests/chain-routes.test.mjs',
     // 2026-09-26: the featured pools list's route, its 60-second edge cache and what it may answer from it (featured-pools v1 §10.6).
     'tests/featured-edge.test.mjs',
+    // 2026-10-01 (audit A6, A7 b, A14, B1, F7, I3): the list served at once under 5 min, its evidence line, misses coalesced,
+    // the stored overview kept when settled, and DEX Screener through our own edge.
+    'tests/edge-cache.test.mjs',
+    // 2026-10-01 (audit V1, V2, V3, I1, I2, B1-B3, A7, A22, I3): stand-in figures, a token's pools from both sources,
+    // look-alikes, the featured list's count and withdrawals, and the client's side of the edge.
+    'tests/markets-pacote.test.mjs',
     'tests/owned.test.mjs',
     // 2026-09-24: the wallet's Domino positions from chain replace owned-positions (v1 list, row reads, browser memory).
     'tests/wallet-positions.test.mjs',
@@ -46,6 +58,10 @@ execFileSync(
     'tests/automation-state.test.mjs',
     // 2026-09-27: what the automation did for a position (its vault's executions and fees, and the card's figures).
     'tests/automation-impact.test.mjs',
+    // RPC-SPEC (UNIT positions): the wallet feature's reads (none served, but a batch's simulation over its fixed route),
+    // and a position page's row from the read gateway while the site's chain routes cannot answer.
+    'tests/wallet-reads.test.mjs',
+    'tests/gateway-row.test.mjs',
     // 2026-09-28 (hotfix): the chain RPC's eth_getLogs limits, and the fees history's reads inside them.
     'tests/rpc-log-limits.test.mjs',
     'tests/release.test.mjs',
@@ -57,6 +73,10 @@ execFileSync(
     'tests/session.privateQuery.test.mjs',
     'tests/session.forwarder.test.mjs',
     'tests/session.source-guard.test.mjs',
+    // 2026-10-01: wallet compatibility quirks (the audit's C1-C16 and H5), as pure functions.
+    'tests/wallet-compat.test.mjs',
+    // 2026-10-01: a sequence's wallet steps against a slow signer, a refusing Ledger and a reload (the audit's C8 and C2).
+    'tests/sequence-sign-window.test.mjs',
     'tests/screens.test.mjs',
     'tests/range-price-input.test.mjs',
     'tests/picker-presentation.test.mjs',
@@ -80,6 +100,8 @@ execFileSync(
     // 2026-09-27: a position's Activity rows, and the automation's only where its vault's record names it.
     'tests/position-activity.test.mjs',
     'tests/docs.test.mjs',
+    // 2026-10-01 (audit H6): the words the docs and Create position's copy keep out, on the text inside components too.
+    'tests/screen-words.test.mjs',
     'tests/price-series.test.mjs',
     'tests/price-series-recovery.test.mjs',
     'tests/pool-history.test.mjs',
@@ -120,26 +142,25 @@ execFileSync(
     // 2026-09-24: V2 foundation, the pure number, USD, time and chart geometry helpers (lib/format, lib/chart).
     'tests/format.test.mjs',
     'tests/chart-geometry.test.mjs',
-    // 2026-09-24 (P6): the fees history, its relay, its pins and its store (DESIGN-V2 §15.7, R-11).
-    'tests/fees-replay.test.mjs',
+    // 2026-09-24 (P6): a position's fees, its state route, its pins and its store (DESIGN-V2 §15.7, R-11).
     'tests/fees-relay.test.mjs',
     'tests/fees-topics.test.mjs',
     'tests/fees-store.test.mjs',
     'tests/fees-history-cache.test.mjs',
     'tests/fees-cache-store.test.mjs',
     'tests/fees-freshness.test.mjs',
-    'tests/fees-checkpoint-recovery.test.mjs',
-    'tests/fees-initialize-recovery.test.mjs',
-    'tests/fees-worker-correlation.test.mjs',
-    'tests/apr-prefetch-queue.test.mjs',
-    // 2026-09-25: the price path (a busy pool's position from the Swaps of its own life), its estimate and its two reads.
-    'tests/fees-path.test.mjs',
-    // 2026-09-25: the fees worker's paced lane to the public RPC, and the reads that share it with the page.
+    // 2026-10-02 (RPC-SPEC §11.4, rugged97's rule 2): the fees history is the position's own ledger (the edge's route, and
+    // the page's fold of it with the chain's state and this browser's readings), in place of the replay of its pool's logs.
+    'tests/fees-ledger.test.mjs',
+    'tests/fees-ledger-fold.test.mjs',
+    // 2026-10-02 (the owner: the chart's 24H / 7D / 30D / All went missing): the periods back, each from a measured start,
+    // and the page's reads of a position at chosen past blocks that give a start the history lacks (lib/fees/pastReads.ts).
+    'tests/fees-periods.test.mjs',
+    'tests/fees-past-reads.test.mjs',
+    // 2026-09-25: the fees worker's lane and the page's shared state reads; since 2026-10-01 (RPC-SPEC) through the site's
+    // own routes. The page's router to the public RPC, its fallbacks and the list's hold on the lanes (chain-priority,
+    // rpc-failover) went with the public RPC.
     'tests/chain-lane.test.mjs',
-    // 2026-09-28: the list's read goes first: it holds every lane for the whole of it, and a refusal rests them all.
-    'tests/chain-priority.test.mjs',
-    // 2026-09-28: the page's fallbacks while the chain's own RPC cannot be reached (a large ISP's DNS answers NXDOMAIN for it).
-    'tests/rpc-failover.test.mjs',
     // 2026-09-24 (P5): the guided creation's successor axis, per-field reasons and the Automate fee meter's rates (DESIGN-V2 §14, R-13, R-18).
     'tests/automate-successor.test.mjs',
     // 2026-09-24: the automation page's position picker (the wallet's open positions, a link's preselection, what each option shows).
@@ -148,6 +169,32 @@ execFileSync(
     'tests/wallet-holdings.test.mjs',
     // 2026-09-25: closeBrowser, which every browser suite closes Chrome with (on macOS its pipes outlive it).
     'tests/close-browser.test.mjs',
+    // 2026-10-01 (chain2 workstream, part A, G3-G12; folded in by the package's integrator, until then
+    // scripts/test-chain2.mjs): the chain registry, the chain-parameterized client and CSP lists, chain-scoped storage
+    // keys, the EIP-6963 picker, the Elysium v3 adapter, service client, New position flow, receipts and screens' words,
+    // rugged97's vendored v3 runtimes, and the /uniswap-v3/ edge route's rules (not routed yet). The live smoke test
+    // against Elysium Testnet's public RPC (tests/elysium-live.mjs) is not here: it reaches the network, and runs on
+    // demand with `node tests/elysium-live.mjs`.
+    'tests/chain-registry.test.mjs',
+    'tests/chain-csp.test.mjs',
+    'tests/chain-client.test.mjs',
+    'tests/chain-storage.test.mjs',
+    'tests/chain-eip6963.test.mjs',
+    'tests/elysium-contracts.test.mjs',
+    'tests/elysium-api.test.mjs',
+    'tests/elysium-chain.test.mjs',
+    'tests/elysium-math.test.mjs',
+    'tests/elysium-adapter.test.mjs',
+    'tests/elysium-flow.test.mjs',
+    'tests/elysium-receipts.test.mjs',
+    'tests/elysium-present.test.mjs',
+    'tests/elysium-guards.test.mjs',
+    // 2026-10-01 (the chain2 workstream, part B): the section's closed wallet signer and its one network call.
+    'tests/elysium-signer.test.mjs',
+    'tests/elysium-transport.test.mjs',
+    // 2026-10-01 (the chain2 workstream, part B, G7): the Robinhood v4 ChainAdapter over the page's own reads.
+    'tests/chain-adapters.test.mjs',
+    'tests/uniswap-v3-edge.test.mjs',
   ],
   { stdio: 'inherit' },
 );

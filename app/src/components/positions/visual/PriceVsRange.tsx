@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useMemo } from 'react'
-import type { ReactNode } from 'react'
 import { XAxis } from '../../charts/Axis'
 import { ChartFrame, type Plot } from '../../charts/ChartFrame'
 import { ChartTooltip, ChartTooltipRow } from '../../charts/ChartTooltip'
@@ -8,20 +7,13 @@ import { Pill } from '../../ui'
 import { TokenLabel } from '../../read/TokenLabel'
 import { logScale } from '../../../lib/chart/scale'
 import { nearestIndex } from '../../../lib/chart/inspect'
-import type { FeeDisplayState, FeeHistoryView, HourlyPrices } from '../../../lib/fees/types'
-import { useFeeHistory } from '../../../lib/fees/useFeeHistory'
-import { shortAmount } from '../../../lib/format/amount'
-import { group } from '../../../lib/format/decimal'
-import { priceFromSqrtIn } from '../../../lib/format/price'
+import type { FeeDisplayState } from '../../../lib/fees/types'
 import { shortDate, shortTime } from '../../../lib/format/time'
-import { priceInverted } from '../../../lib/read/orientation'
 import { shownCardRange, shownCardTick, type CardPoolPrice } from '../../../lib/read/screens/positions'
 import type { TokenDisplay } from '../../../lib/read/types'
 import type { LiveCard } from '../../../lib/walletCards'
 import { useMediaQuery } from '../../../lib/useMediaQuery'
 import { dateTicks } from './ticks'
-
-const HOUR = 3_600
 
 /**
  * One point of the pool's price: the close at `t`, the app's one way round (lib/read/orientation.ts: its priced token
@@ -39,63 +31,17 @@ export interface PriceSeries {
   /** The index where the known hours stop and only the current price follows (an unfinished history); -1 when continuous. */
   gapAt: number
   state: FeeDisplayState
-  /** Presentation qualification only; a retained or estimated series never promotes its fees history. */
-  quality: 'verified' | 'estimated' | 'cached' | 'partial'
-}
-
-/** A price at most six significant digits, grouped, nothing rounded up (`407.278`, `0.00245312`). */
-function priceText(decimal: string): string {
-  const [whole, fraction = ''] = decimal.split('.')
-  return shortAmount(`${group(whole)}.${fraction}`).short
+  /** Presentation qualification only. */
+  quality: 'verified' | 'cached' | 'partial'
 }
 
 
 /**
- * The pool's hourly closes since the mint as a line the chart can draw (a
- * module helper: bigint square roots become plain numbers here, for geometry
- * only). An hour with no swap did not move the price, so the line holds flat
- * through it and moves inside the hour that traded. When the history is not
- * verified, the closes stop where the replay stopped: the current price then
- * stands alone at the end, never joined to them.
+ * Changed on purpose 2026-10-02 (RPC-SPEC §11.4, rugged97's rule 2: never a pool's whole history): the pool's hourly
+ * closes since the mint came from the fees replay's reads of the pool's Swaps, which are gone; a position's page draws
+ * its range, its ends and the price now (the page's own read) with no line, and the legend names no line. `series` stays
+ * for a later source of the pool's prices (none today).
  */
-function priceSeries(prices: HourlyPrices, state: FeeDisplayState, quality: PriceSeries['quality']): PriceSeries | null {
-  const [c0, c1] = state.currencies
-  if (c0.decimals === null || c1.decimals === null || prices.hours.length === 0) return null
-  const d0 = c0.decimals
-  const d1 = c1.decimals
-  const inverted = priceInverted(c0.address, c1.address)
-  const point = (t: number, sqrt: bigint, tick: number): PricePoint => {
-    const decimal = priceFromSqrtIn(sqrt, d0, d1, inverted)
-    return { t, price: Number(decimal), text: priceText(decimal), inRange: tick >= state.tickLower && tick < state.tickUpper }
-  }
-  const points: PricePoint[] = []
-  for (const hour of prices.hours) {
-    const previous = points[points.length - 1]
-    // Flat through the quiet hours, then the traded hour's move.
-    if (previous && hour.t - HOUR > previous.t) points.push({ ...previous, t: hour.t - HOUR })
-    points.push(point(hour.t, hour.sqrtPriceX96Close, hour.tickClose))
-  }
-  const last = points[points.length - 1]
-  const now = point(state.timestamp, state.sqrtPriceX96, state.tick)
-  let gapAt = -1
-  if (now.t > last.t) {
-    if (quality === 'verified' || quality === 'cached') {
-      if (now.t - HOUR > last.t) points.push({ ...last, t: now.t - HOUR })
-    } else gapAt = points.length
-    points.push(now)
-  }
-  return { points, gapAt, state, quality }
-}
-
-/** The price line of a position's pool, when its fees history has read one (§12.1); null otherwise. */
-export function usePriceSeries(tokenId: string | null): PriceSeries | null {
-  const view: FeeHistoryView = useFeeHistory(tokenId, 'page')
-  return useMemo(() => {
-    if (view.phase === 'verified' || view.phase === 'estimated' || view.phase === 'cached') return priceSeries(view.prices, view.state, view.phase)
-    if (view.phase === 'unclaimed-only' && view.prices) return priceSeries(view.prices, view.state, 'partial')
-    return null
-  }, [view])
-}
 
 /** Where the price is against the range, in the words the card writes above the chart; a closed position earns nothing wherever it is. */
 type Where = 'inside' | 'under' | 'over' | 'closed'
@@ -195,12 +141,16 @@ const CHIP_ROOM = 20
  * history arrives. The price now and the range's ends are the key figures' own texts ("350.55"; nothing at 0 or ∞), and
  * an end whose edge lies beyond the plot is not labelled (the band runs to the edge).
  */
-export function PriceVsRange({ series }: { series: PriceSeries | null; unit?: ReactNode }) {
+export function PriceVsRange({ series, missing = false }: { series: PriceSeries | null; missing?: boolean }) {
   const facts = useContext(RangeFactsContext)
-  return facts ? <PriceChart facts={facts} series={series} /> : null
+  return facts ? <PriceChart facts={facts} series={series} missing={missing} /> : null
 }
 
-function PriceChart({ facts, series }: { facts: RangeFacts; series: PriceSeries | null }) {
+/**
+ * `missing` (2026-10-01, item A13): the position's history could not be drawn, so no line will come: the legend says so
+ * in place of the line's key, which it shows only beside a line.
+ */
+function PriceChart({ facts, series, missing }: { facts: RangeFacts; series: PriceSeries | null; missing: boolean }) {
   const { base, quote, lower, upper, lowerText, upperText, now, nowText, where } = facts
   const phone = useMediaQuery('(max-width: 767px)')
   // Only the same snapshot may share the header's current-price text. A retained line keeps its real endpoint:
@@ -373,10 +323,18 @@ function PriceChart({ facts, series }: { facts: RangeFacts; series: PriceSeries 
           <span aria-hidden="true" className="dm-pvr-swatch" />
           Your range
         </span>
-        <span className="dm-pvr-key" data-key="price">
-          <span aria-hidden="true" className="dm-pvr-swatch" />
-          Price
-        </span>
+        {drawn ? (
+          <span className="dm-pvr-key" data-key="price">
+            <span aria-hidden="true" className="dm-pvr-swatch" />
+            Price
+          </span>
+        ) : (
+          missing && (
+            <span className="dm-pvr-key" data-key="no-price">
+              Price history isn’t available yet
+            </span>
+          )
+        )}
         <span className="dm-pvr-unit">
           Prices in <TokenLabel token={quote} /> for 1 <TokenLabel token={base} />
         </span>

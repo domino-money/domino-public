@@ -11,8 +11,8 @@ export const SHOTS = {
   'new-amount': { width: 1672, height: 1592, phone: { width: 780, height: 1484 }, alt: 'New position, step 3: how much of each token goes in, beside the wallet’s balance of each, with the slippage tolerance under Advanced.' },
   'new-review': { width: 1672, height: 2156, phone: { width: 780, height: 2172 }, alt: 'New position, step 4: the review lists every choice, the steps your wallet asks you to sign, and the Create position button.' },
   'positions': { width: 1672, height: 824, phone: { width: 780, height: 972 }, alt: 'Positions: your positions, one row each, with its pair, whether the price is in range, its value, its fees ready to collect, its own APR and how its fees are used.' },
-  'position': { width: 1672, height: 1143, phone: { width: 780, height: 1373 }, alt: 'A position’s page: the pair and its state, its buttons, then what the position is worth, its fees ready to collect, its own APR and the price against its range.' },
-  'automate': { width: 1672, height: 1306, phone: { width: 780, height: 1098 }, alt: 'Auto-compound on the Automate page: what it does, its service fee of 2% of the earned fees it uses, and its Set up Auto-compound button.' },
+  'position': { width: 1672, height: 1032, phone: { width: 780, height: 1373 }, alt: 'A position’s page: the pair and its state, its buttons, then what the position is worth, its fees ready to collect, its own APR and the price against its range.' },
+  'automate': { width: 1672, height: 1306, phone: { width: 780, height: 1058 }, alt: 'Auto-compound on the Automate page: what it does, its service fee of 2% of the earned fees it uses, and its Set up Auto-compound button.' },
   'receipts': { width: 1672, height: 798, phone: { width: 780, height: 830 }, alt: 'The Receipts card on Positions, once you sign in: a short row for each time automation added a position’s fees back, with what it added back.' },
 } as const satisfies Record<string, Shot>
 

@@ -59,7 +59,9 @@ export function caseChain(id, { edit = (position) => position, quietProbe = fals
   const fixture = loadCase(id);
   const position = edit(structuredClone(fixture.state.positions[0]));
   const block = fixture.state.block;
-  const head = block + 2;
+  // Changed on purpose 2026-10-01 (fees item A21): the state read reads the head itself (its block ArbSys's), so the
+  // recorded state block is the head here, where it was the head's two blocks below.
+  const head = block;
   const seen = new Set();
   const all = [];
   for (const log of [...fixture.transfer, ...fixture.initialize, ...Object.values(fixture.pool).flat(), ...Object.values(fixture.swaps).flat(), ...Object.values(fixture.swapBefore).filter(Boolean)]) {
@@ -87,6 +89,8 @@ export function caseChain(id, { edit = (position) => position, quietProbe = fals
     }
     if (target === owned.POSITION_MANAGER) {
       const { functionName, args } = decodeFunctionData({ abi: positionManagerAbi, data });
+      // 2026-10-01 (fees item D5): the next id, past the recorded one.
+      if (functionName === 'nextTokenId') return ok(positionManagerAbi, functionName, BigInt(position.tokenId) + 1n);
       // 2026-09-25: the page reads each position's feature itself; nothing is subscribed to a recorded case.
       if (functionName === 'subscriber') return ok(positionManagerAbi, functionName, '0x0000000000000000000000000000000000000000');
       if (args[0] !== BigInt(position.tokenId)) return revert;

@@ -49,6 +49,8 @@ export const OWNED_PATH = '/api/owned/v2/positions';
  * RPC rate-limits Cloudflare's edge) and never asks this path or the fees
  * relay's: suites answer the RPC with tests/support/browser-chain.mjs. The
  * answers stay, as the routes do, for anything that still asks.
+ * RPC-SPEC Phase 0: the answer is the route's new envelope ({v, answer, automation, mints, capped}); the page asks this
+ * path again once the positions unit of the switch to Domino's own node lands.
  */
 async function noOwnedPositions(request) {
   let owner = null;
@@ -59,7 +61,7 @@ async function noOwnedPositions(request) {
     // An unreadable body is refused below.
   }
   if (request.method !== 'POST' || !owner) return Response.json({ error: 'invalid_request' }, { status: 400 });
-  return Response.json({ owner, block: 1, positions: [], deposits: [] });
+  return Response.json({ v: 1, answer: { owner, block: 1, positions: [], deposits: [] }, automation: { block: 1, positions: [] }, mints: [], capped: false });
 }
 
 /** Where a position's feature is asked (functions/api/automation/v1/state.ts; 2026-09-24, the three features). */
@@ -195,11 +197,8 @@ export function createWalletServer({ fake, gate = null, intercept, dist = WALLET
         if (response !== DROP && (response.headers.get('Content-Type') ?? '').includes('text/html')) {
           response = new Response(response.body, response);
           response.headers.set('Content-Security-Policy', middleware.APP_CSP);
-        } else if (response !== DROP && middleware.WORKER_PATH.test(new URL(request.url).pathname)) {
-          // 2026-09-25: the fees worker's own CSP, as production serves its file (it reads the chain's RPC itself).
-          response = new Response(response.body, response);
-          response.headers.set('Content-Security-Policy', middleware.WORKER_CSP);
         }
+        // Changed on purpose 2026-10-02 (RPC-SPEC §11.4): no fees worker any more, so no worker CSP to serve its file with.
       }
       if (response === DROP) {
         req.socket.destroy();

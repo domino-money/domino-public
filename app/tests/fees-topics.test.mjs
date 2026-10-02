@@ -18,13 +18,11 @@ const constants = require('../.test-build/app/src/lib/fees/constants.js');
 const fees = require('../.test-build/app/functions/_lib/fees.js');
 const owned = require('../.test-build/app/functions/_lib/owned.js');
 
+// Changed on purpose 2026-10-02 (RPC-SPEC §11.4, rugged97's rule 2): Initialize, Swap, Donate and ProtocolFeeUpdated, which only
+// the retired fees replay read, are no pins of the page or the edge any more.
 const EVENTS = {
   Transfer: 'Transfer(address indexed from, address indexed to, uint256 indexed id)',
-  Initialize: 'Initialize(bytes32 indexed id, address indexed currency0, address indexed currency1, uint24 fee, int24 tickSpacing, address hooks, uint160 sqrtPriceX96, int24 tick)',
   ModifyLiquidity: 'ModifyLiquidity(bytes32 indexed id, address indexed sender, int24 tickLower, int24 tickUpper, int256 liquidityDelta, bytes32 salt)',
-  Swap: 'Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)',
-  Donate: 'Donate(bytes32 indexed id, address indexed sender, uint256 amount0, uint256 amount1)',
-  ProtocolFeeUpdated: 'ProtocolFeeUpdated(bytes32 indexed id, uint24 protocolFee)',
 };
 
 const FUNCTIONS = {
@@ -38,6 +36,8 @@ const FUNCTIONS = {
   decimals: 'decimals()',
   getCurrentBlockTimestamp: 'getCurrentBlockTimestamp()',
   aggregate3: 'aggregate3((address,bool,bytes)[])',
+  // 2026-10-01: the point reads' mint search and a page's never-minted id (item D5).
+  nextTokenId: 'nextTokenId()',
 };
 
 test('every event topic is keccak256 of its v4 / ERC-721 signature, in both copies', () => {
@@ -73,29 +73,11 @@ test('the contracts are the V1 deployment profile’s and the finance pins, in e
   for (const address of [constants.POOL_MANAGER, constants.POSITION_MANAGER, constants.STATE_VIEW, constants.MULTICALL3]) assert.match(address, /^0x[0-9a-f]{40}$/);
 });
 
-test('the grid and the limits the relay and the client share are one set of numbers', () => {
-  assert.equal(constants.DAY_SPAN, 24 * constants.HOUR_SPAN);
-  assert.equal(constants.EPOCH_SPAN % constants.HOUR_SPAN, 0);
-  // 2026-09-25: and the probe's span, the page's cheap bound before a history.
-  for (const name of ['HOUR_SPAN', 'DAY_SPAN', 'EPOCH_SPAN', 'SAFE_DEPTH', 'PROBE_SPAN']) assert.equal(fees[name], constants[name], name);
-  assert.equal(fees.MAX_STATE_IDS, constants.MAX_STATE_IDS);
-  assert.equal(fees.MAX_DAYS, constants.MAX_DAYS_PER_REQUEST);
-  assert.equal(fees.MAX_HEADERS, constants.MAX_HEADERS_PER_REQUEST);
-  // Changed on purpose (2026-09-25): every byte is read by the visitor's own browser under the RPC's per-address limit.
-  assert.deepEqual(constants.BUDGET_BYTES, { page: 2 * 1024 * 1024, list: 1024 * 1024 });
-  // Changed on purpose (2026-09-25, later): the page's 30 s (one slow scan and the lane's rest after it took 11 s of 20).
-  assert.deepEqual(constants.BUDGET_MS, { page: 30_000, list: 10_000 });
-  assert.equal(constants.MAX_SWAP_DAYS, 30);
-  // 2026-09-25: the price path's reads (functions/_lib/feesPath.ts) and the pipeline that asks them share their limits.
-  const feesPath = require('../.test-build/app/functions/_lib/feesPath.js');
-  assert.equal(feesPath.SPAN_BLOCKS, constants.SPAN_BLOCKS_MAX);
-  assert.equal(feesPath.MAX_SPANS, constants.MAX_SPANS_PER_REQUEST);
-  assert.equal(feesPath.MAX_HOLDERS, constants.MAX_HOLDERS);
-  assert.equal(feesPath.SETTLE_SPAN, constants.MAX_SWAP_DAYS * constants.DAY_SPAN);
-  assert.ok(constants.SPAN_TARGET_BYTES * 1.5 * 1.6 < feesPath.SPAN_BYTES, 'a span that grew by half still fits a reply (the RPC’s JSON is about 1.6 times the compact bytes)');
-  // 2026-09-25 (review): the compact bytes of a reply at the worker's cap, which size the estimate's windows.
-  assert.equal(constants.SPAN_CAP_BYTES * 1.6, feesPath.SPAN_BYTES);
-  assert.ok(constants.SAMPLE_BATCH_BYTES * 2 <= constants.SPAN_CAP_BYTES);
+test('the limits the edge and the page share are one set of numbers', () => {
+  const ledger = require('../.test-build/app/functions/_lib/feesLedger.js');
+  for (const name of ['SAFE_DEPTH', 'MAX_STATE_IDS']) assert.equal(fees[name], constants[name], name);
+  assert.equal(ledger.MAX_LEDGER_IDS, constants.MAX_LEDGER_IDS);
+  assert.equal(ledger.MAX_LEDGER_IDS, fees.MAX_STATE_IDS, 'one ledger request, one state request: eight ids each');
 });
 
 test('a pool id is keccak256(abi.encode(PoolKey)), as viem encodes it', () => {

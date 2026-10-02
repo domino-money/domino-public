@@ -113,3 +113,47 @@ test('tokenHue: the first two bytes of the lower-cased address, modulo 360; 0 fo
   assert.equal(tokenHue('ETH'), 0);
   assert.equal(tokenHue('0x12'), 0);
 });
+
+// ---------------------------------------------------------------------------
+// 2026-10-01 (the copy workstream): one format for a fee tier and for an APR on every screen (audit E21), the edges of
+// a rate rounded first (audit E8), a position screen's dust in dollars (audit E7), and a network by its name (audit E6).
+// ---------------------------------------------------------------------------
+const { feeWords, feeChipText, FEE_VENUE_PREFIX } = require('../.test-build/app/src/lib/format/fee.js');
+const { aprDigits, aprDigitsOf, APR_SLIVER } = require('../.test-build/app/src/lib/format/apr.js');
+const { formatUsdFloor } = require('../.test-build/app/src/lib/format/usd.js');
+const { networkName } = require('../.test-build/app/src/lib/networkName.js');
+
+test('a fee tier reads one way everywhere: "0.30% fee", "Dynamic fee", and "Uniswap · " before it where the exchange is named', () => {
+  assert.equal(feeWords('0.30%'), '0.30% fee');
+  assert.equal(feeWords('0.005%'), '0.005% fee');
+  for (const dynamic of ['Dynamic', 'Dynamic fee', 'dynamic']) assert.equal(feeWords(dynamic), 'Dynamic fee', dynamic);
+  assert.equal(feeWords('Unknown fee'), 'Unknown fee', 'never "fee fee"');
+  assert.equal(feeChipText('1.00%'), 'Uniswap · 1.00% fee');
+  assert.equal(FEE_VENUE_PREFIX, 'Uniswap · ');
+});
+
+test('an APR reads by one rule everywhere: one decimal under 100%, whole percents from there, rounded before it is sized', () => {
+  const cases = [['27.18', '27.2'], ['10.95', '11.0'], ['99.94', '99.9'], ['99.95', '100'], ['99.96', '100'], ['181.25', '181'], ['1428.4', '1,428'], ['0', '0.0'], ['0.05', APR_SLIVER], ['0.000000000000000001', APR_SLIVER], ['0.06', '0.1']];
+  for (const [value, text] of cases) assert.equal(aprDigits(value), text, value);
+  assert.equal(aprDigits('not a number'), null);
+  const numbers = [[27.18, '27.2'], [99.96, '100'], [181.25, '181'], [1428.4, '1,428'], [0, '0.0'], [0.05, APR_SLIVER], [0.04, APR_SLIVER], [0.06, '0.1']];
+  for (const [value, text] of numbers) assert.equal(aprDigitsOf(value), text, String(value));
+  assert.equal(APR_SLIVER, '<0.1');
+});
+
+test('a position screen’s dollars: under a cent reads "<$0.01", never "$0.000005"; zero and the rest as formatUsd writes them', () => {
+  assert.equal(formatUsdFloor('0.000005'), '<$0.01');
+  assert.equal(formatUsdFloor('0.009999'), '<$0.01');
+  assert.equal(formatUsdFloor('0.01'), '$0.01');
+  assert.equal(formatUsdFloor('0.0100'), '$0.01');
+  assert.equal(formatUsdFloor('0'), '$0.00');
+  assert.equal(formatUsdFloor('0.000000000000000000'), '$0.00');
+  assert.equal(formatUsdFloor('1234.5'), '$1,234.50');
+  assert.equal(formatUsdFloor('-0.000005'), formatUsd('-0.000005'), 'a negative figure is not floored');
+  assert.equal(formatUsdFloor('n/a'), 'n/a', 'what is not a figure comes back as it came');
+});
+
+test('a wallet’s network by its name, and any other as "another network", never its number', () => {
+  assert.deepEqual([1, 8453, 42161, 10, 4663].map(networkName), ['Ethereum', 'Base', 'Arbitrum', 'OP Mainnet', 'Robinhood Chain']);
+  for (const other of [999_999, null, undefined, Number.NaN]) assert.equal(networkName(other), 'another network', String(other));
+});

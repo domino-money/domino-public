@@ -84,7 +84,9 @@ function productionClosures() {
   const assets = join(DIST, 'assets');
   const scripts = readdirSync(assets).filter((file) => file.endsWith('.js')).sort();
   const html = readFileSync(join(DIST, 'index.html'), 'utf8');
-  const entry = scripts.filter((file) => html.includes(file));
+  // Changed on purpose 2026-10-01 (platform workstream, F1/F4): the entry is the page's module script; the page also names
+  // its stable chunks and every route's files.
+  const entry = [...html.matchAll(/<script\b[^>]*\btype="module"[^>]*\bsrc="\/assets\/([^"]+)"/g)].map((match) => match[1]);
   const setup = scripts.filter((file) => file.startsWith('Setup-'));
   const amounts = scripts.filter((file) => file.startsWith('DepositAmounts-'));
   assert.equal(entry.length, 1);
@@ -140,11 +142,27 @@ function productionClosures() {
   const workers = scripts.filter((file) => /^feesReplay\.worker-/.test(file));
   // 2026-09-29: safe history resumption and correlated worker recovery measure 26,391 B gzip in both clean builds.
   // Match the explicitly measured 27 kB ceiling in session.bundle.test.mjs; no unclassified script is exempted.
-  for (const file of workers) assert.ok(gzipSync(readFileSync(join(assets, file)), { level: 9 }).length <= 27_000, `${file} is over its 27,000 B gzip ceiling`);
+  // 2026-10-01 (platform workstream, H4): 28 kB, the same ceiling as session.bundle.test.mjs (26,603 B measured, about 5%
+  // headroom).
+  // Changed on purpose (2026-10-01, the fees workstream): 38,000 B, the same ceiling as tests/session.bundle.test.mjs (the
+  // point reads on the archive nodes, with the replay as their fallback: 37,478 B measured on Windows in dist, 37,471 B in
+  // the wallet-test build; it was 26,517 B at main f6df054e).
+  // 2026-10-01 (the 2026-10 package, integration pass 2a): 40 kB, the same ceiling as session.bundle.test.mjs (37,487 B
+  // measured in both clean builds of the merged tree, about 5% headroom).
+  // 2026-10-01 (RPC-SPEC, re-measured at the integration): 28 kB, the same ceiling as session.bundle.test.mjs (the worker
+  // asks only the site's logs route and carries no chain code: 24,164 B measured in both clean builds).
+  // Changed on purpose 2026-10-02 (RPC-SPEC Section 11.4): the replay is gone, and its worker with it.
+  assert.deepEqual(workers, [], 'no fees worker');
   // 2026-09-25: the chain code the page runs (src/lib/chain/chainCode.ts: the routes' scan and relay reads, the RPC runtime,
   // Keccak), one chunk loaded by dynamic import on a page's first read of the chain, is an admitted root of its own
   // (tests/session.bundle.test.mjs measures it, with its own ceiling).
-  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|feesReplay\.worker|chainCode)-/.test(file));
+  // 2026-10-01 (platform workstream, F1): every screen but Home is a lazy root of its own, opened by its route (src/App.tsx).
+  // 2026-10-01 (audit C3): WalletConnect's client, a chunk of its own the wallet island opens by dynamic import only when
+  // the person picks WalletConnect, is an admitted root too (tests/session.bundle.test.mjs measures it, with its own
+  // ceiling, and keeps it out of the entry and the island's static closure).
+  // 2026-10-01 (the chain2 workstream, part B): the second chain's section, a chunk of its own that only its route opens
+  // (tests/session.bundle.test.mjs measures it, with its own ceiling).
+  const otherRoots = scripts.filter((file) => /^(index|WalletSessionIsland|PoolExplorer|TokenPicker|Sequence|Execution|Performance|DepositAmounts|OwnedPositions|PositionDetail|PositionActions|HeldDeposits|feesReplay\.worker|chainCode|Explore|PoolDetail|Positions|NewPosition|Automate|Docs|walletConnectProvider|ElysiumEntry)-/.test(file));
   const shared = reach([...entry, ...otherRoots]);
   const setupClosure = reach(setup);
   assert.ok(!shared.has(setup[0]), 'Setup must not be loaded statically by the entry or another screen');
@@ -163,7 +181,10 @@ function productionClosures() {
     if (node.type === 'CallExpression' && node.callee?.type === 'Import' && node.arguments[0]?.value === `./${file}`) return true;
     return Object.values(node).some((child) => (Array.isArray(child) ? child.some((item) => opens(item, file)) : opens(child, file)));
   };
-  assert.ok(opens(trees.get(entry[0]), amounts[0]), 'the entry opens Create position through a dynamic import');
+  // Changed on purpose 2026-10-01 (platform workstream, F1): New position is a chunk of its own, and its Review, in it,
+  // opens Create position; the entry no longer carries Review.
+  const openers = scripts.filter((file) => opens(trees.get(file), amounts[0]));
+  assert.ok(openers.length > 0 && openers.every((file) => !entryClosure.has(file)), `a lazy screen opens Create position through a dynamic import: ${openers.join(', ')}`);
   const onboardingAdmitted = new Set([...setupClosure, ...amountsClosure].filter((file) => !entryClosure.has(file)));
   const setupOnly = new Set([...setupClosure].filter((file) => !shared.has(file)));
   const sharedCodeAdmitted = new Set([...setupOnly, ...onboardingAdmitted]);
@@ -206,10 +227,12 @@ test('production excludes preview/deposit labs and confines the live deposit cli
   }
 });
 
-test('the default stylesheet loads nothing from elsewhere (BUN-2)', (t) => {
+test('the default stylesheets load nothing from elsewhere (BUN-2)', (t) => {
+  // Changed on purpose 2026-10-01 (platform workstream, F8): two stylesheets, the site's and the screens'
+  // (src/styles/screens.css), checked together.
   const css = readdirSync(join(DIST, 'assets')).filter((file) => file.endsWith('.css'));
-  assert.equal(css.length, 1);
-  const text = readFileSync(join(DIST, 'assets', css[0]), 'utf8');
+  assert.deepEqual(css.map((file) => file.split('-')[0]).sort(), ['index', 'screens']);
+  const text = css.map((file) => readFileSync(join(DIST, 'assets', file), 'utf8')).join('\n');
   // Changed on purpose 2026-09-28 (speed wave, item 35): the stylesheet now names the site's own fonts
   // (src/styles/fonts.css, until then Google Fonts' stylesheet in index.html), each a content-hashed woff2 file under
   // /assets/ that the build itself carries. Still nothing from elsewhere: no other url(), no host, no @import.
@@ -218,7 +241,7 @@ test('the default stylesheet loads nothing from elsewhere (BUN-2)', (t) => {
   assert.deepEqual(urls.filter((url) => !fonts.includes(url)), []);
   for (const url of new Set(fonts)) assert.ok(existsSync(join(DIST, url)), `${url} is in the build`);
   assert.ok(!/@import/.test(text));
-  t.diagnostic(`dist/assets/${css[0]}: ${Buffer.byteLength(text)} bytes`);
+  for (const file of css) t.diagnostic(`dist/assets/${file}: ${Buffer.byteLength(readFileSync(join(DIST, 'assets', file)))} bytes`);
 });
 
 /** The consumer chunks: the two lazy screens and every chunk only they reach. */

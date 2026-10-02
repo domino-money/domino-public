@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Page } from '../App'
 import { deferred } from './Deferred'
+import { recovering } from '../lib/staleRelease'
 import { Button } from './ui'
 import { BrandMark } from './BrandMark'
 import { WalletBoundary } from './wallet/WalletBoundary'
@@ -12,7 +13,9 @@ import { HeaderMenu, PRIMARY_NAV } from './HeaderMenu'
 // a re-export of it, so the bundler folds it for certain. 2026-09-28 (speed
 // wave B, item 24): drawn as soon as its chunk is in (Deferred.tsx), not
 // 300 ms after its fallback: it says who is connected, which Positions waits for.
-const WalletSession = __DOMINO_WALLET_SESSION__ ? deferred(() => import('./wallet/WalletSessionIsland')) : null
+// 2026-10-01 (D1): when a release replaced its file, the tab reloads once into the new release (lib/staleRelease.ts);
+// any other failure reaches WalletBoundary as before.
+const WalletSession = __DOMINO_WALLET_SESSION__ ? deferred(recovering(() => import('./wallet/WalletSessionIsland'), (error: unknown): never => { throw error })) : null
 const LocalWallet = __DOMINO_LOCAL_LIVE__ ? lazy(() => import('./wallet/LocalWalletIsland')) : null
 
 /** Shown while the feature loads, or if it fails to. */

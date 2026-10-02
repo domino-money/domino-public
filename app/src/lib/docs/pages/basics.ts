@@ -56,7 +56,8 @@ export const RANGES: DocPage = {
       title: 'A band of prices',
       blocks: [
         p('A position provides liquidity between a lowest and a highest price: its range. You choose it when you open the position.'),
-        p('A price here is the pool’s own price between its two tokens, such as 2,500 USDG per ETH, not a dollar price.'),
+        // 2026-10-01 (audit E21): as every screen writes a price.
+        p('A price here is the pool’s own price between its two tokens, such as 1 ETH = 2,500 USDG, not a dollar price.'),
       ],
     },
     {
@@ -68,7 +69,17 @@ export const RANGES: DocPage = {
       id: 'out-of-range',
       title: 'Out of range',
       blocks: [
-        p('Outside its range a position holds only one of its two tokens: the one that lost value against the other. It earns no trading fees until the price comes back into range.'),
+        // Changed on purpose 2026-10-01 (audit E13): which token, by side.
+        p('Outside its range a position holds only one of its two tokens. In an ETH/USDG pool, above the range it holds only USDG; below it, only ETH. It earns no trading fees until the price comes back into range.'),
+      ],
+    },
+    {
+      // 2026-10-01 (audit E13): one-sided ranges (lib/create/journey.ts takesOnly).
+      id: 'one-sided',
+      title: 'A range beside the price',
+      blocks: [
+        p('A range can sit wholly above or below today’s price. One above starts with only the token being priced, such as ETH, and sells it as the price climbs through the range. One below starts with only the other, such as USDG, and buys as the price falls into it.'),
+        p('Either earns once the price enters it, and New position asks for that one token only.'),
       ],
     },
     {
@@ -107,7 +118,11 @@ export const EARNED_FEES: DocPage = {
     {
       id: 'where-fees-come-from',
       title: 'Where fees come from',
-      blocks: [p('Every swap through a pool pays the pool’s fee tier. A position that is in range when the swap happens earns a share of that fee.')],
+      blocks: [
+        p('Every swap through a pool pays the pool’s fee tier. A position that is in range when the swap happens earns a share of that fee.'),
+        // Who sees it is on Privacy (item I4). RPC-SPEC §11.4.
+        p('A position’s page adds up its fees from the chain: those paid out each time they were collected or compounded, read from its own records, and those ready to collect now. Its chart shows measured moments, including about a day and a week ago. Some positions’ Fees earned can’t be measured, such as one whose liquidity changed after it opened; Fees ready to collect is always exact. See ', doc('who sees those reads', 'privacy', 'who-sees'), '.'),
+      ],
     },
     {
       id: 'unsettled-fees',
@@ -133,7 +148,7 @@ export const EARNED_FEES: DocPage = {
         list(
           [b('Plain position'), ': fees wait in the position until you collect them.'],
           [doc('Auto-compound', 'auto-compound'), ': fees go back into the same position.'],
-          [doc('Domino-compound', 'domino-compounder'), ': near the top of the range, fees open the next position one step higher.'],
+          [doc('Domino-compound', 'domino-compound'), ': near the top of the range, fees open the next position one step higher.'],
         ),
         p('You choose once the position exists, when Create position finishes or later from Automate; automation starts only with its own wallet transactions. Collecting a position’s fees or closing it stops its automation.'),
       ],

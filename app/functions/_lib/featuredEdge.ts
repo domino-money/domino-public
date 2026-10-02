@@ -44,9 +44,25 @@
  * The runtime comes in as `contract`, so this module compiles for node --test
  * without it (tsconfig.test.json); functions/api/read/v5/featured-pools.ts
  * hands in the real one.
+ *
+ * Changed 2026-10-01 (audit A6, the owner's OK): a kept list younger than
+ * WAIT_AFTER_SECONDS (5 minutes) is served at once once it is past its 60
+ * seconds, while the request that found it refreshes it behind; only an older
+ * one waits up to REFRESH_WAIT_MS for that refresh, as #280 made every stale
+ * one wait. The list is chosen once a day: a visitor who came after a quiet
+ * minute waited 0.55 to 1.0 s for nothing (simulated on the compiled Function).
+ *
+ * Added 2026-10-01 (audit B1): evidence of when and why the list loses slots
+ * during the day, without asking anyone. Whenever a valid answer passes with a
+ * listId or revision this isolate has not seen, one JSON line goes to the
+ * Function's log (`wrangler pages deployment tail`): the list, its status, how
+ * many pools it names against the size its rules ask for, every withdrawn pool
+ * with its reason and time, and when it was served. Nothing else is logged, and
+ * nothing about a visitor.
  */
 import { APP_ORIGIN, type BridgeEnv } from './bridge'
 import { answerFromEdge, type EdgeCache, type EdgeRuntime } from './publicEdge'
+import { ROBINHOOD_ID } from '../../src/config/chainIdentity'
 
 export type { EdgeCache } from './publicEdge'
 
@@ -62,6 +78,10 @@ export interface FeaturedContract {
 export interface FeaturedRuntime extends EdgeRuntime {
   contract: FeaturedContract
   cache: EdgeCache | null
+  /** Where the list's evidence line goes (B1): console.log unless a test gives its own. */
+  log?: (line: string) => void
+  /** The last list this isolate logged, `listId#revision`: this module's own unless a test gives one. */
+  logged?: { last: string | null }
 }
 
 export const FEATURED_PATH = '/api/read/v5/featured-pools'
@@ -71,9 +91,56 @@ export const LIST_SECONDS = 60
 export const STALE_SECONDS = 15 * 60
 /** Below the browser's 1.5 s featured deadline; does not add a gateway read. */
 export const REFRESH_WAIT_MS = 1_000
+/** A kept list at least this old waits REFRESH_WAIT_MS for its refresh; a younger one is served at once (A6, 2026-10-01). */
+export const WAIT_AFTER_SECONDS = 5 * 60
 
-/** The synthetic GET is scoped to the validated app origin: preview never reads or replaces production entries. */
-export const cacheKey = (version: string, origin = APP_ORIGIN) => `${origin}/api/read/v5/cache/${encodeURIComponent(version)}/featured-pools`
+/**
+ * The synthetic GET is scoped to the validated app origin: preview never reads or replaces production entries.
+ * Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G10): and to the chain the list is of
+ * (Robinhood Chain's: read-v5's featured pools are its), so no other chain's list can ever be served from it. Entries
+ * kept under the key before are never read again and lapse within their 15 minutes.
+ */
+export const cacheKey = (version: string, origin = APP_ORIGIN, chainId: number = ROBINHOOD_ID) => `${origin}/api/read/v5/cache/${chainId}/${encodeURIComponent(version)}/featured-pools`
+
+const LOGGED: { last: string | null } = { last: null }
+
+interface ListShape {
+  status?: unknown
+  listId?: unknown
+  revision?: unknown
+  servedAt?: unknown
+  rules?: { size?: unknown } | null
+  pools?: unknown[]
+  withdrawn?: Array<{ poolId?: unknown; reason?: unknown; at?: unknown }>
+}
+
+/**
+ * The evidence line for a valid answer (B1), or null when this isolate has logged the same listId and revision
+ * already. Pool ids are cut to their first eight digits: enough to tell them apart in a tail.
+ */
+export function featuredEvidence(text: string, version: string, logged: { last: string | null }): string | null {
+  let list: ListShape
+  try {
+    list = JSON.parse(text) as ListShape
+  } catch {
+    return null
+  }
+  const id = `${String(list.listId ?? null)}#${String(list.revision ?? null)}`
+  if (logged.last === id) return null
+  logged.last = id
+  const short = (poolId: unknown) => (typeof poolId === 'string' ? poolId.slice(0, 10) : null)
+  return JSON.stringify({
+    event: 'featured_list',
+    contract: version,
+    listId: list.listId ?? null,
+    revision: list.revision ?? null,
+    status: list.status ?? null,
+    pools: Array.isArray(list.pools) ? list.pools.length : null,
+    size: list.rules && typeof list.rules === 'object' ? (list.rules.size ?? null) : null,
+    withdrawn: Array.isArray(list.withdrawn) ? list.withdrawn.map((entry) => [short(entry.poolId), entry.reason ?? null, entry.at ?? null]) : [],
+    servedAt: list.servedAt ?? null,
+  })
+}
 
 export function answerFeatured(request: Request, env: BridgeEnv, rt: FeaturedRuntime): Promise<Response> {
   const { contract } = rt
@@ -84,6 +151,7 @@ export function answerFeatured(request: Request, env: BridgeEnv, rt: FeaturedRun
       return false
     }
   }
+  const log = rt.log ?? ((line: string) => console.log(line))
   return answerFromEdge(request, env, rt, {
     path: FEATURED_PATH,
     version: contract.CONTRACT_VERSION,
@@ -93,5 +161,10 @@ export function answerFeatured(request: Request, env: BridgeEnv, rt: FeaturedRun
     freshSeconds: LIST_SECONDS,
     staleSeconds: STALE_SECONDS,
     refreshWaitMs: REFRESH_WAIT_MS,
+    waitAfterSeconds: WAIT_AFTER_SECONDS,
+    onAnswer: (text, version) => {
+      const line = featuredEvidence(text, version, rt.logged ?? LOGGED)
+      if (line !== null) log(line)
+    },
   })
 }

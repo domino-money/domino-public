@@ -21,3 +21,11 @@ test('sequence release never accepts a mutation, query, navigation or cross-site
   assert.equal(setupRelease(req('/api/setup/v1/sequence-release',{'Origin':'https://evil.invalid'}),env(d)).status,403);
   assert.equal(setupRelease(req('/api/setup/v1/sequence-release',{'Sec-Fetch-Mode':'navigate'}),env(d)).status,403);
 });
+// 2026-10-01 (audit C13): the same as the setup profile for a browser that sends no Fetch Metadata (iOS before 16.4).
+test('sequence release reaches a browser without Fetch Metadata, and still refuses a present foreign value',async()=>{
+  const response=setupRelease(new Request('https://domino.money/api/setup/v1/sequence-release'),env(d));
+  assert.equal(response.status,200);assert.deepEqual((await response.json()).deployment,d);
+  for(const headers of [{'Sec-Fetch-Site':'cross-site'},{'Sec-Fetch-Mode':'navigate'},{'Sec-Fetch-Dest':'document'},{'Sec-Fetch-User':'?1'},{Origin:'https://evil.invalid'}]){
+    assert.equal(setupRelease(new Request('https://domino.money/api/setup/v1/sequence-release',{headers}),env(d)).status,403,JSON.stringify(headers));
+  }
+});

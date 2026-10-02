@@ -1,5 +1,8 @@
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../styles/screens.css'
 import { useEffect, useState } from 'react'
 import { CREATE } from '../lib/create/copy'
+import { useRouteTitle } from '../lib/routeTitle'
 import { useCreated } from '../lib/create/createProgress'
 import { SlotBoundary, SlotFailed } from '../lib/read/screens/slots'
 import { PageHeader, PageShell } from '../components/ui'
@@ -46,6 +49,8 @@ function useFlowKey(): number {
  * it leaves the rest of the page working and says so.
  */
 export function NewPosition({ poolId }: { poolId: string }) {
+  // The tab's name (lib/routeTitle.ts, audit E11).
+  useRouteTitle(CREATE.page.title)
   const flow = useFlowKey()
   const linkToken = parseNewHash(useHash()).token
   if (!SlotBoundary || !SlotFailed) return <Journey key={flow} poolId={poolId} linkToken={linkToken} />

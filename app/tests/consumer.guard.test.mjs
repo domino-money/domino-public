@@ -134,8 +134,10 @@ test('GUARD-5: the consumer is reached only through the two flag-gated lab scree
   }
   assert.deepEqual(offenders, ['App.tsx: ./screens/LivePreview', 'App.tsx: ./screens/Deposits']);
   const app = byPath('App.tsx').code;
-  assert.match(app, /__DOMINO_ONBOARDING_PREVIEW__\s*\?\s*lazy\(\(\)\s*=>\s*import\('\.\/screens\/LivePreview'\)/);
-  assert.match(app, /__DOMINO_DEPOSIT_LAB__\s*\?\s*lazy\(\(\)\s*=>\s*import\('\.\/screens\/Deposits'\)/);
+  // Changed on purpose 2026-10-01 (platform workstream, D1): the loader may be wrapped in recovering() (lib/staleRelease.ts), which
+  // reloads the tab once into a newer release when the chunk's file is gone; the import inside is the same, behind the same flag.
+  assert.match(app, /__DOMINO_ONBOARDING_PREVIEW__\s*\?\s*lazy\((?:recovering\()?\(\)\s*=>\s*import\('\.\/screens\/LivePreview'\)/);
+  assert.match(app, /__DOMINO_DEPOSIT_LAB__\s*\?\s*lazy\((?:recovering\()?\(\)\s*=>\s*import\('\.\/screens\/Deposits'\)/);
 
   const importersOf = (wanted) =>
     ALL.filter(({ path, code }) => specifiers(code).some((spec) => spec.startsWith('.') && target(path, spec) === wanted)).map(({ path }) => path);

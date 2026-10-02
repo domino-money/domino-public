@@ -184,9 +184,12 @@ test('quotePool says why the quoter refused, and lets any other failure through'
   // The second size refused: the pool fills one and not the other, so it cannot say where the swap ends.
   const edge = chain({ quote: amount => (amount > 100_000n ? { code: 3, message: 'execution reverted', data: NOT_ENOUGH } : 7n) });
   assert.deepEqual(await edge.client.quotePool(KEY, true, 100_000n, 1_000n), { kind: 'refused', reason: 'not_enough_liquidity' });
-  for (const thrown of [{ code: 4001, message: 'User rejected the request.' }, { code: 429, message: 'Too Many Requests' }, new Error('wallet_disconnected')]) {
+  for (const thrown of [{ code: 4001, message: 'User rejected the request.' }, new Error('wallet_disconnected')]) {
     await assert.rejects(refusal(thrown), (error) => error === thrown, 'not a revert: it propagates, and the caller deposits nothing');
   }
+  // 2026-10-01 (audit C6): a wallet whose RPC refuses the read is said as itself, with the wallet's error kept beside it.
+  const limited = { code: 429, message: 'Too Many Requests' };
+  await assert.rejects(refusal(limited), (error) => error.message === 'wallet_rpc_unreachable' && error.cause === limited, 'not a revert either: it propagates, and the caller deposits nothing');
   for (const [net, step] of [[0n, 1_000n], [1_000n, 0n], [2n ** 128n - 1n, 1n], [-1n, 1_000n]]) {
     await assert.rejects(chain().client.quotePool(KEY, true, net, step), /invalid_swap_budget/);
   }

@@ -8,6 +8,8 @@
  * simulated wallet context, but never handed to a wallet: this build has no
  * wallet handoff (deposit/handoff.ts), and the page has no Send control.
  */
+// The screens' own styles (styles/screens.css, F8): loaded with the first screen that needs them, never on Home's first paint.
+import '../styles/screens.css'
 import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react'
 import { createDepositClient } from '../deposit/client'
 import { DEPOSIT_RUNTIME } from '../deposit/contract'

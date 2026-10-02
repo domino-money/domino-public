@@ -28,6 +28,7 @@ import type {
 } from 'api-contracts/read-v1/types'
 import type { PoolAprEstimate } from 'api-contracts/read-v2/types'
 import { carriedHistory } from './chart'
+import { ROBINHOOD_ID, ROBINHOOD_NATIVE_ADDRESS, ROBINHOOD_USDG, ROBINHOOD_WETH } from '../../config/chainIdentity'
 import { formatUnits, formatUsdCompact, isZero, parseDecimal, toFixed } from './decimal'
 import { reasonText } from './describe'
 import type { ArtworkKey, EstimateReason, Observation, ReadOutcome, ReadRoute, TokenDisplay } from './types'
@@ -61,7 +62,8 @@ export interface FamilyView {
   freshness: string[]
 }
 
-const CHAIN = 4663 as const
+// Changed on purpose 2026-10-01 (the chain2 workstream, part B, audit item G3): the chain registry's id and addresses.
+const CHAIN = ROBINHOOD_ID
 const lower = (value: string) => value.toLowerCase()
 export const identityKey = (id: string) => `${CHAIN}:${lower(id)}`
 export const shortId = (id: string) => (id.length > 14 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id)
@@ -72,9 +74,9 @@ export const shortId = (id: string) => (id.length > 14 ? `${id.slice(0, 6)}…${
  * not token admission or a verification badge. Symbols never select artwork.
  */
 const ARTWORK_BY_ADDRESS: Readonly<Record<string, ArtworkKey>> = {
-  '0x0000000000000000000000000000000000000000': 'ETH',
-  '0x0bd7d308f8e1639fab988df18a8011f41eacad73': 'WETH',
-  '0x5fc5360d0400a0fd4f2af552add042d716f1d168': 'USDG',
+  [ROBINHOOD_NATIVE_ADDRESS]: 'ETH',
+  [ROBINHOOD_WETH]: 'WETH',
+  [ROBINHOOD_USDG]: 'USDG',
   '0xab35d04e1ee39c789c4a65d522417b3c7f2e4723': 'MARLIN',
 }
 
@@ -703,6 +705,9 @@ function projectRow(input: RowInput): Market {
     tokens: { base, quote },
     feePips: pool.poolKey.feeMode === 'fixed' ? pool.poolKey.fee_pips : null,
     protocol: 'v4',
+    integration: pool.integrationClass,
+    hooks: lower(pool.poolKey.hooks),
+    protocolFeeRaw: pool.protocolFeeRaw,
     tvlUsd: figure(metrics, m, (v) => v.tvlUsd, (data) => data.reportedLiquidityUsd),
     volume24hUsd: figure(metrics, m, (v) => v.grossInputVolumeUsd, (data) => data.volume24hUsd),
 

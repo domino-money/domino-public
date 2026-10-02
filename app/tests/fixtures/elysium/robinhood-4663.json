@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "id": "robinhood-4663",
+  "chainId": 4663,
+  "name": "Robinhood Chain",
+  "network": "mainnet",
+  "parentChainId": 1,
+  "nativeCurrency": {
+    "name": "Ether",
+    "symbol": "ETH",
+    "decimals": 18
+  },
+  "wrappedNative": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+  "stableTokens": [
+    "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+  ],
+  "explorerUrl": "https://robinhoodchain.blockscout.com",
+  "publicRpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+  "protocolDeploymentId": "robinhood-v4",
+  "nitro": {
+    "minimumArbOS": 40,
+    "arbSys": "0x0000000000000000000000000000000000000064",
+    "nodeInterface": "0x00000000000000000000000000000000000000c8",
+    "blockHashWindow": 256
+  },
+  "finality": {
+    "maxFinalizedLagSeconds": 1800
+  },
+  "gas": {
+    "wallet": {
+      "priorityFeePerGasWei": "0",
+      "maxGas": "8000000",
+      "floorMaxFeePerGasWei": "10000000"
+    },
+    "operator": {
+      "priorityFeePerGasWei": "1"
+    },
+    "publisher": {
+      "priorityFeePerGasWei": "1"
+    }
+  },
+  "windows": {
+    "mode": "legacy-blocks",
+    "liveWindowSeconds": 86400,
+    "retentionBlocks": 86400,
+    "localStateBlocks": 15000
+  },
+  "providers": {
+    "inventory": "alchemy",
+    "marketChain": "robinhood",
+    "uniswapApi": true
+  },
+  "web": {
+    "origin": "https://domino.money"
+  }
+}

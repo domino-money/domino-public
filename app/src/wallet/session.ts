@@ -5,7 +5,9 @@ import { sessionRuntime } from '../session/contract'
 import { createSessionController, HIDDEN_STAGGER_MS, type Snapshot } from '../session/controller'
 import { clearPrivate, privateQueryClient, storePrivate } from '../session/privateQuery'
 import { probeReads } from '../session/testProbe'
+import type { WalletIdentity } from '../session/machine'
 import { signLoginMessage, startIdentityFeed } from './port'
+import { installWellFormed } from './wellFormed'
 
 /**
  * The page's one session controller.
@@ -71,10 +73,19 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', () => sessionController.wake())
 
 // The contract runtime validates messages with String#isWellFormed (Chrome
-// 111, Safari 16.4, Firefox 119). Older browsers get an explicit state rather
-// than an exception in the middle of a sign-in.
-if (!('isWellFormed' in String.prototype)) sessionController.dispatch({ type: 'unsupported_browser' })
-else startIdentityFeed((identity) => sessionController.dispatch({ type: 'identity', identity }))
+// 111, Safari 16.4, Firefox 119). Changed on purpose 2026-10-01 (audit C12):
+// older engines get the specification's own methods (./wellFormed.ts), so the
+// wallet connects and its positions show there too; only where they cannot be
+// installed does the sign-in alone say the browser is too old, and the wallet
+// still connects (the identity feed starts either way).
+if (!installWellFormed()) sessionController.dispatch({ type: 'unsupported_browser' })
+// Test builds only: the kind of the first identity the feed reported (2026-10-01, fix round 1, audit C5): "unknown"
+// while a wallet may still reconnect, never a false "disconnected".
+let firstIdentity: WalletIdentity['kind'] | null = null
+startIdentityFeed((identity) => {
+  if (__DOMINO_TEST_HOOKS__ && firstIdentity === null) firstIdentity = identity.kind
+  sessionController.dispatch({ type: 'identity', identity })
+})
 
 // Test builds only: lets the browser tests see which private data exists. Only
 // queries that hold data or are fetching count; a disabled query with nothing
@@ -103,6 +114,7 @@ if (__DOMINO_TEST_HOOKS__) {
       resolvePrivateReads: (match: string, value: string) => probeReads.resolve(match, value),
       privateReads: () => probeReads.log(),
       view: () => sessionController.getSnapshot().view,
+      firstIdentity: () => firstIdentity,
       // True from a dispatch until its response is applied: what a clock jump
       // must not land inside (tests/support/clock.mjs).
       busy: () => sessionController.getSnapshot().busy,

@@ -95,16 +95,23 @@ test('the real source factory paces only local-live at 10.1 s; deployed reads go
   }
 })
 
-// Added 2026-09-28 (speed wave, item 10): only the deployable build's page loads public/early-list.js, which sends the
-// featured list's read before the app starts; a test build's page reads no list, or reads it from a test's own service.
-test('only the deployable build loads the early list script, before the app’s own', async () => {
+// Added 2026-09-28 (speed wave, item 10): only the deployable build's page sends the featured list's read before the
+// app starts; a test build's page reads no list, or reads it from a test's own service. Changed on purpose 2026-10-01
+// (platform workstream, F1/F3): every build's page carries the same inline boot script (its CSP hash is one), before
+// the app's own, and the table beside it says whether to send (`early`, deployable builds only) and which code each
+// route asks for (none here: the dev server and this check have no bundle).
+test('every build carries the same boot script before the app’s own, and only the deployable build sends the early reads', async () => {
+  const { BOOT_SCRIPT } = await import('../functions/_lib/boot.ts')
   const html = '<head>\n    <script type="module" crossorigin src="/assets/index-abc.js"></script>\n  </head>'
   for (const mode of ['production', 'development', 'fixtures', 'bridge-test', 'wallet-test', 'consumer-test']) {
     const config = await resolveConfig({ root, configFile, mode, logLevel: 'silent' }, 'build')
-    const plugin = config.plugins.find((entry) => entry.name === 'domino:early-list')
+    const plugin = config.plugins.find((entry) => entry.name === 'domino:boot')
     const hook = typeof plugin.transformIndexHtml === 'function' ? plugin.transformIndexHtml : plugin.transformIndexHtml.handler
-    const out = hook(html)
-    if (['production', 'development'].includes(mode)) assert.equal(out, html.replace('<script type="module"', '<script async src="/early-list.js"></script>\n    <script type="module"'), mode)
-    else assert.equal(out, html, mode)
+    const out = hook(html, { filename: 'index.html' })
+    const data = JSON.parse(/<script type="application\/json" id="dm-boot">(.*?)<\/script>/.exec(out)[1])
+    assert.equal(data.early, ['production', 'development'].includes(mode), mode)
+    assert.deepEqual(data.chunks, {}, mode)
+    assert.equal(out.indexOf(`<script>${BOOT_SCRIPT}</script>`) > 0 && out.indexOf(`<script>${BOOT_SCRIPT}</script>`) < out.indexOf('<script type="module"'), true, `${mode}: the boot script, before the app's own`)
+    assert.equal(hook(html, { filename: 'read-lab.html' }), html, `${mode}: the read lab's page carries none`)
   }
 })

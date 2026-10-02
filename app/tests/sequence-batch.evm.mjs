@@ -132,7 +132,10 @@ failSimulation = true;
 await assert.rejects(client.prepareCreateBatch(options, gas), /batch_simulation_reverted/, 'a call the simulation says fails'); check();
 const pendingNonce = String(BigInt(await rpc('eth_getTransactionCount', [owner, 'pending'])));
 claims.set(pendingNonce, pendingNonce);
-await assert.rejects(client.prepareCreateBatch(options, gas), /pending_wallet_transaction/, 'a transaction already offered at the next nonce'); check();
+// Changed on purpose 2026-10-02 (package C2 nonce latch): a nonce offered to the wallet while the chain shows nothing pending
+// is a request still open in the wallet, `wallet_request_open` (sequence.ts freeNonce); `pending_wallet_transaction` now
+// means only a transaction pending on chain. Either way nothing is prepared or sent.
+await assert.rejects(client.prepareCreateBatch(options, gas), /wallet_request_open/, 'a transaction already offered at the next nonce'); check();
 claims.delete(pendingNonce);
 // A review is sent only acknowledged, in time, and with no transaction offered since.
 const unsent = await client.prepareCreateBatch(options, gas);
@@ -141,7 +144,8 @@ now = unsent.expiresAt;
 await assert.rejects(client.sendCreateBatch(unsent, true), /review_required/, 'expired'); check();
 now = f.now;
 claims.set(pendingNonce, pendingNonce);
-await assert.rejects(client.sendCreateBatch(unsent, true), /pending_wallet_transaction/, 'a transaction offered since the review'); check();
+// Changed on purpose 2026-10-02 (package C2 nonce latch): the same open request, met at the send.
+await assert.rejects(client.sendCreateBatch(unsent, true), /wallet_request_open/, 'a transaction offered since the review'); check();
 claims.delete(pendingNonce);
 assert.equal(wallet.batchOffered(unsent.sequenceId), null, 'refused before any latch'); check();
 // Another wallet, or the review's end, while the latch was being claimed: it is freed, and the wallet is asked nothing.
