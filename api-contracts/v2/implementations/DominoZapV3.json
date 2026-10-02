@@ -1,0 +1,581 @@
+{
+  "source": "contracts/src/v2/zap/DominoZapV3.sol",
+  "eventTopics": {
+    "FeeCharged(uint8,address,address,uint256,bytes32)": "0x9a37304a80e9ccbeef339119cc8e57118bbbf4ba4b01df2a1ef6a0dc843a7bca",
+    "FeeDeferred(address,uint256,uint256)": "0xf48e46df15f5fe31c1c79e6219014406d25e1f90301334682c98267482a8221b",
+    "InputPulled(bytes32,address,address,uint256)": "0xc9ee6073c7a83985d230183c509eada6d701370f470716bde0c37568a49711ad",
+    "NoncesInvalidated(address,uint256,uint256)": "0x41a696ce0dbffb78931eef7ecfa24d3ab6270c8a321cc6564df24b38f16c4e4f",
+    "OwedFeesFlushed(address,address,uint256)": "0x6d038b6b9cd7d27cc87517022a03a7025b2cc67e2dc7f0b97f572824cee6bfbb",
+    "PositionActionExecuted(uint8,address,uint256,uint256,uint128,bytes32)": "0xa7c6a820069d8f01991283e8f527fa1678590447c17064fd43148892d2863a92",
+    "PositionLiquidityChanged(bytes32,address,uint256,(uint8,address,address,uint24,int24,address),int256,int256,int256)": "0xf6a97c0d2054864127258f1e392259b35bdb4e5360f3f78285bf30675b4b8b9a",
+    "Refunded(address,address,uint256)": "0xec1e5ed733e00f1a00915d56caef57b4f52312dde4f9b3165f213319a0da156b",
+    "SwapLegExecuted(uint8,address,address,address,uint256,uint256)": "0x60154ef230959d31cc953d02fea179f08acb4195f22d3ac43bc9ce7219c0cf31"
+  },
+  "errorSelectors": {
+    "ApprovalFailed(address)": "0xe5a0a42f",
+    "FeeMismatch()": "0x36a9d011",
+    "FeeNotBacked(address)": "0x6ce78f60",
+    "FeeRecipientUnavailable()": "0x9989eadf",
+    "FeeTransferMismatch(address)": "0xaa22b734",
+    "InsufficientLiquidity()": "0xbb55fd27",
+    "InsufficientLiquidity(uint128,uint128)": "0xe49b763d",
+    "InvalidFeeConfig()": "0x5601467a",
+    "InvalidPlan()": "0x21f24259",
+    "InvalidPool()": "0x2083cd40",
+    "InvalidRange(int24,int24,int24)": "0x00911c16",
+    "InvalidRecipient(address)": "0x17858bbe",
+    "InvalidRouteConfig()": "0x6c8e15aa",
+    "InvalidSignature()": "0x8baa579f",
+    "ManagerMismatch()": "0x274c4ebb",
+    "NonceUsed(address,uint256)": "0x2af71f10",
+    "PartialBurn(uint256,uint128,uint128)": "0xa97bba2b",
+    "PlanExpired()": "0x059e8997",
+    "PositionPoolMismatch(uint256)": "0xf71fd589",
+    "ReentrantCall()": "0x37ed32e8",
+    "SwapEffectMismatch()": "0x374aa3d7",
+    "TokenCallFailed(address)": "0xfecb69b4",
+    "Unauthorized()": "0x82b42900"
+  },
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "payer",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "ref",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FeeCharged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "totalOwed",
+          "type": "uint256"
+        }
+      ],
+      "name": "FeeDeferred",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "intentHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "InputPulled",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "word",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "mask",
+          "type": "uint256"
+        }
+      ],
+      "name": "NoncesInvalidated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "OwedFeesFlushed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "action",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "previousTokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint128",
+          "name": "liquidity",
+          "type": "uint128"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "intentHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "PositionActionExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "intentHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "components": [
+            {
+              "internalType": "uint8",
+              "name": "dex",
+              "type": "uint8"
+            },
+            {
+              "internalType": "address",
+              "name": "currency0",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "currency1",
+              "type": "address"
+            },
+            {
+              "internalType": "uint24",
+              "name": "fee",
+              "type": "uint24"
+            },
+            {
+              "internalType": "int24",
+              "name": "tickSpacing",
+              "type": "int24"
+            },
+            {
+              "internalType": "address",
+              "name": "hooks",
+              "type": "address"
+            }
+          ],
+          "indexed": false,
+          "internalType": "struct DominoV2Types.PoolRef",
+          "name": "pool",
+          "type": "tuple"
+        },
+        {
+          "indexed": false,
+          "internalType": "int256",
+          "name": "liquidityDelta",
+          "type": "int256"
+        },
+        {
+          "indexed": false,
+          "internalType": "int256",
+          "name": "amount0",
+          "type": "int256"
+        },
+        {
+          "indexed": false,
+          "internalType": "int256",
+          "name": "amount1",
+          "type": "int256"
+        }
+      ],
+      "name": "PositionLiquidityChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "Refunded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "venue",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        }
+      ],
+      "name": "SwapLegExecuted",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "ApprovalFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "FeeMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "FeeNotBacked",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "FeeRecipientUnavailable",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "FeeTransferMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InsufficientLiquidity",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint128",
+          "name": "liquidity",
+          "type": "uint128"
+        },
+        {
+          "internalType": "uint128",
+          "name": "minimum",
+          "type": "uint128"
+        }
+      ],
+      "name": "InsufficientLiquidity",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidFeeConfig",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidPlan",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidPool",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "int24",
+          "name": "tickLower",
+          "type": "int24"
+        },
+        {
+          "internalType": "int24",
+          "name": "tickUpper",
+          "type": "int24"
+        },
+        {
+          "internalType": "int24",
+          "name": "tickSpacing",
+          "type": "int24"
+        }
+      ],
+      "name": "InvalidRange",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        }
+      ],
+      "name": "InvalidRecipient",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidRouteConfig",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidSignature",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ManagerMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        }
+      ],
+      "name": "NonceUsed",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint128",
+          "name": "liquidity",
+          "type": "uint128"
+        },
+        {
+          "internalType": "uint128",
+          "name": "positionLiquidity",
+          "type": "uint128"
+        }
+      ],
+      "name": "PartialBurn",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "PlanExpired",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "PositionPoolMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ReentrantCall",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SwapEffectMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "TokenCallFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Unauthorized",
+      "type": "error"
+    }
+  ]
+}

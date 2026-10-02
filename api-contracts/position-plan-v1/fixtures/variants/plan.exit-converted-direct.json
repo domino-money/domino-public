@@ -1,0 +1,261 @@
+{
+  "contractVersion": "1.0.0-rc.2",
+  "plan": {
+    "action": "exit",
+    "block": {
+      "hash": "0xa4e0eda7d418a804fef94c3282601d53ee8d88131c7e7689bc2a2d4cf09e225e",
+      "number": "48",
+      "timestamp": "1790964619"
+    },
+    "call": {
+      "data": "0xda5951bb0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000040000000000000000000000005fc8d32690cc91d4c39d9d3abcbd16989f875707000000000000000000000000cf7ed3acca5a467e9e704c703e8d87f634fb0fc90000000000000000000000000000000000000000000000000000000000000bb8000000000000000000000000000000000000000000000000000000000000003c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb5000000000000000000000000000000000000000000000000000000000000004b00000000000000000000000000000000000000000000000ba271eb9de0998702800000000000000000000000000000000000000000000000000000000000000410000000000000000000000005fc8d32690cc91d4c39d9d3abcbd16989f87570708ff77941f4992926e9a0805900ab5cd9d920a2092f99f4f1427ee31ef299985000000000000000000000000694ce54c908ffd4d997be279d8cb91c00651e2a60000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006abff4b80000000000000000000000000000000000000000000000ba271eb9de0998702800000000000000000000000000000000000000000000000a60dd0df392f23c7a00000000000000000000000000000000000000000000000a5f52d487babcedf000000000000000000000000000000000000000000000000000000000000002c000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000000000000000000000000000000cf7ed3acca5a467e9e704c703e8d87f634fb0fc90000000000000000000000005fc8d32690cc91d4c39d9d3abcbd16989f87570700000000000000000000000000000000000000000000000a5f52d487babcedf000000000000000000000000000000000000000000000000a4a1f7b93028434d200000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000040000000000000000000000005fc8d32690cc91d4c39d9d3abcbd16989f875707000000000000000000000000cf7ed3acca5a467e9e704c703e8d87f634fb0fc90000000000000000000000000000000000000000000000000000000000000bb8000000000000000000000000000000000000000000000000000000000000003c0000000000000000000000000000000000000000000000000000000000000000",
+      "function": "exit",
+      "selector": "0xda5951bb",
+      "to": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+      "valueRaw": "0"
+    },
+    "chainId": 8453,
+    "consent": "direct",
+    "deadline": "1790964920",
+    "expected": {
+      "amount0Raw": "0",
+      "amount1Raw": "0",
+      "fees0Raw": "0",
+      "fees1Raw": "0",
+      "liquidity": "0",
+      "principal0Raw": "199999999999999999999",
+      "principal1Raw": "199931682416481573765",
+      "returned": [
+        {
+          "amountRaw": "389522420727254279354",
+          "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+        },
+        {
+          "amountRaw": "8595455618274012565",
+          "token": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9"
+        }
+      ],
+      "sqrtPriceX96After": "79228884994449508816555387319"
+    },
+    "expiresAt": 1790964800,
+    "fee": {
+      "amountRaw": "1239955445120435647",
+      "basisRaw": "190762376172374715002",
+      "bps": 65,
+      "place": "output",
+      "ranks": [
+        {
+          "rank": 0,
+          "token": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9"
+        },
+        {
+          "rank": 1,
+          "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+        }
+      ],
+      "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+    },
+    "initialPrice": null,
+    "intentHash": "0xc1f87d06f46de4e3408d84e59be5b302a25beba44a1776752a1fd8916388acd4",
+    "l1DataFee": {
+      "block": "48",
+      "l1GasUnits": null,
+      "l2BaseFeeWei": null,
+      "source": "op_gas_price_oracle",
+      "status": "ok",
+      "transactionBytes": 1365,
+      "upperBoundWeiRaw": "32251998515",
+      "weiRaw": "8713929557"
+    },
+    "legs": [
+      {
+        "amountInRaw": "191336226798207561200",
+        "expectedOutRaw": "190762376172374715002",
+        "kind": "v4_pool",
+        "minAmountOutRaw": "189808564291512841426",
+        "pools": [
+          {
+            "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+            "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+            "dex": 4,
+            "fee": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "id": "0xf486671ac05a5da27a2d20250816d2d5fff5ad458cc67dc94029e2e1e944910d",
+            "tickSpacing": 60
+          }
+        ],
+        "priceImpactPercent": null,
+        "source": "local_simulation",
+        "tokenIn": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+        "tokenOut": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+      }
+    ],
+    "minimums": {
+      "amount0RemovedRaw": "191447191074383215738",
+      "amount1RemovedRaw": "191336226798207561200",
+      "liquidity": "3433913292490051973160",
+      "mintBand": null,
+      "removalBand": {
+        "lowerSqrtPriceX96": "79029057754995025247963020191",
+        "upperSqrtPriceX96": "79425195864923482909566142329"
+      },
+      "slippageBps": 50
+    },
+    "owner": "0x694ce54c908ffd4d997be279d8cb91c00651e2a6",
+    "pool": {
+      "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+      "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+      "dex": 4,
+      "fee": 3000,
+      "hooks": "0x0000000000000000000000000000000000000000",
+      "id": "0xf486671ac05a5da27a2d20250816d2d5fff5ad458cc67dc94029e2e1e944910d",
+      "initialized": true,
+      "liquidity": "10008577514670174862052234",
+      "sqrtPriceX96": "79227374397438533532026687261",
+      "swapFeePips": {
+        "oneForZero": 3000,
+        "zeroForOne": 3000
+      },
+      "tick": -1,
+      "tickSpacing": 60
+    },
+    "position": {
+      "approved": "0x0000000000000000000000000000000000000000",
+      "feesOwed0Raw": "0",
+      "feesOwed1Raw": "0",
+      "inRange": true,
+      "liquidity": "3433913292490051973160",
+      "liquidityToRemove": "3433913292490051973160",
+      "manager": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+      "subscriber": "0x0000000000000000000000000000000000000000",
+      "tickLower": -1200,
+      "tickUpper": 1200,
+      "tokenId": "7"
+    },
+    "readiness": {
+      "account": {
+        "consents": [
+          "direct",
+          "relayed"
+        ],
+        "delegate": null,
+        "kind": "eoa"
+      },
+      "approvals": [],
+      "balances": [],
+      "nonce": null,
+      "positionApproval": {
+        "approved": "0x0000000000000000000000000000000000000000",
+        "approvedForAll": false,
+        "manager": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+        "sufficient": false,
+        "tokenId": "7"
+      },
+      "steps": [
+        {
+          "data": "0x095ea7b300000000000000000000000032fcd37f60b76d6e40918da29a99886189a842950000000000000000000000000000000000000000000000000000000000000007",
+          "kind": "approve_position",
+          "to": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+          "valueRaw": "0"
+        },
+        {
+          "data": null,
+          "kind": "send_action",
+          "to": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+          "valueRaw": "0"
+        }
+      ]
+    },
+    "request": {
+      "action": "exit",
+      "burn": true,
+      "chainId": 8453,
+      "consent": "direct",
+      "initialPrice": null,
+      "inputs": null,
+      "liquidityToRemove": "all",
+      "owner": "0x694ce54c908ffd4d997be279d8cb91c00651e2a6",
+      "pool": null,
+      "position": {
+        "dex": 4,
+        "tokenId": "7"
+      },
+      "receive": {
+        "mode": "converted",
+        "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+      },
+      "slippageBps": 50,
+      "tickLower": null,
+      "tickUpper": null
+    },
+    "requestFingerprint": "d9f03d3bcfaf7863ef1827dbb166ba97df9f351e4a6e01a8eb81cab62a569ee7",
+    "requestedAt": 1790964620,
+    "retrievedAt": 1790964620,
+    "routesHash": "0x08ff77941f4992926e9a0805900ab5cd9d920a2092f99f4f1427ee31ef299985",
+    "routing": {
+      "advantageBps": 10,
+      "router": {
+        "reason": null,
+        "status": "not_configured"
+      }
+    },
+    "schemaVersion": 1,
+    "signature": null,
+    "simulation": {
+      "error": null,
+      "gasUnits": "318231",
+      "method": "eth_simulateV1",
+      "reason": null,
+      "result": {
+        "amount0": "199999999999999999999",
+        "amount1": "199931682416481573765",
+        "feeAmount": "1239955445120435647",
+        "feeToken": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+        "liquidity": "3433913292490051973160",
+        "tokenId": "7"
+      },
+      "status": "ok"
+    },
+    "source": "position_plan_v1",
+    "warnings": [],
+    "zap": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+    "zapPlan": {
+      "amount0MinRemoved": "191447191074383215738",
+      "amount1MinRemoved": "191336226798207561200",
+      "burn": true,
+      "intent": {
+        "action": 4,
+        "deadline": "1790964920",
+        "feeBps": 65,
+        "feeToken": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+        "minLiquidity": "3433913292490051973160",
+        "nonce": "0",
+        "pool": {
+          "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+          "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+          "dex": 4,
+          "fee": 3000,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "tickSpacing": 60
+        },
+        "recipient": "0x694ce54c908ffd4d997be279d8cb91c00651e2a6",
+        "routesHash": "0x08ff77941f4992926e9a0805900ab5cd9d920a2092f99f4f1427ee31ef299985",
+        "tickLower": -1200,
+        "tickUpper": 1200,
+        "tokenId": "7"
+      },
+      "legs": [
+        {
+          "amountIn": "191336226798207561200",
+          "data": "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000040000000000000000000000005fc8d32690cc91d4c39d9d3abcbd16989f875707000000000000000000000000cf7ed3acca5a467e9e704c703e8d87f634fb0fc90000000000000000000000000000000000000000000000000000000000000bb8000000000000000000000000000000000000000000000000000000000000003c0000000000000000000000000000000000000000000000000000000000000000",
+          "kind": 3,
+          "minAmountOut": "189808564291512841426",
+          "router": "0x0000000000000000000000000000000000000000",
+          "tokenIn": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+          "tokenOut": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+        }
+      ],
+      "liquidityToRemove": "3433913292490051973160"
+    }
+  }
+}

@@ -1,0 +1,281 @@
+{
+  "source": "contracts/src/v2/registry/DominoRegistry.sol",
+  "eventTopics": {
+    "AutomationHaltSet(bool)": "0x9ae08ca173da8b6e688ebf836373e2ff5c9941136f6265c3ed9f4a7bf896592d",
+    "ChangeCancelled(bytes32)": "0xef2393afd41f32c607a123de95d703349edd33ea1d86af21535ea8040ec7d984",
+    "ChangeExecuted(bytes32,bytes32,bytes)": "0xb2ab228a2014e9c5487d76df97d12f873781fc88c0341d8cbe91b5f9333598e6",
+    "ChangeScheduled(bytes32,bytes32,bytes,uint64)": "0x352fd8f669209040d0f93ad57f2e2832e27f0abfc4f63f3f65ee4328b409564d",
+    "ChargeCurrencySet(address,uint8)": "0xfae1ca406daf14aea29964a68352ce26d26506ee411be2435b1e50954b52c5b1",
+    "FeeRecipientSet(address)": "0xbf9a9534339a9d6b81696e05dcfb614b7dc518a31d48be3cfb757988381fb323",
+    "GovernanceTransferred(address,address)": "0x5f56bee8cffbe9a78652a74a60705edede02af10b0bbb888ca44b79a0d42ce80",
+    "GovernanceTransferStarted(address,address)": "0x1c4bb4e3cab7b72da7eb9f0ae62554dda85dc7fb907c946ad2776095b95ac1ad",
+    "GuardianChanged(address,address)": "0xa14fc14d8620a708a896fd11392a235647d99385500a295f0d7da2a258b2e967",
+    "ObservationEpochRaised(uint64)": "0x7a4f85b6404c1a32824534c85a1faae95f797484e8dbd9062bd43ea1371c5033",
+    "OperatorSet(address,bool)": "0x1a594081ae893ab78e67d9b9e843547318164322d32c65369d78a96172d9dc8f",
+    "PublisherSet(address,bool)": "0x7caa8f8f06897e1155bc1f07edd62aa5b0c96ea5f16f620688d633a9769ff4b8",
+    "RouterSet(address,uint16)": "0x0393cf2dc8b3f641b589711fac2cb626358249e85967634808d44105dcec9279"
+  },
+  "errorSelectors": {
+    "ChangeNotReady()": "0x06cde084",
+    "InvalidChange()": "0x17879689",
+    "Unauthorized()": "0x82b42900"
+  },
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "halted",
+          "type": "bool"
+        }
+      ],
+      "name": "AutomationHaltSet",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "id",
+          "type": "bytes32"
+        }
+      ],
+      "name": "ChangeCancelled",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "id",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "kind",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes",
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "name": "ChangeExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "id",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "kind",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes",
+          "name": "data",
+          "type": "bytes"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "executableAt",
+          "type": "uint64"
+        }
+      ],
+      "name": "ChangeScheduled",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint8",
+          "name": "rank",
+          "type": "uint8"
+        }
+      ],
+      "name": "ChargeCurrencySet",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        }
+      ],
+      "name": "FeeRecipientSet",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "previous",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "current",
+          "type": "address"
+        }
+      ],
+      "name": "GovernanceTransferred",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "current",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "pending",
+          "type": "address"
+        }
+      ],
+      "name": "GovernanceTransferStarted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "previous",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "current",
+          "type": "address"
+        }
+      ],
+      "name": "GuardianChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "epoch",
+          "type": "uint64"
+        }
+      ],
+      "name": "ObservationEpochRaised",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "operator",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "allowed",
+          "type": "bool"
+        }
+      ],
+      "name": "OperatorSet",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "publisher",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "allowed",
+          "type": "bool"
+        }
+      ],
+      "name": "PublisherSet",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "router",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint16",
+          "name": "version",
+          "type": "uint16"
+        }
+      ],
+      "name": "RouterSet",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "ChangeNotReady",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidChange",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Unauthorized",
+      "type": "error"
+    }
+  ]
+}

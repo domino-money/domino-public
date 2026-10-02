@@ -1,0 +1,509 @@
+{
+  "source": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+  "eventTopics": {
+    "Claimed(address,address,address,uint256)": "0x913c992353dc81b7a8ba31496c484e9b6306bd2f6c509a649a38fdf5e1c953b2",
+    "DeliveryDeferred(address,address,uint256,uint256)": "0x38d51fb4fcfb84a8786be0e74a8148eafb6409a3744a41c9f546136d2b0b99e5",
+    "FeeCharged(uint8,address,address,uint256,bytes32)": "0x9a37304a80e9ccbeef339119cc8e57118bbbf4ba4b01df2a1ef6a0dc843a7bca",
+    "FeeDeferred(address,uint256,uint256)": "0xf48e46df15f5fe31c1c79e6219014406d25e1f90301334682c98267482a8221b",
+    "MandateExecuted(bytes32,uint160,address,uint256,uint256)": "0x229a9757dd7caa6183bf76b07d099da52d4a938bf8a98d551843c9947661942c",
+    "MandateRegistered(bytes32,address,address,uint256,uint64)": "0xcbc0a17f5efb2e23ff743df02762b7d9b015265e5b1da6593b3ca271678f3481",
+    "MandateRevoked(bytes32)": "0x31c289dd93001fcacb63a0874240a9d06870135458e9be63e0463f46edf663fa",
+    "NonceCancelled(address,uint256)": "0x26ccf9904b9b2fb069d347553978928fd2fc65efb2638dcbeb8d142e974479f0",
+    "OwedFeesFlushed(address,address,uint256)": "0x6d038b6b9cd7d27cc87517022a03a7025b2cc67e2dc7f0b97f572824cee6bfbb",
+    "SwapLegExecuted(uint8,address,address,address,uint256,uint256)": "0x60154ef230959d31cc953d02fea179f08acb4195f22d3ac43bc9ce7219c0cf31"
+  },
+  "errorSelectors": {
+    "AutomationHalted()": "0x8d37598c",
+    "BelowMinimum()": "0x860b82a9",
+    "DeliveryMismatch(address)": "0xf0de72c3",
+    "ExitModuleNotEnabled()": "0x50cb9524",
+    "FeeNotBacked(address)": "0x6ce78f60",
+    "FeeRecipientUnavailable()": "0x9989eadf",
+    "FeeTransferMismatch(address)": "0xaa22b734",
+    "InvalidAnchor()": "0x080631d5",
+    "InvalidConfiguration()": "0xc52a9bd3",
+    "InvalidExecution()": "0x29adbb29",
+    "InvalidFeeConfig()": "0x5601467a",
+    "InvalidFloor()": "0xe3ccddcc",
+    "InvalidMandate()": "0x544cad7e",
+    "InvalidPlan()": "0x21f24259",
+    "InvalidRecipient()": "0x9c8d2cd2",
+    "InvalidRouteConfig()": "0x6c8e15aa",
+    "InvalidSignature()": "0x8baa579f",
+    "MandateAlreadyRegistered()": "0x6f6ffce9",
+    "MandateNotActive()": "0x952501f6",
+    "NonceAlreadyUsed()": "0x1fb09b80",
+    "NothingToClaim()": "0x969bf728",
+    "ReentrantCall()": "0x37ed32e8",
+    "SwapEffectMismatch()": "0x374aa3d7",
+    "TokenCallFailed(address)": "0xfecb69b4",
+    "TriggerNotReached()": "0xdccfcae2",
+    "TwapWindowTooShort()": "0xe602580b",
+    "Unauthorized()": "0x82b42900",
+    "VaultOwnerChanged()": "0x5aeff3a7"
+  },
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "Claimed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "totalUnclaimed",
+          "type": "uint256"
+        }
+      ],
+      "name": "DeliveryDeferred",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "payer",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "ref",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FeeCharged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "totalOwed",
+          "type": "uint256"
+        }
+      ],
+      "name": "FeeDeferred",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint160",
+          "name": "anchorSqrtPriceX96",
+          "type": "uint160"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount0",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount1",
+          "type": "uint256"
+        }
+      ],
+      "name": "MandateExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "vault",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "validUntil",
+          "type": "uint64"
+        }
+      ],
+      "name": "MandateRegistered",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "mandateHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "MandateRevoked",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "owner",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "nonce",
+          "type": "uint256"
+        }
+      ],
+      "name": "NonceCancelled",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "OwedFeesFlushed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "venue",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        }
+      ],
+      "name": "SwapLegExecuted",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "AutomationHalted",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "BelowMinimum",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "DeliveryMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ExitModuleNotEnabled",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "FeeNotBacked",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "FeeRecipientUnavailable",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "FeeTransferMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidAnchor",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidConfiguration",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidExecution",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidFeeConfig",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidFloor",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidMandate",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidPlan",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidRecipient",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidRouteConfig",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidSignature",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "MandateAlreadyRegistered",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "MandateNotActive",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NonceAlreadyUsed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NothingToClaim",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ReentrantCall",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SwapEffectMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "TokenCallFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TriggerNotReached",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TwapWindowTooShort",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Unauthorized",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "VaultOwnerChanged",
+      "type": "error"
+    }
+  ]
+}

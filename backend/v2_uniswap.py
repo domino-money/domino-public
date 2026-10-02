@@ -149,6 +149,10 @@ class PositionState:
     tick_upper: int
     liquidity: int
     fees_owed: tuple  # raw (amount0, amount1) a collect would deliver at this block
+    # v4: the range's fee growth inside now and at the position's checkpoint
+    # (X128 per token), from which fees_owed is computed; None on v3.
+    fee_growth_inside: tuple | None = None
+    fee_growth_inside_last: tuple | None = None
 
     @property
     def block(self):
@@ -381,4 +385,5 @@ class UniswapReader:
             raise DataError('v2_position_has_no_owner')
         state = self._v4_state(pool_ref, block, slot0, active)
         fees = (v4_fees_owed(inside[0], last0, liquidity), v4_fees_owed(inside[1], last1, liquidity))
-        return PositionState(ref, owner, address(approved), subscriber, state, lower, upper, liquidity, fees)
+        return PositionState(ref, owner, address(approved), subscriber, state, lower, upper, liquidity, fees,
+                             tuple(inside), (last0, last1))

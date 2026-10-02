@@ -120,6 +120,8 @@ jobs:
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/crosschain-v1/types.ts api-contracts/crosschain-v1/runtime.d.mts
       - name: Check V2 wallet read types
         run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/read-v6/types.ts api-contracts/read-v6/runtime.d.mts
+      - name: Check S1 position plan types
+        run: node web/node_modules/typescript/bin/tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext api-contracts/position-plan-v1/types.ts api-contracts/position-plan-v1/runtime.d.mts
       - run: npm --prefix app ci --no-audit --no-fund
       # check:app up to its build, one step each; its browser suites follow in
       # frontend_browser (scripts/check-app-jobs.test.mjs holds the two lists
@@ -271,6 +273,7 @@ jobs:
       - run: python scripts/export-execution-contract.py --check
       - run: python scripts/export-crosschain-contract.py --check
       - run: python scripts/export-read-v6-contract.py --check
+      - run: python scripts/export-position-plan-contract.py --check
       - run: npm run check:read-bridge
       - name: Check PostgreSQL tools
         run: test -x "$DOMINO_PG_BIN/initdb"

@@ -1,0 +1,449 @@
+{
+  "contractVersion": "1.0.0-rc.2",
+  "plan": {
+    "action": "create",
+    "block": {
+      "hash": "0x9d36b7a376f19a29359042bd59bb977319b747851d4e399e3310d84ff76cd8b3",
+      "number": "32",
+      "timestamp": "1790964618"
+    },
+    "call": {
+      "data": null,
+      "function": "createWithPermit",
+      "selector": "0xec627dfe",
+      "to": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+      "valueRaw": "0"
+    },
+    "chainId": 8453,
+    "consent": "permit2",
+    "deadline": "1790964919",
+    "expected": {
+      "amount0Raw": "498043624823979873672",
+      "amount1Raw": "497193863843433185683",
+      "fees0Raw": null,
+      "fees1Raw": null,
+      "liquidity": "8545357425125421133578",
+      "principal0Raw": null,
+      "principal1Raw": null,
+      "returned": [],
+      "sqrtPriceX96After": "79224223338639769339532514594"
+    },
+    "expiresAt": 1790964799,
+    "fee": {
+      "amountRaw": "3241645741325514973",
+      "basisRaw": "498714729434694611355",
+      "bps": 65,
+      "place": "input",
+      "ranks": [
+        {
+          "rank": 1,
+          "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+        },
+        {
+          "rank": 0,
+          "token": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9"
+        }
+      ],
+      "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+    },
+    "initialPrice": null,
+    "intentHash": "0xc1d3d0627cd19b8cecbdcfec9f6df3729b0e219195c870c26621ec144dd36a6e",
+    "l1DataFee": {
+      "block": "32",
+      "l1GasUnits": null,
+      "l2BaseFeeWei": null,
+      "source": "op_gas_price_oracle",
+      "status": "ok",
+      "transactionBytes": 1845,
+      "upperBoundWeiRaw": "43331441130",
+      "weiRaw": "10345963635"
+    },
+    "legs": [
+      {
+        "amountInRaw": "498714729434694611355",
+        "expectedOutRaw": "497193863843433185683",
+        "kind": "v4_pool",
+        "minAmountOutRaw": "494707894524216019754",
+        "pools": [
+          {
+            "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+            "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+            "dex": 4,
+            "fee": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "id": "0xf486671ac05a5da27a2d20250816d2d5fff5ad458cc67dc94029e2e1e944910d",
+            "tickSpacing": 60
+          }
+        ],
+        "priceImpactPercent": null,
+        "source": "local_simulation",
+        "tokenIn": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+        "tokenOut": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9"
+      }
+    ],
+    "minimums": {
+      "amount0RemovedRaw": null,
+      "amount1RemovedRaw": null,
+      "liquidity": "8152776842618419340823",
+      "mintBand": {
+        "lowerSqrtPriceX96": "79025914583715011559369187612",
+        "upperSqrtPriceX96": "79422036938300239567760189645"
+      },
+      "removalBand": null,
+      "slippageBps": 50
+    },
+    "owner": "0xacd86f136f0dd131f2be68c0bdbbfc2be61697eb",
+    "pool": {
+      "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+      "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+      "dex": 4,
+      "fee": 3000,
+      "hooks": "0x0000000000000000000000000000000000000000",
+      "id": "0xf486671ac05a5da27a2d20250816d2d5fff5ad458cc67dc94029e2e1e944910d",
+      "initialized": true,
+      "liquidity": "10000000000000000000543532",
+      "sqrtPriceX96": "79228162514264337593543950336",
+      "swapFeePips": {
+        "oneForZero": 3000,
+        "zeroForOne": 3000
+      },
+      "tick": 0,
+      "tickSpacing": 60
+    },
+    "position": null,
+    "readiness": {
+      "account": {
+        "consents": [
+          "direct",
+          "permit2"
+        ],
+        "delegate": null,
+        "kind": "eoa"
+      },
+      "approvals": [
+        {
+          "allowanceRaw": "0",
+          "requiredRaw": "1000000000000000000000",
+          "spender": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+          "spenderKind": "permit2",
+          "sufficient": false,
+          "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+        }
+      ],
+      "balances": [
+        {
+          "heldRaw": "10000000000000000000000",
+          "requiredRaw": "1000000000000000000000",
+          "sufficient": true,
+          "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+        }
+      ],
+      "nonce": {
+        "bit": 0,
+        "kind": "permit2",
+        "nonce": "5329152",
+        "word": "20817"
+      },
+      "positionApproval": null,
+      "steps": [
+        {
+          "data": "0x095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba300000000000000000000000000000000000000000000003635c9adc5dea00000",
+          "kind": "approve_token",
+          "to": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+          "valueRaw": "0"
+        },
+        {
+          "data": null,
+          "kind": "sign_permit2",
+          "to": null,
+          "valueRaw": "0"
+        },
+        {
+          "data": null,
+          "kind": "send_action",
+          "to": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+          "valueRaw": "0"
+        }
+      ]
+    },
+    "request": {
+      "action": "create",
+      "burn": null,
+      "chainId": 8453,
+      "consent": "permit2",
+      "initialPrice": null,
+      "inputs": [
+        {
+          "amountRaw": "1000000000000000000000",
+          "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+        }
+      ],
+      "liquidityToRemove": null,
+      "owner": "0xacd86f136f0dd131f2be68c0bdbbfc2be61697eb",
+      "pool": {
+        "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+        "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+        "dex": 4,
+        "fee": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tickSpacing": 60
+      },
+      "position": null,
+      "receive": null,
+      "slippageBps": 50,
+      "tickLower": -1200,
+      "tickUpper": 1200
+    },
+    "requestFingerprint": "24dc06a3b4fbf44ae9b619da5554761296aced8a81913a6c7168134875df82b0",
+    "requestedAt": 1790964619,
+    "retrievedAt": 1790964619,
+    "routesHash": "0xfd00d6bc418bf806bf95e085b5f49b1ed3358e8b9a43401693c49c29c550cbd3",
+    "routing": {
+      "advantageBps": 10,
+      "router": {
+        "reason": null,
+        "status": "not_configured"
+      }
+    },
+    "schemaVersion": 1,
+    "signature": {
+      "digest": "0x8826940ea8c31bc861b857b6aecaa7fdee2068c73dfedf45cb1f150b07162068",
+      "kind": "permit2",
+      "permit": {
+        "deadline": "1790964919",
+        "nonce": "5329152",
+        "permitted": [
+          {
+            "amount": "1000000000000000000000",
+            "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+          }
+        ]
+      },
+      "typedData": {
+        "domain": {
+          "chainId": 8453,
+          "name": "Permit2",
+          "verifyingContract": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+        },
+        "message": {
+          "deadline": "1790964919",
+          "nonce": "5329152",
+          "permitted": [
+            {
+              "amount": "1000000000000000000000",
+              "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+            }
+          ],
+          "spender": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+          "witness": {
+            "action": 1,
+            "deadline": "1790964919",
+            "feeBps": 65,
+            "feeToken": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+            "minLiquidity": "8152776842618419340823",
+            "nonce": "5329152",
+            "pool": {
+              "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+              "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+              "dex": 4,
+              "fee": 3000,
+              "hooks": "0x0000000000000000000000000000000000000000",
+              "tickSpacing": 60
+            },
+            "recipient": "0xacd86f136f0dd131f2be68c0bdbbfc2be61697eb",
+            "routesHash": "0xfd00d6bc418bf806bf95e085b5f49b1ed3358e8b9a43401693c49c29c550cbd3",
+            "tickLower": -1200,
+            "tickUpper": 1200,
+            "tokenId": "0"
+          }
+        },
+        "primaryType": "PermitBatchWitnessTransferFrom",
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "PermitBatchWitnessTransferFrom": [
+            {
+              "name": "permitted",
+              "type": "TokenPermissions[]"
+            },
+            {
+              "name": "spender",
+              "type": "address"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "name": "deadline",
+              "type": "uint256"
+            },
+            {
+              "name": "witness",
+              "type": "PositionIntent"
+            }
+          ],
+          "PoolRef": [
+            {
+              "name": "dex",
+              "type": "uint8"
+            },
+            {
+              "name": "currency0",
+              "type": "address"
+            },
+            {
+              "name": "currency1",
+              "type": "address"
+            },
+            {
+              "name": "fee",
+              "type": "uint24"
+            },
+            {
+              "name": "tickSpacing",
+              "type": "int24"
+            },
+            {
+              "name": "hooks",
+              "type": "address"
+            }
+          ],
+          "PositionIntent": [
+            {
+              "name": "action",
+              "type": "uint8"
+            },
+            {
+              "name": "pool",
+              "type": "PoolRef"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "tickLower",
+              "type": "int24"
+            },
+            {
+              "name": "tickUpper",
+              "type": "int24"
+            },
+            {
+              "name": "minLiquidity",
+              "type": "uint128"
+            },
+            {
+              "name": "feeBps",
+              "type": "uint16"
+            },
+            {
+              "name": "feeToken",
+              "type": "address"
+            },
+            {
+              "name": "routesHash",
+              "type": "bytes32"
+            },
+            {
+              "name": "recipient",
+              "type": "address"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "name": "deadline",
+              "type": "uint64"
+            }
+          ],
+          "TokenPermissions": [
+            {
+              "name": "token",
+              "type": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ]
+        }
+      }
+    },
+    "simulation": {
+      "error": null,
+      "gasUnits": "515466",
+      "method": "eth_simulateV1",
+      "reason": null,
+      "result": {
+        "amount0": "498043624823979873672",
+        "amount1": "497193863843433185683",
+        "feeAmount": "3241645741325514973",
+        "feeToken": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+        "liquidity": "8545357425125421133578",
+        "tokenId": "5"
+      },
+      "status": "ok"
+    },
+    "source": "position_plan_v1",
+    "warnings": [],
+    "zap": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+    "zapPlan": {
+      "amount0Max": "340282366920938463463374607431768211455",
+      "amount1Max": "340282366920938463463374607431768211455",
+      "initSqrtPriceX96": "0",
+      "inputs": [
+        {
+          "amount": "1000000000000000000000",
+          "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+        }
+      ],
+      "intent": {
+        "action": 1,
+        "deadline": "1790964919",
+        "feeBps": 65,
+        "feeToken": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+        "minLiquidity": "8152776842618419340823",
+        "nonce": "5329152",
+        "pool": {
+          "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+          "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+          "dex": 4,
+          "fee": 3000,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "tickSpacing": 60
+        },
+        "recipient": "0xacd86f136f0dd131f2be68c0bdbbfc2be61697eb",
+        "routesHash": "0xfd00d6bc418bf806bf95e085b5f49b1ed3358e8b9a43401693c49c29c550cbd3",
+        "tickLower": -1200,
+        "tickUpper": 1200,
+        "tokenId": "0"
+      },
+      "legs": [
+        {
+          "amountIn": "498714729434694611355",
+          "data": "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000040000000000000000000000005fc8d32690cc91d4c39d9d3abcbd16989f875707000000000000000000000000cf7ed3acca5a467e9e704c703e8d87f634fb0fc90000000000000000000000000000000000000000000000000000000000000bb8000000000000000000000000000000000000000000000000000000000000003c0000000000000000000000000000000000000000000000000000000000000000",
+          "kind": 3,
+          "minAmountOut": "494707894524216019754",
+          "router": "0x0000000000000000000000000000000000000000",
+          "tokenIn": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+          "tokenOut": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9"
+        }
+      ]
+    }
+  }
+}

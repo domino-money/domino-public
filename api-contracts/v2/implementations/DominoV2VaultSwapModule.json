@@ -1,0 +1,95 @@
+{
+  "source": "contracts/src/v2/vault/DominoV2VaultSwapModule.sol",
+  "eventTopics": {
+    "SwapLegExecuted(uint8,address,address,address,uint256,uint256)": "0x60154ef230959d31cc953d02fea179f08acb4195f22d3ac43bc9ce7219c0cf31"
+  },
+  "errorSelectors": {
+    "InvalidPlan()": "0x21f24259",
+    "InvalidRouteConfig()": "0x6c8e15aa",
+    "ReentrantCall()": "0x37ed32e8",
+    "SwapEffectMismatch()": "0x374aa3d7",
+    "TokenCallFailed(address)": "0xfecb69b4",
+    "Unauthorized()": "0x82b42900"
+  },
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint8",
+          "name": "kind",
+          "type": "uint8"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenIn",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "tokenOut",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "venue",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amountOut",
+          "type": "uint256"
+        }
+      ],
+      "name": "SwapLegExecuted",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidPlan",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidRouteConfig",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ReentrantCall",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SwapEffectMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "TokenCallFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Unauthorized",
+      "type": "error"
+    }
+  ]
+}

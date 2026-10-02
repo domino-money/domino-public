@@ -1,0 +1,399 @@
+{
+  "contractVersion": "1.0.0-rc.2",
+  "plan": {
+    "action": "exit",
+    "block": {
+      "hash": "0xa4e0eda7d418a804fef94c3282601d53ee8d88131c7e7689bc2a2d4cf09e225e",
+      "number": "48",
+      "timestamp": "1790964619"
+    },
+    "call": {
+      "data": null,
+      "function": "exitWithSignature",
+      "selector": "0x2573777b",
+      "to": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+      "valueRaw": "0"
+    },
+    "chainId": 8453,
+    "consent": "relayed",
+    "deadline": "1790964920",
+    "expected": {
+      "amount0Raw": "0",
+      "amount1Raw": "0",
+      "fees0Raw": "0",
+      "fees1Raw": "0",
+      "liquidity": "0",
+      "principal0Raw": "199999999999999999999",
+      "principal1Raw": "199931682416481573765",
+      "returned": [
+        {
+          "amountRaw": "199999999999999999999",
+          "token": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707"
+        },
+        {
+          "amountRaw": "199931682416481573765",
+          "token": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9"
+        }
+      ],
+      "sqrtPriceX96After": null
+    },
+    "expiresAt": 1790964800,
+    "fee": {
+      "amountRaw": "0",
+      "basisRaw": "0",
+      "bps": 0,
+      "place": "none",
+      "ranks": [],
+      "token": "0x0000000000000000000000000000000000000000"
+    },
+    "initialPrice": null,
+    "intentHash": "0xb48288591b058f300006376a9bec14ee03f722592e5858258b733ddb1b1e87e1",
+    "l1DataFee": {
+      "block": "48",
+      "l1GasUnits": null,
+      "l2BaseFeeWei": null,
+      "source": "op_gas_price_oracle",
+      "status": "ok",
+      "transactionBytes": 981,
+      "upperBoundWeiRaw": "23402236260",
+      "weiRaw": "7679541761"
+    },
+    "legs": [],
+    "minimums": {
+      "amount0RemovedRaw": "191447191074383215738",
+      "amount1RemovedRaw": "191336226798207561200",
+      "liquidity": "3433913292490051973160",
+      "mintBand": null,
+      "removalBand": {
+        "lowerSqrtPriceX96": "79029057754995025247963020191",
+        "upperSqrtPriceX96": "79425195864923482909566142329"
+      },
+      "slippageBps": 50
+    },
+    "owner": "0x694ce54c908ffd4d997be279d8cb91c00651e2a6",
+    "pool": {
+      "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+      "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+      "dex": 4,
+      "fee": 3000,
+      "hooks": "0x0000000000000000000000000000000000000000",
+      "id": "0xf486671ac05a5da27a2d20250816d2d5fff5ad458cc67dc94029e2e1e944910d",
+      "initialized": true,
+      "liquidity": "10008577514670174862052234",
+      "sqrtPriceX96": "79227374397438533532026687261",
+      "swapFeePips": {
+        "oneForZero": 3000,
+        "zeroForOne": 3000
+      },
+      "tick": -1,
+      "tickSpacing": 60
+    },
+    "position": {
+      "approved": "0x0000000000000000000000000000000000000000",
+      "feesOwed0Raw": "0",
+      "feesOwed1Raw": "0",
+      "inRange": true,
+      "liquidity": "3433913292490051973160",
+      "liquidityToRemove": "3433913292490051973160",
+      "manager": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+      "subscriber": "0x0000000000000000000000000000000000000000",
+      "tickLower": -1200,
+      "tickUpper": 1200,
+      "tokenId": "7"
+    },
+    "readiness": {
+      "account": {
+        "consents": [
+          "direct",
+          "relayed"
+        ],
+        "delegate": null,
+        "kind": "eoa"
+      },
+      "approvals": [],
+      "balances": [],
+      "nonce": {
+        "bit": 0,
+        "kind": "relayed",
+        "nonce": "5329152",
+        "word": "20817"
+      },
+      "positionApproval": {
+        "approved": "0x0000000000000000000000000000000000000000",
+        "approvedForAll": false,
+        "manager": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+        "sufficient": false,
+        "tokenId": "7"
+      },
+      "steps": [
+        {
+          "data": "0x095ea7b300000000000000000000000032fcd37f60b76d6e40918da29a99886189a842950000000000000000000000000000000000000000000000000000000000000007",
+          "kind": "approve_position",
+          "to": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+          "valueRaw": "0"
+        },
+        {
+          "data": null,
+          "kind": "sign_relayed",
+          "to": null,
+          "valueRaw": "0"
+        },
+        {
+          "data": null,
+          "kind": "send_action",
+          "to": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+          "valueRaw": "0"
+        }
+      ]
+    },
+    "request": {
+      "action": "exit",
+      "burn": false,
+      "chainId": 8453,
+      "consent": "relayed",
+      "initialPrice": null,
+      "inputs": null,
+      "liquidityToRemove": "all",
+      "owner": "0x694ce54c908ffd4d997be279d8cb91c00651e2a6",
+      "pool": null,
+      "position": {
+        "dex": 4,
+        "tokenId": "7"
+      },
+      "receive": {
+        "mode": "both",
+        "token": null
+      },
+      "slippageBps": 50,
+      "tickLower": null,
+      "tickUpper": null
+    },
+    "requestFingerprint": "343c671a43047aaf98cbd1031dff288ab286cd25b78f4faf4cc963487c1b7ead",
+    "requestedAt": 1790964620,
+    "retrievedAt": 1790964620,
+    "routesHash": "0x569e75fc77c1a856f6daaf9e69d8a9566ca34aa47f9133711ce065a571af0cfd",
+    "routing": {
+      "advantageBps": 10,
+      "router": {
+        "reason": null,
+        "status": "not_needed"
+      }
+    },
+    "schemaVersion": 1,
+    "signature": {
+      "digest": "0xf7721a214dfb356a36e80884a0d241839840038dd7da058fc2c70a84f9ffb79e",
+      "kind": "relayed",
+      "permit": null,
+      "typedData": {
+        "domain": {
+          "chainId": 8453,
+          "name": "Domino",
+          "verifyingContract": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+          "version": "2"
+        },
+        "message": {
+          "amount0Max": "0",
+          "amount0MinRemoved": "191447191074383215738",
+          "amount1Max": "0",
+          "amount1MinRemoved": "191336226798207561200",
+          "burn": false,
+          "intent": {
+            "action": 4,
+            "deadline": "1790964920",
+            "feeBps": 0,
+            "feeToken": "0x0000000000000000000000000000000000000000",
+            "minLiquidity": "3433913292490051973160",
+            "nonce": "5329152",
+            "pool": {
+              "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+              "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+              "dex": 4,
+              "fee": 3000,
+              "hooks": "0x0000000000000000000000000000000000000000",
+              "tickSpacing": 60
+            },
+            "recipient": "0x694ce54c908ffd4d997be279d8cb91c00651e2a6",
+            "routesHash": "0x569e75fc77c1a856f6daaf9e69d8a9566ca34aa47f9133711ce065a571af0cfd",
+            "tickLower": -1200,
+            "tickUpper": 1200,
+            "tokenId": "7"
+          },
+          "liquidityToRemove": "3433913292490051973160"
+        },
+        "primaryType": "RelayedPositionAction",
+        "types": {
+          "EIP712Domain": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "version",
+              "type": "string"
+            },
+            {
+              "name": "chainId",
+              "type": "uint256"
+            },
+            {
+              "name": "verifyingContract",
+              "type": "address"
+            }
+          ],
+          "PoolRef": [
+            {
+              "name": "dex",
+              "type": "uint8"
+            },
+            {
+              "name": "currency0",
+              "type": "address"
+            },
+            {
+              "name": "currency1",
+              "type": "address"
+            },
+            {
+              "name": "fee",
+              "type": "uint24"
+            },
+            {
+              "name": "tickSpacing",
+              "type": "int24"
+            },
+            {
+              "name": "hooks",
+              "type": "address"
+            }
+          ],
+          "PositionIntent": [
+            {
+              "name": "action",
+              "type": "uint8"
+            },
+            {
+              "name": "pool",
+              "type": "PoolRef"
+            },
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "tickLower",
+              "type": "int24"
+            },
+            {
+              "name": "tickUpper",
+              "type": "int24"
+            },
+            {
+              "name": "minLiquidity",
+              "type": "uint128"
+            },
+            {
+              "name": "feeBps",
+              "type": "uint16"
+            },
+            {
+              "name": "feeToken",
+              "type": "address"
+            },
+            {
+              "name": "routesHash",
+              "type": "bytes32"
+            },
+            {
+              "name": "recipient",
+              "type": "address"
+            },
+            {
+              "name": "nonce",
+              "type": "uint256"
+            },
+            {
+              "name": "deadline",
+              "type": "uint64"
+            }
+          ],
+          "RelayedPositionAction": [
+            {
+              "name": "intent",
+              "type": "PositionIntent"
+            },
+            {
+              "name": "liquidityToRemove",
+              "type": "uint128"
+            },
+            {
+              "name": "amount0MinRemoved",
+              "type": "uint128"
+            },
+            {
+              "name": "amount1MinRemoved",
+              "type": "uint128"
+            },
+            {
+              "name": "amount0Max",
+              "type": "uint128"
+            },
+            {
+              "name": "amount1Max",
+              "type": "uint128"
+            },
+            {
+              "name": "burn",
+              "type": "bool"
+            }
+          ]
+        }
+      }
+    },
+    "simulation": {
+      "error": null,
+      "gasUnits": "188258",
+      "method": "eth_simulateV1",
+      "reason": null,
+      "result": {
+        "amount0": "199999999999999999999",
+        "amount1": "199931682416481573765",
+        "feeAmount": "0",
+        "feeToken": "0x0000000000000000000000000000000000000000",
+        "liquidity": "3433913292490051973160",
+        "tokenId": "7"
+      },
+      "status": "ok"
+    },
+    "source": "position_plan_v1",
+    "warnings": [],
+    "zap": "0x32fcd37f60b76d6e40918da29a99886189a84295",
+    "zapPlan": {
+      "amount0MinRemoved": "191447191074383215738",
+      "amount1MinRemoved": "191336226798207561200",
+      "burn": false,
+      "intent": {
+        "action": 4,
+        "deadline": "1790964920",
+        "feeBps": 0,
+        "feeToken": "0x0000000000000000000000000000000000000000",
+        "minLiquidity": "3433913292490051973160",
+        "nonce": "5329152",
+        "pool": {
+          "currency0": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+          "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+          "dex": 4,
+          "fee": 3000,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "tickSpacing": 60
+        },
+        "recipient": "0x694ce54c908ffd4d997be279d8cb91c00651e2a6",
+        "routesHash": "0x569e75fc77c1a856f6daaf9e69d8a9566ca34aa47f9133711ce065a571af0cfd",
+        "tickLower": -1200,
+        "tickUpper": 1200,
+        "tokenId": "7"
+      },
+      "legs": [],
+      "liquidityToRemove": "3433913292490051973160"
+    }
+  }
+}

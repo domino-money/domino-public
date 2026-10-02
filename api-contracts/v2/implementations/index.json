@@ -1,0 +1,459 @@
+{
+  "note": "Events and errors of the deployable V2 contracts (not a frozen surface); components maps each F0/#301 component to the contracts whose events and errors it can surface.",
+  "components": {
+    "registry": [
+      "DominoRegistry"
+    ],
+    "priceAnchor": [
+      "DominoPriceAnchor"
+    ],
+    "autoExit": [
+      "DominoAutoExit"
+    ],
+    "vaultSwap": [
+      "DominoV2VaultSwapModule"
+    ],
+    "vault.v3": [
+      "DominoV2VaultV3",
+      "DominoV2VaultExecutorV3",
+      "DominoV2VaultSwapModule"
+    ],
+    "vault.v4": [
+      "DominoV2VaultV4",
+      "DominoV2VaultExecutorV4",
+      "DominoV2VaultSwapModule"
+    ],
+    "vaultFactory.v3": [
+      "DominoV2VaultFactory"
+    ],
+    "vaultFactory.v4": [
+      "DominoV2VaultFactory"
+    ],
+    "zap.v4.steps": [
+      "DominoZapV4Steps"
+    ],
+    "zap.v3": [
+      "DominoZapV3"
+    ],
+    "zap.v4": [
+      "DominoZapV4",
+      "DominoZapV4Steps"
+    ],
+    "vaultExecutor.v3": [
+      "DominoV2VaultExecutorV3"
+    ],
+    "vaultExecutor.v4": [
+      "DominoV2VaultExecutorV4"
+    ]
+  },
+  "contracts": {
+    "DominoAutoExit": {
+      "source": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+      "eventTopics": {
+        "Claimed(address,address,address,uint256)": "0x913c992353dc81b7a8ba31496c484e9b6306bd2f6c509a649a38fdf5e1c953b2",
+        "DeliveryDeferred(address,address,uint256,uint256)": "0x38d51fb4fcfb84a8786be0e74a8148eafb6409a3744a41c9f546136d2b0b99e5",
+        "FeeCharged(uint8,address,address,uint256,bytes32)": "0x9a37304a80e9ccbeef339119cc8e57118bbbf4ba4b01df2a1ef6a0dc843a7bca",
+        "FeeDeferred(address,uint256,uint256)": "0xf48e46df15f5fe31c1c79e6219014406d25e1f90301334682c98267482a8221b",
+        "MandateExecuted(bytes32,uint160,address,uint256,uint256)": "0x229a9757dd7caa6183bf76b07d099da52d4a938bf8a98d551843c9947661942c",
+        "MandateRegistered(bytes32,address,address,uint256,uint64)": "0xcbc0a17f5efb2e23ff743df02762b7d9b015265e5b1da6593b3ca271678f3481",
+        "MandateRevoked(bytes32)": "0x31c289dd93001fcacb63a0874240a9d06870135458e9be63e0463f46edf663fa",
+        "NonceCancelled(address,uint256)": "0x26ccf9904b9b2fb069d347553978928fd2fc65efb2638dcbeb8d142e974479f0",
+        "OwedFeesFlushed(address,address,uint256)": "0x6d038b6b9cd7d27cc87517022a03a7025b2cc67e2dc7f0b97f572824cee6bfbb",
+        "SwapLegExecuted(uint8,address,address,address,uint256,uint256)": "0x60154ef230959d31cc953d02fea179f08acb4195f22d3ac43bc9ce7219c0cf31"
+      },
+      "errorSelectors": {
+        "AutomationHalted()": "0x8d37598c",
+        "BelowMinimum()": "0x860b82a9",
+        "DeliveryMismatch(address)": "0xf0de72c3",
+        "ExitModuleNotEnabled()": "0x50cb9524",
+        "FeeNotBacked(address)": "0x6ce78f60",
+        "FeeRecipientUnavailable()": "0x9989eadf",
+        "FeeTransferMismatch(address)": "0xaa22b734",
+        "InvalidAnchor()": "0x080631d5",
+        "InvalidConfiguration()": "0xc52a9bd3",
+        "InvalidExecution()": "0x29adbb29",
+        "InvalidFeeConfig()": "0x5601467a",
+        "InvalidFloor()": "0xe3ccddcc",
+        "InvalidMandate()": "0x544cad7e",
+        "InvalidPlan()": "0x21f24259",
+        "InvalidRecipient()": "0x9c8d2cd2",
+        "InvalidRouteConfig()": "0x6c8e15aa",
+        "InvalidSignature()": "0x8baa579f",
+        "MandateAlreadyRegistered()": "0x6f6ffce9",
+        "MandateNotActive()": "0x952501f6",
+        "NonceAlreadyUsed()": "0x1fb09b80",
+        "NothingToClaim()": "0x969bf728",
+        "ReentrantCall()": "0x37ed32e8",
+        "SwapEffectMismatch()": "0x374aa3d7",
+        "TokenCallFailed(address)": "0xfecb69b4",
+        "TriggerNotReached()": "0xdccfcae2",
+        "TwapWindowTooShort()": "0xe602580b",
+        "Unauthorized()": "0x82b42900",
+        "VaultOwnerChanged()": "0x5aeff3a7"
+      }
+    },
+    "DominoPriceAnchor": {
+      "source": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+      "eventTopics": {
+        "ObservationRevokedBy(bytes32,address)": "0x5817d3d21890304df591942c38672b8c4cc192c1ef5e035d4f88f04c8e6f3b53"
+      },
+      "errorSelectors": {
+        "InvalidConfig()": "0x35be3ac8",
+        "InvalidObservation()": "0xcea61d22",
+        "ObservationExpired()": "0xf9e0c800",
+        "ObservationRevoked()": "0x86669805",
+        "PoolUnavailable()": "0x899b8f88",
+        "SpotOutsideBand()": "0x97befd3a",
+        "TwapUnavailable()": "0x146f8be2",
+        "Unauthorized()": "0x82b42900"
+      }
+    },
+    "DominoRegistry": {
+      "source": "contracts/src/v2/registry/DominoRegistry.sol",
+      "eventTopics": {
+        "AutomationHaltSet(bool)": "0x9ae08ca173da8b6e688ebf836373e2ff5c9941136f6265c3ed9f4a7bf896592d",
+        "ChangeCancelled(bytes32)": "0xef2393afd41f32c607a123de95d703349edd33ea1d86af21535ea8040ec7d984",
+        "ChangeExecuted(bytes32,bytes32,bytes)": "0xb2ab228a2014e9c5487d76df97d12f873781fc88c0341d8cbe91b5f9333598e6",
+        "ChangeScheduled(bytes32,bytes32,bytes,uint64)": "0x352fd8f669209040d0f93ad57f2e2832e27f0abfc4f63f3f65ee4328b409564d",
+        "ChargeCurrencySet(address,uint8)": "0xfae1ca406daf14aea29964a68352ce26d26506ee411be2435b1e50954b52c5b1",
+        "FeeRecipientSet(address)": "0xbf9a9534339a9d6b81696e05dcfb614b7dc518a31d48be3cfb757988381fb323",
+        "GovernanceTransferred(address,address)": "0x5f56bee8cffbe9a78652a74a60705edede02af10b0bbb888ca44b79a0d42ce80",
+        "GovernanceTransferStarted(address,address)": "0x1c4bb4e3cab7b72da7eb9f0ae62554dda85dc7fb907c946ad2776095b95ac1ad",
+        "GuardianChanged(address,address)": "0xa14fc14d8620a708a896fd11392a235647d99385500a295f0d7da2a258b2e967",
+        "ObservationEpochRaised(uint64)": "0x7a4f85b6404c1a32824534c85a1faae95f797484e8dbd9062bd43ea1371c5033",
+        "OperatorSet(address,bool)": "0x1a594081ae893ab78e67d9b9e843547318164322d32c65369d78a96172d9dc8f",
+        "PublisherSet(address,bool)": "0x7caa8f8f06897e1155bc1f07edd62aa5b0c96ea5f16f620688d633a9769ff4b8",
+        "RouterSet(address,uint16)": "0x0393cf2dc8b3f641b589711fac2cb626358249e85967634808d44105dcec9279"
+      },
+      "errorSelectors": {
+        "ChangeNotReady()": "0x06cde084",
+        "InvalidChange()": "0x17879689",
+        "Unauthorized()": "0x82b42900"
+      }
+    },
+    "DominoV2VaultExecutorV3": {
+      "source": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+      "eventTopics": {
+        "ChildWithdrawn(uint256,uint64)": "0xda0f3873fe7bfc5d79bda0d2fce8ee21ae8dffbfee37d9d47ec3f7100428ff25",
+        "Compounded(uint256,uint128,uint256,uint256,uint256,uint256,uint64)": "0x0957afbb4f3559d58b385bc7712b4c0a8189e62797dc67866a78faaeb73eed50",
+        "Executed(bytes32,uint8,uint64)": "0x3c96001356e45f3fac5e1bd1a5ffd41ef3f3ed77c090ac8666fd7740ff41c7e6",
+        "ExitExecuted(address,uint256,uint256,uint256,uint64)": "0x327d003acdc07a74d98e702761fd8862b49875d55bffd6e13fe223bc2552493c",
+        "FeeCharged(uint8,address,address,uint256,bytes32)": "0x9a37304a80e9ccbeef339119cc8e57118bbbf4ba4b01df2a1ef6a0dc843a7bca",
+        "FeeDeferred(address,uint256,uint256)": "0xf48e46df15f5fe31c1c79e6219014406d25e1f90301334682c98267482a8221b",
+        "FeesCollected(uint256,uint256,uint256)": "0xa54e6c2fc0861aa9c991b26891d71059d517983b9e84b91020f42609c452eb9d",
+        "OwedFeesFlushed(address,address,uint256)": "0x6d038b6b9cd7d27cc87517022a03a7025b2cc67e2dc7f0b97f572824cee6bfbb",
+        "ReservesWithdrawn(address,uint256,uint64)": "0x113320c04f96f7509453e8d47ef4ceaf5c15877f5d306b4224c7469acf8ab095",
+        "RootCheckpointed((uint128,uint256,uint256,uint128,uint128))": "0xc567dfe117450c03c3c1fa816cbee0cf099065f9506b0b1c3690408851c9ef3f",
+        "RootDisarmed(uint8,uint64)": "0x949733685c38a7e3843a9b3aae151ac20308d66132282a4712043d9e866a3efa",
+        "SuccessorCreated(uint256,uint256,uint64)": "0x63bedd8528c2d4707a09c8341b4e5c9fb313ff9855fd8c1643ccfd7f75b56974",
+        "Swapped(uint256,bool,uint256,uint256)": "0x88b012650d7da64b7697c175b1dc42bd7dd09d8a2ef28c62cbb448086f548ce6"
+      },
+      "errorSelectors": {
+        "ApprovalFailed(address)": "0xe5a0a42f",
+        "AutomationUnavailable()": "0xb114dfff",
+        "FeeNotBacked(address)": "0x6ce78f60",
+        "FeeRecipientUnavailable()": "0x9989eadf",
+        "FeeTransferMismatch(address)": "0xaa22b734",
+        "InsufficientLiquidity(uint128,uint128)": "0xe49b763d",
+        "InsufficientReserves()": "0x945e9268",
+        "InvalidAmount()": "0x2c5211c6",
+        "InvalidFeeConfig()": "0x5601467a",
+        "InvalidFeeMode()": "0x2e573a3f",
+        "InvalidFloor()": "0xe3ccddcc",
+        "InvalidInit()": "0xab849bda",
+        "InvalidInstruction()": "0xd8c48f68",
+        "InvalidPlan()": "0x21f24259",
+        "InvalidPool()": "0x2083cd40",
+        "InvalidPosition()": "0xce7e065e",
+        "InvalidRange(int24,int24,int24)": "0x00911c16",
+        "InvalidRecipient(address)": "0x17858bbe",
+        "InvalidRoute()": "0x84e505d2",
+        "PartialBurn(uint256,uint128,uint128)": "0xa97bba2b",
+        "PlanExpired()": "0x059e8997",
+        "PositionPoolMismatch(uint256)": "0xf71fd589",
+        "ReentrantCall()": "0x37ed32e8",
+        "StaleNonce()": "0xd8d01cf0",
+        "StepUnavailable()": "0x3fb52101",
+        "TokenCallFailed(address)": "0xfecb69b4",
+        "TooSoon()": "0x6fed7d85",
+        "Unauthorized()": "0x82b42900",
+        "UnexpectedCallback()": "0xdab1e993"
+      }
+    },
+    "DominoV2VaultExecutorV4": {
+      "source": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+      "eventTopics": {
+        "ChildWithdrawn(uint256,uint64)": "0xda0f3873fe7bfc5d79bda0d2fce8ee21ae8dffbfee37d9d47ec3f7100428ff25",
+        "Compounded(uint256,uint128,uint256,uint256,uint256,uint256,uint64)": "0x0957afbb4f3559d58b385bc7712b4c0a8189e62797dc67866a78faaeb73eed50",
+        "Executed(bytes32,uint8,uint64)": "0x3c96001356e45f3fac5e1bd1a5ffd41ef3f3ed77c090ac8666fd7740ff41c7e6",
+        "ExitExecuted(address,uint256,uint256,uint256,uint64)": "0x327d003acdc07a74d98e702761fd8862b49875d55bffd6e13fe223bc2552493c",
+        "FeeCharged(uint8,address,address,uint256,bytes32)": "0x9a37304a80e9ccbeef339119cc8e57118bbbf4ba4b01df2a1ef6a0dc843a7bca",
+        "FeeDeferred(address,uint256,uint256)": "0xf48e46df15f5fe31c1c79e6219014406d25e1f90301334682c98267482a8221b",
+        "FeesCollected(uint256,uint256,uint256)": "0xa54e6c2fc0861aa9c991b26891d71059d517983b9e84b91020f42609c452eb9d",
+        "OwedFeesFlushed(address,address,uint256)": "0x6d038b6b9cd7d27cc87517022a03a7025b2cc67e2dc7f0b97f572824cee6bfbb",
+        "ReservesWithdrawn(address,uint256,uint64)": "0x113320c04f96f7509453e8d47ef4ceaf5c15877f5d306b4224c7469acf8ab095",
+        "RootDisarmed(uint8,uint64)": "0x949733685c38a7e3843a9b3aae151ac20308d66132282a4712043d9e866a3efa",
+        "SuccessorCreated(uint256,uint256,uint64)": "0x63bedd8528c2d4707a09c8341b4e5c9fb313ff9855fd8c1643ccfd7f75b56974",
+        "Swapped(uint256,bool,uint256,uint256)": "0x88b012650d7da64b7697c175b1dc42bd7dd09d8a2ef28c62cbb448086f548ce6"
+      },
+      "errorSelectors": {
+        "AutomationUnavailable()": "0xb114dfff",
+        "FeeNotBacked(address)": "0x6ce78f60",
+        "FeeRecipientUnavailable()": "0x9989eadf",
+        "FeeTransferMismatch(address)": "0xaa22b734",
+        "ForeignSubscriber(address)": "0x7889477f",
+        "HookedPool(address)": "0x1758b8a8",
+        "InsufficientLiquidity(uint128,uint128)": "0xe49b763d",
+        "InsufficientReserves()": "0x945e9268",
+        "InvalidAmount()": "0x2c5211c6",
+        "InvalidFeeConfig()": "0x5601467a",
+        "InvalidFeeMode()": "0x2e573a3f",
+        "InvalidFloor()": "0xe3ccddcc",
+        "InvalidInit()": "0xab849bda",
+        "InvalidInstruction()": "0xd8c48f68",
+        "InvalidPlan()": "0x21f24259",
+        "InvalidPool()": "0x2083cd40",
+        "InvalidPosition()": "0xce7e065e",
+        "InvalidRange(int24,int24,int24)": "0x00911c16",
+        "InvalidRecipient(address)": "0x17858bbe",
+        "InvalidRoute()": "0x84e505d2",
+        "OpenDelta(int256,int256)": "0x5e9131f6",
+        "PartialBurn(uint256,uint128,uint128)": "0xa97bba2b",
+        "PlanExpired()": "0x059e8997",
+        "PoolNotInitialized()": "0x486aa307",
+        "PositionPoolMismatch(uint256)": "0xf71fd589",
+        "ReentrantCall()": "0x37ed32e8",
+        "SettlementMismatch(address,uint256,uint256)": "0x60752ed2",
+        "StaleNonce()": "0xd8d01cf0",
+        "StepUnavailable()": "0x3fb52101",
+        "TokenCallFailed(address)": "0xfecb69b4",
+        "TooSoon()": "0x6fed7d85",
+        "TransferFailed(address)": "0x39f1c8d9",
+        "Unauthorized()": "0x82b42900",
+        "UnexpectedCallback()": "0xdab1e993"
+      }
+    },
+    "DominoV2VaultFactory": {
+      "source": "contracts/src/v2/vault/DominoV2VaultFactory.sol",
+      "eventTopics": {
+        "VaultCreated(address,address,uint256,uint8,uint256)": "0x575ce09d88fdbe87124d0a71fd63b9862b8e580f59ed6d38a8fe30cf2e951c33"
+      },
+      "errorSelectors": {
+        "InvalidInit()": "0xab849bda",
+        "UnexpectedNonce(uint256,uint256)": "0x315f0ba0"
+      }
+    },
+    "DominoV2VaultSwapModule": {
+      "source": "contracts/src/v2/vault/DominoV2VaultSwapModule.sol",
+      "eventTopics": {
+        "SwapLegExecuted(uint8,address,address,address,uint256,uint256)": "0x60154ef230959d31cc953d02fea179f08acb4195f22d3ac43bc9ce7219c0cf31"
+      },
+      "errorSelectors": {
+        "InvalidPlan()": "0x21f24259",
+        "InvalidRouteConfig()": "0x6c8e15aa",
+        "ReentrantCall()": "0x37ed32e8",
+        "SwapEffectMismatch()": "0x374aa3d7",
+        "TokenCallFailed(address)": "0xfecb69b4",
+        "Unauthorized()": "0x82b42900"
+      }
+    },
+    "DominoV2VaultV3": {
+      "source": "contracts/src/v2/vault/DominoV2VaultV3.sol",
+      "eventTopics": {
+        "AutomationPaused(address,uint64)": "0x0d46b3b465954a381f9059f636e7ad65a9cd82668b67d3aa6bcb04b1a4c806f3",
+        "AutomationResumed(uint64)": "0x415fc15e2eab1ca93eb69229544afcd6311297e7cb5a26dc093a37c9e5679e73",
+        "ChildWithdrawn(uint256,uint64)": "0xda0f3873fe7bfc5d79bda0d2fce8ee21ae8dffbfee37d9d47ec3f7100428ff25",
+        "Compounded(uint256,uint128,uint256,uint256,uint256,uint256,uint64)": "0x0957afbb4f3559d58b385bc7712b4c0a8189e62797dc67866a78faaeb73eed50",
+        "Executed(bytes32,uint8,uint64)": "0x3c96001356e45f3fac5e1bd1a5ffd41ef3f3ed77c090ac8666fd7740ff41c7e6",
+        "ExitExecuted(address,uint256,uint256,uint256,uint64)": "0x327d003acdc07a74d98e702761fd8862b49875d55bffd6e13fe223bc2552493c",
+        "ExitModuleSet(address,uint64)": "0xa4badd7e467f3561262e9eb5ef93a3c74c6a773ead66572c14c26976b127dd98",
+        "FeeCharged(uint8,address,address,uint256,bytes32)": "0x9a37304a80e9ccbeef339119cc8e57118bbbf4ba4b01df2a1ef6a0dc843a7bca",
+        "FeeDeferred(address,uint256,uint256)": "0xf48e46df15f5fe31c1c79e6219014406d25e1f90301334682c98267482a8221b",
+        "FeesCollected(uint256,uint256,uint256)": "0xa54e6c2fc0861aa9c991b26891d71059d517983b9e84b91020f42609c452eb9d",
+        "Initialized(address,uint8,uint256,uint8)": "0xd7d2db1abe71d733c127e11d760037c21535e2ffd6934c54fa8991051c78e1f0",
+        "LimitsChanged((uint16,uint16,uint32,uint32),uint64)": "0xc270707d7f81506f7cf101d87b0ba3c47214363a3cc2d70a9b64aba293fb4a98",
+        "OwedFeesFlushed(address,address,uint256)": "0x6d038b6b9cd7d27cc87517022a03a7025b2cc67e2dc7f0b97f572824cee6bfbb",
+        "PolicyChanged((uint8,uint16,uint16,uint32,uint8),uint64)": "0xf99adddb4eee022697c89db41a33e6b9692e741b3f778fb44d1ace90a832e338",
+        "PositionRecovered(uint256)": "0x3fb151d8dddd4dd180f8b324be13da04e5ddc747df9576e2d1efc5fb69e129d0",
+        "ReservesWithdrawn(address,uint256,uint64)": "0x113320c04f96f7509453e8d47ef4ceaf5c15877f5d306b4224c7469acf8ab095",
+        "RootCheckpointed((uint128,uint256,uint256,uint128,uint128))": "0xc567dfe117450c03c3c1fa816cbee0cf099065f9506b0b1c3690408851c9ef3f",
+        "RootDisarmed(uint8,uint64)": "0x949733685c38a7e3843a9b3aae151ac20308d66132282a4712043d9e866a3efa",
+        "RootRearmed(uint64)": "0xcc9d8b98ceadb530149e19c65da4d16c82d22ee3314261d038a11b441a7c116a",
+        "SuccessorCreated(uint256,uint256,uint64)": "0x63bedd8528c2d4707a09c8341b4e5c9fb313ff9855fd8c1643ccfd7f75b56974",
+        "Swapped(uint256,bool,uint256,uint256)": "0x88b012650d7da64b7697c175b1dc42bd7dd09d8a2ef28c62cbb448086f548ce6",
+        "TokenRecovered(address,uint256)": "0x4590b594be6fdef6bd5e18792a2494ddf2156b618c7bbe48d13a92831208af05"
+      },
+      "errorSelectors": {
+        "AutomationUnavailable()": "0xb114dfff",
+        "FeeNotBacked(address)": "0x6ce78f60",
+        "FeeRecipientUnavailable()": "0x9989eadf",
+        "FeeTransferMismatch(address)": "0xaa22b734",
+        "InsufficientReserves()": "0x945e9268",
+        "InvalidAmount()": "0x2c5211c6",
+        "InvalidFeeConfig()": "0x5601467a",
+        "InvalidInit()": "0xab849bda",
+        "InvalidInstruction()": "0xd8c48f68",
+        "InvalidLimits()": "0xe773e0a9",
+        "InvalidPlan()": "0x21f24259",
+        "InvalidPolicy()": "0xd06b96b1",
+        "InvalidPool()": "0x2083cd40",
+        "InvalidPosition()": "0xce7e065e",
+        "InvalidRecipient(address)": "0x17858bbe",
+        "InvalidRoute()": "0x84e505d2",
+        "PartialBurn(uint256,uint128,uint128)": "0xa97bba2b",
+        "PlanExpired()": "0x059e8997",
+        "PositionPoolMismatch(uint256)": "0xf71fd589",
+        "ReentrantCall()": "0x37ed32e8",
+        "StaleNonce()": "0xd8d01cf0",
+        "StepUnavailable()": "0x3fb52101",
+        "TokenCallFailed(address)": "0xfecb69b4",
+        "TooSoon()": "0x6fed7d85",
+        "Unauthorized()": "0x82b42900",
+        "UnexpectedCallback()": "0xdab1e993"
+      }
+    },
+    "DominoV2VaultV4": {
+      "source": "contracts/src/v2/vault/DominoV2VaultV4.sol",
+      "eventTopics": {
+        "AutomationPaused(address,uint64)": "0x0d46b3b465954a381f9059f636e7ad65a9cd82668b67d3aa6bcb04b1a4c806f3",
+        "AutomationResumed(uint64)": "0x415fc15e2eab1ca93eb69229544afcd6311297e7cb5a26dc093a37c9e5679e73",
+        "ChildWithdrawn(uint256,uint64)": "0xda0f3873fe7bfc5d79bda0d2fce8ee21ae8dffbfee37d9d47ec3f7100428ff25",
+        "Compounded(uint256,uint128,uint256,uint256,uint256,uint256,uint64)": "0x0957afbb4f3559d58b385bc7712b4c0a8189e62797dc67866a78faaeb73eed50",
+        "Executed(bytes32,uint8,uint64)": "0x3c96001356e45f3fac5e1bd1a5ffd41ef3f3ed77c090ac8666fd7740ff41c7e6",
+        "ExitExecuted(address,uint256,uint256,uint256,uint64)": "0x327d003acdc07a74d98e702761fd8862b49875d55bffd6e13fe223bc2552493c",
+        "ExitModuleSet(address,uint64)": "0xa4badd7e467f3561262e9eb5ef93a3c74c6a773ead66572c14c26976b127dd98",
+        "FeeCharged(uint8,address,address,uint256,bytes32)": "0x9a37304a80e9ccbeef339119cc8e57118bbbf4ba4b01df2a1ef6a0dc843a7bca",
+        "FeeDeferred(address,uint256,uint256)": "0xf48e46df15f5fe31c1c79e6219014406d25e1f90301334682c98267482a8221b",
+        "FeesCollected(uint256,uint256,uint256)": "0xa54e6c2fc0861aa9c991b26891d71059d517983b9e84b91020f42609c452eb9d",
+        "Initialized(address,uint8,uint256,uint8)": "0xd7d2db1abe71d733c127e11d760037c21535e2ffd6934c54fa8991051c78e1f0",
+        "LimitsChanged((uint16,uint16,uint32,uint32),uint64)": "0xc270707d7f81506f7cf101d87b0ba3c47214363a3cc2d70a9b64aba293fb4a98",
+        "OwedFeesFlushed(address,address,uint256)": "0x6d038b6b9cd7d27cc87517022a03a7025b2cc67e2dc7f0b97f572824cee6bfbb",
+        "PolicyChanged((uint8,uint16,uint16,uint32,uint8),uint64)": "0xf99adddb4eee022697c89db41a33e6b9692e741b3f778fb44d1ace90a832e338",
+        "PositionRecovered(uint256)": "0x3fb151d8dddd4dd180f8b324be13da04e5ddc747df9576e2d1efc5fb69e129d0",
+        "ReservesWithdrawn(address,uint256,uint64)": "0x113320c04f96f7509453e8d47ef4ceaf5c15877f5d306b4224c7469acf8ab095",
+        "RootCheckpointed((uint128,uint256,uint256,uint128,uint128))": "0xc567dfe117450c03c3c1fa816cbee0cf099065f9506b0b1c3690408851c9ef3f",
+        "RootDisarmed(uint8,uint64)": "0x949733685c38a7e3843a9b3aae151ac20308d66132282a4712043d9e866a3efa",
+        "RootRearmed(uint64)": "0xcc9d8b98ceadb530149e19c65da4d16c82d22ee3314261d038a11b441a7c116a",
+        "SuccessorCreated(uint256,uint256,uint64)": "0x63bedd8528c2d4707a09c8341b4e5c9fb313ff9855fd8c1643ccfd7f75b56974",
+        "Swapped(uint256,bool,uint256,uint256)": "0x88b012650d7da64b7697c175b1dc42bd7dd09d8a2ef28c62cbb448086f548ce6",
+        "TokenRecovered(address,uint256)": "0x4590b594be6fdef6bd5e18792a2494ddf2156b618c7bbe48d13a92831208af05"
+      },
+      "errorSelectors": {
+        "AutomationUnavailable()": "0xb114dfff",
+        "FeeNotBacked(address)": "0x6ce78f60",
+        "FeeRecipientUnavailable()": "0x9989eadf",
+        "FeeTransferMismatch(address)": "0xaa22b734",
+        "ForeignSubscriber(address)": "0x7889477f",
+        "HookedPool(address)": "0x1758b8a8",
+        "InsufficientReserves()": "0x945e9268",
+        "InvalidAmount()": "0x2c5211c6",
+        "InvalidFeeConfig()": "0x5601467a",
+        "InvalidInit()": "0xab849bda",
+        "InvalidInstruction()": "0xd8c48f68",
+        "InvalidLimits()": "0xe773e0a9",
+        "InvalidPlan()": "0x21f24259",
+        "InvalidPolicy()": "0xd06b96b1",
+        "InvalidPosition()": "0xce7e065e",
+        "InvalidRoute()": "0x84e505d2",
+        "PlanExpired()": "0x059e8997",
+        "ReentrantCall()": "0x37ed32e8",
+        "StaleNonce()": "0xd8d01cf0",
+        "StepUnavailable()": "0x3fb52101",
+        "TokenCallFailed(address)": "0xfecb69b4",
+        "TooSoon()": "0x6fed7d85",
+        "Unauthorized()": "0x82b42900",
+        "UnexpectedCallback()": "0xdab1e993"
+      }
+    },
+    "DominoZapV3": {
+      "source": "contracts/src/v2/zap/DominoZapV3.sol",
+      "eventTopics": {
+        "FeeCharged(uint8,address,address,uint256,bytes32)": "0x9a37304a80e9ccbeef339119cc8e57118bbbf4ba4b01df2a1ef6a0dc843a7bca",
+        "FeeDeferred(address,uint256,uint256)": "0xf48e46df15f5fe31c1c79e6219014406d25e1f90301334682c98267482a8221b",
+        "InputPulled(bytes32,address,address,uint256)": "0xc9ee6073c7a83985d230183c509eada6d701370f470716bde0c37568a49711ad",
+        "NoncesInvalidated(address,uint256,uint256)": "0x41a696ce0dbffb78931eef7ecfa24d3ab6270c8a321cc6564df24b38f16c4e4f",
+        "OwedFeesFlushed(address,address,uint256)": "0x6d038b6b9cd7d27cc87517022a03a7025b2cc67e2dc7f0b97f572824cee6bfbb",
+        "PositionActionExecuted(uint8,address,uint256,uint256,uint128,bytes32)": "0xa7c6a820069d8f01991283e8f527fa1678590447c17064fd43148892d2863a92",
+        "PositionLiquidityChanged(bytes32,address,uint256,(uint8,address,address,uint24,int24,address),int256,int256,int256)": "0xf6a97c0d2054864127258f1e392259b35bdb4e5360f3f78285bf30675b4b8b9a",
+        "Refunded(address,address,uint256)": "0xec1e5ed733e00f1a00915d56caef57b4f52312dde4f9b3165f213319a0da156b",
+        "SwapLegExecuted(uint8,address,address,address,uint256,uint256)": "0x60154ef230959d31cc953d02fea179f08acb4195f22d3ac43bc9ce7219c0cf31"
+      },
+      "errorSelectors": {
+        "ApprovalFailed(address)": "0xe5a0a42f",
+        "FeeMismatch()": "0x36a9d011",
+        "FeeNotBacked(address)": "0x6ce78f60",
+        "FeeRecipientUnavailable()": "0x9989eadf",
+        "FeeTransferMismatch(address)": "0xaa22b734",
+        "InsufficientLiquidity()": "0xbb55fd27",
+        "InsufficientLiquidity(uint128,uint128)": "0xe49b763d",
+        "InvalidFeeConfig()": "0x5601467a",
+        "InvalidPlan()": "0x21f24259",
+        "InvalidPool()": "0x2083cd40",
+        "InvalidRange(int24,int24,int24)": "0x00911c16",
+        "InvalidRecipient(address)": "0x17858bbe",
+        "InvalidRouteConfig()": "0x6c8e15aa",
+        "InvalidSignature()": "0x8baa579f",
+        "ManagerMismatch()": "0x274c4ebb",
+        "NonceUsed(address,uint256)": "0x2af71f10",
+        "PartialBurn(uint256,uint128,uint128)": "0xa97bba2b",
+        "PlanExpired()": "0x059e8997",
+        "PositionPoolMismatch(uint256)": "0xf71fd589",
+        "ReentrantCall()": "0x37ed32e8",
+        "SwapEffectMismatch()": "0x374aa3d7",
+        "TokenCallFailed(address)": "0xfecb69b4",
+        "Unauthorized()": "0x82b42900"
+      }
+    },
+    "DominoZapV4": {
+      "source": "contracts/src/v2/zap/DominoZapV4.sol",
+      "eventTopics": {
+        "FeeCharged(uint8,address,address,uint256,bytes32)": "0x9a37304a80e9ccbeef339119cc8e57118bbbf4ba4b01df2a1ef6a0dc843a7bca",
+        "FeeDeferred(address,uint256,uint256)": "0xf48e46df15f5fe31c1c79e6219014406d25e1f90301334682c98267482a8221b",
+        "InputPulled(bytes32,address,address,uint256)": "0xc9ee6073c7a83985d230183c509eada6d701370f470716bde0c37568a49711ad",
+        "NoncesInvalidated(address,uint256,uint256)": "0x41a696ce0dbffb78931eef7ecfa24d3ab6270c8a321cc6564df24b38f16c4e4f",
+        "OwedFeesFlushed(address,address,uint256)": "0x6d038b6b9cd7d27cc87517022a03a7025b2cc67e2dc7f0b97f572824cee6bfbb",
+        "PositionActionExecuted(uint8,address,uint256,uint256,uint128,bytes32)": "0xa7c6a820069d8f01991283e8f527fa1678590447c17064fd43148892d2863a92",
+        "PositionLiquidityChanged(bytes32,address,uint256,(uint8,address,address,uint24,int24,address),int256,int256,int256)": "0xf6a97c0d2054864127258f1e392259b35bdb4e5360f3f78285bf30675b4b8b9a",
+        "Refunded(address,address,uint256)": "0xec1e5ed733e00f1a00915d56caef57b4f52312dde4f9b3165f213319a0da156b",
+        "SwapLegExecuted(uint8,address,address,address,uint256,uint256)": "0x60154ef230959d31cc953d02fea179f08acb4195f22d3ac43bc9ce7219c0cf31"
+      },
+      "errorSelectors": {
+        "FeeMismatch()": "0x36a9d011",
+        "FeeNotBacked(address)": "0x6ce78f60",
+        "FeeRecipientUnavailable()": "0x9989eadf",
+        "FeeTransferMismatch(address)": "0xaa22b734",
+        "InsufficientLiquidity()": "0xbb55fd27",
+        "InvalidFeeConfig()": "0x5601467a",
+        "InvalidPlan()": "0x21f24259",
+        "InvalidPool()": "0x2083cd40",
+        "InvalidRouteConfig()": "0x6c8e15aa",
+        "InvalidSignature()": "0x8baa579f",
+        "InvalidZapConfig()": "0x787fe9bc",
+        "ManagerMismatch()": "0x274c4ebb",
+        "NonceUsed(address,uint256)": "0x2af71f10",
+        "PlanExpired()": "0x059e8997",
+        "ReentrantCall()": "0x37ed32e8",
+        "SwapEffectMismatch()": "0x374aa3d7",
+        "TokenCallFailed(address)": "0xfecb69b4",
+        "Unauthorized()": "0x82b42900"
+      }
+    },
+    "DominoZapV4Steps": {
+      "source": "contracts/src/v2/zap/DominoZapV4Steps.sol",
+      "eventTopics": {},
+      "errorSelectors": {
+        "DirectCall()": "0xdf146856",
+        "InsufficientLiquidity(uint128,uint128)": "0xe49b763d",
+        "InvalidPool()": "0x2083cd40",
+        "InvalidRange(int24,int24,int24)": "0x00911c16",
+        "InvalidRecipient(address)": "0x17858bbe",
+        "OpenDelta(int256,int256)": "0x5e9131f6",
+        "PartialBurn(uint256,uint128,uint128)": "0xa97bba2b",
+        "PoolNotInitialized()": "0x486aa307",
+        "PositionPoolMismatch(uint256)": "0xf71fd589",
+        "SettlementMismatch(address,uint256,uint256)": "0x60752ed2",
+        "TransferFailed(address)": "0x39f1c8d9"
+      }
+    }
+  }
+}

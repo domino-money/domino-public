@@ -1,0 +1,162 @@
+{
+  "source": "contracts/src/v2/zap/DominoZapV4Steps.sol",
+  "eventTopics": {},
+  "errorSelectors": {
+    "DirectCall()": "0xdf146856",
+    "InsufficientLiquidity(uint128,uint128)": "0xe49b763d",
+    "InvalidPool()": "0x2083cd40",
+    "InvalidRange(int24,int24,int24)": "0x00911c16",
+    "InvalidRecipient(address)": "0x17858bbe",
+    "OpenDelta(int256,int256)": "0x5e9131f6",
+    "PartialBurn(uint256,uint128,uint128)": "0xa97bba2b",
+    "PoolNotInitialized()": "0x486aa307",
+    "PositionPoolMismatch(uint256)": "0xf71fd589",
+    "SettlementMismatch(address,uint256,uint256)": "0x60752ed2",
+    "TransferFailed(address)": "0x39f1c8d9"
+  },
+  "abi": [
+    {
+      "inputs": [],
+      "name": "DirectCall",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint128",
+          "name": "liquidity",
+          "type": "uint128"
+        },
+        {
+          "internalType": "uint128",
+          "name": "minimum",
+          "type": "uint128"
+        }
+      ],
+      "name": "InsufficientLiquidity",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidPool",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "int24",
+          "name": "tickLower",
+          "type": "int24"
+        },
+        {
+          "internalType": "int24",
+          "name": "tickUpper",
+          "type": "int24"
+        },
+        {
+          "internalType": "int24",
+          "name": "tickSpacing",
+          "type": "int24"
+        }
+      ],
+      "name": "InvalidRange",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
+        }
+      ],
+      "name": "InvalidRecipient",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "int256",
+          "name": "delta0",
+          "type": "int256"
+        },
+        {
+          "internalType": "int256",
+          "name": "delta1",
+          "type": "int256"
+        }
+      ],
+      "name": "OpenDelta",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint128",
+          "name": "liquidity",
+          "type": "uint128"
+        },
+        {
+          "internalType": "uint128",
+          "name": "positionLiquidity",
+          "type": "uint128"
+        }
+      ],
+      "name": "PartialBurn",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "PoolNotInitialized",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenId",
+          "type": "uint256"
+        }
+      ],
+      "name": "PositionPoolMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "currency",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "expected",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "paid",
+          "type": "uint256"
+        }
+      ],
+      "name": "SettlementMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "name": "TransferFailed",
+      "type": "error"
+    }
+  ]
+}

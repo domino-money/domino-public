@@ -1,0 +1,345 @@
+{
+  "$defs": {
+    "InitialPriceIn": {
+      "additionalProperties": false,
+      "description": "One whole `baseToken` is worth `price` whole tokens of the pool's other currency.",
+      "properties": {
+        "baseToken": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "title": "Basetoken",
+          "type": "string"
+        },
+        "decimals0": {
+          "maximum": 77,
+          "minimum": 0,
+          "title": "Decimals0",
+          "type": "integer"
+        },
+        "decimals1": {
+          "maximum": 77,
+          "minimum": 0,
+          "title": "Decimals1",
+          "type": "integer"
+        },
+        "price": {
+          "maxLength": 77,
+          "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,36})?$",
+          "title": "Price",
+          "type": "string"
+        }
+      },
+      "required": [
+        "price",
+        "baseToken",
+        "decimals0",
+        "decimals1"
+      ],
+      "title": "InitialPriceIn",
+      "type": "object"
+    },
+    "InputIn": {
+      "additionalProperties": false,
+      "properties": {
+        "amountRaw": {
+          "maxLength": 39,
+          "pattern": "^[1-9][0-9]{0,38}$",
+          "title": "Amountraw",
+          "type": "string",
+          "x-maximum-raw": "340282366920938463463374607431768211455"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "amountRaw"
+      ],
+      "title": "InputIn",
+      "type": "object"
+    },
+    "PoolIn": {
+      "additionalProperties": false,
+      "properties": {
+        "currency0": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "title": "Currency0",
+          "type": "string"
+        },
+        "currency1": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "title": "Currency1",
+          "type": "string"
+        },
+        "dex": {
+          "enum": [
+            3,
+            4
+          ],
+          "title": "Dex",
+          "type": "integer"
+        },
+        "fee": {
+          "maximum": 16777215,
+          "minimum": 0,
+          "title": "Fee",
+          "type": "integer"
+        },
+        "hooks": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "title": "Hooks",
+          "type": "string"
+        },
+        "tickSpacing": {
+          "maximum": 32767,
+          "minimum": 1,
+          "title": "Tickspacing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dex",
+        "currency0",
+        "currency1",
+        "fee",
+        "tickSpacing",
+        "hooks"
+      ],
+      "title": "PoolIn",
+      "type": "object"
+    },
+    "PositionIn": {
+      "additionalProperties": false,
+      "properties": {
+        "dex": {
+          "enum": [
+            3,
+            4
+          ],
+          "title": "Dex",
+          "type": "integer"
+        },
+        "tokenId": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Tokenid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "dex",
+        "tokenId"
+      ],
+      "title": "PositionIn",
+      "type": "object"
+    },
+    "ReceiveIn": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "both",
+            "converted"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "token": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-fA-F]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Token"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "ReceiveIn",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/position-plan-v1/plan.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "increase",
+        "changeRange",
+        "exit"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "burn": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Burn"
+    },
+    "chainId": {
+      "enum": [
+        4663,
+        8453,
+        42161
+      ],
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "consent": {
+      "enum": [
+        "direct",
+        "permit2",
+        "relayed"
+      ],
+      "title": "Consent",
+      "type": "string"
+    },
+    "initialPrice": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InitialPriceIn"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "inputs": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/InputIn"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Inputs"
+    },
+    "liquidityToRemove": {
+      "anyOf": [
+        {
+          "maxLength": 39,
+          "pattern": "^(all|0|[1-9][0-9]{0,38})$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Liquiditytoremove"
+    },
+    "pool": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PoolIn"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "position": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PositionIn"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "receive": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReceiveIn"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "slippageBps": {
+      "default": 50,
+      "maximum": 500,
+      "minimum": 10,
+      "title": "Slippagebps",
+      "type": "integer"
+    },
+    "tickLower": {
+      "anyOf": [
+        {
+          "maximum": 887272,
+          "minimum": -887272,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ticklower"
+    },
+    "tickUpper": {
+      "anyOf": [
+        {
+          "maximum": 887272,
+          "minimum": -887272,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tickupper"
+    }
+  },
+  "required": [
+    "chainId",
+    "action",
+    "consent"
+  ],
+  "title": "PlanRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.2"
+}

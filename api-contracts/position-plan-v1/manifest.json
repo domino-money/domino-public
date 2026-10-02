@@ -1,0 +1,170 @@
+{
+  "contract": "position-plan-v1",
+  "contractVersion": "1.0.0-rc.2",
+  "files": [
+    {
+      "path": "fixtures/errors.json",
+      "sha256": "a5a7d3b6e98e1a8b16e5dfe0c22d9ea3e2f1c035b82b4e17441988c0a45a477f"
+    },
+    {
+      "path": "fixtures/requests/plan.json",
+      "sha256": "7d47e27fff7ed0e6568b2cd3e0b0325d8d28434ae8e98ae9329fffc2cc95da71"
+    },
+    {
+      "path": "fixtures/responses/plan.json",
+      "sha256": "0aeb41cec62159d358d142181becc4c1499d63f6ce3bf28f08976f1d5a3abbdd"
+    },
+    {
+      "path": "fixtures/variants/plan.change-range-direct.json",
+      "sha256": "f7f5ffd29f467f31c09b5e88c7f40c0a7534cc7a36a76ec16c06d629474183b2"
+    },
+    {
+      "path": "fixtures/variants/plan.create-native-direct.json",
+      "sha256": "ceb7ae3422ac5452ca53d5576f0a872a76f671c4ecf2b7a91bec5658cad92f75"
+    },
+    {
+      "path": "fixtures/variants/plan.create-new-pool-direct.json",
+      "sha256": "9f69a9f31c7fbac78b893689b9f3092966a7007de18b4c647f1a343216ac55a6"
+    },
+    {
+      "path": "fixtures/variants/plan.create-robinhood-direct.json",
+      "sha256": "4aedd80110f7da5aafa19870ea6bcdd27bc7b383492b4b9e72556d35474cb0f7"
+    },
+    {
+      "path": "fixtures/variants/plan.create-split-v4.json",
+      "sha256": "4dfd5bf07485c11fde0cc6753c22547d9f21ddb843334a39fa6724a7e3e1a48c"
+    },
+    {
+      "path": "fixtures/variants/plan.exit-converted-direct.json",
+      "sha256": "b816e05eca0984263fe31181fa96d871d879fe19ea62a63209f91838a2cb5992"
+    },
+    {
+      "path": "fixtures/variants/plan.exit-relayed.json",
+      "sha256": "947ebbac3c28c32c53da4bac3b20d6d509f76919d08f453ef97e6908ea2d8536"
+    },
+    {
+      "path": "fixtures/variants/plan.increase-direct.json",
+      "sha256": "897330edc0db38cbf0a401459cf20bc31c28bcf54e5276ab0b0a1bd287e813b3"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "6caff118bb0a20c8140232bfbadbb29a493d3002a964044d0bdcdbaa1ba7138a"
+    },
+    {
+      "path": "schema-data.mjs",
+      "sha256": "52ebb5750340e4b17a33fe4f81c9274120a826b6fece55a492fbb19e07735cfb"
+    },
+    {
+      "path": "schemas/error.response.schema.json",
+      "sha256": "cc06ead32db5f8f27416746476ebc51e7004383a613e6e8408fe149ff7b02cef"
+    },
+    {
+      "path": "schemas/plan.request.schema.json",
+      "sha256": "c3daaaf87df858ed86962f80da5c49149049cbf468cd173993d37dfff509791f"
+    },
+    {
+      "path": "schemas/plan.response.schema.json",
+      "sha256": "cf60dd3da2348bae38da0ca71f13d58de8099be3e2e920656c9259c60ac48bf4"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "9d653c095d9a1090681cd94aaec3797c17a184e89196ef3acaebda73f5926b59"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "d92726c9c6fccaf177525f6618be15f419856f9a383ab4a07b0203ab6cb63f4f"
+    },
+    {
+      "path": "../shared/closed-schema.mjs",
+      "sha256": "ee18602dbc0b43267170a74aa62200b1653c38be25204318f2c93abc513e7970"
+    },
+    {
+      "path": "README.md",
+      "sha256": "9629eaf3d5dc50ce8cad47917419c819acafc3d294a79a16d5c9da142b037a3c"
+    },
+    {
+      "path": "consumer.test.mjs",
+      "sha256": "00b4e2333f21b8ef08695d489f31605f3532f0e93ab5de26c3941b6ef191d4a2"
+    }
+  ],
+  "generator": "scripts/export-position-plan-contract.py",
+  "sources": [
+    {
+      "path": "backend/v2_position_plan.py",
+      "sha256": "d4c2008062648ac7f09931023d4ac0238a8c93b4eeb993d08c8e0277edb76150"
+    },
+    {
+      "path": "backend/v2_position_plan_models.py",
+      "sha256": "8cf6bb210e649e3f672942ecec9861f71d232e96175c3835a4001036ac80e3f5"
+    },
+    {
+      "path": "backend/v2_position_plan_rules.py",
+      "sha256": "0e58b8f15775e08ea2f5d2bb672c3b7173effdb5882aabdb79b113a7ebfb4022"
+    },
+    {
+      "path": "backend/v2_position_plan_service.py",
+      "sha256": "2355789d192265cf6937cec71e7266978d8f632fddd2d3f8ce51143b49c54369"
+    },
+    {
+      "path": "backend/v2_position_plan_api.py",
+      "sha256": "3d78f42f9038b0d2a07bd968890d79028fa4b199ace8b8990771de5a5519cea4"
+    },
+    {
+      "path": "backend/v2_position_plan_config.py",
+      "sha256": "960516c3efbfaf8ee66afb0b6a82a524bb04177a9123af28f975dac0d8f54c76"
+    },
+    {
+      "path": "backend/v2_plan_codec.py",
+      "sha256": "4352e5b123f46f92d4240e922d2ab4e7f4b0f96c129d35c6992c517e5d1f793c"
+    },
+    {
+      "path": "backend/v2_fee_rule.py",
+      "sha256": "8b698178073a525bfd1f5d3d1a5f11b1ed83c435f25d0189b78cb9175754855e"
+    },
+    {
+      "path": "backend/v2_quotes.py",
+      "sha256": "c81bd3b7ce6a4130f7aeb557dfc8391fb01ace166efe1648cfa87d9b522d23e2"
+    },
+    {
+      "path": "backend/v2_liquidity.py",
+      "sha256": "cca4016f98c19f192178f7988be496e358daaf0da72711f666dd8f8f78328f63"
+    },
+    {
+      "path": "backend/v2_l1_fee.py",
+      "sha256": "df00fa934f575c053c85561104c06f0f2d9cf9b681ac721c7ae97fdf73d58c67"
+    },
+    {
+      "path": "backend/v2_uniswap_api.py",
+      "sha256": "b37bfc5379277d3bf44ced91a9f3572853dfb9afe97a216f930795f64736a6b3"
+    },
+    {
+      "path": "backend/authenticated_api.py",
+      "sha256": "dd4d8f9fdb41bf69d8831f9e7b71dbe533e085874e304ca67ede5a5091ecd79f"
+    },
+    {
+      "path": "backend/onboarding_auth.py",
+      "sha256": "0060646f6ceaf95da3b597c68110737d17129afae8dce4120f206de1ed5677d4"
+    },
+    {
+      "path": "backend/onboarding_models.py",
+      "sha256": "8ae40a3208441d611e351a12ccd7912b32bfe91f98c9ee314b3cda1d3d00aa83"
+    },
+    {
+      "path": "api-contracts/v2/eip712.json",
+      "sha256": "e5945119ad011b8a2c715c767c66dbdd5375449de918059f22e7d261a08cbee4"
+    },
+    {
+      "path": "backend/tests/position_plan_contract_fixtures.py",
+      "sha256": "1c855c4bdbd70bfcd3d4632be22b7972a736ae9e1f24bfbb593551df4418256e"
+    },
+    {
+      "path": "backend/tests/fixtures/position-plan/recordings.json",
+      "sha256": "d52df1cb21e0742feb9063ae958d50cbaf217f0befe8924c262b84b817f71ef1"
+    },
+    {
+      "path": "scripts/export-position-plan-contract.py",
+      "sha256": "af85131ec3bf4ae0e96ed9417942535cac1e5aee5cfc41a03ec547658cedce27"
+    }
+  ],
+  "status": "candidate_disabled_pending_deployment_and_worker"
+}

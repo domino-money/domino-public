@@ -1,0 +1,266 @@
+{
+  "account_check_unavailable": {
+    "body": {
+      "error": "account_check_unavailable"
+    },
+    "status": 503
+  },
+  "account_unsupported": {
+    "body": {
+      "error": "account_unsupported"
+    },
+    "status": 403
+  },
+  "csrf_invalid": {
+    "body": {
+      "error": "csrf_invalid"
+    },
+    "status": 403
+  },
+  "invalid_request": {
+    "body": {
+      "error": "invalid_request"
+    },
+    "status": 400
+  },
+  "json_required": {
+    "body": {
+      "error": "json_required"
+    },
+    "status": 415
+  },
+  "method_not_allowed": {
+    "body": {
+      "error": "method_not_allowed"
+    },
+    "status": 405
+  },
+  "onboarding_capacity_busy": {
+    "body": {
+      "error": "onboarding_capacity_busy"
+    },
+    "status": 429
+  },
+  "onboarding_rate_limited": {
+    "body": {
+      "error": "onboarding_rate_limited"
+    },
+    "status": 429
+  },
+  "origin_not_allowed": {
+    "body": {
+      "error": "origin_not_allowed"
+    },
+    "status": 403
+  },
+  "position_plan_amount_too_small": {
+    "body": {
+      "error": "position_plan_amount_too_small"
+    },
+    "status": 422
+  },
+  "position_plan_burn_needs_all": {
+    "body": {
+      "error": "position_plan_burn_needs_all"
+    },
+    "status": 422
+  },
+  "position_plan_capacity_busy": {
+    "body": {
+      "error": "position_plan_capacity_busy"
+    },
+    "status": 429
+  },
+  "position_plan_chain_unavailable": {
+    "body": {
+      "error": "position_plan_chain_unavailable"
+    },
+    "status": 503
+  },
+  "position_plan_consent_unsupported": {
+    "body": {
+      "error": "position_plan_consent_unsupported"
+    },
+    "status": 422
+  },
+  "position_plan_fee_not_backed": {
+    "body": {
+      "error": "position_plan_fee_not_backed"
+    },
+    "status": 502
+  },
+  "position_plan_hooked_pool": {
+    "body": {
+      "error": "position_plan_hooked_pool"
+    },
+    "status": 422
+  },
+  "position_plan_inputs_unsupported": {
+    "body": {
+      "error": "position_plan_inputs_unsupported"
+    },
+    "status": 422
+  },
+  "position_plan_liquidity_invalid": {
+    "body": {
+      "error": "position_plan_liquidity_invalid"
+    },
+    "status": 422
+  },
+  "position_plan_no_route": {
+    "body": {
+      "error": "position_plan_no_route"
+    },
+    "status": 422
+  },
+  "position_plan_not_owner": {
+    "body": {
+      "error": "position_plan_not_owner"
+    },
+    "status": 403
+  },
+  "position_plan_nothing_to_convert": {
+    "body": {
+      "error": "position_plan_nothing_to_convert"
+    },
+    "status": 422
+  },
+  "position_plan_pool_initialized": {
+    "body": {
+      "error": "position_plan_pool_initialized"
+    },
+    "status": 409
+  },
+  "position_plan_pool_invalid": {
+    "body": {
+      "error": "position_plan_pool_invalid"
+    },
+    "status": 422
+  },
+  "position_plan_pool_not_initialized": {
+    "body": {
+      "error": "position_plan_pool_not_initialized"
+    },
+    "status": 409
+  },
+  "position_plan_position_not_found": {
+    "body": {
+      "error": "position_plan_position_not_found"
+    },
+    "status": 404
+  },
+  "position_plan_price_decimals_mismatch": {
+    "body": {
+      "error": "position_plan_price_decimals_mismatch"
+    },
+    "status": 422
+  },
+  "position_plan_price_invalid": {
+    "body": {
+      "error": "position_plan_price_invalid"
+    },
+    "status": 422
+  },
+  "position_plan_range_invalid": {
+    "body": {
+      "error": "position_plan_range_invalid"
+    },
+    "status": 422
+  },
+  "position_plan_unavailable": {
+    "body": {
+      "error": "position_plan_unavailable"
+    },
+    "status": 503
+  },
+  "preview_expired": {
+    "body": {
+      "error": "preview_expired"
+    },
+    "status": 409
+  },
+  "provider_rate_limited": {
+    "body": {
+      "error": "provider_rate_limited"
+    },
+    "status": 429
+  },
+  "provider_request_rejected": {
+    "body": {
+      "error": "provider_request_rejected"
+    },
+    "status": 422
+  },
+  "provider_unavailable": {
+    "body": {
+      "error": "provider_unavailable"
+    },
+    "status": 503
+  },
+  "request_timeout": {
+    "body": {
+      "error": "request_timeout"
+    },
+    "status": 504
+  },
+  "request_too_large": {
+    "body": {
+      "error": "request_too_large"
+    },
+    "status": 413
+  },
+  "route_not_available": {
+    "body": {
+      "error": "route_not_available"
+    },
+    "status": 404
+  },
+  "session_capacity_busy": {
+    "body": {
+      "error": "session_capacity_busy"
+    },
+    "status": 429
+  },
+  "session_rate_limited": {
+    "body": {
+      "error": "session_rate_limited"
+    },
+    "status": 429
+  },
+  "session_required": {
+    "body": {
+      "error": "session_required"
+    },
+    "status": 401
+  },
+  "session_store_unavailable": {
+    "body": {
+      "error": "session_store_unavailable"
+    },
+    "status": 503
+  },
+  "upstream_contract_mismatch": {
+    "body": {
+      "error": "upstream_contract_mismatch"
+    },
+    "status": 502
+  },
+  "upstream_invalid_response": {
+    "body": {
+      "error": "upstream_invalid_response"
+    },
+    "status": 502
+  },
+  "upstream_timeout": {
+    "body": {
+      "error": "upstream_timeout"
+    },
+    "status": 504
+  },
+  "upstream_unavailable": {
+    "body": {
+      "error": "upstream_unavailable"
+    },
+    "status": 503
+  }
+}

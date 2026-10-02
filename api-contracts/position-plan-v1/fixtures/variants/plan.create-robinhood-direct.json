@@ -1,0 +1,261 @@
+{
+  "contractVersion": "1.0.0-rc.2",
+  "plan": {
+    "action": "create",
+    "block": {
+      "hash": "0xa8849ec2f0f277dcf9baf292f271330f0ba737b379bcf14ddf9393af10d8ccc6",
+      "number": "14",
+      "timestamp": "1790964619"
+    },
+    "call": {
+      "data": "0x0e97b0410000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000040000000000000000000000009fe46736679d2d9a65f0992f2272de9f3c7fa6e0000000000000000000000000cf7ed3acca5a467e9e704c703e8d87f634fb0fc90000000000000000000000000000000000000000000000000000000000000bb8000000000000000000000000000000000000000000000000000000000000003c00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffb5000000000000000000000000000000000000000000000000000000000000004b00000000000000000000000000000000000000000000001b9f681cf1935a4e61700000000000000000000000000000000000000000000000000000000000000410000000000000000000000009fe46736679d2d9a65f0992f2272de9f3c7fa6e077499005b450b3874b1be65df474c5470bbdcf7a6d265946035122689125ffe20000000000000000000000008f41a77215aac4bbd3a59211d312bf45ca99a5a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006abff4b800000000000000000000000000000000000000000000000000000000000002c0000000000000000000000000000000000000000000000000000000000000032000000000000000000000000000000000ffffffffffffffffffffffffffffffff00000000000000000000000000000000ffffffffffffffffffffffffffffffff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000009fe46736679d2d9a65f0992f2272de9f3c7fa6e000000000000000000000000000000000000000000000003635c9adc5dea0000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000000000000000000000000000000009fe46736679d2d9a65f0992f2272de9f3c7fa6e0000000000000000000000000cf7ed3acca5a467e9e704c703e8d87f634fb0fc900000000000000000000000000000000000000000000001b090ea41df204f19b00000000000000000000000000000000000000000000001ad17380feb94f0b2a00000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000040000000000000000000000009fe46736679d2d9a65f0992f2272de9f3c7fa6e0000000000000000000000000cf7ed3acca5a467e9e704c703e8d87f634fb0fc90000000000000000000000000000000000000000000000000000000000000bb8000000000000000000000000000000000000000000000000000000000000003c0000000000000000000000000000000000000000000000000000000000000000",
+      "function": "create",
+      "selector": "0x0e97b041",
+      "to": "0x0165878a594ca255338adfa4d48449f69242eb8f",
+      "valueRaw": "0"
+    },
+    "chainId": 4663,
+    "consent": "direct",
+    "deadline": "1790964920",
+    "expected": {
+      "amount0Raw": "498043624823979873672",
+      "amount1Raw": "497193863843433185683",
+      "fees0Raw": null,
+      "fees1Raw": null,
+      "liquidity": "8545357425125421133578",
+      "principal0Raw": null,
+      "principal1Raw": null,
+      "returned": [],
+      "sqrtPriceX96After": "79224223338639769339532514594"
+    },
+    "expiresAt": 1790964800,
+    "fee": {
+      "amountRaw": "3241645741325514973",
+      "basisRaw": "498714729434694611355",
+      "bps": 65,
+      "place": "input",
+      "ranks": [
+        {
+          "rank": 1,
+          "token": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0"
+        },
+        {
+          "rank": 0,
+          "token": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9"
+        }
+      ],
+      "token": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0"
+    },
+    "initialPrice": null,
+    "intentHash": "0x5eea3c676af914f065bd88f2a6f11d2d31fda4b1f2197b2623c062a94768550e",
+    "l1DataFee": {
+      "block": "14",
+      "l1GasUnits": "0",
+      "l2BaseFeeWei": "32014000",
+      "source": "nitro_node_interface",
+      "status": "ok",
+      "transactionBytes": null,
+      "upperBoundWeiRaw": null,
+      "weiRaw": "0"
+    },
+    "legs": [
+      {
+        "amountInRaw": "498714729434694611355",
+        "expectedOutRaw": "497193863843433185683",
+        "kind": "v4_pool",
+        "minAmountOutRaw": "494707894524216019754",
+        "pools": [
+          {
+            "currency0": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+            "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+            "dex": 4,
+            "fee": 3000,
+            "hooks": "0x0000000000000000000000000000000000000000",
+            "id": "0x0dca2477afff6fe899ee14b08f5f2397e75f6f23e2e4c2e49db93fc1ee207d45",
+            "tickSpacing": 60
+          }
+        ],
+        "priceImpactPercent": null,
+        "source": "local_simulation",
+        "tokenIn": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+        "tokenOut": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9"
+      }
+    ],
+    "minimums": {
+      "amount0RemovedRaw": null,
+      "amount1RemovedRaw": null,
+      "liquidity": "8152776842618419340823",
+      "mintBand": {
+        "lowerSqrtPriceX96": "79025914583715011559369187612",
+        "upperSqrtPriceX96": "79422036938300239567760189645"
+      },
+      "removalBand": null,
+      "slippageBps": 50
+    },
+    "owner": "0x8f41a77215aac4bbd3a59211d312bf45ca99a5a0",
+    "pool": {
+      "currency0": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+      "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+      "dex": 4,
+      "fee": 3000,
+      "hooks": "0x0000000000000000000000000000000000000000",
+      "id": "0x0dca2477afff6fe899ee14b08f5f2397e75f6f23e2e4c2e49db93fc1ee207d45",
+      "initialized": true,
+      "liquidity": "10000000000000000000543532",
+      "sqrtPriceX96": "79228162514264337593543950336",
+      "swapFeePips": {
+        "oneForZero": 3000,
+        "zeroForOne": 3000
+      },
+      "tick": 0,
+      "tickSpacing": 60
+    },
+    "position": null,
+    "readiness": {
+      "account": {
+        "consents": [
+          "direct",
+          "permit2"
+        ],
+        "delegate": null,
+        "kind": "eoa"
+      },
+      "approvals": [
+        {
+          "allowanceRaw": "0",
+          "requiredRaw": "1000000000000000000000",
+          "spender": "0x0165878a594ca255338adfa4d48449f69242eb8f",
+          "spenderKind": "zap",
+          "sufficient": false,
+          "token": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0"
+        }
+      ],
+      "balances": [
+        {
+          "heldRaw": "10000000000000000000000",
+          "requiredRaw": "1000000000000000000000",
+          "sufficient": true,
+          "token": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0"
+        }
+      ],
+      "nonce": null,
+      "positionApproval": null,
+      "steps": [
+        {
+          "data": "0x095ea7b30000000000000000000000000165878a594ca255338adfa4d48449f69242eb8f00000000000000000000000000000000000000000000003635c9adc5dea00000",
+          "kind": "approve_token",
+          "to": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+          "valueRaw": "0"
+        },
+        {
+          "data": null,
+          "kind": "send_action",
+          "to": "0x0165878a594ca255338adfa4d48449f69242eb8f",
+          "valueRaw": "0"
+        }
+      ]
+    },
+    "request": {
+      "action": "create",
+      "burn": null,
+      "chainId": 4663,
+      "consent": "direct",
+      "initialPrice": null,
+      "inputs": [
+        {
+          "amountRaw": "1000000000000000000000",
+          "token": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0"
+        }
+      ],
+      "liquidityToRemove": null,
+      "owner": "0x8f41a77215aac4bbd3a59211d312bf45ca99a5a0",
+      "pool": {
+        "currency0": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+        "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+        "dex": 4,
+        "fee": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tickSpacing": 60
+      },
+      "position": null,
+      "receive": null,
+      "slippageBps": 50,
+      "tickLower": -1200,
+      "tickUpper": 1200
+    },
+    "requestFingerprint": "6dcad6a1f9c99ca038e2324768c6795f268c750c210d74c01d35e891f5018a7f",
+    "requestedAt": 1790964620,
+    "retrievedAt": 1790964620,
+    "routesHash": "0x77499005b450b3874b1be65df474c5470bbdcf7a6d265946035122689125ffe2",
+    "routing": {
+      "advantageBps": 10,
+      "router": {
+        "reason": null,
+        "status": "not_configured"
+      }
+    },
+    "schemaVersion": 1,
+    "signature": null,
+    "simulation": {
+      "error": null,
+      "gasUnits": "511862",
+      "method": "eth_simulateV1",
+      "reason": null,
+      "result": {
+        "amount0": "498043624823979873672",
+        "amount1": "497193863843433185683",
+        "feeAmount": "3241645741325514973",
+        "feeToken": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+        "liquidity": "8545357425125421133578",
+        "tokenId": "3"
+      },
+      "status": "ok"
+    },
+    "source": "position_plan_v1",
+    "warnings": [],
+    "zap": "0x0165878a594ca255338adfa4d48449f69242eb8f",
+    "zapPlan": {
+      "amount0Max": "340282366920938463463374607431768211455",
+      "amount1Max": "340282366920938463463374607431768211455",
+      "initSqrtPriceX96": "0",
+      "inputs": [
+        {
+          "amount": "1000000000000000000000",
+          "token": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0"
+        }
+      ],
+      "intent": {
+        "action": 1,
+        "deadline": "1790964920",
+        "feeBps": 65,
+        "feeToken": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+        "minLiquidity": "8152776842618419340823",
+        "nonce": "0",
+        "pool": {
+          "currency0": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+          "currency1": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+          "dex": 4,
+          "fee": 3000,
+          "hooks": "0x0000000000000000000000000000000000000000",
+          "tickSpacing": 60
+        },
+        "recipient": "0x8f41a77215aac4bbd3a59211d312bf45ca99a5a0",
+        "routesHash": "0x77499005b450b3874b1be65df474c5470bbdcf7a6d265946035122689125ffe2",
+        "tickLower": -1200,
+        "tickUpper": 1200,
+        "tokenId": "0"
+      },
+      "legs": [
+        {
+          "amountIn": "498714729434694611355",
+          "data": "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000040000000000000000000000009fe46736679d2d9a65f0992f2272de9f3c7fa6e0000000000000000000000000cf7ed3acca5a467e9e704c703e8d87f634fb0fc90000000000000000000000000000000000000000000000000000000000000bb8000000000000000000000000000000000000000000000000000000000000003c0000000000000000000000000000000000000000000000000000000000000000",
+          "kind": 3,
+          "minAmountOut": "494707894524216019754",
+          "router": "0x0000000000000000000000000000000000000000",
+          "tokenIn": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+          "tokenOut": "0xcf7ed3acca5a467e9e704c703e8d87f634fb0fc9"
+        }
+      ]
+    }
+  }
+}

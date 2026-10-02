@@ -1,0 +1,77 @@
+{
+  "source": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+  "eventTopics": {
+    "ObservationRevokedBy(bytes32,address)": "0x5817d3d21890304df591942c38672b8c4cc192c1ef5e035d4f88f04c8e6f3b53"
+  },
+  "errorSelectors": {
+    "InvalidConfig()": "0x35be3ac8",
+    "InvalidObservation()": "0xcea61d22",
+    "ObservationExpired()": "0xf9e0c800",
+    "ObservationRevoked()": "0x86669805",
+    "PoolUnavailable()": "0x899b8f88",
+    "SpotOutsideBand()": "0x97befd3a",
+    "TwapUnavailable()": "0x146f8be2",
+    "Unauthorized()": "0x82b42900"
+  },
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "observationHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "by",
+          "type": "address"
+        }
+      ],
+      "name": "ObservationRevokedBy",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidConfig",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidObservation",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ObservationExpired",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ObservationRevoked",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "PoolUnavailable",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SpotOutsideBand",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TwapUnavailable",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Unauthorized",
+      "type": "error"
+    }
+  ]
+}
