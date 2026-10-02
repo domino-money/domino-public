@@ -255,8 +255,13 @@ class RobinhoodTests(unittest.TestCase):
             with self.subTest(config=config), \
                     self.assertRaisesRegex(DataError, '^v2_local_first_provider_file_required$'):
                 provider_file_endpoints(ROBINHOOD, config)
-        public_first = {**local_provider_file(), 'rpcUrl': 'https://rpc.mainnet.chain.robinhood.com'}
+        # An admitted host first, with the own node only as a fallback: still refused.
+        alchemy_first = {**local_provider_file(), 'rpcUrl': ALCHEMY, 'rpcFallbackUrls': [LOCAL]}
         with self.assertRaisesRegex(DataError, '^local_first_rpc_required$'):
+            provider_file_endpoints(ROBINHOOD, alchemy_first)
+        # Robinhood's public RPC is no host a provider file admits by default (#289).
+        public_first = {**local_provider_file(), 'rpcUrl': 'https://rpc.mainnet.chain.robinhood.com'}
+        with self.assertRaisesRegex(DataError, '^invalid_rpc_url$'):
             provider_file_endpoints(ROBINHOOD, public_first)
 
     def test_the_provider_file_serves_robinhood_only(self):
