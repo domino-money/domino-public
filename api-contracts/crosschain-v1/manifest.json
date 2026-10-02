@@ -1,0 +1,178 @@
+{
+  "contract": "crosschain-v1",
+  "contractVersion": "1.0.0-rc.1",
+  "files": [
+    {
+      "path": "fixtures/errors.json",
+      "sha256": "d08219edff9ff1d80953dc41e0b936543347fbb4ce906dc7379679e7dd2361c2"
+    },
+    {
+      "path": "fixtures/requests/origins.json",
+      "sha256": "dacd96a687d22e8ca9947a2a4e566a8ff679c1857f6923850ed90ccb25995ef4"
+    },
+    {
+      "path": "fixtures/requests/quote.json",
+      "sha256": "9a7d3900dee14886a9ebef46d5c2507228381a50a27ba7b83875da4dc0e6fd05"
+    },
+    {
+      "path": "fixtures/requests/status.json",
+      "sha256": "2b9e8cf85aed2140136f386544c5de723958bfd2fb7bf07478261294693e2ae3"
+    },
+    {
+      "path": "fixtures/responses/origins.json",
+      "sha256": "c5522c57190d02f0b63897fe4d329d286bc0c259e13232fda3c6a535da7ab869"
+    },
+    {
+      "path": "fixtures/responses/quote.json",
+      "sha256": "f18bdbc5900e385a6d1876bf7e45f0d9669fb73fb4b391d392155fd81b331b0e"
+    },
+    {
+      "path": "fixtures/responses/status.json",
+      "sha256": "f2e599ab43db9d6197842fbc370c73db034f76e798d7b80093d5507d1493f586"
+    },
+    {
+      "path": "fixtures/variants/quote.destination-gas.json",
+      "sha256": "75c9db7163fbc3021ebe38a6474df05126d06109210581b44c10ad916e5fbe7d"
+    },
+    {
+      "path": "fixtures/variants/quote.native-only-across.json",
+      "sha256": "12691c2d38018cfb964a812df4278e3ffddfa6cfadc4da0a6f01ed5c5c960066"
+    },
+    {
+      "path": "fixtures/variants/quote.none.json",
+      "sha256": "6e22c901df7c2187b72b9c9b600aa245fb82e43527ff5b5e23ca5af9250ce245"
+    },
+    {
+      "path": "fixtures/variants/status.across-held.json",
+      "sha256": "b7d8ad48edf058866cd316cfc5019849254cd566e5e1542db087f2f0fe42246c"
+    },
+    {
+      "path": "fixtures/variants/status.across-refund-pending.json",
+      "sha256": "57829add1d2e2a37d8aaec1fea1c0a8bbbbb843ffe632a6bfaa16de8cff83cf1"
+    },
+    {
+      "path": "fixtures/variants/status.relay-awaiting.json",
+      "sha256": "b59e1448fd575a9878fb9c3656bb4343a25f26ba87724e7831daff17597ea610"
+    },
+    {
+      "path": "fixtures/variants/status.relay-filled.json",
+      "sha256": "365c4c6a66fb8904041aa8402caea44ab0d8213c7da8c5cd5e5e020159ecdca2"
+    },
+    {
+      "path": "runtime.d.mts",
+      "sha256": "88fdd664eb0448fcf9903f061e02960b15a5d067fb06a2cec124b19a1f9d2a60"
+    },
+    {
+      "path": "schema-data.mjs",
+      "sha256": "b728916433affe1e887282c511e2f42c834246064f0eef5ea11aca8403121281"
+    },
+    {
+      "path": "schemas/error.response.schema.json",
+      "sha256": "cc947ea06faed19a1ad6504d4a87cca35be3e61cbc6e6f54607c088fee6da0ff"
+    },
+    {
+      "path": "schemas/origins.request.schema.json",
+      "sha256": "496768cecb0491f612b3e98a41565c252d269306277fe05f31dac93077173c28"
+    },
+    {
+      "path": "schemas/origins.response.schema.json",
+      "sha256": "5f03a26654ff5c16ed9c98cc36b24ddad80ae88ca1ad5c773c6d414772540d92"
+    },
+    {
+      "path": "schemas/quote.request.schema.json",
+      "sha256": "a261e6a44ce3c720ec48b16e6df65730e7db0662f73e4390cc7915a6a59f989b"
+    },
+    {
+      "path": "schemas/quote.response.schema.json",
+      "sha256": "72ac7602c68e9781cf52df721161285bf7c352c2b332654fbbbb266c19d2d6fa"
+    },
+    {
+      "path": "schemas/status.request.schema.json",
+      "sha256": "0166cfb2397801e7169647f162c5bb3ef8bb87359f117c08f3d02e324ce56287"
+    },
+    {
+      "path": "schemas/status.response.schema.json",
+      "sha256": "cb08e1fb65050c7c7023b9da0059d38ea0671a8bd97ed0265eaa445da41bfd8d"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "d090bf91d3432dccc83b04eaa660fe50b174f773df92d621ad9e8bbb6595137e"
+    },
+    {
+      "path": "runtime.mjs",
+      "sha256": "8b11de0b1d0c7279e639d3488e3607382c7f186ee84252e6129a97d34766ebc8"
+    },
+    {
+      "path": "../shared/closed-schema.mjs",
+      "sha256": "ee18602dbc0b43267170a74aa62200b1653c38be25204318f2c93abc513e7970"
+    },
+    {
+      "path": "README.md",
+      "sha256": "3e14e401517929649440ef5b18a2fc11df2d37518c224026f603531c140527db"
+    },
+    {
+      "path": "consumer.test.mjs",
+      "sha256": "7463a6bff6273fa4417a8f371c7b54e5e0e7f62cc50c431a7785fd7b731fbf15"
+    }
+  ],
+  "generator": "scripts/export-crosschain-contract.py",
+  "sources": [
+    {
+      "path": "backend/crosschain_models.py",
+      "sha256": "72f1dc75fdac60419cd3f7f7a4c4a2712424ba3cee4c7d70b445ac92687e4b66"
+    },
+    {
+      "path": "backend/crosschain_service.py",
+      "sha256": "87c290460eb85a30aa412ed5d4db16b1933cb56770fda6206031971165279211"
+    },
+    {
+      "path": "backend/crosschain_api.py",
+      "sha256": "011b3243281297c6ee2573c6dccf97fa4d0376c9fb420ed16e7cf90117fcea38"
+    },
+    {
+      "path": "backend/crosschain_common.py",
+      "sha256": "28529d961bac8ae789481aea55034717e251a2545359a25508e9bdab5026088d"
+    },
+    {
+      "path": "backend/crosschain_relay.py",
+      "sha256": "b3ba9a2b410184505a382d642a95764df02c9819bedccdc9d97c98b588005b6e"
+    },
+    {
+      "path": "backend/crosschain_across.py",
+      "sha256": "5d6448bebd3436ede57878829ec5ca3b57c4e180228cb0c7cad292d1a45a5b16"
+    },
+    {
+      "path": "backend/crosschain_http.py",
+      "sha256": "5f680caba1283a2caadd83e105f2dddc184640b5e15f0c08bf9b9b9fb80006e2"
+    },
+    {
+      "path": "backend/crosschain_config.py",
+      "sha256": "7da086a00a05325ca3e65439ea14ee68397ec8013f14267dc0e318c1dd218390"
+    },
+    {
+      "path": "backend/crosschain_pins.json",
+      "sha256": "253e493cc561821b6a89a6d3d44b732b17fdd506513e2cc8b705c119a9f33c3e"
+    },
+    {
+      "path": "backend/authenticated_api.py",
+      "sha256": "dd4d8f9fdb41bf69d8831f9e7b71dbe533e085874e304ca67ede5a5091ecd79f"
+    },
+    {
+      "path": "backend/onboarding_auth.py",
+      "sha256": "0060646f6ceaf95da3b597c68110737d17129afae8dce4120f206de1ed5677d4"
+    },
+    {
+      "path": "backend/tests/crosschain_support.py",
+      "sha256": "e53b6acd4e24fe004e891fc5a7a2dc7c9637e8c98e629b2242073225139232d3"
+    },
+    {
+      "path": "backend/tests/crosschain_contract_fixtures.py",
+      "sha256": "bc64f5587e0920aaf1c40c0295baeb27a390cf985d8aec16e25a9fcf14c6d52a"
+    },
+    {
+      "path": "scripts/export-crosschain-contract.py",
+      "sha256": "6bc4960fd9b3029a8d867edc6f07cffa388f34479c1e93e765073c4e468ecb35"
+    }
+  ],
+  "status": "candidate_disabled_pending_keys_and_worker"
+}

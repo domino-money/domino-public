@@ -1,0 +1,218 @@
+{
+  "$defs": {
+    "OriginChain": {
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 40,
+          "pattern": "^[A-Za-z0-9 .()-]{1,40}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "tokens": {
+          "items": {
+            "$ref": "#/$defs/OriginToken"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Tokens",
+          "type": "array"
+        }
+      },
+      "required": [
+        "chainId",
+        "name",
+        "tokens"
+      ],
+      "title": "OriginChain",
+      "type": "object"
+    },
+    "OriginToken": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Address",
+          "type": "string"
+        },
+        "decimals": {
+          "anyOf": [
+            {
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decimals"
+        },
+        "providers": {
+          "items": {
+            "enum": [
+              "relay",
+              "across"
+            ],
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Providers",
+          "type": "array"
+        },
+        "symbol": {
+          "anyOf": [
+            {
+              "maxLength": 24,
+              "pattern": "^[A-Za-z0-9.+_-]{1,24}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Symbol"
+        }
+      },
+      "required": [
+        "address",
+        "symbol",
+        "decimals",
+        "providers"
+      ],
+      "title": "OriginToken",
+      "type": "object"
+    },
+    "OriginsList": {
+      "additionalProperties": false,
+      "properties": {
+        "chains": {
+          "items": {
+            "$ref": "#/$defs/OriginChain"
+          },
+          "maxItems": 64,
+          "title": "Chains",
+          "type": "array"
+        },
+        "destinationChainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Destinationchainid",
+          "type": "integer"
+        },
+        "destinationToken": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Destinationtoken",
+          "type": "string"
+        },
+        "providers": {
+          "items": {
+            "$ref": "#/$defs/ProviderListing"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Providers",
+          "type": "array"
+        },
+        "retrievedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Retrievedat",
+          "type": "integer"
+        },
+        "schemaVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "destinationChainId",
+        "destinationToken",
+        "retrievedAt",
+        "providers",
+        "chains"
+      ],
+      "title": "OriginsList",
+      "type": "object"
+    },
+    "ProviderListing": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "enum": [
+            "relay",
+            "across"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "status": {
+          "enum": [
+            "listed",
+            "unavailable",
+            "rate_limited"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "status",
+        "reason"
+      ],
+      "title": "ProviderListing",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/crosschain-v1/origins.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "1.0.0-rc.1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "origins": {
+      "$ref": "#/$defs/OriginsList"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "origins"
+  ],
+  "title": "OriginsResponse",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

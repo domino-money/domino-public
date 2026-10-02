@@ -1,0 +1,653 @@
+{
+  "capturedAt": "2026-10-01",
+  "chains": {
+    "1": {
+      "across": {
+        "spokePool": "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+      },
+      "name": "Ethereum",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "ethereum"
+      }
+    },
+    "10": {
+      "across": {
+        "spokePool": "0x6f26Bf09B1C792e3228e5467807a900A503c0281",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0x4200000000000000000000000000000000000006"
+      },
+      "name": "Optimism",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "optimism"
+      }
+    },
+    "100": {
+      "name": "Gnosis",
+      "nativeSymbol": "xDAI",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "gnosis"
+      }
+    },
+    "1088": {
+      "name": "Metis",
+      "nativeSymbol": "METIS",
+      "relay": {
+        "depository": "0x59916DA825D2D2eC1BF878D71c88826F6633ecca",
+        "slug": "metis"
+      }
+    },
+    "1135": {
+      "name": "Lisk",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "lisk"
+      }
+    },
+    "130": {
+      "across": {
+        "spokePool": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0x4200000000000000000000000000000000000006"
+      },
+      "name": "Unichain",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "unichain"
+      }
+    },
+    "137": {
+      "across": {
+        "spokePool": "0x9295ee1d8C5b022Be115A2AD3c30C72E34e7F096",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4"
+      },
+      "name": "Polygon",
+      "nativeSymbol": "POL",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "polygon"
+      }
+    },
+    "143": {
+      "across": {
+        "spokePool": "0xd2ecb3afe598b746F8123CaE365a598DA831A449",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4"
+      },
+      "name": "Monad",
+      "nativeSymbol": "MON",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "monad"
+      }
+    },
+    "146": {
+      "name": "Sonic",
+      "nativeSymbol": "S",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "sonic"
+      }
+    },
+    "169": {
+      "name": "Manta Pacific",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "manta"
+      }
+    },
+    "1868": {
+      "across": {
+        "spokePool": "0x3baD7AD0728f9917d1Bf08af5782dCbD516cDd96",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0x4200000000000000000000000000000000000006"
+      },
+      "name": "Soneium",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "soneium"
+      }
+    },
+    "196": {
+      "name": "X Layer",
+      "nativeSymbol": "OKB",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "xlayer"
+      }
+    },
+    "2020": {
+      "name": "Ronin",
+      "nativeSymbol": "RON",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "ronin"
+      }
+    },
+    "25": {
+      "name": "Cronos",
+      "nativeSymbol": "CRO",
+      "relay": {
+        "depository": "0x59916DA825D2D2eC1BF878D71c88826F6633ecca",
+        "slug": "cronos"
+      }
+    },
+    "2741": {
+      "name": "Abstract",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "abstract"
+      }
+    },
+    "2818": {
+      "name": "Morph",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "morph"
+      }
+    },
+    "288": {
+      "name": "Boba Network",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "boba"
+      }
+    },
+    "324": {
+      "across": {
+        "spokePool": "0xE0B015E54d54fc84a6cB9B666099c46adE9335FF",
+        "spokePoolPeriphery": "0x7C99cED6d8011AF8A52488884F7BA2c61b0FA57D",
+        "wrappedNative": "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91"
+      },
+      "name": "zkSync Era",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "zksync"
+      }
+    },
+    "33139": {
+      "name": "ApeChain",
+      "nativeSymbol": "APE",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "apechain"
+      }
+    },
+    "34443": {
+      "name": "Mode",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "mode"
+      }
+    },
+    "360": {
+      "name": "Shape",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "shape"
+      }
+    },
+    "42018": {
+      "name": "Mythos",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "mythos"
+      }
+    },
+    "42161": {
+      "across": {
+        "spokePool": "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+      },
+      "name": "Arbitrum",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "arbitrum"
+      }
+    },
+    "4217": {
+      "across": {
+        "spokePool": "0x2d4710F04Da90184255782d3715224A6C776955D",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4"
+      },
+      "name": "Tempo",
+      "nativeSymbol": "USD",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "tempo"
+      }
+    },
+    "42220": {
+      "name": "Celo",
+      "nativeSymbol": "CELO",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "celo"
+      }
+    },
+    "43114": {
+      "across": {
+        "spokePool": "0xFE9D541c92E4e90437C7152A00244886dE37a658",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4"
+      },
+      "name": "Avalanche",
+      "nativeSymbol": "AVAX",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "avalanche"
+      }
+    },
+    "4326": {
+      "across": {
+        "spokePool": "0x3Db06DA8F0a24A525f314eeC954fC5c6a973d40E",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0x4200000000000000000000000000000000000006"
+      },
+      "name": "MegaETH",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "megaeth"
+      }
+    },
+    "4663": {
+      "across": {
+        "spokePool": "0xD29C85F15DF544bA632C9E25829fd29d767d7978",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"
+      },
+      "name": "Robinhood Chain",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "robinhood"
+      }
+    },
+    "480": {
+      "across": {
+        "spokePool": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0x4200000000000000000000000000000000000006"
+      },
+      "name": "World Chain",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "worldchain"
+      }
+    },
+    "48900": {
+      "name": "Zircuit",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "zircuit"
+      }
+    },
+    "5000": {
+      "name": "Mantle",
+      "nativeSymbol": "MNT",
+      "relay": {
+        "depository": "0x59916DA825D2D2eC1BF878D71c88826F6633ecca",
+        "slug": "mantle"
+      }
+    },
+    "5031": {
+      "name": "Somnia",
+      "nativeSymbol": "SOMI",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "somnia"
+      }
+    },
+    "5042": {
+      "across": {
+        "spokePool": "0x9b4A302A548c7e313c2b74C461db7b84d3074A84",
+        "spokePoolPeriphery": "0xE791A2669bef779Ff7A4A9CF789F8Ee2CA20a32c"
+      },
+      "name": "Arc",
+      "nativeSymbol": "USDC",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "arc"
+      }
+    },
+    "5064014": {
+      "name": "Ethereal",
+      "nativeSymbol": "USDe",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "ethereal"
+      }
+    },
+    "5330": {
+      "name": "Superseed",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "superseed"
+      }
+    },
+    "534352": {
+      "name": "Scroll",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "scroll"
+      }
+    },
+    "56": {
+      "across": {
+        "spokePool": "0x4e8E101924eDE233C13e2D8622DC8aED2872d505",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4"
+      },
+      "name": "BNB",
+      "nativeSymbol": "BNB",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "bnb"
+      }
+    },
+    "57073": {
+      "across": {
+        "spokePool": "0xeF684C38F94F48775959ECf2012D7E864ffb9dd4",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0x4200000000000000000000000000000000000006"
+      },
+      "name": "Ink",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "ink"
+      }
+    },
+    "59144": {
+      "across": {
+        "spokePool": "0x7E63A5f1a8F0B4d0934B2f2327DAED3F6bb2ee75",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f"
+      },
+      "name": "Linea",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x59916DA825D2D2eC1BF878D71c88826F6633ecca",
+        "slug": "linea"
+      }
+    },
+    "60808": {
+      "name": "BOB",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "bob"
+      }
+    },
+    "685689": {
+      "name": "Gensyn",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "gensyn"
+      }
+    },
+    "747": {
+      "name": "Flow EVM",
+      "nativeSymbol": "FLOW",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "flow"
+      }
+    },
+    "747474": {
+      "name": "Katana",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "katana"
+      }
+    },
+    "7777777": {
+      "name": "Zora",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "zora"
+      }
+    },
+    "80094": {
+      "name": "Berachain",
+      "nativeSymbol": "BERA",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "berachain"
+      }
+    },
+    "81457": {
+      "name": "Blast",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "blast"
+      }
+    },
+    "8453": {
+      "across": {
+        "spokePool": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+        "wrappedNative": "0x4200000000000000000000000000000000000006"
+      },
+      "name": "Base",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "base"
+      }
+    },
+    "9745": {
+      "across": {
+        "spokePool": "0x50039fAEfebef707cFD94D6d462fE6D10B39207a",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4"
+      },
+      "name": "Plasma",
+      "nativeSymbol": "XPL",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "plasma"
+      }
+    },
+    "97477": {
+      "name": "Doma",
+      "nativeSymbol": "ETH",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "doma"
+      }
+    },
+    "988": {
+      "name": "Stable",
+      "nativeSymbol": "gUSDT",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "stable"
+      }
+    },
+    "98866": {
+      "name": "Plume",
+      "nativeSymbol": "PLUME",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "plume"
+      }
+    },
+    "999": {
+      "across": {
+        "spokePool": "0x35E63eA3eb0fb7A3bc543C71FB66412e1F6B0E04",
+        "spokePoolPeriphery": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4"
+      },
+      "name": "HyperEVM",
+      "nativeSymbol": "HYPE",
+      "relay": {
+        "depository": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+        "slug": "hyperevm"
+      }
+    }
+  },
+  "destinations": {
+    "42161": {
+      "across": {
+        "eventEmitter": "0xBF75133b48b0a42AB9374027902E83C5E2949034",
+        "multicallHandlers": [
+          "0x0F7Ae28dE1C8532170AD4ee566B5801485c13a0E"
+        ],
+        "spokePool": "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A"
+      }
+    },
+    "4663": {
+      "across": {
+        "eventEmitter": "0xBF75133b48b0a42AB9374027902E83C5E2949034",
+        "multicallHandlers": [
+          "0xa8aD2e87E2043711d8BeC77e8BC3E2683C0ab6BD",
+          "0x0F7Ae28dE1C8532170AD4ee566B5801485c13a0E"
+        ],
+        "spokePool": "0xD29C85F15DF544bA632C9E25829fd29d767d7978"
+      }
+    },
+    "8453": {
+      "across": {
+        "eventEmitter": "0xBF75133b48b0a42AB9374027902E83C5E2949034",
+        "multicallHandlers": [
+          "0x0F7Ae28dE1C8532170AD4ee566B5801485c13a0E"
+        ],
+        "spokePool": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64"
+      }
+    }
+  },
+  "notes": [
+    "Robinhood (4663): the Swap API routes app-fee fills through MulticallHandler 0xa8aD2e87... (not in deployed-addresses.json; 2,905 bytes exposing exactly MulticallHandler's four functions, checked through the local node on 1 Oct 2026). The canonical handler 0x0F7Ae28d... is also deployed there with the same code as on Base.",
+    "Relay uses the same Depository 0x4cD00E38... on most EVM chains; Cronos, Metis, Mantle and Linea use 0x59916dA8.... Its runtime code differs per chain (immutables), so only the address is pinned for origins.",
+    "Move per-chain data onto the V2 chain registry (F6) once it exists; until then this file is the only source of provider targets."
+  ],
+  "purpose": "Contracts a cross-chain deposit transaction may target, per provider and chain. A quote whose wallet transaction targets anything else is refused (backend/crosschain_relay.py, backend/crosschain_across.py).",
+  "schemaVersion": 1,
+  "sources": [
+    "Relay: GET https://api.relay.link/chains on 1 Oct 2026 (EVM chains with depositEnabled, not disabled, protocol.v2.depository).",
+    "Across: github.com/across-protocol/contracts broadcast/deployed-addresses.json at a634bea (SpokePool, SpokePoolPeriphery), limited to the EVM chains listed by GET https://app.across.to/api/swap/chains on 1 Oct 2026.",
+    "Across wrapped native per origin: GET https://app.across.to/api/available-routes on 1 Oct 2026 (isNative ETH routes).",
+    "Across MulticallHandler and AcrossEventEmitter on the destinations: decoded from live /swap/approval quotes with appFee on 1 Oct 2026 and verified on-chain (verification below)."
+  ],
+  "verification": {
+    "42161": {
+      "block": 510761208,
+      "contracts": [
+        {
+          "address": "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A",
+          "codehash": "0x932cddc50793da935ccf915651ad67f6b746e9936fcc5614f0ff492563782c75",
+          "name": "Across SpokePool (proxy)"
+        },
+        {
+          "address": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+          "codehash": "0x3135e164dc9576269e2230411164d9b99a72c68708e2fb650c62a7fa2810ce36",
+          "name": "Across SpokePoolPeriphery"
+        },
+        {
+          "address": "0x0F7Ae28dE1C8532170AD4ee566B5801485c13a0E",
+          "codehash": "0x2a70f9d1b1c80cc0430bbffe16283cf067d915bee05f9812715cd94ad082b76a",
+          "name": "Across MulticallHandler (canonical)"
+        },
+        {
+          "address": "0xBF75133b48b0a42AB9374027902E83C5E2949034",
+          "codehash": "0x833b49ceddf001f197603e23297ddc21147b7d9e61adbe812e1167b3a7fe2fe5",
+          "name": "AcrossEventEmitter"
+        },
+        {
+          "address": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+          "codehash": "0x849d623d81c9334b401ae365455e32b0e248dc6af4e3a75b081b3d22114c24af",
+          "name": "Relay Depository"
+        }
+      ]
+    },
+    "4663": {
+      "block": 77636446,
+      "contracts": [
+        {
+          "address": "0xD29C85F15DF544bA632C9E25829fd29d767d7978",
+          "codehash": "0xbad165a67f16d7be75d8197acdecb912517a516ce0ca2249dee18cd643577f61",
+          "name": "Across SpokePool (proxy)"
+        },
+        {
+          "address": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+          "codehash": "0xee99f2212a24afa227611da1d6616f38c55a4c980caa7f928af85d68396e3e30",
+          "name": "Across SpokePoolPeriphery"
+        },
+        {
+          "address": "0xa8aD2e87E2043711d8BeC77e8BC3E2683C0ab6BD",
+          "codehash": "0x78113094d7f17c9edcd91c54ebeac335230027aec8042ca69cdddf54b2f8c63a",
+          "name": "Across MulticallHandler (Swap API, 2905 bytes)"
+        },
+        {
+          "address": "0x0F7Ae28dE1C8532170AD4ee566B5801485c13a0E",
+          "codehash": "0x2a70f9d1b1c80cc0430bbffe16283cf067d915bee05f9812715cd94ad082b76a",
+          "name": "Across MulticallHandler (canonical)"
+        },
+        {
+          "address": "0xBF75133b48b0a42AB9374027902E83C5E2949034",
+          "codehash": "0x833b49ceddf001f197603e23297ddc21147b7d9e61adbe812e1167b3a7fe2fe5",
+          "name": "AcrossEventEmitter"
+        },
+        {
+          "address": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+          "codehash": "0xc8b9128d5bc2534ff2b2d7a45fd35a657ec345f5b9ad1d7a05b47b73d1ef4b07",
+          "name": "Relay Depository"
+        }
+      ]
+    },
+    "8453": {
+      "block": 52047333,
+      "contracts": [
+        {
+          "address": "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+          "codehash": "0x932cddc50793da935ccf915651ad67f6b746e9936fcc5614f0ff492563782c75",
+          "name": "Across SpokePool (proxy)"
+        },
+        {
+          "address": "0x97CCDBea4632140639aD5eA9b944aa034eb15fD4",
+          "codehash": "0xb3441cc1c47d190ca102ab6f4db34d87be03620db54ddc8f3f4afbc611bd233e",
+          "name": "Across SpokePoolPeriphery"
+        },
+        {
+          "address": "0x0F7Ae28dE1C8532170AD4ee566B5801485c13a0E",
+          "codehash": "0x2a70f9d1b1c80cc0430bbffe16283cf067d915bee05f9812715cd94ad082b76a",
+          "name": "Across MulticallHandler (canonical)"
+        },
+        {
+          "address": "0xBF75133b48b0a42AB9374027902E83C5E2949034",
+          "codehash": "0x833b49ceddf001f197603e23297ddc21147b7d9e61adbe812e1167b3a7fe2fe5",
+          "name": "AcrossEventEmitter"
+        },
+        {
+          "address": "0x4cD00E387622C35bDDB9b4c962C136462338BC31",
+          "codehash": "0x77df38a47ee0c4453bc1bdc5f322712f0104ba1d97c4798dd49f16d4ed2e6256",
+          "name": "Relay Depository"
+        }
+      ]
+    }
+  }
+}

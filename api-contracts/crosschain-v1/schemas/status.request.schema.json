@@ -1,0 +1,82 @@
+{
+  "$id": "https://domino.invalid/contracts/crosschain-v1/status.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "depositTxHash": {
+      "maxLength": 66,
+      "minLength": 66,
+      "pattern": "^0x[0-9a-fA-F]{64}$",
+      "title": "Deposittxhash",
+      "type": "string"
+    },
+    "destinationChainId": {
+      "enum": [
+        4663,
+        8453,
+        42161
+      ],
+      "title": "Destinationchainid",
+      "type": "integer"
+    },
+    "originChainId": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "Originchainid",
+      "type": "integer"
+    },
+    "previousState": {
+      "anyOf": [
+        {
+          "enum": [
+            "awaiting_deposit",
+            "pending",
+            "refund_pending",
+            "failed",
+            "refund_failed",
+            "filled",
+            "refunded"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Previousstate"
+    },
+    "provider": {
+      "enum": [
+        "relay",
+        "across"
+      ],
+      "title": "Provider",
+      "type": "string"
+    },
+    "requestId": {
+      "anyOf": [
+        {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-fA-F]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Requestid"
+    }
+  },
+  "required": [
+    "provider",
+    "originChainId",
+    "destinationChainId",
+    "depositTxHash",
+    "requestId",
+    "previousState"
+  ],
+  "title": "StatusRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

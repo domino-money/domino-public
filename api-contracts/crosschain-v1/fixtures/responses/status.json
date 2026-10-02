@@ -1,0 +1,33 @@
+{
+  "contractVersion": "1.0.0-rc.1",
+  "status": {
+    "checkedAt": 1790905139,
+    "fee": {
+      "amountRaw": "349695",
+      "chainId": 4663,
+      "evidence": "destination_receipt",
+      "reason": null,
+      "status": "measured",
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+    },
+    "fillTxHash": "0xf1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+    "nextCheckSeconds": null,
+    "observedState": "filled",
+    "providerStatus": "filled",
+    "recovery": null,
+    "refundTxHash": null,
+    "request": {
+      "depositTxHash": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "destinationChainId": 4663,
+      "originChainId": 42161,
+      "owner": "0x1111111111111111111111111111111111111111",
+      "previousState": "pending",
+      "provider": "across",
+      "requestId": null
+    },
+    "schemaVersion": 1,
+    "state": "filled",
+    "terminal": true,
+    "transition": "advanced"
+  }
+}

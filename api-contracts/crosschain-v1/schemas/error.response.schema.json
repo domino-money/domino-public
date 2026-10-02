@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "error": {
+      "enum": [
+        "account_check_unavailable",
+        "account_unsupported",
+        "crosschain_capacity_busy",
+        "crosschain_deposit_not_found",
+        "crosschain_listing_unavailable",
+        "crosschain_route_unsupported",
+        "csrf_invalid",
+        "invalid_request",
+        "json_required",
+        "method_not_allowed",
+        "onboarding_capacity_busy",
+        "onboarding_rate_limited",
+        "origin_not_allowed",
+        "preview_expired",
+        "provider_rate_limited",
+        "provider_request_rejected",
+        "provider_unavailable",
+        "request_timeout",
+        "request_too_large",
+        "route_not_available",
+        "session_capacity_busy",
+        "session_rate_limited",
+        "session_required",
+        "session_store_unavailable",
+        "upstream_contract_mismatch",
+        "upstream_invalid_response",
+        "upstream_timeout",
+        "upstream_unavailable"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "type": "object",
+  "x-status-by-code": {
+    "account_check_unavailable": 503,
+    "account_unsupported": 403,
+    "crosschain_capacity_busy": 429,
+    "crosschain_deposit_not_found": 404,
+    "crosschain_listing_unavailable": 503,
+    "crosschain_route_unsupported": 422,
+    "csrf_invalid": 403,
+    "invalid_request": 400,
+    "json_required": 415,
+    "method_not_allowed": 405,
+    "onboarding_capacity_busy": 429,
+    "onboarding_rate_limited": 429,
+    "origin_not_allowed": 403,
+    "preview_expired": 409,
+    "provider_rate_limited": 429,
+    "provider_request_rejected": 422,
+    "provider_unavailable": 503,
+    "request_timeout": 504,
+    "request_too_large": 413,
+    "route_not_available": 404,
+    "session_capacity_busy": 429,
+    "session_rate_limited": 429,
+    "session_required": 401,
+    "session_store_unavailable": 503,
+    "upstream_contract_mismatch": 502,
+    "upstream_invalid_response": 502,
+    "upstream_timeout": 504,
+    "upstream_unavailable": 503
+  }
+}

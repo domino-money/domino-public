@@ -1,0 +1,14 @@
+{
+ "status": "success",
+ "details": "Same chain request, no need to execute",
+ "inTxHashes": [
+  "0x2f1331a3c08613a3b909b7d87e24565750293c16f08e505356394cca1e2688b7"
+ ],
+ "txHashes": [],
+ "updatedAt": 1790887205778,
+ "originChainId": 4663,
+ "destinationChainId": 4663,
+ "quoteCreatedAt": 1790887111493,
+ "failReason": "N/A",
+ "refundFailReason": "N/A"
+}

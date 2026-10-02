@@ -1,0 +1,688 @@
+{
+  "$defs": {
+    "AppFeeQuote": {
+      "additionalProperties": false,
+      "properties": {
+        "amountRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amountraw",
+          "type": "string"
+        },
+        "chainId": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "charged": {
+          "enum": [
+            "origin_input",
+            "destination_output"
+          ],
+          "title": "Charged",
+          "type": "string"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "amountRaw",
+        "chainId",
+        "token",
+        "charged"
+      ],
+      "title": "AppFeeQuote",
+      "type": "object"
+    },
+    "Approval": {
+      "additionalProperties": false,
+      "properties": {
+        "amountRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Amountraw",
+          "type": "string"
+        },
+        "spender": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Spender",
+          "type": "string"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "spender",
+        "amountRaw"
+      ],
+      "title": "Approval",
+      "type": "object"
+    },
+    "Candidate": {
+      "additionalProperties": false,
+      "properties": {
+        "appFee": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AppFeeQuote"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "destinationGas": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DestinationGas"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "etaSeconds": {
+          "anyOf": [
+            {
+              "maximum": 86400,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Etaseconds"
+        },
+        "minimumOutputRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Minimumoutputraw"
+        },
+        "originGas": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OriginGas"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^[1-9][0-9]{0,77}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Outputraw"
+        },
+        "provider": {
+          "enum": [
+            "relay",
+            "across"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "providerFee": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TokenAmount"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "refund": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Refund"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "quoted",
+            "destination_gas_unsupported",
+            "no_route",
+            "amount_too_low",
+            "amount_too_high",
+            "rate_limited",
+            "unavailable",
+            "rejected",
+            "unsafe",
+            "origin_not_supported"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "tracking": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Tracking"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "status",
+        "reason",
+        "outputRaw",
+        "minimumOutputRaw",
+        "appFee",
+        "providerFee",
+        "originGas",
+        "destinationGas",
+        "etaSeconds",
+        "refund",
+        "tracking"
+      ],
+      "title": "Candidate",
+      "type": "object"
+    },
+    "Comparison": {
+      "additionalProperties": false,
+      "properties": {
+        "advantageBps": {
+          "anyOf": [
+            {
+              "maximum": 1000000000000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Advantagebps"
+        },
+        "advantageRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Advantageraw"
+        },
+        "basis": {
+          "const": "expected_output_after_all_fees",
+          "title": "Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "basis",
+        "advantageRaw",
+        "advantageBps"
+      ],
+      "title": "Comparison",
+      "type": "object"
+    },
+    "DestinationGas": {
+      "additionalProperties": false,
+      "properties": {
+        "deliveredRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Deliveredraw",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deliveredRaw"
+      ],
+      "title": "DestinationGas",
+      "type": "object"
+    },
+    "OriginGas": {
+      "additionalProperties": false,
+      "properties": {
+        "feeRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Feeraw"
+        },
+        "usd": {
+          "anyOf": [
+            {
+              "maxLength": 53,
+              "pattern": "^(0|[1-9][0-9]{0,15})(\\.[0-9]{1,36})?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Usd"
+        }
+      },
+      "required": [
+        "feeRaw",
+        "usd"
+      ],
+      "title": "OriginGas",
+      "type": "object"
+    },
+    "QuoteIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "amountRaw": {
+          "maxLength": 78,
+          "pattern": "^[1-9][0-9]{0,77}$",
+          "title": "Amountraw",
+          "type": "string"
+        },
+        "destinationChainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Destinationchainid",
+          "type": "integer"
+        },
+        "destinationGas": {
+          "title": "Destinationgas",
+          "type": "boolean"
+        },
+        "destinationToken": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Destinationtoken",
+          "type": "string"
+        },
+        "originChainId": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Originchainid",
+          "type": "integer"
+        },
+        "originToken": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Origintoken",
+          "type": "string"
+        },
+        "owner": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Owner",
+          "type": "string"
+        },
+        "slippageBps": {
+          "maximum": 500,
+          "minimum": 10,
+          "title": "Slippagebps",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "originChainId",
+        "originToken",
+        "destinationChainId",
+        "destinationToken",
+        "amountRaw",
+        "slippageBps",
+        "destinationGas",
+        "owner"
+      ],
+      "title": "QuoteIdentity",
+      "type": "object"
+    },
+    "QuotePlan": {
+      "additionalProperties": false,
+      "properties": {
+        "appFeeBps": {
+          "maximum": 35,
+          "minimum": 35,
+          "title": "Appfeebps",
+          "type": "integer"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/Candidate"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Candidates",
+          "type": "array"
+        },
+        "comparison": {
+          "$ref": "#/$defs/Comparison"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "relay",
+                "across"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decision"
+        },
+        "expiresAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Expiresat",
+          "type": "integer"
+        },
+        "feeRecipient": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Feerecipient",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "best_output",
+            "only_quote",
+            "no_quote"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/QuoteIdentity"
+        },
+        "requestFingerprint": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Requestfingerprint",
+          "type": "string"
+        },
+        "requestedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Requestedat",
+          "type": "integer"
+        },
+        "retrievedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Retrievedat",
+          "type": "integer"
+        },
+        "schemaVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "source": {
+          "const": "crosschain_quote_v1",
+          "title": "Source",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "maxItems": 2,
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "source",
+        "requestedAt",
+        "retrievedAt",
+        "expiresAt",
+        "requestFingerprint",
+        "request",
+        "appFeeBps",
+        "feeRecipient",
+        "decision",
+        "reason",
+        "comparison",
+        "candidates",
+        "steps"
+      ],
+      "title": "QuotePlan",
+      "type": "object"
+    },
+    "Refund": {
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "recipient": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Recipient",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chainId",
+        "recipient"
+      ],
+      "title": "Refund",
+      "type": "object"
+    },
+    "Step": {
+      "additionalProperties": false,
+      "properties": {
+        "approval": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Approval"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "enum": [
+            "approval",
+            "deposit"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "transaction": {
+          "$ref": "#/$defs/Transaction"
+        }
+      },
+      "required": [
+        "kind",
+        "transaction",
+        "approval"
+      ],
+      "title": "Step",
+      "type": "object"
+    },
+    "TokenAmount": {
+      "additionalProperties": false,
+      "properties": {
+        "amountRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Amountraw",
+          "type": "string"
+        },
+        "chainId": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "amountRaw",
+        "chainId",
+        "token"
+      ],
+      "title": "TokenAmount",
+      "type": "object"
+    },
+    "Tracking": {
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "anyOf": [
+            {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requestid"
+        }
+      },
+      "required": [
+        "requestId"
+      ],
+      "title": "Tracking",
+      "type": "object"
+    },
+    "Transaction": {
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "data": {
+          "maxLength": 32770,
+          "minLength": 10,
+          "pattern": "^0x(?:[0-9a-f]{2})+$",
+          "title": "Data",
+          "type": "string"
+        },
+        "to": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "To",
+          "type": "string"
+        },
+        "valueRaw": {
+          "maxLength": 78,
+          "pattern": "^(0|[1-9][0-9]{0,77})$",
+          "title": "Valueraw",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chainId",
+        "to",
+        "data",
+        "valueRaw"
+      ],
+      "title": "Transaction",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/crosschain-v1/quote.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "1.0.0-rc.1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "quote": {
+      "$ref": "#/$defs/QuotePlan"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "quote"
+  ],
+  "title": "QuoteResponse",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

@@ -1,0 +1,382 @@
+{
+  "$defs": {
+    "FeeMeasure": {
+      "additionalProperties": false,
+      "properties": {
+        "amountRaw": {
+          "anyOf": [
+            {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Amountraw"
+        },
+        "chainId": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Chainid"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "enum": [
+                "relay_requests_v3",
+                "destination_receipt",
+                "provider_record"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Evidence"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "status": {
+          "enum": [
+            "measured",
+            "not_collected",
+            "pending",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "token": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Token"
+        }
+      },
+      "required": [
+        "status",
+        "reason",
+        "amountRaw",
+        "chainId",
+        "token",
+        "evidence"
+      ],
+      "title": "FeeMeasure",
+      "type": "object"
+    },
+    "Recovery": {
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "automatic_refund",
+            "refunded",
+            "manual_recovery"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "recipient": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Recipient",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "chainId",
+        "recipient"
+      ],
+      "title": "Recovery",
+      "type": "object"
+    },
+    "StatusIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "depositTxHash": {
+          "maxLength": 66,
+          "minLength": 66,
+          "pattern": "^0x[0-9a-f]{64}$",
+          "title": "Deposittxhash",
+          "type": "string"
+        },
+        "destinationChainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Destinationchainid",
+          "type": "integer"
+        },
+        "originChainId": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "title": "Originchainid",
+          "type": "integer"
+        },
+        "owner": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Owner",
+          "type": "string"
+        },
+        "previousState": {
+          "anyOf": [
+            {
+              "enum": [
+                "awaiting_deposit",
+                "pending",
+                "refund_pending",
+                "failed",
+                "refund_failed",
+                "filled",
+                "refunded"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Previousstate"
+        },
+        "provider": {
+          "enum": [
+            "relay",
+            "across"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "requestId": {
+          "anyOf": [
+            {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requestid"
+        }
+      },
+      "required": [
+        "provider",
+        "originChainId",
+        "destinationChainId",
+        "depositTxHash",
+        "requestId",
+        "previousState",
+        "owner"
+      ],
+      "title": "StatusIdentity",
+      "type": "object"
+    },
+    "StatusReport": {
+      "additionalProperties": false,
+      "properties": {
+        "checkedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Checkedat",
+          "type": "integer"
+        },
+        "fee": {
+          "$ref": "#/$defs/FeeMeasure"
+        },
+        "fillTxHash": {
+          "anyOf": [
+            {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Filltxhash"
+        },
+        "nextCheckSeconds": {
+          "anyOf": [
+            {
+              "maximum": 3600,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Nextcheckseconds"
+        },
+        "observedState": {
+          "enum": [
+            "awaiting_deposit",
+            "pending",
+            "refund_pending",
+            "failed",
+            "refund_failed",
+            "filled",
+            "refunded"
+          ],
+          "title": "Observedstate",
+          "type": "string"
+        },
+        "providerStatus": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z_]{0,31}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Providerstatus"
+        },
+        "recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Recovery"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refundTxHash": {
+          "anyOf": [
+            {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Refundtxhash"
+        },
+        "request": {
+          "$ref": "#/$defs/StatusIdentity"
+        },
+        "schemaVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "awaiting_deposit",
+            "pending",
+            "refund_pending",
+            "failed",
+            "refund_failed",
+            "filled",
+            "refunded"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "terminal": {
+          "title": "Terminal",
+          "type": "boolean"
+        },
+        "transition": {
+          "enum": [
+            "initial",
+            "unchanged",
+            "advanced",
+            "held"
+          ],
+          "title": "Transition",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "request",
+        "checkedAt",
+        "providerStatus",
+        "observedState",
+        "state",
+        "transition",
+        "terminal",
+        "nextCheckSeconds",
+        "fillTxHash",
+        "refundTxHash",
+        "recovery",
+        "fee"
+      ],
+      "title": "StatusReport",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/crosschain-v1/status.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "1.0.0-rc.1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/StatusReport"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "status"
+  ],
+  "title": "StatusResponse",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

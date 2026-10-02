@@ -1,0 +1,644 @@
+{
+ "chains": [
+  {
+   "id": 1,
+   "name": "ethereum",
+   "displayName": "Ethereum",
+   "vmType": "evm",
+   "disabled": false,
+   "depositEnabled": true,
+   "tokenSupport": "All",
+   "currency": {
+    "id": "eth",
+    "symbol": "ETH",
+    "name": "Ether",
+    "address": "0x0000000000000000000000000000000000000000",
+    "decimals": 18,
+    "supportsBridging": true
+   },
+   "solverCurrencies": [
+    {
+     "id": "weth",
+     "symbol": "WETH",
+     "name": "Wrapped Ether",
+     "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+     "decimals": 18
+    },
+    {
+     "id": "usde",
+     "symbol": "USDe",
+     "name": "USDe",
+     "address": "0x4c9edd5852cd905f086c759e8383e09bff1e68b3",
+     "decimals": 18
+    },
+    {
+     "id": "usdc",
+     "symbol": "USDC",
+     "name": "USD Coin",
+     "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+     "decimals": 6
+    },
+    {
+     "id": "plume",
+     "symbol": "PLUME",
+     "name": "PLUME",
+     "address": "0x4c1746a800d224393fe2470c70a35717ed4ea5f1",
+     "decimals": 18
+    },
+    {
+     "id": "usdt",
+     "symbol": "USDT",
+     "name": "Tether USD",
+     "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+     "decimals": 6
+    },
+    {
+     "id": "musd",
+     "symbol": "mUSD",
+     "name": "MetaMask USD",
+     "address": "0xaca92e438df0b2401ff60da7e4337b687a2435da",
+     "decimals": 6
+    },
+    {
+     "id": "dai",
+     "symbol": "DAI",
+     "name": "Dai Stablecoin",
+     "address": "0x6b175474e89094c44da98b954eedeac495271d0f",
+     "decimals": 18
+    },
+    {
+     "id": "ape",
+     "symbol": "APE",
+     "name": "ApeCoin",
+     "address": "0x4d224452801aced8b2f0aebe155379bb5d594381",
+     "decimals": 18
+    },
+    {
+     "id": "usdg",
+     "symbol": "USDG",
+     "name": "Global Dollar",
+     "address": "0xe343167631d89b6ffc58b88d6b7fb0228795491d",
+     "decimals": 6
+    },
+    {
+     "id": "ausd",
+     "symbol": "AUSD",
+     "name": "AUSD",
+     "address": "0x00000000efe302beaa2b3e6e1b18d08d69a9012a",
+     "decimals": 6
+    },
+    {
+     "id": "pyusd",
+     "symbol": "PYUSD",
+     "name": "PayPal USD",
+     "address": "0x6c3ea9036406852006290770bedfcaba0e23a0e8",
+     "decimals": 6
+    },
+    {
+     "id": "usdm",
+     "symbol": "USDm",
+     "name": "MegaUSD (USDm)",
+     "address": "0xec2af1c8b110a61fd9c3fa6a554a031ca9943926",
+     "decimals": 18
+    },
+    {
+     "id": "cirbtc",
+     "symbol": "cirBTC",
+     "name": "Circle Wrapped Bitcoin",
+     "address": "0x72dfb2e44f59c5ad2bafe84314e5b99a7cd5075e",
+     "decimals": 8
+    },
+    {
+     "id": "kbtc",
+     "symbol": "kBTC",
+     "name": "Kraken Wrapped Bitcoin",
+     "address": "0x73e0c0d45e048d25fc26fa3159b0aa04bfa4db98",
+     "decimals": 8
+    },
+    {
+     "id": "somi",
+     "symbol": "SOMI",
+     "name": "SomniaOFT",
+     "address": "0x1b0f6590d21dc02b92ad3a7d00f8884dc4f1aed9",
+     "decimals": 18
+    },
+    {
+     "id": "eth",
+     "symbol": "ETH",
+     "name": "Ether",
+     "address": "0x0000000000000000000000000000000000000000",
+     "decimals": 18
+    }
+   ],
+   "contracts": {
+    "multicall3": "0xca11bde05977b3631167028862be2a173976ca11",
+    "multicaller": "0x0000000000002bdbf1bf3279983603ec279cc6df",
+    "onlyOwnerMulticaller": "0xb90ed4c123843cbfd66b11411ee7694ef37e6e72",
+    "relayReceiver": "0xa5f565650890fba1824ee0f21ebbbf660a179934",
+    "erc20Router": "0xb92fe925dc43a0ecde6c8b1a2709c170ec4fff4f",
+    "approvalProxy": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be",
+    "v3": {
+     "erc20Router": "0xb92fe925dc43a0ecde6c8b1a2709c170ec4fff4f",
+     "approvalProxy": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be"
+    }
+   },
+   "protocol": {
+    "v2": {
+     "chainId": "ethereum",
+     "depository": "0x4cd00e387622c35bddb9b4c962c136462338bc31"
+    }
+   }
+  },
+  {
+   "id": 10,
+   "name": "optimism",
+   "displayName": "Optimism",
+   "vmType": "evm",
+   "disabled": false,
+   "depositEnabled": true,
+   "tokenSupport": "All",
+   "currency": {
+    "id": "eth",
+    "symbol": "ETH",
+    "name": "Ether",
+    "address": "0x0000000000000000000000000000000000000000",
+    "decimals": 18,
+    "supportsBridging": true
+   },
+   "solverCurrencies": [
+    {
+     "id": "weth",
+     "symbol": "WETH",
+     "name": "Wrapped Ether",
+     "address": "0x4200000000000000000000000000000000000006",
+     "decimals": 18
+    },
+    {
+     "id": "usdc",
+     "symbol": "USDC",
+     "name": "USD Coin",
+     "address": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+     "decimals": 6
+    },
+    {
+     "id": "usdt",
+     "symbol": "USDT",
+     "name": "Tether USD",
+     "address": "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58",
+     "decimals": 6
+    },
+    {
+     "id": "eth",
+     "symbol": "ETH",
+     "name": "Ether",
+     "address": "0x0000000000000000000000000000000000000000",
+     "decimals": 18
+    }
+   ],
+   "contracts": {
+    "multicall3": "0xca11bde05977b3631167028862be2a173976ca11",
+    "multicaller": "0x0000000000002bdbf1bf3279983603ec279cc6df",
+    "onlyOwnerMulticaller": "0xb90ed4c123843cbfd66b11411ee7694ef37e6e72",
+    "relayReceiver": "0xa5f565650890fba1824ee0f21ebbbf660a179934",
+    "erc20Router": "0xb92fe925dc43a0ecde6c8b1a2709c170ec4fff4f",
+    "approvalProxy": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be",
+    "v3": {
+     "erc20Router": "0xb92fe925dc43a0ecde6c8b1a2709c170ec4fff4f",
+     "approvalProxy": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be"
+    }
+   },
+   "protocol": {
+    "v2": {
+     "chainId": "optimism",
+     "depository": "0x4cd00e387622c35bddb9b4c962c136462338bc31"
+    }
+   }
+  },
+  {
+   "id": 25,
+   "name": "cronos",
+   "displayName": "Cronos",
+   "vmType": "evm",
+   "disabled": false,
+   "depositEnabled": true,
+   "tokenSupport": "All",
+   "currency": {
+    "id": "cronos",
+    "symbol": "CRO",
+    "name": "Cronos",
+    "address": "0x0000000000000000000000000000000000000000",
+    "decimals": 18,
+    "supportsBridging": true
+   },
+   "solverCurrencies": [
+    {
+     "id": "usdc",
+     "symbol": "USDC",
+     "name": "USD Coin",
+     "address": "0x3d7f2c478aafdb65542bcb44bceec05849999d2d",
+     "decimals": 6
+    },
+    {
+     "id": "usdc.e-cronos",
+     "symbol": "USDC.e",
+     "name": "USDCoin (bridged)",
+     "address": "0xc21223249ca28397b4b6541dffaecc539bff0c59",
+     "decimals": 6
+    },
+    {
+     "id": "cronos",
+     "symbol": "CRO",
+     "name": "Cronos",
+     "address": "0x0000000000000000000000000000000000000000",
+     "decimals": 18
+    }
+   ],
+   "contracts": {
+    "multicall3": "0xca11bde05977b3631167028862be2a173976ca11",
+    "multicaller": "0xcd18f12c9424cb072c28137691c993ecb2f8b925",
+    "onlyOwnerMulticaller": "0xd8afcda5f4e509697cbf084482d3254d3b49b45b",
+    "relayReceiver": "0xc56043daac3a26ad451abc7610f04f53cc4412e5",
+    "erc20Router": "0x9ef6d3c2f60d7b9008d74cab1fc0f899c957c819",
+    "approvalProxy": "0x8754bc615047de01228a7527b712806a71a8dc9a",
+    "v3": {
+     "erc20Router": "0x9ef6d3c2f60d7b9008d74cab1fc0f899c957c819",
+     "approvalProxy": "0x8754bc615047de01228a7527b712806a71a8dc9a"
+    }
+   },
+   "protocol": {
+    "v2": {
+     "chainId": "cronos",
+     "depository": "0x59916da825d2d2ec1bf878d71c88826f6633ecca"
+    }
+   }
+  },
+  {
+   "id": 4663,
+   "name": "robinhood",
+   "displayName": "Robinhood Chain",
+   "vmType": "evm",
+   "disabled": false,
+   "depositEnabled": true,
+   "tokenSupport": "All",
+   "currency": {
+    "id": "eth",
+    "symbol": "ETH",
+    "name": "Ether",
+    "address": "0x0000000000000000000000000000000000000000",
+    "decimals": 18,
+    "supportsBridging": true
+   },
+   "solverCurrencies": [
+    {
+     "id": "usdg",
+     "symbol": "USDG",
+     "name": "Global Dollar",
+     "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "decimals": 6
+    },
+    {
+     "id": "eth",
+     "symbol": "ETH",
+     "name": "Ether",
+     "address": "0x0000000000000000000000000000000000000000",
+     "decimals": 18
+    }
+   ],
+   "contracts": {
+    "multicall3": "0xcA11bde05977b3631167028862bE2a173976CA11",
+    "multicaller": "",
+    "onlyOwnerMulticaller": "",
+    "relayReceiver": "",
+    "erc20Router": "0xb92fe925dc43a0ecde6c8b1a2709c170ec4fff4f",
+    "approvalProxy": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be",
+    "v3": {
+     "erc20Router": "0xb92fe925dc43a0ecde6c8b1a2709c170ec4fff4f",
+     "approvalProxy": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be"
+    }
+   },
+   "protocol": {
+    "v2": {
+     "chainId": "robinhood",
+     "depository": "0x4cd00e387622c35bddb9b4c962c136462338bc31"
+    }
+   }
+  },
+  {
+   "id": 8453,
+   "name": "base",
+   "displayName": "Base",
+   "vmType": "evm",
+   "disabled": false,
+   "depositEnabled": true,
+   "tokenSupport": "All",
+   "currency": {
+    "id": "eth",
+    "symbol": "ETH",
+    "name": "Ether",
+    "address": "0x0000000000000000000000000000000000000000",
+    "decimals": 18,
+    "supportsBridging": true
+   },
+   "solverCurrencies": [
+    {
+     "id": "btc",
+     "symbol": "cbBTC",
+     "name": "Coinbase Wrapped BTC",
+     "address": "0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf",
+     "decimals": 8
+    },
+    {
+     "id": "weth",
+     "symbol": "WETH",
+     "name": "Wrapped Ether",
+     "address": "0x4200000000000000000000000000000000000006",
+     "decimals": 18
+    },
+    {
+     "id": "usdt",
+     "symbol": "USDT",
+     "name": "Tether USD",
+     "address": "0xfde4c96c8593536e31f229ea8f37b2ada2699bb2",
+     "decimals": 6
+    },
+    {
+     "id": "usdc",
+     "symbol": "USDC",
+     "name": "USD Coin",
+     "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+     "decimals": 6
+    },
+    {
+     "id": "sol",
+     "symbol": "SOL",
+     "name": "Solana",
+     "address": "0x311935cd80b76769bf2ecc9d8ab7635b2139cf82",
+     "decimals": 9
+    },
+    {
+     "id": "degen",
+     "symbol": "DEGEN",
+     "name": "Degen",
+     "address": "0x4ed4e862860bed51a9570b96d89af5e1b0efefed",
+     "decimals": 18
+    },
+    {
+     "id": "eth",
+     "symbol": "ETH",
+     "name": "Ether",
+     "address": "0x0000000000000000000000000000000000000000",
+     "decimals": 18
+    }
+   ],
+   "contracts": {
+    "multicall3": "0xca11bde05977b3631167028862be2a173976ca11",
+    "multicaller": "0x0000000000002bdbf1bf3279983603ec279cc6df",
+    "onlyOwnerMulticaller": "0xb90ed4c123843cbfd66b11411ee7694ef37e6e72",
+    "relayReceiver": "0xa5f565650890fba1824ee0f21ebbbf660a179934",
+    "erc20Router": "0xb92fe925dc43a0ecde6c8b1a2709c170ec4fff4f",
+    "approvalProxy": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be",
+    "v3": {
+     "erc20Router": "0xb92fe925dc43a0ecde6c8b1a2709c170ec4fff4f",
+     "approvalProxy": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be"
+    }
+   },
+   "protocol": {
+    "v2": {
+     "chainId": "base",
+     "depository": "0x4cd00e387622c35bddb9b4c962c136462338bc31"
+    }
+   }
+  },
+  {
+   "id": 42161,
+   "name": "arbitrum",
+   "displayName": "Arbitrum",
+   "vmType": "evm",
+   "disabled": false,
+   "depositEnabled": true,
+   "tokenSupport": "All",
+   "currency": {
+    "id": "eth",
+    "symbol": "ETH",
+    "name": "Ether",
+    "address": "0x0000000000000000000000000000000000000000",
+    "decimals": 18,
+    "supportsBridging": true
+   },
+   "solverCurrencies": [
+    {
+     "id": "weth",
+     "symbol": "WETH",
+     "name": "Wrapped Ether",
+     "address": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+     "decimals": 18
+    },
+    {
+     "id": "usdc",
+     "symbol": "USDC",
+     "name": "USD Coin",
+     "address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+     "decimals": 6
+    },
+    {
+     "id": "ape",
+     "symbol": "APE",
+     "name": "ApeCoin",
+     "address": "0x7f9fbf9bdd3f4105c478b996b648fe6e828a1e98",
+     "decimals": 18
+    },
+    {
+     "id": "usdt",
+     "symbol": "USDT",
+     "name": "Tether USD",
+     "address": "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+     "decimals": 6
+    },
+    {
+     "id": "usde",
+     "symbol": "USDe",
+     "name": "USDe",
+     "address": "0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34",
+     "decimals": 18
+    },
+    {
+     "id": "eth",
+     "symbol": "ETH",
+     "name": "Ether",
+     "address": "0x0000000000000000000000000000000000000000",
+     "decimals": 18
+    }
+   ],
+   "contracts": {
+    "multicall3": "0xca11bde05977b3631167028862be2a173976ca11",
+    "multicaller": "0x0000000000002bdbf1bf3279983603ec279cc6df",
+    "onlyOwnerMulticaller": "0xb90ed4c123843cbfd66b11411ee7694ef37e6e72",
+    "relayReceiver": "0xa5f565650890fba1824ee0f21ebbbf660a179934",
+    "erc20Router": "0xb92fe925dc43a0ecde6c8b1a2709c170ec4fff4f",
+    "approvalProxy": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be",
+    "v3": {
+     "erc20Router": "0xb92fe925dc43a0ecde6c8b1a2709c170ec4fff4f",
+     "approvalProxy": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be"
+    }
+   },
+   "protocol": {
+    "v2": {
+     "chainId": "arbitrum",
+     "depository": "0x4cd00e387622c35bddb9b4c962c136462338bc31"
+    }
+   }
+  },
+  {
+   "id": 59144,
+   "name": "linea",
+   "displayName": "Linea",
+   "vmType": "evm",
+   "disabled": false,
+   "depositEnabled": true,
+   "tokenSupport": "All",
+   "currency": {
+    "id": "eth",
+    "symbol": "ETH",
+    "name": "Ether",
+    "address": "0x0000000000000000000000000000000000000000",
+    "decimals": 18,
+    "supportsBridging": true
+   },
+   "solverCurrencies": [
+    {
+     "id": "musd",
+     "symbol": "mUSD",
+     "name": "MetaMask USD",
+     "address": "0xaca92e438df0b2401ff60da7e4337b687a2435da",
+     "decimals": 6
+    },
+    {
+     "id": "usdc",
+     "symbol": "USDC",
+     "name": "USD Coin",
+     "address": "0x176211869ca2b568f2a7d4ee941e073a821ee1ff",
+     "decimals": 6
+    },
+    {
+     "id": "eth",
+     "symbol": "ETH",
+     "name": "Ether",
+     "address": "0x0000000000000000000000000000000000000000",
+     "decimals": 18
+    }
+   ],
+   "contracts": {
+    "multicall3": "0xca11bde05977b3631167028862be2a173976ca11",
+    "multicaller": "0x0000000000002Bdbf1Bf3279983603Ec279CC6dF",
+    "onlyOwnerMulticaller": "0xb90ed4c123843cbfd66b11411ee7694ef37e6e72",
+    "relayReceiver": "0x00000000aa467eba42a3d604b3d74d63b2b6c6cb",
+    "erc20Router": "0x9ef6d3c2f60d7b9008d74cab1fc0f899c957c819",
+    "approvalProxy": "0x8754bc615047de01228a7527b712806a71a8dc9a",
+    "v3": {
+     "erc20Router": "0x9ef6d3c2f60d7b9008d74cab1fc0f899c957c819",
+     "approvalProxy": "0x8754bc615047de01228a7527b712806a71a8dc9a"
+    }
+   },
+   "protocol": {
+    "v2": {
+     "chainId": "linea",
+     "depository": "0x59916da825d2d2ec1bf878d71c88826f6633ecca"
+    }
+   }
+  },
+  {
+   "id": 792703809,
+   "name": "solana",
+   "displayName": "Solana",
+   "vmType": "svm",
+   "disabled": false,
+   "depositEnabled": true,
+   "tokenSupport": "All",
+   "currency": {
+    "id": "sol",
+    "symbol": "SOL",
+    "name": "Solana",
+    "address": "11111111111111111111111111111111",
+    "decimals": 9,
+    "supportsBridging": true
+   },
+   "solverCurrencies": [
+    {
+     "id": "pengu",
+     "symbol": "PENGU",
+     "name": "Pudgy Penguins",
+     "address": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv",
+     "decimals": 6
+    },
+    {
+     "id": "usdc",
+     "symbol": "USDC",
+     "name": "USD Coin",
+     "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+     "decimals": 6
+    },
+    {
+     "id": "usdt",
+     "symbol": "USDT",
+     "name": "USDT",
+     "address": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+     "decimals": 6
+    },
+    {
+     "id": "cash",
+     "symbol": "CASH",
+     "name": "CASH",
+     "address": "CASHx9KJUStyftLFWGvEVf59SGeG9sh5FfcnZMVPCASH",
+     "decimals": 6
+    },
+    {
+     "id": "pyusd",
+     "symbol": "PYUSD",
+     "name": "PayPal USD",
+     "address": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+     "decimals": 6
+    },
+    {
+     "id": "usdg",
+     "symbol": "USDG",
+     "name": "Global Dollar",
+     "address": "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
+     "decimals": 6
+    },
+    {
+     "id": "ousd",
+     "symbol": "OUSD",
+     "name": "OpenUSD",
+     "address": "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB",
+     "decimals": 6
+    },
+    {
+     "id": "sol",
+     "symbol": "SOL",
+     "name": "Solana",
+     "address": "11111111111111111111111111111111",
+     "decimals": 9
+    }
+   ],
+   "contracts": {
+    "multicall3": "",
+    "multicaller": "",
+    "onlyOwnerMulticaller": "",
+    "relayReceiver": "",
+    "erc20Router": "",
+    "approvalProxy": "",
+    "v3": {
+     "erc20Router": "",
+     "approvalProxy": ""
+    }
+   },
+   "protocol": {
+    "v2": {
+     "chainId": "solana",
+     "depository": "99vQwtBwYtrqqD9YSXbdum3KBdxPAVxYTaQ3cfnJSrN2",
+     "depositoryVault": "7uTT8Xi5RWXzy7h9XL244GRgEycDYDhLjr3ZyNdXi8pZ"
+    }
+   }
+  }
+ ]
+}

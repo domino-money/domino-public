@@ -1,0 +1,33 @@
+{
+  "contractVersion": "1.0.0-rc.1",
+  "status": {
+    "checkedAt": 1790905139,
+    "fee": {
+      "amountRaw": "350000",
+      "chainId": 42161,
+      "evidence": "relay_requests_v3",
+      "reason": null,
+      "status": "measured",
+      "token": "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
+    },
+    "fillTxHash": "0xf1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+    "nextCheckSeconds": null,
+    "observedState": "filled",
+    "providerStatus": "success",
+    "recovery": null,
+    "refundTxHash": null,
+    "request": {
+      "depositTxHash": "0xd1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "destinationChainId": 4663,
+      "originChainId": 42161,
+      "owner": "0x1111111111111111111111111111111111111111",
+      "previousState": "pending",
+      "provider": "relay",
+      "requestId": "0x17909043250328e5f8f2ae0821aaa72bdd1aa0b373c81bdf0b7996f4545b05af"
+    },
+    "schemaVersion": 1,
+    "state": "filled",
+    "terminal": true,
+    "transition": "advanced"
+  }
+}
