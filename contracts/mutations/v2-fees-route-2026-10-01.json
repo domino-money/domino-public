@@ -1,0 +1,793 @@
+{
+  "description": "V2 F1 fee module and swap-leg executor (#283): every guard of contracts/src/v2/fees and contracts/src/v2/route, deleted or weakened one at a time against the suite meant to catch it.",
+  "provenance": "Authored 2026-10-01 with the F1 fees/route change (claude/v2-f1-fees-route).",
+  "mutations": [
+    {
+      "label": "executor runs only inside a locked action",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "if (!_actionLocked() || _swapInProgress()) revert",
+      "new": "if (_swapInProgress()) revert"
+    },
+    {
+      "label": "no executor run nested inside a leg",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "if (!_actionLocked() || _swapInProgress()) revert",
+      "new": "if (!_actionLocked()) revert"
+    },
+    {
+      "label": "at most eight legs",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "        if (count > MAX_LEGS) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "an empty plan reads no balance",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "        if (count == 0) return amountsOut;\n",
+      "new": ""
+    },
+    {
+      "label": "the in-progress flag is cleared",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "        _setSwapping(0);\n",
+      "new": ""
+    },
+    {
+      "label": "v3 callback only from the pool being swapped on",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+      "old": "if (msg.sender != pool) revert IDominoPositionActions.Unauthorized();",
+      "new": "if (false) revert IDominoPositionActions.Unauthorized();"
+    },
+    {
+      "label": "a v3 callback is consumed once",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+      "old": "            tstore(V3_POOL_SLOT, 0)\n",
+      "new": ""
+    },
+    {
+      "label": "the pool is paid exactly the hop input",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+      "old": "if ((zeroForOne ? amount0Delta : amount1Delta) != int256(amount)) {",
+      "new": "if (false) {"
+    },
+    {
+      "label": "the hop input is read on the paying side",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+      "old": "zeroForOne ? amount0Delta : amount1Delta",
+      "new": "zeroForOne ? amount1Delta : amount0Delta"
+    },
+    {
+      "label": "a v4 callback comes from the PoolManager",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "if (msg.sender != V4_POOL_MANAGER || pending != keccak256(data))",
+      "new": "if (pending != keccak256(data))"
+    },
+    {
+      "label": "a v4 callback is bound to the pending leg",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "if (msg.sender != V4_POOL_MANAGER || pending != keccak256(data))",
+      "new": "if (msg.sender != V4_POOL_MANAGER)"
+    },
+    {
+      "label": "a pending v4 leg is consumed",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "            tstore(V4_CALLBACK_SLOT, 0)\n",
+      "new": ""
+    },
+    {
+      "label": "the v4 path ends at tokenOut",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "        if (tokenOut != expectedOut) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "the PoolManager credited the whole input",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "        if (paid != amountIn) revert IDominoPositionActions.SwapEffectMismatch();\n",
+      "new": ""
+    },
+    {
+      "label": "native input settles with value",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "        if (tokenIn == address(0)) {\n            paid = manager.settle{value: amountIn}();",
+      "new": "        if (false) {\n            paid = manager.settle{value: amountIn}();"
+    },
+    {
+      "label": "a v4 hop is a v4 pool",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "if (pool.dex != DominoV2Types.DEX_V4 || (!zeroForOne",
+      "new": "if ((!zeroForOne"
+    },
+    {
+      "label": "a v4 hop holds the current token",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "(!zeroForOne && tokenOut != pool.currency1)",
+      "new": "false"
+    },
+    {
+      "label": "a v4 hop input fits int128",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "\n                || amountOut > uint256(uint128(type(int128).max))) revert",
+      "new": ") revert"
+    },
+    {
+      "label": "a v4 hop consumes exactly its input",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "if (int256(spent) != -int256(amountOut) || received <= 0) {",
+      "new": "if (received <= 0) {"
+    },
+    {
+      "label": "a v4 hop delivers a positive output",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "if (int256(spent) != -int256(amountOut) || received <= 0) {",
+      "new": "if (int256(spent) != -int256(amountOut)) {"
+    },
+    {
+      "label": "at most four v4 hops",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "        if (pools.length > MAX_HOPS) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "a v4 leg needs a PoolManager",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "        if (manager == address(0)) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "pool legs carry no router",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV4.t.sol",
+      "old": "        if (leg.router != address(0)) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "a leg swaps two different tokens",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "if (leg.tokenIn == leg.tokenOut || leg.amountIn == 0 || leg.minAmountOut == 0)",
+      "new": "if (leg.amountIn == 0 || leg.minAmountOut == 0)"
+    },
+    {
+      "label": "a leg spends something",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "if (leg.tokenIn == leg.tokenOut || leg.amountIn == 0 || leg.minAmountOut == 0)",
+      "new": "if (leg.tokenIn == leg.tokenOut || leg.minAmountOut == 0)"
+    },
+    {
+      "label": "a leg has a nonzero floor",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "if (leg.tokenIn == leg.tokenOut || leg.amountIn == 0 || leg.minAmountOut == 0)",
+      "new": "if (leg.tokenIn == leg.tokenOut || leg.amountIn == 0)"
+    },
+    {
+      "label": "an unknown leg kind is refused",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "        if (leg.kind == DominoV2Types.LEG_V4_POOL) return _swapV4(leg);\n        revert IDominoPositionActions.InvalidPlan();",
+      "new": "        if (leg.kind == DominoV2Types.LEG_V4_POOL) return _swapV4(leg);"
+    },
+    {
+      "label": "only admitted routers run",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "        if (ROUTE_REGISTRY.routerVersion(router) == 0) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "the ERC-20 approval is exactly amountIn",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "DominoTokenOps.approve(token, PERMIT2, leg.amountIn);",
+      "new": "DominoTokenOps.approve(token, PERMIT2, uint256(leg.amountIn) + 1);"
+    },
+    {
+      "label": "the Permit2 allowance is exactly amountIn",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "approve(token, router, uint160(leg.amountIn), uint48(block.timestamp))",
+      "new": "approve(token, router, uint160(leg.amountIn) + 1, uint48(block.timestamp))"
+    },
+    {
+      "label": "the Permit2 allowance is valid in this block",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "uint48(block.timestamp))",
+      "new": "uint48(block.timestamp - 1))"
+    },
+    {
+      "label": "a router failure is bubbled",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "        if (!ok) {\n            assembly (\"memory-safe\") {\n                revert(add(result, 0x20), mload(result))\n            }\n        }\n",
+      "new": ""
+    },
+    {
+      "label": "a native input is the call value",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "router.call{value: native ? leg.amountIn : 0}",
+      "new": "router.call{value: 0}"
+    },
+    {
+      "label": "no Permit2 allowance survives",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "if (left != 0 || DominoTokenOps.allowance(token, address(this), PERMIT2) != 0)",
+      "new": "if (DominoTokenOps.allowance(token, address(this), PERMIT2) != 0)"
+    },
+    {
+      "label": "no ERC-20 allowance survives",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "if (left != 0 || DominoTokenOps.allowance(token, address(this), PERMIT2) != 0)",
+      "new": "if (left != 0)"
+    },
+    {
+      "label": "a v3 path holds a whole hop",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+      "old": "if (length < 43 || (length - 20)",
+      "new": "if ((length - 20)"
+    },
+    {
+      "label": "a v3 path is made of whole hops",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+      "old": " || (length - 20) % 23 != 0 ||",
+      "new": " ||"
+    },
+    {
+      "label": "at most four v3 hops",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+      "old": " || (length - 20) / 23 > MAX_HOPS) {",
+      "new": ") {"
+    },
+    {
+      "label": "a v3 path starts at tokenIn",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+      "old": "            if (h == 0 && tokenIn != leg.tokenIn) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "a v3 path ends at tokenOut",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+      "old": "        if (tokenOut != leg.tokenOut) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "a v3 hop needs a pool at the canonical address",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+      "old": "        if (pool.code.length == 0) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "exactly amountIn leaves",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "if (current[j] + leg.amountIn != before[j]) revert",
+      "new": "if (false) revert"
+    },
+    {
+      "label": "at least minAmountOut arrives",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "if (current[j] < before[j] + leg.minAmountOut) revert",
+      "new": "if (false) revert"
+    },
+    {
+      "label": "no other tracked balance moves",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "            } else if (current[j] != before[j]) {",
+      "new": "            } else if (false) {"
+    },
+    {
+      "label": "the action names extra tracked tokens",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "            count = _include(tracked, count, extra[i]);\n",
+      "new": ""
+    },
+    {
+      "label": "the registry must have code",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "address(config.registry).code.length == 0 || ",
+      "new": ""
+    },
+    {
+      "label": "Permit2 must have code",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": " || config.permit2.code.length == 0",
+      "new": ""
+    },
+    {
+      "label": "a v3 factory must have code",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "config.v3Factory.code.length == 0 || ",
+      "new": ""
+    },
+    {
+      "label": "a v3 factory needs its init code hash",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": " || config.v3PoolInitCodeHash == bytes32(0)",
+      "new": ""
+    },
+    {
+      "label": "a PoolManager must have code",
+      "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+      "suite": "test/v2/route/DominoSwapExecutorRouter.t.sol",
+      "old": "(config.v4PoolManager != address(0) && config.v4PoolManager.code.length == 0)",
+      "new": "false"
+    },
+    {
+      "label": "the ledger needs a registry with code",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        if (address(registry).code.length == 0) revert InvalidFeeConfig();\n",
+      "new": ""
+    },
+    {
+      "label": "a flush with nothing owed does nothing",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        if (amount == 0) return 0;\n",
+      "new": "",
+      "index": 0
+    },
+    {
+      "label": "a flush needs a recipient",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        if (recipient == address(0)) revert FeeRecipientUnavailable();\n",
+      "new": ""
+    },
+    {
+      "label": "a flush clears what it pays",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        fees.owed[token] = 0;\n",
+      "new": ""
+    },
+    {
+      "label": "a flush measures what left",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        if (balance - DominoTokenOps.selfBalance(token) != amount) revert FeeTransferMismatch(token);\n",
+      "new": ""
+    },
+    {
+      "label": "a flush never runs inside an action",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "function flushOwedFees(address token) external nonReentrant returns",
+      "new": "function flushOwedFees(address token) external returns"
+    },
+    {
+      "label": "a zero fee charges nothing",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        if (amount == 0) return 0;\n",
+      "new": "",
+      "index": 1
+    },
+    {
+      "label": "a fee must be backed",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        if (balance < fees.owed[token] + amount) revert FeeNotBacked(token);\n",
+      "new": ""
+    },
+    {
+      "label": "no recipient means owed, not burned",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        if (recipient != address(0)) {",
+      "new": "        if (true) {"
+    },
+    {
+      "label": "a balance that grew is not a payment",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "            if (remaining < balance) debited = balance - remaining;",
+      "new": "            debited = balance - remaining;"
+    },
+    {
+      "label": "a token that takes more than asked reverts",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "            if (debited > amount) revert FeeTransferMismatch(token);\n",
+      "new": ""
+    },
+    {
+      "label": "the inline payment is gas capped",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "DominoTokenOps.tryTransfer(token, recipient, amount, FEE_TRANSFER_GAS);",
+      "new": "DominoTokenOps.tryTransfer(token, recipient, amount, gasleft());"
+    },
+    {
+      "label": "a shortfall becomes owed",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        if (debited < amount) {",
+      "new": "        if (false) {"
+    },
+    {
+      "label": "a broken registry defers instead of reverting",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        } catch {\n            recipient = address(0);\n        }",
+      "new": "        } catch {\n            revert FeeRecipientUnavailable();\n        }"
+    },
+    {
+      "label": "owed fees are not spendable",
+      "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "return DominoTokenOps.selfBalance(token) - _feeStorage().owed[token];",
+      "new": "return DominoTokenOps.selfBalance(token);"
+    },
+    {
+      "label": "the lock refuses reentry",
+      "file": "contracts/src/v2/route/DominoActionLock.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "        if (_actionLocked()) revert ReentrantCall();\n",
+      "new": ""
+    },
+    {
+      "label": "the lock is released",
+      "file": "contracts/src/v2/route/DominoActionLock.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "            tstore(LOCK_SLOT, 0)\n",
+      "new": ""
+    },
+    {
+      "label": "an empty route selects nothing",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "        if (count == 0) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "only charge currencies are selected (spent)",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "if (rank != 0 && rank < bestRank) (bestRank, token, source) = (rank, spent, place);",
+      "new": "if (rank < bestRank) (bestRank, token, source) = (rank, spent, place);"
+    },
+    {
+      "label": "only charge currencies are selected (delivered)",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "if (rank != 0 && rank < bestRank) (bestRank, token, source) = (rank, delivered, place);",
+      "new": "if (rank < bestRank) (bestRank, token, source) = (rank, delivered, place);"
+    },
+    {
+      "label": "a tie keeps the earlier place (spent)",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "rank < bestRank) (bestRank, token, source) = (rank, spent, place);",
+      "new": "rank <= bestRank) (bestRank, token, source) = (rank, spent, place);"
+    },
+    {
+      "label": "a tie keeps the earlier place (delivered)",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "rank < bestRank) (bestRank, token, source) = (rank, delivered, place);",
+      "new": "rank <= bestRank) (bestRank, token, source) = (rank, delivered, place);"
+    },
+    {
+      "label": "inputs, then outputs, then hops (spent)",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "if (_place(legs, i, spent, true) == place) {",
+      "new": "if (true) {"
+    },
+    {
+      "label": "inputs, then outputs, then hops (delivered)",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "if (_place(legs, i, delivered, false) == place) {",
+      "new": "if (true) {"
+    },
+    {
+      "label": "a spent token an earlier leg delivered is a hop",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "                if (legs[j].tokenOut == token) return FROM_HOP;\n",
+      "new": ""
+    },
+    {
+      "label": "a delivered token a later leg spends is a hop",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "            if (legs[j].tokenIn == token) return FROM_HOP;\n",
+      "new": ""
+    },
+    {
+      "label": "the fallback is the first input",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "(legs[0].tokenIn, FROM_FALLBACK)",
+      "new": "(legs[0].tokenOut, FROM_FALLBACK)"
+    },
+    {
+      "label": "the swapped amount counts what was delivered",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "amount = spent > delivered ? spent : delivered;",
+      "new": "amount = spent;"
+    },
+    {
+      "label": "the swapped amount counts what was spent",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "amount = spent > delivered ? spent : delivered;",
+      "new": "amount = delivered;"
+    },
+    {
+      "label": "one measured amount per leg",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "        if (amountsOut.length != legs.length) revert IDominoPositionActions.InvalidPlan();\n",
+      "new": ""
+    },
+    {
+      "label": "fees round down",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "return amount * bps / BPS;",
+      "new": "return (amount * bps + BPS - 1) / BPS;"
+    },
+    {
+      "label": "no swap means no tariff",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "if (feeBps != 0 || feeToken != address(0)) revert",
+      "new": "if (feeToken != address(0)) revert"
+    },
+    {
+      "label": "no swap means no fee token",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "if (feeBps != 0 || feeToken != address(0)) revert",
+      "new": "if (feeBps != 0) revert"
+    },
+    {
+      "label": "a swap pays the tariff",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "if (feeBps != DominoV2Types.FEE_ASSISTED_SWAP_BPS || feeToken != selected) {",
+      "new": "if (feeToken != selected) {"
+    },
+    {
+      "label": "a swap pays in the selected token",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "if (feeBps != DominoV2Types.FEE_ASSISTED_SWAP_BPS || feeToken != selected) {",
+      "new": "if (feeBps != DominoV2Types.FEE_ASSISTED_SWAP_BPS) {"
+    },
+    {
+      "label": "Domino-compound pays 4%",
+      "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+      "suite": "test/v2/fees/DominoFeeRules.t.sol",
+      "old": "        if (mode == DominoV2Types.MODE_DOMINO) return DominoV2Types.FEE_AUTOMATION_DOMINO_BPS;\n",
+      "new": ""
+    },
+    {
+      "label": "a quote needs a price",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "        if (sqrtPriceX96 == 0) revert InvalidFloor();\n",
+      "new": ""
+    },
+    {
+      "label": "the pool fee is below 100%",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "if (poolFeePips >= PIPS || maxSlippageBps >= BPS) revert",
+      "new": "if (maxSlippageBps >= BPS) revert"
+    },
+    {
+      "label": "the slippage is below 100%",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "if (poolFeePips >= PIPS || maxSlippageBps >= BPS) revert",
+      "new": "if (poolFeePips >= PIPS) revert"
+    },
+    {
+      "label": "low prices keep the full ratio",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "if (sqrtPriceX96 <= type(uint128).max) {",
+      "new": "if (false) {"
+    },
+    {
+      "label": "high prices avoid the overflow",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "if (sqrtPriceX96 <= type(uint128).max) {",
+      "new": "if (true) {"
+    },
+    {
+      "label": "the protocol fee of the swap direction",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "zeroForOne ? protocolFee & 0xfff : (protocolFee >> 12) & 0xfff",
+      "new": "zeroForOne ? (protocolFee >> 12) & 0xfff : protocolFee & 0xfff"
+    },
+    {
+      "label": "the protocol fee comes before the LP fee",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "protocol + lpFee - protocol * lpFee / PIPS",
+      "new": "protocol + lpFee"
+    },
+    {
+      "label": "slot0 protocol fee bits",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "protocolFee = uint24(word >> 184);",
+      "new": "protocolFee = uint24(word >> 160);"
+    },
+    {
+      "label": "slot0 LP fee bits",
+      "file": "contracts/src/v2/route/DominoSwapFloor.sol",
+      "suite": "test/v2/route/DominoSwapFloor.t.sol",
+      "old": "lpFee = uint24(word >> 208);",
+      "new": "lpFee = uint24(word >> 184);"
+    },
+    {
+      "label": "a balance needs a full answer",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "ok := and(ok, gt(returndatasize(), 0x1f))\n            amount := mload(0x20)",
+      "new": "amount := mload(0x20)"
+    },
+    {
+      "label": "a failed balance read reverts",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "        if (!ok) revert TokenCallFailed(token);\n",
+      "new": "",
+      "index": 0
+    },
+    {
+      "label": "an allowance needs a full answer",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "ok := and(ok, gt(returndatasize(), 0x1f))\n            amount := mload(0x00)",
+      "new": "amount := mload(0x00)"
+    },
+    {
+      "label": "a failed allowance read reverts",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "        if (!ok) revert TokenCallFailed(token);\n",
+      "new": "",
+      "index": 1
+    },
+    {
+      "label": "a failed transfer reverts",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "if (!tryTransfer(token, to, amount, gasleft())) revert TokenCallFailed(token);",
+      "new": "tryTransfer(token, to, amount, gasleft());"
+    },
+    {
+      "label": "a transfer returning false fails",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "eq(mload(0x00), 1)",
+      "new": "1",
+      "index": 0
+    },
+    {
+      "label": "a transfer without return data needs code",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "gt(extcodesize(token), 0)",
+      "new": "1",
+      "index": 0
+    },
+    {
+      "label": "a transfer without return data is accepted",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "and(iszero(returndatasize()), gt(extcodesize(token), 0))",
+      "new": "0",
+      "index": 0
+    },
+    {
+      "label": "an approve returning false fails",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "eq(mload(0x00), 1)",
+      "new": "1",
+      "index": 1
+    },
+    {
+      "label": "an approve without return data needs code",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "gt(extcodesize(token), 0)",
+      "new": "1",
+      "index": 1
+    },
+    {
+      "label": "a failed approve reverts",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "        if (!ok) revert TokenCallFailed(token);\n",
+      "new": "",
+      "index": 2
+    },
+    {
+      "label": "the native call is gas capped",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/route/DominoTokenOps.t.sol",
+      "old": "ok := call(gasLimit, to, amount, 0x00, 0x00, 0x00, 0x00)",
+      "new": "ok := call(gas(), to, amount, 0x00, 0x00, 0x00, 0x00)"
+    },
+    {
+      "label": "the token call is gas capped",
+      "file": "contracts/src/v2/route/DominoTokenOps.sol",
+      "suite": "test/v2/fees/DominoFeeLedger.t.sol",
+      "old": "ok := call(gasLimit, token, 0, free, 0x44, 0x00, 0x20)",
+      "new": "ok := call(gas(), token, 0, free, 0x44, 0x00, 0x20)"
+    },
+    {
+      "label": "the intent fee terms are checked",
+      "file": "contracts/src/v2/route/DominoAssistedSwap.sol",
+      "suite": "test/v2/route/DominoAssistedSwap.t.sol",
+      "old": "        DominoFeeRules.requireAssistedSwapTerms(ROUTE_REGISTRY, legs, feeBps, feeToken);\n",
+      "new": ""
+    },
+    {
+      "label": "the fee is an assisted-swap fee",
+      "file": "contracts/src/v2/route/DominoAssistedSwap.sol",
+      "suite": "test/v2/route/DominoAssistedSwap.t.sol",
+      "old": "_chargeFee(DominoV2Types.FEE_KIND_ASSISTED_SWAP,",
+      "new": "_chargeFee(DominoV2Types.FEE_KIND_AUTOMATION,"
+    },
+    {
+      "label": "the fee is on the fee token swapped amount",
+      "file": "contracts/src/v2/route/DominoAssistedSwap.sol",
+      "suite": "test/v2/route/DominoAssistedSwap.t.sol",
+      "old": "swappedAmount(legs, amountsOut, feeToken)",
+      "new": "swappedAmount(legs, amountsOut, legs[0].tokenIn)"
+    }
+  ]
+}
