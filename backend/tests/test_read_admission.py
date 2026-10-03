@@ -1,16 +1,20 @@
 """Actual read work controls admission, independently of provider latency."""
+import asyncio
 from copy import deepcopy
 import json
 from pathlib import Path
 import sys
+import threading
 import unittest
 from unittest.mock import patch
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parent)]
 from fastapi.testclient import TestClient
+import httpx
 from bridge_state import ClientBudgets
 from market_cache import MarketCache
-from read_api import ReadGate, create_app
+from read_api import ReadGate, create_app, public_gate
+from read_contract import CONTRACT_VERSION
 from read_gateway import Gateway, LocalReaderHTTP, create_gateway
 from read_service import ReadService
 from test_bridge_identity import IdentityFixtures
@@ -18,6 +22,7 @@ from test_discovery import FakeRpc, POOL, TOKEN
 from test_markets_snapshot import Provider
 
 FIXTURES = Path(__file__).resolve().parents[2] / 'api-contracts/read-v1/fixtures/producer'
+GENERATION = '0123456789abcdef' * 2
 
 
 class ReadAdmissionTests(IdentityFixtures, unittest.TestCase):
@@ -170,6 +175,54 @@ class ReadAdmissionTests(IdentityFixtures, unittest.TestCase):
         response = self.post('catalogue', {'token': TOKEN})
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.headers['Retry-After'], '2')
+
+
+
+class MeetingReader:
+    """A reader that answers only once `parties` reads are inside it at the same time."""
+    def __init__(self, parties):
+        self.meeting = threading.Barrier(parties, timeout=5)
+        self.answers = {route: json.loads((FIXTURES / f'{route}.success.json').read_text())
+                        for route in ('token', 'markets-snapshot')}
+
+    def request(self, route, body=None, *, deadline, request_id=None, version='v1'):
+        metadata = {'generation': GENERATION, 'contract': CONTRACT_VERSION}
+        if route == 'health':
+            return 200, {'mode': 'local_read_only', 'status': 'ok', 'readBudgetSeconds': 15, 'busy': False,
+                         'storedBusy': False, 'generation': GENERATION}, metadata
+        self.meeting.wait()
+        return 200, deepcopy(self.answers[route]), metadata
+
+
+class GatewayWorkerTests(IdentityFixtures, unittest.TestCase):
+    def gateway(self, gate, upstream=None):
+        return Gateway(enabled=True, enabled_reads=('token', 'markets-snapshot'), verifier=self.verifier(),
+                       upstream=upstream or MeetingReader(1), gate=gate, budgets=ClientBudgets(burst=500))
+
+    def test_every_read_the_gate_admits_runs_at_once(self):
+        gate = public_gate()
+        lanes = gate.provider_capacity + gate.stored_capacity
+        app = create_gateway(self.gateway(gate, MeetingReader(lanes)))
+        headers = {'Cf-Access-Jwt-Assertion': self.token(), 'X-Domino-Client-Id': '192.0.2.1'}
+
+        async def burst():
+            transport = httpx.ASGITransport(app=app, client=('127.0.0.1', 40000))
+            async with httpx.AsyncClient(transport=transport, base_url='http://127.0.0.1:8878') as client:
+                reads = [client.post('/internal/read/v1/token', json={'token': TOKEN}, headers=headers)
+                         for _ in range(gate.provider_capacity)]
+                reads += [client.post('/internal/read/v1/markets-snapshot', json={}, headers=headers)
+                          for _ in range(gate.stored_capacity)]
+                return await asyncio.gather(*reads)
+        responses = asyncio.run(burst())
+        self.assertEqual([response.status_code for response in responses], [200] * lanes,
+                         [response.text for response in responses if response.status_code != 200][:1])
+
+    def test_worker_pool_matches_the_lanes_of_each_gate(self):
+        for gate, workers in ((public_gate(), 20), (ReadGate(), 2),
+                              (ReadGate(provider_capacity=3, stored_capacity=2), 5)):
+            with self.subTest(workers=workers):
+                app = create_gateway(self.gateway(gate))
+                self.assertEqual(app.state.worker_limiter.total_tokens, workers)
 
 
 if __name__ == '__main__':

@@ -3,14 +3,19 @@
 Provider metrics are untrusted observations, not reconciled APR or permissions.
 Dependencies: eth-abi and eth-hash, pinned in requirements-readonly.txt.
 """
+from collections import deque
 from dataclasses import dataclass, asdict
 from decimal import Decimal, InvalidOperation
 from functools import partial
 import http.client
 import io
 import json
+import os
 import re
+import select
 import socket
+import ssl
+from threading import Lock
 import time
 import urllib.error
 import urllib.request
@@ -272,6 +277,166 @@ _JSON_OPENER = urllib.request.build_opener(NoRedirect(), _DeadlineHTTPSHandler()
 SNAPSHOT_LOOPBACK_RPC = 'http://127.0.0.1:18547/'
 _LOOPBACK_JSON_OPENER = urllib.request.build_opener(
     urllib.request.ProxyHandler({}), NoRedirect(), _DeadlineHTTPHandler()).open
+
+# urllib sends `Connection: close`, so every RPC call paid a TCP and a TLS
+# handshake. From the São Paulo VM to rpc.domino.money on 3 Oct 2026 that call
+# took 19 ms at the median and 2.8 ms of CPU; on a kept connection, 12 ms and
+# 0.25 ms. Idle connections live well inside the edge's keep-alive window, and
+# the pool holds at most one per reader provider lane.
+KEEPALIVE_IDLE_SECONDS = 20
+KEEPALIVE_MAX_IDLE = 16
+# A kept connection the peer closed as the request went out: no response byte
+# arrived, so the request goes once more, on a new connection.
+_PEER_CLOSED = (ConnectionError, ssl.SSLEOFError, ssl.SSLZeroReturnError)
+
+
+def _keepalive_tls(**trust):
+    """The context urllib's HTTPS handler builds: system trust, hostname checks, HTTP/1.1."""
+    context = ssl.create_default_context(**trust)
+    context.set_alpn_protocols(['http/1.1'])
+    return context
+
+
+_KEEPALIVE_TLS = _keepalive_tls()
+
+
+class _KeptConnection:
+    """A pooled deadline connection, re-armed with each borrowing call's budget.
+
+    A kept connection never connects again (the pool drops a closed one), so a
+    call re-arms only what sending and reading use.
+    """
+    def lend(self, deadline):
+        self.deadline = deadline
+        self.response_class = partial(_DeadlineHTTPResponse, deadline=deadline)
+
+
+class _KeptHTTPSConnection(_KeptConnection, _DeadlineHTTPSConnection):
+    pass
+
+
+def _readable(sock):
+    """An idle kept connection has nothing to read unless its peer closed it."""
+    poller = select.poll()
+    poller.register(sock, select.POLLIN)
+    return bool(poller.poll(0))
+
+
+class _KeptResponse:
+    """One answer on a kept connection; the connection returns only after its last byte."""
+    def __init__(self, pool, key, connection, response):
+        self.pool, self.key, self.connection, self.response = pool, key, connection, response
+
+    def read1(self, size):
+        return self.response.read1(size)
+
+    def read(self, size=-1):
+        return self.response.read(size)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, kind, value, trace):
+        # Reusable once the answer was read to its end on a connection the server
+        # kept open, whatever the caller then made of the bytes.
+        if self.response.isclosed() and self.connection.sock is not None:
+            self.pool.checkin(self.key, self.connection)
+        else:
+            self.response.close()
+            self.connection.close()
+        return False
+
+
+class _KeepAlivePool:
+    """An opener for json_http that keeps HTTPS connections to the RPC providers.
+
+    Each call borrows one idle connection, or opens one, and gives it back only
+    after a complete 2xx answer the server did not close; any failure closes it.
+    Answers keep json_http's contract: a non-2xx status is `http_<code>`, every
+    transport failure stays an OSError or HTTPException, no redirect is followed.
+    """
+    def __init__(self, factory=None, *, proxies=None, fallback=_JSON_OPENER, clock=time.monotonic,
+                 idle_seconds=KEEPALIVE_IDLE_SECONDS, max_idle=KEEPALIVE_MAX_IDLE):
+        self.factory = factory or (lambda host, timeout: _KeptHTTPSConnection(
+            host, timeout=timeout, context=_KEEPALIVE_TLS))
+        # The proxies _JSON_OPENER's ProxyHandler read when this module loaded.
+        self.proxies = urllib.request.getproxies() if proxies is None else proxies
+        self.fallback, self.clock = fallback, clock
+        self.idle_seconds, self.max_idle = idle_seconds, max_idle
+        self.lock, self.idle = Lock(), {}
+
+    def proxied(self, request):
+        return request.type in self.proxies and not urllib.request.proxy_bypass(request.host)
+
+    def checkout(self, key):
+        while True:
+            with self.lock:
+                idle = self.idle.get(key)
+                if not idle:
+                    return None, False
+                connection, since = idle.pop()
+            if self.clock() - since <= self.idle_seconds and not _readable(connection.sock):
+                return connection, True
+            connection.close()
+
+    def checkin(self, key, connection):
+        now = self.clock()
+        with self.lock:
+            idle = self.idle.setdefault(key, deque())
+            idle.append((connection, now))
+            expired = []
+            while idle and (len(idle) > self.max_idle or now - idle[0][1] > self.idle_seconds):
+                expired.append(idle.popleft()[0])
+        for old in expired:
+            old.close()
+
+    def after_fork(self):
+        # The child must not write into the parent's TLS sessions, and another
+        # thread may have held the lock when the process forked.
+        self.lock = Lock()
+        idle, self.idle = self.idle, {}
+        for connections in idle.values():
+            for connection, _ in connections:
+                connection.close()
+
+    def open(self, request, timeout):
+        if request.type != 'https':
+            raise DataError('https_endpoint_required')
+        if self.proxied(request):
+            return self.fallback(request, timeout=timeout)
+        deadline = current_read_deadline()
+        if deadline is None:
+            raise DataError('read_deadline_required')
+        key = request.host
+        connection, reused = self.checkout(key)
+        while True:
+            if connection is None:
+                connection = self.factory(key, deadline.remaining())
+            connection.lend(deadline)
+            try:
+                connection.request(request.get_method(), request.selector, request.data,
+                                   dict(request.header_items()))
+                response = connection.getresponse()
+            except _PEER_CLOSED:
+                connection.close()
+                if not reused:
+                    raise
+                connection, reused = None, False
+                continue
+            except BaseException:
+                connection.close()
+                raise
+            if not 200 <= response.status < 300:
+                response.close()
+                connection.close()
+                raise DataError(f'http_{response.status}')
+            return _KeptResponse(self, key, connection, response)
+
+
+_KEEPALIVE = _KeepAlivePool()
+KEEPALIVE_OPENER = _KEEPALIVE.open
+if hasattr(os, 'register_at_fork'):
+    os.register_at_fork(after_in_child=_KEEPALIVE.after_fork)
 
 
 def _strict_json_object(pairs):

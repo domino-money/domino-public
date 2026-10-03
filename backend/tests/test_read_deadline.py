@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from discovery import PUBLIC_RPC_URL
-from discovery import (DataError, MAX_RESPONSE_BYTES, ReadRpc, _DeadlineHTTPResponse,
+from discovery import (DataError, KEEPALIVE_OPENER, MAX_RESPONSE_BYTES, ReadRpc, _DeadlineHTTPResponse,
                        _deadline_connect, current_read_deadline, json_http,
                        SNAPSHOT_LOOPBACK_RPC, snapshot_loopback_http)
 from market_cache import MarketCache
@@ -117,7 +117,8 @@ class DeadlineTests(unittest.TestCase):
     def test_multiple_transports_share_budget_and_do_not_retry(self):
         clock, calls = FakeClock(), []
 
-        def http(url, body=None, *, timeout):
+        def http(url, body=None, *, timeout, opener):
+            self.assertIs(opener, KEEPALIVE_OPENER)
             calls.append(timeout)
             clock.advance(6)
             return {}

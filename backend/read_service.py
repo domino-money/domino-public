@@ -7,7 +7,7 @@ from threading import BoundedSemaphore, Lock
 import time
 import re
 
-from discovery import (CHAIN_ID, ZERO, DataError, DiscoveryReader,
+from discovery import (CHAIN_ID, KEEPALIVE_OPENER, ZERO, DataError, DiscoveryReader,
                        ReadRpc, Block, address, bytes32, decode_result, discover,
                        json_http, parse_block, prefetched, SNAPSHOT_LOOPBACK_RPC,
                        snapshot_loopback_http)
@@ -73,7 +73,8 @@ def bounded_transport(seconds=60):
 
     def transport(url, body=None):
         with use_read_deadline(deadline) as active:
-            return json_http(url, body, timeout=active.timeout(8))
+            # Reads reuse kept provider connections instead of one handshake per call.
+            return json_http(url, body, timeout=active.timeout(8), opener=KEEPALIVE_OPENER)
     return transport
 
 

@@ -487,7 +487,7 @@
     },
     {
       "path": "backend/read_gateway.py",
-      "sha256": "a87750bf46c8dcfd21c20deaf6a1ba2db693d2d0cc904a5901b0fb605504c3f0"
+      "sha256": "1ad77113f44e9249fbc0b3029cb7227e803997c9d97b068f9ac05b8d570a321a"
     },
     {
       "path": "backend/bridge_http.py",

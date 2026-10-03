@@ -98,6 +98,11 @@
  * with unsigned transactions for the wallet. The two previews are unchanged
  * but for the version. read-v1 and read-v2 moved with it: discovery.py now also
  * admits the router-version header on Uniswap's /swap. Their wire is unchanged.
+ * The read-v1 and read-v2 digests moved again on 2026-10-03, when the reader
+ * began keeping its RPC connections open between calls (discovery.py,
+ * read_service.py) and the gateway began running every read its lanes admit
+ * at once instead of two (read_gateway.py). No route, schema, reason code or
+ * version changed.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -105,7 +110,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '9f880062de132b25977c99d8ccb22041ebc1a1ab9bb1a85c4aadf203f54ec113',
+      manifestSha256: '0446e0d413ecdeae2dfafc62f537c9e00225132db0c5768f9a96fd21d0c257a5',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -125,7 +130,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'c85119d37ab92095e7f4666640ed33dd64efff9ecc20971772941f1bb9d5ebdd',
+  manifestSha256: 'dba8f0312712e5dd7b358a537fb3119d03d1bde537ca7d2cb6f937ba57ccb34c',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

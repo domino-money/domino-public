@@ -362,7 +362,12 @@ def create_gateway(gateway=None):
             record(499, "client_disconnected")
             raise
     app.state.gateway = gateway
-    app.state.worker_limiter = anyio.CapacityLimiter(2)
+    # One worker per lane the gate admits, so an admitted read never waits for
+    # a worker: 2 matched the one provider and one stored lane of #157, but
+    # #238 gave this gateway the reader's 16 + 4 and left the pool at 2, so 18
+    # admitted reads queued here while the reader had lanes free.
+    app.state.worker_limiter = anyio.CapacityLimiter(gateway.gate.provider_capacity
+                                                     + gateway.gate.stored_capacity)
     return app
 
 
