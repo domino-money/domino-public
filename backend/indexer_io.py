@@ -9,9 +9,8 @@ browser-facing one, and read block headers in batched envelopes instead of one
 round trip per event block.
 """
 import json
-import urllib.error
 
-from discovery import DataError, json_http, parse_block, _JSON_OPENER
+from discovery import DataError, parse_block, rpc_http, _JSON_OPENER
 from read_deadline import ReadDeadline, current_read_deadline, use_read_deadline
 
 # Measured against Alchemy Robinhood (2026-09-15): one round trip is about
@@ -43,22 +42,18 @@ def indexer_transport(seconds=90, request_timeout=INDEXER_REQUEST_TIMEOUT,
     def transport(url, body=None):
         with use_read_deadline(deadline) as active:
             if budget is not None:budget.spend(len(body) if isinstance(body,list) else 1)
-            def open_response(request,**kwargs):
-                try:return (opener or _JSON_OPENER)(request,**kwargs)
-                except urllib.error.HTTPError as error:
-                    try:
-                        # Inspect only the bounded JSON error, never propagate a
-                        # provider URL/message. Unknown HTTP 400 is not a size error.
-                        raw=error.read(8193) if error.code==400 else b''
-                        active.remaining()
-                        try:parsed=json.loads(raw or b'{}') if len(raw)<=8192 else None
-                        except (ValueError,UnicodeError):parsed=None
-                        if log_size_error(body,parsed):
-                            raise DataError('rpc_log_range_too_large') from None
-                    finally:error.close()
-                    raise
-            result=json_http(url,body,timeout=active.timeout(request_timeout),
-                             max_bytes=max_bytes,opener=open_response)
+            def log_range(error):
+                # Inspect only the bounded JSON error, never propagate a
+                # provider URL/message. Unknown HTTP 400 is not a size error.
+                raw=error.read(8193) if error.code==400 else b''
+                active.remaining()
+                try:parsed=json.loads(raw or b'{}') if len(raw)<=8192 else None
+                except (ValueError,UnicodeError):parsed=None
+                if log_size_error(body,parsed):
+                    raise DataError('rpc_log_range_too_large') from None
+            # The node's VM-local proxy takes its loopback hop; `opener` is HTTPS.
+            result=rpc_http(url,body,timeout=active.timeout(request_timeout),max_bytes=max_bytes,
+                            opener=opener or _JSON_OPENER,http_error=log_range)
             if log_size_error(body,result):raise DataError('rpc_log_range_too_large')
             return result
     return transport

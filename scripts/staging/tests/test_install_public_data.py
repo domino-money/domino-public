@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+import continuous_egress_policy as egress
 import install_public_data as installer
 
 REPO=Path(__file__).resolve().parents[3]
@@ -121,6 +122,20 @@ class PublicInstallTests(unittest.TestCase):
         lock.write_bytes(b'unchanged')
         os.chmod(self.queue/'release/backend/runtime',0o755)
         with self.assertRaisesRegex(ValueError,'writer_runtime_not_private'):self.plan()
+
+    def test_every_writer_service_reads_the_hosts_file_the_egress_renderer_pins(self):
+        # The writer resolved rpc.domino.money through the stub, and a second
+        # Cloudflare pair outside its egress set hung its calls for minutes (#315).
+        bind=f'BindReadOnlyPaths={egress.ROOT}/write.hosts:/etc/hosts\n'
+        units=self.plan()['units']
+        services=[name for name in units if name.endswith(('.service','.service.d/90-public-data.conf'))]
+        self.assertEqual(len(services),7)
+        for name in services:
+            with self.subTest(unit=name):
+                self.assertEqual(units[name].count(bind),1)
+                self.assertNotIn('BindPaths=',units[name])
+        for name in set(units)-set(services):
+            self.assertNotIn('BindReadOnlyPaths',units[name])
 
     def test_current_cannot_be_an_arbitrary_directory_or_external_link(self):
         self.base.mkdir();(self.base/'current').mkdir()

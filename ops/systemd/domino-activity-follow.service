@@ -12,6 +12,9 @@ User=domino-write
 Group=domino-write
 SupplementaryGroups=domino-db
 WorkingDirectory=@PUBLIC_ROOT@/current/backend
+# The writer reads only the names continuous_egress_policy.py pinned with its
+# egress set, never a DNS answer outside that set (#315).
+BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts
 # The pools come from the Setup contract's SetupMinted events on every run, so a
 # new Domino pool joins without editing this unit; one it cannot register (the
 # catalogue lacks its Initialize block) is reported under notRegistered. 35 s

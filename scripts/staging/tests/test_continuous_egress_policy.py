@@ -78,6 +78,21 @@ def nft(result):
     return result['artifacts'][policy.ROOT + '/policy.nft']
 
 
+def reset(chain):
+    """The rule ahead of every chain's final drop since #315: only a connection attempt is refused aloud."""
+    return (f'tcp flags & (syn | ack) == syn counter name denied_{chain} '
+            'reject with tcp reset comment "refused connection attempt"')
+
+
+def drops(text):
+    return re.findall(r'^add rule inet \w+ (\w+) counter name denied_(\w+) drop$', text, re.M)
+
+
+def live(chains):
+    """Rendered chains as the live host holds them, which predates the reset rule."""
+    return {chain: [rule for rule in rules if rule != reset(chain)] for chain, rules in chains.items()}
+
+
 class PublicCollectorPolicyTests(unittest.TestCase):
     def test_analytics_grant_is_explicit_and_scoped_to_existing_writer_identity(self):
         original=snapshot()
@@ -133,7 +148,7 @@ class ContinuousEgressTests(unittest.TestCase):
         grant = ('oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 '
                  'tcp dport 18547 ct direction original counter accept '
                  'comment "private V4 snapshot RPC"')
-        self.assertEqual(enabled['read'], baseline['read'][:-1] + [grant, baseline['read'][-1]])
+        self.assertEqual(enabled['read'], baseline['read'][:-2] + [grant, *baseline['read'][-2:]])
         for role in baseline.keys() - {'read'}:
             self.assertEqual(enabled[role], baseline[role])
         self.assertNotIn('tcp dport 18547', nft(before))
@@ -147,6 +162,78 @@ class ContinuousEgressTests(unittest.TestCase):
         self.reject({**snapshot(('gateway', 'tunnel', 'write')),
                      'sequenceSnapshotLoopback': True}, 'snapshot_loopback_requires_reader')
 
+    def test_node_loopback_reads_grant_the_reader_and_the_writer_only_the_node_port(self):
+        original = snapshot()
+        before = policy.render(original)
+        after = policy.render({**original, 'nodeLoopbackReads': True})
+        baseline, _ = parse(nft(before))
+        enabled, _ = parse(nft(after))
+        grant = ('oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 '
+                 'tcp dport 18547 ct direction original counter accept comment "private node RPC"')
+        for role in ('read', 'write'):
+            self.assertEqual(enabled[role], baseline[role][:-2] + [grant, *baseline[role][-2:]])
+        for role in baseline.keys() - {'read', 'write'}:
+            self.assertEqual(enabled[role], baseline[role])
+        self.assertNotIn('tcp dport 18547', nft(before))
+        self.assertNotIn('tcp dport 8547', nft(after))
+        self.assertNotEqual(before['pinSetSha256'], after['pinSetSha256'])
+        others = lambda result: {path: text for path, text in result['artifacts'].items()
+                                 if path != policy.ROOT + '/policy.nft'}
+        self.assertEqual(others(before), others(after))
+        # With the V4 snapshot opt-in too, the reader still holds one rule for the port.
+        both, _ = parse(nft(policy.render({**original, 'nodeLoopbackReads': True,
+                                           'sequenceSnapshotLoopback': True})))
+        self.assertEqual(both['read'], enabled['read'])
+        # Only an enabled identity is granted.
+        no_analytics = {host: addresses for host, addresses in PINS.items()
+                        if host not in policy.ANALYTICS_HOSTS}
+        writer, _ = parse(nft(policy.render({**snapshot(('gateway', 'tunnel', 'write'), no_analytics),
+                                             'nodeLoopbackReads': True})))
+        self.assertIn(grant, writer['write'])
+        self.assertNotIn('tcp dport 18547', '\n'.join(writer['read']))
+
+    def test_node_loopback_reads_need_an_explicit_boolean_and_a_reader_or_writer(self):
+        self.reject({**snapshot(), 'nodeLoopbackReads': 'true'}, 'invalid_node_loopback_reads')
+        self.reject({**snapshot(), 'nodeLoopbackReads': 1}, 'invalid_node_loopback_reads')
+        self.reject({**snapshot(('gateway', 'tunnel')), 'nodeLoopbackReads': True},
+                    'node_loopback_requires_reader_or_writer')
+
+    def test_the_writer_reads_a_hosts_file_of_exactly_the_addresses_its_set_admits(self):
+        # rpc.domino.money answered with one Cloudflare pair, then another, five
+        # minutes apart; the writer resolved through the stub and its set held
+        # only the first pair (#315). Its units now read this file instead.
+        pins = {**PINS, 'rpc.domino.money': ['16.0.0.1', '16.0.0.2', '16.0.0.3', '16.0.0.4']}
+        result = policy.render({**snapshot(pins=pins), 'publicDataCollectors': True})
+        path = policy.ROOT + '/write.hosts'
+        self.assertEqual(result['artifactMetadata'][path], {'uid': 0, 'gid': 0, 'mode': 0o644})
+        lines = result['artifacts'][path].splitlines()
+        self.assertEqual(lines[:2], ['127.0.0.1 localhost', '::1 localhost ip6-localhost ip6-loopback'])
+        pinned = [line.split() for line in lines[2:]]
+        self.assertEqual({host for _, host in pinned}, set(policy.RPC_HOSTS) | set(policy.ANALYTICS_HOSTS))
+        self.assertEqual([address for address, host in pinned if host == 'rpc.domino.money'],
+                         ['16.0.0.1', '16.0.0.2', '16.0.0.3', '16.0.0.4'])
+        elements = re.search(r'add set inet \w+ write_ipv4 \{ type ipv4_addr; elements = \{ ([^}]+) \}; \}',
+                             nft(result))[1].split(', ')
+        self.assertEqual(sorted(address for address, _ in pinned), sorted(elements))
+        # A file, not a unit: the writer's units are the public-data installer's.
+        self.assertNotIn('/etc/systemd/system/domino-write.service.d/' + policy.DROPIN, result['artifacts'])
+        self.assertEqual(result['units'], ['domino-read.service', 'domino-gateway.service', 'domino-tunnel.service'])
+        without = policy.render(snapshot(('read', 'gateway', 'tunnel'),
+                                         {host: addresses for host, addresses in PINS.items()}))
+        self.assertNotIn(path, without['artifacts'])
+
+    def test_a_refused_connection_attempt_is_reset_and_any_other_packet_still_dropped(self):
+        every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
+                                'performance-collector', 'execution-status', 'execution-signer')
+        chains, _ = parse(nft(policy.render(snapshot(every, {**PINS, **UNISWAP}))))
+        for role in policy.ROLES:
+            chain = policy.nft_name(role)
+            with self.subTest(chain=chain):
+                # Only a SYN without ACK, a new connection, is answered: a reset for
+                # a stray packet of a connection a rule accepted would tear it down.
+                self.assertEqual(chains[chain][-2:], [reset(chain), f'counter name denied_{chain} drop'])
+                self.assertEqual(sum('reject' in rule for rule in chains[chain]), 1)
+
     def test_domino_rpc_does_not_admit_sibling_suffix_or_credential_hosts(self):
         for host, reason in (('ws.domino.money', 'unapproved_hostname'),
                              ('other.domino.money', 'unapproved_hostname'),
@@ -157,7 +244,12 @@ class ContinuousEgressTests(unittest.TestCase):
 
     def test_describes_the_live_host_exactly_and_closes_the_four_identity_gaps(self):
         live_chains, live_sets = parse(BASELINE)
-        chains, sets = parse(mask(nft(policy.render(snapshot()))))
+        rendered, sets = parse(mask(nft(policy.render(snapshot()))))
+        # The one deliberate difference: each chain resets a refused connection attempt.
+        chains = live(rendered)
+        for chain in set(rendered) - {'', 'output'}:
+            self.assertEqual(rendered[chain][-2:], [reset(chain), f'counter name denied_{chain} drop'])
+            self.assertEqual(len(rendered[chain]), len(chains[chain]) + 1)
         self.assertEqual(sets, live_sets)
         for chain, rules in live_chains.items():
             if chain in ('', 'output'):
@@ -182,7 +274,8 @@ class ContinuousEgressTests(unittest.TestCase):
             return result
         live, rendered = lines(BASELINE), lines(mask(nft(policy.render(snapshot()))))
         self.assertEqual(set(live) - set(rendered), set())
-        added = [line for line in rendered if line not in live]
+        added = [line for line in rendered if line not in live
+                 and not line.endswith(' reject with tcp reset comment "refused connection attempt"')]
         self.assertTrue(all(any(chain in line for chain in NEW_CHAINS) for line in added), added)
         # Only the write block was folded in by hand: its set precedes its chain
         # and its resolver pair is reversed. Everything else is in live order.
@@ -233,7 +326,7 @@ class ContinuousEgressTests(unittest.TestCase):
             'oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp sport 8879 ct direction reply '
             'ct state established counter accept comment "exact listener reply"',
             'oifname != "lo" ip daddr @auth_ipv4 tcp dport 443 counter accept comment "operator pinned external"',
-            'counter name denied_auth drop'])
+            reset('auth'), 'counter name denied_auth drop'])
         self.assertIn('oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 8879 ct direction original '
                       'counter accept comment "exact auth origin"', chains['tunnel'])
         text = dropin(result, 'auth')
@@ -269,7 +362,7 @@ class ContinuousEgressTests(unittest.TestCase):
         chains, sets = parse(nft(result))
         self.assertEqual(result['roleHosts']['execution-status'],[ISSUER])
         self.assertEqual(sets['execution_status_ipv4'],2)
-        self.assertEqual(len(chains['execution_status']), 4)
+        self.assertEqual(len(chains['execution_status']), 5)
         self.assertIn('oifname != "lo" ip daddr @execution_status_ipv4 tcp dport 443 '
                       'counter accept comment "operator pinned external"',chains['execution_status'])
         self.assertEqual(chains['execution_status'][2],
@@ -301,7 +394,7 @@ class ContinuousEgressTests(unittest.TestCase):
         chains, sets = parse(nft(result))
         for chain in ('performance_collector', 'execution_signer'):
             self.assertEqual(sets[chain + '_ipv4'], 3)
-            self.assertEqual(len(chains[chain]), 2)
+            self.assertEqual(chains[chain][1:], [reset(chain), f'counter name denied_{chain} drop'])
             self.assertFalse(any('sport' in rule for rule in chains[chain]))
         self.assertNotIn('exact performance-collector origin', nft(result))
         for role in ('performance-collector', 'execution-signer'):
@@ -317,7 +410,8 @@ class ContinuousEgressTests(unittest.TestCase):
         self.assertTrue(names)
         for name in names:
             self.assertRegex(name, r'^[a-z_][a-z0-9_]*$')
-        self.assertEqual(text.count('counter name denied_'), 13)
+        self.assertEqual([chain for chain, counter in drops(text) if chain == counter],
+                         [policy.nft_name(role) for role in policy.ROLES])
 
     def test_pins_no_enabled_role_needs_are_refused(self):
         self.reject(snapshot(pins={**PINS, **UNISWAP}), 'unapproved_hostname')
@@ -352,7 +446,9 @@ class ContinuousEgressTests(unittest.TestCase):
         data = snapshot(); data['identities']['read']['token'] = 'DO-NOT-ECHO'
         self.reject(data, 'invalid_identity_fields')
         data = snapshot(); data['identities']['admin'] = None
-        self.assertEqual(nft(policy.render(data)).count('counter name denied_'), 12)
+        text = nft(policy.render(data))
+        self.assertEqual(len(drops(text)), 12)
+        self.assertEqual(text.count(' reject with tcp reset '), 12)
 
     def test_addresses_issuer_and_resolver_are_bounded(self):
         for address in ('127.0.0.1', '10.1.2.3', '169.254.169.254', '2001:db8::1', '1.1.1.1/32'):

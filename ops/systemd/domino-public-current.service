@@ -12,6 +12,9 @@ User=domino-write
 Group=domino-write
 SupplementaryGroups=domino-db
 WorkingDirectory=@PUBLIC_ROOT@/current/backend
+# The writer reads only the names continuous_egress_policy.py pinned with its
+# egress set, never a DNS answer outside that set (#315).
+BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts
 ExecStart=@QUEUE_ROOT@/venv/bin/python -B manage_public_data.py --lane current --period 0.2
 Restart=on-failure
 RestartSec=10

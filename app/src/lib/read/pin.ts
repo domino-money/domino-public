@@ -103,6 +103,10 @@
  * read_service.py) and the gateway began running every read its lanes admit
  * at once instead of two (read_gateway.py). No route, schema, reason code or
  * version changed.
+ * They moved once more the same day (#315), when a version 4 provider file
+ * began admitting the node's proxy on the services host as its first route,
+ * ahead of rpc.domino.money (discovery.py, read_service.py, rpc_config.py,
+ * local_config.py, rpc_failover.py). The wire is unchanged.
  */
 export const PRODUCER_PIN = {
   producerCommit: 'a5f71f19e6391f3eab52ee6e51417be211bc8ea5',
@@ -110,7 +114,7 @@ export const PRODUCER_PIN = {
   packages: {
     'read-v1': {
       version: '1.1.0-rc.3',
-      manifestSha256: '0446e0d413ecdeae2dfafc62f537c9e00225132db0c5768f9a96fd21d0c257a5',
+      manifestSha256: '19cbd2f72f5fa132eaae628074a5ce665fca480703e44acc886b862fb8d445da',
     },
     'session-v1': {
       version: '3.0.0-rc.4',
@@ -130,7 +134,7 @@ export const PRODUCER_PIN = {
 /** Separately opted-in public pool estimates; never accepted as a v1 response. */
 export const READ_V2_PIN = {
   version: '2.0.0-rc.1',
-  manifestSha256: 'dba8f0312712e5dd7b358a537fb3119d03d1bde537ca7d2cb6f937ba57ccb34c',
+  manifestSha256: 'b8ec88b697185d6b95f264564e1491a6c5ed0d1f1bbb921d070c5e8bcfb9d7ac',
 } as const
 
 /** Stored public observations, paged discovery and explicitly denominated history. */

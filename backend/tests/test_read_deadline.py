@@ -123,7 +123,7 @@ class DeadlineTests(unittest.TestCase):
             clock.advance(6)
             return {}
 
-        with patch('read_service.json_http', side_effect=http):
+        with patch('read_service.rpc_http', side_effect=http):
             with self.assertRaisesRegex(DataError, 'read_deadline_exceeded'):
                 with read_deadline(15, clock=clock):
                     first = bounded_transport()
@@ -139,7 +139,7 @@ class DeadlineTests(unittest.TestCase):
     def test_preexisting_transport_obeys_new_context_and_default_is_sixty_seconds(self):
         clock = FakeClock()
         http = Mock(return_value={})
-        with patch('read_deadline.time.monotonic', clock), patch('read_service.json_http', http):
+        with patch('read_deadline.time.monotonic', clock), patch('read_service.rpc_http', http):
             transport = bounded_transport()
             clock.advance(50)
             transport('https://example.test')

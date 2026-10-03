@@ -3,7 +3,7 @@ import ipaddress
 import re
 from urllib.parse import urlsplit
 
-from discovery import DataError, PUBLIC_RPC_URL
+from discovery import DataError, PUBLIC_RPC_URL, SNAPSHOT_LOOPBACK_RPC
 
 LOCAL_RPC_HOST = 'rpc.domino.money'
 # That node keeps state for its 30-minute block-age window, about 18,000 blocks
@@ -61,6 +61,20 @@ def rpc_endpoint(url, allowed_hosts=DEFAULT_RPC_HOSTS, *, field='rpc_url'):
     return url
 
 
+def own_node(url):
+    """The Domino node, over its VM-local proxy or its public route: one pruned state."""
+    return url == SNAPSHOT_LOOPBACK_RPC or urlsplit(url).hostname == LOCAL_RPC_HOST
+
+
+def loopback_primary(config):
+    """The node's VM-local proxy leads a version 4 file only ahead of the node's
+    public route, so losing the proxy costs a hop and never a source."""
+    following = (config.get('rpcFallbackUrls') or [None])[0]
+    if not isinstance(following, str) or urlsplit(following).hostname != LOCAL_RPC_HOST:
+        raise DataError('loopback_requires_local_fallback')
+    return SNAPSHOT_LOOPBACK_RPC
+
+
 def configured_rpc_urls(config, override=None):
     """A trusted environment override selects one endpoint, never silent fallbacks."""
     hosts = config.get('rpcAllowedHosts', DEFAULT_RPC_HOSTS)
@@ -69,7 +83,8 @@ def configured_rpc_urls(config, override=None):
     primary = config.get('rpcUrl')
     if primary is None:
         raise DataError('rpc_url_unconfigured')
-    return (rpc_endpoint(primary, hosts), *(
+    loopback = config.get('version') == 4 and primary == SNAPSHOT_LOOPBACK_RPC
+    return (loopback_primary(config) if loopback else rpc_endpoint(primary, hosts), *(
         rpc_endpoint(url, hosts, field='rpc_fallback_url') for url in config.get('rpcFallbackUrls', [])))
 
 

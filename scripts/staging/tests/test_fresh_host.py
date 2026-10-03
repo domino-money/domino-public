@@ -399,6 +399,29 @@ class ContinuousEgressTests(unittest.TestCase):
                          | {'team.cloudflareaccess.com'})
         self.assertFalse(set(needed) & set(policy.UNISWAP_HOSTS))
 
+    def test_collect_names_the_node_loopback_reads_only_when_asked(self):
+        def identity(role):
+            unit = policy.unit_of(role)
+            uid = 2000 + policy.ROLES.index(role)
+            return {'user': 'domino-' + role, 'realUid': uid, 'effectiveUid': uid, 'gid': uid,
+                    'supplementaryGids': [], 'unit': unit, 'cgroup': unit and '/system.slice/' + unit}
+        def resolve(hostname):
+            if hostname in egress_policy.EDGE_ADDRESSES:
+                return sorted(egress_policy.EDGE_ADDRESSES[hostname])[:1]
+            return ['16.0.0.%d' % (1 + sorted(policy.RPC_HOSTS | policy.ANALYTICS_HOSTS).index(hostname))
+                    if hostname != 'team.cloudflareaccess.com' else '16.0.0.9']
+        with patch.object(install_continuous_egress, 'identity', identity), \
+             patch.object(install_continuous_egress, 'resolve', resolve):
+            arguments = ['--collect', '--access-issuer', 'team.cloudflareaccess.com',
+                         '--enabled', 'read,gateway,tunnel,write', '--public-data-collectors']
+            for extra, expected in (([], None), (['--node-loopback-reads'], True)):
+                with self.subTest(extra=extra), patch('sys.stdout', new_callable=io.StringIO) as printed:
+                    self.assertEqual(install_continuous_egress.main(arguments + extra), 0)
+                    snapshot = json.loads(printed.getvalue())
+                    self.assertEqual(snapshot.get('nodeLoopbackReads'), expected)
+                    text = policy.render(snapshot)['artifacts'][policy.ROOT + '/policy.nft']
+                    self.assertEqual('tcp dport 18547' in text, bool(expected))
+
     def test_edge_answers_outside_the_official_inventory_are_dropped(self):
         name = 'region1.v2.argotunnel.com'
         inside = sorted(egress_policy.EDGE_ADDRESSES[name])[0]
@@ -491,6 +514,158 @@ class NodeEndpointTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'haproxy_config_differs'):
                     endpoint.verify(texts, '192.0.2.1')
 
+
+
+class ContinuousEgressUpdateTests(unittest.TestCase):
+    """A rendered candidate on a host that already runs the policy (#315)."""
+    def setUp(self):
+        from test_continuous_egress_policy import snapshot
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        root = Path(self.directory.name)
+        self.root, self.units = str(root / 'etc/domino/continuous-reads'), str(root / 'etc/systemd/system') + '/'
+        self.calls, self.refuse, self.trusted = [], False, []
+
+        def run(args, **kwargs):
+            self.calls.append(args)
+            if args[:2] == ['/usr/sbin/nft', '-c']:
+                self.checked = {path: Path(path).read_bytes() for path in self.live}
+                if self.refuse:
+                    raise ValueError('command_failed')
+            return b''
+
+        def exclusive(path, content, mode=0o600, uid=0, gid=0):
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+            with os.fdopen(fd, 'wb') as stream:
+                os.fchmod(stream.fileno(), mode)
+                stream.write(content)
+        for item in (patch.object(policy, 'ROOT', self.root), patch.object(policy, 'UNIT_DIR', self.units),
+                     patch.object(install_continuous_egress, 'EGRESS_SERVICE', Path(self.units + policy.EGRESS_UNIT)),
+                     patch.object(install_continuous_egress.os, 'geteuid', lambda: 0),
+                     patch.object(install, 'exclusive_file', exclusive),
+                     patch.object(install, 'trusted_parents', self.trusted.append),
+                     patch.object(install, 'run', run)):
+            item.start()
+            self.addCleanup(item.stop)
+        base = {**snapshot(), 'publicDataCollectors': True}
+        # The host as the first render left it: no writer hosts file and no node port.
+        self.before = policy.render(base)
+        self.after = policy.render({**base, 'nodeLoopbackReads': True})
+        self.live = {path: text for path, text in self.before['artifacts'].items() if not path.endswith('/write.hosts')}
+        for path, text in self.live.items():
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(text)
+            os.chmod(path, self.before['artifactMetadata'][path]['mode'])
+        Path(self.units + policy.EGRESS_UNIT).write_text(install_continuous_egress.EGRESS_SERVICE_TEXT)
+        self.backup = Path(self.directory.name) / 'backup'
+
+    def state(self):
+        return {str(path): (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
+                for path in Path(self.directory.name, 'etc').rglob('*') if path.is_file()}
+
+    def test_an_update_names_each_artifact_new_changed_or_the_same_and_writes_nothing(self):
+        before = self.state()
+        planned = install_continuous_egress.plan_update(self.after)
+        self.assertEqual({path: state for path, state in planned['changes'].items() if state != 'same'},
+                         {self.root + '/policy.nft': 'changed', self.root + '/write.hosts': 'new'})
+        self.assertEqual(set(planned['changes']), set(self.after['artifacts']))
+        self.assertEqual(self.state(), before)
+        self.assertEqual(self.calls, [])
+        # A mode is part of what is installed.
+        os.chmod(self.root + '/read.hosts', 0o600)
+        self.assertEqual(install_continuous_egress.plan_update(self.before)['changes'][self.root + '/read.hosts'],
+                         'changed')
+
+    def test_an_update_checks_the_new_policy_before_anything_moves_and_keeps_what_it_replaced(self):
+        planned = install_continuous_egress.plan_update(self.after)
+        result = install_continuous_egress.apply_update(self.after, planned, self.backup)
+        self.assertTrue(result['installed'])
+        self.assertEqual(self.calls, [['/usr/sbin/nft', '-c', '-f', self.root + '/policy.nft.update'],
+                                      ['/usr/bin/systemctl', 'daemon-reload']])
+        # nft saw the new policy while every installed artifact was still the old one.
+        self.assertEqual(self.checked, {path: text.encode() for path, text in self.live.items()})
+        for path, text in self.after['artifacts'].items():
+            self.assertEqual(Path(path).read_text(), text)
+            self.assertEqual(stat.S_IMODE(Path(path).stat().st_mode), self.after['artifactMetadata'][path]['mode'])
+        self.assertFalse(list(Path(self.directory.name, 'etc').rglob('*.update')))
+        manifest = json.loads((self.backup / 'manifest.json').read_text())
+        self.assertEqual({entry['path']: entry['backup'] is None for entry in manifest},
+                         {self.root + '/policy.nft': False, self.root + '/write.hosts': True})
+        kept = next(entry for entry in manifest if entry['path'].endswith('policy.nft'))
+        self.assertEqual((self.backup / kept['backup']).read_text(), self.live[self.root + '/policy.nft'])
+        self.assertEqual(kept['mode'], 0o600)
+        self.assertEqual(stat.S_IMODE(self.backup.stat().st_mode), 0o700)
+        # What it replaced lies only under root-owned directories.
+        self.assertEqual(self.trusted, [self.backup.parent])
+
+    def test_a_family_switched_on_gets_its_new_drop_in_directory(self):
+        from test_continuous_egress_policy import LIVE_ENABLED, PINS, snapshot
+        family = policy.render({**snapshot(LIVE_ENABLED + ('execution-signer',), PINS), 'publicDataCollectors': True})
+        changes = install_continuous_egress.plan_update(family)['changes']
+        dropin = self.units + 'domino-execution-signer.service.d/' + policy.DROPIN
+        self.assertEqual(changes[dropin], 'new')
+        install_continuous_egress.apply_update(family, {'changes': changes}, self.backup)
+        self.assertEqual(Path(dropin).read_text(), family['artifacts'][dropin])
+
+    def test_a_policy_nft_refuses_leaves_every_artifact_as_it_was(self):
+        before = self.state()
+        self.refuse = True
+        planned = install_continuous_egress.plan_update(self.after)
+        with self.assertRaisesRegex(ValueError, 'command_failed'):
+            install_continuous_egress.apply_update(self.after, planned, self.backup)
+        self.assertEqual(self.state(), before)
+        self.assertEqual(self.calls[-1][:2], ['/usr/sbin/nft', '-c'])
+
+    def test_restore_puts_back_what_the_update_replaced_and_removes_what_it_added(self):
+        before = self.state()
+        install_continuous_egress.apply_update(self.after, install_continuous_egress.plan_update(self.after),
+                                               self.backup)
+        self.calls.clear()
+        self.trusted.clear()
+        with patch('sys.stdout', new_callable=io.StringIO) as printed:
+            self.assertEqual(install_continuous_egress.main(['--restore', str(self.backup)]), 0)
+        result = json.loads(printed.getvalue())
+        self.assertEqual(self.trusted, [self.backup])
+        self.assertEqual(self.state(), before)
+        self.assertEqual(sorted(result['restored']), [self.root + '/policy.nft', self.root + '/write.hosts'])
+        self.assertEqual(self.calls, [['/usr/sbin/nft', '-c', '-f', self.root + '/policy.nft'],
+                                      ['/usr/bin/systemctl', 'daemon-reload']])
+
+    def test_an_update_needs_the_running_host_a_new_backup_and_root(self):
+        with self.assertRaisesRegex(ValueError, '^backup_exists$'):
+            self.backup.mkdir()
+            install_continuous_egress.apply_update(self.after, install_continuous_egress.plan_update(self.after),
+                                                   self.backup)
+        candidate = Path(self.directory.name) / 'candidate.json'
+        candidate.write_text(json.dumps(self.after))
+        with patch('sys.stdout', new_callable=io.StringIO) as printed:
+            self.assertEqual(install_continuous_egress.main(['--candidate', str(candidate), '--update', '--apply']), 1)
+        self.assertEqual(json.loads(printed.getvalue())['reason'], 'backup_required')
+        with patch.object(install_continuous_egress.os, 'geteuid', lambda: 1000), \
+             self.assertRaisesRegex(ValueError, '^root_required$'):
+            install_continuous_egress.apply_update(self.after, install_continuous_egress.plan_update(self.after),
+                                                   Path(self.directory.name) / 'other')
+        os.unlink(self.units + policy.EGRESS_UNIT)
+        with self.assertRaisesRegex(ValueError, '^egress_service_missing$'):
+            install_continuous_egress.plan_update(self.after)
+        self.assertEqual(self.state()[self.root + '/policy.nft'][0], self.live[self.root + '/policy.nft'].encode())
+
+    def test_an_artifact_path_that_is_not_a_file_is_refused(self):
+        os.unlink(self.root + '/read.hosts')
+        os.mkdir(self.root + '/read.hosts')
+        with self.assertRaisesRegex(ValueError, '^egress_artifact_not_a_file$'):
+            install_continuous_egress.plan_update(self.after)
+
+    def test_restore_takes_only_its_own_manifest(self):
+        with self.assertRaisesRegex(ValueError, '^backup_manifest_missing$'):
+            self.backup.mkdir()
+            install_continuous_egress.restore(self.backup)
+        for entry, code in (({'path': '/etc/sudoers.d/x', 'backup': None, 'mode': None}, 'candidate_path_not_allowed'),
+                            ({'path': self.root + '/policy.nft', 'backup': '0', 'mode': 0o666}, 'backup_mode_unexpected')):
+            with self.subTest(code=code):
+                (self.backup / 'manifest.json').write_text(json.dumps([entry]))
+                with self.assertRaisesRegex(ValueError, '^' + code + '$'):
+                    install_continuous_egress.restore(self.backup)
 
 if __name__ == '__main__':
     unittest.main()

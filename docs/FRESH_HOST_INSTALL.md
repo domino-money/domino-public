@@ -177,7 +177,9 @@ Below, `$A_<lane>` stands for
     ```
 
 13. **Public data.** Run `install_public_data.py $A_public_data` with
-    `--inspect`, then `--apply`.
+    `--inspect`, then `--apply`. Its units bind the writer's pinned hosts file,
+    `/etc/domino/continuous-reads/write.hosts`, which step 17 writes; none of
+    them starts before cutover.
 
 14. **Read release**, from this repository.
 
@@ -210,7 +212,7 @@ Below, `$A_<lane>` stands for
     ```sh
     python3 -B install_continuous_egress.py --collect --access-issuer ordio-hq.cloudflareaccess.com \
       --enabled read,gateway,tunnel,write,auth,execution-status \
-      --sequence-snapshot-loopback --public-data-collectors > pins.json
+      --sequence-snapshot-loopback --public-data-collectors --node-loopback-reads > pins.json
     python3 -B continuous_egress_policy.py < pins.json > candidate.json
     python3 -B install_continuous_egress.py --candidate candidate.json --apply
     ```
@@ -267,7 +269,9 @@ assistant. The paths are:
 - `/etc/domino/private/session-abuse-secret`
 - `/etc/domino/continuous-reads/gateway.env`
 - `/etc/domino/credentials/cloudflared-token.cred`, sealed with the step 16 drop-in (a plain file on the first host)
-- `providers.json` in the read, gateway and writer runtimes
+- `providers.json` in the read, gateway and writer runtimes; then, as each
+  file's owner, `configure_rpc.py --node-loopback on` in the reader's and the
+  writer's (docs/LOCAL_RPC_SOURCE.md)
 - `/etc/domino/v2/chain-rpc.json` and `/etc/credstore.encrypted/v2-rpc-*`
 
 ### Data (cutover)

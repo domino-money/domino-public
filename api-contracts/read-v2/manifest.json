@@ -262,11 +262,11 @@
     },
     {
       "path": "backend/discovery.py",
-      "sha256": "c75720b7035b7e9fda4014fdbbe42d0a17c346b25b82f090ebe506374c3ea57d"
+      "sha256": "11cd96f41cde4d83194c8674a7fa369156745af527551d66f4c8cd66b51dc8be"
     },
     {
       "path": "backend/read_service.py",
-      "sha256": "64a3e4b36062d73d27ea46c18b551c6d4d58978026a669d626af96f6d0cd02d1"
+      "sha256": "db9ae84a74753c43490f6c10cfa3c8cee5d22ea5a9d70bc986c8bec4dbe135fa"
     },
     {
       "path": "backend/market_cache.py",

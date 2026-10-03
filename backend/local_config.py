@@ -5,9 +5,9 @@ from pathlib import Path
 import stat
 import tempfile
 
-from discovery import DataError
+from discovery import DataError, SNAPSHOT_LOOPBACK_RPC
 from inventory import inventory_endpoint
-from rpc_config import (DEFAULT_RPC_HOSTS, LOCAL_RPC_HOST, MAX_RPC_ENDPOINTS,
+from rpc_config import (DEFAULT_RPC_HOSTS, LOCAL_RPC_HOST, MAX_RPC_ENDPOINTS, loopback_primary,
                         rpc_endpoint, rpc_hosts, configured_rpc_urls)
 from urllib.parse import urlsplit
 
@@ -33,9 +33,12 @@ def checked_config(data):
         raise DataError('invalid_local_provider_config')
     if 'sequenceSnapshotLoopback' in data and type(data['sequenceSnapshotLoopback']) is not bool:
         raise DataError('invalid_local_provider_config')
-    rpc_endpoint(data['rpcUrl'], hosts)
-    if data['version'] == 4 and urlsplit(data['rpcUrl']).hostname != LOCAL_RPC_HOST:
-        raise DataError('local_first_rpc_required')
+    if data['version'] == 4 and data['rpcUrl'] == SNAPSHOT_LOOPBACK_RPC:
+        loopback_primary(data)
+    else:
+        rpc_endpoint(data['rpcUrl'], hosts)
+        if data['version'] == 4 and urlsplit(data['rpcUrl']).hostname != LOCAL_RPC_HOST:
+            raise DataError('local_first_rpc_required')
     if data['version'] == 3:
         history = rpc_endpoint(data['historicalRpcUrl'], hosts, field='historical_rpc_url')
         if urlsplit(history).hostname == LOCAL_RPC_HOST:

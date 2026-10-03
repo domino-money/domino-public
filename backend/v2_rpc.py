@@ -74,12 +74,12 @@ from urllib.parse import urlsplit
 
 from eth_hash.auto import keccak
 
-from discovery import (CHAIN_ID, Block, DataError, ReadRpc, RpcStateUnavailable, json_http, parse_block,
-                       prefetched, quantity)
+from discovery import (CHAIN_ID, Block, DataError, ReadRpc, RpcStateUnavailable, parse_block,
+                       prefetched, quantity, rpc_http)
 from execution_status_runtime import private_file
 from local_config import CONFIG_PATH, checked_config, load_config
 from read_deadline import current_read_deadline, read_deadline
-from rpc_config import LOCAL_RPC_HOST, LOCAL_STATE_BLOCKS, MAX_RPC_ENDPOINTS, configured_rpc_urls, rpc_hosts
+from rpc_config import LOCAL_STATE_BLOCKS, MAX_RPC_ENDPOINTS, configured_rpc_urls, own_node, rpc_hosts
 from rpc_failover import RETRYABLE, FailoverReadRpc, HistoricalReadRpc
 from v2_chains import ChainProfile, default_registry
 
@@ -264,10 +264,11 @@ def provider_file_endpoints(chain, provider_config):
         raise DataError('v2_local_first_provider_file_required')
     # checked_config refuses a version 4 file whose primary is not the own node.
     urls = configured_rpc_urls(checked_config(provider_config))
-    # The own node is pruned (LOCAL_STATE_BLOCKS); its fallbacks serve old state.
-    return (Endpoint('local', LOCAL_RPC_HOST, urls[0], LOCAL_STATE_BLOCKS, ROBINHOOD_BATCH_ITEMS, None, None),
-            *(Endpoint(f'fallback-{index}', urlsplit(url).hostname, url, None, ROBINHOOD_BATCH_ITEMS, None, None)
-              for index, url in enumerate(urls[1:], 1)))
+    # The own node is pruned (LOCAL_STATE_BLOCKS) over its VM-local proxy and its
+    # public route alike; the other fallbacks serve old state.
+    return tuple(Endpoint('local' if index == 0 else f'fallback-{index}', urlsplit(url).hostname, url,
+                          LOCAL_STATE_BLOCKS if own_node(url) else None, ROBINHOOD_BATCH_ITEMS, None, None)
+                 for index, url in enumerate(urls))
 
 
 class CodeCache:
@@ -302,7 +303,7 @@ class ChainEndpoints:
     It is also their transport: whatever a client sends through it respects the
     endpoint's batch size, log range and pace, and counts as billed calls.
     """
-    def __init__(self, chain, endpoints, source, *, send=json_http, clock=time.monotonic, sleep=time.sleep):
+    def __init__(self, chain, endpoints, source, *, send=rpc_http, clock=time.monotonic, sleep=time.sleep):
         if (not isinstance(chain, ChainProfile) or not endpoints or len(endpoints) > MAX_ENDPOINTS
                 or any(not isinstance(e, Endpoint) for e in endpoints)
                 or len({e.url for e in endpoints}) != len(endpoints)):

@@ -39,7 +39,7 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 | `execution-status` | 8901 | jwks | Access assertions, database and exact VM-local EOA RPC at `127.0.0.1:18547` |
 | `execution-signer` | — | rpc | `ExecutionRpc` broadcast |
 | `tunnel` | 20241 | edges, jwks | 7844 to the official edge inventory; connector JWKS |
-| `write` | — | rpc | the indexer's provider |
+| `write` | — | rpc | the public-data lanes, featured, the queue worker and the followers |
 | `operator`, `admin` | — | — | never |
 
 Classes: `rpc` is `robinhood-mainnet.g.alchemy.com` or the private
@@ -50,17 +50,37 @@ exactly the pinned Access issuer; `edges` are the two `argotunnel.com` names,
 whose pins must be members of the official inventory the module carries.
 
 Loopback: the gateway may originate to the reader; the tunnel may originate to
-every enabled listener it fronts. The tunnel and the indexer use the stub
-resolver; every other enabled unit reads a pinned hosts file bound over
-`/etc/hosts` and never resolves.
+every enabled listener it fronts. The tunnel uses the stub resolver; every
+other enabled unit reads a pinned hosts file bound over `/etc/hosts` and never
+resolves. The writer has no unit of its own here: its units bind `write.hosts`
+themselves (`ops/systemd`), and it keeps the stub for operator commands run as
+`domino-write` outside them.
+
+The writer resolved through the stub until #315, and that cost minutes of reads
+several times a day. `rpc.domino.money` answers with one of two Cloudflare pairs,
+alternating with its 300 s TTL, and the writer's set held only the pair seen when
+the pins were collected. A call to the other pair hung in `SYN-SENT` until its
+deadline, for one or two TTLs. A hosts file rendered from the same pins as the
+set cannot lead outside it.
 
 For the V4 sequence snapshot, the reader can use the private VM loopback RPC
 at `127.0.0.1:18547`. Set the optional boolean `sequenceSnapshotLoopback` in
 the operator policy input only when that tunnel and the reader's matching
 private configuration are installed. It adds one reader-owned, loopback-only
-TCP rule for port 18547 before the reader's final drop. The reader option
+TCP rule for port 18547 before the reader's closing rules. The reader option
 grants no other service identity or external address. Without it, the renderer
 preserves the earlier reader policy.
+
+With the optional boolean `nodeLoopbackReads`, the reader and the writer may
+lead their chain reads with that proxy: their private provider files name
+`http://127.0.0.1:18547/` first and `rpc.domino.money` next
+([local RPC source](LOCAL_RPC_SOURCE.md)). Each of the two identities that is
+enabled gets the same exact loopback rule, commented `private node RPC`; the
+reader holds one rule for the port whichever of the two options asks for it.
+It requires `read` or `write` in `enabled`, and it grants nothing else. Load it
+before a provider file names the proxy. Without the rule every call first
+fails at the proxy: refused at once under a table with the reset rule below,
+and hung until its deadline under the first VM's.
 
 When `execution-status` is enabled, its identity gets a separate rule for the
 same exact loopback port. Its private profile must select
@@ -78,6 +98,7 @@ destination is the separately pinned Access issuer for JWKS refresh.
   "accessIssuer": "<team>.cloudflareaccess.com",
   "enabled": ["read", "gateway", "tunnel", "write"],
   "sequenceSnapshotLoopback": true,
+  "nodeLoopbackReads": true,
   "identities": { "<role>": { "user", "realUid", "effectiveUid", "gid",
                               "supplementaryGids", "unit", "cgroup" } },
   "hosts": [ { "hostname": "...", "addresses": ["..."] } ]
@@ -86,7 +107,8 @@ destination is the separately pinned Access issuer for JWKS refresh.
 
 The optional `sequenceSnapshotLoopback` field defaults to false and requires
 `read` in `enabled` when true. It changes the nft policy and its pin digest,
-not the unit drop-ins or the public Worker flag.
+not the unit drop-ins or the public Worker flag. `nodeLoopbackReads` does the
+same for the reader and the writer, and requires either in `enabled`.
 
 `identities` names all thirteen roles exactly (`admin` may be `null`). Roles
 with a service unit must name `domino-<role>.service` and its system-slice
@@ -106,7 +128,7 @@ python3 scripts/staging/continuous_egress_policy.py < pins.json > candidate.json
 | Artifact | Mode | Notes |
 |---|---|---|
 | `/etc/domino/continuous-reads/policy.nft` | 0600 | the whole table, every identity, default deny |
-| `/etc/domino/continuous-reads/<role>.hosts` | 0644 | for each enabled unit with pins; edge names are not pinned here |
+| `/etc/domino/continuous-reads/<role>.hosts` | 0644 | for each enabled unit with pins, and `write.hosts` for the writer, whose units bind it; edge names are not pinned here |
 | `/etc/systemd/system/domino-<role>.service.d/60-continuous-reads.conf` | 0644 | for each enabled unit: bound to the egress service and the target, address allow-list, hosts bind |
 | `/etc/systemd/system/domino-continuous-reads.target` | 0644 | `Requires=` the egress service and the read path (reader, gateway, tunnel); `Wants=` each enabled family |
 
@@ -117,22 +139,32 @@ release drop-in owns it. Families read their environment from
 `/etc/domino/financial/<component>/environment`, which their unit already
 names; the gateway keeps `gateway.env`. Neither file's contents are rendered.
 
+Every chain ends in two rules. A connection attempt no rule admitted (a TCP
+SYN without ACK) is answered with a reset, so the caller sees a refusal at once
+and tries its next route instead of waiting out its deadline. Every other
+packet keeps the silent drop: a reset for a stray packet of a connection a rule
+accepted, a listener's late reply for one, would tear that connection down.
+Both rules count in the chain's `denied_<role>` counter.
+
 ## The procedure
 
 Render, then review the candidate against what is installed before anything
 moves. The renderer proves it describes the host: given the live pins and
 `enabled` as today, it reproduces every live chain, set, drop-in, hosts file
-and the target (the test pins that against a masked copy of the live file).
+and the target, apart from the reset rule each chain gained with #315 (the test
+pins both against a masked copy of the live file).
 
 ```sh
-# 1. Back up what is there.
-sudo cp -p /etc/domino/continuous-reads/policy.nft \
-  /etc/domino/continuous-reads/policy.nft.bak-$(date -u +%Y%m%d)
+# 1. What the candidate changes on this host: each artifact new, changed or
+#    the same. Nothing is written.
+sudo python3 -B install_continuous_egress.py --candidate candidate.json --update --inspect
 
-# 2. Install each artifact with its mode and owner (root), from the candidate.
-
-# 3. Check the file before it is loaded; nothing is applied by this.
-sudo nft -c -f /etc/domino/continuous-reads/policy.nft
+# 2-3. Write the new and changed artifacts with their rendered mode and owner.
+#    The new policy passes `nft -c` before any file moves, and what each
+#    artifact replaced is kept in the backup directory, which must not exist.
+#    It reloads systemd; it loads no table and restarts nothing.
+sudo python3 -B install_continuous_egress.py --candidate candidate.json --update --apply \
+  --backup /root/egress-backup-$(date -u +%Y%m%dT%H%M%SZ)
 
 # 4. Load it the way the egress service does, as one nft transaction. The
 #    file's own delete/add pair rebuilds the table from the file, and every
@@ -152,9 +184,11 @@ curl -s --max-time 5 127.0.0.1:20241/metrics | grep '^cloudflared_tunnel_ha_conn
 sudo nft list chain inet domino_continuous_reads tunnel
 ```
 
-The drop-in and target changes take effect at each unit's next start; the
-address allow-lists they carry are unchanged in content, so nothing waits on
-that. Rollback is the backup copied back and loaded the same way.
+The drop-in and target changes take effect at each unit's next start; when the
+pins are unchanged, the address allow-lists they carry are too, so nothing waits
+on that. Rollback is `install_continuous_egress.py --restore <backup>`, which
+puts back what the update replaced and removes what it added, then the same
+load. Neither mode removes an installed file the candidate does not name.
 
 ### The first apply
 
@@ -205,6 +239,24 @@ now names families in `Wants=` and only the read path in `Requires=`: `Wants=`
 carries no restart back to the target, and the family's `PartOf=` still takes it
 down with the target. Start a family enabled and watch it run before applying a
 candidate that adds it.
+
+### Node loopback reads and the writer's hosts file (#315)
+
+Rendered for the live `enabled` with `nodeLoopbackReads`, a candidate differs
+from the table the first VM loaded in four ways:
+
+- the writer's chain admits `127.0.0.1:18547`, and the reader's rule for that
+  port is commented `private node RPC`;
+- every chain gains the reset rule ahead of its drop;
+- `write.hosts` is a new file;
+- the read and auth drop-ins and hosts files change only if the pins did.
+
+Install `write.hosts` before the public-data release whose units bind it: a
+unit whose bind source is missing does not start. Load the table before any
+provider file names the proxy. Collect the pins again on the day: the reader's
+and the writer's hosts files pin `rpc.domino.money` to whatever it answered
+then. Both of its Cloudflare pairs may be pinned, since each is a pin the set
+admits and each hosts file lists.
 
 ## Not yet a role
 

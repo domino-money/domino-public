@@ -4,10 +4,10 @@ import getpass
 import sys
 from urllib.parse import urlsplit
 
-from discovery import DataError, DiscoveryReader, ReadRpc, parse_block
+from discovery import DataError, DiscoveryReader, ReadRpc, SNAPSHOT_LOOPBACK_RPC, parse_block
 from local_config import CONFIG_PATH, checked_config, load_config, save_config
 from read_service import bounded_transport
-from rpc_config import DEFAULT_RPC_HOSTS, LOCAL_RPC_HOST, MAX_RPC_ENDPOINTS, rpc_hosts
+from rpc_config import DEFAULT_RPC_HOSTS, LOCAL_RPC_HOST, MAX_RPC_ENDPOINTS, own_node, rpc_hosts
 
 
 def prepare_config(existing, urls):
@@ -33,7 +33,7 @@ def prepare_local_config(existing, token, *, historical_url=None):
         raise DataError('invalid_local_rpc_token')
     historical_url = historical_url or existing.get('historicalRpcUrl') or next((
         url for url in [existing.get('rpcUrl'), *existing.get('rpcFallbackUrls', [])]
-        if url and urlsplit(url).hostname != LOCAL_RPC_HOST), None)
+        if url and not own_node(url)), None)
     if not historical_url:
         raise DataError('historical_rpc_required')
     primary = f'https://{LOCAL_RPC_HOST}/{token}/'
@@ -41,13 +41,30 @@ def prepare_local_config(existing, token, *, historical_url=None):
     # must never retain the old credential as a second route to the same node.
     candidates = [existing.get('rpcUrl'), *existing.get('rpcFallbackUrls', []), historical_url]
     fallbacks = list(dict.fromkeys(url for url in candidates
-        if url and urlsplit(url).hostname != LOCAL_RPC_HOST))
+        if url and not own_node(url)))
     if len(fallbacks) >= MAX_RPC_ENDPOINTS:
         raise DataError('too_many_preserved_rpc_endpoints')
     hosts = list(dict.fromkeys([*DEFAULT_RPC_HOSTS,
         *(urlsplit(url).hostname for url in [primary, *fallbacks, historical_url])]))
-    return checked_config({'version':4, 'rpcUrl':primary, 'rpcFallbackUrls':fallbacks,
+    data = checked_config({'version':4, 'rpcUrl':primary, 'rpcFallbackUrls':fallbacks,
         'rpcAllowedHosts':hosts, 'inventoryUrl':existing.get('inventoryUrl')})
+    # A file the node's proxy led keeps that lead, with the new token next.
+    return prepare_node_loopback(data, True) if existing.get('rpcUrl') == SNAPSHOT_LOOPBACK_RPC else data
+
+
+def prepare_node_loopback(existing, enabled):
+    """Lead a version 4 file with the node's VM-local proxy, or give the lead back.
+
+    The node's public route stays the next route and every other route keeps its
+    place: no credential is added, dropped or reordered.
+    """
+    if existing.get('version') != 4:
+        raise DataError('local_first_rpc_required')
+    routes = [existing['rpcUrl'], *existing['rpcFallbackUrls']]
+    if enabled == (routes[0] == SNAPSHOT_LOOPBACK_RPC):
+        raise DataError('node_loopback_unchanged')
+    routes = [SNAPSHOT_LOOPBACK_RPC, *routes] if enabled else routes[1:]
+    return checked_config({**existing, 'rpcUrl': routes[0], 'rpcFallbackUrls': routes[1:]})
 
 
 def probe_endpoints(urls, *, rpc_factory=None):
@@ -69,15 +86,24 @@ def probe_endpoints(urls, *, rpc_factory=None):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config-file',type=str,default=str(CONFIG_PATH))
-    parser.add_argument('--local', action='store_true',
-                        help='use the Domino node; use local-first current/history reads; preserve fallback and inventory')
+    mode=parser.add_mutually_exclusive_group()
+    mode.add_argument('--local', action='store_true',
+                      help='use the Domino node; use local-first current/history reads; preserve fallback and inventory')
+    mode.add_argument('--node-loopback', choices=('on', 'off'),
+                      help="on: lead with the node's VM-local proxy, its public route next; off: give the lead back")
     args=parser.parse_args()
-    if not sys.stdin.isatty():
+    if args.node_loopback is None and not sys.stdin.isatty():
         print('Open this configurator in an interactive terminal. No endpoint was requested.')
         return 1
     try:
         existing=load_config(args.config_file)
-        if args.local:
+        if args.node_loopback:
+            # Nothing is typed. Only a new lead is probed: the routes behind it
+            # are the file's own, already verified, and may be unreachable from
+            # an operator shell that lacks the service's pinned hosts file.
+            data = prepare_node_loopback(existing, args.node_loopback == 'on')
+            urls = [SNAPSHOT_LOOPBACK_RPC] if args.node_loopback == 'on' else []
+        elif args.local:
             token = getpass.getpass('Domino RPC authentication token (not the tunnel token): ').strip()
             history = getpass.getpass('Fallback RPC HTTPS URL (blank preserves existing): ').strip()
             data = prepare_local_config(existing, token, historical_url=history or None)
@@ -88,9 +114,11 @@ def main():
             print('Enter exact HTTPS URLs. Input is hidden. No wallet or transaction is used.')
             urls=[getpass.getpass(f'RPC {i+1} URL: ').strip() for i in range(int(count))]
             data=prepare_config(existing,urls)
-        probe_endpoints(urls)
+        if urls:
+            probe_endpoints(urls)
         save_config(data,args.config_file)
-        print('Saved private provider configuration; chain, managers and shared block verified.')
+        print('Saved private provider configuration; chain, managers and shared block verified.'
+              if urls else 'Saved private provider configuration; the public route leads again.')
         print('Restart the product reader to apply it. Inventory configuration was preserved.')
         return 0
     except (EOFError,KeyboardInterrupt):

@@ -44,7 +44,11 @@ READ_PATH_UNITS = ('domino-read.service', 'domino-gateway.service', 'domino-tunn
 LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
              'deposit': 8881, 'performance': 8900, 'execution-status': 8901,
              'tunnel': 20241}
+# The node's proxy on this host (install_node_rpc_endpoint.py). With
+# `nodeLoopbackReads`, the reader and the writer (public-data lanes, featured,
+# queue worker, followers) lead their chain reads with it, not with Cloudflare.
 SNAPSHOT_RPC_PORT = 18547
+NODE_LOOPBACK_ROLES = ('read', 'write')
 # Robinhood's public RPC is not an egress destination: reads go to our node
 # (rpc.domino.money), with Alchemy as the verified fallback for old state.
 RPC_HOSTS = frozenset(('robinhood-mainnet.g.alchemy.com', 'rpc.domino.money'))
@@ -75,6 +79,8 @@ ORIGINS = {'gateway': ('read',),
            'tunnel': ('gateway', 'auth', 'onboarding', 'deposit', 'performance', 'execution-status')}
 # Identities that resolve names at runtime. Every other enabled unit reads a
 # pinned hosts file bound over /etc/hosts and never needs the stub resolver.
+# The writer's units bind theirs too (ops/systemd); the stub stays for the
+# operator commands it runs outside them.
 DNS_STUB = ('tunnel', 'write')
 # Every listener refuses to start enabled without its private operator file:
 # session_api.load_session_rpc_config raises session_rpc_config_required when
@@ -122,13 +128,14 @@ def classes_of(hostname, issuer):
 
 
 def validate(snapshot):
-    optional = tuple(name for name in ('publicDataCollectors', 'sequenceSnapshotLoopback')
+    optional = tuple(name for name in ('publicDataCollectors', 'sequenceSnapshotLoopback', 'nodeLoopbackReads')
                      if name in snapshot)
     fields = (*FIELDS, *optional)
     exact(snapshot, fields, 'invalid_snapshot_fields')
     require(type(snapshot.get('publicDataCollectors',False)) is bool,'invalid_public_data_collectors')
     require(type(snapshot.get('sequenceSnapshotLoopback', False)) is bool,
             'invalid_sequence_snapshot_loopback')
+    require(type(snapshot.get('nodeLoopbackReads', False)) is bool, 'invalid_node_loopback_reads')
     require(type(snapshot['version']) is int and snapshot['version'] == 1, 'invalid_snapshot_version')
     require(snapshot['resolver'] == '127.0.0.53', 'invalid_resolver')
     issuer = snapshot['accessIssuer']
@@ -141,6 +148,8 @@ def validate(snapshot):
     require(not snapshot.get('publicDataCollectors') or 'write' in enabled,'public_collectors_require_writer')
     require(not snapshot.get('sequenceSnapshotLoopback') or 'read' in enabled,
             'snapshot_loopback_requires_reader')
+    require(not snapshot.get('nodeLoopbackReads') or any(role in enabled for role in NODE_LOOPBACK_ROLES),
+            'node_loopback_requires_reader_or_writer')
     enabled = tuple(role for role in ROLES if role in enabled)
     exact(snapshot['identities'], ROLES, 'invalid_identity_roles')
     seen_uids = set()
@@ -250,14 +259,18 @@ def render(snapshot):
                 for protocol, port in ports:
                     lines.append(prefix + f'oifname != "lo" ip daddr @{name} {protocol} dport {port} '
                                  f'counter accept comment "{comment}"')
-            if role == 'read' and snapshot.get('sequenceSnapshotLoopback'):
+            if role in NODE_LOOPBACK_ROLES and snapshot.get('nodeLoopbackReads'):
+                loopback = 'private node RPC'
+            elif role == 'read' and snapshot.get('sequenceSnapshotLoopback'):
+                loopback = 'private V4 snapshot RPC'
+            elif role == 'execution-status':
+                loopback = 'private execution-status EOA RPC'
+            else:
+                loopback = None
+            if loopback:
                 lines.append(prefix + 'oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 '
                              f'tcp dport {SNAPSHOT_RPC_PORT} ct direction original counter accept '
-                             'comment "private V4 snapshot RPC"')
-            if role == 'execution-status':
-                lines.append(prefix + 'oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 '
-                             f'tcp dport {SNAPSHOT_RPC_PORT} ct direction original counter accept '
-                             'comment "private execution-status EOA RPC"')
+                             f'comment "{loopback}"')
             if role == 'tunnel':
                 for protocol in ('tcp', 'udp'):
                     lines.append(prefix + f'oifname "lo" ip daddr 127.0.0.53 {protocol} dport 53 '
@@ -270,18 +283,22 @@ def render(snapshot):
                     lines.append(prefix + 'oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 '
                                  f'tcp dport {LISTENERS[target]} ct direction original counter accept '
                                  f'comment "exact {name} origin"')
+        # A refused connection attempt is reset at once: the caller sees a
+        # refusal and tries its next route instead of waiting out its deadline
+        # (#315). Every other packet keeps the silent drop, since a reset for a
+        # stray packet of an accepted connection would tear that connection down.
+        lines.append(prefix + f'tcp flags & (syn | ack) == syn counter name denied_{chain} '
+                     'reject with tcp reset comment "refused connection attempt"')
         lines.append(prefix + f'counter name denied_{chain} drop')
     artifacts = {ROOT + '/policy.nft': '\n'.join(lines) + '\n'}
     metadata = {ROOT + '/policy.nft': {'uid': 0, 'gid': 0, 'mode': 0o600}}
     units = []
     for role in enabled:
-        unit = unit_of(role)
-        if unit is None:
-            continue
-        units.append(unit)
         # The hosts file pins what the application resolves through /etc/hosts.
         # The connector resolves the edge names itself through the stub; the
-        # nft set is what bounds where those answers may lead.
+        # nft set is what bounds where those answers may lead. The writer has no
+        # unit here, but its units bind its file: an answer from the stub could
+        # name addresses its set lacks, and rpc.domino.money's did (#315).
         hosts = [h for h in role_hosts[role] if h not in EDGE_HOSTS]
         hosts_path = None
         if hosts:
@@ -290,6 +307,10 @@ def render(snapshot):
             text += [f'{address} {host}' for host in hosts for address in ordered(pins[host])]
             artifacts[hosts_path] = '\n'.join(text) + '\n'
             metadata[hosts_path] = {'uid': 0, 'gid': 0, 'mode': 0o644}
+        unit = unit_of(role)
+        if unit is None:
+            continue
+        units.append(unit)
         dropin = ['# Explicit continuous read activation; fail closed behind the scoped nft policy.',
                   '[Unit]', f'BindsTo={EGRESS_UNIT}', f'After={EGRESS_UNIT} network-online.target',
                   'Wants=network-online.target', f'PartOf={TARGET}',
@@ -331,6 +352,8 @@ def render(snapshot):
         pin_scope += ':public-data-collectors'
     if snapshot.get('sequenceSnapshotLoopback'):
         pin_scope += ':sequence-snapshot-loopback'
+    if snapshot.get('nodeLoopbackReads'):
+        pin_scope += ':node-loopback-reads'
     return {'version': 1, 'kind': 'domino-continuous-egress-v1', 'applied': False,
             'policyQualified': False, 'enabled': list(enabled),
             'roleHosts': {role: hosts for role, hosts in role_hosts.items() if hosts},

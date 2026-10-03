@@ -9,7 +9,7 @@ import re
 
 from discovery import (CHAIN_ID, KEEPALIVE_OPENER, ZERO, DataError, DiscoveryReader,
                        ReadRpc, Block, address, bytes32, decode_result, discover,
-                       json_http, parse_block, prefetched, SNAPSHOT_LOOPBACK_RPC,
+                       parse_block, prefetched, rpc_http, SNAPSHOT_LOOPBACK_RPC,
                        snapshot_loopback_http)
 from inventory import AlchemyInventory, CursorCodec
 from rpc_failover import FailoverReadRpc, HistoricalReadRpc
@@ -73,8 +73,9 @@ def bounded_transport(seconds=60):
 
     def transport(url, body=None):
         with use_read_deadline(deadline) as active:
-            # Reads reuse kept provider connections instead of one handshake per call.
-            return json_http(url, body, timeout=active.timeout(8), opener=KEEPALIVE_OPENER)
+            # Reads reuse kept HTTPS provider connections instead of one handshake
+            # per call; the node's VM-local proxy takes its plain loopback hop.
+            return rpc_http(url, body, timeout=active.timeout(8), opener=KEEPALIVE_OPENER)
     return transport
 
 
@@ -172,10 +173,13 @@ class ReadService:
             return sequence_snapshot(self._rpc(self.transport_factory()), owner, token_id)
         if self.snapshot_rpc_version != 4 or not self.rpc_urls:
             raise DataError('upstream_unavailable')
-        try:
-            primary = rpc_endpoint(self.rpc_urls[0], (LOCAL_RPC_HOST,))
-        except DataError:
-            raise DataError('upstream_unavailable') from None
+        primary = self.rpc_urls[0]
+        # The node's VM-local proxy is that node too, over its loopback hop.
+        if primary != SNAPSHOT_LOOPBACK_RPC:
+            try:
+                primary = rpc_endpoint(primary, (LOCAL_RPC_HOST,))
+            except DataError:
+                raise DataError('upstream_unavailable') from None
         if self.snapshot_loopback:
             return sequence_snapshot(ReadRpc(SNAPSHOT_LOOPBACK_RPC,
                                              transport=bounded_snapshot_loopback_transport(),

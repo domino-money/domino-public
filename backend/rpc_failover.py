@@ -6,11 +6,10 @@ identity or an inconsistent snapshot poisons the whole read even if a metadata
 caller catches its first exception.
 """
 import logging
-from urllib.parse import urlsplit
 
 from discovery import CHAIN_ID, DataError, ReadRpc, RpcStateUnavailable, parse_block, quantity
 from read_deadline import check_read_deadline
-from rpc_config import LOCAL_RPC_HOST, LOCAL_STATE_BLOCKS, MAX_RPC_ENDPOINTS
+from rpc_config import LOCAL_STATE_BLOCKS, MAX_RPC_ENDPOINTS, own_node
 
 RETRYABLE = frozenset({'network_unavailable', 'http_429', 'http_502', 'http_503', 'http_504',
                        'http_520', 'http_521', 'http_522', 'http_523', 'http_524', 'http_530'})
@@ -28,10 +27,15 @@ class FailoverReadRpc(ReadRpc):
         self.verified, self.anchors, self.failure = False, {}, None
 
     def _switch(self, error):
+        refused_state = isinstance(error, RpcStateUnavailable)
+        # State the own node refused over one path, it refuses over the other.
+        skip = refused_state and own_node(self.url)
         self.index += 1
+        while skip and self.index + 1 < len(self.urls) and own_node(self.urls[self.index]):
+            self.index += 1
         self.url, self.verified = self.urls[self.index], False
         # Fixed error codes and route ordinal only; never endpoint credentials.
-        reason = 'historical_state_unavailable' if isinstance(error, RpcStateUnavailable) else str(error)
+        reason = 'historical_state_unavailable' if refused_state else str(error)
         _LOG.warning('rpc_failover provider_index=%d reason=%s', self.index, reason)
 
     def _validate_header_tag(self, tag, block):
@@ -173,7 +177,7 @@ class HistoricalReadRpc(FailoverReadRpc):
     their own range/log/canonicality checks. Unlike a browser read, a historical
     walk may observe thousands of headers and must not accumulate all of them.
     An evicted numeric state block is read and pinned again before state access.
-    State older than the own pruned node keeps starts at the next route.
+    State older than the own pruned node keeps starts at the first route past it.
 
     String endpoints retain the previous single-provider behavior for explicit
     tools and old configurations. An ordered tuple opts into verified failover.
@@ -186,8 +190,11 @@ class HistoricalReadRpc(FailoverReadRpc):
             ReadRpc.__init__(self, urls, **kwargs)
         else:
             super().__init__(urls, **kwargs)
-        self._pruned_primary = (not self.legacy_single_source and len(self.urls) > 1
-                                and urlsplit(self.urls[0]).hostname == LOCAL_RPC_HOST)
+        # The own node may lead over two paths, its VM-local proxy and its public
+        # route; old state starts at the first route past both.
+        self._archive = (None if self.legacy_single_source else
+                         next((index for index, url in enumerate(self.urls) if not own_node(url)), None))
+        self._pruned_primary = self._archive not in (None, 0)
 
     def _record_block(self, anchors, block):
         if block.tag in anchors and block != anchors[block.tag]:
@@ -245,10 +252,10 @@ class HistoricalReadRpc(FailoverReadRpc):
     def _begin_operation(self, calls):
         # Missing old state does not send subsequent retained logs/headers to
         # Alchemy. Each independent operation starts at the local primary,
-        # except state older than it keeps, which starts at the next route.
+        # except state older than it keeps, which starts past the own node.
         # Changing providers still checks the same highest continuity proof.
         if self._operation_depth == 0 and not self.failure:
-            start = 1 if self._beyond_local_state(calls) else 0
+            start = self._archive if self._beyond_local_state(calls) else 0
             if self.index != start:
                 self.index = start
                 self.url, self.verified = self.urls[start], False

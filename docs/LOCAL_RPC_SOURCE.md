@@ -6,6 +6,11 @@ version 4 configuration sends both current and historical Robinhood reads to
 the local node first. Alchemy is retained for verified fallback. Nitro's
 Ethereum execution and Beacon upstreams remain separate and unchanged.
 
+On the services host the same node is also reachable without Cloudflare: its
+proxy at `http://127.0.0.1:18547/` goes over the tailnet, with a reverse SSH
+tunnel as backup ([fresh host install](FRESH_HOST_INSTALL.md), step 18). A
+version 4 file may name it first, ahead of `rpc.domino.money` (#315).
+
 ## Routing
 
 | Consumer | Source with a version 4 provider file |
@@ -44,6 +49,19 @@ its private provider file:
 backend/.venv/bin/python backend/configure_rpc.py --local --config-file /absolute/private/providers.json
 ```
 
+To lead with the node's proxy on the services host, or to give the lead back:
+
+```sh
+backend/.venv/bin/python -B backend/configure_rpc.py --node-loopback on --config-file /absolute/private/providers.json
+backend/.venv/bin/python -B backend/configure_rpc.py --node-loopback off --config-file /absolute/private/providers.json
+```
+
+Nothing is typed and nothing is printed but a fixed line. `on` puts
+`http://127.0.0.1:18547/` first and keeps every route after it in order, so the
+file reads proxy, `rpc.domino.money`, then the archive; it probes only the proxy
+before saving, as the identity running it. `off` removes the proxy. Use the
+runtime directory's real path: the save refuses a linked directory.
+
 The terminal hides the **RPC authentication token** and fallback HTTPS URL.
 The token is not the Cloudflare connector token. Blank fallback input preserves the existing archive/recovery endpoint, or the
 previous primary on the first migration.
@@ -53,10 +71,17 @@ restart services. Preserve a private rollback copy before replacing production
 configuration; never copy a credential-bearing file into Git or an issue.
 
 Version 4 contains `rpcUrl`, `rpcFallbackUrls`, `rpcAllowedHosts` and
-`inventoryUrl`. The local `rpc.domino.money` primary is mandatory. Both current
-and historical consumers use that same ordered route; there is no separate
-always-on historical Alchemy endpoint. Version 1/2/3 files remain supported for
-rollback, and their existing routing semantics are unchanged until migration.
+`inventoryUrl`. The node leads: `rpcUrl` is `rpc.domino.money`, or exactly
+`http://127.0.0.1:18547/` with `rpc.domino.money` as the first fallback
+(`loopback_requires_local_fallback` otherwise). That URL is the only plain-HTTP
+route anywhere: it is not a host in `rpcAllowedHosts`, it never appears among
+the fallbacks, an environment override cannot select it, and it always goes
+through the fixed no-proxy, no-redirect loopback opener. The financial
+listeners' checks accept HTTPS routes only and refuse such a file at start.
+Both current and historical consumers use that same ordered route; there is no
+separate always-on historical Alchemy endpoint. Version 1/2/3 files remain
+supported for rollback, and their existing routing semantics are unchanged
+until migration.
 
 The migration preserves a previous archive URL in the fallback list and keeps
 inventory credentials separate. Rotating the local token removes the old local
@@ -98,9 +123,12 @@ continuity anchor. Each operation returns to the local primary: a pruned-state
 fallback cannot redirect subsequent logs/headers to Alchemy. The exception is
 a state read whose numeric block lies more than `LOCAL_STATE_BLOCKS` (15,000)
 below the highest verified header. The node keeps about 30 minutes of state
-(18,000 blocks at ten per second), so such a read starts at the next route
-instead of drawing a certain missing-trie refusal; consecutive old reads stay
-on the verified fallback. Reads inside the margin still try the node first and
+(18,000 blocks at ten per second), so such a read starts at the first route
+past the node, its proxy and its public route alike, instead of drawing a
+certain missing-trie refusal; consecutive old reads stay on the verified
+fallback. State the node refused over one path is not asked of the other: a
+refusal from the proxy skips `rpc.domino.money`. A transport failure at the
+proxy does move to `rpc.domino.money`, the same node by another path. Reads inside the margin still try the node first and
 keep the refusal fallback, which covers the shorter window after a restart. A switch verifies
 chain identity and the continuity header; state at an evicted numeric block is
 pinned again. Historical mixed batches can recover an explicit missing-state refusal only after every delivered identity/header assertion validates. Invalid chain/hash, malformed envelopes and contract reverts do
@@ -115,8 +143,11 @@ Ethereum/Beacon upstreams and the node's probes remain unchanged.
 ## Applying a release
 
 Code support and live activation are separate. Each production/development role
-has its own private provider/profile file and network policy. The VM's
-`127.0.0.1` is **not** the clawber host; use the authenticated HTTPS route.
+has its own private provider/profile file and network policy. On the services
+host, `127.0.0.1:18547` is the node's proxy and may lead the reader's and the
+writer's files once their egress admits it (`nodeLoopbackReads`, see
+[continuous egress](CONTINUOUS_EGRESS.md)). No other loopback address or port
+is the node: the first VM's `127.0.0.1:8547` never was.
 
 1. Install the source revision using the existing release procedure.
    `install_read_release.py` preserves runtime symlinks and updates read/gateway;
@@ -139,7 +170,10 @@ has its own private provider/profile file and network policy. The VM's
 The edge limits the backend's token to 100 requests/second per IP (burst 200) and
 20 concurrent HTTP connections, with five WebSocket connections per IP (D19 in the
 node's repository, 24 Sep 2026). VM roles may share one egress IP: the
-infrastructure limit is aggregate, not an allocation per process. The site's
+infrastructure limit is aggregate, not an allocation per process. The proxy on
+the services host does not pass through that edge. It bounds connections only:
+512 at its listener, 128 per path, and 256 at the tailnet socket on clawber; the
+per-job budgets and the reader's lanes bound the rest. The site's
 server-side routes on Cloudflare have their own token, limited per token rather
 than per IP, because a Worker's request does not carry the visitor's address:
 1,000 requests/second (burst 2,000) and 64 connections (D21, 2 Oct 2026).

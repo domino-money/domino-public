@@ -593,6 +593,8 @@ For the node on clawber, use the [local RPC integration](../docs/LOCAL_RPC_SOURC
 `configure_rpc.py --local` creates version 4 with local-first current and
 historical routes, bounded fallbacks, and separate inventory credentials. The token stays in each service's private configuration;
 the existing browser bridge inherits the backend's current data source.
+On the services host, `configure_rpc.py --node-loopback on` puts the node's
+proxy, `http://127.0.0.1:18547/`, ahead of `rpc.domino.money` (#315).
 
 The local configuration separates generic RPC endpoints from Alchemy inventory.
 Version1 files remain readable and retain their shape. They now allow either the
