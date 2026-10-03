@@ -400,7 +400,11 @@ jobs:
     # near its 75-minute limit before any integration suite. Split, each half
     # stays near 35-40 minutes cold; a cold run follows a compiler change or a
     # missing cache. The limit stays at 75 per half (issue #145 for the
-    # original one-closure-per-suite layout).
+    # original one-closure-per-suite layout). The V2 integration journeys
+    # (#303) add about 5 minutes to a cold v2 half: 29m19s cold on a Mac with
+    # them against 26m32s without, side by side, where main's near-cold v2
+    # half took 42m52s on CI (run 37066559693); docs/v2/INTEGRATION_TESTS.md
+    # has the measurements.
     timeout-minutes: 75
     strategy:
       fail-fast: false
@@ -433,6 +437,24 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Drop cached Forge artifacts this checkout invalidates
         run: node --test scripts/forge-cache.test.mjs && node scripts/forge-cache.mjs prune
+      # The integration suites (contracts/test/v2/integration) import only
+      # interfaces and deploy every contract from its artifact: the V2
+      # contracts below and the helpers and fixture runtimes of
+      # IntegrationArtifacts.sol, built here before any suite runs. solc
+      # 0.8.26 recompiles every concrete contract in a test file's import
+      # closure whenever the file is rebuilt (Forge lists them with no
+      # outputs), so the first integration suites, which imported them, paid
+      # 25 CI minutes for seven files (run 37021480059, PR #303).
+      - name: Build the V2 contracts and test artifacts the integration suites deploy
+        if: matrix.part == 'v2'
+        working-directory: contracts
+        run: >-
+          node ../scripts/test-contracts.mjs build
+          src/v2/registry/DominoRegistry.sol src/v2/anchor/DominoPriceAnchor.sol
+          src/v2/autoexit/DominoAutoExit.sol src/v2/vault/DominoV2VaultSwapModule.sol
+          src/v2/vault/DominoV2VaultV3.sol src/v2/vault/DominoV2VaultV4.sol src/v2/vault/DominoV2VaultFactory.sol
+          src/v2/zap/DominoZapV3.sol src/v2/zap/DominoZapV4.sol src/v2/zap/DominoZapV4Steps.sol
+          test/v2/integration/IntegrationArtifacts.sol
       # One suite at a time: a single forge invocation compiles every source in
       # one soljson payload and aborts (OOM) on the whole vendored v4 tree, so
       # the job must build each suite's dependency closure separately with a

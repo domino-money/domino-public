@@ -1,0 +1,414 @@
+{
+ "description": "V2 wired integration journeys (#300, #303): each guard or wiring the journeys claim to pin, deleted or weakened alone in the production source, against the v3 and the v4 integration suite that claims it. The suites deploy the production contracts from their artifacts, so the mutated source reaches them through Forge, which rebuilds every changed file under src/ on each run.",
+ "provenance": "Authored 2026-10-02 with the review of PR #303 (mutants V1-V5, Z1, Z2b, Z3, A1-A4, W1 of that review, plus the guards the new journeys add). Run: node scripts/mutate-contracts.mjs contracts/mutations/v2-integration-2026-10-02.json --with-artifacts, in a checkout where the integration artifacts are built (node scripts/test-contracts.mjs build test/v2/integration/IntegrationArtifacts.sol from contracts/) and every integration suite has run. Z2b and Z5 are placed where they compile: at the call site in _act, the review's _refund(tokens, msg.sender) and a selfBalance read both overflow the via-IR stack (\"Variable var_owner is 1 too deep\"), so Z2b sends the refund to msg.sender inside _refund (its receipt still names the owner) and Z5 adds the owed amount back to what _available may spend.",
+ "suite": "test/v2/integration/VaultV3Integration.t.sol",
+ "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+ "mutations": [
+  {
+   "label": "V1 vault anchor band widened (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "(r.anchor,) = PRICE_ANCHOR.anchor(r.pool, p.anchorEvidence, _maxObservationAgeSeconds, _maxPriceImpactBps);",
+   "new": "(r.anchor,) = PRICE_ANCHOR.anchor(r.pool, p.anchorEvidence, _maxObservationAgeSeconds, 9999);"
+  },
+  {
+   "label": "V1 vault anchor band widened (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "(r.anchor,) = PRICE_ANCHOR.anchor(r.pool, p.anchorEvidence, _maxObservationAgeSeconds, _maxPriceImpactBps);",
+   "new": "(r.anchor,) = PRICE_ANCHOR.anchor(r.pool, p.anchorEvidence, _maxObservationAgeSeconds, 9999);"
+  },
+  {
+   "label": "V2 vault decides on the spot, not the anchor (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "(r.anchor,) = PRICE_ANCHOR.anchor(",
+   "new": "(, r.anchor) = PRICE_ANCHOR.anchor("
+  },
+  {
+   "label": "V2 vault decides on the spot, not the anchor (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "(r.anchor,) = PRICE_ANCHOR.anchor(",
+   "new": "(, r.anchor) = PRICE_ANCHOR.anchor("
+  },
+  {
+   "label": "V3 post-swap re-anchor dropped (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "\n        PRICE_ANCHOR.anchor(r.pool, p.anchorEvidence, _maxObservationAgeSeconds, _maxPriceImpactBps);\n",
+   "new": "\n"
+  },
+  {
+   "label": "V3 post-swap re-anchor dropped (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "\n        PRICE_ANCHOR.anchor(r.pool, p.anchorEvidence, _maxObservationAgeSeconds, _maxPriceImpactBps);\n",
+   "new": "\n"
+  },
+  {
+   "label": "V4 exitAll without its reentrancy lock (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "function exitAll() external nonReentrant onlyOwner {",
+   "new": "function exitAll() external onlyOwner {"
+  },
+  {
+   "label": "V4 exitAll without its reentrancy lock (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "function exitAll() external nonReentrant onlyOwner {",
+   "new": "function exitAll() external onlyOwner {"
+  },
+  {
+   "label": "V5 fee recipient dropped (every tariff deferred) (v3)",
+   "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "recipient = current;",
+   "new": "recipient = address(0);"
+  },
+  {
+   "label": "V5 fee recipient dropped (every tariff deferred) (v4)",
+   "file": "contracts/src/v2/fees/DominoFeeLedger.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "recipient = current;",
+   "new": "recipient = address(0);"
+  },
+  {
+   "label": "V6 v4 re-collect after the vault's own swap dropped (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "        if (p.action == Plan.ACTION_COMPOUND && _feesSettleOnModify()) {\n            _collect(r.pool, p.target, p.target == r.rootId);\n        }\n",
+   "new": ""
+  },
+  {
+   "label": "V7 swap floor not enforced (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "        ) revert InvalidRoute();\n        uint256 index;",
+   "new": "        ) {}\n        uint256 index;"
+  },
+  {
+   "label": "V7 swap floor not enforced (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultExecutor.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "        ) revert InvalidRoute();\n        uint256 index;",
+   "new": "        ) {}\n        uint256 index;"
+  },
+  {
+   "label": "V8 inverse geometry never set (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "_inverse = rank0 != 0 && (rank1 == 0 || rank0 < rank1);",
+   "new": "_inverse = false;"
+  },
+  {
+   "label": "V8 inverse geometry never set (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "_inverse = rank0 != 0 && (rank1 == 0 || rank0 < rank1);",
+   "new": "_inverse = false;"
+  },
+  {
+   "label": "V9 returnReserves pays whoever calls (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "DominoTokenOps.tryTransfer(token, _owner, amount, gasleft())",
+   "new": "DominoTokenOps.tryTransfer(token, msg.sender, amount, gasleft())"
+  },
+  {
+   "label": "V9 returnReserves pays whoever calls (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "DominoTokenOps.tryTransfer(token, _owner, amount, gasleft())",
+   "new": "DominoTokenOps.tryTransfer(token, msg.sender, amount, gasleft())"
+  },
+  {
+   "label": "V10 anchor band check dropped (v3)",
+   "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "if (!AnchorMath.withinBand(anchorSqrtPriceX96, spotSqrtPriceX96, maxDeviationBps)) revert SpotOutsideBand();",
+   "new": ""
+  },
+  {
+   "label": "V10 anchor band check dropped (v4)",
+   "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "if (!AnchorMath.withinBand(anchorSqrtPriceX96, spotSqrtPriceX96, maxDeviationBps)) revert SpotOutsideBand();",
+   "new": ""
+  },
+  {
+   "label": "W1 vault wired to the swap module as its auto-exit (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/integration/AutoExitV3Integration.t.sol",
+   "old": "AUTO_EXIT = deployment.autoExit;",
+   "new": "AUTO_EXIT = deployment.swapModule;"
+  },
+  {
+   "label": "W1 vault wired to the swap module as its auto-exit (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/integration/AutoExitV4Integration.t.sol",
+   "old": "AUTO_EXIT = deployment.autoExit;",
+   "new": "AUTO_EXIT = deployment.swapModule;"
+  },
+  {
+   "label": "W2 vault reads prices from the registry (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "PRICE_ANCHOR = IDominoPriceAnchor(deployment.priceAnchor);",
+   "new": "PRICE_ANCHOR = IDominoPriceAnchor(deployment.registry);"
+  },
+  {
+   "label": "W2 vault reads prices from the registry (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "PRICE_ANCHOR = IDominoPriceAnchor(deployment.priceAnchor);",
+   "new": "PRICE_ANCHOR = IDominoPriceAnchor(deployment.registry);"
+  },
+  {
+   "label": "W3 vault swaps through the auto-exit slot (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "SWAP_MODULE = deployment.swapModule;",
+   "new": "SWAP_MODULE = deployment.autoExit;"
+  },
+  {
+   "label": "W3 vault swaps through the auto-exit slot (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultStorage.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "SWAP_MODULE = deployment.swapModule;",
+   "new": "SWAP_MODULE = deployment.autoExit;"
+  },
+  {
+   "label": "Z1 leftover refund skipped (v3)",
+   "file": "contracts/src/v2/zap/DominoZapBase.sol",
+   "suite": "test/v2/integration/ZapV3Integration.t.sol",
+   "old": "        if (action != DominoV2Types.ACTION_EXIT || a.legs.length != 0) _refund(tokens, recipient);\n",
+   "new": ""
+  },
+  {
+   "label": "Z1 leftover refund skipped (v4)",
+   "file": "contracts/src/v2/zap/DominoZapBase.sol",
+   "suite": "test/v2/integration/ZapV4Integration.t.sol",
+   "old": "        if (action != DominoV2Types.ACTION_EXIT || a.legs.length != 0) _refund(tokens, recipient);\n",
+   "new": ""
+  },
+  {
+   "label": "Z2b leftovers paid to the relayer (v3)",
+   "file": "contracts/src/v2/zap/DominoZapBase.sol",
+   "suite": "test/v2/integration/ZapV3Integration.t.sol",
+   "old": "DominoTokenOps.transfer(token, recipient, amount);",
+   "new": "DominoTokenOps.transfer(token, msg.sender, amount);"
+  },
+  {
+   "label": "Z2b leftovers paid to the relayer (v4)",
+   "file": "contracts/src/v2/zap/DominoZapBase.sol",
+   "suite": "test/v2/integration/ZapV4Integration.t.sol",
+   "old": "DominoTokenOps.transfer(token, recipient, amount);",
+   "new": "DominoTokenOps.transfer(token, msg.sender, amount);"
+  },
+  {
+   "label": "Z3 relay nonce not enforced (v3)",
+   "file": "contracts/src/v2/zap/DominoZapBase.sol",
+   "suite": "test/v2/integration/ZapV3Integration.t.sol",
+   "old": "        if (bits & bit != 0) revert NonceUsed(owner, nonce);\n",
+   "new": ""
+  },
+  {
+   "label": "Z3 relay nonce not enforced (v4)",
+   "file": "contracts/src/v2/zap/DominoZapBase.sol",
+   "suite": "test/v2/integration/ZapV4Integration.t.sol",
+   "old": "        if (bits & bit != 0) revert NonceUsed(owner, nonce);\n",
+   "new": ""
+  },
+  {
+   "label": "Z4 owed fees refunded with the leftovers (v3)",
+   "file": "contracts/src/v2/zap/DominoZapBase.sol",
+   "suite": "test/v2/integration/ZapV3Integration.t.sol",
+   "old": "uint256 amount = _unowedBalance(token);",
+   "new": "uint256 amount = DominoTokenOps.selfBalance(token);"
+  },
+  {
+   "label": "Z4 owed fees refunded with the leftovers (v4)",
+   "file": "contracts/src/v2/zap/DominoZapBase.sol",
+   "suite": "test/v2/integration/ZapV4Integration.t.sol",
+   "old": "uint256 amount = _unowedBalance(token);",
+   "new": "uint256 amount = DominoTokenOps.selfBalance(token);"
+  },
+  {
+   "label": "Z5 owed fees added to the position (v3)",
+   "file": "contracts/src/v2/zap/DominoZapBase.sol",
+   "suite": "test/v2/integration/ZapV3Integration.t.sol",
+   "old": "uint256 held = _unowedBalance(currency);",
+   "new": "uint256 held = _unowedBalance(currency) + owedFees(currency);"
+  },
+  {
+   "label": "Z5 owed fees added to the position (v4)",
+   "file": "contracts/src/v2/zap/DominoZapBase.sol",
+   "suite": "test/v2/integration/ZapV4Integration.t.sol",
+   "old": "uint256 held = _unowedBalance(currency);",
+   "new": "uint256 held = _unowedBalance(currency) + owedFees(currency);"
+  },
+  {
+   "label": "F1 fallback charges the last output (v3)",
+   "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+   "suite": "test/v2/integration/ZapV3Integration.t.sol",
+   "old": "if (source == 0) (token, source) = (legs[0].tokenIn, FROM_FALLBACK);",
+   "new": "if (source == 0) (token, source) = (legs[count - 1].tokenOut, FROM_FALLBACK);"
+  },
+  {
+   "label": "F1 fallback charges the last output (v4)",
+   "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+   "suite": "test/v2/integration/ZapV4Integration.t.sol",
+   "old": "if (source == 0) (token, source) = (legs[0].tokenIn, FROM_FALLBACK);",
+   "new": "if (source == 0) (token, source) = (legs[count - 1].tokenOut, FROM_FALLBACK);"
+  },
+  {
+   "label": "F2 route hops are not charge candidates (v3)",
+   "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+   "suite": "test/v2/integration/ZapV3Integration.t.sol",
+   "old": "for (uint8 place = FROM_INPUT; place <= FROM_HOP; ++place) {",
+   "new": "for (uint8 place = FROM_INPUT; place < FROM_HOP; ++place) {"
+  },
+  {
+   "label": "F2 route hops are not charge candidates (v4)",
+   "file": "contracts/src/v2/fees/DominoFeeRules.sol",
+   "suite": "test/v2/integration/ZapV4Integration.t.sol",
+   "old": "for (uint8 place = FROM_INPUT; place <= FROM_HOP; ++place) {",
+   "new": "for (uint8 place = FROM_INPUT; place < FROM_HOP; ++place) {"
+  },
+  {
+   "label": "A1 upper trigger comparison flipped (v3)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV3Integration.t.sol",
+   "old": "(above == 0 || price < above)",
+   "new": "(above == 0 || price > above)"
+  },
+  {
+   "label": "A1 upper trigger comparison flipped (v4)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV4Integration.t.sol",
+   "old": "(above == 0 || price < above)",
+   "new": "(above == 0 || price > above)"
+  },
+  {
+   "label": "A2 lower trigger never fires (v3)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV3Integration.t.sol",
+   "old": "if (price > record.triggerBelowSqrtPriceX96 && (above == 0 || price < above))",
+   "new": "if (true && (above == 0 || price < above))"
+  },
+  {
+   "label": "A2 lower trigger never fires (v4)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV4Integration.t.sol",
+   "old": "if (price > record.triggerBelowSqrtPriceX96 && (above == 0 || price < above))",
+   "new": "if (true && (above == 0 || price < above))"
+  },
+  {
+   "label": "A3 trigger reads the spot instead of the anchor (v3)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV3Integration.t.sol",
+   "old": "(price,) = IDominoPriceAnchor(priceAnchor).anchor(pool, evidence, maxAge, band);",
+   "new": "(, price) = IDominoPriceAnchor(priceAnchor).anchor(pool, evidence, maxAge, band);"
+  },
+  {
+   "label": "A3 trigger reads the spot instead of the anchor (v4)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV4Integration.t.sol",
+   "old": "(price,) = IDominoPriceAnchor(priceAnchor).anchor(pool, evidence, maxAge, band);",
+   "new": "(, price) = IDominoPriceAnchor(priceAnchor).anchor(pool, evidence, maxAge, band);"
+  },
+  {
+   "label": "A4 conversion floor dropped (v3)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV3Integration.t.sol",
+   "old": "        if (converted < floor) revert BelowMinimum();\n",
+   "new": ""
+  },
+  {
+   "label": "A4 conversion floor dropped (v4)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV4Integration.t.sol",
+   "old": "        if (converted < floor) revert BelowMinimum();\n",
+   "new": ""
+  },
+  {
+   "label": "A5 receive-both tariff always led by currency1 (v3)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV3Integration.t.sol",
+   "old": "if (rank0 != 0 && (rank1 == 0 || rank0 <= rank1)) {",
+   "new": "if (false) {"
+  },
+  {
+   "label": "A5 receive-both tariff always led by currency1 (v4)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV4Integration.t.sol",
+   "old": "if (rank0 != 0 && (rank1 == 0 || rank0 <= rank1)) {",
+   "new": "if (false) {"
+  },
+  {
+   "label": "A6 unlisted conversion target treated as listed (v3)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV3Integration.t.sol",
+   "old": "listed: ROUTE_REGISTRY.chargeCurrencyRank(exit.convertTo) != 0,",
+   "new": "listed: true,"
+  },
+  {
+   "label": "A6 unlisted conversion target treated as listed (v4)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV4Integration.t.sol",
+   "old": "listed: ROUTE_REGISTRY.chargeCurrencyRank(exit.convertTo) != 0,",
+   "new": "listed: true,"
+  },
+  {
+   "label": "V11 returnReserves while the root is open (v3)",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "        if (!_rootClosed()) revert RootOpen();\n",
+   "new": ""
+  },
+  {
+   "label": "V11 returnReserves while the root is open (v4)",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/integration/VaultV4Integration.t.sol",
+   "old": "        if (!_rootClosed()) revert RootOpen();\n",
+   "new": ""
+  },
+  {
+   "label": "A7 a disabled upper trigger counts as crossed (v3)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV3Integration.t.sol",
+   "old": "(above == 0 || price < above)",
+   "new": "(price < above)"
+  },
+  {
+   "label": "A7 a disabled upper trigger counts as crossed (v4)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV4Integration.t.sol",
+   "old": "(above == 0 || price < above)",
+   "new": "(price < above)"
+  },
+  {
+   "label": "T1 TWAP window outside the floor and the age accepted (v3)",
+   "file": "contracts/src/v2/anchor/DominoPriceAnchor.sol",
+   "suite": "test/v2/integration/VaultV3Integration.t.sol",
+   "old": "            if (secondsAgo < minTwapSeconds || secondsAgo > maxAgeSeconds) revert TwapUnavailable();\n",
+   "new": ""
+  },
+  {
+   "label": "T2 auto-exit TWAP window under its floor accepted (v3)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV3Integration.t.sol",
+   "old": "            if (window < minTwapSeconds) revert TwapWindowTooShort();\n",
+   "new": ""
+  },
+  {
+   "label": "T2 auto-exit TWAP window under its floor accepted (v4)",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/integration/AutoExitV4Integration.t.sol",
+   "old": "            if (window < minTwapSeconds) revert TwapWindowTooShort();\n",
+   "new": ""
+  }
+ ]
+}
