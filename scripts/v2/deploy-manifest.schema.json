@@ -1,0 +1,713 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "const": "domino-v2-deployment"
+    },
+    "status": {
+      "enum": [
+        "prepared",
+        "verified"
+      ]
+    },
+    "environment": {
+      "enum": [
+        "public-chain-preparation",
+        "local-test",
+        "fork-rehearsal"
+      ]
+    },
+    "chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chainId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "nativeCurrency": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "name",
+        "chainId",
+        "nativeCurrency"
+      ]
+    },
+    "sourceCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "releaseTag": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,100}$"
+    },
+    "contractNames": {
+      "const": {
+        "registry": "DominoRegistry",
+        "priceAnchor": "DominoPriceAnchor",
+        "autoExit": "DominoAutoExit",
+        "vaultSwap": "DominoV2VaultSwapModule",
+        "vault.v3": "DominoV2VaultV3",
+        "vault.v4": "DominoV2VaultV4",
+        "vaultFactory.v3": "DominoV2VaultFactory",
+        "vaultFactory.v4": "DominoV2VaultFactory",
+        "zap.v4.steps": "DominoZapV4Steps",
+        "zap.v3": "DominoZapV3",
+        "zap.v4": "DominoZapV4",
+        "vaultExecutor.v3": "DominoV2VaultExecutorV3",
+        "vaultExecutor.v4": "DominoV2VaultExecutorV4"
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "priceAnchor": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "autoExit": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "vaultSwap": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "vault.v3": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "vault.v4": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "vaultFactory.v3": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "vaultFactory.v4": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "zap.v4.steps": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "zap.v3": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "zap.v4": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "vaultExecutor.v3": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "vaultExecutor.v4": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "registry",
+        "priceAnchor",
+        "autoExit",
+        "vaultSwap",
+        "vault.v3",
+        "vault.v4",
+        "vaultFactory.v3",
+        "vaultFactory.v4",
+        "zap.v4.steps",
+        "zap.v3",
+        "zap.v4",
+        "vaultExecutor.v3",
+        "vaultExecutor.v4"
+      ]
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "v3Factory": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "v3PositionManager": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "v3Quoter": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "v3SwapRouter": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "v4PoolManager": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "v4PositionManager": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "v4StateView": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "v4Quoter": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "universalRouter": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "permit2": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "wrappedNative": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "v3Factory",
+        "v3PositionManager",
+        "v3Quoter",
+        "v3SwapRouter",
+        "v4PoolManager",
+        "v4PositionManager",
+        "v4StateView",
+        "v4Quoter",
+        "universalRouter",
+        "permit2",
+        "wrappedNative"
+      ]
+    },
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "deployer": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "governance": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "guardian": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "feeRecipient": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "operator": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "publisher": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "deployer",
+        "governance",
+        "guardian",
+        "feeRecipient",
+        "operator",
+        "publisher"
+      ]
+    },
+    "policies": {
+      "const": {
+        "assistedSwapFeeBps": 65,
+        "bridgeAppFeeBps": 35,
+        "simpleCompoundFeeBps": 200,
+        "dominoCompoundFeeBps": 400,
+        "autoExitFeeBps": 20,
+        "automationFeeBasis": "consumed_original_earned_fees_once_not_principal",
+        "additionalAutomationSwapFeeBps": 0,
+        "timelockSeconds": 86400,
+        "minTwapSeconds": 60,
+        "autoExitMaxObservationAgeSeconds": 300,
+        "autoExitMinTwapSeconds": 600,
+        "minimumUniversalRouterVersion": 212,
+        "hookedPoolsAllowed": false
+      }
+    },
+    "chargeCurrencies": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string",
+            "pattern": "^0x[0-9a-f]{40}$"
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 255
+          }
+        },
+        "required": [
+          "token",
+          "rank"
+        ]
+      }
+    },
+    "runtimeCodeHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "priceAnchor": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "autoExit": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "vaultSwap": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "vault.v3": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "vault.v4": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "vaultFactory.v3": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "vaultFactory.v4": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "zap.v4.steps": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "zap.v3": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "zap.v4": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "vaultExecutor.v3": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "vaultExecutor.v4": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "v3Factory": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "v3PositionManager": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "v3Quoter": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "v3SwapRouter": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "v4PoolManager": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "v4PositionManager": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "v4StateView": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "v4Quoter": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "universalRouter": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "permit2": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "wrappedNative": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "registry",
+        "priceAnchor",
+        "autoExit",
+        "vaultSwap",
+        "vault.v3",
+        "vault.v4",
+        "vaultFactory.v3",
+        "vaultFactory.v4",
+        "zap.v4.steps",
+        "zap.v3",
+        "zap.v4",
+        "vaultExecutor.v3",
+        "vaultExecutor.v4",
+        "v3Factory",
+        "v3PositionManager",
+        "v3Quoter",
+        "v3SwapRouter",
+        "v4PoolManager",
+        "v4PositionManager",
+        "v4StateView",
+        "v4Quoter",
+        "universalRouter",
+        "permit2",
+        "wrappedNative"
+      ]
+    },
+    "createx": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{40}$"
+        },
+        "runtimeCodeHash": {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{64}$"
+        },
+        "salts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "registry": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "priceAnchor": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "autoExit": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "vaultSwap": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "vault.v3": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "vault.v4": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "vaultFactory.v3": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "vaultFactory.v4": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "zap.v4.steps": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "zap.v3": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "zap.v4": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "registry",
+            "priceAnchor",
+            "autoExit",
+            "vaultSwap",
+            "vault.v3",
+            "vault.v4",
+            "vaultFactory.v3",
+            "vaultFactory.v4",
+            "zap.v4.steps",
+            "zap.v3",
+            "zap.v4"
+          ]
+        },
+        "guardedSalts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "registry": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "priceAnchor": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "autoExit": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "vaultSwap": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "vault.v3": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "vault.v4": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "vaultFactory.v3": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "vaultFactory.v4": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "zap.v4.steps": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "zap.v3": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "zap.v4": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "registry",
+            "priceAnchor",
+            "autoExit",
+            "vaultSwap",
+            "vault.v3",
+            "vault.v4",
+            "vaultFactory.v3",
+            "vaultFactory.v4",
+            "zap.v4.steps",
+            "zap.v3",
+            "zap.v4"
+          ]
+        }
+      },
+      "required": [
+        "address",
+        "runtimeCodeHash",
+        "salts",
+        "guardedSalts"
+      ]
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "0.8.26+commit.8a97fa7a"
+        },
+        "optimizerRuns": {
+          "const": 200
+        },
+        "viaIR": {
+          "const": true
+        },
+        "evmVersion": {
+          "const": "cancun"
+        },
+        "bytecodeHash": {
+          "const": "none"
+        },
+        "sourceTreeSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "workingTreeSourceChanges": {
+          "type": "boolean"
+        },
+        "sourceHashes": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "chainProfileSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "version",
+        "optimizerRuns",
+        "viaIR",
+        "evmVersion",
+        "bytecodeHash",
+        "sourceTreeSha256",
+        "workingTreeSourceChanges",
+        "sourceHashes",
+        "chainProfileSha256"
+      ]
+    },
+    "deploymentReceipts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "transactionHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-f]{64}$"
+          },
+          "blockNumber": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "blockHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-f]{64}$"
+          },
+          "gasUsed": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "effectiveGasPrice": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          }
+        },
+        "required": [
+          "transactionHash",
+          "blockNumber",
+          "blockHash",
+          "gasUsed",
+          "effectiveGasPrice"
+        ]
+      }
+    },
+    "verification": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "blockNumber": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "blockHash": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{64}$"
+            },
+            "blockTag": {
+              "type": "string"
+            },
+            "codeHashes": {
+              "const": "exact_precomputed_immutable_runtime"
+            },
+            "wiring": {
+              "const": "checked"
+            },
+            "checkedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "blockNumber",
+            "blockHash",
+            "blockTag",
+            "codeHashes",
+            "wiring",
+            "checkedAt"
+          ]
+        }
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "kind",
+    "status",
+    "environment",
+    "chain",
+    "sourceCommit",
+    "releaseTag",
+    "contractNames",
+    "contracts",
+    "dependencies",
+    "roles",
+    "policies",
+    "chargeCurrencies",
+    "runtimeCodeHashes",
+    "createx",
+    "build",
+    "deploymentReceipts",
+    "verification"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Domino V2 deployment manifest",
+  "description": "Structural schema. deploy-schema.mjs validates every manifest against this file, then the semantic rules: guarded CREATE3 predictions, policy, role separation, complete canonical receipt coverage, receipts after genesis with one hash per block, and a verification at or after every receipt. backend/v2_manifest.py applies the same rules, one for one."
+}

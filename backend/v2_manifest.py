@@ -24,11 +24,15 @@ is both in Python, rule for rule:
   dependency, two or more charge currencies, the build's fixed compiler profile
   and its source-tree hash;
 - a verified manifest has one distinct receipt per deployed component and an
-  anchored verification record; a prepared one has neither. Beyond #302's
-  validator (the indexer's rules, item 3b): a receipt is in a block after the
-  genesis, transaction and block hashes are never zero, receipts in one block
-  agree on its hash, the verification is at or after every receipt (and agrees
-  with one in its block), and its time carries a zone.
+  anchored verification record; a prepared one has neither. A receipt is in a
+  block after the genesis, transaction and block hashes are never zero,
+  receipts in one block agree on its hash, the verification is at or after
+  every receipt (and agrees with one in its block), and its time is an RFC 3339
+  date-time with a zone, checked field by field (the indexer's rules, item 3b,
+  which deploy-schema.mjs applies too since #302's review).
+
+backend/tests/test_v2_manifest.py runs this module and deploy-schema.mjs over
+the same documents and requires the same verdict for each.
 
 `checked_deployment` binds the manifest to the chain profile the service
 serves (the chain id, the profile's CreateX, and the dependencies at the
@@ -48,7 +52,6 @@ reachable from the service's configuration. The on-chain half is
 hashes, and the verification block still canonical.
 """
 from dataclasses import dataclass
-from datetime import datetime
 from functools import cached_property
 import hashlib
 import json
@@ -109,6 +112,8 @@ _ADDRESS = re.compile(r'0x[0-9a-f]{40}')
 _HASH = re.compile(r'0x[0-9a-f]{64}')
 _HEX64 = re.compile(r'[0-9a-f]{64}')
 _DECIMAL = re.compile(r'0|[1-9][0-9]*')
+_CHECKED_AT = re.compile(r'([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.[0-9]{1,9})?'
+                         r'(?:Z|[+-]([0-9]{2}):([0-9]{2}))')
 
 
 def _ensure(condition):
@@ -198,13 +203,16 @@ def _roles(roles):
 
 
 def _checked_at(value):
-    """An ISO 8601 time with its zone (deploy.mjs writes toISOString's `Z`)."""
-    _ensure(type(value) is str)
-    try:
-        moment = datetime.fromisoformat(value)
-    except ValueError:
-        raise DataError('v2_deployment_invalid') from None
-    _ensure(moment.tzinfo is not None)
+    """deploy-schema.mjs `isDateTime`: an RFC 3339 time with its zone, checked field by field (no library
+    parser: Python's and JavaScript's accept different extensions). Upper-case T and Z, 1 to 9 fraction
+    digits, a real calendar day; deploy.mjs writes toISOString's form."""
+    match = _CHECKED_AT.fullmatch(value) if type(value) is str else None
+    _ensure(match is not None)
+    year, month, day, hour, minute, second = (int(match.group(i)) for i in range(1, 7))
+    leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    days = (31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    _ensure(year >= 1 and 1 <= month <= 12 and 1 <= day <= days[month - 1] and hour <= 23 and minute <= 59
+            and second <= 59 and (match.group(7) is None or (int(match.group(7)) <= 23 and int(match.group(8)) <= 59)))
 
 
 def checked_manifest(m):

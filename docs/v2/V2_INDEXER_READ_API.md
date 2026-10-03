@@ -129,7 +129,7 @@ Robinhood's routes come from the read path's provider file (`--provider-file`), 
 ## What 3a, #301 and F7 must align with
 
 - **Automation (3a, PR #306, merged):** this slice uses its `v2_manifest` (the one loader of #301's manifest) and its `tests/v2_local_chain.py` (the one fixture deployer). The waiting file is read as #306 documents it, with `since` and `sinceBlock`, which this slice adds to the journal (`v2_executor.Journal.record_waiting`) and the file. The rules this slice's own loader had and `v2_manifest` lacked moved into it, with their tests and mutants: public test-mnemonic keys refused as production roles (PR #302's review, item 2), receipts after the genesis with non-zero hashes and one hash per block, the verification at or after every receipt and agreeing with one in its block, a check time with its zone, and the profile's CreateX. #306's docs propose decoding its log scans with `v2_events`, the strict catalog here.
-- **Deployment (#301, PR #302):** a local mode that takes real dependencies (Uniswap and Permit2 at their addresses) would let both the automation's and this slice's EVM tests use `deploy-local.mjs`.
+- **Deployment (#301, PR #302):** its local mode now defaults to a fork that keeps the real chain id, with the real Uniswap and Permit2 at their addresses; the EVM tests run offline in CI, so they keep the automation's `tests/v2_local_chain.py`.
 - **App (F7):** read-v6 through the bridge once its Worker route exists (`/api/read/v6/portfolio`, `/api/read/v6/activity`); per-chain status before any figure; no totals across chains; `waiting.error` for §4.9's copy and `waiting.reason` for the automation's own codes; `waiting.since` for how long.
 
 ## What remains

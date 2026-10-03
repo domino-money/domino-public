@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "kind": "domino-v2-deployment",
+  "status": "verified",
+  "environment": "local-test",
+  "chain": {
+    "name": "Offline V2 deployment fixtures",
+    "chainId": 31337,
+    "nativeCurrency": "ETH"
+  },
+  "sourceCommit": "24a35eba2b24bab0ee3829fd7c0f886d7350291c",
+  "releaseTag": "v2-local",
+  "contractNames": {
+    "registry": "DominoRegistry",
+    "priceAnchor": "DominoPriceAnchor",
+    "autoExit": "DominoAutoExit",
+    "vaultSwap": "DominoV2VaultSwapModule",
+    "vault.v3": "DominoV2VaultV3",
+    "vault.v4": "DominoV2VaultV4",
+    "vaultFactory.v3": "DominoV2VaultFactory",
+    "vaultFactory.v4": "DominoV2VaultFactory",
+    "zap.v4.steps": "DominoZapV4Steps",
+    "zap.v3": "DominoZapV3",
+    "zap.v4": "DominoZapV4",
+    "vaultExecutor.v3": "DominoV2VaultExecutorV3",
+    "vaultExecutor.v4": "DominoV2VaultExecutorV4"
+  },
+  "contracts": {
+    "registry": "0x9130cdc2c710ba17761809bb12a96b3252a06778",
+    "priceAnchor": "0xb1217b68256350ab7a31b7a72c4584671f164725",
+    "autoExit": "0x19ff433504d784425f5901020bcf0f3ed59fdf40",
+    "vaultSwap": "0x36557375fecd59fd354f0df836e4f88b4393255b",
+    "vault.v3": "0x30b27262a1e76e643080381400222e18ea36fa94",
+    "vault.v4": "0xacc7c8f89b031f882443b8183aff3dac83675224",
+    "vaultFactory.v3": "0x165b7ec31130ca90f2b67b3e5e778ee6b38c49eb",
+    "vaultFactory.v4": "0xfa2c2f3cd95dc61d5163d2f1850a032eee8c9f44",
+    "zap.v4.steps": "0x393adfcd71b11874951d2f88d26fd25794479f41",
+    "zap.v3": "0xad3d00bbfdc6263bbeeb6a1e2d88a87ea150720c",
+    "zap.v4": "0x0cc0583315434eab3ae79bc5e00035d6cda6d218",
+    "vaultExecutor.v3": "0xa720ef0e44d80f8bcb3543731935a133405b40f3",
+    "vaultExecutor.v4": "0x2b0d64398b510cd51581e40cb32a309658689e53"
+  },
+  "dependencies": {
+    "v3Factory": "0x33128a8fc17869897dce68ed026d694621f6fdfd",
+    "v3PositionManager": "0x03a520b32c04bf3beef7beb72e919cf822ed34f1",
+    "v3Quoter": "0x3d4e44eb1374240ce5f1b871ab261cd16335b76a",
+    "v3SwapRouter": "0x2626664c2603336e57b271c5c0b26f421741e481",
+    "v4PoolManager": "0x498581ff718922c3f8e6a244956af099b2652b2b",
+    "v4PositionManager": "0x7c5f5a4bbd8fd63184577525326123b519429bdc",
+    "v4StateView": "0xa3c0c9b65bad0b08107aa264b0f3db444b867a71",
+    "v4Quoter": "0x0d5e0f971ed27fbff6c2837bf31316121532048d",
+    "universalRouter": "0xd6145b2d3f379919e8cdeda7b97e37c4b2ca9c40",
+    "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+    "wrappedNative": "0x4200000000000000000000000000000000000006"
+  },
+  "roles": {
+    "deployer": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e",
+    "governance": "0x54fd481396a33354a2b1bff6dc4c2c5b6bad3ec8",
+    "guardian": "0xda2b7726b4aba36f1e12286676952389f70f052e",
+    "feeRecipient": "0xae58629550a6849862337402eadd34671212eec5",
+    "operator": "0xcc3cc1c4a058780b63f0d2ca44e780b2497af8e9",
+    "publisher": "0xab749cfc2cf4e5c7cf6dfb036657491dab4e9f5b"
+  },
+  "policies": {
+    "assistedSwapFeeBps": 65,
+    "bridgeAppFeeBps": 35,
+    "simpleCompoundFeeBps": 200,
+    "dominoCompoundFeeBps": 400,
+    "autoExitFeeBps": 20,
+    "automationFeeBasis": "consumed_original_earned_fees_once_not_principal",
+    "additionalAutomationSwapFeeBps": 0,
+    "timelockSeconds": 86400,
+    "minTwapSeconds": 60,
+    "autoExitMaxObservationAgeSeconds": 300,
+    "autoExitMinTwapSeconds": 600,
+    "minimumUniversalRouterVersion": 212,
+    "hookedPoolsAllowed": false
+  },
+  "chargeCurrencies": [
+    {
+      "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rank": 1
+    },
+    {
+      "token": "0x0000000000000000000000000000000000000000",
+      "rank": 2
+    },
+    {
+      "token": "0x4200000000000000000000000000000000000006",
+      "rank": 2
+    }
+  ],
+  "runtimeCodeHashes": {
+    "v3Factory": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "v3PositionManager": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "v3Quoter": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "v3SwapRouter": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "v4PoolManager": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "v4PositionManager": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "v4StateView": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "v4Quoter": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "universalRouter": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "permit2": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "wrappedNative": "0x28b51d85bb4e728c5c759d67d42bcd170e2635738745856b116571be2cd7a82e",
+    "registry": "0xddf969943981f6bfc255e620f7fa0a56bc92a1c1727ab5626ab7954bb2fd47d9",
+    "priceAnchor": "0x6b1ce0543b26e0fc03c1d08b48fa67f4037acb4df227ce168b1efa6d9c9d0f2f",
+    "autoExit": "0x31d8b53a85ecebfd7346c0505083e36e11605a77ada60c37bf94758beb21befd",
+    "vaultSwap": "0x2131cddfc081ef51612a3bd1eec2b566a197d4f2a7907faaf589e144d5365087",
+    "vault.v3": "0x3da182f5a5f4377b2b236d3b3006d5cd4d38092ea59d9de8fe2efdd4dc74af79",
+    "vault.v4": "0xbf2f6fdc28cca075fdac124fa5b147f1523dc30bd3ff8bf9e863c2c5076afd05",
+    "vaultFactory.v3": "0x0537ddda79391b4b96fc5b226aa4b94f900bf385538694450d736bebebd1c622",
+    "vaultFactory.v4": "0x18c1289f4f9fafe73674c5dadef4192b63a3a60ddee0d8354d23e9d37e94368b",
+    "zap.v4.steps": "0x2d20636c5ac571fd135156bb53ccfed75f41275a0d017b8edc34f0505c24f6cb",
+    "zap.v3": "0x0d62fcde9718837ef2b059d9ea547eceb6743d57e95b6b014912d6df788d09a8",
+    "zap.v4": "0xa5d7bd2fa3564101c6ba583411ddc0dc090015691a51c0c353a53487a1cf30ef",
+    "vaultExecutor.v3": "0x04f8ec9f137abebae7dd3f93b3ab1143955b5eb2bc1b731b4746c6e45ed521d2",
+    "vaultExecutor.v4": "0xc109cfe1004f005609a8a75a035e45819a11c0ab1374128faa54a9e2bc25f6e5"
+  },
+  "createx": {
+    "address": "0xba5ed099633d3b313e4d5f7bdc1305d3c28ba5ed",
+    "runtimeCodeHash": "0xbd8a7ea8cfca7b4e5f5041d7d4b17bc317c5ce42cfbc42066a00cf26b43eb53f",
+    "salts": {
+      "registry": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e005808207249734df963985c",
+      "priceAnchor": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e004c705838108da4e4e8af43",
+      "autoExit": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e00d0feba4257c7e2032d47bd",
+      "vaultSwap": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e0017939d6b153dec4f7ed5eb",
+      "vault.v3": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e002e68577e00ea91b67d700e",
+      "vault.v4": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e0009b5d544ebddc0c5aea0e8",
+      "vaultFactory.v3": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e0008064ede1f22f450cec0ee",
+      "vaultFactory.v4": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e00d4e69cd73d2ca239ce6158",
+      "zap.v4.steps": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e0059f2325f7d67f7038cd06d",
+      "zap.v3": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e00bddaa2c68dd90d5da7fd75",
+      "zap.v4": "0x6de3a1d515c48f73d00b894acb316b961a7ec59e00ec60e889c6bd24495f213d"
+    },
+    "guardedSalts": {
+      "registry": "0xf64d177bdc2b5cdc4cd12548d16b5cd3876ccf5084a425ef070fe36b76094f77",
+      "priceAnchor": "0x6e2137d50a6c623acbccd46b09c4c9bad598c92b3acb3c30f7101867552dc69b",
+      "autoExit": "0x61b2b6b480c2f363f1be422a13165b3252bc37dc96338a409574ccefffbd60dd",
+      "vaultSwap": "0x709f312c716355f3e1c617c6cad0f1058bc38048429502e89ca1d5dfb25637a6",
+      "vault.v3": "0x92d0bbfd3dd34c8f08866c61b965d1ee3414038b1d6f4cc566390a85f499890b",
+      "vault.v4": "0x6cefe1847df580db869441d8dff95ea5f389f007f9b7d7a3ca4c687b34ce7a5b",
+      "vaultFactory.v3": "0xaafb2ef7906060fc1a2be758bba370f8b227a021ce1c6c263feedb08785a7e92",
+      "vaultFactory.v4": "0x349ea02050b3687c3afe193077d3c8e03d7b3348da12ba8e1c45453a10f8a55a",
+      "zap.v4.steps": "0xe014c1496635dd3bfe1200b777f9dce0c7cdbc5523a38d9020f1a3f59e6faede",
+      "zap.v3": "0x870ba6d05d567deece91bd0c99312067edbc6e627c19efbb53d68c75bbd62158",
+      "zap.v4": "0x49e8435977b91b68f4ebd30aa9adcb7a6228651945f4e2344c10abf8d03640c3"
+    }
+  },
+  "build": {
+    "version": "0.8.26+commit.8a97fa7a",
+    "optimizerRuns": 200,
+    "viaIR": true,
+    "evmVersion": "cancun",
+    "bytecodeHash": "none",
+    "sourceTreeSha256": "bc7bdb616e2f7ff59c5887958bae0e7a8cde6879e38de60096f1cdcb06b8ebce",
+    "workingTreeSourceChanges": false,
+    "sourceHashes": {
+      "src/v2/DominoV2RelayTypes.sol": "21e86e7ae93a38a9d6f468ff5d103b68da7dc6d08f4d4e69fd6389e93239e249",
+      "src/v2/DominoV2Types.sol": "ba3704899465ac61c8ded16ae89c3eac41b3e1fdb5c9442ae92c57ab65e87f0c",
+      "src/v2/anchor/AnchorMath.sol": "6dbb1e2c975ea4a2b6e03de6934117cb59249228da232f1501da1ff2a01eb094",
+      "src/v2/anchor/DominoPriceAnchor.sol": "5d3a14f990b427f719ad6febc2a99bcc6a927daebc5a02616ba4e08a8e99fd3b",
+      "src/v2/autoexit/DominoAutoExit.sol": "b7526cdd92a95132abd0ecb570b83259da369cd6ee2473cf44209cf07ffcfcc5",
+      "src/v2/external/IPermit2Signature.sol": "aeabff4a33e1305db02080124c7005003521027a339482416c0ab83976815796",
+      "src/v2/external/IUniswapV3Minimal.sol": "adf95f6fb40707c78cb403135cbb24590462ff5636634525f762816c0caed26b",
+      "src/v2/external/IUniswapV4Minimal.sol": "d629c41e7a552646fa8b1b12b30783e85f303075bc34d68e45608003ce2a79a8",
+      "src/v2/fees/DominoFeeLedger.sol": "add1beb81d7b9b26b3af4214916793ba44ca9955afaa97d41f830f7814f997ae",
+      "src/v2/fees/DominoFeeRules.sol": "fca2a256024e028b22574c186831132dae6a9d6ec19b4bd9418ca3c27dfc430b",
+      "src/v2/interfaces/IDominoAutoExit.sol": "165af9ab00ca1beedca111af796bb709694664f57acfc233b5807059bf73ba61",
+      "src/v2/interfaces/IDominoAutoExitExtension.sol": "afee670ad8747028bbb83ff2e5a13726e94693f9ee7a31e5fc736b40e34dc9a3",
+      "src/v2/interfaces/IDominoFees.sol": "9e6393dfbc0ddcb3192cb249849071a861baa173058131672020cfde94df7818",
+      "src/v2/interfaces/IDominoPositionActions.sol": "6c420fd28b1c9e0527ca0018b00b8183428e93ae733d210578d067bffc3bebc3",
+      "src/v2/interfaces/IDominoPriceAnchor.sol": "afa6a43d0cc7ae57af00f0baab349363f7265210cbf3a5a8bc48f95e07bb6502",
+      "src/v2/interfaces/IDominoRegistry.sol": "dcdf552d64e6123246f9f102545057b2b180745ca7fe2188729645cf92f5274a",
+      "src/v2/interfaces/IDominoVault.sol": "b9c3f5b99e0c62b55fe6b49a47bd63dabc7e807531c10dede3f9c0021f3fc4af",
+      "src/v2/interfaces/IDominoVaultLedger.sol": "53ea322b29edc44e4bc9d21c431dab1652b9ea3dad36bfa5ff499d0fed06ea0f",
+      "src/v2/interfaces/IDominoZap.sol": "42ef36bb78a408d2dae918058cc9440fb49192828c6a074cecadfdaa2982d93f",
+      "src/v2/positions/DominoPositionMath.sol": "caadd732f2ce3e254e154a671f50b96f69a949f7a62d33c3cb707fdee747388e",
+      "src/v2/positions/DominoV3Positions.sol": "69ca611c806cbfba02d7f7d12ce473d9d6d49a7e60b40585c2c8befb4862cb33",
+      "src/v2/positions/DominoV4Positions.sol": "90775e79bdbce04b5b6c55d2ebf6c53107507affa3437665aad40d2854fe9ae5",
+      "src/v2/positions/uniswap/BitMath.sol": "c450c547466d3be610efc9a7a4d2abe9b289e6c80b6cf3ba7c4c6a6732975bab",
+      "src/v2/positions/uniswap/CustomRevert.sol": "79e2704e0ccfa081081cbaaab6d95b12863a57bb8689b1019f4e68b1d6406c1b",
+      "src/v2/positions/uniswap/FixedPoint128.sol": "f7bd3e5c840bd1d69e0432770060fa6151854979a5e1ee573f9595e2ccfb142f",
+      "src/v2/positions/uniswap/FixedPoint96.sol": "3039628c426d42480ef5221c6815cc13b9a7a8cf2bfc34aff0828688b01ed85a",
+      "src/v2/positions/uniswap/FullMath.sol": "1d40254af0abf3fe6735f59c3fe452b0d074a1b9dafbc1db5bd81bc4d72bf6df",
+      "src/v2/positions/uniswap/LiquidityAmounts.sol": "96ac58c679db2f5a9fabd2d23386f0cc1b18972e36ec9121f3d155c00ac991d7",
+      "src/v2/positions/uniswap/SafeCast.sol": "471e7dc159a08689202df88e761e3f0a55e365298b63dc2e1447e696e7b8450a",
+      "src/v2/positions/uniswap/SqrtPriceMath.sol": "0e426522635367218ea191a1964d11d1efac40d857c06ead3b4f3c74baf0d305",
+      "src/v2/positions/uniswap/TickMath.sol": "387e90f0360f31624867aec7730d7f15a860d750896d33d7e4293ad1f41608dd",
+      "src/v2/positions/uniswap/UnsafeMath.sol": "c3802b50d9dfe8d3be0e580959bfe467dcd2889691e046081ec8ec8931b39197",
+      "src/v2/registry/DominoRegistry.sol": "7a3bbafb7971d01036607688adf59252a9e4b202ff55d6e4682de82442636d18",
+      "src/v2/route/DominoActionLock.sol": "0c2e4a54ac247aeb1f53256deedc41c89355eb75c8431613284ca4f1aaea14c9",
+      "src/v2/route/DominoAssistedSwap.sol": "dbddd9e870620221c2e0153ed079eb6ca035bf22c6bda692056705f964504b23",
+      "src/v2/route/DominoSwapExecutor.sol": "7fb3d187aa6ff9be605597ed090e3215582cf60be1e80de375106d5f4acfd3a1",
+      "src/v2/route/DominoSwapFloor.sol": "f565deba3ce6009b192605a1aa8baa232fef0842dedcc0ffb69fa2ed2cc3258d",
+      "src/v2/route/DominoTokenOps.sol": "009367bf7d16abb27a385aa717e097f9dafc3e28e1b54c3d13c319261fb72d13",
+      "src/v2/vault/DominoV2VaultBase.sol": "1964dd23e4d5864ff28a6e59205cca6075cdb7a6f347a7071b7a53e09d721489",
+      "src/v2/vault/DominoV2VaultExecutor.sol": "6730a41123b23a778ce709b94f384568d91d96572bde32d2fae96487c93fada0",
+      "src/v2/vault/DominoV2VaultFactory.sol": "5ad8e6b605137b8672d9b8b684365a1fc607361fc1dc1232c147915a39f68b32",
+      "src/v2/vault/DominoV2VaultMath.sol": "b656293d519feafc1668fc0798d17a53f80ebf7ae1a626e8d46c7b2f8b3930f4",
+      "src/v2/vault/DominoV2VaultPlan.sol": "0835d94e4f09c4c7c50676bf97be4acc980fc70a416ac9d6001be013a92b4ae6",
+      "src/v2/vault/DominoV2VaultStorage.sol": "8c2fb491379f496c066fb083a41333b1a639d06ff0d657d54848f3e07a0ce3d7",
+      "src/v2/vault/DominoV2VaultSwapModule.sol": "2c3780c200efefd7f99d2b4cc6a5495082594f9a606435d23fd497c8ad41dfb0",
+      "src/v2/vault/DominoV2VaultV3.sol": "5ccca34aff6cec51fb59e1609598091549006e90584b90386efb9d9bb38631be",
+      "src/v2/vault/DominoV2VaultV4.sol": "565837d53b4a51b49cd483907b2a52853fc6e5f17088772bb8644b7c112989cf",
+      "src/v2/vault/IDominoVaultSteps.sol": "da8d06a5e315cce7fece24ab0db9f6453b1577600e94efbe66f867ab86ad28aa",
+      "src/v2/zap/DominoZapBase.sol": "9409b23958ecaa7ca8c3f8a1099217b8972ce4e6b4708f7f863e9210793b0b0f",
+      "src/v2/zap/DominoZapV3.sol": "6a08b7fdd5f0ae7c6a83339e70a25443e7554a68b058214ce93e38d9cfebcdf5",
+      "src/v2/zap/DominoZapV4.sol": "94e03e76414083bf73af7cf0ec3e07c44101b6f5d53d4331433478c4f95b5a3b",
+      "src/v2/zap/DominoZapV4Steps.sol": "33f37cf1902caaae395ab237fcf79dc537f6d7e1cc6e9804ddc10aedc809844a"
+    },
+    "chainProfileSha256": "56001950ed4391ae1b28fc9b0bd47746e3d9ae75815aea966cff319ee634c25d"
+  },
+  "deploymentReceipts": {
+    "registry": {
+      "transactionHash": "0x98d774b1f2c787105724ce268649fa00ca2ea41ec69261226f3a3fcb5d81fe48",
+      "blockNumber": 1,
+      "blockHash": "0xdf424925c1749b40e797e1785091356d235b7db05441dbd90f5a1dfda597816e",
+      "gasUsed": "1932629",
+      "effectiveGasPrice": "2000000000"
+    },
+    "priceAnchor": {
+      "transactionHash": "0xba4220eb0c63d45d7f06eb477e5f8b63283b7f483307849b8260009a36c3b7ee",
+      "blockNumber": 2,
+      "blockHash": "0x930a20ed4f1dfa5d57bee58fcde9f14533eccde953d3b7be099a2f46a7dbef1a",
+      "gasUsed": "1759277",
+      "effectiveGasPrice": "1891105242"
+    },
+    "autoExit": {
+      "transactionHash": "0xe8ae5bcd08bb8b196f22aee7248d26ff91dd1027f63ac1fb176b9c3d8e58743b",
+      "blockNumber": 3,
+      "blockHash": "0x8c93453734313d3be4ccacc82344742306f4af67b26392f09fb5a3c552ff8ecb",
+      "gasUsed": "4379642",
+      "effectiveGasPrice": "1792781262"
+    },
+    "vaultSwap": {
+      "transactionHash": "0xa246350457c6be76638198589d1fd08b3ff42d1905aaa5dcc07e2538469b00dd",
+      "blockNumber": 4,
+      "blockHash": "0xd054c0b373afd04967a31ea70cddfde7e7a669a14089047bfdb234102fa07ba1",
+      "gasUsed": "1685654",
+      "effectiveGasPrice": "1722617756"
+    },
+    "vault.v3": {
+      "transactionHash": "0x7684edd2cbd8b0351605989da708a758586d618af3c90f46a711b4dfb381fbc9",
+      "blockNumber": 5,
+      "blockHash": "0xdc3999effbab0d1b529ca1338d8f0467022004b76e744c1ed775e21a30809a58",
+      "gasUsed": "7947862",
+      "effectiveGasPrice": "1642441233"
+    },
+    "vault.v4": {
+      "transactionHash": "0x1a977806a3505b75210f32bfac91eeac5df73612832de7b0dba7ec33d0f11a61",
+      "blockNumber": 6,
+      "blockHash": "0x4d0f7a9cc07bed495ee2d9d71de1a85c10a53ab5ed9cc5b4bd1270531df2e5c8",
+      "gasUsed": "8776156",
+      "effectiveGasPrice": "1604686365"
+    },
+    "vaultFactory.v3": {
+      "transactionHash": "0x67962c1e3b48dcb4dda1db9a2985ca4ef5bde6b4695f5ceacd29fa5722cc7c49",
+      "blockNumber": 7,
+      "blockHash": "0x77236e5083c92273228c2fe750095d69e190ca2036aa723ab2b719faa8042c89",
+      "gasUsed": "434888",
+      "effectiveGasPrice": "1573324085"
+    },
+    "vaultFactory.v4": {
+      "transactionHash": "0xefc709ff47fd8db4a53179e4eae4eb0a9460c836045d8bbe9b1e2dec8b75a758",
+      "blockNumber": 8,
+      "blockHash": "0x60d095e14e7f6134cb4a8ebf593e7c15782ac0370f821aa6443d2671da70b427",
+      "gasUsed": "435079",
+      "effectiveGasPrice": "1503736340"
+    },
+    "zap.v4.steps": {
+      "transactionHash": "0x37bc2c00af89f5ee03c13ba08acf5d1640721627f4ef12ae9e79d58df9c4aca5",
+      "blockNumber": 9,
+      "blockHash": "0x7b377971bba9edb2678dbb500f615b9b1973ccc6e18cf9154796864423343142",
+      "gasUsed": "1711256",
+      "effectiveGasPrice": "1442595674"
+    },
+    "zap.v3": {
+      "transactionHash": "0x5e33b04bfafebe623221b6c9427b54ce565a617a4b420fd82348b9f4248b26e1",
+      "blockNumber": 10,
+      "blockHash": "0x513f6309ccff237d90721685d4c69be57553cd55fa1945fd8a3137824954061b",
+      "gasUsed": "5191582",
+      "effectiveGasPrice": "1393582836"
+    },
+    "zap.v4": {
+      "transactionHash": "0xb95ff13db9079be7b25cd929ed8710652ec63da1feb6923265e152bd8f213b68",
+      "blockNumber": 11,
+      "blockHash": "0x39e7da85b2dafc0c73838f85e2bcc69afa54c8649185008c7b3ee4463e825575",
+      "gasUsed": "4665554",
+      "effectiveGasPrice": "1361412628"
+    }
+  },
+  "verification": {
+    "blockNumber": 11,
+    "blockHash": "0x39e7da85b2dafc0c73838f85e2bcc69afa54c8649185008c7b3ee4463e825575",
+    "blockTag": "latest",
+    "codeHashes": "exact_precomputed_immutable_runtime",
+    "wiring": "checked",
+    "checkedAt": "2026-10-03T01:03:07.321Z"
+  }
+}

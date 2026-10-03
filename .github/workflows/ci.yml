@@ -370,6 +370,19 @@ jobs:
       - run: python -m unittest discover -s backend/tests -v
       - name: Verify unsigned financial deployment tooling on disposable EVM
         run: node --test scripts/prepare-financial-release.test.mjs scripts/prepare-financial-release-rpc.test.mjs scripts/release-artifact-manifest.test.mjs scripts/build-public-release.test.mjs
+      # The V2 deployment tool's tests compile every V2 source with the pinned
+      # solc-js (about 90 s cold). The output depends only on those sources and
+      # the compiler, so it is cached under them; the tool reuses an entry only
+      # for an identical standard-JSON input, and production commands always compile.
+      - name: Restore the V2 deployment tool's test compile
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/v2-deploy-compile
+          key: v2-deploy-compile-${{ runner.os }}-${{ hashFiles('contracts/src/v2/**/*.sol', 'scripts/solc-compile.cjs', 'package-lock.json') }}
+      - name: Verify V2 unsigned CREATE3 deployment tooling offline
+        env:
+          DOMINO_V2_COMPILE_CACHE: ${{ runner.temp }}/v2-deploy-compile
+        run: node --test scripts/v2/deploy.test.mjs scripts/v2/deploy-preflight.test.mjs scripts/v2/deploy-schema.test.mjs scripts/v2/deploy-fork.test.mjs
       - name: Record the sources of the cached Forge artifacts
         run: node scripts/forge-cache.mjs record
       - name: Stop isolated database
