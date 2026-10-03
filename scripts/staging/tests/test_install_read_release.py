@@ -91,6 +91,45 @@ class ReadReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'installed_release_link_broken'):
             self.plan()
 
+    def foundation_runtimes(self, mode=0o700):
+        """The first release on a host: prepare_disabled.py's private runtime directories."""
+        for component in installer.COMPONENTS:
+            runtime = self.releases / BEFORE / component / 'backend/runtime'
+            runtime.unlink()
+            runtime.mkdir(mode=mode)
+            os.chmod(runtime, mode)
+        account = type('Account', (), {'pw_uid': os.getuid()})
+        lookup = patch.object(installer.pwd, 'getpwnam', lambda name: account)
+        lookup.start()
+        self.addCleanup(lookup.stop)
+
+    def test_a_fresh_host_links_to_the_foundation_release_runtime(self):
+        self.foundation_runtimes()
+        self.assertEqual(self.plan()['links'], {
+            f'{c}/backend/.venv': str(self.venv) for c in installer.COMPONENTS} | {
+            f'{c}/backend/runtime': str(self.releases / BEFORE / c / 'backend/runtime')
+            for c in installer.COMPONENTS})
+
+    def test_a_foundation_runtime_must_be_the_identity_s_private_directory(self):
+        self.foundation_runtimes(mode=0o750)
+        with self.assertRaisesRegex(ValueError, 'installed_runtime_not_private'):
+            self.plan()
+        for component in installer.COMPONENTS:
+            os.chmod(self.releases / BEFORE / component / 'backend/runtime', 0o700)
+        self.plan()
+        stranger = type('Account', (), {'pw_uid': os.getuid() + 1})
+        with patch.object(installer.pwd, 'getpwnam', lambda name: stranger), \
+             self.assertRaisesRegex(ValueError, 'installed_runtime_not_private'):
+            self.plan()
+
+    def test_only_the_runtime_may_be_a_directory(self):
+        self.foundation_runtimes()
+        venv = self.releases / BEFORE / 'read/backend/.venv'
+        venv.unlink()
+        venv.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, 'installed_release_link_missing'):
+            self.plan()
+
     def test_apply_writes_both_trees_with_the_two_links_and_nothing_else(self):
         planned = self.plan()
         with patch.object(installer.os, 'geteuid', lambda: 0), \

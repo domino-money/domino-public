@@ -21,6 +21,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import pwd
 import stat
 import sys
 
@@ -62,12 +63,24 @@ def unit_release(component):
 
 
 def link_targets(commit):
-    """Where the installed release points, so the new one points the same way."""
+    """Where the installed release points, so the new one points the same way.
+
+    A release this tool installed links its runtime to the identity's private
+    directory. The first release on a host, installed by prepare_disabled.py,
+    holds that directory itself: owned by the service identity, mode 0700. The
+    new release then links to it there (docs/FRESH_HOST_INSTALL.md).
+    """
     targets = {}
     for component in COMPONENTS:
         root = RELEASES / commit / component
         for name in LINKS:
             path = root / name
+            if name == 'backend/runtime' and not path.is_symlink() and path.is_dir():
+                info = path.lstat()
+                require(info.st_uid == pwd.getpwnam(f'domino-{component}').pw_uid
+                        and stat.S_IMODE(info.st_mode) == 0o700, 'installed_runtime_not_private')
+                targets[(component, name)] = path
+                continue
             require(path.is_symlink(), 'installed_release_link_missing')
             target = Path(os.readlink(path))
             require(target.is_absolute() and target.exists(), 'installed_release_link_broken')

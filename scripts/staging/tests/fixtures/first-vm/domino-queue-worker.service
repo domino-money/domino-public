@@ -1,0 +1,30 @@
+[Unit]
+Description=Domino on-demand pool queue worker
+After=postgresql@16-domino.service
+StartLimitIntervalSec=300
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+User=domino-write
+Group=domino-write
+SupplementaryGroups=domino-db
+WorkingDirectory=/opt/domino/queue-worker/release/backend
+ExecStart=/opt/domino/queue-worker/venv/bin/python -B manage_activity.py --queue-worker --search-back-blocks 400000 --search-span 5000 --search-max-spans 80 --max-pools 2 --max-steps 5 --span 100000 --lag 100 --parallel-walks --max-header-calls 5000
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

@@ -55,6 +55,8 @@ jobs:
         run: node --test scripts/inspect-execution-cloudflare.test.mjs
       - name: Check the read-path release installer without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_read_release.py -v
+      - name: Check the fresh-host installers without host access
+        run: python3 -B -m unittest discover -s scripts/staging/tests -p test_fresh_host.py -v
       - name: Check the session listener release installer without host access
         run: python3 -B -m unittest discover -s scripts/staging/tests -p test_install_auth_release.py -v
       - name: Check the performance and execution-status release installer without host access

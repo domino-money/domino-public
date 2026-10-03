@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Domino pool queue worker every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=domino-queue-worker.service
+
+[Install]
+WantedBy=timers.target

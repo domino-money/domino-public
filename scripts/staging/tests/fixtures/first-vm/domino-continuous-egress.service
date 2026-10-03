@@ -1,0 +1,20 @@
+[Unit]
+Description=Domino continuous read egress (explicit operator IPv4 pins)
+Before=domino-read.service domino-gateway.service domino-tunnel.service
+PartOf=domino-continuous-reads.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/domino/continuous-reads/policy.nft
+ExecStartPost=/usr/bin/touch /run/domino-continuous-reads.ready
+ExecStop=/usr/bin/rm -f /run/domino-continuous-reads.ready
+# Retain the restrictive kernel table when stopped; never flush host rules.
+UMask=0077
+ProtectSystem=strict
+ReadWritePaths=/run
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_NETLINK

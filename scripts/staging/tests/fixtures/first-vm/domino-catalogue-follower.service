@@ -1,0 +1,30 @@
+[Unit]
+Description=Domino public catalogue follower
+After=postgresql@16-domino.service
+StartLimitIntervalSec=300
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+User=domino-write
+Group=domino-write
+SupplementaryGroups=domino-db
+WorkingDirectory=/opt/domino/queue-worker/release/backend
+ExecStart=/opt/domino/queue-worker/venv/bin/python -B manage_catalogue.py follow --lag 200 --span 100000 --max-passes 1 --poll-seconds 0 --max-consecutive-failures 3
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
