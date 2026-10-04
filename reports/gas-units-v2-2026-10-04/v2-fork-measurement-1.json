@@ -1,0 +1,417 @@
+{
+ "tool": "measure_v2_costs",
+ "chainId": 4663,
+ "pool": "weth-usdg",
+ "poolId": "0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6",
+ "rounds": 40,
+ "rootWidthTicks": 200,
+ "roots": {
+  "currency0": "2000000000000000000",
+  "currency1": "8000000000",
+  "simple": {
+   "tokenId": 3594929,
+   "tickLower": -197508,
+   "tickUpper": -197104,
+   "liquidity": "10119674134720619"
+  },
+  "domino": {
+   "tokenId": 3594930,
+   "tickLower": -197908,
+   "tickUpper": -197184,
+   "liquidity": "5090685869869194"
+  }
+ },
+ "basis": "Anvil receipts on a DepositFork child of Robinhood (cancun), as GAS_UNITS_V1_2026-09-22",
+ "startedAt": "2026-10-04T18:32:29+00:00",
+ "source": {
+  "upstream": "loopback source (the own node)",
+  "number": "0x4c7027a",
+  "hash": "0x49acceba15ff4919dd91bf2a700dc0da41a4279fb04d439183631c089ec56f85",
+  "timestamp": "0x6ac29bbd"
+ },
+ "anvilVersion": "anvil/v1.7.1",
+ "transactions": [
+  {
+   "kind": "create_vault",
+   "gasUsed": 383461,
+   "calldataBytes": 484,
+   "calldataGas": 2452,
+   "blockNumber": 80151192,
+   "transactionHash": "0x5b8f9c28ce5118362305d526f817318e6d9dde711d4a53d7b96ddfbca34696a3",
+   "l1DataQuotes": [
+    {
+     "tag": "latest",
+     "number": 80151191,
+     "l1DataGasInL2Units": 0,
+     "baseFeeWei": "20010000",
+     "l1BaseFeeEstimateWei": "0"
+    },
+    {
+     "tag": "safe",
+     "number": 80145951,
+     "l1DataGasInL2Units": 2261,
+     "baseFeeWei": "20144000",
+     "l1BaseFeeEstimateWei": "7860814"
+    }
+   ]
+  },
+  {
+   "kind": "create_vault_domino",
+   "gasUsed": 366360,
+   "calldataBytes": 484,
+   "calldataGas": 2464,
+   "blockNumber": 80151194,
+   "transactionHash": "0x58570e08d2833e7005c0282dd23d10e13d206594a42569ace5740e1e17a29c02",
+   "l1DataQuotes": [
+    {
+     "tag": "latest",
+     "number": 80151193,
+     "l1DataGasInL2Units": 0,
+     "baseFeeWei": "20020000",
+     "l1BaseFeeEstimateWei": "0"
+    },
+    {
+     "tag": "safe",
+     "number": 80145951,
+     "l1DataGasInL2Units": 2281,
+     "baseFeeWei": "20144000",
+     "l1BaseFeeEstimateWei": "7860814"
+    }
+   ]
+  },
+  {
+   "kind": "compound",
+   "gasUsed": 569104,
+   "calldataBytes": 1444,
+   "calldataGas": 8560,
+   "blockNumber": 80151276,
+   "transactionHash": "0xfea52caacff8341ec184738db3b7e23aa80ab41057e6a736082b908bceedced7",
+   "l1DataQuotes": [
+    {
+     "tag": "latest",
+     "number": 80151217,
+     "l1DataGasInL2Units": 0,
+     "baseFeeWei": "20040000",
+     "l1BaseFeeEstimateWei": "0"
+    },
+    {
+     "tag": "safe",
+     "number": 80145951,
+     "l1DataGasInL2Units": 3585,
+     "baseFeeWei": "20144000",
+     "l1BaseFeeEstimateWei": "7860814"
+    }
+   ],
+   "liquidityAdded": "7887924164315"
+  },
+  {
+   "kind": "compound_swap",
+   "gasUsed": 614832,
+   "calldataBytes": 1988,
+   "calldataGas": 12056,
+   "blockNumber": 80151358,
+   "transactionHash": "0xed6120286aa669065954de2d33af2244f18a1e5e03a2ff5b512709b9bc601d8b",
+   "owed": [
+    "1561456891034687",
+    "4212077"
+   ],
+   "swapIn": "624582756413874",
+   "swapFloor": "1669718",
+   "l1DataQuotes": [
+    {
+     "tag": "latest",
+     "number": 80151221,
+     "l1DataGasInL2Units": 0,
+     "baseFeeWei": "20008000",
+     "l1BaseFeeEstimateWei": "0"
+    },
+    {
+     "tag": "safe",
+     "number": 80145951,
+     "l1DataGasInL2Units": 4002,
+     "baseFeeWei": "20144000",
+     "l1BaseFeeEstimateWei": "7860814"
+    }
+   ],
+   "liquidityAdded": "4666409535448"
+  },
+  {
+   "kind": "successor_mint",
+   "gasUsed": 717472,
+   "calldataBytes": 1444,
+   "calldataGas": 9316,
+   "blockNumber": 80151359,
+   "transactionHash": "0x1e93f78c5309019c4d61ca208ea318b05b7882ba79acdbeaeb498c7a3c1e9f00",
+   "successorTicks": [
+    -197304,
+    -193128
+   ],
+   "l1DataQuotes": [
+    {
+     "tag": "latest",
+     "number": 80151222,
+     "l1DataGasInL2Units": 0,
+     "baseFeeWei": "20014000",
+     "l1BaseFeeEstimateWei": "0"
+    },
+    {
+     "tag": "safe",
+     "number": 80145951,
+     "l1DataGasInL2Units": 3704,
+     "baseFeeWei": "20144000",
+     "l1BaseFeeEstimateWei": "7860814"
+    }
+   ]
+  },
+  {
+   "kind": "owner_exit_all",
+   "gasUsed": 172411,
+   "calldataBytes": 4,
+   "calldataGas": 64,
+   "blockNumber": 80151360,
+   "transactionHash": "0xc1332682e709f1f4f7ab1559afcfc03f8ec311dd1cc76cc577363b4b0c3d4138",
+   "l1DataQuotes": [
+    {
+     "tag": "latest",
+     "number": 80151223,
+     "l1DataGasInL2Units": 0,
+     "baseFeeWei": "20018000",
+     "l1BaseFeeEstimateWei": "0"
+    },
+    {
+     "tag": "safe",
+     "number": 80145951,
+     "l1DataGasInL2Units": 1012,
+     "baseFeeWei": "20144000",
+     "l1BaseFeeEstimateWei": "7860814"
+    }
+   ]
+  }
+ ],
+ "stack": {
+  "contracts": {
+   "registry": "0x39a9671a55426bf27ade24d311ed372db7847a37",
+   "priceAnchor": "0xb7fb20c98c247271bbd48dcfb3532f9ee8f6ffa2",
+   "autoExit": "0x2c1b2cb697ecd0bd4da25e59e018221be1dbd677",
+   "vaultSwap": "0x26d2e61a66ae6df5573c66db363eaf7705b1c394",
+   "vault.v3": "0xf7ced448a16f0f452dc4869ec159505a40e0a31b",
+   "vault.v4": "0x579582a157accdb7d515ab7b02e7a7b7fb706e07",
+   "vaultFactory.v3": "0xbefb2e83d2d18d9570b708c5883202c1d6031c7e",
+   "vaultFactory.v4": "0x26d358620d38cea2de96d3beec520625cce4b99b",
+   "zap.v4.steps": "0xe9edfdffd4dbea6ce86b5f87b7a127d9d443ce7a",
+   "zap.v3": "0x9634e471ef84c9fa220ea732808e3a584ee9f3a0",
+   "zap.v4": "0x1e6e488d9867f6c2228dfbb6f7611bbc9264a012",
+   "vaultExecutor.v3": "0xf45f6ca2868579f9a30ae3488e173cc8d9ed5b23",
+   "vaultExecutor.v4": "0x43bd4cf95878583f00ab1e4042b4dbaf2722293d"
+  },
+  "deploymentGas": {
+   "registry": 1840872,
+   "priceAnchor": 1697503,
+   "autoExit": 4381578,
+   "vaultSwap": 1714504,
+   "vault.v3": 7857169,
+   "vault.v4": 8673862,
+   "vaultFactory.v3": 389800,
+   "vaultFactory.v4": 389979,
+   "zap.v4.steps": 1652073,
+   "zap.v3": 5220994,
+   "zap.v4": 4693588
+  },
+  "sourceTreeSha256": "7a78b034fc09c924140173748b5a620cebd539d9635690adbda1154c0b95edfe",
+  "driver": "0x7256e0609adc3a9e781b04456665e78e08e95b09"
+ },
+ "artifacts": {
+  "v2": {
+   "DominoRegistry": {
+    "artifactSha256": "9cd749eb9d06cd598fe10a7cb0bf267341631e335164da15a55603a7d511c202",
+    "compilationTarget": "src/v2/registry/DominoRegistry.sol",
+    "creationCodeHash": "0xc1df4bdcc017d8d29ae0013fbf60c5d931aac6e0f8defd49f00234835e3315f0",
+    "sourceManifestSha256": "3a0c31daefea9ea3d273f5eec0c3f675959ed055ec887221c2d62ea096bb13c0"
+   },
+   "DominoPriceAnchor": {
+    "artifactSha256": "e300fe9c70a8f9b12149f81acfdf419e8b12b4fc6baff9df15100e2ef160ab21",
+    "compilationTarget": "src/v2/anchor/DominoPriceAnchor.sol",
+    "creationCodeHash": "0x56f1126270492648c8651fcc0b9261d4e145a52273e1d94d775c41bee3532f67",
+    "sourceManifestSha256": "922a24a223cab312371f4581a0fb6b78530dcb5ec95d39062b4a8305c2affdd1"
+   },
+   "DominoAutoExit": {
+    "artifactSha256": "3f83c78ee149c02e596de3cbb98a99f773af0537cedf3fa0dc980bb7cde40d59",
+    "compilationTarget": "src/v2/autoexit/DominoAutoExit.sol",
+    "creationCodeHash": "0x7aa525fa428d41b27060a8a9866df7bbd42f390870ddd7ce8ee963b64ac4a994",
+    "sourceManifestSha256": "546bf6ea7262ff25c08e3b0dca9ce2a8569ffa5f0dec0f86cae6180d49e26010"
+   },
+   "DominoV2VaultSwapModule": {
+    "artifactSha256": "52fd03466df3f231227b7baf1c0da187edc63fa85f548343247db215600a6f64",
+    "compilationTarget": "src/v2/vault/DominoV2VaultSwapModule.sol",
+    "creationCodeHash": "0x2337d44648181a2bd70fbdb84fa8763949bb10a940a96155418c1e01112c2d48",
+    "sourceManifestSha256": "a9feb08cc7a4fb209e3b691988c1ccc3a47481043439036e6a24533bb969f694"
+   },
+   "DominoV2VaultV3": {
+    "artifactSha256": "bd302981cb99f03704f883cc086fdf21728b6f414b7c7fa0793270ccb379c154",
+    "compilationTarget": "src/v2/vault/DominoV2VaultV3.sol",
+    "creationCodeHash": "0x99ef1a156111324fe62ddc7797b03e9fbf5ca775e5d4d9b4dc3394d53bb9521d",
+    "sourceManifestSha256": "314ca9d7b67ea371b7342d301829e169bd95d153e338f423817bc9f9cbb64e6b"
+   },
+   "DominoV2VaultV4": {
+    "artifactSha256": "e55d7e36d6d89a5b83d0d50037ba31af5dff835b1d67b20cd8ff2f69983ee066",
+    "compilationTarget": "src/v2/vault/DominoV2VaultV4.sol",
+    "creationCodeHash": "0x4f136b149a7a01e9a6cb54b6b7a7e8c2c5c8c393d4a16b7133fe6403f3cdb1a4",
+    "sourceManifestSha256": "55615b73576196af9d46f0e83d825afe6d962feb680af395ba1920be1e95008c"
+   },
+   "DominoV2VaultFactory": {
+    "artifactSha256": "c78000743479274b6b108ab0d45ff16227be854d6f4082190656e3eb0d980266",
+    "compilationTarget": "src/v2/vault/DominoV2VaultFactory.sol",
+    "creationCodeHash": "0xd1bb0765fa8bd597f993302e58d0ecb4ac74e5ac4a006484bfd8ca7f5be67ace",
+    "sourceManifestSha256": "d7fc48ec4e15744508915154c1d23a5f94fc40cb30a6c5376bce6a1678b03da0"
+   },
+   "DominoZapV4Steps": {
+    "artifactSha256": "5f90c0863754212c64acab252279f46f4790a2aa4d5caae24ffe715f51641431",
+    "compilationTarget": "src/v2/zap/DominoZapV4Steps.sol",
+    "creationCodeHash": "0x69d22e5af3a73d3ece018d1492fb05ec547b921889ca79625c8f65b442b20d55",
+    "sourceManifestSha256": "34018a156adecf83c17b1184517ba320620243e377288e76f76e563004e39a50"
+   },
+   "DominoZapV3": {
+    "artifactSha256": "f40cae0a6b97b652ea62678678b378677cbc4b05765bf7f78b154e4235256a27",
+    "compilationTarget": "src/v2/zap/DominoZapV3.sol",
+    "creationCodeHash": "0x5ad95416fa60233d7b2dcf0de4512d38795c9999eba68efbd80bc06c0243c690",
+    "sourceManifestSha256": "82a415a8f1e883ec71ee78584a11b7b573fd54acdf6c463f3a52a54e3daf1a7b"
+   },
+   "DominoZapV4": {
+    "artifactSha256": "f04fef25952358ab25ca10d073452badc816ee6df27e45beddfe88dc6e87c52a",
+    "compilationTarget": "src/v2/zap/DominoZapV4.sol",
+    "creationCodeHash": "0x3db18faebfc9b78bbc4c03342755ec77fd480e3768761be71ad89ceed111e60e",
+    "sourceManifestSha256": "804b78cd7e772f95dbd35abb8b3f073c10d0cc352801fdcc6054f7b6431efa78"
+   }
+  },
+  "fixtures": {
+   "OfficialV4SwapDriver": {
+    "artifactSha256": "0184f19c81c5ce2a9f67b35c191f43f5757eb9d98af34a6790eece6a7abb0466",
+    "creationCodeHash": "0x572cabdc2ed48dc0dbca0e906572d340a1a80103b641ed99b4df44b8f76af17a",
+    "runtimeTemplateHash": "0xabf6fd7ee6a99915c178fc28730f6f49cf0c56b6abc2d6f19dbd547bf129fb7b",
+    "compilationTarget": "test/reference/OfficialV4Fixture.sol",
+    "compilerVersion": "0.8.26+commit.8a97fa7a",
+    "sourceManifestSha256": "0557bfe28f301e6cf270dc83fe9b128c9f779ba449503e9e8b829c2515316795",
+    "sourcePaths": [
+     "test/reference/OfficialV4Fixture.sol",
+     "test/reference/official-v4/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol",
+     "test/reference/official-v4/permit2/src/interfaces/IAllowanceTransfer.sol",
+     "test/reference/official-v4/permit2/src/interfaces/IEIP712.sol",
+     "test/reference/official-v4/permit2/src/interfaces/IERC1271.sol",
+     "test/reference/official-v4/permit2/src/libraries/SignatureVerification.sol",
+     "test/reference/official-v4/solmate/src/auth/Owned.sol",
+     "test/reference/official-v4/solmate/src/tokens/ERC721.sol",
+     "test/reference/official-v4/v4-core/src/ERC6909.sol",
+     "test/reference/official-v4/v4-core/src/ERC6909Claims.sol",
+     "test/reference/official-v4/v4-core/src/Extsload.sol",
+     "test/reference/official-v4/v4-core/src/Exttload.sol",
+     "test/reference/official-v4/v4-core/src/NoDelegateCall.sol",
+     "test/reference/official-v4/v4-core/src/PoolManager.sol",
+     "test/reference/official-v4/v4-core/src/ProtocolFees.sol",
+     "test/reference/official-v4/v4-core/src/interfaces/IExtsload.sol",
+     "test/reference/official-v4/v4-core/src/interfaces/IExttload.sol",
+     "test/reference/official-v4/v4-core/src/interfaces/IHooks.sol",
+     "test/reference/official-v4/v4-core/src/interfaces/IPoolManager.sol",
+     "test/reference/official-v4/v4-core/src/interfaces/IProtocolFees.sol",
+     "test/reference/official-v4/v4-core/src/interfaces/callback/IUnlockCallback.sol",
+     "test/reference/official-v4/v4-core/src/interfaces/external/IERC20Minimal.sol",
+     "test/reference/official-v4/v4-core/src/interfaces/external/IERC6909Claims.sol",
+     "test/reference/official-v4/v4-core/src/libraries/BitMath.sol",
+     "test/reference/official-v4/v4-core/src/libraries/CurrencyDelta.sol",
+     "test/reference/official-v4/v4-core/src/libraries/CurrencyReserves.sol",
+     "test/reference/official-v4/v4-core/src/libraries/CustomRevert.sol",
+     "test/reference/official-v4/v4-core/src/libraries/FixedPoint128.sol",
+     "test/reference/official-v4/v4-core/src/libraries/FixedPoint96.sol",
+     "test/reference/official-v4/v4-core/src/libraries/FullMath.sol",
+     "test/reference/official-v4/v4-core/src/libraries/Hooks.sol",
+     "test/reference/official-v4/v4-core/src/libraries/LPFeeLibrary.sol",
+     "test/reference/official-v4/v4-core/src/libraries/LiquidityMath.sol",
+     "test/reference/official-v4/v4-core/src/libraries/Lock.sol",
+     "test/reference/official-v4/v4-core/src/libraries/NonzeroDeltaCount.sol",
+     "test/reference/official-v4/v4-core/src/libraries/ParseBytes.sol",
+     "test/reference/official-v4/v4-core/src/libraries/Pool.sol",
+     "test/reference/official-v4/v4-core/src/libraries/Position.sol",
+     "test/reference/official-v4/v4-core/src/libraries/ProtocolFeeLibrary.sol",
+     "test/reference/official-v4/v4-core/src/libraries/SafeCast.sol",
+     "test/reference/official-v4/v4-core/src/libraries/SqrtPriceMath.sol",
+     "test/reference/official-v4/v4-core/src/libraries/StateLibrary.sol",
+     "test/reference/official-v4/v4-core/src/libraries/SwapMath.sol",
+     "test/reference/official-v4/v4-core/src/libraries/TickBitmap.sol",
+     "test/reference/official-v4/v4-core/src/libraries/TickMath.sol",
+     "test/reference/official-v4/v4-core/src/libraries/TransientStateLibrary.sol",
+     "test/reference/official-v4/v4-core/src/libraries/UnsafeMath.sol",
+     "test/reference/official-v4/v4-core/src/types/BalanceDelta.sol",
+     "test/reference/official-v4/v4-core/src/types/BeforeSwapDelta.sol",
+     "test/reference/official-v4/v4-core/src/types/Currency.sol",
+     "test/reference/official-v4/v4-core/src/types/PoolId.sol",
+     "test/reference/official-v4/v4-core/src/types/PoolKey.sol",
+     "test/reference/official-v4/v4-core/src/types/PoolOperation.sol",
+     "test/reference/official-v4/v4-core/src/types/Slot0.sol",
+     "test/reference/official-v4/v4-periphery/src/PositionManager.sol",
+     "test/reference/official-v4/v4-periphery/src/base/BaseActionsRouter.sol",
+     "test/reference/official-v4/v4-periphery/src/base/DeltaResolver.sol",
+     "test/reference/official-v4/v4-periphery/src/base/EIP712_v4.sol",
+     "test/reference/official-v4/v4-periphery/src/base/ERC721Permit_v4.sol",
+     "test/reference/official-v4/v4-periphery/src/base/ImmutableState.sol",
+     "test/reference/official-v4/v4-periphery/src/base/Multicall_v4.sol",
+     "test/reference/official-v4/v4-periphery/src/base/NativeWrapper.sol",
+     "test/reference/official-v4/v4-periphery/src/base/Notifier.sol",
+     "test/reference/official-v4/v4-periphery/src/base/Permit2Forwarder.sol",
+     "test/reference/official-v4/v4-periphery/src/base/PoolInitializer_v4.sol",
+     "test/reference/official-v4/v4-periphery/src/base/ReentrancyLock.sol",
+     "test/reference/official-v4/v4-periphery/src/base/SafeCallback.sol",
+     "test/reference/official-v4/v4-periphery/src/base/UnorderedNonce.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IEIP712_v4.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IERC721Permit_v4.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IImmutableState.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IMsgSender.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IMulticall_v4.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/INotifier.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IPermit2Forwarder.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IPoolInitializer_v4.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IPositionDescriptor.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IPositionManager.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/ISubscriber.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IUnorderedNonce.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/IV4Router.sol",
+     "test/reference/official-v4/v4-periphery/src/interfaces/external/IWETH9.sol",
+     "test/reference/official-v4/v4-periphery/src/libraries/ActionConstants.sol",
+     "test/reference/official-v4/v4-periphery/src/libraries/Actions.sol",
+     "test/reference/official-v4/v4-periphery/src/libraries/CalldataDecoder.sol",
+     "test/reference/official-v4/v4-periphery/src/libraries/ERC721PermitHash.sol",
+     "test/reference/official-v4/v4-periphery/src/libraries/LiquidityAmounts.sol",
+     "test/reference/official-v4/v4-periphery/src/libraries/Locker.sol",
+     "test/reference/official-v4/v4-periphery/src/libraries/PathKey.sol",
+     "test/reference/official-v4/v4-periphery/src/libraries/PositionInfoLibrary.sol",
+     "test/reference/official-v4/v4-periphery/src/libraries/SlippageCheck.sol"
+    ],
+    "deployedAt": "0x7256e0609adc3a9e781b04456665e78e08e95b09",
+    "initcodeHash": "0x1224f85e81c4a8927722025df4e509dd07ec87c426af0e904b536e60280bc189",
+    "deployedRuntimeCodeHash": "0x71e377ef7dcd9784a344a1c14118f850de3e5ead3802e22b1ae2989c44507de8"
+   }
+  }
+ },
+ "spotAtOpen": {
+  "tick": -197307,
+  "sqrtPriceX96": "4117569106013742313590031"
+ },
+ "vaults": {
+  "simple": "0x54d313574e321bd8c668faffb6a7e3810e70bba8",
+  "domino": "0x709acf3850c9248745c3ada8dbba528204e620f8"
+ },
+ "fees": {
+  "legCurrency0": "950149536132812500",
+  "owedAfterFirstRounds": [
+   "1560490409513139",
+   "4209553"
+  ]
+ },
+ "successor": {
+  "tokenId": 3594931,
+  "ticks": [
+   -197304,
+   -193128
+  ],
+  "liquidity": "415713330234"
+ },
+ "durationSeconds": 6
+}
