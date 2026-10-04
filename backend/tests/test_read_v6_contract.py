@@ -94,6 +94,7 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(V2_ERRORS, tuple(sorted(declared)))
         self.assertEqual(error_of('reverted_spot_outside_band'), 'SpotOutsideBand')
         self.assertEqual(error_of('reverted_twap_window_too_short'), 'TwapWindowTooShort')
+        self.assertEqual(error_of('reverted_twap_window_too_long'), 'TwapWindowTooLong')
         self.assertEqual(len({error_of('reverted_' + re.sub(r'(?<!^)(?=[A-Z])', '_', n).lower()) for n in V2_ERRORS}),
                          len(V2_ERRORS))
         for code in ('trigger_not_reached', 'reverted_unknown_12345678', 'reverted_panic', 'reverted_error_string'):

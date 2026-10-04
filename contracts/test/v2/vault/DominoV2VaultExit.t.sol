@@ -3,7 +3,7 @@ pragma solidity 0.8.26;
 
 import {IDominoVault} from "../../../src/v2/interfaces/IDominoVault.sol";
 import {DominoV2VaultStorage} from "../../../src/v2/vault/DominoV2VaultStorage.sol";
-import {VaultHarness, HarnessV3} from "./VaultHarness.sol";
+import {VaultHarness, HarnessV3, VaultVm} from "./VaultHarness.sol";
 
 /// An exit module that refuses any call: the vault never calls back into it.
 contract SilentModule {
@@ -58,6 +58,35 @@ abstract contract ExitSuite is VaultHarness {
         vm.prank(EXIT_MODULE);
         vm.expectRevert(IDominoVault.Unauthorized.selector);
         vault.executeExit(rootId, instruction);
+    }
+
+    /// exitAll withdraws the consent with everything else (owner decision of
+    /// 3 Oct 2026): the module is disabled in the same call, under exitAll's
+    /// nonce, so a stop the owner signed no longer reaches the root they took
+    /// back until they enable the module again. A second exitAll, with no
+    /// module left, records no ExitModuleSet.
+    function testExitAllWithdrawsTheConsent() public {
+        bytes memory instruction = _armed();
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit IDominoVault.ExitModuleSet(address(0), 3);
+        vm.prank(OWNER);
+        vault.exitAll();
+        _true(vault.exitModule() == address(0), "disabled");
+        vm.prank(EXIT_MODULE);
+        vm.expectRevert(IDominoVault.Unauthorized.selector);
+        vault.executeExit(rootId, instruction);
+        vm.recordLogs();
+        vm.prank(OWNER);
+        vault.exitAll();
+        VaultVm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            _true(logs[i].topics[0] != IDominoVault.ExitModuleSet.selector, "nothing to disable");
+        }
+        vm.prank(OWNER);
+        vault.setExitModule(EXIT_MODULE);
+        vm.prank(EXIT_MODULE);
+        vault.executeExit(rootId, instruction);
+        _eq(_liquidityOf(rootId), 0, "the owner's renewed consent lets the exit through");
     }
 
     /// Principal and the position's accrued fees to the module; the root's

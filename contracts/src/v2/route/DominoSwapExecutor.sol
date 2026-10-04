@@ -376,12 +376,15 @@ abstract contract DominoSwapExecutor is DominoActionLock {
             tstore(V3_PAYMENT_SLOT, payment)
             tstore(V3_AMOUNT_SLOT, amountIn)
         }
-        (int256 amount0, int256 amount1) = IUniswapV3PoolMinimal(pool).swap(
+        uint256 held = DominoTokenOps.selfBalance(tokenOut);
+        IUniswapV3PoolMinimal(pool).swap(
             address(this), zeroForOne, int256(amountIn), zeroForOne ? MIN_SQRT_PRICE_LIMIT : MAX_SQRT_PRICE_LIMIT, ""
         );
-        // As SwapRouter: the pool's reported output feeds the next hop; the
-        // leg's effect check is what accepts the result.
-        amountOut = uint256(-(zeroForOne ? amount1 : amount0));
+        // What arrived feeds the next hop, not what the pool reports: a hop
+        // token that delivers less (a tax on what pools send) is never made up
+        // from this contract's own balance of it, which may be owed or another
+        // account's. The leg's effect check is what accepts the result.
+        amountOut = DominoTokenOps.selfBalance(tokenOut) - held;
     }
 
     function _swapV4(DominoV2Types.SwapLeg memory leg) private returns (address manager) {

@@ -73,8 +73,8 @@ A clone costs about 2,700 gas per call over a direct contract (the DELEGATECALL 
 
 - **Slot 0:** owner, stateNonce, paused, rootArmed, quote-in-currency0, initialized.
 - **Slot 1:** policy, limits, lastExecutionAt and the last disarm reason.
-- **Slots 2–4:** the pool.
-- **Slot 5:** the root token id (96 bits) and the exit module.
+- **Slots 2–4:** the pool. Slot 4 also holds the root token id (96 bits), packed after the hooks address.
+- **Slot 5:** the exit module, alone. `exitAll` reads it cold to disable the module (2,146 gas when none is enabled).
 - **Slot 6:** the v3 root checkpoint (a hash; unused on v4).
 - **Then:** the member list, the members, the lots and the idle reserves.
 - **Elsewhere:** owed fees in F1b's ERC-7201 slot; the lock and the step flags in transient storage.
@@ -254,7 +254,8 @@ Each member has, per pool token, a lot of `uncharged` earned fees and `charged` 
 - **`exitAll()`:**
   - every child goes to the owner;
   - every reserve the owner can receive is paid out, and one it cannot receive stays idle (A8);
-  - the root is disarmed and automation paused.
+  - the root is disarmed and automation paused;
+  - the exit module is disabled (owner decision, 3 Oct): `ExitModuleSet(0, nonce)` under exitAll's nonce when one was enabled, so the owner's exit mandates pause until the owner enables it again (F4).
   The root's v4 subscription stays until the owner calls `unsubscribe` on the PositionManager or rearms.
 - **Exits never depend on the operator, the publisher, the anchor, the registry, the executor or the swap module.** Only `pause` reads the registry, and only for a caller that is not the owner.
 - `setExitModule(module)` accepts only `address(0)` or the auto-exit address the implementation was deployed with (component `autoExit`). A phishing page cannot enable another module.
@@ -335,7 +336,7 @@ interface IDominoVaultSwapSteps {
 | `DominoV2VaultCustody.t.sol` | The limited operator rearm (v3: each condition on both sides, a dust add then an owner's decrease or collect, every disarm reason; never on v4). v4 on the deployed PositionManager: subscription, each owner action disarming without being blocked, the transfer's unsubscription, spoofed and foreign notifications, a silently lost notification, cold `notifyUnsubscribe`; v3 re-verification (each mismatch, the dust grief). |
 | `DominoV2VaultUniswapV4.t.sol` | v4 paths on the deployed managers: compound inside the vault's own unlock, fees a swap accrues collected first, the protocol fee in the floor per direction, native currency (tariff paid, rejected, gas-hungry), successor mint and exits, exit minimums, the hooked-pool policy, the unlock callback guards. |
 | `DominoV2VaultSwapModule.t.sol` | The production swap module (F1b) on the deployed PoolManager: v4-pool legs, native, a swap through the vault's own pool, the route checks on top of each leg's, a refused leg, the lock, forwarded callbacks. |
-| `DominoV2VaultExit.t.sol` | `executeExit` per F4: consent, caller, instruction version and recipient, halt, pause, minimums, the position to the module and its reserves to the owner, no callback into the module. |
+| `DominoV2VaultExit.t.sol` | `executeExit` per F4: consent (and its withdrawal by `exitAll`), caller, instruction version and recipient, halt, pause, minimums, the position to the module and its reserves to the owner, no callback into the module. |
 | `DominoV2VaultDomino.t.sol` | Successor geometry, trigger, cap, routing, slot freeing, inverse orientation, child exit, 96-bit ids. |
 | `DominoV2VaultFactory.t.sol` | Prediction, nonces, EIP-1167 code, one-time binding, wiring checks; the implementation and the executor are never vaults (both DEXes). |
 | `DominoV2VaultMath.t.sol` | Least-gross and split-rounding properties (fuzzed); exact ratios. |

@@ -219,7 +219,9 @@ def checked_config(document):
         price_references=checked_references(chain, document['priceReferences']),
         earnings_window_seconds=_int(document['earningsWindowSeconds'], 60, 86400),
         twap_seconds=_int(document['twapSeconds'], 1, 86400),
-        exit_twap_seconds=_int(document['exitTwapSeconds'], 1, 86400),
+        # DominoAutoExit.MAX_TWAP_SECONDS (the owner's decision of 3 Oct 2026): a
+        # longer window would revert every v3 exit (TwapWindowTooLong).
+        exit_twap_seconds=_int(document['exitTwapSeconds'], 1, 3600),
         deadline_seconds=_int(document['deadlineSeconds'], 10, 3600),
         pass_seconds=_int(document['passSeconds'], 1, 3600),
         head_max_age_seconds=_int(document['headMaxAgeSeconds'], 1, 60),

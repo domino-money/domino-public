@@ -169,17 +169,17 @@ Labelled `gasleft()` deltas around the measured call (`-vv`), on the deployed DE
 | Measured call | v3 gas | v4 gas |
 | --- | ---: | ---: |
 | Signed anchor read | 28,044 | 25,276 |
-| Create, deployed router, Permit2 witness (relayed) | 862,017 | 704,259 |
-| Increase, direct pool | 297,320 | 249,597 |
-| Relayed change of range, direct pool | 729,408 | 500,777 |
-| Relayed exit with conversion | 290,386 | 245,891 |
-| Auto-compound, deployed router | 690,616 | 647,670 |
-| Auto-compound, direct pool | 620,873 | 566,807 |
+| Create, deployed router, Permit2 witness (relayed) | 865,630 | 707,836 |
+| Increase, direct pool | 301,997 | 252,662 |
+| Relayed change of range, direct pool | 734,073 | 503,827 |
+| Relayed exit with conversion | 296,790 | 250,717 |
+| Auto-compound, deployed router | 691,173 | 648,227 |
+| Auto-compound, direct pool | 622,492 | 566,825 |
 | Domino successor | 877,077 | 633,887 |
-| Owner `exitAll` | 31,461 | 31,467 |
-| Signed-mandate auto-exit with full conversion | 457,714 | 387,445 |
+| Owner `exitAll` | 33,607 | 33,613 |
+| Signed-mandate auto-exit with full conversion | 462,821 | 390,963 |
 
-A registry schedule plus execute is 169,858 gas (one registry, either DEX). The CI gas baseline (`contracts/.gas-snapshot`, `node scripts/gas-baseline.mjs --check --part v2`) pins every test's total.
+Measured again on 4 Oct 2026, after #317 and the adversarial suite's fixes. Each exact payment and refund now reads the token balance before and after (F-04), and so does each v3 hop (F-03). `exitAll` reads the exit module to disable it, a cold slot (2,146 gas). The signed anchor reads, the Domino successor and the registry are unchanged. A registry schedule plus execute is 169,858 gas (one registry, either DEX). The CI gas baseline (`contracts/.gas-snapshot`, `node scripts/gas-baseline.mjs --check --part v2`) pins every test's total.
 
 ## CI budget
 
@@ -197,6 +197,8 @@ Measured on 2 October 2026 on an Apple M3 Pro (Node 24.19, the pinned Forge 1.7.
 - the build step: about 30 s of its own. It compiles the V2 contracts that the first suite compiled before (`DominoV2External.t.sol` fell from 117 s to 52 s); the rest is `IntegrationArtifacts.sol` and its fixture closure.
 
 **On CI**, runners take 1.6 to 2 times this Mac's time: main's near-cold v2 half took 42m52s on run 37066559693 against 26m32s here, and #296 measured 2.0-2.1. A cold v2 half with these journeys therefore needs about 46-57 minutes against its 75-minute limit, with these journeys adding about 5 minutes. The first version added 24m42s on a warm run (37021480059). A change to the journeys alone recompiles only their seven files (and the artifacts file when it changes): about 2.5 minutes here, 4-5 on CI.
+
+**The audit suites (4 Oct 2026).** With the 19 suites of `contracts/test/v2/adversarial` and `invariant` (#319), the v2 half's 67 suites took 71.1 minutes cold on CI (run 37173015030), 61.0 of them compiling. Then the gas check met the 75-minute limit and the job was cancelled. The audit suites took 32.0 of those minutes and the other 48 suites 39.1. They now run as a third part, `Contracts (v2-audit)`, with its own cache. Each V2 part builds the deployables and the integration artifacts and checks the gas entries its own suites declare.
 
 ## Scope and exclusions
 

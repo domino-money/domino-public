@@ -414,12 +414,16 @@ jobs:
     # (#303) add about 5 minutes to a cold v2 half: 29m19s cold on a Mac with
     # them against 26m32s without, side by side, where main's near-cold v2
     # half took 42m52s on CI (run 37066559693); docs/v2/INTEGRATION_TESTS.md
-    # has the measurements.
+    # has the measurements. The V2 audit suites (contracts/test/v2/adversarial
+    # and invariant, #319) are a third part: with them the v2 half's 67 suites
+    # took 71.1 minutes cold on CI, 61 of them compiling, and the gas check
+    # then met the limit (run 37173015030). The 19 audit suites took 32.0 of
+    # those minutes, the other 48 the remaining 39.1.
     timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
-        part: [v1, v2]
+        part: [v1, v2, v2-audit]
     env:
       PART: ${{ matrix.part }}
     steps:
@@ -456,7 +460,7 @@ jobs:
       # outputs), so the first integration suites, which imported them, paid
       # 25 CI minutes for seven files (run 37021480059, PR #303).
       - name: Build the V2 contracts and test artifacts the integration suites deploy
-        if: matrix.part == 'v2'
+        if: matrix.part != 'v1'
         working-directory: contracts
         run: >-
           node ../scripts/test-contracts.mjs build
@@ -472,11 +476,12 @@ jobs:
       - name: Run the contract suites, one dependency closure at a time
         run: |
           set -e
-          if [ "$PART" = v2 ]; then
-            suites=$(find contracts/test/v2 -name '*.t.sol' | sort)
-          else
-            suites=$(find contracts/test -name '*.t.sol' -not -path 'contracts/test/v2/*' | sort)
-          fi
+          # The same partition as scripts/gas-baseline.mjs's inPart.
+          case "$PART" in
+            v2-audit) suites=$(find contracts/test/v2/adversarial contracts/test/v2/invariant -name '*.t.sol' | sort) ;;
+            v2) suites=$(find contracts/test/v2 -name '*.t.sol' -not -path 'contracts/test/v2/adversarial/*' -not -path 'contracts/test/v2/invariant/*' | sort) ;;
+            *) suites=$(find contracts/test -name '*.t.sol' -not -path 'contracts/test/v2/*' | sort) ;;
+          esac
           for suite in $suites; do
             echo "::group::${suite}"
             node scripts/test-contracts.mjs --match-path "${suite#contracts/}"

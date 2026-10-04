@@ -10,10 +10,12 @@ component autoExit) holds owners' signed one-shot ExitMandates. The operator:
 2. takes the anchor the module will take: on a v4 pool a publisher's signed
    observation of the spot at the head (valid at most the module's
    maxObservationAgeSeconds, 300 s), on a v3 pool the pool's TWAP over a window
-   of at least the module's minTwapSeconds (600 s), read through the price
-   anchor itself; and fires only when that anchor price has crossed a
-   trigger: at or below triggerBelow, or at or above a nonzero triggerAbove
-   (the module's own comparison). The spot alone never fires an exit;
+   of at least the module's minTwapSeconds (600 s) and at most its
+   MAX_TWAP_SECONDS (an hour; the configuration holds the operator's preferred
+   window to it), read through the price anchor itself; and fires only when
+   that anchor price has crossed a trigger: at or below triggerBelow, or at or
+   above a nonzero triggerAbove (the module's own comparison). The spot alone
+   never fires an exit;
 3. builds IDominoAutoExit.Execution: the evidence; for a conversion one pool
    leg through the vault's own pool selling the other token for convertTo
    with amountIn 0, which the module fills with everything withdrawn, and a
@@ -198,7 +200,9 @@ def vault_facts(rpc, mandate, block):
 
 
 def twap_exit_evidence(parameters, preferred_window):
-    """The v3 window an exit may use: at least the module's minimum."""
+    """The v3 window an exit may use: at least the module's minimum. The
+    preferred window is at most the module's hour (checked_config), which the
+    module's minimum never exceeds (its constructor), so neither does this."""
     window = max(parameters.min_twap_seconds, preferred_window)
     return window, twap_evidence(window)
 

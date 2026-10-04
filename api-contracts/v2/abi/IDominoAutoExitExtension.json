@@ -1,6 +1,6 @@
 {
   "source": "contracts/src/v2/interfaces/IDominoAutoExitExtension.sol",
-  "interfaceId": "0x3c903db1",
+  "interfaceId": "0xb8d72fba",
   "functions": {
     "cancelNonce(uint256)": "0xcfdd7aea",
     "claim(address,address)": "0x21c0b342",
@@ -8,6 +8,7 @@
     "mandateOf(bytes32)": "0x19eee827",
     "MAX_POOL_FEE_PIPS()": "0x48620409",
     "MAX_SLIPPAGE_BPS()": "0xe229cd76",
+    "MAX_TWAP_SECONDS()": "0x8447120b",
     "maxObservationAgeSeconds()": "0x9c392d2c",
     "minTwapSeconds()": "0x0036c27c",
     "nonceUsed(address,uint256)": "0x1647795e",
@@ -74,6 +75,11 @@
     {
       "inputs": [],
       "name": "NothingToClaim",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TwapWindowTooLong",
       "type": "error"
     },
     {
@@ -201,6 +207,19 @@
           "internalType": "uint16",
           "name": "",
           "type": "uint16"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MAX_TWAP_SECONDS",
+      "outputs": [
+        {
+          "internalType": "uint32",
+          "name": "",
+          "type": "uint32"
         }
       ],
       "stateMutability": "view",

@@ -408,7 +408,7 @@
     },
     {
       "path": "schema-data.mjs",
-      "sha256": "834227ae95fb93cb523db81015f45ccbcced85523284fd500d3aebd8845b36aa"
+      "sha256": "c2e926aefc3cdc688468b0ab085a9e9003d89bbd070210a57b05a10b112396e7"
     },
     {
       "path": "schemas/activity.request.schema.json",
@@ -428,11 +428,11 @@
     },
     {
       "path": "schemas/portfolio.response.schema.json",
-      "sha256": "7077223ea658979813a362c41e3d5157786ab89c4cfe659aa09d97a381a40034"
+      "sha256": "87cc2ee9486d9af825fec02ed17efa528d43c1515b8067408fef9976d9b1a1a9"
     },
     {
       "path": "types.ts",
-      "sha256": "16a73064bd6549c1e6c1cd757b01664427f567dbfb1fa1df2401cabd92d82413"
+      "sha256": "363080d92c63fd8357be50c4146a12ecbeedd751996db7019020d84246fda773"
     },
     {
       "path": "runtime.mjs",
@@ -455,7 +455,7 @@
   "sources": [
     {
       "path": "backend/v2_read_contract.py",
-      "sha256": "9af76da59e452b3a99f39671164443377fa33cbced8d1e7d2ea63930900f0f9e"
+      "sha256": "9c988cf355c701753a6a9b8f5b292c31d065f0757661585cbe8ed6505538a90a"
     },
     {
       "path": "backend/v2_read_service.py",

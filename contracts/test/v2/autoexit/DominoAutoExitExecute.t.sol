@@ -358,6 +358,25 @@ contract DominoAutoExitExecuteTest is AutoExitFixture {
         _eq(autoExit.mandateStatus(mandateHash), 3, "executed");
     }
 
+    /// The window's ceiling is an hour, inclusive (owner decision of 3 Oct 2026).
+    function testAV3TwapWindowIsCappedAtAnHour() public {
+        DominoV2Types.PoolRef memory v3 = _poolOf(DominoV2Types.DEX_V3, address(token0), address(token1));
+        MockVault v3Vault = _newVault(v3, HELD0, HELD1);
+        anchor.setTwap(v3, STOP);
+        anchor.setSpot(v3, STOP);
+        DominoV2Types.ExitMandate memory mandate = _mandate();
+        mandate.vault = address(v3Vault);
+        bytes32 mandateHash = _register(mandate);
+        uint32 ceiling = autoExit.MAX_TWAP_SECONDS();
+        _eq(ceiling, 3600, "an hour");
+        _refused(mandateHash, _plan(abi.encode(ceiling + 1)), IDominoAutoExitExtension.TwapWindowTooLong.selector);
+        _refused(mandateHash, _plan(abi.encode(type(uint32).max)), IDominoAutoExitExtension.TwapWindowTooLong.selector);
+        bytes memory evidence = abi.encode(ceiling);
+        vm.expectCall(address(anchor), abi.encodeCall(MockPriceAnchor.anchor, (v3, evidence, ceiling, 100)));
+        _execute(mandateHash, _plan(evidence));
+        _eq(autoExit.mandateStatus(mandateHash), 3, "executed");
+    }
+
     // ------------------------------------------------------------------ vault
     function testTheVaultEnforcesTheOperatorsMinimums() public {
         bytes32 mandateHash = _register(_mandate());

@@ -38,14 +38,20 @@ export function listSuites(directory = path.join(root, 'contracts', 'test')) {
   return found;
 }
 
-export const PARTS = Object.freeze(['v1', 'v2']);
+export const PARTS = Object.freeze(['v1', 'v2', 'v2-audit']);
+
+/** The V2 audit suites (reports/V2_AUDIT_PACKAGE.md): CI runs them as a part of their own. */
+const V2_AUDIT = Object.freeze(['test/v2/adversarial/', 'test/v2/invariant/']);
 
 /** Whether a suite path (relative to contracts/) belongs to a part; no part means every suite. */
 export function inPart(suite, part) {
   if (part === undefined) return true;
-  if (!PARTS.includes(part)) throw new Error(`unknown part ${part}; use ${PARTS.join(' or ')}`);
-  const v2 = suite.split(path.sep).join('/').startsWith('test/v2/');
-  return part === 'v2' ? v2 : !v2;
+  if (!PARTS.includes(part)) throw new Error(`unknown part ${part}; use ${PARTS.join(', ')}`);
+  const posix = suite.split(path.sep).join('/');
+  const v2 = posix.startsWith('test/v2/');
+  const audit = V2_AUDIT.some((prefix) => posix.startsWith(prefix));
+  if (part === 'v2-audit') return audit;
+  return part === 'v2' ? v2 && !audit : !v2;
 }
 
 /** The contract names a Solidity source declares; snapshot keys start with the test contract's name. */

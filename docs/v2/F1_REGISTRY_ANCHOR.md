@@ -63,14 +63,14 @@ Otherwise a lost or compromised guardian could block its own replacement and, th
 
 With this rule:
 
-- **A compromised guardian** costs at most two timelocks of automation. It can halt, remove and cancel, but not its own replacement. Governance replaces it after one timelock, then restores what it removed after a second.
+- **A compromised guardian** costs at most two timelocks of automation (exactly two timelocks and one second: a change cannot execute in the second the guardian acts). It can halt, remove and cancel, but not its own replacement. Governance replaces it after one timelock, then restores what it removed after a second.
 - **A compromised governance** needs two timelocks to defeat an honest guardian: one to replace it, one for the change it was vetoing. Throughout, the guardian can halt automation and remove every role, and owners can exit, since exits never read the registry.
 
 ### Other rules
 
 - **Operators and publishers are disjoint.** The key that executes never attests the price that bounds its own execution. The deployment configuration is checked the same way.
 - **The observation epoch** only rises and never passes `block.timestamp`. It voids the past and can never block observations made from now on. Observations with `observedAt` equal to the epoch stay valid, so a compromised publisher key is handled by `removePublisher`, which voids all its observations immediately. The epoch is for voiding everything signed so far by everyone.
-- **The deployment configuration** (governance, guardian, timelock, fee recipient, operators, publishers, routers, charge currencies) applies without a delay. The deployment is the governance act that sets it. The constructor emits the same events as the changes would, so an indexer rebuilds the state from logs.
+- **The deployment configuration** (governance, guardian, timelock, fee recipient, operators, publishers, routers, charge currencies) applies without a delay. The deployment is the governance act that sets it. The constructor emits the same events as the changes would, so an indexer rebuilds the state from logs. The one exception is the timelock's value, which no event carries: `timelockSeconds()` gives it, and so does the first scheduled change's `executableAt`.
 
 ## Price anchor
 
@@ -209,13 +209,13 @@ AnchorMath.withinBand(anchorSqrtPriceX96, DominoPriceAnchor(anchor).spotSqrtPric
 | Situation | Who | Calls |
 | --- | --- | --- |
 | Admit an operator, a publisher or a router | governance | `scheduleChange(REGISTRY_OPERATOR, abi.encode(addr, true))` (or `REGISTRY_PUBLISHER`, or `REGISTRY_ROUTER` with the router's version, `uint16(212)` for 2.1.2). After the timelock, `executeChange(id)`. Before scheduling a router, check its address and code hash against `api-contracts/v2/chains`. |
-| An operator or publisher key leaks | guardian | `removeOperator` or `removePublisher`, at once. For a publisher, every observation it signed is void from that block; `raiseObservationEpoch(block.timestamp)` also voids every earlier observation of every publisher. Re-admitting the same address needs a change scheduled after the removal. |
+| An operator or publisher key leaks | guardian | `removeOperator` **and** `removePublisher`, at once: removal is per role, so a leaked key's pending admission to the other role becomes executable once it no longer holds the first (the adversarial suite pins it). For a publisher, every observation it signed is void from that block; `raiseObservationEpoch(block.timestamp)` also voids every earlier observation of every publisher, but never one dated in the future (the epoch never passes the clock). **Never re-admit a leaked key**: its future-dated observations would be valid again. Re-admitting an address needs a change scheduled after the removal. |
 | One observation is wrong | its publisher or the guardian | `revokeObservation(hashObservation(point))`. |
 | Stop automation everywhere | guardian | `haltAutomation()`. Resuming takes `scheduleChange(REGISTRY_RESUME_AUTOMATION, "")` after the halt, then the timelock. |
 | Veto a pending change | guardian | `cancelChange(id)`; not a guardian change. |
 | Rotate the fee recipient (A1) or the guardian (A13) | governance | `REGISTRY_FEE_RECIPIENT` or `REGISTRY_GUARDIAN`, through the timelock. The guardian cannot cancel its own replacement. |
 | Change the timelock | governance | `REGISTRY_TIMELOCK`, through the current timelock; it applies to later changes only. |
-| Move governance | governance, then the new address | `transferGovernance(next)`, then `acceptGovernance()` from `next`. `transferGovernance(address(0))` withdraws an offer. |
+| Move governance | governance, then the new address | `transferGovernance(next)`, then `acceptGovernance()` from `next`. `transferGovernance(address(0))` withdraws an offer. The hand-over is immediate and outside the guardian's veto, and an offer never expires: monitoring watches `GovernanceTransferStarted` and withdraws a stale offer. Never hand governance to the guardian's address: nothing on chain refuses it, and that address could then cancel guardian changes. |
 | A new Universal Router version | governance | `REGISTRY_ROUTER` with its version (above 212), through the timelock, after checking the address and code hash. No new registry is needed. Retire the old router with `REGISTRY_ROUTER` version 0 or the guardian's `removeRouter`. Versions below 212 (2.0, 2.1.1) are refused. |
 
 ## Deployment parameters

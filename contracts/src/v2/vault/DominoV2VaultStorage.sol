@@ -98,14 +98,15 @@ abstract contract DominoV2VaultStorage is DominoActionLock {
     uint64 internal _lastExecutionAt;
     /// Why the root was last disarmed (a DISARM_* reason); stale while armed.
     uint8 internal _disarmReason;
-    // slots 2-4: the pool
+    // slots 2-4: the pool; slot 4 also holds the root token id, packed
+    // after the hooks
     address internal _currency0;
     uint24 internal _fee;
     int24 internal _tickSpacing;
     address internal _currency1;
     address internal _hooks;
-    // slot 5
     uint96 internal _rootTokenId;
+    // slot 5
     address internal _exitModule;
     // slot 6: the v3 root checkpoint (unused on v4)
     bytes32 internal _rootCheckpoint;
@@ -311,8 +312,16 @@ abstract contract DominoV2VaultStorage is DominoActionLock {
         return DominoTokenOps.selfBalance(token);
     }
 
+    /// An exact payment. A token that debits the vault more than it moves (a
+    /// sender-side fee) would spend what the vault owes or keeps for others,
+    /// so it is refused, as F1b refuses it in its own payments. The
+    /// best-effort sweeps (_release, exitAll's and returnReserves' idle
+    /// payments) keep A8's rule instead and never revert over one token.
     function _pay(address token, address to, uint256 amount) internal {
-        if (amount != 0) DominoTokenOps.transfer(token, to, amount);
+        if (amount == 0) return;
+        uint256 held = _balance(token);
+        DominoTokenOps.transfer(token, to, amount);
+        if (_balance(token) + amount < held) revert DominoTokenOps.TokenCallFailed(token);
     }
 
     function _u128(uint256 value) internal pure returns (uint128) {

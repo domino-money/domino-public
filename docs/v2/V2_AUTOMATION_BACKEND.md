@@ -197,7 +197,7 @@ One private JSON file per chain (0600, in a 0700 directory outside any checkout;
 | `observations` | The publisher: `validitySeconds` (120), `lookbackSeconds` ([12, 60]), `maxDeviationBps` (50). |
 | `priceReferences` | `[{token, pool}]`: a pool between a token and the native or wrapped native token, per token to value directly (the chain's stable). Others are valued through the vault's pool. |
 | `earningsWindowSeconds` | The owner gate's fee-growth window. On Robinhood, at most about 20 minutes stays on Domino's own node (15,000 blocks of state); older reads go to the archive fallback. |
-| `twapSeconds`, `exitTwapSeconds` | The v3 TWAP windows for compounds and exits (each bounded by what the vault or the module admits). |
+| `twapSeconds`, `exitTwapSeconds` | The v3 TWAP windows for compounds and exits (each bounded by what the vault or the module admits; `exitTwapSeconds` at most 3,600, the module's `MAX_TWAP_SECONDS`). |
 | `deadlineSeconds` | A plan's deadline after the head (a v4 plan never outlives its observation). |
 | `passSeconds`, `headMaxAgeSeconds` | The serve loop's cadence and the head follower's maximum age. |
 | `autoExit` | Whether this service executes mandates. |

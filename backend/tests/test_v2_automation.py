@@ -121,6 +121,7 @@ class ConfigTests(unittest.TestCase):
             'a maximum of 100%': lambda c: c['vaultDefaults']['ownerMaxima'].update(maxPriceImpactBps=10_000),
             'no observation age': lambda c: c['vaultDefaults']['limits'].update(maxObservationAgeSeconds=0),
             'an exit slippage above the module': lambda c: c['vaultDefaults'].update(exitMaxSlippageBps=1001),
+            'an exit TWAP above the module\'s hour': lambda c: c.update(exitTwapSeconds=3601),
             'a zero gas ceiling': lambda c: c.update(vaultGasCeilingWei=0),
             'a relative waiting file': lambda c: c.update(waitingFile='waiting.json'),
             'a ceiling for no address': lambda c: c.update(vaultGasCeilingsWei={'vault': 1}),

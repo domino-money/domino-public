@@ -105,11 +105,13 @@ class DeriveTests(unittest.TestCase):
     def test_a_failed_custody_check_and_exit_all_are_vault_events(self):
         custody, = derive_transaction(Tx().add(VAULT, 'RootDisarmed', reason=4, stateNonce=6).logs, ctx())
         self.assertEqual((custody.kind, custody.wallets), ('vault_event', (OWNER,)))
+        # exitAll also disables the exit module (3 Oct 2026): one more event, the same item.
         exit_all = (Tx().add(VAULT, 'ChildWithdrawn', tokenId=8, stateNonce=7)
                     .add(VAULT, 'ReservesWithdrawn', token=T0, amount=3, stateNonce=7)
+                    .add(VAULT, 'ExitModuleSet', module=ZERO, stateNonce=7)
                     .add(VAULT, 'RootDisarmed', reason=7, stateNonce=7))
         item, = derive_transaction(exit_all.logs, ctx())
-        self.assertEqual((item.kind, len(item.logs)), ('vault_event', 3))
+        self.assertEqual((item.kind, item.wallets, len(item.logs)), ('vault_event', (OWNER,), 4))
 
     def test_fee_or_position_events_outside_an_execution_are_refused(self):
         for name, args in (('Compounded', dict(tokenId=7, liquidityAdded=1, fees0=1, fees1=1, serviceFee0=0,

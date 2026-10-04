@@ -51,6 +51,10 @@ contract DominoAutoExit is IDominoAutoExit, IDominoAutoExitExtension, DominoFeeL
     address public immutable priceAnchor;
     uint32 public immutable maxObservationAgeSeconds;
     uint32 public immutable minTwapSeconds;
+    /// The longest v3 TWAP an execution may anchor on (owner decision of 3 Oct
+    /// 2026): a longer window would let the operator fire a stop on history
+    /// the floor window no longer sees.
+    uint32 public constant MAX_TWAP_SECONDS = 3600;
 
     mapping(bytes32 mandateHash => MandateRecord) private _mandates;
     mapping(address owner => mapping(uint256 nonce => bool)) public nonceUsed;
@@ -86,7 +90,10 @@ contract DominoAutoExit is IDominoAutoExit, IDominoAutoExitExtension, DominoFeeL
         uint32 maxObservationAgeSeconds_,
         uint32 minTwapSeconds_
     ) DominoFeeLedger(route.registry) DominoSwapExecutor(route) {
-        if (priceAnchor_ == address(0) || maxObservationAgeSeconds_ == 0 || minTwapSeconds_ == 0) {
+        if (
+            priceAnchor_ == address(0) || maxObservationAgeSeconds_ == 0 || minTwapSeconds_ == 0
+                || minTwapSeconds_ > MAX_TWAP_SECONDS
+        ) {
             revert InvalidConfiguration();
         }
         priceAnchor = priceAnchor_;
@@ -264,8 +271,9 @@ contract DominoAutoExit is IDominoAutoExit, IDominoAutoExitExtension, DominoFeeL
     }
 
     /// The anchor's price for the vault's pool. The band against the spot is
-    /// the mandate's slippage. A v3 TWAP must span minTwapSeconds; the module
-    /// has bounded its window, so it passes the window as the age bound.
+    /// the mandate's slippage. A v3 TWAP must span at least minTwapSeconds and
+    /// at most MAX_TWAP_SECONDS; the module has bounded its window, so it
+    /// passes the window as the age bound.
     function _anchorPrice(DominoV2Types.PoolRef memory pool, bytes calldata evidence, uint16 band)
         private
         view
@@ -275,6 +283,7 @@ contract DominoAutoExit is IDominoAutoExit, IDominoAutoExitExtension, DominoFeeL
         if (evidence.length == 32) {
             uint32 window = abi.decode(evidence, (uint32));
             if (window < minTwapSeconds) revert TwapWindowTooShort();
+            if (window > MAX_TWAP_SECONDS) revert TwapWindowTooLong();
             maxAge = window;
         }
         (price,) = IDominoPriceAnchor(priceAnchor).anchor(pool, evidence, maxAge, band);

@@ -175,7 +175,7 @@ export const READ_V5_PIN = {
 export const BACKEND_OPENAPI_PIN = {
   path: 'backend/openapi-read.json',
   infoVersion: '0.8.0',
-  sha256: '43ad1f729f49d85127de3055e9b3733286fefe961b01733b26f112da23669df6',
+  sha256: 'ac27a4b604bc2b4d0fc342c98603b95ea9b289176e3c54260bf9bed0d3e4dde6',
 } as const
 
 export type ReadContractPin = (typeof PRODUCER_PIN)['packages']['read-v1']['version']

@@ -18,6 +18,7 @@ interface IDominoAutoExitExtension {
     error VaultOwnerChanged();
     error InvalidAnchor();
     error TwapWindowTooShort();
+    error TwapWindowTooLong();
     error InvalidExecution();
     error BelowMinimum();
     error NothingToClaim();
@@ -71,6 +72,8 @@ interface IDominoAutoExitExtension {
     function maxObservationAgeSeconds() external view returns (uint32);
     /// The shortest v3 TWAP window accepted as an exit's anchor.
     function minTwapSeconds() external view returns (uint32);
+    /// The longest v3 TWAP window accepted as an exit's anchor (one hour).
+    function MAX_TWAP_SECONDS() external view returns (uint32);
 
     function mandateOf(bytes32 mandateHash) external view returns (MandateRecord memory record);
     /// True once the owner's nonce registered a mandate or was cancelled.

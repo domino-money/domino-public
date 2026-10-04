@@ -54,6 +54,7 @@ It is the first Domino contract with power over principal. Its audit scope is th
 
 **Owners should know:**
 - Disabling the module on the vault (`setExitModule(0)`) pauses that vault's mandates; it does not revoke them. Enabling the module again brings them back. The app should offer to revoke them at that moment, or show them as paused.
+- The vault's `exitAll` disables the module in the same call (owner decision, 3 Oct): it emits `ExitModuleSet(0, nonce)` under exitAll's nonce, and the vault's mandates pause exactly as above. A stop the owner signed never fires on a root they took back unless they enable the module again.
 - Executing one mandate does not end other active mandates on the same position.
 
 ## Execution
@@ -69,6 +70,7 @@ It is the first Domino contract with power over principal. Its audit scope is th
 | The vault's `owner()` is no longer the mandate's owner | `VaultOwnerChanged` |
 | The vault's pool has no two ordered tokens, or the conversion target is not one of them | `InvalidMandate` |
 | A TWAP window shorter than `minTwapSeconds` | `TwapWindowTooShort` |
+| A TWAP window longer than `MAX_TWAP_SECONDS` (3,600 s) | `TwapWindowTooLong` |
 | The anchor refuses the evidence | the anchor's error, e.g. `ObservationExpired`, `SpotOutsideBand` |
 | The anchor returns zero | `InvalidAnchor` |
 | No trigger reached | `TriggerNotReached` |
@@ -79,7 +81,8 @@ It is the first Domino contract with power over principal. Its audit scope is th
 - The module calls `anchor(vault.pool(), evidence, maxAge, band)`.
 - `band` is the mandate's `maxSlippageBps`: the spot may stand at most that far from the anchor.
 - A signed observation's `maxAge` is the module's `maxObservationAgeSeconds`.
-- A v3 TWAP's evidence is 32 bytes. Its window must be at least `minTwapSeconds`. The module then passes the window itself as `maxAge`: an anchor that bounds a TWAP window by `maxAge` accepts exactly what the module approved, and an anchor that ignores `maxAge` for a TWAP is unaffected.
+- A v3 TWAP's evidence is 32 bytes. Its window must be at least `minTwapSeconds` and at most `MAX_TWAP_SECONDS`, one hour (owner decision, 3 Oct). The module then passes the window itself as `maxAge`: an anchor that bounds a TWAP window by `maxAge` accepts exactly what the module approved, and an anchor that ignores `maxAge` for a TWAP is unaffected.
+- Why the ceiling: the operator picks the window. Without one, a window reaching back into an old dip fired a stop the price never crossed after the owner signed, bounded only by the band (the adversarial suite pinned a 6,500 s window doing so an hour after the recovery). The ceiling the owner chose, an hour, is six times the floor.
 
 **Triggers.** Prices are the pool's sqrt price, token1 per token0, Q64.96.
 - `triggerBelowSqrtPriceX96` fires when the anchor is at or below it.
@@ -191,7 +194,7 @@ Examples on Robinhood (USDG rank 1, ETH/WETH rank 2):
 | Choice | Bound |
 | --- | --- |
 | When to execute | After a trigger |
-| The evidence | Fresh, from an admitted publisher, or a long enough TWAP |
+| The evidence | Fresh, from an admitted publisher, or a v3 TWAP of `minTwapSeconds` to one hour |
 | The legs | Admitted routers or v3/v4 pools, each checked by its effect |
 | The minimums | The module's floor applies regardless |
 
@@ -220,16 +223,16 @@ The planner (F6) should still service factory vaults only, to avoid wasting gas.
 
 ## Deployment
 
-- **Constructor:** `(RouteConfig route, priceAnchor, maxObservationAgeSeconds, minTwapSeconds)`. `route` is F1b's `{registry, permit2, v3Factory, v3PoolInitCodeHash, v4PoolManager}` from the chain profile; a zero factory or PoolManager disables that leg kind. None of the other three may be zero.
+- **Constructor:** `(RouteConfig route, priceAnchor, maxObservationAgeSeconds, minTwapSeconds)`. `route` is F1b's `{registry, permit2, v3Factory, v3PoolInitCodeHash, v4PoolManager}` from the chain profile; a zero factory or PoolManager disables that leg kind. None of the other three may be zero, and `minTwapSeconds` may not exceed `MAX_TWAP_SECONDS` (`InvalidConfiguration`).
 - **Address:** deployed through CreateX `deployCreate3` with the `autoExit` salt of F0, so the address is the same on every chain while the arguments are per chain.
-- **Values** (owner decision, 2 Oct): `maxObservationAgeSeconds` 300, `minTwapSeconds` 600 (v3 TWAPs only).
+- **Values** (owner decision, 2 Oct): `maxObservationAgeSeconds` 300, `minTwapSeconds` 600 (v3 TWAPs only). The ceiling `MAX_TWAP_SECONDS` is a constant, 3,600 (owner decision, 3 Oct).
 
 ## The anchor (F1a)
 
 Checked against F1a's implementation (PR #290, `docs/v2/F1_REGISTRY_ANCHOR.md`); the test double follows it.
 
 - **Evidence.** 32 bytes is a v3 TWAP's `secondsAgo`; anything else is a signed observation.
-- **TWAP window.** The anchor accepts a window within `[its own minTwapSeconds, maxAgeSeconds]` (`TwapUnavailable` otherwise). The module first requires its own `minTwapSeconds`, then passes the window as `maxAgeSeconds`, so the ceiling holds by construction. The effective floor is the larger of the two minimums.
+- **TWAP window.** The anchor accepts a window within `[its own minTwapSeconds, maxAgeSeconds]` (`TwapUnavailable` otherwise). The module first requires its own `minTwapSeconds` and `MAX_TWAP_SECONDS`, then passes the window as `maxAgeSeconds`, so the anchor's ceiling holds by construction. The effective floor is the larger of the two minimums.
 - **Band.** Symmetric on the price: `max(a, s)^2 * 10000 <= min(a, s)^2 * (10000 + d)`, with `d` the mandate's slippage.
 - **Reverts that reach the operator:**
   - `PoolUnavailable` (spot unreadable);
@@ -245,7 +248,7 @@ Checked against F1a's implementation (PR #290, `docs/v2/F1_REGISTRY_ANCHOR.md`);
 **Reading mandates.** `MandateRegistered` gives the id, owner, vault and token id. `mandateOf(id)` gives the triggers, mode, target, slippage and validity, and `mandateStatus(id)` the status. Watch the vaults' `ExitModuleSet`.
 
 **Building an `Execution`:**
-- `anchorEvidence`: a fresh publisher observation, or `abi.encode(uint32 window)` with `window >= minTwapSeconds` on v3.
+- `anchorEvidence`: a fresh publisher observation, or `abi.encode(uint32 window)` with `minTwapSeconds <= window <= MAX_TWAP_SECONDS` on v3.
 - `legs`: as F1b's guide for the planner says. Router calldata is paid through Permit2 (`payerIsUser = true`, `SETTLE_ALL`), swaps exactly `amountIn` and pays `MSG_SENDER`. Put the remainder on a v3/v4 pool leg with `amountIn = 0`, which the module fills in. Every `minAmountOut` must be positive. Leave legs empty when receiving both.
 - `amount0MinRemoved`/`amount1MinRemoved`: optional removal minimums.
 
@@ -262,7 +265,7 @@ Checked against F1a's implementation (PR #290, `docs/v2/F1_REGISTRY_ANCHOR.md`);
 | Suite | Tests | Covers |
 | --- | ---: | --- |
 | `DominoAutoExitMandate.t.sol` | 35 | Every registration term, signatures, replay, revocation, nonces, the F0 goldens, ERC-165, the constructor and the size limit. |
-| `DominoAutoExitExecute.t.sol` | 47 | Operator, halt, status, expiry and consent. The anchor: stale, unadmitted, revoked, epoch-voided, unreadable pool, down, zero, band, TWAP window and arguments. Triggers and brackets, one shot, removal minimums, a withholding vault, reentry into each entry point. Measured delivery (reverting, false-returning, lying and over-debiting tokens), credits and claims, owed fees and flush, gas-burning owners and recipients. |
+| `DominoAutoExitExecute.t.sol` | 48 | Operator, halt, status, expiry and consent. The anchor: stale, unadmitted, revoked, epoch-voided, unreadable pool, down, zero, band, the TWAP window's floor and ceiling, and the arguments. Triggers and brackets, one shot, removal minimums, a withholding vault, reentry into each entry point. Measured delivery (reverting, false-returning, lying and over-debiting tokens), credits and claims, owed fees and flush, gas-burning owners and recipients. |
 | `DominoAutoExitConversion.t.sol` | 32 | Conversion both ways, through a router and through the vendored PoolManager's v4 pools, native in and out. The remainder on a pool leg, split routes, every leg rule. The floor to the unit, the #3409682 case, the 10% fee ceiling, a v4 protocol fee, a v3 tier. F1b's executor refusals as wired. Every fee rule, and fuzzed conservation with the fee bound. |
 
 They run on Robinhood's Permit2 runtime, the vendored v4 PoolManager and F1b's scripted router. The doubles implement the frozen interfaces with the semantics their NatSpec states, and the anchor follows F1a's implementation. Each can turn adversarial where a test needs it:
@@ -304,7 +307,11 @@ Guards that moved into F1b's modules are pinned by F1b's batch (`v2-fees-route-2
 4. **The registry halt stops exits** (kept).
 5. **No conversion into a third token** (kept).
 6. **Undeliverable amounts become claimable credits** (kept).
-7. **Windows:** `maxObservationAgeSeconds` 300; `minTwapSeconds` 600, for v3 TWAPs only.
+7. **Windows:** `maxObservationAgeSeconds` 300; `minTwapSeconds` 600, for v3 TWAPs only (a ceiling of one hour added on 3 Oct, below).
 8. **Direct v3/v4 legs** through F1b's executor: enabled (the size allows it).
 
 Decided 3 Oct 2026: the 10% ceiling on the pool fee counted in the floor (`MAX_POOL_FEE_PIPS`), this front's own bound on dynamic fees, is kept; it touches only pools above 10%.
+
+Decided on the night of 3 Oct 2026, after the adversarial suite:
+- **A v3 TWAP spans at most one hour** (`MAX_TWAP_SECONDS` = 3,600, `TwapWindowTooLong`; the constructor refuses a `minTwapSeconds` above it). Before, the operator's window had no ceiling.
+- **`exitAll` disables the module** on the vault (`ExitModuleSet(0, nonce)`). Before, the module stayed enabled and an active stop still removed the root the owner had taken back, liquidity added afterwards included.

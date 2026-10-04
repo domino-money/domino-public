@@ -59,10 +59,17 @@ test('suites are every test file under contracts/test except the vendored offici
   }
 });
 
-test('a part is the V2 suites or everything else, and an unknown part is refused', () => {
-  const suites = ['test/A.t.sol', 'test/reference/R.t.sol', 'test/v2/zap/Z.t.sol', 'test/v2/DominoV2Types.t.sol', 'test/v2x/X.t.sol'];
-  assert.deepEqual(suites.filter((suite) => inPart(suite, 'v2')), ['test/v2/zap/Z.t.sol', 'test/v2/DominoV2Types.t.sol']);
+test('a part is the V2 audit suites, the other V2 suites or everything else, and an unknown part is refused', () => {
+  const suites = [
+    'test/A.t.sol', 'test/reference/R.t.sol', 'test/v2/zap/Z.t.sol', 'test/v2/DominoV2Types.t.sol', 'test/v2x/X.t.sol',
+    'test/v2/adversarial/Attacks.t.sol', 'test/v2/invariant/Ledger.t.sol', 'test/v2/adversarialx/Y.t.sol',
+  ];
+  assert.deepEqual(suites.filter((suite) => inPart(suite, 'v2')), ['test/v2/zap/Z.t.sol', 'test/v2/DominoV2Types.t.sol', 'test/v2/adversarialx/Y.t.sol']);
+  assert.deepEqual(suites.filter((suite) => inPart(suite, 'v2-audit')), ['test/v2/adversarial/Attacks.t.sol', 'test/v2/invariant/Ledger.t.sol']);
   assert.deepEqual(suites.filter((suite) => inPart(suite, 'v1')), ['test/A.t.sol', 'test/reference/R.t.sol', 'test/v2x/X.t.sol']);
+  for (const suite of suites) {
+    assert.equal(['v1', 'v2', 'v2-audit'].filter((part) => inPart(suite, part)).length, 1, `${suite} is in exactly one part`);
+  }
   assert.equal(suites.every((suite) => inPart(suite, undefined)), true);
   assert.throws(() => inPart('test/A.t.sol', 'v3'), /unknown part v3/);
 });

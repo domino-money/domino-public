@@ -87,6 +87,7 @@
         "SwapEffectMismatch()": "0x374aa3d7",
         "TokenCallFailed(address)": "0xfecb69b4",
         "TriggerNotReached()": "0xdccfcae2",
+        "TwapWindowTooLong()": "0x38fa200f",
         "TwapWindowTooShort()": "0xe602580b",
         "Unauthorized()": "0x82b42900",
         "VaultOwnerChanged()": "0x5aeff3a7"

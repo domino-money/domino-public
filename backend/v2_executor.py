@@ -79,8 +79,8 @@ CONTRACT_ERRORS = (
     'PoolUnavailable()', 'PositionPoolMismatch(uint256)', 'ReentrantCall()', 'RootOpen()',
     'SettlementMismatch(address,uint256,uint256)', 'SpotOutsideBand()', 'StaleNonce()', 'StepUnavailable()',
     'SuccessorActive()', 'SwapEffectMismatch()', 'TokenCallFailed(address)', 'TooSoon()', 'TransferFailed(address)',
-    'TriggerNotReached()', 'TwapUnavailable()', 'TwapWindowTooShort()', 'Unauthorized()', 'UnexpectedCallback()',
-    'VaultOwnerChanged()', 'WrappedError(address,bytes4,bytes,bytes)',
+    'TriggerNotReached()', 'TwapUnavailable()', 'TwapWindowTooLong()', 'TwapWindowTooShort()', 'Unauthorized()',
+    'UnexpectedCallback()', 'VaultOwnerChanged()', 'WrappedError(address,bytes4,bytes,bytes)',
 )
 
 

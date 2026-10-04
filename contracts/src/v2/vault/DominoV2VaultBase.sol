@@ -292,8 +292,9 @@ abstract contract DominoV2VaultBase is DominoV2VaultStorage, DominoFeeLedger, ID
     }
 
     /// Ends the sequence: every child to the owner, every reserve the owner can
-    /// receive paid out (one it cannot stays idle), the root disarmed and
-    /// automation paused.
+    /// receive paid out (one it cannot stays idle), the root disarmed,
+    /// automation paused and the exit module disabled (owner decision of 3 Oct
+    /// 2026: an active stop no longer fires; setExitModule enables it again).
     function exitAll() external nonReentrant onlyOwner {
         uint64 nonce = ++_stateNonce;
         address owner_ = _owner;
@@ -311,6 +312,10 @@ abstract contract DominoV2VaultBase is DominoV2VaultStorage, DominoFeeLedger, ID
         _payIdle(currency0, owner_, nonce);
         _payIdle(currency1, owner_, nonce);
         _paused = true;
+        if (_exitModule != address(0)) {
+            _exitModule = address(0);
+            emit ExitModuleSet(address(0), nonce);
+        }
         // Recorded even when already disarmed, so no operator rearms after it.
         if (_rootArmed) emit RootDisarmed(DISARM_EXIT_ALL, nonce);
         _markDisarmed(DISARM_EXIT_ALL);

@@ -356,6 +356,9 @@ contract DominoAutoExitMandateTest is AutoExitFixture {
         new DominoAutoExit(route, address(anchor), 0, MIN_TWAP);
         vm.expectRevert(DominoAutoExit.InvalidConfiguration.selector);
         new DominoAutoExit(route, address(anchor), MAX_AGE, 0);
+        // A floor above the hour's ceiling would refuse every TWAP.
+        vm.expectRevert(DominoAutoExit.InvalidConfiguration.selector);
+        new DominoAutoExit(route, address(anchor), MAX_AGE, 3601);
         route.registry = IDominoRegistry(STRANGER);
         vm.expectRevert(DominoFeeLedger.InvalidFeeConfig.selector);
         new DominoAutoExit(route, address(anchor), MAX_AGE, MIN_TWAP);
@@ -366,6 +369,7 @@ contract DominoAutoExitMandateTest is AutoExitFixture {
         _eq(autoExit.priceAnchor(), address(anchor), "anchor");
         _eq(autoExit.maxObservationAgeSeconds(), MAX_AGE, "max age");
         _eq(autoExit.minTwapSeconds(), MIN_TWAP, "min twap");
+        _eq(autoExit.MAX_TWAP_SECONDS(), 3600, "max twap");
         _eq(autoExit.MAX_SLIPPAGE_BPS(), 1000, "slippage cap");
         _eq(autoExit.MAX_POOL_FEE_PIPS(), 100_000, "pool fee ceiling");
         _eq(autoExit.INSTRUCTION_VERSION(), 1, "instruction version");

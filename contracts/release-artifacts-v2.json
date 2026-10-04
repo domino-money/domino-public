@@ -23,25 +23,25 @@
     "vaultExecutor.v3": "DominoV2VaultExecutorV3",
     "vaultExecutor.v4": "DominoV2VaultExecutorV4"
   },
-  "sourceTreeSha256": "4de35b9531d687a1f09721715e23e090fc31ccc9c1d981e2234c2ef6ec8209b6",
+  "sourceTreeSha256": "296008a420406c857706033149e39d17fba544061507ee9ad0ed06a199f75ad9",
   "sources": {
     "src/v2/DominoV2RelayTypes.sol": "21e86e7ae93a38a9d6f468ff5d103b68da7dc6d08f4d4e69fd6389e93239e249",
     "src/v2/DominoV2Types.sol": "ba3704899465ac61c8ded16ae89c3eac41b3e1fdb5c9442ae92c57ab65e87f0c",
     "src/v2/anchor/AnchorMath.sol": "6dbb1e2c975ea4a2b6e03de6934117cb59249228da232f1501da1ff2a01eb094",
     "src/v2/anchor/DominoPriceAnchor.sol": "5d3a14f990b427f719ad6febc2a99bcc6a927daebc5a02616ba4e08a8e99fd3b",
-    "src/v2/autoexit/DominoAutoExit.sol": "b7526cdd92a95132abd0ecb570b83259da369cd6ee2473cf44209cf07ffcfcc5",
+    "src/v2/autoexit/DominoAutoExit.sol": "1ca56091254ce832577480cb1e1b268e5874555a4b07beec24eb8d1ddc15946c",
     "src/v2/external/IPermit2Signature.sol": "aeabff4a33e1305db02080124c7005003521027a339482416c0ab83976815796",
     "src/v2/external/IUniswapV3Minimal.sol": "adf95f6fb40707c78cb403135cbb24590462ff5636634525f762816c0caed26b",
     "src/v2/external/IUniswapV4Minimal.sol": "d629c41e7a552646fa8b1b12b30783e85f303075bc34d68e45608003ce2a79a8",
     "src/v2/fees/DominoFeeLedger.sol": "add1beb81d7b9b26b3af4214916793ba44ca9955afaa97d41f830f7814f997ae",
     "src/v2/fees/DominoFeeRules.sol": "fca2a256024e028b22574c186831132dae6a9d6ec19b4bd9418ca3c27dfc430b",
     "src/v2/interfaces/IDominoAutoExit.sol": "165af9ab00ca1beedca111af796bb709694664f57acfc233b5807059bf73ba61",
-    "src/v2/interfaces/IDominoAutoExitExtension.sol": "afee670ad8747028bbb83ff2e5a13726e94693f9ee7a31e5fc736b40e34dc9a3",
+    "src/v2/interfaces/IDominoAutoExitExtension.sol": "ffd7f6929598005517b66ccf4dd1c53e2a809406ced954be1e4badb7efa4935a",
     "src/v2/interfaces/IDominoFees.sol": "9e6393dfbc0ddcb3192cb249849071a861baa173058131672020cfde94df7818",
     "src/v2/interfaces/IDominoPositionActions.sol": "0bc9ab8113689792cb8cf467036b7f8b21cc7708d7d43a4074ac7b0292832156",
     "src/v2/interfaces/IDominoPriceAnchor.sol": "afa6a43d0cc7ae57af00f0baab349363f7265210cbf3a5a8bc48f95e07bb6502",
     "src/v2/interfaces/IDominoRegistry.sol": "dcdf552d64e6123246f9f102545057b2b180745ca7fe2188729645cf92f5274a",
-    "src/v2/interfaces/IDominoVault.sol": "bc57b5b856d16b84d86fbe70f83f67ecb009aa2d2f37cb69a5916802f58bf512",
+    "src/v2/interfaces/IDominoVault.sol": "b3cb140e2dda1a9bb658e25964b1d85fb536fc13bfb6b1d605dc11c39ec5b8b7",
     "src/v2/interfaces/IDominoVaultLedger.sol": "53ea322b29edc44e4bc9d21c431dab1652b9ea3dad36bfa5ff499d0fed06ea0f",
     "src/v2/interfaces/IDominoZap.sol": "42ef36bb78a408d2dae918058cc9440fb49192828c6a074cecadfdaa2982d93f",
     "src/v2/positions/DominoPositionMath.sol": "caadd732f2ce3e254e154a671f50b96f69a949f7a62d33c3cb707fdee747388e",
@@ -60,20 +60,20 @@
     "src/v2/registry/DominoRegistry.sol": "7a3bbafb7971d01036607688adf59252a9e4b202ff55d6e4682de82442636d18",
     "src/v2/route/DominoActionLock.sol": "0c2e4a54ac247aeb1f53256deedc41c89355eb75c8431613284ca4f1aaea14c9",
     "src/v2/route/DominoAssistedSwap.sol": "8ea7d1d6a197f0312e80d0bcacf34cea9c3aca1194f0fb92758a48b97b06d13a",
-    "src/v2/route/DominoSwapExecutor.sol": "5dfefe7f276c631baf6b4aece79964b3250e96a7e750b1a6fcd4782b4e1f9b80",
+    "src/v2/route/DominoSwapExecutor.sol": "3cd1e8364ae074e27a759032861870ce91dc26eb4faa9c451f5f54030f6edef6",
     "src/v2/route/DominoSwapFloor.sol": "f565deba3ce6009b192605a1aa8baa232fef0842dedcc0ffb69fa2ed2cc3258d",
     "src/v2/route/DominoTokenOps.sol": "009367bf7d16abb27a385aa717e097f9dafc3e28e1b54c3d13c319261fb72d13",
-    "src/v2/vault/DominoV2VaultBase.sol": "3f8a337e7aa177af768f6ade5e92bdd9793463011e4dce0b057550073f88dcbe",
+    "src/v2/vault/DominoV2VaultBase.sol": "193420749d563b920d1b646dc81d25b3fef38ea9bddda0746fbe1ba13b9e5f68",
     "src/v2/vault/DominoV2VaultExecutor.sol": "6730a41123b23a778ce709b94f384568d91d96572bde32d2fae96487c93fada0",
     "src/v2/vault/DominoV2VaultFactory.sol": "5ad8e6b605137b8672d9b8b684365a1fc607361fc1dc1232c147915a39f68b32",
     "src/v2/vault/DominoV2VaultMath.sol": "b656293d519feafc1668fc0798d17a53f80ebf7ae1a626e8d46c7b2f8b3930f4",
     "src/v2/vault/DominoV2VaultPlan.sol": "0835d94e4f09c4c7c50676bf97be4acc980fc70a416ac9d6001be013a92b4ae6",
-    "src/v2/vault/DominoV2VaultStorage.sol": "497fa8880ed67500ead53dd00562de1bd503ffa96530800422eb50a143720316",
+    "src/v2/vault/DominoV2VaultStorage.sol": "dbf0e329d819ee49fa446cc15455d968141f96aa40c5967f8fd3f1fd511d11bb",
     "src/v2/vault/DominoV2VaultSwapModule.sol": "2c3780c200efefd7f99d2b4cc6a5495082594f9a606435d23fd497c8ad41dfb0",
     "src/v2/vault/DominoV2VaultV3.sol": "5ccca34aff6cec51fb59e1609598091549006e90584b90386efb9d9bb38631be",
     "src/v2/vault/DominoV2VaultV4.sol": "551d0d63526d6681619efebbbb2c58dac3740f33f18c0c108ca30870ab0ac547",
     "src/v2/vault/IDominoVaultSteps.sol": "da8d06a5e315cce7fece24ab0db9f6453b1577600e94efbe66f867ab86ad28aa",
-    "src/v2/zap/DominoZapBase.sol": "9409b23958ecaa7ca8c3f8a1099217b8972ce4e6b4708f7f863e9210793b0b0f",
+    "src/v2/zap/DominoZapBase.sol": "c4f9e175cba9319cad1164d67439abae2546d437e0381d38a4c689f22321267d",
     "src/v2/zap/DominoZapV3.sol": "6a08b7fdd5f0ae7c6a83339e70a25443e7554a68b058214ce93e38d9cfebcdf5",
     "src/v2/zap/DominoZapV4.sol": "31d9348925fb8c117f461819fa7adde8972aba008cc0bfab14fc61c62874b74c",
     "src/v2/zap/DominoZapV4Steps.sol": "33f37cf1902caaae395ab237fcf79dc537f6d7e1cc6e9804ddc10aedc809844a"
@@ -89,94 +89,94 @@
   "contracts": {
     "DominoAutoExit": {
       "source": "src/v2/autoexit/DominoAutoExit.sol",
-      "creationSha256": "3313180338245799c7739d2af030f53ef721b23fcbe61eb64dc473469720b313",
-      "runtimeSha256": "7a5901832af3aff9a9a1507cb401205c3603e66fe4abdbe2367d90ef8a6eb219",
-      "creationBytes": 20461,
-      "runtimeBytes": 19669,
-      "abiSha256": "d1aa39e7ad5ca36d90a0f9d6904bd9924cd4be85904fad6062b65a27d2e71672",
+      "creationSha256": "cb018d3b127a870c5609e4ecf4baf61bee5117315fd6f37cf2fd56edbf0487e3",
+      "runtimeSha256": "2c74cfce8e0efdf0c0d58424b621b07efea1adff42631f0a05edce4c4f7b66df",
+      "creationBytes": 20526,
+      "runtimeBytes": 19710,
+      "abiSha256": "95ad0d197e4b8d240708398ac48e75de76559aa2768389e883e852997fd82df1",
       "immutableRanges": [
         {
-          "start": 1411,
+          "start": 1422,
           "length": 32
         },
         {
-          "start": 1486,
+          "start": 1497,
           "length": 32
         },
         {
-          "start": 1791,
+          "start": 1802,
           "length": 32
         },
         {
-          "start": 1921,
+          "start": 1932,
           "length": 32
         },
         {
-          "start": 3096,
+          "start": 3107,
           "length": 32
         },
         {
-          "start": 3883,
+          "start": 3894,
           "length": 32
         },
         {
-          "start": 4441,
+          "start": 4476,
           "length": 32
         },
         {
-          "start": 4531,
+          "start": 4566,
           "length": 32
         },
         {
-          "start": 6255,
+          "start": 6318,
           "length": 32
         },
         {
-          "start": 9632,
+          "start": 9695,
           "length": 32
         },
         {
-          "start": 9956,
+          "start": 10019,
           "length": 32
         },
         {
-          "start": 11075,
+          "start": 11138,
           "length": 32
         },
         {
-          "start": 13133,
+          "start": 13196,
           "length": 32
         },
         {
-          "start": 14307,
+          "start": 14370,
           "length": 32
         },
         {
-          "start": 14473,
+          "start": 14536,
           "length": 32
         },
         {
-          "start": 16077,
+          "start": 16140,
           "length": 32
         },
         {
-          "start": 16759,
+          "start": 16825,
           "length": 32
         },
         {
-          "start": 16801,
+          "start": 16868,
           "length": 32
         },
         {
-          "start": 17715,
+          "start": 17756,
           "length": 32
         },
         {
-          "start": 18006,
+          "start": 18047,
           "length": 32
         },
         {
-          "start": 18307,
+          "start": 18348,
           "length": 32
         }
       ]
@@ -262,10 +262,10 @@
     },
     "DominoV2VaultExecutorV3": {
       "source": "src/v2/vault/DominoV2VaultV3.sol",
-      "creationSha256": "a437004c378f6df6debc8661be9a74869313a6a6d8994740d6096dd7f9d579f4",
-      "runtimeSha256": "df6bc4190c17601d5e5683783892868a7809b649be09f1d316626767e04d229a",
-      "creationBytes": 20380,
-      "runtimeBytes": 19633,
+      "creationSha256": "c996cd7d4032723a6a6b0d4b600a7ee440bb29a52ed74e347086c31c8fff629a",
+      "runtimeSha256": "f7cb1b15b9054fd3016f6779a531c55c96c755ff12b9cbec976b4accb98bfcfb",
+      "creationBytes": 20435,
+      "runtimeBytes": 19688,
       "abiSha256": "a066f5102a00b7e9061e4c8ebffc6eee2211d6c4bd10b0d5c3de6f713b3329f5",
       "immutableRanges": [
         {
@@ -313,25 +313,25 @@
           "length": 32
         },
         {
-          "start": 14826,
+          "start": 14886,
           "length": 32
         },
         {
-          "start": 16105,
+          "start": 16165,
           "length": 32
         },
         {
-          "start": 16142,
+          "start": 16202,
           "length": 32
         }
       ]
     },
     "DominoV2VaultExecutorV4": {
       "source": "src/v2/vault/DominoV2VaultV4.sol",
-      "creationSha256": "daf29ae815d4b7aa2fceb214dbed7973fd1f46a72ba4bfa538cdc16e1b37f625",
-      "runtimeSha256": "1041b9396989048427a90e3553dae769fe103a57c1ee25e416096f91ba7817dc",
-      "creationBytes": 24148,
-      "runtimeBytes": 23387,
+      "creationSha256": "ea6f1c2be159566899bdc40989d481258a5824b869b579a768dd707c466e665c",
+      "runtimeSha256": "578739865d641911ad576fbf3f678c760ad783a36395f629f324828201c0b565",
+      "creationBytes": 24203,
+      "runtimeBytes": 23442,
       "abiSha256": "9397a2cfaeefb90bc35d543f3b12baf35b20b6a0ae40d064907eb6bc4f173df3",
       "immutableRanges": [
         {
@@ -395,7 +395,7 @@
           "length": 32
         },
         {
-          "start": 17835,
+          "start": 17895,
           "length": 32
         }
       ]
@@ -432,10 +432,10 @@
     },
     "DominoV2VaultSwapModule": {
       "source": "src/v2/vault/DominoV2VaultSwapModule.sol",
-      "creationSha256": "0d99ddb88a561c46cdbb9112142cfbea1f23dc1bb6fa5966e11be5ad1f8f1a50",
-      "runtimeSha256": "7febbad19c15de62825a9f247a2c5b4ff095c18bb7a51de51392ea5c529fca3b",
-      "creationBytes": 7918,
-      "runtimeBytes": 7395,
+      "creationSha256": "f58cf3d239c52e170d91b80b8c6fd04f14e0df48562bed0a4ada75097a4ec283",
+      "runtimeSha256": "e89a93654c5bd87b874e87247aca14e4f4fa51efd7bcd69ee2729b6afe9daaad",
+      "creationBytes": 7905,
+      "runtimeBytes": 7382,
       "abiSha256": "ad88500fca391fa3bef5159721138693c039fb3a23e0c8a800afd9777f4cdfef",
       "immutableRanges": [
         {
@@ -447,33 +447,33 @@
           "length": 32
         },
         {
-          "start": 4960,
+          "start": 4963,
           "length": 32
         },
         {
-          "start": 5007,
+          "start": 5011,
           "length": 32
         },
         {
-          "start": 5918,
+          "start": 5905,
           "length": 32
         },
         {
-          "start": 6241,
+          "start": 6228,
           "length": 32
         },
         {
-          "start": 6575,
+          "start": 6562,
           "length": 32
         }
       ]
     },
     "DominoV2VaultV3": {
       "source": "src/v2/vault/DominoV2VaultV3.sol",
-      "creationSha256": "08d2fc1f76907c7d24285f5c968ec9a197e0f317bee9ef349563c56c8ca163a8",
-      "runtimeSha256": "96befa659d4a6f9be00a808316f12c359b4312b3b90df87f583ac0c5f4027209",
-      "creationBytes": 37120,
-      "runtimeBytes": 15778,
+      "creationSha256": "5f0e6e130adee7c7735bd77763b04f725c286831ffc5843abd57e3fcde0f04b8",
+      "runtimeSha256": "c6aed35714e4c1409eb3f39f5dfde94393be9a858e3ba8149bcc595423250841",
+      "creationBytes": 37320,
+      "runtimeBytes": 15923,
       "abiSha256": "cd811e896a09607f3fbd1035f6404d37e9864be3a744714676aee0c291cad958",
       "immutableRanges": [
         {
@@ -537,73 +537,73 @@
           "length": 32
         },
         {
-          "start": 6588,
+          "start": 6673,
           "length": 32
         },
         {
-          "start": 7103,
+          "start": 7188,
           "length": 32
         },
         {
-          "start": 7351,
+          "start": 7436,
           "length": 32
         },
         {
-          "start": 7952,
+          "start": 8037,
           "length": 32
         },
         {
-          "start": 8568,
+          "start": 8653,
           "length": 32
         },
         {
-          "start": 8962,
+          "start": 9047,
           "length": 32
         },
         {
-          "start": 9030,
+          "start": 9115,
           "length": 32
         },
         {
-          "start": 9944,
+          "start": 10029,
           "length": 32
         },
         {
-          "start": 12472,
+          "start": 12557,
           "length": 32
         },
         {
-          "start": 12999,
+          "start": 13084,
           "length": 32
         },
         {
-          "start": 13486,
+          "start": 13571,
           "length": 32
         },
         {
-          "start": 13957,
+          "start": 14102,
           "length": 32
         },
         {
-          "start": 13994,
+          "start": 14139,
           "length": 32
         },
         {
-          "start": 14849,
+          "start": 14994,
           "length": 32
         },
         {
-          "start": 15279,
+          "start": 15424,
           "length": 32
         }
       ]
     },
     "DominoV2VaultV4": {
       "source": "src/v2/vault/DominoV2VaultV4.sol",
-      "creationSha256": "ebf58babd3d60bb42db4e846618b1f9e05c7a0f76ecc271e63e64aa7ec11da57",
-      "runtimeSha256": "aafe7ba72b800a3220834572586134142fa4827c16784549bf61cab635cd1e3b",
-      "creationBytes": 40941,
-      "runtimeBytes": 15796,
+      "creationSha256": "41f3ddb62a675d44c6ca5eef668ed078153cc82132db19e21bb647dfd483ec79",
+      "runtimeSha256": "354197f4b86ec2616a622f5c1d144a0e26459b61507f2918f6d1b0b3ae3a5bb3",
+      "creationBytes": 41141,
+      "runtimeBytes": 15941,
       "abiSha256": "0b60add9a6e3a55b345949f62097fd6ffd1e4a202bb27c10d1d947eea31b78c8",
       "immutableRanges": [
         {
@@ -671,89 +671,89 @@
           "length": 32
         },
         {
-          "start": 7036,
+          "start": 7121,
           "length": 32
         },
         {
-          "start": 7551,
+          "start": 7636,
           "length": 32
         },
         {
-          "start": 7761,
+          "start": 7846,
           "length": 32
         },
         {
-          "start": 7839,
+          "start": 7924,
           "length": 32
         },
         {
-          "start": 8018,
+          "start": 8103,
           "length": 32
         },
         {
-          "start": 8055,
+          "start": 8140,
           "length": 32
         },
         {
-          "start": 9258,
+          "start": 9343,
           "length": 32
         },
         {
-          "start": 9874,
+          "start": 9959,
           "length": 32
         },
         {
-          "start": 10660,
+          "start": 10745,
           "length": 32
         },
         {
-          "start": 10728,
+          "start": 10813,
           "length": 32
         },
         {
-          "start": 11715,
+          "start": 11800,
           "length": 32
         },
         {
-          "start": 12899,
+          "start": 12984,
           "length": 32
         },
         {
-          "start": 13422,
+          "start": 13507,
           "length": 32
         },
         {
-          "start": 13971,
+          "start": 14056,
           "length": 32
         },
         {
-          "start": 14644,
+          "start": 14729,
           "length": 32
         },
         {
-          "start": 14702,
+          "start": 14787,
           "length": 32
         },
         {
-          "start": 14808,
+          "start": 14893,
           "length": 32
         },
         {
-          "start": 14914,
+          "start": 14999,
           "length": 32
         },
         {
-          "start": 15237,
+          "start": 15382,
           "length": 32
         }
       ]
     },
     "DominoZapV3": {
       "source": "src/v2/zap/DominoZapV3.sol",
-      "creationSha256": "71d05b2e1e00609f2f51d99c565670c78ea3efebb353ebbaab9add268daa9161",
-      "runtimeSha256": "776e4570c9cb923e53c6d112d3917db52568d600b4ca1129296f058f916dc591",
-      "creationBytes": 24571,
-      "runtimeBytes": 23616,
+      "creationSha256": "df7cbb699434bb7d13d7d3fa75eebbe41b3ac9c441244657a923d9a7a3015ea9",
+      "runtimeSha256": "3f0d3662b82560bc25ac1f8ed30a70839948e9ec371af4ef0f38e79a9f9bda32",
+      "creationBytes": 24509,
+      "runtimeBytes": 23554,
       "abiSha256": "5d92c661daa820daf6640517214a5826e3295dcb042f0992851fab4d2e553b9e",
       "immutableRanges": [
         {
@@ -765,65 +765,65 @@
           "length": 32
         },
         {
-          "start": 8217,
+          "start": 8185,
           "length": 32
         },
         {
-          "start": 8908,
+          "start": 8854,
           "length": 32
         },
         {
-          "start": 13536,
+          "start": 13526,
           "length": 32
         },
         {
-          "start": 14731,
+          "start": 14686,
           "length": 32
         },
         {
-          "start": 15971,
+          "start": 15926,
           "length": 32
         },
         {
-          "start": 16991,
+          "start": 16946,
           "length": 32
         },
         {
-          "start": 17028,
+          "start": 16983,
           "length": 32
         },
         {
-          "start": 19673,
+          "start": 19628,
           "length": 32
         },
         {
-          "start": 20478,
+          "start": 20438,
           "length": 32
         },
         {
-          "start": 20525,
+          "start": 20486,
           "length": 32
         },
         {
-          "start": 21454,
+          "start": 21392,
           "length": 32
         },
         {
-          "start": 21745,
+          "start": 21683,
           "length": 32
         },
         {
-          "start": 22057,
+          "start": 21995,
           "length": 32
         }
       ]
     },
     "DominoZapV4": {
       "source": "src/v2/zap/DominoZapV4.sol",
-      "creationSha256": "14d770c920df6720493564bfcd86b56f96a5a7fe8c6dd4cd37c9f1d3bfdfed97",
-      "runtimeSha256": "557fc80fd5421ac77f333a9534bb8f0a8993208a5b7b76c57304fb442bae4610",
-      "creationBytes": 21973,
-      "runtimeBytes": 21065,
+      "creationSha256": "6b38489075188cc249800e808a2c43bbb0646940b4c2f7a433716280b1f9d7bf",
+      "runtimeSha256": "60e8523c47b29b3ac0928efdb3dd14c985670829f64676e913bd0c635c3c8f2c",
+      "creationBytes": 22018,
+      "runtimeBytes": 21110,
       "abiSha256": "dc362a72d811b5e0913ba629e4a81ba8e07a574c5b685109f3997b98f2b8c331",
       "immutableRanges": [
         {
@@ -847,51 +847,51 @@
           "length": 32
         },
         {
-          "start": 8380,
+          "start": 8364,
           "length": 32
         },
         {
-          "start": 9050,
+          "start": 9018,
           "length": 32
         },
         {
-          "start": 10046,
+          "start": 10081,
           "length": 32
         },
         {
-          "start": 11649,
+          "start": 11718,
           "length": 32
         },
         {
-          "start": 12917,
+          "start": 12979,
           "length": 32
         },
         {
-          "start": 15139,
+          "start": 15201,
           "length": 32
         },
         {
-          "start": 17912,
+          "start": 17974,
           "length": 32
         },
         {
-          "start": 18598,
+          "start": 18663,
           "length": 32
         },
         {
-          "start": 18645,
+          "start": 18711,
           "length": 32
         },
         {
-          "start": 19545,
+          "start": 19590,
           "length": 32
         },
         {
-          "start": 19836,
+          "start": 19881,
           "length": 32
         },
         {
-          "start": 20154,
+          "start": 20199,
           "length": 32
         }
       ]

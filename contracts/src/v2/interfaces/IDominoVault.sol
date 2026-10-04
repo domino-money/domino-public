@@ -100,7 +100,8 @@ interface IDominoVault {
     function withdrawChild(uint256 tokenId) external;
     /// Any token that is not accounted to the vault, including tokens outside the pair.
     function recoverToken(address token, uint256 amount) external;
-    /// Ends the sequence: every child NFT and every reserve goes to the owner and the root is disarmed.
+    /// Ends the sequence: every child NFT and every reserve goes to the owner,
+    /// the root is disarmed and the exit module is disabled.
     function exitAll() external;
     /// Enables (or, with address(0), disables) the auto-exit module for this vault.
     function setExitModule(address module) external;

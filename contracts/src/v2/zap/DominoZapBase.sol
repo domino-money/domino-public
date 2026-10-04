@@ -405,7 +405,11 @@ abstract contract DominoZapBase is DominoAssistedSwap, IDominoPositionActions, I
             address token = tokens[i];
             uint256 amount = _unowedBalance(token);
             if (amount != 0) {
+                uint256 held = DominoTokenOps.selfBalance(token);
                 DominoTokenOps.transfer(token, recipient, amount);
+                // A token that debits more than it moves (a sender-side fee)
+                // would spend what is owed in it.
+                if (DominoTokenOps.selfBalance(token) + amount < held) revert DominoTokenOps.TokenCallFailed(token);
                 emit Refunded(recipient, token, amount);
             }
         }

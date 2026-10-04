@@ -45,10 +45,11 @@ The compile is `deploy.mjs`'s `compileV2`: every V2 source in one standard-JSON 
 
   The compile is the one the deployment-tool tests cached in the step before, which is reused only for an identical input.
 - **Contracts (v2):**
-  - every V2 suite;
+  - every V2 suite outside `adversarial/` and `invariant/`;
   - `export-abi.mjs --check` (the interface freeze, F0);
   - `position-fixtures.mjs check`;
-  - the gas baseline.
+  - the gas baseline of those suites.
+- **Contracts (v2-audit):** the audit suites, `contracts/test/v2/adversarial` and `invariant` ([reports/V2_AUDIT_PACKAGE.md](../../reports/V2_AUDIT_PACKAGE.md) §6), and their gas baseline.
 
 ## Changing a frozen file
 

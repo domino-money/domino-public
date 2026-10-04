@@ -89,7 +89,8 @@ V2_ERRORS = (
     'PoolNotInitialized', 'PoolUnavailable', 'PositionPoolMismatch', 'PriceOverflow', 'ReentrantCall', 'RootOpen',
     'SafeCastOverflow', 'SettlementMismatch', 'SpotOutsideBand', 'StaleNonce', 'StepUnavailable', 'SuccessorActive',
     'SwapEffectMismatch', 'TokenCallFailed', 'TooSoon', 'TransferFailed', 'TriggerNotReached', 'TwapUnavailable',
-    'TwapWindowTooShort', 'Unauthorized', 'UnexpectedCallback', 'UnexpectedNonce', 'VaultOwnerChanged', 'WrappedError')
+    'TwapWindowTooLong', 'TwapWindowTooShort', 'Unauthorized', 'UnexpectedCallback', 'UnexpectedNonce',
+    'VaultOwnerChanged', 'WrappedError')
 ZERO = '0x' + '0' * 40
 U256 = 2**256 - 1
 I255 = 2**255

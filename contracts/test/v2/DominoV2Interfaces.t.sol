@@ -28,7 +28,7 @@ contract DominoV2InterfacesTest {
 
     function testInterfaceIdsArePinned() public pure {
         _pin(type(IDominoAutoExit).interfaceId, 0x871e6484, "IDominoAutoExit");
-        _pin(type(IDominoAutoExitExtension).interfaceId, 0x3c903db1, "IDominoAutoExitExtension");
+        _pin(type(IDominoAutoExitExtension).interfaceId, 0xb8d72fba, "IDominoAutoExitExtension");
         _pin(type(IDominoFeeSettlement).interfaceId, 0x28cc3518, "IDominoFeeSettlement");
         _pin(type(IDominoPositionActions).interfaceId, 0x0c6d074a, "IDominoPositionActions");
         _pin(type(IDominoPriceAnchor).interfaceId, 0x8e179650, "IDominoPriceAnchor");
