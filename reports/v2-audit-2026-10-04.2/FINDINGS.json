@@ -1,0 +1,322 @@
+{
+  "kind": "domino-v2-remediation-reaudit",
+  "completed_at_utc": "2026-10-04T18:50:00.122682+00:00",
+  "commit": "559c509ff71d71e49ac720bd6acd8a9783531ebb",
+  "tree": "e5ed5db6404ae9d5464028690f788ea3a217ebbd",
+  "overall_verdict": "REQUEST_CHANGES",
+  "contract_remediation": "ACCEPTED_IN_REVIEWED_SCOPE",
+  "new_blocking_contract_defects_confirmed": 0,
+  "remaining_issue_class": "low historical evidence/provenance, not a demonstrated financial vulnerability",
+  "closures": [
+    {
+      "id": "DV2-01",
+      "severity": "medium",
+      "status": "closed_fixed",
+      "basis": [
+        "static delta review",
+        "shipped fixed-candidate route and three host regressions passed",
+        "manifest rebuild matched"
+      ]
+    },
+    {
+      "id": "DV2-02",
+      "severity": "release_blocker",
+      "status": "closed_fixed",
+      "basis": [
+        "54/54 deploy tooling tests passed",
+        "main CI completed success on exact candidate SHA"
+      ],
+      "ci_run": 37223288312,
+      "ci_attempt": 1
+    },
+    {
+      "id": "DV2-03",
+      "severity": "low",
+      "status": "closed_fixed",
+      "basis": [
+        "fresh checkout preconditions verified",
+        "official audit-bootstrap passed",
+        "AutoExitInvariants 10/10 passed after bootstrap"
+      ]
+    },
+    {
+      "id": "DV2-04",
+      "severity": "low",
+      "status": "partially_fixed_open_historical_provenance",
+      "current_batch_and_report_integrity": "verified",
+      "stale_entries": "rewritten_and_statically_applicable",
+      "author_reported_current_mutations": 67,
+      "independently_replayed_mutations": 0,
+      "runner_unit_tests": "passed within 49 auxiliary tests",
+      "historical_exact_source_hashes": "not recorded at run time; cannot retroactively verify",
+      "action": "Provide genuine contemporaneous evidence if available, or explicitly withdraw retrospective assurance and record current-candidate evidence as a prospective replacement. No invented reconstruction and no contract change required solely for this documentary disposition."
+    },
+    {
+      "id": "DV2-05",
+      "severity": "informational",
+      "status": "closed_fixed",
+      "basis": [
+        "bounded streaming reply and correlated JSON-RPC envelope reviewed",
+        "shipped transport regressions passed"
+      ]
+    }
+  ],
+  "execution": {
+    "checks": 24,
+    "all_exit_zero": true,
+    "suites": [
+      {
+        "name": "suite-00-AutoExitInvariants.t",
+        "suites": 1,
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-01-DominoSwapExecutorV3.t",
+        "suites": 1,
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-02-HopTokenBacking.t",
+        "suites": 1,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-03-HostileOperator.t",
+        "suites": 2,
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-04-AutoExitAttacks.t",
+        "suites": 1,
+        "passed": 26,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-05-VaultLedgerInvariants.t",
+        "suites": 1,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-06-WiredVaultInvariants.t",
+        "suites": 2,
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-07-ZapLedgerInvariants.t",
+        "suites": 1,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-08-ZapV4LedgerInvariants.t",
+        "suites": 1,
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-09-DominoAssistedSwap.t",
+        "suites": 1,
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-10-DominoSwapExecutorRouter.t",
+        "suites": 1,
+        "passed": 30,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-11-DominoSwapExecutorUniversalRouter.t",
+        "suites": 1,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-12-DominoSwapExecutorV4.t",
+        "suites": 1,
+        "passed": 16,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-13-DominoSwapFloor.t",
+        "suites": 2,
+        "passed": 13,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-14-DominoTokenOps.t",
+        "suites": 1,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      {
+        "name": "suite-15-DominoV2VaultSwapModule.t",
+        "suites": 1,
+        "passed": 8,
+        "failed": 0,
+        "skipped": 0,
+        "exit_code": 0
+      }
+    ],
+    "totals": {
+      "suites": 19,
+      "passed": 172,
+      "failed": 0,
+      "skipped": 0
+    },
+    "suite_files": 16,
+    "node_tests": {
+      "deploy-tooling": {
+        "tests": 54,
+        "suites": 2,
+        "pass": 54,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "evidence-runner-tests": {
+        "tests": 49,
+        "suites": 0,
+        "pass": 49,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      }
+    },
+    "new_regression_log_lines": {
+      "suite-01-DominoSwapExecutorV3.t": [
+        "[PASS] testAForgedCallbackIsRefused() (gas: 14050)",
+        "[PASS] testAMultiHopPathPaysEachPoolInItsOwnCallback() (gas: 167412)",
+        "[PASS] testAPaymentTheTokenRefusesStopsTheSwap() (gas: 110197)",
+        "[PASS] testAPoolThatNeverAsksOrNeverPaysIsRefused() (gas: 165571)",
+        "[PASS] testASwapOnTheDeployedPoolCode() (gas: 229384)",
+        "[PASS] testAnOverDebitingIntermediateIsRefusedAndTheHoldingStays() (gas: 336811)",
+        "[PASS] testEveryIntermediateOfALongPathIsHeld() (gas: 384475)",
+        "[PASS] testFourHopsAreTheLimit() (gas: 323985)",
+        "[PASS] testMalformedPathsAreRefused() (gas: 378017)",
+        "[PASS] testOnlyThePoolBeingSwappedOnIsPaid() (gas: 190649)",
+        "[PASS] testTheFixtureIsRobinhoodsPoolAtItsCanonicalAddress() (gas: 19142)",
+        "[PASS] testThePoolIsPaidExactlyTheHopsInput() (gas: 237269)"
+      ],
+      "suite-02-HopTokenBacking.t": [
+        "[PASS] testABuyTaxedHopTokenNeverSpendsAnOwedFeeInIt() (gas: 11943422)",
+        "[PASS] testATaxedHopTokenNeverSpendsAnOwedFeeInIt() (gas: 1039182)",
+        "[PASS] testATaxedHopWithNothingHeldFails() (gas: 363085)",
+        "[PASS] testAnOverDebitingHopTokenNeverSpendsAnOwedFeeInIt() (gas: 1049561)"
+      ],
+      "suite-03-HostileOperator.t": [
+        "[PASS] testARouteMustDeliverTheFloorAndMayKeepOnlyItsMargin() (gas: 2648509)",
+        "[PASS] testAnObservationAtTheBandEdgeLowersTheFloorByAtMostTheBand() (gas: 2352614)",
+        "[PASS] testAnOperatorsPauseNeverHoldsTheOwnersMoney() (gas: 1591615)",
+        "[PASS] testAHopTokenTheVaultHoldsIsNeverSpentByARoute() (gas: 12507976)",
+        "[PASS] testARouteMustDeliverTheFloorAndMayKeepOnlyItsMargin() (gas: 2770599)",
+        "[PASS] testAnObservationAtTheBandEdgeLowersTheFloorByAtMostTheBand() (gas: 2437708)",
+        "[PASS] testAnOperatorsPauseNeverHoldsTheOwnersMoney() (gas: 1720240)",
+        "[PASS] testAnOverDebitingHopTokenTheVaultHoldsIsRefused() (gas: 12373352)"
+      ],
+      "suite-04-AutoExitAttacks.t": [
+        "[PASS] testANewVaultOwnerIsNotBoundByTheOldOwnersMandate() (gas: 697218)",
+        "[PASS] testARegistrationFrontRunningCancelNonceLeavesOnlyRevoke() (gas: 380362)",
+        "[PASS] testARemovedOperatorCannotExecute() (gas: 358298)",
+        "[PASS] testAResumeQueuedBeforeTheHaltCannotLiftIt() (gas: 388484)",
+        "[PASS] testARevokeThatLandsFirstEndsTheMandateForGood() (gas: 417575)",
+        "[PASS] testARevokedObservationIsRefused() (gas: 414244)",
+        "[PASS] testARotatedOutPublisherCannotFireAndItsSuccessorCan() (gas: 869321)",
+        "[PASS] testARoutersGiftInAnUntrackedTokenStaysInTheModule() (gas: 651120)",
+        "[PASS] testASplitRouteIsHeldToTheFloorAsAWhole() (gas: 1033668)",
+        "[PASS] testAStillValidObservationFiresAfterARecoveryOnlyWithinTheBand() (gas: 1114257)",
+        "[PASS] testATwapForAV4VaultFailsClosed() (gas: 199473)",
+        "[PASS] testATwapWindowAboveAnHourIsRefusedSoAStaleDipNeverFiresAStop() (gas: 601512)",
+        "[PASS] testATwapWindowIsBoundedByTheFloorTheCeilingAndTheBand() (gas: 1034140)",
+        "[PASS] testAVaultNoFactoryMadeCannotReachOtherOwnersCreditsOrOwedFees() (gas: 2576252)",
+        "[PASS] testAnAnchorAtTheBandsEdgeStacksTheBandOnTheFloor() (gas: 866045)",
+        "[PASS] testAnEpochRaisedBetweenSigningAndExecutionVoidsTheObservation() (gas: 726247)",
+        "[PASS] testAnExecutionThatLandsBeforeTheRevokeWins() (gas: 665878)",
+        "[PASS] testAnExpiredMandateNeverExecutesAndExpiryIsInclusive() (gas: 844439)",
+        "[PASS] testAnObservationDatedAfterTheEpochSurvivesItButNotTheKeysRemoval() (gas: 900812)",
+        "[PASS] testAnOverDebitingIntermediateNeverSpendsADeferredDelivery() (gas: 13603980)",
+        "[PASS] testFuzzAHostileRouterLosesTheOwnerAtMostTheMandatesSlippage(uint256,uint256) (runs: 512, μ: 594942, ~: 574783)",
+        "[PASS] testHostileRouterScriptsAreRefusedByTheirEffect() (gas: 2881749)",
+        "[PASS] testLegsThatSellTheWrongTokenOrTheWrongAmountAreRefused() (gas: 2073825)",
+        "[PASS] testStaleOrMisshapenObservationsAreRefusedAndSpendNothing() (gas: 882639)",
+        "[PASS] testTheGlobalHaltStopsExitsButNeitherRevocationNorTheModuleSwitch() (gas: 866718)",
+        "[PASS] testTheModuleSwitchPausesAMandateWithoutRevokingIt() (gas: 693760)"
+      ]
+    }
+  },
+  "source_integrity": {
+    "commit": "559c509ff71d71e49ac720bd6acd8a9783531ebb",
+    "tree": "e5ed5db6404ae9d5464028690f788ea3a217ebbd",
+    "tracked_files_compared": 3369,
+    "mismatches": [],
+    "git_status": ""
+  },
+  "ci": {
+    "checked_at_utc": "2026-10-04T18:47:44.725618+00:00",
+    "checked_at_local": "2026-10-04T15:47:44.725618-03:00",
+    "watch_note": "Foreground watch tool timed out at 420s; not a CI failure. This subsequent live API result is authoritative.",
+    "id": 37223288312,
+    "status": "completed",
+    "conclusion": "success",
+    "head_sha": "559c509ff71d71e49ac720bd6acd8a9783531ebb",
+    "run_attempt": 1,
+    "updated_at": "2026-10-04T18:45:26Z"
+  },
+  "tag": {
+    "checked_at_utc": "2026-10-04T18:47:44.725618+00:00",
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "",
+    "exists": false
+  },
+  "limits": [
+    "Targeted delta re-audit, not a replay of all prior tests or Slither",
+    "Mutation JSON integrity checked; author executions not independently repeated",
+    "No symbolic execution/formal proof/new public fork qualification",
+    "No on-chain deployment inventory or operational authorization",
+    "Static review annex pending-runtime wording is superseded only where consolidated execution provides evidence"
+  ],
+  "nonblocking_coverage_notes": [
+    "Last internal position not isolated with a distinct token in long-path regression",
+    "No direct DV2-01 V3-leg regression hosted specifically by ZapV4",
+    "RPC error object could be validated more strictly; malformed error still fails closed"
+  ]
+}

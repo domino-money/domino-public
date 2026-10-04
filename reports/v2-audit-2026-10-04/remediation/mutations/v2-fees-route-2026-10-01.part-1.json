@@ -1,0 +1,294 @@
+{
+ "kind": "domino-mutation-run",
+ "batch": "contracts/mutations/v2-fees-route-2026-10-01.json",
+ "batchSha256": "fbbc4a6b89fbba1d23ed1bf8b9b893f0e09aa2b76b420253555056ce40628ee3",
+ "sources": {
+  "contracts/src/v2/route/DominoSwapExecutor.sol": "d850de22789e05db695b4e89ca18fcf4413f5a12e62b3f7fa348cd0ff90cd969"
+ },
+ "suites": {
+  "test/v2/route/DominoSwapExecutorRouter.t.sol": "16c59360ae562aed17276fd135edb858b1f7afc2b47025489c981fc5ac015d63",
+  "test/v2/route/DominoSwapExecutorV3.t.sol": "17d727ab8e2c6f41b24e347e9dda981366fbaff75d24b9a7e658b627320e957e",
+  "test/v2/route/DominoSwapExecutorV4.t.sol": "92a7ec84a7bfe92c67b69f149e669d7b797d9b51b97da4ef7009fb836f23f320"
+ },
+ "rebuild": [],
+ "only": [
+  "executor runs only inside a locked action",
+  "no executor run nested inside a leg",
+  "at most eight legs",
+  "an empty plan reads no balance",
+  "the in-progress flag is cleared",
+  "v3 callback only from the pool being swapped on",
+  "a v3 callback is consumed once",
+  "the pool is paid exactly the hop input",
+  "the hop input is read on the paying side",
+  "a v4 callback comes from the PoolManager",
+  "a v4 callback is bound to the pending leg",
+  "a pending v4 leg is consumed",
+  "the v4 path ends at tokenOut",
+  "the PoolManager credited the whole input",
+  "native input settles with value",
+  "a v4 hop is a v4 pool",
+  "a v4 hop holds the current token",
+  "a v4 hop input fits int128",
+  "a v4 hop consumes exactly its input",
+  "a v4 hop delivers a positive output",
+  "at most four v4 hops",
+  "a v4 leg needs a PoolManager",
+  "pool legs carry no router",
+  "a leg swaps two different tokens",
+  "a leg spends something",
+  "a leg has a nonzero floor",
+  "an unknown leg kind is refused",
+  "only admitted routers run",
+  "the ERC-20 approval is exactly amountIn",
+  "the Permit2 allowance is exactly amountIn",
+  "the Permit2 allowance is valid in this block",
+  "a router failure is bubbled",
+  "a native input is the call value",
+  "no Permit2 allowance survives",
+  "no ERC-20 allowance survives",
+  "a v3 path holds a whole hop",
+  "a v3 path is made of whole hops",
+  "at most four v3 hops",
+  "a v3 path starts at tokenIn"
+ ],
+ "rows": [
+  {
+   "label": "executor runs only inside a locked action",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "no executor run nested inside a leg",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "at most eight legs",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "an empty plan reads no balance",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the in-progress flag is cleared",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "27 passed / 3 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "v3 callback only from the pool being swapped on",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "10 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v3 callback is consumed once",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the pool is paid exactly the hop input",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the hop input is read on the paying side",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 8 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v4 callback comes from the PoolManager",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v4 callback is bound to the pending leg",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "14 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a pending v4 leg is consumed",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the v4 path ends at tokenOut",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the PoolManager credited the whole input",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "native input settles with value",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v4 hop is a v4 pool",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "14 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v4 hop holds the current token",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v4 hop input fits int128",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v4 hop consumes exactly its input",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "14 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v4 hop delivers a positive output",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "at most four v4 hops",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v4 leg needs a PoolManager",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "pool legs carry no router",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a leg swaps two different tokens",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a leg spends something",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a leg has a nonzero floor",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "an unknown leg kind is refused",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "only admitted routers run",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the ERC-20 approval is exactly amountIn",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "21 passed / 9 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the Permit2 allowance is exactly amountIn",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "19 passed / 11 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the Permit2 allowance is valid in this block",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "14 passed / 16 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a router failure is bubbled",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "27 passed / 3 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a native input is the call value",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "no Permit2 allowance survives",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "no ERC-20 allowance survives",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v3 path holds a whole hop",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v3 path is made of whole hops",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "at most four v3 hops",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v3 path starts at tokenIn",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  }
+ ],
+ "baselineFailure": null,
+ "summary": "39 mutations: 39 caught, 0 not caught.",
+ "exitCode": 0
+}

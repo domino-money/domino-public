@@ -1,6 +1,6 @@
 {
   "description": "V2 F1 fee module and swap-leg executor (#283): every guard of contracts/src/v2/fees and contracts/src/v2/route, deleted or weakened one at a time against the suite meant to catch it.",
-  "provenance": "Authored 2026-10-01 with the F1 fees/route change (claude/v2-f1-fees-route). Revised 2026-10-02 (#283 item 5): the floor's mulDiv is now the vendored FullMath under src/v2/positions/uniswap, and six mutants pin its rounding: one for each of the quote's five mulDivs and one for the floor's own. Revised 2026-10-04 (audit DV2-01): the executor now reads a v3 path's intermediates behind the same length checks, so the two whole-hop mutants name the swap's own occurrence (index 0); v2-audit-2026-10-04.json mutates the other.",
+  "provenance": "Authored 2026-10-01 with the F1 fees/route change (claude/v2-f1-fees-route). Revised 2026-10-02 (#283 item 5): the floor's mulDiv is now the vendored FullMath under src/v2/positions/uniswap, and six mutants pin its rounding: one for each of the quote's five mulDivs and one for the floor's own. Revised 2026-10-04 (audit DV2-01): the executor now reads a v3 path's intermediates behind the same length checks, so the two whole-hop mutants name the swap's own occurrence (index 0); v2-audit-2026-10-04.json mutates the other. Revised again 2026-10-04: \"the swapped amount counts what was spent\" no longer compiles on this tree (via-IR: stack too deep in the suite's compilation unit, a NO BUILD that proves nothing); it makes the same edit (the amount is what was delivered) while still reading what was spent, and the suite catches it. And again: \"one measured amount per leg\" deleted the length check, which no longer compiles on this tree either (via-IR: stack too deep in DominoFeeRules.t.sol's unit); it keeps the comparison behind a bound no memory array reaches, so the check never fires, and the suite catches it.",
   "mutations": [
     {
       "label": "executor runs only inside a locked action",
@@ -557,14 +557,14 @@
       "file": "contracts/src/v2/fees/DominoFeeRules.sol",
       "suite": "test/v2/fees/DominoFeeRules.t.sol",
       "old": "amount = spent > delivered ? spent : delivered;",
-      "new": "amount = delivered;"
+      "new": "amount = spent > delivered ? delivered : delivered;"
     },
     {
       "label": "one measured amount per leg",
       "file": "contracts/src/v2/fees/DominoFeeRules.sol",
       "suite": "test/v2/fees/DominoFeeRules.t.sol",
       "old": "        if (amountsOut.length != legs.length) revert IDominoPositionActions.InvalidPlan();\n",
-      "new": ""
+      "new": "        if (amountsOut.length != legs.length && amountsOut.length > type(uint64).max) revert IDominoPositionActions.InvalidPlan();\n"
     },
     {
       "label": "fees round down",

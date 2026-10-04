@@ -1,0 +1,58 @@
+{
+  "kind": "domino-v2-audit-freeze",
+  "frozenAtUTC": "2026-10-04T18:56:49+00:00",
+  "repository": "https://github.com/domino-money/domino",
+  "tag": "v2-audit-2026-10-04.2",
+  "commit": "559c509ff71d71e49ac720bd6acd8a9783531ebb",
+  "tree": "e5ed5db6404ae9d5464028690f788ea3a217ebbd",
+  "annotatedTagObject": "d0c72d80de8037c502401ac9c002c485b8ca89bf",
+  "candidateOf": "the remediation (#323) of the audit of v2-audit-2026-10-04 (REQUEST_CHANGES, reports/v2-audit-2026-10-04/)",
+  "ci": {
+    "pullRequest": {
+      "number": 323,
+      "runId": 37220671110,
+      "url": "https://github.com/domino-money/domino/actions/runs/37220671110",
+      "conclusion": "success",
+      "headSha": "e47fa2799b73f1f78ed404bfd6440f3d6b110d06",
+      "headTree": "e5ed5db6404ae9d5464028690f788ea3a217ebbd"
+    },
+    "main": {
+      "runId": 37223288312,
+      "url": "https://github.com/domino-money/domino/actions/runs/37223288312",
+      "attempt": 1,
+      "conclusion": "success",
+      "headSha": "559c509ff71d71e49ac720bd6acd8a9783531ebb"
+    }
+  },
+  "note": "Cut after main's own run on this commit passed on its first attempt (docs/v2/FREEZE.md). The auditors' re-audit of this commit, made before the tag, is in this folder.",
+  "releaseManifest": {
+    "path": "contracts/release-artifacts-v2.json",
+    "sha256": "2975c377c6f3690a702fddeecfe4ffb2c4ccab6e52c8739f4877ce458f66ed5c",
+    "sourceTreeSha256": "7a78b034fc09c924140173748b5a620cebd539d9635690adbda1154c0b95edfe",
+    "sources": 52,
+    "contracts": 12
+  },
+  "previousFreeze": {
+    "tag": "v2-audit-2026-10-04",
+    "annotatedTagObject": "ca9aede4ab55de02db39d8714f60abf620515cfb",
+    "commit": "5e63d2dba9123fdc585f7f272b83532b491fbc51",
+    "releaseManifestSha256": "4f607c2f0ee6c58f156453147fac19029f90b1437613ec3ad228242938436ebb"
+  },
+  "reaudit": {
+    "report": "REAUDITORIA_DOMINO_V2.md",
+    "findings": "FINDINGS.json",
+    "evidence": "DOMINO_V2_REAUDIT_EVIDENCE.zip",
+    "receipt": "DELIVERY_RECEIPT.json",
+    "verdict": "REQUEST_CHANGES",
+    "closed": [
+      "DV2-01",
+      "DV2-02",
+      "DV2-03",
+      "DV2-05"
+    ],
+    "open": [
+      "DV2-04: the 3 Oct campaigns' historical record, for a documentary disposition"
+    ]
+  },
+  "auditPackage": "reports/V2_AUDIT_PACKAGE.md"
+}

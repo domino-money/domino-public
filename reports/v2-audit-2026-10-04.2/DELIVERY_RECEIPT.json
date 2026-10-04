@@ -1,0 +1,26 @@
+{
+  "kind": "domino-v2-reaudit-delivery-receipt",
+  "commit": "559c509ff71d71e49ac720bd6acd8a9783531ebb",
+  "tree": "e5ed5db6404ae9d5464028690f788ea3a217ebbd",
+  "verdict": "REQUEST_CHANGES",
+  "files": {
+    "REAUDITORIA_DOMINO_V2.md": {
+      "sha256": "9bb40965be860ba7483ef4c622c3a0d349650c07881c661db1e5b1e7082fd355",
+      "bytes": 12775
+    },
+    "FINDINGS.json": {
+      "sha256": "86b0a30c06014f30830f9958dfa1c39acfc64a3aec6563758f63451a829c56a4",
+      "bytes": 11708
+    },
+    "DOMINO_V2_REAUDIT_EVIDENCE.zip": {
+      "sha256": "6946b9a5b33d35585bd7fe1c36a8fffee5257421d40319a875c50c1de5209352",
+      "bytes": 332566
+    }
+  },
+  "archive_members": 68,
+  "payloads_verified": 67,
+  "archive_crc_ok": true,
+  "member_set_complete": true,
+  "standalone_report_matches_archive": true,
+  "known_secret_patterns_found": false
+}

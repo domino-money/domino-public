@@ -1,0 +1,298 @@
+{
+ "kind": "domino-mutation-run",
+ "batch": "contracts/mutations/v2-fees-route-2026-10-01.json",
+ "batchSha256": "fbbc4a6b89fbba1d23ed1bf8b9b893f0e09aa2b76b420253555056ce40628ee3",
+ "sources": {
+  "contracts/src/v2/fees/DominoFeeLedger.sol": "add1beb81d7b9b26b3af4214916793ba44ca9955afaa97d41f830f7814f997ae",
+  "contracts/src/v2/fees/DominoFeeRules.sol": "fca2a256024e028b22574c186831132dae6a9d6ec19b4bd9418ca3c27dfc430b",
+  "contracts/src/v2/route/DominoActionLock.sol": "0c2e4a54ac247aeb1f53256deedc41c89355eb75c8431613284ca4f1aaea14c9",
+  "contracts/src/v2/route/DominoSwapExecutor.sol": "d850de22789e05db695b4e89ca18fcf4413f5a12e62b3f7fa348cd0ff90cd969"
+ },
+ "suites": {
+  "test/v2/fees/DominoFeeLedger.t.sol": "d3d54718769e32ff9fcb61cf016688258fb8d2faca03275313a32f65d8d57e9c",
+  "test/v2/fees/DominoFeeRules.t.sol": "0ada40c57f66a6d4c8e336bb74e182761b38d81c73edd47853875c64e4a3e8c7",
+  "test/v2/route/DominoSwapExecutorRouter.t.sol": "16c59360ae562aed17276fd135edb858b1f7afc2b47025489c981fc5ac015d63",
+  "test/v2/route/DominoSwapExecutorV3.t.sol": "17d727ab8e2c6f41b24e347e9dda981366fbaff75d24b9a7e658b627320e957e"
+ },
+ "rebuild": [],
+ "only": [
+  "a v3 path ends at tokenOut",
+  "a v3 hop needs a pool at the canonical address",
+  "exactly amountIn leaves",
+  "at least minAmountOut arrives",
+  "no other tracked balance moves",
+  "the action names extra tracked tokens",
+  "the registry must have code",
+  "Permit2 must have code",
+  "a v3 factory must have code",
+  "a v3 factory needs its init code hash",
+  "a PoolManager must have code",
+  "the ledger needs a registry with code",
+  "a flush with nothing owed does nothing",
+  "a flush needs a recipient",
+  "a flush clears what it pays",
+  "a flush measures what left",
+  "a flush never runs inside an action",
+  "a zero fee charges nothing",
+  "a fee must be backed",
+  "no recipient means owed, not burned",
+  "a balance that grew is not a payment",
+  "a token that takes more than asked reverts",
+  "the inline payment is gas capped",
+  "a shortfall becomes owed",
+  "a broken registry defers instead of reverting",
+  "owed fees are not spendable",
+  "the lock refuses reentry",
+  "the lock is released",
+  "an empty route selects nothing",
+  "only charge currencies are selected (spent)",
+  "only charge currencies are selected (delivered)",
+  "a tie keeps the earlier place (spent)",
+  "a tie keeps the earlier place (delivered)",
+  "inputs, then outputs, then hops (spent)",
+  "inputs, then outputs, then hops (delivered)",
+  "a spent token an earlier leg delivered is a hop",
+  "a delivered token a later leg spends is a hop",
+  "the fallback is the first input",
+  "the swapped amount counts what was delivered"
+ ],
+ "rows": [
+  {
+   "label": "a v3 path ends at tokenOut",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v3 hop needs a pool at the canonical address",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "exactly amountIn leaves",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "at least minAmountOut arrives",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "no other tracked balance moves",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the action names extra tracked tokens",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the registry must have code",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "Permit2 must have code",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v3 factory must have code",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a v3 factory needs its init code hash",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a PoolManager must have code",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "29 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the ledger needs a registry with code",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a flush with nothing owed does nothing",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a flush needs a recipient",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a flush clears what it pays",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "27 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a flush measures what left",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "27 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a flush never runs inside an action",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "27 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a zero fee charges nothing",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a fee must be backed",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "no recipient means owed, not burned",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "27 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a balance that grew is not a payment",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a token that takes more than asked reverts",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the inline payment is gas capped",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "27 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a shortfall becomes owed",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "10 passed / 19 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a broken registry defers instead of reverting",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "owed fees are not spendable",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "27 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the lock refuses reentry",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "27 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the lock is released",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "19 passed / 10 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "an empty route selects nothing",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "only charge currencies are selected (spent)",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "8 passed / 8 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "only charge currencies are selected (delivered)",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "7 passed / 9 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a tie keeps the earlier place (spent)",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "14 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a tie keeps the earlier place (delivered)",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "13 passed / 3 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "inputs, then outputs, then hops (spent)",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 5 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "inputs, then outputs, then hops (delivered)",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "9 passed / 7 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a spent token an earlier leg delivered is a hop",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 5 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a delivered token a later leg spends is a hop",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 5 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the fallback is the first input",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "13 passed / 3 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the swapped amount counts what was delivered",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  }
+ ],
+ "baselineFailure": null,
+ "summary": "39 mutations: 39 caught, 0 not caught.",
+ "exitCode": 0
+}

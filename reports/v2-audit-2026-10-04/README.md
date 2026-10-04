@@ -32,7 +32,7 @@ cd reports/v2-audit-2026-10-04 && shasum -a 256 AUDITORIA_DOMINO_V2.md FINDINGS.
 | DV2-01 (medium) | `contracts/src/v2/route/DominoSwapExecutor.sol`: a v3 path's intermediate tokens are tracked, so a leg that moves them reverts | Regressions on the route, the zap, the vault and the auto-exit (package §5); mutants in `remediation/mutations/v2-audit-2026-10-04.json` |
 | DV2-02 (release blocker) | `scripts/v2/deploy-preflight.test.mjs`: no transaction a test leaves pending reaches the next test | `remediation/main-ci.json` records the audited commit's run as it happened. The candidate's own main run gates its tag |
 | DV2-03 (low) | `scripts/v2/audit-bootstrap.sh` | A run on a fresh checkout of the candidate (package §1) |
-| DV2-04 (low) | The three hand-run campaigns are committed batches; eight stale vault mutants are rewritten; `scripts/mutate-contracts.mjs` rebuilds what a suite loads by artifact and reports source hashes | `remediation/mutation-history.json`, `remediation/mutations/` |
+| DV2-04 (low) | The three hand-run campaigns are committed batches; eight stale vault mutants are rewritten; `scripts/mutate-contracts.mjs` rebuilds what a suite loads by artifact and reports source hashes. After the re-audit, the 3 Oct runs are withdrawn as evidence (no source hash binds them); the candidate's reruns replace them | `remediation/mutations/`; `remediation/mutation-history.json` as history only |
 | DV2-05 (informational) | `scripts/v2/deploy.mjs`: RPC replies bounded to 8 MiB and checked against their request | `scripts/v2/deploy.test.mjs` (the transport test) |
 | Limits to state plainly | Double-entry (B) reaches the auto-exit's credits; the v3 rearm's slack; the per-position path when `exitAll` does not fit; 8,040 lines at the tag | Package §2, §5, §7; `docs/v2/F3_VAULT.md`; `docs/v2/F4_AUTO_EXIT.md` |
 
@@ -41,4 +41,4 @@ cd reports/v2-audit-2026-10-04 && shasum -a 256 AUDITORIA_DOMINO_V2.md FINDINGS.
 - **`mutation-history.json`:** the hand-run campaigns behind the package's "29 of 29", "18 of 18" and "5 of 5", with their results as recorded on 3 Oct.
 - **`mutations/*.json`:** the reruns on the remediation candidate (`scripts/mutate-contracts.mjs --report`). Each names its batch and every source and suite it ran by SHA-256. A source's hash can be compared with `contracts/release-artifacts-v2.json`.
 
-The remediation changes neither the tag nor this folder's delivered files.
+The remediation changes neither the tag nor this folder's delivered files. It is tagged `v2-audit-2026-10-04.2`; the auditors' re-audit of it is in [`../v2-audit-2026-10-04.2/`](../v2-audit-2026-10-04.2/README.md).

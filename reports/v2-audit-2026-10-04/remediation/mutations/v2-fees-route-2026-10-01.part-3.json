@@ -1,0 +1,299 @@
+{
+ "kind": "domino-mutation-run",
+ "batch": "contracts/mutations/v2-fees-route-2026-10-01.json",
+ "batchSha256": "fbbc4a6b89fbba1d23ed1bf8b9b893f0e09aa2b76b420253555056ce40628ee3",
+ "sources": {
+  "contracts/src/v2/fees/DominoFeeRules.sol": "fca2a256024e028b22574c186831132dae6a9d6ec19b4bd9418ca3c27dfc430b",
+  "contracts/src/v2/route/DominoAssistedSwap.sol": "8ea7d1d6a197f0312e80d0bcacf34cea9c3aca1194f0fb92758a48b97b06d13a",
+  "contracts/src/v2/route/DominoSwapFloor.sol": "f565deba3ce6009b192605a1aa8baa232fef0842dedcc0ffb69fa2ed2cc3258d",
+  "contracts/src/v2/route/DominoTokenOps.sol": "009367bf7d16abb27a385aa717e097f9dafc3e28e1b54c3d13c319261fb72d13"
+ },
+ "suites": {
+  "test/v2/fees/DominoFeeLedger.t.sol": "d3d54718769e32ff9fcb61cf016688258fb8d2faca03275313a32f65d8d57e9c",
+  "test/v2/fees/DominoFeeRules.t.sol": "0ada40c57f66a6d4c8e336bb74e182761b38d81c73edd47853875c64e4a3e8c7",
+  "test/v2/route/DominoAssistedSwap.t.sol": "5cd8b8ac4094c7565c981adebe438c50a27b37565871fbc71f4bed4bb7d91a89",
+  "test/v2/route/DominoSwapFloor.t.sol": "a9515736ba382cc3a30fa01a765ab0cbd541c0849a9f0b6fecc59c7ba53f0a11",
+  "test/v2/route/DominoTokenOps.t.sol": "d04011d483fdb35d93390fd54869d9ba175596adbecd436eff48c20e88c6de44"
+ },
+ "rebuild": [],
+ "only": [
+  "the swapped amount counts what was spent",
+  "one measured amount per leg",
+  "fees round down",
+  "no swap means no tariff",
+  "no swap means no fee token",
+  "a swap pays the tariff",
+  "a swap pays in the selected token",
+  "Domino-compound pays 4%",
+  "a quote needs a price",
+  "the pool fee is below 100%",
+  "the slippage is below 100%",
+  "low prices keep the full ratio",
+  "high prices avoid the overflow",
+  "the protocol fee of the swap direction",
+  "the protocol fee comes before the LP fee",
+  "slot0 protocol fee bits",
+  "slot0 LP fee bits",
+  "the quote rounds down: low price, token0 in",
+  "the quote rounds down: low price, token1 in",
+  "the quote rounds down: the Q128 ratio",
+  "the quote rounds down: high price, token0 in",
+  "the quote rounds down: high price, token1 in",
+  "the floor rounds down once",
+  "a balance needs a full answer",
+  "a failed balance read reverts",
+  "an allowance needs a full answer",
+  "a failed allowance read reverts",
+  "a failed transfer reverts",
+  "a transfer returning false fails",
+  "a transfer without return data needs code",
+  "a transfer without return data is accepted",
+  "an approve returning false fails",
+  "an approve without return data needs code",
+  "a failed approve reverts",
+  "the native call is gas capped",
+  "the token call is gas capped",
+  "the intent fee terms are checked",
+  "the fee is an assisted-swap fee",
+  "the fee is on the fee token swapped amount"
+ ],
+ "rows": [
+  {
+   "label": "the swapped amount counts what was spent",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "one measured amount per leg",
+   "expected": "CAUGHT",
+   "verdict": "NO BUILD",
+   "detail": "Error: Compiler run failed:; 0 passed / 0 failed / 0 skipped across 0 suite(s)"
+  },
+  {
+   "label": "fees round down",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "no swap means no tariff",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "no swap means no fee token",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a swap pays the tariff",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a swap pays in the selected token",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "Domino-compound pays 4%",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a quote needs a price",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "the pool fee is below 100%",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "the slippage is below 100%",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "low prices keep the full ratio",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "high prices avoid the overflow",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "10 passed / 3 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "the protocol fee of the swap direction",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "9 passed / 4 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "the protocol fee comes before the LP fee",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "10 passed / 3 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "slot0 protocol fee bits",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 2 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "slot0 LP fee bits",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "10 passed / 3 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "the quote rounds down: low price, token0 in",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "the quote rounds down: low price, token1 in",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "the quote rounds down: the Q128 ratio",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "the quote rounds down: high price, token0 in",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "the quote rounds down: high price, token1 in",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "the floor rounds down once",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 2 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "a balance needs a full answer",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a failed balance read reverts",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "an allowance needs a full answer",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a failed allowance read reverts",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a failed transfer reverts",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "3 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a transfer returning false fails",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "3 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a transfer without return data needs code",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a transfer without return data is accepted",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "an approve returning false fails",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "an approve without return data needs code",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "a failed approve reverts",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the native call is gas capped",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the token call is gas capped",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "28 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the intent fee terms are checked",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "8 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the fee is an assisted-swap fee",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "9 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "the fee is on the fee token swapped amount",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "7 passed / 3 failed / 0 skipped across 1 suite(s)"
+  }
+ ],
+ "baselineFailure": null,
+ "summary": "39 mutations: 38 caught, 0 not caught, 1 did not compile.",
+ "exitCode": 1
+}

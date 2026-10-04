@@ -1,0 +1,26 @@
+{
+ "kind": "domino-mutation-run",
+ "batch": "contracts/mutations/v2-fees-route-2026-10-01.json",
+ "batchSha256": "600e5ba839500485ba1f3e43d5f6732c675ec6baf58029c8e7e4abc83e5c9d3b",
+ "sources": {
+  "contracts/src/v2/fees/DominoFeeRules.sol": "fca2a256024e028b22574c186831132dae6a9d6ec19b4bd9418ca3c27dfc430b"
+ },
+ "suites": {
+  "test/v2/fees/DominoFeeRules.t.sol": "0ada40c57f66a6d4c8e336bb74e182761b38d81c73edd47853875c64e4a3e8c7"
+ },
+ "rebuild": [],
+ "only": [
+  "one measured amount per leg"
+ ],
+ "rows": [
+  {
+   "label": "one measured amount per leg",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "15 passed / 1 failed / 0 skipped across 1 suite(s)"
+  }
+ ],
+ "baselineFailure": null,
+ "summary": "1 mutations: 1 caught, 0 not caught.",
+ "exitCode": 0
+}
