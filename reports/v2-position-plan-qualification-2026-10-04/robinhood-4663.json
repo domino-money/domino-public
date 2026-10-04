@@ -1,0 +1,845 @@
+{
+ "schemaVersion": 1,
+ "kind": "domino-v2-position-plan-fork-qualification",
+ "chain": "robinhood-4663",
+ "contractVersion": "1.0.0-rc.2",
+ "sourceCommit": "a602232c097ea715f6c4e17893b93540097818a0",
+ "manifestSha256": "3f07f48cac98b8bc61851736a3332ac4b972069bb7b57401c816bfbcfd6e0f0d",
+ "forkBlock": 80277453,
+ "upstream": "loopback",
+ "checkedAt": "2026-10-04T22:04:58Z",
+ "liveL1DataFee": {
+  "status": "ok",
+  "source": "nitro_node_interface",
+  "block": "80277502",
+  "weiRaw": "0",
+  "upperBoundWeiRaw": null,
+  "l1GasUnits": "0",
+  "l2BaseFeeWei": "20132000",
+  "transactionBytes": null
+ },
+ "journeys": [
+  {
+   "name": "v4 create with a swap (direct)",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "fee": 200,
+     "tickSpacing": 4,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -199256,
+    "tickUpper": -195252,
+    "inputs": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "amountRaw": "100000000"
+     }
+    ]
+   },
+   "planSeconds": 4.21,
+   "planCalls": 16,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "tokenOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "amountInRaw": "49851864",
+     "expectedOutRaw": "18358635999737790"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "input",
+    "basisRaw": "49851864",
+    "amountRaw": "324037",
+    "ranks": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     },
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_token",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 574815,
+   "tokenId": "3597848",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 create through Permit2, sent by another account",
+   "request": {
+    "action": "create",
+    "consent": "permit2",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "fee": 200,
+     "tickSpacing": 4,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -199256,
+    "tickUpper": -195252,
+    "inputs": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "amountRaw": "100000000"
+     }
+    ]
+   },
+   "planSeconds": 0.09,
+   "planCalls": 10,
+   "consent": "permit2",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "tokenOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "amountInRaw": "49851873",
+     "expectedOutRaw": "18358632734534918"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "input",
+    "basisRaw": "49851873",
+    "amountRaw": "324037",
+    "ranks": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     },
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_token",
+    "sign_permit2",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 539086,
+   "tokenId": "3597849",
+   "sentBy": "submitter"
+  },
+  {
+   "name": "v4 create with native ETH",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x0000000000000000000000000000000000000000",
+     "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "fee": 87,
+     "tickSpacing": 1,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -199255,
+    "tickUpper": -195255,
+    "inputs": [
+     {
+      "token": "0x0000000000000000000000000000000000000000",
+      "amountRaw": "50000000000000000"
+     }
+    ]
+   },
+   "planSeconds": 0.09,
+   "planCalls": 10,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "v4_quoter",
+     "tokenIn": "0x0000000000000000000000000000000000000000",
+     "tokenOut": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "amountInRaw": "25086172676365954",
+     "expectedOutRaw": "68107289"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "output",
+    "basisRaw": "68107289",
+    "amountRaw": "442697",
+    "ranks": [
+     {
+      "token": "0x0000000000000000000000000000000000000000",
+      "rank": 2
+     },
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 499008,
+   "tokenId": "3597850",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 increase with a swap",
+   "request": {
+    "action": "increase",
+    "consent": "direct",
+    "position": {
+     "dex": 4,
+     "tokenId": "3597848"
+    },
+    "inputs": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "amountRaw": "50000000"
+     }
+    ]
+   },
+   "planSeconds": 0.09,
+   "planCalls": 17,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "tokenOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "amountInRaw": "24925940",
+     "expectedOutRaw": "9179315188853918"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "input",
+    "basisRaw": "24925940",
+    "amountRaw": "162018",
+    "ranks": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     },
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_token",
+    "approve_position",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 397574,
+   "tokenId": "3597848",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 change range",
+   "request": {
+    "action": "changeRange",
+    "consent": "direct",
+    "position": {
+     "dex": 4,
+     "tokenId": "3597848"
+    },
+    "tickLower": -198256,
+    "tickUpper": -194252,
+    "liquidityToRemove": "all",
+    "burn": true
+   },
+   "planSeconds": 0.09,
+   "planCalls": 17,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "tokenOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "amountInRaw": "35772240",
+     "expectedOutRaw": "13173609201866577"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "input",
+    "basisRaw": "35772240",
+    "amountRaw": "232519",
+    "ranks": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     },
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 625744,
+   "tokenId": "3597851",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 relayed exit, converted to WETH",
+   "request": {
+    "action": "exit",
+    "consent": "relayed",
+    "position": {
+     "dex": 4,
+     "tokenId": "3597851"
+    },
+    "liquidityToRemove": "all",
+    "burn": true,
+    "receive": {
+     "mode": "converted",
+     "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+    }
+   },
+   "planSeconds": 0.08,
+   "planCalls": 17,
+   "consent": "relayed",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "tokenOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "amountInRaw": "36509135",
+     "expectedOutRaw": "13444977477351734"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "input",
+    "basisRaw": "36509135",
+    "amountRaw": "237309",
+    "ranks": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     },
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_position",
+    "sign_relayed",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 410164,
+   "tokenId": "3597851",
+   "sentBy": "submitter"
+  },
+  {
+   "name": "v4 exit converted to USDG",
+   "request": {
+    "action": "exit",
+    "consent": "direct",
+    "position": {
+     "dex": 4,
+     "tokenId": "3597849"
+    },
+    "liquidityToRemove": "all",
+    "burn": true,
+    "receive": {
+     "mode": "converted",
+     "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+    }
+   },
+   "planSeconds": 2.57,
+   "planCalls": 17,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "tokenOut": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "amountInRaw": "17878669353270721",
+     "expectedOutRaw": "48538882"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "output",
+    "basisRaw": "48538882",
+    "amountRaw": "315502",
+    "ranks": [
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     },
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_position",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 378231,
+   "tokenId": "3597849",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 exit to both tokens",
+   "request": {
+    "action": "exit",
+    "consent": "direct",
+    "position": {
+     "dex": 4,
+     "tokenId": "3597850"
+    },
+    "liquidityToRemove": "all",
+    "burn": false,
+    "receive": {
+     "mode": "both"
+    }
+   },
+   "planSeconds": 0.02,
+   "planCalls": 14,
+   "consent": "direct",
+   "legs": [],
+   "fee": {
+    "bps": 0,
+    "token": "0x0000000000000000000000000000000000000000",
+    "place": "none",
+    "basisRaw": "0",
+    "amountRaw": "0",
+    "ranks": []
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_position",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 207504,
+   "tokenId": "3597850",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v4 new pool at the owner's price",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "fee": 7000,
+     "tickSpacing": 140,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -201320,
+    "tickUpper": -193200,
+    "inputs": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "amountRaw": "100000000"
+     }
+    ],
+    "initialPrice": {
+     "price": "2715.045901",
+     "baseToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "decimals0": 18,
+     "decimals1": 6
+    }
+   },
+   "planSeconds": 0.09,
+   "planCalls": 10,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "quoter_v2",
+     "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "tokenOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "amountInRaw": "49780254",
+     "expectedOutRaw": "18332245020527672"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "input",
+    "basisRaw": "49780254",
+    "amountRaw": "323571",
+    "ranks": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     },
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_token",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 640410,
+   "tokenId": "3597852",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v3 create with a swap",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 3,
+     "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "fee": 100,
+     "tickSpacing": 1,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -200254,
+    "tickUpper": -194254,
+    "inputs": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "amountRaw": "100000000"
+     }
+    ]
+   },
+   "planSeconds": 0.13,
+   "planCalls": 15,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "local_simulation",
+     "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "tokenOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "amountInRaw": "49839687",
+     "expectedOutRaw": "18354125793584130"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "input",
+    "basisRaw": "49839687",
+    "amountRaw": "323957",
+    "ranks": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     },
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_token",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 738791,
+   "tokenId": "1384995",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v3 increase",
+   "request": {
+    "action": "increase",
+    "consent": "direct",
+    "position": {
+     "dex": 3,
+     "tokenId": "1384995"
+    },
+    "inputs": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "amountRaw": "50000000"
+     }
+    ]
+   },
+   "planSeconds": 0.08,
+   "planCalls": 15,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "local_simulation",
+     "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "tokenOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "amountInRaw": "24919831",
+     "expectedOutRaw": "9177055826788851"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "input",
+    "basisRaw": "24919831",
+    "amountRaw": "161978",
+    "ranks": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     },
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_token",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 450292,
+   "tokenId": "1384995",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v3 change range",
+   "request": {
+    "action": "changeRange",
+    "consent": "direct",
+    "position": {
+     "dex": 3,
+     "tokenId": "1384995"
+    },
+    "tickLower": -198754,
+    "tickUpper": -192754,
+    "liquidityToRemove": "all",
+    "burn": true
+   },
+   "planSeconds": 0.1,
+   "planCalls": 15,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "local_simulation",
+     "tokenIn": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "tokenOut": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "amountInRaw": "35122384",
+     "expectedOutRaw": "12934277218745041"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "input",
+    "basisRaw": "35122384",
+    "amountRaw": "228295",
+    "ranks": [
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     },
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_position",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 739264,
+   "tokenId": "1384996",
+   "sentBy": "owner"
+  },
+  {
+   "name": "v3 exit converted to USDG",
+   "request": {
+    "action": "exit",
+    "consent": "direct",
+    "position": {
+     "dex": 3,
+     "tokenId": "1384996"
+    },
+    "liquidityToRemove": "all",
+    "burn": true,
+    "receive": {
+     "mode": "converted",
+     "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168"
+    }
+   },
+   "planSeconds": 0.05,
+   "planCalls": 15,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "local_simulation",
+     "tokenIn": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "tokenOut": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "amountInRaw": "39965200943959587",
+     "expectedOutRaw": "108501773"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "output",
+    "basisRaw": "108501773",
+    "amountRaw": "705261",
+    "ranks": [
+     {
+      "token": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "rank": 2
+     },
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": "unavailable",
+   "steps": [
+    "approve_position",
+    "send_action"
+   ],
+   "ok": true,
+   "failed": [],
+   "gasUsed": 419592,
+   "tokenId": "1384996",
+   "sentBy": "owner"
+  },
+  {
+   "name": "live node: plan only (quotes and eth_simulateV1 on the node), never sent",
+   "request": {
+    "action": "create",
+    "consent": "direct",
+    "pool": {
+     "dex": 4,
+     "currency0": "0x0000000000000000000000000000000000000000",
+     "currency1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "fee": 87,
+     "tickSpacing": 1,
+     "hooks": "0x0000000000000000000000000000000000000000"
+    },
+    "tickLower": -199255,
+    "tickUpper": -195255,
+    "inputs": [
+     {
+      "token": "0x0000000000000000000000000000000000000000",
+      "amountRaw": "1000000000000000"
+     }
+    ]
+   },
+   "owner": "0x706627e3e75b0603c4b6f9a1ebbfc635da712747",
+   "ok": true,
+   "planSeconds": 0.06,
+   "planCalls": 15,
+   "consent": "direct",
+   "legs": [
+    {
+     "source": "local_simulation",
+     "amountInRaw": "502456663988227",
+     "expectedOutRaw": "1364431"
+    }
+   ],
+   "fee": {
+    "bps": 65,
+    "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+    "place": "output",
+    "basisRaw": "1364431",
+    "amountRaw": "8868",
+    "ranks": [
+     {
+      "token": "0x0000000000000000000000000000000000000000",
+      "rank": 2
+     },
+     {
+      "token": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "rank": 1
+     }
+    ]
+   },
+   "simulation": "ok",
+   "l1DataFee": {
+    "status": "ok",
+    "source": "nitro_node_interface",
+    "block": "80277569",
+    "weiRaw": "0",
+    "upperBoundWeiRaw": null,
+    "l1GasUnits": "0",
+    "l2BaseFeeWei": "20078000",
+    "transactionBytes": null
+   },
+   "failed": []
+  }
+ ],
+ "passed": 14,
+ "failed": []
+}

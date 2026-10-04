@@ -350,6 +350,7 @@ With a key, router legs add 2 Trading API calls (quote and swap) per conversion,
 | `test_v2_quotes.py`, `test_v2_liquidity.py`, `test_v2_plan_codec.py`, `test_v2_uniswap_api.py` | Quotes, ticks and Multicall3 decoding; the exact math (F7 §2.6.5's example included, and the fee growth a swap adds, protocol fee included); the codec against the EIP-712 goldens and the zap's selectors; every Trading API field that must match |
 | `test_position_plan_contract.py` | The exported contract is current; fixtures replay the real service against recorded chain answers (no network); the consumer test; the listener's boundary, limits and launcher |
 | `test_v2_position_plan_config.py` | Manifests through v2_manifest (production admits a verified public manifest; local tests, #302's fork rehearsal, another chain and a malformed one are refused, named), settings, secrets never echoed |
+| `qualify_position_plan_fork.py` on Robinhood, 4 Oct 2026 ([report](../../reports/v2-position-plan-qualification-2026-10-04/robinhood-4663.json)) | **The deployed V2 on a fork of the chain, through the own node.** One plan of each kind on real pools (WETH/USDG v4, ETH/USDG v4, WETH/USDG v3) with the verified production manifest. 13 plans executed exactly as planned: each leg's output, the fee, the liquidity and the refunds, as in the journeys above. One more plan was made against the live node for the deployer and never sent: its quote came from the V4Quoter, its `eth_simulateV1` ran on Nitro, and NodeInterface answered its L1 component |
 
 **Which deployer each EVM test uses.** All of them use `backend/tests/v2_s1_chain.py`, on a local Anvil with real Uniswap code:
 - `vendored`: vendored v4, Base's v3 bytecode;
@@ -382,10 +383,10 @@ Permit2's, the position managers' and the Universal Router's errors stay in the 
 ## What remains
 
 - **The Worker route, the systemd unit, egress and credentials** (F8), and the production manifests (#301). The contract stays `candidate_disabled_pending_deployment_and_worker` until then.
-- **Qualification on forks of the three chains** with the real Uniswap, quoters and Universal Router (#301's fork rehearsals): one plan of each kind per chain. In particular:
-  - Robinhood's V4Quoter `quoteExactInput`, used for multi-hop v4 paths only. Its `quoteExactInputSingle` is V1's production call;
-  - `eth_simulateV1` on the own Nitro node and on each hosted provider. Without it, simulation falls back to `eth_call` and reports `not_run` when approvals are missing;
-  - the Trading API's live answers for each chain with the zap as swapper. The tests use synthetic answers in the shape V1 recorded.
+- **Qualification on forks** (`backend/qualify_position_plan_fork.py`): one plan of each kind per chain, on the deployed V2.
+  - **Robinhood: done on 4 Oct 2026, 14 of 14** ([evidence](#evidence)). That includes the V4Quoter, and `eth_simulateV1` on the own Nitro node.
+  - **Base and Arbitrum:** still to run. They need their hosted RPC, reached through a loopback forwarder, because the tool takes no remote upstream, and their manifests added to the tool's list.
+  - **The Trading API's live answers** with the zap as swapper: still synthetic in the tests. They need the owner's key.
 - **Gas in money**: L2 `gasUnits` and the L1 data fee in wei; no gas price, no OP Stack operator fee, no ETH or USD value (F6's gas work).
 - **Converted exits of narrow ranges** convert what the band guarantees ([table](#minimums-at-the-worst-price-within-s-rc2)): the app should offer a lower `s` for them, or an exit to both tokens.
 - **Wrapping is never a leg.** The zap has no wrap or unwrap leg, so a WETH input for a v4 native-ETH pool, or an exit of a v3 WETH pool converted to native ETH, swaps WETH like any other token (through an ETH/WETH pool, with the fee) or finds no route. The app should offer WETH as the target on v3 and ETH on v4.
