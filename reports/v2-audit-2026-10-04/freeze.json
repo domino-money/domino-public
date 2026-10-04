@@ -1,0 +1,35 @@
+{
+  "kind": "domino-v2-audit-freeze",
+  "frozenAtUTC": "2026-10-04T13:51:46+00:00",
+  "repository": "https://github.com/domino-money/domino",
+  "tag": "v2-audit-2026-10-04",
+  "commit": "5e63d2dba9123fdc585f7f272b83532b491fbc51",
+  "tree": "db8bfb4e57a043a94f7fe55bf02725cb65836b1c",
+  "annotatedTagObject": "ca9aede4ab55de02db39d8714f60abf620515cfb",
+  "ci": {
+    "pullRequest": {
+      "number": 319,
+      "runId": 37201444263,
+      "url": "https://github.com/domino-money/domino/actions/runs/37201444263",
+      "conclusion": "success",
+      "headSha": "417b999a246d673e8c7cbed5a022e55afe9b6016",
+      "headTree": "db8bfb4e57a043a94f7fe55bf02725cb65836b1c"
+    },
+    "main": {
+      "runId": 37206891445,
+      "url": "https://github.com/domino-money/domino/actions/runs/37206891445",
+      "status": "in_progress",
+      "conclusion": null,
+      "headSha": "5e63d2dba9123fdc585f7f272b83532b491fbc51"
+    }
+  },
+  "note": "Tagged at the owner's request before main's run on the tagged commit completed. #319's run passed every job on the identical tree. This record carries main's result once that run completes.",
+  "releaseManifest": {
+    "path": "contracts/release-artifacts-v2.json",
+    "sha256": "4f607c2f0ee6c58f156453147fac19029f90b1437613ec3ad228242938436ebb",
+    "sourceTreeSha256": "296008a420406c857706033149e39d17fba544061507ee9ad0ed06a199f75ad9",
+    "sources": 52,
+    "contracts": 12
+  },
+  "auditPackage": "reports/V2_AUDIT_PACKAGE.md"
+}
