@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 2,
+  "kind": "domino-v2-fork-rehearsal-summary",
+  "status": "passed",
+  "sourceCommit": "559c509ff71d71e49ac720bd6acd8a9783531ebb",
+  "identicalAddresses": true,
+  "productionDeployer": "0x706627e3e75b0603c4b6f9a1ebbfc635da712747",
+  "contracts": {
+    "registry": "0x25d4f013ecff3790e384e16ca9951bba6cd715fa",
+    "priceAnchor": "0x8c1edc4280d9533f6336f760380ba329e1f81f43",
+    "autoExit": "0x6109fc514a88a8e85e6e5c863238ddba9a98be36",
+    "vaultSwap": "0xbf22a36bbb419846e073cf0c6c729f669d7f348a",
+    "vault.v3": "0xd55c0f5ff8ad1ded828edb36be77e0f3677ad4a4",
+    "vault.v4": "0xa3ff8d74e4ec4a19f35d92b7eec852ba6f7e2bbb",
+    "vaultFactory.v3": "0xa7dfb61a6597d09742cb7f9a8780c9c74ebc34f4",
+    "vaultFactory.v4": "0xc71a561853514efc2271f1d10c13ec95834792ba",
+    "zap.v4.steps": "0x355b0997d5e04392862a8e8d21d911851b2eefbe",
+    "zap.v3": "0xe30d7e07a67198c45d4c7b67d8423cbb6c7ea5a0",
+    "zap.v4": "0x376b92929bbe778c6dd64e8d73f8688686288e8a",
+    "vaultExecutor.v3": "0xd8d3bf832b234855fee2ac36ac4803aa7f9adca9",
+    "vaultExecutor.v4": "0xf3f68d8461c2071e2b8d88a60ce64f527f1d6639"
+  },
+  "governanceSafe": "0x2B1d4098EC880058886B95A0E75069a7099C5a9d",
+  "preflightWarnings": [
+    "governance_owner_holds_role: deployer",
+    "governance_owner_holds_role: guardian"
+  ],
+  "chains": [
+    {
+      "chainId": 4663,
+      "forkBlock": 80174253,
+      "forkGasUsed": "39496354",
+      "simulatedGas": "39493753",
+      "gasLimitTotal": "49367196",
+      "maxFeePerGas": "54201003",
+      "worstCaseWei": "2675751538497588",
+      "balanceAtForkWei": "101101302769667044",
+      "estimatedCostAtChainPriceWei": "815520717392000",
+      "maxFeeCeilingWei": "2047945011",
+      "resume": "verified",
+      "journeys": "passed"
+    },
+    {
+      "chainId": 8453,
+      "forkBlock": 52175867,
+      "forkGasUsed": "39496198",
+      "simulatedGas": "39493597",
+      "gasLimitTotal": "49367001",
+      "maxFeePerGas": "15962389",
+      "worstCaseWei": "789957367477068",
+      "balanceAtForkWei": "12730251729760243",
+      "estimatedCostAtChainPriceWei": "238530863001341",
+      "maxFeeCeilingWei": "257830319",
+      "resume": "verified",
+      "journeys": "passed"
+    },
+    {
+      "chainId": 42161,
+      "forkBlock": 511699376,
+      "forkGasUsed": "39496414",
+      "simulatedGas": "39493813",
+      "gasLimitTotal": "49694084",
+      "maxFeePerGas": "52500003",
+      "worstCaseWei": "2608939559082252",
+      "balanceAtForkWei": "43966156795912085",
+      "estimatedCostAtChainPriceWei": "795159840000000",
+      "maxFeeCeilingWei": "884736235",
+      "resume": "verified",
+      "journeys": "passed"
+    }
+  ],
+  "publicTransactionsSent": 0
+}
