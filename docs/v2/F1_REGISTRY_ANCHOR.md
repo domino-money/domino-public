@@ -220,7 +220,7 @@ AnchorMath.withinBand(anchorSqrtPriceX96, DominoPriceAnchor(anchor).spotSqrtPric
 
 ## Deployment parameters
 
-No production deployment yet. The fork rehearsal of 2 Oct 2026 (`docs/deployments/v2-rehearsal-2026-10-02`) deployed this configuration, with the owner's roles (provided on 2 Oct, #301), on forks of the three chains. The deployer key is the owner's.
+Deployed on Robinhood, Base and Arbitrum on 4 Oct 2026 from `v2-release-2026-10-04`, with the owner's roles (provided on 2 Oct, #301): `docs/deployments/v2-mainnet-2026-10-04` and one verified manifest per chain. The fork rehearsal of 2 Oct 2026 (`docs/deployments/v2-rehearsal-2026-10-02`) had deployed the same configuration on forks of the three chains. The deployer key is the owner's.
 
 **Salts** (CreateX `deployCreate3`, docs/v2/F0_INTERFACES.md): `deployer (20 bytes) ‖ 0x00 ‖ bytes11(keccak256("domino.v2.<component>"))`.
 

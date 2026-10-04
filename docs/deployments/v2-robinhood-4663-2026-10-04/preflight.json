@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "kind": "domino-v2-deployment-preflight",
+  "status": "passed",
+  "environment": "public-chain-preparation",
+  "warnings": [
+    "governance_owner_holds_role: deployer",
+    "governance_owner_holds_role: guardian"
+  ],
+  "packageSha256": "b85b8023d25d62cccc7947b6a49223cda62fff45da9fe49fc7521785ed547d41",
+  "resumeOf": null,
+  "checkedAt": "2026-10-04T19:36:39.000Z",
+  "expiresAt": 1791314285,
+  "chain": {
+    "chainId": 4663,
+    "client": "nitro/v3.11.4-7d5ac27/linux-amd64/go1.25.14",
+    "block": {
+      "number": 80189378,
+      "hash": "0xb0bf632e6da203bd929b87317e2d60217530124e95c733789808bb732de4257d",
+      "baseFeePerGas": "20110000"
+    }
+  },
+  "dependencies": "codehashes_and_cross_references_matched",
+  "governance": {
+    "checked": true,
+    "address": "0x2b1d4098ec880058886b95a0e75069a7099c5a9d",
+    "kind": "safe",
+    "proxyVersion": "1.5.0",
+    "singleton": "0xedd160febbd92e350d4d398fb636302fccd67c7e",
+    "version": "1.5.0",
+    "l2": true,
+    "threshold": 2,
+    "owners": [
+      "0x706627e3e75b0603c4b6f9a1ebbfc635da712747",
+      "0x5e57fded90c4635648eb7b3ba29705ff0769d103",
+      "0x19ea136f23151d681da6d20a7a39d36e784ea792"
+    ],
+    "modules": [],
+    "guard": "0x0000000000000000000000000000000000000000",
+    "fallbackHandler": "0x3efcbb83a4a7afcb4f68d501e2c2203a38be77f4",
+    "warnings": [
+      "governance_owner_holds_role: deployer",
+      "governance_owner_holds_role: guardian"
+    ]
+  },
+  "roleHasCode": {
+    "deployer": false,
+    "governance": true,
+    "guardian": false,
+    "feeRecipient": false,
+    "operator": false,
+    "publisher": false
+  },
+  "deployer": {
+    "address": "0x706627e3e75b0603c4b6f9a1ebbfc635da712747",
+    "nonce": "300",
+    "balanceWei": "101101302769667044"
+  },
+  "components": {
+    "registry": "empty",
+    "priceAnchor": "empty",
+    "autoExit": "empty",
+    "vaultSwap": "empty",
+    "vault.v3": "empty",
+    "vault.v4": "empty",
+    "vaultFactory.v3": "empty",
+    "vaultFactory.v4": "empty",
+    "zap.v4.steps": "empty",
+    "zap.v3": "empty",
+    "zap.v4": "empty",
+    "vaultExecutor.v3": "empty",
+    "vaultExecutor.v4": "empty"
+  },
+  "l1": {
+    "status": "estimated",
+    "method": "NodeInterface.gasEstimateL1Component"
+  },
+  "fees": {
+    "maxFeePerGas": "500000000",
+    "maxPriorityFeePerGas": "0"
+  },
+  "steps": [
+    {
+      "component": "registry",
+      "nonce": 300,
+      "gasLimit": "2416027",
+      "simulatedExecutionGas": "1932821",
+      "l1Gas": "16566",
+      "l1FeeWei": "0",
+      "headroomGas": "466640",
+      "worstCaseWei": "1208013500000000"
+    },
+    {
+      "component": "priceAnchor",
+      "nonce": 301,
+      "gasLimit": "2199097",
+      "simulatedExecutionGas": "1759277",
+      "l1Gas": "16965",
+      "l1FeeWei": "0",
+      "headroomGas": "422855",
+      "worstCaseWei": "1099548500000000"
+    },
+    {
+      "component": "autoExit",
+      "nonce": 302,
+      "gasLimit": "5599087",
+      "simulatedExecutionGas": "4479269",
+      "l1Gas": "40607",
+      "l1FeeWei": "0",
+      "headroomGas": "1079211",
+      "worstCaseWei": "2799543500000000"
+    },
+    {
+      "component": "vaultSwap",
+      "nonce": 303,
+      "gasLimit": "2219873",
+      "simulatedExecutionGas": "1775898",
+      "l1Gas": "17456",
+      "l1FeeWei": "0",
+      "headroomGas": "426519",
+      "worstCaseWei": "1109936500000000"
+    },
+    {
+      "component": "vault.v3",
+      "nonce": 304,
+      "gasLimit": "10007689",
+      "simulatedExecutionGas": "8006151",
+      "l1Gas": "67042",
+      "l1FeeWei": "0",
+      "headroomGas": "1934496",
+      "worstCaseWei": "5003844500000000"
+    },
+    {
+      "component": "vault.v4",
+      "nonce": 305,
+      "gasLimit": "11042839",
+      "simulatedExecutionGas": "8834271",
+      "l1Gas": "72856",
+      "l1FeeWei": "0",
+      "headroomGas": "2135712",
+      "worstCaseWei": "5521419500000000"
+    },
+    {
+      "component": "vaultFactory.v3",
+      "nonce": 306,
+      "gasLimit": "543598",
+      "simulatedExecutionGas": "434878",
+      "l1Gas": "5116",
+      "l1FeeWei": "0",
+      "headroomGas": "103604",
+      "worstCaseWei": "271799000000000"
+    },
+    {
+      "component": "vaultFactory.v4",
+      "nonce": 307,
+      "gasLimit": "543822",
+      "simulatedExecutionGas": "435057",
+      "l1Gas": "5116",
+      "l1FeeWei": "0",
+      "headroomGas": "103649",
+      "worstCaseWei": "271911000000000"
+    },
+    {
+      "component": "zap.v4.steps",
+      "nonce": 308,
+      "gasLimit": "2139070",
+      "simulatedExecutionGas": "1711256",
+      "l1Gas": "15354",
+      "l1FeeWei": "0",
+      "headroomGas": "412460",
+      "worstCaseWei": "1069535000000000"
+    },
+    {
+      "component": "zap.v3",
+      "nonce": 309,
+      "gasLimit": "6662609",
+      "simulatedExecutionGas": "5330087",
+      "l1Gas": "47493",
+      "l1FeeWei": "0",
+      "headroomGas": "1285029",
+      "worstCaseWei": "3331304500000000"
+    },
+    {
+      "component": "zap.v4",
+      "nonce": 310,
+      "gasLimit": "5993485",
+      "simulatedExecutionGas": "4794788",
+      "l1Gas": "42364",
+      "l1FeeWei": "0",
+      "headroomGas": "1156333",
+      "worstCaseWei": "2996742500000000"
+    }
+  ],
+  "funding": {
+    "worstCaseWei": "24683598000000000",
+    "balanceWei": "101101302769667044",
+    "marginWei": "76417704769667044",
+    "gasLimitTotal": "49367196",
+    "l1FeesWithHeadroomWei": "0",
+    "maxFeeCeilingWei": "2047945011"
+  }
+}

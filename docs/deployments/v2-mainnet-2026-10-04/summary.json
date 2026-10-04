@@ -1,0 +1,127 @@
+{
+ "schemaVersion": 1,
+ "kind": "domino-v2-mainnet-deployment-summary",
+ "releaseTag": "v2-release-2026-10-04",
+ "sourceCommit": "559c509ff71d71e49ac720bd6acd8a9783531ebb",
+ "chains": {
+  "robinhood-4663": {
+   "chainId": 4663,
+   "name": "Robinhood Chain",
+   "packageDigest": "b85b8023d25d62cccc7947b6a49223cda62fff45da9fe49fc7521785ed547d41",
+   "packageNonce": "300",
+   "preflight": {
+    "status": "passed",
+    "checkedAt": "2026-10-04T19:36:39.000Z",
+    "warnings": [
+     "governance_owner_holds_role: deployer",
+     "governance_owner_holds_role: guardian"
+    ]
+   },
+   "transactions": 11,
+   "blocks": [
+    80189516,
+    80191491
+   ],
+   "gasUsed": 39808515,
+   "executionCostWei": "801374127314000",
+   "rehearsalGasOnFork": 39496354,
+   "rehearsalCostEthAtChainPrice": "0.000816",
+   "verification": {
+    "blockNumber": 80195475,
+    "blockTag": "finalized",
+    "checkedAt": "2026-10-04T20:04:31.502Z"
+   },
+   "sourcify": {
+    "matched": 13,
+    "of": 13
+   }
+  },
+  "base-8453": {
+   "chainId": 8453,
+   "name": "Base",
+   "packageDigest": "983801d0476e82e92139b17e2b05625c76186bfc6fabe1c8316f258e00c7d63d",
+   "packageNonce": "79",
+   "preflight": {
+    "status": "passed",
+    "checkedAt": "2026-10-04T19:41:30.000Z",
+    "warnings": [
+     "governance_owner_holds_role: deployer",
+     "governance_owner_holds_role: guardian"
+    ]
+   },
+   "transactions": 11,
+   "blocks": [
+    52176808,
+    52177314
+   ],
+   "gasUsed": 39496198,
+   "executionCostWei": "247616602650000",
+   "rehearsalGasOnFork": 39496198,
+   "rehearsalCostEthAtChainPrice": "0.000239",
+   "verification": {
+    "blockNumber": 52177509,
+    "blockTag": "finalized",
+    "checkedAt": "2026-10-04T20:22:52.261Z"
+   },
+   "sourcify": {
+    "matched": 13,
+    "of": 13
+   }
+  },
+  "arbitrum-42161": {
+   "chainId": 42161,
+   "name": "Arbitrum One",
+   "packageDigest": "5c2c8b12092c07520e4ab8b424e49dd381972ae8333ccd903f86652ec1500149",
+   "packageNonce": "500",
+   "preflight": {
+    "status": "passed",
+    "checkedAt": "2026-10-04T19:46:21.000Z",
+    "warnings": [
+     "governance_owner_holds_role: deployer",
+     "governance_owner_holds_role: guardian"
+    ]
+   },
+   "transactions": 11,
+   "blocks": [
+    511706605,
+    511707289
+   ],
+   "gasUsed": 39737704,
+   "executionCostWei": "795510546912000",
+   "rehearsalGasOnFork": 39496414,
+   "rehearsalCostEthAtChainPrice": "0.000795",
+   "verification": {
+    "blockNumber": 511707510,
+    "blockTag": "finalized",
+    "checkedAt": "2026-10-04T20:09:37.268Z"
+   },
+   "sourcify": {
+    "matched": 13,
+    "of": 13
+   }
+  }
+ },
+ "contracts": {
+  "registry": "0x25d4f013ecff3790e384e16ca9951bba6cd715fa",
+  "priceAnchor": "0x8c1edc4280d9533f6336f760380ba329e1f81f43",
+  "autoExit": "0x6109fc514a88a8e85e6e5c863238ddba9a98be36",
+  "vaultSwap": "0xbf22a36bbb419846e073cf0c6c729f669d7f348a",
+  "vault.v3": "0xd55c0f5ff8ad1ded828edb36be77e0f3677ad4a4",
+  "vault.v4": "0xa3ff8d74e4ec4a19f35d92b7eec852ba6f7e2bbb",
+  "vaultFactory.v3": "0xa7dfb61a6597d09742cb7f9a8780c9c74ebc34f4",
+  "vaultFactory.v4": "0xc71a561853514efc2271f1d10c13ec95834792ba",
+  "zap.v4.steps": "0x355b0997d5e04392862a8e8d21d911851b2eefbe",
+  "zap.v3": "0xe30d7e07a67198c45d4c7b67d8423cbb6c7ea5a0",
+  "zap.v4": "0x376b92929bbe778c6dd64e8d73f8688686288e8a",
+  "vaultExecutor.v3": "0xd8d3bf832b234855fee2ac36ac4803aa7f9adca9",
+  "vaultExecutor.v4": "0xf3f68d8461c2071e2b8d88a60ce64f527f1d6639"
+ },
+ "roles": {
+  "deployer": "0x706627e3e75b0603c4b6f9a1ebbfc635da712747",
+  "governance": "0x2b1d4098ec880058886b95a0e75069a7099c5a9d",
+  "guardian": "0x5e57fded90c4635648eb7b3ba29705ff0769d103",
+  "feeRecipient": "0x1488c84dafc03f7f4c4fb986f83ba99fd530c6f4",
+  "operator": "0x64b72517d8b0d72be25f814b4e03985cf15e098a",
+  "publisher": "0x07c7e7f92e2c76c9cb8d7f2ae44caa6877fc7df3"
+ }
+}
