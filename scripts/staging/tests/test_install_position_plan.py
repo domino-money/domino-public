@@ -68,6 +68,32 @@ class TreeTests(unittest.TestCase):
                           'backend/v2_chains.py', 'backend/v2_position_plan_api.py', MANIFEST])
 
 
+class RunningLockTests(unittest.TestCase):
+    """Unmocked: the read release's own layout, where the 4 Oct deploy found the first version looking in
+    read/backend/backend/ and stopping on FileNotFoundError."""
+
+    def test_the_running_lock_is_the_read_release_s_own_lockfile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            read = base / 'releases' / ('c' * 40) / 'read'
+            (read / 'backend').mkdir(parents=True)
+            (read / 'backend/requirements-api.lock').write_bytes(b'the pinned lock\n')
+            with patch.object(installer.install, 'BASE', base), \
+                 patch.object(installer.install, 'run', return_value=(str(read) + '\n').encode()) as run:
+                self.assertEqual(installer.running_lock(), b'the pinned lock\n')
+            self.assertEqual(run.call_args.args[0], ['/usr/bin/systemctl', 'show', 'domino-read.service', '-p',
+                                                     'WorkingDirectory', '--value'])
+
+    def test_a_reader_outside_the_releases_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            for elsewhere in (base / 'other' / ('c' * 40) / 'read', Path('relative/read')):
+                with self.subTest(elsewhere=str(elsewhere)), patch.object(installer.install, 'BASE', base), \
+                        patch.object(installer.install, 'run', return_value=str(elsewhere).encode()):
+                    with self.assertRaisesRegex(ValueError, 'read_release_unknown'):
+                        installer.running_lock()
+
+
 class HostTests(unittest.TestCase):
     """A temporary host: releases, units, PostgreSQL configuration and the financial base."""
 

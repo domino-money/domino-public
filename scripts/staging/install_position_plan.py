@@ -147,7 +147,7 @@ def running_lock():
     raw = install.run(['/usr/bin/systemctl', 'show', 'domino-read.service', '-p', 'WorkingDirectory', '--value'])
     root = Path(raw.decode().strip())
     require(root.is_absolute() and root.parent.parent == install.BASE / 'releases', 'read_release_unknown')
-    return read_installed(root / 'backend' / LOCKFILE)
+    return read_installed(root / LOCKFILE)
 
 
 def account():
