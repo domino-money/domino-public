@@ -310,7 +310,34 @@ Before its first plan, the planner proves on-chain the code of the components it
 1. **A Uniswap Trading API key** for router legs (the Uniswap Developers key V1's onboarding listener reads from its `--uniswap-config` file can serve, or a separate one for its own quota). Without it plans use pool routes only.
 2. **The per-chain manifests** from #301's deployment.
 3. **Hosted RPC for Base and Arbitrum**, as F6's provisioning list describes.
-4. **Egress** for `trade-api.gateway.uniswap.org` and the RPC hosts, the listener's systemd unit with its credentials, and the Worker route `/api/position-plan/v1/` → this listener (F8). None of these is in this change.
+4. **The Worker route** `/api/position-plan/v1/` → this listener (F8). The systemd unit, its credentials and its egress to `trade-api.gateway.uniswap.org` and the RPC hosts are below.
+
+### In production (Robinhood first)
+
+`scripts/staging/install_position_plan.py` installs the listener and moves it to newer releases; it starts nothing. The tunnel hostname `vm-position-plan.domino.money`, its route to `127.0.0.1:8911` and its Access application are the bridge's.
+
+1. **Install.** Run `install_position_plan.py --archive <tar> --archive-sha256 <hex> --commit <sha>`, first with `--inspect`, then with `--apply`.
+   - **The first install** creates:
+     - the identity `domino-position-plan`;
+     - its peer row `domino domino-position-plan domino_session_auth`, proven by a connection as that user;
+     - `/etc/domino/financial/position-plan`;
+     - `/var/lib/domino-financial/position-plan`, with `catalogue-db.json`.
+   - **Every release** writes `/opt/domino/financial/releases/<sha>/position-plan` (the backend, `api-contracts/v2` and the V2 manifests) and the unit naming it.
+   - **Rollback:** `--rollback <sha>` puts back the previous unit, or removes it.
+2. **Private files.** They go in `/etc/domino/financial/position-plan`, owned by `domino-position-plan`, mode 0600.
+   - **`rpc.json`:** a version 4 provider file led by `https://rpc.domino.money/<token>/`. The session listener's own file is one. `EoaChecker` refuses the loopback proxy.
+   - **`environment`:**
+     - `DOMINO_POSITION_PLAN_CHAINS=robinhood-4663`;
+     - `DOMINO_POSITION_PLAN_MANIFEST_ROBINHOOD_4663=/run/domino-v2-deployments/v2-robinhood-4663-2026-10-04/deployment.json`. The unit binds every release's manifests at that fixed path;
+     - the Access application's issuer, audience and service ID;
+     - the session listener's `DOMINO_SESSION_ORIGIN` and `DOMINO_SESSION_ABUSE_SECRET`.
+3. **The Trading API key** is optional. Seal it once as `/etc/credstore.encrypted/uniswap-api-key` with `systemd-creds encrypt --with-key=host+tpm2 --name=uniswap-api-key`. The unit imports it (`ImportCredential=`) and unsets the environment variable, so the key is never read from a file in clear.
+4. **Egress.** Collect with `position-plan` enabled, render, review, update, then `nft -f`.
+   - The role gets the `rpc`, `jwks` and `uniswap` classes, and the replies of its listener on 8911.
+   - The tunnel gets the origin rule to 8911.
+   - The 60 drop-in adds `--enable --rpc-config /run/domino-financial-position-plan-config/rpc.json`.
+   - `domino-continuous-reads.target` wants the unit as a family.
+5. **Start.** Run `daemon-reload`, then start the unit. A request without an Access assertion gets 403. Then a plan through the bridge.
 
 ## Calls and cost
 
@@ -382,7 +409,7 @@ Permit2's, the position managers' and the Universal Router's errors stay in the 
 
 ## What remains
 
-- **The Worker route, the systemd unit, egress and credentials** (F8), and the production manifests (#301). The contract stays `candidate_disabled_pending_deployment_and_worker` until then.
+- **The Worker route** (the bridge's). The unit, its egress role and its credentials are `install_position_plan.py` and the continuous egress policy ("In production" above); the manifests are #301's. The contract stays `candidate_disabled_pending_deployment_and_worker` until the bridge serves it.
 - **Qualification on forks** (`backend/qualify_position_plan_fork.py`): one plan of each kind per chain, on the deployed V2.
   - **Robinhood: done on 4 Oct 2026, 14 of 14** ([evidence](#evidence)). That includes the V4Quoter, and `eth_simulateV1` on the own Nitro node.
   - **Base and Arbitrum:** still to run. They need their hosted RPC, reached through a loopback forwarder, because the tool takes no remote upstream, and their manifests added to the tool's list.

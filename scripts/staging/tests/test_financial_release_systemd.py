@@ -28,7 +28,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install_auth_release as auth
 import install_automation_boot as boot
 import install_automation_release as automation
+import continuous_egress_policy as egress_policy
 import install_financial_release as installer
+import install_position_plan as position_plan
 import upgrade_financial as financial
 
 RUNTIME_UNITS = Path('/run/systemd/system')
@@ -233,6 +235,42 @@ class RealSystemdTests(unittest.TestCase):
         # Installed is not enabled: no instance is wanted until an operator enables it. The template has an
         # [Install] section, so it is never static either.
         self.assertIn(shown['UnitFileState'], ('disabled', 'indirect'))
+
+    def test_the_plan_listener_loads_disabled_and_the_egress_drop_in_enables_it(self):
+        # The unit starts without --enable, takes the sealed Uniswap key only as a credential, and the continuous
+        # egress policy's drop-in (an empty ExecStart= then the enable command) is what switches it on.
+        name = 'domino-position-plan-under-test'
+        self.install(name, position_plan.unit_text(AFTER))
+        self.plan_reload()
+        shown = self.plan_show(name, 'LoadState', 'ExecStart', 'User', 'ImportCredential', 'BindReadOnlyPaths',
+                               'UnsetEnvironment', 'ProtectSystem')
+        self.assertEqual((shown['LoadState'], shown['User'], shown['ProtectSystem']),
+                         ('loaded', 'domino-position-plan', 'strict'))
+        self.assertIn('-B backend/v2_position_plan_api.py --port 8911 ;', shown['ExecStart'])
+        self.assertNotIn('--enable', shown['ExecStart'])
+        self.assertIn('uniswap-api-key', shown['ImportCredential'])
+        self.assertIn('DOMINO_UNISWAP_API_KEY', shown['UnsetEnvironment'])
+        for target in ('/run/domino-financial-position-plan-config', '/run/domino-v2-deployments'):
+            self.assertIn(target, shown['BindReadOnlyPaths'])
+        enable = egress_policy.enable_command('position-plan')
+        dropin_dir = RUNTIME_UNITS / f'{name}.service.d'
+        self.assertFalse(os.path.lexists(dropin_dir), dropin_dir)
+        self.written.append(dropin_dir)
+        dropin_dir.mkdir()
+        (dropin_dir / egress_policy.DROPIN).write_text('[Service]\nExecStart=\n' + enable + '\n')
+        self.plan_reload()
+        shown = self.plan_show(name, 'ExecStart')
+        self.assertIn('--port 8911 --enable --rpc-config /run/domino-financial-position-plan-config/rpc.json ;',
+                      shown['ExecStart'])
+        self.assertEqual(shown['ExecStart'].count('argv[]='), 1)
+
+    def plan_reload(self):
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+
+    def plan_show(self, name, *properties):
+        raw = subprocess.run(['systemctl', 'show', '--all', f'{name}.service', '--property=' + ','.join(properties)],
+                             check=True, capture_output=True, text=True).stdout
+        return dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
 
     def test_the_automation_target_is_wanted_at_boot_and_wants_its_three_units(self):
         target = RUNTIME_UNITS / boot.TARGET

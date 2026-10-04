@@ -13,7 +13,7 @@ only to the gateway — so a listener behind `vm-session` or `vm-onboarding` is
 unreachable from the connector today, whatever the Cloudflare route says.
 
 `scripts/staging/continuous_egress_policy.py` renders the whole policy for all
-thirteen production identities, from operator pins on stdin, together with the
+fourteen production identities, from operator pins on stdin, together with the
 per-unit drop-in, hosts file and target that activate a unit behind it. A
 family gets its external destinations, and the tunnel a way to reach its
 listener, only when the family is named in `enabled`. The three layers cannot
@@ -41,6 +41,7 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 | `tunnel` | 20241 | edges, jwks | 7844 to the official edge inventory; connector JWKS |
 | `write` | — | rpc | the public-data lanes, featured, the queue worker and the followers |
 | `operator`, `admin` | — | — | never |
+| `position-plan` | 8911 | rpc, jwks, uniswap | the S1 plan listener (`install_position_plan.py`): `EoaChecker` and plans; assertion verification; Trading API router legs. Optional: a host without the identity renders no chain for it |
 
 Classes: `rpc` is `robinhood-mainnet.g.alchemy.com` or the private
 `rpc.domino.money` route (Robinhood's public RPC is not admitted);
@@ -110,8 +111,10 @@ The optional `sequenceSnapshotLoopback` field defaults to false and requires
 not the unit drop-ins or the public Worker flag. `nodeLoopbackReads` does the
 same for the reader and the writer, and requires either in `enabled`.
 
-`identities` names all thirteen roles exactly (`admin` may be `null`). Roles
-with a service unit must name `domino-<role>.service` and its system-slice
+`identities` names all fourteen roles exactly. `admin` may be `null`, and so
+may `position-plan` until `install_position_plan.py` creates the account; an
+enabled role with a `null` identity is refused (`enabled_role_without_identity`).
+Roles with a service unit must name `domino-<role>.service` and its system-slice
 cgroup; `write`, `operator` and `admin` must name none. `hosts` are the
 operator's pins: public IPv4 only, no private, loopback, metadata or reserved
 address, no duplicates, edges only from the official inventory. Every pinned

@@ -21,6 +21,7 @@ import re
 import sys
 
 import egress_policy as shared
+import install_position_plan as position_plan
 import upgrade_financial as financial
 
 TABLE = 'domino_continuous_reads'
@@ -34,7 +35,10 @@ UNIT_DIR = '/etc/systemd/system/'
 # order; the four financial identities of 13 September follow deposit.
 ROLES = ('read', 'gateway', 'auth', 'onboarding', 'deposit', 'performance',
          'performance-collector', 'execution-status', 'execution-signer',
-         'tunnel', 'write', 'operator', 'admin')
+         'tunnel', 'write', 'operator', 'admin', 'position-plan')
+# Identities a host may not have: the admin account, and the S1 plan listener
+# until install_position_plan.py has created it. An enabled role needs its own.
+OPTIONAL = ('admin', 'position-plan')
 # Identities with no single service unit: the indexer role runs two
 # timer-driven units whose systemd layer is not this file's, and the two
 # accounts never run a service at all.
@@ -43,7 +47,7 @@ NO_UNIT = ('write', 'operator', 'admin')
 READ_PATH_UNITS = ('domino-read.service', 'domino-gateway.service', 'domino-tunnel.service')
 LISTENERS = {'read': 8876, 'gateway': 8878, 'auth': 8879, 'onboarding': 8880,
              'deposit': 8881, 'performance': 8900, 'execution-status': 8901,
-             'tunnel': 20241}
+             'tunnel': 20241, 'position-plan': position_plan.PORT}
 # The node's proxy on this host (install_node_rpc_endpoint.py). With
 # `nodeLoopbackReads`, the reader and the writer (public-data lanes, featured,
 # queue worker, followers) lead their chain reads with it, not with Cloudflare.
@@ -69,14 +73,19 @@ CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),
            'deposit': ('rpc', 'jwks', 'uniswap'), 'performance': ('rpc', 'jwks'),
            'performance-collector': ('rpc',), 'execution-status': ('jwks',),
            'execution-signer': ('rpc',), 'tunnel': ('edges', 'jwks'),
-           'write': ('rpc',), 'operator': (), 'admin': ()}
+           'write': ('rpc',), 'operator': (), 'admin': (),
+           # The S1 plan listener: its session account check and its plans read the
+           # chain (rpc), it verifies the bridge's Access assertion (jwks), and its
+           # router legs ask the Trading API (uniswap).
+           'position-plan': ('rpc', 'jwks', 'uniswap')}
 # A class an enabled role cannot run without. Analytics is optional for the
 # reader: the market provider is a fallback, not the read path.
 REQUIRED = {'rpc', 'jwks', 'uniswap', 'edges'}
 # Who originates a loopback connection to whose listener. The tunnel fronts
 # every listener behind an Access hostname; the gateway fronts the reader.
 ORIGINS = {'gateway': ('read',),
-           'tunnel': ('gateway', 'auth', 'onboarding', 'deposit', 'performance', 'execution-status')}
+           'tunnel': ('gateway', 'auth', 'onboarding', 'deposit', 'performance', 'execution-status',
+                      'position-plan')}
 # Identities that resolve names at runtime. Every other enabled unit reads a
 # pinned hosts file bound over /etc/hosts and never needs the stub resolver.
 # The writer's units bind theirs too (ops/systemd); the stub stays for the
@@ -96,7 +105,8 @@ ENABLE_ARGUMENTS = {
     'onboarding': f'--enable --rpc-config {private_config("onboarding", "rpc.json")}',
     'deposit': f'--enable --rpc-config {private_config("deposit", "rpc.json")}',
     'performance': f'--enable --profile {private_config("performance", "profile.json")}',
-    'execution-status': f'--enable --config {private_config("execution-status", "profile.json")}'}
+    'execution-status': f'--enable --config {private_config("execution-status", "profile.json")}',
+    'position-plan': f'--enable --rpc-config {private_config("position-plan", "rpc.json")}'}
 UNSET = ('UnsetEnvironment=HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy '
          'all_proxy no_proxy SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE CURL_CA_BUNDLE '
          'PYTHONPATH PYTHONHOME')
@@ -153,9 +163,10 @@ def validate(snapshot):
     enabled = tuple(role for role in ROLES if role in enabled)
     exact(snapshot['identities'], ROLES, 'invalid_identity_roles')
     seen_uids = set()
+    require(all(snapshot['identities'][role] is not None for role in enabled), 'enabled_role_without_identity')
     for role in ROLES:
         identity = snapshot['identities'][role]
-        if role == 'admin' and identity is None:
+        if role in OPTIONAL and identity is None:
             continue
         exact(identity, ('user', 'realUid', 'effectiveUid', 'gid', 'supplementaryGids',
                          'unit', 'cgroup'), 'invalid_identity_fields')
@@ -211,7 +222,7 @@ def ordered(values):
 
 def enable_command(role):
     """The installer's exact ExecStart for this component, plus its enable flags."""
-    text = financial.unit_text(role, '0' * 40)
+    text = position_plan.unit_text('0' * 40) if role == 'position-plan' else financial.unit_text(role, '0' * 40)
     command = next(line for line in text.splitlines() if line.startswith('ExecStart='))
     return command + ' ' + ENABLE_ARGUMENTS[role]
 

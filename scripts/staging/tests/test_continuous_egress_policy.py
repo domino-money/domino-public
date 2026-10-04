@@ -12,6 +12,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import continuous_egress_policy as policy
 import egress_policy as shared
+import install_position_plan as position_plan
 import upgrade_financial as financial
 
 SCRIPT = Path(policy.__file__)
@@ -29,13 +30,16 @@ UNISWAP = {'trade-api.gateway.uniswap.org': ['15.0.0.1'], 'liquidity.api.uniswap
 NEW_CHAINS = ('performance', 'performance_collector', 'execution_status', 'execution_signer')
 
 
-def identities():
+def identities(plan_listener=False):
+    """The live host's identities. The S1 plan listener's exists only once install_position_plan.py ran."""
     result = {}
     for index, role in enumerate(policy.ROLES):
         unit = policy.unit_of(role)
         result[role] = {'user': 'domino-' + role, 'realUid': 2000 + index, 'effectiveUid': 2000 + index,
                         'gid': 3000 + index, 'supplementaryGids': [], 'unit': unit,
                         'cgroup': '/system.slice/' + unit if unit else None}
+    if not plan_listener:
+        result['position-plan'] = None
     return result
 
 
@@ -224,8 +228,9 @@ class ContinuousEgressTests(unittest.TestCase):
 
     def test_a_refused_connection_attempt_is_reset_and_any_other_packet_still_dropped(self):
         every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
-                                'performance-collector', 'execution-status', 'execution-signer')
-        chains, _ = parse(nft(policy.render(snapshot(every, {**PINS, **UNISWAP}))))
+                                'performance-collector', 'execution-status', 'execution-signer', 'position-plan')
+        data = {**snapshot(every, {**PINS, **UNISWAP}), 'identities': identities(plan_listener=True)}
+        chains, _ = parse(nft(policy.render(data)))
         for role in policy.ROLES:
             chain = policy.nft_name(role)
             with self.subTest(chain=chain):
@@ -404,8 +409,8 @@ class ContinuousEgressTests(unittest.TestCase):
 
     def test_every_family_enabled_renders_only_hyphen_free_nft_identifiers(self):
         every = LIVE_ENABLED + ('auth', 'onboarding', 'deposit', 'performance',
-                                'performance-collector', 'execution-status', 'execution-signer')
-        text = nft(policy.render(snapshot(every, {**PINS, **UNISWAP})))
+                                'performance-collector', 'execution-status', 'execution-signer', 'position-plan')
+        text = nft(policy.render({**snapshot(every, {**PINS, **UNISWAP}), 'identities': identities(plan_listener=True)}))
         names = re.findall(r'add (?:chain|counter|set) inet \w+ (\S+)', text) + re.findall(r'jump (\S+)', text)
         self.assertTrue(names)
         for name in names:
@@ -490,11 +495,48 @@ class ContinuousEgressTests(unittest.TestCase):
         one = {**PINS, 'trade-api.gateway.uniswap.org': ['15.0.0.1']}
         self.assertEqual(policy.render(snapshot(LIVE_ENABLED + ('onboarding',), one))['roleHosts']['onboarding'].count('liquidity.api.uniswap.org'), 0)
 
+    def test_the_plan_listener_is_optional_until_installed_and_needs_its_identity_when_enabled(self):
+        self.assertEqual(policy.render(snapshot()), policy.render({**snapshot(), 'identities': identities()}))
+        data = snapshot(enabled=(*LIVE_ENABLED, 'position-plan'), pins={**PINS, **UNISWAP})
+        self.reject(data, 'enabled_role_without_identity')
+        installed = {**snapshot(), 'identities': identities(plan_listener=True)}
+        text = nft(policy.render(installed))
+        chains, _ = parse(mask(text))
+        # Installed but not enabled: its own chain refuses everything but the replies of its listener.
+        self.assertEqual([rule for rule in chains['position_plan'] if 'accept' in rule],
+                         ['oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp sport 8911 ct direction reply '
+                          'ct state established counter accept comment "exact listener reply"'])
+        self.assertFalse(any('8911' in rule for rule in chains['tunnel']))
+
+    def test_the_plan_listener_enabled_reaches_rpc_access_and_uniswap_and_the_tunnel_reaches_it(self):
+        enabled = (*LIVE_ENABLED, 'position-plan')
+        data = {**snapshot(enabled=enabled, pins={**PINS, 'rpc.domino.money': ['16.0.0.1'], **UNISWAP}),
+                'identities': identities(plan_listener=True)}
+        rendered = policy.render(data)
+        chains, sets = parse(mask(nft(rendered)))
+        self.assertIn('oifname "lo" ip saddr 127.0.0.1 ip daddr 127.0.0.1 tcp dport 8911 ct direction original '
+                      'counter accept comment "exact position-plan origin"', chains['tunnel'])
+        self.assertEqual(sets['position_plan_ipv4'],
+                         len(PINS['robinhood-mainnet.g.alchemy.com']) + 1 + len(PINS[ISSUER]) + 2)
+        self.assertFalse(any('18547' in rule for rule in chains['position_plan']))
+        dropin = rendered['artifacts'][policy.UNIT_DIR + 'domino-position-plan.service.d/' + policy.DROPIN]
+        self.assertIn('ExecStart=\n' + policy.enable_command('position-plan') + '\n', dropin)
+        self.assertTrue(policy.enable_command('position-plan').endswith(
+            'v2_position_plan_api.py --port 8911 --enable --rpc-config '
+            '/run/domino-financial-position-plan-config/rpc.json'))
+        hosts = rendered['artifacts'][policy.ROOT + '/position-plan.hosts']
+        for host in ('rpc.domino.money', 'robinhood-mainnet.g.alchemy.com', ISSUER, *UNISWAP):
+            self.assertIn(' ' + host + '\n', hosts)
+        target = rendered['artifacts'][policy.UNIT_DIR + policy.TARGET]
+        self.assertIn('domino-position-plan.service', target.split('Wants=', 2)[1].split('\n')[0])
+        self.assertNotIn('domino-position-plan.service', target.split('Requires=')[1].split('\n')[0])
+
     def test_enable_commands_are_derived_from_the_installer_not_copied(self):
         for role in policy.ENABLE_ARGUMENTS:
             with self.subTest(role=role):
-                installed = next(line for line in financial.unit_text(role, '0' * 40).splitlines()
-                                 if line.startswith('ExecStart='))
+                text = (position_plan.unit_text('0' * 40) if role == 'position-plan'
+                        else financial.unit_text(role, '0' * 40))
+                installed = next(line for line in text.splitlines() if line.startswith('ExecStart='))
                 self.assertTrue(policy.enable_command(role).startswith(installed + ' --enable'))
 
     def test_render_is_pure_and_the_cli_is_stdin_only_and_never_echoes(self):
