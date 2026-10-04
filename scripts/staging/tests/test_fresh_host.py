@@ -309,6 +309,22 @@ class ReadActivationTests(unittest.TestCase):
                       'DOMINO_BRIDGE_V4_READS=sequence-snapshot', 'DOMINO_BRIDGE_V5_READS=featured-pools'):
             self.assertIn(f'Environment={value}\n', gateway)
 
+    def test_the_v2_reads_are_opt_in_and_only_add_to_the_live_profile(self):
+        for component in activation.DROP_INS:
+            live = activation.drop_in(component, COMMIT, Path(f'/runtime/{component}'))
+            self.assertEqual(live, activation.drop_in(component, COMMIT, Path(f'/runtime/{component}'), False))
+            self.assertNotIn('v6', live.lower())
+            self.assertNotIn('DOMINO_V2_READ', live)
+        read = activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True)
+        gateway = activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True)
+        self.assertIn('backend/read_api.py --port 8876 --read-budget 15\n', read)
+        self.assertIn('Environment=DOMINO_PUBLIC_DATA=1\nEnvironment=DOMINO_V2_READ=1\n', read)
+        self.assertIn('--enable --enable-v2 --enable-v3 --enable-v4 --enable-v5 --enable-v6\n', gateway)
+        self.assertIn('Environment=DOMINO_BRIDGE_V5_READS=featured-pools\n'
+                      'Environment=DOMINO_BRIDGE_V6_READS=portfolio,activity\n', gateway)
+        self.assertEqual(read.count('Environment='), 2)
+        self.assertEqual(gateway.count('Environment='), 5)
+
     def test_the_release_must_be_installed_with_its_links(self):
         with tempfile.TemporaryDirectory() as folder:
             releases, units = Path(folder) / 'releases', Path(folder) / 'units'

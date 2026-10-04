@@ -50,7 +50,7 @@ class PublicInstallTests(unittest.TestCase):
         planned=self.plan()
         self.assertEqual(planned['runtime'],str(self.queue/'release/backend/runtime'))
         self.assertEqual(planned['previousCurrent'],None)
-        self.assertEqual(len(planned['units']),11)
+        self.assertEqual(len(planned['units']),12)
         for name,value in planned['units'].items():
             self.assertNotIn('@PUBLIC_ROOT@',value)
             self.assertNotIn('@QUEUE_ROOT@',value)
@@ -68,6 +68,16 @@ class PublicInstallTests(unittest.TestCase):
             self.assertIn(field,unit)
         target=self.plan()['units']['domino-public-data.target']
         self.assertNotIn('domino-featured',target)
+
+    def test_the_v2_indexer_is_installed_per_chain_but_never_enabled(self):
+        unit=self.plan()['units']['domino-v2-indexer@.service']
+        for field in ('User=domino-write','SupplementaryGroups=domino-db','ProtectSystem=strict',
+                      'BindsTo=domino-continuous-egress.service','PartOf=domino-public-data.target',
+                      'v2_indexer.py follow --chain %i\n','Restart=always\n','WantedBy=domino-public-data.target'):
+            self.assertIn(field,unit)
+        self.assertNotIn('@PUBLIC_ROOT@',unit)
+        target=self.plan()['units']['domino-public-data.target']
+        self.assertNotIn('domino-v2-indexer',target)
 
     def test_the_domino_pool_follower_runs_every_minute_under_the_public_data_target(self):
         units=self.plan()['units']
@@ -129,7 +139,7 @@ class PublicInstallTests(unittest.TestCase):
         bind=f'BindReadOnlyPaths={egress.ROOT}/write.hosts:/etc/hosts\n'
         units=self.plan()['units']
         services=[name for name in units if name.endswith(('.service','.service.d/90-public-data.conf'))]
-        self.assertEqual(len(services),7)
+        self.assertEqual(len(services),8)
         for name in services:
             with self.subTest(unit=name):
                 self.assertEqual(units[name].count(bind),1)

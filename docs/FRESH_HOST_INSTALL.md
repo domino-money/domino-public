@@ -169,6 +169,10 @@ Below, `$A_<lane>` stands for
       042_provider_priority,043_featured_pools,044_demand_horizon,045_featured_live,047_provider_ceiling
     ```
 
+    An archive from #305 on also carries `052_v2_index`, the V2 index. Append it
+    to the list, then install the indexer as `docs/v2/V2_INDEXER_READ_API.md`
+    ("In production") describes.
+
 12. **Queue-worker root.** The writer's lock and runtime, and the first host's
     four base units.
 
@@ -194,6 +198,10 @@ Below, `$A_<lane>` stands for
     ```sh
     python3 -B install_read_activation.py --commit 965fc290ec31d03d4e9f1fd9470f0a5e73539f69 --apply
     ```
+
+    With a read release from #305 on, and the V2 indexer following, `--read-v6`
+    also enables the V2 reads (read-v6). Without the flag the drop-ins are the
+    live profile.
 
 16. **Connector.** No token yet; the connector starts only at cutover.
 

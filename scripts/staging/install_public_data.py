@@ -34,6 +34,9 @@ UNITS=tuple(f'domino-public-{lane}.service' for lane in ('current','history','ac
     # Pool activity for every pool holding a Domino position; the target wants its timer.
     'domino-activity-follow.service',
     'domino-activity-follow.timer',
+    # The V2 index (read-v6), one instance per chain profile. Installed, never enabled here: an
+    # instance starts only on `systemctl enable --now`, after 052 and its registration.
+    'domino-v2-indexer@.service',
     'domino-queue-worker.service.d/90-public-data.conf',
     'domino-catalogue-follower.service.d/90-public-data.conf',
     'domino-queue-worker.timer.d/90-public-data.conf',

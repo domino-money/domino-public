@@ -1,0 +1,53 @@
+[Unit]
+Description=Domino V2 index for %i (read-v6)
+After=postgresql@16-domino.service domino-continuous-egress.service
+BindsTo=domino-continuous-egress.service
+PartOf=domino-public-data.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=domino-write
+Group=domino-write
+SupplementaryGroups=domino-db
+WorkingDirectory=@PUBLIC_ROOT@/current/backend
+# The writer reads only the names continuous_egress_policy.py pinned with its
+# egress set, never a DNS answer outside that set (#315).
+BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts
+# The instance is the chain profile (robinhood-4663). The writer's provider file
+# leads with the node's loopback proxy; registration is a one-time step before
+# the first start (docs/v2/V2_INDEXER_READ_API.md, "Operating it").
+ExecStart=@QUEUE_ROOT@/venv/bin/python -B v2_indexer.py follow --chain %i
+Environment=PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# `follow` returns 0 after five failed rounds in a row (a refused head included),
+# so only `always` brings it back.
+Restart=always
+RestartSec=15
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+TasksMax=32
+MemoryMax=512M
+CPUQuota=100%
+
+# Installed by install_public_data.py and never enabled there: an instance starts
+# only on `systemctl enable --now domino-v2-indexer@<profile>.service`, after 052
+# and `v2_indexer.py register`.
+[Install]
+WantedBy=domino-public-data.target

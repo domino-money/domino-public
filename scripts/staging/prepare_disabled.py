@@ -176,7 +176,8 @@ PACKAGED_ONLY_MIGRATIONS = (
     'backend/migrations/046_gas_answer_heartbeat.sql',
     # The provider allowance at the provider's real limit; same vehicle as 042.
     'backend/migrations/047_provider_ceiling.sql',
-    # The V2 index (read-v6): applied with the V2 indexer's installation, never by this upgrade.
+    # The V2 index (read-v6): apply_migrations.py applies it as postgres before the V2 indexer
+    # is registered, never this tool.
     'backend/migrations/052_v2_index.sql',
 )
 MAPPINGS = (

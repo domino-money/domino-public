@@ -10,7 +10,8 @@ that brings the automation back after a reboot is loaded the same way, with the
 link `systemctl enable` would make, and must be wanted at boot and want the
 three units it names. A drop-in that resets BindPaths and gives back
 only that bind must lose the read-only configuration bind, or the model the
-offline tests share is wrong.
+offline tests share is wrong. The V2 indexer's template must run the chain its
+instance names, as the writer, and come back after any exit.
 
 It needs root and systemd as PID 1, so it runs only when
 DOMINO_TEST_REAL_SYSTEMD=1 asks for it: the hygiene job, under sudo. Nothing is
@@ -201,6 +202,37 @@ class RealSystemdTests(unittest.TestCase):
         self.assertIn('OnUnitInactiveUSec=1min', lost.get('TimersMonotonic', ''))
         for erased in ('OnBootUSec', 'OnActiveUSec', 'OnUnitActiveUSec'):
             self.assertNotIn(erased, lost.get('TimersMonotonic', ''))
+
+    def test_the_v2_indexer_template_runs_its_instance_chain_and_always_comes_back(self):
+        # `follow` exits 0 after five failed rounds, so only Restart=always revives it, and the
+        # instance name is the only place the chain comes from.
+        ops = Path(__file__).resolve().parents[3] / 'ops/systemd'
+        template = RUNTIME_UNITS / 'domino-v2-indexer-under-test@.service'
+        self.assertFalse(os.path.lexists(template), template)
+        self.written.append(template)
+        template.write_text((ops / 'domino-v2-indexer@.service').read_text()
+                            .replace('@PUBLIC_ROOT@', '/opt/domino/public-data')
+                            .replace('@QUEUE_ROOT@', '/opt/domino/queue-worker'))
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+        raw = subprocess.run(['systemctl', 'show', '--all', 'domino-v2-indexer-under-test@robinhood-4663.service',
+                              '--property=LoadState,ExecStart,Restart,User,SupplementaryGroups,WorkingDirectory,'
+                              'PartOf,BindsTo,BindReadOnlyPaths,ProtectSystem,UnitFileState'],
+                             check=True, capture_output=True, text=True).stdout
+        shown = dict(line.split('=', 1) for line in raw.splitlines() if '=' in line)
+        self.assertEqual(shown['LoadState'], 'loaded')
+        self.assertIn('argv[]=/opt/domino/queue-worker/venv/bin/python -B v2_indexer.py follow '
+                      '--chain robinhood-4663 ;', shown['ExecStart'])
+        self.assertEqual(shown['Restart'], 'always')
+        self.assertEqual((shown['User'], shown['SupplementaryGroups']), ('domino-write', 'domino-db'))
+        self.assertEqual(shown['WorkingDirectory'], '/opt/domino/public-data/current/backend')
+        self.assertEqual((shown['PartOf'], shown['BindsTo']),
+                         ('domino-public-data.target', 'domino-continuous-egress.service'))
+        # systemd shows a bind with its default option (CI run 37237979007).
+        self.assertEqual(shown['BindReadOnlyPaths'], '/etc/domino/continuous-reads/write.hosts:/etc/hosts:rbind')
+        self.assertEqual(shown['ProtectSystem'], 'strict')
+        # Installed is not enabled: no instance is wanted until an operator enables it. The template has an
+        # [Install] section, so it is never static either.
+        self.assertIn(shown['UnitFileState'], ('disabled', 'indirect'))
 
     def test_the_automation_target_is_wanted_at_boot_and_wants_its_three_units(self):
         target = RUNTIME_UNITS / boot.TARGET

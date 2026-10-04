@@ -35,7 +35,7 @@ Left for the next slices (see [What remains](#what-remains)): the bridge Worker 
 | `backend/v2_indexer.py` | Registration, passes, reconciliation and rewind, enrichment; CLI `register`, `step`, `follow`, `status`. |
 | `backend/v2_waiting.py` | Reads the automation's per-chain waiting file whole or not at all, `since` and `sinceBlock` as recorded. |
 | `backend/v2_read_contract.py`, `backend/v2_read_service.py` | read-v6's models and builders. |
-| `backend/migrations/052_v2_index.sql` | The schema, applied with the V2 indexer's installation (registered in `dev_postgres.py` and the staging helpers; `upgrade_financial` does not apply it). |
+| `backend/migrations/052_v2_index.sql` | The schema. In production `scripts/staging/apply_migrations.py` applies it as postgres, the owner of `domino_v2` as of `domino_public` (registered in `dev_postgres.py` and the staging helpers; `upgrade_financial` does not apply it). |
 | `scripts/export-read-v6-contract.py`, `api-contracts/read-v6/` | The contract package. |
 
 ## The deployment manifest (#301)
@@ -126,6 +126,22 @@ python backend/v2_indexer.py status --chain base-8453
 
 Robinhood's routes come from the read path's provider file (`--provider-file`), the others from F6's chain RPC file. The catalogue database is the reader's (`database_settings`). `register` admits production manifests only, unless `--admission fork-rehearsal` or `--admission local-test`. The reader needs `DOMINO_V2_READ=1`; it reads waiting reasons from the index, not from files.
 
+### In production (Robinhood first)
+
+The indexer runs as the catalogue writer, `domino-write`, from the public-data release, which is the whole archive. The V2 modules read `api-contracts/v2` from it. Its provider file, `catalogue-db.json`, egress (the node's loopback proxy and the `rpc` class) and hosts file are the public-data lanes'. Nothing below starts on install.
+
+1. **Migration 052.** Use the archive of the release that carries it:
+   `apply_migrations.py --archive <tar> --archive-sha256 <hex> --commit <sha> --migrations 052_v2_index`, first with `--inspect`, then with `--apply`.
+2. **The public-data release from that commit,** with `install_public_data.py`. It installs `domino-v2-indexer@.service` and never enables it. Restart the three lanes as for any public-data release.
+3. **Preflight and registration.** Run both as `domino-write` from `/opt/domino/public-data/current/backend`, with the unit's sandbox (for example `systemd-run --pipe --wait -p User=domino-write -p SupplementaryGroups=domino-db -p WorkingDirectory=… -p BindReadOnlyPaths=/etc/domino/continuous-reads/write.hosts:/etc/hosts`):
+   - `v2_rpc.py check --chain robinhood-4663 --endpoint local` (read-only);
+   - `v2_indexer.py register --chain robinhood-4663 --deployment ../docs/deployments/v2-robinhood-4663-2026-10-04/deployment.json`. It prints `registered`, the start block 80,189,516 and 24 proven code hashes.
+4. **Start the follower:** `systemctl enable --now domino-v2-indexer@robinhood-4663.service`. The enablement joins `domino-public-data.target`. Its journal has one JSON line per pass; wait for `caught_up_to_target`. The unit restarts on any exit, because `follow` returns 0 after five failed rounds in a row. Before rolling the public-data release back, disable the instance.
+5. **read-v6 on the read path.** Use a read release that has #305 (`install_read_release.py`). Move the two 70 drop-ins aside, then run `install_read_activation.py --commit <sha> --read-v6`, first with `--inspect`, then with `--apply`. It adds `DOMINO_V2_READ=1` to the reader, and `--enable-v6` with `DOMINO_BRIDGE_V6_READS=portfolio,activity` to the gateway, keeping v1 to v5 as they were. Restart `domino-continuous-reads.target`.
+6. **Check locally:** `POST http://127.0.0.1:8876/v6/read/portfolio {"wallet": "0x…"}` should show chain 4663 `current`. Base and Arbitrum stay `unavailable` until their deployments are registered.
+
+`status` connects as the catalogue reader, which the writer's identity is not mapped to. Read `domino_v2.deployments` with psql as the operator instead, or run `status` from the reader's release.
+
 ## What 3a, #301 and F7 must align with
 
 - **Automation (3a, PR #306, merged):** this slice uses its `v2_manifest` (the one loader of #301's manifest) and its `tests/v2_local_chain.py` (the one fixture deployer). The waiting file is read as #306 documents it, with `since` and `sinceBlock`, which this slice adds to the journal (`v2_executor.Journal.record_waiting`) and the file. The rules this slice's own loader had and `v2_manifest` lacked moved into it, with their tests and mutants: public test-mnemonic keys refused as production roles (PR #302's review, item 2), receipts after the genesis with non-zero hashes and one hash per block, the verification at or after every receipt and agreeing with one in its block, a check time with its zone, and the profile's CreateX. #306's docs propose decoding its log scans with `v2_events`, the strict catalog here.
@@ -137,7 +153,7 @@ Robinhood's routes come from the read path's provider file (`--provider-file`), 
 | Item | Why it is not here |
 | --- | --- |
 | The bridge Worker route and the app's pin of read-v6 | The bridge's and the app's (F7) side. |
-| Installation on the VM: units per chain, migration 052 with the indexer's installer, reader and gateway flags, head file and RPC files | Needs the deployments and the owner's provisioning. |
+| Installation on the VM for Base and Arbitrum: their chain RPC files (F6, hosted providers) and the writer's egress to them; the shared head file | Needs the owner's providers. Robinhood is installed as "In production" above describes. |
 | Pools per chain (§6.2) for pool selection on Base and Arbitrum | A separate read (market data with sources), not derivable from V2 events. |
 | Qualified USD (pool against the chain's stable; Chainlink ETH/USD from the profile, with heartbeat and sequencer uptime) | Its own qualification; prices are `null` with a reason until then. |
 | The anchor's reference price per vault with its age (§5.2 distance) | Needs the publisher's observations or a TWAP read per vault. |

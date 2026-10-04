@@ -7,7 +7,10 @@ operator ran them with psql as the procedures in WALLET_ACCESS.md,
 WALLET_SESSIONS.md and FEATURED_POOLS.md describe. On the first VM their objects
 show who ran them: the domino_activity changes (020-023) belong to the catalogue
 owner, and the domino_public schema (024-026, 042-045, 047) to postgres; 027 and
-041 only alter existing tables and were run as postgres.
+041 only alter existing tables and were run as postgres. 052, the V2 index
+(domino_v2, read-v6), has no installer of its own: postgres owns its schema like
+domino_public, and it is applied here before the V2 indexer is registered
+(docs/v2/V2_INDEXER_READ_API.md).
 
 Each migration is read from a verified release archive and applied in one
 transaction with ON_ERROR_STOP, in the order given, after its predecessors. A
@@ -45,6 +48,7 @@ HAND_APPLIED = {
     '044_demand_horizon': POSTGRES,
     '045_featured_live': POSTGRES,
     '047_provider_ceiling': POSTGRES,
+    '052_v2_index': POSTGRES,
 }
 
 

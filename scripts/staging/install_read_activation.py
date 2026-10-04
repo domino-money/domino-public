@@ -12,6 +12,12 @@ unit, for the profile live since 27 Sep 2026:
   they are today (pool market; overview, history and search; the V1 sequence
   snapshot; featured pools).
 
+`--read-v6` adds the V2 reads (read-v6: portfolio and activity) to both units:
+DOMINO_V2_READ=1 on the reader, `--enable-v6` and DOMINO_BRIDGE_V6_READS on the
+gateway. Use it only with a release that has them (main since #305), after
+migration 052 and with the V2 indexer following (docs/v2/V2_INDEXER_READ_API.md);
+without it the drop-ins reproduce the live profile.
+
 The interpreter is the release's own `backend/.venv`, a link to the shared
 environment, and each identity's runtime directory is the one the release links
 to. The scoped egress drop-ins (60) come from the continuous egress policy.
@@ -39,19 +45,25 @@ ENVIRONMENT = {
     'gateway': ('DOMINO_BRIDGE_V2_READS=pool-market', 'DOMINO_BRIDGE_V3_READS=overview,history,search',
                 'DOMINO_BRIDGE_V4_READS=sequence-snapshot', 'DOMINO_BRIDGE_V5_READS=featured-pools'),
 }
+# The V2 reads, opt-in: a gateway without them in its code exits on the flag.
+READ_V6 = {
+    'read': ('', ('DOMINO_V2_READ=1',)),
+    'gateway': (' --enable-v6', ('DOMINO_BRIDGE_V6_READS=portfolio,activity',)),
+}
 
 
-def drop_in(component, commit, runtime):
+def drop_in(component, commit, runtime, read_v6=False):
     root = RELEASES / commit / component
+    flags, environment = READ_V6[component] if read_v6 else ('', ())
     lines = ['# Read path activation (install_read_activation.py): release, runtime and bridge reads.',
              '[Service]', f'WorkingDirectory={root}', 'ExecStart=',
-             f'ExecStart={root}/backend/.venv/bin/python3.14 -B {COMMANDS[component]}',
+             f'ExecStart={root}/backend/.venv/bin/python3.14 -B {COMMANDS[component]}{flags}',
              'ReadWritePaths=', f'ReadWritePaths={runtime}',
-             *(f'Environment={value}' for value in ENVIRONMENT[component])]
+             *(f'Environment={value}' for value in (*ENVIRONMENT[component], *environment))]
     return '\n'.join(lines) + '\n'
 
 
-def plan(commit):
+def plan(commit, read_v6=False):
     require(re.fullmatch('[0-9a-f]{40}', commit), 'commit must be a full lowercase Git SHA')
     files = {}
     for component, name in DROP_INS.items():
@@ -64,8 +76,8 @@ def plan(commit):
         path = install.UNIT_DIR / f'domino-{component}.service.d' / name
         require(not os.path.lexists(path), 'read_activation_exists')
         require((install.UNIT_DIR / f'domino-{component}.service').is_file(), 'base_unit_missing')
-        files[str(path)] = drop_in(component, commit, runtime)
-    return {'mode': 'read-activation', 'commit': commit, 'dropIns': files,
+        files[str(path)] = drop_in(component, commit, runtime, read_v6)
+    return {'mode': 'read-activation', 'commit': commit, 'readV6': read_v6, 'dropIns': files,
             'notPerformed': ['service start, enable or restart', 'egress drop-ins (60)', 'runtime configuration']}
 
 
@@ -89,12 +101,14 @@ def apply(planned):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--commit', required=True, help='the read release installed by install_read_release.py')
+    parser.add_argument('--read-v6', action='store_true',
+                        help='also enable the V2 reads (read-v6), after 052 and with the V2 indexer following')
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--inspect', action='store_true')
     mode.add_argument('--apply', action='store_true')
     args = parser.parse_args(argv)
     try:
-        planned = plan(args.commit)
+        planned = plan(args.commit, args.read_v6)
         result = apply(planned) if args.apply else {**planned, 'ok': True, 'applied': False}
         print(json.dumps(result, indent=2))
         return 0
