@@ -114,7 +114,7 @@ class AutomationEvmTests(unittest.TestCase):
         assert owner_of.lower() == owner
         return token_id
 
-    def vault(self, token_id, *, interval=60, paused=False):
+    def vault(self, token_id, *, interval=600, paused=False):
         """The owner's vault on `token_id`, approved first as F3 prescribes."""
         local, factory = self.local, self.deployment.factory(4)
         nonce, = local.call(factory, 'nextNonce(address)', ['uint256'], ['address'], [self.owner])
@@ -484,6 +484,9 @@ class AutomationEvmTests(unittest.TestCase):
         armed, = self.local.call(closed, 'rootArmed()', ['bool'])
         self.assertFalse(armed)
         self.assertEqual(self.reserves(closed), reserves, 'the close itself returns nothing')
+        # Past the closed vault's 600 s interval (the vault's floor), so what it
+        # waits for at the end is its disarmed root, not its interval.
+        self.local.mine(1, 600)
         # Another vault becomes eligible to compound in the same pass.
         second = self.position(self.owner, 10**20)
         other = self.vault(second)

@@ -54,7 +54,7 @@ abstract contract OwnerSuite is VaultHarness {
         IDominoVaultLedger.Member memory root_ = vault.member(rootId);
         _true(root_.active && root_.tickLower == LOWER && root_.tickUpper == UPPER, "root member");
         IDominoVault.Policy memory policy = vault.policy();
-        _true(policy.mode == 1 && policy.maxPositions == 1 && policy.minimumIntervalSeconds == 60, "policy");
+        _true(policy.mode == 1 && policy.maxPositions == 1 && policy.minimumIntervalSeconds == 600, "policy");
         IDominoVault.Limits memory limits = vault.limits();
         _true(limits.maxSlippageBps == 100 && limits.upsideBps == 5000, "limits");
         DominoV2VaultStorage.Deployment memory wiring = vault.wiring();
@@ -166,6 +166,9 @@ abstract contract OwnerSuite is VaultHarness {
         next = _policy(DominoV2Types.MODE_DOMINO, 3);
         next.minimumIntervalSeconds = 0;
         _policyFails(next);
+        next = _policy(DominoV2Types.MODE_DOMINO, 3);
+        next.minimumIntervalSeconds = 599; // ten minutes at least (owner decision of 3 Oct 2026)
+        _policyFails(next);
         next = _policy(DominoV2Types.MODE_DOMINO, 0);
         _policyFails(next);
         next = _policy(DominoV2Types.MODE_DOMINO, 3);
@@ -196,14 +199,19 @@ abstract contract OwnerSuite is VaultHarness {
 
     function testLimitRules() public {
         _simple();
+        // The owner's ceilings (owner decision of 3 Oct 2026): 10% slippage,
+        // a 5% band around the anchor, an observation at most 300 s old.
         IDominoVault.Limits memory next = _limits();
-        next.maxSlippageBps = 10_000;
+        next.maxSlippageBps = 1_001;
         _limitsFail(next);
         next = _limits();
-        next.maxPriceImpactBps = 10_000;
+        next.maxPriceImpactBps = 501;
         _limitsFail(next);
         next = _limits();
         next.maxObservationAgeSeconds = 0;
+        _limitsFail(next);
+        next = _limits();
+        next.maxObservationAgeSeconds = 301;
         _limitsFail(next);
         next = _limits();
         next.upsideBps = 0;
@@ -211,12 +219,14 @@ abstract contract OwnerSuite is VaultHarness {
         next = _limits();
         next.upsideBps = 1_000_001;
         _limitsFail(next);
-        next = IDominoVault.Limits(9_999, 9_999, 1, 1_000_000);
+        next = IDominoVault.Limits(1_000, 500, 300, 1_000_000);
         vm.expectEmit(true, true, true, true, address(vault));
         emit IDominoVault.LimitsChanged(next, 2);
         vm.prank(OWNER);
         vault.setLimits(next);
         _eq(vault.limits().upsideBps, 1_000_000, "stored");
+        _true(vault.limits().maxSlippageBps == 1_000 && vault.limits().maxPriceImpactBps == 500
+            && vault.limits().maxObservationAgeSeconds == 300, "the ceilings themselves are accepted");
     }
 
     // ===================================================== pause and resume
@@ -291,23 +301,42 @@ abstract contract OwnerSuite is VaultHarness {
         // token0: 501 uncharged left after the add.
         vm.prank(STRANGER);
         vm.expectRevert(IDominoVault.Unauthorized.selector);
-        vault.withdrawReserves(address(token0), 1);
+        vault.withdrawReserves(address(token0), 1, OWNER);
         vm.prank(OWNER);
         vm.expectRevert(DominoV2VaultStorage.InvalidAmount.selector);
-        vault.withdrawReserves(address(token0), 0);
+        vault.withdrawReserves(address(token0), 0, OWNER);
         vm.prank(OWNER);
         vm.expectRevert(DominoV2VaultStorage.InsufficientReserves.selector);
-        vault.withdrawReserves(address(token0), 502);
+        vault.withdrawReserves(address(token0), 502, OWNER);
         vm.prank(OWNER);
         vm.expectRevert(DominoV2VaultStorage.InsufficientReserves.selector);
-        vault.withdrawReserves(address(0xDEAD), 1);
+        vault.withdrawReserves(address(0xDEAD), 1, OWNER);
         vm.expectEmit(true, true, true, true, address(vault));
         emit IDominoVault.ReservesWithdrawn(address(token0), 501, 3);
         vm.prank(OWNER);
-        vault.withdrawReserves(address(token0), 501);
+        vault.withdrawReserves(address(token0), 501, OWNER);
         _eq(token0.balanceOf(OWNER), 501, "paid to the owner");
         _eq(vault.reserves(address(token0)), 0, "nothing left");
         _eq(token0.balanceOf(RECIPIENT), 9, "no tariff on the withdrawal");
+    }
+
+    /// V1 audit A8: the owner names the recipient, so reserves never wait on
+    /// an owner account that cannot receive them; a zero recipient is refused.
+    function testWithdrawReservesToTheRecipientTheOwnerNames() public {
+        _simple();
+        _accrue(rootId, 1000, 500);
+        _execute(_plan());
+        address elsewhere = address(0xBEEF);
+        vm.prank(OWNER);
+        vm.expectRevert(DominoV2VaultStorage.InvalidRecipient.selector);
+        vault.withdrawReserves(address(token0), 501, address(0));
+        vm.expectEmit(true, true, true, true, address(vault));
+        emit IDominoVault.ReservesWithdrawn(address(token0), 501, 3);
+        vm.prank(OWNER);
+        vault.withdrawReserves(address(token0), 501, elsewhere);
+        _eq(token0.balanceOf(elsewhere), 501, "paid to the named recipient");
+        _eq(token0.balanceOf(OWNER), 0, "not to the owner");
+        _eq(vault.reserves(address(token0)), 0, "nothing left");
     }
 
     function testWithdrawalSpendsUnchargedBeforeCharged() public {
@@ -322,7 +351,7 @@ abstract contract OwnerSuite is VaultHarness {
         _eq(uncharged1, 5, "uncharged token1");
         _eq(charged1, 9, "charged token1");
         vm.prank(OWNER);
-        vault.withdrawReserves(address(token1), 7);
+        vault.withdrawReserves(address(token1), 7, OWNER);
         (uncharged1, charged1) = _lot(rootId, address(token1));
         _eq(uncharged1, 0, "uncharged spent first");
         _eq(charged1, 7, "then charged");
@@ -433,7 +462,7 @@ abstract contract OwnerSuite is VaultHarness {
         _eq(token1.balanceOf(OWNER), 1, "the other paid");
         token0.setBlocked(OWNER, false);
         vm.prank(OWNER);
-        vault.withdrawReserves(address(token0), 501);
+        vault.withdrawReserves(address(token0), 501, OWNER);
         _eq(token0.balanceOf(OWNER), 501, "withdrawn later");
     }
 
@@ -465,7 +494,7 @@ abstract contract OwnerSuite is VaultHarness {
         _execute(_plan());
         token0.setHook(OWNER, address(vault), abi.encodeCall(vault.flushOwedFees, (address(token0))));
         vm.prank(OWNER);
-        vault.withdrawReserves(address(token0), 1);
+        vault.withdrawReserves(address(token0), 1, OWNER);
         _true(
             keccak256(token0.hookResult()) == keccak256(abi.encodeWithSelector(DominoActionLock.ReentrantCall.selector)),
             "the reentrant call was refused"

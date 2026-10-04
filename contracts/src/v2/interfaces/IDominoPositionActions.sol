@@ -6,8 +6,8 @@ import {IPermit2Signature} from "../external/IPermit2Signature.sol";
 
 /// @notice Manual position management (#283, S1): create, increase, change
 /// range and exit, each in one transaction, on Uniswap v3 or v4.
-/// @dev Implemented by the stateless zap (positions in the owner's wallet) and
-/// by the vault (positions under automation, owner-only), with the same plans.
+/// @dev Implemented by the stateless zap (positions in the owner's wallet).
+/// The vault does not implement it in V2.0 (owner decision of 3 Oct 2026).
 /// Rules every implementation enforces:
 /// - the intent's action, pool, ticks, minimum liquidity, fee, routes hash,
 ///   recipient and deadline bind the plan; routesHash covers every swap leg;

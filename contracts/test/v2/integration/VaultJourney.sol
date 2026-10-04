@@ -177,7 +177,7 @@ abstract contract VaultJourney is IntegrationWorld {
         uint256 reserve = vault.reserves(address(base));
         vm.expectRevert(DominoV2VaultStorage.InsufficientReserves.selector);
         vm.prank(owner);
-        vault.withdrawReserves(address(base), reserve + owed);
+        vault.withdrawReserves(address(base), reserve + owed, owner);
         _ledgerBalanced();
         base.setBlocked(FEE_RECIPIENT, false);
         quote.setBlocked(FEE_RECIPIENT, false);
@@ -544,7 +544,7 @@ abstract contract VaultJourney is IntegrationWorld {
         // The guardian narrows at once: the removed operator is refused.
         vm.prank(GUARDIAN);
         registry.removeOperator(NEXT_OPERATOR);
-        _advance(60);
+        _advance(600);
         p = _plan();
         vm.expectRevert(IDominoVault.Unauthorized.selector);
         vm.prank(NEXT_OPERATOR);

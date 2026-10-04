@@ -95,7 +95,7 @@ The root NFT stays in the owner's wallet, with an individual approval (`getAppro
 - A transfer clears the approval and unsubscribes within the manager's `unsubscribeGasLimit` (300,000 on the deployed chains). The vault needs 15,772 gas, cold.
 - If that notification were lost, the next execution still sees it: it checks the subscriber and the approval live and disarms with reason 4. So does the `rootArmed()` view.
 - **The vault's own steps** (collect, increase, mint, withdraw) are F1c's `DominoV4Positions`, run inside a PoolManager unlock the vault itself holds: the vault flags the unlock in transient storage, and its `unlockCallback` sends the call to the executor only while that flag is set, where it is accepted only from the PoolManager. Every other `unlockCallback` goes to the swap module, which accepts only the PoolManager with the leg it is waiting for.
-- **Hooked pools: refused by default.** The owner has not decided whether a root in a pool with hooks is accepted. Until then creation reverts `HookedPool(hooks)`; accepting them is one constant, `ACCEPT_HOOKED_POOLS` in `DominoV2VaultV4.sol`. Successors share the root's pool. If accepted, note that a dynamic-fee hook can charge more than the `lpFee` slot0 shows, which the swap floor reads.
+- **Hooked pools: refused by default.** Decided (2 and 3 Oct 2026): a root in a pool with hooks is refused, and creation reverts `HookedPool(hooks)`; accepting them is one constant, `ACCEPT_HOOKED_POOLS` in `DominoV2VaultV4.sol`. Successors share the root's pool. If accepted, note that a dynamic-fee hook can charge more than the `lpFee` slot0 shows, which the swap floor reads.
 
 **v3: the vault re-verifies the root on every execution that needs it.**
 - After each of its own steps on the root, the vault records `keccak256(liquidity, feeGrowthInside0LastX128, feeGrowthInside1LastX128, tokensOwed0, tokensOwed1)` from the NonfungiblePositionManager.
@@ -248,7 +248,7 @@ Each member has, per pool token, a lot of `uncharged` earned fees and `charged` 
   - **The automation** sends it for every vault that qualifies, once per pass at most and before any compound ([V2_AUTOMATION_BACKEND.md](V2_AUTOMATION_BACKEND.md), "Returning a closed vault's reserves").
 - **Owner only:**
   - `setPolicy`, `setLimits`, `resume`, `rearm(consent)`;
-  - `withdrawReserves(token, amount)`, `withdrawChild(tokenId)`;
+  - `withdrawReserves(token, amount, recipient)`, `withdrawChild(tokenId)`;
   - `recoverToken(token, amount)`: anything unaccounted, including other tokens, native currency and a swap route's leftover hop token;
   - `recoverPosition(tokenId)` (additive): an NFT of the vault's manager the vault holds without managing it. This includes the root sent to it by mistake, which is then disarmed.
 - **`exitAll()`:**
@@ -308,7 +308,7 @@ interface IDominoVaultSwapSteps {
 | A5 unnecessary swaps | One direction per plan; the output must fund the add (≤ 1% may remain). |
 | A6 decisions on the spot | Routing, trigger, geometry and the floor use the anchor. |
 | A7 floor nuance | F1b's floor: anchor quote × (1 − pool fee incl. protocol) × (1 − slippage). |
-| A8 fragmented exits | `exitAll`; `recoverToken` for any token; inexact owner exits keep what cannot be paid as idle instead of reverting; once the root is closed, anyone's `returnReserves` pays the owner every reserve, with the same rule: what the owner cannot receive stays idle. |
+| A8 fragmented exits | `exitAll`; `withdrawReserves` to a recipient the owner names (3 Oct); `recoverToken` for any token; inexact owner exits keep what cannot be paid as idle instead of reverting; once the root is closed, anyone's `returnReserves` pays the owner every reserve, with the same rule: what the owner cannot receive stays idle. |
 | A9 pause cancels setPolicy | `paused` is not in the policy. |
 | A14 root as authority anchor | Successors keep working while the root is disarmed; a root sent to the vault is recoverable. |
 | A15 limits stored, not enforced | Only enforced limits remain (F0's `Limits`). |
@@ -375,9 +375,9 @@ Locally, a cold tree warms in pieces: `node scripts/test-contracts.mjs build <di
 ## What remains
 
 1. **Fork tests on Robinhood, Base and Arbitrum.** The v4 suites run the bytecode deployed on Base (identical on the three chains but for immutables); v3 runs on a faithful mock of the NonfungiblePositionManager under F1c's library, which F1c tests on the deployed v3 bytecode. CI has no network.
-2. **v4 netting** with F1b's `_v4SwapPath` (B3): collect, swap and increase in one unlock, about −60–100k gas per swap.
-3. **Manual actions on positions under automation.** `IDominoPositionActions` on the vault (S1 for automated positions, including a range change that migrates the root) is not part of this front.
-4. **Deployment** (F8): CreateX salts and constructor arguments.
+2. **v4 netting** with F1b's `_v4SwapPath` (B3): collect, swap and increase in one unlock, about −60–100k gas per swap. Deferred by the owner (3 Oct 2026) to a later implementation.
+3. **Manual actions on positions under automation.** `IDominoPositionActions` on the vault (S1 for automated positions, including a range change that migrates the root) is not part of this front. Out of V2.0 (owner decision of 3 Oct 2026).
+4. **Deployment** (F8): CreateX salts and constructor arguments. Done by #302 (`scripts/v2/deploy.mjs`).
    - `DominoV2VaultSwapModule(RouteConfig{registry, permit2, v3Factory, v3PoolInitCodeHash, v4PoolManager})`, once per chain.
    - `DominoV2VaultV3(Deployment)` and `DominoV2VaultV4(Deployment)`, with `Deployment = (factory, registry, priceAnchor, positionManager, swapModule, autoExit)`. The v4 vault takes its PoolManager from the PositionManager, and the v3 vault its factory from the NonfungiblePositionManager.
    - `DominoV2VaultFactory(implementation)`. The implementation needs its factory's address, which CREATE3 makes known in advance.
@@ -390,3 +390,11 @@ Locally, a cold tree warms in pieces: `node scripts/test-contracts.mjs build <di
 4. **Fee push vs accumulate:** decided, push per execution with the owed fallback, as F0 says.
 5. **Swap leftover tolerance:** decided, up to 1% of a swap's output may stay as reserve (A5).
 6. **The compiler input ceiling** above: a dedicated PR changes `scripts/solc-compile.cjs`.
+
+## Owner decisions (3 Oct 2026)
+
+1. **The owner's limits have on-chain ceilings:** `maxSlippageBps` ≤ 1,000 (10%), `maxPriceImpactBps` (the anchor band) ≤ 500 (5%), `maxObservationAgeSeconds` ≤ 300, `minimumIntervalSeconds` ≥ 600. `setLimits`, `setPolicy` and creation refuse anything looser (`InvalidLimits`, `InvalidPolicy`), so neither an app nor an operator works under looser limits.
+2. **A8:** `withdrawReserves(token, amount, recipient)` pays the recipient the owner names (never zero, `InvalidRecipient`), so an owner that cannot receive (a 7702 account without `receive`, for native reserves) still gets them out. `exitAll` and `returnReserves` keep paying the owner and keep what cannot be paid idle.
+3. **Accepted as they are:** A3 (no minimum successor size: any `minLiquidity` above zero), A4 (global operators, with no per-vault opt-in; item 1 bounds what they may do), A10 (the zap pushes refunds, and an action reverts when one cannot be paid), A14 (no two-step owner transfer), B4 (one source member per vault swap), and no wrap or unwrap leg.
+4. **`returnReserves` while a successor is active** stays refused (`SuccessorActive`).
+5. **S1 on automated positions** is out of V2.0; **v4 netting** and a **registry list of approved hooks** come later, with new implementations.

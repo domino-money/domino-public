@@ -627,7 +627,7 @@ contract DominoV2VaultCustodyV3Test is HarnessV3 {
         config.set(0, 0);
         vm.prank(OWNER);
         npm.collect(MockV3PositionManager.CollectParams(rootId, OWNER, 7, 7));
-        vm.warp(block.timestamp + 60);
+        vm.warp(block.timestamp + 600);
         vm.expectEmit(true, true, true, true, address(vault));
         emit IDominoVault.RootDisarmed(5, 3);
         _execute(_plan());
@@ -638,7 +638,7 @@ contract DominoV2VaultCustodyV3Test is HarnessV3 {
         _accrue(rootId, 1000, 1000);
         _execute(_plan());
         _accrue(rootId, 500, 500);
-        vm.warp(block.timestamp + 60);
+        vm.warp(block.timestamp + 600);
         uint128 before = _liquidityOf(rootId);
         _execute(_plan());
         _true(_liquidityOf(rootId) > before, "second compound");

@@ -103,13 +103,15 @@ def checked_vault_defaults(document):
             or any(type(v) is not int for v in (*policy.values(), *limits.values(), *maxima.values(),
                                                 document['exitMaxSlippageBps']))):
         raise DataError('v2_automation_config_invalid')
-    # DominoV2VaultBase._storePolicy / _storeLimits, and the auto-exit's MAX_SLIPPAGE_BPS.
+    # DominoV2VaultBase._storePolicy / _storeLimits, with the vault's own ceilings (the owner's decision of
+    # 3 Oct 2026: slippage 10%, band 5%, observations 300 s, interval at least 600 s), and the auto-exit's
+    # MAX_SLIPPAGE_BPS.
     if (not 0 <= policy['triggerDistanceBps'] <= 2000 or not 0 <= policy['maxOverlapBps'] <= 2000
-            or not 0 < policy['minimumIntervalSeconds'] < 2**32 or not 1 <= policy['maxPositions'] <= 255
+            or not 600 <= policy['minimumIntervalSeconds'] < 2**32 or not 1 <= policy['maxPositions'] <= 255
             or (mode == 1 and policy['maxPositions'] != 1)
-            or not 0 <= limits['maxSlippageBps'] <= maxima['maxSlippageBps'] < 10_000
-            or not 0 <= limits['maxPriceImpactBps'] <= maxima['maxPriceImpactBps'] < 10_000
-            or not 0 < limits['maxObservationAgeSeconds'] < 2**32 or not 1 <= limits['upsideBps'] <= 1_000_000
+            or not 0 <= limits['maxSlippageBps'] <= maxima['maxSlippageBps'] <= 1000
+            or not 0 <= limits['maxPriceImpactBps'] <= maxima['maxPriceImpactBps'] <= 500
+            or not 0 < limits['maxObservationAgeSeconds'] <= 300 or not 1 <= limits['upsideBps'] <= 1_000_000
             or not 1 <= document['exitMaxSlippageBps'] <= 1000):
         raise DataError('v2_automation_config_invalid')
     return VaultDefaults(mode, dict(policy), dict(limits), document['startPaused'], dict(maxima),

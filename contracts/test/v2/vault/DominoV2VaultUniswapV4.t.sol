@@ -151,7 +151,7 @@ contract DominoV2VaultUniswapV4Test is HarnessV4 {
         // The same fee oneForZero only leaves zeroForOne at 3000 pips: 987030.
         _setProtocolFee(1000 << 12);
         _accrue(rootId, 2_100_000, 0);
-        vm.warp(block.timestamp + 60);
+        vm.warp(block.timestamp + 600);
         p = _withSwap(_plan(), rootId, true, 1_000_000, 987_029);
         vm.expectRevert(DominoV2VaultStorage.InvalidRoute.selector);
         _execute(p);

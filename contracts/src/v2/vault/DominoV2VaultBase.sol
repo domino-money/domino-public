@@ -24,6 +24,15 @@ abstract contract DominoV2VaultBase is DominoV2VaultStorage, DominoFeeLedger, ID
     uint16 internal constant MAX_TRIGGER_DISTANCE_BPS = 2000;
     uint16 internal constant MAX_OVERLAP_BPS = 2000;
     uint32 internal constant MAX_UPSIDE_BPS = 1_000_000;
+    /// The owner's limits have ceilings of their own (owner decision of 3 Oct
+    /// 2026), so neither an app nor an operator works under looser ones: a
+    /// swap floor at most 10% under the anchor quote, a spot at most 5% off
+    /// the anchor, a price observation at most 300 s old, and at least ten
+    /// minutes between executions.
+    uint16 internal constant MAX_SLIPPAGE_BPS = 1_000;
+    uint16 internal constant MAX_ANCHOR_BAND_BPS = 500;
+    uint32 internal constant MAX_OBSERVATION_AGE_SECONDS = 300;
+    uint32 internal constant MIN_INTERVAL_SECONDS = 600;
 
     /// The executor this implementation created; same wiring, same layout.
     address internal immutable EXECUTOR;
@@ -221,10 +230,13 @@ abstract contract DominoV2VaultBase is DominoV2VaultStorage, DominoFeeLedger, ID
         emit RootRearmed(++_stateNonce);
     }
 
-    /// Without any charge. Spends idle reserves first, then the members'
-    /// uncharged fees before their charged units, which stay tariff-free.
-    function withdrawReserves(address token, uint256 amount) external nonReentrant onlyOwner {
+    /// Without any charge, to the recipient the owner names (V1 audit A8: an
+    /// owner that cannot receive, a 7702 account without receive for native
+    /// reserves, still gets them out). Spends idle reserves first, then the
+    /// members' uncharged fees before their charged units, which stay tariff-free.
+    function withdrawReserves(address token, uint256 amount, address recipient) external nonReentrant onlyOwner {
         if (amount == 0) revert InvalidAmount();
+        if (recipient == address(0)) revert InvalidRecipient();
         uint256 left = amount;
         uint256 idle = _idle[token];
         uint256 take = idle < left ? idle : left;
@@ -241,7 +253,7 @@ abstract contract DominoV2VaultBase is DominoV2VaultStorage, DominoFeeLedger, ID
             left -= take;
         }
         if (left != 0) revert InsufficientReserves();
-        _pay(token, _owner, amount);
+        _pay(token, recipient, amount);
         emit ReservesWithdrawn(token, amount, ++_stateNonce);
     }
 
@@ -375,7 +387,7 @@ abstract contract DominoV2VaultBase is DominoV2VaultStorage, DominoFeeLedger, ID
         bool simple = next.mode == DominoV2Types.MODE_SIMPLE;
         if (
             (!simple && next.mode != DominoV2Types.MODE_DOMINO) || next.triggerDistanceBps > MAX_TRIGGER_DISTANCE_BPS
-                || next.maxOverlapBps > MAX_OVERLAP_BPS || next.minimumIntervalSeconds == 0
+                || next.maxOverlapBps > MAX_OVERLAP_BPS || next.minimumIntervalSeconds < MIN_INTERVAL_SECONDS
                 || next.maxPositions < _members.length || (simple && next.maxPositions != 1)
         ) revert InvalidPolicy();
         _mode = next.mode;
@@ -387,7 +399,8 @@ abstract contract DominoV2VaultBase is DominoV2VaultStorage, DominoFeeLedger, ID
 
     function _storeLimits(Limits memory next) private {
         if (
-            next.maxSlippageBps >= 10_000 || next.maxPriceImpactBps >= 10_000 || next.maxObservationAgeSeconds == 0
+            next.maxSlippageBps > MAX_SLIPPAGE_BPS || next.maxPriceImpactBps > MAX_ANCHOR_BAND_BPS
+                || next.maxObservationAgeSeconds == 0 || next.maxObservationAgeSeconds > MAX_OBSERVATION_AGE_SECONDS
                 || next.upsideBps == 0 || next.upsideBps > MAX_UPSIDE_BPS
         ) revert InvalidLimits();
         _maxSlippageBps = next.maxSlippageBps;

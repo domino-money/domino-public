@@ -13,7 +13,7 @@ import {PositionManager} from "../../reference/official-v4/v4-periphery/src/Posi
 import {RobinhoodPermit2} from "../route/fixtures/RobinhoodPermit2.sol";
 import {RobinhoodPoolManager} from "../route/fixtures/RobinhoodPoolManager.sol";
 import {RobinhoodUniversalRouter212} from "../route/fixtures/RobinhoodUniversalRouter212.sol";
-import {ScriptedRouter} from "../route/RouteAdversaries.sol";
+import {ScriptedRouter, scriptedCall} from "../route/RouteAdversaries.sol";
 import {IV4PoolManagerTest, MockDominoRegistry, TestToken, V4LiquidityHelper} from "../route/V2RouteTestKit.sol";
 import {IPermit2Views, IPositionNft, IZap, ZapTestBase} from "./ZapTestKit.sol";
 
@@ -183,7 +183,7 @@ contract ZapRoutersTest is ZapTestBase {
             address(tkn),
             IN,
             minOut,
-            abi.encodeCall(ScriptedRouter.run, (script))
+            scriptedCall(script)
         );
     }
 

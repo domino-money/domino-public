@@ -141,7 +141,7 @@ abstract contract VaultHarness {
             mode: mode,
             triggerDistanceBps: 500,
             maxOverlapBps: 2000,
-            minimumIntervalSeconds: 60,
+            minimumIntervalSeconds: 600,
             maxPositions: maxPositions
         });
     }

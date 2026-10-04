@@ -220,7 +220,7 @@ AnchorMath.withinBand(anchorSqrtPriceX96, DominoPriceAnchor(anchor).spotSqrtPric
 
 ## Deployment parameters
 
-No deployment was made. The deployer key is the owner's.
+No production deployment yet. The fork rehearsal of 2 Oct 2026 (`docs/deployments/v2-rehearsal-2026-10-02`) deployed this configuration, with the owner's roles (provided on 2 Oct, #301), on forks of the three chains. The deployer key is the owner's.
 
 **Salts** (CreateX `deployCreate3`, docs/v2/F0_INTERFACES.md): `deployer (20 bytes) ‖ 0x00 ‖ bytes11(keccak256("domino.v2.<component>"))`.
 
@@ -297,7 +297,7 @@ No RPC is needed by any suite. The deployed v3 bytecode is committed in `Uniswap
 All recorded in the deployment parameters above:
 
 1. **Timelock:** 24 h on each chain.
-2. **Governance and guardian:** governance on a multisig, with a separate guardian. The addresses, and the fee recipient's, are pending from the owner.
+2. **Governance and guardian:** governance on a multisig, with a separate guardian. The owner provided the addresses, and the fee recipient's, on 2 Oct 2026 (#301); the rehearsal manifests carry them.
 3. **TWAP floor:** `minTwapSeconds` is 60 on all three chains: 600 Robinhood blocks, 240 on Arbitrum, 30 on Base.
 4. **Router versions:** **212 or later**, still only through the timelocked governance change. A successor to 2.1.2 is admitted without a new registry, while the sunset 2.0 and 2.1.1 (and anything below 212) stay refused. The version is governance's label, so before scheduling, governance checks the address and code hash against the chain profile, and the guardian has the timelock to veto.
 5. **Governance keeps the guardian's immediate powers.** It can remove a role, halt or raise the epoch at once, and revoke observations, which keeps those actions available if the guardian key is unreachable.

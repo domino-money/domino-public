@@ -305,7 +305,7 @@ abstract contract ReturnSuite is VaultHarness {
         (uint256 reserve0, uint256 reserve1) = _vaultWithReserves();
         _closeRoot();
         vm.prank(OWNER);
-        vault.withdrawReserves(address(token1), reserve1);
+        vault.withdrawReserves(address(token1), reserve1, OWNER);
         uint64 nonce = vault.stateNonce();
         (uint256 paid0, uint256 paid1) = vault.returnReserves();
         _eq(paid0, reserve0, "token0 paid");
@@ -320,7 +320,7 @@ abstract contract ReturnSuite is VaultHarness {
         // The owner takes token0's reserve itself; token1's cannot reach it.
         uint256 reserve0 = vault.reserves(_currency0());
         vm.prank(OWNER);
-        vault.withdrawReserves(_currency0(), reserve0);
+        vault.withdrawReserves(_currency0(), reserve0, OWNER);
         token1.setBlocked(OWNER, true);
         uint64 nonce = vault.stateNonce();
         (uint256 paid0, uint256 paid1) = vault.returnReserves();
@@ -404,7 +404,7 @@ abstract contract ReturnSuite is VaultHarness {
         _eq(token1.balanceOf(OWNER) - owner1, 7, "the donation, recovered");
         _eq(vault.owedFees(address(token1)), owed1, "owed untouched");
         vm.prank(OWNER);
-        vault.withdrawReserves(address(token1), reserve1);
+        vault.withdrawReserves(address(token1), reserve1, OWNER);
         _eq(token1.balanceOf(OWNER) - owner1, 7 + reserve1, "the idle reserve, withdrawn");
         _eq(token1.balanceOf(address(vault)), owed1, "only the owed fee is left");
     }

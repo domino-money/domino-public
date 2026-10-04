@@ -454,7 +454,7 @@ contract MockVault is IDominoVault {
         revert NotModelled();
     }
 
-    function withdrawReserves(address, uint256) external pure {
+    function withdrawReserves(address, uint256, address) external pure {
         revert NotModelled();
     }
 

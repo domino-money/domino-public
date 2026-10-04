@@ -19,7 +19,7 @@ F2 is service S1 of domino-money/domino#283 ("Gestão manual"), milestone M1, Do
 - **Consent is bound to the plan.** Permit2 `permitWitnessTransferFrom` (batch) carries the `PositionIntent` as witness, so a wallet without EIP-5792 (Rabby) still does everything with one signature. Actions that pull nothing (change range, exit) can be relayed with an EIP-712 signature of the owner (see [Relayed actions](#relayed-actions-and-the-f0-addition)).
 - **Tariff:** the assisted swap pays 65 bps of the swapped amount (F1b's formula), in the token F1b's charge-currency rule selects. No swap, no fee: `feeBps` and `feeToken` are zero.
 - **Non-custodial:** the NFT stays in the owner's wallet; nothing stays in the zap after an action, except fees owed to a recipient that could not receive them.
-- **Pools with hooks are not decided:** the default refuses them, and accepting them is one constant (see [Hooks policy](#hooks-policy)).
+- **Pools with hooks are refused** (owner decisions of 2 and 3 Oct 2026). A later registry list of approved hooks would come with new zap and vault implementations; until then the constant stays off (see [Hooks policy](#hooks-policy)).
 
 ## The flows
 

@@ -1,6 +1,6 @@
 {
   "source": "contracts/src/v2/interfaces/IDominoVault.sol",
-  "interfaceId": "0x4e0b5b84",
+  "interfaceId": "0x58f8d35f",
   "functions": {
     "executeExit(uint256,bytes)": "0xa1da458d",
     "exitAll()": "0x5b6c508c",
@@ -25,7 +25,7 @@
     "setPolicy((uint8,uint16,uint16,uint32,uint8))": "0x740b167b",
     "stateNonce()": "0x7e25850b",
     "withdrawChild(uint256)": "0x76175193",
-    "withdrawReserves(address,uint256)": "0xe478795d"
+    "withdrawReserves(address,uint256,address)": "0xf28bf186"
   },
   "abi": [
     {
@@ -889,6 +889,11 @@
           "internalType": "uint256",
           "name": "amount",
           "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "recipient",
+          "type": "address"
         }
       ],
       "name": "withdrawReserves",

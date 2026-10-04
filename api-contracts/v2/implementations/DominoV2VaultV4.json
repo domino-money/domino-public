@@ -40,6 +40,7 @@
     "InvalidPlan()": "0x21f24259",
     "InvalidPolicy()": "0xd06b96b1",
     "InvalidPosition()": "0xce7e065e",
+    "InvalidRecipient()": "0x9c8d2cd2",
     "InvalidRoute()": "0x84e505d2",
     "PlanExpired()": "0x059e8997",
     "ReentrantCall()": "0x37ed32e8",
@@ -746,6 +747,11 @@
     {
       "inputs": [],
       "name": "InvalidPosition",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidRecipient",
       "type": "error"
     },
     {

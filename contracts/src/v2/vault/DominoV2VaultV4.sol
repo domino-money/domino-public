@@ -21,9 +21,10 @@ abstract contract DominoV2VaultV4Hooks is DominoV2VaultStorage {
     error ForeignSubscriber(address subscriber);
     error HookedPool(address hooks);
 
-    /// Whether a root in a pool with hooks is accepted. The owner has not
-    /// decided yet (#283); until then such a pool is refused at creation, and
-    /// accepting it is a change to this line. Successors share the root's pool.
+    /// Whether a root in a pool with hooks is accepted: no (owner decisions of
+    /// 2 and 3 Oct 2026), so such a pool is refused at creation; a registry list
+    /// of approved hooks may come with a new implementation. Successors share
+    /// the root's pool.
     bool internal constant ACCEPT_HOOKED_POOLS = false;
 
     bytes32 internal constant T_SUBSCRIBING = keccak256("domino.vault.subscribing");

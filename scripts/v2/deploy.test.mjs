@@ -4,13 +4,15 @@ import { createRequire } from 'node:module';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { repoRoot, viem, CREATE_X, CREATE_X_CODE_HASH, CREATE3_PROXY_HASH, CREATE3_PROXY_RUNTIME, CREATEX_EVENTS, CONTRACT_NAMES, DEPLOY_ORDER, ROLE_NAMES,
   POLICIES, PRODUCTION, PRODUCTION_DEPLOYER, PUBLIC_TEST_ACCOUNTS, MAX_TRANSACTION_GAS, SAFE_SINGLETONS, SAFE_PROXY_RUNTIME_HASHES,
   precomputeAddresses, validateRoleInput, checkRoleAddresses, compileV2, checkPolicyConstants, literalNumber, prepareDeployment, rebuildPackage,
   packageDigest, fullPackage, planDeployment, preflightDeployment, verifyDeployment, deploymentState, checkSignedTransactions,
   explorerInput, committedProfile, checkProvenance, expectedRuntime, writeJson, flags, cli, readJson, quantity, makeRpc, readOnlyRpc,
-  rpcErrorReason, pinBlock } from './deploy.mjs';
+  rpcErrorReason, pinBlock, canonical, sha256Hex, RELEASE_MANIFEST_PATH, RELEASE_INPUTS, artifactIdentity, releaseManifest,
+  checkReleaseManifest } from './deploy.mjs';
 import { requireAnvil, installCreateX, installOfflineDependencies, installStubs, startAnvil, simulateGas, rehearsalAccount, localRoles, stubRuntime } from './deploy-anvil.mjs';
 import { executeSteps, deployLocal, chainProfile, creationTransactions, cli as localCli } from './deploy-local.mjs';
 import { cli as forkCli } from './deploy-fork.mjs';
@@ -302,13 +304,16 @@ test('block-explorer input: the exact compiler input and every component\'s cons
   assert.throws(() => explorerInput(structuredClone(bundle), artifacts), /explorer_input_requires_fresh_authenticated_preparation/);
 });
 
-test('a public package attests a clean checkout and the committed chain profile', () => {
-  const commit = compiled().sourceCommit;
-  const clean = { sourceRoot: repoRoot, sourceCommit: commit, sourceState: { workingTreeSourceChanges: false, workingTreeToolChanges: false } };
+test('a public package attests a clean checkout, the committed chain profile and the reviewed release', () => {
+  const artifacts = compiled(), commit = artifacts.sourceCommit;
+  const clean = { ...artifacts, sourceRoot: repoRoot, sourceState: { ...artifacts.sourceState, workingTreeSourceChanges: false, workingTreeToolChanges: false } };
+  // Only a checkout whose V2 sources, tool and manifest are all committed can pass; CI's always is.
+  const pristine = !artifacts.sourceState.workingTreeSourceChanges && !artifacts.sourceState.workingTreeToolChanges
+    && execFileSync('git', ['status', '--porcelain', '--', RELEASE_MANIFEST_PATH], { cwd: repoRoot, encoding: 'utf8' }) === '';
   for (const chainId of [4663, 8453, 42161]) {
     const profile = committedProfile(repoRoot, commit, chainId);
     assert.equal(profile.chainId, chainId);
-    checkProvenance({ artifacts: clean, profile });
+    if (pristine) checkProvenance({ artifacts: clean, profile });
     assert.throws(() => checkProvenance({ artifacts: { ...clean, sourceRoot: tmpdir() }, profile }), /public_preparation_requires_the_tool_checkout/);
     for (const flag of ['workingTreeSourceChanges', 'workingTreeToolChanges']) {
       assert.throws(() => checkProvenance({ artifacts: { ...clean, sourceState: { ...clean.sourceState, [flag]: true } }, profile }), /uncommitted_changes_refused_for_public_preparation/);
@@ -316,6 +321,60 @@ test('a public package attests a clean checkout and the committed chain profile'
     assert.throws(() => checkProvenance({ artifacts: clean, profile: { ...profile, permit2: PRODUCTION_DEPLOYER } }), /chain_profile_not_the_committed_one/);
   }
   assert.throws(() => committedProfile(repoRoot, commit, 1), /committed_chain_profile_missing/);
+});
+
+test('the release manifest pins every V2 source and each deployable contract, and refuses anything else', () => {
+  const artifacts = compiled(), manifest = releaseManifest(artifacts);
+  assert.equal(manifest.kind, 'domino-v2-reviewed-release-artifacts');
+  assert.equal(manifest.sourceTreeSha256, artifacts.sourceState.sourceTreeSha256);
+  assert.deepEqual(Object.keys(manifest.sources), Object.keys(artifacts.sourceHashes).sort());
+  assert.ok(Object.keys(manifest.sources).every(name => name.startsWith('src/v2/')));
+  assert.deepEqual(Object.keys(manifest.releaseInputs), [...RELEASE_INPUTS]);
+  assert.deepEqual(Object.keys(manifest.contracts), [...new Set(Object.values(CONTRACT_NAMES))].sort());
+  for (const [name, entry] of Object.entries(manifest.contracts)) {
+    const artifact = artifacts.contracts[name];
+    assert.equal(entry.runtimeSha256, sha256Hex(Buffer.from(artifact.evm.deployedBytecode.object, 'hex')), name);
+    assert.ok(entry.runtimeBytes > 0 && entry.runtimeBytes <= 24576, name);
+    assert.equal(entry.immutableRanges.length, Object.values(artifact.evm.deployedBytecode.immutableReferences).flat().length, name);
+  }
+  // A Foundry artifact (0x-prefixed, ABI grouped differently) of the same contract is the same identity.
+  const registry = artifacts.contracts.DominoRegistry;
+  const foundry = { abi: [...registry.abi].reverse(), bytecode: { object: '0x' + registry.evm.bytecode.object, linkReferences: {} },
+    deployedBytecode: { object: '0x' + registry.evm.deployedBytecode.object, linkReferences: {}, immutableReferences: registry.evm.deployedBytecode.immutableReferences } };
+  assert.deepEqual(artifactIdentity(foundry), artifactIdentity(registry));
+  assert.notEqual(artifactIdentity({ ...foundry, abi: registry.abi.slice(1) }).abiSha256, manifest.contracts.DominoRegistry.abiSha256);
+  // The committed manifest is this compile's (the CI check says the same, with the Foundry artifacts).
+  const pristine = !artifacts.sourceState.workingTreeSourceChanges && !artifacts.sourceState.workingTreeToolChanges
+    && execFileSync('git', ['status', '--porcelain', '--', RELEASE_MANIFEST_PATH], { cwd: repoRoot, encoding: 'utf8' }) === '';
+  if (pristine) assert.equal(checkReleaseManifest(artifacts), sha256Hex(readFileSync(join(repoRoot, RELEASE_MANIFEST_PATH))));
+  const first = Object.keys(artifacts.sourceHashes)[0];
+  const swapped = { ...artifacts, sourceHashes: { ...artifacts.sourceHashes, [first]: '0'.repeat(64) } };
+  assert.notEqual(canonical(releaseManifest(swapped)), canonical(manifest));
+  const otherCode = { ...artifacts, contracts: { ...artifacts.contracts, DominoRegistry: { ...registry, evm: { ...registry.evm,
+    deployedBytecode: { ...registry.evm.deployedBytecode, object: registry.evm.deployedBytecode.object.slice(0, -2) + 'fe' } } } } };
+  assert.notEqual(releaseManifest(otherCode).contracts.DominoRegistry.runtimeSha256, manifest.contracts.DominoRegistry.runtimeSha256);
+  assert.throws(() => checkReleaseManifest({ ...artifacts, sourceCommit: '0'.repeat(40) }), /release_manifest_not_committed/);
+  // A manifest committed in a checkout, then edited there, is not the reviewed one.
+  const directory = mkdtempSync(join(tmpdir(), 'domino-v2-release-'));
+  try {
+    const git = (...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args], { cwd: directory, encoding: 'utf8' });
+    git('init', '-q');
+    mkdirSync(join(directory, 'contracts'));
+    writeFileSync(join(directory, RELEASE_MANIFEST_PATH), JSON.stringify(manifest, null, 2) + '\n');
+    git('add', '.'); git('commit', '-qm', 'manifest');
+    const local = { ...artifacts, sourceRoot: directory, sourceCommit: git('rev-parse', 'HEAD').trim() };
+    writeFileSync(join(directory, RELEASE_MANIFEST_PATH), JSON.stringify(manifest) + '\n');
+    assert.throws(() => checkReleaseManifest(local), /release_manifest_changed/);
+    writeFileSync(join(directory, RELEASE_MANIFEST_PATH), JSON.stringify(manifest, null, 2) + '\n');
+    // Its release inputs are read from that checkout, which has none of them.
+    assert.throws(() => checkReleaseManifest(local), /ENOENT/);
+    for (const name of RELEASE_INPUTS) { mkdirSync(dirname(join(directory, name)), { recursive: true }); writeFileSync(join(directory, name), readFileSync(join(repoRoot, name))); }
+    assert.equal(checkReleaseManifest(local), sha256Hex(readFileSync(join(directory, RELEASE_MANIFEST_PATH))));
+    assert.throws(() => checkReleaseManifest({ ...local, sourceHashes: swapped.sourceHashes }), /release_manifest_mismatch/);
+    assert.throws(() => checkReleaseManifest({ ...local, contracts: otherCode.contracts }), /release_manifest_mismatch/);
+    writeFileSync(join(directory, RELEASE_INPUTS[0]), 'changed\n');
+    assert.throws(() => checkReleaseManifest(local), /release_manifest_mismatch/);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('CLI: arguments checked before any work; outputs never overwritten', async () => {

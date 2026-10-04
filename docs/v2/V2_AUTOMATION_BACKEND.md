@@ -219,7 +219,7 @@ One private JSON file per chain (0600, in a 0700 directory outside any checkout;
 ```
 
 - `mode` `null`: no default; the owner chooses Auto-compound (1, 2%) or Domino-compound (2, 4%). Auto-compound always takes `maxPositions` 1.
-- `maxSlippageBps` 1% on top of the pool's fee, and `maxPriceImpactBps` (the anchor–spot band) 1%, each selectable up to `ownerMaxima` (5%).
+- `maxSlippageBps` 1% on top of the pool's fee, and `maxPriceImpactBps` (the anchor–spot band) 1%, each selectable up to `ownerMaxima` (5%). The vault itself refuses more than 10% and 5% (owner decision of 3 Oct 2026), and the configuration more than those ceilings.
 - `maxObservationAgeSeconds` 300; `minimumIntervalSeconds` 600 (10 minutes, the owner's correction of 2 Oct): a floor, above which the economic criterion decides the cadence.
 - The Domino parameters are V1's sequence defaults (`app/src/lib/create`): trigger 5%, overlap 20%, 3 positions, a successor's ceiling 50% higher.
 - `startPaused` false; `exitMaxSlippageBps` is an exit mandate's default slippage, on top of the pool's fee.

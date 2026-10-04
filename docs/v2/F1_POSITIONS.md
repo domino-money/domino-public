@@ -282,7 +282,7 @@ The v2 suites do not compile the V1 contracts whose sizes `test-contracts.mjs` c
 
 - **Hooked pools.** The adapters handle any v4 pool mechanically.
   - Hook deltas on add or remove are settled by their actual amount, and the PositionManager's maxima and minima bound them.
-  - Whether F2/F3 accept positions in hooked pools is a product decision. F0 accepts every pool; #282 says "hook só no trecho de swap".
+  - Decided (2 and 3 Oct 2026): F2 and F3 refuse positions in hooked pools; a registry list of approved hooks may come later, with new implementations. F0 accepts every pool; #282 says "hook só no trecho de swap".
 - **Gas.** On top of the Uniswap calls, the adapters add:
   - v4: up to two extra PositionManager calls, four `exttload` and one position-info read;
   - v3: one `positions` read and four approvals.

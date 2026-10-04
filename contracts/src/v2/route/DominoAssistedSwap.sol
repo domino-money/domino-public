@@ -5,6 +5,7 @@ import {DominoV2Types} from "../DominoV2Types.sol";
 import {DominoFeeLedger} from "../fees/DominoFeeLedger.sol";
 import {DominoFeeRules} from "../fees/DominoFeeRules.sol";
 import {DominoSwapExecutor} from "./DominoSwapExecutor.sol";
+import {DominoTokenOps} from "./DominoTokenOps.sol";
 
 /// @notice The assisted swap of a manual action (#283 S1): the plan's legs,
 /// executed and accepted by effect, then the 65 bps fee in the token the
@@ -30,6 +31,13 @@ abstract contract DominoAssistedSwap is DominoSwapExecutor, DominoFeeLedger {
     ) internal returns (uint256[] memory amountsOut, uint256 fee) {
         DominoFeeRules.requireAssistedSwapTerms(ROUTE_REGISTRY, legs, feeBps, feeToken);
         amountsOut = _executeLegs(legs, extraTracked);
+        // A leg spends only what the action brought: never what this contract
+        // owes the fee recipient, in any token a leg starts from (not only the
+        // action's own tokens, which the refund already holds to that).
+        for (uint256 i; i < legs.length; ++i) {
+            address spent = legs[i].tokenIn;
+            if (DominoTokenOps.selfBalance(spent) < owedFees(spent)) revert FeeNotBacked(spent);
+        }
         fee = DominoFeeRules.feeOf(DominoFeeRules.swappedAmount(legs, amountsOut, feeToken), feeBps);
         _chargeFee(DominoV2Types.FEE_KIND_ASSISTED_SWAP, feeToken, payer, fee, ref);
     }

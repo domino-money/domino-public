@@ -100,7 +100,7 @@ Anything that widens trust is scheduled by governance (`scheduleChange` with a `
 - returns the anchor (a signed observation, or a v3 TWAP) and the current spot after the band check;
 - publisher or guardian can revoke a single observation; the registry epoch voids all earlier ones.
 
-**`IDominoPositionActions`** — S1 manual management, implemented by the stateless zap (positions in the wallet) and by the vault (positions under automation, owner-only):
+**`IDominoPositionActions`** — S1 manual management, implemented by the stateless zap (positions in the wallet). The vault does not implement it in V2.0 (owner decision of 3 Oct 2026): the NFT of a position under automation stays in the owner's wallet, and the app (its rule since 2 Oct) blocks a range change on an armed root and only warns before an increase or an exit:
 - `create` / `createWithPermit`, `increase` / `increaseWithPermit`, `changeRange`, `exit`.
 - Plans carry the `PositionIntent`, the inputs, the swap legs and the amount bounds.
 - A swap leg (`SwapLeg`: Universal Router call, v3 path or v4 path) is accepted by its effect:
@@ -126,8 +126,8 @@ Anything that widens trust is scheduled by governance (`scheduleChange` with a `
 `Limits.maxPriceImpactBps` is the anchor–spot band: the spot must lie within a factor (1 + band) above or below the anchor (`IDominoPriceAnchor.anchor`'s `maxDeviationBps`). The name is V1's; it does not bound how far a swap moves the pool's price.
 
 **`IDominoVaultExecution`** — the operator's entry point, `execute(bytes plan)`:
-- a draft owned by F3;
-- the plan encoding is versioned in its first byte and freezes when F3 freezes;
+- owned by F3;
+- the plan encoding is versioned in its first byte; version 1 is frozen (F3_VAULT.md, golden vector `0x890394e7…`);
 - F6's planner and F3 define it together.
 
 **`IDominoAutoExit`** — S3:
@@ -214,7 +214,7 @@ These were confirmed against the deployed contracts on all three chains, not onl
 - the events.
 
 **Not frozen:**
-- `IDominoVaultExecution`'s plan encoding, owned by F3;
+- a later plan version (a new first byte), owned by F3;
 - implementation details behind the interfaces.
 
 **To change a frozen surface:**

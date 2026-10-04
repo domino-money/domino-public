@@ -9,7 +9,7 @@ import {IDominoFeeEvents} from "../../../src/v2/interfaces/IDominoFees.sol";
 import {IDominoPositionActions} from "../../../src/v2/interfaces/IDominoPositionActions.sol";
 import {DominoActionLock} from "../../../src/v2/route/DominoActionLock.sol";
 import {DominoSwapFloor} from "../../../src/v2/route/DominoSwapFloor.sol";
-import {ScriptedRouter} from "../route/RouteAdversaries.sol";
+import {ScriptedRouter, failingCall} from "../route/RouteAdversaries.sol";
 import {AutoExitFixture, VmAutoExit} from "./AutoExitFixture.sol";
 import {MockVault} from "./AutoExitMocks.sol";
 
@@ -309,7 +309,7 @@ contract DominoAutoExitConversionTest is AutoExitFixture {
         vault.setPosition(TOKEN_ID, 0, HELD1);
         bytes32 mandateHash = _register(_converted(address(token1)));
         DominoV2Types.SwapLeg memory failing = _routerLeg(address(token0), address(token1), HELD0, 1);
-        failing.data = abi.encodeCall(ScriptedRouter.fail, ());
+        failing.data = failingCall();
         (, uint256 amount1) = _execute(mandateHash, _with(failing));
         _eq(amount1, HELD1 - _fee(HELD1), "delivered without a swap");
     }
@@ -368,7 +368,7 @@ contract DominoAutoExitConversionTest is AutoExitFixture {
     function testARouterFailureRevertsWithItsReason() public {
         bytes32 mandateHash = _register(_converted(address(token1)));
         DominoV2Types.SwapLeg memory leg = _routerLeg(address(token0), address(token1), HELD0, 4e18);
-        leg.data = abi.encodeCall(ScriptedRouter.fail, ());
+        leg.data = failingCall();
         IDominoAutoExit.Execution memory execution = _with(leg);
         vm.prank(OPERATOR);
         vm.expectRevert(abi.encodeWithSignature("Error(string)", "router says no"));

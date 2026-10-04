@@ -40,7 +40,7 @@ abstract contract DominoSuite is VaultHarness {
         _anchorAt(5800);
         child = _nextTokenId();
         _execute(_mintPlan(SUCCESSOR_LOWER, SUCCESSOR_UPPER));
-        vm.warp(block.timestamp + 60);
+        vm.warp(block.timestamp + 600);
     }
 
     function _mintFails(int24 lower, int24 upper, bytes4 selector) internal {
@@ -218,7 +218,7 @@ abstract contract DominoSuite is VaultHarness {
         vault.withdrawChild(child);
         // The slot is free again, and idle reserves never fund automation.
         _accrue(rootId, 1000, 1000);
-        vm.warp(block.timestamp + 60);
+        vm.warp(block.timestamp + 600);
         _execute(_mintPlan(SUCCESSOR_LOWER, SUCCESSOR_UPPER));
         _eq(vault.idleReserves(address(token0)), 1, "idle untouched");
     }

@@ -36,6 +36,7 @@ abstract contract DominoV2VaultStorage is DominoActionLock {
     error InvalidRoute();
     error InvalidAmount();
     error InsufficientReserves();
+    error InvalidRecipient();
     error StepUnavailable();
     error InvalidInstruction();
     error UnexpectedCallback();

@@ -11,8 +11,8 @@ import {DominoV2Types} from "../DominoV2Types.sol";
 /// on v3 the vault re-verifies the position on every execution. Successors
 /// minted by Domino-compound are held by the vault. Owner exits never depend
 /// on the operator, the publisher, the registry or the engine.
-/// The operator's execution plan is defined by workstream F3 and is not part
-/// of this frozen surface (see IDominoVaultExecution).
+/// The operator's execution plan is defined by workstream F3 (plan version 1,
+/// frozen; see IDominoVaultExecution).
 interface IDominoVault {
     error Unauthorized();
     error InvalidPolicy();
@@ -95,7 +95,8 @@ interface IDominoVault {
     function pause() external; // owner or an admitted operator
     function resume() external;
     function rearm(bool consentToUncollectedFees) external;
-    function withdrawReserves(address token, uint256 amount) external;
+    /// To `recipient`, which the owner names (never zero).
+    function withdrawReserves(address token, uint256 amount, address recipient) external;
     function withdrawChild(uint256 tokenId) external;
     /// Any token that is not accounted to the vault, including tokens outside the pair.
     function recoverToken(address token, uint256 amount) external;
@@ -109,8 +110,8 @@ interface IDominoVault {
     function executeExit(uint256 tokenId, bytes calldata instruction) external returns (uint256 amount0, uint256 amount1);
 }
 
-/// @notice The operator's entry point. Draft owned by workstream F3: the plan
-/// encoding is versioned in its first byte and frozen when F3 freezes.
+/// @notice The operator's entry point, owned by workstream F3: the plan
+/// encoding is versioned in its first byte, and version 1 is frozen (F3_VAULT.md).
 interface IDominoVaultExecution {
     event Executed(bytes32 indexed planHash, uint8 action, uint64 stateNonce);
 

@@ -9,7 +9,7 @@ import {DominoActionLock} from "../../../src/v2/route/DominoActionLock.sol";
 import {DominoSwapExecutor, IPermit2AllowanceMinimal} from "../../../src/v2/route/DominoSwapExecutor.sol";
 import {DominoTokenOps} from "../../../src/v2/route/DominoTokenOps.sol";
 import {RobinhoodPermit2} from "./fixtures/RobinhoodPermit2.sol";
-import {ScriptedRouter} from "./RouteAdversaries.sol";
+import {ScriptedRouter, scriptedCall, failingCall} from "./RouteAdversaries.sol";
 import {AssistedSwapHarness, MockDominoRegistry, TestToken, V2TestBase, V2Vm} from "./V2RouteTestKit.sol";
 
 /// A host with the executor and no fee ledger.
@@ -85,7 +85,7 @@ contract DominoSwapExecutorRouterTest is V2TestBase {
             tokenOut: tokenOut,
             amountIn: IN,
             minAmountOut: minOut,
-            data: abi.encodeCall(ScriptedRouter.run, (script))
+            data: scriptedCall(script)
         });
     }
 
@@ -298,9 +298,79 @@ contract DominoSwapExecutorRouterTest is V2TestBase {
             "the router's Permit2 allowance survived");
     }
 
+    // ------------------------------------------------------ router commands
+
+    /// Calldata in the router's execute shape: these command bytes and the
+    /// honest script (tokenA in, 995e6 tokenB out) as the only input.
+    function _commands(bytes memory commands) internal view returns (bytes memory) {
+        bytes[] memory inputs = new bytes[](1);
+        inputs[0] = abi.encode(_honest(address(tokenA), address(tokenB), 995e6));
+        return abi.encodeWithSignature("execute(bytes,bytes[],uint256)", commands, inputs, type(uint256).max);
+    }
+
+    function _withData(bytes memory data) internal view returns (DominoV2Types.SwapLeg memory leg) {
+        leg = _leg(address(tokenA), address(tokenB), MIN, _honest(address(tokenA), address(tokenB), 995e6));
+        leg.data = data;
+    }
+
+    /// Every swap and payment command reaches the router, alone, with the
+    /// allow-revert bit, in a route, and through the deadline-free execute.
+    function testSwapAndPaymentCommandsReachTheRouter() public {
+        tokenA.mint(address(host), 20 * uint256(IN));
+        uint8[13] memory allowed = [0x00, 0x01, 0x02, 0x04, 0x05, 0x06, 0x08, 0x09, 0x0b, 0x0c, 0x0e, 0x10, 0x80];
+        for (uint256 i; i < allowed.length; ++i) {
+            host.executeLegs(_one(_withData(_commands(abi.encodePacked(allowed[i])))), new address[](0));
+        }
+        host.executeLegs(_one(_withData(_commands(hex"02000410060c0e"))), new address[](0));
+        bytes[] memory inputs = new bytes[](1);
+        inputs[0] = abi.encode(_honest(address(tokenA), address(tokenB), 995e6));
+        host.executeLegs(
+            _one(_withData(abi.encodeWithSignature("execute(bytes,bytes[])", hex"0010", inputs))), new address[](0)
+        );
+        _eq(tokenB.balanceOf(address(host)), 15 * 995e6, "every leg ran");
+    }
+
+    /// The position managers' calls (the router authorises them by its
+    /// caller, this contract), a nested sub-plan, permits, pool initialisation
+    /// and every command no router defines yet never reach the router, alone
+    /// or behind allowed ones, with or without the allow-revert bit.
+    function testPositionSubPlanPermitAndUnknownCommandsAreRefused() public {
+        uint8[16] memory refused =
+            [0x03, 0x07, 0x0a, 0x0d, 0x0f, 0x11, 0x12, 0x13, 0x14, 0x15, 0x20, 0x21, 0x3f, 0x40, 0x92, 0xff];
+        for (uint256 i; i < refused.length; ++i) {
+            _refused(_withData(_commands(abi.encodePacked(refused[i]))), IDominoPositionActions.InvalidPlan.selector,
+                "a refused command");
+        }
+        _refused(_withData(_commands(hex"00041012")), IDominoPositionActions.InvalidPlan.selector,
+            "a position call behind swaps");
+        _eq(tokenB.balanceOf(address(host)), 0, "nothing ran");
+    }
+
+    /// Anything but execute(commands, inputs[, deadline]) whose commands lie
+    /// inside the calldata is refused before the router is called.
+    function testRouterCalldataOutsideTheExecuteShapeIsRefused() public {
+        bytes4 invalid = IDominoPositionActions.InvalidPlan.selector;
+        ScriptedRouter.Script memory script = _honest(address(tokenA), address(tokenB), 995e6);
+        _refused(_withData(abi.encodeCall(ScriptedRouter.run, (script))), invalid, "another function");
+        _refused(_withData(abi.encodePacked(bytes4(0x3593564c))), invalid, "a selector alone");
+        bytes memory data = _commands(hex"00");
+        uint256 size = data.length;
+        assembly ("memory-safe") {
+            mstore(add(data, 0x24), sub(size, 0x23)) // the commands' length word starts one byte past the end
+        }
+        _refused(_withData(data), invalid, "commands offset past the end");
+        data = _commands(hex"00");
+        assembly ("memory-safe") {
+            let offset := mload(add(data, 0x24))
+            mstore(add(add(data, 0x24), offset), sub(sub(mload(data), 0x24), offset)) // one byte too many
+        }
+        _refused(_withData(data), invalid, "commands longer than the calldata");
+        _eq(tokenB.balanceOf(address(host)), 0, "nothing ran");
+    }
+
     function testARouterFailureIsBubbled() public {
         DominoV2Types.SwapLeg memory leg = _leg(address(tokenA), address(tokenB), MIN, _honest(address(tokenA), address(tokenB), IN));
-        leg.data = abi.encodeCall(ScriptedRouter.fail, ());
+        leg.data = failingCall();
         (bool ok, bytes memory reason) = address(host).call(_call(_one(leg), new address[](0)));
         _check(!ok && keccak256(reason) == keccak256(abi.encodeWithSignature("Error(string)", "router says no")),
             "the router's own reason");

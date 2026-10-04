@@ -33,7 +33,7 @@ contract DominoV2InterfacesTest {
         _pin(type(IDominoPositionActions).interfaceId, 0x0c6d074a, "IDominoPositionActions");
         _pin(type(IDominoPriceAnchor).interfaceId, 0x8e179650, "IDominoPriceAnchor");
         _pin(type(IDominoRegistry).interfaceId, 0xaf07dbb9, "IDominoRegistry");
-        _pin(type(IDominoVault).interfaceId, 0x4e0b5b84, "IDominoVault");
+        _pin(type(IDominoVault).interfaceId, 0x58f8d35f, "IDominoVault");
         _pin(type(IDominoVaultExecution).interfaceId, 0x09c5eabe, "IDominoVaultExecution");
         _pin(type(IDominoVaultFactory).interfaceId, 0x7f517144, "IDominoVaultFactory");
         _pin(type(IDominoVaultLedger).interfaceId, 0xb3bfc5d0, "IDominoVaultLedger");

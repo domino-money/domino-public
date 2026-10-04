@@ -1201,6 +1201,87 @@ abstract contract ZapV4Behaviour is ZapTestBase {
         _eq(extra.balanceOf(address(zap)), 0, "not kept");
     }
 
+    // ===================================================== owed fees, hostile
+
+    /// An exact-input v4 leg through one given pool.
+    function _pathLeg(
+        DominoV2Types.PoolRef memory ref,
+        address tokenIn,
+        address tokenOut,
+        uint128 amountIn,
+        uint128 minOut
+    ) internal pure returns (DominoV2Types.SwapLeg memory) {
+        DominoV2Types.PoolRef[] memory path = new DominoV2Types.PoolRef[](1);
+        path[0] = ref;
+        return DominoV2Types.SwapLeg(
+            DominoV2Types.LEG_V4_POOL, address(0), tokenIn, tokenOut, amountIn, minOut, abi.encode(path)
+        );
+    }
+
+    /// Leaves the zap owing a fee in W, a token outside every charge-currency
+    /// rank: bob's create swaps W to tkn on a W/tkn pool, a route with no
+    /// charge currency, so the 65 bps fall on W (the first leg's input), and
+    /// W refuses the fee recipient. Returns W, its deep pool with usd, the debt.
+    function _owedInW() internal returns (TestToken w, DominoV2Types.PoolRef memory wUsd, uint256 owed) {
+        w = new TestToken();
+        V4LiquidityHelper liquidity = new V4LiquidityHelper(manager);
+        w.mint(address(liquidity), 1e30);
+        usd.mint(address(liquidity), 1e30);
+        tkn.mint(address(liquidity), 1e30);
+        w.mint(bob, 1e30);
+        (address c0, address c1) = _sorted(address(w), address(tkn));
+        DominoV2Types.PoolRef memory wTkn = DominoV2Types.PoolRef(DominoV2Types.DEX_V4, c0, c1, 500, 10, address(0));
+        (c0, c1) = _sorted(address(w), address(usd));
+        wUsd = DominoV2Types.PoolRef(DominoV2Types.DEX_V4, c0, c1, 500, 10, address(0));
+        _openPool(liquidity, wTkn, 1e25);
+        _openPool(liquidity, wUsd, 1e25);
+        w.setBlocked(feeRecipient, true);
+        vm.prank(bob);
+        w.approve(address(zap), type(uint256).max);
+        DominoV2Types.TokenAmount[] memory inputs = new DominoV2Types.TokenAmount[](2);
+        (inputs[0], inputs[1]) =
+            (DominoV2Types.TokenAmount(address(usd), 50e18), DominoV2Types.TokenAmount(address(w), 50e18));
+        DominoV2Types.SwapLeg[] memory legs = _oneLeg(_pathLeg(wTkn, address(w), address(tkn), 49e18, 48e18));
+        IDominoPositionActions.CreatePlan memory plan =
+            _createPlan(pool, inputs, legs, address(w), _liquidityFor(pool, LOWER, UPPER, 45e18, 45e18), bob, 0);
+        vm.prank(bob);
+        IDominoPositionActions.ActionResult memory r = zap.create(plan);
+        owed = zap.owedFees(address(w));
+        _check(r.feeToken == address(w) && owed == r.feeAmount && owed == 49e18 * 65 / 10_000, "fallback fee owed in W");
+        _eq(w.balanceOf(address(zap)), owed, "the zap holds exactly the owed W");
+    }
+
+    /// A stranger's create in the usd/tkn pool whose one leg would spend what
+    /// the zap owes in W: W is neither a pool currency, an input nor an
+    /// earlier leg's output, and the 65 bps fall on usd (the better-ranked
+    /// output), so neither the refund nor the fee's backing check sees it.
+    function _strangerSpendsOwedW(TestToken w, DominoV2Types.PoolRef memory wUsd, uint256 owed)
+        internal
+        returns (address stranger, IDominoPositionActions.CreatePlan memory plan)
+    {
+        stranger = address(0xBAD);
+        usd.mint(stranger, 1e18);
+        tkn.mint(stranger, 1e18);
+        _allowZap(stranger);
+        DominoV2Types.TokenAmount[] memory inputs = new DominoV2Types.TokenAmount[](2);
+        (inputs[0], inputs[1]) =
+            (DominoV2Types.TokenAmount(address(usd), 1e18), DominoV2Types.TokenAmount(address(tkn), 1e18));
+        DominoV2Types.SwapLeg[] memory legs = _oneLeg(_pathLeg(wUsd, address(w), address(usd), uint128(owed), 1));
+        plan = _createPlan(pool, inputs, legs, address(usd), 1, stranger, 0);
+    }
+
+    function testALegCannotSpendWhatTheZapOwes() public {
+        (TestToken w, DominoV2Types.PoolRef memory wUsd, uint256 owed) = _owedInW();
+        (address stranger, IDominoPositionActions.CreatePlan memory plan) = _strangerSpendsOwedW(w, wUsd, owed);
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(bytes4(keccak256("FeeNotBacked(address)")), address(w)));
+        zap.create(plan);
+        _eq(w.balanceOf(address(zap)), owed, "the owed W stays");
+        w.setBlocked(feeRecipient, false);
+        zap.flushOwedFees(address(w));
+        _eq(w.balanceOf(feeRecipient), owed, "and reaches the recipient");
+    }
+
     // ================================================================= gas
 
     function testGasPerFlow() public {

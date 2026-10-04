@@ -33,6 +33,7 @@
     "InvalidPool()": "0x2083cd40",
     "InvalidPosition()": "0xce7e065e",
     "InvalidRange(int24,int24,int24)": "0x00911c16",
+    "InvalidRecipient()": "0x9c8d2cd2",
     "InvalidRecipient(address)": "0x17858bbe",
     "InvalidRoute()": "0x84e505d2",
     "PartialBurn(uint256,uint128,uint128)": "0xa97bba2b",
@@ -557,6 +558,11 @@
         }
       ],
       "name": "InvalidRange",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidRecipient",
       "type": "error"
     },
     {

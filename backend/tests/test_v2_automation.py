@@ -112,6 +112,11 @@ class ConfigTests(unittest.TestCase):
             'a mode that is no mode': lambda c: c['vaultDefaults'].update(mode=3),
             'a trigger above the contract bound': lambda c: c['vaultDefaults']['policy'].update(triggerDistanceBps=2001),
             'no interval at all': lambda c: c['vaultDefaults']['policy'].update(minimumIntervalSeconds=0),
+            'an interval below the vault floor': lambda c: c['vaultDefaults']['policy'].update(minimumIntervalSeconds=599),
+            'a slippage maximum above the vault ceiling': lambda c: c['vaultDefaults']['ownerMaxima'].update(maxSlippageBps=1001),
+            'a band maximum above the vault ceiling': lambda c: c['vaultDefaults']['ownerMaxima'].update(maxPriceImpactBps=501),
+            'an observation age above the vault ceiling':
+                lambda c: c['vaultDefaults']['limits'].update(maxObservationAgeSeconds=301),
             'a default above its maximum': lambda c: c['vaultDefaults']['limits'].update(maxSlippageBps=600),
             'a maximum of 100%': lambda c: c['vaultDefaults']['ownerMaxima'].update(maxPriceImpactBps=10_000),
             'no observation age': lambda c: c['vaultDefaults']['limits'].update(maxObservationAgeSeconds=0),

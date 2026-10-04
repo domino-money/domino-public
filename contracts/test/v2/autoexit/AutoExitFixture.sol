@@ -8,7 +8,7 @@ import {IDominoAutoExit} from "../../../src/v2/interfaces/IDominoAutoExit.sol";
 import {IDominoRegistry} from "../../../src/v2/interfaces/IDominoRegistry.sol";
 import {DominoSwapExecutor} from "../../../src/v2/route/DominoSwapExecutor.sol";
 import {RobinhoodPermit2} from "../route/fixtures/RobinhoodPermit2.sol";
-import {ScriptedRouter} from "../route/RouteAdversaries.sol";
+import {ScriptedRouter, scriptedCall} from "../route/RouteAdversaries.sol";
 import {IV4PoolManagerTest, V4LiquidityHelper} from "../route/V2RouteTestKit.sol";
 import {V2VendoredFixtures} from "../route/V2VendoredFixtures.sol";
 import {MockPriceAnchor, MockRegistry, MockToken, MockVault} from "./AutoExitMocks.sol";
@@ -293,7 +293,7 @@ abstract contract AutoExitFixture {
             tokenOut: tokenOut,
             amountIn: uint128(amountIn),
             minAmountOut: 1,
-            data: abi.encodeCall(ScriptedRouter.run, (script))
+            data: scriptedCall(script)
         });
     }
 

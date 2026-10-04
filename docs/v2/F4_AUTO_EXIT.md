@@ -307,4 +307,4 @@ Guards that moved into F1b's modules are pinned by F1b's batch (`v2-fees-route-2
 7. **Windows:** `maxObservationAgeSeconds` 300; `minTwapSeconds` 600, for v3 TWAPs only.
 8. **Direct v3/v4 legs** through F1b's executor: enabled (the size allows it).
 
-Still open: the 10% ceiling on the pool fee counted in the floor (`MAX_POOL_FEE_PIPS`) is this front's own bound on dynamic fees; it touches only pools above 10%.
+Decided 3 Oct 2026: the 10% ceiling on the pool fee counted in the floor (`MAX_POOL_FEE_PIPS`), this front's own bound on dynamic fees, is kept; it touches only pools above 10%.

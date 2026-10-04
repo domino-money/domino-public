@@ -489,7 +489,7 @@ abstract contract IntegrationWorld is ZapTestBase {
         IPositionNft(manager).approve(predicted, id);
         IDominoVault.Init memory init = IDominoVault.Init(
             DominoV2Types.PositionRef(_dex(), manager, id),
-            IDominoVault.Policy(mode, 500, 2000, 60, mode == DominoV2Types.MODE_SIMPLE ? 1 : 3),
+            IDominoVault.Policy(mode, 500, 2000, 600, mode == DominoV2Types.MODE_SIMPLE ? 1 : 3),
             IDominoVault.Limits(100, 200, ANCHOR_MAX_AGE, 5000),
             false,
             true

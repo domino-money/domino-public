@@ -836,11 +836,72 @@ export function committedProfile(sourceRoot, commit, chainId) {
   return matches[0];
 }
 
-/** A public package is built by this checkout's committed tool, from its committed sources and profile. */
+/** A public package is built by this checkout's committed tool, from its committed sources and profile,
+ * and only from the reviewed release (docs/v2/FREEZE.md). */
 export function checkProvenance({ artifacts, profile }) {
   ensure(resolve(artifacts.sourceRoot) === resolve(repoRoot), 'public_preparation_requires_the_tool_checkout');
   ensure(!artifacts.sourceState.workingTreeSourceChanges && !artifacts.sourceState.workingTreeToolChanges, 'uncommitted_changes_refused_for_public_preparation');
   ensure(canonical(committedProfile(repoRoot, artifacts.sourceCommit, profile.chainId)) === canonical(profile), 'chain_profile_not_the_committed_one');
+  checkReleaseManifest(artifacts);
+}
+
+// ---------------------------------------------------------------- release
+
+/** The reviewed manifest of the V2 release (docs/v2/FREEZE.md). */
+export const RELEASE_MANIFEST_PATH = 'contracts/release-artifacts-v2.json';
+/** What decides the bytecode or what this tool prepares, besides the V2 sources: the compile wrapper and the
+ * deployment tool. The compiler is pinned by its version (compileV2) and the bytecode by its hashes. */
+export const RELEASE_INPUTS = Object.freeze(['scripts/solc-compile.cjs', 'scripts/prepare-financial-release.mjs',
+  'scripts/v2/deploy.mjs', 'scripts/v2/deploy-schema.mjs', 'scripts/v2/deploy-manifest.schema.json', 'scripts/v2/release-manifest.mjs']);
+
+/** One compiled contract as the manifest pins it: its creation and runtime bytecode as compiled (immutable
+ * slots zero), where its immutables sit, and its ABI. AST ids differ between compilation units; the offsets
+ * do not. Takes a solc output or a Foundry artifact. Top-level ABI order is the only thing normalized. */
+export function artifactIdentity(artifact) {
+  const bytecode = artifact.evm?.bytecode ?? artifact.bytecode, deployed = artifact.evm?.deployedBytecode ?? artifact.deployedBytecode;
+  const bytes = value => {
+    ensure(typeof value === 'string' && /^(?:0x)?(?:[0-9a-f]{2})+$/.test(value), 'invalid_release_bytecode');
+    return Buffer.from(value.replace(/^0x/, ''), 'hex');
+  };
+  const creation = bytes(bytecode?.object), runtime = bytes(deployed?.object);
+  ensure(Array.isArray(artifact.abi), 'invalid_release_abi');
+  ensure(!Object.keys(bytecode.linkReferences ?? {}).length && !Object.keys(deployed.linkReferences ?? {}).length, 'unlinked_release_artifact');
+  const immutableRanges = Object.values(deployed.immutableReferences ?? {}).flat()
+    .map(({ start, length }) => ({ start, length })).sort((a, b) => a.start - b.start);
+  let end = 0;
+  for (const { start, length } of immutableRanges) {
+    ensure(Number.isSafeInteger(start) && start >= end && length === 32 && start + length <= runtime.length, 'invalid_release_immutable_range');
+    end = start + length;
+  }
+  return { creationSha256: sha256Hex(creation), runtimeSha256: sha256Hex(runtime), creationBytes: creation.length,
+    runtimeBytes: runtime.length, abiSha256: sha256Hex(canonical(artifact.abi.map(canonical).sort().map(entry => JSON.parse(entry)))),
+    immutableRanges };
+}
+
+/** The release manifest of a compile: the compiler, every V2 source, the release inputs and each deployable
+ * contract. Its sourceTreeSha256 is the one a deployment manifest's build records. */
+export function releaseManifest(artifacts) {
+  const byPath = ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0);
+  return {
+    schemaVersion: 1, kind: 'domino-v2-reviewed-release-artifacts', compiler: { ...COMPILER }, components: { ...CONTRACT_NAMES },
+    sourceTreeSha256: sha256Hex(canonical(artifacts.sourceHashes)),
+    sources: Object.fromEntries(Object.entries(artifacts.sourceHashes).sort(byPath)),
+    releaseInputs: Object.fromEntries(RELEASE_INPUTS.map(name => [name, sha256Hex(readFileSync(join(artifacts.sourceRoot, name)))])),
+    contracts: Object.fromEntries([...new Set(Object.values(CONTRACT_NAMES))].sort().map(name =>
+      [name, { source: artifacts.contracts[name].source, ...artifactIdentity(artifacts.contracts[name]) }])),
+  };
+}
+
+/** The committed manifest at the compiled commit, unchanged in the checkout and equal to this compile.
+ * Returns its SHA-256. */
+export function checkReleaseManifest(artifacts) {
+  let committed;
+  try { committed = gitOutput(artifacts.sourceRoot, ['show', artifacts.sourceCommit + ':' + RELEASE_MANIFEST_PATH]); }
+  catch { throw new Error('release_manifest_not_committed'); }
+  const path = join(artifacts.sourceRoot, RELEASE_MANIFEST_PATH);
+  ensure(existsSync(path) && readFileSync(path, 'utf8') === committed, 'release_manifest_changed');
+  ensure(canonical(JSON.parse(committed)) === canonical(releaseManifest(artifacts)), 'release_manifest_mismatch');
+  return sha256Hex(committed);
 }
 
 // --------------------------------------------------------------------- CLI

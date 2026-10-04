@@ -1,5 +1,7 @@
 # Vault v2: space prerequisite for public execution
 
+> **Historical (V1 era).** This is the V1 vault's "implementationVersion 2" candidate of September 2026 (#88–#91, closed 13 Sep). It is not the Domino V2 contracts in `contracts/src/v2`; for those, see `docs/v2/`.
+
 Status: **implementation candidate for independent review**, part of [#88](https://github.com/domino-money/domino/issues/88). It changes the E2 custody implementation and build, not the public execution status. Compound, Domino minting and automated swaps remain unimplemented. This is a new immutable deployment version, not an upgrade mechanism for existing clones.
 
 ## Decision

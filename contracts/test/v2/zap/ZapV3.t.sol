@@ -14,7 +14,7 @@ import {DominoZapV3} from "../../../src/v2/zap/DominoZapV3.sol";
 import {UniswapBase8453} from "../positions/fixtures/UniswapBase8453.sol";
 import {V3SwapDriver} from "../positions/PositionTestKit.sol";
 import {RobinhoodPermit2} from "../route/fixtures/RobinhoodPermit2.sol";
-import {ScriptedRouter} from "../route/RouteAdversaries.sol";
+import {ScriptedRouter, scriptedCall} from "../route/RouteAdversaries.sol";
 import {MockDominoRegistry, RejectingRecipient, TestToken} from "../route/V2RouteTestKit.sol";
 import {ZapBaseFixtures} from "./ZapBaseFixtures.sol";
 import {IPositionNft, IZap} from "./ZapTestKit.sol";
@@ -332,7 +332,7 @@ contract ZapV3Test is ZapBaseFixtures {
                 address(usd),
                 1e18,
                 1e18,
-                abi.encodeCall(ScriptedRouter.run, (script))
+                scriptedCall(script)
             )
         );
         IDominoPositionActions.CreatePlan memory plan = _createPlan(wethPool, _inputs(ETH, 3e18), legs, ETH, 1, owner, 0);

@@ -21,9 +21,10 @@ import {DominoZapV4Steps} from "./DominoZapV4Steps.sol";
 contract DominoZapV4 is DominoZapBase {
     error InvalidZapConfig();
 
-    /// Positions in pools with a hooks contract (#283: not decided yet). The
-    /// default refuses them; flipping this constant accepts them. Swap legs may
-    /// cross hooked pools either way (F1b judges them by what arrives).
+    /// Positions in pools with a hooks contract are refused (owner decisions of
+    /// 2 and 3 Oct 2026); a registry list of approved hooks may come with a new
+    /// implementation. Swap legs may cross hooked pools either way (F1b judges
+    /// them by what arrives).
     bool internal constant HOOKED_POOLS_ALLOWED = false;
 
     /// keccak256("domino.v2.zap.v4.unlock") - 1: keccak256 of the pending step's unlock data.

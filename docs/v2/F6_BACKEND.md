@@ -12,7 +12,7 @@ Every V2 service needs three things before it can do its own work:
 
 This slice builds exactly those three, and nothing that depends on decisions not yet made:
 
-- The planner needs F3's plan encoding, which is not frozen yet.
+- The planner needed F3's plan encoding; plan v1 is now frozen (F3_VAULT.md).
 - The gas budget needs the owner's per-chain caps.
 - The indexer needs deployed V2 contracts.
 

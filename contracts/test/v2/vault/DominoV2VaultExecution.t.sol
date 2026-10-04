@@ -357,11 +357,11 @@ abstract contract ExecutionSuite is VaultHarness {
         _accrue(rootId, 1000, 1000);
         _execute(_plan());
         _accrue(rootId, 1000, 1000);
-        vm.warp(10_059);
+        vm.warp(10_599);
         Plan.PlanV1 memory p = _plan();
         vm.expectRevert(DominoV2VaultStorage.TooSoon.selector);
         _execute(p);
-        vm.warp(10_060);
+        vm.warp(10_600);
         _execute(p);
     }
 

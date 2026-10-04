@@ -384,7 +384,15 @@ jobs:
       - name: Verify V2 unsigned CREATE3 deployment tooling offline
         env:
           DOMINO_V2_COMPILE_CACHE: ${{ runner.temp }}/v2-deploy-compile
-        run: node --test scripts/v2/deploy.test.mjs scripts/v2/deploy-preflight.test.mjs scripts/v2/deploy-schema.test.mjs scripts/v2/deploy-fork.test.mjs
+        run: node --test scripts/v2/deploy.test.mjs scripts/v2/deploy-preflight.test.mjs scripts/v2/deploy-schema.test.mjs scripts/v2/deploy-fork.test.mjs scripts/v2/release-manifest.test.mjs
+      # The V2 freeze (docs/v2/FREEZE.md): the reviewed release manifest must be
+      # what this compile produces, and the Foundry artifacts the backend EVM
+      # tests deploy (built above) the same contracts. The compile is the
+      # cached one of the step above, reused only for an identical input.
+      - name: Reproduce the V2 release artifact manifest
+        env:
+          DOMINO_V2_COMPILE_CACHE: ${{ runner.temp }}/v2-deploy-compile
+        run: node scripts/v2/release-manifest.mjs --check --forge-out contracts/out
       - name: Record the sources of the cached Forge artifacts
         run: node scripts/forge-cache.mjs record
       - name: Stop isolated database
@@ -479,6 +487,12 @@ jobs:
       - name: Check the V2 interface exports
         if: matrix.part == 'v2'
         run: node scripts/v2/export-abi.mjs --check
+      # The deployed Uniswap runtimes the V2 position suites etch, and the
+      # vendored math in contracts/src/v2/positions/uniswap against its
+      # reference copies (docs/v2/F1_POSITIONS.md). Offline, under a second.
+      - name: Check the V2 position fixtures and vendored math
+        if: matrix.part == 'v2'
+        run: node scripts/v2/position-fixtures.mjs check
       # Deterministic gas per test against the committed baseline; a regression
       # fails here instead of surfacing in a report months later. Each half
       # checks the entries of the test contracts its own suites declare.

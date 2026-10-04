@@ -75,6 +75,22 @@ abstract contract DominoSwapExecutor is DominoActionLock {
     uint256 internal constant MAX_LEGS = 8;
     uint256 internal constant MAX_HOPS = 4;
 
+    /// Universal Router commands a leg may carry (Commands.sol of Universal
+    /// Router 2.x), one bit per command: the v3, v2 and v4 swaps, a Permit2
+    /// pull from this contract (bounded by the allowance below), payments out
+    /// of the router's own balance (SWEEP, TRANSFER, PAY_PORTION), WETH
+    /// wrapping and the ERC-20 balance check. Every other command is refused:
+    /// above all the position managers' calls (V3_POSITION_MANAGER_PERMIT and
+    /// _CALL, V4_POSITION_MANAGER_CALL), which the router authorises by its
+    /// caller, this contract, so a leg could reach any position this contract
+    /// is approved for; also a nested EXECUTE_SUB_PLAN, permits, and whatever
+    /// a later router adds. Bit 0x80 of a command only lets it revert.
+    uint256 private constant ROUTER_COMMANDS = 1 << 0x00 | 1 << 0x01 | 1 << 0x02 | 1 << 0x04 | 1 << 0x05 | 1 << 0x06
+        | 1 << 0x08 | 1 << 0x09 | 1 << 0x0b | 1 << 0x0c | 1 << 0x0e | 1 << 0x10;
+    uint256 private constant ALLOW_REVERT = 0x80;
+    bytes4 private constant ROUTER_EXECUTE = 0x3593564c; // execute(bytes,bytes[],uint256)
+    bytes4 private constant ROUTER_EXECUTE_NOW = 0x24856bc3; // execute(bytes,bytes[])
+
     uint160 private constant MIN_SQRT_PRICE_LIMIT = 4295128739 + 1;
     uint160 private constant MAX_SQRT_PRICE_LIMIT = 1461446703485210103287273052203988822378723970342 - 1;
 
@@ -254,6 +270,7 @@ abstract contract DominoSwapExecutor is DominoActionLock {
     function _callRouter(DominoV2Types.SwapLeg memory leg) private returns (address router) {
         router = leg.router;
         if (ROUTE_REGISTRY.routerVersion(router) == 0) revert IDominoPositionActions.InvalidPlan();
+        _checkRouterCommands(leg.data);
         address token = leg.tokenIn;
         bool native = token == address(0);
         if (!native) {
@@ -271,6 +288,38 @@ abstract contract DominoSwapExecutor is DominoActionLock {
             if (left != 0 || DominoTokenOps.allowance(token, address(this), PERMIT2) != 0) {
                 revert IDominoPositionActions.SwapEffectMismatch();
             }
+        }
+    }
+
+    /// `data` must be execute(bytes commands, bytes[] inputs[, uint256 deadline])
+    /// whose every command is in ROUTER_COMMANDS. The commands are read where
+    /// the router's ABI decoder reads them, through the first argument's offset.
+    function _checkRouterCommands(bytes memory data) private pure {
+        uint256 size = data.length;
+        uint256 head;
+        uint256 offset;
+        assembly ("memory-safe") {
+            head := mload(add(data, 0x20))
+            offset := mload(add(data, 0x24))
+        }
+        bytes4 selector = bytes4(bytes32(head));
+        // The selector, the first argument's offset, then `commands` itself:
+        // its length word at 4 + offset and its bytes right after, all inside.
+        if (size < 0x24 || (selector != ROUTER_EXECUTE && selector != ROUTER_EXECUTE_NOW) || offset > size - 0x24) {
+            revert IDominoPositionActions.InvalidPlan();
+        }
+        uint256 count;
+        assembly ("memory-safe") {
+            count := mload(add(add(data, 0x24), offset))
+        }
+        if (count > size - 0x24 - offset) revert IDominoPositionActions.InvalidPlan();
+        for (uint256 i; i < count; ++i) {
+            uint256 command;
+            assembly ("memory-safe") {
+                command := byte(0, mload(add(add(add(data, 0x44), offset), i)))
+            }
+            command &= ~ALLOW_REVERT;
+            if ((ROUTER_COMMANDS >> command) & 1 == 0) revert IDominoPositionActions.InvalidPlan();
         }
     }
 

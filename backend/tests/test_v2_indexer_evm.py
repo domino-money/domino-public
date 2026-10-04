@@ -255,7 +255,7 @@ class Journey:
         vault = vault.lower()
         anvil.send(self.owner, self.v4.positionManager, calldata('approve(address,uint256)', ['address', 'uint256'],
                                                                  [vault, token_id]))
-        init = ((4, self.v4.positionManager, token_id), (1, 500, 2000, 60, 1), (100, 100, 300, 1000), False, True)
+        init = ((4, self.v4.positionManager, token_id), (1, 500, 2000, 600, 1), (100, 100, 300, 1000), False, True)
         receipt = anvil.send(self.owner, factory, calldata('createVault(' + INIT_TYPE + ',uint256)',
                                                            [INIT_TYPE, 'uint256'], [init, nonce]))
         return receipt, vault

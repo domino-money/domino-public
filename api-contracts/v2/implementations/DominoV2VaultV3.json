@@ -39,6 +39,7 @@
     "InvalidPolicy()": "0xd06b96b1",
     "InvalidPool()": "0x2083cd40",
     "InvalidPosition()": "0xce7e065e",
+    "InvalidRecipient()": "0x9c8d2cd2",
     "InvalidRecipient(address)": "0x17858bbe",
     "InvalidRoute()": "0x84e505d2",
     "PartialBurn(uint256,uint128,uint128)": "0xa97bba2b",
@@ -731,6 +732,11 @@
     {
       "inputs": [],
       "name": "InvalidPosition",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidRecipient",
       "type": "error"
     },
     {

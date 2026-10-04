@@ -12,6 +12,19 @@ interface IPermit2Pull {
 /// what the Universal Router does for an exact-input swap paid through
 /// Permit2: pull exactly the input from the caller, pay the output to the
 /// caller. Every other field is one way to misbehave.
+/// A scripted leg's calldata in the Universal Router's execute shape: one
+/// swap command (0x00) whose input is the script.
+function scriptedCall(ScriptedRouter.Script memory script) pure returns (bytes memory) {
+    bytes[] memory inputs = new bytes[](1);
+    inputs[0] = abi.encode(script);
+    return abi.encodeWithSignature("execute(bytes,bytes[],uint256)", hex"00", inputs, type(uint256).max);
+}
+
+/// A leg whose router fails with its own reason ("router says no").
+function failingCall() pure returns (bytes memory) {
+    return abi.encodeWithSignature("execute(bytes,bytes[],uint256)", hex"00", new bytes[](0), type(uint256).max);
+}
+
 contract ScriptedRouter {
     struct Script {
         address tokenIn;
@@ -34,7 +47,27 @@ contract ScriptedRouter {
 
     receive() external payable {}
 
+    /// The Universal Router's execute shape, which the executor requires:
+    /// inputs[0] is the script, and no input makes the router fail with its
+    /// own reason. The command bytes are the caller's to choose.
+    function execute(bytes calldata, bytes[] calldata inputs, uint256) external payable {
+        _execute(inputs);
+    }
+
+    function execute(bytes calldata, bytes[] calldata inputs) external payable {
+        _execute(inputs);
+    }
+
     function run(Script calldata script) external payable {
+        _run(script);
+    }
+
+    function _execute(bytes[] calldata inputs) private {
+        if (inputs.length == 0) revert("router says no");
+        _run(abi.decode(inputs[0], (Script)));
+    }
+
+    function _run(Script memory script) private {
         if (script.pull != 0) {
             IPermit2Pull(permit2).transferFrom(msg.sender, address(this), uint160(script.pull), script.tokenIn);
         }
