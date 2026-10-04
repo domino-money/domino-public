@@ -113,7 +113,7 @@ class ContractTests(unittest.TestCase):
         v1 = load_policy(Path(__file__).resolve().parent / 'fixtures/featured_policy_v1.json')
         for policy, rank_by, off in ((v1, 'min_fresh_and_previous_day_feeAprEstimate24hPercent', set()),
                                      (load_policy(), 'feeAprEstimate24hPercent',
-                                      {'minReferenceDepthUsd', 'maxAprPercent', 'maxTurnover24h', 'minPoolAgeHours'})):
+                                      {'maxAprPercent', 'maxTurnover24h', 'minPoolAgeHours'})):
             row = exporter.stored()['current']
             row['payload']['rules'] = rules_of(policy)
             rules = build_response(row, now=exporter.SERVED_AT)['rules']

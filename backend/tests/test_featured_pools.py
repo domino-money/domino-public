@@ -213,16 +213,20 @@ class RuleTests(unittest.TestCase):
 
 class PolicyV2Tests(unittest.TestCase):
     """The owner's choice of 28/09: the highest APR today, above US$ 1M of 24 h volume and
-    US$ 100k of liquidity; every safety rule stays, no other market rule applies."""
-    def judged(self,candidate,*,previous=None,relaxed=False):
-        return evaluate(candidate,V2,now=NOW,previous={} if previous is None else previous,relaxed=relaxed)
+    US$ 100k of liquidity; every safety rule stays. On 04/10 the owner added one market rule
+    back: US$ 10k of reference depth, after a dry run would have listed two pools with 0% APR
+    and US$ 30 and US$ 265 of depth (one with US$ 68M of 24 h volume)."""
+    def judged(self,candidate,*,previous=None,relaxed=False,policy=None):
+        return evaluate(candidate,V2 if policy is None else policy,now=NOW,
+                        previous={} if previous is None else previous,relaxed=relaxed)
 
     def test_the_shipped_policy_is_the_owner_s(self):
         thresholds=V2['thresholds']
         self.assertEqual((V2['rankBy'],V2['persistence'],V2['fill']),('fresh',False,['fallback']))
-        self.assertEqual((thresholds['minVolume24hUsd'],thresholds['minTvlUsd']),('1000000','100000'))
+        self.assertEqual((thresholds['minVolume24hUsd'],thresholds['minTvlUsd'],thresholds['minReferenceDepthUsd']),
+                         ('1000000','100000','10000'))
         self.assertEqual({name for name,value in thresholds.items() if value is None},
-                         set(OPTIONAL_DECIMALS+OPTIONAL_INTEGERS))
+                         set(OPTIONAL_DECIMALS+OPTIONAL_INTEGERS)-{'minReferenceDepthUsd'})
         self.assertEqual(V2['hysteresis'],{'incumbentFloorFactor':'1','challengerMargin':'1',
                                            'maxRankedSwapsPerDay':V2['size']})
         self.assertTrue(V2['rejectUpgradeableTokens'])
@@ -231,8 +235,20 @@ class PolicyV2Tests(unittest.TestCase):
                          {key:value for key,value in POLICY.items() if key not in ('rankBy','persistence','fill',
                                                                                    'thresholds','hysteresis')})
 
+    def test_the_shipped_policy_holds_the_reference_depth_floor(self):
+        # 04/10: under US$ 10k, or unmeasurable, is refused; exactly US$ 10k is not.
+        for reason,changes in (('reference_depth_below_floor',[(('depth','usd'),'9999.99')]),
+                               ('reference_depth_unmeasurable',[(('depth',),{'status':'unmeasurable',
+                                                                              'reason':'too_many_ticks'})])):
+            with self.subTest(reason=reason):
+                result=self.judged(changed(changes))
+                self.assertEqual(result['reasons'],[reason])
+                self.assertFalse(result['eligible'])
+        self.assertTrue(self.judged(changed([(('depth','usd'),'10000')]))['eligible'])
+
     def test_a_null_threshold_turns_its_rule_off(self):
-        # Each change fails exactly its rule under v1 and none under v2.
+        # Each change fails exactly its rule under v1 and none under v2 with every
+        # optional threshold null (the shipped v2 keeps the depth floor, above).
         cases=[
             ('reference_depth_below_floor',[(('depth','usd'),'9999.99')]),
             ('reference_depth_unmeasurable',[(('depth',),{'status':'unmeasurable','reason':'too_many_ticks'})]),
@@ -249,10 +265,11 @@ class PolicyV2Tests(unittest.TestCase):
             ('price_move_outlier',[(('listing','priceChange24hPercent'),'-300.01')]),
             ('provider_price_disagreement',[(('providerPriceDeviation',),'0.0501')]),
         ]
+        all_off={**V2,'thresholds':{**V2['thresholds'],'minReferenceDepthUsd':None}}
         for reason,changes in cases:
             with self.subTest(reason=reason,changes=changes):
                 self.assertEqual(judged(changed(changes))['reasons'],[reason])
-                result=self.judged(changed(changes))
+                result=self.judged(changed(changes),policy=all_off)
                 self.assertEqual(result['reasons'],[])
                 self.assertTrue(result['eligible'])
         # Every one of them at once.
@@ -262,7 +279,7 @@ class PolicyV2Tests(unittest.TestCase):
                             (('listing','transactions24h'),None),(('listing','priceChange24hPercent'),'-900'),
                             (('providerPriceDeviation',),'0.5')])
         self.assertEqual(len(judged(everything)['reasons']),8)
-        self.assertEqual(self.judged(everything)['reasons'],[])
+        self.assertEqual(self.judged(everything,policy=all_off)['reasons'],[])
         # Without a previous evaluation, v1 waits a day; v2 does not.
         self.assertEqual(judged(good(),previous={})['reasons'],['not_persistent'])
         self.assertTrue(self.judged(good(),previous={})['eligible'])
