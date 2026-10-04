@@ -235,8 +235,14 @@ Two units serve the node to this host. The node itself is not changed.
 
 - The socket has `ListenStream=<clawber tailnet IPv4>:18549`, `FreeBind=yes`,
   `NoDelay=yes`, `IPAddressDeny=any` and `IPAddressAllow=<this host's tailnet IPv4>/32`.
-- The service runs `/usr/lib/systemd/systemd-socket-proxyd --connections-max=256 127.0.0.1:8547`
-  under `DynamicUser`, with `IPAddressAllow=127.0.0.1/32` only.
+- The service runs `/usr/bin/socat ACCEPT-FD:3,fork,max-children=256 TCP4:127.0.0.1:8547,nodelay`
+  (socat 1.8 or later) under `DynamicUser`, with `IPAddressAllow=127.0.0.1/32` only.
+- Both legs turn Nagle's algorithm off: the socket's `NoDelay=yes` toward this
+  host, socat's `nodelay` toward the node. `systemd-socket-proxyd`, which ran
+  here first, sets nothing on its connection to the node. A request that
+  arrived in two segments waited there about 40 ms for the node's delayed ACK.
+  Any request over the tailnet's 1,228-byte MSS arrives in two segments
+  (reports/NODE_PROXY_STALL_2026-10-03.md).
 - The allow-list must sit on the socket. Tailscale's own rules accept tailnet
   traffic ahead of the firewall.
 
