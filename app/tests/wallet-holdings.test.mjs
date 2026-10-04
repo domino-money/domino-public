@@ -21,9 +21,12 @@ const MANY = '0xa26992c4268a8a78a4d872fe4bdad2ed03ac287d';
 const PONS = '0x39dbed3a2bd333467115de45665cc57f813c4571';
 const FAKE_PONS = '0x7859f341c798189a1da859947a6eec82d414cdaa';
 const FAKE_USDG = '0x3c261bf9087b11bd30861881492ed02e9ad1c7de';
-const MARLIN = '0xab35d04e1ee39c789c4a65d522417b3c7f2e4723';
-const CBBTC = '0xcec185eb182c47d1ba1efc84e6959e18cd620be4';
-const U = '0xce24439f2d9c6a2289f741120fe202248b666666';
+// Changed on purpose 2026-10-04 (the owner's new embedded list): MARLIN, cbBTC and U left the selected pools with their
+// pools; beside PONS and USDG the embedded list's tokens are now ORBIO, CASHCAT, UBIK and VIRTUAL.
+const ORBIO = '0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3';
+const CASHCAT = '0x020bfc650a365f8bb26819deaabf3e21291018b4';
+const UBIK = '0x812486eaea648819853f8e372dc9f1516c7868bd';
+const VIRTUAL = '0xc6911796042b15d7fa4f6cde69e245ddcd3d9c31';
 const addr = (n) => `0x${n.toString(16).padStart(40, '0')}`;
 const ONE = 10n ** 18n;
 
@@ -368,8 +371,10 @@ test('look-alikes of the main tokens are recognised however they are spelt; the 
   assert.equal(symbolReading(`${String.fromCharCode(0xdc)}SDG`), 'USDG');
   assert.equal(symbolReading(`USD${String.fromCharCode(0x122)}`), 'USDG');
   assert.equal(isLookAlike(row(addr(14), `USD${String.fromCharCode(0x122)}`, '1')), true, 'USD G-cedilla on another contract');
-  for (const [address, symbol] of [[FAKE_PONS, 'P0NS'], [FAKE_USDG, 'USDG'], [addr(9), `PO${zwsp}NS`], [addr(10), 'WETH'], [addr(11), 'eth'], [addr(12), 'U']]) assert.equal(isLookAlike(row(address, symbol, '1')), true, symbol);
-  for (const [address, symbol] of [[PONS, 'PONS'], [USDG, 'USDG'], [WETH, 'WETH'], [NATIVE, 'ETH'], [WETH, 'ETH'], [UFG, 'UFG'], [addr(13), null]]) assert.equal(isLookAlike(row(address, symbol, '1')), false, String(symbol));
+  // Changed on purpose 2026-10-04 (the owner's new embedded list): U left the selected pools; UBIK, one of the new list's
+  // tokens, stands where it stood, on another contract and at its own address.
+  for (const [address, symbol] of [[FAKE_PONS, 'P0NS'], [FAKE_USDG, 'USDG'], [addr(9), `PO${zwsp}NS`], [addr(10), 'WETH'], [addr(11), 'eth'], [addr(12), 'UBIK']]) assert.equal(isLookAlike(row(address, symbol, '1')), true, symbol);
+  for (const [address, symbol] of [[PONS, 'PONS'], [UBIK, 'UBIK'], [USDG, 'USDG'], [WETH, 'WETH'], [NATIVE, 'ETH'], [WETH, 'ETH'], [UFG, 'UFG'], [addr(13), null]]) assert.equal(isLookAlike(row(address, symbol, '1')), false, String(symbol));
 });
 
 // Changed on purpose (round 6): at most one GET's worth (30) was named, and the rest went unanswered for good.
@@ -379,12 +384,14 @@ test('what is priced: only what the wallet holds, WETH and the held selected-poo
   // Changed on purpose (review of 2026-09-25): selected-pool tokens the wallet does not hold are no longer asked for, and neither is a look-alike.
   const asked = addressesToPrice([row(NATIVE, 'ETH', '1'), row(USDG, 'USDG', '5', 6), row(UFG, 'UFG', '10'), row(MANY, 'MANY', '0', 18, 'zero'), row(PONS, 'PONS', '3'), row(FAKE_PONS, 'P0NS', '5'), row(FAKE_USDG, 'USDG', '50')]);
   assert.deepEqual(asked, [WETH, PONS, UFG], 'WETH for native ETH, then the held selected-pool token, then the rest in list order');
-  for (const absent of [USDG, NATIVE, MANY, MARLIN, CBBTC, U, FAKE_PONS, FAKE_USDG]) assert.ok(!asked.includes(absent), absent);
+  // Changed on purpose 2026-10-04 (the owner's new embedded list): the selected-pool tokens not held are the new list's.
+  for (const absent of [USDG, NATIVE, MANY, ORBIO, CASHCAT, UBIK, VIRTUAL, FAKE_PONS, FAKE_USDG]) assert.ok(!asked.includes(absent), absent);
   assert.deepEqual(addressesToPrice([row(WETH, 'WETH', '1'), row(NATIVE, 'ETH', '0', 18, 'zero')]), [WETH], 'WETH held alone is asked once');
   const many = Array.from({ length: 45 }, (_, i) => row(addr(i + 100), `T${i}`, '1'));
-  const all = addressesToPrice([row(NATIVE, 'ETH', '1'), ...many, row(MARLIN, 'MARLIN', '2')]);
-  assert.equal(all.length, 47, 'every held token: WETH, MARLIN and the 45 others');
-  assert.deepEqual(all.slice(0, 3), [WETH, MARLIN, addr(100)], 'the main tokens the wallet holds come first, wherever the list has them');
+  // Changed on purpose 2026-10-04 (the owner's new embedded list): ORBIO, a selected-pool token, last in the list, as MARLIN was.
+  const all = addressesToPrice([row(NATIVE, 'ETH', '1'), ...many, row(ORBIO, 'ORBIO', '2')]);
+  assert.equal(all.length, 47, 'every held token: WETH, ORBIO and the 45 others');
+  assert.deepEqual(all.slice(0, 3), [WETH, ORBIO, addr(100)], 'the main tokens the wallet holds come first, wherever the list has them');
   const huge = Array.from({ length: PRICE_BATCH * PRICE_GETS + 10 }, (_, i) => row(addr(i + 1000), `H${i}`, '1'));
   assert.equal(addressesToPrice(huge).length, PRICE_BATCH * PRICE_GETS, `${PRICE_GETS} GETs’ worth at most`);
 });

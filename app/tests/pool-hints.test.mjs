@@ -32,9 +32,9 @@ const USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168';
 const USDG_BODY = JSON.parse(readFileSync(new URL('./support/dexscreener-usdg.json', import.meta.url), 'utf8'));
 const ETH_BODY = JSON.parse(readFileSync(new URL('./support/dexscreener-eth.json', import.meta.url), 'utf8'));
 const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73';
-const U = '0xce24439f2d9c6a2289f741120fe202248b666666';
-/** The featured pools (config/selectedPools.ts), in catalogue order. */
-const [WETH_USDG, USDG_MARLIN, CBBTC_USDG, U_USDG, ETH_USDG, PONS_USDG] = SELECTED_POOLS;
+const UBIK = '0x812486eaea648819853f8e372dc9f1516c7868bd';
+/** The featured pools (config/selectedPools.ts), in catalogue order: the owner's embedded list of 2026-10-04. */
+const [ETH_USDG, PONS_USDG, USDG_ORBIO, CASHCAT_USDG, USDG_UBIK, USDG_VIRTUAL] = SELECTED_POOLS;
 
 /** The fixture's one pool with another id, key, liquidity or volume. */
 function pool({ poolId, liquidity = '10.00', volume = '1234.56', hooks = ZERO, dynamic = false, integration = 'hookless_fixed_fee', fee = 3000, metrics = true } = {}) {
@@ -138,45 +138,51 @@ test('the pools read names the hinted pools and asks for exactly that many, and 
 // every featured pool holds, it names none of U/USDG ($3.0M), cbBTC/USDG, ETH/USDG or WETH/USDG, so step 1 never
 // listed them. The featured pools that hold the token are named first; every one was read on chain (Initialize, 2026-09-23)
 // as hookless with a fixed fee, and ETH/USDG as holding native ETH, although its catalogue row names no addresses.
+// Changed on purpose 2026-10-04 (the owner's new embedded list): the six are now ETH/USDG, PONS/USDG, USDG/ORBIO,
+// CASHCAT/USDG, USDG/UBIK and USDG/VIRTUAL, each in featuredPools.ts's hookless fixed-fee set. No featured pool holds
+// WETH or U any more: WETH names none, so native ETH's pool is still not named for it, and UBIK stands where U stood.
 test('the featured pools that hold the token, in catalogue order; ETH/USDG by the native ETH its pool was read to hold', () => {
-  assert.deepEqual(featured.featuredPoolIds(USDG, null), [WETH_USDG, USDG_MARLIN, CBBTC_USDG, U_USDG, ETH_USDG, PONS_USDG], 'all six hold USDG');
+  assert.deepEqual(featured.featuredPoolIds(USDG, null), [ETH_USDG, PONS_USDG, USDG_ORBIO, CASHCAT_USDG, USDG_UBIK, USDG_VIRTUAL], 'all six hold USDG');
   assert.deepEqual(featured.featuredPoolIds(ZERO, null), [ETH_USDG], 'native ETH');
   assert.deepEqual(featured.featuredPoolIds(ZERO, USDG), [ETH_USDG]);
   assert.deepEqual(featured.featuredPoolIds(USDG, ZERO), [ETH_USDG], 'USDG with native ETH on the other side');
-  assert.deepEqual(featured.featuredPoolIds(WETH, null), [WETH_USDG], 'wrapped ether is another token');
+  assert.deepEqual(featured.featuredPoolIds(WETH, null), [], 'wrapped ether is another token: native ETH’s pool is not named for it');
   assert.deepEqual(featured.featuredPoolIds(WETH, ZERO), []);
-  assert.deepEqual(featured.featuredPoolIds(U, null), [U_USDG]);
+  assert.deepEqual(featured.featuredPoolIds(UBIK, null), [USDG_UBIK]);
   assert.deepEqual(featured.featuredPoolIds(USDG, PONS), [PONS_USDG], 'the second asset must be the other side');
   assert.deepEqual(featured.featuredPoolIds(PONS, USDG), [PONS_USDG]);
   assert.deepEqual(featured.featuredPoolIds(PONS, WETH), []);
   assert.deepEqual(featured.featuredPoolIds(TOKEN, null), [], 'a token no featured pool holds');
 });
 
+// Changed on purpose 2026-10-04 (the owner's new embedded list): the same saved USDG reply against the new six. Its
+// sample holds three of them, PONS/USDG second, USDG/ORBIO fifth and USDG/UBIK tenth, and leaves out the other three;
+// the two the request reaches are each named once, where the featured pools are.
 test('USDG: the featured pools first, then the provider’s hints, each once, ten at most, and exactly that many asked for', () => {
   const provider = hints.v4PoolHints(USDG_BODY, USDG, null);
   assert.equal(provider.length, 10);
-  for (const poolId of [WETH_USDG, USDG_MARLIN, CBBTC_USDG, U_USDG, ETH_USDG]) assert.equal(provider.includes(poolId), false, `the provider’s sample leaves out ${poolId}`);
-  assert.equal(provider[1], PONS_USDG, 'one featured pool is in it, second');
+  for (const poolId of [ETH_USDG, CASHCAT_USDG, USDG_VIRTUAL]) assert.equal(provider.includes(poolId), false, `the provider’s sample leaves out ${poolId}`);
+  assert.deepEqual([PONS_USDG, USDG_ORBIO, USDG_UBIK].map((poolId) => provider.indexOf(poolId)), [1, 4, 9], 'three featured pools are in it: second, fifth and tenth');
   const request = pools.usablePoolsRequest(USDG, null, provider);
   assert.deepEqual(request, {
     token: USDG,
     maxPools: 10,
     poolIds: [
-      WETH_USDG, USDG_MARLIN, CBBTC_USDG, U_USDG, ETH_USDG, PONS_USDG,
-      // Then the provider's most liquid, PONS/USDG not twice.
+      ETH_USDG, PONS_USDG, USDG_ORBIO, CASHCAT_USDG, USDG_UBIK, USDG_VIRTUAL,
+      // Then the provider's most liquid, PONS/USDG and USDG/ORBIO not twice.
       '0x486435a1f76cd58193f854c6e6213cd05fd58d637865d02065ff558b387fa6ea',
-      provider[2], provider[3], provider[4],
+      provider[2], provider[3], provider[5],
     ],
   });
   assert.equal(new Set(request.poolIds).size, 10, 'each once');
   // Hints that are slow or missing still leave the featured pools, not the catalogue's first twelve by id.
-  assert.deepEqual(pools.usablePoolsRequest(USDG, null, []), { token: USDG, maxPools: 6, poolIds: [WETH_USDG, USDG_MARLIN, CBBTC_USDG, U_USDG, ETH_USDG, PONS_USDG] });
+  assert.deepEqual(pools.usablePoolsRequest(USDG, null, []), { token: USDG, maxPools: 6, poolIds: [ETH_USDG, PONS_USDG, USDG_ORBIO, CASHCAT_USDG, USDG_UBIK, USDG_VIRTUAL] });
   // A second asset keeps only the featured pools with it on the other side.
   assert.deepEqual(pools.usablePoolsRequest(USDG, PONS, [id('a')]), { token: USDG, pairedToken: PONS, maxPools: 2, poolIds: [PONS_USDG, id('a')] });
   // Six featured and eleven hints: ten at most.
   const eleven = [...'123456789ab'].map(id);
   const capped = pools.usablePoolsRequest(USDG, null, eleven);
-  assert.deepEqual(capped.poolIds, [WETH_USDG, USDG_MARLIN, CBBTC_USDG, U_USDG, ETH_USDG, PONS_USDG, ...eleven.slice(0, 4)]);
+  assert.deepEqual(capped.poolIds, [ETH_USDG, PONS_USDG, USDG_ORBIO, CASHCAT_USDG, USDG_UBIK, USDG_VIRTUAL, ...eleven.slice(0, 4)]);
   assert.equal(capped.maxPools, 10);
   // A hint that repeats a featured pool is named once, where the featured pools are.
   assert.deepEqual(pools.usablePoolsRequest(PONS, null, [id('a'), PONS_USDG, id('b')]), { token: PONS, maxPools: 3, poolIds: [PONS_USDG, id('a'), id('b')] });

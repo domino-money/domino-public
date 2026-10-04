@@ -126,7 +126,12 @@ test('a token that reads as a main token on another contract drops its pool, and
   assert.ok(Object.isFrozen(MAIN_TOKENS) && MAIN_TOKENS.every(Object.isFrozen));
   assert.equal(USDG, '0x5fc5360d0400a0fd4f2af552add042d716f1d168');
   assert.equal(PRICED_USDG, USDG);
-  assert.equal(SELECTED_POOL_CATALOGUE.find((entry) => entry.labels.includes('USDG')).addresses.includes(USDG), true);
+  // Changed on purpose 2026-10-04 (the owner's new embedded list): the first row labelled USDG is now ETH/USDG, which
+  // names no addresses (only a read of its pool says native or wrapped). Every row that names them binds its USDG label
+  // to the one address.
+  const bound = SELECTED_POOL_CATALOGUE.filter((entry) => entry.addresses && entry.labels.includes('USDG'));
+  assert.ok(bound.length > 0);
+  for (const entry of bound) assert.equal(entry.addresses[entry.labels.indexOf('USDG')], USDG, entry.poolId);
   assert.equal(readsAsMainToken('USDG', addr('f6')), true);
   assert.equal(readsAsMainToken('USDG', USDG), false);
   assert.equal(readsAsMainToken('ETH', WETH), false, 'ether either way');
@@ -806,8 +811,16 @@ test('the embedded labels are keyed by pool id, so a new order cannot move a lab
   assert.doesNotMatch(source, /LABELS\[index\]/);
   assert.deepEqual(SELECTED_POOL_CATALOGUE.map((entry) => entry.poolId), SELECTED_POOLS, 'every reviewed pool has its labels');
   const byId = Object.fromEntries(SELECTED_POOL_CATALOGUE.map((entry) => [entry.poolId, entry.labels.join('/')]));
-  assert.equal(byId['0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6'], 'WETH/USDG');
-  assert.equal(byId['0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a'], 'PONS/USDG');
+  // Changed on purpose 2026-10-04 (the owner's new embedded list): WETH/USDG left the list, and ETH/USDG and PONS/USDG
+  // moved up from fifth and sixth to first and second. Each pool id still carries its own labels, the four new ones too.
+  assert.deepEqual(byId, {
+    '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e': 'ETH/USDG',
+    '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a': 'PONS/USDG',
+    '0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef': 'USDG/ORBIO',
+    '0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b': 'CASHCAT/USDG',
+    '0x6d56f66e52e63e8be558d708a987426314bb4de92bc9b43a44effee1f2abf317': 'USDG/UBIK',
+    '0xa95732060867f07aa9b8ae9a4b7b8d737bc3374f1dfbb952759c5ed676e8737c': 'USDG/VIRTUAL',
+  });
 });
 
 test('New position names a featured list’s pools by their validated keys; a link to one is verified with a currency its entry names', () => {

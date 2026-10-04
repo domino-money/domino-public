@@ -3001,19 +3001,22 @@ test('a first Home load of the six selected pools: 13 POSTs, each row’s tokens
   assert.ok(inAnyMinute <= 35, `${inAnyMinute} in a minute`);
 });
 
-test('the six selected chain-4663 pools retain the original two and exclude stock candidates', () => {
+// Changed on purpose 2026-10-04 (the owner's new embedded list): the original two of #45 (WETH/USDG 0.02% and
+// USDG/MARLIN 5%) left the list with cbBTC/USDG and U/USDG. The six are the owner's, in the owner's order, ids only; the
+// labels the file now carries are comments, and the check below names the new list's tokens too.
+test('the six selected chain-4663 pools are the owner’s list of 2026-10-04, in its order, ids only, and exclude stock candidates', () => {
   const { SELECTED_POOLS } = require('../.test-build/app/src/config/selectedPools.js');
   assert.deepEqual(SELECTED_POOLS, [
-    '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6',
-    '0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7',
-    '0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a',
-    '0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c',
     '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e',
     '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a',
+    '0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef',
+    '0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b',
+    '0x6d56f66e52e63e8be558d708a987426314bb4de92bc9b43a44effee1f2abf317',
+    '0xa95732060867f07aa9b8ae9a4b7b8d737bc3374f1dfbb952759c5ed676e8737c',
   ]);
   for (const id of SELECTED_POOLS) assert.match(id, /^0x[0-9a-f]{64}$/);
   const code = readFileSync(join(SRC, 'config/selectedPools.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  assert.doesNotMatch(code, /symbol|label|name|weth|usdg|marlin|tvl|volume|apr|price/i, 'no labels, symbols or figures');
+  assert.doesNotMatch(code, /symbol|label|name|eth|usdg|marlin|pons|orbio|cashcat|ubik|virtual|tvl|volume|apr|price/i, 'no labels, symbols or figures');
   assert.deepEqual(code.match(/0x[0-9a-f]+/g), SELECTED_POOLS, 'nothing but pool ids');
 });
 
@@ -3046,14 +3049,16 @@ test('a catalogue row names its pair as its price is written, so the name does n
   const { poolListings, inPoolOrder, catalogueTokenLabel, SELECTED_POOL_CATALOGUE } = require('../.test-build/app/src/config/selectedPoolCatalogue.js');
   const { pricePair } = require('../.test-build/app/src/lib/read/orientation.js');
   const rows = poolListings([], SELECTED_POOL_CATALOGUE);
-  assert.deepEqual(rows.map(({ catalogue }) => catalogue.labels.join('/')), ['WETH/USDG', 'MARLIN/USDG', 'cbBTC/USDG', 'U/USDG', 'ETH/USDG', 'PONS/USDG']);
+  // Changed on purpose 2026-10-04 (the owner's new embedded list): the six rows' names, and the third row (cbBTC/USDG
+  // then, USDG/ORBIO now, inspected USDG first) is still the one whose read lands below.
+  assert.deepEqual(rows.map(({ catalogue }) => catalogue.labels.join('/')), ['ETH/USDG', 'PONS/USDG', 'ORBIO/USDG', 'CASHCAT/USDG', 'UBIK/USDG', 'VIRTUAL/USDG']);
   for (const { poolId, catalogue } of rows) {
     if (!catalogue.addresses) continue;
     assert.equal(catalogue.addresses[1], '0x5fc5360d0400a0fd4f2af552add042d716f1d168', `${poolId}: USDG, the token prices are written in, comes second`);
     assert.deepEqual(catalogue.addresses.map((address) => catalogueTokenLabel(project.unreadToken(address))), [...catalogue.labels], `${poolId}: each label stays on its address`);
   }
   assert.deepEqual(rows[2].catalogue.artwork, [null, 'USDG'], 'artwork moves with its token');
-  assert.deepEqual(SELECTED_POOL_CATALOGUE[2].labels, ['cbBTC', 'USDG'], 'the catalogue itself keeps the order it was inspected in');
+  assert.deepEqual(SELECTED_POOL_CATALOGUE[2].labels, ['USDG', 'ORBIO'], 'the catalogue itself keeps the order it was inspected in');
 
   // The same pool once its market read lands: the row names currency0 first, exactly as the catalogue row did.
   const entry = SELECTED_POOL_CATALOGUE[2];
@@ -3072,10 +3077,18 @@ test('a catalogue row names its pair as its price is written, so the name does n
   const live = project.projectMarketRow({ market, metrics: null, tokens: new Map() });
   const named = pricePair(live.tokens.base, live.tokens.quote);
   assert.equal([named.base, named.quote].map((token) => catalogueTokenLabel(token)).join('/'), rows[2].catalogue.labels.join('/'));
+  // Changed on purpose 2026-10-04 (the owner's new embedded list): every row of the new list was inspected in its pool's
+  // order, so none is listed the other way round as cbBTC/USDG was for USDG/cbBTC. The same pool listed that way moves
+  // into its pool's order and still names its pair as its read does.
+  const reversed = { ...entry, labels: [entry.labels[1], entry.labels[0]], artwork: [entry.artwork[1], entry.artwork[0]], addresses: [entry.addresses[1], entry.addresses[0]] };
+  const pooled = inPoolOrder(reversed);
+  assert.deepEqual([pooled.labels, pooled.artwork, pooled.addresses], [entry.labels, entry.artwork, entry.addresses], 'USDG, the lower address, first');
+  assert.equal(poolListings([], [reversed])[0].catalogue.labels.join('/'), rows[2].catalogue.labels.join('/'), 'listed the other way round, the same name');
+  assert.deepEqual(reversed.labels, ['ORBIO', 'USDG'], 'the listing itself is left as it was');
 
   // Native ETH, the zero address, sorts first; without both addresses nothing moves.
   const ZERO = `0x${'0'.repeat(40)}`;
-  const usdg = entry.addresses[1];
+  const usdg = entry.addresses[entry.labels.indexOf('USDG')];
   const native = inPoolOrder({ poolId: entry.poolId, labels: ['USDG', 'ETH'], artwork: ['USDG', 'ETH'], addresses: [usdg, ZERO], fee: '0.01%', sourceUrl: entry.sourceUrl });
   assert.deepEqual([native.labels, native.artwork, native.addresses], [['ETH', 'USDG'], ['ETH', 'USDG'], [ZERO, usdg]]);
   const unbound = SELECTED_POOL_CATALOGUE.find((item) => !item.addresses);

@@ -202,11 +202,15 @@ test('only a selectable answer is handed over: an unreadable token, whose reason
   }
 });
 
-test('the selected pools’ catalogue names six tokens by address, none of them ETH, and USDG is found by name', () => {
+// Changed on purpose 2026-10-04 (the owner's new embedded list): the six tokens are PONS, USDG, ORBIO, CASHCAT, UBIK and
+// VIRTUAL. The list still holds native ETH, in ETH/USDG as before, but that row names no addresses (only a read of the
+// pool says native or wrapped), so ETH is not among them; WETH, whose pool left the list, is not either.
+test('the selected pools’ catalogue names six tokens by address, no ether among them (the ETH/USDG row names none), and USDG is found by name', () => {
   const known = knownTokens({ catalogue: catalogueTokens(), candidates: [] });
-  assert.deepEqual(known.map((token) => token.label), ['WETH', 'USDG', 'MARLIN', 'cbBTC', 'U', 'PONS']);
+  assert.deepEqual(known.map((token) => token.label), ['PONS', 'USDG', 'ORBIO', 'CASHCAT', 'UBIK', 'VIRTUAL']);
   assert.ok(known.every((token) => token.sources.length === 1 && token.sources[0] === 'catalogue' && token.candidate === null));
   assert.ok(!known.some((token) => token.key === `0x${'0'.repeat(40)}`), 'the ETH/USDG row has no addresses, so native ETH is not a catalogue token');
+  assert.ok(!known.some((token) => token.key === WETH), 'no selected pool holds WETH');
   assert.deepEqual(hits(searchTokens('usdg', known)), [USDG]);
-  assert.deepEqual(hits(searchTokens('cbbtc', known)), ['0xcec185eb182c47d1ba1efc84e6959e18cd620be4']);
+  assert.deepEqual(hits(searchTokens('cashcat', known)), ['0x020bfc650a365f8bb26819deaabf3e21291018b4']);
 });

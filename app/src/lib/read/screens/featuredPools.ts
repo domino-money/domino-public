@@ -13,21 +13,24 @@ import { SELECTED_POOL_CATALOGUE, SELECTED_POOLS_COMMON_TOKEN, type PoolCatalogu
 import { NATIVE_CURRENCY, poolIdKey, type AddressKey, type PoolIdKey } from './identity'
 
 /**
- * The embedded list's pools read on chain on 2026-09-23 (each pool's Initialize
- * event on the PoolManager) as having no hooks and a fixed fee, the only
- * pools Domino opens a position in. A catalogue row added later is not named
- * until its pool is read the same way. A featured list's pools need no such
+ * The embedded list's pools read as having no hooks and a fixed fee, the only
+ * pools Domino opens a position in: ETH/USDG and PONS/USDG on chain on
+ * 2026-09-23 (each pool's Initialize event on the PoolManager); CASHCAT/USDG,
+ * USDG/ORBIO, USDG/UBIK and USDG/VIRTUAL from their keys as Domino's reader
+ * verified them at a block (2026-09-25 and 2026-10-04: no hooks, fee mode
+ * fixed, the fees below). A catalogue row added later is not named until its
+ * pool is read the same way. A featured list's pools need no such
  * set: every entry it shows passed the contract's runtime and the app's own
  * checks as hookless with a fixed fee, and carries its key (2026-09-26,
  * featured pools v1 §11.5).
  */
 const HOOKLESS_FIXED_FEE: ReadonlySet<string> = new Set([
-  '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6', // WETH/USDG, fee 200
-  '0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7', // USDG/MARLIN, fee 50000
-  '0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a', // USDG/cbBTC, fee 1500
-  '0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c', // USDG/U, fee 75
   '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e', // ETH/USDG, fee 100
   '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a', // PONS/USDG, fee 3000
+  '0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef', // USDG/ORBIO, fee 8000
+  '0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b', // CASHCAT/USDG, fee 2690
+  '0x6d56f66e52e63e8be558d708a987426314bb4de92bc9b43a44effee1f2abf317', // USDG/UBIK, fee 10000
+  '0xa95732060867f07aa9b8ae9a4b7b8d737bc3374f1dfbb952759c5ed676e8737c', // USDG/VIRTUAL, fee 3000
 ])
 
 /**

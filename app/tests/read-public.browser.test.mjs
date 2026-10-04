@@ -218,6 +218,11 @@ test('Markets on the deployable build: all six cards draw a real chart within se
 // store's before it caught up on the last two; a later visit meets a store whose collection of those two failed.
 // Changed on purpose 2026-10-01 (audit E21): the estimates as the one APR rule of every screen writes them (lib/format/apr.ts):
 // one decimal under 100%, whole percents from there. The recorded answers are unchanged.
+// Added 2026-10-04 (the owner's new embedded list): USDG/ORBIO, USDG/UBIK and USDG/VIRTUAL were in neither list the harness
+// recorded. Their entries are production's stored overview, read from the reader's /v3/read/overview at 17:14 UTC that day
+// (blocks 80,104,644 to 80,104,648), each fresh like the harness's. Their times are shifted onto the harness recording's
+// clock (-878,385 s), since one answer never holds an observation made after it was generated: each keeps its age
+// within the answer, and its figures, key and blocks are as read. The other entries are unchanged.
 const RECORDED_FIGURES = {
   // main's six, 2026-09-23 to 2026-09-25
   '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6': ['$375.1K', '$1.7M', '32.1% est.'],
@@ -233,6 +238,10 @@ const RECORDED_FIGURES = {
   '0x778a632fdd85577efe9cfce4a2c9ac91b9decdb24c351f9b56e25d38fbe587b4': ['$1.7M', '$2.0M', '397% est.'],
   '0xebd2fbb46948c5b21ca32dcd0be5ae851fed99362cfcf198d060a63a8689cd66': ['$204.5K', '$35.3K', '125% est.'],
   '0x031fe000f185cdf1b8850821d22bdf4ed1e337909be7caa00c2b68594da83f03': ['$70.9K', '$25.8K', '530% est.'],
+  // the owner's list of 2026-10-04: ETH/USDG, PONS/USDG and CASHCAT/USDG above, and these three, from production
+  '0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef': ['$1.4M', '$3.8M', '800% est.'],
+  '0x6d56f66e52e63e8be558d708a987426314bb4de92bc9b43a44effee1f2abf317': ['$245.4K', '$485.1K', '721% est.'],
+  '0xa95732060867f07aa9b8ae9a4b7b8d737bc3374f1dfbb952759c5ed676e8737c': ['$407.7K', '$123.1K', '33.0% est.'],
 }
 
 test('Home, its ticker, Markets and its cards show one set of figures for the six pools; pools the store is still collecting wait for theirs, and pools whose collection failed say Unavailable at once', { timeout: 90000 }, async () => {

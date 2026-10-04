@@ -14,6 +14,10 @@ const TOKEN_LABELS: Readonly<Record<string, string>> = {
   '0xcec185eb182c47d1ba1efc84e6959e18cd620be4': 'cbBTC',
   '0xce24439f2d9c6a2289f741120fe202248b666666': 'U',
   '0x39dbed3a2bd333467115de45665cc57f813c4571': 'PONS',
+  '0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3': 'ORBIO',
+  '0x020bfc650a365f8bb26819deaabf3e21291018b4': 'CASHCAT',
+  '0x812486eaea648819853f8e372dc9f1516c7868bd': 'UBIK',
+  '0xc6911796042b15d7fa4f6cde69e245ddcd3d9c31': 'VIRTUAL',
 }
 
 export function catalogueTokenLabel(token: TokenDisplay): string | null {
@@ -29,8 +33,6 @@ export function catalogueTokenLabel(token: TokenDisplay): string | null {
  */
 export const SELECTED_POOLS_COMMON_TOKEN = USDG
 
-const WETH = MAIN_WETH
-const MARLIN = '0xab35d04e1ee39c789c4a65d522417b3c7f2e4723'
 
 export interface PoolCatalogueEntry {
   poolId: string
@@ -67,13 +69,14 @@ export interface PoolCatalogueEntry {
 // Keyed by pool id (2026-09-26, featured pools v1 §11.4): a label can no longer land on another pool when the list's
 // order changes. A pool of selectedPools.ts without labels here is left out of the catalogue, never shown unlabelled.
 const LABELS: Readonly<Record<string, Omit<PoolCatalogueEntry, 'poolId' | 'sourceUrl'>>> = {
-  '0x84bd4e2d8be11aeb0afc1195b38f587b61e90068548f1063fdbe448fb8cad0b6': { labels: ['WETH', 'USDG'], artwork: ['WETH', 'USDG'], addresses: [WETH, SELECTED_POOLS_COMMON_TOKEN], fee: '0.02%' },
-  '0xdb922f0619e11b0c1e6c3a142798f0243060b8a4331ea4f4e7de80e898cc02e7': { labels: ['USDG', 'MARLIN'], artwork: ['USDG', 'MARLIN'], addresses: [SELECTED_POOLS_COMMON_TOKEN, MARLIN], fee: '5.00%' },
-  '0x94c62eebf6454231b2fcd0259ede448ae3c6ad8617718cd88dab20b30cfae48a': { labels: ['cbBTC', 'USDG'], artwork: [null, 'USDG'], addresses: ['0xcec185eb182c47d1ba1efc84e6959e18cd620be4', SELECTED_POOLS_COMMON_TOKEN], fee: '0.15%' },
-  '0xf399bd1544377680d48c62fd85c2105b869e55906c4189cc5ab3b4e83446928c': { labels: ['U', 'USDG'], artwork: [null, 'USDG'], addresses: ['0xce24439f2d9c6a2289f741120fe202248b666666', SELECTED_POOLS_COMMON_TOKEN], fee: '0.0075%' },
   '0x24107d152f14a76d292123265ae3f3c71f863fc2f4ef7ba49d64e78d28ea379e': { labels: ['ETH', 'USDG'], artwork: ['ETH', 'USDG'], fee: '0.01%' },
   // Written as fee.ts writes a read fee (at least two decimals), so the label and the read agree.
   '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a': { labels: ['PONS', 'USDG'], artwork: [null, 'USDG'], addresses: ['0x39dbed3a2bd333467115de45665cc57f813c4571', SELECTED_POOLS_COMMON_TOKEN], fee: '0.30%' },
+  // 2026-10-04 (the owner's replacement of the embedded list): pool keys read from the featured selection's verified entries.
+  '0xea9f200e13055b82f175f44f592c4c13dd8c9d9320a66487d3c5cd90d68550ef': { labels: ['USDG', 'ORBIO'], artwork: ['USDG', null], addresses: [SELECTED_POOLS_COMMON_TOKEN, '0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3'], fee: '0.80%' },
+  '0xa92a3df27a00a276183ff7265fd8affa11df1fe8bb23ddfaf13f6c879a3f818b': { labels: ['CASHCAT', 'USDG'], artwork: [null, 'USDG'], addresses: ['0x020bfc650a365f8bb26819deaabf3e21291018b4', SELECTED_POOLS_COMMON_TOKEN], fee: '0.269%' },
+  '0x6d56f66e52e63e8be558d708a987426314bb4de92bc9b43a44effee1f2abf317': { labels: ['USDG', 'UBIK'], artwork: ['USDG', null], addresses: [SELECTED_POOLS_COMMON_TOKEN, '0x812486eaea648819853f8e372dc9f1516c7868bd'], fee: '1.00%' },
+  '0xa95732060867f07aa9b8ae9a4b7b8d737bc3374f1dfbb952759c5ed676e8737c': { labels: ['USDG', 'VIRTUAL'], artwork: ['USDG', null], addresses: [SELECTED_POOLS_COMMON_TOKEN, '0xc6911796042b15d7fa4f6cde69e245ddcd3d9c31'], fee: '0.30%' },
 }
 
 /** The embedded list: the reviewed pools of selectedPools.ts, in its order, each with its own labels. */

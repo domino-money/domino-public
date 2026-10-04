@@ -587,14 +587,18 @@ const provider = (asked, answer) => async (context) => {
   });
 };
 
-// The selected pools' tokens, by address, in catalogueTokens() order (src/config/selectedPoolCatalogue.ts).
+// The tokens the wallet list checks by address (src/config/selectedPoolCatalogue.ts WALLET_FALLBACK_TOKENS): WETH and
+// USDG, the main tokens, then the selected pools' other tokens in catalogueTokens() order.
+// Changed on purpose 2026-10-04 (the owner's new embedded list): seven, from six. MARLIN, cbBTC and U left with their
+// pools; WETH is still checked as a main token, though no selected pool holds it any more.
 const SELECTED_TOKENS = [
   '0x0bd7d308f8e1639fab988df18a8011f41eacad73', // WETH
   '0x5fc5360d0400a0fd4f2af552add042d716f1d168', // USDG
-  '0xab35d04e1ee39c789c4a65d522417b3c7f2e4723', // MARLIN
-  '0xcec185eb182c47d1ba1efc84e6959e18cd620be4', // cbBTC
-  '0xce24439f2d9c6a2289f741120fe202248b666666', // U
   '0x39dbed3a2bd333467115de45665cc57f813c4571', // PONS
+  '0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3', // ORBIO
+  '0x020bfc650a365f8bb26819deaabf3e21291018b4', // CASHCAT
+  '0x812486eaea648819853f8e372dc9f1516c7868bd', // UBIK
+  '0xc6911796042b15d7fa4f6cde69e245ddcd3d9c31', // VIRTUAL
 ];
 
 test('a partial wallet page lists what was read with no notice, checks the selected pool tokens once by address, and never says the list is complete', async () => {
@@ -703,7 +707,8 @@ test('an address whose provider page lists nothing held: the selected pools’ t
 // own and nothing waits for Load more. The check a partial list is owed now goes out once, after the last page, for
 // what the whole list lacks (here the same six tokens: neither page lists one), instead of after page 1 with Load
 // more pressed behind it. The session-level rule that a check on the wire is joined, never asked twice, is still
-// covered in tests/screens.test.mjs.
+// covered in tests/screens.test.mjs. Since 2026-10-04 (the owner's new embedded list) the tokens are seven, all of
+// SELECTED_TOKENS; neither page lists one still.
 test('a partial list is read to its last page on its own, then checked once by address for what the whole list lacks, and its balance stays', async () => {
   const USDG = SELECTED_TOKENS[1];
   overrideReply = async (route, body) => {
