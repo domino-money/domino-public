@@ -1,0 +1,113 @@
+{
+ "chainId": 8453,
+ "explorer": "https://basescan.org",
+ "sourceCommit": "559c509ff71d71e49ac720bd6acd8a9783531ebb",
+ "compilerVersion": "v0.8.26+commit.8a97fa7a",
+ "contracts": {
+  "registry": {
+   "address": "0x25d4f013ecff3790e384e16ca9951bba6cd715fa",
+   "contract": "src/v2/registry/DominoRegistry.sol:DominoRegistry",
+   "outcome": "verified",
+   "name": "DominoRegistry",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0x25d4f013ecff3790e384e16ca9951bba6cd715fa#code"
+  },
+  "priceAnchor": {
+   "address": "0x8c1edc4280d9533f6336f760380ba329e1f81f43",
+   "contract": "src/v2/anchor/DominoPriceAnchor.sol:DominoPriceAnchor",
+   "outcome": "verified",
+   "name": "DominoPriceAnchor",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0x8c1edc4280d9533f6336f760380ba329e1f81f43#code"
+  },
+  "autoExit": {
+   "address": "0x6109fc514a88a8e85e6e5c863238ddba9a98be36",
+   "contract": "src/v2/autoexit/DominoAutoExit.sol:DominoAutoExit",
+   "outcome": "verified",
+   "name": "DominoAutoExit",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0x6109fc514a88a8e85e6e5c863238ddba9a98be36#code"
+  },
+  "vaultSwap": {
+   "address": "0xbf22a36bbb419846e073cf0c6c729f669d7f348a",
+   "contract": "src/v2/vault/DominoV2VaultSwapModule.sol:DominoV2VaultSwapModule",
+   "outcome": "verified",
+   "name": "DominoV2VaultSwapModule",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0xbf22a36bbb419846e073cf0c6c729f669d7f348a#code"
+  },
+  "vault.v3": {
+   "address": "0xd55c0f5ff8ad1ded828edb36be77e0f3677ad4a4",
+   "contract": "src/v2/vault/DominoV2VaultV3.sol:DominoV2VaultV3",
+   "outcome": "verified",
+   "name": "DominoV2VaultV3",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0xd55c0f5ff8ad1ded828edb36be77e0f3677ad4a4#code"
+  },
+  "vault.v4": {
+   "address": "0xa3ff8d74e4ec4a19f35d92b7eec852ba6f7e2bbb",
+   "contract": "src/v2/vault/DominoV2VaultV4.sol:DominoV2VaultV4",
+   "outcome": "verified",
+   "name": "DominoV2VaultV4",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0xa3ff8d74e4ec4a19f35d92b7eec852ba6f7e2bbb#code"
+  },
+  "vaultFactory.v3": {
+   "address": "0xa7dfb61a6597d09742cb7f9a8780c9c74ebc34f4",
+   "contract": "src/v2/vault/DominoV2VaultFactory.sol:DominoV2VaultFactory",
+   "outcome": "verified",
+   "name": "DominoV2VaultFactory",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0xa7dfb61a6597d09742cb7f9a8780c9c74ebc34f4#code"
+  },
+  "vaultFactory.v4": {
+   "address": "0xc71a561853514efc2271f1d10c13ec95834792ba",
+   "contract": "src/v2/vault/DominoV2VaultFactory.sol:DominoV2VaultFactory",
+   "outcome": "already verified",
+   "name": "DominoV2VaultFactory",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0xc71a561853514efc2271f1d10c13ec95834792ba#code"
+  },
+  "zap.v4.steps": {
+   "address": "0x355b0997d5e04392862a8e8d21d911851b2eefbe",
+   "contract": "src/v2/zap/DominoZapV4Steps.sol:DominoZapV4Steps",
+   "outcome": "verified",
+   "name": "DominoZapV4Steps",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0x355b0997d5e04392862a8e8d21d911851b2eefbe#code"
+  },
+  "zap.v3": {
+   "address": "0xe30d7e07a67198c45d4c7b67d8423cbb6c7ea5a0",
+   "contract": "src/v2/zap/DominoZapV3.sol:DominoZapV3",
+   "outcome": "verified",
+   "name": "DominoZapV3",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0xe30d7e07a67198c45d4c7b67d8423cbb6c7ea5a0#code"
+  },
+  "zap.v4": {
+   "address": "0x376b92929bbe778c6dd64e8d73f8688686288e8a",
+   "contract": "src/v2/zap/DominoZapV4.sol:DominoZapV4",
+   "outcome": "verified",
+   "name": "DominoZapV4",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0x376b92929bbe778c6dd64e8d73f8688686288e8a#code"
+  },
+  "vaultExecutor.v3": {
+   "address": "0xd8d3bf832b234855fee2ac36ac4803aa7f9adca9",
+   "contract": "src/v2/vault/DominoV2VaultV3.sol:DominoV2VaultExecutorV3",
+   "outcome": "verified",
+   "name": "DominoV2VaultExecutorV3",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0xd8d3bf832b234855fee2ac36ac4803aa7f9adca9#code"
+  },
+  "vaultExecutor.v4": {
+   "address": "0xf3f68d8461c2071e2b8d88a60ce64f527f1d6639",
+   "contract": "src/v2/vault/DominoV2VaultV4.sol:DominoV2VaultExecutorV4",
+   "outcome": "verified",
+   "name": "DominoV2VaultExecutorV4",
+   "compiler": "v0.8.26+commit.8a97fa7a",
+   "page": "https://basescan.org/address/0xf3f68d8461c2071e2b8d88a60ce64f527f1d6639#code"
+  }
+ },
+ "checkedAt": "2026-10-04T21:11:19.892Z"
+}

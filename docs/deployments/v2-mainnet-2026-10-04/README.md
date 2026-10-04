@@ -83,21 +83,24 @@ It was checked on forks with a simulated node one block behind: the old reads fa
 | | Robinhood | Base | Arbitrum |
 |---|---|---|---|
 | Sourcify result | 13/13 `match` | 13/13 `match` | 13/13 `match` |
+| Etherscan family | 13/13 on `robin.etherscan.io` | 13/13 on Basescan | 13/13 on Arbiscan |
 | Blockscout | not imported yet | not checked | not checked |
-| Etherscan family (Basescan, Arbiscan) | — | not verified | not verified |
 
 **The input.** It is the output of `deploy.mjs explorer-input`:
 - the build's exact standard-JSON input (solc 0.8.26, via-IR, 200 runs, cancun);
 - each contract's fully qualified name;
 - each contract's constructor arguments.
 
-`sourcify.json` records each contract's result and the input's SHA-256.
+`sourcify.json` records each contract's Sourcify result and the input's SHA-256. `etherscan.json` records each contract's Etherscan result, the name and compiler the explorer shows, and its page.
 
 **Why `match` and not `exact_match`.** The release compiles with `metadata.bytecodeHash: none`, so there is no metadata hash in the bytecode. `match` means the runtime bytecode is equal, immutables included. It is the strongest result Sourcify can give this build.
 
 **The explorers.**
 - **Blockscout.** The Robinhood Blockscout has not imported the Sourcify verification. Its API refuses scripted requests, and its form takes the same standard-JSON input as a file upload.
-- **Basescan and Arbiscan** (the Etherscan family) do not read Sourcify. Their verification needs an Etherscan API key.
+- **The Etherscan family** (Robin Etherscan for Robinhood, Basescan, Arbiscan) was verified on 4 Oct, 20:49–21:22 UTC.
+  - It went through the Etherscan API V2, with the owner's key.
+  - The input is the same as Sourcify's, with the MIT license of the sources.
+  - On each chain, `vaultFactory.v4` came out "already verified": the explorer matched it to `vaultFactory.v3`, which has the same contract and runtime code.
 
 ## Files
 
@@ -109,7 +112,8 @@ Each chain's folder holds:
 | `unsigned-package.json` | The package the owner signed from |
 | `preflight.json` | The report that passed before the first transaction |
 | `transactions.json` | The verification's input |
-| `sourcify.json` | The source verification |
+| `sourcify.json` | The Sourcify verification |
+| `etherscan.json` | The Etherscan family's verification |
 
 `summary.json` in this folder gathers the table above.
 
