@@ -1,0 +1,89 @@
+{
+ "kind": "domino-mutation-run",
+ "batch": "contracts/mutations/v2-vault-2026-10-02.json",
+ "batchSha256": "c3c3707fe421d5b84c88f852b3e1b68501db51f1e8b70c6ceee8ac5d7b3a482e",
+ "sources": {
+  "contracts/src/v2/vault/DominoV2VaultBase.sol": "193420749d563b920d1b646dc81d25b3fef38ea9bddda0746fbe1ba13b9e5f68"
+ },
+ "suites": {
+  "test/v2/vault/DominoV2VaultOwner.t.sol": "e4e675e35f716eb9623079d1cc7d8c3e893e7c06159d48872eb43cf722d28798"
+ },
+ "rebuild": [],
+ "only": [
+  "withdrawal needs an amount",
+  "withdrawal needs the reserves",
+  "exitAll pauses",
+  "policy: overlap cap",
+  "policy: the 600 s interval floor",
+  "limits: the 10% slippage cap",
+  "limits: the 5% band cap",
+  "limits: an observation age",
+  "limits: the 300 s observation age cap",
+  "withdrawal needs a recipient"
+ ],
+ "rows": [
+  {
+   "label": "withdrawal needs an amount",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "24 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "withdrawal needs the reserves",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "24 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "exitAll pauses",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "24 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "policy: overlap cap",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "24 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "policy: the 600 s interval floor",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "24 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "limits: the 10% slippage cap",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "24 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "limits: the 5% band cap",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "24 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "limits: an observation age",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "24 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "limits: the 300 s observation age cap",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "24 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "withdrawal needs a recipient",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "24 passed / 1 failed / 0 skipped across 1 suite(s)"
+  }
+ ],
+ "baselineFailure": null,
+ "summary": "10 mutations: 10 caught, 0 not caught.",
+ "exitCode": 0
+}

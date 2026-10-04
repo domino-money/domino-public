@@ -1,0 +1,33 @@
+{
+ "kind": "domino-v2-audit-main-ci",
+ "tag": "v2-audit-2026-10-04",
+ "commit": "5e63d2dba9123fdc585f7f272b83532b491fbc51",
+ "runId": 37206891445,
+ "url": "https://github.com/domino-money/domino/actions/runs/37206891445",
+ "attempts": [
+  {
+   "attempt": 1,
+   "conclusion": "failure",
+   "started": "2026-10-04T13:47:42Z",
+   "completed": "2026-10-04T14:25:37Z",
+   "failedJob": {
+    "name": "Backend",
+    "id": 111449829937,
+    "tests": "the deploy tool's CI command: 53 tests, 50 passed, 3 failed (deploy-preflight.test.mjs)",
+    "cause": "A test left a transaction pending in Anvil: evm_revert restores state, not the transaction pool, so the transaction was mined into the next test's state and spent the deployer's nonce (nonce too low, then deployer_nonce_mismatch). Test-only; reproduced and fixed by the remediation (audit DV2-02)."
+   }
+  },
+  {
+   "attempt": 2,
+   "conclusion": "success",
+   "started": "2026-10-04T14:59:21Z",
+   "completed": "2026-10-04T15:21:20Z",
+   "rerun": "the failed job only, on the same commit",
+   "job": {
+    "name": "Backend",
+    "id": 111462883645
+   }
+  }
+ ],
+ "note": "freeze.json is kept as the auditors received it. Attempt 2 reran the failed job after the audit had recorded attempt 1; it does not make the audited commit's run green, and it is no substitute for the release gate: the remediation candidate is tagged only after its own main run passes (DV2-02)."
+}

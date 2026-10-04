@@ -3,7 +3,8 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { applyMutation, batchExitCode, formatRow, runBatch, runSuite, summarise, validateSpec } from './mutate-contracts.mjs';
+import { createHash } from 'node:crypto';
+import { applyMutation, batchExitCode, formatRow, rebuildArtifacts, reportOf, runBatch, runSuite, selectMutations, summarise, validateSpec } from './mutate-contracts.mjs';
 
 function forgeOutput(suites) {
   const totals = suites.reduce((sum, [passed, failed, skipped = 0]) => [sum[0] + passed, sum[1] + failed, sum[2] + skipped], [0, 0, 0]);
@@ -118,4 +119,114 @@ test('the human summary includes every verdict, independent of expected results'
   assert.equal(summarise(rows), '5 mutations: 2 caught, 1 not caught, 1 did not compile, 1 did not apply.');
   assert.equal(summarise([{ verdict: 'CAUGHT' }]), '1 mutations: 1 caught, 0 not caught.');
   assert.match(formatRow('the guard', 12, 'CAUGHT', '9 passed / 1 failed'), /the guard\s+CAUGHT\s+\(9 passed \/ 1 failed\)/);
+});
+
+test('several suites and a rebuild list are validated like a single suite', () => {
+  const several = { file: 'contracts/src/A.sol', suites: ['test/A.t.sol', 'test/B.t.sol'], rebuild: ['src/A.sol'], mutations: [mutation] };
+  assert.equal(validateSpec(several).mutations.length, 1);
+  assert.doesNotThrow(() => validateSpec(spec([{ ...mutation, suites: ['test/B.t.sol', 'test/C.t.sol'] }])));
+  assert.doesNotThrow(() => validateSpec({ ...several, rebuild: ['src/A.sol', 'test/v2/integration/IntegrationArtifacts.sol'] }));
+  for (const invalid of [{ ...several, suites: [] }, { ...several, suites: ['test/A.t.sol', 'test/A.t.sol'] },
+    { ...several, suites: ['../A.t.sol'] }, { ...several, suite: 'test/A.t.sol' }, { ...several, rebuild: [] },
+    { ...several, rebuild: ['../outside.sol'] }, { ...several, rebuild: ['contracts/src/A.sol'] }, { ...several, rebuild: 'src/A.sol' },
+    spec([{ ...mutation, suites: ['test/B.t.sol'], suite: 'test/C.t.sol' }]), spec([{ ...mutation, suites: ['src/B.t.sol'] }]),
+    { file: 'contracts/src/A.sol', mutations: [mutation] }])
+    assert.throws(() => validateSpec(invalid));
+});
+
+test('a rebuild runs on the pristine sources first, then after each applied edit, and a failed one is NO BUILD', () => {
+  const box = mkdtempSync(path.join(os.tmpdir(), 'domino-mutation-unit-'));
+  try {
+    mkdirSync(path.join(box, 'contracts/src'), { recursive: true });
+    writeFileSync(path.join(box, 'contracts/src/A.sol'), 'guard other');
+    const built = []; let suites = 0;
+    const { exitCode, rows } = runBatch(box, { ...spec([mutation, { label: 'broken', old: 'other', new: 'syntax error' },
+      { label: 'missing', old: 'absent', new: 'changed' }]), rebuild: ['src/A.sol'] }, { log() {},
+      builder(_box, files) {
+        assert.deepEqual(files, ['src/A.sol']);
+        const text = readFileSync(path.join(box, 'contracts/src/A.sol'), 'utf8');
+        built.push(text);
+        return text.includes('syntax error') ? { ok: false, detail: 'Error (2314): Expected' } : { ok: true };
+      },
+      suiteRunner() { suites++; return { verdict: suites === 1 ? 'NOT CAUGHT' : 'CAUGHT', detail: 'fixture' }; } });
+    assert.deepEqual(built, ['guard other', 'true other', 'guard syntax error']);
+    assert.equal(suites, 2);
+    assert.deepEqual(rows.map(row => [row.verdict, row.detail]), [['CAUGHT', 'fixture'], ['NO BUILD', 'Error (2314): Expected'],
+      ['NOT APPLIED', '0 occurrence(s), exactly one required']]);
+    assert.equal(exitCode, 1);
+    assert.equal(readFileSync(path.join(box, 'contracts/src/A.sol'), 'utf8'), 'guard other');
+  } finally { rmSync(box, { recursive: true, force: true }); }
+});
+
+test('pristine sources that do not build stop the batch before any baseline', () => {
+  const box = mkdtempSync(path.join(os.tmpdir(), 'domino-mutation-unit-'));
+  try {
+    mkdirSync(path.join(box, 'contracts/src'), { recursive: true });
+    writeFileSync(path.join(box, 'contracts/src/A.sol'), 'guard other');
+    const result = runBatch(box, { ...spec([mutation]), rebuild: ['src/A.sol'] }, { log() {},
+      builder() { return { ok: false, detail: 'Error: missing import' }; },
+      suiteRunner() { throw new Error('no suite may run'); } });
+    assert.deepEqual(result, { exitCode: 1, rows: [], baselineFailure: 'rebuild' });
+  } finally { rmSync(box, { recursive: true, force: true }); }
+});
+
+test('every suite runs for each mutation: any failure catches it, any tool failure voids it', () => {
+  const box = mkdtempSync(path.join(os.tmpdir(), 'domino-mutation-unit-'));
+  try {
+    mkdirSync(path.join(box, 'contracts/src'), { recursive: true });
+    writeFileSync(path.join(box, 'contracts/src/A.sol'), 'one two three');
+    const verdicts = { 'true two three|test/A.t.sol': 'NOT CAUGHT', 'true two three|test/B.t.sol': 'CAUGHT',
+      'one 2 three|test/A.t.sol': 'CAUGHT', 'one 2 three|test/B.t.sol': 'NO BUILD',
+      'one two 3|test/A.t.sol': 'NOT CAUGHT', 'one two 3|test/B.t.sol': 'NOT CAUGHT', 'true two three|test/C.t.sol': 'NOT CAUGHT' };
+    const ran = [];
+    const { rows } = runBatch(box, { file: 'contracts/src/A.sol', suites: ['test/B.t.sol', 'test/A.t.sol'], mutations: [
+      { label: 'first', old: 'one', new: 'true' }, { label: 'second', old: 'two', new: '2' }, { label: 'third', old: 'three', new: '3' },
+      { label: 'own suite', old: 'one', new: 'true', suite: 'test/C.t.sol' }] }, { log() {}, suiteRunner(_box, suite) {
+      const text = readFileSync(path.join(box, 'contracts/src/A.sol'), 'utf8');
+      ran.push(`${text}|${suite}`);
+      return { verdict: text === 'one two three' ? 'NOT CAUGHT' : verdicts[`${text}|${suite}`], detail: suite.slice(5, 6) };
+    } });
+    assert.deepEqual(ran.slice(0, 3), ['one two three|test/A.t.sol', 'one two three|test/B.t.sol', 'one two three|test/C.t.sol']);
+    assert.equal(ran.length, 3 + 2 + 2 + 2 + 1);
+    assert.deepEqual(rows.map(row => row.verdict), ['CAUGHT', 'NO BUILD', 'NOT CAUGHT', 'NOT CAUGHT']);
+    assert.equal(rows[1].detail, 'test/B.t.sol: B; test/A.t.sol: A');
+    assert.equal(rows[3].detail, 'C');
+  } finally { rmSync(box, { recursive: true, force: true }); }
+});
+
+test('the rebuild reports a compiler error, a signal or a nonzero exit as a failure', () => {
+  const calls = [];
+  const fake = result => (command, args, options) => { calls.push([command, args, options.cwd]); return result; };
+  assert.deepEqual(rebuildArtifacts('/box', ['src/A.sol', 'src/B.sol'], fake({ status: 0, stdout: 'Compiler run successful!' })), { ok: true });
+  assert.deepEqual(calls[0], ['node', ['../scripts/test-contracts.mjs', 'build', 'src/A.sol', 'src/B.sol'], path.join('/box', 'contracts')]);
+  assert.deepEqual(rebuildArtifacts('/box', ['src/A.sol'], fake({ status: 1, stdout: 'Error (7576): Undeclared identifier.\n' })),
+    { ok: false, detail: 'Error (7576): Undeclared identifier.' });
+  assert.equal(rebuildArtifacts('/box', ['src/A.sol'], fake({ status: null, signal: 'SIGKILL', stdout: '' })).ok, false);
+  assert.equal(rebuildArtifacts('/box', ['src/A.sol'], fake({ status: 0, error: new Error('spawn failed') })).ok, false);
+});
+
+test('a report names the batch, the pristine sources and the suites by SHA-256', () => {
+  const box = mkdtempSync(path.join(os.tmpdir(), 'domino-mutation-unit-'));
+  try {
+    mkdirSync(path.join(box, 'contracts/src'), { recursive: true });
+    mkdirSync(path.join(box, 'contracts/test'), { recursive: true });
+    writeFileSync(path.join(box, 'contracts/src/A.sol'), 'guard other');
+    writeFileSync(path.join(box, 'contracts/test/A.t.sol'), 'suite');
+    const input = spec([mutation]);
+    const result = runBatch(box, input, { log() {}, suiteRunner() { return { verdict: 'NOT CAUGHT', detail: 'fixture' }; } });
+    const digest = text => createHash('sha256').update(text).digest('hex');
+    const report = reportOf(box, 'batch.json', '{"batch":1}', input, result);
+    assert.equal(report.batchSha256, digest('{"batch":1}'));
+    assert.deepEqual(report.sources, { 'contracts/src/A.sol': digest('guard other') });
+    assert.deepEqual(report.suites, { 'test/A.t.sol': digest('suite') });
+    assert.deepEqual(report.rows, [{ label: 'owner', expected: 'CAUGHT', verdict: 'NOT CAUGHT', detail: 'fixture' }]);
+    assert.equal(report.exitCode, 1); assert.equal(report.summary, '1 mutations: 0 caught, 1 not caught.');
+  } finally { rmSync(box, { recursive: true, force: true }); }
+});
+
+test('only the named mutations run, in the batch order, and an unknown name is an error', () => {
+  const input = validateSpec(spec([mutation, { label: 'second', old: 'other', new: 'x' }, { label: 'third', old: 'x', new: 'y' }]));
+  assert.equal(selectMutations(input, []), input);
+  assert.deepEqual(selectMutations(input, ['third', 'owner']).mutations.map(m => m.label), ['owner', 'third']);
+  assert.throws(() => selectMutations(input, ['owner', 'absent']), /Not in the batch: absent/);
 });

@@ -11,7 +11,10 @@ import {IDominoRegistry} from "../../../src/v2/interfaces/IDominoRegistry.sol";
 import {DominoActionLock} from "../../../src/v2/route/DominoActionLock.sol";
 import {DominoSwapFloor} from "../../../src/v2/route/DominoSwapFloor.sol";
 import {MockVault, NativeRefuser} from "../autoexit/AutoExitMocks.sol";
+import {IUniswapV3PositionManagerMinimal} from "../../../src/v2/external/IUniswapV3Minimal.sol";
 import {ScriptedRouter} from "../route/RouteAdversaries.sol";
+import {TestToken} from "../route/V2RouteTestKit.sol";
+import {IIntegrationV3Initializer} from "../integration/IntegrationInterfaces.sol";
 import {AutoExitAdversarialWorld} from "./AutoExitAdversarialWorld.sol";
 
 /// Targeted attacks on the auto-exit module (#283 S3) from the audit's attack
@@ -726,5 +729,57 @@ contract DominoAutoExitAttacksTest is AutoExitAdversarialWorld {
         vm.expectRevert(IDominoAutoExitExtension.MandateAlreadyRegistered.selector);
         autoExit.registerMandate(m, signature);
         _eq(autoExit.mandateStatus(id), 2, "revoked for good");
+    }
+
+    // ======================================== a path's intermediates (audit DV2-01)
+
+    /// A 0.05% v3 pool of a and b at price one, full range, deep.
+    function _openV3Pair(address a, address b) private returns (DominoV2Types.PoolRef memory ref) {
+        (address c0, address c1) = a < b ? (a, b) : (b, a);
+        address npm = chain.v3PositionManager;
+        IIntegrationV3Initializer(npm).createAndInitializePoolIfNecessary(c0, c1, 500, PRICE_ONE);
+        TestToken(c0).approve(npm, type(uint256).max);
+        TestToken(c1).approve(npm, type(uint256).max);
+        IUniswapV3PositionManagerMinimal(npm).mint(
+            IUniswapV3PositionManagerMinimal.MintParams(c0, c1, 500, -887270, 887270, 1e25, 1e25, 0, 0, address(this), clock + 1 hours)
+        );
+        ref = DominoV2Types.PoolRef(DominoV2Types.DEX_V3, c0, c1, 500, 10, address(0));
+    }
+
+    /// The module holds an owner's deferred delivery in a token x. Another
+    /// owner's exit converts through x (token0 -> x -> token1), and x debits
+    /// its sender one unit more than it moves: paying the second pool would
+    /// take that unit from the deferred delivery. The intermediate is tracked
+    /// like the action's own tokens, so the exit reverts, the credit stays
+    /// backed in full and the mandate stays active.
+    function testAnOverDebitingIntermediateNeverSpendsADeferredDelivery() public {
+        TestToken x = new TestToken();
+        x.mint(address(this), 1e30);
+        DominoV2Types.PoolRef memory xPool = _openV3Pair(address(x), address(token1));
+        _openV3Pair(address(token0), address(x));
+        // Owner B's vault on (x, token1) exits; B cannot receive x, so it is deferred.
+        MockVault vaultX = _vault(ownerB, xPool);
+        _refill(vaultX, TOKEN_ID, 1e18, 1e18);
+        x.setBlocked(ownerB, true);
+        bytes32 first = _register(
+            _mandate(ownerB, address(vaultX), PRICE_ONE, 0, DominoV2Types.RECEIVE_BOTH, address(0), 1000, 7), OWNER_B_KEY
+        );
+        _execute(first, _plan(_fresh(xPool, _spot(xPool))));
+        uint256 credit = autoExit.unclaimed(ownerB, address(x));
+        _check(credit == 1e18 && x.balanceOf(address(autoExit)) == credit, "a deferred delivery in x, held");
+        // Owner A's stop converts token0 into token1 through x, which now over-debits.
+        x.setMode(3); // OVERDEBITS
+        bytes32 id = _register(
+            _mandate(ownerA, address(vaultA), PRICE_ONE, 0, DominoV2Types.RECEIVE_CONVERTED, address(token1), 1000, 8),
+            OWNER_A_KEY
+        );
+        DominoV2Types.SwapLeg memory leg = DominoV2Types.SwapLeg(
+            DominoV2Types.LEG_V3_POOL, address(0), address(token0), address(token1), 0, 1,
+            abi.encodePacked(address(token0), uint24(500), address(x), uint24(500), address(token1))
+        );
+        _refused(id, _plan(_fresh(p3, _spot(p3)), _legs(leg)), IDominoPositionActions.SwapEffectMismatch.selector);
+        _eq(x.balanceOf(address(autoExit)), credit, "the deferred delivery in x is still held");
+        _eq(autoExit.unclaimed(ownerB, address(x)), credit, "and still owed to its owner");
+        _eq(autoExit.mandateStatus(id), 1, "the stop is still active, unspent");
     }
 }

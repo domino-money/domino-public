@@ -19,6 +19,9 @@ import {BuyTaxToken} from "./BuyTaxToken.sol";
 /// previous pool reported, so a hop token that delivers less than reported
 /// (a tax on what pools send) was made up from this contract's own balance
 /// of it, owed fees included. Each hop now pays forward what arrived.
+/// Audit DV2-01, the same gap from the paying side: a hop token that debits
+/// its sender more than it moves. Each intermediate is now tracked, so no leg
+/// may move it.
 /// The v3 zap on Base's deployed factory and NonfungiblePositionManager.
 contract HopTokenBackingTest is ZapBaseFixtures {
     string internal constant ZAP_ARTIFACT = "DominoZapV3.sol:DominoZapV3";
@@ -187,6 +190,24 @@ contract HopTokenBackingTest is ZapBaseFixtures {
         );
         _check(bhop.balanceOf(address(zap)) >= zap.owedFees(address(bhop)), "the owed fee in bhop is still backed");
         _eq(zap.owedFees(address(bhop)), owed, "and still owed in full");
+    }
+
+    /// Audit DV2-01: a hop token that debits its sender more than it moves
+    /// (a sender-side fee: here one unit) would make the zap pay the second
+    /// pool partly out of the fee it owes in that token. The intermediate is
+    /// tracked like the action's own tokens, so Bob's create reverts and the
+    /// owed fee stays held and owed in full.
+    function testAnOverDebitingHopTokenNeverSpendsAnOwedFeeInIt() public {
+        uint256 owed = _owedHop();
+        hop.setMode(3); // OVERDEBITS
+        DominoV2Types.SwapLeg memory leg = DominoV2Types.SwapLeg(
+            DominoV2Types.LEG_V3_POOL, address(0), address(usd), address(tkn), 1e18, 0.95e18,
+            abi.encodePacked(address(usd), uint24(500), address(hop), uint24(500), address(tkn))
+        );
+        (bool ok, bytes memory reason) = _create(BOB, _inputs(address(usd), 2e18), leg, address(usd));
+        _check(!ok && bytes4(reason) == IDominoPositionActions.SwapEffectMismatch.selector, "refused by its effect");
+        _eq(hop.balanceOf(address(zap)), owed, "the owed fee in hop is still held");
+        _eq(zap.owedFees(address(hop)), owed, "and still owed in full");
     }
 
     /// Without anything held in hop, the taxed hop simply cannot pay its next pool.

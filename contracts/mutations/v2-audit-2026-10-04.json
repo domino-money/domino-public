@@ -1,0 +1,76 @@
+{
+ "description": "The guards the audit of v2-audit-2026-10-04 asked to tie to committed inputs (DV2-04): the owner's 3 Oct night decisions (D-1: the auto-exit's one-hour TWAP ceiling; D-2: exitAll disables the exit module) and the remediation of DV2-01 (a v3 path's intermediate tokens are tracked, read only from a well-formed path). Each is deleted or weakened alone against the suite that pins it.",
+ "provenance": "Authored 2026-10-04 for the audit remediation (reports/v2-audit-2026-10-04). D-1 and D-2 replay, with the same text, the five mutants run by hand on 3 Oct (the audit package's 5/5). Run: node scripts/mutate-contracts.mjs contracts/mutations/v2-audit-2026-10-04.json --with-artifacts",
+ "mutations": [
+  {
+   "label": "D-1: a TWAP window over the hour is refused",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/autoexit/DominoAutoExitExecute.t.sol",
+   "old": "            if (window > MAX_TWAP_SECONDS) revert TwapWindowTooLong();\n",
+   "new": ""
+  },
+  {
+   "label": "D-1: the constructor refuses a floor above the ceiling",
+   "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+   "suite": "test/v2/autoexit/DominoAutoExitMandate.t.sol",
+   "old": "\n                || minTwapSeconds_ > MAX_TWAP_SECONDS",
+   "new": ""
+  },
+  {
+   "label": "D-2: exitAll disables the exit module",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "            _exitModule = address(0);\n",
+   "new": ""
+  },
+  {
+   "label": "D-2: exitAll records the module it disabled",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "            emit ExitModuleSet(address(0), nonce);\n",
+   "new": ""
+  },
+  {
+   "label": "D-2: only when a module was enabled",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultExit.t.sol",
+   "old": "        if (_exitModule != address(0)) {\n            _exitModule = address(0);",
+   "new": "        if (true) {\n            _exitModule = address(0);"
+  },
+  {
+   "label": "DV2-01: a v3 path's intermediates are tracked",
+   "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+   "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+   "old": "            if (legs[i].kind == DominoV2Types.LEG_V3_POOL) count = _includeHops(tracked, count, legs[i].data);\n",
+   "new": ""
+  },
+  {
+   "label": "DV2-01: every intermediate, not only the first",
+   "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+   "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+   "old": "        for (uint256 h = 1; h < hops; ++h) {",
+   "new": "        for (uint256 h = 1; h < hops && h < 2; ++h) {"
+  },
+  {
+   "label": "DV2-01: a path shorter than one token adds no intermediate",
+   "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+   "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+   "old": "if (length < 43 || (length - 20) % 23 != 0 || (length - 20) / 23 > MAX_HOPS) return count;",
+   "new": "if ((length - 20) % 23 != 0 || (length - 20) / 23 > MAX_HOPS) return count;"
+  },
+  {
+   "label": "DV2-01: a partial hop adds no intermediate",
+   "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+   "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+   "old": "if (length < 43 || (length - 20) % 23 != 0 || (length - 20) / 23 > MAX_HOPS) return count;",
+   "new": "if (length < 43 || (length - 20) / 23 > MAX_HOPS) return count;"
+  },
+  {
+   "label": "DV2-01: a path over four hops adds no intermediate",
+   "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
+   "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
+   "old": "if (length < 43 || (length - 20) % 23 != 0 || (length - 20) / 23 > MAX_HOPS) return count;",
+   "new": "if (length < 43 || (length - 20) % 23 != 0) return count;"
+  }
+ ]
+}

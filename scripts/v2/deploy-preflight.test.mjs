@@ -30,7 +30,13 @@ describe('preflight on a disposable EVM with a real Safe', () => {
   let chain, rpc, safe, safeRoles, lower, planned, deployer;
   const preflight = (bundle = planned.bundle, options = {}) => preflightDeployment(bundle, { rpc, simulatedGas: planned.simulatedGas, requireSafeGovernance: true, ...options });
   const variant = changes => prepareDeployment({ ...planned.bundle.parameters, ...changes }, compiled());
-  const isolated = async body => { const id = await rpc('evm_snapshot', []); try { return await body(); } finally { await rpc('evm_revert', [id]); } };
+  // evm_revert restores the state but not Anvil's pool: a transaction a test
+  // left pending would be mined into the next test's state and spend the
+  // deployer's nonce there (main run 37206891445, audit DV2-02). Drop it first.
+  const isolated = async body => {
+    const id = await rpc('evm_snapshot', []);
+    try { return await body(); } finally { await rpc('anvil_dropAllTransactions', []); await rpc('evm_revert', [id]); }
+  };
   before(async () => {
     chain = await offlineChain(); rpc = chain.rpc;
     safe = await installSafe(rpc, { address: checksummed('rehearsal-governance-safe') });
@@ -162,12 +168,30 @@ describe('preflight on a disposable EVM with a real Safe', () => {
     });
     await isolated(async () => {
       await rpc('evm_setAutomine', [false]);
+      let pending;
       try {
         await rpc('anvil_impersonateAccount', [deployer]);
-        await rpc('eth_sendTransaction', [{ from: deployer, to: deployer, value: '0x0', gas: '0x5208' }]);
+        pending = await rpc('eth_sendTransaction', [{ from: deployer, to: deployer, value: '0x0', gas: '0x5208' }]);
         await assert.rejects(preflight(), /deployer_has_pending_transactions/);
-      } finally { await rpc('evm_setAutomine', [true]); }
+      } finally {
+        // Never mined: re-enabling automine first would race the revert.
+        if (pending) await rpc('anvil_dropTransaction', [pending]);
+        await rpc('evm_setAutomine', [true]);
+      }
     });
+  });
+
+  test('a transaction a test leaves pending never reaches the next test', async () => {
+    const nonce = await rpc('eth_getTransactionCount', [deployer, 'latest']);
+    await isolated(async () => {
+      await rpc('evm_setAutomine', [false]);
+      await rpc('anvil_impersonateAccount', [deployer]);
+      await rpc('eth_sendTransaction', [{ from: deployer, to: deployer, value: '0x0', gas: '0x5208' }]);
+    });
+    await rpc('evm_setAutomine', [true]);
+    await rpc('evm_mine', []);
+    assert.equal(await rpc('eth_getTransactionCount', [deployer, 'latest']), nonce);
+    assert.equal(await rpc('eth_getTransactionCount', [deployer, 'pending']), nonce);
   });
 
   test('every target address is empty, or holds exactly this deployment on resume', async () => {

@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {DominoV2Types} from "../../../src/v2/DominoV2Types.sol";
 import {IUniswapV3PositionManagerMinimal} from "../../../src/v2/external/IUniswapV3Minimal.sol";
+import {IDominoPositionActions} from "../../../src/v2/interfaces/IDominoPositionActions.sol";
 import {IV3PoolInitializerMinimal} from "../../../src/v2/positions/DominoV3Positions.sol";
 import {DominoSwapFloor} from "../../../src/v2/route/DominoSwapFloor.sol";
 import {DominoV2VaultPlan as Plan} from "../../../src/v2/vault/DominoV2VaultPlan.sol";
@@ -187,6 +188,40 @@ contract HostileOperatorV3Test is HostileOperatorSuite {
                 )
             )
         );
+        _execute(p);
+        _eq(bhop.balanceOf(address(vault)), 5e15, "the owner's recoverable hop tokens are untouched");
+        _ledgerBalanced();
+    }
+
+    /// Audit DV2-01 in the vault: a hop token that debits its sender (the
+    /// vault, paying the second pool) one unit more than it moves would pay
+    /// that pool partly out of what the owner may recover. The intermediate is
+    /// tracked, so the execution reverts and the vault's hop tokens are untouched.
+    function testAnOverDebitingHopTokenTheVaultHoldsIsRefused() public {
+        _createVault(main, DominoV2Types.MODE_SIMPLE, -600, 600);
+        _accrueFees(main);
+        BuyTaxToken bhop = new BuyTaxToken();
+        bhop.mint(address(this), 1e30);
+        _openV3(address(base), address(bhop));
+        _openV3(address(bhop), address(quote));
+        bhop.mint(address(vault), 5e15);
+        bhop.setOverdebited(address(vault), true);
+        uint128 amountIn = 1e12;
+        uint160 spot = _spot(main);
+        Plan.PlanV1 memory p = _plan();
+        p.swap = Plan.Swap(
+            rootId,
+            true,
+            amountIn,
+            _floor(main, amountIn, spot, true, 100),
+            _oneLeg(
+                DominoV2Types.SwapLeg(
+                    DominoV2Types.LEG_V3_POOL, address(0), address(base), address(quote), amountIn, 1,
+                    abi.encodePacked(address(base), uint24(500), address(bhop), uint24(500), address(quote))
+                )
+            )
+        );
+        vm.expectRevert(IDominoPositionActions.SwapEffectMismatch.selector);
         _execute(p);
         _eq(bhop.balanceOf(address(vault)), 5e15, "the owner's recoverable hop tokens are untouched");
         _ledgerBalanced();

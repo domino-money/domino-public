@@ -257,6 +257,16 @@ contract DominoSwapExecutorV3Test is V2TestBase {
         bytes memory five = abi.encodePacked(address(tokenA));
         for (uint256 i; i < 5; ++i) five = abi.encodePacked(five, uint24(500), i % 2 == 0 ? address(tokenB) : address(tokenA));
         _refused(_leg(address(tokenA), address(tokenB), 1, five), IDominoPositionActions.InvalidPlan.selector, "five hops");
+        // A path's intermediates are read only from a well-formed path (audit
+        // DV2-01): no address of a malformed one is tracked as a hop token.
+        _refused(_leg(address(tokenA), address(tokenB), 1,
+            abi.encodePacked(address(tokenA), uint24(500), address(0x1001), uint24(500), address(tokenB), uint8(0))),
+            IDominoPositionActions.InvalidPlan.selector, "a trailing byte after two hops");
+        bytes memory distinct = abi.encodePacked(address(tokenA));
+        for (uint256 i; i < 4; ++i) distinct = abi.encodePacked(distinct, uint24(500), address(uint160(0x1001 + i)));
+        distinct = abi.encodePacked(distinct, uint24(500), address(tokenB));
+        _refused(_leg(address(tokenA), address(tokenB), 1, distinct), IDominoPositionActions.InvalidPlan.selector,
+            "five hops through addresses that are no token");
         _refused(_leg(address(tokenB), address(tokenC), 1, abi.encodePacked(ab, uint24(3000), address(tokenC))),
             IDominoPositionActions.InvalidPlan.selector, "the path does not start at tokenIn");
         _refused(_leg(address(tokenA), address(tokenC), 1, ab), IDominoPositionActions.InvalidPlan.selector,
@@ -265,6 +275,37 @@ contract DominoSwapExecutorV3Test is V2TestBase {
             IDominoPositionActions.InvalidPlan.selector, "no pool for that fee");
         _refused(_leg(address(0), address(tokenB), 1, abi.encodePacked(address(0), uint24(500), address(tokenB))),
             IDominoPositionActions.InvalidPlan.selector, "native currency: v3 uses WETH");
+    }
+
+    // ------------------------------------- a path's intermediates (audit DV2-01)
+    /// A hop token that debits its sender one unit more than it moves would
+    /// make the host pay the next pool out of what it already held in that
+    /// token (owed fees, credits). The leg reverts and the holding stays whole;
+    /// the same path runs once the token is honest, leaving the holding as it was.
+    function testAnOverDebitingIntermediateIsRefusedAndTheHoldingStays() public {
+        tokenB.mint(address(host), 5e18);
+        bytes memory path = abi.encodePacked(address(tokenA), uint24(500), address(tokenB), uint24(3000), address(tokenC));
+        tokenB.setMode(3); // OVERDEBITS
+        _refused(_leg(address(tokenA), address(tokenC), 1, path), IDominoPositionActions.SwapEffectMismatch.selector,
+            "an over-debiting hop token");
+        _eq(tokenB.balanceOf(address(host)), 5e18, "the host's hop token untouched");
+        _eq(tokenA.balanceOf(address(host)), 100e18, "nothing spent");
+        tokenB.setMode(0);
+        _run(_leg(address(tokenA), address(tokenC), 1, path));
+        _eq(tokenB.balanceOf(address(host)), 5e18, "an honest hop leaves the holding as it was");
+    }
+
+    /// Every intermediate of a long path is held, not only the first: here the
+    /// third token of a four-hop path over-debits.
+    function testEveryIntermediateOfALongPathIsHeld() public {
+        _scripted(address(tokenC), address(tokenA), 100, 0);
+        bytes memory four = abi.encodePacked(address(tokenA), uint24(500), address(tokenB), uint24(3000), address(tokenC));
+        four = abi.encodePacked(four, uint24(100), address(tokenA), uint24(500), address(tokenB));
+        tokenC.mint(address(host), 5e18);
+        tokenC.setMode(3); // OVERDEBITS
+        _refused(_leg(address(tokenA), address(tokenB), 1, four), IDominoPositionActions.SwapEffectMismatch.selector,
+            "an over-debiting third token");
+        _eq(tokenC.balanceOf(address(host)), 5e18, "the host's third token untouched");
     }
 
     function testFourHopsAreTheLimit() public {

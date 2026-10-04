@@ -1,0 +1,508 @@
+{
+ "kind": "domino-v2-mutation-history",
+ "note": "The three hand-run campaigns behind the mutation claims of reports/V2_AUDIT_PACKAGE.md section 6 at v2-audit-2026-10-04 (29 of 29, 18 of 18, 5 of 5). Their scripts lived outside the repository and hashed no source, which the audit found (DV2-04). Their edits are now committed batches, transcribed by program from the scripts' own lists, and rerun on the remediation candidate with source hashes (mutations/). The results below are as those scripts recorded them; times are UTC.",
+ "campaigns": [
+  {
+   "claim": "the auto-exit: 29 of 29 caught (sandbox copy, the module's artifact rebuilt per mutant)",
+   "batch": "contracts/mutations/v2-auto-exit-adversarial-2026-10-03.json",
+   "ran": "2026-10-04T00:58Z to 2026-10-04T01:26Z",
+   "tree": "the working tree of claude/v2-adv-autoexit, committed five minutes after the run as c7290aaa; not hashed at the time",
+   "method": "a sandbox copy; DominoAutoExit.sol edited, its artifact rebuilt, AutoExitInvariants and AutoExitAttacks (and AutoExitVaultAttacks for the module switch) rerun; caught when any suite failed",
+   "results": [
+    {
+     "label": "operator admitted",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_mandatesExecuteOnceOnlyWhileActiveAndAuthorized, testASeededWalkReachesTheSuccessPaths",
+      "AutoExitAttacks.t.sol: testARemovedOperatorCannotExecute"
+     ]
+    },
+    {
+     "label": "automation halt",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_mandatesExecuteOnceOnlyWhileActiveAndAuthorized, testASeededWalkReachesTheSuccessPaths",
+      "AutoExitAttacks.t.sol: testAResumeQueuedBeforeTheHaltCannotLiftIt, testTheGlobalHaltStopsExitsButNeitherRevocationNorTheModuleSwitch"
+     ]
+    },
+    {
+     "label": "mandate active",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_mandatesExecuteOnceOnlyWhileActiveAndAuthorized, testASeededWalkReachesTheSuccessPaths",
+      "AutoExitAttacks.t.sol: testARegistrationFrontRunningCancelNonceLeavesOnlyRevoke, testARevokeThatLandsFirstEndsTheMandateForGood"
+     ]
+    },
+    {
+     "label": "mandate unexpired",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_mandatesExecuteOnceOnlyWhileActiveAndAuthorized, testASeededWalkReachesTheSuccessPaths",
+      "AutoExitAttacks.t.sol: testAnExpiredMandateNeverExecutesAndExpiryIsInclusive"
+     ]
+    },
+    {
+     "label": "one shot",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_mandatesExecuteOnceOnlyWhileActiveAndAuthorized, invariant_noncesAreSingleUseAndRegistrationFollowsItsRules, testASeededWalkReachesTheSuccessPaths, testTheHandlerReachesEveryAction",
+      "AutoExitAttacks.t.sol: testARotatedOutPublisherCannotFireAndItsSuccessorCan, testATwapWindowAboveTheFloorFiresAStopOnHistoryTheFloorWindowNeverSaw, testAnEpochRaisedBetweenSigningAndExecutionVoidsTheObservation, testAnExecutionThatLandsBeforeTheRevokeWins, testAnExpiredMandateNeverExecutesAndExpiryIsInclusive, testAnObservationDatedAfterTheEpochSurvivesItButNotTheKeysRemoval, testHostileRouterScriptsAreRefusedByTheirEffect, testLegsThatSellTheWrongTokenOrTheWrongAmountAreRefused, testStaleOrMisshapenObservationsAreRefusedAndSpendNothing, testTheGlobalHaltStopsExitsButNeitherRevocationNorTheModuleSwitch, testTheModuleSwitchPausesAMandateWithoutRevokingIt"
+     ]
+    },
+    {
+     "label": "exit module enabled",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitAttacks.t.sol: testTheModuleSwitchPausesAMandateWithoutRevokingIt",
+      "AutoExitVaultAttacks.t.sol: testAfterExitAllOnlyTheModuleSwitchOrARevokeStopsTheStop"
+     ]
+    },
+    {
+     "label": "vault owner unchanged",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_mandatesExecuteOnceOnlyWhileActiveAndAuthorized, testASeededWalkReachesTheSuccessPaths",
+      "AutoExitAttacks.t.sol: testANewVaultOwnerIsNotBoundByTheOldOwnersMandate"
+     ]
+    },
+    {
+     "label": "pool tokens ordered and distinct",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitAttacks.t.sol: testAVaultNoFactoryMadeCannotReachOtherOwnersCreditsOrOwedFees"
+     ]
+    },
+    {
+     "label": "trigger crossed",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_executionsNeedACrossedTriggerOnFreshEvidenceInsideTheBand, testASeededWalkReachesTheSuccessPaths",
+      "AutoExitAttacks.t.sol: testARevokeThatLandsFirstEndsTheMandateForGood, testATwapWindowAboveTheFloorFiresAStopOnHistoryTheFloorWindowNeverSaw"
+     ]
+    },
+    {
+     "label": "TWAP floor",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_executionsNeedACrossedTriggerOnFreshEvidenceInsideTheBand",
+      "AutoExitAttacks.t.sol: testALongTwapWindowIsBoundedByTheFloorTheHistoryAndTheBand"
+     ]
+    },
+    {
+     "label": "band is the mandate's slippage",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: testASeededWalkReachesTheSuccessPaths",
+      "AutoExitAttacks.t.sol: testALongTwapWindowIsBoundedByTheFloorTheHistoryAndTheBand, testAStillValidObservationFiresAfterARecoveryOnlyWithinTheBand"
+     ]
+    },
+    {
+     "label": "removal minimums measured",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: testASeededWalkReachesTheSuccessPaths"
+     ]
+    },
+    {
+     "label": "legs sell the source for the target",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitAttacks.t.sol: testLegsThatSellTheWrongTokenOrTheWrongAmountAreRefused"
+     ]
+    },
+    {
+     "label": "everything withdrawn converted",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: testASeededWalkReachesTheSuccessPaths",
+      "AutoExitAttacks.t.sol: testLegsThatSellTheWrongTokenOrTheWrongAmountAreRefused"
+     ]
+    },
+    {
+     "label": "conversion floor",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: testASeededWalkReachesTheSuccessPaths",
+      "AutoExitAttacks.t.sol: testASplitRouteIsHeldToTheFloorAsAWhole, testFuzzAHostileRouterLosesTheOwnerAtMostTheMandatesSlippage"
+     ]
+    },
+    {
+     "label": "fee rate 20 bps",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_tariffDeliveryAndFloorFollowTheRules, testASeededWalkReachesTheSuccessPaths, testTheHandlerReachesEveryAction",
+      "AutoExitAttacks.t.sol: testARoutersGiftInAnUntrackedTokenStaysInTheModule, testASplitRouteIsHeldToTheFloorAsAWhole, testATwapWindowAboveTheFloorFiresAStopOnHistoryTheFloorWindowNeverSaw, testAVaultNoFactoryMadeCannotReachOtherOwnersCreditsOrOwedFees, testAnAnchorAtTheBandsEdgeStacksTheBandOnTheFloor, testFuzzAHostileRouterLosesTheOwnerAtMostTheMandatesSlippage"
+     ]
+    },
+    {
+     "label": "listed output charged once",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_tariffDeliveryAndFloorFollowTheRules, testASeededWalkReachesTheSuccessPaths, testTheHandlerReachesEveryAction",
+      "AutoExitAttacks.t.sol: testARoutersGiftInAnUntrackedTokenStaysInTheModule, testASplitRouteIsHeldToTheFloorAsAWhole, testAVaultNoFactoryMadeCannotReachOtherOwnersCreditsOrOwedFees, testAnAnchorAtTheBandsEdgeStacksTheBandOnTheFloor, testFuzzAHostileRouterLosesTheOwnerAtMostTheMandatesSlippage"
+     ]
+    },
+    {
+     "label": "deferred delivery credited",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: testASeededWalkReachesTheSuccessPaths, testTheHandlerReachesEveryAction",
+      "AutoExitAttacks.t.sol: testAVaultNoFactoryMadeCannotReachOtherOwnersCreditsOrOwedFees"
+     ]
+    },
+    {
+     "label": "claim clears the credit",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: testASeededWalkReachesTheSuccessPaths, testTheHandlerReachesEveryAction"
+     ]
+    },
+    {
+     "label": "no over-debit on a push",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: testASeededWalkReachesTheSuccessPaths"
+     ]
+    },
+    {
+     "label": "native only inside an execution",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_nothingElseStaysInTheModule, testASeededWalkReachesTheSuccessPaths, testTheHandlerReachesEveryAction"
+     ]
+    },
+    {
+     "label": "registration: known id",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitAttacks.t.sol: testARegistrationFrontRunningCancelNonceLeavesOnlyRevoke, testARevokeThatLandsFirstEndsTheMandateForGood"
+     ]
+    },
+    {
+     "label": "registration: nonce unused",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: testASeededWalkReachesTheSuccessPaths"
+     ]
+    },
+    {
+     "label": "registration: nonce consumed",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_noncesAreSingleUseAndRegistrationFollowsItsRules, testASeededWalkReachesTheSuccessPaths, testTheHandlerReachesEveryAction",
+      "AutoExitAttacks.t.sol: testARegistrationFrontRunningCancelNonceLeavesOnlyRevoke"
+     ]
+    },
+    {
+     "label": "registration: signature",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_noncesAreSingleUseAndRegistrationFollowsItsRules, testASeededWalkReachesTheSuccessPaths, testTheHandlerReachesEveryAction"
+     ]
+    },
+    {
+     "label": "registration: owner owns the vault",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_noncesAreSingleUseAndRegistrationFollowsItsRules, testASeededWalkReachesTheSuccessPaths"
+     ]
+    },
+    {
+     "label": "registration: validity not past",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_noncesAreSingleUseAndRegistrationFollowsItsRules, testASeededWalkReachesTheSuccessPaths"
+     ]
+    },
+    {
+     "label": "revoke: owner only",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_noncesAreSingleUseAndRegistrationFollowsItsRules, testASeededWalkReachesTheSuccessPaths"
+     ]
+    },
+    {
+     "label": "cancelNonce: unused",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "AutoExitInvariants.t.sol: invariant_claimsAndFlushesAreExact, invariant_noncesAreSingleUseAndRegistrationFollowsItsRules, testASeededWalkReachesTheSuccessPaths",
+      "AutoExitAttacks.t.sol: testARegistrationFrontRunningCancelNonceLeavesOnlyRevoke"
+     ]
+    }
+   ]
+  },
+  {
+   "claim": "the registry: 18 of 18 hand-made mutants caught",
+   "batch": "contracts/mutations/v2-registry-adversarial-2026-10-03.json",
+   "ran": "2026-10-04T00:16Z to 2026-10-04T00:35Z",
+   "tree": "the working tree of claude/v2-adv-registry, committed as 566e91d3; not hashed at the time",
+   "method": "a renamed copy of DominoRegistry.sol compiled under test/ (imports adjusted), RegistryWorld pointed at it, RegistryInvariants rerun; caught when a test or an invariant failed. The committed batch edits the registry itself and rebuilds its artifact, which the world loads.",
+   "results": [
+    {
+     "label": "M01 same-second re-admission",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a re-admission or resume broke the scheduled-after rule",
+      "a stale change executed",
+      "the halt moved outside haltAutomation and a resume"
+     ]
+    },
+    {
+     "label": "M02 guardian cancels its replacement",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "the guardian vetoed its replacement"
+     ]
+    },
+    {
+     "label": "M03 epoch may pass now",
+     "verdict": "CAUGHT",
+     "failingTests": [],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "the epoch fell or passed the clock"
+     ]
+    },
+    {
+     "label": "M04 no timelock at execution",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a change executed before its timelock"
+     ]
+    },
+    {
+     "label": "M05 operator may publish",
+     "verdict": "CAUGHT",
+     "failingTests": [],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "an operator publishes"
+     ]
+    },
+    {
+     "label": "M06 router removal not timed",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a re-admission or resume broke the scheduled-after rule",
+      "a removal time",
+      "a stale change executed"
+     ]
+    },
+    {
+     "label": "M07 halt clock not restarted",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a re-admission or resume broke the scheduled-after rule",
+      "halt"
+     ]
+    },
+    {
+     "label": "M08 anyone narrows",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a change is still pending",
+      "a pending change is not as scheduled",
+      "a removal time",
+      "the epoch fell or passed the clock",
+      "the halt moved outside haltAutomation and a resume"
+     ]
+    },
+    {
+     "label": "M09 stale resume executes",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a re-admission or resume broke the scheduled-after rule",
+      "a stale change executed",
+      "the halt moved outside haltAutomation and a resume"
+     ]
+    },
+    {
+     "label": "M10 router 2.1.1 admitted",
+     "verdict": "CAUGHT",
+     "failingTests": [],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a router below 2.1.2 is admitted"
+     ]
+    },
+    {
+     "label": "M11 timelock one second short",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a pending change is not as scheduled",
+      "an event disagrees with the change it reports"
+     ]
+    },
+    {
+     "label": "M12 accepted offer stays open",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "governance"
+     ]
+    },
+    {
+     "label": "M13 timelock change ignored",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a change executed other than as scheduled",
+      "timelock"
+     ]
+    },
+    {
+     "label": "M14 operator removal not logged",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a removal time"
+     ]
+    },
+    {
+     "label": "M15 publisher re-admission reads the operator clock",
+     "verdict": "CAUGHT",
+     "failingTests": [],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a re-admission or resume broke the scheduled-after rule"
+     ]
+    },
+    {
+     "label": "M16 change executes twice",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a spent change still pending",
+      "an event disagrees with the change it reports"
+     ]
+    },
+    {
+     "label": "M17 guardian schedules",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testTheHandlerReachesEveryAction"
+     ],
+     "failures": [
+      "a call's outcome differs from the docs",
+      "a fresh re-admission or resume failed"
+     ]
+    },
+    {
+     "label": "M18 dirty flag accepted",
+     "verdict": "CAUGHT",
+     "failingTests": [],
+     "failures": [
+      "a call's outcome differs from the docs"
+     ]
+    }
+   ]
+  },
+  {
+   "claim": "the 3 Oct decisions' five guards: 5 of 5 caught",
+   "batch": "contracts/mutations/v2-audit-2026-10-04.json (the five D-1 and D-2 entries)",
+   "ran": "2026-10-04T02:03Z to 2026-10-04T02:08Z",
+   "tree": "the working tree of claude/v2-adversarial-suite, committed ten minutes after the run as eeb4c6c8; not hashed at the time",
+   "method": "each edit made in place in the worktree, the edited contract rebuilt, its unit suite rerun, the source restored and rebuilt afterwards",
+   "results": [
+    {
+     "label": "M1 window ceiling check",
+     "batchLabel": "D-1: a TWAP window over the hour is refused",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testAV3TwapWindowIsCappedAtAnHour"
+     ],
+     "failures": [
+      "next call did not revert as expected"
+     ]
+    },
+    {
+     "label": "M2 constructor ceiling",
+     "batchLabel": "D-1: the constructor refuses a floor above the ceiling",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testConstructorRefusesMissingParameters"
+     ],
+     "failures": [
+      "next call did not revert as expected"
+     ]
+    },
+    {
+     "label": "M3 exitAll clears module",
+     "batchLabel": "D-2: exitAll disables the exit module",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testExitAllWithdrawsTheConsent"
+     ],
+     "failures": [
+      "Expected(\"disabled\")"
+     ]
+    },
+    {
+     "label": "M4 exitAll emits",
+     "batchLabel": "D-2: exitAll records the module it disabled",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testExitAllWithdrawsTheConsent"
+     ],
+     "failures": [
+      "RootDisarmed != expected ExitModuleSet"
+     ]
+    },
+    {
+     "label": "M5 exitAll guard",
+     "batchLabel": "D-2: only when a module was enabled",
+     "verdict": "CAUGHT",
+     "failingTests": [
+      "testExitAllWithdrawsTheConsent"
+     ],
+     "failures": [
+      "Expected(\"nothing to disable\")"
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -212,6 +212,8 @@ Examples on Robinhood (USDG rank 1, ETH/WETH rank 2):
 
 The planner (F6) should still service factory vaults only, to avoid wasting gas.
 
+**A double-entry token is outside the model** (known limit B of [the audit package](../../reports/V2_AUDIT_PACKAGE.md), restated after the audit of 4 Oct). The module keeps both its owed fees and the owners' `unclaimed` credits per token address. With a token whose second address moves the same balance, what it keeps in that token, credits included, can leave through the twin. Such tokens are not supported; the owner accepted this scope on 4 Oct. This reach was found by reading the code, not shown with a supported token.
+
 **No admin.** The module has no admin, no upgrade path and no sweep. Tokens sent to it outside an execution stay there.
 
 ## What users must be told
@@ -294,6 +296,8 @@ The batch has 107 mutations and declares one survivor with its reason: `_deliver
 - **The other 54:** their code is unchanged, and all were caught in the full run on the previous revision.
 
 Guards that moved into F1b's modules are pinned by F1b's batch (`v2-fees-route-2026-10-01.json`): the lock itself, the fee push and flush, token calls, leg kinds and effects.
+
+`v2-auto-exit-adversarial-2026-10-03.json` runs 29 of the module's guards against the adversarial suites instead (`AutoExitInvariants`, `AutoExitAttacks`, `AutoExitVaultAttacks`). Those suites deploy the module from its artifact, so the batch rebuilds it after each edit (`rebuild`). These are the edits behind the audit package's "29 of 29"; their reports are under `reports/v2-audit-2026-10-04/remediation/`.
 
 ## Follow-ups
 

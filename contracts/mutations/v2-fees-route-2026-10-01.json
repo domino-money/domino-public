@@ -1,6 +1,6 @@
 {
   "description": "V2 F1 fee module and swap-leg executor (#283): every guard of contracts/src/v2/fees and contracts/src/v2/route, deleted or weakened one at a time against the suite meant to catch it.",
-  "provenance": "Authored 2026-10-01 with the F1 fees/route change (claude/v2-f1-fees-route). Revised 2026-10-02 (#283 item 5): the floor's mulDiv is now the vendored FullMath under src/v2/positions/uniswap, and six mutants pin its rounding: one for each of the quote's five mulDivs and one for the floor's own.",
+  "provenance": "Authored 2026-10-01 with the F1 fees/route change (claude/v2-f1-fees-route). Revised 2026-10-02 (#283 item 5): the floor's mulDiv is now the vendored FullMath under src/v2/positions/uniswap, and six mutants pin its rounding: one for each of the quote's five mulDivs and one for the floor's own. Revised 2026-10-04 (audit DV2-01): the executor now reads a v3 path's intermediates behind the same length checks, so the two whole-hop mutants name the swap's own occurrence (index 0); v2-audit-2026-10-04.json mutates the other.",
   "mutations": [
     {
       "label": "executor runs only inside a locked action",
@@ -252,14 +252,16 @@
       "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
       "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
       "old": "if (length < 43 || (length - 20)",
-      "new": "if ((length - 20)"
+      "new": "if ((length - 20)",
+      "index": 0
     },
     {
       "label": "a v3 path is made of whole hops",
       "file": "contracts/src/v2/route/DominoSwapExecutor.sol",
       "suite": "test/v2/route/DominoSwapExecutorV3.t.sol",
       "old": " || (length - 20) % 23 != 0 ||",
-      "new": " ||"
+      "new": " ||",
+      "index": 0
     },
     {
       "label": "at most four v3 hops",

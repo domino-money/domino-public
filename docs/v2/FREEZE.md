@@ -58,13 +58,23 @@ A change to a V2 source or a release input is deliberate:
 - Its description says what changed and why.
 - After the audit tag, the change is a new candidate. Never describe it as the audited release.
 
+## Rebuilding from a clean checkout
+
+`sh scripts/v2/audit-bootstrap.sh` installs the locked dependencies, builds what every V2 suite needs and checks the manifest. That covers the V1 contracts the runner's size gate reads and the integration artifacts the wired suites load by name. Then run one suite at a time (`node scripts/test-contracts.mjs --match-path <suite>`). [The audit package](../../reports/V2_AUDIT_PACKAGE.md) §1 lists the steps.
+
 ## Tags
 
-- **`v2-audit-YYYY-MM-DD`:** an annotated tag on a `main` commit whose full CI run passed. `reports/v2-audit-YYYY-MM-DD/freeze.json` records:
+- **`v2-audit-YYYY-MM-DD`:** an annotated tag on a `main` commit, cut only after main's own full CI run on that commit passed. A pull request's run on the same tree does not count. `reports/v2-audit-YYYY-MM-DD/freeze.json` records:
   - the commit, tree and tag object;
   - the CI run;
   - the SHA-256 of the manifest.
+
+  A tag is never moved and a freeze record never edited: what happens later (a rerun, an audit's report, a remediation) is recorded beside it. A second candidate on a date that already has a tag takes the suffix `.2`.
 - **`v2-release-YYYY-MM-DD`:** an annotated tag on the commit a deployment is prepared from. It is that deployment's `--release-tag`.
+
+## Audits
+
+`reports/v2-audit-YYYY-MM-DD/` keeps an audit of that tag as delivered: the report, the findings, the evidence archive and its receipt, with their SHA-256 in the folder's README. A remediation adds a `remediation/` folder beside them and becomes the next candidate. `v2-audit-2026-10-04` was audited on 4 Oct 2026 (REQUEST_CHANGES); [its folder](../../reports/v2-audit-2026-10-04/README.md) maps each finding to its fix.
 
 ## The deployment binding
 

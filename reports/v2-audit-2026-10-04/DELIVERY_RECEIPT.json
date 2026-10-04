@@ -1,0 +1,10 @@
+{
+  "archive": "DOMINO_V2_AUDIT_EVIDENCE.zip",
+  "sha256": "db3a30d7b6cdb8ab8734f160ff1a8a5db5aeab6ed186c577f7ef7ff93976650e",
+  "bytes": 996367,
+  "zip_members": 131,
+  "hashed_payload_members": 130,
+  "verification": "PASS: exact member set, sizes, SHA256, safe relative paths, ZIP CRC",
+  "report_sha256": "d778ced0da068d1ed7cef7ecf19a798d2b858213dd333eb68e6d6847d00fb0e3",
+  "findings_sha256": "7a1b3e05574063b733c97eab86d6d49b0a1aca7839cec5698a68c1612624de91"
+}

@@ -1,0 +1,272 @@
+{
+ "description": "The auto-exit module's guards against the adversarial suites, which deploy the module from its artifact (vm.getCode): each guard deleted or weakened alone, the module rebuilt, then AutoExitInvariants and AutoExitAttacks (and AutoExitVaultAttacks for the module switch) rerun. A mutation is caught when any of them fails.",
+ "provenance": "Transcribed 2026-10-04 (audit DV2-04) from the hand-run script behind the audit package's '29 of 29', with the same 29 edits and suites: run 4 Oct 2026 00:58-01:25 UTC (3 Oct evening in Brazil) on the working tree committed five minutes later as c7290aaa. Its results are in reports/v2-audit-2026-10-04/remediation/mutation-history.json. Run: node scripts/mutate-contracts.mjs contracts/mutations/v2-auto-exit-adversarial-2026-10-03.json --with-artifacts",
+ "file": "contracts/src/v2/autoexit/DominoAutoExit.sol",
+ "rebuild": [
+  "src/v2/autoexit/DominoAutoExit.sol"
+ ],
+ "mutations": [
+  {
+   "label": "operator admitted",
+   "old": "if (!ROUTE_REGISTRY.isOperator(msg.sender)) revert Unauthorized();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "automation halt",
+   "old": "if (ROUTE_REGISTRY.automationHalted()) revert AutomationHalted();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "mandate active",
+   "old": "if (record.status != STATUS_ACTIVE || block.timestamp > record.validUntil) revert MandateNotActive();",
+   "new": "if (block.timestamp > record.validUntil) revert MandateNotActive();",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "mandate unexpired",
+   "old": "if (record.status != STATUS_ACTIVE || block.timestamp > record.validUntil) revert MandateNotActive();",
+   "new": "if (record.status != STATUS_ACTIVE) revert MandateNotActive();",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "one shot",
+   "old": "record.status = STATUS_EXECUTED;",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "exit module enabled",
+   "old": "if (vault.exitModule() != address(this)) revert ExitModuleNotEnabled();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol",
+    "test/v2/adversarial/AutoExitVaultAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "vault owner unchanged",
+   "old": "if (vault.owner() != record.owner) revert VaultOwnerChanged();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "pool tokens ordered and distinct",
+   "old": "pool.currency0 >= pool.currency1",
+   "new": "pool.currency0 > pool.currency1",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "trigger crossed",
+   "old": "if (price > record.triggerBelowSqrtPriceX96 && (above == 0 || price < above)) revert TriggerNotReached();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "TWAP floor",
+   "old": "if (window < minTwapSeconds) revert TwapWindowTooShort();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "band is the mandate's slippage",
+   "old": "(price,) = IDominoPriceAnchor(priceAnchor).anchor(pool, evidence, maxAge, band);",
+   "new": "(price,) = IDominoPriceAnchor(priceAnchor).anchor(pool, evidence, maxAge, MAX_SLIPPAGE_BPS);",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "removal minimums measured",
+   "old": "        if (exit.received0 < execution.amount0MinRemoved || exit.received1 < execution.amount1MinRemoved) {\n            revert BelowMinimum();\n        }\n",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "legs sell the source for the target",
+   "old": "if (leg.tokenIn != conversion.source || leg.tokenOut != exit.convertTo) revert InvalidExecution();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "everything withdrawn converted",
+   "old": "if (remaining != 0) revert InvalidExecution();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "conversion floor",
+   "old": "if (converted < floor) revert BelowMinimum();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "fee rate 20 bps",
+   "old": "return DominoFeeRules.feeOf(amount, DominoV2Types.FEE_AUTO_EXIT_BPS);",
+   "new": "return DominoFeeRules.feeOf(amount, DominoV2Types.FEE_AUTO_EXIT_BPS + 1);",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "listed output charged once",
+   "old": "            uint256 fee = _fee(net);\n            _charge(exit, exit.convertTo, fee);\n            net -= fee;",
+   "new": "            uint256 fee = _fee(net);\n            _charge(exit, exit.convertTo, fee + fee);\n            net -= fee + fee;",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "deferred delivery credited",
+   "old": "unclaimed[owner][token] = total;",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "claim clears the credit",
+   "old": "unclaimed[msg.sender][token] = 0;",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "no over-debit on a push",
+   "old": "if (debited > amount) revert DeliveryMismatch(token);",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "native only inside an execution",
+   "old": "if (!_exiting()) revert Unauthorized();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "registration: known id",
+   "old": "if (_mandates[mandateHash].status != 0) revert MandateAlreadyRegistered();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "registration: nonce unused",
+   "old": "if (nonceUsed[mandate.owner][mandate.nonce]) revert NonceAlreadyUsed();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "registration: nonce consumed",
+   "old": "nonceUsed[mandate.owner][mandate.nonce] = true;",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "registration: signature",
+   "old": "        if (!_validSignature(mandate.owner, DominoV2Types.digest(domainSeparator(), mandateHash), signature)) {\n            revert InvalidSignature();\n        }\n",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "registration: owner owns the vault",
+   "old": "if (IDominoVault(mandate.vault).owner() != mandate.owner) revert Unauthorized();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "registration: validity not past",
+   "old": "mandate.validUntil < block.timestamp",
+   "new": "false",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "revoke: owner only",
+   "old": "if (msg.sender != record.owner) revert Unauthorized();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  },
+  {
+   "label": "cancelNonce: unused",
+   "old": "if (nonceUsed[msg.sender][nonce]) revert NonceAlreadyUsed();",
+   "new": "",
+   "suites": [
+    "test/v2/adversarial/AutoExitInvariants.t.sol",
+    "test/v2/adversarial/AutoExitAttacks.t.sol"
+   ]
+  }
+ ]
+}

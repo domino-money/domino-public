@@ -1,6 +1,6 @@
 {
  "description": "Domino V2 vault (F3) guards: every check in contracts/src/v2/vault, each deleted or weakened alone, against the suite that pins it. Intentional survivors carry their reason.",
- "provenance": "Authored 2026-10-02 with the F3 vault (domino-money/domino#283, #282). Run: node scripts/mutate-contracts.mjs contracts/mutations/v2-vault-2026-10-02.json",
+ "provenance": "Authored 2026-10-02 with the F3 vault (domino-money/domino#283, #282). Updated 2026-10-04 (audit DV2-04): eight substitutions written for the source before #317 no longer applied (the vault's caps and withdrawReserves' recipient, #317; exitAll disabling the exit module, #319). They are rewritten for the current text with the same intent (three labels now name the caps), and the two guards #317 added are in: the observation-age cap and the withdrawal's recipient. Run: node scripts/mutate-contracts.mjs contracts/mutations/v2-vault-2026-10-02.json",
  "mutations": [
   {
    "label": "implementation needs a factory",
@@ -230,15 +230,15 @@
    "label": "withdrawal needs an amount",
    "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
    "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
-   "old": "        if (amount == 0) revert InvalidAmount();\n        uint256 left = amount;",
-   "new": "        uint256 left = amount;"
+   "old": "        if (amount == 0) revert InvalidAmount();\n        if (recipient == address(0)) revert InvalidRecipient();",
+   "new": "        if (recipient == address(0)) revert InvalidRecipient();"
   },
   {
    "label": "withdrawal needs the reserves",
    "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
    "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
-   "old": "        if (left != 0) revert InsufficientReserves();\n        _pay(token, _owner, amount);",
-   "new": "        _pay(token, _owner, amount);"
+   "old": "        if (left != 0) revert InsufficientReserves();\n        _pay(token, recipient, amount);",
+   "new": "        _pay(token, recipient, amount);"
   },
   {
    "label": "withdrawal spends uncharged first",
@@ -335,8 +335,8 @@
    "label": "exitAll pauses",
    "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
    "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
-   "old": "        _paused = true;\n        // Recorded even when already disarmed",
-   "new": "        // Recorded even when already disarmed"
+   "old": "        _paused = true;\n        if (_exitModule != address(0)) {",
+   "new": "        if (_exitModule != address(0)) {"
   },
   {
    "label": "exitAll disarms the root",
@@ -391,14 +391,14 @@
    "label": "policy: overlap cap",
    "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
    "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
-   "old": "|| next.maxOverlapBps > MAX_OVERLAP_BPS || next.minimumIntervalSeconds == 0",
-   "new": "|| next.minimumIntervalSeconds == 0"
+   "old": "|| next.maxOverlapBps > MAX_OVERLAP_BPS || next.minimumIntervalSeconds < MIN_INTERVAL_SECONDS",
+   "new": "|| next.minimumIntervalSeconds < MIN_INTERVAL_SECONDS"
   },
   {
-   "label": "policy: an interval",
+   "label": "policy: the 600 s interval floor",
    "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
    "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
-   "old": "|| next.maxOverlapBps > MAX_OVERLAP_BPS || next.minimumIntervalSeconds == 0",
+   "old": "|| next.maxOverlapBps > MAX_OVERLAP_BPS || next.minimumIntervalSeconds < MIN_INTERVAL_SECONDS",
    "new": "|| next.maxOverlapBps > MAX_OVERLAP_BPS"
   },
   {
@@ -416,25 +416,39 @@
    "new": "|| next.maxPositions < _members.length"
   },
   {
-   "label": "limits: slippage below 100%",
+   "label": "limits: the 10% slippage cap",
    "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
    "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
-   "old": "next.maxSlippageBps >= 10_000 || next.maxPriceImpactBps >= 10_000",
-   "new": "next.maxPriceImpactBps >= 10_000"
+   "old": "next.maxSlippageBps > MAX_SLIPPAGE_BPS || next.maxPriceImpactBps > MAX_ANCHOR_BAND_BPS",
+   "new": "next.maxPriceImpactBps > MAX_ANCHOR_BAND_BPS"
   },
   {
-   "label": "limits: band below 100%",
+   "label": "limits: the 5% band cap",
    "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
    "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
-   "old": "next.maxSlippageBps >= 10_000 || next.maxPriceImpactBps >= 10_000",
-   "new": "next.maxSlippageBps >= 10_000"
+   "old": "next.maxSlippageBps > MAX_SLIPPAGE_BPS || next.maxPriceImpactBps > MAX_ANCHOR_BAND_BPS",
+   "new": "next.maxSlippageBps > MAX_SLIPPAGE_BPS"
   },
   {
    "label": "limits: an observation age",
    "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
    "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
-   "old": "|| next.maxObservationAgeSeconds == 0\n",
-   "new": "\n"
+   "old": "|| next.maxObservationAgeSeconds == 0 || next.maxObservationAgeSeconds > MAX_OBSERVATION_AGE_SECONDS",
+   "new": "|| next.maxObservationAgeSeconds > MAX_OBSERVATION_AGE_SECONDS"
+  },
+  {
+   "label": "limits: the 300 s observation age cap",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "|| next.maxObservationAgeSeconds == 0 || next.maxObservationAgeSeconds > MAX_OBSERVATION_AGE_SECONDS",
+   "new": "|| next.maxObservationAgeSeconds == 0"
+  },
+  {
+   "label": "withdrawal needs a recipient",
+   "file": "contracts/src/v2/vault/DominoV2VaultBase.sol",
+   "suite": "test/v2/vault/DominoV2VaultOwner.t.sol",
+   "old": "        if (recipient == address(0)) revert InvalidRecipient();\n        uint256 left = amount;",
+   "new": "        uint256 left = amount;"
   },
   {
    "label": "limits: an upside",

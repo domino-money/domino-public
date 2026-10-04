@@ -1,0 +1,128 @@
+{
+ "kind": "domino-mutation-run",
+ "batch": "contracts/mutations/v2-registry-adversarial-2026-10-03.json",
+ "batchSha256": "09071b92e8927216a398bc65450d0106cf99f4328c51dace918d1507cb339e12",
+ "sources": {
+  "contracts/src/v2/registry/DominoRegistry.sol": "7a3bbafb7971d01036607688adf59252a9e4b202ff55d6e4682de82442636d18"
+ },
+ "suites": {
+  "test/v2/adversarial/RegistryInvariants.t.sol": "95503670e4ab68d3dd00c928adae8bb9d0e00fa75207fe19bc6a9ffe5c026486"
+ },
+ "rebuild": [
+  "src/v2/registry/DominoRegistry.sol"
+ ],
+ "only": null,
+ "rows": [
+  {
+   "label": "M01 same-second re-admission",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 4 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M02 guardian cancels its replacement",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "6 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M03 epoch may pass now",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "6 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M04 no timelock at execution",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "5 passed / 3 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M05 operator may publish",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "6 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M06 router removal not timed",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 4 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M07 halt clock not restarted",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 4 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M08 anyone narrows",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "1 passed / 7 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M09 stale resume executes",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 4 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M10 router 2.1.1 admitted",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "6 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M11 timelock one second short",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 4 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M12 accepted offer stays open",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "5 passed / 3 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M13 timelock change ignored",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 4 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M14 operator removal not logged",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "6 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M15 publisher re-admission reads the operator clock",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "6 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M16 change executes twice",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "4 passed / 4 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M17 guardian schedules",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "6 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "M18 dirty flag accepted",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "7 passed / 1 failed / 0 skipped across 1 suite(s)"
+  }
+ ],
+ "baselineFailure": null,
+ "summary": "18 mutations: 18 caught, 0 not caught.",
+ "exitCode": 0
+}

@@ -429,20 +429,55 @@ export function rpcErrorReason(endpoint, body) {
   if (!LOOPBACK_HOSTS.includes(new URL(endpoint).hostname) || !body?.error) return '';
   return ' (' + String(body.error.message ?? '').replace(/https?:\/\/\S+/g, '[endpoint]').slice(0, 200) + ')';
 }
+/** The largest JSON-RPC reply this tool reads; bytecode, blocks and receipts stay far below it (audit DV2-05). */
+export const RPC_REPLY_MAX_BYTES = 8 * 1024 * 1024;
+
+/** A reply's text, refused once it passes `max` bytes, before the rest is read. */
+async function boundedReply(response, max) {
+  const reader = response.body.getReader(); const chunks = []; let size = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      size += value.length; if (size > max) throw new Error('rpc_reply_too_large'); chunks.push(value);
+    }
+  } finally { await reader.cancel().catch(() => {}); }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/** A JSON-RPC 2.0 reply to request `id`: exactly one of result and error. An error may carry a null id (the spec's
+ * answer when the request id could not be read); a result never does. */
+function validReply(body, id) {
+  if (body === null || typeof body !== 'object' || Array.isArray(body) || body.jsonrpc !== '2.0') return false;
+  const hasResult = Object.hasOwn(body, 'result'), hasError = Object.hasOwn(body, 'error');
+  if (hasResult === hasError) return false;
+  if (hasError) return body.error !== null && typeof body.error === 'object' && (body.id === id || body.id === null);
+  return body.id === id;
+}
+
 /** JSON-RPC over HTTP. A rate-limit answer (HTTP 429, -32005, -32016) is retried with backoff, at most five
- * times; any other failure is final. Errors never carry the URL. */
-export function makeRpc(url, { retryDelays = [1000, 2000, 4000, 8000, 8000] } = {}) {
+ * times; any other failure is final. A reply is read up to `maxReplyBytes` and must answer the request it was
+ * sent for (rpc_reply_too_large, rpc_invalid_reply). Errors never carry the URL. */
+export function makeRpc(url, { retryDelays = [1000, 2000, 4000, 8000, 8000], maxReplyBytes = RPC_REPLY_MAX_BYTES } = {}) {
   const endpoint = new URL(url); ensure(['http:', 'https:'].includes(endpoint.protocol), 'invalid_rpc_url');
   let id = 0;
   return async (method, params = []) => {
     for (let attempt = 0; ; attempt++) {
-      let body, limited = false;
+      const requestId = ++id;
+      let body, limited = false, text;
       try {
         const response = await fetch(endpoint, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }), signal: AbortSignal.timeout(60000) });
+          body: JSON.stringify({ jsonrpc: '2.0', id: requestId, method, params }), signal: AbortSignal.timeout(60000) });
         limited = response.status === 429;
-        if (!limited) { ensure(response.ok, 'rpc_http_failed'); body = await response.json(); limited = RATE_LIMITED(body); }
-      } catch { throw new Error('rpc_transport_failed: ' + method); }
+        if (limited) await response.body?.cancel().catch(() => {});
+        else { ensure(response.ok, 'rpc_http_failed'); text = await boundedReply(response, maxReplyBytes); }
+      } catch (error) {
+        throw new Error((error.message === 'rpc_reply_too_large' ? 'rpc_reply_too_large: ' : 'rpc_transport_failed: ') + method);
+      }
+      if (!limited) {
+        try { body = JSON.parse(text); } catch { throw new Error('rpc_invalid_reply: ' + method); }
+        ensure(validReply(body, requestId), 'rpc_invalid_reply: ' + method);
+        limited = RATE_LIMITED(body);
+      }
       if (limited && attempt < retryDelays.length) { await new Promise(done => setTimeout(done, retryDelays[attempt])); continue; }
       ensure(body && !body.error && Object.hasOwn(body, 'result'), 'rpc_method_failed: ' + method + rpcErrorReason(url, body)); return body.result;
     }

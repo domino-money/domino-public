@@ -10,7 +10,7 @@ import { repoRoot, viem, CREATE_X, CREATE_X_CODE_HASH, CREATE3_PROXY_HASH, CREAT
   POLICIES, PRODUCTION, PRODUCTION_DEPLOYER, PUBLIC_TEST_ACCOUNTS, MAX_TRANSACTION_GAS, SAFE_SINGLETONS, SAFE_PROXY_RUNTIME_HASHES,
   precomputeAddresses, validateRoleInput, checkRoleAddresses, compileV2, checkPolicyConstants, literalNumber, prepareDeployment, rebuildPackage,
   packageDigest, fullPackage, planDeployment, preflightDeployment, verifyDeployment, deploymentState, checkSignedTransactions,
-  explorerInput, committedProfile, checkProvenance, expectedRuntime, writeJson, flags, cli, readJson, quantity, makeRpc, readOnlyRpc,
+  explorerInput, committedProfile, checkProvenance, expectedRuntime, writeJson, flags, cli, readJson, quantity, makeRpc, readOnlyRpc, RPC_REPLY_MAX_BYTES,
   rpcErrorReason, pinBlock, canonical, sha256Hex, RELEASE_MANIFEST_PATH, RELEASE_INPUTS, artifactIdentity, releaseManifest,
   checkReleaseManifest } from './deploy.mjs';
 import { requireAnvil, installCreateX, installOfflineDependencies, installStubs, startAnvil, simulateGas, rehearsalAccount, localRoles, stubRuntime } from './deploy-anvil.mjs';
@@ -421,6 +421,14 @@ test('the RPC transport retries rate limits only, a bounded number of times, and
       if (request.url === '/http429' && calls <= 1) { response.statusCode = 429; return response.end('{}'); }
       if (request.url === '/broken') return response.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601, message: 'no method at https://node.example/secret-key' } }));
       if (request.url === '/http500') { response.statusCode = 500; return response.end('{}'); }
+      // Audit DV2-05: replies that do not answer the request, or are too long, are refused by type.
+      const malformed = { '/wrong-id': { jsonrpc: '2.0', id: id + 1, result: '0x1' }, '/no-version': { id, result: '0x1' },
+        '/old-version': { jsonrpc: '1.0', id, result: '0x1' }, '/both': { jsonrpc: '2.0', id, result: '0x1', error: { code: -1, message: 'x' } },
+        '/neither': { jsonrpc: '2.0', id }, '/batch': [{ jsonrpc: '2.0', id, result: '0x1' }], '/null-id-result': { jsonrpc: '2.0', id: null, result: '0x1' },
+        '/null-id-error': { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'invalid request' } } };
+      if (malformed[request.url]) return response.end(JSON.stringify(malformed[request.url]));
+      if (request.url === '/not-json') return response.end('{"jsonrpc": "2.0", "id": ' + id + ', "result": ');
+      if (request.url === '/long') return response.end(JSON.stringify({ jsonrpc: '2.0', id, result: '0x' + 'ab'.repeat(512) }));
       response.end(JSON.stringify({ jsonrpc: '2.0', id, result: '0x1' }));
     });
   });
@@ -435,6 +443,14 @@ test('the RPC transport retries rate limits only, a bounded number of times, and
     calls = 0; assert.equal(await makeRpc(base + '/http429', { retryDelays: [1] })('eth_chainId'), '0x1'); assert.equal(calls, 2);
     calls = 0; await assert.rejects(makeRpc(base + '/broken', { retryDelays: [1, 1] })('eth_chainId'), error => /^rpc_method_failed: eth_chainId \(no method at \[endpoint\]\)$/.test(error.message)); assert.equal(calls, 1);
     calls = 0; await assert.rejects(makeRpc(base + '/http500', { retryDelays: [1, 1] })('eth_chainId'), /rpc_transport_failed: eth_chainId/); assert.equal(calls, 1);
+    for (const path of ['/wrong-id', '/no-version', '/old-version', '/both', '/neither', '/batch', '/null-id-result', '/not-json']) {
+      calls = 0; await assert.rejects(makeRpc(base + path, { retryDelays: [1, 1] })('eth_chainId'), /^Error: rpc_invalid_reply: eth_chainId$/, path);
+      assert.equal(calls, 1, path);
+    }
+    calls = 0; await assert.rejects(makeRpc(base + '/null-id-error', { retryDelays: [1] })('eth_chainId'), /rpc_method_failed: eth_chainId/);
+    calls = 0; assert.equal((await makeRpc(base + '/long')('eth_chainId')).length, 1026);
+    await assert.rejects(makeRpc(base + '/long', { maxReplyBytes: 1024 })('eth_chainId'), /^Error: rpc_reply_too_large: eth_chainId$/);
+    assert.equal(RPC_REPLY_MAX_BYTES, 8 * 1024 * 1024);
     const bounded = readOnlyRpc(base + '/ok', { maximumCalls: 1 });
     assert.equal(await bounded('eth_chainId', []), '0x1');
     await assert.rejects(bounded('eth_chainId', []), /readonly_rpc_budget/);

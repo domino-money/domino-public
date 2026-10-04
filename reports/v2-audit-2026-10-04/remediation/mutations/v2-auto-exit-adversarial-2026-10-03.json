@@ -1,0 +1,196 @@
+{
+ "kind": "domino-mutation-run",
+ "batch": "contracts/mutations/v2-auto-exit-adversarial-2026-10-03.json",
+ "batchSha256": "a6e667daec3c02abde9036089cfb8a66092c55d6048ade39b08ef14849a0e2a1",
+ "sources": {
+  "contracts/src/v2/autoexit/DominoAutoExit.sol": "1ca56091254ce832577480cb1e1b268e5874555a4b07beec24eb8d1ddc15946c"
+ },
+ "suites": {
+  "test/v2/adversarial/AutoExitAttacks.t.sol": "2db3f6f7fec20071644d41d0daa724b6aefc7e897225a9d3559cc2646097d126",
+  "test/v2/adversarial/AutoExitInvariants.t.sol": "2b187817277add28ed674f448e0a42fd65f15081c2ad76abc927e0505fdf2177",
+  "test/v2/adversarial/AutoExitVaultAttacks.t.sol": "567fe6ee2adb9624aa3a079bf59df7d76c73463aec8f81b8360ba0cac2b88306"
+ },
+ "rebuild": [
+  "src/v2/autoexit/DominoAutoExit.sol"
+ ],
+ "only": null,
+ "rows": [
+  {
+   "label": "operator admitted",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 25 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "automation halt",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 24 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "mandate active",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 24 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "mandate unexpired",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 9 passed / 1 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 25 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "one shot",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 5 passed / 5 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 16 passed / 10 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "exit module enabled",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 10 passed / 0 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 25 passed / 1 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitVaultAttacks.t.sol: 6 passed / 4 failed / 0 skipped across 2 suite(s)"
+  },
+  {
+   "label": "vault owner unchanged",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 25 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "pool tokens ordered and distinct",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 10 passed / 0 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 25 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "trigger crossed",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 9 passed / 1 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 23 passed / 3 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "TWAP floor",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 8 passed / 2 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 25 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "band is the mandate's slippage",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 24 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "removal minimums measured",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 9 passed / 1 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 26 passed / 0 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "legs sell the source for the target",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 10 passed / 0 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 25 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "everything withdrawn converted",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 25 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "conversion floor",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 24 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "fee rate 20 bps",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 6 passed / 4 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 21 passed / 5 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "listed output charged once",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 6 passed / 4 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 21 passed / 5 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "deferred delivery credited",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 8 passed / 2 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 24 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "claim clears the credit",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 5 passed / 5 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 26 passed / 0 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "no over-debit on a push",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 9 passed / 1 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 26 passed / 0 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "native only inside an execution",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 6 passed / 4 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 26 passed / 0 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "registration: known id",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 10 passed / 0 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 24 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "registration: nonce unused",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 26 passed / 0 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "registration: nonce consumed",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 25 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "registration: signature",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 6 passed / 4 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 26 passed / 0 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "registration: owner owns the vault",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 26 passed / 0 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "registration: validity not past",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 26 passed / 0 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "revoke: owner only",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 26 passed / 0 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "cancelNonce: unused",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "test/v2/adversarial/AutoExitInvariants.t.sol: 7 passed / 3 failed / 0 skipped across 1 suite(s); test/v2/adversarial/AutoExitAttacks.t.sol: 25 passed / 1 failed / 0 skipped across 1 suite(s)"
+  }
+ ],
+ "baselineFailure": null,
+ "summary": "29 mutations: 29 caught, 0 not caught.",
+ "exitCode": 0
+}

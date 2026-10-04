@@ -1,0 +1,83 @@
+{
+ "kind": "domino-mutation-run",
+ "batch": "contracts/mutations/v2-audit-2026-10-04.json",
+ "batchSha256": "765ddc0bf42da56600224e92d3e208eb9e4ce0aaf402a835c7dbcc02bc42b82d",
+ "sources": {
+  "contracts/src/v2/autoexit/DominoAutoExit.sol": "1ca56091254ce832577480cb1e1b268e5874555a4b07beec24eb8d1ddc15946c",
+  "contracts/src/v2/route/DominoSwapExecutor.sol": "d850de22789e05db695b4e89ca18fcf4413f5a12e62b3f7fa348cd0ff90cd969",
+  "contracts/src/v2/vault/DominoV2VaultBase.sol": "193420749d563b920d1b646dc81d25b3fef38ea9bddda0746fbe1ba13b9e5f68"
+ },
+ "suites": {
+  "test/v2/autoexit/DominoAutoExitExecute.t.sol": "5553f05fd030a7c8fb1edef550c7f999a9eecd50ad2ea73482b727fad0066e54",
+  "test/v2/autoexit/DominoAutoExitMandate.t.sol": "cba98ecc45eaea1d030ebaf352b5560f5dcf908cfa093e727dbc1ee23dc1ab89",
+  "test/v2/route/DominoSwapExecutorV3.t.sol": "17d727ab8e2c6f41b24e347e9dda981366fbaff75d24b9a7e658b627320e957e",
+  "test/v2/vault/DominoV2VaultExit.t.sol": "dea8f2c9dbe603ef4281ccfb70557396393c7ac6c3b23ac9da747dce3d5fd082"
+ },
+ "rebuild": [],
+ "only": null,
+ "rows": [
+  {
+   "label": "D-1: a TWAP window over the hour is refused",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "47 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "D-1: the constructor refuses a floor above the ceiling",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "34 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "D-2: exitAll disables the exit module",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "D-2: exitAll records the module it disabled",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "D-2: only when a module was enabled",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "12 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "DV2-01: a v3 path's intermediates are tracked",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "10 passed / 2 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "DV2-01: every intermediate, not only the first",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "DV2-01: a path shorter than one token adds no intermediate",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "DV2-01: a partial hop adds no intermediate",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  },
+  {
+   "label": "DV2-01: a path over four hops adds no intermediate",
+   "expected": "CAUGHT",
+   "verdict": "CAUGHT",
+   "detail": "11 passed / 1 failed / 0 skipped across 1 suite(s)"
+  }
+ ],
+ "baselineFailure": null,
+ "summary": "10 mutations: 10 caught, 0 not caught.",
+ "exitCode": 0
+}

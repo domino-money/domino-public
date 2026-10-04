@@ -1,0 +1,192 @@
+{
+  "generatedUTC": "2026-10-04T14:48:38.259950+00:00",
+  "kind": "domino-v2-defensive-audit",
+  "verdict": "REQUEST_CHANGES",
+  "release_recommended": false,
+  "commit": "5e63d2dba9123fdc585f7f272b83532b491fbc51",
+  "tree": "db8bfb4e57a043a94f7fe55bf02725cb65836b1c",
+  "scope": {
+    "solidity_files": 52,
+    "deployment_tool_files": 6,
+    "manual_coverage_missing": []
+  },
+  "original_solidity_tests": {
+    "suite_files": 67,
+    "test_contracts": 76,
+    "passed": 1068,
+    "failed": 0,
+    "skipped": 0,
+    "total": 1068
+  },
+  "audit_suites": {
+    "suite_files": 19,
+    "test_contracts": 23,
+    "passed": 168,
+    "failed": 0,
+    "skipped": 0,
+    "total": 168
+  },
+  "deployment_tool_tests": {
+    "tests": 53,
+    "pass": 53,
+    "fail": 0,
+    "skipped": 0
+  },
+  "shared_tool_tests": {
+    "tests": 54,
+    "pass": 53,
+    "fail": 0,
+    "skipped": 1
+  },
+  "shared_skip_reason": "Optional V1 EVM test gated by DOMINO_TEST_EVM=1; not run and not counted as PASS.",
+  "static_analysis": {
+    "by_classification": {
+      "confirmed_issue": 0,
+      "false_positive": 147,
+      "accepted_or_informational": 205,
+      "unverified": 0
+    },
+    "by_subclassification": {
+      "accepted_risk": 2,
+      "architecture_false_positive": 60,
+      "detector_parser_false_positive": 1,
+      "equivalent_validation": 1,
+      "informational": 203,
+      "intentional_behavior": 1,
+      "language_semantics_false_positive": 19,
+      "proxy_false_positive": 1,
+      "security_false_positive": 64
+    },
+    "by_scanner_impact": {
+      "High": 30,
+      "Informational": 126,
+      "Low": 109,
+      "Medium": 65,
+      "Optimization": 22
+    },
+    "by_detector": {
+      "assembly": 57,
+      "calls-loop": 86,
+      "constable-states": 21,
+      "controlled-delegatecall": 1,
+      "costly-loop": 1,
+      "cyclomatic-complexity": 5,
+      "dead-code": 1,
+      "divide-before-multiply": 12,
+      "immutable-states": 1,
+      "incorrect-exp": 1,
+      "incorrect-return": 1,
+      "incorrect-shift": 2,
+      "low-level-calls": 11,
+      "missing-inheritance": 2,
+      "missing-zero-check": 3,
+      "naming-convention": 27,
+      "reentrancy-benign": 6,
+      "reentrancy-eth": 2,
+      "reentrancy-events": 4,
+      "reentrancy-no-eth": 2,
+      "shadowing-local": 1,
+      "timestamp": 9,
+      "too-many-digits": 5,
+      "uninitialized-local": 19,
+      "uninitialized-state": 23,
+      "unused-return": 32,
+      "unused-state": 17
+    },
+    "scoped_verdict_pt_br": "Nenhum dos 352 resultados confirma vulnerabilidade neste tree. Todos foram resolvidos como falso positivo ou comportamento aceito/informacional; não há resultado não verificado. O veredito é limitado aos resultados do Slither fornecidos e não equivale a ausência geral de defeitos."
+  },
+  "selected_mutations": {
+    "total": 12,
+    "caught": 12,
+    "restored_baseline_suites": 11,
+    "historical_campaigns_fully_replayed": false
+  },
+  "main_ci": {
+    "id": 37206891445,
+    "status": "completed",
+    "conclusion": "failure",
+    "head_sha": "5e63d2dba9123fdc585f7f272b83532b491fbc51",
+    "run_attempt": 1,
+    "updated_at": "2026-10-04T14:25:36Z",
+    "html_url": "https://github.com/domino-money/domino/actions/runs/37206891445"
+  },
+  "unchanged_tracked_files": 3353,
+  "canonical_source_modified": false,
+  "public_chain_transactions_sent": false,
+  "confirmed_contract_findings_by_severity": {
+    "critical": 0,
+    "high": 0,
+    "medium": 1,
+    "low": 0
+  },
+  "limitations": [
+    "No formal proof or symbolic execution",
+    "No public-chain or fresh fork qualification",
+    "External bytecode not re-audited opcode-by-opcode",
+    "Historical mutation campaigns not fully replayed",
+    "Exact root cause of remote CI failure unconfirmed",
+    "No current affected-asset inventory"
+  ],
+  "findings": [
+    {
+      "id": "DV2-01",
+      "origin": "RFZ-01",
+      "type": "contract_security",
+      "severity": "medium",
+      "status": "open",
+      "title": "Preservação incompleta do backing em moeda intermediária V3",
+      "location": [
+        "contracts/src/v2/route/DominoSwapExecutor.sol:166-184",
+        "contracts/src/v2/route/DominoSwapExecutor.sol:425-435",
+        "contracts/src/v2/route/DominoAssistedSwap.sol:34-40"
+      ],
+      "impact": "Passivo na própria moeda de comportamento não convencional pode ficar sem cobertura; nenhum impacto cruzado sobre ERC-20 independente demonstrado.",
+      "remediation": "Uniformizar validação de débito exato e preservação de passivos em todas as moedas movimentadas, com regressões dos hosts compartilhados.",
+      "evidence": "accounting-finding-evidence-validation.json",
+      "live_asset_exposure_confirmed": false
+    },
+    {
+      "id": "DV2-02",
+      "type": "release_assurance",
+      "severity": "release_blocker",
+      "status": "open",
+      "title": "CI do commit congelado terminou com falha",
+      "evidence": "ci-main-final.json",
+      "local_replays": {
+        "runs": 3,
+        "tests_per_run": 53,
+        "failed": 0
+      },
+      "root_cause_confirmed": false
+    },
+    {
+      "id": "DV2-03",
+      "type": "reproducibility",
+      "severity": "low",
+      "status": "open",
+      "title": "Instruções frias omitem artefatos de integração e pré-requisitos do runner",
+      "evidence": "cold-instructions/official-example-suite.log"
+    },
+    {
+      "id": "DV2-04",
+      "type": "assurance",
+      "severity": "low",
+      "status": "open",
+      "title": "Campanhas históricas não integralmente reproduzíveis a partir dos inputs identificados",
+      "stale_vault_substitutions": 8,
+      "evidence": "mutation-applicability.json"
+    },
+    {
+      "id": "DV2-05",
+      "type": "hardening",
+      "severity": "informational",
+      "status": "recommendation",
+      "title": "Limitar corpo e validar correlação de respostas RPC",
+      "location": [
+        "scripts/v2/deploy.mjs:434-462"
+      ],
+      "evidence": "deploy-probes-results.json",
+      "crash_or_financial_bypass_demonstrated": false
+    }
+  ]
+}

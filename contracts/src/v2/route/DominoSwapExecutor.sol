@@ -422,16 +422,22 @@ abstract contract DominoSwapExecutor is DominoActionLock {
         }
     }
 
+    /// Every leg's tokenIn and tokenOut, every v3 path's intermediate tokens,
+    /// then `extra`. An intermediate is what one hop receives and the next
+    /// pays forward (F-03), so no leg may move it: a token that debits its
+    /// sender more than it moves would otherwise spend this contract's own
+    /// balance of it, owed fees and credits included (audit DV2-01).
     function _trackedTokens(DominoV2Types.SwapLeg[] memory legs, address[] memory extra)
         private
         pure
         returns (address[] memory tracked)
     {
-        tracked = new address[](legs.length * 2 + extra.length);
+        tracked = new address[](legs.length * (MAX_HOPS + 1) + extra.length);
         uint256 count;
         for (uint256 i; i < legs.length; ++i) {
             count = _include(tracked, count, legs[i].tokenIn);
             count = _include(tracked, count, legs[i].tokenOut);
+            if (legs[i].kind == DominoV2Types.LEG_V3_POOL) count = _includeHops(tracked, count, legs[i].data);
         }
         for (uint256 i; i < extra.length; ++i) {
             count = _include(tracked, count, extra[i]);
@@ -439,6 +445,22 @@ abstract contract DominoSwapExecutor is DominoActionLock {
         assembly ("memory-safe") {
             mstore(tracked, count)
         }
+    }
+
+    /// The tokens between a v3 path's hops. A path _swapV3 would refuse adds
+    /// nothing here: the leg reverts before any hop runs.
+    function _includeHops(address[] memory set, uint256 count, bytes memory path) private pure returns (uint256) {
+        uint256 length = path.length;
+        if (length < 43 || (length - 20) % 23 != 0 || (length - 20) / 23 > MAX_HOPS) return count;
+        uint256 hops = (length - 20) / 23;
+        for (uint256 h = 1; h < hops; ++h) {
+            address token;
+            assembly ("memory-safe") {
+                token := shr(96, mload(add(add(path, 0x20), mul(h, 23))))
+            }
+            count = _include(set, count, token);
+        }
+        return count;
     }
 
     function _include(address[] memory set, uint256 count, address token) private pure returns (uint256) {

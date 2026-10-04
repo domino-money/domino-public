@@ -99,6 +99,13 @@ the three chains). Keep the RPC URL in a private file (mode 0600, one URL) and p
 in the URL never reaches the command line or shell history; `--rpc` is for URLs without secrets. The file rules are
 V1's (`prepare-financial-release.mjs verificationRpcEndpoint`). No command overwrites an output file.
 
+The RPC is untrusted transport as well as a data source (audit DV2-05, 4 Oct 2026):
+- **Size:** a reply is read up to 8 MiB (`RPC_REPLY_MAX_BYTES`), else `rpc_reply_too_large: <method>`.
+- **Shape:** it must be a JSON-RPC 2.0 object answering its own request id with exactly one of `result` or `error`, else `rpc_invalid_reply: <method>`. A null id is accepted only on an error.
+- **Unchanged:** the retries, timeouts and call budget.
+
+These checks do not make the RPC's data trustworthy, which is why the preflight pins a block and checks code hashes.
+
 1. **Prepare.** It reads the chain at a pinned block and writes the package and its preflight report
    (`<out>.preflight.json`), or nothing:
 

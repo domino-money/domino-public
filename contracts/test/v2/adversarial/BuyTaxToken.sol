@@ -8,6 +8,8 @@ contract BuyTaxToken {
     mapping(address => mapping(address => uint256)) public allowance;
     mapping(address => bool) public taxedSender;
     mapping(address => bool) public blocked;
+    /// Senders debited one unit more than they send (a sender-side fee).
+    mapping(address => bool) public overdebited;
 
     function mint(address to, uint256 amount) external {
         balanceOf[to] += amount;
@@ -19,6 +21,10 @@ contract BuyTaxToken {
 
     function setBlocked(address account, bool value) external {
         blocked[account] = value;
+    }
+
+    function setOverdebited(address account, bool value) external {
+        overdebited[account] = value;
     }
 
     function approve(address spender, uint256 amount) external returns (bool) {
@@ -38,7 +44,7 @@ contract BuyTaxToken {
     /// 1% of what a taxed sender (a pool) sends is burned.
     function _transfer(address from, address to, uint256 amount) private returns (bool) {
         require(!blocked[to], "blocked");
-        balanceOf[from] -= amount;
+        balanceOf[from] -= overdebited[from] ? amount + 1 : amount;
         balanceOf[to] += taxedSender[from] ? amount - amount / 100 : amount;
         return true;
     }

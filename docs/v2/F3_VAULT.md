@@ -103,14 +103,16 @@ The root NFT stays in the owner's wallet, with an individual approval (`getAppro
   - On any difference, it disarms the root (reasons 4 and 5) and returns `bytes32(0)` without spending anything.
   - This catches an owner's decrease (principal waiting in tokensOwed), collect, increase, transfer, burn, or approval to another app.
 - At arming, whatever the manager already owes the root may be principal from an owner's decrease. When anything is owed, F1c's collect (which always takes everything) sends it to the owner with the fees accrued so far, and only fee growth from the checkpoint on becomes automation fees. When nothing is owed, the accrued fees stay with the root under the owner's consent, as on v4.
-- **A third party's addition and the limited operator rearm** (owner decision, 2 Oct). `increaseLiquidity` is open to anyone on v3, so anyone can add dust to the root and change its checkpoint. A registry operator (not under the global halt) may then rearm the vault with `operatorRearm(previous)`, where `previous` is the last `RootCheckpointed` the vault emitted (it emits one at arming and after each of its own steps; storage keeps only its hash). The vault accepts only when:
+- **A third party's addition and the limited operator rearm** (owner decision, 2 Oct). `increaseLiquidity` is open to anyone on v3, so anyone can add liquidity to the root, however little, and change its checkpoint. A registry operator (not under the global halt) may then rearm the vault with `operatorRearm(previous)`, where `previous` is the last `RootCheckpointed` the vault emitted (it emits one at arming and after each of its own steps; storage keeps only its hash). The vault accepts only when:
   - the root is armed, or was disarmed by a checkpoint mismatch (reason 5); after any other reason (custody, exit, `exitAll`, a recovered root) only the owner rearms;
   - `previous` hashes to the stored checkpoint;
   - the owner still holds the root and the vault still has its individual approval;
   - the liquidity grew;
   - in each token, what the root is owed grew by at least `g × previous liquidity` and at most `g × current liquidity`, with `g` the fee growth since `previous` (rounded down, Q128). An addition pokes the fees accrued at the liquidity of the moment, so a collect makes it fall short and a decrease's principal makes it exceed. What is owed never shrinks.
 
-  Then the new checkpoint is recorded and the root is armed (`RootRearmed`). Anything else stays disarmed until the owner rearms. Two additions separated by fee growth can fall a unit short of the lower bound; the vault then also waits for the owner. A decrease smaller than what fee growth on the added liquidity can explain would pass the upper bound: at worst the vault charges its tariff on that dust of principal. `DominoV2VaultCustody.t.sol` pins both sides, including a dust add followed by an owner's decrease.
+  Then the new checkpoint is recorded and the root is armed (`RootRearmed`). Anything else stays disarmed until the owner rearms. Two additions separated by fee growth can fall a unit short of the lower bound; the vault then also waits for the owner.
+
+  **What the check cannot see** (accepted with the rearm; restated after the audit of 4 Oct). It compares two checkpoints, so it cannot prove that every step between them was an addition. An owner's decrease leaves its principal owed to the root. When that principal fits in the slack between the upper bound and the fees actually accrued, it passes as fees. The slack is at most `g × (current liquidity − previous liquidity)` in each token. The vault then collects that principal with the fees and charges its tariff on it when it uses it, as it does fees. The slack has no small absolute ceiling: it grows with the liquidity added and with the fee growth since `previous`. `DominoV2VaultCustody.t.sol` pins both sides, including a third party's small addition followed by an owner's decrease.
 
 **`RootDisarmed` reasons:**
 
@@ -257,6 +259,13 @@ Each member has, per pool token, a lot of `uncharged` earned fees and `charged` 
   - the root is disarmed and automation paused;
   - the exit module is disabled (owner decision, 3 Oct): `ExitModuleSet(0, nonce)` under exitAll's nonce when one was enabled, so the owner's exit mandates pause until the owner enables it again (F4).
   The root's v4 subscription stays until the owner calls `unsubscribe` on the PositionManager or rearms.
+- **When `exitAll` does not fit a transaction (runbook).** `exitAll`'s gas grows with the members and with the tokens' behaviour: both pool tokens burning gas take it past a 16.7M per-transaction cap (`ReturnBomb`). There is no capacity certificate for any chain or configuration; the suites measure the test world. The owner then leaves position by position, in this order, each step its own transaction:
+  1. `pause()`: no execution starts;
+  2. `setExitModule(address(0))`: no exit mandate fires meanwhile;
+  3. `withdrawChild(tokenId)` for each successor;
+  4. `withdrawReserves(token, amount, recipient)` for each pool token, up to `reserves(token)`, to any recipient that can receive it (A8).
+
+  The root is already in the owner's wallet: revoking the vault's approval on the position manager cuts the vault off (v4: `unsubscribe` too). `ReturnBomb` runs `withdrawChild` on 500,000 gas and `pause` on 200,000 with both pool tokens burning gas.
 - **Exits never depend on the operator, the publisher, the anchor, the registry, the executor or the swap module.** Only `pause` reads the registry, and only for a caller that is not the owner.
 - `setExitModule(module)` accepts only `address(0)` or the auto-exit address the implementation was deployed with (component `autoExit`). A phishing page cannot enable another module.
 - Every entry point, owner's or not, takes F1b's one transient lock, which `flushOwedFees` and the swap-leg executor share.

@@ -12,7 +12,7 @@
 // noticed. And a mutation that does not apply is an error, never a pass: a
 // silently skipped edit reads exactly like a guard the tests already cover.
 //
-//   node scripts/mutate-contracts.mjs batch.json [--head] [--keep] [--with-artifacts]
+//   node scripts/mutate-contracts.mjs batch.json [--head] [--keep] [--with-artifacts] [--report=file.json] [--only=label ...]
 //
 // `--with-artifacts` seeds the sandbox with this checkout's contracts/cache and
 // contracts/out. A V2 suite builds no V1 contract, and the size gate that
@@ -27,12 +27,23 @@
 // unexpected verdict fail the batch. `--head` mutates the last commit instead of the working tree,
 // so a batch can run while tests are being edited.
 //
+// `suites` (batch or mutation) runs several suites in place of `suite`: a
+// mutation is caught when any of them fails, and NO BUILD when any of them
+// is. `rebuild` lists contracts (paths under contracts/) to build after each
+// edit and before the baselines: a suite that deploys a contract from its
+// artifact (vm.getCode) never rebuilds it, so without this it would test the
+// pristine bytes. `--report` writes the verdicts with the SHA-256 of the batch
+// and of every source and suite it ran, so a result names what it ran on.
+// `--only` (repeatable) runs just the named mutations of the batch; a label
+// the batch does not have is an error.
+//
 // Verdicts, one per mutation:
 //   CAUGHT       a complete test run failed after the mutation
 //   NOT CAUGHT   the suite did not distinguish the mutation (possibly redundant)
 //   NOT APPLIED  the text was not found exactly once as asked - fix the batch
 //   NO BUILD     the mutation does not compile - it proves nothing
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -91,6 +102,32 @@ export function runSuite(box, suite, run = spawnSync) {
   return { verdict: counts.failed > 0 ? 'CAUGHT' : 'NOT CAUGHT', detail, ...counts };
 }
 
+/** Builds `files` (paths under contracts/) in the sandbox; a failure is NO BUILD. */
+export function rebuildArtifacts(box, files, run = spawnSync) {
+  const result = run('node', ['../scripts/test-contracts.mjs', 'build', ...files],
+    { cwd: path.join(box, 'contracts'), encoding: 'utf8', maxBuffer: 1 << 28 });
+  if (!result.error && !result.signal && result.status === 0) return { ok: true };
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  return { ok: false, detail: [result.error?.message, result.signal,
+    /^Error.*$/m.exec(output)?.[0] ?? `the rebuild failed (exit ${result.status ?? 'unknown'})`].filter(Boolean).join('; ') };
+}
+
+/** The suites a mutation runs: its own, else the batch's. */
+export function suitesOf(spec, mutation) {
+  if (mutation.suites) return mutation.suites;
+  if (mutation.suite) return [mutation.suite];
+  return spec.suites ?? [spec.suite];
+}
+
+/** One verdict from several suites: any tool failure voids it, any failure catches it. */
+export function combine(results) {
+  if (results.length === 1) return results[0];
+  const detail = results.map(({ suite, detail: text }) => `${suite}: ${text}`).join('; ');
+  const verdict = results.some(result => result.verdict === 'NO BUILD') ? 'NO BUILD'
+    : results.some(result => result.verdict === 'CAUGHT') ? 'CAUGHT' : 'NOT CAUGHT';
+  return { verdict, detail };
+}
+
 /** Without an explicit index, require exactly one match; never guess which guard. */
 export function applyMutation(text, { old: previous, new: next, index }) {
   if (typeof previous !== 'string' || previous.length === 0 || typeof next !== 'string' || previous === next)
@@ -109,11 +146,17 @@ export function validateSpec(spec) {
   const labels = new Set();
   const relative = (value, prefix) => typeof value === 'string' && value.startsWith(prefix)
     && !path.isAbsolute(value) && !value.split(/[\\/]/).includes('..');
+  const list = (value, valid) => value === undefined
+    || (Array.isArray(value) && value.length > 0 && new Set(value).size === value.length && value.every(valid));
+  if (!list(spec.suites, value => relative(value, 'test/')) || (spec.suites && spec.suite !== undefined)
+      || !list(spec.rebuild, value => relative(value, 'src/') || relative(value, 'test/')))
+    throw new Error('Invalid batch suites or rebuild list.');
   for (const mutation of spec.mutations) {
     if (!mutation || typeof mutation.label !== 'string' || !mutation.label.trim() || labels.has(mutation.label))
       throw new Error('Mutation labels must be nonempty and unique.');
     labels.add(mutation.label);
-    if (!relative(mutation.file ?? spec.file, 'contracts/src/') || !relative(mutation.suite ?? spec.suite, 'test/'))
+    if (!relative(mutation.file ?? spec.file, 'contracts/src/') || !list(mutation.suites, value => relative(value, 'test/'))
+        || (mutation.suites && mutation.suite !== undefined) || !suitesOf(spec, mutation).every(suite => relative(suite, 'test/')))
       throw new Error(`Invalid source or suite path: ${mutation.label}`);
     if (typeof mutation.old !== 'string' || !mutation.old || typeof mutation.new !== 'string' || mutation.old === mutation.new
         || (mutation.index !== undefined && (!Number.isSafeInteger(mutation.index) || mutation.index < 0)))
@@ -142,13 +185,20 @@ export function summarise(rows) {
     + `${count('NOT APPLIED') ? `, ${count('NOT APPLIED')} did not apply` : ''}.`;
 }
 
-export function runBatch(box, input, { suiteRunner = runSuite, log = console.log } = {}) {
+export function runBatch(box, input, { suiteRunner = runSuite, builder = rebuildArtifacts, log = console.log } = {}) {
   const spec = validateSpec(input);
   if (typeof spec.description === 'string') log(spec.description);
   if (typeof spec.provenance === 'string') log(spec.provenance);
   const files = [...new Set(spec.mutations.map(mutation => mutation.file ?? spec.file))];
   const pristine = new Map(files.map(file => [file, readFileSync(path.join(box, file), 'utf8')]));
-  for (const suite of [...new Set(spec.mutations.map(mutation => mutation.suite ?? spec.suite))].sort()) {
+  const rebuild = () => (spec.rebuild ? builder(box, spec.rebuild) : { ok: true });
+  const built = rebuild();
+  if (!built.ok) {
+    log(`baseline rebuild: NO BUILD (${built.detail})`);
+    log('STOPPED: the pristine sources do not build.');
+    return { exitCode: 1, rows: [], baselineFailure: 'rebuild' };
+  }
+  for (const suite of [...new Set(spec.mutations.flatMap(mutation => suitesOf(spec, mutation)))].sort()) {
     const baseline = suiteRunner(box, suite);
     log(`baseline ${suite}: ${baseline.verdict === 'CAUGHT' ? 'FAILING' : baseline.verdict} (${baseline.detail})`);
     if (baseline.verdict !== 'NOT CAUGHT') {
@@ -167,21 +217,61 @@ export function runBatch(box, input, { suiteRunner = runSuite, log = console.log
       `${applied.occurrences} occurrence(s), ${mutation.index === undefined ? 'exactly one required' : `asked for index ${mutation.index}`}` };
     else {
       writeFileSync(path.join(box, file), applied.text);
-      result = suiteRunner(box, mutation.suite ?? spec.suite);
+      const mutant = rebuild();
+      result = mutant.ok
+        ? combine(suitesOf(spec, mutation).map(suite => ({ suite, ...suiteRunner(box, suite) })))
+        : { verdict: 'NO BUILD', detail: mutant.detail };
     }
-    const row = { label: mutation.label, expected: mutation.expected ?? 'CAUGHT', ...result };
+    const row = { label: mutation.label, expected: mutation.expected ?? 'CAUGHT', verdict: result.verdict, detail: result.detail };
     rows.push(row);
     log(formatRow(mutation.label, width, row.verdict, `${row.detail}; expected ${row.expected}${mutation.reason ? `: ${mutation.reason}` : ''}`));
   }
+  for (const [file, text] of pristine) writeFileSync(path.join(box, file), text);
   log(`\n${summarise(rows)}`);
   return { exitCode: batchExitCode(rows), rows };
 }
 
+const sha256 = data => createHash('sha256').update(data).digest('hex');
+
+/** The named mutations of a validated batch, in its order; an unknown label throws. */
+export function selectMutations(spec, labels) {
+  if (!labels.length) return spec;
+  const known = new Set(spec.mutations.map(mutation => mutation.label));
+  const missing = labels.filter(label => !known.has(label));
+  if (missing.length) throw new Error(`Not in the batch: ${missing.join('; ')}`);
+  return { ...spec, mutations: spec.mutations.filter(mutation => labels.includes(mutation.label)) };
+}
+
+/** What a run ran on: the batch, every source it mutates and every suite, by SHA-256. */
+export function reportOf(box, batchPath, batchText, spec, result, only = []) {
+  const hashes = (paths, base) => Object.fromEntries([...new Set(paths)].sort()
+    .map(file => [file, existsSync(path.join(box, base, file)) ? sha256(readFileSync(path.join(box, base, file))) : null]));
+  return {
+    kind: 'domino-mutation-run',
+    batch: batchPath,
+    batchSha256: sha256(batchText),
+    sources: hashes(spec.mutations.map(mutation => mutation.file ?? spec.file), ''),
+    suites: hashes(spec.mutations.flatMap(mutation => suitesOf(spec, mutation)), 'contracts'),
+    rebuild: spec.rebuild ?? [],
+    only: only.length ? only : null,
+    rows: result.rows,
+    baselineFailure: result.baselineFailure ?? null,
+    summary: summarise(result.rows),
+    exitCode: result.exitCode,
+  };
+}
+
 function main(argv) {
-  const spec = validateSpec(JSON.parse(readFileSync(argv.find(value => !value.startsWith('--')), 'utf8')));
+  const batchPath = argv.find(value => !value.startsWith('--'));
+  const batchText = readFileSync(batchPath, 'utf8');
+  const only = argv.filter(value => value.startsWith('--only=')).map(value => value.slice('--only='.length));
+  const spec = selectMutations(validateSpec(JSON.parse(batchText)), only);
+  const report = argv.find(value => value.startsWith('--report='))?.slice('--report='.length);
   const box = makeSandbox({ head: argv.includes('--head'), artifacts: argv.includes('--with-artifacts') });
   try {
-    return runBatch(box, spec).exitCode;
+    const result = runBatch(box, spec);
+    if (report) writeFileSync(report, `${JSON.stringify(reportOf(box, batchPath, batchText, spec, result, only), null, 1)}\n`);
+    return result.exitCode;
   } finally {
     if (!argv.includes('--keep')) rmSync(box, { recursive: true, force: true });
     else console.log(`\nSandbox kept: ${box}`);

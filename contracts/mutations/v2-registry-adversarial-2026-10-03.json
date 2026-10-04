@@ -1,0 +1,101 @@
+{
+ "description": "The registry's guards against the stateful RegistryInvariants suite, which deploys the registry from its artifact (vm.getCode): each guard deleted or weakened alone, the registry rebuilt, the suite rerun.",
+ "provenance": "Transcribed 2026-10-04 (audit DV2-04) from the hand-run script behind the audit package's '18 of 18', with the same 18 edits: run 4 Oct 2026 00:15-00:35 UTC (3 Oct evening in Brazil) on the working tree committed as 566e91d3. That script compiled a renamed copy of the registry and pointed the suite's world at it; this batch edits the registry itself and rebuilds its artifact, which the world loads. Its results are in reports/v2-audit-2026-10-04/remediation/mutation-history.json. Run: node scripts/mutate-contracts.mjs contracts/mutations/v2-registry-adversarial-2026-10-03.json --with-artifacts",
+ "file": "contracts/src/v2/registry/DominoRegistry.sol",
+ "suite": "test/v2/adversarial/RegistryInvariants.t.sol",
+ "rebuild": [
+  "src/v2/registry/DominoRegistry.sol"
+ ],
+ "mutations": [
+  {
+   "label": "M01 same-second re-admission",
+   "old": "if (scheduledAt <= removed) revert InvalidChange();",
+   "new": "if (scheduledAt < removed) revert InvalidChange();"
+  },
+  {
+   "label": "M02 guardian cancels its replacement",
+   "old": "if (msg.sender != governance && change.kind == DominoV2Types.REGISTRY_GUARDIAN) revert Unauthorized();",
+   "new": ""
+  },
+  {
+   "label": "M03 epoch may pass now",
+   "old": "if (epoch <= observationEpoch || epoch > block.timestamp) revert InvalidChange();",
+   "new": "if (epoch <= observationEpoch) revert InvalidChange();"
+  },
+  {
+   "label": "M04 no timelock at execution",
+   "old": "if (block.timestamp < change.executableAt) revert ChangeNotReady();",
+   "new": ""
+  },
+  {
+   "label": "M05 operator may publish",
+   "old": "                if (_publishers[operator].admitted) revert InvalidChange();\n",
+   "new": ""
+  },
+  {
+   "label": "M06 router removal not timed",
+   "old": "    function removeRouter(address router) external onlyNarrowing {\n        _routers[router] = RouterEntry({version: 0, removedAt: uint64(block.timestamp)});",
+   "new": "    function removeRouter(address router) external onlyNarrowing {\n        _routers[router].version = 0;"
+  },
+  {
+   "label": "M07 halt clock not restarted",
+   "old": "        automationHalted = true;\n        haltedAt = uint64(block.timestamp);",
+   "new": "        if (!automationHalted) haltedAt = uint64(block.timestamp);\n        automationHalted = true;"
+  },
+  {
+   "label": "M08 anyone narrows",
+   "old": "if (msg.sender != guardian && msg.sender != governance) revert Unauthorized();",
+   "new": ""
+  },
+  {
+   "label": "M09 stale resume executes",
+   "old": "            _readmit(haltedAt, scheduledAt);\n",
+   "new": ""
+  },
+  {
+   "label": "M10 router 2.1.1 admitted",
+   "old": "if (version < MIN_UNIVERSAL_ROUTER_VERSION || router.code.length == 0) revert InvalidChange();",
+   "new": "if (version < MIN_UNIVERSAL_ROUTER_VERSION - 1 || router.code.length == 0) revert InvalidChange();"
+  },
+  {
+   "label": "M11 timelock one second short",
+   "old": "uint64 executableAt = scheduledAt + timelockSeconds;",
+   "new": "uint64 executableAt = scheduledAt + timelockSeconds - 1;"
+  },
+  {
+   "label": "M12 accepted offer stays open",
+   "old": "        governance = msg.sender;\n        pendingGovernance = address(0);",
+   "new": "        governance = msg.sender;"
+  },
+  {
+   "label": "M13 timelock change ignored",
+   "old": "            timelockSeconds = abi.decode(data, (uint32));",
+   "new": "            abi.decode(data, (uint32));"
+  },
+  {
+   "label": "M14 operator removal not logged",
+   "old": "        _remove(_operators[operator]);\n        emit OperatorSet(operator, false);",
+   "new": "        _remove(_operators[operator]);"
+  },
+  {
+   "label": "M15 publisher re-admission reads the operator clock",
+   "old": "                _readmit(_publishers[publisher].removedAt, scheduledAt);",
+   "new": "                _readmit(_operators[publisher].removedAt, scheduledAt);"
+  },
+  {
+   "label": "M16 change executes twice",
+   "old": "        delete _changes[id];\n        _apply(change.kind, change.data, change.scheduledAt);",
+   "new": "        _apply(change.kind, change.data, change.scheduledAt);"
+  },
+  {
+   "label": "M17 guardian schedules",
+   "old": "    function scheduleChange(bytes32 kind, bytes calldata data) external onlyGovernance returns (bytes32 id) {",
+   "new": "    function scheduleChange(bytes32 kind, bytes calldata data) external onlyNarrowing returns (bytes32 id) {"
+  },
+  {
+   "label": "M18 dirty flag accepted",
+   "old": "            _uint(data, 1, 1);",
+   "new": "            _uint(data, 1, type(uint256).max);"
+  }
+ ]
+}
