@@ -1,7 +1,9 @@
 """Auto-exit for the operator: the module's trigger rule, the band's removal minimums, the conversion leg and the log watch."""
 from pathlib import Path
 import random
+import shutil
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -18,6 +20,7 @@ from v2_manifest import checked_deployment
 from v2_observation import within_band
 from v2_plan import LEG_V3_POOL, LEG_V4_POOL, twap_evidence
 from v2_planner import amounts_for_liquidity
+from v2_scan_state import REORG_MARGIN, ScanState
 from v2_uniswap import PoolRef
 from v4_math import Q96, sqrt_at_tick
 from test_v2_manifest import manifest_document
@@ -173,6 +176,56 @@ class WatchTests(unittest.TestCase):
         start = deployment.start_block('autoExit')
         with self.assertRaisesRegex(DataError, '^v2_log_address_mismatch$'):
             MandateWatcher(deployment).scan(Index(), Block(start, '0x' + '11' * 32, 1))
+
+
+class MandateWatcherStateTests(unittest.TestCase):
+    """The mandate scan keeps its position per window and across processes (v2_scan_state)."""
+
+    def setUp(self):
+        self.deployment = checked_deployment(manifest_document(), profile('base-8453'))
+        self.registered = event('IDominoAutoExit', 'MandateRegistered')
+        self.start = self.deployment.start_block('autoExit')
+        self.folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.folder)
+        self.path = self.folder / 'v2-scans-base-8453.json'
+
+    def index(self, budget=None):
+        deployment, registered, start, reads = self.deployment, self.registered, self.start, []
+
+        class Index:
+            def request(inner, method, params):
+                if budget is not None and len(reads) >= budget:
+                    raise DataError('request_budget_exhausted')
+                query = params[0]
+                reads.append((int(query['fromBlock'], 16), int(query['toBlock'], 16)))
+                if int(query['fromBlock'], 16) <= start + 5 <= int(query['toBlock'], 16):
+                    return [{'address': deployment.auto_exit, 'blockNumber': hex(start + 5),
+                             'topics': [registered.topic, '0x' + '5a' * 32, '0x' + encode(['address'], [OWNER]).hex(),
+                                        '0x' + encode(['address'], [VAULT]).hex()],
+                             'data': '0x' + encode(['uint256', 'uint64'], [7, 2_000_000_000]).hex()}]
+                return []
+        return Index(), reads
+
+    def test_a_scan_stopped_by_its_budget_goes_on_where_it_stopped(self):
+        watcher = MandateWatcher(self.deployment, max_blocks_per_read=4, state=ScanState(self.path, self.deployment))
+        index, _ = self.index(budget=2)
+        with self.assertRaisesRegex(DataError, '^request_budget_exhausted$'):
+            watcher.scan(index, Block(self.start + 200, '0x' + '11' * 32, 1))
+        self.assertEqual((watcher.next_block, list(watcher.hashes)), (self.start + 8, ['0x' + '5a' * 32]))
+        index, reads = self.index()
+        self.assertEqual(watcher.scan(index, Block(self.start + 200, '0x' + '11' * 32, 1)), ['0x' + '5a' * 32])
+        self.assertEqual(reads[0], (self.start + 8, self.start + 11))
+
+    def test_the_mandates_found_and_the_position_outlive_the_process(self):
+        index, _ = self.index()
+        first = MandateWatcher(self.deployment, max_blocks_per_read=50, state=ScanState(self.path, self.deployment))
+        end = self.start + 300
+        self.assertEqual(first.scan(index, Block(end, '0x' + '11' * 32, 1)), ['0x' + '5a' * 32])
+        again = MandateWatcher(self.deployment, max_blocks_per_read=50, state=ScanState(self.path, self.deployment))
+        self.assertEqual((again.next_block, again.hashes), (end + 1 - REORG_MARGIN, {'0x' + '5a' * 32: self.start + 5}))
+        index, reads = self.index()
+        self.assertEqual(again.scan(index, Block(end + 5, '0x' + '12' * 32, 2)), ['0x' + '5a' * 32])
+        self.assertEqual(min(read[0] for read in reads), end + 1 - REORG_MARGIN)
 
 
 if __name__ == '__main__':

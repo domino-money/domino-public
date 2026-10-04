@@ -146,6 +146,14 @@ These are the yields of the position's own range while in range: a concentrated 
 
 The journal is a SQLite file per chain and signer (`journalFile`, in the unit's own 0700 state directory; WAL, `synchronous=FULL`): one process owns a signer's nonces on a chain, and each claim and state change is one transaction. It holds public chain data and transactions that are broadcast anyway, never a key. Use one operator key for V2 that V1's executor never uses: two journals on one key would race for its nonces.
 
+The log scans keep their place beside the journal, in `v2-scans-<chain>.json` (`v2_scan_state`). `VaultDiscovery` and `MandateWatcher` advance one read window at a time, and a window counts only once all its logs were accepted, so a pass that stops on its request budget keeps what it read.
+- **What is saved:** after every scan, each scan's next block and what it found.
+- **The next block saved** stays 64 blocks behind what was read, so a short reorganization is read again. Records are keyed, so a block read twice adds nothing.
+- **The file is bound** to the chain, both factories and the auto-exit module. A file for anything else, or one that does not parse, is ignored.
+- **Private:** the file must be 0600 in a 0700 directory, both owned by the unit, or the process refuses it. It is replaced atomically, and holds public chain data only.
+
+Before this, every process scanned again from the deployment blocks. Once the chain outgrew one pass's budget, `status`, `plan` and `run-once` never finished a scan, and `serve` never got past its first pass. Deleting the file costs one rescan.
+
 ## Auto-exit (`v2_autoexit`)
 
 - **Watch.** `MandateRegistered` logs of the module from its deployment block; each mandate's record (`mandateOf`) and status at the head; active, not past `validUntil`, the vault's exit module is the module and its owner is still the mandate's. A revoked, executed or expired mandate can never execute again and is not read on later passes.

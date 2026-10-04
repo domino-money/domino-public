@@ -1,8 +1,13 @@
 """What the V2 automation reads: discovery, a vault's proof, the v3 TWAP, fee growth, native prices and the L1 fee."""
 from fractions import Fraction
+import json
+import os
 from pathlib import Path
 import re
+import shutil
+import stat
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -15,6 +20,7 @@ from v2_chains import chain as profile
 from v2_manifest import checked_deployment
 from v2_planner import Limits, returnable
 from v2_rpc import ChainEndpoints, Endpoint
+from v2_scan_state import REORG_MARGIN, ScanState
 from v2_uniswap import PoolRef, v3_fee_growth_inside, v3_pool_address
 from v2_vaults import (L1_UPPER_BOUND, OP_GAS_PRICE_ORACLE, TX_OVERHEAD_BYTES, WIRING_SELECTOR, PriceReference,
                        VaultDiscovery, VaultRecord, VaultReader, clone_code, fee_growth_inside, l1_fee,
@@ -161,6 +167,115 @@ class DiscoveryTests(unittest.TestCase):
                             'timestamp': '0x10'})
         with self.assertRaisesRegex(DataError, '^v2_log_address_mismatch$'):
             VaultDiscovery(self.deployment).scan(Index(), head)
+
+
+class DiscoveryStateTests(unittest.TestCase):
+    """Where the scans stopped, kept per window and across processes (v2_scan_state)."""
+
+    def setUp(self):
+        self.deployment = checked_deployment(manifest_document(), BASE)
+        self.created = event('IDominoVaultFactory', 'VaultCreated')
+        self.folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.folder)
+        self.path = self.folder / 'v2-scans-base-8453.json'
+        self.start3 = self.deployment.start_block('vaultFactory.v3')
+        self.start4 = self.deployment.start_block('vaultFactory.v4')
+        self.logs = {self.deployment.factory(3): [], self.deployment.factory(4): [
+            {'address': self.deployment.factory(4), 'blockNumber': hex(self.start4 + 3),
+             'topics': [self.created.topic, '0x' + encode(['address'], ['0x' + '0b' * 20]).hex(),
+                        '0x' + encode(['address'], ['0x' + 'a4' * 20]).hex(), '0x' + encode(['uint256'], [7]).hex()],
+             'data': '0x' + encode(['uint8', 'uint256'], [4, 0]).hex()}]}
+
+    def index(self, budget=None):
+        logs, reads = self.logs, []
+
+        class Index:
+            def request(inner, method, params):
+                if budget is not None and len(reads) >= budget:
+                    raise DataError('request_budget_exhausted')
+                query = params[0]
+                reads.append((query['address'], int(query['fromBlock'], 16), int(query['toBlock'], 16)))
+                return [log for log in logs[query['address']]
+                        if int(query['fromBlock'], 16) <= int(log['blockNumber'], 16) <= int(query['toBlock'], 16)]
+        return Index(), reads
+
+    def head(self, number):
+        return parse_block({'number': hex(number), 'hash': '0x' + '11' * 32, 'timestamp': '0x10'})
+
+    def test_a_window_read_moves_the_scan_on_when_a_later_one_runs_out_of_budget(self):
+        discovery = VaultDiscovery(self.deployment, max_blocks_per_read=4)
+        end = max(self.start3, self.start4) + 40
+        index, reads = self.index(budget=3)
+        with self.assertRaisesRegex(DataError, '^request_budget_exhausted$'):
+            discovery.scan(index, self.head(end))
+        self.assertEqual(discovery.next_block[3], self.start3 + 12)
+        # The next pass goes on from there, it does not start over.
+        index, reads = self.index()
+        discovery.scan(index, self.head(end))
+        self.assertEqual(reads[0][1:], (self.start3 + 12, self.start3 + 15))
+
+    def test_where_the_scan_stopped_and_what_it_found_outlive_the_process(self):
+        end = max(self.start3, self.start4) + 200
+        index, _ = self.index()
+        first = VaultDiscovery(self.deployment, max_blocks_per_read=50, state=ScanState(self.path, self.deployment))
+        self.assertEqual([r.vault for r in first.scan(index, self.head(end))], ['0x' + 'a4' * 20])
+        self.assertEqual(stat.S_IMODE(os.stat(self.path).st_mode), 0o600)
+        again = VaultDiscovery(self.deployment, max_blocks_per_read=50, state=ScanState(self.path, self.deployment))
+        # It starts REORG_MARGIN blocks before the head it saw, with the vault it found.
+        self.assertEqual(again.next_block, {3: end + 1 - REORG_MARGIN, 4: end + 1 - REORG_MARGIN})
+        index, reads = self.index()
+        self.assertEqual([(r.vault, r.owner, r.root_token_id, r.dex, r.block_number)
+                          for r in again.scan(index, self.head(end + 10))],
+                         [('0x' + 'a4' * 20, '0x' + '0b' * 20, 7, 4, self.start4 + 3)])
+        # Nothing before that is read again.
+        self.assertEqual(min(read[1] for read in reads), end + 1 - REORG_MARGIN)
+
+    def test_a_scan_that_stops_on_its_budget_keeps_its_progress_on_disk(self):
+        end = max(self.start3, self.start4) + 400
+        index, _ = self.index(budget=2)
+        discovery = VaultDiscovery(self.deployment, max_blocks_per_read=50, state=ScanState(self.path, self.deployment))
+        with self.assertRaises(DataError):
+            discovery.scan(index, self.head(end))
+        saved = json.loads(self.path.read_text())['scans']['vaultFactory.v3']
+        self.assertEqual(saved['next'], self.start3 + 100)
+        self.assertEqual(VaultDiscovery(self.deployment, state=ScanState(self.path, self.deployment)).next_block[3],
+                         self.start3 + 100)
+
+    def test_a_state_for_another_deployment_is_ignored(self):
+        index, _ = self.index()
+        VaultDiscovery(self.deployment, state=ScanState(self.path, self.deployment)).scan(
+            index, self.head(max(self.start3, self.start4) + 500))
+        saved = json.loads(self.path.read_text())
+        saved['identity']['vaultFactory.v4'] = '0x' + 'ee' * 20
+        self.path.write_text(json.dumps(saved))
+        fresh = VaultDiscovery(self.deployment, state=ScanState(self.path, self.deployment))
+        self.assertEqual((fresh.next_block, fresh.records), ({3: self.start3, 4: self.start4}, {}))
+
+    def test_the_state_is_private_to_the_automation(self):
+        os.chmod(self.folder, 0o755)
+        with self.assertRaisesRegex(DataError, '^v2_scan_state_directory_not_private$'):
+            ScanState(self.path, self.deployment)
+        os.chmod(self.folder, 0o700)
+        self.path.write_text('{}')
+        os.chmod(self.path, 0o644)
+        with self.assertRaisesRegex(DataError, '^v2_scan_state_file_not_private$'):
+            ScanState(self.path, self.deployment)
+
+    def test_a_window_with_a_foreign_log_counts_nothing(self):
+        # A valid v3 vault, then, in the same window, a log from another address.
+        valid = {**self.logs[self.deployment.factory(4)][0], 'address': self.deployment.factory(3),
+                 'blockNumber': hex(self.start3),
+                 'topics': [self.created.topic, '0x' + encode(['address'], ['0x' + '0b' * 20]).hex(),
+                            '0x' + encode(['address'], ['0x' + 'a3' * 20]).hex(), '0x' + encode(['uint256'], [7]).hex()],
+                 'data': '0x' + encode(['uint8', 'uint256'], [3, 0]).hex()}
+        self.logs[self.deployment.factory(3)] += [valid, {**self.logs[self.deployment.factory(4)][0],
+                                                          'blockNumber': hex(self.start3 + 1)}]
+        discovery = VaultDiscovery(self.deployment, max_blocks_per_read=4,
+                                   state=ScanState(self.path, self.deployment))
+        index, _ = self.index()
+        with self.assertRaisesRegex(DataError, '^v2_log_address_mismatch$'):
+            discovery.scan(index, self.head(max(self.start3, self.start4) + 40))
+        self.assertEqual((discovery.next_block[3], discovery.records), (self.start3, {}))
 
 
 class ProofTests(unittest.TestCase):

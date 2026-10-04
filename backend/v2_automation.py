@@ -55,6 +55,7 @@ from v2_plan import (execute_calldata, plan_hash, return_reserves_calldata, retu
 from v2_planner import (FeeGrowth, GasQuote, PlannerConfig, decide, preconditions, price_book, remeasured,
                         returnable)
 from v2_rpc import ChainIndexRpc, configured_endpoints, load_chain_rpc_config
+from v2_scan_state import ScanState
 from v2_uniswap import UniswapReader
 from v2_vaults import (VaultDiscovery, VaultReader, anchor_min_twap, checked_references, earlier_block,
                        fee_growth_inside, l1_fee, reference_prices, twap_price, twap_window)
@@ -247,7 +248,7 @@ class ChainAutomation:
     def __init__(self, *, chain, deployment, endpoints, follower, planner, observations, price_references,
                  earnings_window_seconds, twap_seconds, exit_twap_seconds, deadline_seconds, executor=None,
                  publisher_signer=None, auto_exit=True, vault_gas_ceiling_wei=None, vault_gas_ceilings_wei=None,
-                 quoter_factory=None, waiting_file=None, clock=time.time):
+                 quoter_factory=None, waiting_file=None, scan_state_file=None, clock=time.time):
         self.chain, self.deployment, self.endpoints, self.follower = chain, deployment, endpoints, follower
         self.planner, self.observations, self.references = planner, observations, price_references
         self.window, self.twap_seconds, self.exit_twap_seconds = earnings_window_seconds, twap_seconds, exit_twap_seconds
@@ -260,8 +261,10 @@ class ChainAutomation:
         self.quoter_factory = quoter_factory
         # Where the read API finds why each vault and mandate waits (docs/v2/V2_AUTOMATION_BACKEND.md).
         self.waiting_file = Path(waiting_file) if waiting_file else None
-        self.discovery = VaultDiscovery(deployment)
-        self.mandates = MandateWatcher(deployment)
+        # Where the log scans stopped and what they found, kept across processes (v2_scan_state).
+        state = ScanState(scan_state_file, deployment) if scan_state_file else None
+        self.discovery = VaultDiscovery(deployment, state=state)
+        self.mandates = MandateWatcher(deployment, state=state)
         self.proven = set()  # vaults proven to be the manifest's clones, once per process
         # Closed vaults found with nothing to return, by the state nonce they had:
         # every change to a vault's reserves advances its nonce, so one is read
@@ -594,7 +597,8 @@ def build(config, *, keys=True, endpoint_options=None):
                            exit_twap_seconds=config.exit_twap_seconds, deadline_seconds=config.deadline_seconds,
                            executor=executor, publisher_signer=publisher, auto_exit=config.auto_exit,
                            vault_gas_ceiling_wei=config.vault_gas_ceiling_wei,
-                           vault_gas_ceilings_wei=config.vault_gas_ceilings_wei, waiting_file=config.waiting_file)
+                           vault_gas_ceilings_wei=config.vault_gas_ceilings_wei, waiting_file=config.waiting_file,
+                           scan_state_file=Path(config.journal_file).parent / f'v2-scans-{chain.key}.json')
 
 
 def main(argv=None):

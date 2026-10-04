@@ -35,6 +35,7 @@ from v2_abi import event, function
 from v2_chains import DEX_V3, DEX_V4
 from v2_planner import Limits, MemberState, Policy, PoolState as PlannerPool, VaultState
 from v2_rpc import batched_reads
+from v2_scan_state import valid_address
 from v2_uniswap import PoolRef, PositionRef, v3_fee_growth_inside, v3_pool_address
 
 VAULT = 'IDominoVault'
@@ -82,35 +83,61 @@ class VaultRecord:
 
 
 class VaultDiscovery:
-    """VaultCreated logs of both factories, read once from each factory's deployment block and then incrementally."""
+    """VaultCreated logs of both factories, read once from each factory's deployment block and then incrementally.
 
-    def __init__(self, deployment, *, max_blocks_per_read=50_000):
-        self.deployment, self.max_blocks = deployment, max_blocks_per_read
+    Each window read moves the scan on at once, so a pass that stops on its request budget keeps what it read.
+    With a `state` (v2_scan_state.ScanState) the position and the vaults found outlive the process."""
+
+    def __init__(self, deployment, *, max_blocks_per_read=50_000, state=None):
+        self.deployment, self.max_blocks, self.state = deployment, max_blocks_per_read, state
         self.next_block = {dex: deployment.start_block(f'vaultFactory.v{dex}') for dex in (DEX_V3, DEX_V4)}
         self.records = {}
+        for dex in (DEX_V3, DEX_V4):
+            saved = state.get(f'vaultFactory.v{dex}') if state is not None else None
+            if saved is None:
+                continue
+            self.next_block[dex] = max(self.next_block[dex], saved['next'])
+            for vault, row in saved['items'].items():
+                if (valid_address(vault) and isinstance(row, list) and len(row) == 3 and valid_address(row[0])
+                        and all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in row[1:])):
+                    self.records.setdefault(vault, VaultRecord(vault, row[0], row[1], dex, row[2]))
 
     def scan(self, rpc, head, *, lag_blocks=0):
         """Every vault proposed up to the head (less lag_blocks), through an index client (v2_rpc.ChainIndexRpc)."""
         created = event(FACTORY, 'VaultCreated')
         end = head.number - lag_blocks
-        for dex in (DEX_V3, DEX_V4):
-            factory = self.deployment.factory(dex)
-            start = self.next_block[dex]
-            while start <= end:
-                stop = min(end, start + self.max_blocks - 1)
-                logs = rpc.request('eth_getLogs', [{'address': factory, 'topics': [created.topic],
-                                                         'fromBlock': hex(start), 'toBlock': hex(stop)}])
-                for log in logs:
-                    if address(log['address']) != factory:
-                        raise DataError('v2_log_address_mismatch')
-                    values = created.decode(log)
-                    vault = address(values['vault'])
-                    if values['dex'] == dex and vault not in self.records:
-                        self.records[vault] = VaultRecord(vault, address(values['owner']), values['rootTokenId'], dex,
-                                                          int(log['blockNumber'], 16))
-                start = stop + 1
-            self.next_block[dex] = max(self.next_block[dex], end + 1)
+        try:
+            for dex in (DEX_V3, DEX_V4):
+                factory = self.deployment.factory(dex)
+                while self.next_block[dex] <= end:
+                    start = self.next_block[dex]
+                    stop = min(end, start + self.max_blocks - 1)
+                    logs = rpc.request('eth_getLogs', [{'address': factory, 'topics': [created.topic],
+                                                             'fromBlock': hex(start), 'toBlock': hex(stop)}])
+                    found = {}
+                    for log in logs:
+                        if address(log['address']) != factory:
+                            raise DataError('v2_log_address_mismatch')
+                        values = created.decode(log)
+                        vault = address(values['vault'])
+                        if values['dex'] == dex and vault not in self.records:
+                            found[vault] = VaultRecord(vault, address(values['owner']), values['rootTokenId'], dex,
+                                                       int(log['blockNumber'], 16))
+                    # The window counts only once all its logs were accepted.
+                    for vault, record in found.items():
+                        self.records.setdefault(vault, record)
+                    self.next_block[dex] = stop + 1
+        finally:
+            self._keep(end)
         return [self.records[vault] for vault in sorted(self.records, key=lambda v: (self.records[v].block_number, v))]
+
+    def _keep(self, end):
+        if self.state is None:
+            return
+        for dex in (DEX_V3, DEX_V4):
+            items = {r.vault: [r.owner, r.root_token_id, r.block_number] for r in self.records.values() if r.dex == dex}
+            self.state.put(f'vaultFactory.v{dex}', self.next_block[dex], end, items)
+        self.state.save()
 
 
 class VaultReader:

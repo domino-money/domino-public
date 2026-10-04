@@ -35,6 +35,7 @@ from v2_abi import event, function
 from v2_chains import DEX_V4
 from v2_plan import LEG_V3_POOL, LEG_V4_POOL, ExitExecution, SwapLeg, exit_calldata, twap_evidence, v3_path, v4_path
 from v2_planner import BPS, amounts_for_liquidity
+from v2_scan_state import valid_hash
 from v2_uniswap import PoolRef, PositionRef
 from v2_vaults import calls, pool_ref
 from v4_math import MAX_SQRT, MIN_SQRT
@@ -70,29 +71,46 @@ class Mandate:
 
 
 class MandateWatcher:
-    """MandateRegistered logs of the module, from its deployment block on."""
+    """MandateRegistered logs of the module, from its deployment block on.
 
-    def __init__(self, deployment, *, max_blocks_per_read=50_000):
-        self.deployment, self.max_blocks = deployment, max_blocks_per_read
+    Each window read moves the scan on at once (a pass that stops on its request budget keeps what it read), and
+    with a `state` (v2_scan_state.ScanState) the position and the mandates found outlive the process."""
+
+    def __init__(self, deployment, *, max_blocks_per_read=50_000, state=None):
+        self.deployment, self.max_blocks, self.state = deployment, max_blocks_per_read, state
         self.next_block = deployment.start_block('autoExit')
         self.hashes = {}
         self.final = set()  # revoked, executed or expired: never active again
+        saved = state.get('autoExit') if state is not None else None
+        if saved is not None:
+            self.next_block = max(self.next_block, saved['next'])
+            for mandate_hash, block in saved['items'].items():
+                if valid_hash(mandate_hash) and isinstance(block, int) and not isinstance(block, bool) and block >= 0:
+                    self.hashes.setdefault(mandate_hash, block)
 
     def scan(self, rpc, head, *, lag_blocks=0):
         registered = event(AUTO_EXIT, 'MandateRegistered')
         module = self.deployment.auto_exit
         end = head.number - lag_blocks
-        start = self.next_block
-        while start <= end:
-            stop = min(end, start + self.max_blocks - 1)
-            for log in rpc.request('eth_getLogs', [{'address': module, 'topics': [registered.topic],
-                                                         'fromBlock': hex(start), 'toBlock': hex(stop)}]):
-                if address(log['address']) != module:
-                    raise DataError('v2_log_address_mismatch')
-                values = registered.decode(log)
-                self.hashes.setdefault('0x' + values['mandateHash'].hex(), int(log['blockNumber'], 16))
-            start = stop + 1
-        self.next_block = max(self.next_block, end + 1)
+        try:
+            while self.next_block <= end:
+                start = self.next_block
+                stop = min(end, start + self.max_blocks - 1)
+                found = {}
+                for log in rpc.request('eth_getLogs', [{'address': module, 'topics': [registered.topic],
+                                                             'fromBlock': hex(start), 'toBlock': hex(stop)}]):
+                    if address(log['address']) != module:
+                        raise DataError('v2_log_address_mismatch')
+                    values = registered.decode(log)
+                    found.setdefault('0x' + values['mandateHash'].hex(), int(log['blockNumber'], 16))
+                # The window counts only once all its logs were accepted.
+                for mandate_hash, block in found.items():
+                    self.hashes.setdefault(mandate_hash, block)
+                self.next_block = stop + 1
+        finally:
+            if self.state is not None:
+                self.state.put('autoExit', self.next_block, end, dict(self.hashes))
+                self.state.save()
         return sorted((h for h in self.hashes if h not in self.final), key=lambda h: (self.hashes[h], h))
 
     def forget(self, mandate_hash):

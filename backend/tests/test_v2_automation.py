@@ -10,6 +10,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -17,6 +18,7 @@ from eth_abi import encode
 from eth_hash.auto import keccak
 
 from discovery import DataError, parse_block
+import v2_automation as automation
 from v2_automation import ChainAutomation, build, checked_config, load_automation_config, main
 from v2_chains import chain as profile
 from v2_executor import CallReverted
@@ -172,6 +174,23 @@ class ConfigTests(unittest.TestCase):
         for service, keys in ((config(), True), (config('operator'), False)):
             with self.assertRaisesRegex(DataError, '^v2_chain_rpc_config_unreadable$'):
                 build(service, keys=keys)
+
+    def test_where_the_scans_stopped_is_kept_beside_the_journal(self):
+        # Every operation builds the service with it, status and plan included, so no fresh process starts the log
+        # scans over from the deployment block (each pass's budget stops reading long before the head).
+        directory = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, directory)
+        os.chmod(directory, 0o700)
+        (directory / 'deployment.json').write_text(json.dumps(manifest_document()))
+        config = checked_config(document(**{'deploymentFile': str(directory / 'deployment.json'),
+                                            'rpc': {'chainRpcFile': str(directory / 'rpc.json')},
+                                            'journalFile': str(directory / 'journal.sqlite')}))
+        with patch.object(automation, 'load_chain_rpc_config', return_value={}), \
+                patch.object(automation, 'configured_endpoints', return_value=None), \
+                patch.object(automation, 'HeadFollower', return_value=None):
+            service = build(config, keys=False)
+        self.assertIs(service.discovery.state, service.mandates.state)
+        self.assertEqual(service.discovery.state.path, directory / 'v2-scans-base-8453.json')
 
     def test_the_command_line_prints_a_fixed_code_and_never_a_value(self):
         directory = Path(tempfile.mkdtemp()).resolve()
