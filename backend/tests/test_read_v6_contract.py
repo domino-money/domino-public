@@ -27,7 +27,7 @@ from discovery import DataError  # noqa: E402
 from read_api import ReadGate, create_app  # noqa: E402
 from read_gateway import Gateway, create_gateway  # noqa: E402
 from v2_chains import default_registry  # noqa: E402
-from v2_read_contract import (CHAIN_IDS, CONTRACT_VERSION, REQUEST_MODELS, ROUTES, V2_ERRORS,  # noqa: E402
+from v2_read_contract import (CHAIN_IDS, CONTRACT_VERSION, REQUEST_MODELS, ROUTES, STORED_ROUTES, V2_ERRORS,  # noqa: E402
                               cursor_key, error_of, validate_v6_request_response, validate_v6_response)
 import read_v6_contract_fixtures as fixtures  # noqa: E402
 
@@ -61,9 +61,33 @@ class Reader:
         return self._answer('activity-page' if limit == 3 else 'activity', wallet)
 
 
-def reader_client(v2_reader):
-    return TestClient(create_app(object(), gate=ReadGate(interval=0), read_budget_seconds=15, v2_reader=v2_reader),
-                      base_url='http://127.0.0.1:8876')
+def reader_client(v2_reader, chain_reads=None):
+    return TestClient(create_app(object(), gate=ReadGate(interval=0), read_budget_seconds=15, v2_reader=v2_reader,
+                                 chain_reads=chain_reads), base_url='http://127.0.0.1:8876')
+
+
+class ChainReads:
+    """The live reads answering the shared fixtures, the way v2_chain_reads.ChainReads answers."""
+    def __init__(self, change=None, fail=None):
+        self.change, self.fail, self.calls = change, fail, []
+
+    def _answer(self, name):
+        if self.fail:
+            raise DataError(self.fail)
+        body = copy.deepcopy(fixtures.valid()[name])
+        return self.change(body) if self.change else body
+
+    def pools(self, chain_id, token, paired):
+        self.calls.append(('pools', chain_id, token, paired))
+        return self._answer('chain-pools-paired' if paired else 'chain-pools')
+
+    def balances(self, wallet, tokens):
+        self.calls.append(('balances', wallet, tokens))
+        return self._answer('chain-balances' if tokens is None else 'chain-balances-asked')
+
+    def tokens(self, chain_id, query, limit):
+        self.calls.append(('tokens', chain_id, query, limit))
+        return self._answer('chain-tokens')
 
 
 def gateway_client(reader, **enabled):
@@ -104,7 +128,7 @@ class PackageTests(unittest.TestCase):
         fixtures.check()
         for name in fixtures.valid():
             body = json.loads((PACKAGE / f'fixtures/valid/{name}.json').read_text())
-            validate_v6_response('portfolio' if name.startswith('portfolio') else 'activity', body)
+            validate_v6_response(fixtures.route_of(name), body)
         for name, (route, _) in fixtures.invalid().items():
             body = json.loads((PACKAGE / f'fixtures/invalid/{name}.json').read_text())
             with self.subTest(name=name), self.assertRaises(ValueError):
@@ -138,6 +162,76 @@ class PackageTests(unittest.TestCase):
             validate_v6_request_response('activity', {'wallet': fixtures.OTHER, 'limit': 3}, body)
         with self.assertRaises(ValueError):
             validate_v6_request_response('activity', {'wallet': WALLET, 'limit': 2}, body)
+
+
+class ChainReadContractTests(unittest.TestCase):
+    TOKEN = fixtures.LIVE_TOKEN
+
+    def test_requests_are_well_formed_and_never_ask_twice(self):
+        REQUEST_MODELS['chain-pools'].model_validate({'chainId': 8453, 'token': self.TOKEN})
+        REQUEST_MODELS['chain-balances'].model_validate({'wallet': WALLET})
+        REQUEST_MODELS['chain-tokens'].model_validate({'chainId': 42161, 'query': ' usd '})
+        many = [{'chainId': 8453, 'address': '0x' + f'{index:040x}'} for index in range(25)]
+        for route, body in (('chain-pools', {'chainId': 8453, 'token': self.TOKEN, 'pairedToken': self.TOKEN}),
+                            ('chain-pools', {'chainId': 8453, 'token': self.TOKEN.upper().replace('0X', '0x')}),
+                            ('chain-balances', {'wallet': WALLET, 'tokens': []}),
+                            ('chain-balances', {'wallet': WALLET, 'tokens': many}),
+                            ('chain-balances', {'wallet': WALLET, 'tokens': [{'chainId': 8453, 'address': self.TOKEN}] * 2}),
+                            ('chain-tokens', {'chainId': 4663, 'query': 'usd'}),
+                            ('chain-tokens', {'chainId': 8453, 'query': '   '}),
+                            ('chain-tokens', {'chainId': 8453, 'query': 'a\u0000b'}),
+                            ('chain-tokens', {'chainId': 8453, 'query': 'usd', 'limit': 25}),
+                            ('chain-tokens', {'chainId': 8453, 'query': 'x' * 97})):
+            with self.subTest(route=route, body=str(body)[:60]), self.assertRaises(ValueError):
+                REQUEST_MODELS[route].model_validate(body)
+
+    def test_an_answer_about_another_chain_token_query_wallet_or_token_list_is_refused(self):
+        valid = fixtures.valid()
+        pools = valid['chain-pools']
+        validate_v6_request_response('chain-pools', {'chainId': 8453, 'token': self.TOKEN, 'pairedToken': None}, pools)
+        for request in ({'chainId': 42161, 'token': self.TOKEN}, {'chainId': 8453, 'token': fixtures.BASE_USDC},
+                        {'chainId': 8453, 'token': self.TOKEN, 'pairedToken': fixtures.BASE_WETH}):
+            with self.subTest(request=request), self.assertRaises(ValueError):
+                validate_v6_request_response('chain-pools', request, pools)
+        tokens = valid['chain-tokens']
+        validate_v6_request_response('chain-tokens', {'chainId': 8453, 'query': 'aero', 'limit': 2}, tokens)
+        for request in ({'chainId': 42161, 'query': 'aero'}, {'chainId': 8453, 'query': 'AERO'},
+                        {'chainId': 8453, 'query': 'aero', 'limit': 1}):
+            with self.subTest(request=request), self.assertRaises(ValueError):
+                validate_v6_request_response('chain-tokens', request, tokens)
+        every, asked = valid['chain-balances'], valid['chain-balances-asked']
+        validate_v6_request_response('chain-balances', {'wallet': WALLET, 'tokens': None}, every)
+        request = fixtures.REQUESTS['chain-balances']
+        validate_v6_request_response('chain-balances', request, asked)
+        for name, ask, body in (('default answers every chain', {'wallet': WALLET, 'tokens': None}, asked),
+                                ('another wallet', {**request, 'wallet': fixtures.OTHER}, asked),
+                                ('one token less', {**request, 'tokens': request['tokens'][:1]}, asked),
+                                ('another order', {**request, 'tokens': request['tokens'][::-1]}, asked),
+                                ('another chain', {**request, 'tokens': [{**t, 'chainId': 42161} for t in request['tokens']]},
+                                 asked)):
+            with self.subTest(case=name), self.assertRaises(ValueError):
+                validate_v6_request_response('chain-balances', ask, body)
+
+    def test_a_fault_in_the_chain_reads_configuration_leaves_the_read_path_up(self):
+        import io
+        import os
+        from contextlib import redirect_stderr
+        from unittest.mock import patch
+        import read_api
+        stderr = io.StringIO()
+        with patch.dict(os.environ, {'DOMINO_V2_CHAIN_RPC_FILE': '/nonexistent/chain-rpc.json'}), redirect_stderr(stderr):
+            self.assertIsNone(read_api.configured_chain_reads(None, None))
+        record = json.loads(stderr.getvalue().strip().splitlines()[-1])
+        self.assertEqual((record['mode'], record['reason']), ('chain_reads_unavailable', 'v2_chain_rpc_config_unreadable'))
+        self.assertNotIn('nonexistent', stderr.getvalue())
+        # Any other fault is named by a fixed code: its text may carry a path.
+        stderr = io.StringIO()
+        with patch('v2_chain_reads.build_chain_reads', side_effect=OSError('/srv/private/chain-rpc.json: denied')), \
+                redirect_stderr(stderr):
+            self.assertIsNone(read_api.configured_chain_reads(None, None))
+        record = json.loads(stderr.getvalue().strip().splitlines()[-1])
+        self.assertEqual((record['mode'], record['reason']), ('chain_reads_unavailable', 'chain_reads_unconfigured'))
+        self.assertNotIn('private', stderr.getvalue())
 
 
 class RouteTests(unittest.TestCase):
@@ -180,10 +274,62 @@ class RouteTests(unittest.TestCase):
         broken = reader_client(Reader(fail='v2_receipt_unanchored')).post('/v6/read/activity', json={'wallet': WALLET})
         self.assertEqual((broken.status_code, broken.json()), (503, {'error': 'upstream_unavailable'}))
 
-    def test_v6_reads_are_stored_lane_reads(self):
+    def test_stored_v6_reads_take_the_stored_lane_and_chain_reads_the_provider_lane(self):
         gate = ReadGate(interval=0)
         for route in ROUTES:
-            self.assertEqual(gate.kind_of(route, {}), gate.STORED)
+            with self.subTest(route=route):
+                self.assertEqual(gate.kind_of(route, {}), gate.STORED if route in STORED_ROUTES else gate.PROVIDER)
+        self.assertEqual(set(ROUTES) - set(STORED_ROUTES), {'chain-pools', 'chain-balances'})
+        # A v1 route keeps its own lane: the v6 names never shadow pools, token or wallet-assets.
+        for route in ('pools', 'token', 'wallet-assets'):
+            self.assertEqual(gate.kind_of(route, {}), gate.PROVIDER)
+
+    def test_the_reader_serves_the_chain_reads_with_the_contract_header(self):
+        reads = ChainReads()
+        client = reader_client(Reader(), reads)
+        cases = (('chain-pools', fixtures.REQUESTS['chain-pools'], 'chain-pools'),
+                 ('chain-pools', {**fixtures.REQUESTS['chain-pools'], 'pairedToken': fixtures.BASE_WETH}, 'chain-pools-paired'),
+                 ('chain-balances', {'wallet': WALLET}, 'chain-balances'),
+                 ('chain-balances', fixtures.REQUESTS['chain-balances'], 'chain-balances-asked'),
+                 ('chain-tokens', fixtures.REQUESTS['chain-tokens'], 'chain-tokens'),
+                 ('chain-tokens', {'chainId': 8453, 'query': 'aero'}, 'chain-tokens'),
+                 ('chain-tokens', {**fixtures.REQUESTS['chain-tokens'], 'limit': 5}, 'chain-tokens'))
+        for route, request, name in cases:
+            with self.subTest(route=route, name=name):
+                response = client.post(f'/v6/read/{route}', json=request)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.headers['x-domino-read-contract'], CONTRACT_VERSION)
+                self.assertEqual(response.json(), fixtures.valid()[name])
+        self.assertEqual(reads.calls, [
+            ('pools', 8453, fixtures.LIVE_TOKEN, None), ('pools', 8453, fixtures.LIVE_TOKEN, fixtures.BASE_WETH),
+            ('balances', WALLET, None), ('balances', WALLET, [(8453, fixtures.LIVE_TOKEN), (8453, fixtures.ZERO)]),
+            ('tokens', 8453, 'aero', 20), ('tokens', 8453, 'aero', 20), ('tokens', 8453, 'aero', 5)])
+
+    def test_chain_reads_refuse_bad_requests_unconfigured_reads_and_answers_about_something_else(self):
+        for route, request in (('chain-pools', {'chainId': 1, 'token': fixtures.LIVE_TOKEN}),
+                               ('chain-pools', {'chainId': 8453, 'token': fixtures.LIVE_TOKEN, 'pairedToken': fixtures.LIVE_TOKEN}),
+                               ('chain-tokens', {'chainId': 4663, 'query': 'usd'}),
+                               ('chain-balances', {'wallet': WALLET, 'tokens': []})):
+            with self.subTest(route=route, request=request):
+                response = reader_client(Reader(), ChainReads()).post(f'/v6/read/{route}', json=request)
+                self.assertEqual((response.status_code, response.json()), (422, {'error': 'invalid_request'}))
+        off = reader_client(Reader()).post('/v6/read/chain-tokens', json=fixtures.REQUESTS['chain-tokens'])
+        self.assertEqual((off.status_code, off.json()), (503, {'error': 'upstream_unavailable'}))
+        cooling = reader_client(Reader(), ChainReads(fail='v2_rpc_endpoints_cooling')).post(
+            '/v6/read/chain-pools', json=fixtures.REQUESTS['chain-pools'])
+        self.assertEqual((cooling.status_code, cooling.json()), (503, {'error': 'upstream_unavailable'}))
+        drifted = reader_client(Reader(), ChainReads()).post(
+            '/v6/read/chain-pools', json={**fixtures.REQUESTS['chain-pools'], 'chainId': 42161})
+        self.assertEqual((drifted.status_code, drifted.json()), (502, {'error': 'upstream_contract_mismatch'}))
+
+    def test_the_gateway_serves_chain_reads_only_when_named(self):
+        reader = reader_client(Reader(), ChainReads())
+        client = gateway_client(reader, enabled_v6=True, enabled_v6_reads=('portfolio', 'chain-pools'))
+        response = client.post('/internal/read/v6/chain-pools', json=fixtures.REQUESTS['chain-pools'], headers=HEADER)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['token'], fixtures.LIVE_TOKEN)
+        self.assertEqual(client.post('/internal/read/v6/chain-tokens', json=fixtures.REQUESTS['chain-tokens'],
+                                     headers=HEADER).status_code, 404)
 
     def test_the_gateway_serves_v6_only_under_its_flag(self):
         reader = reader_client(Reader())

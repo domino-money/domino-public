@@ -1360,6 +1360,33 @@
         "title": "AutomationResumed",
         "type": "object"
       },
+      "BalanceTokenRef": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Address",
+            "type": "string"
+          },
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chainId",
+          "address"
+        ],
+        "title": "BalanceTokenRef",
+        "type": "object"
+      },
       "Block": {
         "additionalProperties": false,
         "properties": {
@@ -2444,6 +2471,358 @@
         "title": "CatalogueUnavailable",
         "type": "object"
       },
+      "ChainBalances": {
+        "additionalProperties": false,
+        "properties": {
+          "balances": {
+            "items": {
+              "$ref": "#/components/schemas/TokenBalance"
+            },
+            "maxItems": 24,
+            "minItems": 1,
+            "title": "Balances",
+            "type": "array"
+          },
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chain_not_configured",
+                  "chain_read_failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlockRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "current",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chainId",
+          "status",
+          "reason",
+          "snapshot",
+          "balances"
+        ],
+        "title": "ChainBalances",
+        "type": "object"
+      },
+      "ChainBalancesRequest": {
+        "additionalProperties": false,
+        "description": "Without tokens: every chain's base currencies (its charge currencies).",
+        "properties": {
+          "tokens": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/BalanceTokenRef"
+                },
+                "maxItems": 24,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens"
+          },
+          "wallet": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Wallet",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wallet"
+        ],
+        "title": "ChainBalancesRequest",
+        "type": "object"
+      },
+      "ChainBalancesResponse": {
+        "additionalProperties": false,
+        "description": "chain-balances: a wallet's native and token balances on each chain asked, one block per chain.",
+        "properties": {
+          "chains": {
+            "items": {
+              "$ref": "#/components/schemas/ChainBalances"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Chains",
+            "type": "array"
+          },
+          "contractVersion": {
+            "const": "1.0.0-rc.1",
+            "title": "Contractversion",
+            "type": "string"
+          },
+          "coverage": {
+            "enum": [
+              "complete",
+              "partial"
+            ],
+            "title": "Coverage",
+            "type": "string"
+          },
+          "executionAvailable": {
+            "const": false,
+            "title": "Executionavailable",
+            "type": "boolean"
+          },
+          "limitations": {
+            "items": {
+              "enum": [
+                "raw_amounts_no_usd_valuation",
+                "token_metadata_untrusted",
+                "state_as_of_last_read",
+                "no_execution_or_signing"
+              ],
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Limitations",
+            "type": "array"
+          },
+          "mode": {
+            "const": "live_chain_balances",
+            "title": "Mode",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "servedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Servedat",
+            "type": "integer"
+          },
+          "wallet": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Wallet",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "mode",
+          "wallet",
+          "servedAt",
+          "coverage",
+          "chains",
+          "limitations",
+          "executionAvailable"
+        ],
+        "title": "ChainBalancesResponse",
+        "type": "object"
+      },
+      "ChainPoolsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "pairedToken": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pairedtoken"
+          },
+          "token": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chainId",
+          "token"
+        ],
+        "title": "ChainPoolsRequest",
+        "type": "object"
+      },
+      "ChainPoolsResponse": {
+        "additionalProperties": false,
+        "description": "chain-pools: the token's pools against the chain's base currencies (or the paired token), Uniswap's standard\nhookless keys and the enabled v3 tiers, read at one block; listed when priced and holding liquidity.",
+        "properties": {
+          "chainId": {
+            "enum": [
+              4663,
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "contractVersion": {
+            "const": "1.0.0-rc.1",
+            "title": "Contractversion",
+            "type": "string"
+          },
+          "coverage": {
+            "const": "standard_hookless_pools",
+            "title": "Coverage",
+            "type": "string"
+          },
+          "executionAvailable": {
+            "const": false,
+            "title": "Executionavailable",
+            "type": "boolean"
+          },
+          "freshness": {
+            "$ref": "#/components/schemas/Freshness"
+          },
+          "limitations": {
+            "items": {
+              "enum": [
+                "raw_amounts_no_usd_valuation",
+                "token_metadata_untrusted",
+                "state_as_of_last_read",
+                "no_execution_or_signing"
+              ],
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Limitations",
+            "type": "array"
+          },
+          "mode": {
+            "const": "live_chain_pools",
+            "title": "Mode",
+            "type": "string"
+          },
+          "pairedToken": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pairedtoken"
+          },
+          "pools": {
+            "items": {
+              "$ref": "#/components/schemas/LivePool"
+            },
+            "maxItems": 32,
+            "title": "Pools",
+            "type": "array"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "servedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Servedat",
+            "type": "integer"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/BlockRef"
+          },
+          "token": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Token",
+            "type": "string"
+          },
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/LiveToken"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Tokens",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "mode",
+          "chainId",
+          "token",
+          "pairedToken",
+          "servedAt",
+          "snapshot",
+          "freshness",
+          "tokens",
+          "pools",
+          "truncated",
+          "coverage",
+          "limitations",
+          "executionAvailable"
+        ],
+        "title": "ChainPoolsResponse",
+        "type": "object"
+      },
       "ChainStatus": {
         "additionalProperties": false,
         "properties": {
@@ -2602,6 +2981,135 @@
           "waitingReasons"
         ],
         "title": "ChainStatus",
+        "type": "object"
+      },
+      "ChainTokensRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "chainId": {
+            "enum": [
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "limit": {
+            "default": 20,
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 96,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "chainId",
+          "query"
+        ],
+        "title": "ChainTokensRequest",
+        "type": "object"
+      },
+      "ChainTokensResponse": {
+        "additionalProperties": false,
+        "description": "chain-tokens: the tokens Domino knows on Base or Arbitrum One that match a query (known tokens only).",
+        "properties": {
+          "chainId": {
+            "enum": [
+              8453,
+              42161
+            ],
+            "title": "Chainid",
+            "type": "integer"
+          },
+          "contractVersion": {
+            "const": "1.0.0-rc.1",
+            "title": "Contractversion",
+            "type": "string"
+          },
+          "coverage": {
+            "const": "known_tokens_only",
+            "title": "Coverage",
+            "type": "string"
+          },
+          "executionAvailable": {
+            "const": false,
+            "title": "Executionavailable",
+            "type": "boolean"
+          },
+          "limitations": {
+            "items": {
+              "enum": [
+                "raw_amounts_no_usd_valuation",
+                "token_metadata_untrusted",
+                "state_as_of_last_read",
+                "no_execution_or_signing"
+              ],
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Limitations",
+            "type": "array"
+          },
+          "mode": {
+            "const": "known_chain_tokens",
+            "title": "Mode",
+            "type": "string"
+          },
+          "query": {
+            "maxLength": 96,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "servedAt": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Servedat",
+            "type": "integer"
+          },
+          "tokenList": {
+            "$ref": "#/components/schemas/TokenListRef"
+          },
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/KnownToken"
+            },
+            "maxItems": 24,
+            "title": "Tokens",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "contractVersion",
+          "mode",
+          "chainId",
+          "query",
+          "servedAt",
+          "coverage",
+          "tokenList",
+          "tokens",
+          "truncated",
+          "limitations",
+          "executionAvailable"
+        ],
+        "title": "ChainTokensResponse",
         "type": "object"
       },
       "ChildWithdrawn": {
@@ -5236,6 +5744,67 @@
         "title": "Key",
         "type": "object"
       },
+      "KnownToken": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Address",
+            "type": "string"
+          },
+          "decimals": {
+            "maximum": 255.0,
+            "minimum": 0.0,
+            "title": "Decimals",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sources": {
+            "items": {
+              "enum": [
+                "profile",
+                "uniswap_default_list",
+                "v2_activity",
+                "looked_up"
+              ],
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Sources",
+            "type": "array"
+          },
+          "symbol": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "symbol",
+          "name",
+          "decimals",
+          "sources"
+        ],
+        "title": "KnownToken",
+        "type": "object"
+      },
       "LastExecution": {
         "additionalProperties": false,
         "properties": {
@@ -5564,6 +6133,150 @@
           "tokenCompatibilityQualified"
         ],
         "title": "LiveNft",
+        "type": "object"
+      },
+      "LivePool": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "maxLength": 42,
+                "minLength": 42,
+                "pattern": "^0x[0-9a-f]{40}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "maxLength": 66,
+                "minLength": 66,
+                "pattern": "^0x[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "liquidity": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Liquidity",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "lpFeePips": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Lpfeepips",
+            "type": "integer"
+          },
+          "market": {
+            "$ref": "#/components/schemas/PoolMarket"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/PoolRef"
+          },
+          "protocolFee": {
+            "maximum": 16777215.0,
+            "minimum": 0.0,
+            "title": "Protocolfee",
+            "type": "integer"
+          },
+          "sqrtPriceX96": {
+            "maxLength": 78,
+            "pattern": "^(0|[1-9][0-9]{0,77})$",
+            "title": "Sqrtpricex96",
+            "type": "string",
+            "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+          },
+          "swapFeePips": {
+            "$ref": "#/components/schemas/SwapFees"
+          },
+          "tick": {
+            "maximum": 887272.0,
+            "minimum": -887272.0,
+            "title": "Tick",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pool",
+          "id",
+          "address",
+          "sqrtPriceX96",
+          "tick",
+          "liquidity",
+          "lpFeePips",
+          "protocolFee",
+          "swapFeePips",
+          "market"
+        ],
+        "title": "LivePool",
+        "type": "object"
+      },
+      "LiveToken": {
+        "additionalProperties": false,
+        "description": "A token's metadata as read at the block: untrusted text, decimals null when unread, never guessed.",
+        "properties": {
+          "address": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Address",
+            "type": "string"
+          },
+          "decimals": {
+            "anyOf": [
+              {
+                "maximum": 255.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimals"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "partial",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          }
+        },
+        "required": [
+          "address",
+          "symbol",
+          "decimals",
+          "status"
+        ],
+        "title": "LiveToken",
         "type": "object"
       },
       "LiveWindowCoverage": {
@@ -7608,6 +8321,28 @@
           "executionAvailable"
         ],
         "title": "PoolAprEstimate",
+        "type": "object"
+      },
+      "PoolMarket": {
+        "additionalProperties": false,
+        "description": "TVL, volume and APR need a qualified USD source (\u00a76.3); until then the pool says why it has none.",
+        "properties": {
+          "reason": {
+            "const": "no_qualified_price_source",
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "const": "unavailable",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason"
+        ],
+        "title": "PoolMarket",
         "type": "object"
       },
       "PoolMarketEstimateResponse": {
@@ -10692,6 +11427,30 @@
         "title": "Swap",
         "type": "object"
       },
+      "SwapFees": {
+        "additionalProperties": false,
+        "description": "What a swap pays in each direction, in pips of its input: v4's protocol fee taken before the LP fee.",
+        "properties": {
+          "oneForZero": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Oneforzero",
+            "type": "integer"
+          },
+          "zeroForOne": {
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Zeroforone",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "zeroForOne",
+          "oneForZero"
+        ],
+        "title": "SwapFees",
+        "type": "object"
+      },
       "SwapLeg": {
         "additionalProperties": false,
         "properties": {
@@ -10816,6 +11575,104 @@
           "decimals"
         ],
         "title": "Token",
+        "type": "object"
+      },
+      "TokenBalance": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 42,
+            "minLength": 42,
+            "pattern": "^0x[0-9a-f]{40}$",
+            "title": "Address",
+            "type": "string"
+          },
+          "balanceRaw": {
+            "anyOf": [
+              {
+                "maxLength": 78,
+                "pattern": "^(0|[1-9][0-9]{0,77})$",
+                "type": "string",
+                "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balanceraw"
+          },
+          "decimals": {
+            "anyOf": [
+              {
+                "maximum": 255.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decimals"
+          },
+          "status": {
+            "enum": [
+              "read",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          }
+        },
+        "required": [
+          "address",
+          "symbol",
+          "decimals",
+          "balanceRaw",
+          "status"
+        ],
+        "title": "TokenBalance",
+        "type": "object"
+      },
+      "TokenListRef": {
+        "additionalProperties": false,
+        "description": "The curated list's provenance: the Uniswap Labs Default token list (GPL-3.0), as pinned in the release.",
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^[0-9]{1,6}\\.[0-9]{1,6}\\.[0-9]{1,6}$",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "sha256"
+        ],
+        "title": "TokenListRef",
         "type": "object"
       },
       "TokenMetadata": {
@@ -15132,6 +15989,420 @@
           }
         },
         "summary": "V2 Activity"
+      }
+    },
+    "/v6/read/chain-balances": {
+      "post": {
+        "operationId": "v2_chain_balances_v6_read_chain_balances_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChainBalancesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainBalancesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "V2 Chain Balances"
+      }
+    },
+    "/v6/read/chain-pools": {
+      "post": {
+        "operationId": "v2_chain_pools_v6_read_chain_pools_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChainPoolsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainPoolsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "V2 Chain Pools"
+      }
+    },
+    "/v6/read/chain-tokens": {
+      "post": {
+        "operationId": "v2_chain_tokens_v6_read_chain_tokens_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChainTokensRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainTokensResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Gateway Timeout"
+          }
+        },
+        "summary": "V2 Chain Tokens"
       }
     },
     "/v6/read/portfolio": {

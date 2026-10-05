@@ -1,0 +1,67 @@
+{
+  "$defs": {
+    "BalanceTokenRef": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Address",
+          "type": "string"
+        },
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chainId",
+        "address"
+      ],
+      "title": "BalanceTokenRef",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/read-v6/chain-balances.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Without tokens: every chain's base currencies (its charge currencies).",
+  "properties": {
+    "tokens": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/BalanceTokenRef"
+          },
+          "maxItems": 24,
+          "minItems": 1,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tokens"
+    },
+    "wallet": {
+      "maxLength": 42,
+      "minLength": 42,
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Wallet",
+      "type": "string"
+    }
+  },
+  "required": [
+    "wallet"
+  ],
+  "title": "ChainBalancesRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

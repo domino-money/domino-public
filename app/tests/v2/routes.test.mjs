@@ -116,6 +116,8 @@ const xc = (value, status = 200) => json(value, { status, contractHeader: XC_VER
 test('only an exact capabilities answer is on; every other reply has its one reason', () => {
   for (const [route, result, expected] of [
     ['readV6', v6(V6_ON), { on: true, routes: ['portfolio', 'activity'] }],
+    ['readV6', v6({ ...V6_ON, enabledReads: ['portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens'] }),
+      { on: true, routes: ['portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens'] }],
     ['readV6', v6({ ...V6_ON, dataMode: 'disabled', enabledReads: [] }), { on: false, reason: 'disabled' }],
     ['plan', plan(PLAN_LIVE), { on: true, routes: ['plan'] }],
     ['plan', plan({ ...PLAN_LIVE, dataMode: 'disabled', enabledRoutes: [] }), { on: false, reason: 'disabled' }],

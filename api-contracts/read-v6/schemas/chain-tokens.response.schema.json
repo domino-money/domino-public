@@ -1,0 +1,192 @@
+{
+  "$defs": {
+    "KnownToken": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Address",
+          "type": "string"
+        },
+        "decimals": {
+          "maximum": 255,
+          "minimum": 0,
+          "title": "Decimals",
+          "type": "integer"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name"
+        },
+        "sources": {
+          "items": {
+            "enum": [
+              "profile",
+              "uniswap_default_list",
+              "v2_activity",
+              "looked_up"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        },
+        "symbol": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Symbol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "address",
+        "symbol",
+        "name",
+        "decimals",
+        "sources"
+      ],
+      "title": "KnownToken",
+      "type": "object"
+    },
+    "TokenListRef": {
+      "additionalProperties": false,
+      "description": "The curated list's provenance: the Uniswap Labs Default token list (GPL-3.0), as pinned in the release.",
+      "properties": {
+        "name": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^[0-9]{1,6}\\.[0-9]{1,6}\\.[0-9]{1,6}$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "sha256"
+      ],
+      "title": "TokenListRef",
+      "type": "object"
+    }
+  },
+  "$id": "https://domino.invalid/contracts/read-v6/chain-tokens.response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "chain-tokens: the tokens Domino knows on Base or Arbitrum One that match a query (known tokens only).",
+  "properties": {
+    "chainId": {
+      "enum": [
+        8453,
+        42161
+      ],
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "contractVersion": {
+      "const": "1.0.0-rc.1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "coverage": {
+      "const": "known_tokens_only",
+      "title": "Coverage",
+      "type": "string"
+    },
+    "executionAvailable": {
+      "const": false,
+      "title": "Executionavailable",
+      "type": "boolean"
+    },
+    "limitations": {
+      "items": {
+        "enum": [
+          "raw_amounts_no_usd_valuation",
+          "token_metadata_untrusted",
+          "state_as_of_last_read",
+          "no_execution_or_signing"
+        ],
+        "type": "string"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "title": "Limitations",
+      "type": "array"
+    },
+    "mode": {
+      "const": "known_chain_tokens",
+      "title": "Mode",
+      "type": "string"
+    },
+    "query": {
+      "maxLength": 96,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "servedAt": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Servedat",
+      "type": "integer"
+    },
+    "tokenList": {
+      "$ref": "#/$defs/TokenListRef"
+    },
+    "tokens": {
+      "items": {
+        "$ref": "#/$defs/KnownToken"
+      },
+      "maxItems": 24,
+      "title": "Tokens",
+      "type": "array"
+    },
+    "truncated": {
+      "title": "Truncated",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "contractVersion",
+    "mode",
+    "chainId",
+    "query",
+    "servedAt",
+    "coverage",
+    "tokenList",
+    "tokens",
+    "truncated",
+    "limitations",
+    "executionAvailable"
+  ],
+  "title": "ChainTokensResponse",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

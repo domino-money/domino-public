@@ -2,14 +2,17 @@
 
 Contract `1.0.0-rc.1` for the app (F7) of [#283](https://github.com/domino-money/domino/issues/283): one wallet's Domino V2 state and receipts on Robinhood (4663), Base (8453) and Arbitrum One (42161), read from the V2 index. How the index is built, what each table holds and what remains are in [docs/v2/V2_INDEXER_READ_API.md](../../docs/v2/V2_INDEXER_READ_API.md).
 
-Two stored routes of the local reader (`backend/read_api.py`), separate from read-v1 to read-v5:
+Two stored routes of the local reader (`backend/read_api.py`), separate from read-v1 to read-v5, and three live chain reads (below):
 
 | Route | Request | Answer |
 | --- | --- | --- |
 | `POST /v6/read/portfolio` | `{wallet}` | Per chain, the index's freshness and the automation's reporting; the wallet's vaults with their last read state, custody and history totals; the positions it holds or its vaults manage, as last read; its auto-exit mandates with what blocks them; undelivered auto-exit credit; why each vault and mandate waits; the tokens named, with their metadata |
 | `POST /v6/read/activity` | `{wallet, limit?, cursor?}` | The wallet's receipts, newest first, `limit` (1–50, default 20) at a time; `nextCursor` continues |
+| `POST /v6/read/chain-pools` | `{chainId, token, pairedToken?}` | The token's pools on a chain, read at its head (below) |
+| `POST /v6/read/chain-balances` | `{wallet, tokens?}` | A wallet's balances on each chain asked, every chain's base currencies by default |
+| `POST /v6/read/chain-tokens` | `{chainId, query, limit?}` | The tokens Domino knows on Base or Arbitrum One that match a query |
 
-Header `X-Domino-Read-Contract: 1.0.0-rc.1`. Through the gateway the paths are `/internal/read/v6/<route>`, with `--enable-v6` and `DOMINO_BRIDGE_V6_READS=portfolio,activity`, both off by default. The reader serves the routes only with `DOMINO_V2_READ=1` (otherwise `upstream_unavailable`). The Worker route (`/api/read/v6/`) and the app's consumption are the bridge side's: this candidate does not add them.
+Header `X-Domino-Read-Contract: 1.0.0-rc.1`. Through the gateway the paths are `/internal/read/v6/<route>`, with `--enable-v6` and each route named in `DOMINO_BRIDGE_V6_READS`, both off by default. The reader serves the stored routes only with `DOMINO_V2_READ=1` and the chain reads only with `DOMINO_V2_CHAIN_READS=1` (otherwise `upstream_unavailable`). The Worker forwards `/api/read/v6/<route>` for the routes its `ENABLED_V6_READS` names.
 
 `wallet` is lower case. The read API does not authenticate wallets: everything here is public chain data, the same for anyone who asks about that address, and the reader refuses browser origins. Errors are read-v1's codes (`ERROR_STATUS_BY_CODE`): `catalogue_database_unavailable` or `upstream_unavailable` (503) when the index cannot be read at all, never a partial answer.
 
@@ -74,3 +77,22 @@ node --test api-contracts/read-v6/consumer.test.mjs
 ```
 
 `backend/tests/test_read_v6_contract.py` runs both, and checks the reader and gateway routes. The schemas, `types.ts`, `schema-data.mjs`, `runtime.d.mts`, the fixtures and `manifest.json` are generated; `runtime.mjs`, this README and `consumer.test.mjs` are written by hand and hashed in the manifest. `fixtures/valid/` holds answers the producer builds; `fixtures/invalid/` the base answers with one defect each, named by the file; every validator must accept the first and refuse the second.
+
+## Chain reads: chain-pools, chain-balances, chain-tokens
+
+The app spec's §6.2 reads that need the chain itself (0xdecimal's list of 5 Oct 2026), so the app lists pools and balances without moving the wallet to another network; it still does, to sign. They read the chains when asked (`backend/v2_chain_reads.py`): Robinhood through Domino's own node, Base and Arbitrum through the hosted endpoints of the V2 chain RPC file, one Multicall3 call per chain at its head, cached for a few seconds. They take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane. Their `limitations` are `raw_amounts_no_usd_valuation`, `token_metadata_untrusted`, `state_as_of_last_read` and `no_execution_or_signing`, in that order.
+
+- **`chain-pools`** reads the pools the app reads today through the wallet: `token` against the chain's base currencies (its charge currencies: the stable, the native currency and its wrapped token) or against `pairedToken` alone, in Uniswap's standard hookless v4 keys (fee 100, 500, 3000 or 10000 with spacing 1, 10, 60 or 200) and the v3 fee tiers the factory enables (Base adds 200, 300 and 400). Native ETH has no v3 pool; in v3 it pairs as WETH. A pool is listed when it exists, is priced and holds liquidity: partners ETH and WETH first, then the stable, then by active liquidity, at most 32 (`truncated`).
+  - Each pool: `pool` (its `PoolRef`), `id` (v4's pool id) or `address` (v3's pool), `sqrtPriceX96`, `tick`, active `liquidity`, `lpFeePips` (the tier's), `protocolFee` as the pool reports it, and `swapFeePips` per direction (v4's protocol fee taken before the LP fee; v3's protocol fee is a share of the LP fee, not on top of it).
+  - `market` is `{status: "unavailable", reason: "no_qualified_price_source"}`: TVL, volume and APR wait for a qualified USD source (§6.3).
+  - `tokens`: every currency the answer names (`token`, `pairedToken` and each pool's pair), sorted, with its metadata as read (`available`, `partial`, `unavailable`).
+  - `snapshot` is the block read; `freshness` is its age at `servedAt`, `fresh` up to 60 s.
+- **`chain-balances`**: per chain asked (ascending), `current` with the `snapshot` read and each token's `balanceRaw` (`read`, or `unavailable` when the call failed), or `unavailable` with `chain_not_configured` or `chain_read_failed` and every balance unavailable. `coverage` is `complete` when every chain is `current`. Without `tokens`, every chain's base currencies; with them (at most 24, no repeats), exactly those, in the order asked. The native currency is the zero address.
+- **`chain-tokens`** (Base and Arbitrum One; Robinhood's search is read-v3's): the tokens Domino knows there. Like read-v3's search it covers known tokens only (`coverage: "known_tokens_only"`). Each token's `sources`, in this order:
+  - `profile`: the chain's own currencies;
+  - `uniswap_default_list`: the Uniswap Labs Default token list, pinned in the release with its version and SHA-256 (`tokenList`), GPL-3.0;
+  - `v2_activity`: tokens the V2 index read in full;
+  - `looked_up`: tokens a `chain-pools` read found priced pools for, as Robinhood's catalogue learns from visitors.
+
+  A query matches an address exactly, else a symbol exactly, then a symbol's prefix, then a word of the name, then either anywhere; within a rank the curated sources first. At most `limit` (1–24, default 20; `truncated`).
+

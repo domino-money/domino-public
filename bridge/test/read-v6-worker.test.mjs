@@ -13,13 +13,26 @@ const fixtures = new URL('../../api-contracts/read-v6/fixtures/', import.meta.ur
 const text = (path) => readFileSync(new URL(path, fixtures), 'utf8');
 const list = (kind) => readdirSync(new URL(`${kind}/`, fixtures)).filter((name) => name.endsWith('.json')).sort()
   .map((name) => [name, text(`${kind}/${name}`)]);
-const routeOf = (name) => (name.startsWith('portfolio') ? 'portfolio' : 'activity');
+// A fixture answers the longest route its file name starts with, then `.` or `-`.
+const routeOf = (name) => [...ROUTES].sort((a, b) => b.length - a.length).find((r) => name.startsWith(r) && '.-'.includes(name[r.length]));
 const VALID = list('valid');
 const INVALID = list('invalid');
-const REQUESTS = { portfolio: text('requests/portfolio.json'), activity: text('requests/activity.json') };
+const REQUESTS = Object.fromEntries(['portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens']
+  .map((route) => [route, text(`requests/${route}.json`)]));
+const ALL_READS = 'portfolio,activity,chain-pools,chain-balances,chain-tokens';
 const WALLET = JSON.parse(REQUESTS.portfolio).wallet;
 /** The request each valid answer answers: the page fixture its own request (limit 3, a cursor), the others a first page. */
-const requestFor = (name) => (name === 'activity-page.json' ? REQUESTS.activity : JSON.stringify({ wallet: WALLET }));
+// A chain read's request is read off its answer; the asked balances answer their request fixture.
+function requestFor(name) {
+  const route = routeOf(name);
+  if (route === 'chain-pools' || route === 'chain-tokens' || route === 'chain-balances') {
+    const body = JSON.parse(text(`valid/${name}`));
+    if (route === 'chain-pools') return JSON.stringify({ chainId: body.chainId, token: body.token, ...(body.pairedToken ? { pairedToken: body.pairedToken } : {}) });
+    if (route === 'chain-tokens') return JSON.stringify({ chainId: body.chainId, query: body.query });
+    return name.startsWith('chain-balances-asked') ? REQUESTS['chain-balances'] : JSON.stringify({ wallet: body.wallet });
+  }
+  return name === 'activity-page.json' ? REQUESTS.activity : JSON.stringify({ wallet: WALLET });
+}
 const PORTFOLIO = text('valid/portfolio.json');
 const env = {
   APP_ORIGIN: origin,
@@ -138,13 +151,14 @@ for (const patch of [{ GATEWAY_ORIGIN: origin }, { GATEWAY_ORIGIN: 'http://gatew
 }
 
 test('on, each route goes to its one upstream path with the service identity, and every valid answer is relayed byte for byte', async () => {
-  assert.deepEqual([...ROUTES].sort(), ['activity', 'portfolio']);
-  assert.equal(VALID.length, 10);
+  assert.deepEqual([...ROUTES].sort(), ['activity', 'chain-balances', 'chain-pools', 'chain-tokens', 'portfolio']);
+  assert.equal(VALID.length, 18);
+  const every = { ...env, ENABLED_V6_READS: ALL_READS };
   for (const [name, body] of VALID) {
     const route = routeOf(name);
     const sent = requestFor(name);
     const h = harness(() => upstream({ body }));
-    const response = await h.worker.fetch(request(route, { body: sent }), env);
+    const response = await h.worker.fetch(request(route, { body: sent }), every);
     assert.equal(response.status, 200, name);
     assert.equal(await response.text(), body, name);
     assert.equal(response.headers.get('X-Domino-Read-Contract'), CONTRACT_VERSION);
@@ -163,23 +177,27 @@ test('on, each route goes to its one upstream path with the service identity, an
       'X-Domino-Client-Id': '203.0.113.7',
     });
   }
-  const capabilities = await harness().worker.fetch(capabilitiesRequest(), env);
-  assert.deepEqual(await capabilities.json(), { ...DISABLED_CAPABILITIES, dataMode: 'live_read_only', enabledReads: ['portfolio', 'activity'] });
+  const capabilities = await harness().worker.fetch(capabilitiesRequest(), every);
+  assert.deepEqual(await capabilities.json(), { ...DISABLED_CAPABILITIES, dataMode: 'live_read_only', enabledReads: ALL_READS.split(',') });
+  const two = await harness().worker.fetch(capabilitiesRequest(), env);
+  assert.deepEqual(await two.json(), { ...DISABLED_CAPABILITIES, dataMode: 'live_read_only', enabledReads: ['portfolio', 'activity'] });
 });
 
-test('the capabilities name the three chains every answer carries, in the answers\' own order', () => {
-  for (const [name, body] of VALID) {
+test('the capabilities name the three chains every stored answer carries, in the answers\' own order', () => {
+  for (const [name, body] of VALID.filter(([name]) => !name.startsWith('chain-'))) {
     assert.deepEqual(JSON.parse(body).chains.map((chain) => chain.chainId), DISABLED_CAPABILITIES.chainIds, name);
     assert.equal(JSON.parse(body).schemaVersion, 1, name);
   }
 });
 
 test('every invalid answer the producer could serve is refused as upstream_contract_mismatch, never relayed', async () => {
-  assert.equal(INVALID.length, 87);
+  assert.equal(INVALID.length, 133);
+  const every = { ...env, ENABLED_V6_READS: ALL_READS };
   for (const [name, body] of INVALID) {
     const route = routeOf(name);
     const h = harness(() => upstream({ body }));
-    const response = await h.worker.fetch(request(route, { body: route === 'activity' ? REQUESTS.activity : JSON.stringify({ wallet: WALLET }) }), env);
+    const sent = route === 'activity' ? REQUESTS.activity : route.startsWith('chain-') ? requestFor(`${route}.json`) : JSON.stringify({ wallet: WALLET });
+    const response = await h.worker.fetch(request(route, { body: sent }), every);
     // A defect the Worker's own envelope check meets first (an answer of another version) is the same refusal.
     assert.equal(response.status, 502, name);
     assert.deepEqual(await response.json(), { error: 'upstream_contract_mismatch' }, name);

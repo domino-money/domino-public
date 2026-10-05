@@ -489,6 +489,12 @@ class V2Reader:
                                  ([k[0] for k in keys], [k[1] for k in keys], [k[2] for k in keys])).fetchall()
         return {(row['chain_id'], row['kind'], row['subject']): row for row in rows}
 
+    def available_tokens(self, chain_id, limit):
+        """The chain's tokens the index read in full, (address, decimals, symbol): read-v6 chain-tokens' v2_activity."""
+        rows = self.conn.execute('''SELECT address, decimals, symbol FROM domino_v2.tokens
+          WHERE chain_id=%s AND status='available' ORDER BY address LIMIT %s''', (chain_id, limit)).fetchall()
+        return [(row['address'], row['decimals'], row['symbol']) for row in rows]
+
     def tokens(self, keys):
         """(chain id, address) -> token row, for the keys named."""
         if not keys:

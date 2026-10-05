@@ -1156,7 +1156,11 @@ test('what every visitor downloads first, the route screens, the session/read cl
     // measure a few hundred bytes apart): 162,000 -> 163,000; financial 341,594 B: 341,000 -> 343,000; all lazy 378,085 B:
     // 378,000 -> 380,000; Domino V2's own family 609,433 B (the other networks' module and the zap client's readPools):
     // 606,000 -> 611,000.
-    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 186_000], ['session/public reads', base, 163_000], ['financial', financial, 343_000], ['all lazy', allLazy, 380_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 611_000]]) {
+    // 2026-10-05 (0xdecimal's items 1-3: read-v6's chain-pools, chain-balances and chain-tokens): the package's schemas and
+    // validators for the three routes, which the V2 read client carries, and its three read functions; CI's Linux dist
+    // measured Domino V2's own family at 613,393 B (609,657 B on main): 611,000 -> 615,000, the next kB and one more, as
+    // builds measure a few hundred bytes apart.
+    for (const [family, files, productionBudget] of [['initial entry', first, 216_000], ['route screens', routes, 186_000], ['session/public reads', base, 163_000], ['financial', financial, 343_000], ['all lazy', allLazy, 380_000], ['fees worker', worker, 28_000], ['chain code', chain, 4_000], ['walletconnect', walletConnect, 137_000], ['elysium section', elysium, 43_000], ['price range chart', priceChart, 6_000], ['domino v2', v2, 615_000]]) {
       const total = [...files].reduce((sum, file) => sum + gzip(join(dir, 'assets', file)), 0);
       const testOnly = dir === WALLET && (family === 'financial' || family === 'all lazy');
       const budget = productionBudget + (testOnly ? 3_000 : 0);

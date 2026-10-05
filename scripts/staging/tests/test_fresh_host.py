@@ -325,6 +325,22 @@ class ReadActivationTests(unittest.TestCase):
         self.assertEqual(read.count('Environment='), 2)
         self.assertEqual(gateway.count('Environment='), 5)
 
+    def test_the_chain_reads_are_opt_in_on_top_of_the_v2_reads(self):
+        with self.assertRaises(ValueError):
+            activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=False, chain_reads=True)
+        read = activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True, chain_reads=True)
+        gateway = activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True, chain_reads=True)
+        self.assertIn('Environment=DOMINO_V2_READ=1\nEnvironment=DOMINO_V2_CHAIN_READS=1\n'
+                      'Environment=DOMINO_V2_CHAIN_RPC_FILE=/runtime/read/chain-rpc.json\n'
+                      'ImportCredential=v2-rpc-*\nDeviceAllow=char-tpm rw\n', read)
+        self.assertIn('Environment=DOMINO_BRIDGE_V6_READS=portfolio,activity,chain-pools,chain-balances,chain-tokens\n', gateway)
+        self.assertNotIn('ImportCredential', gateway)
+        self.assertEqual(gateway.count('Environment='), 5)
+        # Without them, the v2 reads' drop-ins are exactly what they were.
+        self.assertEqual(activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True),
+                         activation.drop_in('read', COMMIT, Path('/runtime/read'), read_v6=True, chain_reads=False))
+        self.assertNotIn('chain', activation.drop_in('gateway', COMMIT, Path('/runtime/gateway'), read_v6=True))
+
     def test_the_release_must_be_installed_with_its_links(self):
         with tempfile.TemporaryDirectory() as folder:
             releases, units = Path(folder) / 'releases', Path(folder) / 'units'

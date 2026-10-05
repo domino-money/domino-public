@@ -18,6 +18,15 @@ gateway. Use it only with a release that has them (main since #305), after
 migration 052 and with the V2 indexer following (docs/v2/V2_INDEXER_READ_API.md);
 without it the drop-ins reproduce the live profile.
 
+`--chain-reads` (with `--read-v6`) adds read-v6's live chain reads (chain-pools,
+chain-balances, chain-tokens; backend/v2_chain_reads.py): on the reader
+DOMINO_V2_CHAIN_READS=1, the V2 chain RPC file in its runtime directory
+(chain-rpc.json, a copy of /etc/domino/v2/chain-rpc.json the operator writes)
+and the sealed URLs it names (ImportCredential=v2-rpc-*, with the TPM in the
+device policy: systemd 255 adds it only for LoadCredentialEncrypted=); on the
+gateway the three routes in DOMINO_BRIDGE_V6_READS. The reader reaches Base's
+and Arbitrum's hosted RPC once the egress is collected with `--v2-chains`.
+
 The interpreter is the release's own `backend/.venv`, a link to the shared
 environment, and each identity's runtime directory is the one the release links
 to. The scoped egress drop-ins (60) come from the continuous egress policy.
@@ -50,20 +59,31 @@ READ_V6 = {
     'read': ('', ('DOMINO_V2_READ=1',)),
     'gateway': (' --enable-v6', ('DOMINO_BRIDGE_V6_READS=portfolio,activity',)),
 }
+# read-v6's live chain reads, opt-in on top of READ_V6.
+CHAIN_READS_V6 = 'DOMINO_BRIDGE_V6_READS=portfolio,activity,chain-pools,chain-balances,chain-tokens'
+CHAIN_RPC_FILE = 'chain-rpc.json'
 
 
-def drop_in(component, commit, runtime, read_v6=False):
+def drop_in(component, commit, runtime, read_v6=False, chain_reads=False):
+    require(read_v6 or not chain_reads, 'chain_reads_need_read_v6')
     root = RELEASES / commit / component
     flags, environment = READ_V6[component] if read_v6 else ('', ())
+    credentials = ()
+    if chain_reads and component == 'read':
+        environment = (*environment, 'DOMINO_V2_CHAIN_READS=1', f'DOMINO_V2_CHAIN_RPC_FILE={runtime}/{CHAIN_RPC_FILE}')
+        credentials = ('ImportCredential=v2-rpc-*', 'DeviceAllow=char-tpm rw')
+    elif chain_reads:
+        environment = tuple(CHAIN_READS_V6 if value.startswith('DOMINO_BRIDGE_V6_READS=') else value
+                            for value in environment)
     lines = ['# Read path activation (install_read_activation.py): release, runtime and bridge reads.',
              '[Service]', f'WorkingDirectory={root}', 'ExecStart=',
              f'ExecStart={root}/backend/.venv/bin/python3.14 -B {COMMANDS[component]}{flags}',
              'ReadWritePaths=', f'ReadWritePaths={runtime}',
-             *(f'Environment={value}' for value in (*ENVIRONMENT[component], *environment))]
+             *(f'Environment={value}' for value in (*ENVIRONMENT[component], *environment)), *credentials]
     return '\n'.join(lines) + '\n'
 
 
-def plan(commit, read_v6=False):
+def plan(commit, read_v6=False, chain_reads=False):
     require(re.fullmatch('[0-9a-f]{40}', commit), 'commit must be a full lowercase Git SHA')
     files = {}
     for component, name in DROP_INS.items():
@@ -76,8 +96,8 @@ def plan(commit, read_v6=False):
         path = install.UNIT_DIR / f'domino-{component}.service.d' / name
         require(not os.path.lexists(path), 'read_activation_exists')
         require((install.UNIT_DIR / f'domino-{component}.service').is_file(), 'base_unit_missing')
-        files[str(path)] = drop_in(component, commit, runtime, read_v6)
-    return {'mode': 'read-activation', 'commit': commit, 'readV6': read_v6, 'dropIns': files,
+        files[str(path)] = drop_in(component, commit, runtime, read_v6, chain_reads)
+    return {'mode': 'read-activation', 'commit': commit, 'readV6': read_v6, 'chainReads': chain_reads, 'dropIns': files,
             'notPerformed': ['service start, enable or restart', 'egress drop-ins (60)', 'runtime configuration']}
 
 
@@ -103,12 +123,14 @@ def main(argv=None):
     parser.add_argument('--commit', required=True, help='the read release installed by install_read_release.py')
     parser.add_argument('--read-v6', action='store_true',
                         help='also enable the V2 reads (read-v6), after 052 and with the V2 indexer following')
+    parser.add_argument('--chain-reads', action='store_true',
+                        help="with --read-v6: also read-v6's live chain reads, after chain-rpc.json is in the reader's runtime")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--inspect', action='store_true')
     mode.add_argument('--apply', action='store_true')
     args = parser.parse_args(argv)
     try:
-        planned = plan(args.commit, args.read_v6)
+        planned = plan(args.commit, args.read_v6, args.chain_reads)
         result = apply(planned) if args.apply else {**planned, 'ok': True, 'applied': False}
         print(json.dumps(result, indent=2))
         return 0

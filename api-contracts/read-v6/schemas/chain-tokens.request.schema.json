@@ -1,0 +1,35 @@
+{
+  "$id": "https://domino.invalid/contracts/read-v6/chain-tokens.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "chainId": {
+      "enum": [
+        8453,
+        42161
+      ],
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "limit": {
+      "default": 20,
+      "maximum": 24,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "query": {
+      "maxLength": 96,
+      "minLength": 1,
+      "title": "Query",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chainId",
+    "query"
+  ],
+  "title": "ChainTokensRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

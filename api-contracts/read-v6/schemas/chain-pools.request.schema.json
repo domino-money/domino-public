@@ -1,0 +1,45 @@
+{
+  "$id": "https://domino.invalid/contracts/read-v6/chain-pools.request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "chainId": {
+      "enum": [
+        4663,
+        8453,
+        42161
+      ],
+      "title": "Chainid",
+      "type": "integer"
+    },
+    "pairedToken": {
+      "anyOf": [
+        {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pairedtoken"
+    },
+    "token": {
+      "maxLength": 42,
+      "minLength": 42,
+      "pattern": "^0x[0-9a-f]{40}$",
+      "title": "Token",
+      "type": "string"
+    }
+  },
+  "required": [
+    "chainId",
+    "token"
+  ],
+  "title": "ChainPoolsRequest",
+  "type": "object",
+  "x-contract-version": "1.0.0-rc.1"
+}

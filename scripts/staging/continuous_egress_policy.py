@@ -115,9 +115,10 @@ CLASSES = {'read': ('rpc', 'analytics'), 'gateway': ('jwks',),
            'monitor': ('rpc', 'telegram')}
 # Who reads the V2 chains' hosted RPC (`chains`), and only with `v2Chains`:
 # the writer's indexer instances for Base and Arbitrum, the plan listener's
-# plans there, the V2 automation, the monitor, and the S2 crosschain listener's
-# Across fee proofs. A host that serves Robinhood alone pins none of it.
-CHAIN_ROLES = ('write', 'position-plan', 'v2-automation', 'monitor', 'crosschain')
+# plans there, the V2 automation, the monitor, the S2 crosschain listener's
+# Across fee proofs, and the reader's read-v6 chain reads (chain-pools and
+# chain-balances, v2_chain_reads). A host that serves Robinhood alone pins none of it.
+CHAIN_ROLES = ('read', 'write', 'position-plan', 'v2-automation', 'monitor', 'crosschain')
 # A class an enabled role cannot run without. Analytics is optional for the
 # reader: the market provider is a fallback, not the read path.
 REQUIRED = {'rpc', 'jwks', 'uniswap', 'edges', 'bridges', 'telegram'}
@@ -217,7 +218,7 @@ def validate(snapshot):
     require(not snapshot.get('nodeLoopbackReads') or any(role in enabled for role in NODE_LOOPBACK_ROLES),
             'node_loopback_requires_reader_or_writer')
     require(not snapshot.get('v2Chains') or any(role in enabled for role in CHAIN_ROLES),
-            'v2_chains_require_writer_or_plan_listener')
+            'v2_chains_require_a_chain_role')
     enabled = tuple(role for role in ROLES if role in enabled)
     exact(snapshot['identities'], ROLES, 'invalid_identity_roles')
     seen_uids = set()

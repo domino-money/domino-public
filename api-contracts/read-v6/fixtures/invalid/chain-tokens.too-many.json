@@ -1,0 +1,249 @@
+{
+  "chainId": 8453,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "known_tokens_only",
+  "executionAvailable": false,
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "known_chain_tokens",
+  "query": "aero",
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "tokenList": {
+    "name": "Uniswap Labs Default",
+    "sha256": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b",
+    "version": "22.24.0"
+  },
+  "tokens": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000001",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000002",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000003",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000004",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000005",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000006",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000007",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000008",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000009",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x000000000000000000000000000000000000000a",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x000000000000000000000000000000000000000b",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x000000000000000000000000000000000000000c",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x000000000000000000000000000000000000000d",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x000000000000000000000000000000000000000e",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x000000000000000000000000000000000000000f",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000010",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000011",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000012",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000013",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000014",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000015",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000016",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000017",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000018",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    }
+  ],
+  "truncated": false
+}

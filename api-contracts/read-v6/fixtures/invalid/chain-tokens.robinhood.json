@@ -1,0 +1,42 @@
+{
+  "chainId": 4663,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "known_tokens_only",
+  "executionAvailable": false,
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "known_chain_tokens",
+  "query": "aero",
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "tokenList": {
+    "name": "Uniswap Labs Default",
+    "sha256": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b",
+    "version": "22.24.0"
+  },
+  "tokens": [
+    {
+      "address": "0x2222222222222222222222222222222222222222",
+      "decimals": 18,
+      "name": "Aerodrome Finance",
+      "sources": [
+        "uniswap_default_list"
+      ],
+      "symbol": "AERO"
+    },
+    {
+      "address": "0x4444444444444444444444444444444444444444",
+      "decimals": 18,
+      "name": null,
+      "sources": [
+        "looked_up"
+      ],
+      "symbol": "AEROX"
+    }
+  ],
+  "truncated": false
+}

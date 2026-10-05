@@ -1,0 +1,42 @@
+{
+  "chainId": 8453,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "standard_hookless_pools",
+  "executionAvailable": false,
+  "freshness": {
+    "ageSeconds": 4,
+    "status": "fresh"
+  },
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "live_chain_pools",
+  "pairedToken": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+  "pools": [],
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "snapshot": {
+    "hash": "0xdededededededededededededededededededededededededededededededede",
+    "number": 52214620,
+    "timestamp": 1790431230
+  },
+  "token": "0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+  "tokens": [
+    {
+      "address": "0x6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+      "decimals": null,
+      "status": "unavailable",
+      "symbol": null
+    },
+    {
+      "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "decimals": 6,
+      "status": "available",
+      "symbol": "USDC"
+    }
+  ],
+  "truncated": false
+}

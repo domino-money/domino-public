@@ -423,6 +423,23 @@ class IndexerTests(unittest.TestCase):
                          ('create', 65, 'v4_pool'))
         self.assertEqual(service.activity(OTHER)['items'], [])
 
+    def test_the_tokens_read_in_full_feed_the_chain_search(self):
+        # read-v6 chain-tokens' v2_activity source: a chain's available tokens, by address, through the reader role.
+        rows = [(CHAIN.chainId, '0x' + '03' * 20, 6, 'ALPHA', 'available'),  # by address, not by symbol
+                (CHAIN.chainId, '0x' + '01' * 20, 18, 'ONE', 'available'),
+                (CHAIN.chainId, '0x' + '02' * 20, None, 'TWO', 'partial'),
+                (CHAIN.chainId, '0x' + '04' * 20, None, None, 'unavailable'),
+                (8453, '0x' + '00' * 20, 18, 'BASE', 'available')]
+        with admin() as conn:
+            for row in rows:
+                conn.execute('''INSERT INTO domino_v2.tokens(chain_id,address,decimals,symbol,status,block_number)
+                  VALUES(%s,%s,%s,%s,%s,1)''', row)
+        with self.store.reader() as reader:
+            self.assertEqual(reader.available_tokens(CHAIN.chainId, 10),
+                             [('0x' + '01' * 20, 18, 'ONE'), ('0x' + '03' * 20, 6, 'ALPHA')])
+            self.assertEqual(reader.available_tokens(CHAIN.chainId, 1), [('0x' + '01' * 20, 18, 'ONE')])
+            self.assertEqual(reader.available_tokens(8453, 10), [('0x' + '00' * 20, 18, 'BASE')])
+
     def test_the_automation_s_waiting_file_is_kept_and_served(self):
         import json
         import os

@@ -149,6 +149,68 @@ function activity(body) {
   }) && (body.nextCursor === null || cursorKey(body.nextCursor) !== null);
 }
 
+// ------------------------------------------------------------ chain reads
+const same = (a, b) => a.length === b.length && a.every((value, index) => value === b[index]);
+const ascending = (values) => values.every((value, index) => index === 0 || values[index - 1] < value);
+const unique = (values) => new Set(values).size === values.length;
+
+function liveToken(t) {
+  if (t.symbol !== null && !printable(t.symbol)) return false;
+  return (t.decimals !== null) + (t.symbol !== null) === { available: 2, partial: 1, unavailable: 0 }[t.status];
+}
+
+function livePool(p) {
+  const v4 = p.pool.dex === 4;
+  if (v4 !== (p.id !== null) || v4 === (p.address !== null) || p.pool.hooks !== ZERO) return false;
+  if (p.lpFeePips !== p.pool.fee || BigInt(p.liquidity) === 0n || BigInt(p.sqrtPriceX96) === 0n) return false;
+  let fees;
+  if (v4) {
+    const sides = [p.protocolFee & 0xfff, p.protocolFee >> 12];
+    if (sides.some((side) => side > 1000)) return false;
+    fees = sides.map((side) => (side === 0 ? p.lpFeePips :
+      side + p.lpFeePips - Math.floor((side * p.lpFeePips) / 1_000_000)));
+  } else {
+    if (p.protocolFee > 0xff) return false;
+    fees = [p.lpFeePips, p.lpFeePips];
+  }
+  return p.swapFeePips.zeroForOne === fees[0] && p.swapFeePips.oneForZero === fees[1];
+}
+
+function fresh(body) {
+  const age = Math.max(0, body.servedAt - body.snapshot.timestamp);
+  return body.freshness.ageSeconds === age && (body.freshness.status === 'fresh') === (age <= CONSTANTS.liveFreshSeconds);
+}
+
+function chainPools(body) {
+  if (!same(body.limitations, CONSTANTS.liveLimitations) || !fresh(body)) return false;
+  const addresses = body.tokens.map((t) => t.address);
+  if (!ascending(addresses) || !addresses.includes(body.token) || body.pairedToken === body.token ||
+    (body.pairedToken !== null && !addresses.includes(body.pairedToken))) return false;
+  const keys = new Set();
+  for (const item of body.pools) {
+    const pair = [item.pool.currency0, item.pool.currency1];
+    if (!pair.includes(body.token) || (body.pairedToken !== null && !pair.includes(body.pairedToken))) return false;
+    if (!pair.every((currency) => addresses.includes(currency))) return false;
+    const key = [item.pool.dex, ...pair, item.pool.fee, item.pool.tickSpacing].join(':');
+    if (keys.has(key)) return false;
+    keys.add(key);
+  }
+  return true;
+}
+
+function chainBalances(c) {
+  const current = c.status === 'current';
+  if (current !== (c.snapshot !== null) || current === (c.reason !== null)) return false;
+  if (!current && c.balances.some((b) => b.status !== 'unavailable')) return false;
+  return unique(c.balances.map((b) => b.address));
+}
+
+function knownToken(t) {
+  if (!printable(t.symbol) || (t.name !== null && !printable(t.name))) return false;
+  const order = CONSTANTS.tokenSources;
+  return same(t.sources, [...new Set(t.sources)].sort((a, b) => order.indexOf(a) - order.indexOf(b)));
+}
+
 function semantic(name, value) {
   switch (name) {
     case 'PoolRef': return value.currency0 < value.currency1 && !(value.dex === 3 && value.hooks !== ZERO);
@@ -180,6 +242,22 @@ function semantic(name, value) {
     case 'ActivityPageRequest': return value.cursor === undefined || value.cursor === null || cursorKey(value.cursor) !== null;
     case 'PortfolioResponse': return portfolio(value);
     case 'ActivityResponse': return activity(value);
+    case 'LiveToken': return liveToken(value);
+    case 'LivePool': return livePool(value);
+    case 'ChainPoolsResponse': return chainPools(value);
+    case 'TokenBalance': return (value.symbol === null || printable(value.symbol)) &&
+      (value.status === 'read') === (value.balanceRaw !== null);
+    case 'ChainBalances': return chainBalances(value);
+    case 'ChainBalancesResponse': return same(value.limitations, CONSTANTS.liveLimitations) &&
+      ascending(value.chains.map((c) => c.chainId)) &&
+      (value.coverage === 'complete') === value.chains.every((c) => c.status === 'current');
+    case 'KnownToken': return knownToken(value);
+    case 'ChainTokensResponse': return same(value.limitations, CONSTANTS.liveLimitations) &&
+      unique(value.tokens.map((t) => t.address));
+    case 'ChainPoolsRequest': return value.pairedToken === undefined || value.pairedToken !== value.token;
+    case 'ChainBalancesRequest': return value.tokens === undefined || value.tokens === null ||
+      unique(value.tokens.map((t) => `${t.chainId}:${t.address}`));
+    case 'ChainTokensRequest': return value.query.trim().length > 0 && printable(value.query);
     default: return true;
   }
 }
@@ -187,9 +265,27 @@ function semantic(name, value) {
 const validators = createContractValidators(SCHEMAS, ERROR_STATUS_BY_CODE, semantic);
 export const { validateRequest, validateResponse, validateError } = validators;
 
-/** The answer is about the wallet asked for, and a page is no longer than asked. */
+/** The answer is about what was asked: the wallet, the chain, the token, the query; a page or a search no longer
+ * than its limit; balances for exactly the chains and tokens asked (every chain's base currencies by default). */
 export function validateExchange(route, request, response) {
   if (!validateRequest(route, request) || !validateResponse(route, response)) return false;
-  if (response.wallet !== request.wallet) return false;
-  return route !== 'activity' || response.items.length <= (request.limit ?? 20);
+  if (['portfolio', 'activity', 'chain-balances'].includes(route) && response.wallet !== request.wallet) return false;
+  if (route === 'activity') return response.items.length <= (request.limit ?? 20);
+  if (route === 'chain-pools') {
+    return response.chainId === request.chainId && response.token === request.token &&
+      response.pairedToken === (request.pairedToken ?? null);
+  }
+  if (route === 'chain-tokens') {
+    return response.chainId === request.chainId && response.query === request.query &&
+      response.tokens.length <= (request.limit ?? 20);
+  }
+  if (route === 'chain-balances') {
+    const chains = response.chains.map((c) => c.chainId);
+    if (request.tokens === undefined || request.tokens === null) return same(chains, CONSTANTS.chainIds);
+    const asked = {};
+    for (const t of request.tokens) (asked[t.chainId] ??= []).push(t.address);
+    return same(chains, Object.keys(asked).map(Number).sort((a, b) => a - b)) &&
+      response.chains.every((c) => same(c.balances.map((b) => b.address), asked[c.chainId]));
+  }
+  return true;
 }

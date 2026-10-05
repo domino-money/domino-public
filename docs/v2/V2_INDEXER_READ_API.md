@@ -92,8 +92,23 @@ The automation (3a, docs/v2/V2_AUTOMATION_BACKEND.md, "Why a vault or a mandate 
 | --- | --- |
 | `POST /v6/read/portfolio` `{wallet}` | Per chain status; vaults (≤ 50), positions (≤ 100), mandates (≤ 100), credits, tokens, `truncated` |
 | `POST /v6/read/activity` `{wallet, limit?, cursor?}` | Receipts newest first, `limit` 1–50 (20); `nextCursor` = `timestamp.chain.block.logIndex` of the last item, exclusive |
+| `POST /v6/read/chain-pools` `{chainId, token, pairedToken?}` | The token's standard hookless pools on a chain, read at its head (≤ 32) |
+| `POST /v6/read/chain-balances` `{wallet, tokens?}` | A wallet's balances per chain, each chain's base currencies by default |
+| `POST /v6/read/chain-tokens` `{chainId, query, limit?}` | Known tokens on Base or Arbitrum One that match (≤ 24) |
 
-Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Contract: 1.0.0-rc.1`) when `DOMINO_V2_READ=1`, and through the gateway (`read_gateway.py`, `--enable-v6`, `DOMINO_BRIDGE_V6_READS=portfolio,activity`; it re-validates every answer and that it is about the wallet asked); `bridge_http.py`'s client knows the two routes. Field by field, the package's [README](../../api-contracts/read-v6/README.md) is the reference; the generated schemas and `types.ts` are the contract.
+Served by the local reader (`read_api.py`, stored lane, header `X-Domino-Read-Contract: 1.0.0-rc.1`) when `DOMINO_V2_READ=1`, and through the gateway (`read_gateway.py`, `--enable-v6`, `DOMINO_BRIDGE_V6_READS=portfolio,activity`; it re-validates every answer and that it is about the wallet asked); `bridge_http.py`'s client knows the routes. Field by field, the package's [README](../../api-contracts/read-v6/README.md) is the reference; the generated schemas and `types.ts` are the contract.
+
+### The chain reads (0xdecimal's items 1-3, 5 Oct 2026)
+
+`chain-pools`, `chain-balances` and `chain-tokens` are not index reads (`backend/v2_chain_reads.py`):
+
+- **Where they read:** at request time, one Multicall3 call per chain at the chain's head (`v2_head`). Robinhood goes through the reader's provider file (the own node); Base and Arbitrum go through the V2 chain RPC file's hosted endpoints (F6), billed per call.
+- **Cache:** pools for 15 s, balances for 10 s, the index's known tokens for 60 s.
+- **Lanes:** `chain-pools` and `chain-balances` take the reader's provider lane; `chain-tokens` reads no chain and takes the stored lane.
+- **Search sources:** the profile's currencies; the Uniswap Labs Default token list, pinned in `backend/data/token-lists` with its version, SHA-256 and GPL-3.0 license (`scripts/update-uniswap-token-list.py` refreshes it; the owner's decision of 5 Oct 2026); tokens the index read in full; tokens a `chain-pools` read found priced pools for. The last are kept in the reader's runtime (`v2-learned-tokens.json`), at most 5,000 per chain.
+- **Turning them on:** `install_read_activation.py --read-v6 --chain-reads` adds to the reader `DOMINO_V2_CHAIN_READS=1`, `DOMINO_V2_CHAIN_RPC_FILE` (the operator's copy of `/etc/domino/v2/chain-rpc.json` in its runtime directory) and `ImportCredential=v2-rpc-*` with the TPM, and adds the three routes to the gateway.
+  - The reader reaches the hosted endpoints once the egress is collected with `--v2-chains` (`read` is one of the `CHAIN_ROLES`).
+  - A fault in that configuration leaves the three routes answering `upstream_unavailable` and the read path up.
 
 ### What the app consumes (F7 spec)
 
@@ -166,14 +181,12 @@ The writer reads their hosted providers from its private V2 chain RPC file (`bac
 
 | Item | Why it is not here |
 | --- | --- |
-| The bridge Worker route and the app's pin of read-v6 | The bridge's and the app's (F7) side. |
 | The shared head file (`--head-file`) | Optional: each follower reads its own head. |
-| Pools per chain (§6.2) for pool selection on Base and Arbitrum | A separate read (market data with sources), not derivable from V2 events. |
+| Pools' market metrics (TVL, volume, APR) on `chain-pools` | They need qualified USD (next row); each pool says `no_qualified_price_source` until then. |
 | Qualified USD (pool against the chain's stable; Chainlink ETH/USD from the profile, with heartbeat and sequencer uptime) | Its own qualification; prices are `null` with a reason until then. |
 | The anchor's reference price per vault with its age (§5.2 distance) | Needs the publisher's observations or a TWAP read per vault. |
 | `approvedForAll` in a position's custody | Not read yet (`isApprovedForAll(owner, vault)` for a vault's root); the vault's live `rootArmed` covers its custody. |
 | Pool cost per leg (tiers, approximate cost on one-hop legs, §2.11) | Derivable from the legs and pool fees; not derived yet. |
-| Balances per owner × chain (S2's destination gas) | Not an index read. |
 | Multicall3 for the snapshot reads | They are JSON-RPC batches of `eth_call` now. |
 | The implementation events from 3c's ABI export | The catalog pins `SwapLegExecuted` to the source; `test_v2_indexer_evm.py` holds the catalog to every event the compiled contracts declare until the export covers them. |
 | The deployment tool's local mode in the EVM tests | Its offline mode's dependencies are synthetic and cannot run a pool; the tests use the automation's fixture deployer until it can. |

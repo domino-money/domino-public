@@ -27,8 +27,9 @@ from read_contract import CONTRACT_VERSION, RESPONSE_MODELS, ErrorResponse, vali
 from featured_contract import (CONTRACT_VERSION as V5_CONTRACT_VERSION, FeaturedPoolsRequest,
                                FeaturedPoolsResponse, FeaturedReader, validate_featured_response)
 from v2_read_contract import (CONTRACT_VERSION as V6_CONTRACT_VERSION, ActivityPageRequest as V6ActivityRequest,
+                              ChainBalancesRequest, ChainPoolsRequest, ChainTokensRequest,
                               PortfolioRequest as V6PortfolioRequest, RESPONSE_MODELS as V6_RESPONSE_MODELS,
-                              validate_v6_request_response, validate_v6_response)
+                              STORED_ROUTES as V6_STORED_ROUTES, validate_v6_request_response, validate_v6_response)
 from public_data_contract import (CONTRACT_VERSION as V3_CONTRACT_VERSION,
                                   REQUEST_MODELS as V3_REQUEST_MODELS,
                                   RESPONSE_MODELS as V3_RESPONSE_MODELS,
@@ -140,7 +141,7 @@ class ReadGate:
 
     PROVIDER, STORED = 'provider', 'stored'
     STORED_ROUTES = frozenset({'catalogue', 'markets-snapshot', *V3_REQUEST_MODELS, 'featured-pools',
-                               *V6_RESPONSE_MODELS})
+                               *V6_STORED_ROUTES})
     # Admission stays fail-fast with a client backoff, the reviewed design of
     # #157. What it never did was tell the truth about the wait: a constant one
     # second against a slot a six-second read owns sent three visitors opening
@@ -315,6 +316,8 @@ class LocalReadBoundary:
 
 
 SNAPSHOT_STORE = Path(__file__).resolve().parent / 'runtime' / 'markets-snapshot.json'
+# The tokens read-v6 chain-tokens learned from chain-pools reads (v2_chain_reads.LearnedTokens).
+LEARNED_TOKENS_STORE = Path(__file__).resolve().parent / 'runtime' / 'v2-learned-tokens.json'
 
 # A probe is not a read. Neither route touches the chain, the store or the
 # provider, so the read budget - the caller's patience for a *read* - has no
@@ -332,8 +335,30 @@ def checked_refresh_interval(value):
     return value
 
 
+def configured_chain_reads(provider_config, catalogue):
+    """read-v6's live chain reads (v2_chain_reads), or None: a fault in their configuration (the V2 chain RPC file, a
+    sealed URL, the token list) leaves those three routes answering upstream_unavailable and the read path up."""
+    from v2_chain_reads import build_chain_reads
+    index_tokens = None
+    if catalogue is not None:
+        from v2_index_store import V2Store
+        store = V2Store(catalogue.settings)
+
+        def index_tokens(chain_id, limit):
+            with store.reader() as reader:
+                return reader.available_tokens(chain_id, limit)
+    try:
+        return build_chain_reads(provider_config=provider_config, learned_path=LEARNED_TOKENS_STORE,
+                                 chain_rpc_file=os.environ.get('DOMINO_V2_CHAIN_RPC_FILE') or None,
+                                 index_tokens=index_tokens)
+    except (OSError, ValueError) as error:
+        code = str(error) if isinstance(error, DataError) else 'chain_reads_unconfigured'  # never a path
+        hop_log.emit(service='read-api', mode='chain_reads_unavailable', reason=code[:96])
+        return None
+
+
 def create_app(service=None, *, gate=None, read_budget_seconds=60,
-               snapshot_refresh_seconds=None, v2_reader=None):
+               snapshot_refresh_seconds=None, v2_reader=None, chain_reads=None):
     from markets_snapshot import DEFAULT_REFRESH_SECONDS, MarketsSnapshot, SnapshotRefresher
     if type(read_budget_seconds) not in (int, float) or not 0 < read_budget_seconds <= 60:
         raise ValueError('invalid_read_budget')
@@ -368,6 +393,8 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
             from v2_index_store import V2Store
             from v2_read_service import V2ReadService
             v2_reader = V2ReadService(V2Store(catalogue.settings))
+        if os.environ.get('DOMINO_V2_CHAIN_READS') == '1':
+            chain_reads = configured_chain_reads(config, catalogue)
     # The featured list lives beside the public observations, read through the same reader role.
     repository = getattr(getattr(service, 'public_data', None), 'repository', None)
     featured = FeaturedReader(repository) if repository is not None else None
@@ -630,6 +657,39 @@ def create_app(service=None, *, gate=None, read_budget_seconds=60,
     @app.post('/v6/read/activity', responses={200: {'model': V6_RESPONSE_MODELS['activity']}, **error_responses})
     def v2_activity(body: V6ActivityRequest):
         return stored_v6('activity', body)
+
+    def live_v6(route, body, read):
+        # The chains at request time (v2_chain_reads): one Multicall3 call per chain at its head, cached briefly.
+        request = body.model_dump()
+
+        def operation():
+            if chain_reads is None:
+                raise DataError('upstream_unavailable')
+            result = read(request)
+            try:
+                validate_v6_request_response(route, request, result)
+            except (ValueError, TypeError):
+                raise DataError('upstream_contract_mismatch') from None
+            return result
+        return run_read(operation, route, request, validator=validate_v6_response)
+
+    @app.post('/v6/read/chain-pools', responses={200: {'model': V6_RESPONSE_MODELS['chain-pools']}, **error_responses})
+    def v2_chain_pools(body: ChainPoolsRequest):
+        return live_v6('chain-pools', body,
+                       lambda request: chain_reads.pools(request['chainId'], request['token'], request['pairedToken']))
+
+    @app.post('/v6/read/chain-balances', responses={200: {'model': V6_RESPONSE_MODELS['chain-balances']}, **error_responses})
+    def v2_chain_balances(body: ChainBalancesRequest):
+        def read(request):
+            tokens = request['tokens']
+            return chain_reads.balances(request['wallet'], None if tokens is None else
+                                        [(token['chainId'], token['address']) for token in tokens])
+        return live_v6('chain-balances', body, read)
+
+    @app.post('/v6/read/chain-tokens', responses={200: {'model': V6_RESPONSE_MODELS['chain-tokens']}, **error_responses})
+    def v2_chain_tokens(body: ChainTokensRequest):
+        return live_v6('chain-tokens', body,
+                       lambda request: chain_reads.tokens(request['chainId'], request['query'], request['limit']))
 
     @app.post('/v4/read/sequence-snapshot')
     def owner_sequence_snapshot(body: SequenceSnapshotRequest):

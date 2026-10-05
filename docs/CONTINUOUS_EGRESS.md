@@ -29,7 +29,7 @@ rendered only for an enabled role and only for the hostnames actually pinned.
 
 | Identity | Listener | External classes | Why |
 |---|---|---|---|
-| `read` | 8876 | rpc, analytics | discovery and the market provider |
+| `read` | 8876 | rpc, analytics; chains with `v2Chains` | discovery and the market provider; read-v6's chain reads on Base and Arbitrum (`chain-pools`, `chain-balances`) |
 | `gateway` | 8878 | jwks | `AccessVerifier` fetches the issuer's certs |
 | `auth` | 8879 | rpc, jwks | `EoaChecker`; assertion verification |
 | `onboarding` | 8880 | rpc, jwks, uniswap | plus the trade API quote |
@@ -54,8 +54,9 @@ exactly the pinned Access issuer; `edges` are the two `argotunnel.com` names,
 whose pins must be members of the official inventory the module carries;
 `chains` is Base's and Arbitrum's hosted RPC: Chainstack, Alchemy, and each
 chain's public endpoint as a last resort (`CHAIN_HOSTS`). It is granted only
-by `v2Chains`, and only to the writer (its V2 indexer instances), the plan
-listener, the V2 automation and the monitor. A host that serves Robinhood alone pins none of it. `bridges` is
+by `v2Chains`, and only to the reader (read-v6's chain reads), the writer (its V2
+indexer instances), the plan listener, the V2 automation, the monitor and the
+crosschain listener. A host that serves Robinhood alone pins none of it. `bridges` is
 `api.relay.link` and `app.across.to` (`BRIDGE_HOSTS`), the crosschain listener's
 alone and required by it. Relay's API sits behind CloudFront, whose edge
 addresses differ by resolver and move over time: collect on the VM itself, and
@@ -123,9 +124,10 @@ The optional `sequenceSnapshotLoopback` field defaults to false and requires
 `read` in `enabled` when true. It changes the nft policy and its pin digest,
 not the unit drop-ins or the public Worker flag. `nodeLoopbackReads` does the
 same for the reader and the writer, and requires either in `enabled`.
-`v2Chains` (`--v2-chains` when collecting) grants `chains` to the writer, the
-plan listener, the V2 automation, the monitor and the crosschain listener
-(`CHAIN_ROLES`), and requires the writer or the plan listener in `enabled`.
+`v2Chains` (`--v2-chains` when collecting) grants `chains` to the reader, the
+writer, the plan listener, the V2 automation, the monitor and the crosschain
+listener (`CHAIN_ROLES`), and requires one of them in `enabled`
+(`v2_chains_require_a_chain_role`).
 
 `identities` names all seventeen roles exactly. `admin` may be `null`, and so
 may `position-plan`, `v2-automation`, `crosschain` and `monitor` until their

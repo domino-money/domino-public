@@ -170,17 +170,23 @@ test('only worker-v6 and tunnels-v6 open the wallet reads; no release input can'
   for (const operation of ['worker-v6', 'tunnels-v6', 'worker-disable-v6']) assert.doesNotThrow(() => releaseVars(settings(), releaseOptions(operation, {})))
 })
 
-test('worker-v6 sets exactly READ_V6_BRIDGE_ENABLED=true and ENABLED_V6_READS=portfolio,activity', () => {
+const V6_ALL = 'portfolio,activity,chain-pools,chain-balances,chain-tokens'
+
+test('worker-v6 sets exactly READ_V6_BRIDGE_ENABLED=true and ENABLED_V6_READS to its five routes', () => {
   const current = settings()
   const ordinary = releaseVars(current)
   assert.equal(ordinary.READ_V6_BRIDGE_ENABLED, undefined, 'an ordinary release does not switch read-v6 on')
   assert.equal(ordinary.ENABLED_V6_READS, undefined)
   const enabled = releaseVars(current, { enableV6: true })
   assert.equal(enabled.READ_V6_BRIDGE_ENABLED, 'true')
-  assert.equal(enabled.ENABLED_V6_READS, 'portfolio,activity')
+  assert.equal(enabled.ENABLED_V6_READS, V6_ALL)
   assert.deepEqual({ ...enabled, READ_V6_BRIDGE_ENABLED: undefined, ENABLED_V6_READS: undefined },
     { ...ordinary, READ_V6_BRIDGE_ENABLED: undefined, ENABLED_V6_READS: undefined }, 'nothing else moves')
-  assert.equal(releaseVars(withV6('false', ''), { enableV6: true }).ENABLED_V6_READS, 'portfolio,activity')
+  assert.equal(releaseVars(withV6('false', ''), { enableV6: true }).ENABLED_V6_READS, V6_ALL)
+  // A Worker holding the two first routes is widened by worker-v6 alone; any other release keeps it as it is.
+  assert.equal(releaseVars(withV6('true'), { enableV6: true }).ENABLED_V6_READS, V6_ALL)
+  assert.equal(releaseVars(withV6('true')).ENABLED_V6_READS, 'portfolio,activity')
+  assert.equal(releaseVars(withV6('true', V6_ALL)).ENABLED_V6_READS, V6_ALL)
 })
 
 test('every other release keeps an enabled read-v6, and its rollback moves nothing but its flag', () => {
@@ -188,7 +194,7 @@ test('every other release keeps an enabled read-v6, and its rollback moves nothi
   for (const options of [{}, { enableV3: true }, { enableV4: true }, { disableV4: true }, { enableV5: true }, { disableV5: true }, { enableV6: true }]) {
     const next = releaseVars(current, options)
     assert.equal(next.READ_V6_BRIDGE_ENABLED, 'true', JSON.stringify(options))
-    assert.equal(next.ENABLED_V6_READS, 'portfolio,activity', JSON.stringify(options))
+    assert.equal(next.ENABLED_V6_READS, options.enableV6 ? V6_ALL : 'portfolio,activity', JSON.stringify(options))
   }
   current.bindings.push({ type: 'plain_text', name: 'READ_V2_BRIDGE_ENABLED', text: 'true' },
     { type: 'plain_text', name: 'ENABLED_V2_READS', text: 'pool-market' },
@@ -207,7 +213,9 @@ test('every other release keeps an enabled read-v6, and its rollback moves nothi
 
 test('the V6 lock refuses any other route list, live or stored, and any mixed rollback', () => {
   for (const [enabled, reads] of [['true', ''], ['true', 'portfolio'], ['true', 'activity,portfolio'], ['true', 'portfolio,activity,portfolio'],
-    ['true', 'portfolio, activity'], ['true', 'featured-pools'], ['false', 'portfolio'], ['false', 'portfolio,capabilities'], ['false', '__proto__']]) {
+    ['true', 'portfolio, activity'], ['true', 'featured-pools'], ['false', 'portfolio'], ['false', 'portfolio,capabilities'], ['false', '__proto__'],
+    ['true', 'portfolio,activity,chain-pools'], ['true', 'chain-pools,chain-balances,chain-tokens,portfolio,activity'],
+    ['false', V6_ALL + ',chain-swaps']]) {
     assert.throws(() => releaseVars(withV6(enabled, reads)), /Unexpected existing V6/, `${enabled} ${reads}`)
     assert.throws(() => releaseVars(withV6(enabled, reads), { enableV6: true }), /Unexpected existing V6/, `${enabled} ${reads}`)
     assert.throws(() => releaseVars(withV6(enabled, reads), { disableV6: true }), /Unexpected existing V6/, `${enabled} ${reads}`)

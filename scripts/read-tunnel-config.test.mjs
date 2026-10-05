@@ -179,13 +179,15 @@ test('the states published before read-v6 keep their spelling, stay accepted and
     const input = fixture(PROD, path);
     assert.deepEqual(extendReadTunnelConfig(PROD, input), input, name);
     const pattern = new RegExp(extendReadTunnelConfig(PROD, input, { enableV6: true }).ingress[1].path);
-    for (const route of ['portfolio', 'activity']) assert.equal(pattern.test(`/internal/read/v6/${route}`), true, name);
+    for (const route of ['portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens']) {
+      assert.equal(pattern.test(`/internal/read/v6/${route}`), true, name);
+    }
     assert.equal(pattern.test('/internal/read/v5/featured-pools'), name.includes('v5'), name);
     assert.equal(pattern.test('/internal/read/v3/overview'), name.includes('v3'), name);
   }
 });
 
-test('V6 opens only the two fixed production wallet-read paths and preserves V3, V4 and V5', () => {
+test('V6 opens only its five fixed production read paths and preserves V3, V4 and V5', () => {
   assert.deepEqual(V6_READ_TUNNEL_IDS, [PROD]);
   const baseline = extendReadTunnelConfig(PROD, fixture(PROD, PRE_V6.v3v4v5));
   const before = structuredClone(baseline);
@@ -194,15 +196,18 @@ test('V6 opens only the two fixed production wallet-read paths and preserves V3,
   const expected = structuredClone(before);
   expected.ingress[1].path = v6.ingress[1].path;
   assert.deepEqual(v6, expected, 'only the one path changes');
-  assert.equal(v6.ingress[1].path, PRE_V6.v3v4v5.replace(')$', '|v6/(portfolio|activity))$'), 'v6 last, in version order');
+  assert.equal(v6.ingress[1].path, PRE_V6.v3v4v5.replace(')$', '|v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens))$'),
+    'v6 last, in version order');
   const pattern = new RegExp(v6.ingress[1].path);
-  for (const path of ['/internal/read/v6/portfolio', '/internal/read/v6/activity', '/internal/read/v5/featured-pools',
+  for (const path of ['/internal/read/v6/portfolio', '/internal/read/v6/activity', '/internal/read/v6/chain-pools',
+    '/internal/read/v6/chain-balances', '/internal/read/v6/chain-tokens', '/internal/read/v5/featured-pools',
     '/internal/read/v4/sequence-snapshot', '/internal/read/v3/overview', '/internal/read/v2/pool-market']) {
     assert.equal(pattern.test(path), true, path);
   }
   for (const path of ['/internal/read/v6/capabilities', '/internal/read/v6/portfolio/', '/internal/read/v6/portfolio/extra',
     '/internal/read/v6/%70ortfolio', '/internal/read/v6/activity?limit=1', '/internal/read/v6/Portfolio', '/internal/read/v6/',
-    '/internal/read/v6/featured-pools', '/internal/read/v5/portfolio', '/internal/read/v1/activity', '/prefix/internal/read/v6/portfolio']) {
+    '/internal/read/v6/featured-pools', '/internal/read/v5/portfolio', '/internal/read/v1/activity', '/prefix/internal/read/v6/portfolio',
+    '/internal/read/v6/chain-pools/', '/internal/read/v6/chain-swaps', '/internal/read/v1/chain-pools']) {
     assert.equal(pattern.test(path), false, path);
   }
   // Idempotent, and an ordinary publication keeps it.
@@ -216,6 +221,20 @@ test('V6 opens only the two fixed production wallet-read paths and preserves V3,
   assert.equal(withoutV6.ingress[1].path, PRE_V6.v3v4v5);
   assert.deepEqual(extendReadTunnelConfig(PROD, withoutV6, { disableV6: true }), withoutV6);
   assert.equal(extendReadTunnelConfig(PROD, extendReadTunnelConfig(PROD, fixture(PROD), { enableV6: true }), { disableV6: true }).ingress[1].path, PRE_V5.next);
+});
+
+test('a tunnel published with the two first read-v6 routes is a known state that any publication widens to five', () => {
+  const first = (path) => path.replace('|v6/(portfolio|activity|chain-pools|chain-balances|chain-tokens))$', '|v6/(portfolio|activity))$');
+  const widened = extendReadTunnelConfig(PROD, extendReadTunnelConfig(PROD, fixture(PROD, PRE_V6.v3v4v5)), { enableV6: true });
+  const published = fixture(PROD, first(widened.ingress[1].path));
+  assert.notEqual(published.ingress[1].path, widened.ingress[1].path);
+  for (const options of [{}, { enableV6: true }, { disableV4: true }, { disableV5: true }]) {
+    const next = extendReadTunnelConfig(PROD, published, options);
+    assert.equal(new RegExp(next.ingress[1].path).test('/internal/read/v6/chain-pools'), true, JSON.stringify(options));
+    assert.equal(new RegExp(next.ingress[1].path).test('/internal/read/v6/portfolio'), true, JSON.stringify(options));
+  }
+  assert.deepEqual(extendReadTunnelConfig(PROD, published), widened);
+  assert.equal(extendReadTunnelConfig(PROD, published, { disableV6: true }).ingress[1].path, PRE_V6.v3v4v5);
 });
 
 test('a V6 rollback on a tunnel that never opened V6 is a true no-op, and a rollback opens nothing', () => {

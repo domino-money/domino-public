@@ -1,0 +1,105 @@
+{
+  "chainId": 8453,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "standard_hookless_pools",
+  "executionAvailable": false,
+  "freshness": {
+    "ageSeconds": 4,
+    "status": "fresh"
+  },
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "live_chain_pools",
+  "pairedToken": null,
+  "pools": [
+    {
+      "address": "0x61173a79f79881e617b74ede8575f797af7d3f85",
+      "id": null,
+      "liquidity": "9100000",
+      "lpFeePips": 500,
+      "market": {
+        "reason": "no_qualified_price_source",
+        "status": "unavailable"
+      },
+      "pool": {
+        "currency0": "0x4200000000000000000000000000000000000006",
+        "currency1": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "dex": 3,
+        "fee": 500,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tickSpacing": 10
+      },
+      "protocolFee": 68,
+      "sqrtPriceX96": "158456325028528675187087900672",
+      "swapFeePips": {
+        "oneForZero": 500,
+        "zeroForOne": 500
+      },
+      "tick": 13863
+    },
+    {
+      "address": null,
+      "id": "0x3cfb421555b4e59a791c48f1c084becc64d64ccdf09e9aeba066cee2224a9f3b",
+      "liquidity": "4200000",
+      "lpFeePips": 3000,
+      "market": {
+        "reason": "no_qualified_price_source",
+        "status": "unavailable"
+      },
+      "pool": {
+        "currency0": "0x0000000000000000000000000000000000000000",
+        "currency1": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "dex": 4,
+        "fee": 3000,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tickSpacing": 60
+      },
+      "protocolFee": 1024125,
+      "sqrtPriceX96": "237684487542793012780631851008",
+      "swapFeePips": {
+        "oneForZero": 3250,
+        "zeroForOne": 3125
+      },
+      "tick": 21972
+    }
+  ],
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "snapshot": {
+    "hash": "0xdededededededededededededededededededededededededededededededede",
+    "number": 52214620,
+    "timestamp": 1790431230
+  },
+  "token": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+  "tokens": [
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "decimals": 18,
+      "status": "available",
+      "symbol": "ETH"
+    },
+    {
+      "address": "0x4200000000000000000000000000000000000006",
+      "decimals": 18,
+      "status": "available",
+      "symbol": "WETH"
+    },
+    {
+      "address": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+      "decimals": 18,
+      "status": "available",
+      "symbol": "LIVE"
+    },
+    {
+      "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "decimals": 6,
+      "status": "available",
+      "symbol": "USDC"
+    }
+  ],
+  "truncated": false
+}

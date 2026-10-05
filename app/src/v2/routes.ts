@@ -78,7 +78,7 @@ interface RouteSpec {
 }
 
 export const V2_ROUTE_SPECS: Readonly<Record<V2Route, RouteSpec>> = Object.freeze({
-  readV6: Object.freeze({ path: '/api/read/v6/capabilities', header: READ_V6_HEADER, version: READ_V6_CONTRACT_VERSION, known: Object.freeze(['portfolio', 'activity']) }),
+  readV6: Object.freeze({ path: '/api/read/v6/capabilities', header: READ_V6_HEADER, version: READ_V6_CONTRACT_VERSION, known: Object.freeze(['portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens']) }),
   plan: Object.freeze({ path: '/api/position-plan/v1/capabilities', header: S1_PLAN_HEADER, version: S1_PLAN_CONTRACT_VERSION, known: Object.freeze(['plan']) }),
   crosschain: Object.freeze({ path: '/api/crosschain/v1/capabilities', header: CROSSCHAIN_HEADER, version: CROSSCHAIN_CONTRACT, known: Object.freeze(['origins', 'quote', 'status']) }),
 })

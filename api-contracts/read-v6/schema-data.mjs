@@ -2559,6 +2559,1042 @@ export const SCHEMAS = {
       "x-contract-version": "1.0.0-rc.1"
     }
   },
+  "chain-balances": {
+    "request": {
+      "$defs": {
+        "BalanceTokenRef": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "chainId": {
+              "enum": [
+                4663,
+                8453,
+                42161
+              ],
+              "title": "Chainid",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "chainId",
+            "address"
+          ],
+          "title": "BalanceTokenRef",
+          "type": "object"
+        }
+      },
+      "$id": "https://domino.invalid/contracts/read-v6/chain-balances.request.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Without tokens: every chain's base currencies (its charge currencies).",
+      "properties": {
+        "tokens": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/BalanceTokenRef"
+              },
+              "maxItems": 24,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokens"
+        },
+        "wallet": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Wallet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "wallet"
+      ],
+      "title": "ChainBalancesRequest",
+      "type": "object",
+      "x-contract-version": "1.0.0-rc.1"
+    },
+    "response": {
+      "$defs": {
+        "BlockRef": {
+          "additionalProperties": false,
+          "description": "A block, shaped as read-v1's snapshot: what a read or an event is true at.",
+          "properties": {
+            "hash": {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "title": "Hash",
+              "type": "string"
+            },
+            "number": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Number",
+              "type": "integer"
+            },
+            "timestamp": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Timestamp",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "number",
+            "hash",
+            "timestamp"
+          ],
+          "title": "BlockRef",
+          "type": "object"
+        },
+        "ChainBalances": {
+          "additionalProperties": false,
+          "properties": {
+            "balances": {
+              "items": {
+                "$ref": "#/$defs/TokenBalance"
+              },
+              "maxItems": 24,
+              "minItems": 1,
+              "title": "Balances",
+              "type": "array"
+            },
+            "chainId": {
+              "enum": [
+                4663,
+                8453,
+                42161
+              ],
+              "title": "Chainid",
+              "type": "integer"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "chain_not_configured",
+                    "chain_read_failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reason"
+            },
+            "snapshot": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BlockRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "current",
+                "unavailable"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "chainId",
+            "status",
+            "reason",
+            "snapshot",
+            "balances"
+          ],
+          "title": "ChainBalances",
+          "type": "object"
+        },
+        "TokenBalance": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "balanceRaw": {
+              "anyOf": [
+                {
+                  "maxLength": 78,
+                  "pattern": "^(0|[1-9][0-9]{0,77})$",
+                  "type": "string",
+                  "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Balanceraw"
+            },
+            "decimals": {
+              "anyOf": [
+                {
+                  "maximum": 255,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decimals"
+            },
+            "status": {
+              "enum": [
+                "read",
+                "unavailable"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "symbol": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          },
+          "required": [
+            "address",
+            "symbol",
+            "decimals",
+            "balanceRaw",
+            "status"
+          ],
+          "title": "TokenBalance",
+          "type": "object"
+        }
+      },
+      "$id": "https://domino.invalid/contracts/read-v6/chain-balances.response.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "chain-balances: a wallet's native and token balances on each chain asked, one block per chain.",
+      "properties": {
+        "chains": {
+          "items": {
+            "$ref": "#/$defs/ChainBalances"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Chains",
+          "type": "array"
+        },
+        "contractVersion": {
+          "const": "1.0.0-rc.1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "coverage": {
+          "enum": [
+            "complete",
+            "partial"
+          ],
+          "title": "Coverage",
+          "type": "string"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "limitations": {
+          "items": {
+            "enum": [
+              "raw_amounts_no_usd_valuation",
+              "token_metadata_untrusted",
+              "state_as_of_last_read",
+              "no_execution_or_signing"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "mode": {
+          "const": "live_chain_balances",
+          "title": "Mode",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "servedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Servedat",
+          "type": "integer"
+        },
+        "wallet": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Wallet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contractVersion",
+        "mode",
+        "wallet",
+        "servedAt",
+        "coverage",
+        "chains",
+        "limitations",
+        "executionAvailable"
+      ],
+      "title": "ChainBalancesResponse",
+      "type": "object",
+      "x-contract-version": "1.0.0-rc.1"
+    }
+  },
+  "chain-pools": {
+    "request": {
+      "$id": "https://domino.invalid/contracts/read-v6/chain-pools.request.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "pairedToken": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pairedtoken"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chainId",
+        "token"
+      ],
+      "title": "ChainPoolsRequest",
+      "type": "object",
+      "x-contract-version": "1.0.0-rc.1"
+    },
+    "response": {
+      "$defs": {
+        "BlockRef": {
+          "additionalProperties": false,
+          "description": "A block, shaped as read-v1's snapshot: what a read or an event is true at.",
+          "properties": {
+            "hash": {
+              "maxLength": 66,
+              "minLength": 66,
+              "pattern": "^0x[0-9a-f]{64}$",
+              "title": "Hash",
+              "type": "string"
+            },
+            "number": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Number",
+              "type": "integer"
+            },
+            "timestamp": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Timestamp",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "number",
+            "hash",
+            "timestamp"
+          ],
+          "title": "BlockRef",
+          "type": "object"
+        },
+        "Freshness": {
+          "additionalProperties": false,
+          "properties": {
+            "ageSeconds": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "title": "Ageseconds",
+              "type": "integer"
+            },
+            "status": {
+              "enum": [
+                "fresh",
+                "stale"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "ageSeconds",
+            "status"
+          ],
+          "title": "Freshness",
+          "type": "object"
+        },
+        "LivePool": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "anyOf": [
+                {
+                  "maxLength": 42,
+                  "minLength": 42,
+                  "pattern": "^0x[0-9a-f]{40}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Address"
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "maxLength": 66,
+                  "minLength": 66,
+                  "pattern": "^0x[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id"
+            },
+            "liquidity": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Liquidity",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "lpFeePips": {
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Lpfeepips",
+              "type": "integer"
+            },
+            "market": {
+              "$ref": "#/$defs/PoolMarket"
+            },
+            "pool": {
+              "$ref": "#/$defs/PoolRef"
+            },
+            "protocolFee": {
+              "maximum": 16777215,
+              "minimum": 0,
+              "title": "Protocolfee",
+              "type": "integer"
+            },
+            "sqrtPriceX96": {
+              "maxLength": 78,
+              "pattern": "^(0|[1-9][0-9]{0,77})$",
+              "title": "Sqrtpricex96",
+              "type": "string",
+              "x-maximum-raw": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            },
+            "swapFeePips": {
+              "$ref": "#/$defs/SwapFees"
+            },
+            "tick": {
+              "maximum": 887272,
+              "minimum": -887272,
+              "title": "Tick",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "pool",
+            "id",
+            "address",
+            "sqrtPriceX96",
+            "tick",
+            "liquidity",
+            "lpFeePips",
+            "protocolFee",
+            "swapFeePips",
+            "market"
+          ],
+          "title": "LivePool",
+          "type": "object"
+        },
+        "LiveToken": {
+          "additionalProperties": false,
+          "description": "A token's metadata as read at the block: untrusted text, decimals null when unread, never guessed.",
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "decimals": {
+              "anyOf": [
+                {
+                  "maximum": 255,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decimals"
+            },
+            "status": {
+              "enum": [
+                "available",
+                "partial",
+                "unavailable"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "symbol": {
+              "anyOf": [
+                {
+                  "maxLength": 40,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Symbol"
+            }
+          },
+          "required": [
+            "address",
+            "symbol",
+            "decimals",
+            "status"
+          ],
+          "title": "LiveToken",
+          "type": "object"
+        },
+        "PoolMarket": {
+          "additionalProperties": false,
+          "description": "TVL, volume and APR need a qualified USD source (\u00a76.3); until then the pool says why it has none.",
+          "properties": {
+            "reason": {
+              "const": "no_qualified_price_source",
+              "title": "Reason",
+              "type": "string"
+            },
+            "status": {
+              "const": "unavailable",
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "title": "PoolMarket",
+          "type": "object"
+        },
+        "PoolRef": {
+          "additionalProperties": false,
+          "properties": {
+            "currency0": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Currency0",
+              "type": "string"
+            },
+            "currency1": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Currency1",
+              "type": "string"
+            },
+            "dex": {
+              "enum": [
+                3,
+                4
+              ],
+              "title": "Dex",
+              "type": "integer"
+            },
+            "fee": {
+              "maximum": 8388608,
+              "minimum": 0,
+              "title": "Fee",
+              "type": "integer"
+            },
+            "hooks": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Hooks",
+              "type": "string"
+            },
+            "tickSpacing": {
+              "maximum": 32767,
+              "minimum": 1,
+              "title": "Tickspacing",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "dex",
+            "currency0",
+            "currency1",
+            "fee",
+            "tickSpacing",
+            "hooks"
+          ],
+          "title": "PoolRef",
+          "type": "object"
+        },
+        "SwapFees": {
+          "additionalProperties": false,
+          "description": "What a swap pays in each direction, in pips of its input: v4's protocol fee taken before the LP fee.",
+          "properties": {
+            "oneForZero": {
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Oneforzero",
+              "type": "integer"
+            },
+            "zeroForOne": {
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Zeroforone",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "zeroForOne",
+            "oneForZero"
+          ],
+          "title": "SwapFees",
+          "type": "object"
+        }
+      },
+      "$id": "https://domino.invalid/contracts/read-v6/chain-pools.response.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "chain-pools: the token's pools against the chain's base currencies (or the paired token), Uniswap's standard\nhookless keys and the enabled v3 tiers, read at one block; listed when priced and holding liquidity.",
+      "properties": {
+        "chainId": {
+          "enum": [
+            4663,
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "contractVersion": {
+          "const": "1.0.0-rc.1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "coverage": {
+          "const": "standard_hookless_pools",
+          "title": "Coverage",
+          "type": "string"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "freshness": {
+          "$ref": "#/$defs/Freshness"
+        },
+        "limitations": {
+          "items": {
+            "enum": [
+              "raw_amounts_no_usd_valuation",
+              "token_metadata_untrusted",
+              "state_as_of_last_read",
+              "no_execution_or_signing"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "mode": {
+          "const": "live_chain_pools",
+          "title": "Mode",
+          "type": "string"
+        },
+        "pairedToken": {
+          "anyOf": [
+            {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pairedtoken"
+        },
+        "pools": {
+          "items": {
+            "$ref": "#/$defs/LivePool"
+          },
+          "maxItems": 32,
+          "title": "Pools",
+          "type": "array"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "servedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Servedat",
+          "type": "integer"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/BlockRef"
+        },
+        "token": {
+          "maxLength": 42,
+          "minLength": 42,
+          "pattern": "^0x[0-9a-f]{40}$",
+          "title": "Token",
+          "type": "string"
+        },
+        "tokens": {
+          "items": {
+            "$ref": "#/$defs/LiveToken"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Tokens",
+          "type": "array"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contractVersion",
+        "mode",
+        "chainId",
+        "token",
+        "pairedToken",
+        "servedAt",
+        "snapshot",
+        "freshness",
+        "tokens",
+        "pools",
+        "truncated",
+        "coverage",
+        "limitations",
+        "executionAvailable"
+      ],
+      "title": "ChainPoolsResponse",
+      "type": "object",
+      "x-contract-version": "1.0.0-rc.1"
+    }
+  },
+  "chain-tokens": {
+    "request": {
+      "$id": "https://domino.invalid/contracts/read-v6/chain-tokens.request.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "chainId": {
+          "enum": [
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "limit": {
+          "default": 20,
+          "maximum": 24,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "query": {
+          "maxLength": 96,
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chainId",
+        "query"
+      ],
+      "title": "ChainTokensRequest",
+      "type": "object",
+      "x-contract-version": "1.0.0-rc.1"
+    },
+    "response": {
+      "$defs": {
+        "KnownToken": {
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "maxLength": 42,
+              "minLength": 42,
+              "pattern": "^0x[0-9a-f]{40}$",
+              "title": "Address",
+              "type": "string"
+            },
+            "decimals": {
+              "maximum": 255,
+              "minimum": 0,
+              "title": "Decimals",
+              "type": "integer"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            },
+            "sources": {
+              "items": {
+                "enum": [
+                  "profile",
+                  "uniswap_default_list",
+                  "v2_activity",
+                  "looked_up"
+                ],
+                "type": "string"
+              },
+              "maxItems": 4,
+              "minItems": 1,
+              "title": "Sources",
+              "type": "array"
+            },
+            "symbol": {
+              "maxLength": 40,
+              "minLength": 1,
+              "title": "Symbol",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address",
+            "symbol",
+            "name",
+            "decimals",
+            "sources"
+          ],
+          "title": "KnownToken",
+          "type": "object"
+        },
+        "TokenListRef": {
+          "additionalProperties": false,
+          "description": "The curated list's provenance: the Uniswap Labs Default token list (GPL-3.0), as pinned in the release.",
+          "properties": {
+            "name": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Sha256",
+              "type": "string"
+            },
+            "version": {
+              "pattern": "^[0-9]{1,6}\\.[0-9]{1,6}\\.[0-9]{1,6}$",
+              "title": "Version",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "version",
+            "sha256"
+          ],
+          "title": "TokenListRef",
+          "type": "object"
+        }
+      },
+      "$id": "https://domino.invalid/contracts/read-v6/chain-tokens.response.schema.json",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "chain-tokens: the tokens Domino knows on Base or Arbitrum One that match a query (known tokens only).",
+      "properties": {
+        "chainId": {
+          "enum": [
+            8453,
+            42161
+          ],
+          "title": "Chainid",
+          "type": "integer"
+        },
+        "contractVersion": {
+          "const": "1.0.0-rc.1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "coverage": {
+          "const": "known_tokens_only",
+          "title": "Coverage",
+          "type": "string"
+        },
+        "executionAvailable": {
+          "const": false,
+          "title": "Executionavailable",
+          "type": "boolean"
+        },
+        "limitations": {
+          "items": {
+            "enum": [
+              "raw_amounts_no_usd_valuation",
+              "token_metadata_untrusted",
+              "state_as_of_last_read",
+              "no_execution_or_signing"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "mode": {
+          "const": "known_chain_tokens",
+          "title": "Mode",
+          "type": "string"
+        },
+        "query": {
+          "maxLength": 96,
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "servedAt": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "title": "Servedat",
+          "type": "integer"
+        },
+        "tokenList": {
+          "$ref": "#/$defs/TokenListRef"
+        },
+        "tokens": {
+          "items": {
+            "$ref": "#/$defs/KnownToken"
+          },
+          "maxItems": 24,
+          "title": "Tokens",
+          "type": "array"
+        },
+        "truncated": {
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contractVersion",
+        "mode",
+        "chainId",
+        "query",
+        "servedAt",
+        "coverage",
+        "tokenList",
+        "tokens",
+        "truncated",
+        "limitations",
+        "executionAvailable"
+      ],
+      "title": "ChainTokensResponse",
+      "type": "object",
+      "x-contract-version": "1.0.0-rc.1"
+    }
+  },
   "portfolio": {
     "request": {
       "$id": "https://domino.invalid/contracts/read-v6/portfolio.request.schema.json",
@@ -4965,6 +6001,13 @@ export const CONSTANTS = {
     "state_as_of_last_read",
     "no_execution_or_signing"
   ],
+  "liveFreshSeconds": 60,
+  "liveLimitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
   "maxLagSeconds": 120,
   "staleSeconds": 7200,
   "tariffRates": {
@@ -4979,6 +6022,12 @@ export const CONSTANTS = {
       400
     ]
   },
+  "tokenSources": [
+    "profile",
+    "uniswap_default_list",
+    "v2_activity",
+    "looked_up"
+  ],
   "v2Errors": [
     "ApprovalFailed",
     "AutomationHalted",

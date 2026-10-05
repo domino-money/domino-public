@@ -55,10 +55,23 @@ export type AutomationResumed = {
   "event": "AutomationResumed";
 };
 
+export type BalanceTokenRef = {
+  "chainId": 4663 | 8453 | 42161;
+  "address": string;
+};
+
 export type BlockRef = {
   "number": number;
   "hash": string;
   "timestamp": number;
+};
+
+export type ChainBalances = {
+  "chainId": 4663 | 8453 | 42161;
+  "status": "current" | "unavailable";
+  "reason": "chain_not_configured" | "chain_read_failed" | null;
+  "snapshot": BlockRef | null;
+  "balances": Array<TokenBalance>;
 };
 
 export type ChainStatus = {
@@ -157,6 +170,14 @@ export type IndexedToken = {
   "priceReason": "no_qualified_price_source";
 };
 
+export type KnownToken = {
+  "address": string;
+  "symbol": string;
+  "name": string | null;
+  "decimals": number;
+  "sources": Array<"profile" | "uniswap_default_list" | "v2_activity" | "looked_up">;
+};
+
 export type LastExecution = {
   "tx": TxRef;
   "planHash": string;
@@ -183,6 +204,26 @@ export type LimitsChanged = {
   "stateNonce": string | null;
   "event": "LimitsChanged";
   "limits": Limits;
+};
+
+export type LivePool = {
+  "pool": PoolRef;
+  "id": string | null;
+  "address": string | null;
+  "sqrtPriceX96": string;
+  "tick": number;
+  "liquidity": string;
+  "lpFeePips": number;
+  "protocolFee": number;
+  "swapFeePips": SwapFees;
+  "market": PoolMarket;
+};
+
+export type LiveToken = {
+  "address": string;
+  "symbol": string | null;
+  "decimals": number | null;
+  "status": "available" | "partial" | "unavailable";
 };
 
 export type Lot = {
@@ -256,6 +297,11 @@ export type PolicyChanged = {
   "stateNonce": string | null;
   "event": "PolicyChanged";
   "policy": Policy;
+};
+
+export type PoolMarket = {
+  "status": "unavailable";
+  "reason": "no_qualified_price_source";
 };
 
 export type PoolRef = {
@@ -392,12 +438,31 @@ export type Swap = {
   "amountOut": string;
 };
 
+export type SwapFees = {
+  "zeroForOne": number;
+  "oneForZero": number;
+};
+
 export type Tariff = {
   "kind": "assisted_swap" | "automation" | "auto_exit";
   "rateBps": 20 | 65 | 200 | 400 | null;
   "token": string;
   "amount": string;
   "deferred": string;
+};
+
+export type TokenBalance = {
+  "address": string;
+  "symbol": string | null;
+  "decimals": number | null;
+  "balanceRaw": string | null;
+  "status": "read" | "unavailable";
+};
+
+export type TokenListRef = {
+  "name": string;
+  "version": string;
+  "sha256": string;
 };
 
 export type TokenRecovered = {
@@ -595,14 +660,82 @@ export type ActivityResponse = {
   "nextCursor": string | null;
 };
 
+export type ChainPoolsRequest = {
+  "chainId": 4663 | 8453 | 42161;
+  "token": string;
+  "pairedToken"?: string | null;
+};
+
+export type ChainPoolsResponse = {
+  "schemaVersion": 1;
+  "contractVersion": "1.0.0-rc.1";
+  "mode": "live_chain_pools";
+  "chainId": 4663 | 8453 | 42161;
+  "token": string;
+  "pairedToken": string | null;
+  "servedAt": number;
+  "snapshot": BlockRef;
+  "freshness": Freshness;
+  "tokens": Array<LiveToken>;
+  "pools": Array<LivePool>;
+  "truncated": boolean;
+  "coverage": "standard_hookless_pools";
+  "limitations": Array<"raw_amounts_no_usd_valuation" | "token_metadata_untrusted" | "state_as_of_last_read" | "no_execution_or_signing">;
+  "executionAvailable": false;
+};
+
+export type ChainBalancesRequest = {
+  "wallet": string;
+  "tokens"?: Array<BalanceTokenRef> | null;
+};
+
+export type ChainBalancesResponse = {
+  "schemaVersion": 1;
+  "contractVersion": "1.0.0-rc.1";
+  "mode": "live_chain_balances";
+  "wallet": string;
+  "servedAt": number;
+  "coverage": "complete" | "partial";
+  "chains": Array<ChainBalances>;
+  "limitations": Array<"raw_amounts_no_usd_valuation" | "token_metadata_untrusted" | "state_as_of_last_read" | "no_execution_or_signing">;
+  "executionAvailable": false;
+};
+
+export type ChainTokensRequest = {
+  "chainId": 8453 | 42161;
+  "query": string;
+  "limit"?: number;
+};
+
+export type ChainTokensResponse = {
+  "schemaVersion": 1;
+  "contractVersion": "1.0.0-rc.1";
+  "mode": "known_chain_tokens";
+  "chainId": 8453 | 42161;
+  "query": string;
+  "servedAt": number;
+  "coverage": "known_tokens_only";
+  "tokenList": TokenListRef;
+  "tokens": Array<KnownToken>;
+  "truncated": boolean;
+  "limitations": Array<"raw_amounts_no_usd_valuation" | "token_metadata_untrusted" | "state_as_of_last_read" | "no_execution_or_signing">;
+  "executionAvailable": false;
+};
+
 export interface ReadV6Requests {
   "portfolio": PortfolioRequest;
   "activity": ActivityRequest;
+  "chain-pools": ChainPoolsRequest;
+  "chain-balances": ChainBalancesRequest;
+  "chain-tokens": ChainTokensRequest;
 }
 
 export interface ReadV6Responses {
   "portfolio": PortfolioResponse;
   "activity": ActivityResponse;
+  "chain-pools": ChainPoolsResponse;
+  "chain-balances": ChainBalancesResponse;
+  "chain-tokens": ChainTokensResponse;
 }
 
 export type ReadV6Route = keyof ReadV6Requests;

@@ -548,8 +548,8 @@ class ContinuousEgressTests(unittest.TestCase):
         self.assertNotIn('domino-position-plan.service', target.split('Requires=')[1].split('\n')[0])
 
     def test_the_v2_chains_grant_is_explicit_and_reaches_only_the_chain_roles(self):
-        # Base and Arbitrum (backend/v2_rpc.py): the writer's indexer instances, the plan listener's plans, the
-        # V2 automation, the monitor, and the crosschain listener's Across fee proofs.
+        # Base and Arbitrum (backend/v2_rpc.py): the reader's chain reads, the writer's indexer instances, the plan
+        # listener's plans, the V2 automation, the monitor, and the crosschain listener's Across fee proofs.
         chains = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
         enabled = (*LIVE_ENABLED, 'auth', 'position-plan', 'v2-automation', 'monitor', 'crosschain')
         everyone = identities(plan_listener=True, automation=True, bridge=True, monitor=True)
@@ -566,12 +566,13 @@ class ContinuousEgressTests(unittest.TestCase):
             if role not in policy.CHAIN_ROLES:
                 self.assertEqual(hosts, before['roleHosts'][role], role)
         sets_before, sets_after = parse(nft(before))[1], parse(nft(after))[1]
-        granted_sets = ('write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4', 'ops_monitor_ipv4', 'crosschain_ipv4')
+        granted_sets = ('read_ipv4', 'write_ipv4', 'position_plan_ipv4', 'v2_automation_ipv4', 'ops_monitor_ipv4',
+                        'crosschain_ipv4')
         for name in granted_sets:
             self.assertEqual(sets_after[name], sets_before[name] + len(chains), name)
         self.assertEqual({name: count for name, count in sets_after.items() if name not in granted_sets},
                          {name: count for name, count in sets_before.items() if name not in granted_sets})
-        for unit in ('domino-position-plan.service', 'domino-crosschain.service'):
+        for unit in ('domino-read.service', 'domino-position-plan.service', 'domino-crosschain.service'):
             listener = after['artifacts'][policy.UNIT_DIR + unit + '.d/' + policy.DROPIN]
             for (address,) in chains.values():
                 self.assertIn(f'IPAddressAllow={address}/32\n', listener)
@@ -590,8 +591,12 @@ class ContinuousEgressTests(unittest.TestCase):
 
     def test_the_v2_chains_grant_needs_a_boolean_and_a_role_that_reads_them(self):
         self.reject({**snapshot(), 'v2Chains': 'true'}, 'invalid_v2_chains')
-        self.reject({**snapshot(('read', 'gateway', 'tunnel')), 'v2Chains': True},
-                    'v2_chains_require_writer_or_plan_listener')
+        self.reject({**snapshot(('gateway', 'tunnel')), 'v2Chains': True}, 'v2_chains_require_a_chain_role')
+        # The reader alone takes it too: read-v6's chain reads (chain-pools, chain-balances).
+        chains = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
+        reader = policy.render({**snapshot(('read', 'gateway', 'tunnel'), {**PINS, **chains}), 'v2Chains': True})
+        self.assertLessEqual(set(chains), set(reader['roleHosts']['read']))
+        self.assertFalse(set(chains) & set(reader['roleHosts']['gateway']))
         # The writer alone takes it, before the plan listener's identity exists.
         chains = {host: [f'17.0.0.{index}'] for index, host in enumerate(sorted(policy.CHAIN_HOSTS), 1)}
         result = policy.render({**snapshot(pins={**PINS, **chains}), 'v2Chains': True})

@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from v2_activity import Context, derive_transaction  # noqa: E402
 from v2_events import catalog, decode_log, event_keys, json_args  # noqa: E402
 from v2_index_fixtures import block_hash, encode_log, tx_hash  # noqa: E402
-from v2_read_contract import CONTRACT_VERSION, validate_v6_response  # noqa: E402
+from v2_read_contract import CONTRACT_VERSION, ROUTES, validate_v6_response  # noqa: E402
 from v2_read_service import build_activity, build_portfolio  # noqa: E402
 
 NOW = 1_790_431_234
@@ -382,6 +382,117 @@ def activity(limit=50, rows=None, book=None):
                           tokens=tokens, waiting_reports=waiting_reports())
 
 
+# ------------------------------------------------------------ chain reads
+# The live routes' answers, built by v2_chain_reads.ChainReads over a scripted Multicall3 (v2_chain_reads tests).
+LIVE_TOKEN = '0x' + '5e' * 20
+BASE_USDC, BASE_WETH = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', '0x4200000000000000000000000000000000000006'
+LIVE_BLOCK = (52_214_620, '0x' + 'de' * 32, NOW - 4)
+
+
+class LiveChain:
+    """Multicall3 over scripted answers by (target, selector, arguments); anything else is an address without code."""
+
+    def __init__(self, answers):
+        self.answers = answers
+
+    def request(self, method, params):
+        from eth_abi import decode, encode
+        calls, = decode(['(address,bool,bytes)[]'], bytes.fromhex(params[0]['data'][10:]))
+        rows = [self.answers.get((target.lower(), bytes(data[:4]).hex(), bytes(data[4:])), (True, b''))
+                for target, _, data in calls]
+        return '0x' + encode(['(bool,bytes)[]'], [rows]).hex()
+
+
+def live_reads(answers, *, chains=(8453,)):
+    from discovery import Block
+    import v2_chain_reads as reads
+    from v2_chains import default_registry
+    registry = default_registry()
+
+    class Follower:
+        def head(self):
+            return type('Head', (), {'block': Block(*LIVE_BLOCK)})()
+
+    class Endpoints:
+        endpoints = ()
+
+        def read_rpc(self, *, anchor, max_requests):
+            return LiveChain(answers)
+    sources = {chain: reads.ChainSource(registry.chain(chain), Endpoints(), Follower()) for chain in chains}
+    listed = ({'name': 'Uniswap Labs Default', 'version': '22.24.0', 'sha256': '5b' * 32},
+              {8453: [('0x' + '22' * 20, 'AERO', 'Aerodrome Finance', 18), (BASE_USDC, 'USDC', 'USD Coin', 6),
+                      ('0x' + '33' * 20, 'cbBTC', 'Coinbase Wrapped BTC', 8)], 42161: []})
+    learned = reads.LearnedTokens()
+    learned.learn(8453, '0x' + '44' * 20, 'AEROX', None, 18)
+    return reads.ChainReads(sources, token_list=listed, learned=learned, registry=registry,
+                            clock=lambda: NOW, monotonic=lambda: 0.0)
+
+
+def live_answers():
+    from eth_abi import encode
+    from eth_hash.auto import keccak
+    from v2_chains import default_registry
+    from v2_uniswap import PoolRef, v3_pool_address
+    base = default_registry().chain(8453)
+
+    def selector(signature):
+        return keccak(signature.encode())[:4].hex()
+    v4 = PoolRef(4, ZERO, LIVE_TOKEN, 3000, 60)
+    view = base.uniswap.v4.stateView
+    v3_low, v3_high = sorted((LIVE_TOKEN, BASE_WETH))
+    v3 = v3_pool_address(base, v3_low, v3_high, 500)
+    pool_id = bytes.fromhex(v4.pool_id[2:])
+    wallet = encode(['address'], [WALLET])
+    return {
+        (view, selector('getSlot0(bytes32)'), pool_id): (True, encode(['uint160', 'int24', 'uint24', 'uint24'],
+                                                                      [2**96 * 3, 21_972, (250 << 12) | 125, 3000])),
+        (view, selector('getLiquidity(bytes32)'), pool_id): (True, encode(['uint128'], [4_200_000])),
+        (v3, selector('slot0()'), b''): (True, encode(['uint160', 'int24', 'uint16', 'uint16', 'uint16', 'uint8', 'bool'],
+                                                      [2**96 * 2, 13_863, 0, 1, 1, 68, True])),
+        (v3, selector('liquidity()'), b''): (True, encode(['uint128'], [9_100_000])),
+        (base.uniswap.v3.factory, selector('feeAmountTickSpacing(uint24)'), encode(['uint24'], [500])):
+            (True, encode(['int24'], [10])),
+        (LIVE_TOKEN, selector('decimals()'), b''): (True, encode(['uint8'], [18])),
+        (LIVE_TOKEN, selector('symbol()'), b''): (True, encode(['string'], ['LIVE'])),
+        (LIVE_TOKEN, selector('name()'), b''): (True, encode(['string'], ['Live Token'])),
+        (base.multicall3, selector('getEthBalance(address)'), wallet): (True, encode(['uint256'], [10**17])),
+        (BASE_USDC, selector('balanceOf(address)'), wallet): (True, encode(['uint256'], [2_500_000])),
+        (LIVE_TOKEN, selector('balanceOf(address)'), wallet): (True, encode(['uint256'], [7 * 10**18])),
+    }
+
+
+def live_fixtures():
+    reads = live_reads(live_answers())
+    return {
+        'chain-pools': reads.pools(8453, LIVE_TOKEN),
+        'chain-pools-paired': reads.pools(8453, LIVE_TOKEN, BASE_WETH),
+        'chain-pools-none': live_reads({}).pools(8453, '0x' + '6f' * 20, BASE_USDC),
+        'chain-balances': reads.balances(WALLET),
+        'chain-balances-asked': reads.balances(WALLET, [(8453, LIVE_TOKEN), (8453, ZERO)]),
+        'chain-tokens': reads.tokens(8453, 'aero', 20),
+        'chain-tokens-usdc': reads.tokens(8453, 'USDC', 5),
+        'chain-tokens-none': reads.tokens(42161, 'nothing', 20),
+    }
+
+
+def pool_of(body, dex):
+    return next(item for item in body['pools'] if item['pool']['dex'] == dex)
+
+
+def refee(item, **fields):
+    """A pool changed, its swap fees recomputed from the fees it then states: the defect breaks one rule alone."""
+    from v2_chain_reads import swap_fees
+    item.update(fields)
+    zero_for_one, one_for_zero = swap_fees(item['pool']['dex'], item['lpFeePips'], item['protocolFee'])
+    item['swapFeePips'] = {'zeroForOne': zero_for_one, 'oneForZero': one_for_zero}
+
+
+def route_of(name):
+    """The route a fixture answers: the longest route its file name starts with, then `.` or `-`."""
+    return max((route for route in ROUTES if name == route or name[len(route):len(route) + 1] in ('.', '-')
+                and name.startswith(route)), key=len)
+
+
 def valid():
     book = ledger()
     rows = book.newest_first()
@@ -411,16 +522,23 @@ def valid():
         'activity': activity(),
         'activity-page': activity(limit=3, rows=rows, book=book),
         'activity-empty': activity(rows=[]),
+        **live_fixtures(),
     }
 
 
 REQUESTS = {'portfolio': {'wallet': WALLET},
-            'activity': {'wallet': WALLET, 'limit': 3, 'cursor': '1790425234.4663.73391000.4'}}
+            'activity': {'wallet': WALLET, 'limit': 3, 'cursor': '1790425234.4663.73391000.4'},
+            'chain-pools': {'chainId': 8453, 'token': LIVE_TOKEN, 'pairedToken': None},
+            'chain-balances': {'wallet': WALLET, 'tokens': [{'chainId': 8453, 'address': LIVE_TOKEN},
+                                                       {'chainId': 8453, 'address': ZERO}]},
+            'chain-tokens': {'chainId': 8453, 'query': 'aero', 'limit': 20}}
 
 
 def invalid():
     """The base answers with exactly one defect each, named by the file."""
-    base = {'portfolio': portfolio(), 'activity': activity()}
+    answers = live_fixtures()
+    base = {'portfolio': portfolio(), 'activity': activity(), 'chain-pools': answers['chain-pools'],
+            'chain-balances': answers['chain-balances'], 'chain-tokens': answers['chain-tokens']}
 
     def defect(route, change):
         body = copy.deepcopy(base[route])
@@ -570,6 +688,76 @@ def invalid():
             i for i in b['items'] if i['kind'] == 'auto_exit_event' and i['event'] == 'MandateRegistered'
         ).update(amount='1')),
         'activity.too-many-items': defect('activity', lambda b: b.update(items=b['items'] * 5)),
+        # chain-pools: a v4 pool (ETH/LIVE, a protocol fee each way) and a v3 one (LIVE/WETH).
+        'chain-pools.tokens-unsorted': defect('chain-pools', lambda b: b['tokens'].reverse()),
+        # Without its pools, which would name the token too.
+        'chain-pools.token-not-listed': defect('chain-pools', lambda b: b.update(pools=[], tokens=[
+            t for t in b['tokens'] if t['address'] != LIVE_TOKEN])),
+        'chain-pools.paired-not-listed': defect('chain-pools', lambda b: b.update(pairedToken=BASE_WETH, pools=[], tokens=[
+            t for t in b['tokens'] if t['address'] != BASE_WETH])),
+        'chain-pools.paired-is-the-token': defect('chain-pools', lambda b: b.update(pairedToken=LIVE_TOKEN)),
+        'chain-pools.pool-without-the-token': defect('chain-pools', lambda b: pool_of(b, 3)['pool'].update(
+            currency0=BASE_WETH, currency1=BASE_USDC)),
+        # Paired with WETH, yet the v4 pool is ETH's.
+        'chain-pools.pool-without-the-paired-token': defect('chain-pools', lambda b: b.update(pairedToken=BASE_WETH)),
+        'chain-pools.pool-currency-not-listed': defect('chain-pools', lambda b: b.update(tokens=[
+            t for t in b['tokens'] if t['address'] != BASE_WETH])),
+        'chain-pools.v4-with-an-address': defect('chain-pools', lambda b: pool_of(b, 4).update(address=BASE_WETH)),
+        'chain-pools.v3-with-an-id': defect('chain-pools', lambda b: pool_of(b, 3).update(id='0x' + 'ab' * 32)),
+        'chain-pools.hooked-pool': defect('chain-pools', lambda b: pool_of(b, 4)['pool'].update(hooks='0x' + '40' * 20)),
+        'chain-pools.lp-fee-not-the-tier': defect('chain-pools', lambda b: refee(pool_of(b, 4), lpFeePips=2999)),
+        'chain-pools.swap-fee-off-by-one': defect('chain-pools', lambda b: pool_of(b, 4)['swapFeePips'].update(
+            zeroForOne=pool_of(b, 4)['swapFeePips']['zeroForOne'] + 1)),
+        'chain-pools.v3-swap-fee-plus-protocol': defect('chain-pools', lambda b: pool_of(b, 3)['swapFeePips'].update(
+            zeroForOne=pool_of(b, 3)['lpFeePips'] + 1)),
+        'chain-pools.protocol-fee-out-of-range': defect('chain-pools', lambda b: refee(pool_of(b, 4),
+                                                                                       protocolFee=(1001 << 12) | 125)),
+        'chain-pools.v3-protocol-fee-over-a-byte': defect('chain-pools', lambda b: pool_of(b, 3).update(protocolFee=256)),
+        'chain-pools.empty-pool': defect('chain-pools', lambda b: pool_of(b, 3).update(liquidity='0')),
+        'chain-pools.unpriced-pool': defect('chain-pools', lambda b: pool_of(b, 3).update(sqrtPriceX96='0')),
+        'chain-pools.duplicate-pool': defect('chain-pools', lambda b: b['pools'].append(copy.deepcopy(pool_of(b, 4)))),
+        'chain-pools.market-with-a-price': defect('chain-pools', lambda b: pool_of(b, 4)['market'].update(tvlUsd='1')),
+        'chain-pools.stale-called-fresh': defect('chain-pools', lambda b: b.update(servedAt=b['snapshot']['timestamp'] + 61,
+                                                                                    freshness={'ageSeconds': 61, 'status': 'fresh'})),
+        'chain-pools.wrong-age': defect('chain-pools', lambda b: b['freshness'].update(ageSeconds=b['freshness']['ageSeconds'] + 1)),
+        'chain-pools.limitations-reordered': defect('chain-pools', lambda b: b['limitations'].reverse()),
+        'chain-pools.partial-with-both': defect('chain-pools', lambda b: next(
+            t for t in b['tokens'] if t['address'] == LIVE_TOKEN).update(status='partial')),
+        'chain-pools.unsafe-symbol': defect('chain-pools', lambda b: next(
+            t for t in b['tokens'] if t['address'] == LIVE_TOKEN).update(symbol='LI\u202eVE')),
+        'chain-pools.execution-available': defect('chain-pools', lambda b: b.update(executionAvailable=True)),
+        # chain-balances: Robinhood unconfigured (unavailable), then Base, then Arbitrum unconfigured.
+        'chain-balances.read-without-an-amount': defect('chain-balances', lambda b: b['chains'][1]['balances'][0].update(
+            balanceRaw=None)),
+        'chain-balances.amount-unread': defect('chain-balances', lambda b: b['chains'][1]['balances'][0].update(
+            status='unavailable')),
+        'chain-balances.unavailable-with-a-block': defect('chain-balances', lambda b: b['chains'][0].update(
+            snapshot={'number': 1, 'hash': '0x' + 'ab' * 32, 'timestamp': NOW})),
+        'chain-balances.unavailable-without-a-reason': defect('chain-balances', lambda b: b['chains'][0].update(reason=None)),
+        'chain-balances.current-with-a-reason': defect('chain-balances', lambda b: b['chains'][1].update(
+            reason='chain_read_failed')),
+        'chain-balances.unavailable-with-a-balance': defect('chain-balances', lambda b: b['chains'][0]['balances'][0].update(
+            balanceRaw='1', status='read')),
+        'chain-balances.chains-unsorted': defect('chain-balances', lambda b: b['chains'].reverse()),
+        'chain-balances.complete-but-unavailable': defect('chain-balances', lambda b: b.update(coverage='complete')),
+        'chain-balances.duplicate-token': defect('chain-balances', lambda b: b['chains'][1]['balances'].append(
+            copy.deepcopy(b['chains'][1]['balances'][0]))),
+        'chain-balances.negative-amount': defect('chain-balances', lambda b: b['chains'][1]['balances'][0].update(
+            balanceRaw='-1')),
+        'chain-balances.unknown-reason': defect('chain-balances', lambda b: b['chains'][0].update(reason='rpc_down')),
+        # chain-tokens: AERO from the list, AEROX looked up.
+        'chain-tokens.sources-unordered': defect('chain-tokens', lambda b: b['tokens'][0].update(
+            sources=['looked_up', 'uniswap_default_list'])),
+        'chain-tokens.unknown-source': defect('chain-tokens', lambda b: b['tokens'][0].update(sources=['coingecko'])),
+        'chain-tokens.no-source': defect('chain-tokens', lambda b: b['tokens'][0].update(sources=[])),
+        'chain-tokens.robinhood': defect('chain-tokens', lambda b: b.update(chainId=4663)),
+        'chain-tokens.duplicate-token': defect('chain-tokens', lambda b: b['tokens'].append(copy.deepcopy(b['tokens'][0]))),
+        'chain-tokens.list-hash-short': defect('chain-tokens', lambda b: b['tokenList'].update(sha256='5b' * 31)),
+        'chain-tokens.too-many': defect('chain-tokens', lambda b: b.update(tokens=[
+            {**b['tokens'][0], 'address': '0x' + f'{index:040x}'} for index in range(25)])),
+        'chain-tokens.unsafe-name': defect('chain-tokens', lambda b: b['tokens'][0].update(name='Aero\tdrome')),
+        'chain-tokens.symbol-null': defect('chain-tokens', lambda b: b['tokens'][0].update(symbol=None)),
+        'chain-tokens.empty-query': defect('chain-tokens', lambda b: b.update(query='')),
     }
 
 
@@ -582,7 +770,7 @@ def errors():
 
 def check():
     for name, body in valid().items():
-        validate_v6_response('portfolio' if name.startswith('portfolio') else 'activity', body)
+        validate_v6_response(route_of(name), body)
     for name, (route, body) in invalid().items():
         try:
             validate_v6_response(route, body)
@@ -591,4 +779,4 @@ def check():
         raise AssertionError(f'invalid fixture {name} is accepted by the producer')
 
 
-__all__ = ['valid', 'invalid', 'errors', 'REQUESTS', 'CONTRACT_VERSION', 'check']
+__all__ = ['valid', 'invalid', 'errors', 'REQUESTS', 'CONTRACT_VERSION', 'check', 'route_of']

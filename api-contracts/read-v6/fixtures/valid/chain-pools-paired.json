@@ -1,0 +1,68 @@
+{
+  "chainId": 8453,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "standard_hookless_pools",
+  "executionAvailable": false,
+  "freshness": {
+    "ageSeconds": 4,
+    "status": "fresh"
+  },
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "live_chain_pools",
+  "pairedToken": "0x4200000000000000000000000000000000000006",
+  "pools": [
+    {
+      "address": "0x61173a79f79881e617b74ede8575f797af7d3f85",
+      "id": null,
+      "liquidity": "9100000",
+      "lpFeePips": 500,
+      "market": {
+        "reason": "no_qualified_price_source",
+        "status": "unavailable"
+      },
+      "pool": {
+        "currency0": "0x4200000000000000000000000000000000000006",
+        "currency1": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "dex": 3,
+        "fee": 500,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "tickSpacing": 10
+      },
+      "protocolFee": 68,
+      "sqrtPriceX96": "158456325028528675187087900672",
+      "swapFeePips": {
+        "oneForZero": 500,
+        "zeroForOne": 500
+      },
+      "tick": 13863
+    }
+  ],
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "snapshot": {
+    "hash": "0xdededededededededededededededededededededededededededededededede",
+    "number": 52214620,
+    "timestamp": 1790431230
+  },
+  "token": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+  "tokens": [
+    {
+      "address": "0x4200000000000000000000000000000000000006",
+      "decimals": 18,
+      "status": "available",
+      "symbol": "WETH"
+    },
+    {
+      "address": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+      "decimals": 18,
+      "status": "available",
+      "symbol": "LIVE"
+    }
+  ],
+  "truncated": false
+}

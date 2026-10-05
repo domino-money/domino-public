@@ -1,0 +1,13 @@
+{
+  "tokens": [
+    {
+      "address": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+      "chainId": 8453
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000000",
+      "chainId": 8453
+    }
+  ],
+  "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+}

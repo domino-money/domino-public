@@ -18,11 +18,13 @@ sys.path[:0] = [str(ROOT / 'backend'), str(ROOT / 'backend/tests')]
 from read_contract import ERROR_STATUS_BY_CODE  # noqa: E402
 from v2_read_contract import (BLOCKERS, CHAIN_IDS, CHAIN_REASONS, CONTRACT_VERSION, DISARM_REASONS,  # noqa: E402
                               HEAD_MAX_AGE_SECONDS, LIMITATIONS, MAX_LAG_SECONDS, REQUEST_MODELS, RESPONSE_MODELS,
-                              ROUTES, STALE_SECONDS, V2_ERRORS, WAITING_STALE_SECONDS, WAITING_STATUSES)
+                              ROUTES, STALE_SECONDS, V2_ERRORS, WAITING_STALE_SECONDS, WAITING_STATUSES,
+                              LIVE_FRESH_SECONDS, LIVE_LIMITATIONS, TOKEN_SOURCES)
 import read_v6_contract_fixtures as fixtures  # noqa: E402
 
 DEST = ROOT / 'api-contracts/read-v6'
 SOURCES = ['backend/v2_read_contract.py', 'backend/v2_read_service.py', 'backend/v2_index_store.py',
+           'backend/v2_chain_reads.py', 'backend/data/token-lists/uniswap-default.json',
            'backend/v2_waiting.py', 'backend/v2_activity.py', 'backend/v2_events.py', 'backend/read_contract.py', 'backend/read_api.py',
            'backend/read_gateway.py', 'backend/bridge_http.py', 'backend/migrations/052_v2_index.sql',
            'backend/tests/read_v6_contract_fixtures.py', 'backend/tests/v2_index_fixtures.py',
@@ -88,7 +90,8 @@ def constants():
             'staleSeconds': STALE_SECONDS, 'tariffRates': {'assisted_swap': [65], 'automation': [200, 400],
                                                           'auto_exit': [20]},
             'waitingStatuses': list(WAITING_STATUSES), 'waitingStaleSeconds': WAITING_STALE_SECONDS,
-            'v2Errors': list(V2_ERRORS)}
+            'v2Errors': list(V2_ERRORS), 'liveLimitations': list(LIVE_LIMITATIONS),
+            'liveFreshSeconds': LIVE_FRESH_SECONDS, 'tokenSources': list(TOKEN_SOURCES)}
 
 
 def build():

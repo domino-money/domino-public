@@ -1,0 +1,34 @@
+{
+  "chainId": 8453,
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "known_tokens_only",
+  "executionAvailable": false,
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "known_chain_tokens",
+  "query": "USDC",
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "tokenList": {
+    "name": "Uniswap Labs Default",
+    "sha256": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b",
+    "version": "22.24.0"
+  },
+  "tokens": [
+    {
+      "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "decimals": 6,
+      "name": "USD Coin",
+      "sources": [
+        "profile",
+        "uniswap_default_list"
+      ],
+      "symbol": "USDC"
+    }
+  ],
+  "truncated": false
+}

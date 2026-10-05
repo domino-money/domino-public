@@ -14,7 +14,10 @@
  * transport serving the package's own fixtures. This module imports no runtime: the caller hands it in (as
  * src/v2/crosschain does), so the node tests load api-contracts/read-v6/runtime.mjs themselves.
  */
-import type { ActivityResponse, ChainStatus, PortfolioResponse, ReadV6ErrorCode, ReadV6Route } from 'api-contracts/read-v6/types'
+import type {
+  ActivityResponse, ChainBalancesResponse, ChainPoolsResponse, ChainStatus, ChainTokensResponse, PortfolioResponse,
+  ReadV6ErrorCode, ReadV6Route,
+} from 'api-contracts/read-v6/types'
 
 export const READ_V6_CONTRACT_VERSION = '1.0.0-rc.1' as const
 export const READ_V6_HEADER = 'X-Domino-Read-Contract' as const
@@ -78,6 +81,34 @@ export function readActivity(transport: ReadV6Transport, runtime: ReadV6Validato
   if (page.limit !== undefined) request.limit = page.limit
   if (page.cursor !== undefined) request.cursor = page.cursor
   return exchange<ActivityResponse>(transport, runtime, 'activity', request)
+}
+
+/**
+ * The live chain reads (api-contracts/read-v6 README, "Chain reads"): read at each chain's head by the backend, so the
+ * app lists pools and balances without moving the wallet to another network; it still moves it to sign (§1.3).
+ */
+
+/** A token's pools on a chain: against the chain's base currencies, or against `pairedToken` alone. */
+export function readChainPools(transport: ReadV6Transport, runtime: ReadV6Validators, chainId: number, token: string, pairedToken?: string): Promise<ReadV6Reply<ChainPoolsResponse>> {
+  const request: Record<string, unknown> = { chainId, token: String(token).toLowerCase() }
+  if (pairedToken !== undefined) request.pairedToken = String(pairedToken).toLowerCase()
+  return exchange<ChainPoolsResponse>(transport, runtime, 'chain-pools', request)
+}
+
+/** A wallet's balances on each chain: every chain's base currencies, or exactly `tokens` (at most 24, in that order). */
+export function readChainBalances(transport: ReadV6Transport, runtime: ReadV6Validators, wallet: string, tokens?: readonly { chainId: number; address: string }[]): Promise<ReadV6Reply<ChainBalancesResponse>> {
+  const lower = String(wallet).toLowerCase()
+  if (!ADDRESS.test(lower)) return Promise.resolve({ kind: 'invalid', detail: 'request' })
+  const request: Record<string, unknown> = { wallet: lower }
+  if (tokens !== undefined) request.tokens = tokens.map((t) => ({ chainId: t.chainId, address: String(t.address).toLowerCase() }))
+  return exchange<ChainBalancesResponse>(transport, runtime, 'chain-balances', request)
+}
+
+/** The tokens Domino knows on Base or Arbitrum One that match `query` (known tokens only; Robinhood's search is read-v3's). */
+export function readChainTokens(transport: ReadV6Transport, runtime: ReadV6Validators, chainId: number, query: string, limit?: number): Promise<ReadV6Reply<ChainTokensResponse>> {
+  const request: Record<string, unknown> = { chainId, query }
+  if (limit !== undefined) request.limit = limit
+  return exchange<ChainTokensResponse>(transport, runtime, 'chain-tokens', request)
 }
 
 /** The names §6.3's sentence uses ("Showing Base and Arbitrum. Robinhood Chain is unavailable right now."). */

@@ -27,3 +27,15 @@ not an external audit or a claim of contract-wallet support.
 
 Sources: [Spruce SIWE Python](https://github.com/spruceid/siwe-py),
 [Ethereum eth-account](https://github.com/ethereum/eth-account).
+
+## The Uniswap Labs Default token list
+
+`data/token-lists/uniswap-default.json` is a subset of the Uniswap Labs Default token list
+(<https://tokens.uniswap.org>, version 22.24.0 of 2026-10-01): the Base and Arbitrum One entries' address,
+symbol, name and decimals, which read-v6's `chain-tokens` searches (`v2_chain_reads.py`; the owner's decision of
+5 Oct 2026). The list is published under the GNU General Public License v3.0 by
+[Uniswap/default-token-list](https://github.com/Uniswap/default-token-list); its complete
+[license](data/token-lists/LICENSE-uniswap-default-token-list) is retained beside the subset, and the subset
+records its source, version, timestamp and the SHA-256 of the exact bytes read.
+`scripts/update-uniswap-token-list.py` regenerates it. Symbols and names are served as untrusted text.
+

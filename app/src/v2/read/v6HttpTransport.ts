@@ -16,7 +16,13 @@ import type { RawPost } from '../plan/httpTransport'
 import { READ_V6_CONTRACT_VERSION, READ_V6_HEADER, type ReadV6Transport } from './v6'
 
 /** Each route's path, on the site's own origin. */
-export const READ_V6_PATHS: Readonly<Record<ReadV6Route, string>> = Object.freeze({ portfolio: '/api/read/v6/portfolio', activity: '/api/read/v6/activity' })
+export const READ_V6_PATHS: Readonly<Record<ReadV6Route, string>> = Object.freeze({
+  portfolio: '/api/read/v6/portfolio',
+  activity: '/api/read/v6/activity',
+  'chain-pools': '/api/read/v6/chain-pools',
+  'chain-balances': '/api/read/v6/chain-balances',
+  'chain-tokens': '/api/read/v6/chain-tokens',
+})
 
 /** The read Worker's limits (bridge/src/worker.mjs LIMITS): an 8 KiB request, a 1 MiB answer, 20 s; the page waits a little longer. */
 export const READ_V6_MAX_REQUEST_BYTES = 8 * 1024

@@ -1,0 +1,43 @@
+{
+  "chains": [
+    {
+      "balances": [
+        {
+          "address": "0x5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+          "balanceRaw": "7000000000000000000",
+          "decimals": 18,
+          "status": "read",
+          "symbol": "LIVE"
+        },
+        {
+          "address": "0x0000000000000000000000000000000000000000",
+          "balanceRaw": "100000000000000000",
+          "decimals": 18,
+          "status": "read",
+          "symbol": "ETH"
+        }
+      ],
+      "chainId": 8453,
+      "reason": null,
+      "snapshot": {
+        "hash": "0xdededededededededededededededededededededededededededededededede",
+        "number": 52214620,
+        "timestamp": 1790431230
+      },
+      "status": "current"
+    }
+  ],
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "complete",
+  "executionAvailable": false,
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "live_chain_balances",
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+}

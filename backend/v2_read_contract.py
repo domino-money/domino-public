@@ -2,7 +2,9 @@
 
 Two stored routes, served by the local reader (read_api) and, once the bridge
 side enables them, by the gateway: no RPC at request time, one read-only
-snapshot of the V2 index (v2_index_store) per answer.
+snapshot of the V2 index (v2_index_store) per answer. Three chain reads beside
+them (chain-pools, chain-balances, chain-tokens) read the chains when asked
+(v2_chain_reads); their models close this module.
 
 - portfolio: per chain, how fresh and how final the index is, the registry's
   halt and admitted operators; the wallet's V2 vaults (custody with the disarm
@@ -41,7 +43,10 @@ from pydantic import AfterValidator, Field, StrictBool, StrictInt, model_validat
 from read_contract import WireModel
 
 CONTRACT_VERSION = '1.0.0-rc.1'
-ROUTES = ('portfolio', 'activity')
+ROUTES = ('portfolio', 'activity', 'chain-pools', 'chain-balances', 'chain-tokens')
+# The routes that read stored data only; chain-pools and chain-balances read the chains at request time
+# (v2_chain_reads) and take the reader's provider lane.
+STORED_ROUTES = ('portfolio', 'activity', 'chain-tokens')
 # The enabled V2 chains (api-contracts/v2/chains), ascending; a constant so the
 # reader never loads the profiles to start. tests/test_read_v6_contract.py
 # holds it to the registry.
@@ -58,6 +63,14 @@ CHAIN_REASONS = ('deployment_not_registered', 'never_indexed', 'head_not_observe
                  'indexer_behind_head')
 LIMITATIONS = ('raw_amounts_no_usd_valuation', 'token_metadata_untrusted', 'positions_known_to_domino_only',
                'state_as_of_last_read', 'no_execution_or_signing')
+# The live chain reads' own: no USD, untrusted metadata, state as of the block read, nothing executed.
+LIVE_LIMITATIONS = ('raw_amounts_no_usd_valuation', 'token_metadata_untrusted', 'state_as_of_last_read',
+                    'no_execution_or_signing')
+SEARCH_CHAIN_IDS = (8453, 42161)
+MAX_CHAIN_POOLS, MAX_POOL_TOKENS, MAX_BALANCE_TOKENS, MAX_SEARCH_TOKENS = 32, 8, 24, 24
+MAX_QUERY, DEFAULT_SEARCH_TOKENS, LIVE_FRESH_SECONDS = 96, 20, 60
+# Where a known token comes from, in the order matches rank (v2_chain_reads.SOURCES).
+TOKEN_SOURCES = ('profile', 'uniswap_default_list', 'v2_activity', 'looked_up')
 DISARM_REASONS = {1: 'unsubscribed_or_transferred', 2: 'changed_outside_domino', 3: 'burned', 4: 'custody_lost',
                   5: 'v3_checkpoint_mismatch', 6: 'auto_exit', 7: 'exit_all'}
 # What keeps an active mandate from executing now, beyond its trigger (F4
@@ -968,6 +981,234 @@ class ActivityResponse(Envelope):
         return self
 
 
+# ------------------------------------------------------------ chain reads
+Pips = Annotated[StrictInt, Field(ge=0, le=1_000_000)]
+
+
+def _live_limitations(limitations):
+    if list(limitations) != list(LIVE_LIMITATIONS):
+        raise ValueError('limitations')
+
+
+def _fresh(served_at, snapshot, freshness):
+    age = max(0, served_at - snapshot.timestamp)
+    if freshness.ageSeconds != age or (freshness.status == 'fresh') != (age <= LIVE_FRESH_SECONDS):
+        raise ValueError('freshness')
+
+
+class LiveToken(WireModel):
+    """A token's metadata as read at the block: untrusted text, decimals null when unread, never guessed."""
+    address: Address
+    symbol: Symbol | None
+    decimals: Annotated[StrictInt, Field(ge=0, le=255)] | None
+    status: Literal['available', 'partial', 'unavailable']
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if self.symbol is not None and not self.symbol.isprintable():
+            raise ValueError('unsafe_symbol')
+        read = (self.decimals is not None) + (self.symbol is not None)
+        if read != {'available': 2, 'partial': 1, 'unavailable': 0}[self.status]:
+            raise ValueError('token_status')
+        return self
+
+
+class SwapFees(WireModel):
+    """What a swap pays in each direction, in pips of its input: v4's protocol fee taken before the LP fee."""
+    zeroForOne: Pips
+    oneForZero: Pips
+
+
+class PoolMarket(WireModel):
+    """TVL, volume and APR need a qualified USD source (§6.3); until then the pool says why it has none."""
+    status: Literal['unavailable']
+    reason: Literal['no_qualified_price_source']
+
+
+class LivePool(WireModel):
+    pool: PoolRef
+    id: Hash | None
+    address: Address | None
+    sqrtPriceX96: Raw
+    tick: Tick
+    liquidity: Raw
+    lpFeePips: Pips
+    protocolFee: Annotated[StrictInt, Field(ge=0, le=0xFFFFFF)]
+    swapFeePips: SwapFees
+    market: PoolMarket
+
+    @model_validator(mode='after')
+    def consistent(self):
+        v4 = self.pool.dex == 4
+        if v4 != (self.id is not None) or v4 == (self.address is not None) or self.pool.hooks != ZERO:
+            raise ValueError('pool_identity')
+        if self.lpFeePips != self.pool.fee or int(self.liquidity) == 0 or int(self.sqrtPriceX96) == 0:
+            raise ValueError('pool_state')
+        if v4:
+            sides = (self.protocolFee & 0xFFF, self.protocolFee >> 12)
+            if any(side > 1000 for side in sides):
+                raise ValueError('pool_protocol_fee')
+            fees = tuple(self.lpFeePips if side == 0 else side + self.lpFeePips - side * self.lpFeePips // 1_000_000
+                         for side in sides)
+        else:
+            if self.protocolFee > 0xFF:
+                raise ValueError('pool_protocol_fee')
+            fees = (self.lpFeePips, self.lpFeePips)
+        if (self.swapFeePips.zeroForOne, self.swapFeePips.oneForZero) != fees:
+            raise ValueError('pool_swap_fees')
+        return self
+
+
+class ChainPoolsResponse(WireModel):
+    """chain-pools: the token's pools against the chain's base currencies (or the paired token), Uniswap's standard
+    hookless keys and the enabled v3 tiers, read at one block; listed when priced and holding liquidity."""
+    schemaVersion: Literal[1]
+    contractVersion: Literal[CONTRACT_VERSION]
+    mode: Literal['live_chain_pools']
+    chainId: ChainId
+    token: Address
+    pairedToken: Address | None
+    servedAt: UInt
+    snapshot: BlockRef
+    freshness: Freshness
+    tokens: Annotated[list[LiveToken], Field(min_length=1, max_length=MAX_POOL_TOKENS)]
+    pools: Annotated[list[LivePool], Field(max_length=MAX_CHAIN_POOLS)]
+    truncated: StrictBool
+    coverage: Literal['standard_hookless_pools']
+    limitations: Annotated[list[Literal[LIVE_LIMITATIONS]], Field(min_length=len(LIVE_LIMITATIONS),
+                                                                 max_length=len(LIVE_LIMITATIONS))]
+    executionAvailable: Literal[False]
+
+    @model_validator(mode='after')
+    def consistent(self):
+        _live_limitations(self.limitations)
+        _fresh(self.servedAt, self.snapshot, self.freshness)
+        addresses = [token.address for token in self.tokens]
+        if (addresses != sorted(set(addresses)) or self.token not in addresses or self.pairedToken == self.token
+                or (self.pairedToken is not None and self.pairedToken not in addresses)):
+            raise ValueError('pool_tokens')
+        keys = set()
+        for item in self.pools:
+            pair = (item.pool.currency0, item.pool.currency1)
+            if self.token not in pair or (self.pairedToken is not None and self.pairedToken not in pair):
+                raise ValueError('pool_pair')
+            if not set(pair) <= set(addresses):
+                raise ValueError('pool_tokens')
+            key = (item.pool.dex, *pair, item.pool.fee, item.pool.tickSpacing)
+            if key in keys:
+                raise ValueError('pool_duplicate')
+            keys.add(key)
+        return self
+
+
+class TokenBalance(WireModel):
+    address: Address
+    symbol: Symbol | None
+    decimals: Annotated[StrictInt, Field(ge=0, le=255)] | None
+    balanceRaw: Raw | None
+    status: Literal['read', 'unavailable']
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if self.symbol is not None and not self.symbol.isprintable():
+            raise ValueError('unsafe_symbol')
+        if (self.status == 'read') != (self.balanceRaw is not None):
+            raise ValueError('balance_status')
+        return self
+
+
+class ChainBalances(WireModel):
+    chainId: ChainId
+    status: Literal['current', 'unavailable']
+    reason: Literal['chain_not_configured', 'chain_read_failed'] | None
+    snapshot: BlockRef | None
+    balances: Annotated[list[TokenBalance], Field(min_length=1, max_length=MAX_BALANCE_TOKENS)]
+
+    @model_validator(mode='after')
+    def consistent(self):
+        current = self.status == 'current'
+        if current != (self.snapshot is not None) or current == (self.reason is not None):
+            raise ValueError('balances_status')
+        if not current and any(balance.status != 'unavailable' for balance in self.balances):
+            raise ValueError('balances_status')
+        addresses = [balance.address for balance in self.balances]
+        if len(addresses) != len(set(addresses)):
+            raise ValueError('balances_duplicate')
+        return self
+
+
+class ChainBalancesResponse(WireModel):
+    """chain-balances: a wallet's native and token balances on each chain asked, one block per chain."""
+    schemaVersion: Literal[1]
+    contractVersion: Literal[CONTRACT_VERSION]
+    mode: Literal['live_chain_balances']
+    wallet: Address
+    servedAt: UInt
+    coverage: Literal['complete', 'partial']
+    chains: Annotated[list[ChainBalances], Field(min_length=1, max_length=len(CHAIN_IDS))]
+    limitations: Annotated[list[Literal[LIVE_LIMITATIONS]], Field(min_length=len(LIVE_LIMITATIONS),
+                                                                 max_length=len(LIVE_LIMITATIONS))]
+    executionAvailable: Literal[False]
+
+    @model_validator(mode='after')
+    def consistent(self):
+        _live_limitations(self.limitations)
+        chains = [chain.chainId for chain in self.chains]
+        if chains != sorted(set(chains)):
+            raise ValueError('chains_order')
+        if (self.coverage == 'complete') != all(chain.status == 'current' for chain in self.chains):
+            raise ValueError('coverage')
+        return self
+
+
+class TokenListRef(WireModel):
+    """The curated list's provenance: the Uniswap Labs Default token list (GPL-3.0), as pinned in the release."""
+    name: Annotated[str, Field(min_length=1, max_length=64)]
+    version: Annotated[str, Field(pattern=r'^[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}$')]
+    sha256: Annotated[str, Field(pattern=r'^[0-9a-f]{64}$')]
+
+
+class KnownToken(WireModel):
+    address: Address
+    symbol: Symbol
+    name: Annotated[str, Field(min_length=1, max_length=64)] | None
+    decimals: Annotated[StrictInt, Field(ge=0, le=255)]
+    sources: Annotated[list[Literal[TOKEN_SOURCES]], Field(min_length=1, max_length=len(TOKEN_SOURCES))]
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if not self.symbol.isprintable() or (self.name is not None and not self.name.isprintable()):
+            raise ValueError('unsafe_text')
+        if list(self.sources) != sorted(set(self.sources), key=TOKEN_SOURCES.index):
+            raise ValueError('sources_order')
+        return self
+
+
+class ChainTokensResponse(WireModel):
+    """chain-tokens: the tokens Domino knows on Base or Arbitrum One that match a query (known tokens only)."""
+    schemaVersion: Literal[1]
+    contractVersion: Literal[CONTRACT_VERSION]
+    mode: Literal['known_chain_tokens']
+    chainId: Literal[SEARCH_CHAIN_IDS]
+    query: Annotated[str, Field(min_length=1, max_length=MAX_QUERY)]
+    servedAt: UInt
+    coverage: Literal['known_tokens_only']
+    tokenList: TokenListRef
+    tokens: Annotated[list[KnownToken], Field(max_length=MAX_SEARCH_TOKENS)]
+    truncated: StrictBool
+    limitations: Annotated[list[Literal[LIVE_LIMITATIONS]], Field(min_length=len(LIVE_LIMITATIONS),
+                                                                 max_length=len(LIVE_LIMITATIONS))]
+    executionAvailable: Literal[False]
+
+    @model_validator(mode='after')
+    def consistent(self):
+        _live_limitations(self.limitations)
+        addresses = [token.address for token in self.tokens]
+        if len(addresses) != len(set(addresses)):
+            raise ValueError('tokens_duplicate')
+        return self
+
+
 # ---------------------------------------------------------------- requests
 WalletAddress = Annotated[str, Field(pattern=r'^0x[0-9a-f]{40}$', min_length=42, max_length=42)]
 
@@ -982,8 +1223,53 @@ class ActivityPageRequest(WireModel):
     cursor: Cursor | None = None
 
 
-REQUEST_MODELS = {'portfolio': PortfolioRequest, 'activity': ActivityPageRequest}
-RESPONSE_MODELS = {'portfolio': PortfolioResponse, 'activity': ActivityResponse}
+class ChainPoolsRequest(WireModel):
+    chainId: ChainId
+    token: WalletAddress
+    pairedToken: WalletAddress | None = None
+
+    @model_validator(mode='after')
+    def distinct(self):
+        if self.pairedToken == self.token:
+            raise ValueError('same_token')
+        return self
+
+
+class BalanceTokenRef(WireModel):
+    chainId: ChainId
+    address: WalletAddress
+
+
+class ChainBalancesRequest(WireModel):
+    """Without tokens: every chain's base currencies (its charge currencies)."""
+    wallet: WalletAddress
+    tokens: Annotated[list[BalanceTokenRef], Field(min_length=1, max_length=MAX_BALANCE_TOKENS)] | None = None
+
+    @model_validator(mode='after')
+    def distinct(self):
+        if self.tokens is not None:
+            keys = [(token.chainId, token.address) for token in self.tokens]
+            if len(keys) != len(set(keys)):
+                raise ValueError('duplicate_token')
+        return self
+
+
+class ChainTokensRequest(WireModel):
+    chainId: Literal[SEARCH_CHAIN_IDS]
+    query: Annotated[str, Field(min_length=1, max_length=MAX_QUERY)]
+    limit: Annotated[StrictInt, Field(ge=1, le=MAX_SEARCH_TOKENS)] = DEFAULT_SEARCH_TOKENS
+
+    @model_validator(mode='after')
+    def readable(self):
+        if not self.query.strip() or not self.query.isprintable():
+            raise ValueError('query')
+        return self
+
+
+REQUEST_MODELS = {'portfolio': PortfolioRequest, 'activity': ActivityPageRequest, 'chain-pools': ChainPoolsRequest,
+                  'chain-balances': ChainBalancesRequest, 'chain-tokens': ChainTokensRequest}
+RESPONSE_MODELS = {'portfolio': PortfolioResponse, 'activity': ActivityResponse, 'chain-pools': ChainPoolsResponse,
+                   'chain-balances': ChainBalancesResponse, 'chain-tokens': ChainTokensResponse}
 
 
 def validate_v6_response(route, body):
@@ -996,12 +1282,31 @@ def validate_v6_response(route, body):
 
 
 def validate_v6_request_response(route, request, body):
-    """The answer is about the wallet asked for (the gateway's consistency check)."""
+    """The answer is about what was asked (the gateway's consistency check): the wallet, the chain, the token, the
+    query; an answer never longer than the limit asked; balances for exactly the chains and tokens asked."""
     validate_v6_response(route, body)
-    if body['wallet'] != request['wallet']:
+    if route in ('portfolio', 'activity', 'chain-balances') and body['wallet'] != request['wallet']:
         raise ValueError('v6_wallet_mismatch')
     if route == 'activity' and len(body['items']) > request.get('limit', DEFAULT_ITEMS):
         raise ValueError('v6_page_too_long')
+    if route == 'chain-pools' and (body['chainId'], body['token'], body['pairedToken']) != (
+            request['chainId'], request['token'], request.get('pairedToken')):
+        raise ValueError('v6_pools_mismatch')
+    if route == 'chain-tokens' and ((body['chainId'], body['query']) != (request['chainId'], request['query'])
+                                    or len(body['tokens']) > request.get('limit', DEFAULT_SEARCH_TOKENS)):
+        raise ValueError('v6_tokens_mismatch')
+    if route == 'chain-balances':
+        tokens = request.get('tokens')
+        chains = [chain['chainId'] for chain in body['chains']]
+        if tokens is None:
+            if chains != list(CHAIN_IDS):
+                raise ValueError('v6_balances_mismatch')
+        else:
+            asked = {}
+            for token in tokens:
+                asked.setdefault(token['chainId'], []).append(token['address'])
+            if {chain['chainId']: [b['address'] for b in chain['balances']] for chain in body['chains']} != asked:
+                raise ValueError('v6_balances_mismatch')
     return body
 
 

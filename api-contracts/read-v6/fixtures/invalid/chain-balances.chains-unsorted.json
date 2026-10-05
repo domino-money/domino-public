@@ -1,0 +1,108 @@
+{
+  "chains": [
+    {
+      "balances": [
+        {
+          "address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+          "balanceRaw": null,
+          "decimals": null,
+          "status": "unavailable",
+          "symbol": null
+        },
+        {
+          "address": "0x0000000000000000000000000000000000000000",
+          "balanceRaw": null,
+          "decimals": null,
+          "status": "unavailable",
+          "symbol": null
+        },
+        {
+          "address": "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+          "balanceRaw": null,
+          "decimals": null,
+          "status": "unavailable",
+          "symbol": null
+        }
+      ],
+      "chainId": 42161,
+      "reason": "chain_not_configured",
+      "snapshot": null,
+      "status": "unavailable"
+    },
+    {
+      "balances": [
+        {
+          "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+          "balanceRaw": "2500000",
+          "decimals": 6,
+          "status": "read",
+          "symbol": "USDC"
+        },
+        {
+          "address": "0x0000000000000000000000000000000000000000",
+          "balanceRaw": "100000000000000000",
+          "decimals": 18,
+          "status": "read",
+          "symbol": "ETH"
+        },
+        {
+          "address": "0x4200000000000000000000000000000000000006",
+          "balanceRaw": null,
+          "decimals": 18,
+          "status": "unavailable",
+          "symbol": "WETH"
+        }
+      ],
+      "chainId": 8453,
+      "reason": null,
+      "snapshot": {
+        "hash": "0xdededededededededededededededededededededededededededededededede",
+        "number": 52214620,
+        "timestamp": 1790431230
+      },
+      "status": "current"
+    },
+    {
+      "balances": [
+        {
+          "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+          "balanceRaw": null,
+          "decimals": null,
+          "status": "unavailable",
+          "symbol": null
+        },
+        {
+          "address": "0x0000000000000000000000000000000000000000",
+          "balanceRaw": null,
+          "decimals": null,
+          "status": "unavailable",
+          "symbol": null
+        },
+        {
+          "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+          "balanceRaw": null,
+          "decimals": null,
+          "status": "unavailable",
+          "symbol": null
+        }
+      ],
+      "chainId": 4663,
+      "reason": "chain_not_configured",
+      "snapshot": null,
+      "status": "unavailable"
+    }
+  ],
+  "contractVersion": "1.0.0-rc.1",
+  "coverage": "partial",
+  "executionAvailable": false,
+  "limitations": [
+    "raw_amounts_no_usd_valuation",
+    "token_metadata_untrusted",
+    "state_as_of_last_read",
+    "no_execution_or_signing"
+  ],
+  "mode": "live_chain_balances",
+  "schemaVersion": 1,
+  "servedAt": 1790431234,
+  "wallet": "0xb1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+}
