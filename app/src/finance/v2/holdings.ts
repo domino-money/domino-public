@@ -2,8 +2,9 @@
  * What the connected wallet holds on another network (spec F7 §3.3; the owner's decision #9, 2026-10-02: reads of other
  * chains come from the wallet's own provider, and the site reads no public RPC), read through that provider after the
  * wallet switched there. The crosschain-v1 origins listing is not wired yet (open point #17), so the networks and tokens
- * looked at are this module's own short list, CANDIDATE_ORIGINS: the spec's Base and Arbitrum One, Ethereum and OP
- * Mainnet, each with its ETH, WETH and USDC; never the destination chain itself.
+ * looked at are this module's own short list, CANDIDATE_ORIGINS: the spec's three chains (Robinhood Chain with its ETH,
+ * WETH and USDG; Base and Arbitrum One with their ETH, WETH and USDC), Ethereum and OP Mainnet; never the destination
+ * chain itself.
  *
  * Nothing here switches a network (the switch is wallet/port's, handed in), nothing is sent, nothing is guessed: a
  * balance that could not be read is absent, never zero, and only a balance above zero is a holding. No test data stands
@@ -24,13 +25,17 @@ const ZERO = '0x0000000000000000000000000000000000000000'
 const ETH = Object.freeze({ address: ZERO, symbol: 'ETH', decimals: 18 })
 const weth = (address: string) => Object.freeze({ address, symbol: 'WETH', decimals: 18 })
 const usdc = (address: string) => Object.freeze({ address, symbol: 'USDC', decimals: 6 })
+const USDG = Object.freeze({ address: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', symbol: 'USDG', decimals: 6 })
 
 /**
- * The networks looked at while the origins listing cannot be asked: the spec's two beside the destination (Base,
- * Arbitrum One: their WETH and USDC are the chain profiles' own, api-contracts/v2/chains/*.json), Ethereum and OP
- * Mainnet, every one ETH-native. Robinhood Chain (4663) is the destination, never an origin here.
+ * The networks looked at while the origins listing cannot be asked: the spec's three (spec F7 §3.1: a deposit arrives on
+ * Robinhood Chain, Base or Arbitrum One, from any other), their WETH, USDC and USDG the chain profiles' own
+ * (api-contracts/v2/chains/*.json), then Ethereum and OP Mainnet, every one ETH-native. The destination itself is never
+ * looked at (Holdings.tsx). Changed on purpose 2026-10-05 (the owner: a position on Base or Arbitrum One funded from the
+ * other two networks too): Robinhood Chain is an origin as well, for a deposit that arrives on Base or Arbitrum One.
  */
 export const CANDIDATE_ORIGINS: readonly OriginCandidate[] = Object.freeze([
+  { chainId: 4663, name: 'Robinhood Chain', tokens: [ETH, weth('0x0bd7d308f8e1639fab988df18a8011f41eacad73'), USDG] },
   { chainId: 1, name: 'Ethereum', tokens: [ETH, weth('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'), usdc('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48')] },
   { chainId: 8453, name: 'Base', tokens: [ETH, weth('0x4200000000000000000000000000000000000006'), usdc('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913')] },
   { chainId: 42161, name: 'Arbitrum One', tokens: [ETH, weth('0x82af49447d8a07e3bd95bd0d56f35241523fbab1'), usdc('0xaf88d065e77c8cc2239327c5edb3a432268e5831')] },

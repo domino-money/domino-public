@@ -72,14 +72,19 @@ function fakeWallet({ chainId = HOME, balances = {}, known = [1, 8453, 42161, 10
   return { wallet, state, switchTo };
 }
 
-test('the candidates: Ethereum, Base, Arbitrum One and OP Mainnet with ETH, WETH and USDC each, lowercase, never Robinhood Chain', () => {
-  assert.deepEqual(CANDIDATE_ORIGINS.map((c) => [c.chainId, c.name]), [[1, 'Ethereum'], [8453, 'Base'], [42161, 'Arbitrum One'], [10, 'OP Mainnet']]);
+// Changed on purpose 2026-10-05 (the owner: a position on Base or Arbitrum One funded from the other two networks too):
+// Robinhood Chain, with its ETH, WETH and USDG, is a candidate as well (for a deposit that arrives elsewhere).
+test('the candidates: Robinhood Chain with ETH, WETH and USDG; Ethereum, Base, Arbitrum One and OP Mainnet with ETH, WETH and USDC; lowercase', () => {
+  assert.deepEqual(CANDIDATE_ORIGINS.map((c) => [c.chainId, c.name]), [[4663, 'Robinhood Chain'], [1, 'Ethereum'], [8453, 'Base'], [42161, 'Arbitrum One'], [10, 'OP Mainnet']]);
   for (const c of CANDIDATE_ORIGINS) {
-    assert.deepEqual(c.tokens.map((t) => [t.symbol, t.decimals]), [['ETH', 18], ['WETH', 18], ['USDC', 6]], c.name);
+    assert.deepEqual(c.tokens.map((t) => [t.symbol, t.decimals]), [['ETH', 18], ['WETH', 18], [c.chainId === 4663 ? 'USDG' : 'USDC', 6]], c.name);
     for (const t of c.tokens) assert.match(t.address, /^0x[0-9a-f]{40}$/, `${c.name} ${t.symbol}`);
     assert.equal(c.tokens[0].address, ZERO);
   }
-  // Base's and Arbitrum One's WETH and USDC are the published chain profiles' own (api-contracts/v2/chains/*.json).
+  // Robinhood Chain's WETH and USDG, Base's and Arbitrum One's WETH and USDC, are the published chain profiles' own.
+  const robinhood = V2_CHAINS.find((chain) => chain.chainId === 4663);
+  assert.equal(candidate(4663).tokens[1].address, robinhood.wrappedNative.address.toLowerCase(), 'Robinhood Chain WETH');
+  assert.equal(candidate(4663).tokens[2].address, robinhood.chargeCurrencies.find((c) => c.symbol === 'USDG').address.toLowerCase(), 'Robinhood Chain USDG');
   for (const chainId of [8453, 42161]) {
     const profile = V2_CHAINS.find((chain) => chain.chainId === chainId);
     const found = candidate(chainId);
@@ -172,14 +177,15 @@ test('the way home refused: returned is false; a waiting request or a failed rea
   assert.deepEqual(thrown, { holdings: [], read: [], skipped: [{ chainId: 8453, reason: 'error' }], stoppedBy: null, returned: false });
 });
 
-test('by default the scan goes over the four candidates, in order, and never the home chain', async () => {
+// Changed on purpose 2026-10-05: five candidates, Robinhood Chain first (an origin for a position on Base or Arbitrum One).
+test('by default the scan goes over the candidates, in order, and never the home chain', async () => {
   const w = fakeWallet();
   const scan = await scanHoldings({ wallet: w.wallet, switchTo: w.switchTo, homeChainId: HOME });
   assert.deepEqual(w.state.switches, [1, 8453, 42161, 10, HOME]);
   assert.deepEqual(scan, { holdings: [], read: [1, 8453, 42161, 10], skipped: [], stoppedBy: null, returned: true });
   const fromBase = fakeWallet({ chainId: 8453 });
   await scanHoldings({ wallet: fromBase.wallet, switchTo: fromBase.switchTo, homeChainId: 8453 });
-  assert.deepEqual(fromBase.state.switches, [1, 42161, 10, 8453], 'a position on Base: Base is home, not an origin');
+  assert.deepEqual(fromBase.state.switches, [4663, 1, 42161, 10, 8453], 'a position on Base: Robinhood Chain an origin, Base home, not one');
 });
 
 // Round 5: zero, unavailable and partial are different states, including during an account/network change.
