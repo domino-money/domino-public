@@ -100,7 +100,7 @@ A field outside its action, an unknown field, or a malformed value is `invalid_r
 | `l1DataFee` | The transaction's L1 data fee at `block`, apart from the simulation's L2 gas: `status`, `source` (`op_gas_price_oracle` or `nitro_node_interface`), `weiRaw`, and per source the bound and size (`upperBoundWeiRaw`, `transactionBytes`) or the L1 gas and its L2 price (`l1GasUnits`, `l2BaseFeeWei`); `unavailable` when the chain did not answer |
 | `warnings` | `simulation_reverted`, `simulated_liquidity_below_minimum` |
 
-`expected` is exact at `block`: on the test chains every swap delivered exactly `expectedOutRaw`, every fee was exactly `fee.amountRaw`, the liquidity exactly `expected.liquidity`, and the zap's refunds exactly `expected.returned` (see [Evidence](#evidence)).
+`expected` is exact at `block`: on the test chains every swap delivered exactly `expectedOutRaw`, every fee was exactly `fee.amountRaw`, the liquidity exactly `expected.liquidity`, and the zap's refunds exactly `expected.returned` (see [Evidence](#evidence)). The exception is two legs that cross the same pool ([What remains](#what-remains)).
 
 ### What the app checks
 
@@ -382,6 +382,7 @@ With a key, router legs add 2 Trading API calls (quote and swap) per conversion,
 | `test_position_plan_contract.py` | The exported contract is current; fixtures replay the real service against recorded chain answers (no network); the consumer test; the listener's boundary, limits and launcher |
 | `test_v2_position_plan_config.py` | Manifests through v2_manifest (production admits a verified public manifest; local tests, #302's fork rehearsal, another chain and a malformed one are refused, named), settings, secrets never echoed |
 | `qualify_position_plan_fork.py` on Robinhood, 4 Oct 2026 ([report](../../reports/v2-position-plan-qualification-2026-10-04/robinhood-4663.json)) | **The deployed V2 on a fork of the chain, through the own node.** One plan of each kind on real pools (WETH/USDG v4, ETH/USDG v4, WETH/USDG v3) with the verified production manifest. 13 plans executed exactly as planned: each leg's output, the fee, the liquidity and the refunds, as in the journeys above. One more plan was made against the live node for the deployer and never sent: its quote came from the V4Quoter, its `eth_simulateV1` ran on Nitro, and NodeInterface answered its L1 component |
+| `qualify_position_plan_fork.py` with the Trading API, 4 Oct 2026 ([report](../../reports/v2-position-plan-qualification-2026-10-04/robinhood-4663-trading-api.json)) | **The owner's key, with the zap as swapper,** as the listener plans with its credential. The planner's router status is recorded per plan: 2 not better than a pool route by 10 bps; 3 refused for crossing the position's pool; 3 no route; 4 quotes and 2 routes refused by the planner's checks; 1 not needed. 14 of 15 plans executed exactly as planned. The 15th paid with PONS, a token outside the pool; it took a router leg and came out within its minimums but not exactly ([What remains](#what-remains)). Two earlier runs that day, from the uncommitted tool, never chose the router and passed 15 of 15 |
 
 **Which deployer each EVM test uses.** All of them use `backend/tests/v2_s1_chain.py`, on a local Anvil with real Uniswap code:
 - `vendored`: vendored v4, Base's v3 bytecode;
@@ -417,7 +418,19 @@ Permit2's, the position managers' and the Universal Router's errors stay in the 
 - **Qualification on forks** (`backend/qualify_position_plan_fork.py`): one plan of each kind per chain, on the deployed V2.
   - **Robinhood: done on 4 Oct 2026, 14 of 14** ([evidence](#evidence)). That includes the V4Quoter, and `eth_simulateV1` on the own Nitro node.
   - **Base and Arbitrum:** still to run. They need their hosted RPC, reached through a loopback forwarder, because the tool takes no remote upstream, and their manifests added to the tool's list.
-  - **The Trading API's live answers** with the zap as swapper: still synthetic in the tests. They need the owner's key.
+  - **The Trading API's live answers,** with the zap as swapper: run on 4 Oct 2026 with the owner's key ([evidence](#evidence)).
+    - The API answered every plan.
+    - Its quote failed the planner's checks 4 times (`uniswap_api_quote_invalid`) and its route the connectivity check twice (`uniswap_api_route_disconnected`). Both still need examining against the API's raw answers; the planner fell back to pool routes each time.
+- **Legs that share a pool.** Each leg is quoted alone at the block, so when two legs cross the same pool, the second leg's quote misses the first leg's trade.
+  - **On 4 Oct, on the fork at block 80,340,418** ([report](../../reports/v2-position-plan-qualification-2026-10-04/robinhood-4663-trading-api.json)): a PONS input into WETH/USDG took a router leg PONS→WETH whose route crossed the PONS/USDG pool, and a pool leg PONS→USDG through that same pool.
+  - **On-chain, everything held:** the plan executed with each leg at its exact input, above its minimum, the fee by the rule, and the liquidity above its minimum.
+  - **What missed `expected`:**
+    - the router leg delivered 0.28% more;
+    - the pool leg delivered 0.24% less, and so did the fee charged on it;
+    - the liquidity came out 0.009% lower;
+    - the refund was 0.0000104 WETH instead of 274 wei of WETH and 0.023 USDG.
+  - **Who is affected:** single-leg plans are not, and neither are two legs on separate pools. Past the slippage, the plan's own simulation reverts before anything is signed.
+  - **The fix:** for two-leg plans, take `expected` from the zap call's simulation, or keep the legs' pools apart when choosing routes.
 - **Gas in money**: L2 `gasUnits` and the L1 data fee in wei; no gas price, no OP Stack operator fee, no ETH or USD value (F6's gas work).
 - **Converted exits of narrow ranges** convert what the band guarantees ([table](#minimums-at-the-worst-price-within-s-rc2)): the app should offer a lower `s` for them, or an exit to both tokens.
 - **Wrapping is never a leg.** The zap has no wrap or unwrap leg, so a WETH input for a v4 native-ETH pool, or an exit of a v3 WETH pool converted to native ETH, swaps WETH like any other token (through an ETH/WETH pool, with the fee) or finds no route. The app should offer WETH as the target on v3 and ETH on v4.

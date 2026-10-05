@@ -105,6 +105,22 @@ class ReceiptCheckTests(unittest.TestCase):
             with self.subTest(check=name):
                 self.assertIn(name, q.check_receipt(body, receipt)[0])
 
+    def test_what_the_receipt_delivered_is_recorded_beside_the_plan(self):
+        body, receipt = body_and_receipt()
+        self.assertEqual(q.observed(receipt), {'legOutputsRaw': [str(2 * 10**6)], 'feeRaw': body['fee']['amountRaw'],
+                                               'liquidity': '1000', 'returned': {TKA: '5'}})
+        # A leg that delivered less than quoted: its output, the liquidity and the refund are the receipt's own.
+        short = {**receipt, 'logs': [
+            log('SwapLegExecuted', [topic('0x4'), topic(USD), topic(TKA)], ['address', 'uint256', 'uint256'],
+                [q.ZERO, 10**6, 195 * 10**4]),
+            receipt['logs'][1], log('Refunded', [topic(OWNER), topic(TKA)], ['uint256'], [3]),
+            log('PositionActionExecuted', [topic('0x1'), topic(OWNER), topic(hex(77))],
+                ['uint256', 'uint128', 'bytes32'], [0, 990, bytes.fromhex(INTENT[2:])])]}
+        failed, _ = q.check_receipt(body, short)
+        self.assertEqual(failed, ['leg_output_as_planned', 'liquidity_as_planned', 'returned_as_planned'])
+        self.assertEqual(q.observed(short), {'legOutputsRaw': [str(195 * 10**4)], 'feeRaw': body['fee']['amountRaw'],
+                                             'liquidity': '990', 'returned': {TKA: '3'}})
+
     def test_an_exit_without_legs_charges_nothing_and_the_manager_pays(self):
         body, receipt = body_and_receipt()
         body.update(action='exit', legs=[], fee={'token': q.ZERO, 'amountRaw': '0'})

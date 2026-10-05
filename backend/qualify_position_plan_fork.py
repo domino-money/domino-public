@@ -23,8 +23,10 @@ reports its L1 data fee as unavailable. One more plan is made against the live n
 holds ETH there (the deployer by default), so its quotes and its eth_simulateV1 run on the node, not on Anvil. It
 is never sent.
 
-Not covered: router legs from the Uniswap Trading API (they need the owner's key), and the Worker, session and
-Access checks in front of the listener (the bridge's side). Nothing is signed by a real key. No provider credential
+With `--uniswap-key-file` (the owner's Trading API key, read from that file and never printed), the planner also
+asks the Trading API for router legs, exactly as the listener does with its `uniswap-api-key` credential, and one more
+journey pays a WETH/USDG position with PONS, a token outside the pool. Not covered: the Worker, session and Access
+checks in front of the listener (the bridge's side). Nothing is signed by a real key. No provider credential
 enters this process, which accepts only a loopback upstream, and the fork is discarded.
 
     python -B backend/qualify_position_plan_fork.py --upstream http://127.0.0.1:18547 --out <report.json>
@@ -57,12 +59,16 @@ from v2_manifest import load_deployment  # noqa: E402
 from v2_position_plan import PlanError, PositionPlanner  # noqa: E402
 from v2_position_plan_models import CONTRACT_VERSION, PlanRequest, PlanResponse  # noqa: E402
 from v2_rpc import ChainEndpoints, ChainReadRpc, Endpoint  # noqa: E402
+from v2_uniswap_api import SOURCE as ROUTER_SOURCE, TradingApiLegs  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFESTS = {'robinhood-4663': ROOT / 'docs/deployments/v2-robinhood-4663-2026-10-04/deployment.json'}
 ZERO = '0x' + '00' * 20
 USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168'
 WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73'
+# PONS/USDG v4 (0.30%), one of the owner's featured pools: a token outside WETH/USDG with its own depth.
+PONS = '0x39dbed3a2bd333467115de45665cc57f813c4571'
+PONS_USDG_ID = '0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a'
 # The chain's two deepest v4 pools for the pair (qualify_deposit_fork.POOLS): WETH/USDG and native ETH/USDG.
 V4_POOLS = {'weth-usdg': {'dex': 4, 'currency0': WETH, 'currency1': USDG, 'fee': 200, 'tickSpacing': 4, 'hooks': ZERO},
             'eth-usdg': {'dex': 4, 'currency0': ZERO, 'currency1': USDG, 'fee': 87, 'tickSpacing': 1, 'hooks': ZERO}}
@@ -161,6 +167,18 @@ def check_receipt(body, receipt):
     return failed, int(log['topics'][3], 16)
 
 
+def observed(receipt):
+    """What the receipt delivered, beside the plan's expectation, for a plan that did not come out exactly."""
+    executed = events(receipt, 'PositionActionExecuted')
+    charged = events(receipt, 'FeeCharged')
+    return {'legOutputsRaw': [str(decode(['address', 'uint256', 'uint256'], bytes.fromhex(swap['data'][2:]))[2])
+                              for swap in events(receipt, 'SwapLegExecuted')],
+            'feeRaw': str(decode(['uint256', 'bytes32'], bytes.fromhex(charged[0]['data'][2:]))[0]) if len(charged) == 1 else None,
+            'liquidity': str(decode(['uint256', 'uint128', 'bytes32'], bytes.fromhex(executed[0]['data'][2:]))[1])
+            if len(executed) == 1 else None,
+            'returned': {token: str(amount) for token, amount in sorted(refunds(receipt).items())}}
+
+
 class Fork:
     """A discarded Anvil fork of the upstream, at its head."""
 
@@ -229,7 +247,7 @@ class ForkHead:
 
 
 class Qualification:
-    def __init__(self, fork, profile_key):
+    def __init__(self, fork, profile_key, router_legs=None):
         self.fork, self.profile = fork, default_registry().chain(profile_key)
         manifest = MANIFESTS[profile_key]
         self.manifest_sha256 = hashlib.sha256(manifest.read_bytes()).hexdigest()
@@ -237,8 +255,10 @@ class Qualification:
         self.deployment = load_deployment(manifest, self.profile, admission='production')
         endpoint = Endpoint('local', 'anvil.invalid', 'https://anvil.invalid/', None, 100, None, None)
         self.endpoints = ChainEndpoints(self.profile, (endpoint,), 'fork', send=lambda _url, body: fork.post(body))
+        self.router_legs = router_legs
         self.planner = PositionPlanner(self.profile, self.endpoints, ForkHead(fork), self.deployment,
-                                       clock=time.time, nonce_word=lambda: random.SystemRandom().getrandbits(248))
+                                       router_legs=router_legs, clock=time.time,
+                                       nonce_word=lambda: random.SystemRandom().getrandbits(248))
         self.journeys, self.live_l1 = [], None
         self.submitter = Account.create().address.lower()
         fork.request('anvil_setBalance', [self.submitter, hex(10**19)])
@@ -268,17 +288,35 @@ class Qualification:
         return best
 
     # ----------------------------------------------------------------- owner
-    def owner(self, usdg):
+    def owner(self, usdg, token=USDG):
         account = Account.create()
         address = account.address.lower()
         self.fork.request('anvil_setBalance', [address, hex(10**20)])
         if usdg:
             manager = self.dependencies['v4PoolManager']
             self.fork.request('anvil_setBalance', [manager, hex(10**18)])
-            receipt = self.fork.send(manager, USDG, '0xa9059cbb' + encode(['address', 'uint256'], [address, usdg]).hex())
+            receipt = self.fork.send(manager, token, '0xa9059cbb' + encode(['address', 'uint256'], [address, usdg]).hex())
             if receipt.get('status') != '0x1':
                 raise QualificationError('owner_funding_failed')
         return account, address
+
+    def outside_token(self):
+        """A WETH/USDG v4 position paid in PONS, about 20 USDG of it at the PONS/USDG pool's price."""
+        raw = self.fork.call(self.dependencies['v4StateView'], '0xc815641c' + PONS_USDG_ID[2:])
+        sqrt_price, _ = decode(['uint160', 'int24', 'uint24', 'uint24'], bytes.fromhex(raw[2:]))[:2]
+        usdg_per_pons = sqrt_price * sqrt_price  # Q192: PONS is currency0, USDG currency1
+        amount = 20 * 10**6 * 2**192 // usdg_per_pons if usdg_per_pons else 0
+        if amount <= 0:
+            self.journeys.append({'name': 'v4 create paid with a token outside the pool', 'ok': False,
+                                  'failed': ['outside_token_unpriced']})
+            return
+        account, _ = self.owner(2 * amount, token=PONS)
+        pool = V4_POOLS['weth-usdg']
+        _, tick = self.v4_slot0(pool)
+        self.run('v4 create paid with a token outside the pool (PONS into WETH/USDG)', {
+            'chainId': self.profile.chainId, 'action': 'create', 'consent': 'direct', 'pool': pool,
+            'tickLower': around(tick, 4, 2000)[0], 'tickUpper': around(tick, 4, 2000)[1],
+            'inputs': [{'token': PONS, 'amountRaw': str(amount)}]}, account)
 
     # ------------------------------------------------------------- one plan
     def run(self, name, request, account, *, sender=None):
@@ -299,7 +337,9 @@ class Qualification:
                                                       'tokenOut': leg['tokenOut'], 'amountInRaw': leg['amountInRaw'],
                                                       'expectedOutRaw': leg['expectedOutRaw']} for leg in body['legs']],
                      fee=body['fee'], simulation=body['simulation']['status'], l1DataFee=body['l1DataFee']['status'],
-                     steps=[step['kind'] for step in body['readiness']['steps']])
+                     steps=[step['kind'] for step in body['readiness']['steps']],
+                     # Whether the Trading API was asked and why its leg was or was not taken.
+                     router=body['routing']['router'])
         for step in body['readiness']['steps'][:-1]:
             if step['kind'] in ('approve_token', 'approve_position'):
                 receipt = self.fork.send(owner, step['to'], step['data'])
@@ -324,6 +364,12 @@ class Qualification:
         failed, token_id = check_receipt(body, receipt)
         entry.update(ok=not failed, failed=failed, gasUsed=int(receipt['gasUsed'], 16), tokenId=str(token_id),
                      sentBy='submitter' if sender else 'owner')
+        if any(name.endswith('_as_planned') for name in failed):
+            entry['observed'] = observed(receipt)
+            entry['planned'] = {'legOutputsRaw': [leg['expectedOutRaw'] for leg in body['legs']],
+                                'feeRaw': body['fee']['amountRaw'] if body['legs'] else None,
+                                'liquidity': body['expected'].get('liquidity'),
+                                'returned': {item['token']: item['amountRaw'] for item in body['expected']['returned']}}
         self.journeys.append(entry)
         return token_id
 
@@ -385,6 +431,7 @@ class Qualification:
                 'position': {'dex': 4, 'tokenId': str(native)}, 'liquidityToRemove': 'all', 'burn': False,
                 'receive': {'mode': 'both'}}, native_account)
         self.new_pool(weth_usdg)
+        self.outside_token()
 
     def new_pool(self, existing):
         """A WETH/USDG v4 pool at a tier nobody initialized, at the existing pool's price (USDG per WETH)."""
@@ -415,8 +462,8 @@ class Qualification:
             def head(inner):
                 raw = self.fork.request('eth_getBlockByNumber', ['latest', False], url=self.fork.upstream)
                 return Head(self.fork.chain_id, parse_block(raw), None, time.time())
-        planner = PositionPlanner(self.profile, live, LiveHead(), self.deployment, clock=time.time,
-                                  nonce_word=lambda: random.SystemRandom().getrandbits(248))
+        planner = PositionPlanner(self.profile, live, LiveHead(), self.deployment, router_legs=self.router_legs,
+                                  clock=time.time, nonce_word=lambda: random.SystemRandom().getrandbits(248))
         pool = V4_POOLS['eth-usdg']
         _, tick = self.v4_slot0(pool)
         request = {'chainId': self.profile.chainId, 'action': 'create', 'consent': 'direct', 'pool': pool,
@@ -436,6 +483,7 @@ class Qualification:
                          legs=[{'source': leg.get('source'), 'amountInRaw': leg['amountInRaw'],
                                 'expectedOutRaw': leg['expectedOutRaw']} for leg in body['legs']],
                          fee=body['fee'], simulation=body['simulation']['status'], l1DataFee=body['l1DataFee'],
+                         router=body['routing']['router'],
                          failed=[] if body['simulation']['status'] == 'ok' else ['simulation_not_ok'])
         self.journeys.append(entry)
 
@@ -483,15 +531,20 @@ def main(argv=None):
     parser.add_argument('--out', required=True, type=Path, help='the report, written once (never overwritten)')
     parser.add_argument('--live-owner', help='an account holding ETH on the chain, for the live plan (default: '
                         'the deployment\'s deployer)')
+    parser.add_argument('--uniswap-key-file', type=Path,
+                        help='a file holding the Trading API key (router legs); read, never printed')
     args = parser.parse_args(argv)
     try:
         upstream = loopback(args.upstream)
         if args.out.exists():
             raise QualificationError('report_exists')
         profile = default_registry().chain(args.chain)
+        router_legs = None
+        if args.uniswap_key_file is not None:
+            router_legs = TradingApiLegs(args.uniswap_key_file.read_text().strip())
         with Fork(upstream, profile.chainId) as fork:
             block = int(fork.request('eth_blockNumber'), 16)
-            qualification = Qualification(fork, args.chain)
+            qualification = Qualification(fork, args.chain, router_legs)
             qualification.journeys_v4()
             qualification.journeys_v3()
             owner = (args.live_owner or json.loads(MANIFESTS[args.chain].read_text())['roles']['deployer']).lower()
@@ -503,6 +556,9 @@ def main(argv=None):
                   'contractVersion': CONTRACT_VERSION, 'sourceCommit': source_commit(),
                   'manifestSha256': qualification.manifest_sha256, 'forkBlock': block, 'upstream': 'loopback',
                   'checkedAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                  'tradingApi': 'configured' if router_legs else 'not_configured',
+                  'routerLegs': sum(1 for j in qualification.journeys for leg in j.get('legs', [])
+                                    if leg.get('source') == ROUTER_SOURCE),
                   'liveL1DataFee': qualification.live_l1, 'journeys': qualification.journeys,
                   'passed': len(qualification.journeys) - len(failed), 'failed': failed}
         with open(args.out, 'x') as stream:
